@@ -1,0 +1,486 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+generator dbml {
+  provider              = "prisma-dbml-generator"
+  mapToDbSchema         = false
+  includeRelationFields = false
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["account", "product", "payment"]
+}
+
+model Account {
+  id       BigInt      @id @default(autoincrement())
+  username String      @unique @db.VarChar(100)
+  password String      @db.VarChar(255)
+  type     AccountType
+
+  user_account  UserAccount?
+  admin_account AdminAccount?
+  comments      Comment[]
+
+  @@map("base")
+  @@schema("account")
+}
+
+enum AccountType {
+  ACCOUNT_TYPE_USER
+  ACCOUNT_TYPE_ADMIN
+
+  @@map("account_type")
+  @@schema("account")
+}
+
+model Role {
+  id          String  @id @db.VarChar(50)
+  description String?
+
+  accounts    RoleOnAdmin[]
+  permissions PermissionOnRole[]
+
+  @@map("role")
+  @@schema("account")
+}
+
+model RoleOnAdmin {
+  admin_id BigInt
+  role_id  String
+
+  admin AdminAccount @relation(fields: [admin_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  role  Role         @relation(fields: [role_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@id([admin_id, role_id])
+  @@map("role_on_admin")
+  @@schema("account")
+}
+
+model Permission {
+  id          String  @id @db.VarChar(100)
+  description String?
+
+  roles PermissionOnRole[]
+
+  @@map("permission")
+  @@schema("account")
+}
+
+model PermissionOnRole {
+  role_id       String
+  permission_id String
+
+  role       Role       @relation(fields: [role_id], references: [id], onUpdate: Cascade)
+  permission Permission @relation(fields: [permission_id], references: [id], onUpdate: Cascade)
+
+  @@id([role_id, permission_id])
+  @@map("permission_on_role")
+  @@schema("account")
+}
+
+model UserAccount {
+  id                 BigInt  @id
+  email              String  @unique @db.VarChar(255)
+  phone              String  @unique @db.VarChar(50)
+  gender             Gender
+  full_name          String  @default("") @db.VarChar(100)
+  default_address_id BigInt?
+  avatar_url         String? @db.VarChar(500)
+
+  account   Account   @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  addresses Address[]
+  cart      Cart?
+  payments  Payment[]
+
+  @@map("user")
+  @@schema("account")
+}
+
+model AdminAccount {
+  id             BigInt  @id
+  avatar_url     String? @db.VarChar(255)
+  is_super_admin Boolean @default(false)
+
+  account          Account       @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  approved_refunds Refund[]
+  roles            RoleOnAdmin[]
+
+  @@map("admin")
+  @@schema("account")
+}
+
+model Address {
+  id           BigInt   @id @default(autoincrement())
+  user_id      BigInt
+  full_name    String
+  phone        String
+  address      String // Home address, eg: 95/62...
+  city         String
+  province     String
+  country      String
+  date_created DateTime @default(now()) @db.Timestamptz(3)
+
+  user_account UserAccount? @relation(fields: [user_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@map("address")
+  @@schema("account")
+}
+
+model Cart {
+  id BigInt @id
+
+  products     ItemOnCart[]
+  user_account UserAccount  @relation(fields: [id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@map("cart")
+  @@schema("account")
+}
+
+// TODO: hold the item quantity in the product stock (stock -= quantity), after 1h of inactivity, free the item stock in the product stock (stock += quantity)
+model ItemOnCart {
+  cart_id      BigInt
+  product_id   BigInt
+  quantity     BigInt
+  date_created DateTime @default(now()) @db.Timestamptz(3)
+
+  cart    Cart    @relation(fields: [cart_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  product Product @relation(fields: [product_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@id([cart_id, product_id])
+  @@map("item_on_cart")
+  @@schema("account")
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+
+  @@map("gender")
+  @@schema("account")
+}
+
+//===== PRODUCT =====
+
+model Brand {
+  id          BigInt @id @default(autoincrement())
+  //! because brand name is not unique, should put the logo images via Resources[0] beside the brand name (to make it unique in view)
+  name        String
+  description String
+
+  productModels ProductModel[]
+
+  @@map("brand")
+  @@schema("product")
+}
+
+model ProductModel {
+  id                BigInt   @id @default(autoincrement())
+  type              BigInt
+  brand_id          BigInt
+  name              String
+  description       String
+  list_price        BigInt
+  date_manufactured DateTime @db.Timestamptz(3)
+
+  product_type ProductType         @relation(fields: [type], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  brand        Brand               @relation(fields: [brand_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  tags         TagOnProductModel[]
+  products     Product[]
+
+  @@map("model")
+  @@schema("product")
+}
+
+// TODO: sửa comment support comment type
+model Comment {
+  id           BigInt      @id @default(autoincrement())
+  type         CommentType
+  account_id   BigInt
+  dest_id      BigInt
+  body         String
+  upvote       BigInt      @default(0)
+  downvote     BigInt      @default(0)
+  score        Int         @default(0) // 1 ~ 100
+  date_created DateTime    @default(now()) @db.Timestamptz(3)
+  date_updated DateTime    @default(now()) @updatedAt @db.Timestamptz(3)
+
+  account Account @relation(fields: [account_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@unique([account_id, dest_id])
+  @@map("comment")
+  @@schema("product")
+}
+
+model Product {
+  id               BigInt   @id @default(autoincrement())
+  product_model_id BigInt
+  additional_price BigInt   @default(0) // Additional price for this product, base on product_model.list_price
+  is_active        Boolean  @default(true)
+  can_combine      Boolean  @default(false) // If true, allow user to (put many products inside one container), otherwise each product is a single item (for refunding stuff)
+  metadata         Json     @default("{}") @db.JsonB
+  date_created     DateTime @default(now()) @db.Timestamptz(3)
+
+  product_model    ProductModel       @relation(fields: [product_model_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  productSerial    ProductSerial[]
+  carts            ItemOnCart[]
+  productOnPayment ProductOnPayment[]
+
+  ProductTracking ProductTracking?
+
+  @@map("base")
+  @@schema("product")
+}
+
+model ProductTracking {
+  product_id    BigInt @id
+  current_stock BigInt // Current stock of this product, 0 means out of stock
+  sold          BigInt @default(0)
+
+  product Product @relation(fields: [product_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@map("tracking")
+  @@schema("product")
+}
+
+model ProductSerial {
+  serial_id    String   @unique
+  product_id   BigInt
+  is_sold      Boolean  @default(false)
+  is_active    Boolean  @default(true)
+  date_created DateTime @default(now()) @db.Timestamptz(3)
+
+  product                              Product                           @relation(fields: [product_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  product_serial_on_product_on_payment ProductSerialOnProductOnPayment[]
+
+  @@map("serial")
+  @@schema("product")
+}
+
+model ProductType {
+  id   BigInt @id @default(autoincrement())
+  name String @unique
+
+  productModels ProductModel[]
+
+  @@map("type")
+  @@schema("product")
+}
+
+// Note: Sale data should be auto deactivated when reached end_date
+model Sale {
+  id BigInt @id @default(autoincrement())
+
+  type    SaleType
+  item_id BigInt // either tag, product_model_id or brand_id (base on sale_type)
+
+  date_created DateTime  @default(now()) @db.Timestamptz(3)
+  date_started DateTime  @default(now()) @db.Timestamptz(3)
+  date_ended   DateTime? @db.Timestamptz(3)
+  is_active    Boolean   @default(true)
+
+  // discount properties
+  discount_percent   Int? // either discount_percent or discount_price
+  discount_price     BigInt?
+  max_discount_price BigInt  @default(0) // 0 means no limit
+
+  SaleTracking SaleTracking?
+
+  @@map("sale")
+  @@schema("product")
+}
+
+enum SaleType {
+  SALE_TYPE_TAG
+  SALE_TYPE_PRODUCT_MODEL
+  SALE_TYPE_BRAND
+
+  @@map("sale_type")
+  @@schema("product")
+}
+
+model SaleTracking {
+  sale_id       BigInt @id
+  current_stock BigInt @default(0) // Current stock of this sale, 0 means out of stock
+  used          BigInt // number of products used in sale
+
+  sale Sale @relation(fields: [sale_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@map("sale_tracking")
+  @@schema("product")
+}
+
+model TagOnProductModel {
+  product_model_id BigInt
+  tag              String
+
+  product_model ProductModel @relation(fields: [product_model_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  tag_relation  Tag          @relation(fields: [tag], references: [tag], onUpdate: Cascade, onDelete: Cascade)
+
+  @@id([product_model_id, tag])
+  @@map("tag_on_product_model")
+  @@schema("product")
+}
+
+model Tag {
+  id          BigInt @id @default(autoincrement())
+  tag         String @unique @db.VarChar(50)
+  description String @default("")
+
+  productModels TagOnProductModel[]
+
+  @@map("tag")
+  @@schema("product")
+}
+
+enum CommentType {
+  PRODUCT_MODEL
+  BRAND
+  COMMENT
+
+  @@map("comment_type")
+  @@schema("product")
+}
+
+// ===== PAYMENT =====
+
+model ProductSerialOnProductOnPayment {
+  product_on_payment_id BigInt
+  product_serial_id     String
+
+  product_on_payment ProductOnPayment @relation(fields: [product_on_payment_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  product_serial     ProductSerial    @relation(fields: [product_serial_id], references: [serial_id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@id([product_on_payment_id, product_serial_id])
+  @@map("product_serial_on_product_on_payment")
+  @@schema("payment")
+}
+
+model ProductOnPayment {
+  id          BigInt @id @default(autoincrement())
+  payment_id  BigInt
+  product_id  BigInt
+  quantity    BigInt
+  price       BigInt // single product list price, not applied discount yet
+  total_price BigInt // total price of all products, after discount applied
+
+  product_serial ProductSerialOnProductOnPayment[]
+  refund         Refund[]
+  payment        Payment                           @relation(fields: [payment_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  product        Product                           @relation(fields: [product_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  // @@unique([payment_id, product_id]); Should not be unique, because product can be added multiple times (due to product.can_combine)
+  @@map("product_on_payment")
+  @@schema("payment")
+}
+
+model Payment {
+  id           BigInt        @id @default(autoincrement())
+  user_id      BigInt
+  method       PaymentMethod
+  status       Status
+  address      String
+  total        BigInt
+  date_created DateTime      @default(now()) @db.Timestamptz(3)
+
+  user_account UserAccount        @relation(fields: [user_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  products     ProductOnPayment[]
+  vnpay        PaymentVnpay?
+
+  @@map("base")
+  @@schema("payment")
+}
+
+model PaymentVnpay {
+  id                    BigInt @id
+  vnp_Amount            String
+  vnp_BankCode          String
+  vnp_CardType          String
+  vnp_OrderInfo         String
+  vnp_PayDate           String
+  vnp_ResponseCode      String
+  vnp_SecureHash        String
+  vnp_TmnCode           String
+  vnp_TransactionNo     String
+  vnp_TransactionStatus String
+  vnp_TxnRef            String
+
+  payment Payment @relation(fields: [id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@map("vnpay")
+  @@schema("payment")
+}
+
+model Refund {
+  id                    BigInt       @id @default(autoincrement())
+  product_on_payment_id BigInt
+  method                RefundMethod
+  status                Status
+  reason                String
+  address               String // PICK_UP address, if method is DROP_OFF, address is empty
+  amount                BigInt // Amount to be refunded (can be same as total_price of ProductOnPayment, or more if there is a penalty fee or shipping fee)
+  approved_by_id        BigInt? // Admin account id, if null, means not approved yet
+  date_created          DateTime     @default(now()) @db.Timestamptz(3)
+
+  product_on_payment ProductOnPayment @relation(fields: [product_on_payment_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  approved_by        AdminAccount?    @relation(fields: [approved_by_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@map("refund")
+  @@schema("payment")
+}
+
+enum PaymentMethod {
+  CASH
+  VNPAY
+  MOMO
+
+  @@map("payment_method")
+  @@schema("payment")
+}
+
+enum RefundMethod {
+  PICK_UP
+  DROP_OFF
+
+  @@map("refund_method")
+  @@schema("payment")
+}
+
+enum Status {
+  PENDING
+  SUCCESS
+  CANCELED
+  FAILED
+
+  @@map("status")
+  @@schema("payment")
+}
+
+// ===== OTHER =====
+
+// TODO: should catch "remove" event and remove them in s3; https://chatgpt.com/c/67bea496-7388-800f-a564-9641dc54c520
+model Resource {
+  id       BigInt       @id @default(autoincrement())
+  type     ResourceType
+  owner_id BigInt
+  url      String
+  order    Int
+
+  @@map("resource")
+  @@schema("product")
+}
+
+enum ResourceType {
+  BRAND
+  COMMENT
+  PRODUCT_MODEL
+  PRODUCT
+  REFUND
+
+  @@map("resource_type")
+  @@schema("product")
+}

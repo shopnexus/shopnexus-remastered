@@ -1,0 +1,344 @@
+//// ------------------------------------------------------
+//// THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+//// ------------------------------------------------------
+
+Table Account {
+  id BigInt [pk, increment]
+  username String [unique, not null]
+  password String [not null]
+  type AccountType [not null]
+}
+
+Table Role {
+  id String [pk]
+  description String
+}
+
+Table RoleOnAdmin {
+  admin_id BigInt [not null]
+  role_id String [not null]
+
+  indexes {
+    (admin_id, role_id) [pk]
+  }
+}
+
+Table Permission {
+  id String [pk]
+  description String
+}
+
+Table PermissionOnRole {
+  role_id String [not null]
+  permission_id String [not null]
+
+  indexes {
+    (role_id, permission_id) [pk]
+  }
+}
+
+Table UserAccount {
+  id BigInt [pk]
+  email String [unique, not null]
+  phone String [unique, not null]
+  gender Gender [not null]
+  full_name String [not null, default: '']
+  default_address_id BigInt
+  avatar_url String
+}
+
+Table AdminAccount {
+  id BigInt [pk]
+  avatar_url String
+  is_super_admin Boolean [not null, default: false]
+}
+
+Table Address {
+  id BigInt [pk, increment]
+  user_id BigInt [not null]
+  full_name String [not null]
+  phone String [not null]
+  address String [not null]
+  city String [not null]
+  province String [not null]
+  country String [not null]
+  date_created DateTime [default: `now()`, not null]
+}
+
+Table Cart {
+  id BigInt [pk]
+}
+
+Table ItemOnCart {
+  cart_id BigInt [not null]
+  product_id BigInt [not null]
+  quantity Int [not null]
+  date_created DateTime [default: `now()`, not null]
+
+  indexes {
+    (cart_id, product_id) [pk]
+  }
+}
+
+Table Brand {
+  id BigInt [pk, increment]
+  name String [not null]
+  description String [not null]
+}
+
+Table ProductModel {
+  id BigInt [pk, increment]
+  type BigInt [not null]
+  brand_id BigInt [not null]
+  name String [not null]
+  description String [not null]
+  list_price BigInt [not null]
+  date_manufactured DateTime [not null]
+}
+
+Table Comment {
+  id BigInt [pk, increment]
+  type CommentType [not null]
+  account_id BigInt [not null]
+  dest_id BigInt [not null]
+  body String [not null]
+  upvote BigInt [not null, default: 0]
+  downvote BigInt [not null, default: 0]
+  score Int [not null, default: 0]
+  date_created DateTime [default: `now()`, not null]
+  date_updated DateTime [default: `now()`, not null]
+
+  indexes {
+    (account_id, dest_id) [unique]
+  }
+}
+
+Table Product {
+  id BigInt [pk, increment]
+  product_model_id BigInt [not null]
+  additional_price BigInt [not null, default: 0]
+  is_active Boolean [not null, default: true]
+  can_combine Boolean [not null, default: false]
+  metadata Json [not null, default: '{}']
+  date_created DateTime [default: `now()`, not null]
+}
+
+Table ProductTracking {
+  id BigInt [pk, increment]
+  product_id BigInt [unique, not null]
+  current_stock BigInt [not null]
+  sold BigInt [not null, default: 0]
+}
+
+Table ProductSerial {
+  serial_id String [unique, not null]
+  product_id BigInt [not null]
+  is_sold Boolean [not null, default: false]
+  is_active Boolean [not null, default: true]
+  date_created DateTime [default: `now()`, not null]
+}
+
+Table ProductType {
+  id BigInt [pk, increment]
+  name String [unique, not null]
+}
+
+Table Sale {
+  id BigInt [pk, increment]
+  type SaleType [not null]
+  item_id BigInt [not null]
+  date_created DateTime [default: `now()`, not null]
+  date_started DateTime [default: `now()`, not null]
+  date_ended DateTime
+  is_active Boolean [not null, default: true]
+  discount_percent Int
+  discount_price BigInt
+  max_discount_price BigInt [not null, default: 0]
+}
+
+Table SaleTracking {
+  sale_id BigInt [pk]
+  current_stock BigInt [not null, default: 0]
+  used BigInt [not null]
+}
+
+Table TagOnProductModel {
+  product_model_id BigInt [not null]
+  tag String [not null]
+
+  indexes {
+    (product_model_id, tag) [pk]
+  }
+}
+
+Table Tag {
+  id BigInt [pk, increment]
+  tag String [unique, not null]
+  description String [not null, default: '']
+}
+
+Table ProductSerialOnProductOnPayment {
+  product_on_payment_id BigInt [not null]
+  product_serial_id String [not null]
+
+  indexes {
+    (product_on_payment_id, product_serial_id) [pk]
+  }
+}
+
+Table ProductOnPayment {
+  id BigInt [pk, increment]
+  payment_id BigInt [not null]
+  product_id BigInt [not null]
+  quantity Int [not null]
+  price BigInt [not null]
+  total_price BigInt [not null]
+}
+
+Table Payment {
+  id BigInt [pk, increment]
+  user_id BigInt [not null]
+  method PaymentMethod [not null]
+  status Status [not null]
+  address String [not null]
+  total BigInt [not null]
+  date_created DateTime [default: `now()`, not null]
+}
+
+Table PaymentVnpay {
+  id BigInt [pk]
+  vnp_Amount String [not null]
+  vnp_BankCode String [not null]
+  vnp_CardType String [not null]
+  vnp_OrderInfo String [not null]
+  vnp_PayDate String [not null]
+  vnp_ResponseCode String [not null]
+  vnp_SecureHash String [not null]
+  vnp_TmnCode String [not null]
+  vnp_TransactionNo String [not null]
+  vnp_TransactionStatus String [not null]
+  vnp_TxnRef String [not null]
+}
+
+Table Refund {
+  id BigInt [pk, increment]
+  product_on_payment_id BigInt [not null]
+  method RefundMethod [not null]
+  status Status [not null]
+  reason String [not null]
+  address String [not null]
+  amount BigInt [not null]
+  approved_by_id BigInt
+  date_created DateTime [default: `now()`, not null]
+}
+
+Table Resource {
+  id BigInt [pk, increment]
+  type ResourceType [not null]
+  owner_id BigInt [not null]
+  url String [not null]
+  order Int [not null]
+}
+
+Enum AccountType {
+  USER
+  ADMIN
+}
+
+Enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+Enum SaleType {
+  TAG
+  PRODUCT_MODEL
+  BRAND
+}
+
+Enum CommentType {
+  PRODUCT_MODEL
+  BRAND
+  COMMENT
+}
+
+Enum PaymentMethod {
+  CASH
+  VNPAY
+  MOMO
+}
+
+Enum RefundMethod {
+  PICK_UP
+  DROP_OFF
+}
+
+Enum Status {
+  PENDING
+  SUCCESS
+  CANCELED
+  FAILED
+}
+
+Enum ResourceType {
+  BRAND
+  COMMENT
+  PRODUCT_MODEL
+  PRODUCT
+  REFUND
+}
+
+Ref: RoleOnAdmin.admin_id > AdminAccount.id [delete: Cascade]
+
+Ref: RoleOnAdmin.role_id > Role.id [delete: Cascade]
+
+Ref: PermissionOnRole.role_id > Role.id
+
+Ref: PermissionOnRole.permission_id > Permission.id
+
+Ref: UserAccount.id - Account.id [delete: Cascade]
+
+Ref: AdminAccount.id - Account.id [delete: Cascade]
+
+Ref: Address.user_id > UserAccount.id [delete: Cascade]
+
+Ref: Cart.id - UserAccount.id [delete: Cascade]
+
+Ref: ItemOnCart.cart_id > Cart.id [delete: Cascade]
+
+Ref: ItemOnCart.product_id > Product.id [delete: Cascade]
+
+Ref: ProductModel.type > ProductType.id [delete: Cascade]
+
+Ref: ProductModel.brand_id > Brand.id [delete: Cascade]
+
+Ref: Comment.account_id > Account.id [delete: Cascade]
+
+Ref: Product.product_model_id > ProductModel.id [delete: Cascade]
+
+Ref: ProductTracking.product_id - Product.id [delete: Cascade]
+
+Ref: ProductSerial.product_id > Product.id [delete: Cascade]
+
+Ref: SaleTracking.sale_id - Sale.id [delete: Cascade]
+
+Ref: TagOnProductModel.product_model_id > ProductModel.id [delete: Cascade]
+
+Ref: TagOnProductModel.tag > Tag.tag [delete: Cascade]
+
+Ref: ProductSerialOnProductOnPayment.product_on_payment_id > ProductOnPayment.id [delete: Cascade]
+
+Ref: ProductSerialOnProductOnPayment.product_serial_id > ProductSerial.serial_id [delete: Cascade]
+
+Ref: ProductOnPayment.payment_id > Payment.id [delete: Cascade]
+
+Ref: ProductOnPayment.product_id > Product.id [delete: Cascade]
+
+Ref: Payment.user_id > UserAccount.id [delete: Cascade]
+
+Ref: PaymentVnpay.id - Payment.id [delete: Cascade]
+
+Ref: Refund.product_on_payment_id > ProductOnPayment.id [delete: Cascade]
+
+Ref: Refund.approved_by_id > AdminAccount.id [delete: Cascade]
