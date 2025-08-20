@@ -22,7 +22,7 @@ type KafkaConfig struct {
 }
 
 // NewKafkaClient creates a new Kafka client using franz-go.
-func NewKafkaClient(cfg KafkaConfig) (Client, error) {
+func NewKafkaClient(cfg KafkaConfig) (*KafkaClient, error) {
 	if len(cfg.Brokers) == 0 {
 		return nil, fmt.Errorf("at least one broker must be specified")
 	}
