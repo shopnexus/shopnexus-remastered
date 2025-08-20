@@ -7,7 +7,7 @@ volumes:
   postgres-backup-data:
   postgres-data:
   redis-data:
-  nats-data:
+  kafka-data:
   server-data:
 
 
@@ -66,23 +66,56 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  nats:
-    container_name: shopnexus-nats
-    image: nats:2.11-alpine
-    ports:
-      - "4222:4222" # Client connections
-      - "8222:8222" # HTTP monitoring
+  kafka:
+    container_name: shopnexus-kafka
+    image: confluentinc/cp-kafka:latest
     networks:
       - shopnexus-network
+    ports:
+      - "9092:9092"
     volumes:
-      - nats-data:/data
+      - kafka-data:/data
     healthcheck:
-      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8222/healthz" ]
+      test: [ "CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
     restart: unless-stopped
+    environment:
+      # Required in KRaft mode
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+
+      # Listener configuration
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+#      KAFKA_AUTO_OFFSET_RESET: earliest
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"  # Kafka will automatically create topics if needed.
+      KAFKA_NUM_PARTITIONS: 3  # Default number of partitions for new topics.
+      KAFKA_LOG_RETENTION_HOURS: 168  # Keep logs for 7 days.
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0  # No delay for consumer rebalancing.
+      CLUSTER_ID: "Mk3OEYBSD34fcwNTJENDM2Qk"  # A unique ID for the Kafka cluster.
+
+
+
+  kafka-ui:
+    container_name: shopnexus-kafka-ui
+    image: ghcr.io/kafbat/kafka-ui:latest
+    networks:
+      - shopnexus-network
+    ports:
+      - 8080:8080
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:29092
 
   server:
     container_name: shopnexus-server
@@ -91,6 +124,10 @@ services:
       dockerfile: docker/server/Dockerfile
     ports:
       - "50051:50051"
+    depends_on:
+      - kafka
+      - postgres
+      - redis
     networks:
       - shopnexus-network
     volumes:
