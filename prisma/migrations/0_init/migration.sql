@@ -75,6 +75,7 @@ CREATE TABLE "account"."account" (
     "username" VARCHAR(100),
     "password" VARCHAR(255),
     "date_created" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "date_updated" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "account_pkey" PRIMARY KEY ("id")
 );
@@ -89,6 +90,7 @@ CREATE TABLE "account"."profile" (
     "avatar_rs_id" BIGINT,
     "email_verified" BOOLEAN NOT NULL DEFAULT false,
     "phone_verified" BOOLEAN NOT NULL DEFAULT false,
+    "date_updated" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "profile_pkey" PRIMARY KEY ("id")
 );
@@ -98,19 +100,9 @@ CREATE TABLE "account"."customer" (
     "id" BIGSERIAL NOT NULL,
     "account_id" BIGINT NOT NULL,
     "default_address_id" BIGINT,
+    "date_updated" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "customer_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "account"."cart_item" (
-    "id" BIGSERIAL NOT NULL,
-    "cart_id" BIGINT NOT NULL,
-    "sku_id" BIGINT NOT NULL,
-    "quantity" BIGINT NOT NULL,
-    "date_created" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "cart_item_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -122,6 +114,18 @@ CREATE TABLE "account"."vendor" (
 );
 
 -- CreateTable
+CREATE TABLE "account"."cart_item" (
+    "id" BIGSERIAL NOT NULL,
+    "cart_id" BIGINT NOT NULL,
+    "sku_id" BIGINT NOT NULL,
+    "quantity" BIGINT NOT NULL,
+    "date_created" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "date_updated" TIMESTAMPTZ(3) NOT NULL,
+
+    CONSTRAINT "cart_item_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "account"."address" (
     "id" BIGSERIAL NOT NULL,
     "code" TEXT NOT NULL,
@@ -130,12 +134,12 @@ CREATE TABLE "account"."address" (
     "full_name" VARCHAR(100) NOT NULL,
     "phone" VARCHAR(20) NOT NULL,
     "phone_verified" BOOLEAN NOT NULL DEFAULT false,
-    "street_address" VARCHAR(255) NOT NULL,
-    "country" VARCHAR(2) NOT NULL,
+    "address_line" VARCHAR(255) NOT NULL,
     "city" VARCHAR(100) NOT NULL,
-    "district" VARCHAR(100) NOT NULL,
-    "ward" VARCHAR(100) NOT NULL,
+    "state_province" VARCHAR(100) NOT NULL,
+    "country" VARCHAR(2) NOT NULL,
     "date_created" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "date_updated" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "address_pkey" PRIMARY KEY ("id")
 );
@@ -283,6 +287,7 @@ CREATE TABLE "payment"."order" (
     "status" "shared"."status" NOT NULL,
     "address" TEXT NOT NULL,
     "date_created" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "date_updated" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "order_pkey" PRIMARY KEY ("id")
 );
@@ -485,6 +490,12 @@ CREATE INDEX "customer_account_id_idx" ON "account"."customer"("account_id");
 CREATE INDEX "customer_default_address_id_idx" ON "account"."customer"("default_address_id");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "vendor_account_id_key" ON "account"."vendor"("account_id");
+
+-- CreateIndex
+CREATE INDEX "vendor_account_id_idx" ON "account"."vendor"("account_id");
+
+-- CreateIndex
 CREATE INDEX "cart_item_cart_id_idx" ON "account"."cart_item"("cart_id");
 
 -- CreateIndex
@@ -494,19 +505,10 @@ CREATE INDEX "cart_item_sku_id_idx" ON "account"."cart_item"("sku_id");
 CREATE UNIQUE INDEX "cart_item_cart_id_sku_id_key" ON "account"."cart_item"("cart_id", "sku_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "vendor_account_id_key" ON "account"."vendor"("account_id");
-
--- CreateIndex
-CREATE INDEX "vendor_account_id_idx" ON "account"."vendor"("account_id");
-
--- CreateIndex
 CREATE UNIQUE INDEX "address_code_key" ON "account"."address"("code");
 
 -- CreateIndex
 CREATE INDEX "address_account_id_idx" ON "account"."address"("account_id");
-
--- CreateIndex
-CREATE INDEX "address_country_city_district_ward_idx" ON "account"."address"("country", "city", "district", "ward");
 
 -- CreateIndex
 CREATE INDEX "address_type_idx" ON "account"."address"("type");
@@ -647,13 +649,13 @@ ALTER TABLE "account"."profile" ADD CONSTRAINT "profile_account_id_fkey" FOREIGN
 ALTER TABLE "account"."customer" ADD CONSTRAINT "customer_account_id_fkey" FOREIGN KEY ("account_id") REFERENCES "account"."account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "account"."vendor" ADD CONSTRAINT "vendor_account_id_fkey" FOREIGN KEY ("account_id") REFERENCES "account"."account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "account"."cart_item" ADD CONSTRAINT "cart_item_cart_id_fkey" FOREIGN KEY ("cart_id") REFERENCES "account"."customer"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "account"."cart_item" ADD CONSTRAINT "cart_item_sku_id_fkey" FOREIGN KEY ("sku_id") REFERENCES "catalog"."sku"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "account"."vendor" ADD CONSTRAINT "vendor_account_id_fkey" FOREIGN KEY ("account_id") REFERENCES "account"."account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "account"."address" ADD CONSTRAINT "address_account_id_fkey" FOREIGN KEY ("account_id") REFERENCES "account"."account"("id") ON DELETE CASCADE ON UPDATE CASCADE;

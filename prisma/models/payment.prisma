@@ -8,6 +8,7 @@ model Order {
   status         Status
   address        String
   date_created   DateTime      @default(now()) @db.Timestamptz(3)
+  date_updated   DateTime      @updatedAt @db.Timestamptz(3)
 
   customer Customer      @relation(fields: [customer_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
   products OrderItem[]

@@ -11,6 +11,64 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AccountAddressType string
+
+const (
+	AccountAddressTypeHOME AccountAddressType = "HOME"
+	AccountAddressTypeWORK AccountAddressType = "WORK"
+)
+
+func (e *AccountAddressType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = AccountAddressType(s)
+	case string:
+		*e = AccountAddressType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for AccountAddressType: %T", src)
+	}
+	return nil
+}
+
+type NullAccountAddressType struct {
+	AccountAddressType AccountAddressType
+	Valid              bool // Valid is true if AccountAddressType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullAccountAddressType) Scan(value interface{}) error {
+	if value == nil {
+		ns.AccountAddressType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.AccountAddressType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullAccountAddressType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.AccountAddressType), nil
+}
+
+func (e AccountAddressType) Valid() bool {
+	switch e {
+	case AccountAddressTypeHOME,
+		AccountAddressTypeWORK:
+		return true
+	}
+	return false
+}
+
+func AllAccountAddressTypeValues() []AccountAddressType {
+	return []AccountAddressType{
+		AccountAddressTypeHOME,
+		AccountAddressTypeWORK,
+	}
+}
+
 type AccountGender string
 
 const (
@@ -72,11 +130,69 @@ func AllAccountGenderValues() []AccountGender {
 	}
 }
 
+type AccountStatus string
+
+const (
+	AccountStatusACTIVE    AccountStatus = "ACTIVE"
+	AccountStatusSUSPENDED AccountStatus = "SUSPENDED"
+)
+
+func (e *AccountStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = AccountStatus(s)
+	case string:
+		*e = AccountStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for AccountStatus: %T", src)
+	}
+	return nil
+}
+
+type NullAccountStatus struct {
+	AccountStatus AccountStatus
+	Valid         bool // Valid is true if AccountStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullAccountStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.AccountStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.AccountStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullAccountStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.AccountStatus), nil
+}
+
+func (e AccountStatus) Valid() bool {
+	switch e {
+	case AccountStatusACTIVE,
+		AccountStatusSUSPENDED:
+		return true
+	}
+	return false
+}
+
+func AllAccountStatusValues() []AccountStatus {
+	return []AccountStatus{
+		AccountStatusACTIVE,
+		AccountStatusSUSPENDED,
+	}
+}
+
 type AccountType string
 
 const (
-	AccountTypeUser  AccountType = "User"
-	AccountTypeAdmin AccountType = "Admin"
+	AccountTypeCustomer AccountType = "Customer"
+	AccountTypeVendor   AccountType = "Vendor"
 )
 
 func (e *AccountType) Scan(src interface{}) error {
@@ -116,8 +232,8 @@ func (ns NullAccountType) Value() (driver.Value, error) {
 
 func (e AccountType) Valid() bool {
 	switch e {
-	case AccountTypeUser,
-		AccountTypeAdmin:
+	case AccountTypeCustomer,
+		AccountTypeVendor:
 		return true
 	}
 	return false
@@ -125,17 +241,317 @@ func (e AccountType) Valid() bool {
 
 func AllAccountTypeValues() []AccountType {
 	return []AccountType{
-		AccountTypeUser,
-		AccountTypeAdmin,
+		AccountTypeCustomer,
+		AccountTypeVendor,
+	}
+}
+
+type CatalogCommentDestType string
+
+const (
+	CatalogCommentDestTypeProductSPU CatalogCommentDestType = "ProductSPU"
+	CatalogCommentDestTypeComment    CatalogCommentDestType = "Comment"
+)
+
+func (e *CatalogCommentDestType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = CatalogCommentDestType(s)
+	case string:
+		*e = CatalogCommentDestType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for CatalogCommentDestType: %T", src)
+	}
+	return nil
+}
+
+type NullCatalogCommentDestType struct {
+	CatalogCommentDestType CatalogCommentDestType
+	Valid                  bool // Valid is true if CatalogCommentDestType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullCatalogCommentDestType) Scan(value interface{}) error {
+	if value == nil {
+		ns.CatalogCommentDestType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.CatalogCommentDestType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullCatalogCommentDestType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.CatalogCommentDestType), nil
+}
+
+func (e CatalogCommentDestType) Valid() bool {
+	switch e {
+	case CatalogCommentDestTypeProductSPU,
+		CatalogCommentDestTypeComment:
+		return true
+	}
+	return false
+}
+
+func AllCatalogCommentDestTypeValues() []CatalogCommentDestType {
+	return []CatalogCommentDestType{
+		CatalogCommentDestTypeProductSPU,
+		CatalogCommentDestTypeComment,
+	}
+}
+
+type InventoryProductStatus string
+
+const (
+	InventoryProductStatusActive   InventoryProductStatus = "Active"
+	InventoryProductStatusInactive InventoryProductStatus = "Inactive"
+	InventoryProductStatusSold     InventoryProductStatus = "Sold"
+	InventoryProductStatusDamaged  InventoryProductStatus = "Damaged"
+)
+
+func (e *InventoryProductStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = InventoryProductStatus(s)
+	case string:
+		*e = InventoryProductStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for InventoryProductStatus: %T", src)
+	}
+	return nil
+}
+
+type NullInventoryProductStatus struct {
+	InventoryProductStatus InventoryProductStatus
+	Valid                  bool // Valid is true if InventoryProductStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullInventoryProductStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.InventoryProductStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.InventoryProductStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullInventoryProductStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.InventoryProductStatus), nil
+}
+
+func (e InventoryProductStatus) Valid() bool {
+	switch e {
+	case InventoryProductStatusActive,
+		InventoryProductStatusInactive,
+		InventoryProductStatusSold,
+		InventoryProductStatusDamaged:
+		return true
+	}
+	return false
+}
+
+func AllInventoryProductStatusValues() []InventoryProductStatus {
+	return []InventoryProductStatus{
+		InventoryProductStatusActive,
+		InventoryProductStatusInactive,
+		InventoryProductStatusSold,
+		InventoryProductStatusDamaged,
+	}
+}
+
+type InventoryStockType string
+
+const (
+	InventoryStockTypeProductSKU InventoryStockType = "ProductSKU"
+	InventoryStockTypePromotion  InventoryStockType = "Promotion"
+)
+
+func (e *InventoryStockType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = InventoryStockType(s)
+	case string:
+		*e = InventoryStockType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for InventoryStockType: %T", src)
+	}
+	return nil
+}
+
+type NullInventoryStockType struct {
+	InventoryStockType InventoryStockType
+	Valid              bool // Valid is true if InventoryStockType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullInventoryStockType) Scan(value interface{}) error {
+	if value == nil {
+		ns.InventoryStockType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.InventoryStockType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullInventoryStockType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.InventoryStockType), nil
+}
+
+func (e InventoryStockType) Valid() bool {
+	switch e {
+	case InventoryStockTypeProductSKU,
+		InventoryStockTypePromotion:
+		return true
+	}
+	return false
+}
+
+func AllInventoryStockTypeValues() []InventoryStockType {
+	return []InventoryStockType{
+		InventoryStockTypeProductSKU,
+		InventoryStockTypePromotion,
+	}
+}
+
+type PaymentInvoiceRefType string
+
+const (
+	PaymentInvoiceRefTypeOrder PaymentInvoiceRefType = "Order"
+	PaymentInvoiceRefTypeFee   PaymentInvoiceRefType = "Fee"
+)
+
+func (e *PaymentInvoiceRefType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = PaymentInvoiceRefType(s)
+	case string:
+		*e = PaymentInvoiceRefType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for PaymentInvoiceRefType: %T", src)
+	}
+	return nil
+}
+
+type NullPaymentInvoiceRefType struct {
+	PaymentInvoiceRefType PaymentInvoiceRefType
+	Valid                 bool // Valid is true if PaymentInvoiceRefType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullPaymentInvoiceRefType) Scan(value interface{}) error {
+	if value == nil {
+		ns.PaymentInvoiceRefType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.PaymentInvoiceRefType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullPaymentInvoiceRefType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.PaymentInvoiceRefType), nil
+}
+
+func (e PaymentInvoiceRefType) Valid() bool {
+	switch e {
+	case PaymentInvoiceRefTypeOrder,
+		PaymentInvoiceRefTypeFee:
+		return true
+	}
+	return false
+}
+
+func AllPaymentInvoiceRefTypeValues() []PaymentInvoiceRefType {
+	return []PaymentInvoiceRefType{
+		PaymentInvoiceRefTypeOrder,
+		PaymentInvoiceRefTypeFee,
+	}
+}
+
+type PaymentInvoiceType string
+
+const (
+	PaymentInvoiceTypeSale       PaymentInvoiceType = "Sale"
+	PaymentInvoiceTypeService    PaymentInvoiceType = "Service"
+	PaymentInvoiceTypeAdjustment PaymentInvoiceType = "Adjustment"
+)
+
+func (e *PaymentInvoiceType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = PaymentInvoiceType(s)
+	case string:
+		*e = PaymentInvoiceType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for PaymentInvoiceType: %T", src)
+	}
+	return nil
+}
+
+type NullPaymentInvoiceType struct {
+	PaymentInvoiceType PaymentInvoiceType
+	Valid              bool // Valid is true if PaymentInvoiceType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullPaymentInvoiceType) Scan(value interface{}) error {
+	if value == nil {
+		ns.PaymentInvoiceType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.PaymentInvoiceType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullPaymentInvoiceType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.PaymentInvoiceType), nil
+}
+
+func (e PaymentInvoiceType) Valid() bool {
+	switch e {
+	case PaymentInvoiceTypeSale,
+		PaymentInvoiceTypeService,
+		PaymentInvoiceTypeAdjustment:
+		return true
+	}
+	return false
+}
+
+func AllPaymentInvoiceTypeValues() []PaymentInvoiceType {
+	return []PaymentInvoiceType{
+		PaymentInvoiceTypeSale,
+		PaymentInvoiceTypeService,
+		PaymentInvoiceTypeAdjustment,
 	}
 }
 
 type PaymentPaymentMethod string
 
 const (
-	PaymentPaymentMethodCash  PaymentPaymentMethod = "Cash"
-	PaymentPaymentMethodVnpay PaymentPaymentMethod = "Vnpay"
-	PaymentPaymentMethodMomo  PaymentPaymentMethod = "Momo"
+	PaymentPaymentMethodCOD     PaymentPaymentMethod = "COD"
+	PaymentPaymentMethodCard    PaymentPaymentMethod = "Card"
+	PaymentPaymentMethodEWallet PaymentPaymentMethod = "EWallet"
+	PaymentPaymentMethodCrypto  PaymentPaymentMethod = "Crypto"
 )
 
 func (e *PaymentPaymentMethod) Scan(src interface{}) error {
@@ -175,9 +591,10 @@ func (ns NullPaymentPaymentMethod) Value() (driver.Value, error) {
 
 func (e PaymentPaymentMethod) Valid() bool {
 	switch e {
-	case PaymentPaymentMethodCash,
-		PaymentPaymentMethodVnpay,
-		PaymentPaymentMethodMomo:
+	case PaymentPaymentMethodCOD,
+		PaymentPaymentMethodCard,
+		PaymentPaymentMethodEWallet,
+		PaymentPaymentMethodCrypto:
 		return true
 	}
 	return false
@@ -185,9 +602,10 @@ func (e PaymentPaymentMethod) Valid() bool {
 
 func AllPaymentPaymentMethodValues() []PaymentPaymentMethod {
 	return []PaymentPaymentMethod{
-		PaymentPaymentMethodCash,
-		PaymentPaymentMethodVnpay,
-		PaymentPaymentMethodMomo,
+		PaymentPaymentMethodCOD,
+		PaymentPaymentMethodCard,
+		PaymentPaymentMethodEWallet,
+		PaymentPaymentMethodCrypto,
 	}
 }
 
@@ -249,363 +667,509 @@ func AllPaymentRefundMethodValues() []PaymentRefundMethod {
 	}
 }
 
-type PaymentStatus string
+type PromotionPromotionRefType string
 
 const (
-	PaymentStatusPending  PaymentStatus = "Pending"
-	PaymentStatusSuccess  PaymentStatus = "Success"
-	PaymentStatusCanceled PaymentStatus = "Canceled"
-	PaymentStatusFailed   PaymentStatus = "Failed"
+	PromotionPromotionRefTypeOrderItem PromotionPromotionRefType = "OrderItem"
+	PromotionPromotionRefTypeOrder     PromotionPromotionRefType = "Order"
 )
 
-func (e *PaymentStatus) Scan(src interface{}) error {
+func (e *PromotionPromotionRefType) Scan(src interface{}) error {
 	switch s := src.(type) {
 	case []byte:
-		*e = PaymentStatus(s)
+		*e = PromotionPromotionRefType(s)
 	case string:
-		*e = PaymentStatus(s)
+		*e = PromotionPromotionRefType(s)
 	default:
-		return fmt.Errorf("unsupported scan type for PaymentStatus: %T", src)
+		return fmt.Errorf("unsupported scan type for PromotionPromotionRefType: %T", src)
 	}
 	return nil
 }
 
-type NullPaymentStatus struct {
-	PaymentStatus PaymentStatus
-	Valid         bool // Valid is true if PaymentStatus is not NULL
+type NullPromotionPromotionRefType struct {
+	PromotionPromotionRefType PromotionPromotionRefType
+	Valid                     bool // Valid is true if PromotionPromotionRefType is not NULL
 }
 
 // Scan implements the Scanner interface.
-func (ns *NullPaymentStatus) Scan(value interface{}) error {
+func (ns *NullPromotionPromotionRefType) Scan(value interface{}) error {
 	if value == nil {
-		ns.PaymentStatus, ns.Valid = "", false
+		ns.PromotionPromotionRefType, ns.Valid = "", false
 		return nil
 	}
 	ns.Valid = true
-	return ns.PaymentStatus.Scan(value)
+	return ns.PromotionPromotionRefType.Scan(value)
 }
 
 // Value implements the driver Valuer interface.
-func (ns NullPaymentStatus) Value() (driver.Value, error) {
+func (ns NullPromotionPromotionRefType) Value() (driver.Value, error) {
 	if !ns.Valid {
 		return nil, nil
 	}
-	return string(ns.PaymentStatus), nil
+	return string(ns.PromotionPromotionRefType), nil
 }
 
-func (e PaymentStatus) Valid() bool {
+func (e PromotionPromotionRefType) Valid() bool {
 	switch e {
-	case PaymentStatusPending,
-		PaymentStatusSuccess,
-		PaymentStatusCanceled,
-		PaymentStatusFailed:
+	case PromotionPromotionRefTypeOrderItem,
+		PromotionPromotionRefTypeOrder:
 		return true
 	}
 	return false
 }
 
-func AllPaymentStatusValues() []PaymentStatus {
-	return []PaymentStatus{
-		PaymentStatusPending,
-		PaymentStatusSuccess,
-		PaymentStatusCanceled,
-		PaymentStatusFailed,
+func AllPromotionPromotionRefTypeValues() []PromotionPromotionRefType {
+	return []PromotionPromotionRefType{
+		PromotionPromotionRefTypeOrderItem,
+		PromotionPromotionRefTypeOrder,
 	}
 }
 
-type ProductCommentType string
+type PromotionPromotionType string
 
 const (
-	ProductCommentTypeProductModel ProductCommentType = "ProductModel"
-	ProductCommentTypeBrand        ProductCommentType = "Brand"
-	ProductCommentTypeComment      ProductCommentType = "Comment"
+	PromotionPromotionTypeVoucher   PromotionPromotionType = "Voucher"
+	PromotionPromotionTypeFlashSale PromotionPromotionType = "FlashSale"
+	PromotionPromotionTypeBundle    PromotionPromotionType = "Bundle"
+	PromotionPromotionTypeBuyXGetY  PromotionPromotionType = "BuyXGetY"
+	PromotionPromotionTypeCashback  PromotionPromotionType = "Cashback"
 )
 
-func (e *ProductCommentType) Scan(src interface{}) error {
+func (e *PromotionPromotionType) Scan(src interface{}) error {
 	switch s := src.(type) {
 	case []byte:
-		*e = ProductCommentType(s)
+		*e = PromotionPromotionType(s)
 	case string:
-		*e = ProductCommentType(s)
+		*e = PromotionPromotionType(s)
 	default:
-		return fmt.Errorf("unsupported scan type for ProductCommentType: %T", src)
+		return fmt.Errorf("unsupported scan type for PromotionPromotionType: %T", src)
 	}
 	return nil
 }
 
-type NullProductCommentType struct {
-	ProductCommentType ProductCommentType
-	Valid              bool // Valid is true if ProductCommentType is not NULL
+type NullPromotionPromotionType struct {
+	PromotionPromotionType PromotionPromotionType
+	Valid                  bool // Valid is true if PromotionPromotionType is not NULL
 }
 
 // Scan implements the Scanner interface.
-func (ns *NullProductCommentType) Scan(value interface{}) error {
+func (ns *NullPromotionPromotionType) Scan(value interface{}) error {
 	if value == nil {
-		ns.ProductCommentType, ns.Valid = "", false
+		ns.PromotionPromotionType, ns.Valid = "", false
 		return nil
 	}
 	ns.Valid = true
-	return ns.ProductCommentType.Scan(value)
+	return ns.PromotionPromotionType.Scan(value)
 }
 
 // Value implements the driver Valuer interface.
-func (ns NullProductCommentType) Value() (driver.Value, error) {
+func (ns NullPromotionPromotionType) Value() (driver.Value, error) {
 	if !ns.Valid {
 		return nil, nil
 	}
-	return string(ns.ProductCommentType), nil
+	return string(ns.PromotionPromotionType), nil
 }
 
-func (e ProductCommentType) Valid() bool {
+func (e PromotionPromotionType) Valid() bool {
 	switch e {
-	case ProductCommentTypeProductModel,
-		ProductCommentTypeBrand,
-		ProductCommentTypeComment:
+	case PromotionPromotionTypeVoucher,
+		PromotionPromotionTypeFlashSale,
+		PromotionPromotionTypeBundle,
+		PromotionPromotionTypeBuyXGetY,
+		PromotionPromotionTypeCashback:
 		return true
 	}
 	return false
 }
 
-func AllProductCommentTypeValues() []ProductCommentType {
-	return []ProductCommentType{
-		ProductCommentTypeProductModel,
-		ProductCommentTypeBrand,
-		ProductCommentTypeComment,
+func AllPromotionPromotionTypeValues() []PromotionPromotionType {
+	return []PromotionPromotionType{
+		PromotionPromotionTypeVoucher,
+		PromotionPromotionTypeFlashSale,
+		PromotionPromotionTypeBundle,
+		PromotionPromotionTypeBuyXGetY,
+		PromotionPromotionTypeCashback,
 	}
 }
 
-type ProductResourceType string
+type SharedResourceType string
 
 const (
-	ProductResourceTypeBrand        ProductResourceType = "Brand"
-	ProductResourceTypeComment      ProductResourceType = "Comment"
-	ProductResourceTypeProductModel ProductResourceType = "ProductModel"
-	ProductResourceTypeProduct      ProductResourceType = "Product"
-	ProductResourceTypeRefund       ProductResourceType = "Refund"
+	SharedResourceTypeAvatar        SharedResourceType = "Avatar"
+	SharedResourceTypeProductImage  SharedResourceType = "ProductImage"
+	SharedResourceTypeBrandLogo     SharedResourceType = "BrandLogo"
+	SharedResourceTypeRefund        SharedResourceType = "Refund"
+	SharedResourceTypeReturnDispute SharedResourceType = "ReturnDispute"
 )
 
-func (e *ProductResourceType) Scan(src interface{}) error {
+func (e *SharedResourceType) Scan(src interface{}) error {
 	switch s := src.(type) {
 	case []byte:
-		*e = ProductResourceType(s)
+		*e = SharedResourceType(s)
 	case string:
-		*e = ProductResourceType(s)
+		*e = SharedResourceType(s)
 	default:
-		return fmt.Errorf("unsupported scan type for ProductResourceType: %T", src)
+		return fmt.Errorf("unsupported scan type for SharedResourceType: %T", src)
 	}
 	return nil
 }
 
-type NullProductResourceType struct {
-	ProductResourceType ProductResourceType
-	Valid               bool // Valid is true if ProductResourceType is not NULL
+type NullSharedResourceType struct {
+	SharedResourceType SharedResourceType
+	Valid              bool // Valid is true if SharedResourceType is not NULL
 }
 
 // Scan implements the Scanner interface.
-func (ns *NullProductResourceType) Scan(value interface{}) error {
+func (ns *NullSharedResourceType) Scan(value interface{}) error {
 	if value == nil {
-		ns.ProductResourceType, ns.Valid = "", false
+		ns.SharedResourceType, ns.Valid = "", false
 		return nil
 	}
 	ns.Valid = true
-	return ns.ProductResourceType.Scan(value)
+	return ns.SharedResourceType.Scan(value)
 }
 
 // Value implements the driver Valuer interface.
-func (ns NullProductResourceType) Value() (driver.Value, error) {
+func (ns NullSharedResourceType) Value() (driver.Value, error) {
 	if !ns.Valid {
 		return nil, nil
 	}
-	return string(ns.ProductResourceType), nil
+	return string(ns.SharedResourceType), nil
 }
 
-func (e ProductResourceType) Valid() bool {
+func (e SharedResourceType) Valid() bool {
 	switch e {
-	case ProductResourceTypeBrand,
-		ProductResourceTypeComment,
-		ProductResourceTypeProductModel,
-		ProductResourceTypeProduct,
-		ProductResourceTypeRefund:
+	case SharedResourceTypeAvatar,
+		SharedResourceTypeProductImage,
+		SharedResourceTypeBrandLogo,
+		SharedResourceTypeRefund,
+		SharedResourceTypeReturnDispute:
 		return true
 	}
 	return false
 }
 
-func AllProductResourceTypeValues() []ProductResourceType {
-	return []ProductResourceType{
-		ProductResourceTypeBrand,
-		ProductResourceTypeComment,
-		ProductResourceTypeProductModel,
-		ProductResourceTypeProduct,
-		ProductResourceTypeRefund,
+func AllSharedResourceTypeValues() []SharedResourceType {
+	return []SharedResourceType{
+		SharedResourceTypeAvatar,
+		SharedResourceTypeProductImage,
+		SharedResourceTypeBrandLogo,
+		SharedResourceTypeRefund,
+		SharedResourceTypeReturnDispute,
 	}
 }
 
-type ProductSaleType string
+type SharedStatus string
 
 const (
-	ProductSaleTypeTag          ProductSaleType = "Tag"
-	ProductSaleTypeProductModel ProductSaleType = "ProductModel"
-	ProductSaleTypeBrand        ProductSaleType = "Brand"
+	SharedStatusPending    SharedStatus = "Pending"
+	SharedStatusProcessing SharedStatus = "Processing"
+	SharedStatusSuccess    SharedStatus = "Success"
+	SharedStatusCanceled   SharedStatus = "Canceled"
+	SharedStatusFailed     SharedStatus = "Failed"
 )
 
-func (e *ProductSaleType) Scan(src interface{}) error {
+func (e *SharedStatus) Scan(src interface{}) error {
 	switch s := src.(type) {
 	case []byte:
-		*e = ProductSaleType(s)
+		*e = SharedStatus(s)
 	case string:
-		*e = ProductSaleType(s)
+		*e = SharedStatus(s)
 	default:
-		return fmt.Errorf("unsupported scan type for ProductSaleType: %T", src)
+		return fmt.Errorf("unsupported scan type for SharedStatus: %T", src)
 	}
 	return nil
 }
 
-type NullProductSaleType struct {
-	ProductSaleType ProductSaleType
-	Valid           bool // Valid is true if ProductSaleType is not NULL
+type NullSharedStatus struct {
+	SharedStatus SharedStatus
+	Valid        bool // Valid is true if SharedStatus is not NULL
 }
 
 // Scan implements the Scanner interface.
-func (ns *NullProductSaleType) Scan(value interface{}) error {
+func (ns *NullSharedStatus) Scan(value interface{}) error {
 	if value == nil {
-		ns.ProductSaleType, ns.Valid = "", false
+		ns.SharedStatus, ns.Valid = "", false
 		return nil
 	}
 	ns.Valid = true
-	return ns.ProductSaleType.Scan(value)
+	return ns.SharedStatus.Scan(value)
 }
 
 // Value implements the driver Valuer interface.
-func (ns NullProductSaleType) Value() (driver.Value, error) {
+func (ns NullSharedStatus) Value() (driver.Value, error) {
 	if !ns.Valid {
 		return nil, nil
 	}
-	return string(ns.ProductSaleType), nil
+	return string(ns.SharedStatus), nil
 }
 
-func (e ProductSaleType) Valid() bool {
+func (e SharedStatus) Valid() bool {
 	switch e {
-	case ProductSaleTypeTag,
-		ProductSaleTypeProductModel,
-		ProductSaleTypeBrand:
+	case SharedStatusPending,
+		SharedStatusProcessing,
+		SharedStatusSuccess,
+		SharedStatusCanceled,
+		SharedStatusFailed:
 		return true
 	}
 	return false
 }
 
-func AllProductSaleTypeValues() []ProductSaleType {
-	return []ProductSaleType{
-		ProductSaleTypeTag,
-		ProductSaleTypeProductModel,
-		ProductSaleTypeBrand,
+func AllSharedStatusValues() []SharedStatus {
+	return []SharedStatus{
+		SharedStatusPending,
+		SharedStatusProcessing,
+		SharedStatusSuccess,
+		SharedStatusCanceled,
+		SharedStatusFailed,
 	}
+}
+
+type AccountAccount struct {
+	ID          int64
+	Code        string
+	Type        AccountType
+	Status      AccountStatus
+	Phone       pgtype.Text
+	Email       pgtype.Text
+	Username    pgtype.Text
+	Password    pgtype.Text
+	DateCreated pgtype.Timestamptz
+	DateUpdated pgtype.Timestamptz
 }
 
 type AccountAddress struct {
+	ID            int64
+	Code          string
+	AccountID     int64
+	Type          AccountAddressType
+	FullName      string
+	Phone         string
+	PhoneVerified bool
+	AddressLine   string
+	City          string
+	StateProvince string
+	Country       string
+	DateCreated   pgtype.Timestamptz
+	DateUpdated   pgtype.Timestamptz
+}
+
+type AccountCartItem struct {
 	ID          int64
-	UserID      int64
-	FullName    string
-	Phone       string
-	Address     string
-	City        string
-	Province    string
-	Country     string
-	DateCreated pgtype.Timestamptz
-}
-
-type AccountAdmin struct {
-	ID           int64
-	AvatarUrl    pgtype.Text
-	IsSuperAdmin bool
-}
-
-type AccountBase struct {
-	ID       int64
-	Username string
-	Password string
-	Type     AccountType
-}
-
-type AccountCart struct {
-	ID int64
-}
-
-type AccountItemOnCart struct {
 	CartID      int64
-	ProductID   int64
+	SkuID       int64
 	Quantity    int64
 	DateCreated pgtype.Timestamptz
+	DateUpdated pgtype.Timestamptz
 }
 
-type AccountPermission struct {
-	ID          string
-	Description pgtype.Text
-}
-
-type AccountPermissionOnRole struct {
-	RoleID       string
-	PermissionID string
-}
-
-type AccountRole struct {
-	ID          string
-	Description pgtype.Text
-}
-
-type AccountRoleOnAdmin struct {
-	AdminID int64
-	RoleID  string
-}
-
-type AccountUser struct {
+type AccountCustomer struct {
 	ID               int64
-	Email            string
-	Phone            string
-	Gender           AccountGender
-	FullName         string
+	AccountID        int64
 	DefaultAddressID pgtype.Int8
-	AvatarUrl        pgtype.Text
+	DateUpdated      pgtype.Timestamptz
 }
 
-type PaymentBase struct {
+type AccountProfile struct {
+	ID            int64
+	AccountID     int64
+	Gender        NullAccountGender
+	Name          pgtype.Text
+	DateOfBirth   pgtype.Date
+	AvatarRsID    pgtype.Int8
+	EmailVerified bool
+	PhoneVerified bool
+	DateUpdated   pgtype.Timestamptz
+}
+
+type AccountVendor struct {
+	ID        int64
+	AccountID int64
+}
+
+type CatalogBrand struct {
 	ID          int64
-	UserID      int64
-	Method      PaymentPaymentMethod
-	Status      PaymentStatus
-	Address     string
-	Total       int64
+	Code        string
+	Name        string
+	Description string
+}
+
+type CatalogCategory struct {
+	ID          int64
+	Name        string
+	Description string
+	ParentID    pgtype.Int8
+}
+
+type CatalogComment struct {
+	ID          int64
+	Code        string
+	AccountID   int64
+	RefType     CatalogCommentDestType
+	RefID       int64
+	Body        string
+	Upvote      int64
+	Downvote    int64
+	Score       int32
+	DateCreated pgtype.Timestamptz
+	DateUpdated pgtype.Timestamptz
+}
+
+type CatalogSku struct {
+	ID          int64
+	Code        string
+	SpuID       int64
+	Price       int64
+	CanCombine  bool
+	DateCreated pgtype.Timestamptz
+	DateDeleted pgtype.Timestamptz
+	Version     int64
+}
+
+type CatalogSkuAttribute struct {
+	ID          int64
+	Code        string
+	SkuID       int64
+	Name        string
+	Value       string
+	DateCreated pgtype.Timestamptz
+	DateUpdated pgtype.Timestamptz
+}
+
+type CatalogSpu struct {
+	ID               int64
+	Code             string
+	AccountID        int64
+	CategoryID       int64
+	BrandID          int64
+	Name             string
+	Description      string
+	IsActive         bool
+	DateManufactured pgtype.Timestamptz
+	DateCreated      pgtype.Timestamptz
+	DateUpdated      pgtype.Timestamptz
+	DateDeleted      pgtype.Timestamptz
+}
+
+type CatalogSpuTag struct {
+	ID    int64
+	SpuID int64
+	TagID int64
+}
+
+type CatalogTag struct {
+	ID          int64
+	Tag         string
+	Description string
+}
+
+type InventorySkuSerial struct {
+	ID           int64
+	SerialNumber string
+	SkuID        int64
+	Status       InventoryProductStatus
+	DateCreated  pgtype.Timestamptz
+}
+
+type InventoryStock struct {
+	ID           int64
+	RefType      InventoryStockType
+	RefID        int64
+	CurrentStock int64
+	Sold         int64
+	DateCreated  pgtype.Timestamptz
+}
+
+type InventoryStockHistory struct {
+	ID          int64
+	StockID     int64
+	Change      int64
 	DateCreated pgtype.Timestamptz
 }
 
-type PaymentProductOnPayment struct {
-	ID         int64
-	PaymentID  int64
-	ProductID  int64
-	Quantity   int64
-	Price      int64
-	TotalPrice int64
+type PaymentInvoice struct {
+	ID              int64
+	Code            string
+	Type            PaymentInvoiceType
+	RefType         PaymentInvoiceRefType
+	RefID           int64
+	SellerAccountID pgtype.Int8
+	BuyerAccountID  int64
+	Status          SharedStatus
+	PaymentMethod   PaymentPaymentMethod
+	Address         string
+	Phone           string
+	Subtotal        int64
+	Total           int64
+	FileRsID        string
+	DateCreated     pgtype.Timestamptz
+	Hash            []byte
+	PrevHash        []byte
 }
 
-type PaymentProductSerialOnProductOnPayment struct {
-	ProductOnPaymentID int64
-	ProductSerialID    string
+type PaymentInvoiceItem struct {
+	ID        int64
+	InvoiceID int64
+	Snapshot  []byte
+	Quantity  int64
+	UnitPrice int64
+	Subtotal  int64
+	Total     int64
+}
+
+type PaymentOrder struct {
+	ID            int64
+	Code          string
+	CustomerID    int64
+	InvoiceID     pgtype.Int8
+	PaymentMethod PaymentPaymentMethod
+	Status        SharedStatus
+	Address       string
+	DateCreated   pgtype.Timestamptz
+	DateUpdated   pgtype.Timestamptz
+}
+
+type PaymentOrderItem struct {
+	ID       int64
+	Code     string
+	OrderID  int64
+	SkuID    int64
+	Quantity int64
+}
+
+type PaymentOrderItemSerial struct {
+	ID              int64
+	OrderItemID     int64
+	ProductSerialID int64
 }
 
 type PaymentRefund struct {
-	ID                 int64
-	ProductOnPaymentID int64
-	Method             PaymentRefundMethod
-	Status             PaymentStatus
-	Reason             string
-	Address            string
-	Amount             int64
-	ApprovedByID       pgtype.Int8
-	DateCreated        pgtype.Timestamptz
+	ID           int64
+	Code         string
+	OrderItemID  int64
+	ReviewedByID pgtype.Int8
+	Method       PaymentRefundMethod
+	Status       SharedStatus
+	Reason       string
+	Address      pgtype.Text
+	DateCreated  pgtype.Timestamptz
+}
+
+type PaymentRefundDispute struct {
+	ID        int64
+	Code      string
+	RefundID  int64
+	VendorID  int64
+	Reason    string
+	Status    SharedStatus
+	CreatedAt pgtype.Timestamp
+	UpdatedAt pgtype.Timestamp
 }
 
 type PaymentVnpay struct {
 	ID                   int64
+	OrderID              int64
 	VnpAmount            string
 	VnpBankCode          string
 	VnpCardType          string
@@ -619,98 +1183,50 @@ type PaymentVnpay struct {
 	VnpTxnRef            string
 }
 
-type ProductBase struct {
-	ID              int64
-	ProductModelID  int64
-	AdditionalPrice int64
-	IsActive        bool
-	CanCombine      bool
-	Metadata        []byte
-	DateCreated     pgtype.Timestamptz
-}
-
-type ProductBrand struct {
+type PromotionPromotion struct {
 	ID          int64
-	Name        string
-	Description string
-}
-
-type ProductComment struct {
-	ID          int64
-	Type        ProductCommentType
-	AccountID   int64
-	DestID      int64
-	Body        string
-	Upvote      int64
-	Downvote    int64
-	Score       int32
-	DateCreated pgtype.Timestamptz
-	DateUpdated pgtype.Timestamptz
-}
-
-type ProductModel struct {
-	ID               int64
-	Type             int64
-	BrandID          int64
-	Name             string
-	Description      string
-	ListPrice        int64
-	DateManufactured pgtype.Timestamptz
-}
-
-type ProductResource struct {
-	ID      int64
-	Type    ProductResourceType
-	OwnerID int64
-	Url     string
-	Order   int32
-}
-
-type ProductSale struct {
-	ID               int64
-	Type             ProductSaleType
-	ItemID           int64
-	DateCreated      pgtype.Timestamptz
-	DateStarted      pgtype.Timestamptz
-	DateEnded        pgtype.Timestamptz
-	IsActive         bool
-	DiscountPercent  pgtype.Int4
-	DiscountPrice    pgtype.Int8
-	MaxDiscountPrice int64
-}
-
-type ProductSaleTracking struct {
-	SaleID       int64
-	CurrentStock int64
-	Used         int64
-}
-
-type ProductSerial struct {
-	SerialID    string
-	ProductID   int64
-	IsSold      bool
+	Code        string
+	Type        PromotionPromotionType
 	IsActive    bool
+	DateStarted pgtype.Timestamptz
+	DateEnded   pgtype.Timestamptz
 	DateCreated pgtype.Timestamptz
 }
 
-type ProductTag struct {
+type PromotionPromotionRedemption struct {
 	ID          int64
-	Tag         string
-	Description string
+	PromotionID int64
+	Version     int64
+	RefType     PromotionPromotionRefType
+	RefID       int64
+	DateCreated pgtype.Timestamptz
 }
 
-type ProductTagOnProductModel struct {
-	ProductModelID int64
-	Tag            string
+type PromotionPromotionVoucher struct {
+	ID              int64
+	PromotionID     int64
+	MinSpend        int64
+	MaxDiscount     int64
+	DiscountPercent pgtype.Int4
+	DiscountPrice   pgtype.Int8
 }
 
-type ProductTracking struct {
-	ProductID    int64
-	CurrentStock int64
-	Sold         int64
+type SharedResource struct {
+	ID        int64
+	MimeType  string
+	OwnerID   int64
+	OwnerType SharedResourceType
+	Url       string
+	Order     int32
 }
 
-type ProductType struct {
-	ID   int64
-	Name string
+type SystemEvent struct {
+	ID            int64
+	AccountID     pgtype.Int8
+	AggregateID   int64
+	AggregateType string
+	EventType     string
+	Payload       []byte
+	Version       int64
+	DateCreated   pgtype.Timestamptz
 }

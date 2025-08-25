@@ -11,340 +11,608 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const addAdminRole = `-- name: AddAdminRole :exec
-INSERT INTO "account".role_on_admin (admin_id, role_id)
-VALUES ($1, $2) ON CONFLICT (admin_id, role_id) DO NOTHING
+const createAccount = `-- name: CreateAccount :one
+INSERT INTO "account".account (id, code, type, status, phone, email, username, password, date_created, date_updated)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id, code, type, status, phone, email, username, password, date_created, date_updated
 `
 
-type AddAdminRoleParams struct {
-	AdminID int64
-	RoleID  string
+type CreateAccountParams struct {
+	ID          int64
+	Code        string
+	Type        AccountType
+	Status      AccountStatus
+	Phone       pgtype.Text
+	Email       pgtype.Text
+	Username    pgtype.Text
+	Password    pgtype.Text
+	DateCreated pgtype.Timestamptz
+	DateUpdated pgtype.Timestamptz
 }
 
-func (q *Queries) AddAdminRole(ctx context.Context, arg AddAdminRoleParams) error {
-	_, err := q.db.Exec(ctx, addAdminRole, arg.AdminID, arg.RoleID)
-	return err
-}
-
-const createAccountAdmin = `-- name: CreateAccountAdmin :one
-WITH base AS (
-INSERT
-INTO "account".base (username, password, type)
-VALUES ($1, $2, 'ADMIN')
-  RETURNING id
-  )
-INSERT
-INTO "account".admin (id)
-SELECT id
-FROM base RETURNING id
-`
-
-type CreateAccountAdminParams struct {
-	Username string
-	Password string
-}
-
-func (q *Queries) CreateAccountAdmin(ctx context.Context, arg CreateAccountAdminParams) (int64, error) {
-	row := q.db.QueryRow(ctx, createAccountAdmin, arg.Username, arg.Password)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
-}
-
-const createAccountUser = `-- name: CreateAccountUser :one
-WITH base AS (
-INSERT
-INTO "account".base (username, password, type)
-VALUES ($1, $2, 'USER')
-  RETURNING id
-  )
-INSERT
-INTO "account".user (id, email, phone, gender, full_name)
-SELECT id, $3, $4, $5, $6
-FROM base RETURNING id
-`
-
-type CreateAccountUserParams struct {
-	Username string
-	Password string
-	Email    string
-	Phone    string
-	Gender   AccountGender
-	FullName string
-}
-
-func (q *Queries) CreateAccountUser(ctx context.Context, arg CreateAccountUserParams) (int64, error) {
-	row := q.db.QueryRow(ctx, createAccountUser,
+func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (AccountAccount, error) {
+	row := q.db.QueryRow(ctx, createAccount,
+		arg.ID,
+		arg.Code,
+		arg.Type,
+		arg.Status,
+		arg.Phone,
+		arg.Email,
 		arg.Username,
 		arg.Password,
-		arg.Email,
-		arg.Phone,
-		arg.Gender,
-		arg.FullName,
+		arg.DateCreated,
+		arg.DateUpdated,
 	)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
-}
-
-const getAccountAdmin = `-- name: GetAccountAdmin :one
-WITH filtered_roles AS (SELECT r.admin_id,
-                               array_agg(r.role_id) as roles
-                        FROM "account".role_on_admin r
-                        WHERE r.admin_id = $1
-                        GROUP BY r.admin_id)
-SELECT a.id, a.avatar_url, a.is_super_admin,
-       b.id, b.username, b.password, b.type,
-       COALESCE(r.roles, '{}') ::text[] as roles
-FROM "account".admin a
-       INNER JOIN "account".base b ON a.id = b.id
-       LEFT JOIN filtered_roles r ON r.admin_id = a.id
-WHERE (
-        a.id = $2 OR
-        b.username = $3
-        )
-`
-
-type GetAccountAdminParams struct {
-	AdminID  int64
-	ID       pgtype.Int8
-	Username pgtype.Text
-}
-
-type GetAccountAdminRow struct {
-	ID           int64
-	AvatarUrl    pgtype.Text
-	IsSuperAdmin bool
-	ID_2         int64
-	Username     string
-	Password     string
-	Type         AccountType
-	Roles        []string
-}
-
-func (q *Queries) GetAccountAdmin(ctx context.Context, arg GetAccountAdminParams) (GetAccountAdminRow, error) {
-	row := q.db.QueryRow(ctx, getAccountAdmin, arg.AdminID, arg.ID, arg.Username)
-	var i GetAccountAdminRow
+	var i AccountAccount
 	err := row.Scan(
 		&i.ID,
-		&i.AvatarUrl,
-		&i.IsSuperAdmin,
-		&i.ID_2,
+		&i.Code,
+		&i.Type,
+		&i.Status,
+		&i.Phone,
+		&i.Email,
 		&i.Username,
 		&i.Password,
-		&i.Type,
-		&i.Roles,
+		&i.DateCreated,
+		&i.DateUpdated,
 	)
 	return i, err
 }
 
-const getAccountBase = `-- name: GetAccountBase :one
-SELECT id, username, password, type
-FROM "account".base
+const createAddress = `-- name: CreateAddress :one
+INSERT INTO "account".address (id, code, account_id, type, full_name, phone, phone_verified, address_line, city, state_province, country,
+                               date_created, date_updated)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+RETURNING id, code, account_id, type, full_name, phone, phone_verified, address_line, city, state_province, country, date_created, date_updated
+`
+
+type CreateAddressParams struct {
+	ID            int64
+	Code          string
+	AccountID     int64
+	Type          AccountAddressType
+	FullName      string
+	Phone         string
+	PhoneVerified bool
+	AddressLine   string
+	City          string
+	StateProvince string
+	Country       string
+	DateCreated   pgtype.Timestamptz
+	DateUpdated   pgtype.Timestamptz
+}
+
+func (q *Queries) CreateAddress(ctx context.Context, arg CreateAddressParams) (AccountAddress, error) {
+	row := q.db.QueryRow(ctx, createAddress,
+		arg.ID,
+		arg.Code,
+		arg.AccountID,
+		arg.Type,
+		arg.FullName,
+		arg.Phone,
+		arg.PhoneVerified,
+		arg.AddressLine,
+		arg.City,
+		arg.StateProvince,
+		arg.Country,
+		arg.DateCreated,
+		arg.DateUpdated,
+	)
+	var i AccountAddress
+	err := row.Scan(
+		&i.ID,
+		&i.Code,
+		&i.AccountID,
+		&i.Type,
+		&i.FullName,
+		&i.Phone,
+		&i.PhoneVerified,
+		&i.AddressLine,
+		&i.City,
+		&i.StateProvince,
+		&i.Country,
+		&i.DateCreated,
+		&i.DateUpdated,
+	)
+	return i, err
+}
+
+const createCartItem = `-- name: CreateCartItem :one
+INSERT INTO "account".cart_item (id, cart_id, sku_id, quantity, date_created, date_updated)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, cart_id, sku_id, quantity, date_created, date_updated
+`
+
+type CreateCartItemParams struct {
+	ID          int64
+	CartID      int64
+	SkuID       int64
+	Quantity    int64
+	DateCreated pgtype.Timestamptz
+	DateUpdated pgtype.Timestamptz
+}
+
+func (q *Queries) CreateCartItem(ctx context.Context, arg CreateCartItemParams) (AccountCartItem, error) {
+	row := q.db.QueryRow(ctx, createCartItem,
+		arg.ID,
+		arg.CartID,
+		arg.SkuID,
+		arg.Quantity,
+		arg.DateCreated,
+		arg.DateUpdated,
+	)
+	var i AccountCartItem
+	err := row.Scan(
+		&i.ID,
+		&i.CartID,
+		&i.SkuID,
+		&i.Quantity,
+		&i.DateCreated,
+		&i.DateUpdated,
+	)
+	return i, err
+}
+
+const createCustomer = `-- name: CreateCustomer :one
+INSERT INTO "account".customer (id, account_id, default_address_id, date_updated)
+VALUES ($1, $2, $3, $4) RETURNING id, account_id, default_address_id, date_updated
+`
+
+type CreateCustomerParams struct {
+	ID               int64
+	AccountID        int64
+	DefaultAddressID pgtype.Int8
+	DateUpdated      pgtype.Timestamptz
+}
+
+func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) (AccountCustomer, error) {
+	row := q.db.QueryRow(ctx, createCustomer,
+		arg.ID,
+		arg.AccountID,
+		arg.DefaultAddressID,
+		arg.DateUpdated,
+	)
+	var i AccountCustomer
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.DefaultAddressID,
+		&i.DateUpdated,
+	)
+	return i, err
+}
+
+const createProfile = `-- name: CreateProfile :one
+INSERT INTO "account".profile (id, account_id, gender, name, date_of_birth, avatar_rs_id, email_verified,
+                               phone_verified, date_updated)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, account_id, gender, name, date_of_birth, avatar_rs_id, email_verified, phone_verified, date_updated
+`
+
+type CreateProfileParams struct {
+	ID            int64
+	AccountID     int64
+	Gender        NullAccountGender
+	Name          pgtype.Text
+	DateOfBirth   pgtype.Date
+	AvatarRsID    pgtype.Int8
+	EmailVerified bool
+	PhoneVerified bool
+	DateUpdated   pgtype.Timestamptz
+}
+
+func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (AccountProfile, error) {
+	row := q.db.QueryRow(ctx, createProfile,
+		arg.ID,
+		arg.AccountID,
+		arg.Gender,
+		arg.Name,
+		arg.DateOfBirth,
+		arg.AvatarRsID,
+		arg.EmailVerified,
+		arg.PhoneVerified,
+		arg.DateUpdated,
+	)
+	var i AccountProfile
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Gender,
+		&i.Name,
+		&i.DateOfBirth,
+		&i.AvatarRsID,
+		&i.EmailVerified,
+		&i.PhoneVerified,
+		&i.DateUpdated,
+	)
+	return i, err
+}
+
+const createVendor = `-- name: CreateVendor :one
+INSERT INTO "account".vendor (id, account_id)
+VALUES ($1, $2) RETURNING id, account_id
+`
+
+type CreateVendorParams struct {
+	ID        int64
+	AccountID int64
+}
+
+func (q *Queries) CreateVendor(ctx context.Context, arg CreateVendorParams) (AccountVendor, error) {
+	row := q.db.QueryRow(ctx, createVendor, arg.ID, arg.AccountID)
+	var i AccountVendor
+	err := row.Scan(&i.ID, &i.AccountID)
+	return i, err
+}
+
+const deleteAccount = `-- name: DeleteAccount :exec
+DELETE FROM "account".account
 WHERE id = $1
 `
 
-func (q *Queries) GetAccountBase(ctx context.Context, id int64) (AccountBase, error) {
-	row := q.db.QueryRow(ctx, getAccountBase, id)
-	var i AccountBase
-	err := row.Scan(
-		&i.ID,
-		&i.Username,
-		&i.Password,
-		&i.Type,
-	)
-	return i, err
-}
-
-const getAccountUser = `-- name: GetAccountUser :one
-SELECT u.id, u.email, u.phone, u.gender, u.full_name, u.default_address_id, u.avatar_url, b.id, b.username, b.password, b.type
-FROM "account".user u
-       INNER JOIN "account".base b ON u.id = b.id
-WHERE (
-        u.id = $1 OR
-        u.email = $2 OR
-        u.phone = $3 OR
-        b.username = $4
-        )
-`
-
-type GetAccountUserParams struct {
-	ID       pgtype.Int8
-	Email    pgtype.Text
-	Phone    pgtype.Text
-	Username pgtype.Text
-}
-
-type GetAccountUserRow struct {
-	ID               int64
-	Email            string
-	Phone            string
-	Gender           AccountGender
-	FullName         string
-	DefaultAddressID pgtype.Int8
-	AvatarUrl        pgtype.Text
-	ID_2             int64
-	Username         string
-	Password         string
-	Type             AccountType
-}
-
-func (q *Queries) GetAccountUser(ctx context.Context, arg GetAccountUserParams) (GetAccountUserRow, error) {
-	row := q.db.QueryRow(ctx, getAccountUser,
-		arg.ID,
-		arg.Email,
-		arg.Phone,
-		arg.Username,
-	)
-	var i GetAccountUserRow
-	err := row.Scan(
-		&i.ID,
-		&i.Email,
-		&i.Phone,
-		&i.Gender,
-		&i.FullName,
-		&i.DefaultAddressID,
-		&i.AvatarUrl,
-		&i.ID_2,
-		&i.Username,
-		&i.Password,
-		&i.Type,
-	)
-	return i, err
-}
-
-const getAdminPermissions = `-- name: GetAdminPermissions :one
-SELECT array_agg(DISTINCT p.permission_id)::TEXT[] AS permissions
-FROM "account".role_on_admin r
-       INNER JOIN "account".permission_on_role p ON r.role_id = p.role_id
-WHERE r.admin_id = $1
-`
-
-func (q *Queries) GetAdminPermissions(ctx context.Context, adminID int64) ([]string, error) {
-	row := q.db.QueryRow(ctx, getAdminPermissions, adminID)
-	var permissions []string
-	err := row.Scan(&permissions)
-	return permissions, err
-}
-
-const getRolePermissions = `-- name: GetRolePermissions :one
-SELECT array_agg(p.permission_id) as permissions
-FROM "account".permission_on_role p
-       INNER JOIN "account".role r ON p.role_id = r.id
-WHERE r.id = $1
-`
-
-func (q *Queries) GetRolePermissions(ctx context.Context, id string) (interface{}, error) {
-	row := q.db.QueryRow(ctx, getRolePermissions, id)
-	var permissions interface{}
-	err := row.Scan(&permissions)
-	return permissions, err
-}
-
-const removeAdminRole = `-- name: RemoveAdminRole :exec
-DELETE
-FROM "account".role_on_admin
-WHERE admin_id = $1
-  AND role_id = $2
-`
-
-type RemoveAdminRoleParams struct {
-	AdminID int64
-	RoleID  string
-}
-
-func (q *Queries) RemoveAdminRole(ctx context.Context, arg RemoveAdminRoleParams) error {
-	_, err := q.db.Exec(ctx, removeAdminRole, arg.AdminID, arg.RoleID)
+func (q *Queries) DeleteAccount(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteAccount, id)
 	return err
 }
 
+const deleteAddress = `-- name: DeleteAddress :exec
+DELETE FROM "account".address
+WHERE id = $1
+`
+
+func (q *Queries) DeleteAddress(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteAddress, id)
+	return err
+}
+
+const deleteCartItem = `-- name: DeleteCartItem :exec
+DELETE FROM "account".cart_item
+WHERE id = $1
+`
+
+func (q *Queries) DeleteCartItem(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteCartItem, id)
+	return err
+}
+
+const deleteCustomer = `-- name: DeleteCustomer :exec
+DELETE FROM "account".customer
+WHERE id = $1
+`
+
+func (q *Queries) DeleteCustomer(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteCustomer, id)
+	return err
+}
+
+const deleteProfile = `-- name: DeleteProfile :exec
+DELETE FROM "account".profile
+WHERE id = $1
+`
+
+func (q *Queries) DeleteProfile(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteProfile, id)
+	return err
+}
+
+const deleteVendor = `-- name: DeleteVendor :exec
+DELETE FROM "account".vendor
+WHERE id = $1
+`
+
+func (q *Queries) DeleteVendor(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteVendor, id)
+	return err
+}
+
+const getAccount = `-- name: GetAccount :one
+SELECT id, code, type, status, phone, email, username, password, date_created, date_updated
+FROM "account".account
+WHERE id = $1
+`
+
+func (q *Queries) GetAccount(ctx context.Context, id int64) (AccountAccount, error) {
+	row := q.db.QueryRow(ctx, getAccount, id)
+	var i AccountAccount
+	err := row.Scan(
+		&i.ID,
+		&i.Code,
+		&i.Type,
+		&i.Status,
+		&i.Phone,
+		&i.Email,
+		&i.Username,
+		&i.Password,
+		&i.DateCreated,
+		&i.DateUpdated,
+	)
+	return i, err
+}
+
 const updateAccount = `-- name: UpdateAccount :one
-UPDATE "account".base
-SET username = COALESCE($2, username),
-    password = COALESCE($3, password)
-WHERE id = $1 RETURNING id, username, password, type
+UPDATE "account".account
+SET code        = COALESCE($2, code),
+    type         = COALESCE($3, type),
+    status       = COALESCE($4, status),
+    phone = CASE WHEN $5 = TRUE THEN NULL ELSE COALESCE($6, phone) END,
+    email = CASE WHEN $7 = TRUE THEN NULL ELSE COALESCE($8, email) END,
+    username  = CASE WHEN $9 = TRUE THEN NULL ELSE COALESCE($10, username) END,
+    password     = CASE WHEN $11 = TRUE THEN NULL ELSE COALESCE($12, password) END,
+    date_created = COALESCE($13, date_created),
+    date_updated = COALESCE($14, date_updated)
+WHERE id = $1
+RETURNING id, code, type, status, phone, email, username, password, date_created, date_updated
 `
 
 type UpdateAccountParams struct {
-	ID       int64
-	Username pgtype.Text
-	Password pgtype.Text
+	ID           int64
+	Code         pgtype.Text
+	Type         NullAccountType
+	Status       NullAccountStatus
+	NullPhone    interface{}
+	Phone        pgtype.Text
+	NullEmail    interface{}
+	Email        pgtype.Text
+	NullUsername interface{}
+	Username     pgtype.Text
+	NullPassword interface{}
+	Password     pgtype.Text
+	DateCreated  pgtype.Timestamptz
+	DateUpdated  pgtype.Timestamptz
 }
 
-func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (AccountBase, error) {
-	row := q.db.QueryRow(ctx, updateAccount, arg.ID, arg.Username, arg.Password)
-	var i AccountBase
+func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (AccountAccount, error) {
+	row := q.db.QueryRow(ctx, updateAccount,
+		arg.ID,
+		arg.Code,
+		arg.Type,
+		arg.Status,
+		arg.NullPhone,
+		arg.Phone,
+		arg.NullEmail,
+		arg.Email,
+		arg.NullUsername,
+		arg.Username,
+		arg.NullPassword,
+		arg.Password,
+		arg.DateCreated,
+		arg.DateUpdated,
+	)
+	var i AccountAccount
 	err := row.Scan(
 		&i.ID,
+		&i.Code,
+		&i.Type,
+		&i.Status,
+		&i.Phone,
+		&i.Email,
 		&i.Username,
 		&i.Password,
-		&i.Type,
+		&i.DateCreated,
+		&i.DateUpdated,
 	)
 	return i, err
 }
 
-const updateAccountAdmin = `-- name: UpdateAccountAdmin :one
-UPDATE "account".admin
-SET avatar_url = COALESCE($2, avatar_url)
-WHERE id = $1 RETURNING id, avatar_url, is_super_admin
+const updateAddress = `-- name: UpdateAddress :one
+UPDATE "account".address
+SET code         = COALESCE($2, code),
+    account_id   = COALESCE($3, account_id),
+    type         = COALESCE($4, type),
+    full_name    = COALESCE($5, full_name),
+    phone        = COALESCE($6, phone),
+    phone_verified = COALESCE($7, phone_verified),
+    address_line = COALESCE($8, address_line),
+    city         = COALESCE($9, city),
+    state_province = COALESCE($10, state_province),
+    country      = COALESCE($11, country),
+    date_created = COALESCE($12, date_created),
+    date_updated = COALESCE($13, date_updated)
+WHERE id = $1
+RETURNING id, code, account_id, type, full_name, phone, phone_verified, address_line, city, state_province, country, date_created, date_updated
 `
 
-type UpdateAccountAdminParams struct {
-	ID        int64
-	AvatarUrl pgtype.Text
+type UpdateAddressParams struct {
+	ID            int64
+	Code          pgtype.Text
+	AccountID     pgtype.Int8
+	Type          NullAccountAddressType
+	FullName      pgtype.Text
+	Phone         pgtype.Text
+	PhoneVerified pgtype.Bool
+	AddressLine   pgtype.Text
+	City          pgtype.Text
+	StateProvince pgtype.Text
+	Country       pgtype.Text
+	DateCreated   pgtype.Timestamptz
+	DateUpdated   pgtype.Timestamptz
 }
 
-func (q *Queries) UpdateAccountAdmin(ctx context.Context, arg UpdateAccountAdminParams) (AccountAdmin, error) {
-	row := q.db.QueryRow(ctx, updateAccountAdmin, arg.ID, arg.AvatarUrl)
-	var i AccountAdmin
-	err := row.Scan(&i.ID, &i.AvatarUrl, &i.IsSuperAdmin)
-	return i, err
-}
-
-const updateAccountUser = `-- name: UpdateAccountUser :one
-UPDATE "account".user
-SET email              = COALESCE($2, email),
-    phone              = COALESCE($3, phone),
-    gender             = COALESCE($4, gender),
-    full_name          = COALESCE($5, full_name),
-    default_address_id = CASE
-                           WHEN $6 = TRUE THEN NULL
-                           ELSE COALESCE($7, default_address_id) END,
-    avatar_url         = COALESCE($8, avatar_url)
-WHERE id = $1 RETURNING id, email, phone, gender, full_name, default_address_id, avatar_url
-`
-
-type UpdateAccountUserParams struct {
-	ID                   int64
-	Email                pgtype.Text
-	Phone                pgtype.Text
-	Gender               NullAccountGender
-	FullName             pgtype.Text
-	NullDefaultAddressID interface{}
-	DefaultAddressID     pgtype.Int8
-	AvatarUrl            pgtype.Text
-}
-
-func (q *Queries) UpdateAccountUser(ctx context.Context, arg UpdateAccountUserParams) (AccountUser, error) {
-	row := q.db.QueryRow(ctx, updateAccountUser,
+func (q *Queries) UpdateAddress(ctx context.Context, arg UpdateAddressParams) (AccountAddress, error) {
+	row := q.db.QueryRow(ctx, updateAddress,
 		arg.ID,
-		arg.Email,
-		arg.Phone,
-		arg.Gender,
+		arg.Code,
+		arg.AccountID,
+		arg.Type,
 		arg.FullName,
-		arg.NullDefaultAddressID,
-		arg.DefaultAddressID,
-		arg.AvatarUrl,
+		arg.Phone,
+		arg.PhoneVerified,
+		arg.AddressLine,
+		arg.City,
+		arg.StateProvince,
+		arg.Country,
+		arg.DateCreated,
+		arg.DateUpdated,
 	)
-	var i AccountUser
+	var i AccountAddress
 	err := row.Scan(
 		&i.ID,
-		&i.Email,
-		&i.Phone,
-		&i.Gender,
+		&i.Code,
+		&i.AccountID,
+		&i.Type,
 		&i.FullName,
-		&i.DefaultAddressID,
-		&i.AvatarUrl,
+		&i.Phone,
+		&i.PhoneVerified,
+		&i.AddressLine,
+		&i.City,
+		&i.StateProvince,
+		&i.Country,
+		&i.DateCreated,
+		&i.DateUpdated,
 	)
+	return i, err
+}
+
+const updateCartItem = `-- name: UpdateCartItem :one
+UPDATE "account".cart_item
+SET cart_id      = COALESCE($2, cart_id),
+    sku_id       = COALESCE($3, sku_id),
+    quantity     = COALESCE($4, quantity),
+    date_created = COALESCE($5, date_created),
+    date_updated = COALESCE($6, date_updated)
+WHERE id = $1
+RETURNING id, cart_id, sku_id, quantity, date_created, date_updated
+`
+
+type UpdateCartItemParams struct {
+	ID          int64
+	CartID      pgtype.Int8
+	SkuID       pgtype.Int8
+	Quantity    pgtype.Int8
+	DateCreated pgtype.Timestamptz
+	DateUpdated pgtype.Timestamptz
+}
+
+func (q *Queries) UpdateCartItem(ctx context.Context, arg UpdateCartItemParams) (AccountCartItem, error) {
+	row := q.db.QueryRow(ctx, updateCartItem,
+		arg.ID,
+		arg.CartID,
+		arg.SkuID,
+		arg.Quantity,
+		arg.DateCreated,
+		arg.DateUpdated,
+	)
+	var i AccountCartItem
+	err := row.Scan(
+		&i.ID,
+		&i.CartID,
+		&i.SkuID,
+		&i.Quantity,
+		&i.DateCreated,
+		&i.DateUpdated,
+	)
+	return i, err
+}
+
+const updateCustomer = `-- name: UpdateCustomer :one
+UPDATE "account".customer
+SET account_id        = COALESCE($2, account_id),
+    default_address_id = CASE WHEN $3 = TRUE THEN NULL ELSE COALESCE($4, default_address_id) END,
+    date_updated       = COALESCE($5, date_updated)
+WHERE id = $1
+RETURNING id, account_id, default_address_id, date_updated
+`
+
+type UpdateCustomerParams struct {
+	ID                   int64
+	AccountID            pgtype.Int8
+	NullDefaultAddressID interface{}
+	DefaultAddressID     pgtype.Int8
+	DateUpdated          pgtype.Timestamptz
+}
+
+func (q *Queries) UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) (AccountCustomer, error) {
+	row := q.db.QueryRow(ctx, updateCustomer,
+		arg.ID,
+		arg.AccountID,
+		arg.NullDefaultAddressID,
+		arg.DefaultAddressID,
+		arg.DateUpdated,
+	)
+	var i AccountCustomer
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.DefaultAddressID,
+		&i.DateUpdated,
+	)
+	return i, err
+}
+
+const updateProfile = `-- name: UpdateProfile :one
+UPDATE "account".profile
+SET account_id     = COALESCE($2, account),
+    gender = CASE WHEN $3 = TRUE THEN NULL ELSE COALESCE($4, gender) END,
+    name = CASE WHEN $5 = TRUE THEN NULL ELSE COALESCE($6, name) END,
+    date_of_birth = CASE WHEN $7 = TRUE THEN NULL ELSE COALESCE($8, date_of_birth) END,
+    avatar_rs_id = CASE WHEN $9 = TRUE THEN NULL ELSE COALESCE($10, avatar_rs_id) END,
+    email_verified = COALESCE($11, email_verified),
+    phone_verified = COALESCE($12, phone_verified),
+    date_updated   = COALESCE($13, date_updated)
+WHERE id = $1
+RETURNING id, account_id, gender, name, date_of_birth, avatar_rs_id, email_verified, phone_verified, date_updated
+`
+
+type UpdateProfileParams struct {
+	ID              int64
+	AccountID       pgtype.Int8
+	NullGender      interface{}
+	Gender          NullAccountGender
+	NullName        interface{}
+	Name            pgtype.Text
+	NullDateOfBirth interface{}
+	DateOfBirth     pgtype.Date
+	NullAvatarRsID  interface{}
+	AvatarRsID      pgtype.Int8
+	EmailVerified   pgtype.Bool
+	PhoneVerified   pgtype.Bool
+	DateUpdated     pgtype.Timestamptz
+}
+
+func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (AccountProfile, error) {
+	row := q.db.QueryRow(ctx, updateProfile,
+		arg.ID,
+		arg.AccountID,
+		arg.NullGender,
+		arg.Gender,
+		arg.NullName,
+		arg.Name,
+		arg.NullDateOfBirth,
+		arg.DateOfBirth,
+		arg.NullAvatarRsID,
+		arg.AvatarRsID,
+		arg.EmailVerified,
+		arg.PhoneVerified,
+		arg.DateUpdated,
+	)
+	var i AccountProfile
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Gender,
+		&i.Name,
+		&i.DateOfBirth,
+		&i.AvatarRsID,
+		&i.EmailVerified,
+		&i.PhoneVerified,
+		&i.DateUpdated,
+	)
+	return i, err
+}
+
+const updateVendor = `-- name: UpdateVendor :one
+UPDATE "account".vendor
+SET account_id = COALESCE($2, account_id)
+WHERE id = $1
+RETURNING id, account_id
+`
+
+type UpdateVendorParams struct {
+	ID        int64
+	AccountID pgtype.Int8
+}
+
+func (q *Queries) UpdateVendor(ctx context.Context, arg UpdateVendorParams) (AccountVendor, error) {
+	row := q.db.QueryRow(ctx, updateVendor, arg.ID, arg.AccountID)
+	var i AccountVendor
+	err := row.Scan(&i.ID, &i.AccountID)
 	return i, err
 }
