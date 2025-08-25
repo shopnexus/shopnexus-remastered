@@ -26,7 +26,9 @@ go.work.sum
 config/config.*.yml
 !config/config.example.yml
 
-# prisma files
+.vscode/
+.idea/
+
 node_modules/
 
 main
