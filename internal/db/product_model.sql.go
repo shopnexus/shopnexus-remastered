@@ -27,14 +27,14 @@ WHERE (
 `
 
 type CountProductModelsParams struct {
-	Type                 pgtype.Int8        `json:"type"`
-	BrandID              pgtype.Int8        `json:"brand_id"`
-	Name                 pgtype.Text        `json:"name"`
-	Description          pgtype.Text        `json:"description"`
-	ListPriceFrom        pgtype.Int8        `json:"list_price_from"`
-	ListPriceTo          pgtype.Int8        `json:"list_price_to"`
-	DateManufacturedFrom pgtype.Timestamptz `json:"date_manufactured_from"`
-	DateManufacturedTo   pgtype.Timestamptz `json:"date_manufactured_to"`
+	Type                 pgtype.Int8
+	BrandID              pgtype.Int8
+	Name                 pgtype.Text
+	Description          pgtype.Text
+	ListPriceFrom        pgtype.Int8
+	ListPriceTo          pgtype.Int8
+	DateManufacturedFrom pgtype.Timestamptz
+	DateManufacturedTo   pgtype.Timestamptz
 }
 
 func (q *Queries) CountProductModels(ctx context.Context, arg CountProductModelsParams) (int64, error) {
@@ -74,12 +74,12 @@ VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, type, brand_id, name, description,
 `
 
 type CreateProductModelParams struct {
-	Type             int64              `json:"type"`
-	BrandID          int64              `json:"brand_id"`
-	Name             string             `json:"name"`
-	Description      string             `json:"description"`
-	ListPrice        int64              `json:"list_price"`
-	DateManufactured pgtype.Timestamptz `json:"date_manufactured"`
+	Type             int64
+	BrandID          int64
+	Name             string
+	Description      string
+	ListPrice        int64
+	DateManufactured pgtype.Timestamptz
 }
 
 func (q *Queries) CreateProductModel(ctx context.Context, arg CreateProductModelParams) (ProductModel, error) {
@@ -138,15 +138,15 @@ FROM filtered_model pm
 `
 
 type GetProductModelRow struct {
-	ID               int64              `json:"id"`
-	Type             int64              `json:"type"`
-	BrandID          int64              `json:"brand_id"`
-	Name             string             `json:"name"`
-	Description      string             `json:"description"`
-	ListPrice        int64              `json:"list_price"`
-	DateManufactured pgtype.Timestamptz `json:"date_manufactured"`
-	Resources        []string           `json:"resources"`
-	Tags             interface{}        `json:"tags"`
+	ID               int64
+	Type             int64
+	BrandID          int64
+	Name             string
+	Description      string
+	ListPrice        int64
+	DateManufactured pgtype.Timestamptz
+	Resources        []string
+	Tags             interface{}
 }
 
 func (q *Queries) GetProductModel(ctx context.Context, id int64) (GetProductModelRow, error) {
@@ -229,28 +229,28 @@ OFFSET $1
 `
 
 type ListProductModelsParams struct {
-	Offset               int32              `json:"offset"`
-	Limit                int32              `json:"limit"`
-	Type                 pgtype.Int8        `json:"type"`
-	BrandID              pgtype.Int8        `json:"brand_id"`
-	Name                 pgtype.Text        `json:"name"`
-	Description          pgtype.Text        `json:"description"`
-	ListPriceFrom        pgtype.Int8        `json:"list_price_from"`
-	ListPriceTo          pgtype.Int8        `json:"list_price_to"`
-	DateManufacturedFrom pgtype.Timestamptz `json:"date_manufactured_from"`
-	DateManufacturedTo   pgtype.Timestamptz `json:"date_manufactured_to"`
+	Offset               int32
+	Limit                int32
+	Type                 pgtype.Int8
+	BrandID              pgtype.Int8
+	Name                 pgtype.Text
+	Description          pgtype.Text
+	ListPriceFrom        pgtype.Int8
+	ListPriceTo          pgtype.Int8
+	DateManufacturedFrom pgtype.Timestamptz
+	DateManufacturedTo   pgtype.Timestamptz
 }
 
 type ListProductModelsRow struct {
-	ID               int64              `json:"id"`
-	Type             int64              `json:"type"`
-	BrandID          int64              `json:"brand_id"`
-	Name             string             `json:"name"`
-	Description      string             `json:"description"`
-	ListPrice        int64              `json:"list_price"`
-	DateManufactured pgtype.Timestamptz `json:"date_manufactured"`
-	Resources        []string           `json:"resources"`
-	Tags             interface{}        `json:"tags"`
+	ID               int64
+	Type             int64
+	BrandID          int64
+	Name             string
+	Description      string
+	ListPrice        int64
+	DateManufactured pgtype.Timestamptz
+	Resources        []string
+	Tags             interface{}
 }
 
 func (q *Queries) ListProductModels(ctx context.Context, arg ListProductModelsParams) ([]ListProductModelsRow, error) {
@@ -305,9 +305,9 @@ OFFSET $2
 `
 
 type ListProductTypesParams struct {
-	Name   pgtype.Text `json:"name"`
-	Offset int32       `json:"offset"`
-	Limit  int32       `json:"limit"`
+	Name   pgtype.Text
+	Offset int32
+	Limit  int32
 }
 
 func (q *Queries) ListProductTypes(ctx context.Context, arg ListProductTypesParams) ([]ProductType, error) {
@@ -342,13 +342,13 @@ WHERE id = $1 RETURNING id, type, brand_id, name, description, list_price, date_
 `
 
 type UpdateProductModelParams struct {
-	ID               int64              `json:"id"`
-	Type             pgtype.Int8        `json:"type"`
-	BrandID          pgtype.Int8        `json:"brand_id"`
-	Name             pgtype.Text        `json:"name"`
-	Description      pgtype.Text        `json:"description"`
-	ListPrice        pgtype.Int8        `json:"list_price"`
-	DateManufactured pgtype.Timestamptz `json:"date_manufactured"`
+	ID               int64
+	Type             pgtype.Int8
+	BrandID          pgtype.Int8
+	Name             pgtype.Text
+	Description      pgtype.Text
+	ListPrice        pgtype.Int8
+	DateManufactured pgtype.Timestamptz
 }
 
 func (q *Queries) UpdateProductModel(ctx context.Context, arg UpdateProductModelParams) (ProductModel, error) {

@@ -25,8 +25,8 @@ SELECT EXISTS (SELECT 1
 `
 
 type CanRefundParams struct {
-	ID     int64       `json:"id"`
-	UserID pgtype.Int8 `json:"user_id"`
+	ID     int64
+	UserID pgtype.Int8
 }
 
 func (q *Queries) CanRefund(ctx context.Context, arg CanRefundParams) (bool, error) {
@@ -57,16 +57,16 @@ WHERE (
 `
 
 type CountRefundsParams struct {
-	UserID             pgtype.Int8             `json:"user_id"`
-	ProductOnPaymentID pgtype.Int8             `json:"product_on_payment_id"`
-	Method             NullPaymentRefundMethod `json:"method"`
-	Status             NullPaymentStatus       `json:"status"`
-	Reason             pgtype.Text             `json:"reason"`
-	Address            pgtype.Text             `json:"address"`
-	AmountFrom         pgtype.Int8             `json:"amount_from"`
-	AmountTo           pgtype.Int8             `json:"amount_to"`
-	DateCreatedFrom    pgtype.Timestamptz      `json:"date_created_from"`
-	DateCreatedTo      pgtype.Timestamptz      `json:"date_created_to"`
+	UserID             pgtype.Int8
+	ProductOnPaymentID pgtype.Int8
+	Method             NullPaymentRefundMethod
+	Status             NullPaymentStatus
+	Reason             pgtype.Text
+	Address            pgtype.Text
+	AmountFrom         pgtype.Int8
+	AmountTo           pgtype.Int8
+	DateCreatedFrom    pgtype.Timestamptz
+	DateCreatedTo      pgtype.Timestamptz
 }
 
 func (q *Queries) CountRefunds(ctx context.Context, arg CountRefundsParams) (int64, error) {
@@ -99,13 +99,13 @@ VALUES ($1, $2, $3, $4, $5, $7, $6) RETURNING id, product_on_payment_id, method,
 `
 
 type CreateRefundParams struct {
-	ProductOnPaymentID int64               `json:"product_on_payment_id"`
-	Method             PaymentRefundMethod `json:"method"`
-	Status             PaymentStatus       `json:"status"`
-	Reason             string              `json:"reason"`
-	Address            string              `json:"address"`
-	Amount             int64               `json:"amount"`
-	ApprovedByID       pgtype.Int8         `json:"approved_by_id"`
+	ProductOnPaymentID int64
+	Method             PaymentRefundMethod
+	Status             PaymentStatus
+	Reason             string
+	Address            string
+	Amount             int64
+	ApprovedByID       pgtype.Int8
 }
 
 func (q *Queries) CreateRefund(ctx context.Context, arg CreateRefundParams) (PaymentRefund, error) {
@@ -146,8 +146,8 @@ WHERE r.id = $1
 `
 
 type DeleteRefundParams struct {
-	ID     int64       `json:"id"`
-	UserID pgtype.Int8 `json:"user_id"`
+	ID     int64
+	UserID pgtype.Int8
 }
 
 func (q *Queries) DeleteRefund(ctx context.Context, arg DeleteRefundParams) error {
@@ -168,8 +168,8 @@ SELECT EXISTS (SELECT 1
 `
 
 type ExistsRefundParams struct {
-	ProductOnPaymentID int64 `json:"product_on_payment_id"`
-	UserID             int64 `json:"user_id"`
+	ProductOnPaymentID int64
+	UserID             int64
 }
 
 func (q *Queries) ExistsRefund(ctx context.Context, arg ExistsRefundParams) (bool, error) {
@@ -201,21 +201,21 @@ FROM filtered_refund r
 `
 
 type GetRefundParams struct {
-	ID     int64       `json:"id"`
-	UserID pgtype.Int8 `json:"user_id"`
+	ID     int64
+	UserID pgtype.Int8
 }
 
 type GetRefundRow struct {
-	ID                 int64               `json:"id"`
-	ProductOnPaymentID int64               `json:"product_on_payment_id"`
-	Method             PaymentRefundMethod `json:"method"`
-	Status             PaymentStatus       `json:"status"`
-	Reason             string              `json:"reason"`
-	Address            string              `json:"address"`
-	Amount             int64               `json:"amount"`
-	ApprovedByID       pgtype.Int8         `json:"approved_by_id"`
-	DateCreated        pgtype.Timestamptz  `json:"date_created"`
-	Resources          []string            `json:"resources"`
+	ID                 int64
+	ProductOnPaymentID int64
+	Method             PaymentRefundMethod
+	Status             PaymentStatus
+	Reason             string
+	Address            string
+	Amount             int64
+	ApprovedByID       pgtype.Int8
+	DateCreated        pgtype.Timestamptz
+	Resources          []string
 }
 
 func (q *Queries) GetRefund(ctx context.Context, arg GetRefundParams) (GetRefundRow, error) {
@@ -271,31 +271,31 @@ OFFSET $1
 `
 
 type ListRefundsParams struct {
-	Offset             int32                   `json:"offset"`
-	Limit              int32                   `json:"limit"`
-	UserID             pgtype.Int8             `json:"user_id"`
-	ProductOnPaymentID pgtype.Int8             `json:"product_on_payment_id"`
-	Method             NullPaymentRefundMethod `json:"method"`
-	Status             NullPaymentStatus       `json:"status"`
-	Reason             pgtype.Text             `json:"reason"`
-	Address            pgtype.Text             `json:"address"`
-	AmountFrom         pgtype.Int8             `json:"amount_from"`
-	AmountTo           pgtype.Int8             `json:"amount_to"`
-	DateCreatedFrom    pgtype.Timestamptz      `json:"date_created_from"`
-	DateCreatedTo      pgtype.Timestamptz      `json:"date_created_to"`
+	Offset             int32
+	Limit              int32
+	UserID             pgtype.Int8
+	ProductOnPaymentID pgtype.Int8
+	Method             NullPaymentRefundMethod
+	Status             NullPaymentStatus
+	Reason             pgtype.Text
+	Address            pgtype.Text
+	AmountFrom         pgtype.Int8
+	AmountTo           pgtype.Int8
+	DateCreatedFrom    pgtype.Timestamptz
+	DateCreatedTo      pgtype.Timestamptz
 }
 
 type ListRefundsRow struct {
-	ID                 int64               `json:"id"`
-	ProductOnPaymentID int64               `json:"product_on_payment_id"`
-	Method             PaymentRefundMethod `json:"method"`
-	Status             PaymentStatus       `json:"status"`
-	Reason             string              `json:"reason"`
-	Address            string              `json:"address"`
-	Amount             int64               `json:"amount"`
-	ApprovedByID       pgtype.Int8         `json:"approved_by_id"`
-	DateCreated        pgtype.Timestamptz  `json:"date_created"`
-	Resources          []string            `json:"resources"`
+	ID                 int64
+	ProductOnPaymentID int64
+	Method             PaymentRefundMethod
+	Status             PaymentStatus
+	Reason             string
+	Address            string
+	Amount             int64
+	ApprovedByID       pgtype.Int8
+	DateCreated        pgtype.Timestamptz
+	Resources          []string
 }
 
 func (q *Queries) ListRefunds(ctx context.Context, arg ListRefundsParams) ([]ListRefundsRow, error) {
@@ -359,13 +359,13 @@ WHERE (
 `
 
 type UpdateRefundParams struct {
-	ID           int64                   `json:"id"`
-	Method       NullPaymentRefundMethod `json:"method"`
-	Status       NullPaymentStatus       `json:"status"`
-	Reason       pgtype.Text             `json:"reason"`
-	Address      pgtype.Text             `json:"address"`
-	Amount       pgtype.Int8             `json:"amount"`
-	ApprovedByID pgtype.Int8             `json:"approved_by_id"`
+	ID           int64
+	Method       NullPaymentRefundMethod
+	Status       NullPaymentStatus
+	Reason       pgtype.Text
+	Address      pgtype.Text
+	Amount       pgtype.Int8
+	ApprovedByID pgtype.Int8
 }
 
 func (q *Queries) UpdateRefund(ctx context.Context, arg UpdateRefundParams) error {

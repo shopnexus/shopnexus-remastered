@@ -26,13 +26,13 @@ WHERE (
 `
 
 type CountAddressesParams struct {
-	UserID   pgtype.Int8 `json:"user_id"`
-	FullName pgtype.Text `json:"full_name"`
-	Phone    pgtype.Text `json:"phone"`
-	Address  pgtype.Text `json:"address"`
-	City     pgtype.Text `json:"city"`
-	Province pgtype.Text `json:"province"`
-	Country  pgtype.Text `json:"country"`
+	UserID   pgtype.Int8
+	FullName pgtype.Text
+	Phone    pgtype.Text
+	Address  pgtype.Text
+	City     pgtype.Text
+	Province pgtype.Text
+	Country  pgtype.Text
 }
 
 func (q *Queries) CountAddresses(ctx context.Context, arg CountAddressesParams) (int64, error) {
@@ -56,13 +56,13 @@ VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, user_id, full_name, phone, add
 `
 
 type CreateAddressParams struct {
-	UserID   int64  `json:"user_id"`
-	FullName string `json:"full_name"`
-	Phone    string `json:"phone"`
-	Address  string `json:"address"`
-	City     string `json:"city"`
-	Province string `json:"province"`
-	Country  string `json:"country"`
+	UserID   int64
+	FullName string
+	Phone    string
+	Address  string
+	City     string
+	Province string
+	Country  string
 }
 
 func (q *Queries) CreateAddress(ctx context.Context, arg CreateAddressParams) (AccountAddress, error) {
@@ -100,8 +100,8 @@ WHERE (
 `
 
 type DeleteAddressParams struct {
-	ID     int64       `json:"id"`
-	UserID pgtype.Int8 `json:"user_id"`
+	ID     int64
+	UserID pgtype.Int8
 }
 
 func (q *Queries) DeleteAddress(ctx context.Context, arg DeleteAddressParams) (AccountAddress, error) {
@@ -131,8 +131,8 @@ WHERE (
 `
 
 type GetAddressParams struct {
-	ID     int64       `json:"id"`
-	UserID pgtype.Int8 `json:"user_id"`
+	ID     int64
+	UserID pgtype.Int8
 }
 
 func (q *Queries) GetAddress(ctx context.Context, arg GetAddressParams) (AccountAddress, error) {
@@ -169,15 +169,15 @@ OFFSET $8
 `
 
 type ListAddressesParams struct {
-	UserID   pgtype.Int8 `json:"user_id"`
-	FullName pgtype.Text `json:"full_name"`
-	Phone    pgtype.Text `json:"phone"`
-	Address  pgtype.Text `json:"address"`
-	City     pgtype.Text `json:"city"`
-	Province pgtype.Text `json:"province"`
-	Country  pgtype.Text `json:"country"`
-	Offset   int32       `json:"offset"`
-	Limit    int32       `json:"limit"`
+	UserID   pgtype.Int8
+	FullName pgtype.Text
+	Phone    pgtype.Text
+	Address  pgtype.Text
+	City     pgtype.Text
+	Province pgtype.Text
+	Country  pgtype.Text
+	Offset   int32
+	Limit    int32
 }
 
 func (q *Queries) ListAddresses(ctx context.Context, arg ListAddressesParams) ([]AccountAddress, error) {
@@ -236,14 +236,14 @@ WHERE (
 `
 
 type UpdateAddressParams struct {
-	ID       int64       `json:"id"`
-	FullName pgtype.Text `json:"full_name"`
-	Phone    pgtype.Text `json:"phone"`
-	Address  pgtype.Text `json:"address"`
-	City     pgtype.Text `json:"city"`
-	Province pgtype.Text `json:"province"`
-	Country  pgtype.Text `json:"country"`
-	UserID   pgtype.Int8 `json:"user_id"`
+	ID       int64
+	FullName pgtype.Text
+	Phone    pgtype.Text
+	Address  pgtype.Text
+	City     pgtype.Text
+	Province pgtype.Text
+	Country  pgtype.Text
+	UserID   pgtype.Int8
 }
 
 func (q *Queries) UpdateAddress(ctx context.Context, arg UpdateAddressParams) (AccountAddress, error) {

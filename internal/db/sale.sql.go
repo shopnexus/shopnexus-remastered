@@ -25,13 +25,13 @@ WHERE ($1::text IS NULL OR s.type = $1)
 `
 
 type CountSalesParams struct {
-	Type            pgtype.Text        `json:"type"`
-	ItemID          pgtype.Int8        `json:"item_id"`
-	DateStartedFrom pgtype.Timestamptz `json:"date_started_from"`
-	DateStartedTo   pgtype.Timestamptz `json:"date_started_to"`
-	DateEndedFrom   pgtype.Timestamptz `json:"date_ended_from"`
-	DateEndedTo     pgtype.Timestamptz `json:"date_ended_to"`
-	IsActive        pgtype.Bool        `json:"is_active"`
+	Type            pgtype.Text
+	ItemID          pgtype.Int8
+	DateStartedFrom pgtype.Timestamptz
+	DateStartedTo   pgtype.Timestamptz
+	DateEndedFrom   pgtype.Timestamptz
+	DateEndedTo     pgtype.Timestamptz
+	IsActive        pgtype.Bool
 }
 
 func (q *Queries) CountSales(ctx context.Context, arg CountSalesParams) (int64, error) {
@@ -76,30 +76,30 @@ FROM new_sale ns
 `
 
 type CreateSaleParams struct {
-	Type             ProductSaleType    `json:"type"`
-	ItemID           int64              `json:"item_id"`
-	DateStarted      pgtype.Timestamptz `json:"date_started"`
-	DateEnded        pgtype.Timestamptz `json:"date_ended"`
-	IsActive         bool               `json:"is_active"`
-	DiscountPercent  pgtype.Int4        `json:"discount_percent"`
-	DiscountPrice    pgtype.Int8        `json:"discount_price"`
-	MaxDiscountPrice int64              `json:"max_discount_price"`
-	CurrentStock     int64              `json:"current_stock"`
+	Type             ProductSaleType
+	ItemID           int64
+	DateStarted      pgtype.Timestamptz
+	DateEnded        pgtype.Timestamptz
+	IsActive         bool
+	DiscountPercent  pgtype.Int4
+	DiscountPrice    pgtype.Int8
+	MaxDiscountPrice int64
+	CurrentStock     int64
 }
 
 type CreateSaleRow struct {
-	ID               int64              `json:"id"`
-	Type             ProductSaleType    `json:"type"`
-	ItemID           int64              `json:"item_id"`
-	DateCreated      pgtype.Timestamptz `json:"date_created"`
-	DateStarted      pgtype.Timestamptz `json:"date_started"`
-	DateEnded        pgtype.Timestamptz `json:"date_ended"`
-	IsActive         bool               `json:"is_active"`
-	DiscountPercent  pgtype.Int4        `json:"discount_percent"`
-	DiscountPrice    pgtype.Int8        `json:"discount_price"`
-	MaxDiscountPrice int64              `json:"max_discount_price"`
-	CurrentStock     int64              `json:"current_stock"`
-	Used             int64              `json:"used"`
+	ID               int64
+	Type             ProductSaleType
+	ItemID           int64
+	DateCreated      pgtype.Timestamptz
+	DateStarted      pgtype.Timestamptz
+	DateEnded        pgtype.Timestamptz
+	IsActive         bool
+	DiscountPercent  pgtype.Int4
+	DiscountPrice    pgtype.Int8
+	MaxDiscountPrice int64
+	CurrentStock     int64
+	Used             int64
 }
 
 func (q *Queries) CreateSale(ctx context.Context, arg CreateSaleParams) (CreateSaleRow, error) {
@@ -161,24 +161,24 @@ WHERE s.is_active = true
 `
 
 type GetAvailableSalesParams struct {
-	ProductModelID int64    `json:"product_model_id"`
-	BrandID        int64    `json:"brand_id"`
-	Tags           []string `json:"tags"`
+	ProductModelID int64
+	BrandID        int64
+	Tags           []string
 }
 
 type GetAvailableSalesRow struct {
-	ID               int64              `json:"id"`
-	Type             ProductSaleType    `json:"type"`
-	ItemID           int64              `json:"item_id"`
-	DateCreated      pgtype.Timestamptz `json:"date_created"`
-	DateStarted      pgtype.Timestamptz `json:"date_started"`
-	DateEnded        pgtype.Timestamptz `json:"date_ended"`
-	IsActive         bool               `json:"is_active"`
-	DiscountPercent  pgtype.Int4        `json:"discount_percent"`
-	DiscountPrice    pgtype.Int8        `json:"discount_price"`
-	MaxDiscountPrice int64              `json:"max_discount_price"`
-	CurrentStock     pgtype.Int8        `json:"current_stock"`
-	Used             pgtype.Int8        `json:"used"`
+	ID               int64
+	Type             ProductSaleType
+	ItemID           int64
+	DateCreated      pgtype.Timestamptz
+	DateStarted      pgtype.Timestamptz
+	DateEnded        pgtype.Timestamptz
+	IsActive         bool
+	DiscountPercent  pgtype.Int4
+	DiscountPrice    pgtype.Int8
+	MaxDiscountPrice int64
+	CurrentStock     pgtype.Int8
+	Used             pgtype.Int8
 }
 
 func (q *Queries) GetAvailableSales(ctx context.Context, arg GetAvailableSalesParams) ([]GetAvailableSalesRow, error) {
@@ -222,18 +222,18 @@ WHERE s.id = $1
 `
 
 type GetSaleRow struct {
-	ID               int64              `json:"id"`
-	Type             ProductSaleType    `json:"type"`
-	ItemID           int64              `json:"item_id"`
-	DateCreated      pgtype.Timestamptz `json:"date_created"`
-	DateStarted      pgtype.Timestamptz `json:"date_started"`
-	DateEnded        pgtype.Timestamptz `json:"date_ended"`
-	IsActive         bool               `json:"is_active"`
-	DiscountPercent  pgtype.Int4        `json:"discount_percent"`
-	DiscountPrice    pgtype.Int8        `json:"discount_price"`
-	MaxDiscountPrice int64              `json:"max_discount_price"`
-	CurrentStock     pgtype.Int8        `json:"current_stock"`
-	Used             pgtype.Int8        `json:"used"`
+	ID               int64
+	Type             ProductSaleType
+	ItemID           int64
+	DateCreated      pgtype.Timestamptz
+	DateStarted      pgtype.Timestamptz
+	DateEnded        pgtype.Timestamptz
+	IsActive         bool
+	DiscountPercent  pgtype.Int4
+	DiscountPrice    pgtype.Int8
+	MaxDiscountPrice int64
+	CurrentStock     pgtype.Int8
+	Used             pgtype.Int8
 }
 
 func (q *Queries) GetSale(ctx context.Context, id int64) (GetSaleRow, error) {
@@ -272,30 +272,30 @@ OFFSET $8
 `
 
 type ListSalesParams struct {
-	Type            pgtype.Text        `json:"type"`
-	ItemID          pgtype.Int8        `json:"item_id"`
-	DateStartedFrom pgtype.Timestamptz `json:"date_started_from"`
-	DateStartedTo   pgtype.Timestamptz `json:"date_started_to"`
-	DateEndedFrom   pgtype.Timestamptz `json:"date_ended_from"`
-	DateEndedTo     pgtype.Timestamptz `json:"date_ended_to"`
-	IsActive        pgtype.Bool        `json:"is_active"`
-	Offset          int32              `json:"offset"`
-	Limit           int32              `json:"limit"`
+	Type            pgtype.Text
+	ItemID          pgtype.Int8
+	DateStartedFrom pgtype.Timestamptz
+	DateStartedTo   pgtype.Timestamptz
+	DateEndedFrom   pgtype.Timestamptz
+	DateEndedTo     pgtype.Timestamptz
+	IsActive        pgtype.Bool
+	Offset          int32
+	Limit           int32
 }
 
 type ListSalesRow struct {
-	ID               int64              `json:"id"`
-	Type             ProductSaleType    `json:"type"`
-	ItemID           int64              `json:"item_id"`
-	DateCreated      pgtype.Timestamptz `json:"date_created"`
-	DateStarted      pgtype.Timestamptz `json:"date_started"`
-	DateEnded        pgtype.Timestamptz `json:"date_ended"`
-	IsActive         bool               `json:"is_active"`
-	DiscountPercent  pgtype.Int4        `json:"discount_percent"`
-	DiscountPrice    pgtype.Int8        `json:"discount_price"`
-	MaxDiscountPrice int64              `json:"max_discount_price"`
-	CurrentStock     pgtype.Int8        `json:"current_stock"`
-	Used             pgtype.Int8        `json:"used"`
+	ID               int64
+	Type             ProductSaleType
+	ItemID           int64
+	DateCreated      pgtype.Timestamptz
+	DateStarted      pgtype.Timestamptz
+	DateEnded        pgtype.Timestamptz
+	IsActive         bool
+	DiscountPercent  pgtype.Int4
+	DiscountPrice    pgtype.Int8
+	MaxDiscountPrice int64
+	CurrentStock     pgtype.Int8
+	Used             pgtype.Int8
 }
 
 func (q *Queries) ListSales(ctx context.Context, arg ListSalesParams) ([]ListSalesRow, error) {
@@ -355,15 +355,15 @@ WHERE id = $1
 `
 
 type UpdateSaleParams struct {
-	ID               int64               `json:"id"`
-	Type             NullProductSaleType `json:"type"`
-	ItemID           pgtype.Int8         `json:"item_id"`
-	DateStarted      pgtype.Timestamptz  `json:"date_started"`
-	DateEnded        pgtype.Timestamptz  `json:"date_ended"`
-	IsActive         pgtype.Bool         `json:"is_active"`
-	DiscountPercent  pgtype.Int4         `json:"discount_percent"`
-	DiscountPrice    pgtype.Int8         `json:"discount_price"`
-	MaxDiscountPrice pgtype.Int8         `json:"max_discount_price"`
+	ID               int64
+	Type             NullProductSaleType
+	ItemID           pgtype.Int8
+	DateStarted      pgtype.Timestamptz
+	DateEnded        pgtype.Timestamptz
+	IsActive         pgtype.Bool
+	DiscountPercent  pgtype.Int4
+	DiscountPrice    pgtype.Int8
+	MaxDiscountPrice pgtype.Int8
 }
 
 func (q *Queries) UpdateSale(ctx context.Context, arg UpdateSaleParams) error {
@@ -389,9 +389,9 @@ WHERE sale_id = $1
 `
 
 type UpdateSaleTrackingParams struct {
-	SaleID       int64       `json:"sale_id"`
-	CurrentStock pgtype.Int8 `json:"current_stock"`
-	Used         pgtype.Int8 `json:"used"`
+	SaleID       int64
+	CurrentStock pgtype.Int8
+	Used         pgtype.Int8
 }
 
 func (q *Queries) UpdateSaleTracking(ctx context.Context, arg UpdateSaleTrackingParams) error {

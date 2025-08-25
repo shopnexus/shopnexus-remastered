@@ -23,8 +23,8 @@ FROM filtered_brands
 `
 
 type CountBrandsParams struct {
-	Name        pgtype.Text `json:"name"`
-	Description pgtype.Text `json:"description"`
+	Name        pgtype.Text
+	Description pgtype.Text
 }
 
 func (q *Queries) CountBrands(ctx context.Context, arg CountBrandsParams) (int64, error) {
@@ -40,8 +40,8 @@ VALUES ($1, $2) RETURNING id, name, description
 `
 
 type CreateBrandParams struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name        string
+	Description string
 }
 
 func (q *Queries) CreateBrand(ctx context.Context, arg CreateBrandParams) (ProductBrand, error) {
@@ -79,10 +79,10 @@ FROM filtered_brand b
 `
 
 type GetBrandRow struct {
-	ID          int64    `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Resources   []string `json:"resources"`
+	ID          int64
+	Name        string
+	Description string
+	Resources   []string
 }
 
 func (q *Queries) GetBrand(ctx context.Context, id int64) (GetBrandRow, error) {
@@ -118,17 +118,17 @@ OFFSET $1
 `
 
 type ListBrandsParams struct {
-	Offset      int32       `json:"offset"`
-	Limit       int32       `json:"limit"`
-	Name        pgtype.Text `json:"name"`
-	Description pgtype.Text `json:"description"`
+	Offset      int32
+	Limit       int32
+	Name        pgtype.Text
+	Description pgtype.Text
 }
 
 type ListBrandsRow struct {
-	ID          int64    `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Resources   []string `json:"resources"`
+	ID          int64
+	Name        string
+	Description string
+	Resources   []string
 }
 
 func (q *Queries) ListBrands(ctx context.Context, arg ListBrandsParams) ([]ListBrandsRow, error) {
@@ -169,9 +169,9 @@ WHERE id = $1
 `
 
 type UpdateBrandParams struct {
-	ID          int64       `json:"id"`
-	Name        pgtype.Text `json:"name"`
-	Description pgtype.Text `json:"description"`
+	ID          int64
+	Name        pgtype.Text
+	Description pgtype.Text
 }
 
 func (q *Queries) UpdateBrand(ctx context.Context, arg UpdateBrandParams) error {

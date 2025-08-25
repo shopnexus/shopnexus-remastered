@@ -17,8 +17,8 @@ VALUES ($1, $2) ON CONFLICT (admin_id, role_id) DO NOTHING
 `
 
 type AddAdminRoleParams struct {
-	AdminID int64  `json:"admin_id"`
-	RoleID  string `json:"role_id"`
+	AdminID int64
+	RoleID  string
 }
 
 func (q *Queries) AddAdminRole(ctx context.Context, arg AddAdminRoleParams) error {
@@ -40,8 +40,8 @@ FROM base RETURNING id
 `
 
 type CreateAccountAdminParams struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username string
+	Password string
 }
 
 func (q *Queries) CreateAccountAdmin(ctx context.Context, arg CreateAccountAdminParams) (int64, error) {
@@ -65,12 +65,12 @@ FROM base RETURNING id
 `
 
 type CreateAccountUserParams struct {
-	Username string        `json:"username"`
-	Password string        `json:"password"`
-	Email    string        `json:"email"`
-	Phone    string        `json:"phone"`
-	Gender   AccountGender `json:"gender"`
-	FullName string        `json:"full_name"`
+	Username string
+	Password string
+	Email    string
+	Phone    string
+	Gender   AccountGender
+	FullName string
 }
 
 func (q *Queries) CreateAccountUser(ctx context.Context, arg CreateAccountUserParams) (int64, error) {
@@ -106,20 +106,20 @@ WHERE (
 `
 
 type GetAccountAdminParams struct {
-	AdminID  int64       `json:"admin_id"`
-	ID       pgtype.Int8 `json:"id"`
-	Username pgtype.Text `json:"username"`
+	AdminID  int64
+	ID       pgtype.Int8
+	Username pgtype.Text
 }
 
 type GetAccountAdminRow struct {
-	ID           int64              `json:"id"`
-	AvatarUrl    pgtype.Text        `json:"avatar_url"`
-	IsSuperAdmin bool               `json:"is_super_admin"`
-	ID_2         int64              `json:"id_2"`
-	Username     string             `json:"username"`
-	Password     string             `json:"password"`
-	Type         AccountAccountType `json:"type"`
-	Roles        []string           `json:"roles"`
+	ID           int64
+	AvatarUrl    pgtype.Text
+	IsSuperAdmin bool
+	ID_2         int64
+	Username     string
+	Password     string
+	Type         AccountType
+	Roles        []string
 }
 
 func (q *Queries) GetAccountAdmin(ctx context.Context, arg GetAccountAdminParams) (GetAccountAdminRow, error) {
@@ -169,24 +169,24 @@ WHERE (
 `
 
 type GetAccountUserParams struct {
-	ID       pgtype.Int8 `json:"id"`
-	Email    pgtype.Text `json:"email"`
-	Phone    pgtype.Text `json:"phone"`
-	Username pgtype.Text `json:"username"`
+	ID       pgtype.Int8
+	Email    pgtype.Text
+	Phone    pgtype.Text
+	Username pgtype.Text
 }
 
 type GetAccountUserRow struct {
-	ID               int64              `json:"id"`
-	Email            string             `json:"email"`
-	Phone            string             `json:"phone"`
-	Gender           AccountGender      `json:"gender"`
-	FullName         string             `json:"full_name"`
-	DefaultAddressID pgtype.Int8        `json:"default_address_id"`
-	AvatarUrl        pgtype.Text        `json:"avatar_url"`
-	ID_2             int64              `json:"id_2"`
-	Username         string             `json:"username"`
-	Password         string             `json:"password"`
-	Type             AccountAccountType `json:"type"`
+	ID               int64
+	Email            string
+	Phone            string
+	Gender           AccountGender
+	FullName         string
+	DefaultAddressID pgtype.Int8
+	AvatarUrl        pgtype.Text
+	ID_2             int64
+	Username         string
+	Password         string
+	Type             AccountType
 }
 
 func (q *Queries) GetAccountUser(ctx context.Context, arg GetAccountUserParams) (GetAccountUserRow, error) {
@@ -249,8 +249,8 @@ WHERE admin_id = $1
 `
 
 type RemoveAdminRoleParams struct {
-	AdminID int64  `json:"admin_id"`
-	RoleID  string `json:"role_id"`
+	AdminID int64
+	RoleID  string
 }
 
 func (q *Queries) RemoveAdminRole(ctx context.Context, arg RemoveAdminRoleParams) error {
@@ -266,9 +266,9 @@ WHERE id = $1 RETURNING id, username, password, type
 `
 
 type UpdateAccountParams struct {
-	ID       int64       `json:"id"`
-	Username pgtype.Text `json:"username"`
-	Password pgtype.Text `json:"password"`
+	ID       int64
+	Username pgtype.Text
+	Password pgtype.Text
 }
 
 func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (AccountBase, error) {
@@ -290,8 +290,8 @@ WHERE id = $1 RETURNING id, avatar_url, is_super_admin
 `
 
 type UpdateAccountAdminParams struct {
-	ID        int64       `json:"id"`
-	AvatarUrl pgtype.Text `json:"avatar_url"`
+	ID        int64
+	AvatarUrl pgtype.Text
 }
 
 func (q *Queries) UpdateAccountAdmin(ctx context.Context, arg UpdateAccountAdminParams) (AccountAdmin, error) {
@@ -315,14 +315,14 @@ WHERE id = $1 RETURNING id, email, phone, gender, full_name, default_address_id,
 `
 
 type UpdateAccountUserParams struct {
-	ID                   int64             `json:"id"`
-	Email                pgtype.Text       `json:"email"`
-	Phone                pgtype.Text       `json:"phone"`
-	Gender               NullAccountGender `json:"gender"`
-	FullName             pgtype.Text       `json:"full_name"`
-	NullDefaultAddressID interface{}       `json:"null_default_address_id"`
-	DefaultAddressID     pgtype.Int8       `json:"default_address_id"`
-	AvatarUrl            pgtype.Text       `json:"avatar_url"`
+	ID                   int64
+	Email                pgtype.Text
+	Phone                pgtype.Text
+	Gender               NullAccountGender
+	FullName             pgtype.Text
+	NullDefaultAddressID interface{}
+	DefaultAddressID     pgtype.Int8
+	AvatarUrl            pgtype.Text
 }
 
 func (q *Queries) UpdateAccountUser(ctx context.Context, arg UpdateAccountUserParams) (AccountUser, error) {

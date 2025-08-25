@@ -18,9 +18,9 @@ UPDATE SET quantity = "account".item_on_cart.quantity + $3
 `
 
 type AddCartItemParams struct {
-	CartID    int64 `json:"cart_id"`
-	ProductID int64 `json:"product_id"`
-	Quantity  int64 `json:"quantity"`
+	CartID    int64
+	ProductID int64
+	Quantity  int64
 }
 
 func (q *Queries) AddCartItem(ctx context.Context, arg AddCartItemParams) (int64, error) {
@@ -76,8 +76,8 @@ ORDER BY date_created DESC
 `
 
 type GetCartItemsParams struct {
-	CartID     int64   `json:"cart_id"`
-	ProductIds []int64 `json:"product_ids"`
+	CartID     int64
+	ProductIds []int64
 }
 
 func (q *Queries) GetCartItems(ctx context.Context, arg GetCartItemsParams) ([]AccountItemOnCart, error) {
@@ -113,8 +113,8 @@ WHERE cart_id = $1
 `
 
 type RemoveCartItemParams struct {
-	CartID     int64   `json:"cart_id"`
-	ProductIds []int64 `json:"product_ids"`
+	CartID     int64
+	ProductIds []int64
 }
 
 func (q *Queries) RemoveCartItem(ctx context.Context, arg RemoveCartItemParams) error {
@@ -130,9 +130,9 @@ WHERE cart_id = $1
 `
 
 type UpdateCartItemParams struct {
-	CartID    int64 `json:"cart_id"`
-	ProductID int64 `json:"product_id"`
-	Quantity  int64 `json:"quantity"`
+	CartID    int64
+	ProductID int64
+	Quantity  int64
 }
 
 func (q *Queries) UpdateCartItem(ctx context.Context, arg UpdateCartItemParams) (int64, error) {

@@ -10,10 +10,10 @@ import (
 )
 
 type AddResourcesParams struct {
-	Type    ProductResourceType `json:"type"`
-	OwnerID int64               `json:"owner_id"`
-	Url     string              `json:"url"`
-	Order   int32               `json:"order"`
+	Type    ProductResourceType
+	OwnerID int64
+	Url     string
+	Order   int32
 }
 
 const emptyResources = `-- name: EmptyResources :exec
@@ -24,8 +24,8 @@ WHERE owner_id = $1
 `
 
 type EmptyResourcesParams struct {
-	OwnerID int64               `json:"owner_id"`
-	Type    ProductResourceType `json:"type"`
+	OwnerID int64
+	Type    ProductResourceType
 }
 
 func (q *Queries) EmptyResources(ctx context.Context, arg EmptyResourcesParams) error {
@@ -42,8 +42,8 @@ ORDER BY r.order ASC
 `
 
 type GetResourcesParams struct {
-	OwnerID int64               `json:"owner_id"`
-	Type    ProductResourceType `json:"type"`
+	OwnerID int64
+	Type    ProductResourceType
 }
 
 func (q *Queries) GetResources(ctx context.Context, arg GetResourcesParams) ([]string, error) {

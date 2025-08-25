@@ -33,19 +33,19 @@ WHERE (
 `
 
 type CountProductsParams struct {
-	ID                  pgtype.Int8        `json:"id"`
-	ProductModelID      pgtype.Int8        `json:"product_model_id"`
-	CurrentStockFrom    pgtype.Int8        `json:"current_stock_from"`
-	CurrentStockTo      pgtype.Int8        `json:"current_stock_to"`
-	SoldFrom            pgtype.Int8        `json:"sold_from"`
-	SoldTo              pgtype.Int8        `json:"sold_to"`
-	AdditionalPriceFrom pgtype.Int8        `json:"additional_price_from"`
-	AdditionalPriceTo   pgtype.Int8        `json:"additional_price_to"`
-	IsActive            pgtype.Bool        `json:"is_active"`
-	CanCombine          pgtype.Bool        `json:"can_combine"`
-	Metadata            []byte             `json:"metadata"`
-	DateCreatedFrom     pgtype.Timestamptz `json:"date_created_from"`
-	DateCreatedTo       pgtype.Timestamptz `json:"date_created_to"`
+	ID                  pgtype.Int8
+	ProductModelID      pgtype.Int8
+	CurrentStockFrom    pgtype.Int8
+	CurrentStockTo      pgtype.Int8
+	SoldFrom            pgtype.Int8
+	SoldTo              pgtype.Int8
+	AdditionalPriceFrom pgtype.Int8
+	AdditionalPriceTo   pgtype.Int8
+	IsActive            pgtype.Bool
+	CanCombine          pgtype.Bool
+	Metadata            []byte
+	DateCreatedFrom     pgtype.Timestamptz
+	DateCreatedTo       pgtype.Timestamptz
 }
 
 func (q *Queries) CountProducts(ctx context.Context, arg CountProductsParams) (int64, error) {
@@ -87,12 +87,12 @@ FROM new_product RETURNING product_id, current_stock, sold
 `
 
 type CreateProductParams struct {
-	ProductModelID  int64  `json:"product_model_id"`
-	AdditionalPrice int64  `json:"additional_price"`
-	IsActive        bool   `json:"is_active"`
-	CanCombine      bool   `json:"can_combine"`
-	Metadata        []byte `json:"metadata"`
-	CurrentStock    int64  `json:"current_stock"`
+	ProductModelID  int64
+	AdditionalPrice int64
+	IsActive        bool
+	CanCombine      bool
+	Metadata        []byte
+	CurrentStock    int64
 }
 
 func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (ProductTracking, error) {
@@ -140,19 +140,19 @@ FROM filtered_product p
 `
 
 type GetProductRow struct {
-	ID              int64              `json:"id"`
-	ProductModelID  int64              `json:"product_model_id"`
-	AdditionalPrice int64              `json:"additional_price"`
-	IsActive        bool               `json:"is_active"`
-	CanCombine      bool               `json:"can_combine"`
-	Metadata        []byte             `json:"metadata"`
-	DateCreated     pgtype.Timestamptz `json:"date_created"`
-	CurrentStock    pgtype.Int8        `json:"current_stock"`
-	Sold            pgtype.Int8        `json:"sold"`
-	ProductID       int64              `json:"product_id"`
-	CurrentStock_2  int64              `json:"current_stock_2"`
-	Sold_2          int64              `json:"sold_2"`
-	Resources       []string           `json:"resources"`
+	ID              int64
+	ProductModelID  int64
+	AdditionalPrice int64
+	IsActive        bool
+	CanCombine      bool
+	Metadata        []byte
+	DateCreated     pgtype.Timestamptz
+	CurrentStock    pgtype.Int8
+	Sold            pgtype.Int8
+	ProductID       int64
+	CurrentStock_2  int64
+	Sold_2          int64
+	Resources       []string
 }
 
 func (q *Queries) GetProduct(ctx context.Context, id int64) (GetProductRow, error) {
@@ -192,14 +192,14 @@ WHERE pop.id = $1
 `
 
 type GetProductByPOPIDRow struct {
-	ID              int64              `json:"id"`
-	ProductModelID  int64              `json:"product_model_id"`
-	AdditionalPrice int64              `json:"additional_price"`
-	IsActive        bool               `json:"is_active"`
-	CanCombine      bool               `json:"can_combine"`
-	Metadata        []byte             `json:"metadata"`
-	DateCreated     pgtype.Timestamptz `json:"date_created"`
-	Resources       []string           `json:"resources"`
+	ID              int64
+	ProductModelID  int64
+	AdditionalPrice int64
+	IsActive        bool
+	CanCombine      bool
+	Metadata        []byte
+	DateCreated     pgtype.Timestamptz
+	Resources       []string
 }
 
 func (q *Queries) GetProductByPOPID(ctx context.Context, id int64) (GetProductByPOPIDRow, error) {
@@ -261,37 +261,37 @@ OFFSET $1
 `
 
 type ListProductsParams struct {
-	Offset              int32              `json:"offset"`
-	Limit               int32              `json:"limit"`
-	ID                  pgtype.Int8        `json:"id"`
-	ProductModelID      pgtype.Int8        `json:"product_model_id"`
-	CurrentStockFrom    pgtype.Int8        `json:"current_stock_from"`
-	CurrentStockTo      pgtype.Int8        `json:"current_stock_to"`
-	SoldFrom            pgtype.Int8        `json:"sold_from"`
-	SoldTo              pgtype.Int8        `json:"sold_to"`
-	AdditionalPriceFrom pgtype.Int8        `json:"additional_price_from"`
-	AdditionalPriceTo   pgtype.Int8        `json:"additional_price_to"`
-	IsActive            pgtype.Bool        `json:"is_active"`
-	CanCombine          pgtype.Bool        `json:"can_combine"`
-	Metadata            []byte             `json:"metadata"`
-	DateCreatedFrom     pgtype.Timestamptz `json:"date_created_from"`
-	DateCreatedTo       pgtype.Timestamptz `json:"date_created_to"`
+	Offset              int32
+	Limit               int32
+	ID                  pgtype.Int8
+	ProductModelID      pgtype.Int8
+	CurrentStockFrom    pgtype.Int8
+	CurrentStockTo      pgtype.Int8
+	SoldFrom            pgtype.Int8
+	SoldTo              pgtype.Int8
+	AdditionalPriceFrom pgtype.Int8
+	AdditionalPriceTo   pgtype.Int8
+	IsActive            pgtype.Bool
+	CanCombine          pgtype.Bool
+	Metadata            []byte
+	DateCreatedFrom     pgtype.Timestamptz
+	DateCreatedTo       pgtype.Timestamptz
 }
 
 type ListProductsRow struct {
-	ID              int64              `json:"id"`
-	ProductModelID  int64              `json:"product_model_id"`
-	AdditionalPrice int64              `json:"additional_price"`
-	IsActive        bool               `json:"is_active"`
-	CanCombine      bool               `json:"can_combine"`
-	Metadata        []byte             `json:"metadata"`
-	DateCreated     pgtype.Timestamptz `json:"date_created"`
-	CurrentStock    pgtype.Int8        `json:"current_stock"`
-	Sold            pgtype.Int8        `json:"sold"`
-	ProductID       int64              `json:"product_id"`
-	CurrentStock_2  int64              `json:"current_stock_2"`
-	Sold_2          int64              `json:"sold_2"`
-	Resources       []string           `json:"resources"`
+	ID              int64
+	ProductModelID  int64
+	AdditionalPrice int64
+	IsActive        bool
+	CanCombine      bool
+	Metadata        []byte
+	DateCreated     pgtype.Timestamptz
+	CurrentStock    pgtype.Int8
+	Sold            pgtype.Int8
+	ProductID       int64
+	CurrentStock_2  int64
+	Sold_2          int64
+	Resources       []string
 }
 
 func (q *Queries) ListProducts(ctx context.Context, arg ListProductsParams) ([]ListProductsRow, error) {
@@ -355,12 +355,12 @@ WHERE id = $1
 `
 
 type UpdateProductParams struct {
-	ID              int64       `json:"id"`
-	ProductModelID  pgtype.Int8 `json:"product_model_id"`
-	AdditionalPrice pgtype.Int8 `json:"additional_price"`
-	CanCombine      pgtype.Bool `json:"can_combine"`
-	IsActive        pgtype.Bool `json:"is_active"`
-	Metadata        []byte      `json:"metadata"`
+	ID              int64
+	ProductModelID  pgtype.Int8
+	AdditionalPrice pgtype.Int8
+	CanCombine      pgtype.Bool
+	IsActive        pgtype.Bool
+	Metadata        []byte
 }
 
 func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) error {
@@ -384,8 +384,8 @@ WHERE (product_id = ANY ($2::bigint[]))
 `
 
 type UpdateProductSoldParams struct {
-	Amount int64   `json:"amount"`
-	Ids    []int64 `json:"ids"`
+	Amount int64
+	Ids    []int64
 }
 
 func (q *Queries) UpdateProductSold(ctx context.Context, arg UpdateProductSoldParams) error {
@@ -401,9 +401,9 @@ WHERE product_id = $1
 `
 
 type UpdateProductTrackingParams struct {
-	ProductID    int64       `json:"product_id"`
-	CurrentStock pgtype.Int8 `json:"current_stock"`
-	Sold         pgtype.Int8 `json:"sold"`
+	ProductID    int64
+	CurrentStock pgtype.Int8
+	Sold         pgtype.Int8
 }
 
 func (q *Queries) UpdateProductTracking(ctx context.Context, arg UpdateProductTrackingParams) error {

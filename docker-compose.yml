@@ -95,7 +95,7 @@ services:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
       KAFKA_LISTENERS: PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-#      KAFKA_AUTO_OFFSET_RESET: earliest
+      #      KAFKA_AUTO_OFFSET_RESET: earliest
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"  # Kafka will automatically create topics if needed.
       KAFKA_NUM_PARTITIONS: 3  # Default number of partitions for new topics.
       KAFKA_LOG_RETENTION_HOURS: 168  # Keep logs for 7 days.

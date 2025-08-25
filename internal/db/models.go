@@ -11,70 +11,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type AccountAccountType string
-
-const (
-	AccountAccountTypeACCOUNTTYPEUSER  AccountAccountType = "ACCOUNT_TYPE_USER"
-	AccountAccountTypeACCOUNTTYPEADMIN AccountAccountType = "ACCOUNT_TYPE_ADMIN"
-)
-
-func (e *AccountAccountType) Scan(src interface{}) error {
-	switch s := src.(type) {
-	case []byte:
-		*e = AccountAccountType(s)
-	case string:
-		*e = AccountAccountType(s)
-	default:
-		return fmt.Errorf("unsupported scan type for AccountAccountType: %T", src)
-	}
-	return nil
-}
-
-type NullAccountAccountType struct {
-	AccountAccountType AccountAccountType `json:"account_account_type"`
-	Valid              bool               `json:"valid"` // Valid is true if AccountAccountType is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (ns *NullAccountAccountType) Scan(value interface{}) error {
-	if value == nil {
-		ns.AccountAccountType, ns.Valid = "", false
-		return nil
-	}
-	ns.Valid = true
-	return ns.AccountAccountType.Scan(value)
-}
-
-// Value implements the driver Valuer interface.
-func (ns NullAccountAccountType) Value() (driver.Value, error) {
-	if !ns.Valid {
-		return nil, nil
-	}
-	return string(ns.AccountAccountType), nil
-}
-
-func (e AccountAccountType) Valid() bool {
-	switch e {
-	case AccountAccountTypeACCOUNTTYPEUSER,
-		AccountAccountTypeACCOUNTTYPEADMIN:
-		return true
-	}
-	return false
-}
-
-func AllAccountAccountTypeValues() []AccountAccountType {
-	return []AccountAccountType{
-		AccountAccountTypeACCOUNTTYPEUSER,
-		AccountAccountTypeACCOUNTTYPEADMIN,
-	}
-}
-
 type AccountGender string
 
 const (
-	AccountGenderMALE   AccountGender = "MALE"
-	AccountGenderFEMALE AccountGender = "FEMALE"
-	AccountGenderOTHER  AccountGender = "OTHER"
+	AccountGenderMale   AccountGender = "Male"
+	AccountGenderFemale AccountGender = "Female"
+	AccountGenderOther  AccountGender = "Other"
 )
 
 func (e *AccountGender) Scan(src interface{}) error {
@@ -90,8 +32,8 @@ func (e *AccountGender) Scan(src interface{}) error {
 }
 
 type NullAccountGender struct {
-	AccountGender AccountGender `json:"account_gender"`
-	Valid         bool          `json:"valid"` // Valid is true if AccountGender is not NULL
+	AccountGender AccountGender
+	Valid         bool // Valid is true if AccountGender is not NULL
 }
 
 // Scan implements the Scanner interface.
@@ -114,9 +56,9 @@ func (ns NullAccountGender) Value() (driver.Value, error) {
 
 func (e AccountGender) Valid() bool {
 	switch e {
-	case AccountGenderMALE,
-		AccountGenderFEMALE,
-		AccountGenderOTHER:
+	case AccountGenderMale,
+		AccountGenderFemale,
+		AccountGenderOther:
 		return true
 	}
 	return false
@@ -124,18 +66,76 @@ func (e AccountGender) Valid() bool {
 
 func AllAccountGenderValues() []AccountGender {
 	return []AccountGender{
-		AccountGenderMALE,
-		AccountGenderFEMALE,
-		AccountGenderOTHER,
+		AccountGenderMale,
+		AccountGenderFemale,
+		AccountGenderOther,
+	}
+}
+
+type AccountType string
+
+const (
+	AccountTypeUser  AccountType = "User"
+	AccountTypeAdmin AccountType = "Admin"
+)
+
+func (e *AccountType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = AccountType(s)
+	case string:
+		*e = AccountType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for AccountType: %T", src)
+	}
+	return nil
+}
+
+type NullAccountType struct {
+	AccountType AccountType
+	Valid       bool // Valid is true if AccountType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullAccountType) Scan(value interface{}) error {
+	if value == nil {
+		ns.AccountType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.AccountType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullAccountType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.AccountType), nil
+}
+
+func (e AccountType) Valid() bool {
+	switch e {
+	case AccountTypeUser,
+		AccountTypeAdmin:
+		return true
+	}
+	return false
+}
+
+func AllAccountTypeValues() []AccountType {
+	return []AccountType{
+		AccountTypeUser,
+		AccountTypeAdmin,
 	}
 }
 
 type PaymentPaymentMethod string
 
 const (
-	PaymentPaymentMethodCASH  PaymentPaymentMethod = "CASH"
-	PaymentPaymentMethodVNPAY PaymentPaymentMethod = "VNPAY"
-	PaymentPaymentMethodMOMO  PaymentPaymentMethod = "MOMO"
+	PaymentPaymentMethodCash  PaymentPaymentMethod = "Cash"
+	PaymentPaymentMethodVnpay PaymentPaymentMethod = "Vnpay"
+	PaymentPaymentMethodMomo  PaymentPaymentMethod = "Momo"
 )
 
 func (e *PaymentPaymentMethod) Scan(src interface{}) error {
@@ -151,8 +151,8 @@ func (e *PaymentPaymentMethod) Scan(src interface{}) error {
 }
 
 type NullPaymentPaymentMethod struct {
-	PaymentPaymentMethod PaymentPaymentMethod `json:"payment_payment_method"`
-	Valid                bool                 `json:"valid"` // Valid is true if PaymentPaymentMethod is not NULL
+	PaymentPaymentMethod PaymentPaymentMethod
+	Valid                bool // Valid is true if PaymentPaymentMethod is not NULL
 }
 
 // Scan implements the Scanner interface.
@@ -175,9 +175,9 @@ func (ns NullPaymentPaymentMethod) Value() (driver.Value, error) {
 
 func (e PaymentPaymentMethod) Valid() bool {
 	switch e {
-	case PaymentPaymentMethodCASH,
-		PaymentPaymentMethodVNPAY,
-		PaymentPaymentMethodMOMO:
+	case PaymentPaymentMethodCash,
+		PaymentPaymentMethodVnpay,
+		PaymentPaymentMethodMomo:
 		return true
 	}
 	return false
@@ -185,17 +185,17 @@ func (e PaymentPaymentMethod) Valid() bool {
 
 func AllPaymentPaymentMethodValues() []PaymentPaymentMethod {
 	return []PaymentPaymentMethod{
-		PaymentPaymentMethodCASH,
-		PaymentPaymentMethodVNPAY,
-		PaymentPaymentMethodMOMO,
+		PaymentPaymentMethodCash,
+		PaymentPaymentMethodVnpay,
+		PaymentPaymentMethodMomo,
 	}
 }
 
 type PaymentRefundMethod string
 
 const (
-	PaymentRefundMethodPICKUP  PaymentRefundMethod = "PICK_UP"
-	PaymentRefundMethodDROPOFF PaymentRefundMethod = "DROP_OFF"
+	PaymentRefundMethodPickUp  PaymentRefundMethod = "PickUp"
+	PaymentRefundMethodDropOff PaymentRefundMethod = "DropOff"
 )
 
 func (e *PaymentRefundMethod) Scan(src interface{}) error {
@@ -211,8 +211,8 @@ func (e *PaymentRefundMethod) Scan(src interface{}) error {
 }
 
 type NullPaymentRefundMethod struct {
-	PaymentRefundMethod PaymentRefundMethod `json:"payment_refund_method"`
-	Valid               bool                `json:"valid"` // Valid is true if PaymentRefundMethod is not NULL
+	PaymentRefundMethod PaymentRefundMethod
+	Valid               bool // Valid is true if PaymentRefundMethod is not NULL
 }
 
 // Scan implements the Scanner interface.
@@ -235,8 +235,8 @@ func (ns NullPaymentRefundMethod) Value() (driver.Value, error) {
 
 func (e PaymentRefundMethod) Valid() bool {
 	switch e {
-	case PaymentRefundMethodPICKUP,
-		PaymentRefundMethodDROPOFF:
+	case PaymentRefundMethodPickUp,
+		PaymentRefundMethodDropOff:
 		return true
 	}
 	return false
@@ -244,18 +244,18 @@ func (e PaymentRefundMethod) Valid() bool {
 
 func AllPaymentRefundMethodValues() []PaymentRefundMethod {
 	return []PaymentRefundMethod{
-		PaymentRefundMethodPICKUP,
-		PaymentRefundMethodDROPOFF,
+		PaymentRefundMethodPickUp,
+		PaymentRefundMethodDropOff,
 	}
 }
 
 type PaymentStatus string
 
 const (
-	PaymentStatusPENDING  PaymentStatus = "PENDING"
-	PaymentStatusSUCCESS  PaymentStatus = "SUCCESS"
-	PaymentStatusCANCELED PaymentStatus = "CANCELED"
-	PaymentStatusFAILED   PaymentStatus = "FAILED"
+	PaymentStatusPending  PaymentStatus = "Pending"
+	PaymentStatusSuccess  PaymentStatus = "Success"
+	PaymentStatusCanceled PaymentStatus = "Canceled"
+	PaymentStatusFailed   PaymentStatus = "Failed"
 )
 
 func (e *PaymentStatus) Scan(src interface{}) error {
@@ -271,8 +271,8 @@ func (e *PaymentStatus) Scan(src interface{}) error {
 }
 
 type NullPaymentStatus struct {
-	PaymentStatus PaymentStatus `json:"payment_status"`
-	Valid         bool          `json:"valid"` // Valid is true if PaymentStatus is not NULL
+	PaymentStatus PaymentStatus
+	Valid         bool // Valid is true if PaymentStatus is not NULL
 }
 
 // Scan implements the Scanner interface.
@@ -295,10 +295,10 @@ func (ns NullPaymentStatus) Value() (driver.Value, error) {
 
 func (e PaymentStatus) Valid() bool {
 	switch e {
-	case PaymentStatusPENDING,
-		PaymentStatusSUCCESS,
-		PaymentStatusCANCELED,
-		PaymentStatusFAILED:
+	case PaymentStatusPending,
+		PaymentStatusSuccess,
+		PaymentStatusCanceled,
+		PaymentStatusFailed:
 		return true
 	}
 	return false
@@ -306,19 +306,19 @@ func (e PaymentStatus) Valid() bool {
 
 func AllPaymentStatusValues() []PaymentStatus {
 	return []PaymentStatus{
-		PaymentStatusPENDING,
-		PaymentStatusSUCCESS,
-		PaymentStatusCANCELED,
-		PaymentStatusFAILED,
+		PaymentStatusPending,
+		PaymentStatusSuccess,
+		PaymentStatusCanceled,
+		PaymentStatusFailed,
 	}
 }
 
 type ProductCommentType string
 
 const (
-	ProductCommentTypePRODUCTMODEL ProductCommentType = "PRODUCT_MODEL"
-	ProductCommentTypeBRAND        ProductCommentType = "BRAND"
-	ProductCommentTypeCOMMENT      ProductCommentType = "COMMENT"
+	ProductCommentTypeProductModel ProductCommentType = "ProductModel"
+	ProductCommentTypeBrand        ProductCommentType = "Brand"
+	ProductCommentTypeComment      ProductCommentType = "Comment"
 )
 
 func (e *ProductCommentType) Scan(src interface{}) error {
@@ -334,8 +334,8 @@ func (e *ProductCommentType) Scan(src interface{}) error {
 }
 
 type NullProductCommentType struct {
-	ProductCommentType ProductCommentType `json:"product_comment_type"`
-	Valid              bool               `json:"valid"` // Valid is true if ProductCommentType is not NULL
+	ProductCommentType ProductCommentType
+	Valid              bool // Valid is true if ProductCommentType is not NULL
 }
 
 // Scan implements the Scanner interface.
@@ -358,9 +358,9 @@ func (ns NullProductCommentType) Value() (driver.Value, error) {
 
 func (e ProductCommentType) Valid() bool {
 	switch e {
-	case ProductCommentTypePRODUCTMODEL,
-		ProductCommentTypeBRAND,
-		ProductCommentTypeCOMMENT:
+	case ProductCommentTypeProductModel,
+		ProductCommentTypeBrand,
+		ProductCommentTypeComment:
 		return true
 	}
 	return false
@@ -368,20 +368,20 @@ func (e ProductCommentType) Valid() bool {
 
 func AllProductCommentTypeValues() []ProductCommentType {
 	return []ProductCommentType{
-		ProductCommentTypePRODUCTMODEL,
-		ProductCommentTypeBRAND,
-		ProductCommentTypeCOMMENT,
+		ProductCommentTypeProductModel,
+		ProductCommentTypeBrand,
+		ProductCommentTypeComment,
 	}
 }
 
 type ProductResourceType string
 
 const (
-	ProductResourceTypeBRAND        ProductResourceType = "BRAND"
-	ProductResourceTypeCOMMENT      ProductResourceType = "COMMENT"
-	ProductResourceTypePRODUCTMODEL ProductResourceType = "PRODUCT_MODEL"
-	ProductResourceTypePRODUCT      ProductResourceType = "PRODUCT"
-	ProductResourceTypeREFUND       ProductResourceType = "REFUND"
+	ProductResourceTypeBrand        ProductResourceType = "Brand"
+	ProductResourceTypeComment      ProductResourceType = "Comment"
+	ProductResourceTypeProductModel ProductResourceType = "ProductModel"
+	ProductResourceTypeProduct      ProductResourceType = "Product"
+	ProductResourceTypeRefund       ProductResourceType = "Refund"
 )
 
 func (e *ProductResourceType) Scan(src interface{}) error {
@@ -397,8 +397,8 @@ func (e *ProductResourceType) Scan(src interface{}) error {
 }
 
 type NullProductResourceType struct {
-	ProductResourceType ProductResourceType `json:"product_resource_type"`
-	Valid               bool                `json:"valid"` // Valid is true if ProductResourceType is not NULL
+	ProductResourceType ProductResourceType
+	Valid               bool // Valid is true if ProductResourceType is not NULL
 }
 
 // Scan implements the Scanner interface.
@@ -421,11 +421,11 @@ func (ns NullProductResourceType) Value() (driver.Value, error) {
 
 func (e ProductResourceType) Valid() bool {
 	switch e {
-	case ProductResourceTypeBRAND,
-		ProductResourceTypeCOMMENT,
-		ProductResourceTypePRODUCTMODEL,
-		ProductResourceTypePRODUCT,
-		ProductResourceTypeREFUND:
+	case ProductResourceTypeBrand,
+		ProductResourceTypeComment,
+		ProductResourceTypeProductModel,
+		ProductResourceTypeProduct,
+		ProductResourceTypeRefund:
 		return true
 	}
 	return false
@@ -433,20 +433,20 @@ func (e ProductResourceType) Valid() bool {
 
 func AllProductResourceTypeValues() []ProductResourceType {
 	return []ProductResourceType{
-		ProductResourceTypeBRAND,
-		ProductResourceTypeCOMMENT,
-		ProductResourceTypePRODUCTMODEL,
-		ProductResourceTypePRODUCT,
-		ProductResourceTypeREFUND,
+		ProductResourceTypeBrand,
+		ProductResourceTypeComment,
+		ProductResourceTypeProductModel,
+		ProductResourceTypeProduct,
+		ProductResourceTypeRefund,
 	}
 }
 
 type ProductSaleType string
 
 const (
-	ProductSaleTypeSALETYPETAG          ProductSaleType = "SALE_TYPE_TAG"
-	ProductSaleTypeSALETYPEPRODUCTMODEL ProductSaleType = "SALE_TYPE_PRODUCT_MODEL"
-	ProductSaleTypeSALETYPEBRAND        ProductSaleType = "SALE_TYPE_BRAND"
+	ProductSaleTypeTag          ProductSaleType = "Tag"
+	ProductSaleTypeProductModel ProductSaleType = "ProductModel"
+	ProductSaleTypeBrand        ProductSaleType = "Brand"
 )
 
 func (e *ProductSaleType) Scan(src interface{}) error {
@@ -462,8 +462,8 @@ func (e *ProductSaleType) Scan(src interface{}) error {
 }
 
 type NullProductSaleType struct {
-	ProductSaleType ProductSaleType `json:"product_sale_type"`
-	Valid           bool            `json:"valid"` // Valid is true if ProductSaleType is not NULL
+	ProductSaleType ProductSaleType
+	Valid           bool // Valid is true if ProductSaleType is not NULL
 }
 
 // Scan implements the Scanner interface.
@@ -486,9 +486,9 @@ func (ns NullProductSaleType) Value() (driver.Value, error) {
 
 func (e ProductSaleType) Valid() bool {
 	switch e {
-	case ProductSaleTypeSALETYPETAG,
-		ProductSaleTypeSALETYPEPRODUCTMODEL,
-		ProductSaleTypeSALETYPEBRAND:
+	case ProductSaleTypeTag,
+		ProductSaleTypeProductModel,
+		ProductSaleTypeBrand:
 		return true
 	}
 	return false
@@ -496,221 +496,221 @@ func (e ProductSaleType) Valid() bool {
 
 func AllProductSaleTypeValues() []ProductSaleType {
 	return []ProductSaleType{
-		ProductSaleTypeSALETYPETAG,
-		ProductSaleTypeSALETYPEPRODUCTMODEL,
-		ProductSaleTypeSALETYPEBRAND,
+		ProductSaleTypeTag,
+		ProductSaleTypeProductModel,
+		ProductSaleTypeBrand,
 	}
 }
 
 type AccountAddress struct {
-	ID          int64              `json:"id"`
-	UserID      int64              `json:"user_id"`
-	FullName    string             `json:"full_name"`
-	Phone       string             `json:"phone"`
-	Address     string             `json:"address"`
-	City        string             `json:"city"`
-	Province    string             `json:"province"`
-	Country     string             `json:"country"`
-	DateCreated pgtype.Timestamptz `json:"date_created"`
+	ID          int64
+	UserID      int64
+	FullName    string
+	Phone       string
+	Address     string
+	City        string
+	Province    string
+	Country     string
+	DateCreated pgtype.Timestamptz
 }
 
 type AccountAdmin struct {
-	ID           int64       `json:"id"`
-	AvatarUrl    pgtype.Text `json:"avatar_url"`
-	IsSuperAdmin bool        `json:"is_super_admin"`
+	ID           int64
+	AvatarUrl    pgtype.Text
+	IsSuperAdmin bool
 }
 
 type AccountBase struct {
-	ID       int64              `json:"id"`
-	Username string             `json:"username"`
-	Password string             `json:"password"`
-	Type     AccountAccountType `json:"type"`
+	ID       int64
+	Username string
+	Password string
+	Type     AccountType
 }
 
 type AccountCart struct {
-	ID int64 `json:"id"`
+	ID int64
 }
 
 type AccountItemOnCart struct {
-	CartID      int64              `json:"cart_id"`
-	ProductID   int64              `json:"product_id"`
-	Quantity    int64              `json:"quantity"`
-	DateCreated pgtype.Timestamptz `json:"date_created"`
+	CartID      int64
+	ProductID   int64
+	Quantity    int64
+	DateCreated pgtype.Timestamptz
 }
 
 type AccountPermission struct {
-	ID          string      `json:"id"`
-	Description pgtype.Text `json:"description"`
+	ID          string
+	Description pgtype.Text
 }
 
 type AccountPermissionOnRole struct {
-	RoleID       string `json:"role_id"`
-	PermissionID string `json:"permission_id"`
+	RoleID       string
+	PermissionID string
 }
 
 type AccountRole struct {
-	ID          string      `json:"id"`
-	Description pgtype.Text `json:"description"`
+	ID          string
+	Description pgtype.Text
 }
 
 type AccountRoleOnAdmin struct {
-	AdminID int64  `json:"admin_id"`
-	RoleID  string `json:"role_id"`
+	AdminID int64
+	RoleID  string
 }
 
 type AccountUser struct {
-	ID               int64         `json:"id"`
-	Email            string        `json:"email"`
-	Phone            string        `json:"phone"`
-	Gender           AccountGender `json:"gender"`
-	FullName         string        `json:"full_name"`
-	DefaultAddressID pgtype.Int8   `json:"default_address_id"`
-	AvatarUrl        pgtype.Text   `json:"avatar_url"`
+	ID               int64
+	Email            string
+	Phone            string
+	Gender           AccountGender
+	FullName         string
+	DefaultAddressID pgtype.Int8
+	AvatarUrl        pgtype.Text
 }
 
 type PaymentBase struct {
-	ID          int64                `json:"id"`
-	UserID      int64                `json:"user_id"`
-	Method      PaymentPaymentMethod `json:"method"`
-	Status      PaymentStatus        `json:"status"`
-	Address     string               `json:"address"`
-	Total       int64                `json:"total"`
-	DateCreated pgtype.Timestamptz   `json:"date_created"`
+	ID          int64
+	UserID      int64
+	Method      PaymentPaymentMethod
+	Status      PaymentStatus
+	Address     string
+	Total       int64
+	DateCreated pgtype.Timestamptz
 }
 
 type PaymentProductOnPayment struct {
-	ID         int64 `json:"id"`
-	PaymentID  int64 `json:"payment_id"`
-	ProductID  int64 `json:"product_id"`
-	Quantity   int64 `json:"quantity"`
-	Price      int64 `json:"price"`
-	TotalPrice int64 `json:"total_price"`
+	ID         int64
+	PaymentID  int64
+	ProductID  int64
+	Quantity   int64
+	Price      int64
+	TotalPrice int64
 }
 
 type PaymentProductSerialOnProductOnPayment struct {
-	ProductOnPaymentID int64  `json:"product_on_payment_id"`
-	ProductSerialID    string `json:"product_serial_id"`
+	ProductOnPaymentID int64
+	ProductSerialID    string
 }
 
 type PaymentRefund struct {
-	ID                 int64               `json:"id"`
-	ProductOnPaymentID int64               `json:"product_on_payment_id"`
-	Method             PaymentRefundMethod `json:"method"`
-	Status             PaymentStatus       `json:"status"`
-	Reason             string              `json:"reason"`
-	Address            string              `json:"address"`
-	Amount             int64               `json:"amount"`
-	ApprovedByID       pgtype.Int8         `json:"approved_by_id"`
-	DateCreated        pgtype.Timestamptz  `json:"date_created"`
+	ID                 int64
+	ProductOnPaymentID int64
+	Method             PaymentRefundMethod
+	Status             PaymentStatus
+	Reason             string
+	Address            string
+	Amount             int64
+	ApprovedByID       pgtype.Int8
+	DateCreated        pgtype.Timestamptz
 }
 
 type PaymentVnpay struct {
-	ID                   int64  `json:"id"`
-	VnpAmount            string `json:"vnp_Amount"`
-	VnpBankCode          string `json:"vnp_BankCode"`
-	VnpCardType          string `json:"vnp_CardType"`
-	VnpOrderInfo         string `json:"vnp_OrderInfo"`
-	VnpPayDate           string `json:"vnp_PayDate"`
-	VnpResponseCode      string `json:"vnp_ResponseCode"`
-	VnpSecureHash        string `json:"vnp_SecureHash"`
-	VnpTmnCode           string `json:"vnp_TmnCode"`
-	VnpTransactionNo     string `json:"vnp_TransactionNo"`
-	VnpTransactionStatus string `json:"vnp_TransactionStatus"`
-	VnpTxnRef            string `json:"vnp_TxnRef"`
+	ID                   int64
+	VnpAmount            string
+	VnpBankCode          string
+	VnpCardType          string
+	VnpOrderInfo         string
+	VnpPayDate           string
+	VnpResponseCode      string
+	VnpSecureHash        string
+	VnpTmnCode           string
+	VnpTransactionNo     string
+	VnpTransactionStatus string
+	VnpTxnRef            string
 }
 
 type ProductBase struct {
-	ID              int64              `json:"id"`
-	ProductModelID  int64              `json:"product_model_id"`
-	AdditionalPrice int64              `json:"additional_price"`
-	IsActive        bool               `json:"is_active"`
-	CanCombine      bool               `json:"can_combine"`
-	Metadata        []byte             `json:"metadata"`
-	DateCreated     pgtype.Timestamptz `json:"date_created"`
+	ID              int64
+	ProductModelID  int64
+	AdditionalPrice int64
+	IsActive        bool
+	CanCombine      bool
+	Metadata        []byte
+	DateCreated     pgtype.Timestamptz
 }
 
 type ProductBrand struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	ID          int64
+	Name        string
+	Description string
 }
 
 type ProductComment struct {
-	ID          int64              `json:"id"`
-	Type        ProductCommentType `json:"type"`
-	AccountID   int64              `json:"account_id"`
-	DestID      int64              `json:"dest_id"`
-	Body        string             `json:"body"`
-	Upvote      int64              `json:"upvote"`
-	Downvote    int64              `json:"downvote"`
-	Score       int32              `json:"score"`
-	DateCreated pgtype.Timestamptz `json:"date_created"`
-	DateUpdated pgtype.Timestamptz `json:"date_updated"`
+	ID          int64
+	Type        ProductCommentType
+	AccountID   int64
+	DestID      int64
+	Body        string
+	Upvote      int64
+	Downvote    int64
+	Score       int32
+	DateCreated pgtype.Timestamptz
+	DateUpdated pgtype.Timestamptz
 }
 
 type ProductModel struct {
-	ID               int64              `json:"id"`
-	Type             int64              `json:"type"`
-	BrandID          int64              `json:"brand_id"`
-	Name             string             `json:"name"`
-	Description      string             `json:"description"`
-	ListPrice        int64              `json:"list_price"`
-	DateManufactured pgtype.Timestamptz `json:"date_manufactured"`
+	ID               int64
+	Type             int64
+	BrandID          int64
+	Name             string
+	Description      string
+	ListPrice        int64
+	DateManufactured pgtype.Timestamptz
 }
 
 type ProductResource struct {
-	ID      int64               `json:"id"`
-	Type    ProductResourceType `json:"type"`
-	OwnerID int64               `json:"owner_id"`
-	Url     string              `json:"url"`
-	Order   int32               `json:"order"`
+	ID      int64
+	Type    ProductResourceType
+	OwnerID int64
+	Url     string
+	Order   int32
 }
 
 type ProductSale struct {
-	ID               int64              `json:"id"`
-	Type             ProductSaleType    `json:"type"`
-	ItemID           int64              `json:"item_id"`
-	DateCreated      pgtype.Timestamptz `json:"date_created"`
-	DateStarted      pgtype.Timestamptz `json:"date_started"`
-	DateEnded        pgtype.Timestamptz `json:"date_ended"`
-	IsActive         bool               `json:"is_active"`
-	DiscountPercent  pgtype.Int4        `json:"discount_percent"`
-	DiscountPrice    pgtype.Int8        `json:"discount_price"`
-	MaxDiscountPrice int64              `json:"max_discount_price"`
+	ID               int64
+	Type             ProductSaleType
+	ItemID           int64
+	DateCreated      pgtype.Timestamptz
+	DateStarted      pgtype.Timestamptz
+	DateEnded        pgtype.Timestamptz
+	IsActive         bool
+	DiscountPercent  pgtype.Int4
+	DiscountPrice    pgtype.Int8
+	MaxDiscountPrice int64
 }
 
 type ProductSaleTracking struct {
-	SaleID       int64 `json:"sale_id"`
-	CurrentStock int64 `json:"current_stock"`
-	Used         int64 `json:"used"`
+	SaleID       int64
+	CurrentStock int64
+	Used         int64
 }
 
 type ProductSerial struct {
-	SerialID    string             `json:"serial_id"`
-	ProductID   int64              `json:"product_id"`
-	IsSold      bool               `json:"is_sold"`
-	IsActive    bool               `json:"is_active"`
-	DateCreated pgtype.Timestamptz `json:"date_created"`
+	SerialID    string
+	ProductID   int64
+	IsSold      bool
+	IsActive    bool
+	DateCreated pgtype.Timestamptz
 }
 
 type ProductTag struct {
-	ID          int64  `json:"id"`
-	Tag         string `json:"tag"`
-	Description string `json:"description"`
+	ID          int64
+	Tag         string
+	Description string
 }
 
 type ProductTagOnProductModel struct {
-	ProductModelID int64  `json:"product_model_id"`
-	Tag            string `json:"tag"`
+	ProductModelID int64
+	Tag            string
 }
 
 type ProductTracking struct {
-	ProductID    int64 `json:"product_id"`
-	CurrentStock int64 `json:"current_stock"`
-	Sold         int64 `json:"sold"`
+	ProductID    int64
+	CurrentStock int64
+	Sold         int64
 }
 
 type ProductType struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
+	ID   int64
+	Name string
 }

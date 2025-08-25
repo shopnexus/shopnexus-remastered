@@ -25,12 +25,12 @@ WHERE (
 `
 
 type CountProductSerialsParams struct {
-	SerialID        pgtype.Text        `json:"serial_id"`
-	ProductID       pgtype.Int8        `json:"product_id"`
-	IsSold          pgtype.Bool        `json:"is_sold"`
-	IsActive        pgtype.Bool        `json:"is_active"`
-	DateCreatedFrom pgtype.Timestamptz `json:"date_created_from"`
-	DateCreatedTo   pgtype.Timestamptz `json:"date_created_to"`
+	SerialID        pgtype.Text
+	ProductID       pgtype.Int8
+	IsSold          pgtype.Bool
+	IsActive        pgtype.Bool
+	DateCreatedFrom pgtype.Timestamptz
+	DateCreatedTo   pgtype.Timestamptz
 }
 
 func (q *Queries) CountProductSerials(ctx context.Context, arg CountProductSerialsParams) (int64, error) {
@@ -56,10 +56,10 @@ VALUES ($1, $2, $3, $4) RETURNING serial_id, product_id, is_sold, is_active, dat
 `
 
 type CreateProductSerialParams struct {
-	SerialID  string `json:"serial_id"`
-	ProductID int64  `json:"product_id"`
-	IsSold    bool   `json:"is_sold"`
-	IsActive  bool   `json:"is_active"`
+	SerialID  string
+	ProductID int64
+	IsSold    bool
+	IsActive  bool
 }
 
 func (q *Queries) CreateProductSerial(ctx context.Context, arg CreateProductSerialParams) (ProductSerial, error) {
@@ -102,8 +102,8 @@ WHERE (
 `
 
 type GetAvailableProductsParams struct {
-	ProductID int64 `json:"product_id"`
-	Amount    int32 `json:"amount"`
+	ProductID int64
+	Amount    int32
 }
 
 func (q *Queries) GetAvailableProducts(ctx context.Context, arg GetAvailableProductsParams) ([]ProductSerial, error) {
@@ -167,14 +167,14 @@ OFFSET $7
 `
 
 type ListProductSerialsParams struct {
-	SerialID        pgtype.Text        `json:"serial_id"`
-	ProductID       pgtype.Int8        `json:"product_id"`
-	IsSold          pgtype.Bool        `json:"is_sold"`
-	IsActive        pgtype.Bool        `json:"is_active"`
-	DateCreatedFrom pgtype.Timestamptz `json:"date_created_from"`
-	DateCreatedTo   pgtype.Timestamptz `json:"date_created_to"`
-	Offset          int32              `json:"offset"`
-	Limit           int32              `json:"limit"`
+	SerialID        pgtype.Text
+	ProductID       pgtype.Int8
+	IsSold          pgtype.Bool
+	IsActive        pgtype.Bool
+	DateCreatedFrom pgtype.Timestamptz
+	DateCreatedTo   pgtype.Timestamptz
+	Offset          int32
+	Limit           int32
 }
 
 func (q *Queries) ListProductSerials(ctx context.Context, arg ListProductSerialsParams) ([]ProductSerial, error) {
@@ -231,9 +231,9 @@ WHERE serial_id = $1
 `
 
 type UpdateProductSerialParams struct {
-	SerialID string      `json:"serial_id"`
-	IsSold   pgtype.Bool `json:"is_sold"`
-	IsActive pgtype.Bool `json:"is_active"`
+	SerialID string
+	IsSold   pgtype.Bool
+	IsActive pgtype.Bool
 }
 
 func (q *Queries) UpdateProductSerial(ctx context.Context, arg UpdateProductSerialParams) error {

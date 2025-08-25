@@ -18,8 +18,8 @@ SELECT $1,
 `
 
 type AddTagsParams struct {
-	ProductModelID int64    `json:"product_model_id"`
-	Tags           []string `json:"tags"`
+	ProductModelID int64
+	Tags           []string
 }
 
 func (q *Queries) AddTags(ctx context.Context, arg AddTagsParams) error {
@@ -48,8 +48,8 @@ WHERE ($1::text IS NULL OR tag ILIKE '%' || $1 || '%')
 `
 
 type CountTagsParams struct {
-	Tag         pgtype.Text `json:"tag"`
-	Description pgtype.Text `json:"description"`
+	Tag         pgtype.Text
+	Description pgtype.Text
 }
 
 func (q *Queries) CountTags(ctx context.Context, arg CountTagsParams) (int64, error) {
@@ -66,8 +66,8 @@ VALUES ($1, $2)
 `
 
 type CreateTagParams struct {
-	Tag         string `json:"tag"`
-	Description string `json:"description"`
+	Tag         string
+	Description string
 }
 
 func (q *Queries) CreateTag(ctx context.Context, arg CreateTagParams) error {
@@ -135,10 +135,10 @@ OFFSET $3
 `
 
 type ListTagsParams struct {
-	Tag         pgtype.Text `json:"tag"`
-	Description pgtype.Text `json:"description"`
-	Offset      int32       `json:"offset"`
-	Limit       int32       `json:"limit"`
+	Tag         pgtype.Text
+	Description pgtype.Text
+	Offset      int32
+	Limit       int32
 }
 
 func (q *Queries) ListTags(ctx context.Context, arg ListTagsParams) ([]ProductTag, error) {
@@ -174,8 +174,8 @@ WHERE product_model_id = $1
 `
 
 type RemoveTagsParams struct {
-	ProductModelID int64    `json:"product_model_id"`
-	Tags           []string `json:"tags"`
+	ProductModelID int64
+	Tags           []string
 }
 
 func (q *Queries) RemoveTags(ctx context.Context, arg RemoveTagsParams) error {
@@ -191,9 +191,9 @@ WHERE tag = $1
 `
 
 type UpdateTagParams struct {
-	Tag         string      `json:"tag"`
-	NewTag      pgtype.Text `json:"new_tag"`
-	Description pgtype.Text `json:"description"`
+	Tag         string
+	NewTag      pgtype.Text
+	Description pgtype.Text
 }
 
 func (q *Queries) UpdateTag(ctx context.Context, arg UpdateTagParams) error {

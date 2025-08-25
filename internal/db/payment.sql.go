@@ -27,14 +27,14 @@ WHERE (
 `
 
 type CountPaymentsParams struct {
-	UserID          pgtype.Int8              `json:"user_id"`
-	Method          NullPaymentPaymentMethod `json:"method"`
-	Status          NullPaymentStatus        `json:"status"`
-	Address         pgtype.Text              `json:"address"`
-	TotalFrom       pgtype.Int8              `json:"total_from"`
-	TotalTo         pgtype.Int8              `json:"total_to"`
-	DateCreatedFrom pgtype.Timestamptz       `json:"date_created_from"`
-	DateCreatedTo   pgtype.Timestamptz       `json:"date_created_to"`
+	UserID          pgtype.Int8
+	Method          NullPaymentPaymentMethod
+	Status          NullPaymentStatus
+	Address         pgtype.Text
+	TotalFrom       pgtype.Int8
+	TotalTo         pgtype.Int8
+	DateCreatedFrom pgtype.Timestamptz
+	DateCreatedTo   pgtype.Timestamptz
 }
 
 func (q *Queries) CountPayments(ctx context.Context, arg CountPaymentsParams) (int64, error) {
@@ -63,11 +63,11 @@ VALUES ($1, $2, $3, $4, $5) RETURNING id, user_id, method, status, address, tota
 `
 
 type CreatePaymentParams struct {
-	UserID  int64                `json:"user_id"`
-	Method  PaymentPaymentMethod `json:"method"`
-	Status  PaymentStatus        `json:"status"`
-	Address string               `json:"address"`
-	Total   int64                `json:"total"`
+	UserID  int64
+	Method  PaymentPaymentMethod
+	Status  PaymentStatus
+	Address string
+	Total   int64
 }
 
 func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (PaymentBase, error) {
@@ -92,16 +92,16 @@ func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (P
 }
 
 type CreatePaymentProductSerialsParams struct {
-	ProductOnPaymentID int64  `json:"product_on_payment_id"`
-	ProductSerialID    string `json:"product_serial_id"`
+	ProductOnPaymentID int64
+	ProductSerialID    string
 }
 
 type CreatePaymentProductsParams struct {
-	PaymentID  int64 `json:"payment_id"`
-	ProductID  int64 `json:"product_id"`
-	Quantity   int64 `json:"quantity"`
-	Price      int64 `json:"price"`
-	TotalPrice int64 `json:"total_price"`
+	PaymentID  int64
+	ProductID  int64
+	Quantity   int64
+	Price      int64
+	TotalPrice int64
 }
 
 const createPaymentVnpay = `-- name: CreatePaymentVnpay :exec
@@ -121,18 +121,18 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 `
 
 type CreatePaymentVnpayParams struct {
-	ID                   int64  `json:"id"`
-	VnpAmount            string `json:"vnp_Amount"`
-	VnpBankCode          string `json:"vnp_BankCode"`
-	VnpCardType          string `json:"vnp_CardType"`
-	VnpOrderInfo         string `json:"vnp_OrderInfo"`
-	VnpPayDate           string `json:"vnp_PayDate"`
-	VnpResponseCode      string `json:"vnp_ResponseCode"`
-	VnpSecureHash        string `json:"vnp_SecureHash"`
-	VnpTmnCode           string `json:"vnp_TmnCode"`
-	VnpTransactionNo     string `json:"vnp_TransactionNo"`
-	VnpTransactionStatus string `json:"vnp_TransactionStatus"`
-	VnpTxnRef            string `json:"vnp_TxnRef"`
+	ID                   int64
+	VnpAmount            string
+	VnpBankCode          string
+	VnpCardType          string
+	VnpOrderInfo         string
+	VnpPayDate           string
+	VnpResponseCode      string
+	VnpSecureHash        string
+	VnpTmnCode           string
+	VnpTransactionNo     string
+	VnpTransactionStatus string
+	VnpTxnRef            string
 }
 
 func (q *Queries) CreatePaymentVnpay(ctx context.Context, arg CreatePaymentVnpayParams) error {
@@ -163,8 +163,8 @@ WHERE (
 `
 
 type DeletePaymentParams struct {
-	ID     int64       `json:"id"`
-	UserID pgtype.Int8 `json:"user_id"`
+	ID     int64
+	UserID pgtype.Int8
 }
 
 func (q *Queries) DeletePayment(ctx context.Context, arg DeletePaymentParams) error {
@@ -183,9 +183,9 @@ SELECT EXISTS (SELECT 1
 `
 
 type ExistsPaymentParams struct {
-	ID     int64             `json:"id"`
-	UserID pgtype.Int8       `json:"user_id"`
-	Status NullPaymentStatus `json:"status"`
+	ID     int64
+	UserID pgtype.Int8
+	Status NullPaymentStatus
 }
 
 func (q *Queries) ExistsPayment(ctx context.Context, arg ExistsPaymentParams) (bool, error) {
@@ -205,8 +205,8 @@ WHERE (
 `
 
 type GetPaymentParams struct {
-	ID     int64       `json:"id"`
-	UserID pgtype.Int8 `json:"user_id"`
+	ID     int64
+	UserID pgtype.Int8
 }
 
 func (q *Queries) GetPayment(ctx context.Context, arg GetPaymentParams) (PaymentBase, error) {
@@ -308,16 +308,16 @@ OFFSET $9
 `
 
 type ListPaymentsParams struct {
-	UserID          pgtype.Int8              `json:"user_id"`
-	Method          NullPaymentPaymentMethod `json:"method"`
-	Status          NullPaymentStatus        `json:"status"`
-	Address         pgtype.Text              `json:"address"`
-	TotalFrom       pgtype.Int8              `json:"total_from"`
-	TotalTo         pgtype.Int8              `json:"total_to"`
-	DateCreatedFrom pgtype.Timestamptz       `json:"date_created_from"`
-	DateCreatedTo   pgtype.Timestamptz       `json:"date_created_to"`
-	Offset          int32                    `json:"offset"`
-	Limit           int32                    `json:"limit"`
+	UserID          pgtype.Int8
+	Method          NullPaymentPaymentMethod
+	Status          NullPaymentStatus
+	Address         pgtype.Text
+	TotalFrom       pgtype.Int8
+	TotalTo         pgtype.Int8
+	DateCreatedFrom pgtype.Timestamptz
+	DateCreatedTo   pgtype.Timestamptz
+	Offset          int32
+	Limit           int32
 }
 
 func (q *Queries) ListPayments(ctx context.Context, arg ListPaymentsParams) ([]PaymentBase, error) {
@@ -372,12 +372,12 @@ WHERE (
 `
 
 type UpdatePaymentParams struct {
-	ID      int64                    `json:"id"`
-	Method  NullPaymentPaymentMethod `json:"method"`
-	Status  NullPaymentStatus        `json:"status"`
-	Address pgtype.Text              `json:"address"`
-	Total   pgtype.Int8              `json:"total"`
-	UserID  pgtype.Int8              `json:"user_id"`
+	ID      int64
+	Method  NullPaymentPaymentMethod
+	Status  NullPaymentStatus
+	Address pgtype.Text
+	Total   pgtype.Int8
+	UserID  pgtype.Int8
 }
 
 func (q *Queries) UpdatePayment(ctx context.Context, arg UpdatePaymentParams) error {
@@ -409,18 +409,18 @@ WHERE id = $1
 `
 
 type UpdatePaymentVnpayParams struct {
-	ID                   int64       `json:"id"`
-	VnpAmount            pgtype.Text `json:"vnp_Amount"`
-	VnpBankCode          pgtype.Text `json:"vnp_BankCode"`
-	VnpCardType          pgtype.Text `json:"vnp_CardType"`
-	VnpOrderInfo         pgtype.Text `json:"vnp_OrderInfo"`
-	VnpPayDate           pgtype.Text `json:"vnp_PayDate"`
-	VnpResponseCode      pgtype.Text `json:"vnp_ResponseCode"`
-	VnpSecureHash        pgtype.Text `json:"vnp_SecureHash"`
-	VnpTmnCode           pgtype.Text `json:"vnp_TmnCode"`
-	VnpTransactionNo     pgtype.Text `json:"vnp_TransactionNo"`
-	VnpTransactionStatus pgtype.Text `json:"vnp_TransactionStatus"`
-	VnpTxnRef            pgtype.Text `json:"vnp_TxnRef"`
+	ID                   int64
+	VnpAmount            pgtype.Text
+	VnpBankCode          pgtype.Text
+	VnpCardType          pgtype.Text
+	VnpOrderInfo         pgtype.Text
+	VnpPayDate           pgtype.Text
+	VnpResponseCode      pgtype.Text
+	VnpSecureHash        pgtype.Text
+	VnpTmnCode           pgtype.Text
+	VnpTransactionNo     pgtype.Text
+	VnpTransactionStatus pgtype.Text
+	VnpTxnRef            pgtype.Text
 }
 
 func (q *Queries) UpdatePaymentVnpay(ctx context.Context, arg UpdatePaymentVnpayParams) error {

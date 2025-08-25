@@ -29,18 +29,18 @@ WHERE (account_id = $1 OR $1 IS NULL)
 `
 
 type CountCommentsParams struct {
-	AccountID     pgtype.Int8            `json:"account_id"`
-	Type          NullProductCommentType `json:"type"`
-	DestID        pgtype.Int8            `json:"dest_id"`
-	Body          pgtype.Text            `json:"body"`
-	UpvoteFrom    pgtype.Int8            `json:"upvote_from"`
-	UpvoteTo      pgtype.Int8            `json:"upvote_to"`
-	DownvoteFrom  pgtype.Int8            `json:"downvote_from"`
-	DownvoteTo    pgtype.Int8            `json:"downvote_to"`
-	ScoreFrom     pgtype.Int4            `json:"score_from"`
-	ScoreTo       pgtype.Int4            `json:"score_to"`
-	CreatedAtFrom pgtype.Timestamptz     `json:"created_at_from"`
-	CreatedAtTo   pgtype.Timestamptz     `json:"created_at_to"`
+	AccountID     pgtype.Int8
+	Type          NullProductCommentType
+	DestID        pgtype.Int8
+	Body          pgtype.Text
+	UpvoteFrom    pgtype.Int8
+	UpvoteTo      pgtype.Int8
+	DownvoteFrom  pgtype.Int8
+	DownvoteTo    pgtype.Int8
+	ScoreFrom     pgtype.Int4
+	ScoreTo       pgtype.Int4
+	CreatedAtFrom pgtype.Timestamptz
+	CreatedAtTo   pgtype.Timestamptz
 }
 
 func (q *Queries) CountComments(ctx context.Context, arg CountCommentsParams) (int64, error) {
@@ -69,13 +69,13 @@ VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, type, account_id, dest_id, bod
 `
 
 type CreateCommentParams struct {
-	AccountID int64              `json:"account_id"`
-	Type      ProductCommentType `json:"type"`
-	DestID    int64              `json:"dest_id"`
-	Body      string             `json:"body"`
-	Upvote    int64              `json:"upvote"`
-	Downvote  int64              `json:"downvote"`
-	Score     int32              `json:"score"`
+	AccountID int64
+	Type      ProductCommentType
+	DestID    int64
+	Body      string
+	Upvote    int64
+	Downvote  int64
+	Score     int32
 }
 
 func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (ProductComment, error) {
@@ -114,8 +114,8 @@ WHERE (
 `
 
 type DeleteCommentParams struct {
-	ID        int64       `json:"id"`
-	AccountID pgtype.Int8 `json:"account_id"`
+	ID        int64
+	AccountID pgtype.Int8
 }
 
 func (q *Queries) DeleteComment(ctx context.Context, arg DeleteCommentParams) error {
@@ -140,17 +140,17 @@ FROM filtered_comment c
 `
 
 type GetCommentRow struct {
-	ID          int64              `json:"id"`
-	Type        ProductCommentType `json:"type"`
-	AccountID   int64              `json:"account_id"`
-	DestID      int64              `json:"dest_id"`
-	Body        string             `json:"body"`
-	Upvote      int64              `json:"upvote"`
-	Downvote    int64              `json:"downvote"`
-	Score       int32              `json:"score"`
-	DateCreated pgtype.Timestamptz `json:"date_created"`
-	DateUpdated pgtype.Timestamptz `json:"date_updated"`
-	Resources   []string           `json:"resources"`
+	ID          int64
+	Type        ProductCommentType
+	AccountID   int64
+	DestID      int64
+	Body        string
+	Upvote      int64
+	Downvote    int64
+	Score       int32
+	DateCreated pgtype.Timestamptz
+	DateUpdated pgtype.Timestamptz
+	Resources   []string
 }
 
 func (q *Queries) GetComment(ctx context.Context, id int64) (GetCommentRow, error) {
@@ -202,34 +202,34 @@ OFFSET $1
 `
 
 type ListCommentsParams struct {
-	Offset        int32                  `json:"offset"`
-	Limit         int32                  `json:"limit"`
-	AccountID     pgtype.Int8            `json:"account_id"`
-	Type          NullProductCommentType `json:"type"`
-	DestID        pgtype.Int8            `json:"dest_id"`
-	Body          pgtype.Text            `json:"body"`
-	UpvoteFrom    pgtype.Int8            `json:"upvote_from"`
-	UpvoteTo      pgtype.Int8            `json:"upvote_to"`
-	DownvoteFrom  pgtype.Int8            `json:"downvote_from"`
-	DownvoteTo    pgtype.Int8            `json:"downvote_to"`
-	ScoreFrom     pgtype.Int4            `json:"score_from"`
-	ScoreTo       pgtype.Int4            `json:"score_to"`
-	CreatedAtFrom pgtype.Timestamptz     `json:"created_at_from"`
-	CreatedAtTo   pgtype.Timestamptz     `json:"created_at_to"`
+	Offset        int32
+	Limit         int32
+	AccountID     pgtype.Int8
+	Type          NullProductCommentType
+	DestID        pgtype.Int8
+	Body          pgtype.Text
+	UpvoteFrom    pgtype.Int8
+	UpvoteTo      pgtype.Int8
+	DownvoteFrom  pgtype.Int8
+	DownvoteTo    pgtype.Int8
+	ScoreFrom     pgtype.Int4
+	ScoreTo       pgtype.Int4
+	CreatedAtFrom pgtype.Timestamptz
+	CreatedAtTo   pgtype.Timestamptz
 }
 
 type ListCommentsRow struct {
-	ID          int64              `json:"id"`
-	Type        ProductCommentType `json:"type"`
-	AccountID   int64              `json:"account_id"`
-	DestID      int64              `json:"dest_id"`
-	Body        string             `json:"body"`
-	Upvote      int64              `json:"upvote"`
-	Downvote    int64              `json:"downvote"`
-	Score       int32              `json:"score"`
-	DateCreated pgtype.Timestamptz `json:"date_created"`
-	DateUpdated pgtype.Timestamptz `json:"date_updated"`
-	Resources   []string           `json:"resources"`
+	ID          int64
+	Type        ProductCommentType
+	AccountID   int64
+	DestID      int64
+	Body        string
+	Upvote      int64
+	Downvote    int64
+	Score       int32
+	DateCreated pgtype.Timestamptz
+	DateUpdated pgtype.Timestamptz
+	Resources   []string
 }
 
 func (q *Queries) ListComments(ctx context.Context, arg ListCommentsParams) ([]ListCommentsRow, error) {
@@ -290,12 +290,12 @@ WHERE id = $1
 `
 
 type UpdateCommentParams struct {
-	ID        int64       `json:"id"`
-	Body      pgtype.Text `json:"body"`
-	Upvote    pgtype.Int8 `json:"upvote"`
-	Downvote  pgtype.Int8 `json:"downvote"`
-	Score     pgtype.Int4 `json:"score"`
-	AccountID pgtype.Int8 `json:"account_id"`
+	ID        int64
+	Body      pgtype.Text
+	Upvote    pgtype.Int8
+	Downvote  pgtype.Int8
+	Score     pgtype.Int4
+	AccountID pgtype.Int8
 }
 
 func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (ProductComment, error) {
