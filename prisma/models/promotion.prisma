@@ -1,0 +1,66 @@
+enum PromotionType {
+  Voucher
+  FlashSale
+  Bundle
+  BuyXGetY
+  Cashback
+
+  @@map("promotion_type")
+  @@schema("promotion")
+}
+
+enum PromotionRefType {
+  OrderItem // Order item, the specific product that is being purchased
+  Order // Order, the whole order total that is being made
+
+  @@map("promotion_ref_type")
+  @@schema("promotion")
+}
+
+model Promotion {
+  id   BigInt @id @default(autoincrement())
+  code String @unique
+
+  type         PromotionType // Type of promotion, e.g. voucher, flash sale, etc.
+  is_active    Boolean               @default(true)
+  date_started DateTime              @default(now()) @db.Timestamptz(3)
+  date_ended   DateTime?             @db.Timestamptz(3)
+  date_created DateTime              @default(now()) @db.Timestamptz(3)
+  vouchers     PromotionVoucher[]
+  redemptions  PromotionRedemption[]
+
+  @@map("promotion")
+  @@schema("promotion")
+}
+
+model PromotionVoucher {
+  id           BigInt @id @default(autoincrement())
+  promotion_id BigInt @unique
+
+  min_spend        BigInt  @default(0) // Minimum spend to apply this sale, 0 means no limit
+  max_discount     BigInt  @default(0) // Maximum discount amount (fixed price), 0 means no limit
+  discount_percent Int? // either discount_percent or discount_price
+  discount_price   BigInt?
+
+  promotion Promotion @relation(fields: [promotion_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@map("promotion_voucher")
+  @@schema("promotion")
+}
+
+model PromotionRedemption {
+  id           BigInt @id @default(autoincrement())
+  promotion_id BigInt // Promotion history id that this redemption belongs to
+
+  version      BigInt // Version of the promotion, used to track the promotion change history
+  ref_type     PromotionRefType // Type of reference
+  ref_id       BigInt // Reference id, the order item id
+  date_created DateTime         @default(now()) @db.Timestamptz(3)
+
+  promotion Promotion @relation(fields: [promotion_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@index([promotion_id])
+  @@index([ref_type, ref_id])
+  @@map("promotion_redemption")
+  @@schema("promotion")
+}

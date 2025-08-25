@@ -1,0 +1,196 @@
+model Order {
+  id          BigInt  @id @default(autoincrement())
+  code        String  @unique
+  customer_id BigInt
+  invoice_id  BigInt? // Invoice id for this payment, null if not paid yet
+
+  payment_method PaymentMethod
+  status         Status
+  address        String
+  date_created   DateTime      @default(now()) @db.Timestamptz(3)
+
+  customer Customer      @relation(fields: [customer_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  products OrderItem[]
+  vnpay    PaymentVnpay?
+
+  @@map("order")
+  @@schema("payment")
+}
+
+model OrderItem {
+  id       BigInt @id @default(autoincrement())
+  code     String @unique
+  order_id BigInt
+  sku_id   BigInt
+
+  quantity BigInt
+
+  serials OrderItemSerial[]
+  refund  Refund[]
+  order   Order             @relation(fields: [order_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  sku     ProductSKU        @relation(fields: [sku_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  //! @@unique([order_id, sku_id]); Should not be unique, because product can be added multiple times (due to product.can_combine)
+  @@index([order_id])
+  @@index([sku_id])
+  @@map("order_item")
+  @@schema("payment")
+}
+
+model OrderItemSerial {
+  id                BigInt @id @default(autoincrement())
+  order_item_id     BigInt
+  product_serial_id BigInt
+
+  order_item OrderItem     @relation(fields: [order_item_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  serial     ProductSerial @relation(fields: [product_serial_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@unique([order_item_id, product_serial_id])
+  @@map("order_item_serial")
+  @@schema("payment")
+}
+
+enum PaymentMethod {
+  COD
+  Card
+  EWallet
+  Crypto
+
+  @@map("payment_method")
+  @@schema("payment")
+}
+
+enum RefundMethod {
+  PickUp
+  DropOff
+
+  @@map("refund_method")
+  @@schema("payment")
+}
+
+model PaymentVnpay {
+  id       BigInt @id @default(autoincrement())
+  order_id BigInt @unique
+
+  vnp_Amount            String
+  vnp_BankCode          String
+  vnp_CardType          String
+  vnp_OrderInfo         String
+  vnp_PayDate           String
+  vnp_ResponseCode      String
+  vnp_SecureHash        String
+  vnp_TmnCode           String
+  vnp_TransactionNo     String
+  vnp_TransactionStatus String
+  vnp_TxnRef            String
+
+  order Order @relation(fields: [order_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@map("vnpay")
+  @@schema("payment")
+}
+
+model Refund {
+  id             BigInt  @id @default(autoincrement())
+  code           String  @unique
+  order_item_id  BigInt
+  reviewed_by_id BigInt? // VendorProfile id who reviewed this refund request, null if not reviewed yet
+
+  method       RefundMethod
+  status       Status
+  reason       String
+  address      String? // PICK_UP address, if method is DROP_OFF, address is empty
+  date_created DateTime     @default(now()) @db.Timestamptz(3)
+
+  order_item      OrderItem       @relation(fields: [order_item_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  reviewer_vendor Vendor?         @relation(fields: [reviewed_by_id], references: [id], onUpdate: Cascade, onDelete: SetNull)
+  disputes        RefundDispute[]
+
+  @@index([order_item_id])
+  @@index([reviewed_by_id])
+  @@map("refund")
+  @@schema("payment")
+}
+
+// Complaint about refund request for vendor
+model RefundDispute {
+  id        BigInt @id @default(autoincrement())
+  code      String @unique
+  refund_id BigInt // Refund id that this dispute belongs to
+  vendor_id BigInt // id who created this dispute
+
+  reason     String
+  status     Status   @default(Pending)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  refund Refund @relation(fields: [refund_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  vendor Vendor @relation(fields: [vendor_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@index([refund_id])
+  @@index([vendor_id])
+  @@map("refund_dispute")
+  @@schema("payment")
+}
+
+enum InvoiceType {
+  Sale
+  Service
+  Adjustment
+
+  @@map("invoice_type")
+  @@schema("payment")
+}
+
+enum InvoiceRefType {
+  Order
+  Fee
+
+  @@map("invoice_ref_type")
+  @@schema("payment")
+}
+
+model Invoice {
+  id   BigInt @id @default(autoincrement())
+  code String @unique
+
+  type     InvoiceType
+  ref_type InvoiceRefType
+  ref_id   BigInt // Reference id, e.g. Order.id
+
+  seller_account_id BigInt? // VendorProfile, or System (Fee) id who sold this invoice
+  buyer_account_id  BigInt // CustomerProfile, or Vendor (Fee) id who bought this invoice
+
+  status         Status
+  payment_method PaymentMethod
+  address        String
+  phone          String
+  subtotal       BigInt // Total amount before discount
+  total          BigInt // Total amount after discount
+  file_rs_id     String // invoice file (PDF, etc.)
+  date_created   DateTime      @default(now()) @db.Timestamptz(3)
+
+  hash      Bytes         @unique @db.ByteA // Hash of the change log, used to prevent duplicate change logs
+  prev_hash Bytes?        @db.ByteA // Hash of the previous change log, used to link change logs together
+  items     InvoiceItem[]
+
+  @@map("invoice")
+  @@schema("payment")
+}
+
+model InvoiceItem {
+  id         BigInt @id @default(autoincrement())
+  invoice_id BigInt
+
+  snapshot   Json   @db.JsonB // Snapshot of the item at the time of invoicing, e.g. product name, description, etc.
+  quantity   BigInt
+  unit_price BigInt // Price per unit before discount
+  subtotal   BigInt // Total price before discount
+  total      BigInt // Total price after discount
+
+  invoice Invoice @relation(fields: [invoice_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@index([invoice_id])
+  @@map("invoice_item")
+  @@schema("payment")
+}

@@ -1,0 +1,148 @@
+enum AccountType {
+  Customer
+  Vendor
+
+  @@map("type")
+  @@schema("account")
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+
+  @@map("status")
+  @@schema("account")
+}
+
+enum Gender {
+  Male
+  Female
+  Other
+
+  @@map("gender")
+  @@schema("account")
+}
+
+enum AddressType {
+  HOME
+  WORK
+
+  @@map("address_type")
+  @@schema("account")
+}
+
+model Account {
+  id   BigInt @id @default(autoincrement())
+  code String @unique
+
+  type         AccountType
+  status       AccountStatus @default(ACTIVE)
+  phone        String?       @unique @db.VarChar(50)
+  email        String?       @unique @db.VarChar(255)
+  username     String?       @unique @db.VarChar(100)
+  password     String?       @db.VarChar(255)
+  date_created DateTime      @default(now()) @db.Timestamptz(3)
+
+  customer_profile Customer?
+  vendor_profile   Vendor?
+  profile          Profile?
+  addresses        Address[]
+  events           Event[]
+
+  @@map("account")
+  @@schema("account")
+}
+
+model Profile {
+  id         BigInt @id @default(autoincrement())
+  account_id BigInt @unique
+
+  gender         Gender?
+  name           String?   @db.VarChar(100)
+  date_of_birth  DateTime? @db.Date
+  avatar_rs_id   BigInt?   @unique // Resource id for avatar
+  email_verified Boolean   @default(false)
+  phone_verified Boolean   @default(false)
+
+  account Account @relation(fields: [account_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@index([account_id])
+  @@map("profile")
+  @@schema("account")
+}
+
+model Customer {
+  id                 BigInt  @id @default(autoincrement())
+  account_id         BigInt  @unique
+  default_address_id BigInt? // No need FK to check, index FK
+
+  account  Account    @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  orders   Order[]
+  comments Comment[]
+  CartItem CartItem[]
+
+  @@index([account_id])
+  @@index([default_address_id])
+  @@map("customer")
+  @@schema("account")
+}
+
+// TODO: hold the item quantity in the product stock (stock -= quantity), after 1h of inactivity, free the item stock in the product stock (stock += quantity)
+model CartItem {
+  id      BigInt @id @default(autoincrement())
+  cart_id BigInt // is account_id (CustomerProfile.id)
+  sku_id  BigInt
+
+  quantity     BigInt
+  date_created DateTime @default(now()) @db.Timestamptz(3)
+
+  customer Customer   @relation(fields: [cart_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  sku      ProductSKU @relation(fields: [sku_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@unique([cart_id, sku_id])
+  @@index([cart_id])
+  @@index([sku_id])
+  @@map("cart_item")
+  @@schema("account")
+}
+
+model Vendor {
+  id         BigInt @id @default(autoincrement())
+  account_id BigInt @unique
+
+  account         Account         @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  spus            ProductSPU[]
+  refunds         Refund[]
+  refund_disputes RefundDispute[]
+
+  @@index([account_id])
+  @@map("vendor")
+  @@schema("account")
+}
+
+model Address {
+  id         BigInt @id @default(autoincrement())
+  code       String @unique
+  account_id BigInt
+
+  type           AddressType @default(HOME)
+  full_name      String      @db.VarChar(100)
+  phone          String      @db.VarChar(20)
+  phone_verified Boolean     @default(false) // If true, phone number is verified; if the phone same as account phone, then it is verified by default
+
+  // Break down address for better querying
+  street_address String   @db.VarChar(255)
+  country        String   @db.VarChar(2) // Use ISO country codes
+  city           String   @db.VarChar(100)
+  district       String   @db.VarChar(100)
+  ward           String   @db.VarChar(100)
+  date_created   DateTime @default(now()) @db.Timestamptz(3)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@index([account_id])
+  @@index([country, city, district, ward])
+  @@index([type])
+  @@map("address")
+  @@schema("account")
+}

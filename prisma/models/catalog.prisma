@@ -1,0 +1,151 @@
+enum CommentableType {
+  ProductSPU
+  Comment
+
+  @@map("comment_dest_type")
+  @@schema("catalog")
+}
+
+model Brand {
+  id          BigInt @id @default(autoincrement())
+  code        String @unique
+  name        String
+  description String
+
+  spus ProductSPU[]
+
+  @@map("brand")
+  @@schema("catalog")
+}
+
+model ProductCategory {
+  id          BigInt  @id @default(autoincrement())
+  name        String  @unique @db.VarChar(100)
+  description String  @default("")
+  parent_id   BigInt? // If null, this is a root category
+
+  spus ProductSPU[]
+
+  @@index([parent_id])
+  @@map("category")
+  @@schema("catalog")
+}
+
+// Important data, only allow update name/description
+model ProductSPU {
+  id          BigInt @id @default(autoincrement())
+  code        String @unique
+  account_id  BigInt
+  category_id BigInt
+  brand_id    BigInt
+
+  name              String
+  description       String
+  is_active         Boolean   @default(true) // Need to deactive the product model before we update the model or the products inside it
+  date_manufactured DateTime  @db.Timestamptz(3)
+  date_created      DateTime  @default(now()) @db.Timestamptz(3)
+  date_updated      DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+  date_deleted      DateTime? @db.Timestamptz(3) // If not null, this product model is deleted, but still can be used for historical purposes
+
+  vendor   Vendor          @relation(fields: [account_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  category ProductCategory @relation(fields: [category_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  brand    Brand           @relation(fields: [brand_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  tags     ProductTag[]
+  products ProductSKU[]
+
+  @@index([account_id])
+  @@index([category_id])
+  @@index([brand_id])
+  @@map("spu")
+  @@schema("catalog")
+}
+
+model ProductSKU {
+  id     BigInt @id @default(autoincrement())
+  code   String @unique
+  spu_id BigInt
+
+  price        BigInt // Price of the item at this time
+  can_combine  Boolean   @default(false) // If true, allow customer to (put many products together inside one container), otherwise each product is a single item (for refunding stuff)
+  date_created DateTime  @default(now()) @db.Timestamptz(3)
+  date_deleted DateTime? @db.Timestamptz(3) // If not null, this product model is deleted, but still can be used for historical purposes
+
+  // Versioning all model related to product
+  version BigInt @default(1) // Version of the product, used to track the product change history
+
+  spu         ProductSPU      @relation(fields: [spu_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  serials     ProductSerial[]
+  carts       CartItem[]
+  attributes  SKUAttribute[]
+  order_items OrderItem[]
+
+  @@index([spu_id])
+  @@map("sku")
+  @@schema("catalog")
+}
+
+model SKUAttribute {
+  id     BigInt @id @default(autoincrement())
+  code   String @unique
+  sku_id BigInt
+
+  name         String   @db.VarChar(100) // Name of the attribute, e.g. color, size, etc.
+  value        String   @db.VarChar(255) // Value of the attribute, can be JSON string if needed
+  date_created DateTime @default(now()) @db.Timestamptz(3)
+  date_updated DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+
+  sku ProductSKU @relation(fields: [sku_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@index([sku_id])
+  @@index([name])
+  @@map("sku_attribute")
+  @@schema("catalog")
+}
+
+model Tag {
+  id          BigInt @id @default(autoincrement())
+  tag         String @unique @db.VarChar(50)
+  description String @default("")
+
+  spuTags ProductTag[]
+
+  @@map("tag")
+  @@schema("catalog")
+}
+
+model ProductTag {
+  id     BigInt @id @default(autoincrement())
+  spu_id BigInt
+  tag_id BigInt
+
+  spu ProductSPU @relation(fields: [spu_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  tag Tag        @relation(fields: [tag_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@unique([spu_id, tag_id])
+  @@index([spu_id])
+  @@index([tag_id])
+  @@map("spu_tag")
+  @@schema("catalog")
+}
+
+model Comment {
+  id         BigInt @id @default(autoincrement())
+  code       String @unique
+  account_id BigInt
+
+  ref_type CommentableType
+  ref_id   BigInt
+
+  body         String
+  upvote       BigInt   @default(0)
+  downvote     BigInt   @default(0)
+  score        Int      @default(0) // 0 ~ 100
+  date_created DateTime @default(now()) @db.Timestamptz(3)
+  date_updated DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+
+  customer Customer @relation(fields: [account_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@unique([account_id, ref_type, ref_id])
+  @@map("comment")
+  @@schema("catalog")
+}

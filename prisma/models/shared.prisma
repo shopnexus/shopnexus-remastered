@@ -1,0 +1,35 @@
+enum ResourceType {
+  Avatar
+  ProductImage
+  BrandLogo
+  Refund
+  ReturnDispute
+
+  @@map("resource_type")
+  @@schema("shared")
+}
+
+// TODO: should catch "remove" event and remove them in s3; https://chatgpt.com/c/67bea496-7388-800f-a564-9641dc54c520
+model Resource {
+  id         BigInt       @id @default(autoincrement())
+  mime_type  String // MIME type of the resource, e.g. image/jpeg, image/png, etc.
+  owner_id   BigInt
+  owner_type ResourceType // Must have owner type to identify the resource because same id can be used for different types
+  url        String
+  order      Int
+
+  @@index([owner_id, owner_type])
+  @@map("resource")
+  @@schema("shared")
+}
+
+enum Status {
+  Pending
+  Processing
+  Success
+  Canceled
+  Failed
+
+  @@map("status")
+  @@schema("shared")
+}

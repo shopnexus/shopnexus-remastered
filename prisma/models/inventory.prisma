@@ -1,0 +1,65 @@
+enum StockType {
+  ProductSKU
+  Promotion
+
+  @@map("stock_type")
+  @@schema("inventory")
+}
+
+enum ProductStatus {
+  Active
+  Inactive
+  Sold
+  Damaged
+
+  @@map("product_status")
+  @@schema("inventory")
+}
+
+model ProductSerial {
+  id            BigInt @id @default(autoincrement())
+  serial_number String @unique @db.VarChar(50) // Unique serial number for this product
+  sku_id        BigInt
+
+  status       ProductStatus
+  date_created DateTime      @default(now()) @db.Timestamptz(3)
+
+  sku                ProductSKU        @relation(fields: [sku_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  order_item_serials OrderItemSerial[]
+
+  @@index([sku_id])
+  @@map("sku_serial")
+  @@schema("inventory")
+}
+
+// We can track the stock of products, promotions
+model Stock {
+  id       BigInt    @id @default(autoincrement())
+  ref_type StockType
+  ref_id   BigInt
+
+  current_stock BigInt @default(0) // Current stock of this product, 0 means out of stock
+  sold          BigInt @default(0)
+
+  date_created DateTime       @default(now()) @db.Timestamptz(3)
+  history      StockHistory[]
+
+  @@unique([ref_id, ref_type])
+  @@map("stock")
+  @@schema("inventory")
+}
+
+model StockHistory {
+  id       BigInt @id @default(autoincrement())
+  stock_id BigInt // Stock id to track the stock change
+
+  change       BigInt // Positive means stock added, negative means stock removed
+  date_created DateTime @default(now()) @db.Timestamptz(3)
+
+  stock Stock @relation(fields: [stock_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@index([stock_id])
+  @@index([date_created])
+  @@map("stock_history")
+  @@schema("inventory")
+}

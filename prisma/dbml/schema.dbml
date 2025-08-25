@@ -2,105 +2,140 @@
 //// THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 //// ------------------------------------------------------
 
-Table Account {
+Table account {
   id BigInt [pk, increment]
-  username String [unique, not null]
-  password String [not null]
+  code String [unique, not null]
   type AccountType [not null]
+  status AccountStatus [not null, default: 'ACTIVE']
+  phone String [unique]
+  email String [unique]
+  username String [unique]
+  password String
+  date_created DateTime [default: `now()`, not null]
 }
 
-Table Role {
-  id String [pk]
-  description String
-}
-
-Table RoleOnAdmin {
-  admin_id BigInt [not null]
-  role_id String [not null]
-
-  indexes {
-    (admin_id, role_id) [pk]
-  }
-}
-
-Table Permission {
-  id String [pk]
-  description String
-}
-
-Table PermissionOnRole {
-  role_id String [not null]
-  permission_id String [not null]
-
-  indexes {
-    (role_id, permission_id) [pk]
-  }
-}
-
-Table UserAccount {
-  id BigInt [pk]
-  email String [unique, not null]
-  phone String [unique, not null]
-  gender Gender [not null]
-  full_name String [not null, default: '']
-  default_address_id BigInt
-  avatar_url String
-}
-
-Table AdminAccount {
-  id BigInt [pk]
-  avatar_url String
-  is_super_admin Boolean [not null, default: false]
-}
-
-Table Address {
+Table profile {
   id BigInt [pk, increment]
-  user_id BigInt [not null]
+  account_id BigInt [unique, not null]
+  gender Gender
+  name String
+  date_of_birth DateTime
+  avatar_rs_id BigInt [unique]
+  email_verified Boolean [not null, default: false]
+  phone_verified Boolean [not null, default: false]
+}
+
+Table customer {
+  id BigInt [pk, increment]
+  account_id BigInt [unique, not null]
+  default_address_id BigInt
+}
+
+Table cart_item {
+  id BigInt [pk, increment]
+  cart_id BigInt [not null]
+  sku_id BigInt [not null]
+  quantity BigInt [not null]
+  date_created DateTime [default: `now()`, not null]
+
+  indexes {
+    (cart_id, sku_id) [unique]
+  }
+}
+
+Table vendor {
+  id BigInt [pk, increment]
+  account_id BigInt [unique, not null]
+}
+
+Table address {
+  id BigInt [pk, increment]
+  code String [unique, not null]
+  account_id BigInt [not null]
+  type AddressType [not null, default: 'HOME']
   full_name String [not null]
   phone String [not null]
-  address String [not null]
-  city String [not null]
-  province String [not null]
+  phone_verified Boolean [not null, default: false]
+  street_address String [not null]
   country String [not null]
+  city String [not null]
+  district String [not null]
+  ward String [not null]
   date_created DateTime [default: `now()`, not null]
 }
 
-Table Cart {
-  id BigInt [pk]
-}
-
-Table ItemOnCart {
-  cart_id BigInt [not null]
-  product_id BigInt [not null]
-  quantity Int [not null]
-  date_created DateTime [default: `now()`, not null]
-
-  indexes {
-    (cart_id, product_id) [pk]
-  }
-}
-
-Table Brand {
+Table brand {
   id BigInt [pk, increment]
+  code String [unique, not null]
   name String [not null]
   description String [not null]
 }
 
-Table ProductModel {
+Table category {
   id BigInt [pk, increment]
-  type BigInt [not null]
+  name String [unique, not null]
+  description String [not null, default: '']
+  parent_id BigInt
+}
+
+Table spu {
+  id BigInt [pk, increment]
+  code String [unique, not null]
+  account_id BigInt [not null]
+  category_id BigInt [not null]
   brand_id BigInt [not null]
   name String [not null]
   description String [not null]
-  list_price BigInt [not null]
+  is_active Boolean [not null, default: true]
   date_manufactured DateTime [not null]
+  date_created DateTime [default: `now()`, not null]
+  date_updated DateTime [default: `now()`, not null]
+  date_deleted DateTime
 }
 
-Table Comment {
+Table sku {
   id BigInt [pk, increment]
-  type CommentType [not null]
+  code String [unique, not null]
+  spu_id BigInt [not null]
+  price BigInt [not null]
+  can_combine Boolean [not null, default: false]
+  date_created DateTime [default: `now()`, not null]
+  date_deleted DateTime
+  version BigInt [not null, default: 1]
+}
+
+Table sku_attribute {
+  id BigInt [pk, increment]
+  code String [unique, not null]
+  sku_id BigInt [not null]
+  name String [not null]
+  value String [not null]
+  date_created DateTime [default: `now()`, not null]
+  date_updated DateTime [default: `now()`, not null]
+}
+
+Table tag {
+  id BigInt [pk, increment]
+  tag String [unique, not null]
+  description String [not null, default: '']
+}
+
+Table spu_tag {
+  id BigInt [pk, increment]
+  spu_id BigInt [not null]
+  tag_id BigInt [not null]
+
+  indexes {
+    (spu_id, tag_id) [unique]
+  }
+}
+
+Table comment {
+  id BigInt [pk, increment]
+  code String [unique, not null]
   account_id BigInt [not null]
-  dest_id BigInt [not null]
+  ref_type CommentableType [not null]
+  ref_id BigInt [not null]
   body String [not null]
   upvote BigInt [not null, default: 0]
   downvote BigInt [not null, default: 0]
@@ -109,104 +144,70 @@ Table Comment {
   date_updated DateTime [default: `now()`, not null]
 
   indexes {
-    (account_id, dest_id) [unique]
+    (account_id, ref_type, ref_id) [unique]
   }
 }
 
-Table Product {
+Table sku_serial {
   id BigInt [pk, increment]
-  product_model_id BigInt [not null]
-  additional_price BigInt [not null, default: 0]
-  is_active Boolean [not null, default: true]
-  can_combine Boolean [not null, default: false]
-  metadata Json [not null, default: '{}']
+  serial_number String [unique, not null]
+  sku_id BigInt [not null]
+  status ProductStatus [not null]
   date_created DateTime [default: `now()`, not null]
 }
 
-Table ProductTracking {
+Table stock {
   id BigInt [pk, increment]
-  product_id BigInt [unique, not null]
-  current_stock BigInt [not null]
-  sold BigInt [not null, default: 0]
-}
-
-Table ProductSerial {
-  serial_id String [unique, not null]
-  product_id BigInt [not null]
-  is_sold Boolean [not null, default: false]
-  is_active Boolean [not null, default: true]
-  date_created DateTime [default: `now()`, not null]
-}
-
-Table ProductType {
-  id BigInt [pk, increment]
-  name String [unique, not null]
-}
-
-Table Sale {
-  id BigInt [pk, increment]
-  type SaleType [not null]
-  item_id BigInt [not null]
-  date_created DateTime [default: `now()`, not null]
-  date_started DateTime [default: `now()`, not null]
-  date_ended DateTime
-  is_active Boolean [not null, default: true]
-  discount_percent Int
-  discount_price BigInt
-  max_discount_price BigInt [not null, default: 0]
-}
-
-Table SaleTracking {
-  sale_id BigInt [pk]
+  ref_type StockType [not null]
+  ref_id BigInt [not null]
   current_stock BigInt [not null, default: 0]
-  used BigInt [not null]
-}
-
-Table TagOnProductModel {
-  product_model_id BigInt [not null]
-  tag String [not null]
+  sold BigInt [not null, default: 0]
+  date_created DateTime [default: `now()`, not null]
 
   indexes {
-    (product_model_id, tag) [pk]
+    (ref_id, ref_type) [unique]
   }
 }
 
-Table Tag {
+Table stock_history {
   id BigInt [pk, increment]
-  tag String [unique, not null]
-  description String [not null, default: '']
+  stock_id BigInt [not null]
+  change BigInt [not null]
+  date_created DateTime [default: `now()`, not null]
 }
 
-Table ProductSerialOnProductOnPayment {
-  product_on_payment_id BigInt [not null]
-  product_serial_id String [not null]
-
-  indexes {
-    (product_on_payment_id, product_serial_id) [pk]
-  }
-}
-
-Table ProductOnPayment {
+Table order {
   id BigInt [pk, increment]
-  payment_id BigInt [not null]
-  product_id BigInt [not null]
-  quantity Int [not null]
-  price BigInt [not null]
-  total_price BigInt [not null]
-}
-
-Table Payment {
-  id BigInt [pk, increment]
-  user_id BigInt [not null]
-  method PaymentMethod [not null]
+  code String [unique, not null]
+  customer_id BigInt [not null]
+  invoice_id BigInt
+  payment_method PaymentMethod [not null]
   status Status [not null]
   address String [not null]
-  total BigInt [not null]
   date_created DateTime [default: `now()`, not null]
 }
 
-Table PaymentVnpay {
-  id BigInt [pk]
+Table order_item {
+  id BigInt [pk, increment]
+  code String [unique, not null]
+  order_id BigInt [not null]
+  sku_id BigInt [not null]
+  quantity BigInt [not null]
+}
+
+Table order_item_serial {
+  id BigInt [pk, increment]
+  order_item_id BigInt [not null]
+  product_serial_id BigInt [not null]
+
+  indexes {
+    (order_item_id, product_serial_id) [unique]
+  }
+}
+
+Table vnpay {
+  id BigInt [pk, increment]
+  order_id BigInt [unique, not null]
   vnp_Amount String [not null]
   vnp_BankCode String [not null]
   vnp_CardType String [not null]
@@ -220,125 +221,253 @@ Table PaymentVnpay {
   vnp_TxnRef String [not null]
 }
 
-Table Refund {
+Table refund {
   id BigInt [pk, increment]
-  product_on_payment_id BigInt [not null]
+  code String [unique, not null]
+  order_item_id BigInt [not null]
+  reviewed_by_id BigInt
   method RefundMethod [not null]
   status Status [not null]
   reason String [not null]
-  address String [not null]
-  amount BigInt [not null]
-  approved_by_id BigInt
+  address String
   date_created DateTime [default: `now()`, not null]
 }
 
-Table Resource {
+Table refund_dispute {
   id BigInt [pk, increment]
-  type ResourceType [not null]
+  code String [unique, not null]
+  refund_id BigInt [not null]
+  vendor_id BigInt [not null]
+  reason String [not null]
+  status Status [not null, default: 'Pending']
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table invoice {
+  id BigInt [pk, increment]
+  code String [unique, not null]
+  type InvoiceType [not null]
+  ref_type InvoiceRefType [not null]
+  ref_id BigInt [not null]
+  seller_account_id BigInt
+  buyer_account_id BigInt [not null]
+  status Status [not null]
+  payment_method PaymentMethod [not null]
+  address String [not null]
+  phone String [not null]
+  subtotal BigInt [not null]
+  total BigInt [not null]
+  file_rs_id String [not null]
+  date_created DateTime [default: `now()`, not null]
+  hash Bytes [unique, not null]
+  prev_hash Bytes
+}
+
+Table invoice_item {
+  id BigInt [pk, increment]
+  invoice_id BigInt [not null]
+  snapshot Json [not null]
+  quantity BigInt [not null]
+  unit_price BigInt [not null]
+  subtotal BigInt [not null]
+  total BigInt [not null]
+}
+
+Table promotion {
+  id BigInt [pk, increment]
+  code String [unique, not null]
+  type PromotionType [not null]
+  is_active Boolean [not null, default: true]
+  date_started DateTime [default: `now()`, not null]
+  date_ended DateTime
+  date_created DateTime [default: `now()`, not null]
+}
+
+Table promotion_voucher {
+  id BigInt [pk, increment]
+  promotion_id BigInt [unique, not null]
+  min_spend BigInt [not null, default: 0]
+  max_discount BigInt [not null, default: 0]
+  discount_percent Int
+  discount_price BigInt
+}
+
+Table promotion_redemption {
+  id BigInt [pk, increment]
+  promotion_id BigInt [not null]
+  version BigInt [not null]
+  ref_type PromotionRefType [not null]
+  ref_id BigInt [not null]
+  date_created DateTime [default: `now()`, not null]
+}
+
+Table resource {
+  id BigInt [pk, increment]
+  mime_type String [not null]
   owner_id BigInt [not null]
+  owner_type ResourceType [not null]
   url String [not null]
   order Int [not null]
 }
 
+Table event {
+  id BigInt [pk, increment]
+  account_id BigInt
+  aggregate_id BigInt [not null]
+  aggregate_type String [not null]
+  event_type String [not null]
+  payload Json [not null]
+  version BigInt [not null]
+  date_created DateTime [default: `now()`, not null]
+}
+
 Enum AccountType {
-  USER
-  ADMIN
+  Customer
+  Vendor
+}
+
+Enum AccountStatus {
+  ACTIVE
+  SUSPENDED
 }
 
 Enum Gender {
-  MALE
-  FEMALE
-  OTHER
+  Male
+  Female
+  Other
 }
 
-Enum SaleType {
-  TAG
-  PRODUCT_MODEL
-  BRAND
+Enum AddressType {
+  HOME
+  WORK
 }
 
-Enum CommentType {
-  PRODUCT_MODEL
-  BRAND
-  COMMENT
+Enum CommentableType {
+  ProductSPU
+  Comment
+}
+
+Enum StockType {
+  ProductSKU
+  Promotion
+}
+
+Enum ProductStatus {
+  Active
+  Inactive
+  Sold
+  Damaged
 }
 
 Enum PaymentMethod {
-  CASH
-  VNPAY
-  MOMO
+  COD
+  Card
+  EWallet
+  Crypto
 }
 
 Enum RefundMethod {
-  PICK_UP
-  DROP_OFF
+  PickUp
+  DropOff
 }
 
-Enum Status {
-  PENDING
-  SUCCESS
-  CANCELED
-  FAILED
+Enum InvoiceType {
+  Sale
+  Service
+  Adjustment
+}
+
+Enum InvoiceRefType {
+  Order
+  Fee
+}
+
+Enum PromotionType {
+  Voucher
+  FlashSale
+  Bundle
+  BuyXGetY
+  Cashback
+}
+
+Enum PromotionRefType {
+  OrderItem
+  Order
 }
 
 Enum ResourceType {
-  BRAND
-  COMMENT
-  PRODUCT_MODEL
-  PRODUCT
-  REFUND
+  Avatar
+  ProductImage
+  BrandLogo
+  Refund
+  ReturnDispute
 }
 
-Ref: RoleOnAdmin.admin_id > AdminAccount.id [delete: Cascade]
+Enum Status {
+  Pending
+  Processing
+  Success
+  Canceled
+  Failed
+}
 
-Ref: RoleOnAdmin.role_id > Role.id [delete: Cascade]
+Ref: profile.account_id - account.id [delete: Cascade]
 
-Ref: PermissionOnRole.role_id > Role.id
+Ref: customer.account_id - account.id [delete: Cascade]
 
-Ref: PermissionOnRole.permission_id > Permission.id
+Ref: cart_item.cart_id > customer.id [delete: Cascade]
 
-Ref: UserAccount.id - Account.id [delete: Cascade]
+Ref: cart_item.sku_id > sku.id [delete: Cascade]
 
-Ref: AdminAccount.id - Account.id [delete: Cascade]
+Ref: vendor.account_id - account.id [delete: Cascade]
 
-Ref: Address.user_id > UserAccount.id [delete: Cascade]
+Ref: address.account_id > account.id [delete: Cascade]
 
-Ref: Cart.id - UserAccount.id [delete: Cascade]
+Ref: spu.account_id > vendor.id [delete: Cascade]
 
-Ref: ItemOnCart.cart_id > Cart.id [delete: Cascade]
+Ref: spu.category_id > category.id [delete: Cascade]
 
-Ref: ItemOnCart.product_id > Product.id [delete: Cascade]
+Ref: spu.brand_id > brand.id [delete: Cascade]
 
-Ref: ProductModel.type > ProductType.id [delete: Cascade]
+Ref: sku.spu_id > spu.id [delete: Cascade]
 
-Ref: ProductModel.brand_id > Brand.id [delete: Cascade]
+Ref: sku_attribute.sku_id > sku.id [delete: Cascade]
 
-Ref: Comment.account_id > Account.id [delete: Cascade]
+Ref: spu_tag.spu_id > spu.id [delete: Cascade]
 
-Ref: Product.product_model_id > ProductModel.id [delete: Cascade]
+Ref: spu_tag.tag_id > tag.id [delete: Cascade]
 
-Ref: ProductTracking.product_id - Product.id [delete: Cascade]
+Ref: comment.account_id > customer.id [delete: Cascade]
 
-Ref: ProductSerial.product_id > Product.id [delete: Cascade]
+Ref: sku_serial.sku_id > sku.id [delete: Cascade]
 
-Ref: SaleTracking.sale_id - Sale.id [delete: Cascade]
+Ref: stock_history.stock_id > stock.id [delete: Cascade]
 
-Ref: TagOnProductModel.product_model_id > ProductModel.id [delete: Cascade]
+Ref: order.customer_id > customer.id [delete: Cascade]
 
-Ref: TagOnProductModel.tag > Tag.tag [delete: Cascade]
+Ref: order_item.order_id > order.id [delete: Cascade]
 
-Ref: ProductSerialOnProductOnPayment.product_on_payment_id > ProductOnPayment.id [delete: Cascade]
+Ref: order_item.sku_id > sku.id [delete: Cascade]
 
-Ref: ProductSerialOnProductOnPayment.product_serial_id > ProductSerial.serial_id [delete: Cascade]
+Ref: order_item_serial.order_item_id > order_item.id [delete: Cascade]
 
-Ref: ProductOnPayment.payment_id > Payment.id [delete: Cascade]
+Ref: order_item_serial.product_serial_id > sku_serial.id [delete: Cascade]
 
-Ref: ProductOnPayment.product_id > Product.id [delete: Cascade]
+Ref: vnpay.order_id - order.id [delete: Cascade]
 
-Ref: Payment.user_id > UserAccount.id [delete: Cascade]
+Ref: refund.order_item_id > order_item.id [delete: Cascade]
 
-Ref: PaymentVnpay.id - Payment.id [delete: Cascade]
+Ref: refund.reviewed_by_id > vendor.id [delete: Set Null]
 
-Ref: Refund.product_on_payment_id > ProductOnPayment.id [delete: Cascade]
+Ref: refund_dispute.refund_id > refund.id [delete: Cascade]
 
-Ref: Refund.approved_by_id > AdminAccount.id [delete: Cascade]
+Ref: refund_dispute.vendor_id > vendor.id [delete: Cascade]
+
+Ref: invoice_item.invoice_id > invoice.id [delete: Cascade]
+
+Ref: promotion_voucher.promotion_id > promotion.id [delete: Cascade]
+
+Ref: promotion_redemption.promotion_id > promotion.id [delete: Cascade]
+
+Ref: event.account_id > account.id [delete: Set Null]
