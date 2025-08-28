@@ -1,16 +1,16 @@
 package pgxpool
 
 import (
-	"botmediasaver/internal/logger"
 	"context"
 	"fmt"
 
+	"shopnexus-remastered/internal/logger"
+
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"go.uber.org/zap"
 )
 
-type PgxpoolOptions struct {
+type Options struct {
 	Url             string `yaml:"url"`
 	Host            string `yaml:"host"`
 	Port            int    `yaml:"port"`
@@ -21,7 +21,7 @@ type PgxpoolOptions struct {
 	MaxConnIdleTime int32  `yaml:"maxConnIdleTime"`
 }
 
-func NewPgxpool(opts PgxpoolOptions) (*pgxpool.Pool, error) {
+func New(opts Options) (*pgxpool.Pool, error) {
 	connStr := GetConnStr(opts)
 
 	connConfig, err := pgxpool.ParseConfig(connStr)
@@ -32,13 +32,13 @@ func NewPgxpool(opts PgxpoolOptions) (*pgxpool.Pool, error) {
 	// Set maximum number of connections
 	connConfig.MaxConns = opts.MaxConnections
 	connConfig.ConnConfig.OnNotice = func(conn *pgconn.PgConn, notice *pgconn.Notice) {
-		logger.Log.Info("notice", zap.String("message", notice.Message))
+		logger.Log.Warn("PostgreSQL notice: " + notice.Message)
 	}
 
 	return pgxpool.NewWithConfig(context.Background(), connConfig)
 }
 
-func GetConnStr(opts PgxpoolOptions) string {
+func GetConnStr(opts Options) string {
 	if opts.Url == "" {
 		return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 			opts.Host,
