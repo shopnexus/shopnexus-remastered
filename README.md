@@ -9,6 +9,7 @@
 
 
 ### Go
+- Folder structure: Vertical slice (by service)
 
 #### General
 - No use orchestration patterns, use choreography instead.
