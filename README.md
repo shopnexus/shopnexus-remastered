@@ -5,6 +5,7 @@
 ### Database
 - Always use table per type (TPT) in database design
 - Audit snapshot for tax authority and transaction dispute purpose
+- SearchEngine(search_sync): Query event table to get the latest 
 
 
 ### Go
@@ -25,3 +26,9 @@
 ### Biz
 - Tag only for SEO purpose, use category for product grouping instead.
 - Handle the problem "Slowly Changing Dimension (SCD)" in database design (financial transactions related)
+- Always use the sharedmodel.Currency to handle money related fields
+- Use validator/v10 to validate the DTO from client side
+
+### Ack
+"Interface values are comparable. Two interface values are equal if they have identical dynamic types and equal dynamic values or if both have value nil."
+- Which means when compare an interface value with nil, it will always return false because the "nil" is untyped nil, not typed (as the interface) nil.
