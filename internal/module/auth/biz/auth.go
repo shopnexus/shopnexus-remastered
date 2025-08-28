@@ -74,7 +74,6 @@ func (a *AuthBiz) CreateHash(password string) (string, error) {
 }
 
 type LoginParams struct {
-	Type     db.AccountType
 	Code     *string
 	Username *string
 	Email    *string
@@ -91,7 +90,6 @@ func (a *AuthBiz) Login(ctx context.Context, params LoginParams) (LoginResult, e
 	var zero LoginResult
 
 	account, err := a.accountBiz.Find(ctx, accountbiz.FindParams{
-		Type:     params.Type,
 		Code:     params.Code,
 		Username: params.Username,
 		Email:    params.Email,

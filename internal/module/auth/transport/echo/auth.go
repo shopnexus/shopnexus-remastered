@@ -1,10 +1,8 @@
 package echo
 
 import (
-	"fmt"
 	"net/http"
 
-	"shopnexus-remastered/internal/db"
 	"shopnexus-remastered/internal/module/auth/biz"
 	"shopnexus-remastered/internal/module/shared/transport/echo/response"
 
@@ -45,7 +43,6 @@ func (h *Handler) LoginBasic(c echo.Context) error {
 	}
 
 	result, err := h.biz.Login(c.Request().Context(), authbiz.LoginParams{
-		Type:     db.AccountTypeCustomer,
 		Username: req.Username,
 		Email:    req.Email,
 		Phone:    req.Phone,
@@ -61,7 +58,6 @@ func (h *Handler) LoginBasic(c echo.Context) error {
 }
 
 type RegisterBasicRequest struct {
-	Type     string  `json:"type"`
 	Username *string `json:"username" validate:"omitempty,min=1,max=255"`
 	Email    *string `json:"email" validate:"omitempty,email"`
 	Phone    *string `json:"phone" validate:"omitempty,e164"`
@@ -81,13 +77,7 @@ func (h *Handler) RegisterBasic(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	accountType := db.AccountType(req.Type)
-	if !accountType.Valid() {
-		return response.FromError(c.Response().Writer, http.StatusBadRequest, fmt.Errorf("invalid account type: %s", req.Type))
-	}
-
 	result, err := h.biz.Register(c.Request().Context(), authbiz.RegisterParams{
-		Type:     accountType,
 		Username: req.Username,
 		Email:    req.Email,
 		Phone:    req.Phone,

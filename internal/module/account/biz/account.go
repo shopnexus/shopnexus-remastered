@@ -28,7 +28,6 @@ func NewAccountBiz(storage *pgxsqlc.Storage) *AccountBiz {
 }
 
 type FindParams struct {
-	Type     db.AccountType
 	Code     *string
 	Username *string
 	Email    *string
