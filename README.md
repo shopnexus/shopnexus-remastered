@@ -1,5 +1,11 @@
 # shopnexus-remastered
 
+## Epic features
+### 1. Have two mode: modular monolith and microservices
+- Modular monolith: all services in one process -> everything is easy 🤑
+- Microservices: each service run its own process -> scaling and independent deployment, but hell for debugging 🥀
+
+
 ## My code, my rules...
 
 ### Database
