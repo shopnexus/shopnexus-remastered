@@ -131,17 +131,16 @@ model Address {
   phone_verified Boolean     @default(false) // If true, phone number is verified; if the phone same as account phone, then it is verified by default
 
   // Break down address for better querying
-  street_address String   @db.VarChar(255)
-  country        String   @db.VarChar(2) // Use ISO country codes
+  address_line   String   @db.VarChar(255)
   city           String   @db.VarChar(100)
-  district       String   @db.VarChar(100)
-  ward           String   @db.VarChar(100)
+  state_province String   @db.VarChar(100)
+  country        String   @db.VarChar(2) // Use ISO country codes
   date_created   DateTime @default(now()) @db.Timestamptz(3)
+  date_updated   DateTime @updatedAt @db.Timestamptz(3)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
 
   @@index([account_id])
-  @@index([country, city, district, ward])
   @@index([type])
   @@map("address")
   @@schema("account")
