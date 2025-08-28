@@ -38,10 +38,13 @@ func (cv *CustomValidator) Validate(i interface{}) error {
 	err := cv.validator.Struct(i)
 	if valErr, ok := err.(validator.ValidationErrors); ok {
 		trans, _ := cv.uni.GetTranslator("en")
-		text, _ := json.Marshal(valErr.Translate(trans))
-		fmt.Println(string(text))
+		text, err := json.Marshal(valErr.Translate(trans))
+		if err != nil {
+			// Fallback to the original validation error if JSON marshaling fails
+			return valErr
+		}
 
-		return sharedmodel.NewError("VALIDATION_ERROR", string(text))
+		return sharedmodel.NewError("validation", string(text))
 	}
 
 	return err
