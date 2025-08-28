@@ -42,6 +42,7 @@ model Account {
   username     String?       @unique @db.VarChar(100)
   password     String?       @db.VarChar(255)
   date_created DateTime      @default(now()) @db.Timestamptz(3)
+  date_updated DateTime      @updatedAt @db.Timestamptz(3)
 
   customer_profile Customer?
   vendor_profile   Vendor?
@@ -63,6 +64,8 @@ model Profile {
   avatar_rs_id   BigInt?   @unique // Resource id for avatar
   email_verified Boolean   @default(false)
   phone_verified Boolean   @default(false)
+  date_created   DateTime  @default(now()) @db.Timestamptz(3)
+  date_updated   DateTime  @updatedAt @db.Timestamptz(3)
 
   account Account @relation(fields: [account_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
 
@@ -72,9 +75,11 @@ model Profile {
 }
 
 model Customer {
-  id                 BigInt  @id @default(autoincrement())
-  account_id         BigInt  @unique
+  id                 BigInt   @id @default(autoincrement())
+  account_id         BigInt   @unique
   default_address_id BigInt? // No need FK to check, index FK
+  date_created       DateTime @default(now()) @db.Timestamptz(3)
+  date_updated       DateTime @updatedAt @db.Timestamptz(3)
 
   account  Account    @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
   orders   Order[]
@@ -84,25 +89,6 @@ model Customer {
   @@index([account_id])
   @@index([default_address_id])
   @@map("customer")
-  @@schema("account")
-}
-
-// TODO: hold the item quantity in the product stock (stock -= quantity), after 1h of inactivity, free the item stock in the product stock (stock += quantity)
-model CartItem {
-  id      BigInt @id @default(autoincrement())
-  cart_id BigInt // is account_id (CustomerProfile.id)
-  sku_id  BigInt
-
-  quantity     BigInt
-  date_created DateTime @default(now()) @db.Timestamptz(3)
-
-  customer Customer   @relation(fields: [cart_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
-  sku      ProductSKU @relation(fields: [sku_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
-
-  @@unique([cart_id, sku_id])
-  @@index([cart_id])
-  @@index([sku_id])
-  @@map("cart_item")
   @@schema("account")
 }
 
@@ -117,6 +103,26 @@ model Vendor {
 
   @@index([account_id])
   @@map("vendor")
+  @@schema("account")
+}
+
+// TODO: hold the item quantity in the product stock (stock -= quantity), after 1h of inactivity, free the item stock in the product stock (stock += quantity)
+model CartItem {
+  id      BigInt @id @default(autoincrement())
+  cart_id BigInt // is account_id (CustomerProfile.id)
+  sku_id  BigInt
+
+  quantity     BigInt
+  date_created DateTime @default(now()) @db.Timestamptz(3)
+  date_updated DateTime @updatedAt @db.Timestamptz(3)
+
+  customer Customer   @relation(fields: [cart_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  sku      ProductSKU @relation(fields: [sku_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@unique([cart_id, sku_id])
+  @@index([cart_id])
+  @@index([sku_id])
+  @@map("cart_item")
   @@schema("account")
 }
 
