@@ -3,7 +3,7 @@ package pgxsqlc
 import (
 	"context"
 
-	"botmediasaver/generated/sqlc"
+	"shopnexus-remastered/internal/db"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -18,13 +18,20 @@ type DBTX interface {
 	Begin(context.Context) (pgx.Tx, error)
 }
 
+func NewStorage(dbtx DBTX) *Storage {
+	return &Storage{
+		dbtx:    dbtx,
+		Queries: db.New(dbtx),
+	}
+}
+
 type Storage struct {
-	db DBTX
-	*sqlc.Queries
+	dbtx DBTX
+	*db.Queries
 }
 
 func (s *Storage) BeginTx(ctx context.Context) (*TxStorage, error) {
-	tx, err := s.db.Begin(ctx)
+	tx, err := s.dbtx.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +41,7 @@ func (s *Storage) BeginTx(ctx context.Context) (*TxStorage, error) {
 
 type TxStorage struct {
 	tx pgx.Tx
-	*sqlc.Queries
+	*db.Queries
 }
 
 func (s *TxStorage) Commit(ctx context.Context) error {
