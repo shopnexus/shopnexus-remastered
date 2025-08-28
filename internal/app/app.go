@@ -20,7 +20,6 @@ var Module = fx.Module("main",
 		NewConfig,
 		NewDatabase,
 		NewEcho,
-		NewValidator,
 	),
 
 	// Business modules
@@ -29,7 +28,7 @@ var Module = fx.Module("main",
 
 	// HTTP server
 	fx.Invoke(
-		RegisterRoutes,
+		SetupEcho,
 		StartHTTPServer,
 	),
 )

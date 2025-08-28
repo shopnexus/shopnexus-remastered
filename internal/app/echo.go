@@ -26,26 +26,24 @@ func NewEcho() *echo.Echo {
 	return e
 }
 
-// NewValidator creates a custom validator
-func NewValidator() (*validator.CustomValidator, error) {
-	return validator.New()
-}
-
 // RouteParams holds all the dependencies needed for route registration
 type RouteParams struct {
 	fx.In
-	Echo      *echo.Echo
-	Validator *validator.CustomValidator
+	Echo *echo.Echo
 
 	Account *accountecho.Handler
 	Auth    *authecho.Handler
 	// Add more handlers as needed
 }
 
-// RegisterRoutes registers all application routes
-func RegisterRoutes(params RouteParams) {
+// SetupEcho registers all application routes
+func SetupEcho(params RouteParams) {
 	// Set the custom validator
-	params.Echo.Validator = params.Validator
+	customVal, err := validator.New()
+	if err != nil {
+		logger.Log.Sugar().Fatalf("Failed to create validator: %v", err)
+	}
+	params.Echo.Validator = customVal
 
 	// Health check
 	params.Echo.GET("/health", func(c echo.Context) error {
