@@ -7,9 +7,10 @@
     "@prisma/client": "^6.14.0"
   },
   "scripts": {
-    "sqlc": "npx prisma migrate diff --from-empty --to-schema-datamodel prisma --script > prisma/migrations/0_init/migration.sql && sqlc generate"
+    "sqlc": "npx prisma migrate diff --from-empty --to-schema-datamodel prisma --script > prisma/migrations/0_init/migration.sql &&  .\\tool.exe -schema prisma/migrations/0_init/migration.sql -single-file && sqlc generate"
   },
   "prisma": {
     "schema": "./prisma"
   }
 }
+
