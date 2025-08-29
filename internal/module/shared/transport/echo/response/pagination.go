@@ -1,11 +1,8 @@
 package response
 
-import sharedmodel "shopnexus-remastered/internal/module/shared/model"
-
 type PaginationResponse[T any] struct {
-	Data     []T               `json:"data"`
-	PageMeta PageMeta          `json:"pagination"`
-	Error    sharedmodel.Error `json:"error,omitempty"`
+	Data     []T      `json:"data"`
+	PageMeta PageMeta `json:"pagination"`
 }
 
 type PageMeta struct {

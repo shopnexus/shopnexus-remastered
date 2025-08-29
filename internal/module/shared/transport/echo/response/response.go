@@ -1,17 +1,17 @@
 package response
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
-	sharedmodel "shopnexus-remastered/internal/module/backup/shared/model"
+	sharedmodel "shopnexus-remastered/internal/module/shared/model"
 
 	"github.com/bytedance/sonic"
 )
 
 const (
-	ContentTypeJSON   = "application/json"
-	ErrValidationCode = "VALIDATION_ERROR"
+	ContentTypeJSON = "application/json"
 )
 
 // writeError writes an error response with proper error handling
@@ -27,8 +27,11 @@ func writeError(w http.ResponseWriter, httpCode int, err error) error {
 	}
 
 	data, err := sonic.Marshal(CommonResponse{
-		Data:  nil,
-		Error: sharedmodel.NewError(errCode, message),
+		Data: nil,
+		Error: &sharedmodel.Error{
+			ErrCode: errCode,
+			Message: message,
+		},
 	})
 	if err != nil {
 		// Fallback to plain text if JSON marshaling fails
@@ -70,6 +73,7 @@ func FromMessage(w http.ResponseWriter, httpCode int, message string) error {
 
 // FromError writes an error response based on the provided error type
 func FromError(w http.ResponseWriter, httpCode int, err error) error {
+	fmt.Println("FromError called with error:", err)
 	if err == nil {
 		return FromDTO(w, http.StatusOK, nil)
 	}
@@ -94,24 +98,15 @@ func FromHTTPCode(w http.ResponseWriter, httpCode int) error {
 
 	response := CommonResponse{
 		Data:  nil,
-		Error: sharedmodel.NewError(statusCode, statusText),
+		Error: &sharedmodel.Error{ErrCode: statusCode, Message: statusText},
 	}
 
 	return writeResponse(w, httpCode, response)
 }
 
-type Paginate[T any] interface {
-	GetData() []T
-	GetLimit() int32
-	GetNextCursor() *string
-	GetNextPage() *int32
-	GetPage() int32
-	GetTotal() int64
-}
-
 // FromPaginate writes a paginated response with proper structure
-func FromPaginate[T any](w http.ResponseWriter, paginate Paginate[T]) error {
-	data := paginate.GetData()
+func FromPaginate[T any](w http.ResponseWriter, paginate sharedmodel.PaginateResult[T]) error {
+	data := paginate.Data
 	if data == nil {
 		// Make sure the paginate object is not nil
 		data = make([]T, 0)
@@ -120,11 +115,11 @@ func FromPaginate[T any](w http.ResponseWriter, paginate Paginate[T]) error {
 	response := PaginationResponse[T]{
 		Data: data,
 		PageMeta: PageMeta{
-			Limit:      paginate.GetLimit(),
-			Page:       paginate.GetPage(),
-			Total:      paginate.GetTotal(),
-			NextPage:   paginate.GetNextPage(),
-			NextCursor: paginate.GetNextCursor(),
+			Limit:      paginate.Limit,
+			Page:       paginate.Page,
+			Total:      paginate.Total,
+			NextPage:   paginate.NextPage,
+			NextCursor: paginate.NextCursor,
 		},
 	}
 
