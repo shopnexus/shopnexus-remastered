@@ -6,16 +6,49 @@ type PaginationParams struct {
 	Limit int32 `json:"limit"`
 }
 
-func (p *PaginationParams) Offset() int32 {
-	return (p.Page - 1) * p.Limit
+func (p *PaginationParams) GetOffset() int32 {
+	if p.Page <= 0 {
+		p.Page = 1 // default page
+	}
+	if p.Limit <= 0 {
+		p.Limit = 10 // default limit
+	}
+
+	offset := (p.Page - 1) * p.Limit
+	if offset < 0 {
+		return 0
+	}
+	return offset
+}
+
+func (p *PaginationParams) GetLimit() int32 {
+	if p.Limit <= 0 {
+		return 10 // default limit
+	}
+	if p.Limit > 100 {
+		return 100 // max limit
+	}
+	return p.Limit
 }
 
 func (p *PaginationParams) NextPage(total int64) *int32 {
+	if p.Page <= 0 {
+		p.Page = 0
+	}
+	if p.Limit <= 0 {
+		p.Limit = 10
+	}
+
 	if int64(p.Page*p.Limit) < total {
 		nextPage := p.Page + 1
 		return &nextPage
 	}
 
+	return nil
+}
+
+func (p *PaginationParams) NextCursor(total int64) *string {
+	// Cursor pagination is not implemented yet
 	return nil
 }
 
