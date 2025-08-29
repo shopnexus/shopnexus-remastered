@@ -67,10 +67,9 @@ func (s *AccountBiz) Create(ctx context.Context, params CreateParams) (db.Accoun
 	var zero db.AccountAccount
 
 	code := uuid.New().String()
-	createdAccount, err := s.storage.CreateAccount(ctx, db.CreateAccountParams{
+	createdAccount, err := s.storage.CreateDefaultAccount(ctx, db.CreateDefaultAccountParams{
 		Code:     code,
 		Type:     params.Type,
-		Status:   db.AccountStatusACTIVE,
 		Phone:    *pgxptr.PtrToPgtype(&pgtype.Text{}, params.Phone),
 		Email:    *pgxptr.PtrToPgtype(&pgtype.Text{}, params.Email),
 		Username: *pgxptr.PtrToPgtype(&pgtype.Text{}, params.Username),
