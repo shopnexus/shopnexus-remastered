@@ -1,0 +1,9 @@
+-- name: Create{{.Name | pascalCase}} :one
+INSERT INTO {{.GetFullTableName}} ({{range $i, $col := .GetNonSerialColumns}}{{if $i}}, {{end}}{{quotedName $col}}{{end}})
+VALUES ({{range $i, $col := .GetNonSerialColumns}}{{if $i}}, {{end}}${{increment $i}}{{end}})
+RETURNING *;
+
+-- name: CreateDefault{{.Name | pascalCase}} :one
+INSERT INTO {{.GetFullTableName}} ({{range $i, $col := .GetNonSerialNonDefaultColumns}}{{if $i}}, {{end}}{{quotedName $col}}{{end}})
+VALUES ({{range $i, $col := .GetNonSerialNonDefaultColumns}}{{if $i}}, {{end}}${{increment $i}}{{end}})
+RETURNING *;

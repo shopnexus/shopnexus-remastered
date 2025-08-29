@@ -1,0 +1,3 @@
+-- name: Delete{{.Name | pascalCase}} :exec
+DELETE FROM {{.GetFullTableName}}
+{{generateWhereConditions .}};

@@ -1,0 +1,4 @@
+-- name: Get{{.Name | pascalCase}} :one
+SELECT *
+FROM {{.GetFullTableName}}
+{{generateWhereConditions .}};

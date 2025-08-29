@@ -1,0 +1,6 @@
+-- name: Update{{.Name | pascalCase}} :one
+UPDATE {{.GetFullTableName}}
+SET {{range $i, $col := .GetUpdatableColumns}}{{if $i}},
+    {{end}}{{if $col.IsNullable}}{{quotedName $col}} = CASE WHEN {{sqlcArg (printf "null_%s" $col.Name)}}::bool = TRUE THEN NULL ELSE COALESCE({{sqlcNarg $col.Name}}, {{quotedName $col}}) END{{else}}{{quotedName $col}} = COALESCE({{sqlcNarg $col.Name}}, {{quotedName $col}}){{end}}{{end}}
+WHERE "id" = $1
+RETURNING *;
