@@ -63,7 +63,7 @@ type RegisterBasicRequest struct {
 	Username *string        `json:"username" validate:"omitempty,min=1,max=255"`
 	Email    *string        `json:"email" validate:"omitempty,email"`
 	Phone    *string        `json:"phone" validate:"omitempty,e164"`
-	Password *string        `json:"password" validate:"omitempty,min=8,max=72"`
+	Password string         `json:"password" validate:"required,min=8,max=72"`
 }
 
 type RegisterBasicResponse struct {
@@ -84,7 +84,7 @@ func (h *Handler) RegisterBasic(c echo.Context) error {
 		Username: req.Username,
 		Email:    req.Email,
 		Phone:    req.Phone,
-		Password: req.Password,
+		Password: &req.Password,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
