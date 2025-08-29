@@ -12,7 +12,7 @@ sql:
         emit_interface: true
         emit_prepared_queries: true
         emit_empty_slices: true # For api empty data response
-        emit_json_tags: false # Custom dto
+        emit_json_tags: true # Custom dto
 #        emit_pointers_for_null_types: true
         emit_enum_valid_method: true
         emit_all_enum_values: true
