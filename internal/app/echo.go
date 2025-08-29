@@ -7,6 +7,7 @@ import (
 	"shopnexus-remastered/internal/logger"
 	accountecho "shopnexus-remastered/internal/module/account/transport/echo"
 	authecho "shopnexus-remastered/internal/module/auth/transport/echo"
+	catalogecho "shopnexus-remastered/internal/module/catalog/transport/echo"
 	"shopnexus-remastered/internal/module/shared/transport/echo/validator"
 
 	"github.com/labstack/echo/v4"
@@ -33,6 +34,7 @@ type RouteParams struct {
 
 	Account *accountecho.Handler
 	Auth    *authecho.Handler
+	Catalog *catalogecho.Handler
 	// Add more handlers as needed
 }
 

@@ -5,6 +5,7 @@ import (
 	"shopnexus-remastered/internal/logger"
 	"shopnexus-remastered/internal/module/account"
 	"shopnexus-remastered/internal/module/auth"
+	"shopnexus-remastered/internal/module/catalog"
 
 	"go.uber.org/fx"
 )
@@ -25,6 +26,7 @@ var Module = fx.Module("main",
 	// Business modules
 	account.Module,
 	auth.Module,
+	catalog.Module,
 
 	// HTTP server
 	fx.Invoke(
