@@ -6,21 +6,21 @@ type ErrorWithCode interface {
 }
 
 type Error struct {
-	code    string
-	message string
+	ErrCode string `json:"code"`
+	Message string `json:"message"`
 }
 
 func (e Error) Error() string {
-	return e.message
+	return e.Message
 }
 
 func (e Error) Code() string {
-	return e.code
+	return e.ErrCode
 }
 
 func NewError(code, message string) Error {
 	return Error{
-		code:    code,
-		message: message,
+		ErrCode: code,
+		Message: message,
 	}
 }
