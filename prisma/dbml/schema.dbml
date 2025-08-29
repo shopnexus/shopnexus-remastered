@@ -12,6 +12,7 @@ Table account {
   username String [unique]
   password String
   date_created DateTime [default: `now()`, not null]
+  date_updated DateTime [default: `now()`, not null]
 }
 
 Table profile {
@@ -23,12 +24,21 @@ Table profile {
   avatar_rs_id BigInt [unique]
   email_verified Boolean [not null, default: false]
   phone_verified Boolean [not null, default: false]
+  date_created DateTime [default: `now()`, not null]
+  date_updated DateTime [default: `now()`, not null]
 }
 
 Table customer {
   id BigInt [pk, increment]
   account_id BigInt [unique, not null]
   default_address_id BigInt
+  date_created DateTime [default: `now()`, not null]
+  date_updated DateTime [default: `now()`, not null]
+}
+
+Table vendor {
+  id BigInt [pk, increment]
+  account_id BigInt [unique, not null]
 }
 
 Table cart_item {
@@ -37,15 +47,11 @@ Table cart_item {
   sku_id BigInt [not null]
   quantity BigInt [not null]
   date_created DateTime [default: `now()`, not null]
+  date_updated DateTime [default: `now()`, not null]
 
   indexes {
     (cart_id, sku_id) [unique]
   }
-}
-
-Table vendor {
-  id BigInt [pk, increment]
-  account_id BigInt [unique, not null]
 }
 
 Table address {
@@ -56,12 +62,12 @@ Table address {
   full_name String [not null]
   phone String [not null]
   phone_verified Boolean [not null, default: false]
-  street_address String [not null]
-  country String [not null]
+  address_line String [not null]
   city String [not null]
-  district String [not null]
-  ward String [not null]
+  state_province String [not null]
+  country String [not null]
   date_created DateTime [default: `now()`, not null]
+  date_updated DateTime [default: `now()`, not null]
 }
 
 Table brand {
@@ -78,7 +84,7 @@ Table category {
   parent_id BigInt
 }
 
-Table spu {
+Table product_spu {
   id BigInt [pk, increment]
   code String [unique, not null]
   account_id BigInt [not null]
@@ -93,7 +99,7 @@ Table spu {
   date_deleted DateTime
 }
 
-Table sku {
+Table product_sku {
   id BigInt [pk, increment]
   code String [unique, not null]
   spu_id BigInt [not null]
@@ -101,10 +107,9 @@ Table sku {
   can_combine Boolean [not null, default: false]
   date_created DateTime [default: `now()`, not null]
   date_deleted DateTime
-  version BigInt [not null, default: 1]
 }
 
-Table sku_attribute {
+Table product_sku_attribute {
   id BigInt [pk, increment]
   code String [unique, not null]
   sku_id BigInt [not null]
@@ -120,7 +125,7 @@ Table tag {
   description String [not null, default: '']
 }
 
-Table spu_tag {
+Table product_spu_tag {
   id BigInt [pk, increment]
   spu_id BigInt [not null]
   tag_id BigInt [not null]
@@ -180,11 +185,11 @@ Table order {
   id BigInt [pk, increment]
   code String [unique, not null]
   customer_id BigInt [not null]
-  invoice_id BigInt
   payment_method PaymentMethod [not null]
   status Status [not null]
   address String [not null]
   date_created DateTime [default: `now()`, not null]
+  date_updated DateTime [not null]
 }
 
 Table order_item {
@@ -240,8 +245,8 @@ Table refund_dispute {
   vendor_id BigInt [not null]
   reason String [not null]
   status Status [not null, default: 'Pending']
-  created_at DateTime [default: `now()`, not null]
-  updated_at DateTime [not null]
+  date_created DateTime [default: `now()`, not null]
+  date_updated DateTime [not null]
 }
 
 Table invoice {
@@ -316,10 +321,16 @@ Table event {
   account_id BigInt
   aggregate_id BigInt [not null]
   aggregate_type String [not null]
-  event_type String [not null]
+  event_type EventType [not null]
   payload Json [not null]
   version BigInt [not null]
   date_created DateTime [default: `now()`, not null]
+}
+
+Table search_sync {
+  id BigInt [pk, increment]
+  name String [not null]
+  last_synced DateTime [default: `now()`, not null]
 }
 
 Enum AccountType {
@@ -412,35 +423,41 @@ Enum Status {
   Failed
 }
 
+Enum EventType {
+  Created
+  Updated
+  Deleted
+}
+
 Ref: profile.account_id - account.id [delete: Cascade]
 
 Ref: customer.account_id - account.id [delete: Cascade]
 
+Ref: vendor.account_id - account.id [delete: Cascade]
+
 Ref: cart_item.cart_id > customer.id [delete: Cascade]
 
-Ref: cart_item.sku_id > sku.id [delete: Cascade]
-
-Ref: vendor.account_id - account.id [delete: Cascade]
+Ref: cart_item.sku_id > product_sku.id [delete: Cascade]
 
 Ref: address.account_id > account.id [delete: Cascade]
 
-Ref: spu.account_id > vendor.id [delete: Cascade]
+Ref: product_spu.account_id > vendor.id [delete: Cascade]
 
-Ref: spu.category_id > category.id [delete: Cascade]
+Ref: product_spu.category_id > category.id [delete: Cascade]
 
-Ref: spu.brand_id > brand.id [delete: Cascade]
+Ref: product_spu.brand_id > brand.id [delete: Cascade]
 
-Ref: sku.spu_id > spu.id [delete: Cascade]
+Ref: product_sku.spu_id > product_spu.id [delete: Cascade]
 
-Ref: sku_attribute.sku_id > sku.id [delete: Cascade]
+Ref: product_sku_attribute.sku_id > product_sku.id [delete: Cascade]
 
-Ref: spu_tag.spu_id > spu.id [delete: Cascade]
+Ref: product_spu_tag.spu_id > product_spu.id [delete: Cascade]
 
-Ref: spu_tag.tag_id > tag.id [delete: Cascade]
+Ref: product_spu_tag.tag_id > tag.id [delete: Cascade]
 
 Ref: comment.account_id > customer.id [delete: Cascade]
 
-Ref: sku_serial.sku_id > sku.id [delete: Cascade]
+Ref: sku_serial.sku_id > product_sku.id [delete: Cascade]
 
 Ref: stock_history.stock_id > stock.id [delete: Cascade]
 
@@ -448,7 +465,7 @@ Ref: order.customer_id > customer.id [delete: Cascade]
 
 Ref: order_item.order_id > order.id [delete: Cascade]
 
-Ref: order_item.sku_id > sku.id [delete: Cascade]
+Ref: order_item.sku_id > product_sku.id [delete: Cascade]
 
 Ref: order_item_serial.order_item_id > order_item.id [delete: Cascade]
 

@@ -12,7 +12,7 @@ model Brand {
   name        String
   description String
 
-  spus ProductSPU[]
+  spus ProductSpu[]
 
   @@map("brand")
   @@schema("catalog")
@@ -24,7 +24,7 @@ model ProductCategory {
   description String  @default("")
   parent_id   BigInt? // If null, this is a root category
 
-  spus ProductSPU[]
+  spus ProductSpu[]
 
   @@index([parent_id])
   @@map("category")
@@ -32,7 +32,7 @@ model ProductCategory {
 }
 
 // Important data, only allow update name/description
-model ProductSPU {
+model ProductSpu {
   id          BigInt @id @default(autoincrement())
   code        String @unique
   account_id  BigInt
@@ -51,16 +51,16 @@ model ProductSPU {
   category ProductCategory @relation(fields: [category_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
   brand    Brand           @relation(fields: [brand_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
   tags     ProductTag[]
-  products ProductSKU[]
+  products ProductSku[]
 
   @@index([account_id])
   @@index([category_id])
   @@index([brand_id])
-  @@map("spu")
+  @@map("product_spu")
   @@schema("catalog")
 }
 
-model ProductSKU {
+model ProductSku {
   id     BigInt @id @default(autoincrement())
   code   String @unique
   spu_id BigInt
@@ -70,21 +70,18 @@ model ProductSKU {
   date_created DateTime  @default(now()) @db.Timestamptz(3)
   date_deleted DateTime? @db.Timestamptz(3) // If not null, this product model is deleted, but still can be used for historical purposes
 
-  // Versioning all model related to product
-  version BigInt @default(1) // Version of the product, used to track the product change history
-
-  spu         ProductSPU      @relation(fields: [spu_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  spu         ProductSpu            @relation(fields: [spu_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
   serials     ProductSerial[]
   carts       CartItem[]
-  attributes  SKUAttribute[]
+  attributes  ProductSkuAttribute[]
   order_items OrderItem[]
 
   @@index([spu_id])
-  @@map("sku")
+  @@map("product_sku")
   @@schema("catalog")
 }
 
-model SKUAttribute {
+model ProductSkuAttribute {
   id     BigInt @id @default(autoincrement())
   code   String @unique
   sku_id BigInt
@@ -94,11 +91,11 @@ model SKUAttribute {
   date_created DateTime @default(now()) @db.Timestamptz(3)
   date_updated DateTime @default(now()) @updatedAt @db.Timestamptz(3)
 
-  sku ProductSKU @relation(fields: [sku_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  sku ProductSku @relation(fields: [sku_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
 
   @@index([sku_id])
   @@index([name])
-  @@map("sku_attribute")
+  @@map("product_sku_attribute")
   @@schema("catalog")
 }
 
@@ -118,13 +115,13 @@ model ProductTag {
   spu_id BigInt
   tag_id BigInt
 
-  spu ProductSPU @relation(fields: [spu_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  spu ProductSpu @relation(fields: [spu_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
   tag Tag        @relation(fields: [tag_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
 
   @@unique([spu_id, tag_id])
   @@index([spu_id])
   @@index([tag_id])
-  @@map("spu_tag")
+  @@map("product_spu_tag")
   @@schema("catalog")
 }
 

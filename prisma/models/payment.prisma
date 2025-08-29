@@ -28,7 +28,7 @@ model OrderItem {
   serials OrderItemSerial[]
   refund  Refund[]
   order   Order             @relation(fields: [order_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
-  sku     ProductSKU        @relation(fields: [sku_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  sku     ProductSku        @relation(fields: [sku_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
 
   //! @@unique([order_id, sku_id]); Should not be unique, because product can be added multiple times (due to product.can_combine)
   @@index([order_id])
@@ -119,10 +119,10 @@ model RefundDispute {
   refund_id BigInt // Refund id that this dispute belongs to
   vendor_id BigInt // id who created this dispute
 
-  reason     String
-  status     Status   @default(Pending)
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+  reason       String
+  status       Status   @default(Pending)
+  date_created DateTime @default(now()) @db.Timestamptz(3)
+  date_updated DateTime @updatedAt @db.Timestamptz(3)
 
   refund Refund @relation(fields: [refund_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
   vendor Vendor @relation(fields: [vendor_id], references: [id], onUpdate: Cascade, onDelete: Cascade)

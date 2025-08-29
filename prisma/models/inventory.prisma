@@ -24,7 +24,7 @@ model ProductSerial {
   status       ProductStatus
   date_created DateTime      @default(now()) @db.Timestamptz(3)
 
-  sku                ProductSKU        @relation(fields: [sku_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  sku                ProductSku        @relation(fields: [sku_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
   order_item_serials OrderItemSerial[]
 
   @@index([sku_id])
