@@ -3,6 +3,7 @@ package echo
 import (
 	"net/http"
 
+	"shopnexus-remastered/internal/db"
 	"shopnexus-remastered/internal/module/auth/biz"
 	"shopnexus-remastered/internal/module/shared/transport/echo/response"
 
@@ -58,10 +59,11 @@ func (h *Handler) LoginBasic(c echo.Context) error {
 }
 
 type RegisterBasicRequest struct {
-	Username *string `json:"username" validate:"omitempty,min=1,max=255"`
-	Email    *string `json:"email" validate:"omitempty,email"`
-	Phone    *string `json:"phone" validate:"omitempty,e164"`
-	Password *string `json:"password" validate:"omitempty,min=8,max=72"`
+	Type     db.AccountType `json:"type" validate:"required,oneof=Customer Vendor"`
+	Username *string        `json:"username" validate:"omitempty,min=1,max=255"`
+	Email    *string        `json:"email" validate:"omitempty,email"`
+	Phone    *string        `json:"phone" validate:"omitempty,e164"`
+	Password *string        `json:"password" validate:"omitempty,min=8,max=72"`
 }
 
 type RegisterBasicResponse struct {
@@ -78,6 +80,7 @@ func (h *Handler) RegisterBasic(c echo.Context) error {
 	}
 
 	result, err := h.biz.Register(c.Request().Context(), authbiz.RegisterParams{
+		Type:     req.Type,
 		Username: req.Username,
 		Email:    req.Email,
 		Phone:    req.Phone,
