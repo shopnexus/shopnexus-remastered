@@ -1638,6 +1638,7 @@ func (r *iteratorForCreateDefaultPromotionDiscount) Next() bool {
 func (r iteratorForCreateDefaultPromotionDiscount) Values() ([]interface{}, error) {
 	return []interface{}{
 		r.rows[0].ID,
+		r.rows[0].OrderWide,
 		r.rows[0].DiscountPercent,
 		r.rows[0].DiscountPrice,
 	}, nil
@@ -1648,7 +1649,7 @@ func (r iteratorForCreateDefaultPromotionDiscount) Err() error {
 }
 
 func (q *Queries) CreateDefaultPromotionDiscount(ctx context.Context, arg []CreateDefaultPromotionDiscountParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"promotion", "discount"}, []string{"id", "discount_percent", "discount_price"}, &iteratorForCreateDefaultPromotionDiscount{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"promotion", "discount"}, []string{"id", "order_wide", "discount_percent", "discount_price"}, &iteratorForCreateDefaultPromotionDiscount{rows: arg})
 }
 
 // iteratorForCreateDefaultSharedResource implements pgx.CopyFromSource.
@@ -2238,6 +2239,7 @@ func (r *iteratorForCreatePromotionDiscount) Next() bool {
 func (r iteratorForCreatePromotionDiscount) Values() ([]interface{}, error) {
 	return []interface{}{
 		r.rows[0].ID,
+		r.rows[0].OrderWide,
 		r.rows[0].MinSpend,
 		r.rows[0].MaxDiscount,
 		r.rows[0].DiscountPercent,
@@ -2250,7 +2252,7 @@ func (r iteratorForCreatePromotionDiscount) Err() error {
 }
 
 func (q *Queries) CreatePromotionDiscount(ctx context.Context, arg []CreatePromotionDiscountParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"promotion", "discount"}, []string{"id", "min_spend", "max_discount", "discount_percent", "discount_price"}, &iteratorForCreatePromotionDiscount{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"promotion", "discount"}, []string{"id", "order_wide", "min_spend", "max_discount", "discount_percent", "discount_price"}, &iteratorForCreatePromotionDiscount{rows: arg})
 }
 
 // iteratorForCreateSharedResource implements pgx.CopyFromSource.

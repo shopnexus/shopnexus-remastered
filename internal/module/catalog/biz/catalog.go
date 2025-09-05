@@ -3,12 +3,11 @@ package catalogbiz
 import (
 	"context"
 	catalogmodel "shopnexus-remastered/internal/module/catalog/model"
+	promotionmodel "shopnexus-remastered/internal/module/promotion/model"
 	"shopnexus-remastered/internal/utils/pgutil"
 
 	"shopnexus-remastered/internal/db"
 	sharedmodel "shopnexus-remastered/internal/module/shared/model"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type CatalogBiz struct {
@@ -43,18 +42,17 @@ func (c *CatalogBiz) ListProduct(ctx context.Context, params ListProductParams) 
 		return zero, err
 	}
 
+	spuIDs := make([]int64, len(spus))
+	for i, spu := range spus {
+		spuIDs[i] = spu.ID
+	}
+
 	// Get price
 
 	//// List only some SKUs for compact data
 	var skuMap = make(map[int64][]db.CatalogProductSku) // map[spuID][]SKU
 	skus, err := c.storage.ListCatalogProductSku(ctx, db.ListCatalogProductSkuParams{
-		SpuID: func() []int64 {
-			ids := make([]int64, len(spus))
-			for i, spu := range spus {
-				ids[i] = spu.ID
-			}
-			return ids
-		}(),
+		SpuID: spuIDs,
 	})
 	if err != nil {
 		return zero, err
@@ -64,13 +62,7 @@ func (c *CatalogBiz) ListProduct(ctx context.Context, params ListProductParams) 
 	}
 
 	// Calculate price
-	lowestPrices, err := c.storage.LowestPriceProductSku(ctx, func() []int64 {
-		ids := make([]int64, len(spus))
-		for i, spu := range spus {
-			ids[i] = spu.ID
-		}
-		return ids
-	}())
+	lowestPrices, err := c.storage.LowestPriceProductSku(ctx, spuIDs)
 	if err != nil {
 		return zero, err
 	}
@@ -96,7 +88,7 @@ func (c *CatalogBiz) ListProduct(ctx context.Context, params ListProductParams) 
 	for _, spu := range spus {
 		fp := flagshipPrice[spu.ID]
 		for _, promo := range promotions {
-			if catalogmodel.IsPromotionApplicable(promo, spu, fp.SkuID) {
+			if promotionmodel.IsPromotionApplicable(promo, spu, fp.SkuID) {
 				applicablePromotions[spu.ID] = append(applicablePromotions[spu.ID], promo)
 			}
 		}
@@ -120,7 +112,24 @@ func (c *CatalogBiz) ListProduct(ctx context.Context, params ListProductParams) 
 		fp := flagshipPrice[spu.ID]
 
 		for _, promo := range discountPromotions {
-			fp.Price = min(catalogmodel.CalculateDiscountedPrice(fp.OriginalPrice, promo), fp.Price)
+			discounted := promotionmodel.CalculateDiscountedItemPrice(fp.OriginalPrice, promo)
+			if fp.Price > discounted {
+				fp.AppliedPromotionID = &promo.ID
+				fp.Price = discounted
+			}
+		}
+	}
+
+	// Calculate rating score
+	ratings, err := c.storage.ListRating(ctx, db.ListRatingParams{
+		RefType: db.CatalogCommentRefTypeProductSPU,
+		RefID:   spuIDs,
+	})
+	ratingMap := make(map[int64]catalogmodel.Rating) // map[spuID][]Score
+	for _, rating := range ratings {
+		ratingMap[rating.RefID] = catalogmodel.Rating{
+			Score: float32(rating.Score),
+			Total: int(rating.Count),
 		}
 	}
 
@@ -133,14 +142,16 @@ func (c *CatalogBiz) ListProduct(ctx context.Context, params ListProductParams) 
 			BrandID:          spu.BrandID,
 			Name:             spu.Name,
 			Description:      spu.Description,
-			IsActive:         false,
-			DateManufactured: pgtype.Timestamptz{},
-			DateCreated:      pgtype.Timestamptz{},
-			DateUpdated:      pgtype.Timestamptz{},
-			DateDeleted:      pgtype.Timestamptz{},
+			IsActive:         spu.IsActive,
+			DateManufactured: spu.DateManufactured,
+			DateCreated:      spu.DateCreated,
+			DateUpdated:      spu.DateUpdated,
+			DateDeleted:      spu.DateDeleted,
 
-			Price:         flagshipPrice[spu.ID].Price,
-			OriginalPrice: flagshipPrice[spu.ID].OriginalPrice,
+			AppliedPromotionID: flagshipPrice[spu.ID].AppliedPromotionID,
+			Price:              flagshipPrice[spu.ID].Price,
+			OriginalPrice:      flagshipPrice[spu.ID].OriginalPrice,
+			Rating:             ratingMap[spu.ID],
 
 			Skus: nil,
 		})

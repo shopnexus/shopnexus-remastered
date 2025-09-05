@@ -1293,6 +1293,7 @@ type PromotionBase struct {
 
 type PromotionDiscount struct {
 	ID              int64       `json:"id"`
+	OrderWide       bool        `json:"order_wide"`
 	MinSpend        int64       `json:"min_spend"`
 	MaxDiscount     int64       `json:"max_discount"`
 	DiscountPercent pgtype.Int4 `json:"discount_percent"`

@@ -332,6 +332,7 @@ type Querier interface {
 	ListOrderVnpay(ctx context.Context, arg ListOrderVnpayParams) ([]OrderVnpay, error)
 	ListPromotionBase(ctx context.Context, arg ListPromotionBaseParams) ([]PromotionBase, error)
 	ListPromotionDiscount(ctx context.Context, arg ListPromotionDiscountParams) ([]PromotionDiscount, error)
+	ListRating(ctx context.Context, arg ListRatingParams) ([]ListRatingRow, error)
 	ListSharedResource(ctx context.Context, arg ListSharedResourceParams) ([]SharedResource, error)
 	ListSystemEvent(ctx context.Context, arg ListSystemEventParams) ([]SystemEvent, error)
 	ListSystemSearchSync(ctx context.Context, arg ListSystemSearchSyncParams) ([]SystemSearchSync, error)

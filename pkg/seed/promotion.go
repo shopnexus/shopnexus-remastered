@@ -191,6 +191,7 @@ func SeedPromotionSchema(ctx context.Context, storage db.Querier, fake *faker.Fa
 
 				discountParams = append(discountParams, db.CreatePromotionDiscountParams{
 					ID:              promotion.ID,
+					OrderWide:       fake.Bool(),
 					MinSpend:        minSpend,
 					MaxDiscount:     maxDiscount,
 					DiscountPercent: pgtype.Int4{Int32: ptr.DerefDefault(discountPercent, 0), Valid: discountPercent != nil},

@@ -9,6 +9,47 @@ import (
 	"context"
 )
 
+const listRating = `-- name: ListRating :many
+SELECT ref_id, AVG(score) as score, COUNT(*) as count
+FROM "catalog"."comment"
+WHERE (
+    ref_type = $1 AND
+    ref_id = ANY($2)
+)
+GROUP BY ref_id
+`
+
+type ListRatingParams struct {
+	RefType CatalogCommentRefType `json:"ref_type"`
+	RefID   []int64               `json:"ref_id"`
+}
+
+type ListRatingRow struct {
+	RefID int64   `json:"ref_id"`
+	Score float64 `json:"score"`
+	Count int64   `json:"count"`
+}
+
+func (q *Queries) ListRating(ctx context.Context, arg ListRatingParams) ([]ListRatingRow, error) {
+	rows, err := q.db.Query(ctx, listRating, arg.RefType, arg.RefID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRatingRow{}
+	for rows.Next() {
+		var i ListRatingRow
+		if err := rows.Scan(&i.RefID, &i.Score, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lowestPriceProductSku = `-- name: LowestPriceProductSku :many
 SELECT DISTINCT ON (spu_id) spu_id, id, price
 FROM "catalog"."product_sku"

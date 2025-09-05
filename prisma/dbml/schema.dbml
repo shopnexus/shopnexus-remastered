@@ -318,6 +318,7 @@ Table Promotion {
 
 Table PromotionDiscount {
   id BigInt [pk]
+  order_wide Boolean [not null]
   min_spend BigInt [not null, default: 0]
   max_discount BigInt [not null, default: 0]
   discount_percent Int

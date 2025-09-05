@@ -18,8 +18,10 @@ type Product struct {
 	DateUpdated      pgtype.Timestamptz `json:"date_updated"`
 	DateDeleted      pgtype.Timestamptz `json:"date_deleted"`
 
-	Price         int64 `json:"price"`
-	OriginalPrice int64 `json:"original_price"`
+	AppliedPromotionID *int64 `json:"applied_promotion_id"`
+	Price              int64  `json:"price"`
+	OriginalPrice      int64  `json:"original_price"`
+	Rating             Rating `json:"rating"`
 
 	Skus []ProductSku `json:"skus"`
 }
@@ -44,4 +46,17 @@ type ProductSkuAttribute struct {
 	Value       string             `json:"value"`
 	DateCreated pgtype.Timestamptz `json:"date_created"`
 	DateUpdated pgtype.Timestamptz `json:"date_updated"`
+}
+
+// FlagshipPrice is the best price for the product (currently is the lowest price of a product's SKU)
+type FlagshipPrice struct {
+	OriginalPrice      int64
+	Price              int64
+	SkuID              int64
+	AppliedPromotionID *int64
+}
+
+type Rating struct {
+	Score float32 `json:"score"`
+	Total int     `json:"total"`
 }

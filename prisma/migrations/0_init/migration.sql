@@ -452,6 +452,7 @@ CREATE TABLE "promotion"."base" (
 -- CreateTable
 CREATE TABLE "promotion"."discount" (
     "id" BIGINT NOT NULL,
+    "order_wide" BOOLEAN NOT NULL,
     "min_spend" BIGINT NOT NULL DEFAULT 0,
     "max_discount" BIGINT NOT NULL DEFAULT 0,
     "discount_percent" INTEGER,

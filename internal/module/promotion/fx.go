@@ -10,7 +10,7 @@ import (
 // Module provides the promotion module dependencies
 var Module = fx.Module("promotion",
 	fx.Provide(
-		promotionbiz.NewCatalogBiz,
+		promotionbiz.NewPromotionBiz,
 		promotionecho.NewHandler,
 	),
 )

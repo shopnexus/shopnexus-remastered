@@ -2944,6 +2944,7 @@ WHERE (
     ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
     ("id" >= sqlc.narg('id_from') OR sqlc.narg('id_from') IS NULL) AND
     ("id" <= sqlc.narg('id_to') OR sqlc.narg('id_to') IS NULL) AND
+    ("order_wide" = ANY(sqlc.slice('order_wide')) OR sqlc.slice('order_wide') IS NULL) AND
     ("min_spend" = ANY(sqlc.slice('min_spend')) OR sqlc.slice('min_spend') IS NULL) AND
     ("min_spend" >= sqlc.narg('min_spend_from') OR sqlc.narg('min_spend_from') IS NULL) AND
     ("min_spend" <= sqlc.narg('min_spend_to') OR sqlc.narg('min_spend_to') IS NULL) AND
@@ -2966,6 +2967,7 @@ WHERE (
     ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
     ("id" >= sqlc.narg('id_from') OR sqlc.narg('id_from') IS NULL) AND
     ("id" <= sqlc.narg('id_to') OR sqlc.narg('id_to') IS NULL) AND
+    ("order_wide" = ANY(sqlc.slice('order_wide')) OR sqlc.slice('order_wide') IS NULL) AND
     ("min_spend" = ANY(sqlc.slice('min_spend')) OR sqlc.slice('min_spend') IS NULL) AND
     ("min_spend" >= sqlc.narg('min_spend_from') OR sqlc.narg('min_spend_from') IS NULL) AND
     ("min_spend" <= sqlc.narg('min_spend_to') OR sqlc.narg('min_spend_to') IS NULL) AND
@@ -2987,6 +2989,7 @@ WHERE (
     ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
     ("id" >= sqlc.narg('id_from') OR sqlc.narg('id_from') IS NULL) AND
     ("id" <= sqlc.narg('id_to') OR sqlc.narg('id_to') IS NULL) AND
+    ("order_wide" = ANY(sqlc.slice('order_wide')) OR sqlc.slice('order_wide') IS NULL) AND
     ("min_spend" = ANY(sqlc.slice('min_spend')) OR sqlc.slice('min_spend') IS NULL) AND
     ("min_spend" >= sqlc.narg('min_spend_from') OR sqlc.narg('min_spend_from') IS NULL) AND
     ("min_spend" <= sqlc.narg('min_spend_to') OR sqlc.narg('min_spend_to') IS NULL) AND
@@ -3006,16 +3009,17 @@ OFFSET sqlc.narg('offset');
 
 
 -- name: CreatePromotionDiscount :copyfrom
-INSERT INTO "promotion"."discount" ("id", "min_spend", "max_discount", "discount_percent", "discount_price")
-VALUES ($1, $2, $3, $4, $5);
+INSERT INTO "promotion"."discount" ("id", "order_wide", "min_spend", "max_discount", "discount_percent", "discount_price")
+VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: CreateDefaultPromotionDiscount :copyfrom
-INSERT INTO "promotion"."discount" ("id", "discount_percent", "discount_price")
-VALUES ($1, $2, $3);
+INSERT INTO "promotion"."discount" ("id", "order_wide", "discount_percent", "discount_price")
+VALUES ($1, $2, $3, $4);
 
 -- name: UpdatePromotionDiscount :one
 UPDATE "promotion"."discount"
-SET "min_spend" = COALESCE(sqlc.narg('min_spend'), "min_spend"),
+SET "order_wide" = COALESCE(sqlc.narg('order_wide'), "order_wide"),
+    "min_spend" = COALESCE(sqlc.narg('min_spend'), "min_spend"),
     "max_discount" = COALESCE(sqlc.narg('max_discount'), "max_discount"),
     "discount_percent" = CASE WHEN sqlc.arg('null_discount_percent')::bool = TRUE THEN NULL ELSE COALESCE(sqlc.narg('discount_percent'), "discount_percent") END,
     "discount_price" = CASE WHEN sqlc.arg('null_discount_price')::bool = TRUE THEN NULL ELSE COALESCE(sqlc.narg('discount_price'), "discount_price") END

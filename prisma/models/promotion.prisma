@@ -55,6 +55,7 @@ model Promotion {
 model PromotionDiscount {
   id BigInt @id
 
+  order_wide       Boolean // true means the discount applies only to the total order amount, false means it applies to each item
   min_spend        BigInt  @default(0) // Minimum spend to apply this sale, 0 means applied immediately
   max_discount     BigInt  @default(0) // Maximum discount amount (fixed price), 0 means no limit
   discount_percent Int? // either discount_percent or discount_price

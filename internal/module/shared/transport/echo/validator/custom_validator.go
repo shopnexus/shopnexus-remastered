@@ -3,8 +3,7 @@ package validator
 import (
 	"encoding/json"
 	"fmt"
-
-	sharedmodel "shopnexus-remastered/internal/module/backup/shared/model"
+	sharedmodel "shopnexus-remastered/internal/module/shared/model"
 
 	"github.com/go-playground/locales/en"
 	ut "github.com/go-playground/universal-translator"

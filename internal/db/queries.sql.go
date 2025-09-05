@@ -1799,18 +1799,19 @@ WHERE (
     ("id" = ANY($1) OR $1 IS NULL) AND
     ("id" >= $2 OR $2 IS NULL) AND
     ("id" <= $3 OR $3 IS NULL) AND
-    ("min_spend" = ANY($4) OR $4 IS NULL) AND
-    ("min_spend" >= $5 OR $5 IS NULL) AND
-    ("min_spend" <= $6 OR $6 IS NULL) AND
-    ("max_discount" = ANY($7) OR $7 IS NULL) AND
-    ("max_discount" >= $8 OR $8 IS NULL) AND
-    ("max_discount" <= $9 OR $9 IS NULL) AND
-    ("discount_percent" = ANY($10) OR $10 IS NULL) AND
-    ("discount_percent" >= $11 OR $11 IS NULL) AND
-    ("discount_percent" <= $12 OR $12 IS NULL) AND
-    ("discount_price" = ANY($13) OR $13 IS NULL) AND
-    ("discount_price" >= $14 OR $14 IS NULL) AND
-    ("discount_price" <= $15 OR $15 IS NULL)
+    ("order_wide" = ANY($4) OR $4 IS NULL) AND
+    ("min_spend" = ANY($5) OR $5 IS NULL) AND
+    ("min_spend" >= $6 OR $6 IS NULL) AND
+    ("min_spend" <= $7 OR $7 IS NULL) AND
+    ("max_discount" = ANY($8) OR $8 IS NULL) AND
+    ("max_discount" >= $9 OR $9 IS NULL) AND
+    ("max_discount" <= $10 OR $10 IS NULL) AND
+    ("discount_percent" = ANY($11) OR $11 IS NULL) AND
+    ("discount_percent" >= $12 OR $12 IS NULL) AND
+    ("discount_percent" <= $13 OR $13 IS NULL) AND
+    ("discount_price" = ANY($14) OR $14 IS NULL) AND
+    ("discount_price" >= $15 OR $15 IS NULL) AND
+    ("discount_price" <= $16 OR $16 IS NULL)
 )
 `
 
@@ -1818,6 +1819,7 @@ type CountPromotionDiscountParams struct {
 	ID                  []int64       `json:"id"`
 	IDFrom              pgtype.Int8   `json:"id_from"`
 	IDTo                pgtype.Int8   `json:"id_to"`
+	OrderWide           []bool        `json:"order_wide"`
 	MinSpend            []int64       `json:"min_spend"`
 	MinSpendFrom        pgtype.Int8   `json:"min_spend_from"`
 	MinSpendTo          pgtype.Int8   `json:"min_spend_to"`
@@ -1837,6 +1839,7 @@ func (q *Queries) CountPromotionDiscount(ctx context.Context, arg CountPromotion
 		arg.ID,
 		arg.IDFrom,
 		arg.IDTo,
+		arg.OrderWide,
 		arg.MinSpend,
 		arg.MinSpendFrom,
 		arg.MinSpendTo,
@@ -2384,6 +2387,7 @@ type CreateDefaultPromotionBaseParams struct {
 
 type CreateDefaultPromotionDiscountParams struct {
 	ID              int64       `json:"id"`
+	OrderWide       bool        `json:"order_wide"`
 	DiscountPercent pgtype.Int4 `json:"discount_percent"`
 	DiscountPrice   pgtype.Int8 `json:"discount_price"`
 }
@@ -2532,6 +2536,7 @@ type CreatePromotionBaseParams struct {
 
 type CreatePromotionDiscountParams struct {
 	ID              int64       `json:"id"`
+	OrderWide       bool        `json:"order_wide"`
 	MinSpend        int64       `json:"min_spend"`
 	MaxDiscount     int64       `json:"max_discount"`
 	DiscountPercent pgtype.Int4 `json:"discount_percent"`
@@ -4850,18 +4855,19 @@ WHERE (
     ("id" = ANY($1) OR $1 IS NULL) AND
     ("id" >= $2 OR $2 IS NULL) AND
     ("id" <= $3 OR $3 IS NULL) AND
-    ("min_spend" = ANY($4) OR $4 IS NULL) AND
-    ("min_spend" >= $5 OR $5 IS NULL) AND
-    ("min_spend" <= $6 OR $6 IS NULL) AND
-    ("max_discount" = ANY($7) OR $7 IS NULL) AND
-    ("max_discount" >= $8 OR $8 IS NULL) AND
-    ("max_discount" <= $9 OR $9 IS NULL) AND
-    ("discount_percent" = ANY($10) OR $10 IS NULL) AND
-    ("discount_percent" >= $11 OR $11 IS NULL) AND
-    ("discount_percent" <= $12 OR $12 IS NULL) AND
-    ("discount_price" = ANY($13) OR $13 IS NULL) AND
-    ("discount_price" >= $14 OR $14 IS NULL) AND
-    ("discount_price" <= $15 OR $15 IS NULL)
+    ("order_wide" = ANY($4) OR $4 IS NULL) AND
+    ("min_spend" = ANY($5) OR $5 IS NULL) AND
+    ("min_spend" >= $6 OR $6 IS NULL) AND
+    ("min_spend" <= $7 OR $7 IS NULL) AND
+    ("max_discount" = ANY($8) OR $8 IS NULL) AND
+    ("max_discount" >= $9 OR $9 IS NULL) AND
+    ("max_discount" <= $10 OR $10 IS NULL) AND
+    ("discount_percent" = ANY($11) OR $11 IS NULL) AND
+    ("discount_percent" >= $12 OR $12 IS NULL) AND
+    ("discount_percent" <= $13 OR $13 IS NULL) AND
+    ("discount_price" = ANY($14) OR $14 IS NULL) AND
+    ("discount_price" >= $15 OR $15 IS NULL) AND
+    ("discount_price" <= $16 OR $16 IS NULL)
 )
 ) as exists
 `
@@ -4870,6 +4876,7 @@ type ExistsPromotionDiscountParams struct {
 	ID                  []int64       `json:"id"`
 	IDFrom              pgtype.Int8   `json:"id_from"`
 	IDTo                pgtype.Int8   `json:"id_to"`
+	OrderWide           []bool        `json:"order_wide"`
 	MinSpend            []int64       `json:"min_spend"`
 	MinSpendFrom        pgtype.Int8   `json:"min_spend_from"`
 	MinSpendTo          pgtype.Int8   `json:"min_spend_to"`
@@ -4889,6 +4896,7 @@ func (q *Queries) ExistsPromotionDiscount(ctx context.Context, arg ExistsPromoti
 		arg.ID,
 		arg.IDFrom,
 		arg.IDTo,
+		arg.OrderWide,
 		arg.MinSpend,
 		arg.MinSpendFrom,
 		arg.MinSpendTo,
@@ -5963,7 +5971,7 @@ const getPromotionDiscount = `-- name: GetPromotionDiscount :one
 
 
 
-SELECT id, min_spend, max_discount, discount_percent, discount_price
+SELECT id, order_wide, min_spend, max_discount, discount_percent, discount_price
 FROM "promotion"."discount"
 WHERE ("id" = $1)
 `
@@ -5976,6 +5984,7 @@ func (q *Queries) GetPromotionDiscount(ctx context.Context, id pgtype.Int8) (Pro
 	var i PromotionDiscount
 	err := row.Scan(
 		&i.ID,
+		&i.OrderWide,
 		&i.MinSpend,
 		&i.MaxDiscount,
 		&i.DiscountPercent,
@@ -8630,34 +8639,36 @@ func (q *Queries) ListPromotionBase(ctx context.Context, arg ListPromotionBasePa
 }
 
 const listPromotionDiscount = `-- name: ListPromotionDiscount :many
-SELECT id, min_spend, max_discount, discount_percent, discount_price
+SELECT id, order_wide, min_spend, max_discount, discount_percent, discount_price
 FROM "promotion"."discount"
 WHERE (
     ("id" = ANY($1) OR $1 IS NULL) AND
     ("id" >= $2 OR $2 IS NULL) AND
     ("id" <= $3 OR $3 IS NULL) AND
-    ("min_spend" = ANY($4) OR $4 IS NULL) AND
-    ("min_spend" >= $5 OR $5 IS NULL) AND
-    ("min_spend" <= $6 OR $6 IS NULL) AND
-    ("max_discount" = ANY($7) OR $7 IS NULL) AND
-    ("max_discount" >= $8 OR $8 IS NULL) AND
-    ("max_discount" <= $9 OR $9 IS NULL) AND
-    ("discount_percent" = ANY($10) OR $10 IS NULL) AND
-    ("discount_percent" >= $11 OR $11 IS NULL) AND
-    ("discount_percent" <= $12 OR $12 IS NULL) AND
-    ("discount_price" = ANY($13) OR $13 IS NULL) AND
-    ("discount_price" >= $14 OR $14 IS NULL) AND
-    ("discount_price" <= $15 OR $15 IS NULL)
+    ("order_wide" = ANY($4) OR $4 IS NULL) AND
+    ("min_spend" = ANY($5) OR $5 IS NULL) AND
+    ("min_spend" >= $6 OR $6 IS NULL) AND
+    ("min_spend" <= $7 OR $7 IS NULL) AND
+    ("max_discount" = ANY($8) OR $8 IS NULL) AND
+    ("max_discount" >= $9 OR $9 IS NULL) AND
+    ("max_discount" <= $10 OR $10 IS NULL) AND
+    ("discount_percent" = ANY($11) OR $11 IS NULL) AND
+    ("discount_percent" >= $12 OR $12 IS NULL) AND
+    ("discount_percent" <= $13 OR $13 IS NULL) AND
+    ("discount_price" = ANY($14) OR $14 IS NULL) AND
+    ("discount_price" >= $15 OR $15 IS NULL) AND
+    ("discount_price" <= $16 OR $16 IS NULL)
 )
 ORDER BY "id"
-LIMIT $17
-OFFSET $16
+LIMIT $18
+OFFSET $17
 `
 
 type ListPromotionDiscountParams struct {
 	ID                  []int64       `json:"id"`
 	IDFrom              pgtype.Int8   `json:"id_from"`
 	IDTo                pgtype.Int8   `json:"id_to"`
+	OrderWide           []bool        `json:"order_wide"`
 	MinSpend            []int64       `json:"min_spend"`
 	MinSpendFrom        pgtype.Int8   `json:"min_spend_from"`
 	MinSpendTo          pgtype.Int8   `json:"min_spend_to"`
@@ -8679,6 +8690,7 @@ func (q *Queries) ListPromotionDiscount(ctx context.Context, arg ListPromotionDi
 		arg.ID,
 		arg.IDFrom,
 		arg.IDTo,
+		arg.OrderWide,
 		arg.MinSpend,
 		arg.MinSpendFrom,
 		arg.MinSpendTo,
@@ -8703,6 +8715,7 @@ func (q *Queries) ListPromotionDiscount(ctx context.Context, arg ListPromotionDi
 		var i PromotionDiscount
 		if err := rows.Scan(
 			&i.ID,
+			&i.OrderWide,
 			&i.MinSpend,
 			&i.MaxDiscount,
 			&i.DiscountPercent,
@@ -10307,15 +10320,17 @@ func (q *Queries) UpdatePromotionBase(ctx context.Context, arg UpdatePromotionBa
 
 const updatePromotionDiscount = `-- name: UpdatePromotionDiscount :one
 UPDATE "promotion"."discount"
-SET "min_spend" = COALESCE($1, "min_spend"),
-    "max_discount" = COALESCE($2, "max_discount"),
-    "discount_percent" = CASE WHEN $3::bool = TRUE THEN NULL ELSE COALESCE($4, "discount_percent") END,
-    "discount_price" = CASE WHEN $5::bool = TRUE THEN NULL ELSE COALESCE($6, "discount_price") END
-WHERE ("id" = $7)
-RETURNING id, min_spend, max_discount, discount_percent, discount_price
+SET "order_wide" = COALESCE($1, "order_wide"),
+    "min_spend" = COALESCE($2, "min_spend"),
+    "max_discount" = COALESCE($3, "max_discount"),
+    "discount_percent" = CASE WHEN $4::bool = TRUE THEN NULL ELSE COALESCE($5, "discount_percent") END,
+    "discount_price" = CASE WHEN $6::bool = TRUE THEN NULL ELSE COALESCE($7, "discount_price") END
+WHERE ("id" = $8)
+RETURNING id, order_wide, min_spend, max_discount, discount_percent, discount_price
 `
 
 type UpdatePromotionDiscountParams struct {
+	OrderWide           pgtype.Bool `json:"order_wide"`
 	MinSpend            pgtype.Int8 `json:"min_spend"`
 	MaxDiscount         pgtype.Int8 `json:"max_discount"`
 	NullDiscountPercent bool        `json:"null_discount_percent"`
@@ -10327,6 +10342,7 @@ type UpdatePromotionDiscountParams struct {
 
 func (q *Queries) UpdatePromotionDiscount(ctx context.Context, arg UpdatePromotionDiscountParams) (PromotionDiscount, error) {
 	row := q.db.QueryRow(ctx, updatePromotionDiscount,
+		arg.OrderWide,
 		arg.MinSpend,
 		arg.MaxDiscount,
 		arg.NullDiscountPercent,
@@ -10338,6 +10354,7 @@ func (q *Queries) UpdatePromotionDiscount(ctx context.Context, arg UpdatePromoti
 	var i PromotionDiscount
 	err := row.Scan(
 		&i.ID,
+		&i.OrderWide,
 		&i.MinSpend,
 		&i.MaxDiscount,
 		&i.DiscountPercent,
