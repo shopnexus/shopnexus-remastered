@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"shopnexus-remastered/internal/module/shared/transport/echo/binder"
 
 	"shopnexus-remastered/config"
 	"shopnexus-remastered/internal/logger"
@@ -46,6 +47,7 @@ func SetupEcho(params RouteParams) {
 		logger.Log.Sugar().Fatalf("Failed to create validator: %v", err)
 	}
 	params.Echo.Validator = customVal
+	params.Echo.Binder = binder.NewCustomBinder()
 
 	// Health check
 	params.Echo.GET("/health", func(c echo.Context) error {
