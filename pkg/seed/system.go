@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"shopnexus-remastered/internal/utils/pgutil"
 	"time"
 
 	"shopnexus-remastered/internal/db"
@@ -23,6 +24,9 @@ type SystemSeedData struct {
 func SeedSystemSchema(ctx context.Context, storage db.Querier, fake *faker.Faker, cfg *SeedConfig, accountData *AccountSeedData) (*SystemSeedData, error) {
 	fmt.Println("⚙️ Seeding system schema...")
 
+	// Tạo unique tracker (system events thường không cần unique constraints)
+	// tracker := NewUniqueTracker()
+
 	data := &SystemSeedData{
 		Events:      make([]db.SystemEvent, 0),
 		SearchSyncs: make([]db.SystemSearchSync, 0),
@@ -30,7 +34,9 @@ func SeedSystemSchema(ctx context.Context, storage db.Querier, fake *faker.Faker
 
 	// Create search sync records for different search engines
 	searchEngines := []string{"Elasticsearch", "Algolia", "Meilisearch", "Solr", "Typesense"}
-	for _, engine := range searchEngines {
+	searchSyncParams := make([]db.CreateSystemSearchSyncParams, len(searchEngines))
+
+	for i, engine := range searchEngines {
 		// Create some with recent sync times, some with older sync times
 		var lastSynced time.Time
 		if fake.Boolean().Bool() {
@@ -41,14 +47,38 @@ func SeedSystemSchema(ctx context.Context, storage db.Querier, fake *faker.Faker
 			lastSynced = time.Now().AddDate(0, 0, -(fake.RandomDigit()%30 + 1))
 		}
 
-		searchSync, err := storage.CreateSearchSync(ctx, db.CreateSearchSyncParams{
+		searchSyncParams[i] = db.CreateSystemSearchSyncParams{
 			Name:       engine,
 			LastSynced: pgtype.Timestamptz{Time: lastSynced, Valid: true},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create search sync for %s: %w", engine, err)
 		}
-		data.SearchSyncs = append(data.SearchSyncs, searchSync)
+	}
+
+	// Bulk insert search syncs
+	_, err := storage.CreateSystemSearchSync(ctx, searchSyncParams)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bulk create search syncs: %w", err)
+	}
+
+	// Query back created search syncs
+	searchSyncs, err := storage.ListSystemSearchSync(ctx, db.ListSystemSearchSyncParams{
+		Limit:  pgutil.Int32ToPgInt4(int32(len(searchSyncParams) * 2)),
+		Offset: pgutil.Int32ToPgInt4(0),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query back created search syncs: %w", err)
+	}
+
+	// Match search syncs with our parameters by name
+	searchSyncNameMap := make(map[string]db.SystemSearchSync)
+	for _, searchSync := range searchSyncs {
+		searchSyncNameMap[searchSync.Name] = searchSync
+	}
+
+	// Populate data.SearchSyncs with actual database records
+	for _, params := range searchSyncParams {
+		if searchSync, exists := searchSyncNameMap[params.Name]; exists {
+			data.SearchSyncs = append(data.SearchSyncs, searchSync)
+		}
 	}
 
 	// Create system events
@@ -59,6 +89,8 @@ func SeedSystemSchema(ctx context.Context, storage db.Querier, fake *faker.Faker
 	}
 
 	eventCount := cfg.AccountCount + cfg.ProductCount + cfg.OrderCount // Generate events for major entities
+	eventParams := make([]db.CreateSystemEventParams, eventCount)
+
 	for i := 0; i < eventCount; i++ {
 		eventType := eventTypes[fake.RandomDigit()%len(eventTypes)]
 		aggregateType := aggregateTypes[fake.RandomDigit()%len(aggregateTypes)]
@@ -79,7 +111,7 @@ func SeedSystemSchema(ctx context.Context, storage db.Querier, fake *faker.Faker
 		// Event time within the last 30 days
 		eventTime := time.Now().Add(-time.Duration(fake.RandomDigit()%30*24) * time.Hour)
 
-		event, err := storage.CreateEvent(ctx, db.CreateEventParams{
+		eventParams[i] = db.CreateSystemEventParams{
 			AccountID:     pgtype.Int8{Int64: ptr.DerefDefault(accountID, 0), Valid: accountID != nil},
 			AggregateID:   aggregateID,
 			AggregateType: aggregateType,
@@ -87,12 +119,26 @@ func SeedSystemSchema(ctx context.Context, storage db.Querier, fake *faker.Faker
 			Payload:       payloadMarshal,
 			Version:       version,
 			DateCreated:   pgtype.Timestamptz{Time: eventTime, Valid: true},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create event %d: %w", i+1, err)
 		}
-		data.Events = append(data.Events, event)
 	}
+
+	// Bulk insert system events
+	_, err = storage.CreateSystemEvent(ctx, eventParams)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bulk create system events: %w", err)
+	}
+
+	// Query back created system events
+	events, err := storage.ListSystemEvent(ctx, db.ListSystemEventParams{
+		Limit:  pgutil.Int32ToPgInt4(int32(len(eventParams) * 2)),
+		Offset: pgutil.Int32ToPgInt4(0),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query back created system events: %w", err)
+	}
+
+	// Populate data.Events with actual database records
+	data.Events = events
 
 	fmt.Printf("✅ System schema seeded: %d events, %d search syncs\n",
 		len(data.Events), len(data.SearchSyncs))

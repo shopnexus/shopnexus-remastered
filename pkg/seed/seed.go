@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"shopnexus-remastered/internal/utils/pgutil"
 
 	"shopnexus-remastered/config"
 	"shopnexus-remastered/internal/client/pgxpool"
 	"shopnexus-remastered/internal/db"
-	pgxsqlc "shopnexus-remastered/internal/utils/pgx/sqlc"
 
 	"github.com/jaswdr/faker/v2"
 )
@@ -36,7 +36,7 @@ func DefaultSeedConfig() *SeedConfig {
 }
 
 // NewDatabase creates a new database connection
-func NewDatabase(cfg *config.Config) (*pgxsqlc.Storage, error) {
+func NewDatabase(cfg *config.Config) (*pgutil.Storage, error) {
 	pool, err := pgxpool.New(pgxpool.Options{
 		Url:             cfg.Postgres.Url,
 		Host:            cfg.Postgres.Host,
@@ -51,7 +51,7 @@ func NewDatabase(cfg *config.Config) (*pgxsqlc.Storage, error) {
 		return nil, err
 	}
 
-	return pgxsqlc.NewStorage(pool), nil
+	return pgutil.NewStorage(pool), nil
 }
 
 // SeedAll seeds all schemas with fake data
@@ -80,12 +80,12 @@ func SeedAll(ctx context.Context, storage db.Querier, fake *faker.Faker, cfg *Se
 		return fmt.Errorf("failed to seed inventory schema: %w", err)
 	}
 
-	paymentData, err := SeedPaymentSchema(ctx, storage, fake, cfg, accountData, catalogData, inventoryData)
+	_, err = SeedPaymentSchema(ctx, storage, fake, cfg, accountData, catalogData, inventoryData)
 	if err != nil {
 		return fmt.Errorf("failed to seed payment schema: %w", err)
 	}
 
-	_, err = SeedPromotionSchema(ctx, storage, fake, cfg, paymentData)
+	_, err = SeedPromotionSchema(ctx, storage, fake, cfg, accountData, catalogData)
 	if err != nil {
 		return fmt.Errorf("failed to seed promotion schema: %w", err)
 	}

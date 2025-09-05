@@ -20,7 +20,11 @@ func SeedCartItems(ctx context.Context, storage db.Querier, fake *faker.Faker, c
 		return nil
 	}
 
-	cartItemsCreated := 0
+	// Tạo unique tracker cho cart items (không cần unique constraints cho cart items thông thường)
+	// tracker := NewUniqueTracker()
+
+	// Prepare bulk cart item data
+	var cartItemParams []db.CreateAccountCartItemParams
 
 	// Create cart items for some customers (50% of customers have items in cart)
 	for _, customer := range accountData.Customers {
@@ -43,20 +47,24 @@ func SeedCartItems(ctx context.Context, storage db.Querier, fake *faker.Faker, c
 
 			quantity := int64(fake.RandomDigit()%3 + 1) // 1-3 quantity
 
-			_, err := storage.CreateCartItem(ctx, db.CreateCartItemParams{
+			cartItemParams = append(cartItemParams, db.CreateAccountCartItemParams{
 				CartID:      customer.ID, // cart_id is customer.id
 				SkuID:       sku.ID,
 				Quantity:    quantity,
 				DateUpdated: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 				DateCreated: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 			})
-			if err != nil {
-				return fmt.Errorf("failed to create cart item for customer %d: %w", customer.ID, err)
-			}
-			cartItemsCreated++
 		}
 	}
 
-	fmt.Printf("✅ Cart items seeded: %d items\n", cartItemsCreated)
+	// Bulk insert cart items
+	if len(cartItemParams) > 0 {
+		_, err := storage.CreateAccountCartItem(ctx, cartItemParams)
+		if err != nil {
+			return fmt.Errorf("failed to bulk create cart items: %w", err)
+		}
+	}
+
+	fmt.Printf("✅ Cart items seeded: %d items\n", len(cartItemParams))
 	return nil
 }

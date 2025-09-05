@@ -3,6 +3,7 @@ package seed
 import (
 	"context"
 	"fmt"
+	"shopnexus-remastered/internal/utils/pgutil"
 	"time"
 
 	"shopnexus-remastered/internal/db"
@@ -22,6 +23,9 @@ type InventorySeedData struct {
 func SeedInventorySchema(ctx context.Context, storage db.Querier, fake *faker.Faker, cfg *SeedConfig, catalogData *CatalogSeedData) (*InventorySeedData, error) {
 	fmt.Println("📦 Seeding inventory schema...")
 
+	// Tạo unique tracker để theo dõi tính duy nhất
+	tracker := NewUniqueTracker()
+
 	data := &InventorySeedData{
 		ProductSerials: make([]db.InventorySkuSerial, 0),
 		Stocks:         make([]db.InventoryStock, 0),
@@ -33,40 +37,39 @@ func SeedInventorySchema(ctx context.Context, storage db.Querier, fake *faker.Fa
 		return data, nil
 	}
 
-	// Create stock records for each product SKU
-	for _, sku := range catalogData.ProductSkus {
+	// Prepare bulk stock data
+	stockParams := make([]db.CreateInventoryStockParams, len(catalogData.ProductSkus))
+	stockHistoryParams := make([]db.CreateInventoryStockHistoryParams, 0)
+	serialParams := make([]db.CreateInventorySkuSerialParams, 0)
+
+	baseStockID := int64(8000)
+
+	for i, sku := range catalogData.ProductSkus {
 		currentStock := int64(fake.RandomDigit()%200 + 10) // 10-209 items in stock
 		sold := int64(fake.RandomDigit() % 50)             // 0-49 items sold
 
-		stock, err := storage.CreateStock(ctx, db.CreateStockParams{
+		stockParams[i] = db.CreateInventoryStockParams{
 			RefType:      db.InventoryStockTypeProductSKU,
 			RefID:        sku.ID,
 			CurrentStock: currentStock,
 			Sold:         sold,
 			DateCreated:  pgtype.Timestamptz{Time: time.Now(), Valid: true},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create stock for SKU %d: %w", sku.ID, err)
 		}
-		data.Stocks = append(data.Stocks, stock)
 
-		// Create 2-5 stock history entries for each stock
-		historyCount := fake.RandomDigit()%4 + 2
-		for i := 0; i < historyCount; i++ {
+		// Prepare stock history for this stock
+		stockID := baseStockID + int64(i)
+		historyCount := fake.RandomDigit()%4 + 2 // 2-5 history entries
+		for j := 0; j < historyCount; j++ {
 			change := int64(fake.RandomDigit()%100 + 1) // Positive number (stock added)
 			if fake.Boolean().Bool() {
 				change = -change // Negative number (stock removed)
 			}
 
-			history, err := storage.CreateStockHistory(ctx, db.CreateStockHistoryParams{
-				StockID:     stock.ID,
+			stockHistoryParams = append(stockHistoryParams, db.CreateInventoryStockHistoryParams{
+				StockID:     stockID,
 				Change:      change,
 				DateCreated: pgtype.Timestamptz{Time: time.Now().Add(-time.Duration(fake.RandomDigit()%720) * time.Hour), Valid: true}, // Within last 30 days
 			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to create stock history: %w", err)
-			}
-			data.StockHistories = append(data.StockHistories, history)
 		}
 
 		// Create serial numbers for some products (typically electronics, valuable items)
@@ -81,17 +84,111 @@ func SeedInventorySchema(ctx context.Context, storage db.Querier, fake *faker.Fa
 			for j := 0; j < serialCount; j++ {
 				var status = statuses[fake.RandomDigit()%len(statuses)]
 
-				serial, err := retryWithUniqueValues(3, func(attempt int) (db.InventorySkuSerial, error) {
-					return storage.CreateSkuSerial(ctx, db.CreateSkuSerialParams{
-						SerialNumber: generateUniqueSerialNumber(fake),
-						SkuID:        sku.ID,
-						Status:       status,
-						DateCreated:  pgtype.Timestamptz{Time: time.Now(), Valid: true},
-					})
+				serialParams = append(serialParams, db.CreateInventorySkuSerialParams{
+					SerialNumber: generateUniqueSerialNumberWithTracker(fake, tracker),
+					SkuID:        sku.ID,
+					Status:       status,
+					DateCreated:  pgtype.Timestamptz{Time: time.Now(), Valid: true},
 				})
-				if err != nil {
-					return nil, fmt.Errorf("failed to create product serial: %w", err)
-				}
+			}
+		}
+	}
+
+	// Bulk insert stocks
+	_, err := storage.CreateInventoryStock(ctx, stockParams)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bulk create stocks: %w", err)
+	}
+
+	// Query back created stocks
+	stocks, err := storage.ListInventoryStock(ctx, db.ListInventoryStockParams{
+		Limit:  pgutil.Int32ToPgInt4(int32(len(stockParams) * 2)),
+		Offset: pgutil.Int32ToPgInt4(0),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query back created stocks: %w", err)
+	}
+
+	// Match stocks with SKUs by RefID (SKU ID)
+	stockRefMap := make(map[int64]db.InventoryStock)
+	for _, stock := range stocks {
+		stockRefMap[stock.RefID] = stock
+	}
+
+	// Populate data.Stocks with actual database records
+	for _, params := range stockParams {
+		if stock, exists := stockRefMap[params.RefID]; exists {
+			data.Stocks = append(data.Stocks, stock)
+		}
+	}
+
+	// Update stock history parameters with actual stock IDs
+	// We need to map the temporary stock IDs to real stock IDs
+	for i := range stockHistoryParams {
+		tempStockIndex := int(stockHistoryParams[i].StockID - baseStockID)
+		if tempStockIndex >= 0 && tempStockIndex < len(catalogData.ProductSkus) {
+			skuID := catalogData.ProductSkus[tempStockIndex].ID
+			if stock, exists := stockRefMap[skuID]; exists {
+				stockHistoryParams[i].StockID = stock.ID
+			}
+		}
+	}
+
+	// Bulk insert stock histories
+	if len(stockHistoryParams) > 0 {
+		// Filter out histories without valid stock IDs
+		validHistoryParams := make([]db.CreateInventoryStockHistoryParams, 0)
+		for _, history := range stockHistoryParams {
+			if history.StockID > 0 {
+				validHistoryParams = append(validHistoryParams, history)
+			}
+		}
+
+		if len(validHistoryParams) > 0 {
+			_, err = storage.CreateInventoryStockHistory(ctx, validHistoryParams)
+			if err != nil {
+				return nil, fmt.Errorf("failed to bulk create stock histories: %w", err)
+			}
+
+			// Query back created stock histories
+			stockHistories, err := storage.ListInventoryStockHistory(ctx, db.ListInventoryStockHistoryParams{
+				Limit:  pgutil.Int32ToPgInt4(int32(len(validHistoryParams) * 2)),
+				Offset: pgutil.Int32ToPgInt4(0),
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to query back created stock histories: %w", err)
+			}
+
+			// Populate data.StockHistories with actual database records
+			data.StockHistories = stockHistories
+		}
+	}
+
+	// Bulk insert product serials
+	if len(serialParams) > 0 {
+		_, err = storage.CreateInventorySkuSerial(ctx, serialParams)
+		if err != nil {
+			return nil, fmt.Errorf("failed to bulk create product serials: %w", err)
+		}
+
+		// Query back created product serials
+		productSerials, err := storage.ListInventorySkuSerial(ctx, db.ListInventorySkuSerialParams{
+			Limit:  pgutil.Int32ToPgInt4(int32(len(serialParams) * 2)),
+			Offset: pgutil.Int32ToPgInt4(0),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to query back created product serials: %w", err)
+		}
+
+		// Match serials with our parameters by serial number (unique identifier)
+		serialNumberMap := make(map[string]db.InventorySkuSerial)
+		for _, serial := range productSerials {
+			serialNumberMap[serial.SerialNumber] = serial
+		}
+
+		// Populate data.ProductSerials with actual database records
+		for _, params := range serialParams {
+			if serial, exists := serialNumberMap[params.SerialNumber]; exists {
 				data.ProductSerials = append(data.ProductSerials, serial)
 			}
 		}

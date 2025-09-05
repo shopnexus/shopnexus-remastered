@@ -3,6 +3,7 @@ package seed
 import (
 	"context"
 	"fmt"
+	"shopnexus-remastered/internal/utils/pgutil"
 
 	"shopnexus-remastered/internal/db"
 
@@ -18,6 +19,9 @@ type SharedSeedData struct {
 func SeedSharedSchema(ctx context.Context, storage db.Querier, fake *faker.Faker, cfg *SeedConfig) (*SharedSeedData, error) {
 	fmt.Println("🗂️ Seeding shared schema...")
 
+	// Tạo unique tracker (shared resources thường không cần unique constraints đặc biệt)
+	// tracker := NewUniqueTracker()
+
 	data := &SharedSeedData{
 		Resources: make([]db.SharedResource, 0),
 	}
@@ -30,6 +34,8 @@ func SeedSharedSchema(ctx context.Context, storage db.Querier, fake *faker.Faker
 
 	// Create resources
 	resourceCount := cfg.AccountCount + cfg.ProductCount // Resources for avatars and product images
+	resourceParams := make([]db.CreateSharedResourceParams, resourceCount)
+
 	for i := 0; i < resourceCount; i++ {
 		resourceType := resourceTypes[fake.RandomDigit()%len(resourceTypes)]
 		mimeType := mimeTypes[fake.RandomDigit()%len(mimeTypes)]
@@ -43,20 +49,32 @@ func SeedSharedSchema(ctx context.Context, storage db.Querier, fake *faker.Faker
 		ownerID := int64(fake.RandomDigit()%1000 + 1) // Random owner ID
 		order := fake.RandomDigit() % 10              // Order for multiple resources of same owner
 
-		resource, err := retryWithUniqueValues(3, func(attempt int) (db.SharedResource, error) {
-			return storage.CreateResource(ctx, db.CreateResourceParams{
-				MimeType:  mimeType,
-				OwnerID:   ownerID,
-				OwnerType: resourceType,
-				Url:       generateResourceURL(fake, resourceType, mimeType),
-				Order:     int32(order),
-			})
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create resource %d: %w", i+1, err)
+		resourceParams[i] = db.CreateSharedResourceParams{
+			MimeType:  mimeType,
+			OwnerID:   ownerID,
+			OwnerType: resourceType,
+			Url:       generateResourceURL(fake, resourceType, mimeType),
+			Order:     int32(order),
 		}
-		data.Resources = append(data.Resources, resource)
 	}
+
+	// Bulk insert resources
+	_, err := storage.CreateSharedResource(ctx, resourceParams)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bulk create resources: %w", err)
+	}
+
+	// Query back created resources
+	resources, err := storage.ListSharedResource(ctx, db.ListSharedResourceParams{
+		Limit:  pgutil.Int32ToPgInt4(int32(len(resourceParams) * 2)),
+		Offset: pgutil.Int32ToPgInt4(0),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query back created resources: %w", err)
+	}
+
+	// Populate data.Resources with actual database records
+	data.Resources = resources
 
 	fmt.Printf("✅ Shared schema seeded: %d resources\n", len(data.Resources))
 	return data, nil
