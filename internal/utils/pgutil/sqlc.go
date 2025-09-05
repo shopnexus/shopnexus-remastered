@@ -1,4 +1,4 @@
-package pgxsqlc
+package pgutil
 
 import (
 	"context"
