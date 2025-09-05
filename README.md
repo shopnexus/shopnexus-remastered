@@ -9,6 +9,10 @@
 - Modular monolith: all services in one process -> everything is easy 🤑
 - Microservices: each service run its own process -> scaling and independent deployment, but hell for debugging 🥀
 
+### 2. Support array in request params (separated by comma)
+- Example: `/products?ids=1,2,3`
+- Use sqlc.slice to filter by array of ids in sql query => faster fetching, reduce n+1 query problem
+
 ## My code, my rules
 
 ### Database
