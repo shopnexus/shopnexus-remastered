@@ -21,6 +21,13 @@ func (p *PaginationParams) GetOffset() int32 {
 	return offset
 }
 
+func (p *PaginationParams) GetPage() int32 {
+	if p.Page <= 0 {
+		return 1 // default page
+	}
+	return p.Page
+}
+
 func (p *PaginationParams) GetLimit() int32 {
 	if p.Limit <= 0 {
 		return 10 // default limit
@@ -47,7 +54,8 @@ func (p *PaginationParams) NextPage(total int64) *int32 {
 	return nil
 }
 
-func (p *PaginationParams) NextCursor(total int64) *string {
+func (p *PaginationParams) NextCursor(lastID int64) *string {
+
 	// Cursor pagination is not implemented yet
 	return nil
 }
