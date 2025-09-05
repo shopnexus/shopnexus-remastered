@@ -160,26 +160,26 @@ func (p *SchemaParser) parseColumn(line string) *Column {
 		if defaultStart == -1 {
 			defaultStart = strings.Index(fullLine, "default")
 		}
-		
+
 		if defaultStart != -1 {
 			defaultPart := strings.TrimSpace(fullLine[defaultStart+7:])
-			
+
 			// Handle various endings after the default value (comma, space, end of line)
 			endChars := []string{",", " ", "\t", "\n"}
 			endIdx := len(defaultPart)
-			
+
 			for _, endChar := range endChars {
 				if idx := strings.Index(defaultPart, endChar); idx != -1 && idx < endIdx {
 					endIdx = idx
 				}
 			}
-			
+
 			if endIdx > 0 {
 				column.DefaultValue = strings.TrimSpace(defaultPart[:endIdx])
 			} else {
 				column.DefaultValue = strings.TrimSpace(defaultPart)
 			}
-			
+
 			// If we found any default value, even an empty one, mark it as having a default
 			if defaultStart != -1 {
 				// Set a marker that this column has a default, even if we couldn't parse the exact value
@@ -328,6 +328,10 @@ func (t *Table) GetFullTableName() string {
 	return fmt.Sprintf("\"%s\".\"%s\"", t.Schema, t.Name)
 }
 
+func (t *Table) GetSchemaName() string {
+	return t.Schema
+}
+
 func (t *Table) GetQualifiedName() string {
 	return t.Schema + "." + t.Name
 }
@@ -350,12 +354,12 @@ func (t *Table) GetNonSerialNonDefaultColumns() []*Column {
 // GetAllIdentifierConstraints returns all possible ways to identify a record (primary key + unique constraints)
 func (t *Table) GetAllIdentifierConstraints() [][]*Column {
 	var constraints [][]*Column
-	
+
 	// Add primary key as first constraint
 	if len(t.PrimaryKey) > 0 {
 		constraints = append(constraints, t.PrimaryKey)
 	}
-	
+
 	// Add unique constraints
 	for _, uniqueConstraint := range t.UniqueConstraints {
 		var constraintCols []*Column
@@ -372,6 +376,6 @@ func (t *Table) GetAllIdentifierConstraints() [][]*Column {
 			constraints = append(constraints, constraintCols)
 		}
 	}
-	
+
 	return constraints
 }

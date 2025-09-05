@@ -1,4 +1,4 @@
--- name: Get{{.Name | pascalCase}} :one
+-- name: Get{{.GetSchemaName | pascalCase}}{{.Name | pascalCase}} :one
 SELECT *
 FROM {{.GetFullTableName}}
 {{generateWhereConditions .}};

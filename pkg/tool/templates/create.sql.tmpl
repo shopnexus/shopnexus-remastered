@@ -1,9 +1,7 @@
--- name: Create{{.Name | pascalCase}} :one
+-- name: Create{{.GetSchemaName | pascalCase}}{{.Name | pascalCase}} :copyfrom
 INSERT INTO {{.GetFullTableName}} ({{range $i, $col := .GetNonSerialColumns}}{{if $i}}, {{end}}{{quotedName $col}}{{end}})
-VALUES ({{range $i, $col := .GetNonSerialColumns}}{{if $i}}, {{end}}${{increment $i}}{{end}})
-RETURNING *;
+VALUES ({{range $i, $col := .GetNonSerialColumns}}{{if $i}}, {{end}}${{increment $i}}{{end}});
 
--- name: CreateDefault{{.Name | pascalCase}} :one
+-- name: CreateDefault{{.GetSchemaName | pascalCase}}{{.Name | pascalCase}} :copyfrom
 INSERT INTO {{.GetFullTableName}} ({{range $i, $col := .GetNonSerialNonDefaultColumns}}{{if $i}}, {{end}}{{quotedName $col}}{{end}})
-VALUES ({{range $i, $col := .GetNonSerialNonDefaultColumns}}{{if $i}}, {{end}}${{increment $i}}{{end}})
-RETURNING *;
+VALUES ({{range $i, $col := .GetNonSerialNonDefaultColumns}}{{if $i}}, {{end}}${{increment $i}}{{end}});

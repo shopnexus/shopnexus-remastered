@@ -1,18 +1,19 @@
--- name: Count{{.Name | pascalCase}} :one
+-- name: Exists{{.GetSchemaName | pascalCase}}{{.Name | pascalCase}} :one
+SELECT EXISTS (
+SELECT 1
+FROM {{.GetFullTableName}}
+{{generateFilterConditions .}}
+) as exists;
+
+-- name: Count{{.GetSchemaName | pascalCase}}{{.Name | pascalCase}} :one
 SELECT COUNT(*)
 FROM {{.GetFullTableName}}
-{{if .GetFilterableColumns}}WHERE (
-   {{range $i, $col := .GetFilterableColumns}} {{if $i}}AND
-    {{end}}({{quotedName $col}} = {{sqlcNarg $col.Name}} OR {{sqlcNarg $col.Name}} IS NULL){{end}}
-){{end}};
+{{generateFilterConditions .}};
 
--- name: List{{.Name | pascalCase}} :many
+-- name: List{{.GetSchemaName | pascalCase}}{{.Name | pascalCase}} :many
 SELECT *
 FROM {{.GetFullTableName}}
-{{if .GetFilterableColumns}}WHERE (
-   {{range $i, $col := .GetFilterableColumns}} {{if $i}}AND
-    {{end}}({{quotedName $col}} = {{sqlcNarg $col.Name}} OR {{sqlcNarg $col.Name}} IS NULL){{end}}
-){{end}}
-{{if .HasDateColumns}}ORDER BY "date_created" DESC{{else}}ORDER BY "id"{{end}}
-LIMIT {{sqlcArg "limit"}}
-OFFSET {{sqlcArg "offset"}};
+{{generateFilterConditions .}}
+ORDER BY "id"
+LIMIT {{sqlcNarg "limit"}}
+OFFSET {{sqlcNarg "offset"}};
