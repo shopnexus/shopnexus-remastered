@@ -24,10 +24,8 @@ func NewHandler(e *echo.Echo, authbiz *authbiz.AuthBiz) *Handler {
 }
 
 type LoginBasicRequest struct {
-	Username *string `json:"username" validate:"omitempty,min=1,max=255"`
-	Email    *string `json:"email" validate:"omitempty,email"`
-	Phone    *string `json:"phone" validate:"omitempty,e164"`
-	Password string  `json:"password" validate:"required,min=8,max=72"`
+	ID       string `json:"id" validate:"required,min=1,max=255"`
+	Password string `json:"password" validate:"required,min=8,max=72"`
 }
 
 type LoginBasicResponse struct {
@@ -44,9 +42,9 @@ func (h *Handler) LoginBasic(c echo.Context) error {
 	}
 
 	result, err := h.biz.Login(c.Request().Context(), authbiz.LoginParams{
-		Username: req.Username,
-		Email:    req.Email,
-		Phone:    req.Phone,
+		Username: &req.ID,
+		Email:    &req.ID,
+		Phone:    &req.ID,
 		Password: &req.Password,
 	})
 	if err != nil {
@@ -63,7 +61,7 @@ type RegisterBasicRequest struct {
 	Username *string        `json:"username" validate:"omitempty,min=1,max=255"`
 	Email    *string        `json:"email" validate:"omitempty,email"`
 	Phone    *string        `json:"phone" validate:"omitempty,e164"`
-	Password *string        `json:"password" validate:"omitempty,min=8,max=72"`
+	Password string         `json:"password" validate:"required,min=8,max=72"`
 }
 
 type RegisterBasicResponse struct {
@@ -84,7 +82,7 @@ func (h *Handler) RegisterBasic(c echo.Context) error {
 		Username: req.Username,
 		Email:    req.Email,
 		Phone:    req.Phone,
-		Password: req.Password,
+		Password: &req.Password,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)

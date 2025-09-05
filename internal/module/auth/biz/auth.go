@@ -31,10 +31,10 @@ func NewAuthBiz(accountBiz *accountbiz.AccountBiz) *AuthBiz {
 }
 
 // CreateClaims generates JWT claims for the given account.
-func (a *AuthBiz) CreateClaims(account db.AccountAccount) authmodel.Claims {
+func (a *AuthBiz) CreateClaims(account db.AccountBase) authmodel.Claims {
 	return authmodel.Claims{
-		AccountID: account.ID,
-		Type:      account.Type,
+		Type: account.Type,
+		Code: account.Code,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "shopnexus",
 			Subject:   strconv.Itoa(int(account.ID)),
@@ -46,7 +46,7 @@ func (a *AuthBiz) CreateClaims(account db.AccountAccount) authmodel.Claims {
 }
 
 // GenerateAccessToken creates a JWT access token for the given account.
-func (a *AuthBiz) GenerateAccessToken(account db.AccountAccount) (string, error) {
+func (a *AuthBiz) GenerateAccessToken(account db.AccountBase) (string, error) {
 	claims := a.CreateClaims(account)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS512, claims)
 
@@ -66,7 +66,7 @@ func (a *AuthBiz) ComparePassword(hashedPassword, password string) bool {
 
 // CreateHash generates a hashed password (currently using bcrypt).
 func (a *AuthBiz) CreateHash(password string) (string, error) {
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 10)
 	if err != nil {
 		return "", err
 	}
@@ -82,7 +82,7 @@ type LoginParams struct {
 }
 
 type LoginResult struct {
-	Account     db.AccountAccount
+	Account     db.AccountBase
 	AccessToken string
 }
 
@@ -125,7 +125,7 @@ type RegisterParams struct {
 }
 
 type RegisterResult struct {
-	Account     db.AccountAccount
+	Account     db.AccountBase
 	AccessToken string
 }
 
@@ -152,12 +152,20 @@ func (a *AuthBiz) Register(ctx context.Context, params RegisterParams) (Register
 		hashedPassword = &hashed
 	}
 
-	account, err := a.accountBiz.Create(ctx, accountbiz.CreateParams{
+	if err := a.accountBiz.Create(ctx, accountbiz.CreateParams{
 		Type:     params.Type,
 		Username: params.Username,
 		Email:    params.Email,
 		Phone:    params.Phone,
 		Password: hashedPassword,
+	}); err != nil {
+		return zero, err
+	}
+
+	account, err := a.accountBiz.Find(ctx, accountbiz.FindParams{
+		Username: params.Username,
+		Email:    params.Email,
+		Phone:    params.Phone,
 	})
 	if err != nil {
 		return zero, err

@@ -8,6 +8,6 @@ import (
 
 type Claims struct {
 	jwt.RegisteredClaims
-	AccountID int64
-	Type      db.AccountType
+	Type db.AccountType
+	Code string
 }
