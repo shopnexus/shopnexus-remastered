@@ -1,4 +1,4 @@
-package cache
+package cachestruct
 
 import (
 	"context"
@@ -10,20 +10,20 @@ import (
 	"github.com/redis/rueidis"
 )
 
-type RedisStructClient struct {
-	config RedisStructConfig
+type RedisClient struct {
+	config RedisConfig
 	Client rueidis.Client
 }
 
-type RedisStructConfig struct {
-	StructConfig
+type RedisConfig struct {
+	Config
 	Addr     []string
 	Password string
 	DB       int64
 }
 
 // NewRedisStructClient initializes a new Redis client for structured data caching.
-func NewRedisStructClient(cfg RedisStructConfig) (*RedisStructClient, error) {
+func NewRedisStructClient(cfg RedisConfig) (*RedisClient, error) {
 	rdb, err := rueidis.NewClient(rueidis.ClientOption{
 		InitAddress: cfg.Addr,
 		// Add password if needed
@@ -48,13 +48,13 @@ func NewRedisStructClient(cfg RedisStructConfig) (*RedisStructClient, error) {
 		}
 	}
 
-	return &RedisStructClient{
+	return &RedisClient{
 		config: cfg,
 		Client: rdb,
 	}, nil
 }
 
-func (r *RedisStructClient) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
+func (r *RedisClient) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
 	// rueidis expects string or []byte as value, convert accordingly
 	str, err := r.config.Encoder(value)
 	if err != nil {
@@ -71,7 +71,7 @@ func (r *RedisStructClient) Set(ctx context.Context, key string, value any, expi
 	return nil
 }
 
-func (r *RedisStructClient) Get(ctx context.Context, key string, dest any) error {
+func (r *RedisClient) Get(ctx context.Context, key string, dest any) error {
 	resp := r.Client.Do(ctx, r.Client.B().Get().Key(key).Build())
 	if err := resp.Error(); err != nil {
 		if errors.Is(err, rueidis.Nil) {
@@ -92,14 +92,14 @@ func (r *RedisStructClient) Get(ctx context.Context, key string, dest any) error
 	return nil
 }
 
-func (r *RedisStructClient) Delete(ctx context.Context, key string) error {
+func (r *RedisClient) Delete(ctx context.Context, key string) error {
 	if err := r.Client.Do(ctx, r.Client.B().Del().Key(key).Build()).Error(); err != nil {
 		return fmt.Errorf("failed to delete key from Redis: %w", err)
 	}
 	return nil
 }
 
-func (r *RedisStructClient) Exists(ctx context.Context, key string) (bool, error) {
+func (r *RedisClient) Exists(ctx context.Context, key string) (bool, error) {
 	resp := r.Client.Do(ctx, r.Client.B().Exists().Key(key).Build())
 	if err := resp.Error(); err != nil {
 		return false, fmt.Errorf("failed to check if key exists in Redis: %w", err)
