@@ -4,7 +4,7 @@ tmp_dir = "tmp"
 
 [build]
 args_bin = []
-bin = "server.exe"
+bin = "server"
 cmd = "go build ./cmd/server"
 delay = 1000
 exclude_dir = ["assets", "tmp", "vendor", "testdata", "node_modules", "uploads"]
