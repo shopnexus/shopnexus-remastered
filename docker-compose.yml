@@ -34,20 +34,20 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-  postgres-backup:
-    container_name: shopnexus-postgres-backup
-    build:
-      context: .
-      dockerfile: postgres-backup/Dockerfile
-    volumes:
-      - postgres-backup-data:/backups
-      - /etc/localtime:/etc/localtime:ro
-    networks:
-      - shopnexus-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
+#  postgres-backup:
+#    container_name: shopnexus-postgres-backup
+#    build:
+#      context: .
+#      dockerfile: postgres-backup/Dockerfile
+#    volumes:
+#      - postgres-backup-data:/backups
+#      - /etc/localtime:/etc/localtime:ro
+#    networks:
+#      - shopnexus-network
+#    depends_on:
+#      postgres:
+#        condition: service_healthy
+#    restart: unless-stopped
 
   redis:
     container_name: shopnexus-redis
@@ -163,26 +163,26 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-  server:
-    container_name: shopnexus-server
-    build:
-      context: .. # Context from root of the project
-      dockerfile: docker/server/Dockerfile
-    ports:
-      - "50051:50051"
-    depends_on:
-      - kafka
-      - postgres
-      - redis
-    networks:
-      - shopnexus-network
-    volumes:
-      - server-data:/data
-    healthcheck:
-      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:50051/healthz" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    restart: unless-stopped
+#  server:
+#    container_name: shopnexus-server
+#    build:
+#      context: .. # Context from root of the project
+#      dockerfile: docker/server/Dockerfile
+#    ports:
+#      - "50051:50051"
+#    depends_on:
+#      - kafka
+#      - postgres
+#      - redis
+#    networks:
+#      - shopnexus-network
+#    volumes:
+#      - server-data:/data
+#    healthcheck:
+#      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:50051/healthz" ]
+#      interval: 10s
+#      timeout: 5s
+#      retries: 5
+#      start_period: 10s
+#    restart: unless-stopped
 
