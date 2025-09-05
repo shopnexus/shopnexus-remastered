@@ -15,10 +15,17 @@ type Client interface {
 	UpdateDocument(ctx context.Context, index string, id string, doc any) error
 	DeleteDocument(ctx context.Context, index, id string) error
 
-	Search(ctx context.Context, index string, query string) ([]SearchResult, error)
-	Suggest(ctx context.Context, index string, query string) ([]string, error)
+	Search(ctx context.Context, params SearchParams) ([]SearchResult, error)
 
 	Close() error
+}
+
+type SearchParams struct {
+	Index       string
+	Query       string
+	Limit       int
+	OrderBy     map[string]string
+	SearchAfter []string
 }
 
 type SearchResult struct {

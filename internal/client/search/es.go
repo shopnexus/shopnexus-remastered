@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"shopnexus-remastered/internal/utils/ptr"
 
 	"github.com/elastic/go-elasticsearch/v9"
 	"github.com/elastic/go-elasticsearch/v9/typedapi/types"
@@ -50,15 +51,23 @@ func (e *ElasticsearchClient) DeleteDocument(ctx context.Context, index, id stri
 	return err
 }
 
-func (e *ElasticsearchClient) Search(ctx context.Context, index string, query string, limit int) ([]SearchResult, error) {
+func (e *ElasticsearchClient) Search(ctx context.Context, params SearchParams) ([]SearchResult, error) {
 	resp, err := e.client.Search().
-		Index(index).
+		Index(params.Index).
 		Query(&types.Query{
 			QueryString: &types.QueryStringQuery{
-				Query: query,
+				Query: params.Query,
 			},
 		}).
-		Size(limit).
+		Size(params.Limit).
+		Sort(&types.SortOptions{}).
+		SearchAfter(func() []types.FieldValueVariant {
+			var sao []types.FieldValueVariant
+			for _, v := range params.SearchAfter {
+				sao = append(sao, SearchAfterOptions{Value: v})
+			}
+			return sao
+		}()...).
 		Do(ctx)
 
 	if err != nil {
@@ -78,45 +87,16 @@ func (e *ElasticsearchClient) Search(ctx context.Context, index string, query st
 	return results, nil
 }
 
-func (e *ElasticsearchClient) Suggest(ctx context.Context, index string, query string) ([]string, error) {
-	resp, err := e.client.Search().
-		Index(index).
-		Suggest(&types.Suggester{
-			Suggesters: map[string]types.FieldSuggester{
-				"suggestions": {
-					Text: &query,
-					Term: &types.TermSuggester{
-						Field: "title", // Adjust field as needed
-					},
-				},
-			},
-		}).
-		Do(ctx)
-
-	fmt.Println("Suggest response:", resp)
-
-	if err != nil {
-		return nil, err
-	}
-
-	var suggestions []string
-	//if resp.Suggest != nil {
-	//	if termSuggestions, ok := resp.Suggest["suggestions"]; ok {
-	//		for _, suggestion := range termSuggestions {
-	//			if suggestion.Term != nil {
-	//				for _, option := range suggestion.Term.Options {
-	//					suggestions = append(suggestions, option.Text)
-	//				}
-	//			}
-	//		}
-	//	}
-	//}
-
-	return suggestions, nil
-}
-
 func (e *ElasticsearchClient) Close() error {
 	// TypedClient doesn't have explicit close method
 	// Connection pooling is handled internally
 	return nil
+}
+
+type SearchAfterOptions struct {
+	Value any
+}
+
+func (s SearchAfterOptions) FieldValueCaster() *types.FieldValue {
+	return ptr.ToPtr(types.FieldValue(s.Value))
 }
