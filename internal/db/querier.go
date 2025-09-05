@@ -6,321 +6,368 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
-	CountAccount(ctx context.Context, arg CountAccountParams) (int64, error)
-	CountAddress(ctx context.Context, arg CountAddressParams) (int64, error)
-	CountBrand(ctx context.Context, arg CountBrandParams) (int64, error)
-	CountCartItem(ctx context.Context, arg CountCartItemParams) (int64, error)
-	CountCategory(ctx context.Context, arg CountCategoryParams) (int64, error)
-	CountComment(ctx context.Context, arg CountCommentParams) (int64, error)
-	CountCustomer(ctx context.Context, arg CountCustomerParams) (int64, error)
-	CountEvent(ctx context.Context, arg CountEventParams) (int64, error)
-	CountInvoice(ctx context.Context, arg CountInvoiceParams) (int64, error)
-	CountInvoiceItem(ctx context.Context, arg CountInvoiceItemParams) (int64, error)
-	CountOrder(ctx context.Context, arg CountOrderParams) (int64, error)
+	CountAccountAddress(ctx context.Context, arg CountAccountAddressParams) (int64, error)
+	CountAccountBase(ctx context.Context, arg CountAccountBaseParams) (int64, error)
+	CountAccountCartItem(ctx context.Context, arg CountAccountCartItemParams) (int64, error)
+	CountAccountCustomer(ctx context.Context, arg CountAccountCustomerParams) (int64, error)
+	CountAccountIncomeHistory(ctx context.Context, arg CountAccountIncomeHistoryParams) (int64, error)
+	CountAccountNotification(ctx context.Context, arg CountAccountNotificationParams) (int64, error)
+	CountAccountProfile(ctx context.Context, arg CountAccountProfileParams) (int64, error)
+	CountAccountVendor(ctx context.Context, arg CountAccountVendorParams) (int64, error)
+	CountCatalogBrand(ctx context.Context, arg CountCatalogBrandParams) (int64, error)
+	CountCatalogCategory(ctx context.Context, arg CountCatalogCategoryParams) (int64, error)
+	CountCatalogComment(ctx context.Context, arg CountCatalogCommentParams) (int64, error)
+	CountCatalogProductSku(ctx context.Context, arg CountCatalogProductSkuParams) (int64, error)
+	CountCatalogProductSkuAttribute(ctx context.Context, arg CountCatalogProductSkuAttributeParams) (int64, error)
+	CountCatalogProductSpu(ctx context.Context, arg CountCatalogProductSpuParams) (int64, error)
+	CountCatalogProductSpuTag(ctx context.Context, arg CountCatalogProductSpuTagParams) (int64, error)
+	CountCatalogTag(ctx context.Context, arg CountCatalogTagParams) (int64, error)
+	CountInventorySkuSerial(ctx context.Context, arg CountInventorySkuSerialParams) (int64, error)
+	CountInventoryStock(ctx context.Context, arg CountInventoryStockParams) (int64, error)
+	CountInventoryStockHistory(ctx context.Context, arg CountInventoryStockHistoryParams) (int64, error)
+	CountOrderBase(ctx context.Context, arg CountOrderBaseParams) (int64, error)
+	CountOrderInvoice(ctx context.Context, arg CountOrderInvoiceParams) (int64, error)
+	CountOrderInvoiceItem(ctx context.Context, arg CountOrderInvoiceItemParams) (int64, error)
 	CountOrderItem(ctx context.Context, arg CountOrderItemParams) (int64, error)
 	CountOrderItemSerial(ctx context.Context, arg CountOrderItemSerialParams) (int64, error)
-	CountProductSku(ctx context.Context, arg CountProductSkuParams) (int64, error)
-	CountProductSkuAttribute(ctx context.Context, arg CountProductSkuAttributeParams) (int64, error)
-	CountProductSpu(ctx context.Context, arg CountProductSpuParams) (int64, error)
-	CountProductSpuTag(ctx context.Context, arg CountProductSpuTagParams) (int64, error)
-	CountProfile(ctx context.Context, arg CountProfileParams) (int64, error)
-	CountPromotion(ctx context.Context, arg CountPromotionParams) (int64, error)
-	CountPromotionRedemption(ctx context.Context, arg CountPromotionRedemptionParams) (int64, error)
-	CountPromotionVoucher(ctx context.Context, arg CountPromotionVoucherParams) (int64, error)
-	CountRefund(ctx context.Context, arg CountRefundParams) (int64, error)
-	CountRefundDispute(ctx context.Context, arg CountRefundDisputeParams) (int64, error)
-	CountResource(ctx context.Context, arg CountResourceParams) (int64, error)
-	CountSearchSync(ctx context.Context, arg CountSearchSyncParams) (int64, error)
-	CountSkuSerial(ctx context.Context, arg CountSkuSerialParams) (int64, error)
-	CountStock(ctx context.Context, arg CountStockParams) (int64, error)
-	CountStockHistory(ctx context.Context, arg CountStockHistoryParams) (int64, error)
-	CountTag(ctx context.Context, arg CountTagParams) (int64, error)
-	CountVendor(ctx context.Context, arg CountVendorParams) (int64, error)
-	CountVnpay(ctx context.Context, arg CountVnpayParams) (int64, error)
-	CreateAccount(ctx context.Context, arg CreateAccountParams) (AccountAccount, error)
-	CreateAddress(ctx context.Context, arg CreateAddressParams) (AccountAddress, error)
-	CreateBrand(ctx context.Context, arg CreateBrandParams) (CatalogBrand, error)
-	CreateCartItem(ctx context.Context, arg CreateCartItemParams) (AccountCartItem, error)
-	CreateCategory(ctx context.Context, arg CreateCategoryParams) (CatalogCategory, error)
-	CreateComment(ctx context.Context, arg CreateCommentParams) (CatalogComment, error)
-	CreateCustomer(ctx context.Context, arg CreateCustomerParams) (AccountCustomer, error)
-	CreateDefaultAccount(ctx context.Context, arg CreateDefaultAccountParams) (AccountAccount, error)
-	CreateDefaultAddress(ctx context.Context, arg CreateDefaultAddressParams) (AccountAddress, error)
-	CreateDefaultBrand(ctx context.Context, arg CreateDefaultBrandParams) (CatalogBrand, error)
-	CreateDefaultCartItem(ctx context.Context, arg CreateDefaultCartItemParams) (AccountCartItem, error)
-	CreateDefaultCategory(ctx context.Context, arg CreateDefaultCategoryParams) (CatalogCategory, error)
-	CreateDefaultComment(ctx context.Context, arg CreateDefaultCommentParams) (CatalogComment, error)
-	CreateDefaultCustomer(ctx context.Context, arg CreateDefaultCustomerParams) (AccountCustomer, error)
-	CreateDefaultEvent(ctx context.Context, arg CreateDefaultEventParams) (SystemEvent, error)
-	CreateDefaultInvoice(ctx context.Context, arg CreateDefaultInvoiceParams) (PaymentInvoice, error)
-	CreateDefaultInvoiceItem(ctx context.Context, arg CreateDefaultInvoiceItemParams) (PaymentInvoiceItem, error)
-	CreateDefaultOrder(ctx context.Context, arg CreateDefaultOrderParams) (PaymentOrder, error)
-	CreateDefaultOrderItem(ctx context.Context, arg CreateDefaultOrderItemParams) (PaymentOrderItem, error)
-	CreateDefaultOrderItemSerial(ctx context.Context, arg CreateDefaultOrderItemSerialParams) (PaymentOrderItemSerial, error)
-	CreateDefaultProductSku(ctx context.Context, arg CreateDefaultProductSkuParams) (CatalogProductSku, error)
-	CreateDefaultProductSkuAttribute(ctx context.Context, arg CreateDefaultProductSkuAttributeParams) (CatalogProductSkuAttribute, error)
-	CreateDefaultProductSpu(ctx context.Context, arg CreateDefaultProductSpuParams) (CatalogProductSpu, error)
-	CreateDefaultProductSpuTag(ctx context.Context, arg CreateDefaultProductSpuTagParams) (CatalogProductSpuTag, error)
-	CreateDefaultProfile(ctx context.Context, arg CreateDefaultProfileParams) (AccountProfile, error)
-	CreateDefaultPromotion(ctx context.Context, arg CreateDefaultPromotionParams) (PromotionPromotion, error)
-	CreateDefaultPromotionRedemption(ctx context.Context, arg CreateDefaultPromotionRedemptionParams) (PromotionPromotionRedemption, error)
-	CreateDefaultPromotionVoucher(ctx context.Context, arg CreateDefaultPromotionVoucherParams) (PromotionPromotionVoucher, error)
-	CreateDefaultRefund(ctx context.Context, arg CreateDefaultRefundParams) (PaymentRefund, error)
-	CreateDefaultRefundDispute(ctx context.Context, arg CreateDefaultRefundDisputeParams) (PaymentRefundDispute, error)
-	CreateDefaultResource(ctx context.Context, arg CreateDefaultResourceParams) (SharedResource, error)
-	CreateDefaultSearchSync(ctx context.Context, name string) (SystemSearchSync, error)
-	CreateDefaultSkuSerial(ctx context.Context, arg CreateDefaultSkuSerialParams) (InventorySkuSerial, error)
-	CreateDefaultStock(ctx context.Context, arg CreateDefaultStockParams) (InventoryStock, error)
-	CreateDefaultStockHistory(ctx context.Context, arg CreateDefaultStockHistoryParams) (InventoryStockHistory, error)
-	CreateDefaultTag(ctx context.Context, tag string) (CatalogTag, error)
-	CreateDefaultVendor(ctx context.Context, accountID int64) (AccountVendor, error)
-	CreateDefaultVnpay(ctx context.Context, arg CreateDefaultVnpayParams) (PaymentVnpay, error)
-	CreateEvent(ctx context.Context, arg CreateEventParams) (SystemEvent, error)
-	CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (PaymentInvoice, error)
-	CreateInvoiceItem(ctx context.Context, arg CreateInvoiceItemParams) (PaymentInvoiceItem, error)
-	CreateOrder(ctx context.Context, arg CreateOrderParams) (PaymentOrder, error)
-	CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) (PaymentOrderItem, error)
-	CreateOrderItemSerial(ctx context.Context, arg CreateOrderItemSerialParams) (PaymentOrderItemSerial, error)
-	CreateProductSku(ctx context.Context, arg CreateProductSkuParams) (CatalogProductSku, error)
-	CreateProductSkuAttribute(ctx context.Context, arg CreateProductSkuAttributeParams) (CatalogProductSkuAttribute, error)
-	CreateProductSpu(ctx context.Context, arg CreateProductSpuParams) (CatalogProductSpu, error)
-	CreateProductSpuTag(ctx context.Context, arg CreateProductSpuTagParams) (CatalogProductSpuTag, error)
-	CreateProfile(ctx context.Context, arg CreateProfileParams) (AccountProfile, error)
-	CreatePromotion(ctx context.Context, arg CreatePromotionParams) (PromotionPromotion, error)
-	CreatePromotionRedemption(ctx context.Context, arg CreatePromotionRedemptionParams) (PromotionPromotionRedemption, error)
-	CreatePromotionVoucher(ctx context.Context, arg CreatePromotionVoucherParams) (PromotionPromotionVoucher, error)
-	CreateRefund(ctx context.Context, arg CreateRefundParams) (PaymentRefund, error)
-	CreateRefundDispute(ctx context.Context, arg CreateRefundDisputeParams) (PaymentRefundDispute, error)
-	CreateResource(ctx context.Context, arg CreateResourceParams) (SharedResource, error)
-	CreateSearchSync(ctx context.Context, arg CreateSearchSyncParams) (SystemSearchSync, error)
-	CreateSkuSerial(ctx context.Context, arg CreateSkuSerialParams) (InventorySkuSerial, error)
-	CreateStock(ctx context.Context, arg CreateStockParams) (InventoryStock, error)
-	CreateStockHistory(ctx context.Context, arg CreateStockHistoryParams) (InventoryStockHistory, error)
-	CreateTag(ctx context.Context, arg CreateTagParams) (CatalogTag, error)
-	CreateVendor(ctx context.Context, accountID int64) (AccountVendor, error)
-	CreateVnpay(ctx context.Context, arg CreateVnpayParams) (PaymentVnpay, error)
-	DeleteAccount(ctx context.Context, arg DeleteAccountParams) error
-	DeleteAddress(ctx context.Context, arg DeleteAddressParams) error
-	DeleteBrand(ctx context.Context, arg DeleteBrandParams) error
-	DeleteCartItem(ctx context.Context, arg DeleteCartItemParams) error
-	DeleteCategory(ctx context.Context, arg DeleteCategoryParams) error
-	DeleteComment(ctx context.Context, arg DeleteCommentParams) error
-	DeleteCustomer(ctx context.Context, arg DeleteCustomerParams) error
-	DeleteEvent(ctx context.Context, id int64) error
-	DeleteInvoice(ctx context.Context, arg DeleteInvoiceParams) error
-	DeleteInvoiceItem(ctx context.Context, id int64) error
-	DeleteOrder(ctx context.Context, arg DeleteOrderParams) error
+	CountOrderRefund(ctx context.Context, arg CountOrderRefundParams) (int64, error)
+	CountOrderRefundDispute(ctx context.Context, arg CountOrderRefundDisputeParams) (int64, error)
+	CountOrderVnpay(ctx context.Context, arg CountOrderVnpayParams) (int64, error)
+	CountPromotionBase(ctx context.Context, arg CountPromotionBaseParams) (int64, error)
+	CountPromotionDiscount(ctx context.Context, arg CountPromotionDiscountParams) (int64, error)
+	CountSharedResource(ctx context.Context, arg CountSharedResourceParams) (int64, error)
+	CountSystemEvent(ctx context.Context, arg CountSystemEventParams) (int64, error)
+	CountSystemSearchSync(ctx context.Context, arg CountSystemSearchSyncParams) (int64, error)
+	CreateAccountAddress(ctx context.Context, arg []CreateAccountAddressParams) (int64, error)
+	CreateAccountBase(ctx context.Context, arg []CreateAccountBaseParams) (int64, error)
+	CreateAccountCartItem(ctx context.Context, arg []CreateAccountCartItemParams) (int64, error)
+	CreateAccountCustomer(ctx context.Context, arg []CreateAccountCustomerParams) (int64, error)
+	CreateAccountIncomeHistory(ctx context.Context, arg []CreateAccountIncomeHistoryParams) (int64, error)
+	CreateAccountNotification(ctx context.Context, arg []CreateAccountNotificationParams) (int64, error)
+	CreateAccountProfile(ctx context.Context, arg []CreateAccountProfileParams) (int64, error)
+	CreateAccountVendor(ctx context.Context, arg []CreateAccountVendorParams) (int64, error)
+	CreateCatalogBrand(ctx context.Context, arg []CreateCatalogBrandParams) (int64, error)
+	CreateCatalogCategory(ctx context.Context, arg []CreateCatalogCategoryParams) (int64, error)
+	CreateCatalogComment(ctx context.Context, arg []CreateCatalogCommentParams) (int64, error)
+	CreateCatalogProductSku(ctx context.Context, arg []CreateCatalogProductSkuParams) (int64, error)
+	CreateCatalogProductSkuAttribute(ctx context.Context, arg []CreateCatalogProductSkuAttributeParams) (int64, error)
+	CreateCatalogProductSpu(ctx context.Context, arg []CreateCatalogProductSpuParams) (int64, error)
+	CreateCatalogProductSpuTag(ctx context.Context, arg []CreateCatalogProductSpuTagParams) (int64, error)
+	CreateCatalogTag(ctx context.Context, arg []CreateCatalogTagParams) (int64, error)
+	CreateDefaultAccountAddress(ctx context.Context, arg []CreateDefaultAccountAddressParams) (int64, error)
+	CreateDefaultAccountBase(ctx context.Context, arg []CreateDefaultAccountBaseParams) (int64, error)
+	CreateDefaultAccountCartItem(ctx context.Context, arg []CreateDefaultAccountCartItemParams) (int64, error)
+	CreateDefaultAccountCustomer(ctx context.Context, arg []CreateDefaultAccountCustomerParams) (int64, error)
+	CreateDefaultAccountIncomeHistory(ctx context.Context, arg []CreateDefaultAccountIncomeHistoryParams) (int64, error)
+	CreateDefaultAccountNotification(ctx context.Context, arg []CreateDefaultAccountNotificationParams) (int64, error)
+	CreateDefaultAccountProfile(ctx context.Context, arg []CreateDefaultAccountProfileParams) (int64, error)
+	CreateDefaultAccountVendor(ctx context.Context, id []int64) (int64, error)
+	CreateDefaultCatalogBrand(ctx context.Context, arg []CreateDefaultCatalogBrandParams) (int64, error)
+	CreateDefaultCatalogCategory(ctx context.Context, arg []CreateDefaultCatalogCategoryParams) (int64, error)
+	CreateDefaultCatalogComment(ctx context.Context, arg []CreateDefaultCatalogCommentParams) (int64, error)
+	CreateDefaultCatalogProductSku(ctx context.Context, arg []CreateDefaultCatalogProductSkuParams) (int64, error)
+	CreateDefaultCatalogProductSkuAttribute(ctx context.Context, arg []CreateDefaultCatalogProductSkuAttributeParams) (int64, error)
+	CreateDefaultCatalogProductSpu(ctx context.Context, arg []CreateDefaultCatalogProductSpuParams) (int64, error)
+	CreateDefaultCatalogProductSpuTag(ctx context.Context, arg []CreateDefaultCatalogProductSpuTagParams) (int64, error)
+	CreateDefaultCatalogTag(ctx context.Context, tag []string) (int64, error)
+	CreateDefaultInventorySkuSerial(ctx context.Context, arg []CreateDefaultInventorySkuSerialParams) (int64, error)
+	CreateDefaultInventoryStock(ctx context.Context, arg []CreateDefaultInventoryStockParams) (int64, error)
+	CreateDefaultInventoryStockHistory(ctx context.Context, arg []CreateDefaultInventoryStockHistoryParams) (int64, error)
+	CreateDefaultOrderBase(ctx context.Context, arg []CreateDefaultOrderBaseParams) (int64, error)
+	CreateDefaultOrderInvoice(ctx context.Context, arg []CreateDefaultOrderInvoiceParams) (int64, error)
+	CreateDefaultOrderInvoiceItem(ctx context.Context, arg []CreateDefaultOrderInvoiceItemParams) (int64, error)
+	CreateDefaultOrderItem(ctx context.Context, arg []CreateDefaultOrderItemParams) (int64, error)
+	CreateDefaultOrderItemSerial(ctx context.Context, arg []CreateDefaultOrderItemSerialParams) (int64, error)
+	CreateDefaultOrderRefund(ctx context.Context, arg []CreateDefaultOrderRefundParams) (int64, error)
+	CreateDefaultOrderRefundDispute(ctx context.Context, arg []CreateDefaultOrderRefundDisputeParams) (int64, error)
+	CreateDefaultOrderVnpay(ctx context.Context, arg []CreateDefaultOrderVnpayParams) (int64, error)
+	CreateDefaultPromotionBase(ctx context.Context, arg []CreateDefaultPromotionBaseParams) (int64, error)
+	CreateDefaultPromotionDiscount(ctx context.Context, arg []CreateDefaultPromotionDiscountParams) (int64, error)
+	CreateDefaultSharedResource(ctx context.Context, arg []CreateDefaultSharedResourceParams) (int64, error)
+	CreateDefaultSystemEvent(ctx context.Context, arg []CreateDefaultSystemEventParams) (int64, error)
+	CreateDefaultSystemSearchSync(ctx context.Context, name []string) (int64, error)
+	CreateInventorySkuSerial(ctx context.Context, arg []CreateInventorySkuSerialParams) (int64, error)
+	CreateInventoryStock(ctx context.Context, arg []CreateInventoryStockParams) (int64, error)
+	CreateInventoryStockHistory(ctx context.Context, arg []CreateInventoryStockHistoryParams) (int64, error)
+	CreateOrderBase(ctx context.Context, arg []CreateOrderBaseParams) (int64, error)
+	CreateOrderInvoice(ctx context.Context, arg []CreateOrderInvoiceParams) (int64, error)
+	CreateOrderInvoiceItem(ctx context.Context, arg []CreateOrderInvoiceItemParams) (int64, error)
+	CreateOrderItem(ctx context.Context, arg []CreateOrderItemParams) (int64, error)
+	CreateOrderItemSerial(ctx context.Context, arg []CreateOrderItemSerialParams) (int64, error)
+	CreateOrderRefund(ctx context.Context, arg []CreateOrderRefundParams) (int64, error)
+	CreateOrderRefundDispute(ctx context.Context, arg []CreateOrderRefundDisputeParams) (int64, error)
+	CreateOrderVnpay(ctx context.Context, arg []CreateOrderVnpayParams) (int64, error)
+	CreatePromotionBase(ctx context.Context, arg []CreatePromotionBaseParams) (int64, error)
+	CreatePromotionDiscount(ctx context.Context, arg []CreatePromotionDiscountParams) (int64, error)
+	CreateSharedResource(ctx context.Context, arg []CreateSharedResourceParams) (int64, error)
+	CreateSystemEvent(ctx context.Context, arg []CreateSystemEventParams) (int64, error)
+	CreateSystemSearchSync(ctx context.Context, arg []CreateSystemSearchSyncParams) (int64, error)
+	DeleteAccountAddress(ctx context.Context, arg DeleteAccountAddressParams) error
+	DeleteAccountBase(ctx context.Context, arg DeleteAccountBaseParams) error
+	DeleteAccountCartItem(ctx context.Context, arg DeleteAccountCartItemParams) error
+	DeleteAccountCustomer(ctx context.Context, id pgtype.Int8) error
+	DeleteAccountIncomeHistory(ctx context.Context, arg DeleteAccountIncomeHistoryParams) error
+	DeleteAccountNotification(ctx context.Context, id pgtype.Int8) error
+	DeleteAccountProfile(ctx context.Context, arg DeleteAccountProfileParams) error
+	DeleteAccountVendor(ctx context.Context, id pgtype.Int8) error
+	DeleteCatalogBrand(ctx context.Context, arg DeleteCatalogBrandParams) error
+	DeleteCatalogCategory(ctx context.Context, arg DeleteCatalogCategoryParams) error
+	DeleteCatalogComment(ctx context.Context, arg DeleteCatalogCommentParams) error
+	DeleteCatalogProductSku(ctx context.Context, arg DeleteCatalogProductSkuParams) error
+	DeleteCatalogProductSkuAttribute(ctx context.Context, arg DeleteCatalogProductSkuAttributeParams) error
+	DeleteCatalogProductSpu(ctx context.Context, arg DeleteCatalogProductSpuParams) error
+	DeleteCatalogProductSpuTag(ctx context.Context, arg DeleteCatalogProductSpuTagParams) error
+	DeleteCatalogTag(ctx context.Context, arg DeleteCatalogTagParams) error
+	DeleteInventorySkuSerial(ctx context.Context, arg DeleteInventorySkuSerialParams) error
+	DeleteInventoryStock(ctx context.Context, arg DeleteInventoryStockParams) error
+	DeleteInventoryStockHistory(ctx context.Context, id pgtype.Int8) error
+	DeleteOrderBase(ctx context.Context, arg DeleteOrderBaseParams) error
+	DeleteOrderInvoice(ctx context.Context, arg DeleteOrderInvoiceParams) error
+	DeleteOrderInvoiceItem(ctx context.Context, id pgtype.Int8) error
 	DeleteOrderItem(ctx context.Context, arg DeleteOrderItemParams) error
 	DeleteOrderItemSerial(ctx context.Context, arg DeleteOrderItemSerialParams) error
-	DeleteProductSku(ctx context.Context, arg DeleteProductSkuParams) error
-	DeleteProductSkuAttribute(ctx context.Context, arg DeleteProductSkuAttributeParams) error
-	DeleteProductSpu(ctx context.Context, arg DeleteProductSpuParams) error
-	DeleteProductSpuTag(ctx context.Context, arg DeleteProductSpuTagParams) error
-	DeleteProfile(ctx context.Context, arg DeleteProfileParams) error
-	DeletePromotion(ctx context.Context, arg DeletePromotionParams) error
-	DeletePromotionRedemption(ctx context.Context, id int64) error
-	DeletePromotionVoucher(ctx context.Context, arg DeletePromotionVoucherParams) error
-	DeleteRefund(ctx context.Context, arg DeleteRefundParams) error
-	DeleteRefundDispute(ctx context.Context, arg DeleteRefundDisputeParams) error
-	DeleteResource(ctx context.Context, id int64) error
-	DeleteSearchSync(ctx context.Context, id int64) error
-	DeleteSkuSerial(ctx context.Context, arg DeleteSkuSerialParams) error
-	DeleteStock(ctx context.Context, arg DeleteStockParams) error
-	DeleteStockHistory(ctx context.Context, id int64) error
-	DeleteTag(ctx context.Context, arg DeleteTagParams) error
-	DeleteVendor(ctx context.Context, arg DeleteVendorParams) error
-	DeleteVnpay(ctx context.Context, arg DeleteVnpayParams) error
-	// Code generated by tool/main.go. DO NOT EDIT.
-	// This file contains all queries for the database schema.
-	// ========================================
-	// Queries for table: account.account
-	// ========================================
-	GetAccount(ctx context.Context, arg GetAccountParams) (AccountAccount, error)
+	DeleteOrderRefund(ctx context.Context, arg DeleteOrderRefundParams) error
+	DeleteOrderRefundDispute(ctx context.Context, arg DeleteOrderRefundDisputeParams) error
+	DeleteOrderVnpay(ctx context.Context, id pgtype.Int8) error
+	DeletePromotionBase(ctx context.Context, arg DeletePromotionBaseParams) error
+	DeletePromotionDiscount(ctx context.Context, id pgtype.Int8) error
+	DeleteSharedResource(ctx context.Context, id pgtype.Int8) error
+	DeleteSystemEvent(ctx context.Context, id pgtype.Int8) error
+	DeleteSystemSearchSync(ctx context.Context, id pgtype.Int8) error
+	ExistsAccountAddress(ctx context.Context, arg ExistsAccountAddressParams) (bool, error)
+	ExistsAccountBase(ctx context.Context, arg ExistsAccountBaseParams) (bool, error)
+	ExistsAccountCartItem(ctx context.Context, arg ExistsAccountCartItemParams) (bool, error)
+	ExistsAccountCustomer(ctx context.Context, arg ExistsAccountCustomerParams) (bool, error)
+	ExistsAccountIncomeHistory(ctx context.Context, arg ExistsAccountIncomeHistoryParams) (bool, error)
+	ExistsAccountNotification(ctx context.Context, arg ExistsAccountNotificationParams) (bool, error)
+	ExistsAccountProfile(ctx context.Context, arg ExistsAccountProfileParams) (bool, error)
+	ExistsAccountVendor(ctx context.Context, arg ExistsAccountVendorParams) (bool, error)
+	ExistsCartItems(ctx context.Context, skuIds []int64) (bool, error)
+	ExistsCatalogBrand(ctx context.Context, arg ExistsCatalogBrandParams) (bool, error)
+	ExistsCatalogCategory(ctx context.Context, arg ExistsCatalogCategoryParams) (bool, error)
+	ExistsCatalogComment(ctx context.Context, arg ExistsCatalogCommentParams) (bool, error)
+	ExistsCatalogProductSku(ctx context.Context, arg ExistsCatalogProductSkuParams) (bool, error)
+	ExistsCatalogProductSkuAttribute(ctx context.Context, arg ExistsCatalogProductSkuAttributeParams) (bool, error)
+	ExistsCatalogProductSpu(ctx context.Context, arg ExistsCatalogProductSpuParams) (bool, error)
+	ExistsCatalogProductSpuTag(ctx context.Context, arg ExistsCatalogProductSpuTagParams) (bool, error)
+	ExistsCatalogTag(ctx context.Context, arg ExistsCatalogTagParams) (bool, error)
+	ExistsInventorySkuSerial(ctx context.Context, arg ExistsInventorySkuSerialParams) (bool, error)
+	ExistsInventoryStock(ctx context.Context, arg ExistsInventoryStockParams) (bool, error)
+	ExistsInventoryStockHistory(ctx context.Context, arg ExistsInventoryStockHistoryParams) (bool, error)
+	ExistsOrderBase(ctx context.Context, arg ExistsOrderBaseParams) (bool, error)
+	ExistsOrderInvoice(ctx context.Context, arg ExistsOrderInvoiceParams) (bool, error)
+	ExistsOrderInvoiceItem(ctx context.Context, arg ExistsOrderInvoiceItemParams) (bool, error)
+	ExistsOrderItem(ctx context.Context, arg ExistsOrderItemParams) (bool, error)
+	ExistsOrderItemSerial(ctx context.Context, arg ExistsOrderItemSerialParams) (bool, error)
+	ExistsOrderRefund(ctx context.Context, arg ExistsOrderRefundParams) (bool, error)
+	ExistsOrderRefundDispute(ctx context.Context, arg ExistsOrderRefundDisputeParams) (bool, error)
+	ExistsOrderVnpay(ctx context.Context, arg ExistsOrderVnpayParams) (bool, error)
+	ExistsPromotionBase(ctx context.Context, arg ExistsPromotionBaseParams) (bool, error)
+	ExistsPromotionDiscount(ctx context.Context, arg ExistsPromotionDiscountParams) (bool, error)
+	ExistsSharedResource(ctx context.Context, arg ExistsSharedResourceParams) (bool, error)
+	ExistsSystemEvent(ctx context.Context, arg ExistsSystemEventParams) (bool, error)
+	ExistsSystemSearchSync(ctx context.Context, arg ExistsSystemSearchSyncParams) (bool, error)
 	// ========================================
 	// Queries for table: account.address
 	// ========================================
-	GetAddress(ctx context.Context, arg GetAddressParams) (AccountAddress, error)
+	GetAccountAddress(ctx context.Context, arg GetAccountAddressParams) (AccountAddress, error)
+	// Code generated by tool/main.go. DO NOT EDIT.
+	// This file contains all queries for the database schema.
 	// ========================================
-	// Queries for table: catalog.brand
+	// Queries for table: account.base
 	// ========================================
-	GetBrand(ctx context.Context, arg GetBrandParams) (CatalogBrand, error)
+	GetAccountBase(ctx context.Context, arg GetAccountBaseParams) (AccountBase, error)
 	// ========================================
 	// Queries for table: account.cart_item
 	// ========================================
-	GetCartItem(ctx context.Context, arg GetCartItemParams) (AccountCartItem, error)
-	// ========================================
-	// Queries for table: catalog.category
-	// ========================================
-	GetCategory(ctx context.Context, arg GetCategoryParams) (CatalogCategory, error)
-	// ========================================
-	// Queries for table: catalog.comment
-	// ========================================
-	GetComment(ctx context.Context, arg GetCommentParams) (CatalogComment, error)
+	GetAccountCartItem(ctx context.Context, arg GetAccountCartItemParams) (AccountCartItem, error)
 	// ========================================
 	// Queries for table: account.customer
 	// ========================================
-	GetCustomer(ctx context.Context, arg GetCustomerParams) (AccountCustomer, error)
+	GetAccountCustomer(ctx context.Context, id pgtype.Int8) (AccountCustomer, error)
 	// ========================================
-	// Queries for table: system.event
+	// Queries for table: account.income_history
 	// ========================================
-	GetEvent(ctx context.Context, id int64) (SystemEvent, error)
+	GetAccountIncomeHistory(ctx context.Context, arg GetAccountIncomeHistoryParams) (AccountIncomeHistory, error)
 	// ========================================
-	// Queries for table: payment.invoice
+	// Queries for table: account.notification
 	// ========================================
-	GetInvoice(ctx context.Context, arg GetInvoiceParams) (PaymentInvoice, error)
-	// ========================================
-	// Queries for table: payment.invoice_item
-	// ========================================
-	GetInvoiceItem(ctx context.Context, id int64) (PaymentInvoiceItem, error)
-	// ========================================
-	// Queries for table: payment.order
-	// ========================================
-	GetOrder(ctx context.Context, arg GetOrderParams) (PaymentOrder, error)
-	// ========================================
-	// Queries for table: payment.order_item
-	// ========================================
-	GetOrderItem(ctx context.Context, arg GetOrderItemParams) (PaymentOrderItem, error)
-	// ========================================
-	// Queries for table: payment.order_item_serial
-	// ========================================
-	GetOrderItemSerial(ctx context.Context, arg GetOrderItemSerialParams) (PaymentOrderItemSerial, error)
-	// ========================================
-	// Queries for table: catalog.product_sku
-	// ========================================
-	GetProductSku(ctx context.Context, arg GetProductSkuParams) (CatalogProductSku, error)
-	// ========================================
-	// Queries for table: catalog.product_sku_attribute
-	// ========================================
-	GetProductSkuAttribute(ctx context.Context, arg GetProductSkuAttributeParams) (CatalogProductSkuAttribute, error)
-	// ========================================
-	// Queries for table: catalog.product_spu
-	// ========================================
-	GetProductSpu(ctx context.Context, arg GetProductSpuParams) (CatalogProductSpu, error)
-	// ========================================
-	// Queries for table: catalog.product_spu_tag
-	// ========================================
-	GetProductSpuTag(ctx context.Context, arg GetProductSpuTagParams) (CatalogProductSpuTag, error)
+	GetAccountNotification(ctx context.Context, id pgtype.Int8) (AccountNotification, error)
 	// ========================================
 	// Queries for table: account.profile
 	// ========================================
-	GetProfile(ctx context.Context, arg GetProfileParams) (AccountProfile, error)
-	// ========================================
-	// Queries for table: promotion.promotion
-	// ========================================
-	GetPromotion(ctx context.Context, arg GetPromotionParams) (PromotionPromotion, error)
-	// ========================================
-	// Queries for table: promotion.promotion_redemption
-	// ========================================
-	GetPromotionRedemption(ctx context.Context, id int64) (PromotionPromotionRedemption, error)
-	// ========================================
-	// Queries for table: promotion.promotion_voucher
-	// ========================================
-	GetPromotionVoucher(ctx context.Context, arg GetPromotionVoucherParams) (PromotionPromotionVoucher, error)
-	// ========================================
-	// Queries for table: payment.refund
-	// ========================================
-	GetRefund(ctx context.Context, arg GetRefundParams) (PaymentRefund, error)
-	// ========================================
-	// Queries for table: payment.refund_dispute
-	// ========================================
-	GetRefundDispute(ctx context.Context, arg GetRefundDisputeParams) (PaymentRefundDispute, error)
-	// ========================================
-	// Queries for table: shared.resource
-	// ========================================
-	GetResource(ctx context.Context, id int64) (SharedResource, error)
-	// ========================================
-	// Queries for table: system.search_sync
-	// ========================================
-	GetSearchSync(ctx context.Context, id int64) (SystemSearchSync, error)
-	// ========================================
-	// Queries for table: inventory.sku_serial
-	// ========================================
-	GetSkuSerial(ctx context.Context, arg GetSkuSerialParams) (InventorySkuSerial, error)
-	// ========================================
-	// Queries for table: inventory.stock
-	// ========================================
-	GetStock(ctx context.Context, arg GetStockParams) (InventoryStock, error)
-	// ========================================
-	// Queries for table: inventory.stock_history
-	// ========================================
-	GetStockHistory(ctx context.Context, id int64) (InventoryStockHistory, error)
-	// ========================================
-	// Queries for table: catalog.tag
-	// ========================================
-	GetTag(ctx context.Context, arg GetTagParams) (CatalogTag, error)
+	GetAccountProfile(ctx context.Context, arg GetAccountProfileParams) (AccountProfile, error)
 	// ========================================
 	// Queries for table: account.vendor
 	// ========================================
-	GetVendor(ctx context.Context, arg GetVendorParams) (AccountVendor, error)
+	GetAccountVendor(ctx context.Context, id pgtype.Int8) (AccountVendor, error)
 	// ========================================
-	// Queries for table: payment.vnpay
+	// Queries for table: catalog.brand
 	// ========================================
-	GetVnpay(ctx context.Context, arg GetVnpayParams) (PaymentVnpay, error)
-	ListAccount(ctx context.Context, arg ListAccountParams) ([]AccountAccount, error)
-	ListAddress(ctx context.Context, arg ListAddressParams) ([]AccountAddress, error)
-	ListBrand(ctx context.Context, arg ListBrandParams) ([]CatalogBrand, error)
-	ListCartItem(ctx context.Context, arg ListCartItemParams) ([]AccountCartItem, error)
-	ListCategory(ctx context.Context, arg ListCategoryParams) ([]CatalogCategory, error)
-	ListComment(ctx context.Context, arg ListCommentParams) ([]CatalogComment, error)
-	ListCustomer(ctx context.Context, arg ListCustomerParams) ([]AccountCustomer, error)
-	ListEvent(ctx context.Context, arg ListEventParams) ([]SystemEvent, error)
-	ListInvoice(ctx context.Context, arg ListInvoiceParams) ([]PaymentInvoice, error)
-	ListInvoiceItem(ctx context.Context, arg ListInvoiceItemParams) ([]PaymentInvoiceItem, error)
-	ListOrder(ctx context.Context, arg ListOrderParams) ([]PaymentOrder, error)
-	ListOrderItem(ctx context.Context, arg ListOrderItemParams) ([]PaymentOrderItem, error)
-	ListOrderItemSerial(ctx context.Context, arg ListOrderItemSerialParams) ([]PaymentOrderItemSerial, error)
-	ListProductSku(ctx context.Context, arg ListProductSkuParams) ([]CatalogProductSku, error)
-	ListProductSkuAttribute(ctx context.Context, arg ListProductSkuAttributeParams) ([]CatalogProductSkuAttribute, error)
-	ListProductSpu(ctx context.Context, arg ListProductSpuParams) ([]CatalogProductSpu, error)
-	ListProductSpuTag(ctx context.Context, arg ListProductSpuTagParams) ([]CatalogProductSpuTag, error)
-	ListProfile(ctx context.Context, arg ListProfileParams) ([]AccountProfile, error)
-	ListPromotion(ctx context.Context, arg ListPromotionParams) ([]PromotionPromotion, error)
-	ListPromotionRedemption(ctx context.Context, arg ListPromotionRedemptionParams) ([]PromotionPromotionRedemption, error)
-	ListPromotionVoucher(ctx context.Context, arg ListPromotionVoucherParams) ([]PromotionPromotionVoucher, error)
-	ListRefund(ctx context.Context, arg ListRefundParams) ([]PaymentRefund, error)
-	ListRefundDispute(ctx context.Context, arg ListRefundDisputeParams) ([]PaymentRefundDispute, error)
-	ListResource(ctx context.Context, arg ListResourceParams) ([]SharedResource, error)
-	ListSearchSync(ctx context.Context, arg ListSearchSyncParams) ([]SystemSearchSync, error)
-	ListSkuSerial(ctx context.Context, arg ListSkuSerialParams) ([]InventorySkuSerial, error)
-	ListStock(ctx context.Context, arg ListStockParams) ([]InventoryStock, error)
-	ListStockHistory(ctx context.Context, arg ListStockHistoryParams) ([]InventoryStockHistory, error)
-	ListTag(ctx context.Context, arg ListTagParams) ([]CatalogTag, error)
-	ListVendor(ctx context.Context, arg ListVendorParams) ([]AccountVendor, error)
-	ListVnpay(ctx context.Context, arg ListVnpayParams) ([]PaymentVnpay, error)
-	UpdateAccount(ctx context.Context, arg UpdateAccountParams) (AccountAccount, error)
-	UpdateAddress(ctx context.Context, arg UpdateAddressParams) (AccountAddress, error)
-	UpdateBrand(ctx context.Context, arg UpdateBrandParams) (CatalogBrand, error)
-	UpdateCartItem(ctx context.Context, arg UpdateCartItemParams) (AccountCartItem, error)
-	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (CatalogCategory, error)
-	UpdateComment(ctx context.Context, arg UpdateCommentParams) (CatalogComment, error)
-	UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) (AccountCustomer, error)
-	UpdateEvent(ctx context.Context, arg UpdateEventParams) (SystemEvent, error)
-	UpdateInvoice(ctx context.Context, arg UpdateInvoiceParams) (PaymentInvoice, error)
-	UpdateInvoiceItem(ctx context.Context, arg UpdateInvoiceItemParams) (PaymentInvoiceItem, error)
-	UpdateOrder(ctx context.Context, arg UpdateOrderParams) (PaymentOrder, error)
-	UpdateOrderItem(ctx context.Context, arg UpdateOrderItemParams) (PaymentOrderItem, error)
-	UpdateOrderItemSerial(ctx context.Context, arg UpdateOrderItemSerialParams) (PaymentOrderItemSerial, error)
-	UpdateProductSku(ctx context.Context, arg UpdateProductSkuParams) (CatalogProductSku, error)
-	UpdateProductSkuAttribute(ctx context.Context, arg UpdateProductSkuAttributeParams) (CatalogProductSkuAttribute, error)
-	UpdateProductSpu(ctx context.Context, arg UpdateProductSpuParams) (CatalogProductSpu, error)
-	UpdateProductSpuTag(ctx context.Context, arg UpdateProductSpuTagParams) (CatalogProductSpuTag, error)
-	UpdateProfile(ctx context.Context, arg UpdateProfileParams) (AccountProfile, error)
-	UpdatePromotion(ctx context.Context, arg UpdatePromotionParams) (PromotionPromotion, error)
-	UpdatePromotionRedemption(ctx context.Context, arg UpdatePromotionRedemptionParams) (PromotionPromotionRedemption, error)
-	UpdatePromotionVoucher(ctx context.Context, arg UpdatePromotionVoucherParams) (PromotionPromotionVoucher, error)
-	UpdateRefund(ctx context.Context, arg UpdateRefundParams) (PaymentRefund, error)
-	UpdateRefundDispute(ctx context.Context, arg UpdateRefundDisputeParams) (PaymentRefundDispute, error)
-	UpdateResource(ctx context.Context, arg UpdateResourceParams) (SharedResource, error)
-	UpdateSearchSync(ctx context.Context, arg UpdateSearchSyncParams) (SystemSearchSync, error)
-	UpdateSkuSerial(ctx context.Context, arg UpdateSkuSerialParams) (InventorySkuSerial, error)
-	UpdateStock(ctx context.Context, arg UpdateStockParams) (InventoryStock, error)
-	UpdateStockHistory(ctx context.Context, arg UpdateStockHistoryParams) (InventoryStockHistory, error)
-	UpdateTag(ctx context.Context, arg UpdateTagParams) (CatalogTag, error)
-	UpdateVendor(ctx context.Context, arg UpdateVendorParams) (AccountVendor, error)
-	UpdateVnpay(ctx context.Context, arg UpdateVnpayParams) (PaymentVnpay, error)
+	GetCatalogBrand(ctx context.Context, arg GetCatalogBrandParams) (CatalogBrand, error)
+	// ========================================
+	// Queries for table: catalog.category
+	// ========================================
+	GetCatalogCategory(ctx context.Context, arg GetCatalogCategoryParams) (CatalogCategory, error)
+	// ========================================
+	// Queries for table: catalog.comment
+	// ========================================
+	GetCatalogComment(ctx context.Context, arg GetCatalogCommentParams) (CatalogComment, error)
+	// ========================================
+	// Queries for table: catalog.product_sku
+	// ========================================
+	GetCatalogProductSku(ctx context.Context, arg GetCatalogProductSkuParams) (CatalogProductSku, error)
+	// ========================================
+	// Queries for table: catalog.product_sku_attribute
+	// ========================================
+	GetCatalogProductSkuAttribute(ctx context.Context, arg GetCatalogProductSkuAttributeParams) (CatalogProductSkuAttribute, error)
+	// ========================================
+	// Queries for table: catalog.product_spu
+	// ========================================
+	GetCatalogProductSpu(ctx context.Context, arg GetCatalogProductSpuParams) (CatalogProductSpu, error)
+	// ========================================
+	// Queries for table: catalog.product_spu_tag
+	// ========================================
+	GetCatalogProductSpuTag(ctx context.Context, arg GetCatalogProductSpuTagParams) (CatalogProductSpuTag, error)
+	// ========================================
+	// Queries for table: catalog.tag
+	// ========================================
+	GetCatalogTag(ctx context.Context, arg GetCatalogTagParams) (CatalogTag, error)
+	// ========================================
+	// Queries for table: inventory.sku_serial
+	// ========================================
+	GetInventorySkuSerial(ctx context.Context, arg GetInventorySkuSerialParams) (InventorySkuSerial, error)
+	// ========================================
+	// Queries for table: inventory.stock
+	// ========================================
+	GetInventoryStock(ctx context.Context, arg GetInventoryStockParams) (InventoryStock, error)
+	// ========================================
+	// Queries for table: inventory.stock_history
+	// ========================================
+	GetInventoryStockHistory(ctx context.Context, id pgtype.Int8) (InventoryStockHistory, error)
+	// ========================================
+	// Queries for table: order.base
+	// ========================================
+	GetOrderBase(ctx context.Context, arg GetOrderBaseParams) (OrderBase, error)
+	// ========================================
+	// Queries for table: order.invoice
+	// ========================================
+	GetOrderInvoice(ctx context.Context, arg GetOrderInvoiceParams) (OrderInvoice, error)
+	// ========================================
+	// Queries for table: order.invoice_item
+	// ========================================
+	GetOrderInvoiceItem(ctx context.Context, id pgtype.Int8) (OrderInvoiceItem, error)
+	// ========================================
+	// Queries for table: order.item
+	// ========================================
+	GetOrderItem(ctx context.Context, arg GetOrderItemParams) (OrderItem, error)
+	// ========================================
+	// Queries for table: order.item_serial
+	// ========================================
+	GetOrderItemSerial(ctx context.Context, arg GetOrderItemSerialParams) (OrderItemSerial, error)
+	// ========================================
+	// Queries for table: order.refund
+	// ========================================
+	GetOrderRefund(ctx context.Context, arg GetOrderRefundParams) (OrderRefund, error)
+	// ========================================
+	// Queries for table: order.refund_dispute
+	// ========================================
+	GetOrderRefundDispute(ctx context.Context, arg GetOrderRefundDisputeParams) (OrderRefundDispute, error)
+	// ========================================
+	// Queries for table: order.vnpay
+	// ========================================
+	GetOrderVnpay(ctx context.Context, id pgtype.Int8) (OrderVnpay, error)
+	// ========================================
+	// Queries for table: promotion.base
+	// ========================================
+	GetPromotionBase(ctx context.Context, arg GetPromotionBaseParams) (PromotionBase, error)
+	// ========================================
+	// Queries for table: promotion.discount
+	// ========================================
+	GetPromotionDiscount(ctx context.Context, id pgtype.Int8) (PromotionDiscount, error)
+	// ========================================
+	// Queries for table: shared.resource
+	// ========================================
+	GetSharedResource(ctx context.Context, id pgtype.Int8) (SharedResource, error)
+	// ========================================
+	// Queries for table: system.event
+	// ========================================
+	GetSystemEvent(ctx context.Context, id pgtype.Int8) (SystemEvent, error)
+	// ========================================
+	// Queries for table: system.search_sync
+	// ========================================
+	GetSystemSearchSync(ctx context.Context, id pgtype.Int8) (SystemSearchSync, error)
+	ListAccountAddress(ctx context.Context, arg ListAccountAddressParams) ([]AccountAddress, error)
+	ListAccountBase(ctx context.Context, arg ListAccountBaseParams) ([]AccountBase, error)
+	ListAccountCartItem(ctx context.Context, arg ListAccountCartItemParams) ([]AccountCartItem, error)
+	ListAccountCustomer(ctx context.Context, arg ListAccountCustomerParams) ([]AccountCustomer, error)
+	ListAccountIncomeHistory(ctx context.Context, arg ListAccountIncomeHistoryParams) ([]AccountIncomeHistory, error)
+	ListAccountNotification(ctx context.Context, arg ListAccountNotificationParams) ([]AccountNotification, error)
+	ListAccountProfile(ctx context.Context, arg ListAccountProfileParams) ([]AccountProfile, error)
+	ListAccountVendor(ctx context.Context, arg ListAccountVendorParams) ([]AccountVendor, error)
+	ListActivePromotion(ctx context.Context, arg ListActivePromotionParams) ([]PromotionBase, error)
+	ListCatalogBrand(ctx context.Context, arg ListCatalogBrandParams) ([]CatalogBrand, error)
+	ListCatalogCategory(ctx context.Context, arg ListCatalogCategoryParams) ([]CatalogCategory, error)
+	ListCatalogComment(ctx context.Context, arg ListCatalogCommentParams) ([]CatalogComment, error)
+	ListCatalogProductSku(ctx context.Context, arg ListCatalogProductSkuParams) ([]CatalogProductSku, error)
+	ListCatalogProductSkuAttribute(ctx context.Context, arg ListCatalogProductSkuAttributeParams) ([]CatalogProductSkuAttribute, error)
+	ListCatalogProductSpu(ctx context.Context, arg ListCatalogProductSpuParams) ([]CatalogProductSpu, error)
+	ListCatalogProductSpuTag(ctx context.Context, arg ListCatalogProductSpuTagParams) ([]CatalogProductSpuTag, error)
+	ListCatalogTag(ctx context.Context, arg ListCatalogTagParams) ([]CatalogTag, error)
+	ListInventorySkuSerial(ctx context.Context, arg ListInventorySkuSerialParams) ([]InventorySkuSerial, error)
+	ListInventoryStock(ctx context.Context, arg ListInventoryStockParams) ([]InventoryStock, error)
+	ListInventoryStockHistory(ctx context.Context, arg ListInventoryStockHistoryParams) ([]InventoryStockHistory, error)
+	ListOrderBase(ctx context.Context, arg ListOrderBaseParams) ([]OrderBase, error)
+	ListOrderInvoice(ctx context.Context, arg ListOrderInvoiceParams) ([]OrderInvoice, error)
+	ListOrderInvoiceItem(ctx context.Context, arg ListOrderInvoiceItemParams) ([]OrderInvoiceItem, error)
+	ListOrderItem(ctx context.Context, arg ListOrderItemParams) ([]OrderItem, error)
+	ListOrderItemSerial(ctx context.Context, arg ListOrderItemSerialParams) ([]OrderItemSerial, error)
+	ListOrderRefund(ctx context.Context, arg ListOrderRefundParams) ([]OrderRefund, error)
+	ListOrderRefundDispute(ctx context.Context, arg ListOrderRefundDisputeParams) ([]OrderRefundDispute, error)
+	ListOrderVnpay(ctx context.Context, arg ListOrderVnpayParams) ([]OrderVnpay, error)
+	ListPromotionBase(ctx context.Context, arg ListPromotionBaseParams) ([]PromotionBase, error)
+	ListPromotionDiscount(ctx context.Context, arg ListPromotionDiscountParams) ([]PromotionDiscount, error)
+	ListSharedResource(ctx context.Context, arg ListSharedResourceParams) ([]SharedResource, error)
+	ListSystemEvent(ctx context.Context, arg ListSystemEventParams) ([]SystemEvent, error)
+	ListSystemSearchSync(ctx context.Context, arg ListSystemSearchSyncParams) ([]SystemSearchSync, error)
+	LowestPriceProductSku(ctx context.Context, spuID []int64) ([]LowestPriceProductSkuRow, error)
+	UpdateAccountAddress(ctx context.Context, arg UpdateAccountAddressParams) (AccountAddress, error)
+	UpdateAccountBase(ctx context.Context, arg UpdateAccountBaseParams) (AccountBase, error)
+	UpdateAccountCartItem(ctx context.Context, arg UpdateAccountCartItemParams) (AccountCartItem, error)
+	UpdateAccountCustomer(ctx context.Context, arg UpdateAccountCustomerParams) (AccountCustomer, error)
+	UpdateAccountIncomeHistory(ctx context.Context, arg UpdateAccountIncomeHistoryParams) (AccountIncomeHistory, error)
+	UpdateAccountNotification(ctx context.Context, arg UpdateAccountNotificationParams) (AccountNotification, error)
+	UpdateAccountProfile(ctx context.Context, arg UpdateAccountProfileParams) (AccountProfile, error)
+	UpdateAccountVendor(ctx context.Context, arg UpdateAccountVendorParams) (AccountVendor, error)
+	UpdateCatalogBrand(ctx context.Context, arg UpdateCatalogBrandParams) (CatalogBrand, error)
+	UpdateCatalogCategory(ctx context.Context, arg UpdateCatalogCategoryParams) (CatalogCategory, error)
+	UpdateCatalogComment(ctx context.Context, arg UpdateCatalogCommentParams) (CatalogComment, error)
+	UpdateCatalogProductSku(ctx context.Context, arg UpdateCatalogProductSkuParams) (CatalogProductSku, error)
+	UpdateCatalogProductSkuAttribute(ctx context.Context, arg UpdateCatalogProductSkuAttributeParams) (CatalogProductSkuAttribute, error)
+	UpdateCatalogProductSpu(ctx context.Context, arg UpdateCatalogProductSpuParams) (CatalogProductSpu, error)
+	UpdateCatalogProductSpuTag(ctx context.Context, arg UpdateCatalogProductSpuTagParams) (CatalogProductSpuTag, error)
+	UpdateCatalogTag(ctx context.Context, arg UpdateCatalogTagParams) (CatalogTag, error)
+	UpdateInventorySkuSerial(ctx context.Context, arg UpdateInventorySkuSerialParams) (InventorySkuSerial, error)
+	UpdateInventoryStock(ctx context.Context, arg UpdateInventoryStockParams) (InventoryStock, error)
+	UpdateInventoryStockHistory(ctx context.Context, arg UpdateInventoryStockHistoryParams) (InventoryStockHistory, error)
+	UpdateOrderBase(ctx context.Context, arg UpdateOrderBaseParams) (OrderBase, error)
+	UpdateOrderInvoice(ctx context.Context, arg UpdateOrderInvoiceParams) (OrderInvoice, error)
+	UpdateOrderInvoiceItem(ctx context.Context, arg UpdateOrderInvoiceItemParams) (OrderInvoiceItem, error)
+	UpdateOrderItem(ctx context.Context, arg UpdateOrderItemParams) (OrderItem, error)
+	UpdateOrderItemSerial(ctx context.Context, arg UpdateOrderItemSerialParams) (OrderItemSerial, error)
+	UpdateOrderRefund(ctx context.Context, arg UpdateOrderRefundParams) (OrderRefund, error)
+	UpdateOrderRefundDispute(ctx context.Context, arg UpdateOrderRefundDisputeParams) (OrderRefundDispute, error)
+	UpdateOrderVnpay(ctx context.Context, arg UpdateOrderVnpayParams) (OrderVnpay, error)
+	UpdatePromotionBase(ctx context.Context, arg UpdatePromotionBaseParams) (PromotionBase, error)
+	UpdatePromotionDiscount(ctx context.Context, arg UpdatePromotionDiscountParams) (PromotionDiscount, error)
+	UpdateSharedResource(ctx context.Context, arg UpdateSharedResourceParams) (SharedResource, error)
+	UpdateSystemEvent(ctx context.Context, arg UpdateSystemEventParams) (SystemEvent, error)
+	UpdateSystemSearchSync(ctx context.Context, arg UpdateSystemSearchSyncParams) (SystemSearchSync, error)
 }
 
 var _ Querier = (*Queries)(nil)
