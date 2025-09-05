@@ -4,24 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"shopnexus-remastered/internal/utils/pgutil"
 
 	"shopnexus-remastered/internal/db"
 	authmodel "shopnexus-remastered/internal/module/auth/model"
-	pgxptr "shopnexus-remastered/internal/utils/pgx/ptr"
-	pgxsqlc "shopnexus-remastered/internal/utils/pgx/sqlc"
-	"shopnexus-remastered/internal/utils/ptr"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type AccountBiz struct {
-	storage *pgxsqlc.Storage
+	storage *pgutil.Storage
 }
 
 // NewAccountBiz creates a new instance of AccountBiz.
-func NewAccountBiz(storage *pgxsqlc.Storage) *AccountBiz {
+func NewAccountBiz(storage *pgutil.Storage) *AccountBiz {
 	return &AccountBiz{
 		storage: storage,
 	}
@@ -34,20 +31,20 @@ type FindParams struct {
 	Phone    *string
 }
 
-func (s *AccountBiz) Find(ctx context.Context, params FindParams) (db.AccountAccount, error) {
+func (s *AccountBiz) Find(ctx context.Context, params FindParams) (db.AccountBase, error) {
 	if params.Code == nil && params.Username == nil && params.Email == nil && params.Phone == nil {
-		return db.AccountAccount{}, fmt.Errorf("at least one of username, email, or phone must be provided")
+		return db.AccountBase{}, fmt.Errorf("at least one of username, email, or phone must be provided")
 	}
 
-	account, err := s.storage.GetAccount(ctx, db.GetAccountParams{
-		Code:     ptr.DerefDefault(params.Code, ""),
-		Username: *pgxptr.PtrToPgtype(&pgtype.Text{}, params.Username),
-		Email:    *pgxptr.PtrToPgtype(&pgtype.Text{}, params.Email),
-		Phone:    *pgxptr.PtrToPgtype(&pgtype.Text{}, params.Phone),
+	account, err := s.storage.GetAccountBase(ctx, db.GetAccountBaseParams{
+		Code:     pgutil.PtrToPgtype(params.Code, pgutil.StringToPgText),
+		Username: pgutil.PtrToPgtype(params.Username, pgutil.StringToPgText),
+		Email:    pgutil.PtrToPgtype(params.Email, pgutil.StringToPgText),
+		Phone:    pgutil.PtrToPgtype(params.Phone, pgutil.StringToPgText),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return db.AccountAccount{}, authmodel.ErrAccountNotFound
+			return db.AccountBase{}, authmodel.ErrAccountNotFound
 		}
 		return account, err
 	}
@@ -63,21 +60,19 @@ type CreateParams struct {
 	Password *string
 }
 
-func (s *AccountBiz) Create(ctx context.Context, params CreateParams) (db.AccountAccount, error) {
-	var zero db.AccountAccount
-
+func (s *AccountBiz) Create(ctx context.Context, params CreateParams) error {
 	code := uuid.New().String()
-	createdAccount, err := s.storage.CreateDefaultAccount(ctx, db.CreateDefaultAccountParams{
+	_, err := s.storage.CreateDefaultAccountBase(ctx, []db.CreateDefaultAccountBaseParams{{
 		Code:     code,
 		Type:     params.Type,
-		Phone:    *pgxptr.PtrToPgtype(&pgtype.Text{}, params.Phone),
-		Email:    *pgxptr.PtrToPgtype(&pgtype.Text{}, params.Email),
-		Username: *pgxptr.PtrToPgtype(&pgtype.Text{}, params.Username),
-		Password: *pgxptr.PtrToPgtype(&pgtype.Text{}, params.Password),
-	})
+		Phone:    pgutil.PtrToPgtype(params.Phone, pgutil.StringToPgText),
+		Email:    pgutil.PtrToPgtype(params.Email, pgutil.StringToPgText),
+		Username: pgutil.PtrToPgtype(params.Username, pgutil.StringToPgText),
+		Password: pgutil.PtrToPgtype(params.Password, pgutil.StringToPgText),
+	}})
 	if err != nil {
-		return zero, err
+		return err
 	}
 
-	return createdAccount, nil
+	return nil
 }
