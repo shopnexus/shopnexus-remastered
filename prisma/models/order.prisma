@@ -13,8 +13,8 @@ model Order {
   products OrderItem[]
   vnpay    PaymentVnpay?
 
-  @@map("order")
-  @@schema("payment")
+  @@map("base")
+  @@schema("order")
 }
 
 model OrderItem {
@@ -28,13 +28,13 @@ model OrderItem {
   serials OrderItemSerial[]
   refund  Refund[]
   order   Order             @relation(fields: [order_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
-  sku     ProductSku        @relation(fields: [sku_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  sku     ProductSku        @relation(fields: [sku_id], references: [id], onUpdate: Cascade, onDelete: NoAction)
 
   //! @@unique([order_id, sku_id]); Should not be unique, because product can be added multiple times (due to product.can_combine)
   @@index([order_id])
   @@index([sku_id])
-  @@map("order_item")
-  @@schema("payment")
+  @@map("item")
+  @@schema("order")
 }
 
 model OrderItemSerial {
@@ -43,11 +43,11 @@ model OrderItemSerial {
   product_serial_id BigInt
 
   order_item OrderItem     @relation(fields: [order_item_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
-  serial     ProductSerial @relation(fields: [product_serial_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  serial     ProductSerial @relation(fields: [product_serial_id], references: [id], onUpdate: Cascade, onDelete: NoAction)
 
   @@unique([order_item_id, product_serial_id])
-  @@map("order_item_serial")
-  @@schema("payment")
+  @@map("item_serial")
+  @@schema("order")
 }
 
 enum PaymentMethod {
@@ -57,7 +57,7 @@ enum PaymentMethod {
   Crypto
 
   @@map("payment_method")
-  @@schema("payment")
+  @@schema("order")
 }
 
 enum RefundMethod {
@@ -65,12 +65,11 @@ enum RefundMethod {
   DropOff
 
   @@map("refund_method")
-  @@schema("payment")
+  @@schema("order")
 }
 
 model PaymentVnpay {
-  id       BigInt @id @default(autoincrement())
-  order_id BigInt @unique
+  id BigInt @id
 
   vnp_Amount            String
   vnp_BankCode          String
@@ -84,10 +83,10 @@ model PaymentVnpay {
   vnp_TransactionStatus String
   vnp_TxnRef            String
 
-  order Order @relation(fields: [order_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  order Order @relation(fields: [id], references: [id], onUpdate: Cascade, onDelete: Cascade)
 
   @@map("vnpay")
-  @@schema("payment")
+  @@schema("order")
 }
 
 model Refund {
@@ -102,22 +101,22 @@ model Refund {
   address      String? // PICK_UP address, if method is DROP_OFF, address is empty
   date_created DateTime     @default(now()) @db.Timestamptz(3)
 
-  order_item      OrderItem       @relation(fields: [order_item_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  order_item      OrderItem       @relation(fields: [order_item_id], references: [id], onUpdate: Cascade, onDelete: NoAction)
   reviewer_vendor Vendor?         @relation(fields: [reviewed_by_id], references: [id], onUpdate: Cascade, onDelete: SetNull)
   disputes        RefundDispute[]
 
   @@index([order_item_id])
   @@index([reviewed_by_id])
   @@map("refund")
-  @@schema("payment")
+  @@schema("order")
 }
 
 // Complaint about refund request for vendor
 model RefundDispute {
-  id        BigInt @id @default(autoincrement())
-  code      String @unique
-  refund_id BigInt // Refund id that this dispute belongs to
-  vendor_id BigInt // id who created this dispute
+  id           BigInt @id @default(autoincrement())
+  code         String @unique
+  refund_id    BigInt // Refund id that this dispute belongs to
+  issued_by_id BigInt // Vendor id who issued this dispute
 
   reason       String
   status       Status   @default(Pending)
@@ -125,12 +124,12 @@ model RefundDispute {
   date_updated DateTime @updatedAt @db.Timestamptz(3)
 
   refund Refund @relation(fields: [refund_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
-  vendor Vendor @relation(fields: [vendor_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  vendor Vendor @relation(fields: [issued_by_id], references: [id], onUpdate: Cascade, onDelete: NoAction)
 
   @@index([refund_id])
-  @@index([vendor_id])
+  @@index([issued_by_id])
   @@map("refund_dispute")
-  @@schema("payment")
+  @@schema("order")
 }
 
 enum InvoiceType {
@@ -139,7 +138,7 @@ enum InvoiceType {
   Adjustment
 
   @@map("invoice_type")
-  @@schema("payment")
+  @@schema("order")
 }
 
 enum InvoiceRefType {
@@ -147,7 +146,7 @@ enum InvoiceRefType {
   Fee
 
   @@map("invoice_ref_type")
-  @@schema("payment")
+  @@schema("order")
 }
 
 model Invoice {
@@ -171,11 +170,11 @@ model Invoice {
   date_created   DateTime      @default(now()) @db.Timestamptz(3)
 
   hash      Bytes         @unique @db.ByteA // Hash of the change log, used to prevent duplicate change logs
-  prev_hash Bytes?        @db.ByteA // Hash of the previous change log, used to link change logs together
+  prev_hash Bytes         @db.ByteA // Hash of the previous change log, used to link change logs together. Can be empty for initial chain item
   items     InvoiceItem[]
 
   @@map("invoice")
-  @@schema("payment")
+  @@schema("order")
 }
 
 model InvoiceItem {
@@ -192,5 +191,5 @@ model InvoiceItem {
 
   @@index([invoice_id])
   @@map("invoice_item")
-  @@schema("payment")
+  @@schema("order")
 }

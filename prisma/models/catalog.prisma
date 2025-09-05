@@ -1,11 +1,3 @@
-enum CommentableType {
-  ProductSPU
-  Comment
-
-  @@map("comment_dest_type")
-  @@schema("catalog")
-}
-
 model Brand {
   id          BigInt @id @default(autoincrement())
   code        String @unique
@@ -35,7 +27,7 @@ model ProductCategory {
 model ProductSpu {
   id          BigInt @id @default(autoincrement())
   code        String @unique
-  account_id  BigInt
+  account_id  BigInt // Vendor account only
   category_id BigInt
   brand_id    BigInt
 
@@ -125,12 +117,20 @@ model ProductTag {
   @@schema("catalog")
 }
 
+enum CommentRefType {
+  ProductSPU
+  Comment
+
+  @@map("comment_ref_type")
+  @@schema("catalog")
+}
+
 model Comment {
   id         BigInt @id @default(autoincrement())
   code       String @unique
   account_id BigInt
 
-  ref_type CommentableType
+  ref_type CommentRefType
   ref_id   BigInt
 
   body         String
@@ -140,9 +140,8 @@ model Comment {
   date_created DateTime @default(now()) @db.Timestamptz(3)
   date_updated DateTime @default(now()) @updatedAt @db.Timestamptz(3)
 
-  customer Customer @relation(fields: [account_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  account Account @relation(fields: [account_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
 
-  @@unique([account_id, ref_type, ref_id])
   @@map("comment")
   @@schema("catalog")
 }

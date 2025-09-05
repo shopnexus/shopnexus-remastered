@@ -5,12 +5,12 @@ generator client {
 
 generator dbml {
   provider              = "prisma-dbml-generator"
-  mapToDbSchema         = true
+  mapToDbSchema         = false
   includeRelationFields = false
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  schemas  = ["account", "catalog", "inventory", "promotion", "payment", "system", "shared"]
+  schemas  = ["account", "catalog", "inventory", "promotion", "order", "system", "shared"]
 }

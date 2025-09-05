@@ -7,8 +7,8 @@ enum AccountType {
 }
 
 enum AccountStatus {
-  ACTIVE
-  SUSPENDED
+  Active
+  Suspended
 
   @@map("status")
   @@schema("account")
@@ -24,8 +24,8 @@ enum Gender {
 }
 
 enum AddressType {
-  HOME
-  WORK
+  Home
+  Work
 
   @@map("address_type")
   @@schema("account")
@@ -36,7 +36,7 @@ model Account {
   code String @unique
 
   type         AccountType
-  status       AccountStatus @default(ACTIVE)
+  status       AccountStatus @default(Active)
   phone        String?       @unique @db.VarChar(50)
   email        String?       @unique @db.VarChar(255)
   username     String?       @unique @db.VarChar(100)
@@ -49,14 +49,15 @@ model Account {
   profile          Profile?
   addresses        Address[]
   events           Event[]
+  notifications    Notification[]
+  comments         Comment[]
 
-  @@map("account")
+  @@map("base")
   @@schema("account")
 }
 
 model Profile {
-  id         BigInt @id @default(autoincrement())
-  account_id BigInt @unique
+  id BigInt @id
 
   gender         Gender?
   name           String?   @db.VarChar(100)
@@ -67,42 +68,87 @@ model Profile {
   date_created   DateTime  @default(now()) @db.Timestamptz(3)
   date_updated   DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
 
-  account Account @relation(fields: [account_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  account Account @relation(fields: [id], references: [id], onUpdate: Cascade, onDelete: Cascade)
 
-  @@index([account_id])
   @@map("profile")
   @@schema("account")
 }
 
 model Customer {
-  id                 BigInt   @id @default(autoincrement())
-  account_id         BigInt   @unique
-  default_address_id BigInt? // No need FK to check, index FK
+  id                 BigInt   @id
+  default_address_id BigInt? // No need FK to check, index only
   date_created       DateTime @default(now()) @db.Timestamptz(3)
   date_updated       DateTime @default(now()) @updatedAt @db.Timestamptz(3)
 
-  account  Account    @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  account  Account    @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: Cascade)
   orders   Order[]
-  comments Comment[]
   CartItem CartItem[]
 
-  @@index([account_id])
   @@index([default_address_id])
   @@map("customer")
   @@schema("account")
 }
 
 model Vendor {
-  id         BigInt @id @default(autoincrement())
-  account_id BigInt @unique
+  id BigInt @id
 
-  account         Account         @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  spus            ProductSpu[]
-  refunds         Refund[]
-  refund_disputes RefundDispute[]
+  description String @default("") @db.VarChar(255)
+
+  account          Account         @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  spus             ProductSpu[]
+  refunds          Refund[]
+  refund_disputes  RefundDispute[]
+  promotions       Promotion[]
+  income_histories IncomeHistory[]
+
+  @@index([id])
+  @@map("vendor")
+  @@schema("account")
+}
+
+model IncomeHistory {
+  id         BigInt @id @default(autoincrement())
+  account_id BigInt // Only vendor
+
+  type            String   @db.VarChar(50) // e.g. sale, refund, commission, payout
+  income          BigInt // in USD (+/-)
+  current_balance BigInt // in USD after this transaction
+  note            String?  @db.VarChar(100)
+  date_created    DateTime @default(now()) @db.Timestamptz(3)
+
+  hash      Bytes @unique @db.ByteA // Hash of the change log, used to prevent duplicate change logs
+  prev_hash Bytes @db.ByteA // Hash of the previous change log, used to link change logs together. Can be empty for initial chain item
+
+  account Vendor @relation(fields: [account_id], references: [id], onDelete: Cascade)
 
   @@index([account_id])
-  @@map("vendor")
+  @@index([type])
+  @@index([date_created])
+  @@map("income_history")
+  @@schema("account")
+}
+
+model Notification {
+  id         BigInt @id @default(autoincrement())
+  account_id BigInt
+
+  type    String @db.VarChar(50) // e.g. email, sms, push
+  channel String @db.VarChar(50) // e.g. order_update, promotion, system_alert
+
+  is_read        Boolean   @default(false)
+  content        String    @db.Text
+  date_created   DateTime  @default(now()) @db.Timestamptz(3)
+  date_updated   DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+  date_sent      DateTime? @db.Timestamptz(3)
+  date_scheduled DateTime? @db.Timestamptz(3) // If scheduled for later
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@index([account_id])
+  @@index([type])
+  @@index([channel])
+  @@index([date_created])
+  @@map("notification")
   @@schema("account")
 }
 
@@ -117,7 +163,7 @@ model CartItem {
   date_updated DateTime @default(now()) @updatedAt @db.Timestamptz(3)
 
   customer Customer   @relation(fields: [cart_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
-  sku      ProductSku @relation(fields: [sku_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  sku      ProductSku @relation(fields: [sku_id], references: [id], onUpdate: Cascade, onDelete: NoAction)
 
   @@unique([cart_id, sku_id])
   @@index([cart_id])
@@ -131,7 +177,7 @@ model Address {
   code       String @unique
   account_id BigInt
 
-  type           AddressType @default(HOME)
+  type           AddressType @default(Home)
   full_name      String      @db.VarChar(100)
   phone          String      @db.VarChar(30)
   phone_verified Boolean     @default(false) // If true, phone number is verified; if the phone same as account phone, then it is verified by default

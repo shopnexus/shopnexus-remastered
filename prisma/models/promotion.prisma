@@ -1,66 +1,67 @@
+// Flashsale means a time-limited promotion that is scheduled to start and end at specific times.
+// Voucher same as Flashsale, but not having scheduled routine
+
 enum PromotionType {
-  Voucher
-  FlashSale
+  Discount
   Bundle
   BuyXGetY
   Cashback
 
-  @@map("promotion_type")
+  @@map("type")
   @@schema("promotion")
 }
 
 enum PromotionRefType {
-  OrderItem // Order item, the specific product that is being purchased
-  Order // Order, the whole order total that is being made
+  All // All products, the entire product catalog is being promoted
+  ProductSpu // Product SPU, the specific product that is being promoted
+  ProductSku // Product SKU, the specific SKU of the product that is being promoted
+  Category // Category, the category of products that are being promoted
+  Brand // Brand, the brand of products that are being promoted
 
-  @@map("promotion_ref_type")
+  @@map("ref_type")
   @@schema("promotion")
 }
 
 model Promotion {
-  id   BigInt @id @default(autoincrement())
-  code String @unique
+  id       BigInt           @id @default(autoincrement())
+  code     String           @unique
+  owner_id BigInt? // null means system promotion
+  ref_type PromotionRefType // Type of reference
+  ref_id   BigInt? // Reference id, e.g. product id, category id | null when ref_type is All
 
-  type         PromotionType // Type of promotion, e.g. voucher, flash sale, etc.
-  is_active    Boolean               @default(true)
-  date_started DateTime              @default(now()) @db.Timestamptz(3)
-  date_ended   DateTime?             @db.Timestamptz(3)
-  date_created DateTime              @default(now()) @db.Timestamptz(3)
-  vouchers     PromotionVoucher[]
-  redemptions  PromotionRedemption[]
+  type        PromotionType // Type of promotion, e.g: discount (voucher, flashsale, ...), bundle, buyXGetY, cashback
+  title       String // Title of the promotion
+  description String? // Description of the promotion
+  is_active   Boolean       @default(true)
 
-  @@map("promotion")
+  date_started DateTime  @default(now()) @db.Timestamptz(3) // When the promotion becomes active (if also having a schedule_start, then the later one applies)
+  date_ended   DateTime? @db.Timestamptz(3)
+
+  // Flashsale specific fields
+  schedule_tz       String? // Timezone for the schedule, e.g., "America/New_York"
+  schedule_start    DateTime? @db.Timestamptz(3) // (e.g., "0 9 * * 1" for every Monday 9AM)
+  schedule_duration Int? // in minutes, e.g., 60 for 1 hour
+
+  date_created DateTime @default(now()) @db.Timestamptz(3)
+  date_updated DateTime @updatedAt @db.Timestamptz(3)
+
+  vendor    Vendor?             @relation(fields: [owner_id], references: [id], onUpdate: Cascade, onDelete: SetNull)
+  discounts PromotionDiscount[]
+
+  @@map("base")
   @@schema("promotion")
 }
 
-model PromotionVoucher {
-  id           BigInt @id @default(autoincrement())
-  promotion_id BigInt @unique
+model PromotionDiscount {
+  id BigInt @id
 
-  min_spend        BigInt  @default(0) // Minimum spend to apply this sale, 0 means no limit
+  min_spend        BigInt  @default(0) // Minimum spend to apply this sale, 0 means applied immediately
   max_discount     BigInt  @default(0) // Maximum discount amount (fixed price), 0 means no limit
   discount_percent Int? // either discount_percent or discount_price
   discount_price   BigInt?
 
-  promotion Promotion @relation(fields: [promotion_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  promotion Promotion @relation(fields: [id], references: [id], onUpdate: Cascade, onDelete: Cascade)
 
-  @@map("promotion_voucher")
-  @@schema("promotion")
-}
-
-model PromotionRedemption {
-  id           BigInt @id @default(autoincrement())
-  promotion_id BigInt // Promotion history id that this redemption belongs to
-
-  version      BigInt // Version of the promotion, used to track the promotion change history
-  ref_type     PromotionRefType // Type of reference
-  ref_id       BigInt // Reference id, the order item id
-  date_created DateTime         @default(now()) @db.Timestamptz(3)
-
-  promotion Promotion @relation(fields: [promotion_id], references: [id], onUpdate: Cascade, onDelete: Cascade)
-
-  @@index([promotion_id])
-  @@index([ref_type, ref_id])
-  @@map("promotion_redemption")
+  @@map("discount")
   @@schema("promotion")
 }
