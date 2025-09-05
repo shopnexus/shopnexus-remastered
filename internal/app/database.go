@@ -2,17 +2,17 @@ package app
 
 import (
 	"context"
+	"shopnexus-remastered/internal/utils/pgutil"
 
 	"shopnexus-remastered/config"
 	"shopnexus-remastered/internal/client/pgxpool"
 	"shopnexus-remastered/internal/logger"
-	pgxsqlc "shopnexus-remastered/internal/utils/pgx/sqlc"
 
 	"go.uber.org/fx"
 )
 
 // NewDatabase creates a new database connection
-func NewDatabase(lc fx.Lifecycle, cfg *config.Config) (*pgxsqlc.Storage, error) {
+func NewDatabase(lc fx.Lifecycle, cfg *config.Config) (*pgutil.Storage, error) {
 	pool, err := pgxpool.New(pgxpool.Options{
 		Url:             cfg.Postgres.Url,
 		Host:            cfg.Postgres.Host,
@@ -48,5 +48,5 @@ func NewDatabase(lc fx.Lifecycle, cfg *config.Config) (*pgxsqlc.Storage, error) 
 		},
 	})
 
-	return pgxsqlc.NewStorage(pool), nil
+	return pgutil.NewStorage(pool), nil
 }

@@ -10,10 +10,6 @@ import (
 	"go.uber.org/fx"
 )
 
-func init() {
-	logger.InitLogger()
-}
-
 // Module combines all internal modules
 var Module = fx.Module("main",
 	// Infrastructure
@@ -30,6 +26,7 @@ var Module = fx.Module("main",
 
 	// HTTP server
 	fx.Invoke(
+		SetupLogger,
 		SetupEcho,
 		StartHTTPServer,
 	),
@@ -38,4 +35,8 @@ var Module = fx.Module("main",
 // NewConfig provides the application configuration
 func NewConfig() *config.Config {
 	return config.GetConfig()
+}
+
+func SetupLogger() {
+	logger.InitLogger()
 }
