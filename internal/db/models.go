@@ -801,9 +801,10 @@ func AllPromotionTypeValues() []PromotionType {
 type SharedResourceType string
 
 const (
-	SharedResourceTypeAvatar        SharedResourceType = "Avatar"
-	SharedResourceTypeProductImage  SharedResourceType = "ProductImage"
-	SharedResourceTypeBrandLogo     SharedResourceType = "BrandLogo"
+	SharedResourceTypeAccount       SharedResourceType = "Account"
+	SharedResourceTypeProductSpu    SharedResourceType = "ProductSpu"
+	SharedResourceTypeProductSku    SharedResourceType = "ProductSku"
+	SharedResourceTypeBrand         SharedResourceType = "Brand"
 	SharedResourceTypeRefund        SharedResourceType = "Refund"
 	SharedResourceTypeReturnDispute SharedResourceType = "ReturnDispute"
 )
@@ -845,9 +846,10 @@ func (ns NullSharedResourceType) Value() (driver.Value, error) {
 
 func (e SharedResourceType) Valid() bool {
 	switch e {
-	case SharedResourceTypeAvatar,
-		SharedResourceTypeProductImage,
-		SharedResourceTypeBrandLogo,
+	case SharedResourceTypeAccount,
+		SharedResourceTypeProductSpu,
+		SharedResourceTypeProductSku,
+		SharedResourceTypeBrand,
 		SharedResourceTypeRefund,
 		SharedResourceTypeReturnDispute:
 		return true
@@ -857,9 +859,10 @@ func (e SharedResourceType) Valid() bool {
 
 func AllSharedResourceTypeValues() []SharedResourceType {
 	return []SharedResourceType{
-		SharedResourceTypeAvatar,
-		SharedResourceTypeProductImage,
-		SharedResourceTypeBrandLogo,
+		SharedResourceTypeAccount,
+		SharedResourceTypeProductSpu,
+		SharedResourceTypeProductSku,
+		SharedResourceTypeBrand,
 		SharedResourceTypeRefund,
 		SharedResourceTypeReturnDispute,
 	}

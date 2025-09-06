@@ -4,7 +4,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type Product struct {
+type ProductCard struct {
 	ID               int64              `json:"id"`
 	Code             string             `json:"code"`
 	VendorID         int64              `json:"vendor_id"`
@@ -18,12 +18,17 @@ type Product struct {
 	DateUpdated      pgtype.Timestamptz `json:"date_updated"`
 	DateDeleted      pgtype.Timestamptz `json:"date_deleted"`
 
-	AppliedPromotionID *int64 `json:"applied_promotion_id"`
-	Price              int64  `json:"price"`
-	OriginalPrice      int64  `json:"original_price"`
-	Rating             Rating `json:"rating"`
+	Price         int64             `json:"price"`
+	OriginalPrice int64             `json:"original_price"`
+	Rating        Rating            `json:"rating"`
+	Image         string            `json:"image,omitempty"`
+	Promo         *ProductCardPromo `json:"promo,omitempty"`
+}
 
-	Skus []ProductSku `json:"skus"`
+type ProductCardPromo struct {
+	ID          int64  `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
 }
 
 type ProductSku struct {

@@ -334,6 +334,7 @@ type Querier interface {
 	ListPromotionDiscount(ctx context.Context, arg ListPromotionDiscountParams) ([]PromotionDiscount, error)
 	ListRating(ctx context.Context, arg ListRatingParams) ([]ListRatingRow, error)
 	ListSharedResource(ctx context.Context, arg ListSharedResourceParams) ([]SharedResource, error)
+	ListSharedResourceFirst(ctx context.Context, arg ListSharedResourceFirstParams) ([]ListSharedResourceFirstRow, error)
 	ListSystemEvent(ctx context.Context, arg ListSystemEventParams) ([]SystemEvent, error)
 	ListSystemSearchSync(ctx context.Context, arg ListSystemSearchSyncParams) ([]SystemSearchSync, error)
 	LowestPriceProductSku(ctx context.Context, spuID []int64) ([]LowestPriceProductSkuRow, error)

@@ -1,7 +1,8 @@
 enum ResourceType {
-  Avatar
-  ProductImage
-  BrandLogo
+  Account
+  ProductSpu
+  ProductSku
+  Brand
   Refund
   ReturnDispute
 

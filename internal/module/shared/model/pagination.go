@@ -2,8 +2,8 @@ package sharedmodel
 
 // PaginationParams represents the pagination parameters
 type PaginationParams struct {
-	Page  int32 `json:"page"`
-	Limit int32 `json:"limit"`
+	Page  int32 `query:"page" validate:"omitempty,gt=0"`
+	Limit int32 `query:"limit" validate:"omitempty,gt=0,lte=100"`
 }
 
 func (p *PaginationParams) GetOffset() int32 {

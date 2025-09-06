@@ -59,7 +59,7 @@ CREATE TYPE "promotion"."type" AS ENUM ('Discount', 'Bundle', 'BuyXGetY', 'Cashb
 CREATE TYPE "promotion"."ref_type" AS ENUM ('All', 'ProductSpu', 'ProductSku', 'Category', 'Brand');
 
 -- CreateEnum
-CREATE TYPE "shared"."resource_type" AS ENUM ('Avatar', 'ProductImage', 'BrandLogo', 'Refund', 'ReturnDispute');
+CREATE TYPE "shared"."resource_type" AS ENUM ('Account', 'ProductSpu', 'ProductSku', 'Brand', 'Refund', 'ReturnDispute');
 
 -- CreateEnum
 CREATE TYPE "shared"."status" AS ENUM ('Pending', 'Processing', 'Success', 'Canceled', 'Failed');

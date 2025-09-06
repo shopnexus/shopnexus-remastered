@@ -20,13 +20,13 @@ func NewCatalogBiz(storage *pgutil.Storage) *CatalogBiz {
 	}
 }
 
-type ListProductParams struct {
+type ListProductCardParams struct {
 	sharedmodel.PaginationParams
 }
 
-func (c *CatalogBiz) ListProduct(ctx context.Context, params ListProductParams) (sharedmodel.PaginateResult[catalogmodel.Product], error) {
-	var zero sharedmodel.PaginateResult[catalogmodel.Product]
-	var products []catalogmodel.Product
+func (c *CatalogBiz) ListProductCard(ctx context.Context, params ListProductCardParams) (sharedmodel.PaginateResult[catalogmodel.ProductCard], error) {
+	var zero sharedmodel.PaginateResult[catalogmodel.ProductCard]
+	var products []catalogmodel.ProductCard
 
 	total, err := c.storage.CountCatalogProductSpu(ctx, db.CountCatalogProductSpuParams{})
 	if err != nil {
@@ -82,6 +82,10 @@ func (c *CatalogBiz) ListProduct(ctx context.Context, params ListProductParams) 
 	if err != nil {
 		return zero, err
 	}
+	promotionsMap := make(map[int64]db.PromotionBase) // map[promoID]Promotion
+	for _, promo := range promotions {
+		promotionsMap[promo.ID] = promo
+	}
 
 	// Get all applicable promotions for each product
 	applicablePromotions := make(map[int64][]db.PromotionBase) // map[spuID][]Promotion
@@ -133,8 +137,32 @@ func (c *CatalogBiz) ListProduct(ctx context.Context, params ListProductParams) 
 		}
 	}
 
+	// Get first image of the product
+	resources, err := c.storage.ListSharedResourceFirst(ctx, db.ListSharedResourceFirstParams{
+		OwnerType: db.SharedResourceTypeProductSpu,
+		OwnerID:   spuIDs,
+	})
+	resourceMap := make(map[int64]string) // map[ownerID]url
+	for _, res := range resources {
+		resourceMap[res.OwnerID] = res.Url
+	}
+
+	// Map promotion to ProductCardPromo
+	promoCardMap := make(map[int64]*catalogmodel.ProductCardPromo) // map[spuID]ProductCardPromo
 	for _, spu := range spus {
-		products = append(products, catalogmodel.Product{
+		fp := flagshipPrice[spu.ID]
+		if fp.AppliedPromotionID != nil {
+			promo := promotionsMap[*fp.AppliedPromotionID]
+			promoCardMap[spu.ID] = &catalogmodel.ProductCardPromo{
+				ID:          promo.ID,
+				Title:       promo.Title,
+				Description: promo.Description.String,
+			}
+		}
+	}
+
+	for _, spu := range spus {
+		products = append(products, catalogmodel.ProductCard{
 			ID:               spu.ID,
 			Code:             spu.Code,
 			VendorID:         spu.AccountID,
@@ -148,17 +176,16 @@ func (c *CatalogBiz) ListProduct(ctx context.Context, params ListProductParams) 
 			DateUpdated:      spu.DateUpdated,
 			DateDeleted:      spu.DateDeleted,
 
-			AppliedPromotionID: flagshipPrice[spu.ID].AppliedPromotionID,
-			Price:              flagshipPrice[spu.ID].Price,
-			OriginalPrice:      flagshipPrice[spu.ID].OriginalPrice,
-			Rating:             ratingMap[spu.ID],
-
-			Skus: nil,
+			Promo:         promoCardMap[spu.ID],
+			Price:         flagshipPrice[spu.ID].Price,
+			OriginalPrice: flagshipPrice[spu.ID].OriginalPrice,
+			Rating:        ratingMap[spu.ID],
+			Image:         resourceMap[spu.ID],
 		})
 	}
 
 	// List some attributes for compact data
-	return sharedmodel.PaginateResult[catalogmodel.Product]{
+	return sharedmodel.PaginateResult[catalogmodel.ProductCard]{
 		Data:       products,
 		Limit:      params.GetLimit(),
 		Page:       params.GetPage(),

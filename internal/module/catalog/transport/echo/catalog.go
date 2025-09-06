@@ -16,7 +16,7 @@ type Handler struct {
 func NewHandler(e *echo.Echo, catalogbiz *catalogbiz.CatalogBiz) *Handler {
 	h := &Handler{biz: catalogbiz}
 	api := e.Group("/api/v1/catalog")
-	api.GET("/product", h.ListProduct)
+	api.GET("/product-card", h.ListProductCard)
 
 	api.GET("/product-spu", h.ListProductSpu)
 	api.GET("/product-sku", h.ListProductSku)
@@ -25,12 +25,12 @@ func NewHandler(e *echo.Echo, catalogbiz *catalogbiz.CatalogBiz) *Handler {
 	return h
 }
 
-type ListProductRequest struct {
+type ListProductCardRequest struct {
 	sharedmodel.PaginationParams
 }
 
-func (h *Handler) ListProduct(c echo.Context) error {
-	var req ListProductRequest
+func (h *Handler) ListProductCard(c echo.Context) error {
+	var req ListProductCardRequest
 	if err := c.Bind(&req); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
@@ -38,7 +38,7 @@ func (h *Handler) ListProduct(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.ListProduct(c.Request().Context(), catalogbiz.ListProductParams{
+	result, err := h.biz.ListProductCard(c.Request().Context(), catalogbiz.ListProductCardParams{
 		PaginationParams: req.PaginationParams,
 	})
 	if err != nil {

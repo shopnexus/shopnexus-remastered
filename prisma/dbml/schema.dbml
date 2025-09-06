@@ -428,9 +428,10 @@ Enum PromotionRefType {
 }
 
 Enum ResourceType {
-  Avatar
-  ProductImage
-  BrandLogo
+  Account
+  ProductSpu
+  ProductSku
+  Brand
   Refund
   ReturnDispute
 }
