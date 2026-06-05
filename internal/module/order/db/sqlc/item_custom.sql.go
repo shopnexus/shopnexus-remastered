@@ -16,7 +16,7 @@ UPDATE "order"."item"
 SET "date_cancelled" = CURRENT_TIMESTAMP,
     "cancelled_by_id" = $1
 WHERE "id" = $2 AND "date_cancelled" IS NULL
-RETURNING id, order_id, account_id, seller_id, sku_id, spu_id, sku_name, address, note, serial_ids, quantity, transport_option, subtotal_amount, total_amount, payment_session_id, date_cancelled, cancelled_by_id, date_created
+RETURNING id, order_id, account_id, seller_id, sku_id, spu_id, sku_name, address, note, serial_ids, quantity, transport_option, subtotal_amount, total_amount, source_currency, payment_session_id, date_cancelled, cancelled_by_id, date_created
 `
 
 type CancelItemParams struct {
@@ -44,6 +44,7 @@ func (q *Queries) CancelItem(ctx context.Context, arg CancelItemParams) (OrderIt
 		&i.TransportOption,
 		&i.SubtotalAmount,
 		&i.TotalAmount,
+		&i.SourceCurrency,
 		&i.PaymentSessionID,
 		&i.DateCancelled,
 		&i.CancelledByID,
@@ -122,7 +123,7 @@ func (q *Queries) CountSellerPendingItems(ctx context.Context, sellerID uuid.UUI
 }
 
 const listBuyerCancelledItems = `-- name: ListBuyerCancelledItems :many
-SELECT i.id, i.order_id, i.account_id, i.seller_id, i.sku_id, i.spu_id, i.sku_name, i.address, i.note, i.serial_ids, i.quantity, i.transport_option, i.subtotal_amount, i.total_amount, i.payment_session_id, i.date_cancelled, i.cancelled_by_id, i.date_created FROM "order"."item" i
+SELECT i.id, i.order_id, i.account_id, i.seller_id, i.sku_id, i.spu_id, i.sku_name, i.address, i.note, i.serial_ids, i.quantity, i.transport_option, i.subtotal_amount, i.total_amount, i.source_currency, i.payment_session_id, i.date_cancelled, i.cancelled_by_id, i.date_created FROM "order"."item" i
 JOIN "order"."payment_session" ps ON ps."id" = i."payment_session_id"
 WHERE i."account_id" = $1
   AND i."order_id" IS NULL
@@ -157,6 +158,7 @@ func (q *Queries) ListBuyerCancelledItems(ctx context.Context, accountID uuid.UU
 			&i.TransportOption,
 			&i.SubtotalAmount,
 			&i.TotalAmount,
+			&i.SourceCurrency,
 			&i.PaymentSessionID,
 			&i.DateCancelled,
 			&i.CancelledByID,
@@ -173,7 +175,7 @@ func (q *Queries) ListBuyerCancelledItems(ctx context.Context, accountID uuid.UU
 }
 
 const listBuyerPendingItems = `-- name: ListBuyerPendingItems :many
-SELECT i.id, i.order_id, i.account_id, i.seller_id, i.sku_id, i.spu_id, i.sku_name, i.address, i.note, i.serial_ids, i.quantity, i.transport_option, i.subtotal_amount, i.total_amount, i.payment_session_id, i.date_cancelled, i.cancelled_by_id, i.date_created FROM "order"."item" i
+SELECT i.id, i.order_id, i.account_id, i.seller_id, i.sku_id, i.spu_id, i.sku_name, i.address, i.note, i.serial_ids, i.quantity, i.transport_option, i.subtotal_amount, i.total_amount, i.source_currency, i.payment_session_id, i.date_cancelled, i.cancelled_by_id, i.date_created FROM "order"."item" i
 JOIN "order"."payment_session" ps ON ps."id" = i."payment_session_id"
 WHERE i."account_id" = $1
   AND i."order_id" IS NULL
@@ -209,6 +211,7 @@ func (q *Queries) ListBuyerPendingItems(ctx context.Context, accountID uuid.UUID
 			&i.TransportOption,
 			&i.SubtotalAmount,
 			&i.TotalAmount,
+			&i.SourceCurrency,
 			&i.PaymentSessionID,
 			&i.DateCancelled,
 			&i.CancelledByID,
@@ -226,7 +229,7 @@ func (q *Queries) ListBuyerPendingItems(ctx context.Context, accountID uuid.UUID
 
 const listItemsByPaymentSession = `-- name: ListItemsByPaymentSession :many
 
-SELECT id, order_id, account_id, seller_id, sku_id, spu_id, sku_name, address, note, serial_ids, quantity, transport_option, subtotal_amount, total_amount, payment_session_id, date_cancelled, cancelled_by_id, date_created FROM "order"."item" WHERE "payment_session_id" = $1
+SELECT id, order_id, account_id, seller_id, sku_id, spu_id, sku_name, address, note, serial_ids, quantity, transport_option, subtotal_amount, total_amount, source_currency, payment_session_id, date_cancelled, cancelled_by_id, date_created FROM "order"."item" WHERE "payment_session_id" = $1
 `
 
 // Custom item queries
@@ -255,6 +258,7 @@ func (q *Queries) ListItemsByPaymentSession(ctx context.Context, paymentSessionI
 			&i.TransportOption,
 			&i.SubtotalAmount,
 			&i.TotalAmount,
+			&i.SourceCurrency,
 			&i.PaymentSessionID,
 			&i.DateCancelled,
 			&i.CancelledByID,
@@ -271,7 +275,7 @@ func (q *Queries) ListItemsByPaymentSession(ctx context.Context, paymentSessionI
 }
 
 const listPendingPaymentItemsByPaymentSession = `-- name: ListPendingPaymentItemsByPaymentSession :many
-SELECT id, order_id, account_id, seller_id, sku_id, spu_id, sku_name, address, note, serial_ids, quantity, transport_option, subtotal_amount, total_amount, payment_session_id, date_cancelled, cancelled_by_id, date_created FROM "order"."item"
+SELECT id, order_id, account_id, seller_id, sku_id, spu_id, sku_name, address, note, serial_ids, quantity, transport_option, subtotal_amount, total_amount, source_currency, payment_session_id, date_cancelled, cancelled_by_id, date_created FROM "order"."item"
 WHERE "payment_session_id" = $1
   AND "order_id" IS NULL
   AND "date_cancelled" IS NULL
@@ -301,6 +305,7 @@ func (q *Queries) ListPendingPaymentItemsByPaymentSession(ctx context.Context, p
 			&i.TransportOption,
 			&i.SubtotalAmount,
 			&i.TotalAmount,
+			&i.SourceCurrency,
 			&i.PaymentSessionID,
 			&i.DateCancelled,
 			&i.CancelledByID,
@@ -317,7 +322,7 @@ func (q *Queries) ListPendingPaymentItemsByPaymentSession(ctx context.Context, p
 }
 
 const listSellerPendingItems = `-- name: ListSellerPendingItems :many
-SELECT i.id, i.order_id, i.account_id, i.seller_id, i.sku_id, i.spu_id, i.sku_name, i.address, i.note, i.serial_ids, i.quantity, i.transport_option, i.subtotal_amount, i.total_amount, i.payment_session_id, i.date_cancelled, i.cancelled_by_id, i.date_created FROM "order"."item" i
+SELECT i.id, i.order_id, i.account_id, i.seller_id, i.sku_id, i.spu_id, i.sku_name, i.address, i.note, i.serial_ids, i.quantity, i.transport_option, i.subtotal_amount, i.total_amount, i.source_currency, i.payment_session_id, i.date_cancelled, i.cancelled_by_id, i.date_created FROM "order"."item" i
 JOIN "order"."payment_session" ps ON ps."id" = i."payment_session_id"
 WHERE i."seller_id" = $1
   AND i."order_id" IS NULL
@@ -352,6 +357,7 @@ func (q *Queries) ListSellerPendingItems(ctx context.Context, sellerID uuid.UUID
 			&i.TransportOption,
 			&i.SubtotalAmount,
 			&i.TotalAmount,
+			&i.SourceCurrency,
 			&i.PaymentSessionID,
 			&i.DateCancelled,
 			&i.CancelledByID,

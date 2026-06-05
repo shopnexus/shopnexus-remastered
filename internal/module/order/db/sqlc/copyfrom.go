@@ -110,6 +110,7 @@ func (r iteratorForCreateCopyDefaultItem) Values() ([]interface{}, error) {
 		r.rows[0].TransportOption,
 		r.rows[0].SubtotalAmount,
 		r.rows[0].TotalAmount,
+		r.rows[0].SourceCurrency,
 		r.rows[0].PaymentSessionID,
 		r.rows[0].DateCancelled,
 		r.rows[0].CancelledByID,
@@ -121,7 +122,7 @@ func (r iteratorForCreateCopyDefaultItem) Err() error {
 }
 
 func (q *Queries) CreateCopyDefaultItem(ctx context.Context, arg []CreateCopyDefaultItemParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"order", "item"}, []string{"order_id", "account_id", "seller_id", "sku_id", "spu_id", "sku_name", "address", "note", "serial_ids", "quantity", "transport_option", "subtotal_amount", "total_amount", "payment_session_id", "date_cancelled", "cancelled_by_id"}, &iteratorForCreateCopyDefaultItem{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"order", "item"}, []string{"order_id", "account_id", "seller_id", "sku_id", "spu_id", "sku_name", "address", "note", "serial_ids", "quantity", "transport_option", "subtotal_amount", "total_amount", "source_currency", "payment_session_id", "date_cancelled", "cancelled_by_id"}, &iteratorForCreateCopyDefaultItem{rows: arg})
 }
 
 // iteratorForCreateCopyDefaultOrder implements pgx.CopyFromSource.
@@ -190,6 +191,7 @@ func (r iteratorForCreateCopyDefaultPaymentSession) Values() ([]interface{}, err
 		r.rows[0].Note,
 		r.rows[0].Currency,
 		r.rows[0].TotalAmount,
+		r.rows[0].FxSnapshot,
 		r.rows[0].Data,
 		r.rows[0].DatePaid,
 		r.rows[0].DateExpired,
@@ -201,7 +203,7 @@ func (r iteratorForCreateCopyDefaultPaymentSession) Err() error {
 }
 
 func (q *Queries) CreateCopyDefaultPaymentSession(ctx context.Context, arg []CreateCopyDefaultPaymentSessionParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"order", "payment_session"}, []string{"id", "kind", "status", "from_id", "to_id", "note", "currency", "total_amount", "data", "date_paid", "date_expired"}, &iteratorForCreateCopyDefaultPaymentSession{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"order", "payment_session"}, []string{"id", "kind", "status", "from_id", "to_id", "note", "currency", "total_amount", "fx_snapshot", "data", "date_paid", "date_expired"}, &iteratorForCreateCopyDefaultPaymentSession{rows: arg})
 }
 
 // iteratorForCreateCopyDefaultRefund implements pgx.CopyFromSource.
@@ -226,15 +228,13 @@ func (r iteratorForCreateCopyDefaultRefund) Values() ([]interface{}, error) {
 	return []interface{}{
 		r.rows[0].AccountID,
 		r.rows[0].OrderID,
-		r.rows[0].TransportID,
-		r.rows[0].Method,
 		r.rows[0].Reason,
-		r.rows[0].Address,
-		r.rows[0].AcceptedByID,
-		r.rows[0].DateAccepted,
-		r.rows[0].RejectionNote,
-		r.rows[0].ApprovedByID,
-		r.rows[0].DateApproved,
+		r.rows[0].ReturnTransportID,
+		r.rows[0].DateReceivedBySeller,
+		r.rows[0].ReviewDeadline,
+		r.rows[0].SellerDecisionAt,
+		r.rows[0].ReturnToBuyerTransportID,
+		r.rows[0].RejectionReason,
 		r.rows[0].RefundTxID,
 	}, nil
 }
@@ -244,7 +244,7 @@ func (r iteratorForCreateCopyDefaultRefund) Err() error {
 }
 
 func (q *Queries) CreateCopyDefaultRefund(ctx context.Context, arg []CreateCopyDefaultRefundParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"order", "refund"}, []string{"account_id", "order_id", "transport_id", "method", "reason", "address", "accepted_by_id", "date_accepted", "rejection_note", "approved_by_id", "date_approved", "refund_tx_id"}, &iteratorForCreateCopyDefaultRefund{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"order", "refund"}, []string{"account_id", "order_id", "reason", "return_transport_id", "date_received_by_seller", "review_deadline", "seller_decision_at", "return_to_buyer_transport_id", "rejection_reason", "refund_tx_id"}, &iteratorForCreateCopyDefaultRefund{rows: arg})
 }
 
 // iteratorForCreateCopyDefaultRefundDispute implements pgx.CopyFromSource.
@@ -267,12 +267,12 @@ func (r *iteratorForCreateCopyDefaultRefundDispute) Next() bool {
 
 func (r iteratorForCreateCopyDefaultRefundDispute) Values() ([]interface{}, error) {
 	return []interface{}{
-		r.rows[0].AccountID,
 		r.rows[0].RefundID,
+		r.rows[0].AccountID,
 		r.rows[0].Reason,
-		r.rows[0].Note,
 		r.rows[0].ResolvedByID,
 		r.rows[0].DateResolved,
+		r.rows[0].ResolutionNote,
 	}, nil
 }
 
@@ -281,7 +281,7 @@ func (r iteratorForCreateCopyDefaultRefundDispute) Err() error {
 }
 
 func (q *Queries) CreateCopyDefaultRefundDispute(ctx context.Context, arg []CreateCopyDefaultRefundDisputeParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"order", "refund_dispute"}, []string{"account_id", "refund_id", "reason", "note", "resolved_by_id", "date_resolved"}, &iteratorForCreateCopyDefaultRefundDispute{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"order", "refund_dispute"}, []string{"refund_id", "account_id", "reason", "resolved_by_id", "date_resolved", "resolution_note"}, &iteratorForCreateCopyDefaultRefundDispute{rows: arg})
 }
 
 // iteratorForCreateCopyDefaultTransaction implements pgx.CopyFromSource.
@@ -312,9 +312,7 @@ func (r iteratorForCreateCopyDefaultTransaction) Values() ([]interface{}, error)
 		r.rows[0].PaymentOption,
 		r.rows[0].Data,
 		r.rows[0].Amount,
-		r.rows[0].FromCurrency,
-		r.rows[0].ToCurrency,
-		r.rows[0].ExchangeRate,
+		r.rows[0].Currency,
 		r.rows[0].ReversesID,
 		r.rows[0].DateSettled,
 		r.rows[0].DateExpired,
@@ -326,7 +324,7 @@ func (r iteratorForCreateCopyDefaultTransaction) Err() error {
 }
 
 func (q *Queries) CreateCopyDefaultTransaction(ctx context.Context, arg []CreateCopyDefaultTransactionParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"order", "transaction"}, []string{"id", "session_id", "status", "note", "error", "payment_option", "data", "amount", "from_currency", "to_currency", "exchange_rate", "reverses_id", "date_settled", "date_expired"}, &iteratorForCreateCopyDefaultTransaction{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"order", "transaction"}, []string{"id", "session_id", "status", "note", "error", "payment_option", "data", "amount", "currency", "reverses_id", "date_settled", "date_expired"}, &iteratorForCreateCopyDefaultTransaction{rows: arg})
 }
 
 // iteratorForCreateCopyDefaultTransport implements pgx.CopyFromSource.
@@ -395,6 +393,7 @@ func (r iteratorForCreateCopyItem) Values() ([]interface{}, error) {
 		r.rows[0].TransportOption,
 		r.rows[0].SubtotalAmount,
 		r.rows[0].TotalAmount,
+		r.rows[0].SourceCurrency,
 		r.rows[0].PaymentSessionID,
 		r.rows[0].DateCancelled,
 		r.rows[0].CancelledByID,
@@ -407,7 +406,7 @@ func (r iteratorForCreateCopyItem) Err() error {
 }
 
 func (q *Queries) CreateCopyItem(ctx context.Context, arg []CreateCopyItemParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"order", "item"}, []string{"order_id", "account_id", "seller_id", "sku_id", "spu_id", "sku_name", "address", "note", "serial_ids", "quantity", "transport_option", "subtotal_amount", "total_amount", "payment_session_id", "date_cancelled", "cancelled_by_id", "date_created"}, &iteratorForCreateCopyItem{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"order", "item"}, []string{"order_id", "account_id", "seller_id", "sku_id", "spu_id", "sku_name", "address", "note", "serial_ids", "quantity", "transport_option", "subtotal_amount", "total_amount", "source_currency", "payment_session_id", "date_cancelled", "cancelled_by_id", "date_created"}, &iteratorForCreateCopyItem{rows: arg})
 }
 
 // iteratorForCreateCopyOrder implements pgx.CopyFromSource.
@@ -478,6 +477,7 @@ func (r iteratorForCreateCopyPaymentSession) Values() ([]interface{}, error) {
 		r.rows[0].Note,
 		r.rows[0].Currency,
 		r.rows[0].TotalAmount,
+		r.rows[0].FxSnapshot,
 		r.rows[0].Data,
 		r.rows[0].DateCreated,
 		r.rows[0].DatePaid,
@@ -490,7 +490,7 @@ func (r iteratorForCreateCopyPaymentSession) Err() error {
 }
 
 func (q *Queries) CreateCopyPaymentSession(ctx context.Context, arg []CreateCopyPaymentSessionParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"order", "payment_session"}, []string{"id", "kind", "status", "from_id", "to_id", "note", "currency", "total_amount", "data", "date_created", "date_paid", "date_expired"}, &iteratorForCreateCopyPaymentSession{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"order", "payment_session"}, []string{"id", "kind", "status", "from_id", "to_id", "note", "currency", "total_amount", "fx_snapshot", "data", "date_created", "date_paid", "date_expired"}, &iteratorForCreateCopyPaymentSession{rows: arg})
 }
 
 // iteratorForCreateCopyRefund implements pgx.CopyFromSource.
@@ -516,17 +516,16 @@ func (r iteratorForCreateCopyRefund) Values() ([]interface{}, error) {
 		r.rows[0].ID,
 		r.rows[0].AccountID,
 		r.rows[0].OrderID,
-		r.rows[0].TransportID,
-		r.rows[0].Method,
 		r.rows[0].Reason,
-		r.rows[0].Address,
+		r.rows[0].Attachments,
 		r.rows[0].DateCreated,
 		r.rows[0].Status,
-		r.rows[0].AcceptedByID,
-		r.rows[0].DateAccepted,
-		r.rows[0].RejectionNote,
-		r.rows[0].ApprovedByID,
-		r.rows[0].DateApproved,
+		r.rows[0].ReturnTransportID,
+		r.rows[0].DateReceivedBySeller,
+		r.rows[0].ReviewDeadline,
+		r.rows[0].SellerDecisionAt,
+		r.rows[0].ReturnToBuyerTransportID,
+		r.rows[0].RejectionReason,
 		r.rows[0].RefundTxID,
 	}, nil
 }
@@ -536,7 +535,7 @@ func (r iteratorForCreateCopyRefund) Err() error {
 }
 
 func (q *Queries) CreateCopyRefund(ctx context.Context, arg []CreateCopyRefundParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"order", "refund"}, []string{"id", "account_id", "order_id", "transport_id", "method", "reason", "address", "date_created", "status", "accepted_by_id", "date_accepted", "rejection_note", "approved_by_id", "date_approved", "refund_tx_id"}, &iteratorForCreateCopyRefund{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"order", "refund"}, []string{"id", "account_id", "order_id", "reason", "attachments", "date_created", "status", "return_transport_id", "date_received_by_seller", "review_deadline", "seller_decision_at", "return_to_buyer_transport_id", "rejection_reason", "refund_tx_id"}, &iteratorForCreateCopyRefund{rows: arg})
 }
 
 // iteratorForCreateCopyRefundDispute implements pgx.CopyFromSource.
@@ -560,14 +559,15 @@ func (r *iteratorForCreateCopyRefundDispute) Next() bool {
 func (r iteratorForCreateCopyRefundDispute) Values() ([]interface{}, error) {
 	return []interface{}{
 		r.rows[0].ID,
-		r.rows[0].AccountID,
 		r.rows[0].RefundID,
+		r.rows[0].AccountID,
 		r.rows[0].Reason,
-		r.rows[0].Status,
-		r.rows[0].Note,
+		r.rows[0].Attachments,
 		r.rows[0].DateCreated,
+		r.rows[0].Status,
 		r.rows[0].ResolvedByID,
 		r.rows[0].DateResolved,
+		r.rows[0].ResolutionNote,
 	}, nil
 }
 
@@ -576,7 +576,7 @@ func (r iteratorForCreateCopyRefundDispute) Err() error {
 }
 
 func (q *Queries) CreateCopyRefundDispute(ctx context.Context, arg []CreateCopyRefundDisputeParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"order", "refund_dispute"}, []string{"id", "account_id", "refund_id", "reason", "status", "note", "date_created", "resolved_by_id", "date_resolved"}, &iteratorForCreateCopyRefundDispute{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"order", "refund_dispute"}, []string{"id", "refund_id", "account_id", "reason", "attachments", "date_created", "status", "resolved_by_id", "date_resolved", "resolution_note"}, &iteratorForCreateCopyRefundDispute{rows: arg})
 }
 
 // iteratorForCreateCopyTransaction implements pgx.CopyFromSource.
@@ -607,9 +607,7 @@ func (r iteratorForCreateCopyTransaction) Values() ([]interface{}, error) {
 		r.rows[0].PaymentOption,
 		r.rows[0].Data,
 		r.rows[0].Amount,
-		r.rows[0].FromCurrency,
-		r.rows[0].ToCurrency,
-		r.rows[0].ExchangeRate,
+		r.rows[0].Currency,
 		r.rows[0].ReversesID,
 		r.rows[0].DateCreated,
 		r.rows[0].DateSettled,
@@ -622,7 +620,7 @@ func (r iteratorForCreateCopyTransaction) Err() error {
 }
 
 func (q *Queries) CreateCopyTransaction(ctx context.Context, arg []CreateCopyTransactionParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"order", "transaction"}, []string{"id", "session_id", "status", "note", "error", "payment_option", "data", "amount", "from_currency", "to_currency", "exchange_rate", "reverses_id", "date_created", "date_settled", "date_expired"}, &iteratorForCreateCopyTransaction{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"order", "transaction"}, []string{"id", "session_id", "status", "note", "error", "payment_option", "data", "amount", "currency", "reverses_id", "date_created", "date_settled", "date_expired"}, &iteratorForCreateCopyTransaction{rows: arg})
 }
 
 // iteratorForCreateCopyTransport implements pgx.CopyFromSource.

@@ -3,6 +3,7 @@ package promotionbiz
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	restate "github.com/restatedev/sdk-go"
@@ -14,7 +15,7 @@ import (
 	accountmodel "shopnexus-server/internal/module/account/model"
 	promotiondb "shopnexus-server/internal/module/promotion/db/sqlc"
 	promotionmodel "shopnexus-server/internal/module/promotion/model"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/validator"
 )
 
@@ -35,14 +36,14 @@ func (s *PromotionHandler) GetPromotion(
 		ID: uuid.NullUUID{UUID: params.ID, Valid: true},
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db get promotion", err)
+		return zero, fmt.Errorf("db get promotion: %w", err)
 	}
 
 	refs, err := s.storage.Querier().ListRef(ctx, promotiondb.ListRefParams{
 		PromotionID: []uuid.UUID{promo.ID},
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db list promotion refs", err)
+		return zero, fmt.Errorf("db list promotion refs: %w", err)
 	}
 
 	return mapPromotion(promo, refs), nil
@@ -51,7 +52,7 @@ func (s *PromotionHandler) GetPromotion(
 // --- List ---
 
 type ListPromotionParams struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 
 	ID []uuid.UUID `validate:"omitempty,dive,required"`
 }
@@ -60,8 +61,8 @@ type ListPromotionParams struct {
 func (s *PromotionHandler) ListPromotion(
 	ctx restate.Context,
 	params ListPromotionParams,
-) (sharedmodel.PaginateResult[promotionmodel.Promotion], error) {
-	var zero sharedmodel.PaginateResult[promotionmodel.Promotion]
+) (paginate.PaginateResult[promotionmodel.Promotion], error) {
+	var zero paginate.PaginateResult[promotionmodel.Promotion]
 
 	rows, err := s.storage.Querier().ListCountPromotion(ctx, promotiondb.ListCountPromotionParams{
 		Limit:  params.Limit,
@@ -69,7 +70,7 @@ func (s *PromotionHandler) ListPromotion(
 		ID:     params.ID,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db list promotions", err)
+		return zero, fmt.Errorf("db list promotions: %w", err)
 	}
 
 	promoIDs := lo.Map(rows, func(r promotiondb.ListCountPromotionRow, _ int) uuid.UUID {
@@ -80,7 +81,7 @@ func (s *PromotionHandler) ListPromotion(
 		PromotionID: promoIDs,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db list promotion refs", err)
+		return zero, fmt.Errorf("db list promotion refs: %w", err)
 	}
 	refsMap := lo.GroupBy(refs, func(r promotiondb.PromotionRef) uuid.UUID { return r.PromotionID })
 
@@ -89,8 +90,8 @@ func (s *PromotionHandler) ListPromotion(
 		total.SetValid(rows[0].TotalCount)
 	}
 
-	return sharedmodel.PaginateResult[promotionmodel.Promotion]{
-		PageParams: params.PaginationParams,
+	return paginate.PaginateResult[promotionmodel.Promotion]{
+		PageParams: params.Params,
 		Total:      total,
 		Data: lo.Map(rows, func(r promotiondb.ListCountPromotionRow, _ int) promotionmodel.Promotion {
 			return mapPromotion(r.PromotionPromotion, refsMap[r.PromotionPromotion.ID])
@@ -104,10 +105,10 @@ type CreatePromotionParams struct {
 	Account accountmodel.AuthenticatedAccount
 
 	Code        string                        `validate:"required,alphanum,min=3,max=50"`
-	Type        promotiondb.PromotionType     `validate:"required,validateFn=Valid"`
+	Type        promotionmodel.Type           `validate:"required,validateFn=Valid"`
 	Title       string                        `validate:"required,min=3,max=200"`
 	Description null.String                   `validate:"omitnil,max=1000"`
-	IsEnabled    bool                          `validate:"omitempty"`
+	IsEnabled   bool                          `validate:"omitempty"`
 	AutoApply   bool                          `validate:"omitempty"`
 	Group       string                        `validate:"required"`
 	Priority    int32                         `validate:"omitempty"`
@@ -125,13 +126,13 @@ func (b *PromotionHandler) CreatePromotion(
 	var zero promotionmodel.Promotion
 
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("validate create promotion", err)
+		return zero, fmt.Errorf("validate create promotion: %w", err)
 	}
 
 	dbPromo, err := b.storage.Querier().CreateDefaultPromotion(ctx, promotiondb.CreateDefaultPromotionParams{
 		Code:        params.Code,
 		OwnerID:     uuid.NullUUID{UUID: params.Account.ID, Valid: true},
-		Type:        params.Type,
+		Type:        promotiondb.PromotionType(params.Type),
 		Title:       params.Title,
 		Description: params.Description,
 		IsEnabled:   params.IsEnabled,
@@ -142,11 +143,11 @@ func (b *PromotionHandler) CreatePromotion(
 		DateEnded:   params.DateEnded,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db create promotion", err)
+		return zero, fmt.Errorf("db create promotion: %w", err)
 	}
 
 	if err := createRefs(ctx, b.storage, dbPromo.ID, params.Refs); err != nil {
-		return zero, sharedmodel.WrapErr("db create promotion", err)
+		return zero, fmt.Errorf("db create promotion: %w", err)
 	}
 
 	return mapPromotion(dbPromo, nil), nil
@@ -164,7 +165,7 @@ type UpdatePromotionParams struct {
 	Title           null.String                    `validate:"omitnil"`
 	Description     null.String                    `validate:"omitnil"`
 	NullDescription bool                           `validate:"omitempty"`
-	IsEnabled        null.Bool                      `validate:"omitnil"`
+	IsEnabled       null.Bool                      `validate:"omitnil"`
 	AutoApply       null.Bool                      `validate:"omitnil"`
 	Group           null.String                    `validate:"omitnil"`
 	Priority        null.Int32                     `validate:"omitnil"`
@@ -184,7 +185,7 @@ func (s *PromotionHandler) UpdatePromotion(
 	var zero promotionmodel.Promotion
 
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("validate update promotion", err)
+		return zero, fmt.Errorf("validate update promotion: %w", err)
 	}
 
 	dbPromo, err := s.storage.Querier().UpdatePromotion(ctx, promotiondb.UpdatePromotionParams{
@@ -205,17 +206,17 @@ func (s *PromotionHandler) UpdatePromotion(
 		NullDateEnded:   params.NullDateEnded,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db update promotion", err)
+		return zero, fmt.Errorf("db update promotion: %w", err)
 	}
 
 	if params.Refs != nil {
 		if err := s.storage.Querier().DeleteRef(ctx, promotiondb.DeleteRefParams{
 			PromotionID: []uuid.UUID{params.ID},
 		}); err != nil {
-			return zero, sharedmodel.WrapErr("db update promotion", err)
+			return zero, fmt.Errorf("db update promotion: %w", err)
 		}
 		if err := createRefs(ctx, s.storage, dbPromo.ID, *params.Refs); err != nil {
-			return zero, sharedmodel.WrapErr("db update promotion", err)
+			return zero, fmt.Errorf("db update promotion: %w", err)
 		}
 	}
 
@@ -252,12 +253,12 @@ func createRefs(
 		CreateCopyDefaultRef(ctx, lo.Map(refs, func(r promotionmodel.PromotionRef, _ int) promotiondb.CreateCopyDefaultRefParams {
 			return promotiondb.CreateCopyDefaultRefParams{
 				PromotionID: promoID,
-				RefType:     r.RefType,
+				RefType:     promotiondb.PromotionRefType(r.RefType),
 				RefID:       r.RefID,
 			}
 		}))
 	if err != nil {
-		return sharedmodel.WrapErr("db create promotion refs", err)
+		return fmt.Errorf("db create promotion refs: %w", err)
 	}
 	return nil
 }
@@ -268,10 +269,10 @@ func mapPromotion(p promotiondb.PromotionPromotion, refs []promotiondb.Promotion
 		ID:          p.ID,
 		Code:        p.Code,
 		OwnerID:     p.OwnerID,
-		Type:        p.Type,
+		Type:        promotionmodel.Type(p.Type),
 		Title:       p.Title,
 		Description: p.Description,
-		IsEnabled:    p.IsEnabled,
+		IsEnabled:   p.IsEnabled,
 		AutoApply:   p.AutoApply,
 		Group:       p.Group,
 		Data:        p.Data,
@@ -281,7 +282,7 @@ func mapPromotion(p promotiondb.PromotionPromotion, refs []promotiondb.Promotion
 		DateUpdated: p.DateUpdated,
 		Refs: lo.Map(refs, func(r promotiondb.PromotionRef, _ int) promotionmodel.PromotionRef {
 			return promotionmodel.PromotionRef{
-				RefType: r.RefType,
+				RefType: promotionmodel.RefType(r.RefType),
 				RefID:   r.RefID,
 			}
 		}),

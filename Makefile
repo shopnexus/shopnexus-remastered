@@ -1,4 +1,4 @@
-.PHONY: run dev generate pgtempl migrate seed seedcmt build register schema erdiagram cloc cloc-modules
+.PHONY: run dev generate pgtempl sqlcgen nullmarshal genenum migrate seed seedcmt build register schema erdiagram cloc cloc-modules test test-order
 
 # Downgrade protobuf registration conflict to warning (restate-sdk vs milvus share "internal.proto")
 export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn
@@ -18,6 +18,17 @@ generate:
 pgtempl:
 	go run ./cmd/pgtempl/ -module all -skip-schema-prefix -single-file=generated_queries.sql
 
+sqlcgen: pgtempl
+	sqlc generate
+	go run ./cmd/nullmarshal/
+
+nullmarshal:
+	go run ./cmd/nullmarshal/
+
+# Regen Valid() + NullXxx{Value,Valid} wrappers for domain string enums (model/*.go //go:generate directives)
+genenum:
+	go generate ./internal/module/*/model/
+
 migrate:
 	go run ./cmd/migrate/
 
@@ -26,6 +37,12 @@ seed:
 
 schema:
 	go run ./cmd/erdiagram/
+
+test:
+	go test ./...
+
+test-order:
+	go test ./internal/module/order/biz/...
 
 cloc:
 	@find . -type f -name '*.go' \

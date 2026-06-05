@@ -12,7 +12,6 @@ import (
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	analyticbiz "shopnexus-server/internal/module/analytic/biz"
-	analyticdb "shopnexus-server/internal/module/analytic/db/sqlc"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
@@ -26,16 +25,13 @@ import (
 	"shopnexus-server/internal/provider/transport"
 	sharedcurrency "shopnexus-server/internal/shared/currency"
 	"shopnexus-server/internal/shared/idempotency"
-	sharedmodel "shopnexus-server/internal/shared/model"
 	"shopnexus-server/internal/shared/saga"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/samber/lo"
-	"github.com/shopspring/decimal"
 )
 
 type CheckoutWorkflow struct {
@@ -76,10 +72,10 @@ func (h *CheckoutWorkflow) Run(
 
 	// Step 1: Validate.
 	if err = validator.Validate(input); err != nil {
-		return out, sharedmodel.WrapErr("validate checkout", err)
+		return out, fmt.Errorf("validate checkout: %w", err)
 	}
 	if input.BuyNow && len(input.Items) != 1 {
-		return out, ordermodel.ErrBuyNowSingleSkuOnly.Terminal()
+		return out, ordermodel.ErrBuyNowSingleSkuOnly
 	}
 
 	saga := saga.New(ctx)
@@ -100,7 +96,7 @@ func (h *CheckoutWorkflow) Run(
 		AccountID: input.Account.ID,
 	})
 	if err != nil {
-		return out, sharedmodel.WrapErr("load buyer profile", err)
+		return out, fmt.Errorf("load buyer profile: %w", err)
 	}
 
 	resolvedCountry, err := h.common.ResolveCountry(ctx, input.Address)
@@ -108,7 +104,7 @@ func (h *CheckoutWorkflow) Run(
 		return out, err
 	}
 	if resolvedCountry != buyerProfile.Country {
-		return out, ordermodel.ErrCheckoutAddressCountryMismatch.Fmt(resolvedCountry, buyerProfile.Country).Terminal()
+		return out, ordermodel.ErrCheckoutAddressCountryMismatch.Fmt(resolvedCountry, buyerProfile.Country)
 	}
 
 	skuIDs := lo.Map(input.Items, func(s CheckoutItem, _ int) uuid.UUID { return s.SkuID })
@@ -119,10 +115,10 @@ func (h *CheckoutWorkflow) Run(
 		ID: skuIDs,
 	})
 	if err != nil {
-		return out, sharedmodel.WrapErr("fetch product skus", err)
+		return out, fmt.Errorf("fetch product skus: %w", err)
 	}
 	if len(skus) != len(skuIDs) {
-		return out, ordermodel.ErrOrderItemNotFound.Terminal()
+		return out, ordermodel.ErrOrderItemNotFound
 	}
 
 	listSpu, err := h.catalog.ListProductSpu(ctx, catalogbiz.ListProductSpuParams{
@@ -130,68 +126,72 @@ func (h *CheckoutWorkflow) Run(
 		ID:      lo.Map(skus, func(s catalogmodel.ProductSku, _ int) uuid.UUID { return s.SpuID }),
 	})
 	if err != nil {
-		return out, sharedmodel.WrapErr("fetch product spus", err)
+		return out, fmt.Errorf("fetch product spus: %w", err)
 	}
 
 	skuMap := lo.KeyBy(skus, func(s catalogmodel.ProductSku) uuid.UUID { return s.ID })
 	spuMap := lo.KeyBy(listSpu.Data, func(s catalogmodel.ProductSpu) uuid.UUID { return s.ID })
 
-	// Step 2.5: FX snapshot.
+	// Step 2.5: FX snapshot. Mixed-currency carts are supported — each item
+	// converts from its spu's own currency into the buyer's currency.
 	if len(listSpu.Data) == 0 {
-		return out, ordermodel.ErrOrderItemNotFound.Terminal()
-	}
-	sellerCurrency := listSpu.Data[0].Currency
-	for _, spu := range listSpu.Data {
-		if spu.Currency != sellerCurrency {
-			return out, ordermodel.ErrMixedCurrencyCart.Fmt(sellerCurrency, spu.Currency).Terminal()
-		}
+		return out, ordermodel.ErrOrderItemNotFound
 	}
 
 	buyerCurrency, err := sharedcurrency.Infer(buyerProfile.Country)
 	if err != nil {
-		return out, sharedmodel.WrapErr("infer buyer currency", err)
+		return out, fmt.Errorf("infer buyer currency: %w", err)
+	}
+
+	needFX := false
+	for _, spu := range listSpu.Data {
+		if spu.Currency != buyerCurrency {
+			needFX = true
+			break
+		}
 	}
 
 	var fxSnapshot commonmodel.ExchangeRateSnapshot
-	if buyerCurrency != sellerCurrency {
+	if needFX {
 		fxSnapshot, err = h.common.GetExchangeRates(ctx, commonbiz.GetExchangeRatesParams{})
 		if err != nil {
-			return out, sharedmodel.WrapErr("fx rate lookup", err)
+			return out, fmt.Errorf("fx rate lookup: %w", err)
 		}
-	}
-
-	// Stored rate convention: amount_seller = amount_buyer * exchangeRate.
-	exchangeRate := decimal.NewFromInt(1)
-	if buyerCurrency != sellerCurrency {
-		rateFrom := decimal.NewFromInt(1)
-		if buyerCurrency != fxSnapshot.Base {
-			r, ok := fxSnapshot.Rates[buyerCurrency]
-			if !ok || r.Sign() <= 0 {
-				return out, ordermodel.ErrFXRateUnavailable.Fmt(buyerCurrency).Terminal()
+		// Validate rate availability up-front for every currency we'll touch
+		// (buyer + each unique non-buyer seller currency). Fails loud before
+		// inventory reservation, since ConvertAmountPure is fail-open.
+		needed := map[string]struct{}{buyerCurrency: {}}
+		for _, spu := range listSpu.Data {
+			needed[spu.Currency] = struct{}{}
+		}
+		for c := range needed {
+			if c == fxSnapshot.Base {
+				continue
 			}
-			rateFrom = r
-		}
-		rateTo := decimal.NewFromInt(1)
-		if sellerCurrency != fxSnapshot.Base {
-			r, ok := fxSnapshot.Rates[sellerCurrency]
-			if !ok || r.Sign() <= 0 {
-				return out, ordermodel.ErrFXRateUnavailable.Fmt(sellerCurrency).Terminal()
+			if r, ok := fxSnapshot.Rates[c]; !ok || r.Sign() <= 0 {
+				return out, ordermodel.ErrFXRateUnavailable.Fmt(c)
 			}
-			rateTo = r
 		}
-		exchangeRate = rateTo.Div(rateFrom)
 	}
 
-	var exchangeRateNumeric pgtype.Numeric
-	if err = exchangeRateNumeric.Scan(exchangeRate.String()); err != nil {
-		return out, sharedmodel.WrapErr("encode exchange rate", err)
+	// Session/tx settle in buyer currency. Per-item conversion is baked into
+	// the stored subtotal/total amounts; the FX snapshot lives on the session
+	// (one source of truth across all child txs) so audit can replay any
+	// per-item conversion via (item.source_currency, session.fx_snapshot).
+	var fxSnapshotJSON json.RawMessage
+	if needFX {
+		raw, mErr := sonic.Marshal(fxSnapshot)
+		if mErr != nil {
+			return out, fmt.Errorf("marshal fx snapshot: %w", mErr)
+		}
+		fxSnapshotJSON = raw
 	}
 
-	convertToBuyer := func(amount int64) int64 {
-		if buyerCurrency == sellerCurrency {
+	convertToBuyer := func(amount int64, fromCurrency string) int64 {
+		if fromCurrency == buyerCurrency {
 			return amount
 		}
-		return commonbiz.ConvertAmountPure(amount, sellerCurrency, buyerCurrency, fxSnapshot.Rates)
+		return commonbiz.ConvertAmountPure(amount, fromCurrency, buyerCurrency, fxSnapshot.Rates)
 	}
 
 	// Step 3: Remove items from cart (skip on BuyNow)
@@ -220,7 +220,7 @@ func (h *CheckoutWorkflow) Run(
 			})
 			return e
 		}); err != nil {
-			return out, sharedmodel.WrapErr("remove cart items", err)
+			return out, fmt.Errorf("remove cart items: %w", err)
 		}
 	}
 
@@ -259,7 +259,7 @@ func (h *CheckoutWorkflow) Run(
 	})
 	if err != nil {
 		metrics.CheckoutItemsCreatedTotal.WithLabelValues("failure").Inc()
-		return out, sharedmodel.WrapErr("reserve inventory", err)
+		return out, fmt.Errorf("reserve inventory: %w", err)
 	}
 
 	serialIDsMap := lo.SliceToMap(inventories, func(i inventorybiz.ReserveInventoryResult) (uuid.UUID, []string) {
@@ -273,7 +273,7 @@ func (h *CheckoutWorkflow) Run(
 
 	sellerContacts, err := h.account.GetDefaultContact(ctx, sellerIDs)
 	if err != nil {
-		return out, sharedmodel.WrapErr("fetch seller contacts", err)
+		return out, fmt.Errorf("fetch seller contacts: %w", err)
 	}
 
 	type transportQuote struct {
@@ -288,12 +288,12 @@ func (h *CheckoutWorkflow) Run(
 
 		transportClient, tcErr := h.base.getTransportClient(item.TransportOption)
 		if tcErr != nil {
-			return out, sharedmodel.WrapErr("get transport client", tcErr)
+			return out, fmt.Errorf("get transport client: %w", tcErr)
 		}
 
 		sellerContact, ok := sellerContacts[spu.AccountID]
 		if !ok {
-			return out, sharedmodel.WrapErr("seller contact not found", ordermodel.ErrOrderItemNotFound)
+			return out, fmt.Errorf("seller contact not found: %w", ordermodel.ErrOrderItemNotFound)
 		}
 
 		quote, qErr := transportClient.Quote(ctx, transport.QuoteParams{
@@ -305,7 +305,7 @@ func (h *CheckoutWorkflow) Run(
 			ToAddress:   input.Address,
 		})
 		if qErr != nil {
-			return out, sharedmodel.WrapErr(fmt.Sprintf("quote transport for sku %s", item.SkuID), qErr)
+			return out, fmt.Errorf("quote transport for sku %s: %w", item.SkuID, qErr)
 		}
 
 		transportQuotes[item.SkuID] = transportQuote{
@@ -323,9 +323,10 @@ func (h *CheckoutWorkflow) Run(
 	var total int64
 	for _, item := range input.Items {
 		sku := skuMap[item.SkuID]
+		spu := spuMap[sku.SpuID]
 		tq := transportQuotes[item.SkuID]
-		subtotal := convertToBuyer(sku.Price * item.Quantity)
-		paid := subtotal + convertToBuyer(tq.Cost)
+		subtotal := convertToBuyer(sku.Price*item.Quantity, spu.Currency)
+		paid := subtotal + convertToBuyer(tq.Cost, spu.Currency)
 		itemAmountsMap[item.SkuID] = itemAmounts{subtotalAmount: subtotal, totalAmount: paid}
 		total += paid
 	}
@@ -335,14 +336,14 @@ func (h *CheckoutWorkflow) Run(
 	if input.UseWallet && total > 0 {
 		balance, balErr := h.base.account.GetWalletBalance(ctx, input.Account.ID)
 		if balErr != nil {
-			return out, sharedmodel.WrapErr("get wallet balance", balErr)
+			return out, fmt.Errorf("get wallet balance: %w", balErr)
 		}
 		internalWalletAmount = min(balance, total)
 	}
 	gatewayAmount = total - internalWalletAmount
 
 	if gatewayAmount > 0 && input.PaymentOption == "" {
-		return out, ordermodel.ErrInsufficientWalletBalance.Terminal()
+		return out, ordermodel.ErrInsufficientWalletBalance
 	}
 
 	// Step 8: Atomically create payment_session, the wallet tx (if any),
@@ -373,19 +374,20 @@ func (h *CheckoutWorkflow) Run(
 
 		session, sErr := h.storage.Querier().CreateDefaultPaymentSession(rctx, orderdb.CreateDefaultPaymentSessionParams{
 			ID:          sessionID,
-			Kind:        SessionKindBuyerCheckout,
+			Kind:        ordermodel.SessionKindBuyerCheckout,
 			Status:      orderdb.OrderStatusPending,
 			FromID:      uuid.NullUUID{UUID: input.Account.ID, Valid: true},
 			ToID:        uuid.NullUUID{},
 			Note:        "buyer checkout",
 			Currency:    buyerCurrency,
 			TotalAmount: total,
+			FxSnapshot:  fxSnapshotJSON,
 			Data:        json.RawMessage("{}"),
 			DatePaid:    null.Time{},
 			DateExpired: time.Now().Add(sessionExpiry),
 		})
 		if sErr != nil {
-			return res, sharedmodel.WrapErr("db create payment session", sErr)
+			return res, fmt.Errorf("db create payment session: %w", sErr)
 		}
 		res.Session = session
 
@@ -399,14 +401,12 @@ func (h *CheckoutWorkflow) Run(
 				PaymentOption: null.String{},
 				Data:          json.RawMessage("{}"),
 				Amount:        internalWalletAmount,
-				FromCurrency:  buyerCurrency,
-				ToCurrency:    buyerCurrency,
-				ExchangeRate:  exchangeRateNumeric,
+				Currency:      buyerCurrency,
 				ReversesID:    uuid.NullUUID{},
 				DateSettled:   null.Time{},
 				DateExpired:   null.Time{},
 			}); txErr != nil {
-				return res, sharedmodel.WrapErr("db create wallet tx", txErr)
+				return res, fmt.Errorf("db create wallet tx: %w", txErr)
 			}
 		}
 
@@ -421,7 +421,7 @@ func (h *CheckoutWorkflow) Run(
 
 			jsonSerialIDs, mErr := sonic.Marshal(serialIDs)
 			if mErr != nil {
-				return res, sharedmodel.WrapErr("marshal serial ids", mErr)
+				return res, fmt.Errorf("marshal serial ids: %w", mErr)
 			}
 
 			skuName := spu.Name
@@ -447,12 +447,13 @@ func (h *CheckoutWorkflow) Run(
 				TransportOption:  tq.Option,
 				SubtotalAmount:   amounts.subtotalAmount,
 				TotalAmount:      amounts.totalAmount,
+				SourceCurrency:   spu.Currency,
 				PaymentSessionID: sessionID,
 				DateCancelled:    null.Time{},
 				CancelledByID:    uuid.NullUUID{},
 			})
 			if iErr != nil {
-				return res, sharedmodel.WrapErr("db create item", iErr)
+				return res, fmt.Errorf("db create item: %w", iErr)
 			}
 			res.Items = append(res.Items, dbItem)
 		}
@@ -461,7 +462,7 @@ func (h *CheckoutWorkflow) Run(
 	})
 	if err != nil {
 		metrics.CheckoutItemsCreatedTotal.WithLabelValues("failure").Inc()
-		return out, sharedmodel.WrapErr("create checkout records", err)
+		return out, fmt.Errorf("create checkout records: %w", err)
 	}
 
 	// Step 9: Internal wallet payment. The wallet tx was created Pending in
@@ -473,7 +474,7 @@ func (h *CheckoutWorkflow) Run(
 			Reference: fmt.Sprintf("tx:%s", internalWalletTxID),
 			Note:      "checkout internal wallet",
 		}); dErr != nil {
-			return out, sharedmodel.WrapErr("debit internal wallet", dErr)
+			return out, fmt.Errorf("debit internal wallet: %w", dErr)
 		}
 		// Arm credit compensator AFTER debit confirmed. WalletDebit is atomic
 		// (single CTE under FOR UPDATE) → terminal failure means no debit
@@ -495,7 +496,7 @@ func (h *CheckoutWorkflow) Run(
 			})
 			return e
 		}); mErr != nil {
-			return out, sharedmodel.WrapErr("mark wallet tx success", mErr)
+			return out, fmt.Errorf("mark wallet tx success: %w", mErr)
 		}
 	}
 
@@ -512,9 +513,7 @@ func (h *CheckoutWorkflow) Run(
 			Description:     fmt.Sprintf("Checkout session %s", workflowID),
 			PaymentOption:   input.PaymentOption,
 			Amount:          gatewayAmount,
-			FromCurrency:    buyerCurrency,
-			ToCurrency:      buyerCurrency,
-			ExchangeRate:    exchangeRateNumeric,
+			Currency:        buyerCurrency,
 			ErrCancelled:    ordermodel.ErrCheckoutCancelled,
 			ErrExpired:      ordermodel.ErrCheckoutExpired,
 		}); err != nil {
@@ -530,7 +529,7 @@ func (h *CheckoutWorkflow) Run(
 		purchaseInteractions = append(purchaseInteractions, analyticbiz.CreateInteraction{
 			Account:   input.Account,
 			EventType: analyticmodel.EventPurchase,
-			RefType:   analyticdb.AnalyticInteractionRefTypeProduct,
+			RefType:   analyticmodel.InteractionRefTypeProduct,
 			RefID:     item.SkuID.String(),
 		})
 	}
@@ -579,10 +578,10 @@ func (h *CheckoutWorkflow) RequestNewPaymentURL(
 ) (string, error) {
 	attempt, err := restate.Get[int](ctx, "payment_attempt")
 	if err != nil {
-		return "", sharedmodel.WrapErr("read payment_attempt state", err)
+		return "", fmt.Errorf("read payment_attempt state: %w", err)
 	}
 	if attempt < 1 {
-		return "", ordermodel.ErrCheckoutExpired.Terminal()
+		return "", ordermodel.ErrCheckoutExpired
 	}
 	_ = restate.Promise[struct{}](ctx, fmt.Sprintf("retry_%d", attempt)).Resolve(struct{}{})
 	return restate.Promise[string](ctx, fmt.Sprintf("payment_url_%d", attempt+1)).Result()
@@ -605,4 +604,28 @@ func (h *CheckoutWorkflow) CancelCheckout(
 	_ struct{},
 ) error {
 	return restate.Promise[struct{}](ctx, "user_cancel").Resolve(struct{}{})
+}
+
+type CheckoutWorkflowInput struct {
+	Account       accountmodel.AuthenticatedAccount `json:"account"`
+	Items         []CheckoutItem                    `json:"items" validate:"required,min=1,dive"`
+	Address       string                            `json:"address" validate:"required,min=1,max=500"`
+	BuyNow        bool                              `json:"buy_now"`
+	UseWallet     bool                              `json:"use_wallet"`
+	WalletID      *uuid.UUID                        `json:"wallet_id,omitempty"`
+	PaymentOption string                            `json:"payment_option" validate:"max=100"`
+}
+
+type CheckoutWorkflowOutput struct {
+	Status    string    `json:"status"`
+	SessionID uuid.UUID `json:"session_id"`
+}
+
+// CheckoutItem is one line in a buyer checkout — used by the checkout workflow
+// input and the buyer checkout-summary handler.
+type CheckoutItem struct {
+	SkuID           uuid.UUID `json:"sku_id" validate:"required"`
+	Quantity        int64     `json:"quantity" validate:"required,gt=0,max=100000"`
+	TransportOption string    `json:"transport_option" validate:"required,min=1,max=100"`
+	Note            string    `json:"note" validate:"max=500"`
 }

@@ -1,11 +1,11 @@
 package inventorybiz
 
 import (
+	"fmt"
 	"shopnexus-server/internal/infras/metrics"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
 	inventorymodel "shopnexus-server/internal/module/inventory/model"
 	"shopnexus-server/internal/shared/idempotency"
-	sharedmodel "shopnexus-server/internal/shared/model"
 
 	"github.com/google/uuid"
 	restate "github.com/restatedev/sdk-go"
@@ -27,12 +27,12 @@ func (b *InventoryHandler) ReleaseInventory(ctx restate.Context, params ReleaseI
 
 	txStorage, err := b.storage.BeginTx(ctx)
 	if err != nil {
-		return sharedmodel.WrapErr("begin transaction", err)
+		return fmt.Errorf("begin transaction: %w", err)
 	}
 	defer txStorage.Rollback(ctx)
 
 	if err = params.Keys.Apply(ctx, txStorage.Querier()); err != nil {
-		return sharedmodel.WrapErr("check idempotency keys", err)
+		return fmt.Errorf("check idempotency keys: %w", err)
 	}
 
 	for _, item := range params.Items {
@@ -42,15 +42,15 @@ func (b *InventoryHandler) ReleaseInventory(ctx restate.Context, params ReleaseI
 			Amount:  item.Amount,
 		})
 		if e != nil {
-			return sharedmodel.WrapErr("release inventory", e)
+			return fmt.Errorf("release inventory: %w", e)
 		}
 		if rows == 0 {
-			return inventorymodel.ErrInsufficientReservedInventory.Terminal()
+			return inventorymodel.ErrInsufficientReservedInventory
 		}
 	}
 
 	if err = txStorage.Commit(ctx); err != nil {
-		return sharedmodel.WrapErr("commit transaction", err)
+		return fmt.Errorf("commit transaction: %w", err)
 	}
 	return nil
 }

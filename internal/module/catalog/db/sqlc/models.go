@@ -200,7 +200,35 @@ type CatalogSearchSync struct {
 
 type CatalogTag struct {
 	ID          string      `json:"id"`
-	AccountID   uuid.UUID   `json:"account_id"`
 	Name        string      `json:"name"`
 	Description null.String `json:"description"`
+}
+
+func (n NullCatalogCommentRefType) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.CatalogCommentRefType)
+}
+func (n *NullCatalogCommentRefType) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.CatalogCommentRefType)
+}
+func (n NullCatalogSearchSyncRefType) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.CatalogSearchSyncRefType)
+}
+func (n *NullCatalogSearchSyncRefType) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.CatalogSearchSyncRefType)
 }

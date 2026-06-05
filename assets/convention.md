@@ -22,9 +22,10 @@ fx.go               # Uber fx module wiring
 
 ## Nullable Types
 
-- `guregu/null/v6` for DB fields in SQLC-generated structs.
+- `guregu/null/v6` for DB primitive fields (string, int, float, bool, time) in SQLC-generated structs.
+- `NullXxx` structs (sqlc-generated) for nullable enum fields — they have custom `MarshalJSON` added by `cmd/nullmarshal`.
 - `*T` pointers for JSON serialization in models exposed to Restate — generic types like `null.Value[T]` break Restate's JSON schema generation.
-- `ptrutil.PtrIf[T](val, valid)` for converting nullable DB types to pointers.
+- `ptrutil.PtrIf[T](val, valid)` for converting nullable DB types to pointers, `ptrutil.Ptr[T](v)` for pointer literals.
 
 ## Error Handling
 

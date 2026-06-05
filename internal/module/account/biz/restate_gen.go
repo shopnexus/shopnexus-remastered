@@ -4,11 +4,12 @@ package accountbiz
 
 import (
 	"context"
-	"github.com/google/uuid"
 	restateclient "shopnexus-server/internal/infras/restate"
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	accountmodel "shopnexus-server/internal/module/account/model"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
+
+	"github.com/google/uuid"
 )
 
 const serviceName = "Account"
@@ -40,8 +41,8 @@ func (p *AccountRestateClient) GetProfile(ctx context.Context, params GetProfile
 	return restateclient.Call[accountmodel.Profile](ctx, p.client, serviceName, "GetProfile", params)
 }
 
-func (p *AccountRestateClient) ListProfile(ctx context.Context, params ListProfileParams) (sharedmodel.PaginateResult[accountmodel.Profile], error) {
-	return restateclient.Call[sharedmodel.PaginateResult[accountmodel.Profile]](ctx, p.client, serviceName, "ListProfile", params)
+func (p *AccountRestateClient) ListProfile(ctx context.Context, params ListProfileParams) (paginate.PaginateResult[accountmodel.Profile], error) {
+	return restateclient.Call[paginate.PaginateResult[accountmodel.Profile]](ctx, p.client, serviceName, "ListProfile", params)
 }
 
 func (p *AccountRestateClient) UpdateProfile(ctx context.Context, params UpdateProfileParams) (accountmodel.Profile, error) {
@@ -100,16 +101,16 @@ func (p *AccountRestateClient) RemoveFavorite(ctx context.Context, params Remove
 	return restateclient.Send(ctx, p.client, serviceName, "RemoveFavorite", params)
 }
 
-func (p *AccountRestateClient) ListFavorite(ctx context.Context, params ListFavoriteParams) (sharedmodel.PaginateResult[accountdb.AccountFavorite], error) {
-	return restateclient.Call[sharedmodel.PaginateResult[accountdb.AccountFavorite]](ctx, p.client, serviceName, "ListFavorite", params)
+func (p *AccountRestateClient) ListFavorite(ctx context.Context, params ListFavoriteParams) (paginate.PaginateResult[accountdb.AccountFavorite], error) {
+	return restateclient.Call[paginate.PaginateResult[accountdb.AccountFavorite]](ctx, p.client, serviceName, "ListFavorite", params)
 }
 
 func (p *AccountRestateClient) CheckFavorites(ctx context.Context, params CheckFavoritesParams) (map[uuid.UUID]bool, error) {
 	return restateclient.Call[map[uuid.UUID]bool](ctx, p.client, serviceName, "CheckFavorites", params)
 }
 
-func (p *AccountRestateClient) ListNotification(ctx context.Context, params ListNotificationParams) (sharedmodel.PaginateResult[accountdb.AccountNotification], error) {
-	return restateclient.Call[sharedmodel.PaginateResult[accountdb.AccountNotification]](ctx, p.client, serviceName, "ListNotification", params)
+func (p *AccountRestateClient) ListNotification(ctx context.Context, params ListNotificationParams) (paginate.PaginateResult[accountdb.AccountNotification], error) {
+	return restateclient.Call[paginate.PaginateResult[accountdb.AccountNotification]](ctx, p.client, serviceName, "ListNotification", params)
 }
 
 func (p *AccountRestateClient) CountUnread(ctx context.Context, params CountUnreadParams) (int64, error) {

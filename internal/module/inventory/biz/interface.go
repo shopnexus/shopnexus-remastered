@@ -4,7 +4,7 @@ import (
 	"context"
 
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/pgsqlc"
 )
 
@@ -18,14 +18,14 @@ type InventoryBiz interface {
 	ListStock(
 		ctx context.Context,
 		params ListStockParams,
-	) (sharedmodel.PaginateResult[inventorydb.InventoryStock], error)
+	) (paginate.PaginateResult[inventorydb.InventoryStock], error)
 	CreateStock(ctx context.Context, params CreateStockParams) (inventorydb.InventoryStock, error)
 
 	// Stock History
 	ListStockHistory(
 		ctx context.Context,
 		params ListStockHistoryParams,
-	) (sharedmodel.PaginateResult[inventorydb.InventoryStockHistory], error)
+	) (paginate.PaginateResult[inventorydb.InventoryStockHistory], error)
 
 	// Import
 	ImportStock(ctx context.Context, params ImportStockParams) error
@@ -39,7 +39,7 @@ type InventoryBiz interface {
 	ListSerial(
 		ctx context.Context,
 		params ListSerialParams,
-	) (sharedmodel.PaginateResult[inventorydb.InventorySerial], error)
+	) (paginate.PaginateResult[inventorydb.InventorySerial], error)
 
 	// Most Taken
 	ListMostTakenSku(ctx context.Context, params ListMostTakenSkuParams) ([]inventorydb.InventoryStock, error)

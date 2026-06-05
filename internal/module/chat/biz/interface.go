@@ -5,7 +5,7 @@ import (
 
 	chatdb "shopnexus-server/internal/module/chat/db/sqlc"
 	commonbiz "shopnexus-server/internal/module/common/biz"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/pgsqlc"
 
 	"github.com/google/uuid"
@@ -21,11 +21,11 @@ type ChatBiz interface {
 	ListConversation(
 		ctx context.Context,
 		params ListConversationParams,
-	) (sharedmodel.PaginateResult[chatdb.ChatConversation], error)
+	) (paginate.PaginateResult[chatdb.ChatConversation], error)
 
 	// Message
 	SendMessage(ctx context.Context, params SendMessageParams) (chatdb.ChatMessage, error)
-	ListMessage(ctx context.Context, params ListMessageParams) (sharedmodel.PaginateResult[chatdb.ChatMessage], error)
+	ListMessage(ctx context.Context, params ListMessageParams) (paginate.PaginateResult[chatdb.ChatMessage], error)
 	MarkRead(ctx context.Context, params MarkReadParams) error
 }
 

@@ -18,7 +18,7 @@ import (
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	promotionbiz "shopnexus-server/internal/module/promotion/biz"
 	"shopnexus-server/internal/provider/llm"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/pgsqlc"
 )
 
@@ -34,7 +34,7 @@ type CatalogBiz interface {
 	ListProductCard(
 		ctx context.Context,
 		params ListProductCardParams,
-	) (sharedmodel.PaginateResult[catalogmodel.ProductCard], error)
+	) (paginate.PaginateResult[catalogmodel.ProductCard], error)
 	ListRecommendedProductCard(
 		ctx context.Context,
 		params ListRecommendedProductCardParams,
@@ -45,7 +45,7 @@ type CatalogBiz interface {
 	ListProductSpu(
 		ctx context.Context,
 		params ListProductSpuParams,
-	) (sharedmodel.PaginateResult[catalogmodel.ProductSpu], error)
+	) (paginate.PaginateResult[catalogmodel.ProductSpu], error)
 	CreateProductSpu(ctx context.Context, params CreateProductSpuParams) (catalogmodel.ProductSpu, error)
 	UpdateProductSpu(ctx context.Context, params UpdateProductSpuParams) (catalogmodel.ProductSpu, error)
 	DeleteProductSpu(ctx context.Context, params DeleteProductSpuParams) error
@@ -57,21 +57,21 @@ type CatalogBiz interface {
 	DeleteProductSku(ctx context.Context, params DeleteProductSkuParams) error
 
 	// Comment
-	ListComment(ctx context.Context, params ListCommentParams) (sharedmodel.PaginateResult[catalogmodel.Comment], error)
+	ListComment(ctx context.Context, params ListCommentParams) (paginate.PaginateResult[catalogmodel.Comment], error)
 	CreateComment(ctx context.Context, params CreateCommentParams) (catalogmodel.Comment, error)
 	UpdateComment(ctx context.Context, params UpdateCommentParams) (catalogmodel.Comment, error)
 	DeleteComment(ctx context.Context, params DeleteCommentParams) error
 	ListReviewableOrders(ctx context.Context, params ListReviewableOrdersParams) ([]catalogmodel.ReviewableOrder, error)
 
 	// Tag
-	ListTag(ctx context.Context, params ListTagParams) (sharedmodel.PaginateResult[catalogdb.CatalogTag], error)
+	ListTag(ctx context.Context, params ListTagParams) (paginate.PaginateResult[catalogdb.CatalogTag], error)
 	GetTag(ctx context.Context, params GetTagParams) (catalogdb.CatalogTag, error)
 
 	// Category
 	ListCategory(
 		ctx context.Context,
 		params ListCategoryParams,
-	) (sharedmodel.PaginateResult[catalogmodel.Category], error)
+	) (paginate.PaginateResult[catalogmodel.Category], error)
 
 	// Search
 	Search(ctx context.Context, params SearchParams) ([]catalogmodel.ProductRecommend, error)

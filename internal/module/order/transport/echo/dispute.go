@@ -4,53 +4,20 @@ import (
 	"net/http"
 
 	orderbiz "shopnexus-server/internal/module/order/biz"
+	ordermodel "shopnexus-server/internal/module/order/model"
 	authclaims "shopnexus-server/internal/shared/claims"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/response"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
 
-type CreateRefundDisputeRequest struct {
-	Reason string `json:"reason" validate:"required,min=1,max=1000"`
-	Note   string `json:"note"   validate:"required,min=1,max=2000"`
-}
-
-func (h *Handler) CreateRefundDispute(c echo.Context) error {
-	refundID, err := uuid.Parse(c.Param("refundID"))
-	if err != nil {
-		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
-	}
-
-	var req CreateRefundDisputeRequest
-	if err := c.Bind(&req); err != nil {
-		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
-	}
-	if err := c.Validate(&req); err != nil {
-		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
-	}
-
-	claims, err := authclaims.GetClaims(c.Request())
-	if err != nil {
-		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
-	}
-
-	result, err := h.biz.CreateRefundDispute(c.Request().Context(), orderbiz.CreateRefundDisputeParams{
-		Account:  claims.Account,
-		RefundID: refundID,
-		Reason:   req.Reason,
-		Note:     req.Note,
-	})
-	if err != nil {
-		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
-	}
-
-	return response.FromDTO(c.Response().Writer, http.StatusOK, result)
-}
+// --- List + Get disputes ---
 
 type ListRefundDisputesRequest struct {
-	sharedmodel.PaginationParams
+	Status string `query:"status" validate:"omitempty,oneof=Open SellerWins BuyerWins"`
+	paginate.Params
 }
 
 func (h *Handler) ListRefundDisputes(c echo.Context) error {
@@ -61,20 +28,18 @@ func (h *Handler) ListRefundDisputes(c echo.Context) error {
 	if err := c.Validate(&req); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
-
 	claims, err := authclaims.GetClaims(c.Request())
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-
 	result, err := h.biz.ListRefundDisputes(c.Request().Context(), orderbiz.ListRefundDisputesParams{
-		Account:          claims.Account,
-		PaginationParams: req.PaginationParams.Constrain(),
+		Account: claims.Account,
+		Status:  ordermodel.DisputeStatus(req.Status),
+		Params:  req.Params.Constrain(),
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
-
 	return response.FromPaginate(c.Response().Writer, result)
 }
 
@@ -83,7 +48,6 @@ func (h *Handler) ListRefundDisputesByRefund(c echo.Context) error {
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
-
 	var req ListRefundDisputesRequest
 	if err := c.Bind(&req); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
@@ -91,26 +55,20 @@ func (h *Handler) ListRefundDisputesByRefund(c echo.Context) error {
 	if err := c.Validate(&req); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
-
 	claims, err := authclaims.GetClaims(c.Request())
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-
 	result, err := h.biz.ListRefundDisputes(c.Request().Context(), orderbiz.ListRefundDisputesParams{
-		Account:          claims.Account,
-		RefundID:         uuid.NullUUID{UUID: refundID, Valid: true},
-		PaginationParams: req.PaginationParams.Constrain(),
+		Account:  claims.Account,
+		RefundID: uuid.NullUUID{UUID: refundID, Valid: true},
+		Status:   ordermodel.DisputeStatus(req.Status),
+		Params:   req.Params.Constrain(),
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
-
 	return response.FromPaginate(c.Response().Writer, result)
-}
-
-type GetRefundDisputeRequest struct {
-	DisputeID uuid.UUID `param:"disputeID" validate:"required"`
 }
 
 func (h *Handler) GetRefundDispute(c echo.Context) error {
@@ -118,12 +76,10 @@ func (h *Handler) GetRefundDispute(c echo.Context) error {
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
-
 	claims, err := authclaims.GetClaims(c.Request())
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-
 	result, err := h.biz.GetRefundDispute(c.Request().Context(), orderbiz.GetRefundDisputeParams{
 		Account:   claims.Account,
 		DisputeID: disputeID,
@@ -131,6 +87,52 @@ func (h *Handler) GetRefundDispute(c echo.Context) error {
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
+	return response.FromDTO(c.Response().Writer, http.StatusOK, result)
+}
 
+// --- Admin: uphold (seller wins) / dismiss (buyer wins) ---
+
+type AdminDisputeDecisionRequest struct {
+	Note string `json:"resolution_note" validate:"required,min=1,max=2000"`
+}
+
+func (h *Handler) AdminUpholdDispute(c echo.Context) error {
+	return h.adminDecideDispute(c, true)
+}
+
+func (h *Handler) AdminDismissDispute(c echo.Context) error {
+	return h.adminDecideDispute(c, false)
+}
+
+func (h *Handler) adminDecideDispute(c echo.Context, uphold bool) error {
+	disputeID, err := uuid.Parse(c.Param("disputeID"))
+	if err != nil {
+		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
+	}
+	var req AdminDisputeDecisionRequest
+	if err := c.Bind(&req); err != nil {
+		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
+	}
+	if err := c.Validate(&req); err != nil {
+		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
+	}
+	claims, err := authclaims.GetClaims(c.Request())
+	if err != nil {
+		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
+	}
+	params := orderbiz.AdminDisputeDecisionParams{
+		Account:   claims.Account,
+		DisputeID: disputeID,
+		Note:      req.Note,
+	}
+	var result interface{}
+	if uphold {
+		result, err = h.biz.AdminUpholdDispute(c.Request().Context(), params)
+	} else {
+		result, err = h.biz.AdminDismissDispute(c.Request().Context(), params)
+	}
+	if err != nil {
+		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
+	}
 	return response.FromDTO(c.Response().Writer, http.StatusOK, result)
 }

@@ -109,7 +109,7 @@ SELECT
     (SELECT COUNT(*)::BIGINT FROM "order"."refund" r
      JOIN "order"."order" o ON o."id" = r."order_id"
      WHERE o."seller_id" = $1
-       AND r."status" = 'Pending') AS pending_refunds
+       AND r."status" = 'AwaitingSellerReview') AS pending_refunds
 `
 
 type GetSellerPendingActionsRow struct {

@@ -1,4 +1,4 @@
-package sharedmodel
+package paginate
 
 import (
 	"encoding/base64"
@@ -7,13 +7,14 @@ import (
 	"github.com/guregu/null/v6"
 )
 
-type PaginationParams struct {
+type Params struct {
 	Page   null.Int32  `query:"page"   validate:"omitnil,gt=0"`
 	Cursor null.String `query:"cursor" validate:"omitnil"`
-	Limit  null.Int32  `query:"limit"  validate:"omitnil,gt=0"`
+	Limit  null.Int32  `query:"limit"  validate:"omitnil,gt=0,lte=100"`
 }
 
-func (p PaginationParams) Constrain() PaginationParams {
+// TODO: sau khi sửa xong null.X thì xoá luôn hàm này
+func (p Params) Constrain() Params {
 	if p.Limit.Valid {
 		if p.Limit.Int32 > 100 {
 			p.Limit.SetValid(100)
@@ -28,7 +29,7 @@ func (p PaginationParams) Constrain() PaginationParams {
 	return p
 }
 
-func (p PaginationParams) Offset() null.Int32 {
+func (p Params) Offset() null.Int32 {
 	if p.Limit.Valid {
 		offset := (p.Page.Int32 - 1) * p.Limit.Int32
 		if offset < 0 {
@@ -40,7 +41,7 @@ func (p PaginationParams) Offset() null.Int32 {
 	return null.Int32{}
 }
 
-func (p PaginationParams) DecodeCursor(dst any) error {
+func (p Params) DecodeCursor(dst any) error {
 	if !p.Cursor.Valid {
 		return nil
 	}
@@ -52,7 +53,7 @@ func (p PaginationParams) DecodeCursor(dst any) error {
 }
 
 type PaginateResult[T any] struct {
-	PageParams PaginationParams
+	PageParams Params
 	Data       []T
 	Total      null.Int64 // Only valid for page-based pagination, not cursor-based.
 	NextCursor any

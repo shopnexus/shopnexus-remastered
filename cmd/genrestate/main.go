@@ -92,8 +92,10 @@ func main() {
 		importMap[alias] = path
 	}
 
-	// Find the target interface
-	var iface *ast.InterfaceType
+	// Index every interface declared in the file so we can resolve embedded
+	// (composed) interfaces — OrderBiz embeds CartBiz, RefundBiz, … and each
+	// sub-interface's methods must be expanded into the generated proxy.
+	ifaceMap := make(map[string]*ast.InterfaceType)
 	for _, decl := range f.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
 		if !ok {
@@ -101,51 +103,83 @@ func main() {
 		}
 		for _, spec := range genDecl.Specs {
 			ts, ok := spec.(*ast.TypeSpec)
-			if !ok || ts.Name.Name != *ifaceName {
+			if !ok {
 				continue
 			}
-			iface, ok = ts.Type.(*ast.InterfaceType)
-			if !ok {
-				log.Fatalf("%s is not an interface type", *ifaceName)
+			if it, ok := ts.Type.(*ast.InterfaceType); ok {
+				ifaceMap[ts.Name.Name] = it
 			}
 		}
 	}
-	if iface == nil {
+	iface, ok := ifaceMap[*ifaceName]
+	if !ok {
 		log.Fatalf("interface %s not found in %s", *ifaceName, *srcFile)
 	}
 
-	// Extract methods
+	// Extract methods, expanding embedded interfaces depth-first. Declaration
+	// order is preserved (an embed expands inline at its position); duplicate
+	// method names (diamond embeds) are emitted once.
 	usedImports := make(map[string]string)
 	var methods []methodInfo
+	seenMethod := make(map[string]bool)
+	visitedIface := make(map[string]bool)
 
-	for _, field := range iface.Methods.List {
-		ft, ok := field.Type.(*ast.FuncType)
-		if !ok || len(field.Names) == 0 {
-			continue
-		}
-
-		m := methodInfo{Name: field.Names[0].Name}
-
-		// Second param (skip ctx which is first)
-		if ft.Params.NumFields() > 1 {
-			param := ft.Params.List[1]
-			m.HasInput = true
-			if len(param.Names) > 0 {
-				m.InputName = param.Names[0].Name
-			} else {
-				m.InputName = "input"
+	var collect func(it *ast.InterfaceType)
+	collect = func(it *ast.InterfaceType) {
+		for _, field := range it.Methods.List {
+			// Embedded interface: a field with no name. Resolve it from the
+			// same-file index and recurse.
+			if len(field.Names) == 0 {
+				ident, ok := field.Type.(*ast.Ident)
+				if !ok {
+					log.Fatalf("embedded interface must be a same-package identifier, got %T", field.Type)
+				}
+				if visitedIface[ident.Name] {
+					continue
+				}
+				visitedIface[ident.Name] = true
+				embedded, ok := ifaceMap[ident.Name]
+				if !ok {
+					log.Fatalf("embedded interface %s not found in %s", ident.Name, *srcFile)
+				}
+				collect(embedded)
+				continue
 			}
-			m.InputType = renderType(fset, param.Type, *srcPkg, samePackage, usedImports, importMap)
-		}
 
-		// Return: (T, error) → has output; (error) → no output
-		if ft.Results != nil && ft.Results.NumFields() > 1 {
-			m.HasOutput = true
-			m.OutputType = renderType(fset, ft.Results.List[0].Type, *srcPkg, samePackage, usedImports, importMap)
-		}
+			ft, ok := field.Type.(*ast.FuncType)
+			if !ok {
+				continue
+			}
+			name := field.Names[0].Name
+			if seenMethod[name] {
+				continue
+			}
+			seenMethod[name] = true
 
-		methods = append(methods, m)
+			m := methodInfo{Name: name}
+
+			// Second param (skip ctx which is first)
+			if ft.Params.NumFields() > 1 {
+				param := ft.Params.List[1]
+				m.HasInput = true
+				if len(param.Names) > 0 {
+					m.InputName = param.Names[0].Name
+				} else {
+					m.InputName = "input"
+				}
+				m.InputType = renderType(fset, param.Type, *srcPkg, samePackage, usedImports, importMap)
+			}
+
+			// Return: (T, error) → has output; (error) → no output
+			if ft.Results != nil && ft.Results.NumFields() > 1 {
+				m.HasOutput = true
+				m.OutputType = renderType(fset, ft.Results.List[0].Type, *srcPkg, samePackage, usedImports, importMap)
+			}
+
+			methods = append(methods, m)
+		}
 	}
+	collect(iface)
 
 	// Always needed imports
 	usedImports["context"] = "context"

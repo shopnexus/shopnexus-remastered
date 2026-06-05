@@ -10,10 +10,26 @@ CREATE SCHEMA IF NOT EXISTS "order";
 
 -- Enums
 
--- How the buyer returns items for a refund
-CREATE TYPE "order"."refund_method" AS ENUM ('PickUp', 'DropOff');
--- Generic status used by payment, order, refund, and refund_dispute tables
+-- Generic status used by payment, order, and transport tables
 CREATE TYPE "order"."status" AS ENUM ('Pending', 'Processing', 'Success', 'Cancelled', 'Failed');
+
+-- Refund lifecycle (refund v2): buyer ships goods back at creation; seller
+-- reviews within the deadline; disputes escalate to admin. 'Cancelled' is a
+-- buyer-withdraw terminal state (only legal from 'Shipping').
+CREATE TYPE "order"."refund_status" AS ENUM (
+    'Shipping',
+    'AwaitingSellerReview',
+    'Disputed',
+    'Accepted',
+    'Rejected',
+    'Cancelled'
+);
+
+CREATE TYPE "order"."dispute_status" AS ENUM (
+    'Open',
+    'SellerWins',
+    'BuyerWins'
+);
 
 -- Tables
 
@@ -38,8 +54,13 @@ CREATE TABLE IF NOT EXISTS "order"."payment_session" (
     "to_id" UUID, -- Counterparty (buyer, seller, NULL = system)
     "note" TEXT NOT NULL,
 
-    "currency" VARCHAR(3) NOT NULL,
+    "currency" VARCHAR(3) NOT NULL, -- Buyer-facing currency; every child transaction settles via this currency
     "total_amount" BIGINT NOT NULL, -- Expected total in buyer-facing currency
+
+    -- FX snapshot frozen at session creation. NULL when no cross-currency
+    -- conversion was needed (every item already priced in `currency`).
+    -- Shape: { "base": "USD", "rates": { "VND": "24500.0", ... }, "fetched_at": "..." }
+    "fx_snapshot" JSONB,
 
     -- Checkout context shared across rails: cost breakdown, line items snapshot,
     -- applied promotions, gateway URLs per rail, provider metadata
@@ -73,10 +94,9 @@ CREATE TABLE IF NOT EXISTS "order"."transaction" (
 
     -- Signed: positive = original charge; negative = reversal (refund leg).
     -- Per-rail currency because split-tender may mix currencies (e.g. wallet VND + card USD).
+    -- Conversion rates live on payment_session.fx_snapshot, not per-tx.
     "amount" BIGINT NOT NULL,
-    "from_currency" VARCHAR(3) NOT NULL,
-    "to_currency" VARCHAR(3) NOT NULL,
-    "exchange_rate" NUMERIC NOT NULL,
+    "currency" VARCHAR(3) NOT NULL, -- Currency the rail actually debits / credits
 
     -- Self-FK to the original charge this row reverses; NULL on originals.
     "reverses_id" UUID,
@@ -156,8 +176,9 @@ CREATE TABLE IF NOT EXISTS "order"."item" (
     -- PAY-FIRST
     "quantity" BIGINT NOT NULL,
     "transport_option" TEXT NOT NULL,
-    "subtotal_amount" BIGINT NOT NULL, -- quantity * unit price. Used for display
-    "total_amount" BIGINT NOT NULL, -- Final paid amount after discounts, taxes, etc. Used for display & refunds
+    "subtotal_amount" BIGINT NOT NULL, -- quantity * unit price (converted to session.currency). Used for display
+    "total_amount" BIGINT NOT NULL, -- Final paid amount in session.currency after discounts, taxes, etc. Used for display & refunds
+    "source_currency" VARCHAR(3) NOT NULL, -- Currency the SPU was originally priced in; combined with session.fx_snapshot to replay conversion
     "payment_session_id" UUID NOT NULL,
 
     -- Cancellation
@@ -178,70 +199,79 @@ CREATE INDEX IF NOT EXISTS "item_sku_id_idx" ON "order"."item" ("sku_id");
 -- Seller's pending inbox: paid items awaiting confirmation
 CREATE INDEX IF NOT EXISTS "idx_item_seller_pending" ON "order"."item" ("seller_id", "transport_option") WHERE "order_id" IS NULL AND "date_cancelled" IS NULL;
 
--- Refund request raised by the buyer after a completed order. Two stages of approval: seller confirmation before transportation, then final approval after transportation.
+-- Refund request raised by the buyer. The buyer ships the goods back at
+-- creation time (return_transport_id is required), so by the time the seller
+-- sees AwaitingSellerReview they already have the physical items.
 CREATE TABLE IF NOT EXISTS "order"."refund" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
-    "account_id" UUID NOT NULL,
+    "account_id" UUID NOT NULL, -- buyer
     "order_id" UUID NOT NULL,
-    "transport_id" BIGINT NOT NULL,
-    "method" "order"."refund_method" NOT NULL,
     "reason" TEXT NOT NULL,
-    "address" TEXT, -- required for PickUp method, NULL for DropOff
+    "attachments" JSONB NOT NULL DEFAULT '[]'::JSONB, -- evidence photos (mandatory at create)
     "date_created" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    "status" "order"."status" NOT NULL DEFAULT 'Pending', -- Pending →  Processing (Accepted - Before transportation) → Processing (Approved - After transportation, inspect) → Success/Failed
+    "status" "order"."refund_status" NOT NULL DEFAULT 'Shipping',
 
-    -- Stage 1: Seller accepts refund request (before transportation)
-    "accepted_by_id"  UUID,
-    "date_accepted"   TIMESTAMPTZ(3),
-    "rejection_note" TEXT,
+    -- Forward leg: buyer → seller (mandatory, set at create)
+    "return_transport_id" BIGINT NOT NULL,
+    "date_received_by_seller" TIMESTAMPTZ(3), -- set when return transport hits Success
+    "review_deadline" TIMESTAMPTZ(3), -- date_received + 3D, auto-accept timer
 
-    -- Stage 2: Seller inspects item and approves refund payment (after transportation)
-    "approved_by_id" UUID,
-    "date_approved"  TIMESTAMPTZ(3),
-    "refund_tx_id"   UUID, -- Negative-amount tx (in item's payment_session) representing the refund credit; convention: single rail (internal wallet)
+    -- Seller decision (Accepted / Disputed)
+    "seller_decision_at" TIMESTAMPTZ(3),
+
+    -- Rejection backflow: admin upheld seller → ship goods back
+    "return_to_buyer_transport_id" BIGINT,
+    "rejection_reason" TEXT,
+
+    "refund_tx_id" UUID, -- set only when Accepted (the negative-amount reversal leg)
 
     CONSTRAINT "refund_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "refund_transport_id" UNIQUE ("transport_id"),
+    CONSTRAINT "refund_return_transport_id_key" UNIQUE ("return_transport_id"),
+    CONSTRAINT "refund_return_to_buyer_transport_id_key" UNIQUE ("return_to_buyer_transport_id"),
 
     CONSTRAINT "refund_order_id_fkey" FOREIGN KEY ("order_id")
         REFERENCES "order"."order" ("id") ON DELETE NO ACTION ON UPDATE CASCADE,
-    CONSTRAINT "refund_transport_id_fkey" FOREIGN KEY ("transport_id")
+    CONSTRAINT "refund_return_transport_id_fkey" FOREIGN KEY ("return_transport_id")
+        REFERENCES "order"."transport" ("id") ON DELETE NO ACTION ON UPDATE CASCADE,
+    CONSTRAINT "refund_return_to_buyer_transport_id_fkey" FOREIGN KEY ("return_to_buyer_transport_id")
         REFERENCES "order"."transport" ("id") ON DELETE NO ACTION ON UPDATE CASCADE,
     CONSTRAINT "refund_refund_tx_id_fkey" FOREIGN KEY ("refund_tx_id")
         REFERENCES "order"."transaction" ("id") ON DELETE NO ACTION ON UPDATE CASCADE
 );
 CREATE INDEX IF NOT EXISTS "refund_account_id_idx" ON "order"."refund" ("account_id");
 CREATE INDEX IF NOT EXISTS "refund_order_id_idx" ON "order"."refund" ("order_id");
-CREATE INDEX IF NOT EXISTS "refund_accepted_by_id_idx" ON "order"."refund" ("accepted_by_id");
-CREATE INDEX IF NOT EXISTS "refund_transport_id_idx" ON "order"."refund" ("transport_id");
-CREATE INDEX IF NOT EXISTS "refund_approved_by_id_idx" ON "order"."refund" ("approved_by_id");
+CREATE INDEX IF NOT EXISTS "refund_status_idx" ON "order"."refund" ("status");
 CREATE UNIQUE INDEX IF NOT EXISTS "refund_one_active_per_order"
     ON "order"."refund" ("order_id")
-    WHERE "status" IN ('Pending', 'Processing');
+    WHERE "status" IN ('Shipping', 'AwaitingSellerReview', 'Disputed');
 
--- Formal dispute raised against a refund decision by the any account (buyer, seller) for platform review and resolution.
+-- Seller-initiated escalation when seller refuses the refund after physical
+-- inspection. Admin resolves: SellerWins → refund Rejected; BuyerWins → refund Accepted.
 CREATE TABLE IF NOT EXISTS "order"."refund_dispute" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
-    "account_id" UUID NOT NULL, -- The account that raised the dispute
     "refund_id" UUID NOT NULL,
+    "account_id" UUID NOT NULL, -- seller (the disputer)
     "reason" TEXT NOT NULL,
-    "status" "order"."status" NOT NULL DEFAULT 'Pending',
-    "note" TEXT NOT NULL, -- Free-form note explaining the resolution decision
+    "attachments" JSONB NOT NULL DEFAULT '[]'::JSONB, -- seller's evidence (photos of received goods)
     "date_created" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    -- Resolved by platform staff after reviewing the dispute
-    "resolved_by_id" UUID, -- Account that resolved the dispute (platform staff)
-    "date_resolved" TIMESTAMPTZ(3), -- When resolution was recorded
+    "status" "order"."dispute_status" NOT NULL DEFAULT 'Open',
+
+    "resolved_by_id" UUID, -- admin
+    "date_resolved" TIMESTAMPTZ(3),
+    "resolution_note" TEXT,
 
     CONSTRAINT "refund_dispute_pkey" PRIMARY KEY ("id"),
 
     CONSTRAINT "refund_dispute_refund_id_fkey" FOREIGN KEY ("refund_id")
         REFERENCES "order"."refund" ("id") ON DELETE NO ACTION ON UPDATE CASCADE
 );
-CREATE INDEX IF NOT EXISTS "refund_dispute_refund_id_idx" ON "order"."refund_dispute" ("refund_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "refund_dispute_one_active_per_refund"
+    ON "order"."refund_dispute" ("refund_id")
+    WHERE "status" = 'Open';
 CREATE INDEX IF NOT EXISTS "refund_dispute_account_id_idx" ON "order"."refund_dispute" ("account_id");
-CREATE INDEX IF NOT EXISTS "refund_dispute_resolved_by_id_idx" ON "order"."refund_dispute" ("resolved_by_id");
+CREATE INDEX IF NOT EXISTS "refund_dispute_status_idx" ON "order"."refund_dispute" ("status");
 
 -- Order cancellation predicate. Three nullable status columns combine into one
 -- boolean: any of confirm/transport/payout in ('Failed', 'Cancelled') means

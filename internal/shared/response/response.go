@@ -1,15 +1,15 @@
 package response
 
 import (
-	"errors"
+	stderrors "errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"regexp"
 	"runtime"
+	"shopnexus-server/internal/shared/errors"
+	"shopnexus-server/internal/shared/paginate"
 	"strings"
-
-	sharedmodel "shopnexus-server/internal/shared/model"
 
 	"github.com/bytedance/sonic"
 	restate "github.com/restatedev/sdk-go"
@@ -19,43 +19,32 @@ const (
 	ContentTypeJSON = "application/json"
 )
 
-// errorCodePattern matches a valid app-level error code identifier embedded
-// as a message prefix. Snake_case, starts with a lowercase letter, 3–50 chars.
-// This gates the cross-service extraction path so regular messages that happen
-// to contain ": " (e.g. "failed to load item: not found") are not misparsed.
-var errorCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{2,49}$`)
-
 // restateCodePrefix matches "[400] " markers that Restate prepends to terminal
 // error messages. We strip every occurrence so the message handed to the FE is
-// the human chain ("resolve address country: address_not_found: address could
-// not be located") with no transport noise.
+// the human chain ("resolve address country: address could not be located")
+// with no transport noise.
 var restateCodePrefix = regexp.MustCompile(`\[\d+\]\s+`)
 
 func writeError(w http.ResponseWriter, httpCode int, err error) error {
-	// Preserve the original sharedmodel.Error struct (including Code) when the
-	// error originates same-process. Only fall back to reconstructing when the
-	// error didn't come from this codebase's error type — which typically means
-	// it crossed a Restate service boundary and lost the struct on the wire.
-	var e sharedmodel.Error
-	if domainErr, ok := errors.AsType[sharedmodel.Error](err); ok {
-		e = domainErr
-		httpCode = int(domainErr.HTTPStatus)
-	} else {
-		e = sharedmodel.NewError(uint16(httpCode), "", err.Error())
+	e := errors.Errorf{HTTPStatus: uint16(httpCode), Message: err.Error()}
+
+	// Same-process: the coded carrier survives fmt.Errorf wrapping.
+	if ce, ok := stderrors.AsType[interface {
+		error
+		Code() string
+	}](err); ok {
+		e.Code = ce.Code()
 	}
 
-	// Strip any "[400] " transport markers that survived Restate hops before
-	// the message reaches FE or our code-extraction below.
-	e.Message = restateCodePrefix.ReplaceAllString(e.Message, "")
+	e.Message = restateCodePrefix.ReplaceAllString(e.Message, "") // strip "[400] "
 
-	// Cross-service safety: when Code is empty but the message starts with a
-	// valid identifier prefix ("wallet_not_empty: ..."), extract it back into
-	// Code. This makes FE's `err.code === "wallet_not_empty"` branching work
-	// uniformly whether the error was thrown locally or bubbled through
-	// Restate from another service.
-	if e.Code == "" && e.Message != "" {
-		if before, _, ok := strings.Cut(e.Message, ": "); ok && errorCodePattern.MatchString(before) {
-			e.Code = before
+	// Trailing " [code]" tag survives a Restate hop: peel it off, recover code if lost.
+	if strings.HasSuffix(e.Message, "]") {
+		if i := strings.LastIndexByte(e.Message, '['); i >= 0 {
+			if e.Code == "" {
+				e.Code = e.Message[i+1 : len(e.Message)-1]
+			}
+			e.Message = strings.TrimRight(e.Message[:i], " ")
 		}
 	}
 
@@ -133,7 +122,7 @@ func FromHTTPCode(w http.ResponseWriter, httpCode int) error {
 		statusText = "Unknown Error"
 	}
 
-	e := sharedmodel.NewError(uint16(httpCode), "", statusText)
+	e := errors.NewErrorf(uint16(httpCode), "", statusText)
 	response := CommonResponse{
 		Error: &e,
 	}
@@ -142,7 +131,7 @@ func FromHTTPCode(w http.ResponseWriter, httpCode int) error {
 }
 
 // FromPaginate writes a paginated response.
-func FromPaginate[T any](w http.ResponseWriter, paginate sharedmodel.PaginateResult[T]) error {
+func FromPaginate[T any](w http.ResponseWriter, paginate paginate.PaginateResult[T]) error {
 	data := paginate.Data
 	if data == nil {
 		data = make([]T, 0)

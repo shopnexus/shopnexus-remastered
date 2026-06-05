@@ -2,6 +2,7 @@ package chatbiz
 
 import (
 	"encoding/json"
+	"fmt"
 
 	restate "github.com/restatedev/sdk-go"
 
@@ -9,7 +10,7 @@ import (
 	chatdb "shopnexus-server/internal/module/chat/db/sqlc"
 	chatmodel "shopnexus-server/internal/module/chat/model"
 	commonbiz "shopnexus-server/internal/module/common/biz"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
@@ -41,7 +42,7 @@ func (b *ChatHandler) CreateConversation(
 		SellerID: params.SellerID,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("create conversation", err)
+		return zero, fmt.Errorf("create conversation: %w", err)
 	}
 
 	return result, nil
@@ -54,15 +55,15 @@ func (b *ChatHandler) GetConversation(ctx restate.Context, id uuid.UUID) (chatdb
 
 type ListConversationParams struct {
 	Account accountmodel.AuthenticatedAccount
-	sharedmodel.PaginationParams
+	paginate.Params
 }
 
 // ListConversation returns a paginated list of conversations for the authenticated account.
 func (b *ChatHandler) ListConversation(
 	ctx restate.Context,
 	params ListConversationParams,
-) (sharedmodel.PaginateResult[chatdb.ChatConversation], error) {
-	var zero sharedmodel.PaginateResult[chatdb.ChatConversation]
+) (paginate.PaginateResult[chatdb.ChatConversation], error) {
+	var zero paginate.PaginateResult[chatdb.ChatConversation]
 
 	conversations, err := b.storage.Querier().ListConversationByAccount(ctx, chatdb.ListConversationByAccountParams{
 		AccountID: params.Account.ID,
@@ -70,16 +71,16 @@ func (b *ChatHandler) ListConversation(
 		Offset:    params.Offset().Int32,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("list conversations", err)
+		return zero, fmt.Errorf("list conversations: %w", err)
 	}
 
 	total, err := b.storage.Querier().CountConversationByAccount(ctx, params.Account.ID)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("count conversations", err)
+		return zero, fmt.Errorf("count conversations: %w", err)
 	}
 
-	return sharedmodel.PaginateResult[chatdb.ChatConversation]{
-		PageParams: params.PaginationParams,
+	return paginate.PaginateResult[chatdb.ChatConversation]{
+		PageParams: params.Params,
 		Data:       conversations,
 		Total:      null.IntFrom(total),
 	}, nil
@@ -99,11 +100,11 @@ func (b *ChatHandler) SendMessage(ctx restate.Context, params SendMessageParams)
 
 	conv, err := b.storage.Querier().GetConversationByID(ctx, params.ConversationID)
 	if err != nil {
-		return zero, chatmodel.ErrConversationNotFound.Terminal()
+		return zero, chatmodel.ErrConversationNotFound
 	}
 
 	if conv.BuyerID != params.Account.ID && conv.SellerID != params.Account.ID {
-		return zero, chatmodel.ErrNotParticipant.Terminal()
+		return zero, chatmodel.ErrNotParticipant
 	}
 
 	msg, err := b.storage.Querier().CreateChatMessage(ctx, chatdb.CreateChatMessageParams{
@@ -114,11 +115,11 @@ func (b *ChatHandler) SendMessage(ctx restate.Context, params SendMessageParams)
 		Data:           params.Metadata,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("create message", err)
+		return zero, fmt.Errorf("create message: %w", err)
 	}
 
 	if err := b.storage.Querier().UpdateConversationLastMessage(ctx, params.ConversationID); err != nil {
-		return zero, sharedmodel.WrapErr("update conversation last message", err)
+		return zero, fmt.Errorf("update conversation last message: %w", err)
 	}
 
 	// Push new_message to both participants via SSE
@@ -140,24 +141,24 @@ func (b *ChatHandler) SendMessage(ctx restate.Context, params SendMessageParams)
 type ListMessageParams struct {
 	Account        accountmodel.AuthenticatedAccount
 	ConversationID uuid.UUID `validate:"required"`
-	sharedmodel.PaginationParams
+	paginate.Params
 }
 
 // ListMessage returns a paginated list of messages in a conversation.
 func (b *ChatHandler) ListMessage(
 	ctx restate.Context,
 	params ListMessageParams,
-) (sharedmodel.PaginateResult[chatdb.ChatMessage], error) {
-	var zero sharedmodel.PaginateResult[chatdb.ChatMessage]
-	params.PaginationParams = params.Constrain()
+) (paginate.PaginateResult[chatdb.ChatMessage], error) {
+	var zero paginate.PaginateResult[chatdb.ChatMessage]
+	params.Params = params.Constrain()
 
 	conv, err := b.storage.Querier().GetConversationByID(ctx, params.ConversationID)
 	if err != nil {
-		return zero, chatmodel.ErrConversationNotFound.Terminal()
+		return zero, chatmodel.ErrConversationNotFound
 	}
 
 	if conv.BuyerID != params.Account.ID && conv.SellerID != params.Account.ID {
-		return zero, chatmodel.ErrNotParticipant.Terminal()
+		return zero, chatmodel.ErrNotParticipant
 	}
 
 	messages, err := b.storage.Querier().ListMessageByConversation(ctx, chatdb.ListMessageByConversationParams{
@@ -166,16 +167,16 @@ func (b *ChatHandler) ListMessage(
 		Offset:         params.Offset().Int32,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("list messages", err)
+		return zero, fmt.Errorf("list messages: %w", err)
 	}
 
 	total, err := b.storage.Querier().CountMessageByConversation(ctx, params.ConversationID)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("count messages", err)
+		return zero, fmt.Errorf("count messages: %w", err)
 	}
 
-	return sharedmodel.PaginateResult[chatdb.ChatMessage]{
-		PageParams: params.PaginationParams,
+	return paginate.PaginateResult[chatdb.ChatMessage]{
+		PageParams: params.Params,
 		Data:       messages,
 		Total:      null.IntFrom(total),
 	}, nil

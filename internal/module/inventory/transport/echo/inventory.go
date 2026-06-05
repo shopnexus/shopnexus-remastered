@@ -5,7 +5,7 @@ import (
 
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/response"
 
 	"github.com/google/uuid"
@@ -61,7 +61,7 @@ func (h *Handler) GetStock(c echo.Context) error {
 }
 
 type ListStockHistoryRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 
 	RefID   uuid.UUID                         `query:"ref_id"   validate:"required"`
 	RefType inventorydb.InventoryStockRefType `query:"ref_type" validate:"required,validateFn=Valid"`
@@ -77,9 +77,9 @@ func (h *Handler) ListStockHistory(c echo.Context) error {
 	}
 
 	result, err := h.biz.ListStockHistory(c.Request().Context(), inventorybiz.ListStockHistoryParams{
-		PaginationParams: req.PaginationParams.Constrain(),
-		RefID:            req.RefID,
-		RefType:          req.RefType,
+		Params:  req.Params.Constrain(),
+		RefID:   req.RefID,
+		RefType: req.RefType,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
@@ -144,7 +144,7 @@ func (h *Handler) ImportStock(c echo.Context) error {
 }
 
 type ListProductSerialRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 
 	StockID int64 `query:"stock_id" validate:"required,gt=0"`
 }
@@ -159,8 +159,8 @@ func (h *Handler) ListSerial(c echo.Context) error {
 	}
 
 	result, err := h.biz.ListSerial(c.Request().Context(), inventorybiz.ListSerialParams{
-		PaginationParams: req.PaginationParams.Constrain(),
-		StockID:          req.StockID,
+		Params:  req.Params.Constrain(),
+		StockID: req.StockID,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)

@@ -40,21 +40,30 @@ func SetupRestate(
 	checkoutWf *orderbiz.CheckoutWorkflow,
 	confirmWf *orderbiz.ConfirmWorkflow,
 	payoutWf *orderbiz.PayoutWorkflow,
+	refundWf *orderbiz.RefundWorkflow,
 ) {
 	bindAddress := fmt.Sprintf(":%s", cfg.Restate.ServicePort)
 
+	// General retry policy for all service methods: exponential backoff starting at 1s, max 30s, up to 10 attempts, then pause.
+	retryPolicy := restate.WithInvocationRetryPolicy(
+		restate.WithInitialInterval(time.Second),
+		restate.WithMaxInterval(30*time.Second),
+		restate.WithMaxAttempts(10),
+		restate.PauseOnMaxAttempts())
+
 	srv := server.NewRestate().
-		Bind(restate.Reflect(accountBiz)).
-		Bind(restate.Reflect(analyticBiz)).
-		Bind(restate.Reflect(catalogBiz)).
-		Bind(restate.Reflect(chatBiz)).
-		Bind(restate.Reflect(commonBiz)).
-		Bind(restate.Reflect(inventoryBiz)).
-		Bind(restate.Reflect(orderBiz)).
-		Bind(restate.Reflect(promotionBiz)).
-		Bind(restate.Reflect(checkoutWf)).
-		Bind(restate.Reflect(confirmWf)).
-		Bind(restate.Reflect(payoutWf))
+		Bind(restate.Reflect(accountBiz, retryPolicy)).
+		Bind(restate.Reflect(analyticBiz, retryPolicy)).
+		Bind(restate.Reflect(catalogBiz, retryPolicy)).
+		Bind(restate.Reflect(chatBiz, retryPolicy)).
+		Bind(restate.Reflect(commonBiz, retryPolicy)).
+		Bind(restate.Reflect(inventoryBiz, retryPolicy)).
+		Bind(restate.Reflect(orderBiz, retryPolicy)).
+		Bind(restate.Reflect(promotionBiz, retryPolicy)).
+		Bind(restate.Reflect(checkoutWf, retryPolicy)).
+		Bind(restate.Reflect(confirmWf, retryPolicy)).
+		Bind(restate.Reflect(payoutWf, retryPolicy)).
+		Bind(restate.Reflect(refundWf, retryPolicy))
 
 	go func() {
 		slog.Info("Starting Restate service endpoint", "address", bindAddress)

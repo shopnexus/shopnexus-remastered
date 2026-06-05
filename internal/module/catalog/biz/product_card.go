@@ -21,7 +21,7 @@ import (
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
 	promotionbiz "shopnexus-server/internal/module/promotion/biz"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/validator"
 )
 
@@ -37,7 +37,7 @@ func (b *CatalogHandler) buildProductCards(
 		ID: spuIDs,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("list product spus", err)
+		return zero, fmt.Errorf("list product spus: %w", err)
 	}
 	spus := listSpu.Data
 	spuMap := lo.KeyBy(spus, func(spu catalogmodel.ProductSpu) uuid.UUID { return spu.ID })
@@ -55,7 +55,7 @@ func (b *CatalogHandler) buildProductCards(
 		ID: featuredIDs,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("list product skus", err)
+		return zero, fmt.Errorf("list product skus: %w", err)
 	}
 
 	// map[spuID]FeaturedSKU
@@ -67,7 +67,7 @@ func (b *CatalogHandler) buildProductCards(
 		RefID:   featuredIDs,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("list featured stock", err)
+		return zero, fmt.Errorf("list featured stock: %w", err)
 	}
 	// map[refID (skuID)] -> taken
 	stockTakenMap := lo.KeyBy(featuredStocks.Data, func(s inventorydb.InventoryStock) uuid.UUID { return s.RefID })
@@ -96,12 +96,12 @@ func (b *CatalogHandler) buildProductCards(
 		promotionbiz.CalculatePromotedPricesParams{Prices: requestPrices, SpuMap: spuMap},
 	)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("calculate promoted prices", err)
+		return zero, fmt.Errorf("calculate promoted prices: %w", err)
 	}
 
 	ratingMap, err := b.getRatingsMap(ctx, spuIDs)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db list rating", err)
+		return zero, fmt.Errorf("db list rating: %w", err)
 	}
 
 	// Get first image of the product
@@ -110,7 +110,7 @@ func (b *CatalogHandler) buildProductCards(
 		RefIDs:  spuIDs,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("get product resources", err)
+		return zero, fmt.Errorf("get product resources: %w", err)
 	}
 
 	// Map promotion codes to ProductCardPromo per SPU
@@ -161,7 +161,7 @@ func (b *CatalogHandler) buildProductCards(
 			CategoryID:  spu.Category.ID,
 			Name:        spu.Name,
 			Description: spu.Description,
-			IsEnabled:    spu.IsEnabled,
+			IsEnabled:   spu.IsEnabled,
 			Currency:    spu.Currency,
 			DateCreated: spu.DateCreated,
 			DateUpdated: spu.DateUpdated,
@@ -193,24 +193,24 @@ func (b *CatalogHandler) GetProductCard(
 	params GetProductCardParams,
 ) (*catalogmodel.ProductCard, error) {
 	if err := validator.Validate(params); err != nil {
-		return nil, sharedmodel.WrapErr("validate get product card", err)
+		return nil, fmt.Errorf("validate get product card: %w", err)
 	}
 
 	productCardMap, err := b.buildProductCards(ctx, []uuid.UUID{params.SpuID}, params.AccountID)
 	if err != nil {
-		return nil, sharedmodel.WrapErr("build product card", err)
+		return nil, fmt.Errorf("build product card: %w", err)
 	}
 
 	card, ok := productCardMap[params.SpuID]
 	if !ok || card == nil {
-		return nil, catalogmodel.ErrProductNotFound.Terminal()
+		return nil, catalogmodel.ErrProductNotFound
 	}
 
 	return card, nil
 }
 
 type ListProductCardParams struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 
 	AccountID       uuid.NullUUID `validate:"omitnil"` // optional, for is_favorite
 	SellerID        uuid.NullUUID `validate:"omitnil"`
@@ -229,11 +229,11 @@ type ListProductCardParams struct {
 func (b *CatalogHandler) ListProductCard(
 	ctx restate.Context,
 	params ListProductCardParams,
-) (sharedmodel.PaginateResult[catalogmodel.ProductCard], error) {
-	var zero sharedmodel.PaginateResult[catalogmodel.ProductCard]
+) (paginate.PaginateResult[catalogmodel.ProductCard], error) {
+	var zero paginate.PaginateResult[catalogmodel.ProductCard]
 
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("validate list product card", err)
+		return zero, fmt.Errorf("validate list product card: %w", err)
 	}
 
 	var spuIDs []uuid.UUID
@@ -242,15 +242,15 @@ func (b *CatalogHandler) ListProductCard(
 	if params.Search.Valid {
 		// --- Search path: Milvus handles ranking + filtering ---
 		searchParams := SearchParams{
-			PaginationParams: params.PaginationParams,
-			Collection:       CollectionProducts,
-			Query:            params.Search.String,
-			Tags:             params.Tags,
-			IsEnabled:         null.BoolFrom(true),
-			PriceMin:         params.PriceMin,
-			PriceMax:         params.PriceMax,
-			DateCreatedFrom:  params.DateCreatedFrom,
-			DateCreatedTo:    params.DateCreatedTo,
+			Params:          params.Params,
+			Collection:      CollectionProducts,
+			Query:           params.Search.String,
+			Tags:            params.Tags,
+			IsEnabled:       null.BoolFrom(true),
+			PriceMin:        params.PriceMin,
+			PriceMax:        params.PriceMax,
+			DateCreatedFrom: params.DateCreatedFrom,
+			DateCreatedTo:   params.DateCreatedTo,
 		}
 		if params.SellerID.Valid {
 			searchParams.AccountID = []uuid.UUID{params.SellerID.UUID}
@@ -281,8 +281,8 @@ func (b *CatalogHandler) ListProductCard(
 	}
 
 	if len(spuIDs) == 0 {
-		return sharedmodel.PaginateResult[catalogmodel.ProductCard]{
-			PageParams: params.PaginationParams,
+		return paginate.PaginateResult[catalogmodel.ProductCard]{
+			PageParams: params.Params,
 			Data:       []catalogmodel.ProductCard{},
 			Total:      null.IntFrom(0),
 		}, nil
@@ -291,7 +291,7 @@ func (b *CatalogHandler) ListProductCard(
 	// Enrich ranked IDs into full product cards
 	productCardMap, err := b.buildProductCards(ctx, spuIDs, params.AccountID)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("build product cards", err)
+		return zero, fmt.Errorf("build product cards: %w", err)
 	}
 
 	products := make([]catalogmodel.ProductCard, 0, len(spuIDs))
@@ -301,8 +301,8 @@ func (b *CatalogHandler) ListProductCard(
 		}
 	}
 
-	return sharedmodel.PaginateResult[catalogmodel.ProductCard]{
-		PageParams: params.PaginationParams,
+	return paginate.PaginateResult[catalogmodel.ProductCard]{
+		PageParams: params.Params,
 		Data:       products,
 		Total:      null.IntFrom(total),
 	}, nil
@@ -312,8 +312,8 @@ func (b *CatalogHandler) ListProductCard(
 func (b *CatalogHandler) listProductCardFromDB(
 	ctx restate.Context,
 	params ListProductCardParams,
-) (sharedmodel.PaginateResult[catalogmodel.ProductCard], error) {
-	var zero sharedmodel.PaginateResult[catalogmodel.ProductCard]
+) (paginate.PaginateResult[catalogmodel.ProductCard], error) {
+	var zero paginate.PaginateResult[catalogmodel.ProductCard]
 
 	searchArg := catalogdb.SearchCountProductSpuParams{
 		Limit:  params.Limit,
@@ -336,11 +336,11 @@ func (b *CatalogHandler) listProductCardFromDB(
 				Offset:   params.Offset(),
 			})
 		if err != nil {
-			return zero, sharedmodel.WrapErr("db search by tags", err)
+			return zero, fmt.Errorf("db search by tags: %w", err)
 		}
 		if len(tagRows) == 0 {
-			return sharedmodel.PaginateResult[catalogmodel.ProductCard]{
-				PageParams: params.PaginationParams,
+			return paginate.PaginateResult[catalogmodel.ProductCard]{
+				PageParams: params.Params,
 				Data:       []catalogmodel.ProductCard{},
 				Total:      null.IntFrom(0),
 			}, nil
@@ -362,7 +362,7 @@ func (b *CatalogHandler) listProductCardFromDB(
 
 	rows, err := b.storage.Querier().SearchCountProductSpu(ctx, searchArg)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db search product spu", err)
+		return zero, fmt.Errorf("db search product spu: %w", err)
 	}
 	if len(rows) > 0 {
 		total.SetValid(rows[0].TotalCount)
@@ -375,7 +375,7 @@ func (b *CatalogHandler) listProductCardFromDB(
 
 	productCardMap, err := b.buildProductCards(ctx, spuIDs, params.AccountID)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("build product cards", err)
+		return zero, fmt.Errorf("build product cards: %w", err)
 	}
 
 	products := make([]catalogmodel.ProductCard, 0, len(spuIDs))
@@ -385,8 +385,8 @@ func (b *CatalogHandler) listProductCardFromDB(
 		}
 	}
 
-	return sharedmodel.PaginateResult[catalogmodel.ProductCard]{
-		PageParams: params.PaginationParams,
+	return paginate.PaginateResult[catalogmodel.ProductCard]{
+		PageParams: params.Params,
 		Data:       products,
 		Total:      total,
 	}, nil
@@ -407,7 +407,7 @@ func (b *CatalogHandler) ListRecommendedProductCard(
 	var err error
 
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("validate list recommended", err)
+		return zero, fmt.Errorf("validate list recommended: %w", err)
 	}
 
 	// Get current feed offset
@@ -432,7 +432,7 @@ func (b *CatalogHandler) ListRecommendedProductCard(
 			Limit:  null.IntFrom(int64(params.Limit)),
 		},
 	); err != nil {
-		return zero, sharedmodel.WrapErr("get recommended products", err)
+		return zero, fmt.Errorf("get recommended products: %w", err)
 	}
 	feedOffset += int64(len(rcmProducts))
 
@@ -471,7 +471,7 @@ func (b *CatalogHandler) ListRecommendedProductCard(
 				p,
 				float64(p.Score),
 			); err != nil {
-				return zero, sharedmodel.WrapErr("cache recommended product", err)
+				return zero, fmt.Errorf("cache recommended product: %w", err)
 			}
 		}
 	}
@@ -494,13 +494,13 @@ func (b *CatalogHandler) ListRecommendedProductCard(
 	amount := int32(params.Limit - len(rcmProducts))
 	if amount > 0 {
 		mostSolds, err := b.inventory.ListMostTakenSku(ctx, inventorybiz.ListMostTakenSkuParams{
-			PaginationParams: sharedmodel.PaginationParams{
+			Params: paginate.Params{
 				Limit: null.Int32From(amount * 100),
 			},
 			RefType: inventorydb.InventoryStockRefTypeProductSku,
 		})
 		if err != nil {
-			return zero, sharedmodel.WrapErr("list most taken sku", err)
+			return zero, fmt.Errorf("list most taken sku: %w", err)
 		}
 		// Take random amount of shuffled most sold products
 		mutable.Shuffle(mostSolds)
@@ -513,7 +513,7 @@ func (b *CatalogHandler) ListRecommendedProductCard(
 			ID: skuIDs,
 		})
 		if err != nil {
-			return zero, sharedmodel.WrapErr("db list product sku", err)
+			return zero, fmt.Errorf("db list product sku: %w", err)
 		}
 
 		uniqueSpuIDs := lo.UniqMap(skus, func(s catalogdb.CatalogProductSku, _ int) uuid.UUID { return s.SpuID })
@@ -533,7 +533,7 @@ func (b *CatalogHandler) ListRecommendedProductCard(
 		uuid.NullUUID{UUID: params.Account.ID, Valid: true},
 	)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("build product cards", err)
+		return zero, fmt.Errorf("build product cards: %w", err)
 	}
 
 	products := []catalogmodel.ProductCard{}

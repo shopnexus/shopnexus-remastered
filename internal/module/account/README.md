@@ -26,6 +26,7 @@ erDiagram
   timestamptz date_created
   uuid default_contact_id
   uuid default_wallet_id
+  role role
 }
 "account.contact" {
   uuid id

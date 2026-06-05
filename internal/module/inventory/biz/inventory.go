@@ -1,13 +1,15 @@
 package inventorybiz
 
 import (
+	"fmt"
+
 	restate "github.com/restatedev/sdk-go"
 
 	"shopnexus-server/internal/infras/metrics"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
 	inventorymodel "shopnexus-server/internal/module/inventory/model"
 	"shopnexus-server/internal/shared/idempotency"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -50,7 +52,7 @@ type GetStockParams struct {
 func (b *InventoryHandler) GetStock(ctx restate.Context, params GetStockParams) (inventorydb.InventoryStock, error) {
 	var zero inventorydb.InventoryStock
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("validate get stock", err)
+		return zero, fmt.Errorf("validate get stock: %w", err)
 	}
 	return b.getStockByRef(ctx, b.storage, params.RefType, params.RefID)
 }
@@ -68,12 +70,12 @@ func (b *InventoryHandler) UpdateStockSettings(
 ) (inventorydb.InventoryStock, error) {
 	var zero inventorydb.InventoryStock
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("validate update stock settings", err)
+		return zero, fmt.Errorf("validate update stock settings: %w", err)
 	}
 
 	stock, err := b.getStockByRef(ctx, b.storage, params.RefType, params.RefID)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db get stock", err)
+		return zero, fmt.Errorf("db get stock: %w", err)
 	}
 
 	return b.storage.Querier().UpdateStock(ctx, inventorydb.UpdateStockParams{
@@ -83,7 +85,7 @@ func (b *InventoryHandler) UpdateStockSettings(
 }
 
 type ListStockParams struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 
 	RefType []inventorydb.InventoryStockRefType `validate:"dive,required,validateFn=Valid"`
 	RefID   []uuid.UUID                         `validate:"dive,required"`
@@ -93,10 +95,10 @@ type ListStockParams struct {
 func (b *InventoryHandler) ListStock(
 	ctx restate.Context,
 	params ListStockParams,
-) (sharedmodel.PaginateResult[inventorydb.InventoryStock], error) {
-	var zero sharedmodel.PaginateResult[inventorydb.InventoryStock]
+) (paginate.PaginateResult[inventorydb.InventoryStock], error) {
+	var zero paginate.PaginateResult[inventorydb.InventoryStock]
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("validate list stock", err)
+		return zero, fmt.Errorf("validate list stock: %w", err)
 	}
 
 	rows, err := b.storage.Querier().ListCountStock(ctx, inventorydb.ListCountStockParams{
@@ -106,7 +108,7 @@ func (b *InventoryHandler) ListStock(
 		RefID:   params.RefID,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db list stock", err)
+		return zero, fmt.Errorf("db list stock: %w", err)
 	}
 
 	var total null.Int64
@@ -118,8 +120,8 @@ func (b *InventoryHandler) ListStock(
 		return r.InventoryStock
 	})
 
-	return sharedmodel.PaginateResult[inventorydb.InventoryStock]{
-		PageParams: params.PaginationParams,
+	return paginate.PaginateResult[inventorydb.InventoryStock]{
+		PageParams: params.Params,
 		Total:      total,
 		Data:       stocks,
 	}, nil
@@ -139,7 +141,7 @@ func (b *InventoryHandler) CreateStock(
 ) (inventorydb.InventoryStock, error) {
 	var zero inventorydb.InventoryStock
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("validate create stock", err)
+		return zero, fmt.Errorf("validate create stock: %w", err)
 	}
 
 	return b.storage.Querier().CreateDefaultStock(ctx, inventorydb.CreateDefaultStockParams{
@@ -151,7 +153,7 @@ func (b *InventoryHandler) CreateStock(
 }
 
 type ListStockHistoryParams struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 
 	RefID   uuid.UUID                         `validate:"required"`
 	RefType inventorydb.InventoryStockRefType `validate:"required,validateFn=Valid"`
@@ -161,15 +163,15 @@ type ListStockHistoryParams struct {
 func (b *InventoryHandler) ListStockHistory(
 	ctx restate.Context,
 	params ListStockHistoryParams,
-) (sharedmodel.PaginateResult[inventorydb.InventoryStockHistory], error) {
-	var zero sharedmodel.PaginateResult[inventorydb.InventoryStockHistory]
+) (paginate.PaginateResult[inventorydb.InventoryStockHistory], error) {
+	var zero paginate.PaginateResult[inventorydb.InventoryStockHistory]
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("validate list stock history", err)
+		return zero, fmt.Errorf("validate list stock history: %w", err)
 	}
 
 	stock, err := b.getStockByRef(ctx, b.storage, params.RefType, params.RefID)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db get stock", err)
+		return zero, fmt.Errorf("db get stock: %w", err)
 	}
 
 	rows, err := b.storage.Querier().ListCountStockHistory(ctx, inventorydb.ListCountStockHistoryParams{
@@ -178,7 +180,7 @@ func (b *InventoryHandler) ListStockHistory(
 		Offset:  params.Offset(),
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db list stock history", err)
+		return zero, fmt.Errorf("db list stock history: %w", err)
 	}
 
 	var total null.Int64
@@ -190,8 +192,8 @@ func (b *InventoryHandler) ListStockHistory(
 		return r.InventoryStockHistory
 	})
 
-	return sharedmodel.PaginateResult[inventorydb.InventoryStockHistory]{
-		PageParams: params.PaginationParams,
+	return paginate.PaginateResult[inventorydb.InventoryStockHistory]{
+		PageParams: params.Params,
 		Total:      total,
 		Data:       histories,
 	}, nil
@@ -207,21 +209,21 @@ type ImportStockParams struct {
 // ImportStock adds stock quantity and optionally creates serial records.
 func (b *InventoryHandler) ImportStock(ctx restate.Context, params ImportStockParams) error {
 	if err := validator.Validate(params); err != nil {
-		return sharedmodel.WrapErr("validate import stock", err)
+		return fmt.Errorf("validate import stock: %w", err)
 	}
 
 	q := b.storage.Querier()
 
 	stock, err := b.getStockByRef(ctx, b.storage, params.RefType, params.RefID)
 	if err != nil {
-		return sharedmodel.WrapErr("db get stock", err)
+		return fmt.Errorf("db get stock: %w", err)
 	}
 
 	if _, err := q.CreateDefaultStockHistory(ctx, inventorydb.CreateDefaultStockHistoryParams{
 		StockID: stock.ID,
 		Change:  params.Change,
 	}); err != nil {
-		return sharedmodel.WrapErr("db create stock history", err)
+		return fmt.Errorf("db create stock history: %w", err)
 	}
 
 	// Create serials for serialized stock
@@ -230,7 +232,7 @@ func (b *InventoryHandler) ImportStock(ctx restate.Context, params ImportStockPa
 
 		if len(params.SerialIDs) != 0 {
 			if len(params.SerialIDs) != int(params.Change) {
-				return inventorymodel.ErrSerialCountMismatch.Terminal()
+				return inventorymodel.ErrSerialCountMismatch
 			}
 			for _, id := range params.SerialIDs {
 				args = append(args, inventorydb.CreateCopyDefaultSerialParams{
@@ -248,7 +250,7 @@ func (b *InventoryHandler) ImportStock(ctx restate.Context, params ImportStockPa
 		}
 
 		if _, err = q.CreateCopyDefaultSerial(ctx, args); err != nil {
-			return sharedmodel.WrapErr("db create serials", err)
+			return fmt.Errorf("db create serials: %w", err)
 		}
 	}
 
@@ -294,19 +296,19 @@ func (b *InventoryHandler) ReserveInventory(
 
 	txStorage, err := b.storage.BeginTx(ctx)
 	if err != nil {
-		return nil, sharedmodel.WrapErr("begin transaction", err)
+		return nil, fmt.Errorf("begin transaction: %w", err)
 	}
 	defer txStorage.Rollback(ctx)
 
 	if err = params.Keys.Apply(ctx, txStorage.Querier()); err != nil {
-		return nil, sharedmodel.WrapErr("check idempotency keys", err)
+		return nil, fmt.Errorf("check idempotency keys: %w", err)
 	}
 
 	for _, item := range params.Items {
 		var stock inventorydb.InventoryStock
 		stock, err = b.getStockByRef(ctx, txStorage, item.RefType, item.RefID)
 		if err != nil {
-			return nil, sharedmodel.WrapErr("db get stock", err)
+			return nil, fmt.Errorf("db get stock: %w", err)
 		}
 
 		label := item.DisplayName
@@ -315,7 +317,7 @@ func (b *InventoryHandler) ReserveInventory(
 		}
 
 		if stock.Stock < item.Amount {
-			return nil, inventorymodel.ErrOutOfStock.Fmt(label, item.Amount, stock.Stock).Terminal()
+			return nil, inventorymodel.ErrOutOfStock.Fmt(label, item.Amount, stock.Stock)
 		}
 
 		var rowsAffected int64
@@ -324,10 +326,10 @@ func (b *InventoryHandler) ReserveInventory(
 			Amount:  item.Amount,
 		})
 		if err != nil {
-			return nil, sharedmodel.WrapErr("db adjust inventory", err)
+			return nil, fmt.Errorf("db adjust inventory: %w", err)
 		}
 		if rowsAffected == 0 {
-			return nil, inventorymodel.ErrOutOfStockRace.Fmt(label).Terminal()
+			return nil, inventorymodel.ErrOutOfStockRace.Fmt(label)
 		}
 
 		result := ReserveInventoryResult{
@@ -342,11 +344,11 @@ func (b *InventoryHandler) ReserveInventory(
 				Amount:  int32(item.Amount),
 			})
 			if err != nil {
-				return nil, sharedmodel.WrapErr("db get available serials", err)
+				return nil, fmt.Errorf("db get available serials: %w", err)
 			}
 
 			if len(serials) != int(item.Amount) {
-				return nil, inventorymodel.ErrSerialShortage.Fmt(len(serials), label, item.Amount).Terminal()
+				return nil, inventorymodel.ErrSerialShortage.Fmt(len(serials), label, item.Amount)
 			}
 
 			serialIDs := lo.Map(serials, func(row inventorydb.GetAvailableSerialsRow, _ int) string {
@@ -357,7 +359,7 @@ func (b *InventoryHandler) ReserveInventory(
 				ID:     serialIDs,
 				Status: inventorydb.InventoryStatusTaken,
 			}); err != nil {
-				return nil, sharedmodel.WrapErr("db update serial status", err)
+				return nil, fmt.Errorf("db update serial status: %w", err)
 			}
 
 			result.SerialIDs = serialIDs
@@ -367,7 +369,7 @@ func (b *InventoryHandler) ReserveInventory(
 	}
 
 	if err = txStorage.Commit(ctx); err != nil {
-		return nil, sharedmodel.WrapErr("commit transaction", err)
+		return nil, fmt.Errorf("commit transaction: %w", err)
 	}
 
 	return results, nil
@@ -381,7 +383,7 @@ type UpdateSerialParams struct {
 // UpdateSerial updates the status of the given serial IDs.
 func (b *InventoryHandler) UpdateSerial(ctx restate.Context, params UpdateSerialParams) error {
 	if err := validator.Validate(params); err != nil {
-		return sharedmodel.WrapErr("validate update serial", err)
+		return fmt.Errorf("validate update serial: %w", err)
 	}
 
 	return b.storage.Querier().UpdateSerialStatus(ctx, inventorydb.UpdateSerialStatusParams{
@@ -391,7 +393,7 @@ func (b *InventoryHandler) UpdateSerial(ctx restate.Context, params UpdateSerial
 }
 
 type ListSerialParams struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 
 	StockID int64 `validate:"required,gt=0"`
 }
@@ -400,10 +402,10 @@ type ListSerialParams struct {
 func (b *InventoryHandler) ListSerial(
 	ctx restate.Context,
 	params ListSerialParams,
-) (sharedmodel.PaginateResult[inventorydb.InventorySerial], error) {
-	var zero sharedmodel.PaginateResult[inventorydb.InventorySerial]
+) (paginate.PaginateResult[inventorydb.InventorySerial], error) {
+	var zero paginate.PaginateResult[inventorydb.InventorySerial]
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("validate list serial", err)
+		return zero, fmt.Errorf("validate list serial: %w", err)
 	}
 
 	rows, err := b.storage.Querier().ListCountSerial(ctx, inventorydb.ListCountSerialParams{
@@ -412,7 +414,7 @@ func (b *InventoryHandler) ListSerial(
 		Offset:  params.Offset(),
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db list serial", err)
+		return zero, fmt.Errorf("db list serial: %w", err)
 	}
 
 	var total null.Int64
@@ -424,15 +426,15 @@ func (b *InventoryHandler) ListSerial(
 		return r.InventorySerial
 	})
 
-	return sharedmodel.PaginateResult[inventorydb.InventorySerial]{
-		PageParams: params.PaginationParams,
+	return paginate.PaginateResult[inventorydb.InventorySerial]{
+		PageParams: params.Params,
 		Total:      total,
 		Data:       serials,
 	}, nil
 }
 
 type ListMostTakenSkuParams struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 
 	RefType inventorydb.InventoryStockRefType `validate:"required,validateFn=Valid"`
 }
@@ -443,7 +445,7 @@ func (b *InventoryHandler) ListMostTakenSku(
 	params ListMostTakenSkuParams,
 ) ([]inventorydb.InventoryStock, error) {
 	if err := validator.Validate(params); err != nil {
-		return nil, sharedmodel.WrapErr("validate list most taken", err)
+		return nil, fmt.Errorf("validate list most taken: %w", err)
 	}
 
 	return b.storage.Querier().ListMostTakenSku(ctx, inventorydb.ListMostTakenSkuParams{

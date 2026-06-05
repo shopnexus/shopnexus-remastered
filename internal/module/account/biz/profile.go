@@ -1,22 +1,25 @@
 package accountbiz
 
 import (
+	stderrors "errors"
+	"fmt"
+
 	restate "github.com/restatedev/sdk-go"
 
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	sharedcurrency "shopnexus-server/internal/shared/currency"
-	sharedmodel "shopnexus-server/internal/shared/model"
-	"shopnexus-server/internal/shared/ptrutil"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
+	"github.com/jackc/pgx/v5"
 	"github.com/samber/lo"
 )
 
 type ListProfileParams struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 
 	Issuer     accountmodel.AuthenticatedAccount // Who is requesting the profiles
 	AccountIDs []uuid.UUID                       `validate:"dive,required"`
@@ -26,10 +29,10 @@ type ListProfileParams struct {
 func (b *AccountHandler) ListProfile(
 	ctx restate.Context,
 	params ListProfileParams,
-) (sharedmodel.PaginateResult[accountmodel.Profile], error) {
-	var result sharedmodel.PaginateResult[accountmodel.Profile]
+) (paginate.PaginateResult[accountmodel.Profile], error) {
+	var result paginate.PaginateResult[accountmodel.Profile]
 	if err := validator.Validate(params); err != nil {
-		return result, sharedmodel.WrapErr("list profiles", err)
+		return result, fmt.Errorf("list profiles: %w", err)
 	}
 
 	listProfile, err := b.storage.Querier().ListCountProfile(ctx, accountdb.ListCountProfileParams{
@@ -67,8 +70,8 @@ func (b *AccountHandler) ListProfile(
 		profiles = append(profiles, b.mapProfile(ctx, account, dbProfile))
 	}
 
-	return sharedmodel.PaginateResult[accountmodel.Profile]{
-		PageParams: params.PaginationParams,
+	return paginate.PaginateResult[accountmodel.Profile]{
+		PageParams: params.Params,
 		Data:       profiles,
 		Total:      total,
 	}, nil
@@ -79,20 +82,27 @@ type GetProfileParams struct {
 	AccountID uuid.UUID
 }
 
-// GetProfile returns the profile for the given account ID.
+// GetProfile returns the profile for the given account ID. If the profile
+// row is missing (e.g. an account inserted directly via SQL such as an admin
+// seed), the account row is still returned with empty profile defaults so
+// /me continues to work for non-storefront users.
 func (b *AccountHandler) GetProfile(ctx restate.Context, params GetProfileParams) (accountmodel.Profile, error) {
 	var zero accountmodel.Profile
-	profile, err := b.storage.Querier().GetProfile(ctx, accountdb.GetProfileParams{
+
+	account, err := b.storage.Querier().GetAccount(ctx, accountdb.GetAccountParams{
 		ID: uuid.NullUUID{UUID: params.AccountID, Valid: true},
 	})
 	if err != nil {
 		return zero, err
 	}
 
-	account, err := b.storage.Querier().GetAccount(ctx, accountdb.GetAccountParams{
+	profile, err := b.storage.Querier().GetProfile(ctx, accountdb.GetProfileParams{
 		ID: uuid.NullUUID{UUID: params.AccountID, Valid: true},
 	})
 	if err != nil {
+		if stderrors.Is(err, pgx.ErrNoRows) {
+			return b.mapProfile(ctx, account, accountdb.AccountProfile{ID: account.ID}), nil
+		}
 		return zero, err
 	}
 
@@ -105,13 +115,13 @@ type UpdateProfileParams struct {
 	AccountID uuid.UUID                         // Whose profile to be updated
 
 	// Account base fields
-	Status   accountdb.AccountStatus
+	Status   accountmodel.Status
 	Username null.String
 	Phone    null.String
 	Email    null.String
 
 	// Profile fields
-	Gender           accountdb.AccountGender
+	Gender           accountmodel.Gender
 	Name             null.String
 	DateOfBirth      null.Time
 	AvatarRsID       uuid.NullUUID
@@ -131,24 +141,24 @@ func (b *AccountHandler) UpdateProfile(ctx restate.Context, params UpdateProfile
 
 	account, err := b.storage.Querier().UpdateAccount(ctx, accountdb.UpdateAccountParams{
 		ID:       params.AccountID,
-		Status:   accountdb.NullAccountStatus{AccountStatus: params.Status, Valid: params.Status != ""},
+		Status:   accountdb.NullAccountStatus{AccountStatus: accountdb.AccountStatus(params.Status), Valid: params.Status != ""},
 		Username: params.Username,
 		Phone:    params.Phone,
 		Email:    params.Email,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("update profile", err)
+		return zero, fmt.Errorf("update profile: %w", err)
 	}
 
 	profile, err := b.storage.Querier().UpdateProfile(ctx, accountdb.UpdateProfileParams{
 		ID:          params.AccountID,
-		Gender:      accountdb.NullAccountGender{AccountGender: params.Gender, Valid: params.Gender != ""},
+		Gender:      accountdb.NullAccountGender{AccountGender: accountdb.AccountGender(params.Gender), Valid: params.Gender != ""},
 		Name:        params.Name,
 		DateOfBirth: params.DateOfBirth,
 		AvatarRsID:  params.AvatarRsID,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("update profile", err)
+		return zero, fmt.Errorf("update profile: %w", err)
 	}
 
 	if params.DefaultContactID.Valid {
@@ -156,7 +166,7 @@ func (b *AccountHandler) UpdateProfile(ctx restate.Context, params UpdateProfile
 			ID:               params.AccountID,
 			DefaultContactID: params.DefaultContactID,
 		}); err != nil {
-			return zero, sharedmodel.WrapErr("set default contact", err)
+			return zero, fmt.Errorf("set default contact: %w", err)
 		}
 	}
 
@@ -184,12 +194,13 @@ func (b *AccountHandler) mapProfile(
 		ID:          account.ID,
 		DateCreated: account.DateCreated,
 
-		Status:   account.Status,
+		Status:   accountmodel.Status(account.Status),
+		Role:     accountmodel.Role(account.Role),
 		Phone:    account.Phone,
 		Email:    account.Email,
 		Username: account.Username,
 
-		Gender:           ptrutil.PtrIf(profile.Gender.AccountGender, profile.Gender.Valid),
+		Gender:           accountmodel.NullGender{Value: accountmodel.Gender(profile.Gender.AccountGender), Valid: profile.Gender.Valid},
 		Name:             null.StringFrom(profile.Name),
 		DateOfBirth:      profile.DateOfBirth,
 		EmailVerified:    profile.EmailVerified,
@@ -211,10 +222,10 @@ type UpdateCountryParams struct {
 // wallet currency.
 func (b *AccountHandler) UpdateCountry(ctx restate.Context, params UpdateCountryParams) error {
 	if err := validator.Validate(params); err != nil {
-		return sharedmodel.WrapErr("update profile country", err)
+		return fmt.Errorf("update profile country: %w", err)
 	}
 	if _, err := sharedcurrency.Infer(params.Country); err != nil {
-		return sharedmodel.WrapErr("infer currency from country", err)
+		return fmt.Errorf("infer currency from country: %w", err)
 	}
 
 	if err := restate.RunVoid(ctx, func(ctx restate.RunContext) error {
@@ -224,7 +235,7 @@ func (b *AccountHandler) UpdateCountry(ctx restate.Context, params UpdateCountry
 		})
 		return err
 	}); err != nil {
-		return sharedmodel.WrapErr("update profile country", err)
+		return fmt.Errorf("update profile country: %w", err)
 	}
 	return nil
 }

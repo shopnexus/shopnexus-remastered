@@ -46,6 +46,7 @@ var Module = fx.Module("order",
 		orderbiz.NewCheckoutWorkflow,
 		orderbiz.NewConfirmWorkflow,
 		orderbiz.NewPayoutWorkflow,
+		orderbiz.NewRefundWorkflow,
 	),
 	fx.Invoke(
 		orderecho.NewHandler,

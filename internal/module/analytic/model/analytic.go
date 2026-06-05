@@ -2,7 +2,6 @@ package analyticmodel
 
 import (
 	"encoding/json"
-	analyticdb "shopnexus-server/internal/module/analytic/db/sqlc"
 	"time"
 
 	"github.com/google/uuid"
@@ -47,11 +46,11 @@ const (
 )
 
 type Interaction struct {
-	ID          int64                                 `json:"id"`
-	AccountID   uuid.NullUUID                         `json:"account_id"`
-	EventType   Event                                 `json:"event_type"`
-	RefType     analyticdb.AnalyticInteractionRefType `json:"ref_type"`
-	RefID       uuid.UUID                             `json:"ref_id"`
-	Metadata    json.RawMessage                       `json:"metadata"`
-	DateCreated time.Time                             `json:"date_created"`
+	ID          int64              `json:"id"`
+	AccountID   uuid.NullUUID      `json:"account_id"`
+	EventType   Event              `json:"event_type"`
+	RefType     InteractionRefType `json:"ref_type"`
+	RefID       uuid.UUID          `json:"ref_id"`
+	Metadata    json.RawMessage    `json:"metadata"`
+	DateCreated time.Time          `json:"date_created"`
 }

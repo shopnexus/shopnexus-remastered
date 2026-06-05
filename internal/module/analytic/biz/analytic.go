@@ -16,7 +16,7 @@ import (
 type CreateInteraction struct {
 	Account   accountmodel.AuthenticatedAccount
 	EventType analyticmodel.Event
-	RefType   analyticdb.AnalyticInteractionRefType
+	RefType   analyticmodel.InteractionRefType
 	RefID     string
 }
 
@@ -30,12 +30,12 @@ func (b *AnalyticHandler) CreateInteraction(ctx restate.Context, params CreateIn
 		params.Interactions,
 		func(interaction CreateInteraction, _ int) analyticdb.CreateBatchInteractionParams {
 			return analyticdb.CreateBatchInteractionParams{
-				AccountID: uuid.NullUUID{UUID: interaction.Account.ID, Valid: true},
-				EventType: string(interaction.EventType),
-				RefType:       interaction.RefType,
-				RefID:         interaction.RefID,
-				Metadata:      []byte("{}"),
-				DateCreated:   time.Now(),
+				AccountID:   uuid.NullUUID{UUID: interaction.Account.ID, Valid: true},
+				EventType:   string(interaction.EventType),
+				RefType:     analyticdb.AnalyticInteractionRefType(interaction.RefType),
+				RefID:       interaction.RefID,
+				Metadata:    []byte("{}"),
+				DateCreated: time.Now(),
 			}
 		},
 	)
@@ -51,7 +51,7 @@ func (b *AnalyticHandler) CreateInteraction(ctx restate.Context, params CreateIn
 					ID:          ai.ID,
 					AccountID:   ai.AccountID,
 					EventType:   analyticmodel.Event(ai.EventType),
-					RefType:     ai.RefType,
+					RefType:     analyticmodel.InteractionRefType(ai.RefType),
 					RefID:       refID,
 					Metadata:    ai.Metadata,
 					DateCreated: ai.DateCreated,

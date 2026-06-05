@@ -13,7 +13,6 @@ import (
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	catalogutil "shopnexus-server/internal/module/catalog/util"
-	sharedmodel "shopnexus-server/internal/shared/model"
 )
 
 // AddInteraction buffers an analytic interaction event and flushes the batch when full.
@@ -80,7 +79,7 @@ func (b *CatalogHandler) ProcessEvents(ctx restate.Context, events []analyticmod
 	// 2. Fetch product content vectors from Milvus
 	itemVectors, err := b.getProductVectors(ctx, itemIDs)
 	if err != nil {
-		return sharedmodel.WrapErr("get product vectors", err)
+		return fmt.Errorf("get product vectors: %w", err)
 	}
 
 	// 3. Group events by account
@@ -100,7 +99,7 @@ func (b *CatalogHandler) ProcessEvents(ctx restate.Context, events []analyticmod
 	}
 	existingAccounts, err := b.getAccountInterests(ctx, accountIDs)
 	if err != nil {
-		return sharedmodel.WrapErr("get account interests", err)
+		return fmt.Errorf("get account interests: %w", err)
 	}
 
 	// 5. Process each account's events
@@ -136,7 +135,7 @@ func (b *CatalogHandler) ProcessEvents(ctx restate.Context, events []analyticmod
 			interests,
 			strengths,
 		); err != nil {
-			return sharedmodel.WrapErr(fmt.Sprintf("upsert account %s", accountID), err)
+			return fmt.Errorf("upsert account %s: %w", accountID, err)
 		}
 	}
 

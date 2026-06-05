@@ -20,10 +20,6 @@ import (
 	"shopnexus-server/internal/provider/geocoding"
 )
 
-// Module composes the application root. Modules each own their own pool/cache/
-// logger via fx.Private; app/ no longer carries shared infra. What remains is
-// process-level: app config (port + log default + restate registration), the
-// HTTP server, geocoding (no consumer-specific config).
 var Module = fx.Module("main",
 	fx.Provide(
 		appconfig.NewConfig,
@@ -49,8 +45,7 @@ var Module = fx.Module("main",
 	),
 )
 
-// SetupLogger sets the process-wide slog.Default. Module-scoped loggers are
-// constructed inside each module's fx.Module from its own log config.
+// SetupLogger sets the process-wide slog.Default.
 func SetupLogger(cfg *appconfig.Config) {
 	var level slog.Level
 	switch cfg.Log.Level {

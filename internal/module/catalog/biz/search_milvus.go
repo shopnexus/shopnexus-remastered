@@ -15,7 +15,6 @@ import (
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	catalogutil "shopnexus-server/internal/module/catalog/util"
-	sharedmodel "shopnexus-server/internal/shared/model"
 )
 
 // emptySparseEmbedding is a reusable zero-value sparse embedding for Milvus upserts.
@@ -30,7 +29,7 @@ func (b *CatalogHandler) getProductVectors(ctx restate.Context, ids []string) (m
 	expr := fmt.Sprintf("id in %s", toMilvusStringList(ids))
 	rs, err := b.milvus.Query(ctx, CollectionProducts, expr, []string{"id", "content_vector"})
 	if err != nil {
-		return nil, sharedmodel.WrapErr("query product vectors", err)
+		return nil, fmt.Errorf("query product vectors: %w", err)
 	}
 
 	idCol := rs.GetColumn("id")
@@ -65,7 +64,7 @@ func (b *CatalogHandler) getAccountInterests(ctx restate.Context, ids []string) 
 	expr := fmt.Sprintf("id in %s", toMilvusStringList(ids))
 	rs, err := b.milvus.Query(ctx, CollectionAccounts, expr, accountOutputFields())
 	if err != nil {
-		return nil, sharedmodel.WrapErr("query account interests", err)
+		return nil, fmt.Errorf("query account interests: %w", err)
 	}
 
 	idCol := rs.GetColumn("id")
@@ -132,7 +131,7 @@ func (b *CatalogHandler) upsertAccountInterests(
 
 	_, err := b.milvus.Inner().Upsert(ctx, milvusclient.NewColumnBasedInsertOption(CollectionAccounts, cols...))
 	if err != nil {
-		return sharedmodel.WrapErr("upsert account interests", err)
+		return fmt.Errorf("upsert account interests: %w", err)
 	}
 	return nil
 }
@@ -146,7 +145,7 @@ func (b *CatalogHandler) getProductAllVectors(ctx context.Context, ids []string)
 	expr := fmt.Sprintf("id in %s", toMilvusStringList(ids))
 	rs, err := b.milvus.Query(ctx, CollectionProducts, expr, []string{"id", "content_vector", "sparse_vector"})
 	if err != nil {
-		return nil, sharedmodel.WrapErr("query product vectors", err)
+		return nil, fmt.Errorf("query product vectors: %w", err)
 	}
 
 	idCol := rs.GetColumn("id")
@@ -208,7 +207,7 @@ func (b *CatalogHandler) upsertProducts(
 		var err error
 		existingVecMap, err = b.getProductAllVectors(ctx, productIDs)
 		if err != nil {
-			return sharedmodel.WrapErr("fetch existing vectors", err)
+			return fmt.Errorf("fetch existing vectors: %w", err)
 		}
 	}
 
@@ -284,7 +283,7 @@ func (b *CatalogHandler) upsertProducts(
 
 	_, err := b.milvus.Inner().Upsert(ctx, milvusclient.NewColumnBasedInsertOption(CollectionProducts, cols...))
 	if err != nil {
-		return sharedmodel.WrapErr("upsert products", err)
+		return fmt.Errorf("upsert products: %w", err)
 	}
 	return nil
 }
@@ -328,7 +327,7 @@ func (b *CatalogHandler) upsertCategories(
 
 	_, err := b.milvus.Inner().Upsert(ctx, milvusclient.NewColumnBasedInsertOption(CollectionCategories, cols...))
 	if err != nil {
-		return sharedmodel.WrapErr("upsert categories", err)
+		return fmt.Errorf("upsert categories: %w", err)
 	}
 	return nil
 }
@@ -373,7 +372,7 @@ func (b *CatalogHandler) upsertTags(
 
 	_, err := b.milvus.Inner().Upsert(ctx, milvusclient.NewColumnBasedInsertOption(CollectionTags, cols...))
 	if err != nil {
-		return sharedmodel.WrapErr("upsert tags", err)
+		return fmt.Errorf("upsert tags: %w", err)
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package catalogbiz
 
 import (
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -9,13 +10,12 @@ import (
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	analyticbiz "shopnexus-server/internal/module/analytic/biz"
-	analyticdb "shopnexus-server/internal/module/analytic/db/sqlc"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/ptrutil"
 	"shopnexus-server/internal/shared/validator"
 
@@ -30,7 +30,7 @@ type ListReviewableOrdersParams struct {
 }
 
 type ListCommentParams struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 
 	Account   accountmodel.AuthenticatedAccount
 	RefType   catalogdb.CatalogCommentRefType `validate:"required,validateFn=Valid"`
@@ -45,11 +45,11 @@ type ListCommentParams struct {
 func (b *CatalogHandler) ListComment(
 	ctx restate.Context,
 	params ListCommentParams,
-) (sharedmodel.PaginateResult[catalogmodel.Comment], error) {
-	var zero sharedmodel.PaginateResult[catalogmodel.Comment]
+) (paginate.PaginateResult[catalogmodel.Comment], error) {
+	var zero paginate.PaginateResult[catalogmodel.Comment]
 
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("validate list comment", err)
+		return zero, fmt.Errorf("validate list comment: %w", err)
 	}
 
 	listComment, err := b.storage.Querier().ListCountComment(ctx, catalogdb.ListCountCommentParams{
@@ -63,7 +63,7 @@ func (b *CatalogHandler) ListComment(
 		ScoreTo:   params.ScoreTo,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db list comment", err)
+		return zero, fmt.Errorf("db list comment: %w", err)
 	}
 
 	var total null.Int64
@@ -88,7 +88,7 @@ func (b *CatalogHandler) ListComment(
 		AccountIDs: accountIDs,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("list comment profiles", err)
+		return zero, fmt.Errorf("list comment profiles: %w", err)
 	}
 	// map[accountID]catalogdb.AccountProfile
 	profileMap := lo.KeyBy(listProfile.Data, func(a accountmodel.Profile) uuid.UUID { return a.ID })
@@ -99,7 +99,7 @@ func (b *CatalogHandler) ListComment(
 		RefIDs:  commentIDs,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("list comment resources", err)
+		return zero, fmt.Errorf("list comment resources: %w", err)
 	}
 
 	// Batch-fetch reply counts
@@ -107,7 +107,7 @@ func (b *CatalogHandler) ListComment(
 	if len(commentIDs) > 0 {
 		replyCounts, err := b.storage.Querier().CountRepliesByCommentIDs(ctx, commentIDs)
 		if err != nil {
-			return zero, sharedmodel.WrapErr("count replies", err)
+			return zero, fmt.Errorf("count replies: %w", err)
 		}
 		for _, rc := range replyCounts {
 			replyCountMap[rc.RefID] = rc.ReplyCount
@@ -182,8 +182,8 @@ func (b *CatalogHandler) ListComment(
 		comments = append(comments, c)
 	}
 
-	return sharedmodel.PaginateResult[catalogmodel.Comment]{
-		PageParams: params.PaginationParams,
+	return paginate.PaginateResult[catalogmodel.Comment]{
+		PageParams: params.Params,
 		Data:       comments,
 		Total:      total,
 	}, nil
@@ -207,7 +207,7 @@ func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateComment
 	var zero catalogmodel.Comment
 
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("validate create comment", err)
+		return zero, fmt.Errorf("validate create comment: %w", err)
 	}
 
 	// Verify purchase for product reviews
@@ -228,10 +228,10 @@ func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateComment
 			SkuIDs:    skuIDs,
 		})
 		if err != nil {
-			return zero, sharedmodel.WrapErr("validate order for review", err)
+			return zero, fmt.Errorf("validate order for review: %w", err)
 		}
 		if !valid {
-			return zero, catalogmodel.ErrMustPurchaseToReview.Terminal()
+			return zero, catalogmodel.ErrMustPurchaseToReview
 		}
 
 		// Check if this order was already reviewed for this product
@@ -242,10 +242,10 @@ func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateComment
 			OrderID: []uuid.NullUUID{{UUID: params.OrderID, Valid: true}},
 		})
 		if err != nil {
-			return zero, sharedmodel.WrapErr("check existing review", err)
+			return zero, fmt.Errorf("check existing review: %w", err)
 		}
 		if len(existing) > 0 && existing[0].TotalCount > 0 {
-			return zero, catalogmodel.ErrOrderAlreadyReviewed.Terminal()
+			return zero, catalogmodel.ErrOrderAlreadyReviewed
 		}
 	}
 
@@ -258,7 +258,7 @@ func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateComment
 		OrderID:   uuid.NullUUID{UUID: params.OrderID, Valid: params.OrderID != uuid.Nil},
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db create comment", err)
+		return zero, fmt.Errorf("db create comment: %w", err)
 	}
 
 	// Attach resources
@@ -269,7 +269,7 @@ func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateComment
 		ResourceIDs: params.ResourceIDs,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("create comment", err)
+		return zero, fmt.Errorf("create comment: %w", err)
 	}
 
 	profile, err := b.account.GetProfile(ctx, accountbiz.GetProfileParams{
@@ -277,7 +277,7 @@ func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateComment
 		AccountID: comment.AccountID,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("get comment profile", err)
+		return zero, fmt.Errorf("get comment profile: %w", err)
 	}
 
 	// Track analytic interactions for product reviews
@@ -287,7 +287,7 @@ func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateComment
 			{
 				Account:   params.Account,
 				EventType: analyticmodel.EventWriteReview,
-				RefType:   analyticdb.AnalyticInteractionRefTypeProduct,
+				RefType:   analyticmodel.InteractionRefTypeProduct,
 				RefID:     refID,
 			},
 		}
@@ -298,7 +298,7 @@ func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateComment
 				analyticbiz.CreateInteraction{
 					Account:   params.Account,
 					EventType: analyticmodel.EventRatingHigh,
-					RefType:   analyticdb.AnalyticInteractionRefTypeProduct,
+					RefType:   analyticmodel.InteractionRefTypeProduct,
 					RefID:     refID,
 				},
 			)
@@ -308,7 +308,7 @@ func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateComment
 				analyticbiz.CreateInteraction{
 					Account:   params.Account,
 					EventType: analyticmodel.EventRatingMedium,
-					RefType:   analyticdb.AnalyticInteractionRefTypeProduct,
+					RefType:   analyticmodel.InteractionRefTypeProduct,
 					RefID:     refID,
 				},
 			)
@@ -318,7 +318,7 @@ func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateComment
 				analyticbiz.CreateInteraction{
 					Account:   params.Account,
 					EventType: analyticmodel.EventRatingLow,
-					RefType:   analyticdb.AnalyticInteractionRefTypeProduct,
+					RefType:   analyticmodel.InteractionRefTypeProduct,
 					RefID:     refID,
 				},
 			)
@@ -373,7 +373,7 @@ func (b *CatalogHandler) UpdateComment(ctx restate.Context, params UpdateComment
 	var zero catalogmodel.Comment
 
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("validate update comment", err)
+		return zero, fmt.Errorf("validate update comment: %w", err)
 	}
 
 	// Update base comment info
@@ -383,7 +383,7 @@ func (b *CatalogHandler) UpdateComment(ctx restate.Context, params UpdateComment
 		Score: params.Score,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db update comment", err)
+		return zero, fmt.Errorf("db update comment: %w", err)
 	}
 
 	// Update upvote/downvote count
@@ -393,7 +393,7 @@ func (b *CatalogHandler) UpdateComment(ctx restate.Context, params UpdateComment
 			UpvoteDelta:   params.UpvoteDelta,
 			DownvoteDelta: params.DownvoteDelta,
 		}); err != nil {
-			return zero, sharedmodel.WrapErr("db update comment upvote/downvote", err)
+			return zero, fmt.Errorf("db update comment upvote/downvote: %w", err)
 		}
 	}
 
@@ -407,7 +407,7 @@ func (b *CatalogHandler) UpdateComment(ctx restate.Context, params UpdateComment
 		DeleteResources: true,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("update comment", err)
+		return zero, fmt.Errorf("update comment: %w", err)
 	}
 
 	profile, err := b.account.GetProfile(ctx, accountbiz.GetProfileParams{
@@ -415,7 +415,7 @@ func (b *CatalogHandler) UpdateComment(ctx restate.Context, params UpdateComment
 		AccountID: comment.AccountID,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("get comment profile", err)
+		return zero, fmt.Errorf("get comment profile: %w", err)
 	}
 
 	return catalogmodel.Comment{
@@ -441,14 +441,14 @@ type DeleteCommentParams struct {
 // DeleteComment deletes comments and their associated resources.
 func (b *CatalogHandler) DeleteComment(ctx restate.Context, params DeleteCommentParams) error {
 	if err := validator.Validate(params); err != nil {
-		return sharedmodel.WrapErr("validate delete comment", err)
+		return fmt.Errorf("validate delete comment: %w", err)
 	}
 
 	// Delete base comments
 	if err := b.storage.Querier().DeleteComment(ctx, catalogdb.DeleteCommentParams{
 		ID: params.CommentIDs,
 	}); err != nil {
-		return sharedmodel.WrapErr("db delete comment", err)
+		return fmt.Errorf("db delete comment: %w", err)
 	}
 
 	// Remove associated resources
@@ -457,7 +457,7 @@ func (b *CatalogHandler) DeleteComment(ctx restate.Context, params DeleteComment
 		RefID:           params.CommentIDs,
 		DeleteResources: true,
 	}); err != nil {
-		return sharedmodel.WrapErr("delete comment", err)
+		return fmt.Errorf("delete comment: %w", err)
 	}
 
 	return nil
@@ -469,10 +469,10 @@ func (b *CatalogHandler) getSkuIDsForSpu(ctx restate.Context, spuID uuid.UUID) (
 		SpuID: []uuid.UUID{spuID},
 	})
 	if err != nil {
-		return nil, sharedmodel.WrapErr("list product skus", err)
+		return nil, fmt.Errorf("list product skus: %w", err)
 	}
 	if len(skus) == 0 {
-		return nil, catalogmodel.ErrProductNotFound.Terminal()
+		return nil, catalogmodel.ErrProductNotFound
 	}
 	return lo.Map(skus, func(sku catalogdb.CatalogProductSku, _ int) uuid.UUID {
 		return sku.ID
@@ -485,7 +485,7 @@ func (b *CatalogHandler) ListReviewableOrders(
 	params ListReviewableOrdersParams,
 ) ([]catalogmodel.ReviewableOrder, error) {
 	if err := validator.Validate(params); err != nil {
-		return nil, sharedmodel.WrapErr("validate list reviewable orders", err)
+		return nil, fmt.Errorf("validate list reviewable orders: %w", err)
 	}
 
 	skuIDs, err := b.getSkuIDsForSpu(ctx, params.SpuID)
@@ -506,7 +506,7 @@ func (b *CatalogHandler) ListReviewableOrders(
 		SkuIDs:    skuIDs,
 	})
 	if err != nil {
-		return nil, sharedmodel.WrapErr("list reviewable orders", err)
+		return nil, fmt.Errorf("list reviewable orders: %w", err)
 	}
 
 	return orders, nil

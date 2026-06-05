@@ -37,7 +37,7 @@ SELECT
     (SELECT COUNT(*)::BIGINT FROM "order"."refund" r
      JOIN "order"."order" o ON o."id" = r."order_id"
      WHERE o."seller_id" = @seller_id
-       AND r."status" = 'Pending') AS pending_refunds;
+       AND r."status" = 'AwaitingSellerReview') AS pending_refunds;
 
 -- name: GetSellerTopProducts :many
 -- Returns top products by sold quantity within a date range, with revenue.

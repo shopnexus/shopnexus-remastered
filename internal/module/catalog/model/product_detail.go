@@ -1,28 +1,27 @@
 package catalogmodel
 
 import (
-	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	commonmodel "shopnexus-server/internal/module/common/model"
 
 	"github.com/google/uuid"
 )
 
 type ProductDetail struct {
-	ID             uuid.UUID                 `json:"id"`
-	Slug           string                    `json:"slug"`
-	SellerID       uuid.UUID                 `json:"seller_id"`
-	Name           string                    `json:"name"`
-	Description    string                    `json:"description"`
-	IsEnabled      bool                      `json:"is_enabled"`
-	Currency       string                    `json:"currency"`
-	Category       catalogdb.CatalogCategory `json:"category"`
-	Rating         ProductRating             `json:"rating"`
-	IsFavorite     bool                      `json:"is_favorite"`
-	Resources      []commonmodel.Resource    `json:"resources"`
-	Promotions     []ProductCardPromo        `json:"promotions"`
-	Skus           []ProductDetailSku        `json:"skus"`
-	Specifications []ProductSpecification    `json:"specifications"`
-	Tags           []string                  `json:"tags"`
+	ID             uuid.UUID              `json:"id"`
+	Slug           string                 `json:"slug"`
+	SellerID       uuid.UUID              `json:"seller_id"`
+	Name           string                 `json:"name"`
+	Description    string                 `json:"description"`
+	IsEnabled      bool                   `json:"is_enabled"`
+	Currency       string                 `json:"currency"`
+	Category       Category               `json:"category"`
+	Rating         ProductRating          `json:"rating"`
+	IsFavorite     bool                   `json:"is_favorite"`
+	Resources      []commonmodel.Resource `json:"resources"`
+	Promotions     []ProductCardPromo     `json:"promotions"`
+	Skus           []ProductDetailSku     `json:"skus"`
+	Specifications []ProductSpecification `json:"specifications"`
+	Tags           []string               `json:"tags"`
 }
 
 type ProductRating struct {

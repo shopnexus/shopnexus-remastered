@@ -5,7 +5,7 @@ import (
 
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	authclaims "shopnexus-server/internal/shared/claims"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/response"
 
 	"github.com/google/uuid"
@@ -70,7 +70,7 @@ func (h *Handler) RemoveFavorite(c echo.Context) error {
 }
 
 type ListFavoriteRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 }
 
 func (h *Handler) ListFavorite(c echo.Context) error {
@@ -88,8 +88,8 @@ func (h *Handler) ListFavorite(c echo.Context) error {
 	}
 
 	result, err := h.biz.ListFavorite(c.Request().Context(), accountbiz.ListFavoriteParams{
-		Account:          claims.Account,
-		PaginationParams: req.PaginationParams,
+		Account: claims.Account,
+		Params:  req.Params,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)

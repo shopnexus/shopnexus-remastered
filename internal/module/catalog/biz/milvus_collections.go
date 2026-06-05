@@ -9,7 +9,6 @@ import (
 
 	"shopnexus-server/internal/infras/milvus"
 	catalogutil "shopnexus-server/internal/module/catalog/util"
-	sharedmodel "shopnexus-server/internal/shared/model"
 )
 
 const (
@@ -109,10 +108,10 @@ func accountsIndexes() []milvus.IndexDef {
 // SetupMilvusCollections creates the products and accounts collections if they don't exist.
 func (b *CatalogHandler) SetupMilvusCollections(ctx context.Context) error {
 	if err := b.milvus.EnsureCollection(ctx, CollectionProducts, productsSchema(), productsIndexes()); err != nil {
-		return sharedmodel.WrapErr("setup products collection", err)
+		return fmt.Errorf("setup products collection: %w", err)
 	}
 	if err := b.milvus.EnsureCollection(ctx, CollectionAccounts, accountsSchema(), accountsIndexes()); err != nil {
-		return sharedmodel.WrapErr("setup accounts collection", err)
+		return fmt.Errorf("setup accounts collection: %w", err)
 	}
 	if err := b.milvus.EnsureCollection(
 		ctx,
@@ -120,10 +119,10 @@ func (b *CatalogHandler) SetupMilvusCollections(ctx context.Context) error {
 		categoriesSchema(),
 		categoriesIndexes(),
 	); err != nil {
-		return sharedmodel.WrapErr("setup categories collection", err)
+		return fmt.Errorf("setup categories collection: %w", err)
 	}
 	if err := b.milvus.EnsureCollection(ctx, CollectionTags, tagsSchema(), tagsIndexes()); err != nil {
-		return sharedmodel.WrapErr("setup tags collection", err)
+		return fmt.Errorf("setup tags collection: %w", err)
 	}
 	return nil
 }

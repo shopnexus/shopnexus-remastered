@@ -6,7 +6,7 @@ import (
 	"context"
 	restateclient "shopnexus-server/internal/infras/restate"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 )
 
 const serviceName = "Inventory"
@@ -30,16 +30,16 @@ func (p *InventoryRestateClient) UpdateStockSettings(ctx context.Context, params
 	return restateclient.Call[inventorydb.InventoryStock](ctx, p.client, serviceName, "UpdateStockSettings", params)
 }
 
-func (p *InventoryRestateClient) ListStock(ctx context.Context, params ListStockParams) (sharedmodel.PaginateResult[inventorydb.InventoryStock], error) {
-	return restateclient.Call[sharedmodel.PaginateResult[inventorydb.InventoryStock]](ctx, p.client, serviceName, "ListStock", params)
+func (p *InventoryRestateClient) ListStock(ctx context.Context, params ListStockParams) (paginate.PaginateResult[inventorydb.InventoryStock], error) {
+	return restateclient.Call[paginate.PaginateResult[inventorydb.InventoryStock]](ctx, p.client, serviceName, "ListStock", params)
 }
 
 func (p *InventoryRestateClient) CreateStock(ctx context.Context, params CreateStockParams) (inventorydb.InventoryStock, error) {
 	return restateclient.Call[inventorydb.InventoryStock](ctx, p.client, serviceName, "CreateStock", params)
 }
 
-func (p *InventoryRestateClient) ListStockHistory(ctx context.Context, params ListStockHistoryParams) (sharedmodel.PaginateResult[inventorydb.InventoryStockHistory], error) {
-	return restateclient.Call[sharedmodel.PaginateResult[inventorydb.InventoryStockHistory]](ctx, p.client, serviceName, "ListStockHistory", params)
+func (p *InventoryRestateClient) ListStockHistory(ctx context.Context, params ListStockHistoryParams) (paginate.PaginateResult[inventorydb.InventoryStockHistory], error) {
+	return restateclient.Call[paginate.PaginateResult[inventorydb.InventoryStockHistory]](ctx, p.client, serviceName, "ListStockHistory", params)
 }
 
 func (p *InventoryRestateClient) ImportStock(ctx context.Context, params ImportStockParams) error {
@@ -58,8 +58,8 @@ func (p *InventoryRestateClient) UpdateSerial(ctx context.Context, params Update
 	return restateclient.Send(ctx, p.client, serviceName, "UpdateSerial", params)
 }
 
-func (p *InventoryRestateClient) ListSerial(ctx context.Context, params ListSerialParams) (sharedmodel.PaginateResult[inventorydb.InventorySerial], error) {
-	return restateclient.Call[sharedmodel.PaginateResult[inventorydb.InventorySerial]](ctx, p.client, serviceName, "ListSerial", params)
+func (p *InventoryRestateClient) ListSerial(ctx context.Context, params ListSerialParams) (paginate.PaginateResult[inventorydb.InventorySerial], error) {
+	return restateclient.Call[paginate.PaginateResult[inventorydb.InventorySerial]](ctx, p.client, serviceName, "ListSerial", params)
 }
 
 func (p *InventoryRestateClient) ListMostTakenSku(ctx context.Context, params ListMostTakenSkuParams) ([]inventorydb.InventoryStock, error) {

@@ -1,8 +1,8 @@
 package response
 
-import sharedmodel "shopnexus-server/internal/shared/model"
+import "shopnexus-server/internal/shared/errors"
 
 type CommonResponse struct {
-	Data  any                `json:"data,omitempty"`
-	Error *sharedmodel.Error `json:"error,omitempty"`
+	Data  any            `json:"data,omitempty"`
+	Error *errors.Errorf `json:"error,omitempty"`
 }

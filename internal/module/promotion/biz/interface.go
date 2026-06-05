@@ -7,7 +7,7 @@ import (
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	promotiondb "shopnexus-server/internal/module/promotion/db/sqlc"
 	promotionmodel "shopnexus-server/internal/module/promotion/model"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/pgsqlc"
 
 	"github.com/google/uuid"
@@ -22,7 +22,7 @@ type PromotionBiz interface {
 	ListPromotion(
 		ctx context.Context,
 		params ListPromotionParams,
-	) (sharedmodel.PaginateResult[promotionmodel.Promotion], error)
+	) (paginate.PaginateResult[promotionmodel.Promotion], error)
 	CreatePromotion(ctx context.Context, params CreatePromotionParams) (promotionmodel.Promotion, error)
 	UpdatePromotion(ctx context.Context, params UpdatePromotionParams) (promotionmodel.Promotion, error)
 	DeletePromotion(ctx context.Context, params DeletePromotionParams) error

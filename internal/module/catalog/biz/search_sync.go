@@ -2,6 +2,7 @@ package catalogbiz
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"slices"
 	"strings"
@@ -15,7 +16,6 @@ import (
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	"shopnexus-server/internal/shared/htmlutil"
-	sharedmodel "shopnexus-server/internal/shared/model"
 )
 
 const (
@@ -97,7 +97,7 @@ func (b *CatalogHandler) syncStaleEntities(ctx context.Context, metadataOnly boo
 
 	stales, err := b.storage.Querier().ListStaleSearchSync(ctx, params)
 	if err != nil {
-		return sharedmodel.WrapErr("list stale search sync", err)
+		return fmt.Errorf("list stale search sync: %w", err)
 	}
 	if len(stales) == 0 {
 		return nil
@@ -148,20 +148,20 @@ func (b *CatalogHandler) syncProducts(
 		ID: spuIDs,
 	})
 	if err != nil {
-		return sharedmodel.WrapErr("list spus for sync", err)
+		return fmt.Errorf("list spus for sync: %w", err)
 	}
 
 	dbSkus, err := b.storage.Querier().ListProductSku(ctx, catalogdb.ListProductSkuParams{
 		SpuID: spuIDs,
 	})
 	if err != nil {
-		return sharedmodel.WrapErr("list skus for sync", err)
+		return fmt.Errorf("list skus for sync: %w", err)
 	}
 	skusBySpuID := lo.GroupBy(dbSkus, func(s catalogdb.CatalogProductSku) uuid.UUID { return s.SpuID })
 
 	tags, err := b.storage.Querier().ListProductSpuTag(ctx, catalogdb.ListProductSpuTagParams{SpuID: spuIDs})
 	if err != nil {
-		return sharedmodel.WrapErr("list tags for sync", err)
+		return fmt.Errorf("list tags for sync: %w", err)
 	}
 	tagsBySpuID := lo.GroupByMap(
 		tags,
@@ -171,7 +171,7 @@ func (b *CatalogHandler) syncProducts(
 	categoryIDs := lo.Uniq(lo.Map(dbSpus, func(s catalogdb.CatalogProductSpu, _ int) uuid.UUID { return s.CategoryID }))
 	categories, err := b.storage.Querier().ListCategory(ctx, catalogdb.ListCategoryParams{ID: categoryIDs})
 	if err != nil {
-		return sharedmodel.WrapErr("list categories for sync", err)
+		return fmt.Errorf("list categories for sync: %w", err)
 	}
 	categoryMap := lo.KeyBy(categories, func(c catalogdb.CatalogCategory) uuid.UUID { return c.ID })
 
@@ -192,8 +192,8 @@ func (b *CatalogHandler) syncProducts(
 			SellerID:    spu.AccountID,
 			Name:        spu.Name,
 			Description: spu.Description,
-			IsEnabled:    spu.IsEnabled,
-			Category:    categoryMap[spu.CategoryID],
+			IsEnabled:   spu.IsEnabled,
+			Category:    mapCategory(categoryMap[spu.CategoryID]),
 			Skus:        skuDetails,
 			Tags:        tagsBySpuID[spu.ID],
 		})
@@ -212,7 +212,7 @@ func (b *CatalogHandler) syncProducts(
 		}
 		embeddings, err := b.llm.Embed(ctx, texts)
 		if err != nil {
-			return sharedmodel.WrapErr("embed products", err)
+			return fmt.Errorf("embed products: %w", err)
 		}
 		embeddingMap = make(map[string]embeddingResult, len(products))
 		for i, p := range products {
@@ -225,7 +225,7 @@ func (b *CatalogHandler) syncProducts(
 
 	// Upsert to Milvus
 	if err := b.upsertProducts(ctx, products, embeddingMap, metadataOnly); err != nil {
-		return sharedmodel.WrapErr("upsert products", err)
+		return fmt.Errorf("upsert products: %w", err)
 	}
 
 	// Clear stale flags
@@ -256,7 +256,7 @@ func (b *CatalogHandler) syncCategories(
 		ID: categoryIDs,
 	})
 	if err != nil {
-		return sharedmodel.WrapErr("list categories for sync", err)
+		return fmt.Errorf("list categories for sync: %w", err)
 	}
 
 	if len(categories) == 0 {
@@ -270,7 +270,7 @@ func (b *CatalogHandler) syncCategories(
 	}
 	embeddings, err := b.llm.Embed(ctx, texts)
 	if err != nil {
-		return sharedmodel.WrapErr("embed categories", err)
+		return fmt.Errorf("embed categories: %w", err)
 	}
 	embeddingMap := make(map[string]embeddingResult, len(categories))
 	for i, c := range categories {
@@ -282,7 +282,7 @@ func (b *CatalogHandler) syncCategories(
 
 	// Upsert to Milvus
 	if err := b.upsertCategories(ctx, categories, embeddingMap); err != nil {
-		return sharedmodel.WrapErr("upsert categories", err)
+		return fmt.Errorf("upsert categories: %w", err)
 	}
 
 	return b.clearStaleFlagsByRows(ctx, stales, metadataOnly)
@@ -313,7 +313,7 @@ func (b *CatalogHandler) syncTags(
 	// all potentially matching tags. Since we can't reverse SHA1, fetch all tags and filter.
 	tags, err := b.storage.Querier().ListTag(ctx, catalogdb.ListTagParams{})
 	if err != nil {
-		return sharedmodel.WrapErr("list tags for sync", err)
+		return fmt.Errorf("list tags for sync: %w", err)
 	}
 
 	// Filter to only stale tags
@@ -336,7 +336,7 @@ func (b *CatalogHandler) syncTags(
 	}
 	embeddings, err := b.llm.Embed(ctx, texts)
 	if err != nil {
-		return sharedmodel.WrapErr("embed tags", err)
+		return fmt.Errorf("embed tags: %w", err)
 	}
 	embeddingMap := make(map[string]embeddingResult, len(matchedTags))
 	for i, t := range matchedTags {
@@ -349,7 +349,7 @@ func (b *CatalogHandler) syncTags(
 
 	// Upsert to Milvus
 	if err := b.upsertTags(ctx, matchedTags, embeddingMap); err != nil {
-		return sharedmodel.WrapErr("upsert tags", err)
+		return fmt.Errorf("upsert tags: %w", err)
 	}
 
 	return b.clearStaleFlagsByRows(ctx, stales, metadataOnly)
@@ -390,7 +390,7 @@ func (b *CatalogHandler) batchClearFlags(ctx context.Context, args []catalogdb.U
 		}
 	})
 	if updateErr != nil {
-		return sharedmodel.WrapErr("clear stale flags", updateErr)
+		return fmt.Errorf("clear stale flags: %w", updateErr)
 	}
 	return nil
 }

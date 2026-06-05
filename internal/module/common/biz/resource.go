@@ -2,6 +2,7 @@ package commonbiz
 
 import (
 	"context"
+	"fmt"
 	"slices"
 
 	restate "github.com/restatedev/sdk-go"
@@ -9,7 +10,6 @@ import (
 	accountmodel "shopnexus-server/internal/module/account/model"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	commonmodel "shopnexus-server/internal/module/common/model"
-	sharedmodel "shopnexus-server/internal/shared/model"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -31,7 +31,7 @@ func (b *CommonHandler) UpdateResources(
 	params UpdateResourcesParams,
 ) ([]commonmodel.Resource, error) {
 	if err := validator.Validate(params); err != nil {
-		return nil, sharedmodel.WrapErr("validate update resources", err)
+		return nil, fmt.Errorf("validate update resources: %w", err)
 	}
 
 	// Update resources (delete all and re-attach)
@@ -43,7 +43,7 @@ func (b *CommonHandler) UpdateResources(
 			DeleteResources:     params.DeleteResources,
 			SkipDeleteResources: params.ResourceIDs,
 		}); err != nil {
-			return nil, sharedmodel.WrapErr("update resources", err)
+			return nil, fmt.Errorf("update resources: %w", err)
 		}
 
 		// Next step: Attach resources
@@ -53,11 +53,11 @@ func (b *CommonHandler) UpdateResources(
 			ID: params.ResourceIDs,
 		})
 		if err != nil {
-			return nil, sharedmodel.WrapErr("db update resources", err)
+			return nil, fmt.Errorf("db update resources: %w", err)
 		}
 		if len(resources) != len(params.ResourceIDs) {
 			// Some resources not found or not belong to the user
-			return nil, commonmodel.ErrResourceNotFound.Terminal()
+			return nil, commonmodel.ErrResourceNotFound
 		}
 
 		for order, rsID := range params.ResourceIDs {
@@ -70,7 +70,7 @@ func (b *CommonHandler) UpdateResources(
 		}
 
 		if _, err = b.storage.Querier().CreateCopyDefaultResourceReference(ctx, createResourceArgs); err != nil {
-			return nil, sharedmodel.WrapErr("db update resources", err)
+			return nil, fmt.Errorf("db update resources: %w", err)
 		}
 	}
 
@@ -79,7 +79,7 @@ func (b *CommonHandler) UpdateResources(
 		RefIDs:  []uuid.UUID{params.RefID},
 	})
 	if err != nil {
-		return nil, sharedmodel.WrapErr("update resources", err)
+		return nil, fmt.Errorf("update resources: %w", err)
 	}
 
 	return resourcesMap[params.RefID], nil
@@ -95,7 +95,7 @@ type DeleteResourcesParams struct {
 // DeleteResources removes resource references and optionally deletes the underlying resource records.
 func (b *CommonHandler) DeleteResources(ctx restate.Context, params DeleteResourcesParams) error {
 	if err := validator.Validate(params); err != nil {
-		return sharedmodel.WrapErr("validate delete resources", err)
+		return fmt.Errorf("validate delete resources: %w", err)
 	}
 
 	deletedResources, err := b.storage.Querier().ListResourceReference(ctx, commondb.ListResourceReferenceParams{
@@ -103,7 +103,7 @@ func (b *CommonHandler) DeleteResources(ctx restate.Context, params DeleteResour
 		RefID:   params.RefID,
 	})
 	if err != nil {
-		return sharedmodel.WrapErr("db delete resources", err)
+		return fmt.Errorf("db delete resources: %w", err)
 	}
 
 	var deletedIDs []uuid.UUID
@@ -120,7 +120,7 @@ func (b *CommonHandler) DeleteResources(ctx restate.Context, params DeleteResour
 			RefID:   params.RefID,
 			RsID:    deletedIDs,
 		}); err != nil {
-			return sharedmodel.WrapErr("db delete resources", err)
+			return fmt.Errorf("db delete resources: %w", err)
 		}
 	}
 
@@ -128,7 +128,7 @@ func (b *CommonHandler) DeleteResources(ctx restate.Context, params DeleteResour
 		if err := b.storage.Querier().DeleteResource(ctx, commondb.DeleteResourceParams{
 			ID: deletedIDs,
 		}); err != nil {
-			return sharedmodel.WrapErr("db delete resources", err)
+			return fmt.Errorf("db delete resources: %w", err)
 		}
 	}
 
@@ -152,7 +152,7 @@ func (b *CommonHandler) GetResources(
 		RefID:   params.RefIDs,
 	})
 	if err != nil {
-		return nil, sharedmodel.WrapErr("db list resources", err)
+		return nil, fmt.Errorf("db list resources: %w", err)
 	}
 
 	return lo.GroupByMap(resources, func(rs commondb.ListSortedResourcesRow) (uuid.UUID, commonmodel.Resource) {

@@ -14,7 +14,6 @@ import (
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/provider/payment"
 	"shopnexus-server/internal/provider/transport"
-	sharedmodel "shopnexus-server/internal/shared/model"
 	"shopnexus-server/internal/shared/saga"
 	"shopnexus-server/internal/shared/validator"
 
@@ -45,7 +44,7 @@ func (h *ConfirmWorkflow) Run(
 
 	// Step 1: Validate.
 	if err = validator.Validate(input); err != nil {
-		return out, sharedmodel.WrapErr("validate confirm", err)
+		return out, fmt.Errorf("validate confirm: %w", err)
 	}
 
 	saga := saga.New(ctx)
@@ -76,15 +75,15 @@ func (h *ConfirmWorkflow) Run(
 			ID: input.ItemIDs,
 		})
 		if e != nil {
-			return nil, sharedmodel.WrapErr("db list items", e)
+			return nil, fmt.Errorf("db list items: %w", e)
 		}
 		if len(items) != len(input.ItemIDs) {
-			return nil, ordermodel.ErrOrderItemNotFound.Terminal()
+			return nil, ordermodel.ErrOrderItemNotFound
 		}
 		return items, nil
 	})
 	if err != nil {
-		return out, sharedmodel.WrapErr("fetch items", err)
+		return out, fmt.Errorf("fetch items: %w", err)
 	}
 
 	// Validate items and aggregate shared fields. Every item must be owned
@@ -100,7 +99,7 @@ func (h *ConfirmWorkflow) Run(
 	)
 	// Validation outcome is deterministic over journaled orderItems, so any
 	// failure must be terminal — otherwise Restate would retry the same
-	// invariant violation forever. fmt.Errorf("%w") strips the .Terminal()
+	// invariant violation forever. fmt.Errorf("%w") strips the
 	// marker on ordermodel errors, so we re-wrap with restate.TerminalError.
 	for i, item := range orderItems {
 		if item.OrderID.Valid {
@@ -138,15 +137,15 @@ func (h *ConfirmWorkflow) Run(
 		status, sErr := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderStatus, error) {
 			session, e := h.base.storage.Querier().GetPaymentSession(rctx, uuid.NullUUID{UUID: psID, Valid: true})
 			if e != nil {
-				return "", sharedmodel.WrapErr("get payment session", e)
+				return "", fmt.Errorf("get payment session: %w", e)
 			}
 			return session.Status, nil
 		})
 		if sErr != nil {
-			return out, sharedmodel.WrapErr("check payment session status", sErr)
+			return out, fmt.Errorf("check payment session status: %w", sErr)
 		}
 		if status != orderdb.OrderStatusSuccess {
-			return out, ordermodel.ErrPaymentNotSuccess.Terminal()
+			return out, ordermodel.ErrPaymentNotSuccess
 		}
 	}
 
@@ -155,7 +154,7 @@ func (h *ConfirmWorkflow) Run(
 	// destination address (asserted above).
 	contactMap, err := h.base.account.GetDefaultContact(ctx, []uuid.UUID{sellerID})
 	if err != nil {
-		return out, sharedmodel.WrapErr("get seller contact", err)
+		return out, fmt.Errorf("get seller contact: %w", err)
 	}
 	fromAddress := contactMap[sellerID].Address
 
@@ -173,7 +172,7 @@ func (h *ConfirmWorkflow) Run(
 		ToAddress:   address,
 	})
 	if err != nil {
-		return out, sharedmodel.WrapErr("quote transport", err)
+		return out, fmt.Errorf("quote transport: %w", err)
 	}
 
 	platformFee := int64(0) // TODO: plug config
@@ -183,7 +182,7 @@ func (h *ConfirmWorkflow) Run(
 	// is paying the platform). inferCurrency is cross-module → outside Run.
 	sellerCurrency, err := h.base.InferCurrency(ctx, sellerID)
 	if err != nil {
-		return out, sharedmodel.WrapErr("infer seller currency", err)
+		return out, fmt.Errorf("infer seller currency: %w", err)
 	}
 
 	// Step 6: Wallet / gateway split for confirmFeeTotal.
@@ -191,7 +190,7 @@ func (h *ConfirmWorkflow) Run(
 	if input.UseWallet && confirmFeeTotal > 0 {
 		balance, balErr := h.base.account.GetWalletBalance(ctx, sellerID)
 		if balErr != nil {
-			return out, sharedmodel.WrapErr("get seller wallet balance", balErr)
+			return out, fmt.Errorf("get seller wallet balance: %w", balErr)
 		}
 		if balance >= confirmFeeTotal {
 			confirmFeeWallet = confirmFeeTotal
@@ -202,7 +201,7 @@ func (h *ConfirmWorkflow) Run(
 	confirmFeeGateway = confirmFeeTotal - confirmFeeWallet
 
 	if confirmFeeGateway > 0 && input.PaymentOption == "" {
-		return out, ordermodel.ErrInsufficientWalletBalance.Terminal()
+		return out, ordermodel.ErrInsufficientWalletBalance
 	}
 
 	// Step 7: Atomically create payment_session and child txs (Pending) in
@@ -225,7 +224,7 @@ func (h *ConfirmWorkflow) Run(
 	if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
 		if _, sErr := h.base.storage.Querier().CreateDefaultPaymentSession(rctx, orderdb.CreateDefaultPaymentSessionParams{
 			ID:          sessionID,
-			Kind:        SessionKindSellerConfirmationFee,
+			Kind:        ordermodel.SessionKindSellerConfirmationFee,
 			Status:      orderdb.OrderStatusPending,
 			FromID:      uuid.NullUUID{UUID: sellerID, Valid: true},
 			ToID:        uuid.NullUUID{},
@@ -236,29 +235,27 @@ func (h *ConfirmWorkflow) Run(
 			DatePaid:    null.Time{},
 			DateExpired: time.Now().Add(sessionExpiry),
 		}); sErr != nil {
-			return sharedmodel.WrapErr("db create confirm session", sErr)
+			return fmt.Errorf("db create confirm session: %w", sErr)
 		}
 
 		if confirmFeeWallet > 0 {
 			if _, txErr := h.base.storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
-				ID:           walletTxID,
-				SessionID:    sessionID,
-				Status:       orderdb.OrderStatusPending,
-				Note:         "confirm fee wallet payment",
-				Data:         json.RawMessage("{}"),
-				Amount:       confirmFeeWallet,
-				FromCurrency: sellerCurrency,
-				ToCurrency:   sellerCurrency,
-				ExchangeRate: mustNumericOne(),
+				ID:        walletTxID,
+				SessionID: sessionID,
+				Status:    orderdb.OrderStatusPending,
+				Note:      "confirm fee wallet payment",
+				Data:      json.RawMessage("{}"),
+				Amount:    confirmFeeWallet,
+				Currency:  sellerCurrency,
 			}); txErr != nil {
-				return sharedmodel.WrapErr("db create confirm_fee wallet tx", txErr)
+				return fmt.Errorf("db create confirm_fee wallet tx: %w", txErr)
 			}
 		}
 
 		// Gateway txs are minted per-attempt below.
 		return nil
 	}); err != nil {
-		return out, sharedmodel.WrapErr("create confirm fee session and txs", err)
+		return out, fmt.Errorf("create confirm fee session and txs: %w", err)
 	}
 
 	// Step 8: Wallet debit + mark wallet tx success.
@@ -269,7 +266,7 @@ func (h *ConfirmWorkflow) Run(
 			Reference: fmt.Sprintf("tx:%s", walletTxID),
 			Note:      "confirm fee wallet payment",
 		}); dErr != nil {
-			return out, sharedmodel.WrapErr("seller wallet debit", dErr)
+			return out, fmt.Errorf("seller wallet debit: %w", dErr)
 		}
 		// Arm credit compensator AFTER debit confirmed. WalletDebit is atomic
 		// (single CTE under FOR UPDATE) → terminal failure means no debit,
@@ -290,7 +287,7 @@ func (h *ConfirmWorkflow) Run(
 			})
 			return e
 		}); mErr != nil {
-			return out, sharedmodel.WrapErr("mark confirm-fee wallet tx success", mErr)
+			return out, fmt.Errorf("mark confirm-fee wallet tx success: %w", mErr)
 		}
 	}
 
@@ -305,9 +302,7 @@ func (h *ConfirmWorkflow) Run(
 			Description:     fmt.Sprintf("Confirm fee session %s", workflowID),
 			PaymentOption:   input.PaymentOption,
 			Amount:          confirmFeeGateway,
-			FromCurrency:    sellerCurrency,
-			ToCurrency:      sellerCurrency,
-			ExchangeRate:    mustNumericOne(),
+			Currency:        sellerCurrency,
 			ErrCancelled:    ordermodel.ErrConfirmCancelled,
 			ErrExpired:      ordermodel.ErrConfirmExpired,
 		}); err != nil {
@@ -333,7 +328,23 @@ func (h *ConfirmWorkflow) Run(
 			Data:   json.RawMessage(quoteData),
 		})
 		if tErr != nil {
-			return res, sharedmodel.WrapErr("db create transport", tErr)
+			return res, fmt.Errorf("db create transport: %w", tErr)
+		}
+
+		// TODO: remove this mock when a real transport provider is wired up.
+		// Mark the seller→buyer forward leg Success immediately so the order
+		// flips to Completed in the FE without waiting for a real webhook.
+		mockData, _ := json.Marshal(map[string]any{
+			"quote": quote.Cost,
+			"mock":  "auto-delivered",
+		})
+		trRow, tErr = h.base.storage.Querier().UpdateTransportStatusByID(rctx, orderdb.UpdateTransportStatusByIDParams{
+			ID:     trRow.ID,
+			Status: orderdb.NullOrderStatus{OrderStatus: orderdb.OrderStatusSuccess, Valid: true},
+			Data:   json.RawMessage(mockData),
+		})
+		if tErr != nil {
+			return res, fmt.Errorf("mock transport success: %w", tErr)
 		}
 		res.Transport = trRow
 
@@ -347,7 +358,7 @@ func (h *ConfirmWorkflow) Run(
 			Note:             null.NewString(input.Note, input.Note != ""),
 		})
 		if oErr != nil {
-			return res, sharedmodel.WrapErr("db create order", oErr)
+			return res, fmt.Errorf("db create order: %w", oErr)
 		}
 		res.Order = order
 
@@ -355,7 +366,7 @@ func (h *ConfirmWorkflow) Run(
 			OrderID: uuid.NullUUID{UUID: order.ID, Valid: true},
 			ItemIds: input.ItemIDs,
 		}); lErr != nil {
-			return res, sharedmodel.WrapErr("db set items order id", lErr)
+			return res, fmt.Errorf("db set items order id: %w", lErr)
 		}
 
 		return res, nil
@@ -416,10 +427,10 @@ func (h *ConfirmWorkflow) RequestNewPaymentURL(
 ) (string, error) {
 	attempt, err := restate.Get[int](ctx, "payment_attempt")
 	if err != nil {
-		return "", sharedmodel.WrapErr("read payment_attempt state", err)
+		return "", fmt.Errorf("read payment_attempt state: %w", err)
 	}
 	if attempt < 1 {
-		return "", ordermodel.ErrConfirmExpired.Terminal()
+		return "", ordermodel.ErrConfirmExpired
 	}
 	_ = restate.Promise[struct{}](ctx, fmt.Sprintf("retry_%d", attempt)).Resolve(struct{}{})
 	return restate.Promise[string](ctx, fmt.Sprintf("payment_url_%d", attempt+1)).Result()
@@ -442,4 +453,19 @@ func (h *ConfirmWorkflow) CancelConfirm(
 	_ struct{},
 ) error {
 	return restate.Promise[struct{}](ctx, "user_cancel").Resolve(struct{}{})
+}
+
+type ConfirmWorkflowInput struct {
+	Account       accountmodel.AuthenticatedAccount `json:"account"`
+	ItemIDs       []int64                           `json:"item_ids" validate:"required,min=1,max=1000"`
+	UseWallet     bool                              `json:"use_wallet"`
+	WalletID      *uuid.UUID                        `json:"wallet_id,omitempty"`
+	PaymentOption string                            `json:"payment_option" validate:"max=100"`
+	Note          string                            `json:"note" validate:"max=500"`
+}
+
+type ConfirmWorkflowOutput struct {
+	Status           string    `json:"status"`
+	OrderID          uuid.UUID `json:"order_id,omitempty"`
+	ConfirmSessionID uuid.UUID `json:"confirm_session_id"`
 }

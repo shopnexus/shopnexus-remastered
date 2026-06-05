@@ -7,7 +7,7 @@ import (
 	restateclient "shopnexus-server/internal/infras/restate"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 )
 
 const serviceName = "Catalog"
@@ -31,8 +31,8 @@ func (p *CatalogRestateClient) GetProductCard(ctx context.Context, params GetPro
 	return restateclient.Call[*catalogmodel.ProductCard](ctx, p.client, serviceName, "GetProductCard", params)
 }
 
-func (p *CatalogRestateClient) ListProductCard(ctx context.Context, params ListProductCardParams) (sharedmodel.PaginateResult[catalogmodel.ProductCard], error) {
-	return restateclient.Call[sharedmodel.PaginateResult[catalogmodel.ProductCard]](ctx, p.client, serviceName, "ListProductCard", params)
+func (p *CatalogRestateClient) ListProductCard(ctx context.Context, params ListProductCardParams) (paginate.PaginateResult[catalogmodel.ProductCard], error) {
+	return restateclient.Call[paginate.PaginateResult[catalogmodel.ProductCard]](ctx, p.client, serviceName, "ListProductCard", params)
 }
 
 func (p *CatalogRestateClient) ListRecommendedProductCard(ctx context.Context, params ListRecommendedProductCardParams) ([]catalogmodel.ProductCard, error) {
@@ -43,8 +43,8 @@ func (p *CatalogRestateClient) GetProductSpu(ctx context.Context, params GetProd
 	return restateclient.Call[catalogmodel.ProductSpu](ctx, p.client, serviceName, "GetProductSpu", params)
 }
 
-func (p *CatalogRestateClient) ListProductSpu(ctx context.Context, params ListProductSpuParams) (sharedmodel.PaginateResult[catalogmodel.ProductSpu], error) {
-	return restateclient.Call[sharedmodel.PaginateResult[catalogmodel.ProductSpu]](ctx, p.client, serviceName, "ListProductSpu", params)
+func (p *CatalogRestateClient) ListProductSpu(ctx context.Context, params ListProductSpuParams) (paginate.PaginateResult[catalogmodel.ProductSpu], error) {
+	return restateclient.Call[paginate.PaginateResult[catalogmodel.ProductSpu]](ctx, p.client, serviceName, "ListProductSpu", params)
 }
 
 func (p *CatalogRestateClient) CreateProductSpu(ctx context.Context, params CreateProductSpuParams) (catalogmodel.ProductSpu, error) {
@@ -75,8 +75,8 @@ func (p *CatalogRestateClient) DeleteProductSku(ctx context.Context, params Dele
 	return restateclient.Send(ctx, p.client, serviceName, "DeleteProductSku", params)
 }
 
-func (p *CatalogRestateClient) ListComment(ctx context.Context, params ListCommentParams) (sharedmodel.PaginateResult[catalogmodel.Comment], error) {
-	return restateclient.Call[sharedmodel.PaginateResult[catalogmodel.Comment]](ctx, p.client, serviceName, "ListComment", params)
+func (p *CatalogRestateClient) ListComment(ctx context.Context, params ListCommentParams) (paginate.PaginateResult[catalogmodel.Comment], error) {
+	return restateclient.Call[paginate.PaginateResult[catalogmodel.Comment]](ctx, p.client, serviceName, "ListComment", params)
 }
 
 func (p *CatalogRestateClient) CreateComment(ctx context.Context, params CreateCommentParams) (catalogmodel.Comment, error) {
@@ -95,16 +95,16 @@ func (p *CatalogRestateClient) ListReviewableOrders(ctx context.Context, params 
 	return restateclient.Call[[]catalogmodel.ReviewableOrder](ctx, p.client, serviceName, "ListReviewableOrders", params)
 }
 
-func (p *CatalogRestateClient) ListTag(ctx context.Context, params ListTagParams) (sharedmodel.PaginateResult[catalogdb.CatalogTag], error) {
-	return restateclient.Call[sharedmodel.PaginateResult[catalogdb.CatalogTag]](ctx, p.client, serviceName, "ListTag", params)
+func (p *CatalogRestateClient) ListTag(ctx context.Context, params ListTagParams) (paginate.PaginateResult[catalogdb.CatalogTag], error) {
+	return restateclient.Call[paginate.PaginateResult[catalogdb.CatalogTag]](ctx, p.client, serviceName, "ListTag", params)
 }
 
 func (p *CatalogRestateClient) GetTag(ctx context.Context, params GetTagParams) (catalogdb.CatalogTag, error) {
 	return restateclient.Call[catalogdb.CatalogTag](ctx, p.client, serviceName, "GetTag", params)
 }
 
-func (p *CatalogRestateClient) ListCategory(ctx context.Context, params ListCategoryParams) (sharedmodel.PaginateResult[catalogmodel.Category], error) {
-	return restateclient.Call[sharedmodel.PaginateResult[catalogmodel.Category]](ctx, p.client, serviceName, "ListCategory", params)
+func (p *CatalogRestateClient) ListCategory(ctx context.Context, params ListCategoryParams) (paginate.PaginateResult[catalogmodel.Category], error) {
+	return restateclient.Call[paginate.PaginateResult[catalogmodel.Category]](ctx, p.client, serviceName, "ListCategory", params)
 }
 
 func (p *CatalogRestateClient) Search(ctx context.Context, params SearchParams) ([]catalogmodel.ProductRecommend, error) {

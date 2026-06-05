@@ -2,14 +2,13 @@ package chatmodel
 
 import (
 	"net/http"
-
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/errors"
 )
 
 // Sentinel errors for the chat module.
 var (
-	ErrConversationNotFound = sharedmodel.NewError(http.StatusNotFound, "conversation_not_found", "The conversation does not exist")
-	ErrNotParticipant       = sharedmodel.NewError(
+	ErrConversationNotFound = errors.NewError(http.StatusNotFound, "conversation_not_found", "The conversation does not exist")
+	ErrNotParticipant       = errors.NewError(
 		http.StatusForbidden,
 		"not_participant",
 		"You are not a participant in this conversation",

@@ -1,6 +1,8 @@
 package catalogbiz
 
 import (
+	"fmt"
+
 	restate "github.com/restatedev/sdk-go"
 
 	"github.com/google/uuid"
@@ -9,7 +11,6 @@ import (
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
-	sharedmodel "shopnexus-server/internal/shared/model"
 	"shopnexus-server/internal/shared/validator"
 )
 
@@ -28,13 +29,13 @@ type VendorStats struct {
 func (b *CatalogHandler) GetVendorStats(ctx restate.Context, params GetVendorStatsParams) (VendorStats, error) {
 	var zero VendorStats
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("validate get vendor stats", err)
+		return zero, fmt.Errorf("validate get vendor stats: %w", err)
 	}
 
 	// Get product count + average rating from catalog DB
 	stats, err := b.storage.Querier().GetVendorProductStats(ctx, params.AccountID)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db get vendor product stats", err)
+		return zero, fmt.Errorf("db get vendor product stats: %w", err)
 	}
 
 	// Get total sold from inventory via vendor's SKUs
@@ -45,7 +46,7 @@ func (b *CatalogHandler) GetVendorStats(ctx restate.Context, params GetVendorSta
 			AccountID: []uuid.UUID{params.AccountID},
 		})
 		if err != nil {
-			return zero, sharedmodel.WrapErr("db list vendor spus", err)
+			return zero, fmt.Errorf("db list vendor spus: %w", err)
 		}
 
 		spuIDs := lo.Map(spuRows, func(r catalogdb.SearchCountProductSpuRow, _ int) uuid.UUID {
@@ -57,7 +58,7 @@ func (b *CatalogHandler) GetVendorStats(ctx restate.Context, params GetVendorSta
 			SpuID: spuIDs,
 		})
 		if err != nil {
-			return zero, sharedmodel.WrapErr("db list vendor skus", err)
+			return zero, fmt.Errorf("db list vendor skus: %w", err)
 		}
 
 		if len(skus) > 0 {
@@ -67,7 +68,7 @@ func (b *CatalogHandler) GetVendorStats(ctx restate.Context, params GetVendorSta
 				RefID:   skuIDs,
 			})
 			if err != nil {
-				return zero, sharedmodel.WrapErr("list vendor stock", err)
+				return zero, fmt.Errorf("list vendor stock: %w", err)
 			}
 			for _, stock := range stocks.Data {
 				totalSold += stock.Taken

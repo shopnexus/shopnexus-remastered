@@ -3,15 +3,15 @@ package payment
 import (
 	"context"
 	"encoding/json"
-	"errors"
 
+	stderrors "errors"
 	sharedmodel "shopnexus-server/internal/shared/model"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
 
-var ErrNotSupported = errors.New("operation not supported by this payment provider")
+var ErrNotSupported = stderrors.New("operation not supported by this payment provider")
 
 type Status string
 
@@ -58,8 +58,10 @@ type TokenizeResult struct {
 }
 
 type Notification struct {
-	RefID  string `json:"ref_id" validate:"required"`
-	Status Status `json:"status" validate:"required"`
+	RefID        string `json:"ref_id" validate:"required"`
+	Status       Status `json:"status" validate:"required"`
+	Amount       int64  `json:"amount,omitempty"`
+	ProviderTxID string `json:"provider_tx_id,omitempty"`
 }
 
 type NotificationHandler func(ctx context.Context, n Notification) error

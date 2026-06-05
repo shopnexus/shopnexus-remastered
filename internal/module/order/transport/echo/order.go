@@ -11,10 +11,11 @@ import (
 	"shopnexus-server/internal/infras/ratelimit"
 	orderbiz "shopnexus-server/internal/module/order/biz"
 	orderconfig "shopnexus-server/internal/module/order/config"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
+	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/provider/transport"
 	authclaims "shopnexus-server/internal/shared/claims"
 	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/response"
 
 	"github.com/google/uuid"
@@ -37,9 +38,6 @@ func NewHandler(e *echo.Echo, biz orderbiz.OrderBiz, handler *orderbiz.OrderHand
 	}
 	g := e.Group("/api/v1/order")
 
-	// Per-endpoint rate limits on write-heavy / abuse-prone operations. Read
-	// endpoints are uncapped. Limits are per authenticated account (or IP if
-	// unauthenticated) and reset every minute.
 	rlCheckout := rl.Middleware("checkout", 10, time.Minute)
 	rlRefund := rl.Middleware("refund", 5, time.Minute)
 	rlDispute := rl.Middleware("dispute", 3, time.Minute)
@@ -50,9 +48,11 @@ func NewHandler(e *echo.Echo, biz orderbiz.OrderBiz, handler *orderbiz.OrderHand
 	g.DELETE("/cart", h.ClearCart)
 
 	// Buyer - Pending
+	g.POST("/buyer/quote-transport", h.QuoteBuyerTransport)
 	g.POST("/buyer/checkout", h.BuyerCheckout, rlCheckout)
 	g.POST("/buyer/checkout/:sessionID/cancel", h.CancelBuyerCheckout)
 	g.POST("/buyer/checkout/:sessionID/payment-url", h.EnsureBuyerCheckoutPaymentURL, rlCheckout)
+	g.GET("/buyer/checkout-summary/:txID", h.GetCheckoutSummary)
 	g.GET("/buyer/pending-items", h.ListBuyerPendingItems)
 	g.GET("/buyer/pending-orders", h.ListBuyerPendingOrders)
 	g.DELETE("/buyer/pending-items/:id", h.CancelBuyerPending)
@@ -87,17 +87,19 @@ func NewHandler(e *echo.Echo, biz orderbiz.OrderBiz, handler *orderbiz.OrderHand
 	// Seller - Refund
 	g.GET("/seller/refund", h.ListSellerRefunds)
 
-	// Refund stage actions
+	// Refund v2 — seller decides (or auto-accept), may dispute to admin
 	refund := g.Group("/refunds/:id")
-	refund.POST("/accept", h.AcceptRefundStage1, rlRefund)
-	refund.POST("/approve", h.ApproveRefundStage2, rlRefund)
-	refund.POST("/reject", h.RejectRefund, rlRefund)
+	refund.POST("/approve", h.SellerApproveRefund, rlRefund)
+	refund.POST("/dispute", h.SellerDisputeRefund, rlDispute)
+	refund.POST("/withdraw", h.WithdrawBuyerRefund, rlRefund)
 
-	// Dispute
+	// Dispute listing + admin resolution
 	g.GET("/disputes", h.ListRefundDisputes)
 	g.GET("/disputes/:disputeID", h.GetRefundDispute)
-	g.POST("/refunds/:refundID/disputes", h.CreateRefundDispute, rlDispute)
 	g.GET("/refunds/:refundID/disputes", h.ListRefundDisputesByRefund)
+	// Admin-only — biz layer rejects with ORDER_ADMIN_REQUIRED for non-admin callers.
+	g.POST("/disputes/:disputeID/uphold", h.AdminUpholdDispute, rlDispute)
+	g.POST("/disputes/:disputeID/dismiss", h.AdminDismissDispute, rlDispute)
 
 	// registered tracks webhook idempotency keys returned by WireWebhooks so
 	// providers that share an endpoint (e.g., GHTK express/standard/economy)
@@ -126,7 +128,7 @@ func NewHandler(e *echo.Echo, biz orderbiz.OrderBiz, handler *orderbiz.OrderHand
 		}
 		return biz.OnTransportResult(ctx, orderbiz.OnTransportResultParams{
 			TrackingID: result.TransportID,
-			Status:     orderdb.OrderStatus(result.Status),
+			Status:     ordermodel.Status(result.Status),
 			Data:       data,
 		})
 	}
@@ -174,6 +176,35 @@ func (h *Handler) GetBuyerOrder(c echo.Context) error {
 	return response.FromDTO(c.Response().Writer, http.StatusOK, result)
 }
 
+type GetCheckoutSummaryRequest struct {
+	TxID uuid.UUID `param:"txID" validate:"required"`
+}
+
+func (h *Handler) GetCheckoutSummary(c echo.Context) error {
+	var req GetCheckoutSummaryRequest
+	if err := c.Bind(&req); err != nil {
+		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
+	}
+	if err := c.Validate(&req); err != nil {
+		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
+	}
+
+	claims, err := authclaims.GetClaims(c.Request())
+	if err != nil {
+		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
+	}
+
+	result, err := h.biz.GetCheckoutSummary(c.Request().Context(), orderbiz.GetCheckoutSummaryParams{
+		AccountID: claims.Account.ID,
+		TxID:      req.TxID,
+	})
+	if err != nil {
+		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
+	}
+
+	return response.FromDTO(c.Response().Writer, http.StatusOK, result)
+}
+
 type GetSellerOrderRequest struct {
 	ID uuid.UUID `param:"id" validate:"required"`
 }
@@ -198,7 +229,7 @@ func (h *Handler) GetSellerOrder(c echo.Context) error {
 
 type ListSellerConfirmedRequest struct {
 	Search null.String `query:"search"`
-	sharedmodel.PaginationParams
+	paginate.Params
 }
 
 func (h *Handler) ListSellerConfirmed(c echo.Context) error {
@@ -216,15 +247,62 @@ func (h *Handler) ListSellerConfirmed(c echo.Context) error {
 	}
 
 	result, err := h.biz.ListSellerConfirmed(c.Request().Context(), orderbiz.ListSellerConfirmedParams{
-		SellerID:         claims.Account.ID,
-		Search:           req.Search,
-		PaginationParams: req.PaginationParams.Constrain(),
+		SellerID: claims.Account.ID,
+		Search:   req.Search,
+		Params:   req.Params.Constrain(),
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
 
 	return response.FromPaginate(c.Response().Writer, result)
+}
+
+// --- Buyer Quote Transport ---
+
+// QuoteBuyerTransportRequest mirrors BuyerCheckoutRequest minus the payment
+// fields — the preview only needs cart contents + destination to compute the
+// per-item shipping cost.
+type QuoteBuyerTransportRequest struct {
+	Address string                `json:"address" validate:"required,min=1,max=500"`
+	Items   []CheckoutItemRequest `json:"items" validate:"required,min=1,dive"`
+}
+
+// QuoteBuyerTransport returns per-item shipping cost previews so the cart
+// summary can show a real shipping total before the buyer submits checkout.
+func (h *Handler) QuoteBuyerTransport(c echo.Context) error {
+	var req QuoteBuyerTransportRequest
+	if err := c.Bind(&req); err != nil {
+		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
+	}
+	if err := c.Validate(&req); err != nil {
+		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
+	}
+
+	claims, err := authclaims.GetClaims(c.Request())
+	if err != nil {
+		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
+	}
+
+	items := make([]orderbiz.CheckoutItem, 0, len(req.Items))
+	for _, item := range req.Items {
+		items = append(items, orderbiz.CheckoutItem{
+			SkuID:           item.SkuID,
+			Quantity:        item.Quantity,
+			TransportOption: item.TransportOption,
+			Note:            item.Note,
+		})
+	}
+
+	result, err := h.biz.QuoteTransport(c.Request().Context(), orderbiz.QuoteTransportParams{
+		Account: claims.Account,
+		Address: req.Address,
+		Items:   items,
+	})
+	if err != nil {
+		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
+	}
+	return response.FromDTO(c.Response().Writer, http.StatusOK, result)
 }
 
 // --- Buyer Checkout ---
@@ -384,7 +462,7 @@ func (h *Handler) CancelBuyerCheckout(c echo.Context) error {
 // --- Buyer Pending Items ---
 
 type ListBuyerPendingItemsRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 }
 
 func (h *Handler) ListBuyerPendingItems(c echo.Context) error {
@@ -402,8 +480,8 @@ func (h *Handler) ListBuyerPendingItems(c echo.Context) error {
 	}
 
 	result, err := h.biz.ListBuyerPendingItems(c.Request().Context(), orderbiz.ListBuyerPendingItemsParams{
-		AccountID:        claims.Account.ID,
-		PaginationParams: req.PaginationParams.Constrain(),
+		AccountID: claims.Account.ID,
+		Params:    req.Params.Constrain(),
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
@@ -437,7 +515,7 @@ func (h *Handler) CancelBuyerPending(c echo.Context) error {
 // --- Buyer Pending Orders ---
 
 type ListBuyerPendingOrdersRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 }
 
 func (h *Handler) ListBuyerPendingOrders(c echo.Context) error {
@@ -453,8 +531,8 @@ func (h *Handler) ListBuyerPendingOrders(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 	result, err := h.biz.ListBuyerPendingOrders(c.Request().Context(), orderbiz.ListBuyerPendingOrdersParams{
-		BuyerID:          claims.Account.ID,
-		PaginationParams: req.PaginationParams.Constrain(),
+		BuyerID: claims.Account.ID,
+		Params:  req.Params.Constrain(),
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
@@ -465,7 +543,7 @@ func (h *Handler) ListBuyerPendingOrders(c echo.Context) error {
 // --- Buyer Completed Orders ---
 
 type ListBuyerCompletedOrdersRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 }
 
 func (h *Handler) ListBuyerCompletedOrders(c echo.Context) error {
@@ -481,8 +559,8 @@ func (h *Handler) ListBuyerCompletedOrders(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 	result, err := h.biz.ListBuyerCompletedOrders(c.Request().Context(), orderbiz.ListBuyerCompletedOrdersParams{
-		BuyerID:          claims.Account.ID,
-		PaginationParams: req.PaginationParams.Constrain(),
+		BuyerID: claims.Account.ID,
+		Params:  req.Params.Constrain(),
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
@@ -493,7 +571,7 @@ func (h *Handler) ListBuyerCompletedOrders(c echo.Context) error {
 // --- Buyer Cancelled Orders ---
 
 type ListBuyerCancelledOrdersRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 }
 
 func (h *Handler) ListBuyerCancelledOrders(c echo.Context) error {
@@ -509,8 +587,8 @@ func (h *Handler) ListBuyerCancelledOrders(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 	result, err := h.biz.ListBuyerCancelledOrders(c.Request().Context(), orderbiz.ListBuyerCancelledOrdersParams{
-		BuyerID:          claims.Account.ID,
-		PaginationParams: req.PaginationParams.Constrain(),
+		BuyerID: claims.Account.ID,
+		Params:  req.Params.Constrain(),
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
@@ -521,7 +599,7 @@ func (h *Handler) ListBuyerCancelledOrders(c echo.Context) error {
 // --- Buyer Cancelled Items ---
 
 type ListBuyerCancelledItemsRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 }
 
 func (h *Handler) ListBuyerCancelledItems(c echo.Context) error {
@@ -537,8 +615,8 @@ func (h *Handler) ListBuyerCancelledItems(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 	result, err := h.biz.ListBuyerCancelledItems(c.Request().Context(), orderbiz.ListBuyerCancelledItemsParams{
-		AccountID:        claims.Account.ID,
-		PaginationParams: req.PaginationParams.Constrain(),
+		AccountID: claims.Account.ID,
+		Params:    req.Params.Constrain(),
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)

@@ -2,9 +2,8 @@ package idempotency
 
 import (
 	"context"
-	"errors"
-
-	sharedmodel "shopnexus-server/internal/shared/model"
+	stderrors "errors"
+	"shopnexus-server/internal/shared/errors"
 
 	"github.com/google/uuid"
 )
@@ -22,7 +21,7 @@ type querier interface {
 
 func (k Keys) Apply(ctx context.Context, q querier) error {
 	if k.ClaimKey != uuid.Nil && k.ConsumeKey != uuid.Nil {
-		return errors.New("both claim and consume idempotency keys provided")
+		return stderrors.New("both claim and consume idempotency keys provided")
 	}
 
 	switch {
@@ -32,7 +31,7 @@ func (k Keys) Apply(ctx context.Context, q querier) error {
 			return err
 		}
 		if rows == 0 {
-			return sharedmodel.ErrDuplicateIdempotencyKey.Terminal()
+			return errors.ErrDuplicateIdempotencyKey
 		}
 	case k.ConsumeKey != uuid.Nil:
 		rows, err := q.ConsumeIdempotencyKey(ctx, k.ConsumeKey)

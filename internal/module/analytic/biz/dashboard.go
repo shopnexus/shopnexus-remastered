@@ -1,6 +1,7 @@
 package analyticbiz
 
 import (
+	"fmt"
 	"time"
 
 	restate "github.com/restatedev/sdk-go"
@@ -8,7 +9,6 @@ import (
 	"github.com/google/uuid"
 
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
-	sharedmodel "shopnexus-server/internal/shared/model"
 )
 
 // Local param/result types that mirror the Order and Catalog biz structs via JSON.
@@ -112,7 +112,7 @@ func (b *AnalyticHandler) GetSellerDashboard(
 			EndDate:   params.EndDate,
 		})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("get current order stats", err)
+		return zero, fmt.Errorf("get current order stats: %w", err)
 	}
 
 	// Previous period stats (for comparison)
@@ -123,7 +123,7 @@ func (b *AnalyticHandler) GetSellerDashboard(
 			EndDate:   prevEnd,
 		})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("get previous order stats", err)
+		return zero, fmt.Errorf("get previous order stats: %w", err)
 	}
 
 	// Time series
@@ -135,7 +135,7 @@ func (b *AnalyticHandler) GetSellerDashboard(
 			Granularity: params.Granularity,
 		})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("get order time series", err)
+		return zero, fmt.Errorf("get order time series: %w", err)
 	}
 
 	// Pending actions
@@ -144,7 +144,7 @@ func (b *AnalyticHandler) GetSellerDashboard(
 			SellerID: params.SellerID,
 		})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("get pending actions", err)
+		return zero, fmt.Errorf("get pending actions: %w", err)
 	}
 
 	// Top products
@@ -156,7 +156,7 @@ func (b *AnalyticHandler) GetSellerDashboard(
 			Limit:     5,
 		})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("get top products", err)
+		return zero, fmt.Errorf("get top products: %w", err)
 	}
 
 	// Average rating from catalog
@@ -165,7 +165,7 @@ func (b *AnalyticHandler) GetSellerDashboard(
 			AccountID: params.SellerID,
 		})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("get vendor stats", err)
+		return zero, fmt.Errorf("get vendor stats: %w", err)
 	}
 
 	// Build charts

@@ -8,7 +8,7 @@ import (
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	commonbiz "shopnexus-server/internal/module/common/biz"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/pgsqlc"
 
 	"github.com/google/uuid"
@@ -25,7 +25,7 @@ type AccountBiz interface {
 
 	// Profile
 	GetProfile(ctx context.Context, params GetProfileParams) (accountmodel.Profile, error)
-	ListProfile(ctx context.Context, params ListProfileParams) (sharedmodel.PaginateResult[accountmodel.Profile], error)
+	ListProfile(ctx context.Context, params ListProfileParams) (paginate.PaginateResult[accountmodel.Profile], error)
 	UpdateProfile(ctx context.Context, params UpdateProfileParams) (accountmodel.Profile, error)
 	UpdateCountry(ctx context.Context, params UpdateCountryParams) error
 
@@ -51,14 +51,14 @@ type AccountBiz interface {
 	ListFavorite(
 		ctx context.Context,
 		params ListFavoriteParams,
-	) (sharedmodel.PaginateResult[accountdb.AccountFavorite], error)
+	) (paginate.PaginateResult[accountdb.AccountFavorite], error)
 	CheckFavorites(ctx context.Context, params CheckFavoritesParams) (map[uuid.UUID]bool, error)
 
 	// Notification
 	ListNotification(
 		ctx context.Context,
 		params ListNotificationParams,
-	) (sharedmodel.PaginateResult[accountdb.AccountNotification], error)
+	) (paginate.PaginateResult[accountdb.AccountNotification], error)
 	CountUnread(ctx context.Context, params CountUnreadParams) (int64, error)
 	MarkRead(ctx context.Context, params MarkReadParams) error
 	MarkAllRead(ctx context.Context, params MarkAllReadParams) error

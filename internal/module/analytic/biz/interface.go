@@ -8,7 +8,7 @@ import (
 	analyticdb "shopnexus-server/internal/module/analytic/db/sqlc"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
 	promotionbiz "shopnexus-server/internal/module/promotion/biz"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/pgsqlc"
 
 	"github.com/google/uuid"
@@ -26,7 +26,7 @@ type AnalyticBiz interface {
 	GetProductPopularity(ctx context.Context, spuID uuid.UUID) (analyticdb.AnalyticProductPopularity, error)
 	ListTopProductPopularity(
 		ctx context.Context,
-		params sharedmodel.PaginationParams,
+		params paginate.Params,
 	) ([]analyticdb.AnalyticProductPopularity, error)
 
 	// Dashboard

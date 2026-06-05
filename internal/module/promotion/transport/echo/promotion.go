@@ -11,10 +11,9 @@ import (
 	"github.com/samber/lo"
 
 	promotionbiz "shopnexus-server/internal/module/promotion/biz"
-	promotiondb "shopnexus-server/internal/module/promotion/db/sqlc"
 	promotionmodel "shopnexus-server/internal/module/promotion/model"
 	authclaims "shopnexus-server/internal/shared/claims"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/response"
 )
 
@@ -40,8 +39,8 @@ func NewHandler(e *echo.Echo, biz promotionbiz.PromotionBiz) *Handler {
 // --- Shared types ---
 
 type PromotionRefRequest struct {
-	RefType promotiondb.PromotionRefType `json:"ref_type" validate:"required"`
-	RefID   uuid.UUID                    `json:"ref_id"   validate:"required"`
+	RefType promotionmodel.RefType `json:"ref_type" validate:"required"`
+	RefID   uuid.UUID              `json:"ref_id"   validate:"required"`
 }
 
 func mapRefs(reqs []PromotionRefRequest) []promotionmodel.PromotionRef {
@@ -81,7 +80,7 @@ func (h *Handler) GetPromotion(c echo.Context) error {
 // --- List ---
 
 type ListPromotionRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 }
 
 func (h *Handler) ListPromotion(c echo.Context) error {
@@ -94,7 +93,7 @@ func (h *Handler) ListPromotion(c echo.Context) error {
 	}
 
 	result, err := h.biz.ListPromotion(c.Request().Context(), promotionbiz.ListPromotionParams{
-		PaginationParams: req.PaginationParams.Constrain(),
+		Params: req.Params.Constrain(),
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
@@ -107,7 +106,7 @@ func (h *Handler) ListPromotion(c echo.Context) error {
 
 type CreatePromotionRequest struct {
 	Code        string                    `json:"code"         validate:"required"`
-	Type        promotiondb.PromotionType `json:"type"         validate:"required"`
+	Type        promotionmodel.Type       `json:"type"         validate:"required"`
 	Title       string                    `json:"title"        validate:"required"`
 	Description null.String               `json:"description"  validate:"omitnil"`
 	IsEnabled   bool                      `json:"is_enabled"`

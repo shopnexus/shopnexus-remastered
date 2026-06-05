@@ -154,3 +154,32 @@ type ChatMessage struct {
 	Data           json.RawMessage   `json:"data"`
 	DateCreated    time.Time         `json:"date_created"`
 }
+
+func (n NullChatMessageStatus) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.ChatMessageStatus)
+}
+func (n *NullChatMessageStatus) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.ChatMessageStatus)
+}
+func (n NullChatMessageType) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.ChatMessageType)
+}
+func (n *NullChatMessageType) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.ChatMessageType)
+}

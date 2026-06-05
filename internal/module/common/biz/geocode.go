@@ -4,12 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	commonmodel "shopnexus-server/internal/module/common/model"
 	"shopnexus-server/internal/provider/geocoding"
-	sharedmodel "shopnexus-server/internal/shared/model"
 
 	restate "github.com/restatedev/sdk-go"
 )
@@ -33,9 +33,9 @@ func (b *CommonHandler) ReverseGeocode(ctx restate.Context, params ReverseGeocod
 		result, err := b.geocoder.ReverseGeocode(ctx, params.Latitude, params.Longitude)
 		if err != nil {
 			if errors.Is(err, geocoding.ErrNoResults) {
-				return geocoding.Result{}, commonmodel.ErrAddressNotFound.Terminal()
+				return geocoding.Result{}, commonmodel.ErrAddressNotFound
 			}
-			return geocoding.Result{}, sharedmodel.WrapErr("reverse geocode", err)
+			return geocoding.Result{}, fmt.Errorf("reverse geocode: %w", err)
 		}
 		return result, nil
 	})
@@ -60,9 +60,9 @@ func (b *CommonHandler) ForwardGeocode(ctx restate.Context, params ForwardGeocod
 		result, err := b.geocoder.ForwardGeocode(ctx, params.Address)
 		if err != nil {
 			if errors.Is(err, geocoding.ErrNoResults) {
-				return geocoding.Result{}, commonmodel.ErrAddressNotFound.Terminal()
+				return geocoding.Result{}, commonmodel.ErrAddressNotFound
 			}
-			return geocoding.Result{}, sharedmodel.WrapErr("forward geocode", err)
+			return geocoding.Result{}, fmt.Errorf("forward geocode: %w", err)
 		}
 
 		if result.Address != "" {
@@ -80,14 +80,14 @@ func (b *CommonHandler) ForwardGeocode(ctx restate.Context, params ForwardGeocod
 // blank, geocoding fails, or no country was resolved.
 func (b *CommonHandler) ResolveCountry(ctx restate.Context, address string) (string, error) {
 	if strings.TrimSpace(address) == "" {
-		return "", commonmodel.ErrEmptyAddress.Terminal()
+		return "", commonmodel.ErrEmptyAddress
 	}
 	result, err := b.ForwardGeocode(ctx, ForwardGeocodeParams{Address: address})
 	if err != nil {
-		return "", sharedmodel.WrapErr("resolve address country", err)
+		return "", fmt.Errorf("resolve address country: %w", err)
 	}
 	if result.CountryCode == "" {
-		return "", commonmodel.ErrAddressCountryUnresolved.Terminal()
+		return "", commonmodel.ErrAddressCountryUnresolved
 	}
 	return result.CountryCode, nil
 }
@@ -101,7 +101,7 @@ func (b *CommonHandler) SearchGeocode(ctx restate.Context, params SearchGeocodeP
 	return restate.Run(ctx, func(ctx restate.RunContext) ([]geocoding.Result, error) {
 		results, err := b.geocoder.Search(ctx, params.Query, params.Limit)
 		if err != nil {
-			return nil, sharedmodel.WrapErr("search geocode", err)
+			return nil, fmt.Errorf("search geocode: %w", err)
 		}
 		return results, nil
 	})

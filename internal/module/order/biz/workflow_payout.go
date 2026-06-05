@@ -11,7 +11,7 @@ import (
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/saga"
 
 	"github.com/google/uuid"
@@ -56,13 +56,16 @@ func (h *PayoutWorkflow) Run(
 	// so they no-op once the row reaches a final state — safe to retry.
 	saga.Defer("mark_session_and_txs_failed", func(ctx restate.Context) error {
 		return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-			return markSessionAndTxsFailed(
-				rctx,
-				h.base.storage.Querier(),
-				sessionID,
-				[]uuid.UUID{payoutTxID},
-				"payout saga compensation",
-			)
+			if _, e := h.base.storage.Querier().MarkPaymentSessionFailed(rctx, sessionID); e != nil {
+				return fmt.Errorf("mark session failed: %w", e)
+			}
+			if e := h.base.storage.Querier().MarkTransactionsFailed(rctx, orderdb.MarkTransactionsFailedParams{
+				ID:    []uuid.UUID{payoutTxID},
+				Error: null.StringFrom("payout saga compensation"),
+			}); e != nil {
+				return fmt.Errorf("mark txs failed: %w", e)
+			}
+			return nil
 		})
 	})
 	if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
@@ -70,7 +73,7 @@ func (h *PayoutWorkflow) Run(
 			rctx,
 			orderdb.CreateDefaultPaymentSessionParams{
 				ID:          sessionID,
-				Kind:        SessionKindSellerPayout,
+				Kind:        ordermodel.SessionKindSellerPayout,
 				Status:      orderdb.OrderStatusPending,
 				FromID:      uuid.NullUUID{},
 				ToID:        uuid.NullUUID{UUID: input.SellerID, Valid: true},
@@ -81,7 +84,7 @@ func (h *PayoutWorkflow) Run(
 				DatePaid:    null.Time{},
 				DateExpired: time.Now().Add(escrowWindow),
 			}); sErr != nil {
-			return sharedmodel.WrapErr("db create payout session", sErr)
+			return fmt.Errorf("db create payout session: %w", sErr)
 		}
 		if _, txErr := h.base.storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
 			ID:            payoutTxID,
@@ -92,18 +95,16 @@ func (h *PayoutWorkflow) Run(
 			PaymentOption: null.String{},
 			Data:          json.RawMessage("{}"),
 			Amount:        input.PaidTotal,
-			FromCurrency:  input.Currency,
-			ToCurrency:    input.Currency,
-			ExchangeRate:  mustNumericOne(),
+			Currency:      input.Currency,
 			ReversesID:    uuid.NullUUID{},
 			DateSettled:   null.Time{},
 			DateExpired:   null.Time{},
 		}); txErr != nil {
-			return sharedmodel.WrapErr("db create payout tx", txErr)
+			return fmt.Errorf("db create payout tx: %w", txErr)
 		}
 		return nil
 	}); err != nil {
-		return out, sharedmodel.WrapErr("init payout session", err)
+		return out, fmt.Errorf("init payout session: %w", err)
 	}
 
 	deadline := time.Now().Add(escrowWindow)
@@ -123,7 +124,7 @@ func (h *PayoutWorkflow) Run(
 			}, nil
 		})
 		if snapErr != nil {
-			return out, sharedmodel.WrapErr("reload refund snapshot", snapErr)
+			return out, fmt.Errorf("reload refund snapshot: %w", snapErr)
 		}
 
 		switch {
@@ -135,7 +136,7 @@ func (h *PayoutWorkflow) Run(
 			// stuck Pending forever).
 			if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
 				if _, e := h.base.storage.Querier().MarkPaymentSessionCancelled(rctx, sessionID); e != nil {
-					return sharedmodel.WrapErr("mark payout session cancelled", e)
+					return fmt.Errorf("mark payout session cancelled: %w", e)
 				}
 				return nil
 			}); err != nil {
@@ -155,16 +156,16 @@ func (h *PayoutWorkflow) Run(
 				if _, e := h.base.storage.Querier().MarkPaymentSessionSuccess(rctx, orderdb.MarkPaymentSessionSuccessParams{
 					ID: sessionID,
 				}); e != nil {
-					return sharedmodel.WrapErr("mark payout session success", e)
+					return fmt.Errorf("mark payout session success: %w", e)
 				}
 				if _, e := h.base.storage.Querier().MarkTransactionSuccess(rctx, orderdb.MarkTransactionSuccessParams{
 					ID: payoutTxID,
 				}); e != nil {
-					return sharedmodel.WrapErr("mark payout tx success", e)
+					return fmt.Errorf("mark payout tx success: %w", e)
 				}
 				return nil
 			}); err != nil {
-				return out, sharedmodel.WrapErr("mark payout success", err)
+				return out, fmt.Errorf("mark payout success: %w", err)
 			}
 			// Saga stays armed (no Clear). The Pending-guarded compensator
 			// no-ops on the now-Success rows, so a terminal failure of the
@@ -177,7 +178,7 @@ func (h *PayoutWorkflow) Run(
 				Reference: fmt.Sprintf("payout-session:%s", sessionID),
 				Note:      "escrow released",
 			}); err != nil {
-				return out, sharedmodel.WrapErr("seller wallet credit", err)
+				return out, fmt.Errorf("seller wallet credit: %w", err)
 			}
 			notifySellerPayoutReleased(ctx, input.SellerID, input.OrderID)
 			out.Outcome = "released"
@@ -221,7 +222,7 @@ func (h *PayoutWorkflow) OnRefundChanged(
 ) error {
 	iter, err := restate.Get[int](ctx, "refund_iter")
 	if err != nil {
-		return sharedmodel.WrapErr("read refund_iter state", err)
+		return fmt.Errorf("read refund_iter state: %w", err)
 	}
 	// iter == 0 means Run hasn't started its wait loop yet — the next
 	// iteration's reload will pick up the change anyway, so no-op.
@@ -253,4 +254,23 @@ func notifySellerPayoutCancelled(ctx restate.WorkflowContext, sellerID, orderID 
 		Content:   "An approved refund has cancelled the escrow payout for this order.",
 		Metadata:  meta,
 	})
+}
+
+const escrowWindow = 7 * 24 * time.Hour
+
+type PayoutInput struct {
+	OrderID   uuid.UUID `json:"order_id"`
+	SellerID  uuid.UUID `json:"seller_id"`
+	PaidTotal int64     `json:"paid_total"`
+	Currency  string    `json:"currency"`
+}
+
+type PayoutOutput struct {
+	OrderID uuid.UUID `json:"order_id"`
+	Outcome string    `json:"outcome"`
+}
+
+type RefundSnapshot struct {
+	HasActiveRefund    bool `json:"has_active_refund"`
+	LastRefundApproved bool `json:"last_refund_approved"`
 }

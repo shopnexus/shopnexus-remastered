@@ -6,7 +6,7 @@ import (
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	authclaims "shopnexus-server/internal/shared/claims"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/response"
 
 	"github.com/google/uuid"
@@ -15,7 +15,7 @@ import (
 )
 
 type ListProductSpuRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 
 	Search     null.String `query:"search"      validate:"omitnil"`
 	Slug       []string    `query:"slug"        validate:"omitempty" comma_separated:"true"`
@@ -42,13 +42,13 @@ func (h *Handler) ListProductSpu(c echo.Context) error {
 	}
 
 	result, err := h.biz.ListProductSpu(c.Request().Context(), catalogbiz.ListProductSpuParams{
-		PaginationParams: req.PaginationParams.Constrain(),
-		Account:          claims.Account,
-		Search:           req.Search,
-		Slug:             req.Slug,
-		AccountID:        accountID,
-		CategoryID:       req.CategoryID,
-		IsEnabled:        req.IsEnabled,
+		Params:     req.Params.Constrain(),
+		Account:    claims.Account,
+		Search:     req.Search,
+		Slug:       req.Slug,
+		AccountID:  accountID,
+		CategoryID: req.CategoryID,
+		IsEnabled:  req.IsEnabled,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)

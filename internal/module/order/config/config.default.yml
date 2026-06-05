@@ -30,19 +30,17 @@ redis:
 
 order:
   paymentExpiryDays: 30
+  returnUrl: ""
 
 vnpay:
   tmnCode: ""
   hashSecret: ""
-  returnUrl: ""
 
 sepay:
   merchantId: ""
   secretKey: ""
   ipnSecretKey: ""
-  successUrl: ""
-  errorUrl: ""
-  cancelUrl: ""
+  publicBaseUrl: ""
   sandbox: true
 
 cardPayment:

@@ -1,6 +1,7 @@
 package orderbiz
 
 import (
+	"fmt"
 	"time"
 
 	restate "github.com/restatedev/sdk-go"
@@ -8,7 +9,6 @@ import (
 	"github.com/google/uuid"
 
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
-	sharedmodel "shopnexus-server/internal/shared/model"
 )
 
 // --- Param/Result structs ---
@@ -63,7 +63,7 @@ type SellerTopProduct struct {
 
 // --- Implementations ---
 
-func (b *OrderHandler) GetSellerOrderStats(
+func (b *dashboardHandler) GetSellerOrderStats(
 	ctx restate.Context,
 	params GetSellerOrderStatsParams,
 ) (SellerOrderStats, error) {
@@ -73,7 +73,7 @@ func (b *OrderHandler) GetSellerOrderStats(
 		EndAt:    params.EndDate,
 	})
 	if err != nil {
-		return SellerOrderStats{}, sharedmodel.WrapErr("get seller order stats", err)
+		return SellerOrderStats{}, fmt.Errorf("get seller order stats: %w", err)
 	}
 	return SellerOrderStats{
 		TotalRevenue: row.TotalRevenue,
@@ -82,7 +82,7 @@ func (b *OrderHandler) GetSellerOrderStats(
 	}, nil
 }
 
-func (b *OrderHandler) GetSellerOrderTimeSeries(
+func (b *dashboardHandler) GetSellerOrderTimeSeries(
 	ctx restate.Context,
 	params GetSellerOrderTimeSeriesParams,
 ) ([]SellerOrderTimeSeriesPoint, error) {
@@ -93,7 +93,7 @@ func (b *OrderHandler) GetSellerOrderTimeSeries(
 		EndAt:       params.EndDate,
 	})
 	if err != nil {
-		return nil, sharedmodel.WrapErr("get seller order time series", err)
+		return nil, fmt.Errorf("get seller order time series: %w", err)
 	}
 
 	points := make([]SellerOrderTimeSeriesPoint, len(rows))
@@ -107,13 +107,13 @@ func (b *OrderHandler) GetSellerOrderTimeSeries(
 	return points, nil
 }
 
-func (b *OrderHandler) GetSellerPendingActions(
+func (b *dashboardHandler) GetSellerPendingActions(
 	ctx restate.Context,
 	params GetSellerPendingActionsParams,
 ) (SellerPendingActions, error) {
 	row, err := b.storage.Querier().GetSellerPendingActions(ctx, params.SellerID)
 	if err != nil {
-		return SellerPendingActions{}, sharedmodel.WrapErr("get seller pending actions", err)
+		return SellerPendingActions{}, fmt.Errorf("get seller pending actions: %w", err)
 	}
 	return SellerPendingActions{
 		PendingItems:   row.PendingItems,
@@ -121,7 +121,7 @@ func (b *OrderHandler) GetSellerPendingActions(
 	}, nil
 }
 
-func (b *OrderHandler) GetSellerTopProducts(
+func (b *dashboardHandler) GetSellerTopProducts(
 	ctx restate.Context,
 	params GetSellerTopProductsParams,
 ) ([]SellerTopProduct, error) {
@@ -136,7 +136,7 @@ func (b *OrderHandler) GetSellerTopProducts(
 		TopLimit: limit,
 	})
 	if err != nil {
-		return nil, sharedmodel.WrapErr("get seller top products", err)
+		return nil, fmt.Errorf("get seller top products: %w", err)
 	}
 
 	products := make([]SellerTopProduct, len(rows))

@@ -7,7 +7,6 @@ type Config struct {
 	Redis    config.Redis    `mapstructure:"redis"`
 	Log      config.Log      `mapstructure:"log"`
 	Restate  config.Restate  `mapstructure:"restate"`
-	AppName  string          `mapstructure:"appName" validate:"required"`
 	JWT      JWT             `mapstructure:"jwt"`
 }
 

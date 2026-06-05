@@ -2,6 +2,7 @@ package accountbiz
 
 import (
 	"encoding/json"
+	"fmt"
 
 	restate "github.com/restatedev/sdk-go"
 
@@ -12,21 +13,21 @@ import (
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	commonbiz "shopnexus-server/internal/module/common/biz"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 )
 
 type ListNotificationParams struct {
 	Account accountmodel.AuthenticatedAccount
-	sharedmodel.PaginationParams
+	paginate.Params
 }
 
 // ListNotification returns paginated notifications for the authenticated account.
 func (b *AccountHandler) ListNotification(
 	ctx restate.Context,
 	params ListNotificationParams,
-) (sharedmodel.PaginateResult[accountdb.AccountNotification], error) {
-	var zero sharedmodel.PaginateResult[accountdb.AccountNotification]
-	params.PaginationParams = params.Constrain()
+) (paginate.PaginateResult[accountdb.AccountNotification], error) {
+	var zero paginate.PaginateResult[accountdb.AccountNotification]
+	params.Params = params.Constrain()
 
 	rows, err := b.storage.Querier().ListNotificationByAccount(ctx, accountdb.ListNotificationByAccountParams{
 		AccountID: params.Account.ID,
@@ -34,7 +35,7 @@ func (b *AccountHandler) ListNotification(
 		Offset:    params.Offset(),
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("list notifications", err)
+		return zero, fmt.Errorf("list notifications: %w", err)
 	}
 
 	var total null.Int64
@@ -42,8 +43,8 @@ func (b *AccountHandler) ListNotification(
 		total.SetValid(rows[0].TotalCount)
 	}
 
-	return sharedmodel.PaginateResult[accountdb.AccountNotification]{
-		PageParams: params.PaginationParams,
+	return paginate.PaginateResult[accountdb.AccountNotification]{
+		PageParams: params.Params,
 		Total:      total,
 		Data: lo.Map(rows, func(r accountdb.ListNotificationByAccountRow, _ int) accountdb.AccountNotification {
 			return r.AccountNotification
@@ -59,7 +60,7 @@ type CountUnreadParams struct {
 func (b *AccountHandler) CountUnread(ctx restate.Context, params CountUnreadParams) (int64, error) {
 	count, err := b.storage.Querier().CountUnreadByAccount(ctx, params.AccountID)
 	if err != nil {
-		return 0, sharedmodel.WrapErr("count unread notifications", err)
+		return 0, fmt.Errorf("count unread notifications: %w", err)
 	}
 	return count, nil
 }
@@ -75,7 +76,7 @@ func (b *AccountHandler) MarkRead(ctx restate.Context, params MarkReadParams) er
 		ID:        params.IDs,
 		AccountID: params.Account.ID,
 	}); err != nil {
-		return sharedmodel.WrapErr("mark notification read", err)
+		return fmt.Errorf("mark notification read: %w", err)
 	}
 
 	return nil
@@ -88,7 +89,7 @@ type MarkAllReadParams struct {
 // MarkAllRead marks all unread notifications as read for the given account.
 func (b *AccountHandler) MarkAllRead(ctx restate.Context, params MarkAllReadParams) error {
 	if err := b.storage.Querier().MarkAllNotificationRead(ctx, params.AccountID); err != nil {
-		return sharedmodel.WrapErr("mark all notifications read", err)
+		return fmt.Errorf("mark all notifications read: %w", err)
 	}
 
 	return nil
@@ -117,7 +118,7 @@ func (b *AccountHandler) CreateNotification(
 		Metadata:  params.Metadata,
 	})
 	if err != nil {
-		return accountdb.AccountNotification{}, sharedmodel.WrapErr("create notification", err)
+		return accountdb.AccountNotification{}, fmt.Errorf("create notification: %w", err)
 	}
 
 	// Push real-time notification to SSE clients

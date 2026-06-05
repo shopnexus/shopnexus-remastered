@@ -9,10 +9,9 @@ import (
 	"github.com/samber/lo"
 
 	analyticbiz "shopnexus-server/internal/module/analytic/biz"
-	analyticdb "shopnexus-server/internal/module/analytic/db/sqlc"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
 	authclaims "shopnexus-server/internal/shared/claims"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/response"
 )
 
@@ -35,7 +34,7 @@ func NewHandler(e *echo.Echo, biz analyticbiz.AnalyticBiz) *Handler {
 
 type CreateInteraction struct {
 	EventType string                                `json:"event_type" validate:"required,min=1"`
-	RefType   analyticdb.AnalyticInteractionRefType `json:"ref_type"   validate:"required,validateFn=Valid"`
+	RefType   analyticmodel.InteractionRefType      `json:"ref_type"   validate:"required,validateFn=Valid"`
 	RefID     string                                `json:"ref_id"     validate:"required"`
 }
 
@@ -95,7 +94,7 @@ func (h *Handler) GetProductPopularity(c echo.Context) error {
 }
 
 type ListTopProductPopularityRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 }
 
 func (h *Handler) ListTopProductPopularity(c echo.Context) error {
@@ -107,7 +106,7 @@ func (h *Handler) ListTopProductPopularity(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.ListTopProductPopularity(c.Request().Context(), req.PaginationParams)
+	result, err := h.biz.ListTopProductPopularity(c.Request().Context(), req.Params)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}

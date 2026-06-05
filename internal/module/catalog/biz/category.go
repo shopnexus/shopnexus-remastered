@@ -1,6 +1,8 @@
 package catalogbiz
 
 import (
+	"fmt"
+
 	restate "github.com/restatedev/sdk-go"
 
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
@@ -8,7 +10,7 @@ import (
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	commonmodel "shopnexus-server/internal/module/common/model"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -19,7 +21,7 @@ import (
 const popularProductLimit = 4
 
 type ListCategoryParams struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 
 	ID     []uuid.UUID `validate:"omitempty,dive,gt=0"`
 	Search null.String `validate:"omitnil"`
@@ -29,8 +31,8 @@ type ListCategoryParams struct {
 func (b *CatalogHandler) ListCategory(
 	ctx restate.Context,
 	params ListCategoryParams,
-) (sharedmodel.PaginateResult[catalogmodel.Category], error) {
-	var zero sharedmodel.PaginateResult[catalogmodel.Category]
+) (paginate.PaginateResult[catalogmodel.Category], error) {
+	var zero paginate.PaginateResult[catalogmodel.Category]
 
 	if err := validator.Validate(params); err != nil {
 		return zero, err
@@ -62,7 +64,7 @@ func (b *CatalogHandler) ListCategory(
 			ProductLimit: popularProductLimit,
 		})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("list popular products per category", err)
+		return zero, fmt.Errorf("list popular products per category: %w", err)
 	}
 
 	// Fetch resources (images) for all popular product SPUs
@@ -75,7 +77,7 @@ func (b *CatalogHandler) ListCategory(
 		RefIDs:  spuIDs,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("get popular product resources", err)
+		return zero, fmt.Errorf("get popular product resources: %w", err)
 	}
 
 	// Group: categoryID -> first resource of each popular product
@@ -87,8 +89,8 @@ func (b *CatalogHandler) ListCategory(
 		}
 	}
 
-	return sharedmodel.PaginateResult[catalogmodel.Category]{
-		PageParams: params.PaginationParams,
+	return paginate.PaginateResult[catalogmodel.Category]{
+		PageParams: params.Params,
 		Data: lo.Map(dbCategories, func(row catalogdb.SearchCategoryRow, _ int) catalogmodel.Category {
 			return catalogmodel.Category{
 				ID:          row.CatalogCategory.ID,

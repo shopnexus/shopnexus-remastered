@@ -29,7 +29,8 @@ WHERE (
     ("password" = ANY($9) OR $9 IS NULL) AND
     ("date_created" = ANY($10) OR $10 IS NULL) AND
     ("date_created" >= $11 OR $11 IS NULL) AND
-    ("date_created" <= $12 OR $12 IS NULL)
+    ("date_created" <= $12 OR $12 IS NULL) AND
+    ("role" = ANY($13) OR $13 IS NULL)
 )
 `
 
@@ -46,6 +47,7 @@ type CountAccountParams struct {
 	DateCreated     []time.Time     `json:"date_created"`
 	DateCreatedFrom null.Time       `json:"date_created_from"`
 	DateCreatedTo   null.Time       `json:"date_created_to"`
+	Role            []AccountRole   `json:"role"`
 }
 
 func (q *Queries) CountAccount(ctx context.Context, arg CountAccountParams) (int64, error) {
@@ -62,6 +64,7 @@ func (q *Queries) CountAccount(ctx context.Context, arg CountAccountParams) (int
 		arg.DateCreated,
 		arg.DateCreatedFrom,
 		arg.DateCreatedTo,
+		arg.Role,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -315,9 +318,9 @@ func (q *Queries) CountProfile(ctx context.Context, arg CountProfileParams) (int
 }
 
 const createAccount = `-- name: CreateAccount :one
-INSERT INTO "account"."account" ("id", "status", "phone", "email", "username", "password", "date_created")
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, number, status, phone, email, username, password, date_created
+INSERT INTO "account"."account" ("id", "status", "phone", "email", "username", "password", "date_created", "role")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, number, status, phone, email, username, password, date_created, role
 `
 
 type CreateAccountParams struct {
@@ -328,6 +331,7 @@ type CreateAccountParams struct {
 	Username    null.String   `json:"username"`
 	Password    null.String   `json:"password"`
 	DateCreated time.Time     `json:"date_created"`
+	Role        AccountRole   `json:"role"`
 }
 
 func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (AccountAccount, error) {
@@ -339,6 +343,7 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		arg.Username,
 		arg.Password,
 		arg.DateCreated,
+		arg.Role,
 	)
 	var i AccountAccount
 	err := row.Scan(
@@ -350,6 +355,7 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.Username,
 		&i.Password,
 		&i.DateCreated,
+		&i.Role,
 	)
 	return i, err
 }
@@ -410,6 +416,7 @@ type CreateCopyAccountParams struct {
 	Username    null.String   `json:"username"`
 	Password    null.String   `json:"password"`
 	DateCreated time.Time     `json:"date_created"`
+	Role        AccountRole   `json:"role"`
 }
 
 type CreateCopyContactParams struct {
@@ -507,7 +514,7 @@ type CreateCopyProfileParams struct {
 const createDefaultAccount = `-- name: CreateDefaultAccount :one
 INSERT INTO "account"."account" ("phone", "email", "username", "password")
 VALUES ($1, $2, $3, $4)
-RETURNING id, number, status, phone, email, username, password, date_created
+RETURNING id, number, status, phone, email, username, password, date_created, role
 `
 
 type CreateDefaultAccountParams struct {
@@ -534,6 +541,7 @@ func (q *Queries) CreateDefaultAccount(ctx context.Context, arg CreateDefaultAcc
 		&i.Username,
 		&i.Password,
 		&i.DateCreated,
+		&i.Role,
 	)
 	return i, err
 }
@@ -839,7 +847,8 @@ WHERE (
     ("password" = ANY($9) OR $9 IS NULL) AND
     ("date_created" = ANY($10) OR $10 IS NULL) AND
     ("date_created" >= $11 OR $11 IS NULL) AND
-    ("date_created" <= $12 OR $12 IS NULL)
+    ("date_created" <= $12 OR $12 IS NULL) AND
+    ("role" = ANY($13) OR $13 IS NULL)
 )
 `
 
@@ -856,6 +865,7 @@ type DeleteAccountParams struct {
 	DateCreated     []time.Time     `json:"date_created"`
 	DateCreatedFrom null.Time       `json:"date_created_from"`
 	DateCreatedTo   null.Time       `json:"date_created_to"`
+	Role            []AccountRole   `json:"role"`
 }
 
 func (q *Queries) DeleteAccount(ctx context.Context, arg DeleteAccountParams) error {
@@ -872,6 +882,7 @@ func (q *Queries) DeleteAccount(ctx context.Context, arg DeleteAccountParams) er
 		arg.DateCreated,
 		arg.DateCreatedFrom,
 		arg.DateCreatedTo,
+		arg.Role,
 	)
 	return err
 }
@@ -1114,7 +1125,7 @@ const getAccount = `-- name: GetAccount :one
 
 
 
-SELECT id, number, status, phone, email, username, password, date_created
+SELECT id, number, status, phone, email, username, password, date_created, role
 FROM "account"."account"
 WHERE ("id" = $1) OR ("phone" = $2) OR ("email" = $3) OR ("username" = $4)
 `
@@ -1148,6 +1159,7 @@ func (q *Queries) GetAccount(ctx context.Context, arg GetAccountParams) (Account
 		&i.Username,
 		&i.Password,
 		&i.DateCreated,
+		&i.Role,
 	)
 	return i, err
 }
@@ -1274,7 +1286,7 @@ func (q *Queries) GetProfile(ctx context.Context, arg GetProfileParams) (Account
 }
 
 const listAccount = `-- name: ListAccount :many
-SELECT id, number, status, phone, email, username, password, date_created
+SELECT id, number, status, phone, email, username, password, date_created, role
 FROM "account"."account"
 WHERE (
     ("id" = ANY($1) OR $1 IS NULL) AND
@@ -1288,11 +1300,12 @@ WHERE (
     ("password" = ANY($9) OR $9 IS NULL) AND
     ("date_created" = ANY($10) OR $10 IS NULL) AND
     ("date_created" >= $11 OR $11 IS NULL) AND
-    ("date_created" <= $12 OR $12 IS NULL)
+    ("date_created" <= $12 OR $12 IS NULL) AND
+    ("role" = ANY($13) OR $13 IS NULL)
 )
 ORDER BY "id"
-LIMIT $14::int
-OFFSET $13::int
+LIMIT $15::int
+OFFSET $14::int
 `
 
 type ListAccountParams struct {
@@ -1308,6 +1321,7 @@ type ListAccountParams struct {
 	DateCreated     []time.Time     `json:"date_created"`
 	DateCreatedFrom null.Time       `json:"date_created_from"`
 	DateCreatedTo   null.Time       `json:"date_created_to"`
+	Role            []AccountRole   `json:"role"`
 	Offset          null.Int32      `json:"offset"`
 	Limit           null.Int32      `json:"limit"`
 }
@@ -1326,6 +1340,7 @@ func (q *Queries) ListAccount(ctx context.Context, arg ListAccountParams) ([]Acc
 		arg.DateCreated,
 		arg.DateCreatedFrom,
 		arg.DateCreatedTo,
+		arg.Role,
 		arg.Offset,
 		arg.Limit,
 	)
@@ -1345,6 +1360,7 @@ func (q *Queries) ListAccount(ctx context.Context, arg ListAccountParams) ([]Acc
 			&i.Username,
 			&i.Password,
 			&i.DateCreated,
+			&i.Role,
 		); err != nil {
 			return nil, err
 		}
@@ -1454,7 +1470,7 @@ func (q *Queries) ListContact(ctx context.Context, arg ListContactParams) ([]Acc
 }
 
 const listCountAccount = `-- name: ListCountAccount :many
-SELECT embed_account.id, embed_account.number, embed_account.status, embed_account.phone, embed_account.email, embed_account.username, embed_account.password, embed_account.date_created, COUNT(*) OVER() as total_count
+SELECT embed_account.id, embed_account.number, embed_account.status, embed_account.phone, embed_account.email, embed_account.username, embed_account.password, embed_account.date_created, embed_account.role, COUNT(*) OVER() as total_count
 FROM "account"."account" embed_account
 WHERE (
     ("id" = ANY($1) OR $1 IS NULL) AND
@@ -1468,11 +1484,12 @@ WHERE (
     ("password" = ANY($9) OR $9 IS NULL) AND
     ("date_created" = ANY($10) OR $10 IS NULL) AND
     ("date_created" >= $11 OR $11 IS NULL) AND
-    ("date_created" <= $12 OR $12 IS NULL)
+    ("date_created" <= $12 OR $12 IS NULL) AND
+    ("role" = ANY($13) OR $13 IS NULL)
 )
 ORDER BY "id"
-LIMIT $14::int
-OFFSET $13::int
+LIMIT $15::int
+OFFSET $14::int
 `
 
 type ListCountAccountParams struct {
@@ -1488,6 +1505,7 @@ type ListCountAccountParams struct {
 	DateCreated     []time.Time     `json:"date_created"`
 	DateCreatedFrom null.Time       `json:"date_created_from"`
 	DateCreatedTo   null.Time       `json:"date_created_to"`
+	Role            []AccountRole   `json:"role"`
 	Offset          null.Int32      `json:"offset"`
 	Limit           null.Int32      `json:"limit"`
 }
@@ -1511,6 +1529,7 @@ func (q *Queries) ListCountAccount(ctx context.Context, arg ListCountAccountPara
 		arg.DateCreated,
 		arg.DateCreatedFrom,
 		arg.DateCreatedTo,
+		arg.Role,
 		arg.Offset,
 		arg.Limit,
 	)
@@ -1530,6 +1549,7 @@ func (q *Queries) ListCountAccount(ctx context.Context, arg ListCountAccountPara
 			&i.AccountAccount.Username,
 			&i.AccountAccount.Password,
 			&i.AccountAccount.DateCreated,
+			&i.AccountAccount.Role,
 			&i.TotalCount,
 		); err != nil {
 			return nil, err
@@ -2212,9 +2232,10 @@ SET "status" = COALESCE($1, "status"),
     "email" = CASE WHEN $4::bool = TRUE THEN NULL ELSE COALESCE($5, "email") END,
     "username" = CASE WHEN $6::bool = TRUE THEN NULL ELSE COALESCE($7, "username") END,
     "password" = CASE WHEN $8::bool = TRUE THEN NULL ELSE COALESCE($9, "password") END,
-    "date_created" = COALESCE($10, "date_created")
-WHERE "id" = $11
-RETURNING id, number, status, phone, email, username, password, date_created
+    "date_created" = COALESCE($10, "date_created"),
+    "role" = COALESCE($11, "role")
+WHERE "id" = $12
+RETURNING id, number, status, phone, email, username, password, date_created, role
 `
 
 type UpdateAccountParams struct {
@@ -2228,6 +2249,7 @@ type UpdateAccountParams struct {
 	NullPassword bool              `json:"null_password"`
 	Password     null.String       `json:"password"`
 	DateCreated  null.Time         `json:"date_created"`
+	Role         NullAccountRole   `json:"role"`
 	ID           uuid.UUID         `json:"id"`
 }
 
@@ -2243,6 +2265,7 @@ func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (A
 		arg.NullPassword,
 		arg.Password,
 		arg.DateCreated,
+		arg.Role,
 		arg.ID,
 	)
 	var i AccountAccount
@@ -2255,6 +2278,7 @@ func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (A
 		&i.Username,
 		&i.Password,
 		&i.DateCreated,
+		&i.Role,
 	)
 	return i, err
 }

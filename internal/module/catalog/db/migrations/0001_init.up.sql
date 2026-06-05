@@ -83,7 +83,6 @@ ALTER TABLE "catalog"."product_spu"
 -- Flat tag dictionary. id is the tag slug (e.g. 'eco-friendly', 'handmade').
 CREATE TABLE IF NOT EXISTS "catalog"."tag" (
     "id" VARCHAR(100) NOT NULL,
-    "account_id" UUID NOT NULL,
     "name" VARCHAR(100) NOT NULL,
     "description" VARCHAR(255),
 

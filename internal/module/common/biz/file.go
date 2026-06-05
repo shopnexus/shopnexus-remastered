@@ -107,7 +107,7 @@ func (b *CommonHandler) UploadFile(ctx context.Context, params UploadFileParams)
 	var zero UploadFileResult
 
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("invalid upload params", err)
+		return zero, fmt.Errorf("invalid upload params: %w", err)
 	}
 
 	store := b.mustGetObjectStore(b.cfg.Filestore.Type)
@@ -115,7 +115,7 @@ func (b *CommonHandler) UploadFile(ctx context.Context, params UploadFileParams)
 
 	objectKey, err := store.Upload(ctx, myKey, params.File, params.Private)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("upload local", err)
+		return zero, fmt.Errorf("upload local: %w", err)
 	}
 
 	resource, err := b.storage.Querier().CreateDefaultResource(ctx, commondb.CreateDefaultResourceParams{
@@ -127,12 +127,12 @@ func (b *CommonHandler) UploadFile(ctx context.Context, params UploadFileParams)
 		Metadata:     []byte("{}"),
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("insert resource", err)
+		return zero, fmt.Errorf("insert resource: %w", err)
 	}
 
 	url, err := store.GetURL(ctx, objectKey)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("get file url", err)
+		return zero, fmt.Errorf("get file url: %w", err)
 	}
 
 	return UploadFileResult{
@@ -151,7 +151,7 @@ type GetFileURLParams struct {
 func (b *CommonHandler) GetFileURL(ctx restate.Context, params GetFileURLParams) (string, error) {
 	url, err := b.mustGetObjectStore(params.Provider).GetURL(ctx, params.ObjectKey)
 	if err != nil {
-		return "", sharedmodel.WrapErr("get file url", err)
+		return "", fmt.Errorf("get file url: %w", err)
 	}
 
 	return url, nil

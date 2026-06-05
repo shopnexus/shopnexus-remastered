@@ -1,11 +1,13 @@
 package orderbiz
 
 import (
+	"fmt"
+
 	restate "github.com/restatedev/sdk-go"
 
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -15,24 +17,22 @@ import (
 
 // GetBuyerOrder returns a single order by ID with all items and payment details.
 // TODO: add casbin authorization — verify caller owns this order
-func (b *OrderHandler) GetBuyerOrder(ctx restate.Context, orderID uuid.UUID) (ordermodel.Order, error) {
+func (b *orderQueryHandler) GetBuyerOrder(ctx restate.Context, orderID uuid.UUID) (ordermodel.Order, error) {
 	var zero ordermodel.Order
 
-	order, err := restate.Run(ctx, func(ctx restate.RunContext) (orderdb.OrderOrder, error) {
-		return b.storage.Querier().GetOrder(ctx, orderdb.GetOrderParams{
-			ID: uuid.NullUUID{UUID: orderID, Valid: true},
-		})
+	order, err := b.storage.Querier().GetOrder(ctx, orderdb.GetOrderParams{
+		ID: uuid.NullUUID{UUID: orderID, Valid: true},
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("get order", err)
+		return zero, fmt.Errorf("get order: %w", err)
 	}
 
 	hydrated, err := b.hydrateOrders(ctx, []orderdb.OrderOrder{order})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("hydrate order", err)
+		return zero, fmt.Errorf("hydrate order: %w", err)
 	}
 	if len(hydrated) == 0 {
-		return zero, ordermodel.ErrOrderNotFound.Terminal()
+		return zero, ordermodel.ErrOrderNotFound
 	}
 
 	return hydrated[0], nil
@@ -40,31 +40,29 @@ func (b *OrderHandler) GetBuyerOrder(ctx restate.Context, orderID uuid.UUID) (or
 
 // GetSellerOrder returns a single order by ID (seller perspective).
 // TODO: add casbin authorization — verify caller is this order's seller
-func (b *OrderHandler) GetSellerOrder(ctx restate.Context, orderID uuid.UUID) (ordermodel.Order, error) {
+func (b *orderQueryHandler) GetSellerOrder(ctx restate.Context, orderID uuid.UUID) (ordermodel.Order, error) {
 	return b.GetBuyerOrder(ctx, orderID)
 }
 
 // ListSellerConfirmed returns paginated orders for the seller with optional payment/order status filters.
-func (b *OrderHandler) ListSellerConfirmed(
+func (b *orderQueryHandler) ListSellerConfirmed(
 	ctx restate.Context,
 	params ListSellerConfirmedParams,
-) (sharedmodel.PaginateResult[ordermodel.Order], error) {
-	var zero sharedmodel.PaginateResult[ordermodel.Order]
+) (paginate.PaginateResult[ordermodel.Order], error) {
+	var zero paginate.PaginateResult[ordermodel.Order]
 
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("validate list seller orders", err)
+		return zero, fmt.Errorf("validate list seller orders: %w", err)
 	}
 
-	listCountOrder, err := restate.Run(ctx, func(ctx restate.RunContext) ([]orderdb.ListCountSellerOrderRow, error) {
-		return b.storage.Querier().ListCountSellerOrder(ctx, orderdb.ListCountSellerOrderParams{
-			SellerID: params.SellerID,
-			Search:   params.Search,
-			Offset:   params.Offset(),
-			Limit:    params.Limit,
-		})
+	listCountOrder, err := b.storage.Querier().ListCountSellerOrder(ctx, orderdb.ListCountSellerOrderParams{
+		SellerID: params.SellerID,
+		Search:   params.Search,
+		Offset:   params.Offset(),
+		Limit:    params.Limit,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db list seller orders", err)
+		return zero, fmt.Errorf("db list seller orders: %w", err)
 	}
 
 	var total null.Int64
@@ -79,12 +77,19 @@ func (b *OrderHandler) ListSellerConfirmed(
 		}),
 	)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("hydrate seller orders", err)
+		return zero, fmt.Errorf("hydrate seller orders: %w", err)
 	}
 
-	return sharedmodel.PaginateResult[ordermodel.Order]{
-		PageParams: params.PaginationParams,
+	return paginate.PaginateResult[ordermodel.Order]{
+		PageParams: params.Params,
 		Total:      total,
 		Data:       orders,
 	}, nil
+}
+
+type ListSellerConfirmedParams struct {
+	paginate.Params
+
+	SellerID uuid.UUID   `validate:"required"`
+	Search   null.String `validate:"omitnil"`
 }

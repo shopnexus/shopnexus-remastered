@@ -4,21 +4,21 @@ import (
 	"net/http"
 
 	orderbiz "shopnexus-server/internal/module/order/biz"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	authclaims "shopnexus-server/internal/shared/claims"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/response"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
 
+// --- Buyer: create refund ---
+
 type CreateBuyerRefundRequest struct {
-	OrderID               uuid.UUID                 `json:"order_id"                validate:"required"`
-	Method                orderdb.OrderRefundMethod `json:"method"                  validate:"required,validateFn=Valid"`
-	Reason                string                    `json:"reason"                  validate:"required,min=1,max=1000"`
-	Address               string                    `json:"address"                 validate:"omitempty,max=500"`
-	ReturnTransportOption string                    `json:"return_transport_option" validate:"max=100"`
+	OrderID      uuid.UUID                    `json:"order_id"      validate:"required"`
+	Reason       string                       `json:"reason"        validate:"required,min=1,max=1000"`
+	Attachments  []orderbiz.DisputeAttachment `json:"attachments"   validate:"required,min=1,max=20,dive"`
+	ReturnOption string                       `json:"return_option" validate:"required,min=1,max=100"`
 }
 
 func (h *Handler) CreateBuyerRefund(c echo.Context) error {
@@ -38,24 +38,41 @@ func (h *Handler) CreateBuyerRefund(c echo.Context) error {
 	result, err := h.biz.CreateBuyerRefund(c.Request().Context(), orderbiz.CreateBuyerRefundParams{
 		Account:      claims.Account,
 		OrderID:      req.OrderID,
-		Method:       req.Method,
 		Reason:       req.Reason,
-		Address:      req.Address,
-		ReturnOption: req.ReturnTransportOption,
+		Attachments:  req.Attachments,
+		ReturnOption: req.ReturnOption,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
-
 	return response.FromDTO(c.Response().Writer, http.StatusOK, result)
 }
 
-type ListBuyerRefundsRequest struct {
-	sharedmodel.PaginationParams
-}
+// --- Buyer + seller: list refunds ---
 
-type ListSellerRefundsRequest struct {
-	sharedmodel.PaginationParams
+type ListBuyerRefundsRequest struct{ paginate.Params }
+type ListSellerRefundsRequest struct{ paginate.Params }
+
+func (h *Handler) ListBuyerRefunds(c echo.Context) error {
+	var req ListBuyerRefundsRequest
+	if err := c.Bind(&req); err != nil {
+		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
+	}
+	if err := c.Validate(&req); err != nil {
+		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
+	}
+	claims, err := authclaims.GetClaims(c.Request())
+	if err != nil {
+		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
+	}
+	result, err := h.biz.ListBuyerRefunds(c.Request().Context(), orderbiz.ListBuyerRefundsParams{
+		BuyerID: claims.Account.ID,
+		Params:  req.Params.Constrain(),
+	})
+	if err != nil {
+		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
+	}
+	return response.FromPaginate(c.Response().Writer, result)
 }
 
 func (h *Handler) ListSellerRefunds(c echo.Context) error {
@@ -66,125 +83,93 @@ func (h *Handler) ListSellerRefunds(c echo.Context) error {
 	if err := c.Validate(&req); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
-
 	claims, err := authclaims.GetClaims(c.Request())
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-
 	result, err := h.biz.ListSellerRefunds(c.Request().Context(), orderbiz.ListSellerRefundsParams{
-		SellerID:         claims.Account.ID,
-		PaginationParams: req.PaginationParams.Constrain(),
+		SellerID: claims.Account.ID,
+		Params:   req.Params.Constrain(),
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
-
 	return response.FromPaginate(c.Response().Writer, result)
 }
 
-func (h *Handler) ListBuyerRefunds(c echo.Context) error {
-	var req ListBuyerRefundsRequest
-	if err := c.Bind(&req); err != nil {
-		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
-	}
-	if err := c.Validate(&req); err != nil {
-		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
-	}
+// --- Buyer: withdraw refund (only while still Shipping) ---
 
-	claims, err := authclaims.GetClaims(c.Request())
-	if err != nil {
-		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
-	}
-
-	result, err := h.biz.ListBuyerRefunds(c.Request().Context(), orderbiz.ListBuyerRefundsParams{
-		BuyerID:          claims.Account.ID,
-		PaginationParams: req.PaginationParams.Constrain(),
-	})
-	if err != nil {
-		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
-	}
-
-	return response.FromPaginate(c.Response().Writer, result)
-}
-
-func (h *Handler) AcceptRefundStage1(c echo.Context) error {
+func (h *Handler) WithdrawBuyerRefund(c echo.Context) error {
 	refundID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
-
 	claims, err := authclaims.GetClaims(c.Request())
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-
-	result, err := h.biz.AcceptRefundStage1(c.Request().Context(), orderbiz.AcceptRefundStage1Params{
+	result, err := h.biz.WithdrawBuyerRefund(c.Request().Context(), orderbiz.WithdrawBuyerRefundParams{
 		Account:  claims.Account,
 		RefundID: refundID,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
-
 	return response.FromDTO(c.Response().Writer, http.StatusOK, result)
 }
 
-func (h *Handler) ApproveRefundStage2(c echo.Context) error {
+// --- Seller: approve refund ---
+
+func (h *Handler) SellerApproveRefund(c echo.Context) error {
 	refundID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
-
 	claims, err := authclaims.GetClaims(c.Request())
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-
-	result, err := h.biz.ApproveRefundStage2(c.Request().Context(), orderbiz.ApproveRefundStage2Params{
+	result, err := h.biz.SellerApproveRefund(c.Request().Context(), orderbiz.SellerActionParams{
 		Account:  claims.Account,
 		RefundID: refundID,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
-
 	return response.FromDTO(c.Response().Writer, http.StatusOK, result)
 }
 
-type RejectRefundRequest struct {
-	Stage         int    `json:"stage"          validate:"required,oneof=1 2"`
-	RejectionNote string `json:"rejection_note" validate:"required,min=1,max=1000"`
+// --- Seller: dispute refund ---
+
+type SellerDisputeRefundRequest struct {
+	Reason      string                       `json:"reason"      validate:"required,min=1,max=1000"`
+	Attachments []orderbiz.DisputeAttachment `json:"attachments" validate:"required,min=1,max=20,dive"`
 }
 
-func (h *Handler) RejectRefund(c echo.Context) error {
+func (h *Handler) SellerDisputeRefund(c echo.Context) error {
 	refundID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
-
-	var req RejectRefundRequest
+	var req SellerDisputeRefundRequest
 	if err := c.Bind(&req); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 	if err := c.Validate(&req); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
-
 	claims, err := authclaims.GetClaims(c.Request())
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-
-	result, err := h.biz.RejectRefund(c.Request().Context(), orderbiz.RejectRefundParams{
-		Account:       claims.Account,
-		RefundID:      refundID,
-		Stage:         req.Stage,
-		RejectionNote: req.RejectionNote,
+	result, err := h.biz.SellerDisputeRefund(c.Request().Context(), orderbiz.SellerDisputeParams{
+		Account:     claims.Account,
+		RefundID:    refundID,
+		Reason:      req.Reason,
+		Attachments: req.Attachments,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
-
 	return response.FromDTO(c.Response().Writer, http.StatusOK, result)
 }

@@ -15,7 +15,7 @@ import (
 )
 
 const getLatestGatewayTxBySession = `-- name: GetLatestGatewayTxBySession :one
-SELECT id, session_id, status, note, error, payment_option, data, amount, from_currency, to_currency, exchange_rate, reverses_id, date_created, date_settled, date_expired FROM "order"."transaction"
+SELECT id, session_id, status, note, error, payment_option, data, amount, currency, reverses_id, date_created, date_settled, date_expired FROM "order"."transaction"
 WHERE "session_id" = $1 AND "payment_option" IS NOT NULL
 ORDER BY "date_created" DESC
 LIMIT 1
@@ -36,9 +36,7 @@ func (q *Queries) GetLatestGatewayTxBySession(ctx context.Context, sessionID uui
 		&i.PaymentOption,
 		&i.Data,
 		&i.Amount,
-		&i.FromCurrency,
-		&i.ToCurrency,
-		&i.ExchangeRate,
+		&i.Currency,
 		&i.ReversesID,
 		&i.DateCreated,
 		&i.DateSettled,
@@ -48,7 +46,7 @@ func (q *Queries) GetLatestGatewayTxBySession(ctx context.Context, sessionID uui
 }
 
 const listTransactionsByIDs = `-- name: ListTransactionsByIDs :many
-SELECT id, session_id, status, note, error, payment_option, data, amount, from_currency, to_currency, exchange_rate, reverses_id, date_created, date_settled, date_expired FROM "order"."transaction" WHERE "id" = ANY($1::BIGINT[])
+SELECT id, session_id, status, note, error, payment_option, data, amount, currency, reverses_id, date_created, date_settled, date_expired FROM "order"."transaction" WHERE "id" = ANY($1::BIGINT[])
 `
 
 func (q *Queries) ListTransactionsByIDs(ctx context.Context, ids []int64) ([]OrderTransaction, error) {
@@ -69,9 +67,7 @@ func (q *Queries) ListTransactionsByIDs(ctx context.Context, ids []int64) ([]Ord
 			&i.PaymentOption,
 			&i.Data,
 			&i.Amount,
-			&i.FromCurrency,
-			&i.ToCurrency,
-			&i.ExchangeRate,
+			&i.Currency,
 			&i.ReversesID,
 			&i.DateCreated,
 			&i.DateSettled,
@@ -88,7 +84,7 @@ func (q *Queries) ListTransactionsByIDs(ctx context.Context, ids []int64) ([]Ord
 }
 
 const listTransactionsByItem = `-- name: ListTransactionsByItem :many
-SELECT t.id, t.session_id, t.status, t.note, t.error, t.payment_option, t.data, t.amount, t.from_currency, t.to_currency, t.exchange_rate, t.reverses_id, t.date_created, t.date_settled, t.date_expired FROM "order"."transaction" t
+SELECT t.id, t.session_id, t.status, t.note, t.error, t.payment_option, t.data, t.amount, t.currency, t.reverses_id, t.date_created, t.date_settled, t.date_expired FROM "order"."transaction" t
 WHERE t."session_id" = (SELECT i."payment_session_id" FROM "order"."item" i WHERE i."id" = $1)
 ORDER BY t."date_created"
 `
@@ -111,9 +107,7 @@ func (q *Queries) ListTransactionsByItem(ctx context.Context, itemID int64) ([]O
 			&i.PaymentOption,
 			&i.Data,
 			&i.Amount,
-			&i.FromCurrency,
-			&i.ToCurrency,
-			&i.ExchangeRate,
+			&i.Currency,
 			&i.ReversesID,
 			&i.DateCreated,
 			&i.DateSettled,
@@ -130,7 +124,7 @@ func (q *Queries) ListTransactionsByItem(ctx context.Context, itemID int64) ([]O
 }
 
 const listTransactionsByOrder = `-- name: ListTransactionsByOrder :many
-SELECT t.id, t.session_id, t.status, t.note, t.error, t.payment_option, t.data, t.amount, t.from_currency, t.to_currency, t.exchange_rate, t.reverses_id, t.date_created, t.date_settled, t.date_expired FROM "order"."transaction" t
+SELECT t.id, t.session_id, t.status, t.note, t.error, t.payment_option, t.data, t.amount, t.currency, t.reverses_id, t.date_created, t.date_settled, t.date_expired FROM "order"."transaction" t
 WHERE t."session_id" IN (
     SELECT o."confirm_session_id" FROM "order"."order" o WHERE o."id" = $1
     UNION
@@ -157,9 +151,7 @@ func (q *Queries) ListTransactionsByOrder(ctx context.Context, orderID uuid.UUID
 			&i.PaymentOption,
 			&i.Data,
 			&i.Amount,
-			&i.FromCurrency,
-			&i.ToCurrency,
-			&i.ExchangeRate,
+			&i.Currency,
 			&i.ReversesID,
 			&i.DateCreated,
 			&i.DateSettled,
@@ -176,7 +168,7 @@ func (q *Queries) ListTransactionsByOrder(ctx context.Context, orderID uuid.UUID
 }
 
 const listTransactionsBySession = `-- name: ListTransactionsBySession :many
-SELECT id, session_id, status, note, error, payment_option, data, amount, from_currency, to_currency, exchange_rate, reverses_id, date_created, date_settled, date_expired FROM "order"."transaction"
+SELECT id, session_id, status, note, error, payment_option, data, amount, currency, reverses_id, date_created, date_settled, date_expired FROM "order"."transaction"
 WHERE "session_id" = $1
 ORDER BY "date_created"
 `
@@ -199,9 +191,7 @@ func (q *Queries) ListTransactionsBySession(ctx context.Context, sessionID uuid.
 			&i.PaymentOption,
 			&i.Data,
 			&i.Amount,
-			&i.FromCurrency,
-			&i.ToCurrency,
-			&i.ExchangeRate,
+			&i.Currency,
 			&i.ReversesID,
 			&i.DateCreated,
 			&i.DateSettled,
@@ -240,7 +230,7 @@ const markTransactionCancelled = `-- name: MarkTransactionCancelled :one
 UPDATE "order"."transaction"
 SET "status" = 'Cancelled'
 WHERE "id" = $1 AND "status" = 'Pending'
-RETURNING id, session_id, status, note, error, payment_option, data, amount, from_currency, to_currency, exchange_rate, reverses_id, date_created, date_settled, date_expired
+RETURNING id, session_id, status, note, error, payment_option, data, amount, currency, reverses_id, date_created, date_settled, date_expired
 `
 
 func (q *Queries) MarkTransactionCancelled(ctx context.Context, id uuid.UUID) (OrderTransaction, error) {
@@ -255,9 +245,7 @@ func (q *Queries) MarkTransactionCancelled(ctx context.Context, id uuid.UUID) (O
 		&i.PaymentOption,
 		&i.Data,
 		&i.Amount,
-		&i.FromCurrency,
-		&i.ToCurrency,
-		&i.ExchangeRate,
+		&i.Currency,
 		&i.ReversesID,
 		&i.DateCreated,
 		&i.DateSettled,
@@ -271,7 +259,7 @@ UPDATE "order"."transaction"
 SET "status" = 'Success',
     "date_settled" = COALESCE($1::TIMESTAMPTZ, CURRENT_TIMESTAMP)
 WHERE "id" = $2 AND "status" = 'Pending'
-RETURNING id, session_id, status, note, error, payment_option, data, amount, from_currency, to_currency, exchange_rate, reverses_id, date_created, date_settled, date_expired
+RETURNING id, session_id, status, note, error, payment_option, data, amount, currency, reverses_id, date_created, date_settled, date_expired
 `
 
 type MarkTransactionSuccessParams struct {
@@ -291,9 +279,7 @@ func (q *Queries) MarkTransactionSuccess(ctx context.Context, arg MarkTransactio
 		&i.PaymentOption,
 		&i.Data,
 		&i.Amount,
-		&i.FromCurrency,
-		&i.ToCurrency,
-		&i.ExchangeRate,
+		&i.Currency,
 		&i.ReversesID,
 		&i.DateCreated,
 		&i.DateSettled,

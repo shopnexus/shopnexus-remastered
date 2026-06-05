@@ -5,23 +5,21 @@ import (
 	commonmodel "shopnexus-server/internal/module/common/model"
 	"time"
 
-	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
-
 	"github.com/google/uuid"
 )
 
 type ProductSpu struct {
-	ID            uuid.UUID                 `json:"id"`
-	AccountID     uuid.UUID                 `json:"account_id"`
-	Slug          string                    `json:"slug"`
-	Category      catalogdb.CatalogCategory `json:"category"`
-	FeaturedSkuID uuid.NullUUID             `json:"featured_sku_id"`
-	Name          string                    `json:"name"`
-	Description   string                    `json:"description"`
-	IsEnabled     bool                      `json:"is_enabled"`
-	Currency      string                    `json:"currency"`
-	DateCreated   time.Time                 `json:"date_created"`
-	DateUpdated   time.Time                 `json:"date_updated"`
+	ID            uuid.UUID     `json:"id"`
+	AccountID     uuid.UUID     `json:"account_id"`
+	Slug          string        `json:"slug"`
+	Category      Category      `json:"category"`
+	FeaturedSkuID uuid.NullUUID `json:"featured_sku_id"`
+	Name          string        `json:"name"`
+	Description   string        `json:"description"`
+	IsEnabled     bool          `json:"is_enabled"`
+	Currency      string        `json:"currency"`
+	DateCreated   time.Time     `json:"date_created"`
+	DateUpdated   time.Time     `json:"date_updated"`
 
 	Rating         ProductRating          `json:"rating"`
 	Tags           []string               `json:"tags"`

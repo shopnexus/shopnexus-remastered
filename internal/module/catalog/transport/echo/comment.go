@@ -6,7 +6,7 @@ import (
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	authclaims "shopnexus-server/internal/shared/claims"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/response"
 
 	"github.com/google/uuid"
@@ -15,7 +15,7 @@ import (
 )
 
 type ListCommentRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 
 	RefType   catalogdb.CatalogCommentRefType `query:"ref_type"   validate:"required"`
 	RefID     uuid.UUID                       `query:"ref_id"     validate:"required"`
@@ -40,14 +40,14 @@ func (h *Handler) ListComment(c echo.Context) error {
 	}
 
 	result, err := h.biz.ListComment(c.Request().Context(), catalogbiz.ListCommentParams{
-		PaginationParams: req.PaginationParams.Constrain(),
-		Account:          claims.Account,
-		RefType:          req.RefType,
-		ID:               req.ID,
-		AccountID:        req.AccountID,
-		RefID:            []uuid.UUID{req.RefID},
-		ScoreFrom:        req.ScoreFrom,
-		ScoreTo:          req.ScoreTo,
+		Params:    req.Params.Constrain(),
+		Account:   claims.Account,
+		RefType:   req.RefType,
+		ID:        req.ID,
+		AccountID: req.AccountID,
+		RefID:     []uuid.UUID{req.RefID},
+		ScoreFrom: req.ScoreFrom,
+		ScoreTo:   req.ScoreTo,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)

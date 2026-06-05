@@ -12,64 +12,136 @@ import (
 
 	"github.com/google/uuid"
 	null "github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type OrderRefundMethod string
+type OrderDisputeStatus string
 
 const (
-	OrderRefundMethodPickUp  OrderRefundMethod = "PickUp"
-	OrderRefundMethodDropOff OrderRefundMethod = "DropOff"
+	OrderDisputeStatusOpen       OrderDisputeStatus = "Open"
+	OrderDisputeStatusSellerWins OrderDisputeStatus = "SellerWins"
+	OrderDisputeStatusBuyerWins  OrderDisputeStatus = "BuyerWins"
 )
 
-func (e *OrderRefundMethod) Scan(src interface{}) error {
+func (e *OrderDisputeStatus) Scan(src interface{}) error {
 	switch s := src.(type) {
 	case []byte:
-		*e = OrderRefundMethod(s)
+		*e = OrderDisputeStatus(s)
 	case string:
-		*e = OrderRefundMethod(s)
+		*e = OrderDisputeStatus(s)
 	default:
-		return fmt.Errorf("unsupported scan type for OrderRefundMethod: %T", src)
+		return fmt.Errorf("unsupported scan type for OrderDisputeStatus: %T", src)
 	}
 	return nil
 }
 
-type NullOrderRefundMethod struct {
-	OrderRefundMethod OrderRefundMethod `json:"order_refund_method"`
-	Valid             bool              `json:"valid"` // Valid is true if OrderRefundMethod is not NULL
+type NullOrderDisputeStatus struct {
+	OrderDisputeStatus OrderDisputeStatus `json:"order_dispute_status"`
+	Valid              bool               `json:"valid"` // Valid is true if OrderDisputeStatus is not NULL
 }
 
 // Scan implements the Scanner interface.
-func (ns *NullOrderRefundMethod) Scan(value interface{}) error {
+func (ns *NullOrderDisputeStatus) Scan(value interface{}) error {
 	if value == nil {
-		ns.OrderRefundMethod, ns.Valid = "", false
+		ns.OrderDisputeStatus, ns.Valid = "", false
 		return nil
 	}
 	ns.Valid = true
-	return ns.OrderRefundMethod.Scan(value)
+	return ns.OrderDisputeStatus.Scan(value)
 }
 
 // Value implements the driver Valuer interface.
-func (ns NullOrderRefundMethod) Value() (driver.Value, error) {
+func (ns NullOrderDisputeStatus) Value() (driver.Value, error) {
 	if !ns.Valid {
 		return nil, nil
 	}
-	return string(ns.OrderRefundMethod), nil
+	return string(ns.OrderDisputeStatus), nil
 }
 
-func (e OrderRefundMethod) Valid() bool {
+func (e OrderDisputeStatus) Valid() bool {
 	switch e {
-	case OrderRefundMethodPickUp,
-		OrderRefundMethodDropOff:
+	case OrderDisputeStatusOpen,
+		OrderDisputeStatusSellerWins,
+		OrderDisputeStatusBuyerWins:
 		return true
 	}
 	return false
 }
 
-func AllOrderRefundMethodValues() []OrderRefundMethod {
-	return []OrderRefundMethod{
-		OrderRefundMethodPickUp,
-		OrderRefundMethodDropOff,
+func AllOrderDisputeStatusValues() []OrderDisputeStatus {
+	return []OrderDisputeStatus{
+		OrderDisputeStatusOpen,
+		OrderDisputeStatusSellerWins,
+		OrderDisputeStatusBuyerWins,
+	}
+}
+
+type OrderRefundStatus string
+
+const (
+	OrderRefundStatusShipping             OrderRefundStatus = "Shipping"
+	OrderRefundStatusAwaitingSellerReview OrderRefundStatus = "AwaitingSellerReview"
+	OrderRefundStatusDisputed             OrderRefundStatus = "Disputed"
+	OrderRefundStatusAccepted             OrderRefundStatus = "Accepted"
+	OrderRefundStatusRejected             OrderRefundStatus = "Rejected"
+	OrderRefundStatusCancelled            OrderRefundStatus = "Cancelled"
+)
+
+func (e *OrderRefundStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = OrderRefundStatus(s)
+	case string:
+		*e = OrderRefundStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for OrderRefundStatus: %T", src)
+	}
+	return nil
+}
+
+type NullOrderRefundStatus struct {
+	OrderRefundStatus OrderRefundStatus `json:"order_refund_status"`
+	Valid             bool              `json:"valid"` // Valid is true if OrderRefundStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullOrderRefundStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.OrderRefundStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.OrderRefundStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullOrderRefundStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.OrderRefundStatus), nil
+}
+
+func (e OrderRefundStatus) Valid() bool {
+	switch e {
+	case OrderRefundStatusShipping,
+		OrderRefundStatusAwaitingSellerReview,
+		OrderRefundStatusDisputed,
+		OrderRefundStatusAccepted,
+		OrderRefundStatusRejected,
+		OrderRefundStatusCancelled:
+		return true
+	}
+	return false
+}
+
+func AllOrderRefundStatusValues() []OrderRefundStatus {
+	return []OrderRefundStatus{
+		OrderRefundStatusShipping,
+		OrderRefundStatusAwaitingSellerReview,
+		OrderRefundStatusDisputed,
+		OrderRefundStatusAccepted,
+		OrderRefundStatusRejected,
+		OrderRefundStatusCancelled,
 	}
 }
 
@@ -162,6 +234,7 @@ type OrderItem struct {
 	TransportOption  string          `json:"transport_option"`
 	SubtotalAmount   int64           `json:"subtotal_amount"`
 	TotalAmount      int64           `json:"total_amount"`
+	SourceCurrency   string          `json:"source_currency"`
 	PaymentSessionID uuid.UUID       `json:"payment_session_id"`
 	DateCancelled    null.Time       `json:"date_cancelled"`
 	CancelledByID    uuid.NullUUID   `json:"cancelled_by_id"`
@@ -189,6 +262,7 @@ type OrderPaymentSession struct {
 	Note        string          `json:"note"`
 	Currency    string          `json:"currency"`
 	TotalAmount int64           `json:"total_amount"`
+	FxSnapshot  json.RawMessage `json:"fx_snapshot"`
 	Data        json.RawMessage `json:"data"`
 	DateCreated time.Time       `json:"date_created"`
 	DatePaid    null.Time       `json:"date_paid"`
@@ -196,33 +270,33 @@ type OrderPaymentSession struct {
 }
 
 type OrderRefund struct {
-	ID            uuid.UUID         `json:"id"`
-	AccountID     uuid.UUID         `json:"account_id"`
-	OrderID       uuid.UUID         `json:"order_id"`
-	TransportID   int64             `json:"transport_id"`
-	Method        OrderRefundMethod `json:"method"`
-	Reason        string            `json:"reason"`
-	Address       null.String       `json:"address"`
-	DateCreated   time.Time         `json:"date_created"`
-	Status        OrderStatus       `json:"status"`
-	AcceptedByID  uuid.NullUUID     `json:"accepted_by_id"`
-	DateAccepted  null.Time         `json:"date_accepted"`
-	RejectionNote null.String       `json:"rejection_note"`
-	ApprovedByID  uuid.NullUUID     `json:"approved_by_id"`
-	DateApproved  null.Time         `json:"date_approved"`
-	RefundTxID    uuid.NullUUID     `json:"refund_tx_id"`
+	ID                       uuid.UUID         `json:"id"`
+	AccountID                uuid.UUID         `json:"account_id"`
+	OrderID                  uuid.UUID         `json:"order_id"`
+	Reason                   string            `json:"reason"`
+	Attachments              json.RawMessage   `json:"attachments"`
+	DateCreated              time.Time         `json:"date_created"`
+	Status                   OrderRefundStatus `json:"status"`
+	ReturnTransportID        int64             `json:"return_transport_id"`
+	DateReceivedBySeller     null.Time         `json:"date_received_by_seller"`
+	ReviewDeadline           null.Time         `json:"review_deadline"`
+	SellerDecisionAt         null.Time         `json:"seller_decision_at"`
+	ReturnToBuyerTransportID null.Int          `json:"return_to_buyer_transport_id"`
+	RejectionReason          null.String       `json:"rejection_reason"`
+	RefundTxID               uuid.NullUUID     `json:"refund_tx_id"`
 }
 
 type OrderRefundDispute struct {
-	ID           uuid.UUID     `json:"id"`
-	AccountID    uuid.UUID     `json:"account_id"`
-	RefundID     uuid.UUID     `json:"refund_id"`
-	Reason       string        `json:"reason"`
-	Status       OrderStatus   `json:"status"`
-	Note         string        `json:"note"`
-	DateCreated  time.Time     `json:"date_created"`
-	ResolvedByID uuid.NullUUID `json:"resolved_by_id"`
-	DateResolved null.Time     `json:"date_resolved"`
+	ID             uuid.UUID          `json:"id"`
+	RefundID       uuid.UUID          `json:"refund_id"`
+	AccountID      uuid.UUID          `json:"account_id"`
+	Reason         string             `json:"reason"`
+	Attachments    json.RawMessage    `json:"attachments"`
+	DateCreated    time.Time          `json:"date_created"`
+	Status         OrderDisputeStatus `json:"status"`
+	ResolvedByID   uuid.NullUUID      `json:"resolved_by_id"`
+	DateResolved   null.Time          `json:"date_resolved"`
+	ResolutionNote null.String        `json:"resolution_note"`
 }
 
 type OrderTransaction struct {
@@ -234,9 +308,7 @@ type OrderTransaction struct {
 	PaymentOption null.String     `json:"payment_option"`
 	Data          json.RawMessage `json:"data"`
 	Amount        int64           `json:"amount"`
-	FromCurrency  string          `json:"from_currency"`
-	ToCurrency    string          `json:"to_currency"`
-	ExchangeRate  pgtype.Numeric  `json:"exchange_rate"`
+	Currency      string          `json:"currency"`
 	ReversesID    uuid.NullUUID   `json:"reverses_id"`
 	DateCreated   time.Time       `json:"date_created"`
 	DateSettled   null.Time       `json:"date_settled"`
@@ -252,9 +324,7 @@ type OrderTransactionSettled struct {
 	PaymentOption null.String     `json:"payment_option"`
 	Data          json.RawMessage `json:"data"`
 	Amount        int64           `json:"amount"`
-	FromCurrency  string          `json:"from_currency"`
-	ToCurrency    string          `json:"to_currency"`
-	ExchangeRate  pgtype.Numeric  `json:"exchange_rate"`
+	Currency      string          `json:"currency"`
 	ReversesID    uuid.NullUUID   `json:"reverses_id"`
 	DateCreated   time.Time       `json:"date_created"`
 	DateSettled   null.Time       `json:"date_settled"`
@@ -267,4 +337,47 @@ type OrderTransport struct {
 	Status      NullOrderStatus `json:"status"`
 	Data        json.RawMessage `json:"data"`
 	DateCreated time.Time       `json:"date_created"`
+}
+
+func (n NullOrderDisputeStatus) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.OrderDisputeStatus)
+}
+func (n *NullOrderDisputeStatus) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.OrderDisputeStatus)
+}
+func (n NullOrderRefundStatus) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.OrderRefundStatus)
+}
+func (n *NullOrderRefundStatus) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.OrderRefundStatus)
+}
+func (n NullOrderStatus) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.OrderStatus)
+}
+func (n *NullOrderStatus) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.OrderStatus)
 }

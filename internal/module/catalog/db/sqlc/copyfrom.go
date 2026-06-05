@@ -322,7 +322,6 @@ func (r *iteratorForCreateCopyDefaultTag) Next() bool {
 func (r iteratorForCreateCopyDefaultTag) Values() ([]interface{}, error) {
 	return []interface{}{
 		r.rows[0].ID,
-		r.rows[0].AccountID,
 		r.rows[0].Name,
 		r.rows[0].Description,
 	}, nil
@@ -333,7 +332,7 @@ func (r iteratorForCreateCopyDefaultTag) Err() error {
 }
 
 func (q *Queries) CreateCopyDefaultTag(ctx context.Context, arg []CreateCopyDefaultTagParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"catalog", "tag"}, []string{"id", "account_id", "name", "description"}, &iteratorForCreateCopyDefaultTag{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"catalog", "tag"}, []string{"id", "name", "description"}, &iteratorForCreateCopyDefaultTag{rows: arg})
 }
 
 // iteratorForCreateCopyProductSku implements pgx.CopyFromSource.
@@ -510,7 +509,6 @@ func (r *iteratorForCreateCopyTag) Next() bool {
 func (r iteratorForCreateCopyTag) Values() ([]interface{}, error) {
 	return []interface{}{
 		r.rows[0].ID,
-		r.rows[0].AccountID,
 		r.rows[0].Name,
 		r.rows[0].Description,
 	}, nil
@@ -521,5 +519,5 @@ func (r iteratorForCreateCopyTag) Err() error {
 }
 
 func (q *Queries) CreateCopyTag(ctx context.Context, arg []CreateCopyTagParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"catalog", "tag"}, []string{"id", "account_id", "name", "description"}, &iteratorForCreateCopyTag{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"catalog", "tag"}, []string{"id", "name", "description"}, &iteratorForCreateCopyTag{rows: arg})
 }

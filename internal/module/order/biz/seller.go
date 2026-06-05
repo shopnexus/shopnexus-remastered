@@ -3,32 +3,65 @@ package orderbiz
 import (
 	"encoding/json"
 	"fmt"
-	"time"
-
-	restate "github.com/restatedev/sdk-go"
-
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/validator"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
+	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 )
 
+// ListSellerPendingItems returns paginated pending items for the seller.
+func (b *sellerHandler) ListSellerPendingItems(
+	ctx restate.Context,
+	params ListSellerPendingItemsParams,
+) (paginate.PaginateResult[ordermodel.OrderItem], error) {
+	var zero paginate.PaginateResult[ordermodel.OrderItem]
+
+	if err := validator.Validate(params); err != nil {
+		return zero, err
+	}
+
+	items, err := b.storage.Querier().ListSellerPendingItems(ctx, params.SellerID)
+	if err != nil {
+		return zero, err
+	}
+	total, err := b.storage.Querier().CountSellerPendingItems(ctx, params.SellerID)
+	if err != nil {
+		return zero, err
+	}
+
+	enriched, err := b.enrichItems(ctx, items)
+	if err != nil {
+		return zero, err
+	}
+
+	var totalVal null.Int64
+	totalVal.SetValid(total)
+
+	return paginate.PaginateResult[ordermodel.OrderItem]{
+		PageParams: params.Params,
+		Total:      totalVal,
+		Data:       enriched,
+	}, nil
+}
+
 // RejectSellerPending rejects pending items owned by the seller, releases inventory, and refunds buyers.
-func (b *OrderHandler) RejectSellerPending(ctx restate.Context, params RejectSellerPendingParams) error {
+func (b *sellerHandler) RejectSellerPending(ctx restate.Context, params RejectSellerPendingParams) error {
 	// Lock: exclusive — same key as ConfirmSellerPending.
 	unlock := b.locker.Lock(ctx, fmt.Sprintf("order:seller-pending:%s", params.Account.ID))
 	defer unlock()
 
 	if err := validator.Validate(params); err != nil {
-		return sharedmodel.WrapErr("validate reject items", err)
+		return fmt.Errorf("validate reject items: %w", err)
 	}
 
 	sellerID := params.Account.ID
@@ -39,10 +72,10 @@ func (b *OrderHandler) RejectSellerPending(ctx restate.Context, params RejectSel
 			ID: params.ItemIDs,
 		})
 		if err != nil {
-			return nil, sharedmodel.WrapErr("db list items", err)
+			return nil, fmt.Errorf("db list items: %w", err)
 		}
 		if len(dbItems) != len(params.ItemIDs) {
-			return nil, ordermodel.ErrOrderItemNotFound.Terminal()
+			return nil, ordermodel.ErrOrderItemNotFound
 		}
 
 		for _, item := range dbItems {
@@ -59,7 +92,7 @@ func (b *OrderHandler) RejectSellerPending(ctx restate.Context, params RejectSel
 		return dbItems, nil
 	})
 	if err != nil {
-		return sharedmodel.WrapErr("fetch items", err)
+		return fmt.Errorf("fetch items: %w", err)
 	}
 
 	// Release inventory for each item (outside Run — cross-module).
@@ -73,7 +106,7 @@ func (b *OrderHandler) RejectSellerPending(ctx restate.Context, params RejectSel
 	if err := b.inventory.ReleaseInventory(ctx, inventorybiz.ReleaseInventoryParams{
 		Items: releaseItems,
 	}); err != nil {
-		return sharedmodel.WrapErr("release inventory", err)
+		return fmt.Errorf("release inventory: %w", err)
 	}
 
 	// Group items by buyer and process refunds per buyer.
@@ -93,7 +126,7 @@ func (b *OrderHandler) RejectSellerPending(ctx restate.Context, params RejectSel
 			return b.storage.Querier().ListPaymentSession(ctx, orderdb.ListPaymentSessionParams{ID: sessionIDs})
 		})
 		if err != nil {
-			return sharedmodel.WrapErr("db fetch payment sessions", err)
+			return fmt.Errorf("db fetch payment sessions: %w", err)
 		}
 		sessionByID := lo.KeyBy(sessions, func(s orderdb.OrderPaymentSession) uuid.UUID { return s.ID })
 
@@ -108,13 +141,10 @@ func (b *OrderHandler) RejectSellerPending(ctx restate.Context, params RejectSel
 				return b.storage.Querier().ListTransactionsBySession(ctx, sid)
 			})
 			if err != nil {
-				return sharedmodel.WrapErr("db list session txs", err)
+				return fmt.Errorf("db list session txs: %w", err)
 			}
-			for _, tx := range sessionTxs {
-				if tx.Status == orderdb.OrderStatusSuccess && tx.Amount > 0 && !tx.ReversesID.Valid {
-					originalTxBySession[sid] = tx.ID
-					break
-				}
+			if originalTx, ok := findOriginalCharge(sessionTxs); ok {
+				originalTxBySession[sid] = originalTx.ID
 			}
 		}
 
@@ -145,18 +175,23 @@ func (b *OrderHandler) RejectSellerPending(ctx restate.Context, params RejectSel
 		// Infer buyer currency before the durable Run (outside Run — cross-module).
 		buyerCurrency, err := b.InferCurrency(ctx, buyerID)
 		if err != nil {
-			return sharedmodel.WrapErr("infer buyer currency", err)
+			return fmt.Errorf("infer buyer currency: %w", err)
 		}
 
 		// Create per-session refund txs and cancel each item atomically.
+		preMintedRefundTxIDs := make([]uuid.UUID, len(refundPlans))
+		for i := range refundPlans {
+			preMintedRefundTxIDs[i] = restate.UUID(ctx)
+		}
 		refundTxIDs, err := restate.Run(ctx, func(ctx restate.RunContext) ([]uuid.UUID, error) {
-      var txIDs []uuid.UUID
+			var txIDs []uuid.UUID
 			// One refund leg per item, in its own session, reversing the original tx.
-			for _, plan := range refundPlans {
+			for i, plan := range refundPlans {
 				if plan.Item.TotalAmount <= 0 {
 					continue
 				}
 				tx, txErr := b.storage.Querier().CreateDefaultTransaction(ctx, orderdb.CreateDefaultTransactionParams{
+					ID:            preMintedRefundTxIDs[i],
 					SessionID:     plan.Item.PaymentSessionID,
 					Status:        orderdb.OrderStatusSuccess,
 					Note:          "seller reject pre-confirm",
@@ -164,15 +199,13 @@ func (b *OrderHandler) RejectSellerPending(ctx restate.Context, params RejectSel
 					PaymentOption: null.String{},
 					Data:          json.RawMessage("{}"),
 					Amount:        -plan.Item.TotalAmount,
-					FromCurrency:  buyerCurrency,
-					ToCurrency:    buyerCurrency,
-					ExchangeRate:  mustNumericOne(),
+					Currency:      buyerCurrency,
 					ReversesID:    uuid.NullUUID{UUID: plan.OriginalID, Valid: true},
 					DateSettled:   null.TimeFrom(time.Now()),
 					DateExpired:   null.Time{},
 				})
 				if txErr != nil {
-					return nil, sharedmodel.WrapErr("db create refund tx", txErr)
+					return nil, fmt.Errorf("db create refund tx: %w", txErr)
 				}
 				txIDs = append(txIDs, tx.ID)
 			}
@@ -180,7 +213,7 @@ func (b *OrderHandler) RejectSellerPending(ctx restate.Context, params RejectSel
 			// Mark any Pending sessions as Cancelled so their timeout / webhook no-ops.
 			for _, sid := range pendingSessionIDs {
 				if _, err := b.storage.Querier().MarkPaymentSessionCancelled(ctx, sid); err != nil {
-					return nil, sharedmodel.WrapErr("db cancel pending session", err)
+					return nil, fmt.Errorf("db cancel pending session: %w", err)
 				}
 			}
 
@@ -190,14 +223,14 @@ func (b *OrderHandler) RejectSellerPending(ctx restate.Context, params RejectSel
 					CancelledByID: uuid.NullUUID{UUID: sellerID, Valid: true},
 					ID:            id,
 				}); err != nil {
-					return nil, sharedmodel.WrapErr("db cancel item", err)
+					return nil, fmt.Errorf("db cancel item: %w", err)
 				}
 			}
 
 			return txIDs, nil
 		})
 		if err != nil {
-			return sharedmodel.WrapErr("reject items for buyer", err)
+			return fmt.Errorf("reject items for buyer: %w", err)
 		}
 
 		// Credit buyer wallet per session — CreditFromSession sums settled positive
@@ -211,7 +244,7 @@ func (b *OrderHandler) RejectSellerPending(ctx restate.Context, params RejectSel
 					CreditType: "Refund",
 					Note:       "seller reject pre-confirm refund",
 				}); err != nil {
-					return sharedmodel.WrapErr("credit buyer from session", err)
+					return fmt.Errorf("credit buyer from session: %w", err)
 				}
 			}
 		}
@@ -230,4 +263,15 @@ func (b *OrderHandler) RejectSellerPending(ctx restate.Context, params RejectSel
 	}
 
 	return nil
+}
+
+type ListSellerPendingItemsParams struct {
+	paginate.Params
+
+	SellerID uuid.UUID `validate:"required"`
+}
+
+type RejectSellerPendingParams struct {
+	Account accountmodel.AuthenticatedAccount
+	ItemIDs []int64 `validate:"required,min=1,max=1000"`
 }

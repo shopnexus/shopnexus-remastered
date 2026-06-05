@@ -14,7 +14,7 @@ import (
 )
 
 const getPayoutSessionForOrder = `-- name: GetPayoutSessionForOrder :one
-SELECT s.id, s.kind, s.status, s.from_id, s.to_id, s.note, s.currency, s.total_amount, s.data, s.date_created, s.date_paid, s.date_expired FROM "order"."payment_session" s
+SELECT s.id, s.kind, s.status, s.from_id, s.to_id, s.note, s.currency, s.total_amount, s.fx_snapshot, s.data, s.date_created, s.date_paid, s.date_expired FROM "order"."payment_session" s
 WHERE s."id" = $1 AND s."kind" = 'seller-payout'
 LIMIT 1
 `
@@ -35,6 +35,7 @@ func (q *Queries) GetPayoutSessionForOrder(ctx context.Context, orderID uuid.UUI
 		&i.Note,
 		&i.Currency,
 		&i.TotalAmount,
+		&i.FxSnapshot,
 		&i.Data,
 		&i.DateCreated,
 		&i.DatePaid,
@@ -44,7 +45,7 @@ func (q *Queries) GetPayoutSessionForOrder(ctx context.Context, orderID uuid.UUI
 }
 
 const listCheckoutSiblingsForSession = `-- name: ListCheckoutSiblingsForSession :many
-SELECT s2.id, s2.kind, s2.status, s2.from_id, s2.to_id, s2.note, s2.currency, s2.total_amount, s2.data, s2.date_created, s2.date_paid, s2.date_expired FROM "order"."payment_session" s1
+SELECT s2.id, s2.kind, s2.status, s2.from_id, s2.to_id, s2.note, s2.currency, s2.total_amount, s2.fx_snapshot, s2.data, s2.date_created, s2.date_paid, s2.date_expired FROM "order"."payment_session" s1
 JOIN "order"."payment_session" s2 ON s2."from_id" = s1."from_id"
     AND s2."kind" = 'buyer-checkout'
     AND abs(extract(epoch from (s2."date_created" - s1."date_created"))) < 2
@@ -70,6 +71,7 @@ func (q *Queries) ListCheckoutSiblingsForSession(ctx context.Context, sessionID 
 			&i.Note,
 			&i.Currency,
 			&i.TotalAmount,
+			&i.FxSnapshot,
 			&i.Data,
 			&i.DateCreated,
 			&i.DatePaid,
@@ -86,7 +88,7 @@ func (q *Queries) ListCheckoutSiblingsForSession(ctx context.Context, sessionID 
 }
 
 const listConfirmFeeSiblingsForSession = `-- name: ListConfirmFeeSiblingsForSession :many
-SELECT s2.id, s2.kind, s2.status, s2.from_id, s2.to_id, s2.note, s2.currency, s2.total_amount, s2.data, s2.date_created, s2.date_paid, s2.date_expired FROM "order"."payment_session" s1
+SELECT s2.id, s2.kind, s2.status, s2.from_id, s2.to_id, s2.note, s2.currency, s2.total_amount, s2.fx_snapshot, s2.data, s2.date_created, s2.date_paid, s2.date_expired FROM "order"."payment_session" s1
 JOIN "order"."payment_session" s2 ON s2."from_id" = s1."from_id"
     AND s2."kind" = 'seller-confirmation-fee'
     AND abs(extract(epoch from (s2."date_created" - s1."date_created"))) < 2
@@ -112,6 +114,7 @@ func (q *Queries) ListConfirmFeeSiblingsForSession(ctx context.Context, sessionI
 			&i.Note,
 			&i.Currency,
 			&i.TotalAmount,
+			&i.FxSnapshot,
 			&i.Data,
 			&i.DateCreated,
 			&i.DatePaid,
@@ -128,7 +131,7 @@ func (q *Queries) ListConfirmFeeSiblingsForSession(ctx context.Context, sessionI
 }
 
 const listExpiredPendingSessions = `-- name: ListExpiredPendingSessions :many
-SELECT id, kind, status, from_id, to_id, note, currency, total_amount, data, date_created, date_paid, date_expired FROM "order"."payment_session"
+SELECT id, kind, status, from_id, to_id, note, currency, total_amount, fx_snapshot, data, date_created, date_paid, date_expired FROM "order"."payment_session"
 WHERE "status" = 'Pending' AND "date_expired" < $1::TIMESTAMPTZ
 ORDER BY "date_expired"
 LIMIT $2::INTEGER
@@ -157,6 +160,7 @@ func (q *Queries) ListExpiredPendingSessions(ctx context.Context, arg ListExpire
 			&i.Note,
 			&i.Currency,
 			&i.TotalAmount,
+			&i.FxSnapshot,
 			&i.Data,
 			&i.DateCreated,
 			&i.DatePaid,
@@ -176,7 +180,7 @@ const markPaymentSessionCancelled = `-- name: MarkPaymentSessionCancelled :one
 UPDATE "order"."payment_session"
 SET "status" = 'Cancelled'
 WHERE "id" = $1 AND "status" = 'Pending'
-RETURNING id, kind, status, from_id, to_id, note, currency, total_amount, data, date_created, date_paid, date_expired
+RETURNING id, kind, status, from_id, to_id, note, currency, total_amount, fx_snapshot, data, date_created, date_paid, date_expired
 `
 
 func (q *Queries) MarkPaymentSessionCancelled(ctx context.Context, id uuid.UUID) (OrderPaymentSession, error) {
@@ -191,6 +195,7 @@ func (q *Queries) MarkPaymentSessionCancelled(ctx context.Context, id uuid.UUID)
 		&i.Note,
 		&i.Currency,
 		&i.TotalAmount,
+		&i.FxSnapshot,
 		&i.Data,
 		&i.DateCreated,
 		&i.DatePaid,
@@ -203,7 +208,7 @@ const markPaymentSessionFailed = `-- name: MarkPaymentSessionFailed :one
 UPDATE "order"."payment_session"
 SET "status" = 'Failed'
 WHERE "id" = $1 AND "status" = 'Pending'
-RETURNING id, kind, status, from_id, to_id, note, currency, total_amount, data, date_created, date_paid, date_expired
+RETURNING id, kind, status, from_id, to_id, note, currency, total_amount, fx_snapshot, data, date_created, date_paid, date_expired
 `
 
 func (q *Queries) MarkPaymentSessionFailed(ctx context.Context, id uuid.UUID) (OrderPaymentSession, error) {
@@ -218,6 +223,7 @@ func (q *Queries) MarkPaymentSessionFailed(ctx context.Context, id uuid.UUID) (O
 		&i.Note,
 		&i.Currency,
 		&i.TotalAmount,
+		&i.FxSnapshot,
 		&i.Data,
 		&i.DateCreated,
 		&i.DatePaid,
@@ -231,7 +237,7 @@ UPDATE "order"."payment_session"
 SET "status" = 'Success',
     "date_paid" = COALESCE($1::TIMESTAMPTZ, CURRENT_TIMESTAMP)
 WHERE "id" = $2 AND "status" = 'Pending'
-RETURNING id, kind, status, from_id, to_id, note, currency, total_amount, data, date_created, date_paid, date_expired
+RETURNING id, kind, status, from_id, to_id, note, currency, total_amount, fx_snapshot, data, date_created, date_paid, date_expired
 `
 
 type MarkPaymentSessionSuccessParams struct {
@@ -251,6 +257,7 @@ func (q *Queries) MarkPaymentSessionSuccess(ctx context.Context, arg MarkPayment
 		&i.Note,
 		&i.Currency,
 		&i.TotalAmount,
+		&i.FxSnapshot,
 		&i.Data,
 		&i.DateCreated,
 		&i.DatePaid,

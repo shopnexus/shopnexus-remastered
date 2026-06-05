@@ -133,6 +133,64 @@ func AllAccountGenderValues() []AccountGender {
 	}
 }
 
+type AccountRole string
+
+const (
+	AccountRoleMember AccountRole = "Member"
+	AccountRoleAdmin  AccountRole = "Admin"
+)
+
+func (e *AccountRole) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = AccountRole(s)
+	case string:
+		*e = AccountRole(s)
+	default:
+		return fmt.Errorf("unsupported scan type for AccountRole: %T", src)
+	}
+	return nil
+}
+
+type NullAccountRole struct {
+	AccountRole AccountRole `json:"account_role"`
+	Valid       bool        `json:"valid"` // Valid is true if AccountRole is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullAccountRole) Scan(value interface{}) error {
+	if value == nil {
+		ns.AccountRole, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.AccountRole.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullAccountRole) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.AccountRole), nil
+}
+
+func (e AccountRole) Valid() bool {
+	switch e {
+	case AccountRoleMember,
+		AccountRoleAdmin:
+		return true
+	}
+	return false
+}
+
+func AllAccountRoleValues() []AccountRole {
+	return []AccountRole{
+		AccountRoleMember,
+		AccountRoleAdmin,
+	}
+}
+
 type AccountStatus string
 
 const (
@@ -200,6 +258,7 @@ type AccountAccount struct {
 	Username    null.String   `json:"username"`
 	Password    null.String   `json:"password"`
 	DateCreated time.Time     `json:"date_created"`
+	Role        AccountRole   `json:"role"`
 }
 
 type AccountContact struct {
@@ -250,4 +309,61 @@ type AccountProfile struct {
 	InternalBalance  int64             `json:"internal_balance"`
 	DefaultContactID uuid.NullUUID     `json:"default_contact_id"`
 	DefaultWalletID  uuid.NullUUID     `json:"default_wallet_id"`
+}
+
+func (n NullAccountAddressType) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.AccountAddressType)
+}
+func (n *NullAccountAddressType) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.AccountAddressType)
+}
+func (n NullAccountGender) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.AccountGender)
+}
+func (n *NullAccountGender) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.AccountGender)
+}
+func (n NullAccountRole) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.AccountRole)
+}
+func (n *NullAccountRole) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.AccountRole)
+}
+func (n NullAccountStatus) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.AccountStatus)
+}
+func (n *NullAccountStatus) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.AccountStatus)
 }

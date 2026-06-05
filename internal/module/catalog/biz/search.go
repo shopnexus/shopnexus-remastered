@@ -15,11 +15,11 @@ import (
 	accountmodel "shopnexus-server/internal/module/account/model"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	catalogutil "shopnexus-server/internal/module/catalog/util"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 )
 
 type SearchParams struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 
 	Collection string
 	Query      string
@@ -79,10 +79,10 @@ func buildFilterExpr(params SearchParams) string {
 func (b *CatalogHandler) Search(ctx restate.Context, params SearchParams) ([]catalogmodel.ProductRecommend, error) {
 	embeddings, err := b.llm.Embed(ctx, []string{params.Query})
 	if err != nil {
-		return nil, sharedmodel.WrapErr("embed query", err)
+		return nil, fmt.Errorf("embed query: %w", err)
 	}
 	if len(embeddings) == 0 {
-		return nil, catalogmodel.ErrNoEmbeddingsResult.Terminal()
+		return nil, catalogmodel.ErrNoEmbeddingsResult
 	}
 	emb := embeddings[0]
 
@@ -128,7 +128,7 @@ func (b *CatalogHandler) Search(ctx restate.Context, params SearchParams) ([]cat
 		)
 	}
 	if err != nil {
-		return nil, sharedmodel.WrapErr("search", err)
+		return nil, fmt.Errorf("search: %w", err)
 	}
 
 	products := make([]catalogmodel.ProductRecommend, 0, len(results))
@@ -160,7 +160,7 @@ func (b *CatalogHandler) GetRecommendations(
 		accountOutputFields(),
 	)
 	if err != nil {
-		return nil, sharedmodel.WrapErr("query account", err)
+		return nil, fmt.Errorf("query account: %w", err)
 	}
 	if rs.ResultCount == 0 {
 		return nil, nil
@@ -223,7 +223,7 @@ func (b *CatalogHandler) GetRecommendations(
 		searchReqs...,
 	)
 	if err != nil {
-		return nil, sharedmodel.WrapErr("recommend search", err)
+		return nil, fmt.Errorf("recommend search: %w", err)
 	}
 
 	products := make([]catalogmodel.ProductRecommend, 0, len(results))

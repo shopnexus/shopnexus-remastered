@@ -36,6 +36,7 @@ func (r iteratorForCreateCopyAccount) Values() ([]interface{}, error) {
 		r.rows[0].Username,
 		r.rows[0].Password,
 		r.rows[0].DateCreated,
+		r.rows[0].Role,
 	}, nil
 }
 
@@ -44,7 +45,7 @@ func (r iteratorForCreateCopyAccount) Err() error {
 }
 
 func (q *Queries) CreateCopyAccount(ctx context.Context, arg []CreateCopyAccountParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"account", "account"}, []string{"id", "status", "phone", "email", "username", "password", "date_created"}, &iteratorForCreateCopyAccount{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"account", "account"}, []string{"id", "status", "phone", "email", "username", "password", "date_created", "role"}, &iteratorForCreateCopyAccount{rows: arg})
 }
 
 // iteratorForCreateCopyContact implements pgx.CopyFromSource.

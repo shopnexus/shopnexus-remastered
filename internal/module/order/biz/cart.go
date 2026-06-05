@@ -3,11 +3,13 @@ package orderbiz
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 
+	"github.com/guregu/null/v6"
 	restate "github.com/restatedev/sdk-go"
 
+	accountmodel "shopnexus-server/internal/module/account/model"
 	analyticbiz "shopnexus-server/internal/module/analytic/biz"
-	analyticdb "shopnexus-server/internal/module/analytic/db/sqlc"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
@@ -16,7 +18,6 @@ import (
 	commonmodel "shopnexus-server/internal/module/common/model"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
-	sharedmodel "shopnexus-server/internal/shared/model"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -24,41 +25,39 @@ import (
 )
 
 // GetCart returns all cart items for the given account with SKU details and product images.
-func (b *OrderHandler) GetCart(ctx restate.Context, params GetCartParams) ([]ordermodel.CartItem, error) {
-	cartItems, err := restate.Run(ctx, func(ctx restate.RunContext) ([]orderdb.OrderCartItem, error) {
-		return b.storage.Querier().ListCartItem(ctx, orderdb.ListCartItemParams{
-			AccountID: []uuid.UUID{params.AccountID},
-		})
+func (b *cartHandler) GetCart(ctx restate.Context, params GetCartParams) ([]ordermodel.CartItem, error) {
+	cartItems, err := b.storage.Querier().ListCartItem(ctx, orderdb.ListCartItemParams{
+		AccountID: []uuid.UUID{params.AccountID},
 	})
 	if err != nil {
-		return nil, sharedmodel.WrapErr("db list cart items", err)
+		return nil, fmt.Errorf("db list cart items: %w", err)
 	}
 
 	skus, err := b.catalog.ListProductSku(ctx, catalogbiz.ListProductSkuParams{
 		ID: lo.Map(cartItems, func(c orderdb.OrderCartItem, _ int) uuid.UUID { return c.SkuID }),
 	})
 	if err != nil {
-		return nil, sharedmodel.WrapErr("list cart skus", err)
+		return nil, fmt.Errorf("list cart skus: %w", err)
 	}
 	skuMap := lo.SliceToMap(skus, func(s catalogmodel.ProductSku) (uuid.UUID, catalogmodel.ProductSku) {
 		return s.ID, s
 	})
 
-	// Batch-fetch all SPU resources in a single call (outside restate.Run)
+	// Batch-fetch all SPU resources in a single call.
 	spuIDs := lo.Uniq(lo.Map(skus, func(s catalogmodel.ProductSku, _ int) uuid.UUID { return s.SpuID }))
 	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeProductSpu,
 		RefIDs:  spuIDs,
 	})
 	if err != nil {
-		return nil, sharedmodel.WrapErr("get cart resources", err)
+		return nil, fmt.Errorf("get cart resources: %w", err)
 	}
 
 	listSpu, err := b.catalog.ListProductSpu(ctx, catalogbiz.ListProductSpuParams{
 		ID: spuIDs,
 	})
 	if err != nil {
-		return nil, sharedmodel.WrapErr("list cart spus", err)
+		return nil, fmt.Errorf("list cart spus: %w", err)
 	}
 	currencyMap := lo.SliceToMap(listSpu.Data, func(s catalogmodel.ProductSpu) (uuid.UUID, string) {
 		return s.ID, s.Currency
@@ -86,9 +85,9 @@ func (b *OrderHandler) GetCart(ctx restate.Context, params GetCartParams) ([]ord
 }
 
 // UpdateCart adds, updates, or removes a cart item and tracks the interaction.
-func (b *OrderHandler) UpdateCart(ctx restate.Context, params UpdateCartParams) error {
+func (b *cartHandler) UpdateCart(ctx restate.Context, params UpdateCartParams) error {
 	if err := validator.Validate(params); err != nil {
-		return sharedmodel.WrapErr("validate update cart", err)
+		return fmt.Errorf("validate update cart: %w", err)
 	}
 
 	// Track which event type to send after the durable step
@@ -107,7 +106,7 @@ func (b *OrderHandler) UpdateCart(ctx restate.Context, params UpdateCartParams) 
 		} else if params.Quantity.Valid {
 			newQuantity = params.Quantity.Int64
 		} else {
-			return "", ordermodel.ErrQuantityParamRequired.Terminal()
+			return "", ordermodel.ErrQuantityParamRequired
 		}
 
 		// If quantity = 0, remove cart item and return early
@@ -131,14 +130,14 @@ func (b *OrderHandler) UpdateCart(ctx restate.Context, params UpdateCartParams) 
 		return string(analyticmodel.EventAddToCart), nil
 	})
 	if err != nil {
-		return sharedmodel.WrapErr("db update cart", err)
+		return fmt.Errorf("db update cart: %w", err)
 	}
 
 	restate.ServiceSend(ctx, "Analytic", "CreateInteraction").Send(analyticbiz.CreateInteractionParams{
 		Interactions: []analyticbiz.CreateInteraction{{
 			Account:   params.Account,
 			EventType: analyticmodel.Event(eventType),
-			RefType:   analyticdb.AnalyticInteractionRefTypeProduct,
+			RefType:   analyticmodel.InteractionRefTypeProduct,
 			RefID:     params.SkuID.String(),
 		}},
 	})
@@ -146,10 +145,26 @@ func (b *OrderHandler) UpdateCart(ctx restate.Context, params UpdateCartParams) 
 }
 
 // ClearCart removes all items from the account's cart.
-func (b *OrderHandler) ClearCart(ctx restate.Context, params ClearCartParams) error {
+func (b *cartHandler) ClearCart(ctx restate.Context, params ClearCartParams) error {
 	return restate.RunVoid(ctx, func(ctx restate.RunContext) error {
 		return b.storage.Querier().DeleteCartItem(ctx, orderdb.DeleteCartItemParams{
 			AccountID: []uuid.UUID{params.Account.ID},
 		})
 	})
+}
+
+type GetCartParams struct {
+	AccountID uuid.UUID `validate:"required"`
+}
+
+type UpdateCartParams struct {
+	Account accountmodel.AuthenticatedAccount
+
+	SkuID         uuid.UUID  `validate:"required"`
+	Quantity      null.Int64 `validate:"omitnil,min=0,max=1000"`
+	DeltaQuantity null.Int64 `validate:"omitnil,min=-1000,max=1000"`
+}
+
+type ClearCartParams struct {
+	Account accountmodel.AuthenticatedAccount
 }

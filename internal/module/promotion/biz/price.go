@@ -1,10 +1,10 @@
 package promotionbiz
 
 import (
+	"fmt"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	promotiondb "shopnexus-server/internal/module/promotion/db/sqlc"
 	promotionmodel "shopnexus-server/internal/module/promotion/model"
-	sharedmodel "shopnexus-server/internal/shared/model"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
@@ -67,7 +67,7 @@ func (s *PromotionHandler) CalculatePromotedPrices(
 		Code:      codes,
 	})
 	if err != nil {
-		return nil, sharedmodel.WrapErr("db list active promotions", err)
+		return nil, fmt.Errorf("db list active promotions: %w", err)
 	}
 	if len(dbPromos) == 0 {
 		// No active promotions — set original prices and return early
@@ -83,7 +83,7 @@ func (s *PromotionHandler) CalculatePromotedPrices(
 	promoIDs := lo.Map(dbPromos, func(p promotiondb.PromotionPromotion, _ int) uuid.UUID { return p.ID })
 	refs, err := s.storage.Querier().ListRef(ctx, promotiondb.ListRefParams{PromotionID: promoIDs})
 	if err != nil {
-		return nil, sharedmodel.WrapErr("db list promotion refs", err)
+		return nil, fmt.Errorf("db list promotion refs: %w", err)
 	}
 	refsMap := lo.GroupBy(refs, func(r promotiondb.PromotionRef) uuid.UUID { return r.PromotionID })
 
@@ -148,9 +148,9 @@ func pickBestInGroup(group []parsedPromotion, originalProduct, originalShip int6
 
 		if promo.discount != nil {
 			switch promo.Type {
-			case promotiondb.PromotionTypeDiscount:
+			case promotionmodel.TypeDiscount:
 				productCost = applyDiscount(originalProduct, promo.discount)
-			case promotiondb.PromotionTypeShipDiscount:
+			case promotionmodel.TypeShipDiscount:
 				shipCost = applyDiscount(originalShip, promo.discount)
 			}
 		}
@@ -195,9 +195,9 @@ func applyWinners(
 		op.PromotionCodes = append(op.PromotionCodes, w.promo.Code)
 
 		switch w.promo.Type {
-		case promotiondb.PromotionTypeDiscount:
+		case promotionmodel.TypeDiscount:
 			op.ProductCost = w.productCost
-		case promotiondb.PromotionTypeShipDiscount:
+		case promotionmodel.TypeShipDiscount:
 			op.ShipCost = w.shipCost
 		}
 	}
@@ -211,15 +211,15 @@ func isApplicable(promo promotionmodel.Promotion, spu catalogmodel.ProductSpu, s
 	}
 	for _, ref := range promo.Refs {
 		switch ref.RefType {
-		case promotiondb.PromotionRefTypeCategory:
+		case promotionmodel.RefTypeCategory:
 			if spu.Category.ID == ref.RefID {
 				return true
 			}
-		case promotiondb.PromotionRefTypeProductSpu:
+		case promotionmodel.RefTypeProductSpu:
 			if spu.ID == ref.RefID {
 				return true
 			}
-		case promotiondb.PromotionRefTypeProductSku:
+		case promotionmodel.RefTypeProductSku:
 			if skuID == ref.RefID {
 				return true
 			}

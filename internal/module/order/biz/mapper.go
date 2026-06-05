@@ -1,60 +1,40 @@
 package orderbiz
 
 import (
-	"fmt"
-
-	"github.com/google/uuid"
-	"github.com/shopspring/decimal"
-
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 )
+
+func mapTransport(t orderdb.OrderTransport) ordermodel.Transport {
+	var status orderdb.OrderStatus
+	if t.Status.Valid {
+		status = t.Status.OrderStatus
+	}
+	return ordermodel.Transport{
+		ID:          t.ID,
+		OptionID:    t.Option,
+		Status:      ordermodel.Status(status),
+		Data:        t.Data,
+		DateCreated: t.DateCreated,
+	}
+}
 
 // mapPaymentSession converts an sqlc OrderPaymentSession row to the domain model.
 func mapPaymentSession(s orderdb.OrderPaymentSession) ordermodel.PaymentSession {
 	return ordermodel.PaymentSession{
 		ID:          s.ID,
 		Kind:        s.Kind,
-		Status:      s.Status,
+		Status:      ordermodel.Status(s.Status),
 		FromID:      s.FromID,
 		ToID:        s.ToID,
 		Note:        s.Note,
 		Currency:    s.Currency,
 		TotalAmount: s.TotalAmount,
+		FxSnapshot:  s.FxSnapshot,
 		Data:        s.Data,
 		DateCreated: s.DateCreated,
 		DatePaid:    s.DatePaid,
 		DateExpired: s.DateExpired,
-	}
-}
-
-// mapTransaction converts an sqlc OrderTransaction row to the domain Transaction.
-func mapTransaction(tx orderdb.OrderTransaction) ordermodel.Transaction {
-	var exchangeRate decimal.Decimal
-	if tx.ExchangeRate.Valid {
-		if v, err := tx.ExchangeRate.Value(); err == nil && v != nil {
-			if d, perr := decimal.NewFromString(fmt.Sprintf("%v", v)); perr == nil {
-				exchangeRate = d
-			}
-		}
-	}
-
-	return ordermodel.Transaction{
-		ID:            tx.ID,
-		SessionID:     tx.SessionID,
-		Status:        tx.Status,
-		Note:          tx.Note,
-		Error:         tx.Error,
-		PaymentOption: tx.PaymentOption,
-		Data:          tx.Data,
-		Amount:        tx.Amount,
-		FromCurrency:  tx.FromCurrency,
-		ToCurrency:    tx.ToCurrency,
-		ExchangeRate:  exchangeRate,
-		ReversesID:    tx.ReversesID,
-		DateCreated:   tx.DateCreated,
-		DateSettled:   tx.DateSettled,
-		DateExpired:   tx.DateExpired,
 	}
 }
 
@@ -74,6 +54,7 @@ func mapOrderItem(it orderdb.OrderItem) ordermodel.OrderItem {
 		TransportOption:  it.TransportOption,
 		SubtotalAmount:   it.SubtotalAmount,
 		TotalAmount:      it.TotalAmount,
+		SourceCurrency:   it.SourceCurrency,
 		PaymentSessionID: it.PaymentSessionID,
 		DateCreated:      it.DateCreated,
 		DateCancelled:    it.DateCancelled,
@@ -97,41 +78,34 @@ func mapOrder(o orderdb.OrderOrder) ordermodel.Order {
 
 func mapRefund(r orderdb.OrderRefund) ordermodel.Refund {
 	return ordermodel.Refund{
-		ID:            r.ID,
-		AccountID:     r.AccountID,
-		OrderID:       r.OrderID,
-		TransportID:   r.TransportID,
-		Method:        r.Method,
-		Reason:        r.Reason,
-		Address:       r.Address,
-		DateCreated:   r.DateCreated,
-		Status:        r.Status,
-		AcceptedByID:  r.AcceptedByID,
-		DateAccepted:  r.DateAccepted,
-		RejectionNote: r.RejectionNote,
-		ApprovedByID:  r.ApprovedByID,
-		DateApproved:  r.DateApproved,
-		RefundTxID:    r.RefundTxID,
+		ID:                       r.ID,
+		AccountID:                r.AccountID,
+		OrderID:                  r.OrderID,
+		Reason:                   r.Reason,
+		Attachments:              r.Attachments,
+		DateCreated:              r.DateCreated,
+		Status:                   ordermodel.RefundStatus(r.Status),
+		ReturnTransportID:        r.ReturnTransportID,
+		DateReceivedBySeller:     r.DateReceivedBySeller,
+		ReviewDeadline:           r.ReviewDeadline,
+		SellerDecisionAt:         r.SellerDecisionAt,
+		ReturnToBuyerTransportID: r.ReturnToBuyerTransportID,
+		RejectionReason:          r.RejectionReason,
+		RefundTxID:               r.RefundTxID,
 	}
 }
 
 func mapRefundDispute(d orderdb.OrderRefundDispute) ordermodel.RefundDispute {
 	return ordermodel.RefundDispute{
-		ID:           d.ID,
-		AccountID:    d.AccountID,
-		RefundID:     d.RefundID,
-		Reason:       d.Reason,
-		Status:       d.Status,
-		Note:         d.Note,
-		DateCreated:  d.DateCreated,
-		ResolvedByID: d.ResolvedByID,
-		DateResolved: d.DateResolved,
+		ID:             d.ID,
+		RefundID:       d.RefundID,
+		AccountID:      d.AccountID,
+		Reason:         d.Reason,
+		Attachments:    d.Attachments,
+		Status:         ordermodel.DisputeStatus(d.Status),
+		DateCreated:    d.DateCreated,
+		ResolvedByID:   d.ResolvedByID,
+		DateResolved:   d.DateResolved,
+		ResolutionNote: d.ResolutionNote,
 	}
-}
-
-func toNullUUID(p *uuid.UUID) uuid.NullUUID {
-	if p == nil {
-		return uuid.NullUUID{}
-	}
-	return uuid.NullUUID{UUID: *p, Valid: true}
 }

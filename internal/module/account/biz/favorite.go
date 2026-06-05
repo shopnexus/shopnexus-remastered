@@ -1,11 +1,13 @@
 package accountbiz
 
 import (
+	"fmt"
+
 	restate "github.com/restatedev/sdk-go"
 
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	accountmodel "shopnexus-server/internal/module/account/model"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
@@ -34,7 +36,7 @@ func (b *AccountHandler) AddFavorite(ctx restate.Context, params AddFavoritePara
 		SpuID:     params.SpuID,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("add favorite", err)
+		return zero, fmt.Errorf("add favorite: %w", err)
 	}
 
 	return result, nil
@@ -51,7 +53,7 @@ func (b *AccountHandler) RemoveFavorite(ctx restate.Context, params RemoveFavori
 		AccountID: []uuid.UUID{params.Account.ID},
 		SpuID:     []uuid.UUID{params.SpuID},
 	}); err != nil {
-		return sharedmodel.WrapErr("remove favorite", err)
+		return fmt.Errorf("remove favorite: %w", err)
 	}
 
 	return nil
@@ -59,16 +61,16 @@ func (b *AccountHandler) RemoveFavorite(ctx restate.Context, params RemoveFavori
 
 type ListFavoriteParams struct {
 	Account accountmodel.AuthenticatedAccount
-	sharedmodel.PaginationParams
+	paginate.Params
 }
 
 // ListFavorite returns a paginated list of the account's favorited products.
 func (b *AccountHandler) ListFavorite(
 	ctx restate.Context,
 	params ListFavoriteParams,
-) (sharedmodel.PaginateResult[accountdb.AccountFavorite], error) {
-	var zero sharedmodel.PaginateResult[accountdb.AccountFavorite]
-	params.PaginationParams = params.Constrain()
+) (paginate.PaginateResult[accountdb.AccountFavorite], error) {
+	var zero paginate.PaginateResult[accountdb.AccountFavorite]
+	params.Params = params.Constrain()
 
 	rows, err := b.storage.Querier().ListCountFavorite(ctx, accountdb.ListCountFavoriteParams{
 		AccountID: []uuid.UUID{params.Account.ID},
@@ -76,7 +78,7 @@ func (b *AccountHandler) ListFavorite(
 		Offset:    params.Offset(),
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("list favorites", err)
+		return zero, fmt.Errorf("list favorites: %w", err)
 	}
 
 	favorites := make([]accountdb.AccountFavorite, len(rows))
@@ -86,8 +88,8 @@ func (b *AccountHandler) ListFavorite(
 		total = row.TotalCount
 	}
 
-	return sharedmodel.PaginateResult[accountdb.AccountFavorite]{
-		PageParams: params.PaginationParams,
+	return paginate.PaginateResult[accountdb.AccountFavorite]{
+		PageParams: params.Params,
 		Data:       favorites,
 		Total:      null.IntFrom(total),
 	}, nil
@@ -111,7 +113,7 @@ func (b *AccountHandler) CheckFavorites(ctx restate.Context, params CheckFavorit
 		SpuID:     spuIDs,
 	})
 	if err != nil {
-		return nil, sharedmodel.WrapErr("check favorites", err)
+		return nil, fmt.Errorf("check favorites: %w", err)
 	}
 
 	result := make(map[uuid.UUID]bool, len(rows))

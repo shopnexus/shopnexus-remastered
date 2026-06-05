@@ -9,12 +9,12 @@ import (
 
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 	authclaims "shopnexus-server/internal/shared/claims"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/response"
 )
 
 type ListProductCardRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 
 	SellerID        uuid.NullUUID `query:"seller_id"         validate:"omitnil"`
 	CategoryID      []uuid.UUID   `query:"category_id"       validate:"omitempty"     comma_separated:"true"`
@@ -37,15 +37,15 @@ func (h *Handler) ListProductCard(c echo.Context) error {
 	}
 
 	params := catalogbiz.ListProductCardParams{
-		PaginationParams: req.PaginationParams.Constrain(),
-		SellerID:         req.SellerID,
-		CategoryID:       req.CategoryID,
-		Tags:             req.Tags,
-		Search:           req.Search,
-		PriceMin:         req.PriceMin,
-		PriceMax:         req.PriceMax,
-		DateCreatedFrom:  req.DateCreatedFrom,
-		DateCreatedTo:    req.DateCreatedTo,
+		Params:          req.Params.Constrain(),
+		SellerID:        req.SellerID,
+		CategoryID:      req.CategoryID,
+		Tags:            req.Tags,
+		Search:          req.Search,
+		PriceMin:        req.PriceMin,
+		PriceMax:        req.PriceMax,
+		DateCreatedFrom: req.DateCreatedFrom,
+		DateCreatedTo:   req.DateCreatedTo,
 	}
 
 	if claims, err := authclaims.GetClaims(c.Request()); err == nil {

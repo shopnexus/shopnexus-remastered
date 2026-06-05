@@ -2,149 +2,132 @@ package ordermodel
 
 import (
 	"net/http"
-
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/errors"
 )
 
 // Sentinel errors for the order module.
 var (
-	ErrOrderItemNotFound = sharedmodel.NewError(
+	ErrOrderItemNotFound = errors.NewError(
 		http.StatusNotFound,
 		"order_item_not_found",
 		"Sorry, we couldn't find the item you requested",
 	)
-	ErrPaymentGatewayNotFound = sharedmodel.NewError(
+	ErrPaymentGatewayNotFound = errors.NewError(
 		http.StatusNotFound,
 		"payment_gateway_not_found",
 		"Sorry, we couldn't find the payment gateway you requested",
 	)
-	ErrRefundAddressRequired = sharedmodel.NewError(http.StatusBadRequest, "refund_address_required", "Address is required for pick up method")
-	ErrRefundCannotBeUpdated = sharedmodel.NewError(
+	ErrRefundCannotBeUpdated = errors.NewError(
 		http.StatusConflict,
 		"refund_cannot_be_updated",
 		"Refund cannot be updated in its current status",
 	)
-	ErrRefundDuplicateItem = sharedmodel.NewError(http.StatusBadRequest, "refund_duplicate_item", "Duplicate item IDs in refund request")
-	ErrBuyNowSingleSkuOnly = sharedmodel.NewError(
+	ErrBuyNowSingleSkuOnly = errors.NewError(
 		http.StatusBadRequest,
 		"buy_now_single_sku_only",
 		"Buy now is only available for a single product",
 	)
-	ErrOrderNotFound         = sharedmodel.NewError(http.StatusNotFound, "order_not_found", "The order could not be found")
-	ErrQuantityParamRequired = sharedmodel.NewError(
+	ErrOrderNotFound         = errors.NewError(http.StatusNotFound, "order_not_found", "The order could not be found")
+	ErrQuantityParamRequired = errors.NewError(
 		http.StatusBadRequest,
 		"quantity_param_required",
 		"Either quantity or delta_quantity must be provided",
 	)
-	ErrBuyNowQuantityRequired = sharedmodel.NewError(http.StatusBadRequest, "buy_now_quantity_required", "Quantity is required for buy now checkout")
-	ErrSkuNotFoundInCart      = sharedmodel.NewError(http.StatusNotFound, "sku_not_found_in_cart", "Some SKU not found in cart")
-	ErrPaymentCannotCancel    = sharedmodel.NewError(http.StatusConflict, "payment_cannot_cancel", "Payment cannot be canceled")
-	ErrOrderCannotCancel      = sharedmodel.NewError(http.StatusConflict, "order_cannot_cancel", "Order cannot be canceled")
-	ErrOrderNotConfirmable    = sharedmodel.NewError(http.StatusConflict, "order_not_confirmable", "Order is not in a confirmable state")
-	ErrMissingPayment         = sharedmodel.NewError(http.StatusNotFound, "missing_payment", "Payment record not found for order")
-	ErrMissingPromotedPrice   = sharedmodel.NewError(http.StatusNotFound, "missing_promoted_price", "Promoted price not found for SKU")
+	ErrBuyNowQuantityRequired = errors.NewError(http.StatusBadRequest, "buy_now_quantity_required", "Quantity is required for buy now checkout")
+	ErrSkuNotFoundInCart      = errors.NewError(http.StatusNotFound, "sku_not_found_in_cart", "Some SKU not found in cart")
+	ErrPaymentCannotCancel    = errors.NewError(http.StatusConflict, "payment_cannot_cancel", "Payment cannot be canceled")
+	ErrOrderCannotCancel      = errors.NewError(http.StatusConflict, "order_cannot_cancel", "Order cannot be canceled")
+	ErrOrderNotConfirmable    = errors.NewError(http.StatusConflict, "order_not_confirmable", "Order is not in a confirmable state")
+	ErrMissingPayment         = errors.NewError(http.StatusNotFound, "missing_payment", "Payment record not found for order")
+	ErrMissingPromotedPrice   = errors.NewError(http.StatusNotFound, "missing_promoted_price", "Promoted price not found for SKU")
 
-	ErrItemsNotSameBuyer      = sharedmodel.NewError(http.StatusBadRequest, "items_not_same_buyer", "all items must belong to the same buyer")
-	ErrItemsNotSameAddress    = sharedmodel.NewError(http.StatusBadRequest, "items_not_same_address", "all items must have the same address")
-	ErrItemNotPending         = sharedmodel.NewError(http.StatusBadRequest, "item_not_pending", "item is not in pending status")
-	ErrItemNotOwnedBySeller   = sharedmodel.NewError(http.StatusForbidden, "item_not_owned_by_seller", "item does not belong to this seller")
-	ErrOrderNotPayable        = sharedmodel.NewError(http.StatusBadRequest, "order_not_payable", "order is not payable")
-	ErrOrderAlreadyPaid       = sharedmodel.NewError(http.StatusBadRequest, "order_already_paid", "order is already paid")
-	ErrUnknownTransportOption = sharedmodel.NewError(http.StatusBadRequest, "unknown_transport_option", "unknown transport option")
-	ErrNoDefaultPaymentMethod = sharedmodel.NewError(http.StatusBadRequest, "no_default_payment_method", "no default payment method configured")
-	ErrPaymentMethodNotFound  = sharedmodel.NewError(http.StatusNotFound, "payment_method_not_found", "payment method not found")
+	ErrItemsNotSameBuyer      = errors.NewError(http.StatusBadRequest, "items_not_same_buyer", "all items must belong to the same buyer")
+	ErrItemsNotSameAddress    = errors.NewError(http.StatusBadRequest, "items_not_same_address", "all items must have the same address")
+	ErrItemNotPending         = errors.NewError(http.StatusBadRequest, "item_not_pending", "item is not in pending status")
+	ErrItemNotOwnedBySeller   = errors.NewError(http.StatusForbidden, "item_not_owned_by_seller", "item does not belong to this seller")
+	ErrOrderNotPayable        = errors.NewError(http.StatusBadRequest, "order_not_payable", "order is not payable")
+	ErrOrderAlreadyPaid       = errors.NewError(http.StatusBadRequest, "order_already_paid", "order is already paid")
+	ErrUnknownTransportOption = errors.NewError(http.StatusBadRequest, "unknown_transport_option", "unknown transport option")
+	ErrNoDefaultPaymentMethod = errors.NewError(http.StatusBadRequest, "no_default_payment_method", "no default payment method configured")
+	ErrPaymentMethodNotFound  = errors.NewError(http.StatusNotFound, "payment_method_not_found", "payment method not found")
 
-	ErrDisputeNotFound       = sharedmodel.NewError(http.StatusNotFound, "dispute_not_found", "dispute not found")
-	ErrDisputeRefundResolved = sharedmodel.NewError(
+	ErrDisputeNotFound       = errors.NewError(http.StatusNotFound, "dispute_not_found", "dispute not found")
+	ErrDisputeRefundResolved = errors.NewError(
 		http.StatusConflict,
 		"dispute_refund_resolved",
 		"cannot dispute a refund that has already been resolved or cancelled",
 	)
-	ErrDisputeAlreadyActive = sharedmodel.NewError(
+	ErrDisputeAlreadyActive = errors.NewError(
 		http.StatusConflict,
 		"dispute_already_active",
 		"an active dispute already exists for this refund",
 	)
-	ErrDisputeNotAuthorized = sharedmodel.NewError(
+	ErrDisputeNotAuthorized = errors.NewError(
 		http.StatusForbidden,
 		"dispute_not_authorized",
 		"you are not authorized to access this dispute",
 	)
 
-	ErrRefundAmountExceedsPaid = sharedmodel.NewError(
-		http.StatusBadRequest,
-		"refund_amount_exceeds_paid",
-		"refund amount exceeds the total paid amount of the specified items",
-	)
-	ErrItemNotInOrder = sharedmodel.NewError(
-		http.StatusBadRequest,
-		"item_not_in_order",
-		"one or more item IDs do not belong to the specified order",
-	)
-	ErrPaymentNotSuccess = sharedmodel.NewError(
+	ErrPaymentNotSuccess = errors.NewError(
 		http.StatusBadRequest,
 		"payment_not_success",
 		"payment has not been completed successfully",
 	)
-	ErrPaymentExpired = sharedmodel.NewError(
+	ErrPaymentExpired = errors.NewError(
 		http.StatusConflict,
 		"payment_expired",
 		"payment session has expired",
 	)
-	ErrItemAlreadyCancelled   = sharedmodel.NewError(http.StatusConflict, "item_already_cancelled", "item already cancelled")
-	ErrItemAlreadyConfirmed   = sharedmodel.NewError(http.StatusConflict, "item_already_confirmed", "item already confirmed in an order")
-	ErrItemsTransportMismatch = sharedmodel.NewError(http.StatusBadRequest, "items_transport_mismatch", "all items must have the same transport option")
-	ErrPaymentTimeout         = sharedmodel.NewError(http.StatusConflict, "payment_timeout", "payment session expired")
-	ErrPaymentFailed          = sharedmodel.NewError(http.StatusPaymentRequired, "payment_failed", "payment failed")
-	ErrSellerConfirmTimeout   = sharedmodel.NewError(http.StatusConflict, "seller_confirm_timeout", "seller confirmation expired")
-	ErrCheckoutCancelled      = sharedmodel.NewError(http.StatusConflict, "checkout_cancelled", "checkout cancelled by buyer")
-	ErrCheckoutExpired        = sharedmodel.NewError(http.StatusConflict, "checkout_expired", "checkout session expired")
-	ErrConfirmCancelled       = sharedmodel.NewError(http.StatusConflict, "confirm_cancelled", "confirmation cancelled by buyer")
-	ErrConfirmExpired         = sharedmodel.NewError(http.StatusConflict, "confirm_expired", "confirmation session expired")
+	ErrItemAlreadyCancelled   = errors.NewError(http.StatusConflict, "item_already_cancelled", "item already cancelled")
+	ErrItemAlreadyConfirmed   = errors.NewError(http.StatusConflict, "item_already_confirmed", "item already confirmed in an order")
+	ErrItemsTransportMismatch = errors.NewError(http.StatusBadRequest, "items_transport_mismatch", "all items must have the same transport option")
+	ErrPaymentTimeout         = errors.NewError(http.StatusConflict, "payment_timeout", "payment session expired")
+	ErrPaymentFailed          = errors.NewError(http.StatusPaymentRequired, "payment_failed", "payment failed")
+	ErrSellerConfirmTimeout   = errors.NewError(http.StatusConflict, "seller_confirm_timeout", "seller confirmation expired")
+	ErrCheckoutCancelled      = errors.NewError(http.StatusConflict, "checkout_cancelled", "checkout cancelled by buyer")
+	ErrCheckoutExpired        = errors.NewError(http.StatusConflict, "checkout_expired", "checkout session expired")
+	ErrConfirmCancelled       = errors.NewError(http.StatusConflict, "confirm_cancelled", "confirmation cancelled by buyer")
+	ErrConfirmExpired         = errors.NewError(http.StatusConflict, "confirm_expired", "confirmation session expired")
 
-	ErrUnknownPaymentOption = sharedmodel.NewError(http.StatusBadRequest, "unknown_payment_option", "Unknown payment option: %s")
+	ErrUnknownPaymentOption = errors.NewErrorf(http.StatusBadRequest, "unknown_payment_option", "Unknown payment option: %s")
 
-	ErrCheckoutAddressCountryMismatch = sharedmodel.NewError(
+	ErrCheckoutAddressCountryMismatch = errors.NewErrorf(
 		http.StatusBadRequest,
 		"address_country_mismatch",
 		"address resolves to %s, buyer country is %s",
 	)
-	ErrMixedCurrencyCart = sharedmodel.NewError(
-		http.StatusBadRequest,
-		"mixed_currency_cart",
-		"all items must share the same currency (got %s and %s)",
-	)
-	ErrFXRateUnavailable = sharedmodel.NewError(
+	ErrFXRateUnavailable = errors.NewErrorf(
 		http.StatusServiceUnavailable,
 		"fx_rate_unavailable",
 		"fx rate unavailable for %s",
 	)
-	ErrTransportStatusInvalid = sharedmodel.NewError(
+	ErrTransportStatusInvalid = errors.NewErrorf(
 		http.StatusConflict,
 		"transport_status_invalid",
 		"cannot transition transport from %s to %s",
 	)
 
 	// Transaction ledger errors
-	ErrTxNotFound                = sharedmodel.NewError(http.StatusNotFound, "ORDER_TX_NOT_FOUND", "transaction not found")
-	ErrTxAlreadyFinal            = sharedmodel.NewError(http.StatusConflict, "ORDER_TX_ALREADY_FINAL", "transaction is already in a terminal state")
-	ErrInsufficientWalletBalance = sharedmodel.NewError(http.StatusPaymentRequired, "ORDER_WALLET_INSUFFICIENT", "internal wallet balance insufficient and no gateway fallback specified")
+	ErrTxNotFound                = errors.NewError(http.StatusNotFound, "tx_not_found", "transaction not found")
+	ErrTxAlreadyFinal            = errors.NewError(http.StatusConflict, "tx_already_final", "transaction is already in a terminal state")
+	ErrInsufficientWalletBalance = errors.NewError(http.StatusPaymentRequired, "wallet_insufficient", "internal wallet balance insufficient and no gateway fallback specified")
 
-	// Refund 2-stage errors
-	ErrRefundStageSkipped           = sharedmodel.NewError(http.StatusConflict, "ORDER_REFUND_STAGE_SKIPPED", "cannot approve refund without prior stage-1 acceptance")
-	ErrRefundAlreadyAccepted        = sharedmodel.NewError(http.StatusConflict, "ORDER_REFUND_ALREADY_ACCEPTED", "refund is already in stage-2 review")
-	ErrRefundAlreadyFinal           = sharedmodel.NewError(http.StatusConflict, "ORDER_REFUND_ALREADY_FINAL", "refund is already in a terminal state")
-	ErrRefundRejectionWithoutReason = sharedmodel.NewError(http.StatusBadRequest, "ORDER_REFUND_REJECTION_MISSING_NOTE", "rejection_note is required when rejecting a refund")
+	// Refund v2 errors
+	ErrRefundAlreadyAccepted  = errors.NewError(http.StatusConflict, "refund_already_accepted", "an active refund already exists for this order")
+	ErrRefundAlreadyFinal     = errors.NewError(http.StatusConflict, "refund_already_final", "refund is already in a terminal state")
+	ErrRefundWrongStage       = errors.NewError(http.StatusConflict, "refund_wrong_stage", "refund is not in the expected stage for this action")
+	ErrRefundOrderNotPaid     = errors.NewError(http.StatusConflict, "refund_order_not_paid", "cannot refund an order that has not been paid")
+	ErrRefundEvidenceRequired = errors.NewError(http.StatusBadRequest, "refund_evidence_required", "at least one evidence photo is required")
+	ErrRefundNotWithdrawable  = errors.NewError(http.StatusConflict, "refund_not_withdrawable", "refund can only be withdrawn by its buyer while still in Shipping")
 
 	// Dispute errors
-	ErrInvalidDisputeState = sharedmodel.NewError(http.StatusConflict, "ORDER_DISPUTE_INVALID_STATE", "dispute may only be raised against a Failed refund")
-	ErrUnauthorized        = sharedmodel.NewError(http.StatusForbidden, "ORDER_UNAUTHORIZED", "account is not permitted to perform this operation")
-	ErrDisputeNoteRequired = sharedmodel.NewError(http.StatusBadRequest, "ORDER_DISPUTE_NOTE_REQUIRED", "dispute note is required")
+	ErrUnauthorized  = errors.NewError(http.StatusForbidden, "unauthorized", "account is not permitted to perform this operation")
+	ErrAdminRequired = errors.NewError(http.StatusForbidden, "admin_required", "only platform staff can resolve refund disputes")
 
 	// Payout guard
-	ErrOrderHasActiveRefund = sharedmodel.NewError(http.StatusConflict, "ORDER_HAS_ACTIVE_REFUND", "cannot release escrow; an active refund exists for this order")
+	ErrOrderHasActiveRefund = errors.NewError(http.StatusConflict, "has_active_refund", "cannot release escrow; an active refund exists for this order")
 
 	// Item domain errors
-	ErrItemNotOwnedByBuyer = sharedmodel.NewError(http.StatusForbidden, "ORDER_ITEM_NOT_OWNED_BY_BUYER", "item is not owned by this buyer")
-	ErrItemNotConfirmed    = sharedmodel.NewError(http.StatusConflict, "ORDER_ITEM_NOT_CONFIRMED", "item has not been confirmed into an order")
+	ErrItemNotOwnedByBuyer = errors.NewError(http.StatusForbidden, "item_not_owned_by_buyer", "item is not owned by this buyer")
+	ErrItemNotConfirmed    = errors.NewError(http.StatusConflict, "item_not_confirmed", "item has not been confirmed into an order")
 )

@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	accountbiz "shopnexus-server/internal/module/account/biz"
-	accountdb "shopnexus-server/internal/module/account/db/sqlc"
+	accountmodel "shopnexus-server/internal/module/account/model"
 	authclaims "shopnexus-server/internal/shared/claims"
 	"shopnexus-server/internal/shared/response"
 
@@ -59,10 +59,10 @@ func (h *Handler) GetContact(c echo.Context) error {
 }
 
 type CreateContactRequest struct {
-	FullName    string                       `json:"full_name"    validate:"required"`
-	Phone       string                       `json:"phone"        validate:"required"`
-	Address     string                       `json:"address"      validate:"required"`
-	AddressType accountdb.AccountAddressType `json:"address_type" validate:"required,validateFn=Valid"`
+	FullName    string                   `json:"full_name"    validate:"required"`
+	Phone       string                   `json:"phone"        validate:"required"`
+	Address     string                   `json:"address"      validate:"required"`
+	AddressType accountmodel.AddressType `json:"address_type" validate:"required,validateFn=Valid"`
 }
 
 func (h *Handler) CreateContact(c echo.Context) error {
@@ -94,12 +94,12 @@ func (h *Handler) CreateContact(c echo.Context) error {
 }
 
 type UpdateContactRequest struct {
-	ContactID     uuid.UUID                     `json:"contact_id"     validate:"required"`
-	FullName      null.String                   `json:"full_name"      validate:"omitnil"`
-	Phone         null.String                   `json:"phone"          validate:"omitnil"`
-	Address       null.String                   `json:"address"        validate:"omitnil"`
-	AddressType   *accountdb.AccountAddressType `json:"address_type"   validate:"omitnil,validateFn=Valid"`
-	PhoneVerified null.Bool                     `json:"phone_verified" validate:"omitnil"`
+	ContactID     uuid.UUID                    `json:"contact_id"     validate:"required"`
+	FullName      null.String                  `json:"full_name"      validate:"omitnil"`
+	Phone         null.String                  `json:"phone"          validate:"omitnil"`
+	Address       null.String                  `json:"address"        validate:"omitnil"`
+	AddressType   accountmodel.NullAddressType `json:"address_type"   validate:"omitnil,validateFn=Valid"`
+	PhoneVerified null.Bool                    `json:"phone_verified" validate:"omitnil"`
 }
 
 func (h *Handler) UpdateContact(c echo.Context) error {

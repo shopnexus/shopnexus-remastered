@@ -5,7 +5,7 @@ import (
 
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 	authclaims "shopnexus-server/internal/shared/claims"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/response"
 
 	"github.com/guregu/null/v6"
@@ -13,7 +13,7 @@ import (
 )
 
 type ListTagRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 
 	Search null.String `query:"search" validate:"omitnil,max=100"`
 }
@@ -28,8 +28,8 @@ func (h *Handler) ListTag(c echo.Context) error {
 	}
 
 	result, err := h.biz.ListTag(c.Request().Context(), catalogbiz.ListTagParams{
-		PaginationParams: req.PaginationParams.Constrain(),
-		Search:           req.Search,
+		Params: req.Params.Constrain(),
+		Search: req.Search,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)

@@ -7,15 +7,15 @@ Manages the full order lifecycle: cart, checkout, seller confirmation, payment, 
 <!--START_SECTION:mermaid-->
 ```mermaid
 erDiagram
+"order.order" }o--|| "order.transport" : "transport_id"
+"order.item" }o--|o "order.order" : "order_id"
+"order.item" }o--|| "order.payment_session" : "payment_session_id"
 "order.transaction" }o--|| "order.payment_session" : "session_id"
 "order.transaction" }o--|o "order.transaction" : "reverses_id"
-"order.order" }o--|| "order.payment_session" : "confirm_session_id"
-"order.order" }o--|| "order.transport" : "transport_id"
-"order.item" }o--|| "order.payment_session" : "payment_session_id"
-"order.item" }o--|o "order.order" : "order_id"
-"order.refund" }o--|o "order.transaction" : "refund_tx_id"
-"order.refund" }o--|| "order.transport" : "transport_id"
+"order.refund" |o--|o "order.transport" : "return_to_buyer_transport_id"
+"order.refund" |o--|| "order.transport" : "return_transport_id"
 "order.refund" }o--|| "order.order" : "order_id"
+"order.refund" }o--|o "order.transaction" : "refund_tx_id"
 "order.refund_dispute" }o--|| "order.refund" : "refund_id"
 
 "order.cart_item" {
@@ -39,6 +39,7 @@ erDiagram
   text transport_option
   bigint subtotal_amount
   bigint total_amount
+  varchar(3) source_currency
   uuid payment_session_id
   timestamptz date_cancelled
   uuid cancelled_by_id
@@ -64,6 +65,7 @@ erDiagram
   text note
   varchar(3) currency
   bigint total_amount
+  jsonb fx_snapshot
   jsonb data
   timestamptz date_created
   timestamptz date_paid
@@ -73,29 +75,29 @@ erDiagram
   uuid id
   uuid account_id
   uuid order_id
-  bigint transport_id
-  refund_method method
   text reason
-  text address
+  jsonb attachments
   timestamptz date_created
-  status status
-  uuid accepted_by_id
-  timestamptz date_accepted
-  text rejection_note
-  uuid approved_by_id
-  timestamptz date_approved
+  refund_status status
+  bigint return_transport_id
+  timestamptz date_received_by_seller
+  timestamptz review_deadline
+  timestamptz seller_decision_at
+  bigint return_to_buyer_transport_id
+  text rejection_reason
   uuid refund_tx_id
 }
 "order.refund_dispute" {
   uuid id
-  uuid account_id
   uuid refund_id
+  uuid account_id
   text reason
-  status status
-  text note
+  jsonb attachments
   timestamptz date_created
+  dispute_status status
   uuid resolved_by_id
   timestamptz date_resolved
+  text resolution_note
 }
 "order.transaction" {
   uuid id
@@ -106,26 +108,7 @@ erDiagram
   text payment_option
   jsonb data
   bigint amount
-  varchar(3) from_currency
-  varchar(3) to_currency
-  numeric exchange_rate
-  uuid reverses_id
-  timestamptz date_created
-  timestamptz date_settled
-  timestamptz date_expired
-}
-"order.transaction_settled" {
-  uuid id
-  uuid session_id
-  status status
-  text note
-  text error
-  text payment_option
-  jsonb data
-  bigint amount
-  varchar(3) from_currency
-  varchar(3) to_currency
-  numeric exchange_rate
+  varchar(3) currency
   uuid reverses_id
   timestamptz date_created
   timestamptz date_settled
@@ -159,7 +142,19 @@ Transport providers are also pluggable via `transport.Client`. The seller select
 
 ### Refunds
 
-Buyers request refunds on paid orders, choosing either PickUp (seller arranges pickup) or DropOff (buyer ships back). Refunds go through seller confirmation. Disputes can be raised against refunds.
+Buyers commit physically when opening a refund: a return shipment is created at request time (mandatory transport option + evidence photos). The refund flows through 5 terminal-bounded states:
+
+```
+Shipping → AwaitingSellerReview → { Accepted | Disputed → { Accepted | Rejected } }
+```
+
+- **Shipping**: return transport in motion (mocked auto-Success in dev).
+- **AwaitingSellerReview**: seller has 3 days to decide (auto-accept on timeout).
+- **Disputed**: seller refused → admin reviews.
+- **Accepted**: buyer wallet credited via reversal transaction.
+- **Rejected**: admin sided with seller → items shipped back to buyer, no refund.
+
+Disputes are **seller-initiated only**. Admin resolves with `Uphold` (SellerWins → refund Rejected) or `Dismiss` (BuyerWins → refund Accepted). The credit path is shared by `SellerApproveRefund`, `AutoAcceptRefund`, and `AdminDismissDispute` via the `executeRefundCredit` helper.
 
 ## Flows
 
@@ -175,7 +170,7 @@ Cart → Checkout (pending items) → Seller confirms (creates order + transport
 3. **Buyer pending**: buyer lists (`ListBuyerPending`) and can cancel (`CancelBuyerPending`) pending items, which releases the reserved inventory.
 4. **Seller incoming**: seller views pending items for their products (`ListSellerPending`). Can preview costs via `QuoteTransport` before confirming. `ConfirmSellerPending` groups items into an order, creates a transport, and calculates totals. `RejectSellerPending` releases inventory.
 5. **Payment** (`PayBuyerOrders`): buyer pays one or more confirmed orders. Creates a payment record, calls the payment provider. Provider webhook confirms success/failure.
-6. **Refund**: buyer requests refund on a paid order (`CreateBuyerRefund`). Seller confirms (`ConfirmSellerRefund`). Buyer can update or cancel pending refunds.
+6. **Refund** (v2): buyer ships return at `CreateBuyerRefund` time. `RefundWorkflow` (Restate, keyed by refund ID) drives the 3 phases: wait Delivered (14D timeout fallback) → wait Seller decision (3D auto-accept) → wait Admin decision. Seller can `SellerApproveRefund` or `SellerDisputeRefund`. Admin resolves disputes via `AdminUpholdDispute` / `AdminDismissDispute`.
 
 ### Payment Webhook Flow
 
@@ -225,9 +220,7 @@ All under `/api/v1/order`.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/buyer/refund` | List refund requests |
-| POST | `/buyer/refund` | Create refund request (PickUp/DropOff) |
-| PATCH | `/buyer/refund` | Update pending refund |
-| DELETE | `/buyer/refund` | Cancel pending refund |
+| POST | `/buyer/refund` | Create refund + commit return shipment (mandatory evidence photos) |
 
 ### Seller — Pending
 
@@ -249,7 +242,19 @@ All under `/api/v1/order`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/seller/refund/confirm` | Seller confirms refund |
+| GET | `/seller/refund` | List refund requests against seller's orders |
+| POST | `/refunds/:id/approve` | Seller approves → credit buyer wallet |
+| POST | `/refunds/:id/dispute` | Seller disputes → escalate to admin (mandatory evidence) |
+
+### Disputes
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/disputes` | List disputes (admin: all; buyer/seller: own) |
+| GET | `/disputes/:id` | Get dispute detail |
+| GET | `/refunds/:refundID/disputes` | List disputes for a specific refund |
+| POST | `/disputes/:disputeID/uphold` | **Admin only**. Seller wins → refund Rejected |
+| POST | `/disputes/:disputeID/dismiss` | **Admin only**. Buyer wins → refund Accepted |
 
 ### Payment Webhooks
 

@@ -4,10 +4,11 @@ package chatbiz
 
 import (
 	"context"
-	"github.com/google/uuid"
 	restateclient "shopnexus-server/internal/infras/restate"
 	chatdb "shopnexus-server/internal/module/chat/db/sqlc"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
+
+	"github.com/google/uuid"
 )
 
 const serviceName = "Chat"
@@ -31,16 +32,16 @@ func (p *ChatRestateClient) GetConversation(ctx context.Context, id uuid.UUID) (
 	return restateclient.Call[chatdb.ChatConversation](ctx, p.client, serviceName, "GetConversation", id)
 }
 
-func (p *ChatRestateClient) ListConversation(ctx context.Context, params ListConversationParams) (sharedmodel.PaginateResult[chatdb.ChatConversation], error) {
-	return restateclient.Call[sharedmodel.PaginateResult[chatdb.ChatConversation]](ctx, p.client, serviceName, "ListConversation", params)
+func (p *ChatRestateClient) ListConversation(ctx context.Context, params ListConversationParams) (paginate.PaginateResult[chatdb.ChatConversation], error) {
+	return restateclient.Call[paginate.PaginateResult[chatdb.ChatConversation]](ctx, p.client, serviceName, "ListConversation", params)
 }
 
 func (p *ChatRestateClient) SendMessage(ctx context.Context, params SendMessageParams) (chatdb.ChatMessage, error) {
 	return restateclient.Call[chatdb.ChatMessage](ctx, p.client, serviceName, "SendMessage", params)
 }
 
-func (p *ChatRestateClient) ListMessage(ctx context.Context, params ListMessageParams) (sharedmodel.PaginateResult[chatdb.ChatMessage], error) {
-	return restateclient.Call[sharedmodel.PaginateResult[chatdb.ChatMessage]](ctx, p.client, serviceName, "ListMessage", params)
+func (p *ChatRestateClient) ListMessage(ctx context.Context, params ListMessageParams) (paginate.PaginateResult[chatdb.ChatMessage], error) {
+	return restateclient.Call[paginate.PaginateResult[chatdb.ChatMessage]](ctx, p.client, serviceName, "ListMessage", params)
 }
 
 func (p *ChatRestateClient) MarkRead(ctx context.Context, params MarkReadParams) error {

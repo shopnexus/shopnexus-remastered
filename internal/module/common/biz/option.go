@@ -3,6 +3,7 @@ package commonbiz
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/google/uuid"
 	restate "github.com/restatedev/sdk-go"
@@ -53,7 +54,7 @@ func (b *CommonHandler) UpsertOptions(ctx restate.Context, params UpsertOptionsP
 // where we hold a plain context.Context (not a Restate one).
 func (b *CommonHandler) upsertOptions(ctx context.Context, params UpsertOptionsParams) error {
 	if err := validator.Validate(params); err != nil {
-		return sharedmodel.WrapErr("validate upsert options", err)
+		return fmt.Errorf("validate upsert options: %w", err)
 	}
 
 	q := b.storage.Querier()
@@ -74,7 +75,7 @@ func (b *CommonHandler) upsertOptions(ctx context.Context, params UpsertOptionsP
 			Type:        params.Type,
 			Provider:    cfg.Provider,
 		}); err != nil {
-			return sharedmodel.WrapErr("db upsert option", err)
+			return fmt.Errorf("db upsert option: %w", err)
 		}
 	}
 	return nil
@@ -84,12 +85,12 @@ func (b *CommonHandler) upsertOptions(ctx context.Context, params UpsertOptionsP
 // ignored at the SQL layer (DELETE … WHERE id = ANY(...)).
 func (b *CommonHandler) DeleteOptions(ctx restate.Context, params DeleteOptionParams) error {
 	if err := validator.Validate(params); err != nil {
-		return sharedmodel.WrapErr("validate delete options", err)
+		return fmt.Errorf("validate delete options: %w", err)
 	}
 	if err := b.storage.Querier().DeleteOption(ctx, commondb.DeleteOptionParams{
 		ID: params.IDs,
 	}); err != nil {
-		return sharedmodel.WrapErr("db delete option", err)
+		return fmt.Errorf("db delete option: %w", err)
 	}
 	return nil
 }
@@ -101,7 +102,7 @@ func (b *CommonHandler) ListOption(
 	params ListOptionParams,
 ) ([]OptionListItem, error) {
 	if err := validator.Validate(params); err != nil {
-		return nil, sharedmodel.WrapErr("validate list service option", err)
+		return nil, fmt.Errorf("validate list service option: %w", err)
 	}
 
 	dbOptions, err := b.storage.Querier().ListSortedOption(ctx, commondb.ListSortedOptionParams{
@@ -110,7 +111,7 @@ func (b *CommonHandler) ListOption(
 		AccountID: params.AccountID,
 	})
 	if err != nil {
-		return nil, sharedmodel.WrapErr("db list service option", err)
+		return nil, fmt.Errorf("db list service option: %w", err)
 	}
 
 	var result []OptionListItem

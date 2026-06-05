@@ -5,7 +5,7 @@ import (
 
 	accountmodel "shopnexus-server/internal/module/account/model"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/guregu/null/v6"
@@ -13,7 +13,7 @@ import (
 )
 
 type ListTagParams struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 
 	Search null.String `validate:"omitnil,max=100"`
 }
@@ -22,8 +22,8 @@ type ListTagParams struct {
 func (b *CatalogHandler) ListTag(
 	ctx restate.Context,
 	params ListTagParams,
-) (sharedmodel.PaginateResult[catalogdb.CatalogTag], error) {
-	var zero sharedmodel.PaginateResult[catalogdb.CatalogTag]
+) (paginate.PaginateResult[catalogdb.CatalogTag], error) {
+	var zero paginate.PaginateResult[catalogdb.CatalogTag]
 
 	if err := validator.Validate(params); err != nil {
 		return zero, err
@@ -43,8 +43,8 @@ func (b *CatalogHandler) ListTag(
 		total.SetValid(listTag[0].TotalCount)
 	}
 
-	return sharedmodel.PaginateResult[catalogdb.CatalogTag]{
-		PageParams: params.PaginationParams,
+	return paginate.PaginateResult[catalogdb.CatalogTag]{
+		PageParams: params.Params,
 		Total:      total,
 		Data: lo.Map(
 			listTag,

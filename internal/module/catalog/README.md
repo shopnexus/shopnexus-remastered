@@ -74,7 +74,6 @@ erDiagram
 }
 "catalog.tag" {
   varchar(100) id
-  uuid account_id
   varchar(100) name
   varchar(255) description
 }

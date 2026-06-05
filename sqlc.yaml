@@ -203,9 +203,6 @@ overrides:
           type: "String"
 
       # Int4
-      # - db_type: "int4"
-      #   nullable: false
-      #   go_type: int32
       - db_type: "pg_catalog.int4"
         nullable: true
         go_type:
@@ -249,9 +246,6 @@ overrides:
           type: "Float"
 
       # Bool
-      # - db_type: "pg_catalog.bool"
-      #   nullable: false
-      #   go_type: bool
       - db_type: "pg_catalog.bool"
         nullable: true
         go_type:

@@ -1,6 +1,7 @@
 package ptrutil
 
-// ToPtr returns a pointer to val if valid is true, or nil otherwise.
+func Ptr[T any](v T) *T { return &v }
+
 func PtrIf[T any](val T, valid bool) *T {
 	if !valid {
 		return nil

@@ -15,23 +15,21 @@ type Config struct {
 }
 
 type Order struct {
-	PaymentExpiryDays int64 `yaml:"paymentExpiryDays" mapstructure:"paymentExpiryDays" validate:"required,gte=1"`
+	PaymentExpiryDays int64  `yaml:"paymentExpiryDays" mapstructure:"paymentExpiryDays" validate:"required,gte=1"`
+	ReturnURL         string `yaml:"returnUrl"         mapstructure:"returnUrl"         validate:"required,url"`
 }
 
 type Vnpay struct {
 	TmnCode    string `yaml:"tmnCode"    mapstructure:"tmnCode"    validate:"required"`
 	HashSecret string `yaml:"hashSecret" mapstructure:"hashSecret" validate:"required"`
-	ReturnURL  string `yaml:"returnUrl"  mapstructure:"returnUrl"  validate:"required,url"`
 }
 
 type Sepay struct {
-	MerchantID   string `yaml:"merchantId"   mapstructure:"merchantId"`
-	SecretKey    string `yaml:"secretKey"    mapstructure:"secretKey"`
-	IPNSecretKey string `yaml:"ipnSecretKey" mapstructure:"ipnSecretKey"`
-	SuccessURL   string `yaml:"successUrl"   mapstructure:"successUrl"`
-	ErrorURL     string `yaml:"errorUrl"     mapstructure:"errorUrl"`
-	CancelURL    string `yaml:"cancelUrl"    mapstructure:"cancelUrl"`
-	Sandbox      bool   `yaml:"sandbox"      mapstructure:"sandbox"`
+	MerchantID    string `yaml:"merchantId"    mapstructure:"merchantId"`
+	SecretKey     string `yaml:"secretKey"     mapstructure:"secretKey"`
+	IPNSecretKey  string `yaml:"ipnSecretKey"  mapstructure:"ipnSecretKey"`
+	PublicBaseURL string `yaml:"publicBaseUrl" mapstructure:"publicBaseUrl"`
+	Sandbox       bool   `yaml:"sandbox"       mapstructure:"sandbox"`
 }
 
 type CardPayment struct {

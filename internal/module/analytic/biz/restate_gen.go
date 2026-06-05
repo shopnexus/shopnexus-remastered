@@ -4,11 +4,12 @@ package analyticbiz
 
 import (
 	"context"
-	"github.com/google/uuid"
 	restateclient "shopnexus-server/internal/infras/restate"
 	analyticdb "shopnexus-server/internal/module/analytic/db/sqlc"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
+
+	"github.com/google/uuid"
 )
 
 const serviceName = "Analytic"
@@ -36,7 +37,7 @@ func (p *AnalyticRestateClient) GetProductPopularity(ctx context.Context, spuID 
 	return restateclient.Call[analyticdb.AnalyticProductPopularity](ctx, p.client, serviceName, "GetProductPopularity", spuID)
 }
 
-func (p *AnalyticRestateClient) ListTopProductPopularity(ctx context.Context, params sharedmodel.PaginationParams) ([]analyticdb.AnalyticProductPopularity, error) {
+func (p *AnalyticRestateClient) ListTopProductPopularity(ctx context.Context, params paginate.Params) ([]analyticdb.AnalyticProductPopularity, error) {
 	return restateclient.Call[[]analyticdb.AnalyticProductPopularity](ctx, p.client, serviceName, "ListTopProductPopularity", params)
 }
 

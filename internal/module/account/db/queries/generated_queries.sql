@@ -26,7 +26,8 @@ WHERE (
     ("password" = ANY(sqlc.slice('password')) OR sqlc.slice('password') IS NULL) AND
     ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
     ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
+    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
+    ("role" = ANY(sqlc.slice('role')) OR sqlc.slice('role') IS NULL)
 );
 
 -- name: ListAccount :many
@@ -44,7 +45,8 @@ WHERE (
     ("password" = ANY(sqlc.slice('password')) OR sqlc.slice('password') IS NULL) AND
     ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
     ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
+    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
+    ("role" = ANY(sqlc.slice('role')) OR sqlc.slice('role') IS NULL)
 )
 ORDER BY "id"
 LIMIT sqlc.narg('limit')::int
@@ -65,25 +67,26 @@ WHERE (
     ("password" = ANY(sqlc.slice('password')) OR sqlc.slice('password') IS NULL) AND
     ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
     ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
+    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
+    ("role" = ANY(sqlc.slice('role')) OR sqlc.slice('role') IS NULL)
 )
 ORDER BY "id"
 LIMIT sqlc.narg('limit')::int
 OFFSET sqlc.narg('offset')::int;
 
 -- name: CreateAccount :one
-INSERT INTO "account"."account" ("id", "status", "phone", "email", "username", "password", "date_created")
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO "account"."account" ("id", "status", "phone", "email", "username", "password", "date_created", "role")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: CreateBatchAccount :batchone
-INSERT INTO "account"."account" ("id", "status", "phone", "email", "username", "password", "date_created")
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO "account"."account" ("id", "status", "phone", "email", "username", "password", "date_created", "role")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: CreateCopyAccount :copyfrom
-INSERT INTO "account"."account" ("id", "status", "phone", "email", "username", "password", "date_created")
-VALUES ($1, $2, $3, $4, $5, $6, $7);
+INSERT INTO "account"."account" ("id", "status", "phone", "email", "username", "password", "date_created", "role")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
 
 -- name: CreateDefaultAccount :one
 INSERT INTO "account"."account" ("phone", "email", "username", "password")
@@ -101,7 +104,8 @@ SET "status" = COALESCE(sqlc.narg('status'), "status"),
     "email" = CASE WHEN sqlc.arg('null_email')::bool = TRUE THEN NULL ELSE COALESCE(sqlc.narg('email'), "email") END,
     "username" = CASE WHEN sqlc.arg('null_username')::bool = TRUE THEN NULL ELSE COALESCE(sqlc.narg('username'), "username") END,
     "password" = CASE WHEN sqlc.arg('null_password')::bool = TRUE THEN NULL ELSE COALESCE(sqlc.narg('password'), "password") END,
-    "date_created" = COALESCE(sqlc.narg('date_created'), "date_created")
+    "date_created" = COALESCE(sqlc.narg('date_created'), "date_created"),
+    "role" = COALESCE(sqlc.narg('role'), "role")
 WHERE "id" = sqlc.arg('id')
 RETURNING *;
 
@@ -119,7 +123,8 @@ WHERE (
     ("password" = ANY(sqlc.slice('password')) OR sqlc.slice('password') IS NULL) AND
     ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
     ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
+    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
+    ("role" = ANY(sqlc.slice('role')) OR sqlc.slice('role') IS NULL)
 );
 
 -- ========================================

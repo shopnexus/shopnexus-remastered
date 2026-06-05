@@ -396,7 +396,6 @@ SELECT COUNT(*)
 FROM "catalog"."tag"
 WHERE (
     ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
     ("name" = ANY(sqlc.slice('name')) OR sqlc.slice('name') IS NULL) AND
     ("description" = ANY(sqlc.slice('description')) OR sqlc.slice('description') IS NULL)
 );
@@ -406,7 +405,6 @@ SELECT *
 FROM "catalog"."tag"
 WHERE (
     ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
     ("name" = ANY(sqlc.slice('name')) OR sqlc.slice('name') IS NULL) AND
     ("description" = ANY(sqlc.slice('description')) OR sqlc.slice('description') IS NULL)
 )
@@ -419,7 +417,6 @@ SELECT sqlc.embed(embed_tag), COUNT(*) OVER() as total_count
 FROM "catalog"."tag" embed_tag
 WHERE (
     ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
     ("name" = ANY(sqlc.slice('name')) OR sqlc.slice('name') IS NULL) AND
     ("description" = ANY(sqlc.slice('description')) OR sqlc.slice('description') IS NULL)
 )
@@ -428,32 +425,31 @@ LIMIT sqlc.narg('limit')::int
 OFFSET sqlc.narg('offset')::int;
 
 -- name: CreateTag :one
-INSERT INTO "catalog"."tag" ("id", "account_id", "name", "description")
-VALUES ($1, $2, $3, $4)
+INSERT INTO "catalog"."tag" ("id", "name", "description")
+VALUES ($1, $2, $3)
 RETURNING *;
 
 -- name: CreateBatchTag :batchone
-INSERT INTO "catalog"."tag" ("id", "account_id", "name", "description")
-VALUES ($1, $2, $3, $4)
+INSERT INTO "catalog"."tag" ("id", "name", "description")
+VALUES ($1, $2, $3)
 RETURNING *;
 
 -- name: CreateCopyTag :copyfrom
-INSERT INTO "catalog"."tag" ("id", "account_id", "name", "description")
-VALUES ($1, $2, $3, $4);
+INSERT INTO "catalog"."tag" ("id", "name", "description")
+VALUES ($1, $2, $3);
 
 -- name: CreateDefaultTag :one
-INSERT INTO "catalog"."tag" ("id", "account_id", "name", "description")
-VALUES ($1, $2, $3, $4)
+INSERT INTO "catalog"."tag" ("id", "name", "description")
+VALUES ($1, $2, $3)
 RETURNING *;
 
 -- name: CreateCopyDefaultTag :copyfrom
-INSERT INTO "catalog"."tag" ("id", "account_id", "name", "description")
-VALUES ($1, $2, $3, $4);
+INSERT INTO "catalog"."tag" ("id", "name", "description")
+VALUES ($1, $2, $3);
 
 -- name: UpdateTag :one
 UPDATE "catalog"."tag"
-SET "account_id" = COALESCE(sqlc.narg('account_id'), "account_id"),
-    "name" = COALESCE(sqlc.narg('name'), "name"),
+SET "name" = COALESCE(sqlc.narg('name'), "name"),
     "description" = CASE WHEN sqlc.arg('null_description')::bool = TRUE THEN NULL ELSE COALESCE(sqlc.narg('description'), "description") END
 WHERE "id" = sqlc.arg('id')
 RETURNING *;
@@ -462,7 +458,6 @@ RETURNING *;
 DELETE FROM "catalog"."tag"
 WHERE (
     ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
     ("name" = ANY(sqlc.slice('name')) OR sqlc.slice('name') IS NULL) AND
     ("description" = ANY(sqlc.slice('description')) OR sqlc.slice('description') IS NULL)
 );

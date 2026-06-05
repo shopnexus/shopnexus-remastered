@@ -2,7 +2,6 @@ package promotionmodel
 
 import (
 	"encoding/json"
-	promotiondb "shopnexus-server/internal/module/promotion/db/sqlc"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,14 +13,14 @@ type Promotion struct {
 	Code    string        `json:"code"`
 	OwnerID uuid.NullUUID `json:"owner_id"`
 
-	Type        promotiondb.PromotionType `json:"type"`
-	Title       string                    `json:"title"`
-	Description null.String               `json:"description"`
-	IsEnabled   bool                      `json:"is_enabled"`
-	AutoApply   bool                      `json:"auto_apply"`
-	Group       string                    `json:"group"`
-	Priority    int32                     `json:"priority"`
-	Data        json.RawMessage           `json:"data"`
+	Type        Type            `json:"type"`
+	Title       string          `json:"title"`
+	Description null.String     `json:"description"`
+	IsEnabled   bool            `json:"is_enabled"`
+	AutoApply   bool            `json:"auto_apply"`
+	Group       string          `json:"group"`
+	Priority    int32           `json:"priority"`
+	Data        json.RawMessage `json:"data"`
 
 	DateStarted time.Time `json:"date_started"`
 	DateEnded   null.Time `json:"date_ended"`
@@ -33,6 +32,6 @@ type Promotion struct {
 }
 
 type PromotionRef struct {
-	RefType promotiondb.PromotionRefType `validate:"required,validateFn=Valid"`
-	RefID   uuid.UUID                    `validate:"required"`
+	RefType RefType   `validate:"required,validateFn=Valid"`
+	RefID   uuid.UUID `validate:"required"`
 }

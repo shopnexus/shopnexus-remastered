@@ -1,10 +1,11 @@
 package accountbiz
 
 import (
+	"fmt"
+
 	restate "github.com/restatedev/sdk-go"
 
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
-	sharedmodel "shopnexus-server/internal/shared/model"
 
 	"github.com/google/uuid"
 )
@@ -20,7 +21,7 @@ func (b *AccountHandler) SuspendAccount(ctx restate.Context, params SuspendAccou
 		ID:     params.AccountID,
 		Status: accountdb.NullAccountStatus{AccountStatus: accountdb.AccountStatusSuspended, Valid: true},
 	}); err != nil {
-		return sharedmodel.WrapErr("db suspend account", err)
+		return fmt.Errorf("db suspend account: %w", err)
 	}
 	return nil
 }

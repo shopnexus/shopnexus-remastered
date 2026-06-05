@@ -5,14 +5,14 @@ import (
 
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	authclaims "shopnexus-server/internal/shared/claims"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/response"
 
 	"github.com/labstack/echo/v4"
 )
 
 type ListNotificationRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 }
 
 func (h *Handler) ListNotification(c echo.Context) error {
@@ -27,8 +27,8 @@ func (h *Handler) ListNotification(c echo.Context) error {
 	}
 
 	result, err := h.biz.ListNotification(c.Request().Context(), accountbiz.ListNotificationParams{
-		Account:          claims.Account,
-		PaginationParams: req.PaginationParams.Constrain(),
+		Account: claims.Account,
+		Params:  req.Params.Constrain(),
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)

@@ -2,12 +2,11 @@ package validator
 
 import (
 	"database/sql/driver"
-	"errors"
+	stderrors "errors"
 	"fmt"
 	"reflect"
+	"shopnexus-server/internal/shared/errors"
 	"sync"
-
-	sharedmodel "shopnexus-server/internal/shared/model"
 
 	"github.com/bytedance/sonic"
 	"github.com/go-playground/locales/en"
@@ -16,7 +15,6 @@ import (
 	entranslations "github.com/go-playground/validator/v10/translations/en"
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	restate "github.com/restatedev/sdk-go"
 )
 
 var (
@@ -71,7 +69,7 @@ func New() (*CustomValidator, error) {
 func (cv *CustomValidator) Validate(i any) error {
 	err := cv.validator.Struct(i)
 	var valErr validator.ValidationErrors
-	if errors.As(err, &valErr) {
+	if stderrors.As(err, &valErr) {
 		trans, _ := cv.uni.GetTranslator("en")
 		text, err := sonic.Marshal(valErr.Translate(trans))
 		if err != nil {
@@ -79,7 +77,7 @@ func (cv *CustomValidator) Validate(i any) error {
 			return valErr
 		}
 
-		return sharedmodel.ErrValidation.Fmt(string(text))
+		return errors.ErrValidation.Fmt(string(text))
 	}
 
 	return err
@@ -117,7 +115,7 @@ func Validate(i any) error {
 		}
 	})
 
-	return restate.TerminalError(validate.Validate(i), 400)
+	return validate.Validate(i)
 }
 
 // Unmarshal unmarshal JSON data into a struct and validate the result.

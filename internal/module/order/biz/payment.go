@@ -1,40 +1,44 @@
 package orderbiz
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	commonbiz "shopnexus-server/internal/module/common/biz"
+	orderdb "shopnexus-server/internal/module/order/db/sqlc"
+	ordermodel "shopnexus-server/internal/module/order/model"
+	"shopnexus-server/internal/provider/payment"
+	"shopnexus-server/internal/provider/payment/card"
+	"shopnexus-server/internal/provider/payment/sepay"
+	"shopnexus-server/internal/provider/payment/vnpay"
+	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/validator"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	restate "github.com/restatedev/sdk-go"
-
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
-	ordermodel "shopnexus-server/internal/module/order/model"
-	"shopnexus-server/internal/provider/payment"
-	sharedmodel "shopnexus-server/internal/shared/model"
-	"shopnexus-server/internal/shared/validator"
 )
 
 // OnPaymentResult is the unified entry point for gateway IPN webhooks.
-func (b *OrderHandler) OnPaymentResult(ctx restate.Context, params payment.Notification) error {
+func (b *paymentHandler) OnPaymentResult(ctx restate.Context, params payment.Notification) error {
 	if err := validator.Validate(params); err != nil {
-		return sharedmodel.WrapErr("validate on payment result", err)
+		return fmt.Errorf("validate on payment result: %w", err)
 	}
 
 	txID, err := uuid.Parse(params.RefID)
 	if err != nil {
-		return sharedmodel.WrapErr("parse tx id", err)
+		return fmt.Errorf("parse tx id: %w", err)
 	}
 
 	tx, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderTransaction, error) {
 		return b.storage.Querier().GetTransaction(rctx, uuid.NullUUID{UUID: txID, Valid: true})
 	})
 	if err != nil {
-		return sharedmodel.WrapErr("get transaction", err)
+		return fmt.Errorf("get transaction: %w", err)
 	}
 
 	// load session + resolve TxID if the webhook didn't supply one.
@@ -42,7 +46,7 @@ func (b *OrderHandler) OnPaymentResult(ctx restate.Context, params payment.Notif
 		return b.storage.Querier().GetPaymentSession(rctx, uuid.NullUUID{UUID: tx.SessionID, Valid: true})
 	})
 	if err != nil {
-		return sharedmodel.WrapErr("get session", err)
+		return fmt.Errorf("get session: %w", err)
 	}
 
 	wfName, wfID := WorkflowForSession(session)
@@ -58,9 +62,9 @@ func (b *OrderHandler) OnPaymentResult(ctx restate.Context, params payment.Notif
 // WorkflowForSession maps payment_session.kind to (workflowName, workflowID).
 func WorkflowForSession(s orderdb.OrderPaymentSession) (workflowName, workflowID string) {
 	switch s.Kind {
-	case SessionKindBuyerCheckout:
+	case ordermodel.SessionKindBuyerCheckout:
 		return "CheckoutWorkflow", s.ID.String()
-	case SessionKindSellerConfirmationFee:
+	case ordermodel.SessionKindSellerConfirmationFee:
 		return "ConfirmWorkflow", s.ID.String()
 	default:
 		return "", ""
@@ -75,7 +79,7 @@ type InitGatewayPaymentParams struct {
 }
 
 // InitGatewayPayment creates a gateway payment
-func (b *OrderHandler) InitGatewayPayment(
+func (b *paymentHandler) InitGatewayPayment(
 	ctx restate.Context,
 	params InitGatewayPaymentParams,
 ) (string, error) {
@@ -85,7 +89,7 @@ func (b *OrderHandler) InitGatewayPayment(
 
 	paymentClient, err := b.getPaymentClient(params.PaymentOption)
 	if err != nil {
-		return "", sharedmodel.WrapErr("get payment client", err)
+		return "", fmt.Errorf("get payment client: %w", err)
 	}
 
 	url, err := restate.Run(ctx, func(rctx restate.RunContext) (string, error) {
@@ -100,7 +104,7 @@ func (b *OrderHandler) InitGatewayPayment(
 		return r.RedirectURL, nil
 	})
 	if err != nil {
-		return "", sharedmodel.WrapErr("create gateway payment", err)
+		return "", fmt.Errorf("create gateway payment: %w", err)
 	}
 
 	if url != "" {
@@ -111,7 +115,7 @@ func (b *OrderHandler) InitGatewayPayment(
 				Data: data,
 			})
 		}); pErr != nil {
-			return "", sharedmodel.WrapErr("persist gateway url on tx", pErr)
+			return "", fmt.Errorf("persist gateway url on tx: %w", pErr)
 		}
 	}
 
@@ -122,33 +126,29 @@ func (b *OrderHandler) InitGatewayPayment(
 // Pending+not-expired gateway tx whose URL the client can reuse. The echo
 // "ensure payment URL" handler uses this to skip a workflow round-trip on
 // the happy path; on the retry path it falls back to RequestNewPaymentURL.
-func (b *OrderHandler) GetReusableGatewayURL(
+func (b *paymentHandler) GetReusableGatewayURL(
 	ctx restate.Context,
 	sessionID uuid.UUID,
 ) (ReusableGatewayURLState, error) {
 	var state ReusableGatewayURLState
 
-	session, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderPaymentSession, error) {
-		return b.storage.Querier().GetPaymentSession(rctx, uuid.NullUUID{UUID: sessionID, Valid: true})
-	})
+	session, err := b.storage.Querier().GetPaymentSession(ctx, uuid.NullUUID{UUID: sessionID, Valid: true})
 	if err != nil {
-		return state, sharedmodel.WrapErr("get payment session", err)
+		return state, fmt.Errorf("get payment session: %w", err)
 	}
 	if session.Status != orderdb.OrderStatusPending {
 		state.SessionTerminated = true
 		return state, nil
 	}
 
-	tx, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderTransaction, error) {
-		return b.storage.Querier().GetLatestGatewayTxBySession(rctx, sessionID)
-	})
+	tx, err := b.storage.Querier().GetLatestGatewayTxBySession(ctx, sessionID)
 	if err != nil {
 		// pgx returns ErrNoRows when no gateway tx exists yet — treat as
 		// "no reusable URL" so the caller signals the workflow.
 		if errors.Is(err, pgx.ErrNoRows) {
 			return state, nil
 		}
-		return state, sharedmodel.WrapErr("get latest gateway tx", err)
+		return state, fmt.Errorf("get latest gateway tx: %w", err)
 	}
 
 	if tx.Status == orderdb.OrderStatusPending &&
@@ -176,12 +176,10 @@ type gatewayPaymentLoopParams struct {
 	Description   string // gateway transaction memo, e.g. "Checkout session %s"
 	PaymentOption string
 	Amount        int64
-	FromCurrency  string
-	ToCurrency    string
-	ExchangeRate  pgtype.Numeric
+	Currency      string // Rail debit currency
 
-	ErrCancelled sharedmodel.Error
-	ErrExpired   sharedmodel.Error
+	ErrCancelled error
+	ErrExpired   error
 }
 
 // runGatewayPaymentLoop drives the multi-attempt gateway payment leg shared
@@ -200,7 +198,7 @@ type gatewayPaymentLoopParams struct {
 // Caller is responsible for: workflow-level saga registration, the
 // pre-loop session/wallet-tx creation, and the post-success tail. This
 // helper only owns the gateway leg.
-func (b *OrderHandler) runGatewayPaymentLoop(
+func (b *paymentHandler) runGatewayPaymentLoop(
 	ctx restate.WorkflowContext,
 	p gatewayPaymentLoopParams,
 ) error {
@@ -223,16 +221,14 @@ paymentLoop:
 				PaymentOption: null.StringFrom(p.PaymentOption),
 				Data:          json.RawMessage("{}"),
 				Amount:        p.Amount,
-				FromCurrency:  p.FromCurrency,
-				ToCurrency:    p.ToCurrency,
-				ExchangeRate:  p.ExchangeRate,
+				Currency:      p.Currency,
 				ReversesID:    uuid.NullUUID{},
 				DateSettled:   null.Time{},
 				DateExpired:   null.TimeFrom(time.Now().Add(paymentExpiry)),
 			})
 			return e
 		}); cErr != nil {
-			return sharedmodel.WrapErr("db create gateway tx", cErr)
+			return fmt.Errorf("db create gateway tx: %w", cErr)
 		}
 
 		url, gErr := b.InitGatewayPayment(ctx, InitGatewayPaymentParams{
@@ -245,14 +241,14 @@ paymentLoop:
 			return gErr
 		}
 		if pErr := restate.Promise[string](ctx, fmt.Sprintf("payment_url_%d", attempt)).Resolve(url); pErr != nil {
-			return sharedmodel.WrapErr("resolve payment url promise", pErr)
+			return fmt.Errorf("resolve payment url promise: %w", pErr)
 		}
 
 		paymentPromise := restate.Promise[payment.Notification](ctx, "payment_event_"+attemptTxID.String())
 		attemptExpiryFut := restate.After(ctx, paymentExpiry)
 		sessionRem := time.Until(p.SessionDeadline)
 		if sessionRem <= 0 {
-			return p.ErrExpired.Terminal()
+			return p.ErrExpired
 		}
 		sessionExpiryFut := restate.After(ctx, sessionRem)
 
@@ -264,7 +260,7 @@ paymentLoop:
 		case paymentPromise:
 			ev, evErr := paymentPromise.Result()
 			if evErr != nil {
-				return sharedmodel.WrapErr("read payment event", evErr)
+				return fmt.Errorf("read payment event: %w", evErr)
 			}
 			switch ev.Status {
 			case payment.StatusSuccess:
@@ -277,13 +273,13 @@ paymentLoop:
 						ID:          attemptTxID,
 						DateSettled: now,
 					}); e != nil {
-						return sharedmodel.WrapErr("mark gateway tx success", e)
+						return fmt.Errorf("mark gateway tx success: %w", e)
 					}
 					if _, e := b.storage.Querier().MarkPaymentSessionSuccess(rctx, orderdb.MarkPaymentSessionSuccessParams{
 						ID:       p.SessionID,
 						DatePaid: now,
 					}); e != nil {
-						return sharedmodel.WrapErr("mark payment session success", e)
+						return fmt.Errorf("mark payment session success: %w", e)
 					}
 					return nil
 				}); mErr != nil {
@@ -291,14 +287,14 @@ paymentLoop:
 				}
 				break paymentLoop
 			case payment.StatusFailed, payment.StatusExpired:
-				return ordermodel.ErrPaymentFailed.Terminal()
+				return ordermodel.ErrPaymentFailed
 			default:
-				return sharedmodel.WrapErr("unknown payment event status", ordermodel.ErrPaymentFailed.Terminal())
+				return fmt.Errorf("unknown payment event status: %w", ordermodel.ErrPaymentFailed)
 			}
 		case cancelPromise:
-			return p.ErrCancelled.Terminal()
+			return p.ErrCancelled
 		case sessionExpiryFut:
-			return p.ErrExpired.Terminal()
+			return p.ErrExpired
 		case attemptExpiryFut:
 			// This attempt's URL is dead. Mark its tx Failed and wait for the
 			// caller to ask for a fresh one (RequestNewPaymentURL resolves
@@ -310,13 +306,13 @@ paymentLoop:
 					Error: null.StringFrom("gateway attempt expired"),
 				})
 			}); mErr != nil {
-				return sharedmodel.WrapErr("mark attempt failed", mErr)
+				return fmt.Errorf("mark attempt failed: %w", mErr)
 			}
 
 			retryPromise := restate.Promise[struct{}](ctx, fmt.Sprintf("retry_%d", attempt))
 			sessionRem2 := time.Until(p.SessionDeadline)
 			if sessionRem2 <= 0 {
-				return p.ErrExpired.Terminal()
+				return p.ErrExpired
 			}
 			sessionExpiryFut2 := restate.After(ctx, sessionRem2)
 
@@ -328,11 +324,136 @@ paymentLoop:
 			case retryPromise:
 				continue paymentLoop
 			case cancelPromise:
-				return p.ErrCancelled.Terminal()
+				return p.ErrCancelled
 			case sessionExpiryFut2:
-				return p.ErrExpired.Terminal()
+				return p.ErrExpired
 			}
 		}
 	}
 	return nil
 }
+
+// SetupPaymentMap registers the payment options in the central catalog.
+// Clients themselves are built on demand — nothing is cached on the handler.
+func (b *paymentHandler) SetupPaymentMap() error {
+	configs := b.paymentConfigs()
+
+	go func() {
+		if err := b.common.UpsertOptions(context.Background(), commonbiz.UpsertOptionsParams{
+			Type:    string(sharedmodel.OptionTypePayment),
+			Configs: configs,
+		}); err != nil {
+			b.logger.Warn("register payment options", slog.Any("error", err))
+		}
+	}()
+
+	return nil
+}
+
+// paymentFactory routes a payment Option to its provider-specific constructor.
+func (b *paymentHandler) paymentFactory(cfg sharedmodel.Option) payment.Client {
+	switch cfg.Provider {
+	case "vnpay":
+		return vnpay.NewClient(cfg)
+	case "sepay":
+		return sepay.NewClient(cfg)
+	case "card":
+		return card.NewClient(cfg)
+	default:
+		b.logger.Warn("unknown payment provider", "provider", cfg.Provider, "id", cfg.ID)
+		return nil
+	}
+}
+
+func (b *paymentHandler) paymentConfigs() []sharedmodel.Option {
+	var configs []sharedmodel.Option
+
+	returnURL := b.cfg.Order.ReturnURL
+
+	vnpayCfg := b.cfg.Vnpay
+	for _, method := range []string{vnpay.MethodQR, vnpay.MethodBank, vnpay.MethodATM} {
+		data, _ := json.Marshal(vnpay.Data{
+			TmnCode:    vnpayCfg.TmnCode,
+			HashSecret: vnpayCfg.HashSecret,
+			ReturnURL:  returnURL,
+			Method:     method,
+		})
+		configs = append(configs, sharedmodel.Option{
+			ID:       "vnpay_" + method,
+			Type:     sharedmodel.OptionTypePayment,
+			Provider: "vnpay",
+			Name:     "VNPay - " + method,
+			Data:     data,
+		})
+	}
+
+	if c := b.cfg.Sepay; c.MerchantID != "" {
+		data, _ := json.Marshal(sepay.Data{
+			MerchantID:    c.MerchantID,
+			SecretKey:     c.SecretKey,
+			IPNSecretKey:  c.IPNSecretKey,
+			PublicBaseURL: c.PublicBaseURL,
+			ReturnURL:     returnURL,
+			Sandbox:       c.Sandbox,
+		})
+		configs = append(configs, sharedmodel.Option{
+			ID:       "sepay_bank_transfer",
+			Type:     sharedmodel.OptionTypePayment,
+			Provider: "sepay",
+			Name:     "SePay - Bank Transfer",
+			Data:     data,
+		})
+	}
+
+	if c := b.cfg.CardPayment; c.Provider != "" {
+		data, _ := json.Marshal(card.Data{
+			Processor: c.Provider,
+			SecretKey: c.SecretKey,
+			PublicKey: c.PublicKey,
+		})
+		configs = append(configs, sharedmodel.Option{
+			ID:       "card_" + c.Provider,
+			Type:     sharedmodel.OptionTypePayment,
+			Provider: "card",
+			Name:     "Card Payment (" + c.Provider + ")",
+			Data:     data,
+		})
+	}
+
+	return configs
+}
+
+// getPaymentClient builds a payment client on demand for the given option ID.
+// The lookup walks the config-derived option list — no per-handler cache.
+func (b *paymentHandler) getPaymentClient(option string) (payment.Client, error) {
+	for _, cfg := range b.paymentConfigs() {
+		if cfg.ID == option {
+			if client := b.paymentFactory(cfg); client != nil {
+				return client, nil
+			}
+			break
+		}
+	}
+	return nil, ordermodel.ErrUnknownPaymentOption.Fmt(option)
+}
+
+// ReusableGatewayURLState reports the latest gateway-payment state for a
+// payment_session. SessionTerminated=true means the session is in a final
+// state (Cancelled/Failed/Success) — caller should 410 Gone. ReusableURL
+// non-empty means there's a Pending+not-expired tx; reuse it. Both empty
+// means caller should signal the workflow to spawn the next attempt.
+type ReusableGatewayURLState struct {
+	SessionTerminated bool   `json:"session_terminated"`
+	ReusableURL       string `json:"reusable_url"`
+}
+
+const (
+	// paymentExpiry bounds a single gateway payment attempt — i.e. how long the
+	// user has to complete one VNPay/Momo redirect before that URL is considered
+	// dead. Multi-attempt sessions can spawn another attempt (up to sessionExpiry).
+	paymentExpiry = 30 * time.Minute
+	// sessionExpiry bounds the entire checkout/confirm session across all retry
+	// attempts. Once it elapses, the session is failed via saga regardless of
+	// whether the buyer is mid-attempt.
+	sessionExpiry = 24 * time.Hour
+)

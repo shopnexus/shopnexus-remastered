@@ -1,8 +1,8 @@
 package accountbiz
 
 import (
+	"fmt"
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
-	sharedmodel "shopnexus-server/internal/shared/model"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -35,7 +35,7 @@ func (b *AccountHandler) GetWalletBalance(ctx restate.Context, accountID uuid.UU
 		return b.storage.Querier().GetInternalBalance(rctx, accountID)
 	})
 	if err != nil {
-		return 0, sharedmodel.WrapErr("get internal balance", err)
+		return 0, fmt.Errorf("get internal balance: %w", err)
 	}
 	return balance, nil
 }
@@ -44,7 +44,7 @@ func (b *AccountHandler) GetWalletBalance(ctx restate.Context, accountID uuid.UU
 // The underlying CTE row-locks the profile so concurrent debits serialize correctly.
 func (b *AccountHandler) WalletDebit(ctx restate.Context, params WalletDebitParams) (WalletDebitResult, error) {
 	if err := validator.Validate(params); err != nil {
-		return WalletDebitResult{}, sharedmodel.WrapErr("debit internal balance", err)
+		return WalletDebitResult{}, fmt.Errorf("debit internal balance: %w", err)
 	}
 	res, err := restate.Run(ctx, func(rctx restate.RunContext) (WalletDebitResult, error) {
 		row, err := b.storage.Querier().DebitInternalBalance(rctx, accountdb.DebitInternalBalanceParams{
@@ -57,7 +57,7 @@ func (b *AccountHandler) WalletDebit(ctx restate.Context, params WalletDebitPara
 		return WalletDebitResult{Deducted: row.OldBalance - row.NewBalance, Balance: row.NewBalance}, nil
 	})
 	if err != nil {
-		return WalletDebitResult{}, sharedmodel.WrapErr("debit internal balance", err)
+		return WalletDebitResult{}, fmt.Errorf("debit internal balance: %w", err)
 	}
 	return res, nil
 }
@@ -65,7 +65,7 @@ func (b *AccountHandler) WalletDebit(ctx restate.Context, params WalletDebitPara
 // WalletCredit adds the given amount to the account's internal balance.
 func (b *AccountHandler) WalletCredit(ctx restate.Context, params WalletCreditParams) error {
 	if err := validator.Validate(params); err != nil {
-		return sharedmodel.WrapErr("credit internal balance", err)
+		return fmt.Errorf("credit internal balance: %w", err)
 	}
 	if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
 		_, err := b.storage.Querier().CreditInternalBalance(rctx, accountdb.CreditInternalBalanceParams{
@@ -74,7 +74,7 @@ func (b *AccountHandler) WalletCredit(ctx restate.Context, params WalletCreditPa
 		})
 		return err
 	}); err != nil {
-		return sharedmodel.WrapErr("credit internal balance", err)
+		return fmt.Errorf("credit internal balance: %w", err)
 	}
 	return nil
 }

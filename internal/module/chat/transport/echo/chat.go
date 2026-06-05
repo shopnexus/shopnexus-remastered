@@ -7,7 +7,7 @@ import (
 	chatbiz "shopnexus-server/internal/module/chat/biz"
 	chatdb "shopnexus-server/internal/module/chat/db/sqlc"
 	authclaims "shopnexus-server/internal/shared/claims"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/response"
 
 	"github.com/google/uuid"
@@ -63,7 +63,7 @@ func (h *Handler) CreateConversation(c echo.Context) error {
 }
 
 type ListConversationRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 }
 
 func (h *Handler) ListConversation(c echo.Context) error {
@@ -81,8 +81,8 @@ func (h *Handler) ListConversation(c echo.Context) error {
 	}
 
 	result, err := h.biz.ListConversation(c.Request().Context(), chatbiz.ListConversationParams{
-		Account:          claims.Account,
-		PaginationParams: req.PaginationParams,
+		Account: claims.Account,
+		Params:  req.Params,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
@@ -92,7 +92,7 @@ func (h *Handler) ListConversation(c echo.Context) error {
 }
 
 type ListMessageRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 	ConversationID uuid.UUID `param:"id" validate:"required"`
 }
 
@@ -111,9 +111,9 @@ func (h *Handler) ListMessage(c echo.Context) error {
 	}
 
 	result, err := h.biz.ListMessage(c.Request().Context(), chatbiz.ListMessageParams{
-		Account:          claims.Account,
-		ConversationID:   req.ConversationID,
-		PaginationParams: req.PaginationParams,
+		Account:        claims.Account,
+		ConversationID: req.ConversationID,
+		Params:         req.Params,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)

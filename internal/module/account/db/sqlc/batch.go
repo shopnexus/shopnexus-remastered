@@ -21,9 +21,9 @@ var (
 )
 
 const createBatchAccount = `-- name: CreateBatchAccount :batchone
-INSERT INTO "account"."account" ("id", "status", "phone", "email", "username", "password", "date_created")
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, number, status, phone, email, username, password, date_created
+INSERT INTO "account"."account" ("id", "status", "phone", "email", "username", "password", "date_created", "role")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, number, status, phone, email, username, password, date_created, role
 `
 
 type CreateBatchAccountBatchResults struct {
@@ -40,6 +40,7 @@ type CreateBatchAccountParams struct {
 	Username    null.String   `json:"username"`
 	Password    null.String   `json:"password"`
 	DateCreated time.Time     `json:"date_created"`
+	Role        AccountRole   `json:"role"`
 }
 
 func (q *Queries) CreateBatchAccount(ctx context.Context, arg []CreateBatchAccountParams) *CreateBatchAccountBatchResults {
@@ -53,6 +54,7 @@ func (q *Queries) CreateBatchAccount(ctx context.Context, arg []CreateBatchAccou
 			a.Username,
 			a.Password,
 			a.DateCreated,
+			a.Role,
 		}
 		batch.Queue(createBatchAccount, vals...)
 	}
@@ -80,6 +82,7 @@ func (b *CreateBatchAccountBatchResults) QueryRow(f func(int, AccountAccount, er
 			&i.Username,
 			&i.Password,
 			&i.DateCreated,
+			&i.Role,
 		)
 		if f != nil {
 			f(t, i, err)

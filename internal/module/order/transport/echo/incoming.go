@@ -6,7 +6,7 @@ import (
 
 	orderbiz "shopnexus-server/internal/module/order/biz"
 	authclaims "shopnexus-server/internal/shared/claims"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/response"
 
 	"github.com/google/uuid"
@@ -15,7 +15,7 @@ import (
 )
 
 type ListSellerPendingItemsRequest struct {
-	sharedmodel.PaginationParams
+	paginate.Params
 }
 
 func (h *Handler) ListSellerPendingItems(c echo.Context) error {
@@ -33,8 +33,8 @@ func (h *Handler) ListSellerPendingItems(c echo.Context) error {
 	}
 
 	result, err := h.biz.ListSellerPendingItems(c.Request().Context(), orderbiz.ListSellerPendingItemsParams{
-		SellerID:         claims.Account.ID,
-		PaginationParams: req.PaginationParams.Constrain(),
+		SellerID: claims.Account.ID,
+		Params:   req.Params.Constrain(),
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)

@@ -2,10 +2,10 @@ package binder
 
 import (
 	"encoding"
-	"errors"
+	stderrors "errors"
 	"fmt"
 	"reflect"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/errors"
 	"strconv"
 	"strings"
 
@@ -29,12 +29,12 @@ func (cb *CustomBinder) Bind(i any, c echo.Context) error {
 
 	// Handle comma-separated fields first
 	if err := cb.bindCommaSeparatedFields(i, c, commaSeparatedFields); err != nil {
-		return sharedmodel.ErrValidation.Fmt("failed to bind comma-separated fields: %v", err)
+		return errors.ErrValidation.Fmt("failed to bind comma-separated fields: %v", err)
 	}
 
 	// Then handle regular fields with modified query params
 	if err := cb.bindRegularFields(i, c, commaSeparatedFields); err != nil {
-		return sharedmodel.ErrValidation.Fmt(err.Error())
+		return errors.ErrValidation.Fmt(err.Error())
 	}
 
 	return nil
@@ -132,10 +132,10 @@ func (cb *CustomBinder) bindRegularFields(i any, c echo.Context, commaSeparatedF
 	// Bind body using default binder (JSON errors already include field context)
 	if err := cb.DefaultBinder.BindBody(c, i); err != nil {
 		he := &echo.HTTPError{}
-		if errors.As(err, &he) {
-			return sharedmodel.ErrValidation.Fmt(he.Internal.Error())
+		if stderrors.As(err, &he) {
+			return errors.ErrValidation.Fmt(he.Internal.Error())
 		}
-		return sharedmodel.ErrValidation.Fmt(err.Error())
+		return errors.ErrValidation.Fmt(err.Error())
 	}
 
 	return nil
@@ -183,14 +183,14 @@ func (cb *CustomBinder) bindStructFields(
 			if field.Kind() == reflect.Slice {
 				if parts := c.QueryParams()[queryTag]; len(parts) > 0 {
 					if err := cb.setSliceFromParts(field, parts); err != nil {
-						return sharedmodel.ErrValidation.Fmt("query param '%s': %v", queryTag, err)
+						return errors.ErrValidation.Fmt("query param '%s': %v", queryTag, err)
 					}
 				}
 				continue
 			}
 			if value := c.QueryParam(queryTag); value != "" {
 				if err := cb.setSingleValueFromString(field, value); err != nil {
-					return sharedmodel.ErrValidation.Fmt("query param '%s': %v", queryTag, err)
+					return errors.ErrValidation.Fmt("query param '%s': %v", queryTag, err)
 				}
 			}
 			continue
@@ -200,7 +200,7 @@ func (cb *CustomBinder) bindStructFields(
 		if paramTag := fieldType.Tag.Get("param"); paramTag != "" {
 			if value := c.Param(paramTag); value != "" {
 				if err := cb.setSingleValueFromString(field, value); err != nil {
-					return sharedmodel.ErrValidation.Fmt("path param '%s': %v", paramTag, err)
+					return errors.ErrValidation.Fmt("path param '%s': %v", paramTag, err)
 				}
 			}
 			continue

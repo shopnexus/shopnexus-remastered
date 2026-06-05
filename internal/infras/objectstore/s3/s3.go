@@ -2,7 +2,7 @@ package s3
 
 import (
 	"context"
-	"errors"
+	stderrors "errors"
 	"fmt"
 	"io"
 	sharedmodel "shopnexus-server/internal/shared/model"
@@ -72,7 +72,7 @@ func (s *ClientImpl) GetURL(ctx context.Context, key string) (string, error) {
 
 	// Return CloudFront URL for public files
 	if s.config.CloudfrontURL == "" {
-		return "", errors.New("cloudfront URL is not configured")
+		return "", stderrors.New("cloudfront URL is not configured")
 	}
 
 	return fmt.Sprintf("https://%s/%s", s.config.CloudfrontURL, key), nil

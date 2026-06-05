@@ -2,6 +2,7 @@ package catalogbiz
 
 import (
 	"encoding/json"
+	"fmt"
 
 	restate "github.com/restatedev/sdk-go"
 
@@ -10,7 +11,6 @@ import (
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
-	sharedmodel "shopnexus-server/internal/shared/model"
 	"shopnexus-server/internal/shared/nullutil"
 	"shopnexus-server/internal/shared/validator"
 
@@ -21,10 +21,10 @@ import (
 )
 
 type ListProductSkuParams struct {
-	ID         []uuid.UUID `validate:"omitempty,dive,required"`
-	SpuID      []uuid.UUID `validate:"omitempty"`
-	PriceFrom  null.Int64  `validate:"omitnil,gt=0"`
-	PriceTo    null.Int64  `validate:"omitnil,gt=0,gtefield=PriceFrom"`
+	ID              []uuid.UUID `validate:"omitempty,dive,required"`
+	SpuID           []uuid.UUID `validate:"omitempty"`
+	PriceFrom       null.Int64  `validate:"omitnil,gt=0"`
+	PriceTo         null.Int64  `validate:"omitnil,gt=0,gtefield=PriceFrom"`
 	SharedPackaging null.Bool   `validate:"omitnil"`
 }
 
@@ -36,18 +36,18 @@ func (b *CatalogHandler) ListProductSku(
 	var zero []catalogmodel.ProductSku
 
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("validate list product sku", err)
+		return zero, fmt.Errorf("validate list product sku: %w", err)
 	}
 
 	dbSkus, err := b.storage.Querier().ListProductSku(ctx, catalogdb.ListProductSkuParams{
-		ID:         params.ID,
-		SpuID:      params.SpuID,
-		PriceFrom:  params.PriceFrom,
-		PriceTo:    params.PriceTo,
+		ID:              params.ID,
+		SpuID:           params.SpuID,
+		PriceFrom:       params.PriceFrom,
+		PriceTo:         params.PriceTo,
 		SharedPackaging: nullutil.NullBoolToSlice(params.SharedPackaging),
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db list product sku", err)
+		return zero, fmt.Errorf("db list product sku: %w", err)
 	}
 
 	stocks, err := b.inventory.ListStock(ctx, inventorybiz.ListStockParams{
@@ -55,7 +55,7 @@ func (b *CatalogHandler) ListProductSku(
 		RefID:   lo.Map(dbSkus, func(s catalogdb.CatalogProductSku, _ int) uuid.UUID { return s.ID }),
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("list stock", err)
+		return zero, fmt.Errorf("list stock: %w", err)
 	}
 	stockMap := lo.KeyBy(stocks.Data, func(s inventorydb.InventoryStock) uuid.UUID { return s.RefID })
 
@@ -63,7 +63,7 @@ func (b *CatalogHandler) ListProductSku(
 	for _, dbSku := range dbSkus {
 		var attributes []catalogmodel.ProductAttribute
 		if err := sonic.Unmarshal(dbSku.Attributes, &attributes); err != nil {
-			return zero, sharedmodel.WrapErr("unmarshal sku attributes", err)
+			return zero, fmt.Errorf("unmarshal sku attributes: %w", err)
 		}
 		m := mapProductSku(dbSku)
 		m.Stock = stockMap[dbSku.ID].Stock
@@ -75,12 +75,12 @@ func (b *CatalogHandler) ListProductSku(
 }
 
 type CreateProductSkuParams struct {
-	Account        accountmodel.AuthenticatedAccount
-	SpuID          uuid.UUID                       `validate:"required"`
-	Price          int64                           `validate:"required,gt=0"`
-	SharedPackaging     bool                            `validate:"required"`
-	Attributes     []catalogmodel.ProductAttribute `validate:"omitempty,dive"`
-	PackageDetails json.RawMessage                 `validate:"required"`
+	Account         accountmodel.AuthenticatedAccount
+	SpuID           uuid.UUID                       `validate:"required"`
+	Price           int64                           `validate:"required,gt=0"`
+	SharedPackaging bool                            `validate:"required"`
+	Attributes      []catalogmodel.ProductAttribute `validate:"omitempty,dive"`
+	PackageDetails  json.RawMessage                 `validate:"required"`
 }
 
 // CreateProductSku creates a new product SKU and initializes its inventory stock.
@@ -92,11 +92,11 @@ func (b *CatalogHandler) CreateProductSku(
 
 	attributesBytes, err := sonic.Marshal(params.Attributes)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("create product sku", err)
+		return zero, fmt.Errorf("create product sku: %w", err)
 	}
 	packagedetailsBytes, err := sonic.Marshal(params.PackageDetails)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("create product sku", err)
+		return zero, fmt.Errorf("create product sku: %w", err)
 	}
 
 	// Create sku
@@ -108,7 +108,7 @@ func (b *CatalogHandler) CreateProductSku(
 		PackageDetails:  packagedetailsBytes,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db create product sku", err)
+		return zero, fmt.Errorf("db create product sku: %w", err)
 	}
 
 	if _, err := b.inventory.CreateStock(ctx, inventorybiz.CreateStockParams{
@@ -116,7 +116,7 @@ func (b *CatalogHandler) CreateProductSku(
 		RefType: inventorydb.InventoryStockRefTypeProductSku,
 		Stock:   0,
 	}); err != nil {
-		return zero, sharedmodel.WrapErr("create product sku", err)
+		return zero, fmt.Errorf("create product sku: %w", err)
 	}
 
 	m := mapProductSku(sku)
@@ -126,12 +126,12 @@ func (b *CatalogHandler) CreateProductSku(
 }
 
 type UpdateProductSkuParams struct {
-	Account        accountmodel.AuthenticatedAccount
-	ID             uuid.UUID                       `validate:"required"`
-	Price          null.Int                        `validate:"omitnil"`
-	SharedPackaging     null.Bool                       `validate:"omitnil"`
-	Attributes     []catalogmodel.ProductAttribute `validate:"omitnil,dive"`
-	PackageDetails json.RawMessage                 `validate:"omitempty"`
+	Account         accountmodel.AuthenticatedAccount
+	ID              uuid.UUID                       `validate:"required"`
+	Price           null.Int                        `validate:"omitnil"`
+	SharedPackaging null.Bool                       `validate:"omitnil"`
+	Attributes      []catalogmodel.ProductAttribute `validate:"omitnil,dive"`
+	PackageDetails  json.RawMessage                 `validate:"omitempty"`
 }
 
 // UpdateProductSku updates a product SKU and invalidates the parent SPU search index.
@@ -142,16 +142,16 @@ func (b *CatalogHandler) UpdateProductSku(
 	var zero catalogmodel.ProductSku
 
 	if err := validator.Validate(params); err != nil {
-		return zero, sharedmodel.WrapErr("validate update product sku", err)
+		return zero, fmt.Errorf("validate update product sku: %w", err)
 	}
 
 	attributesBytes, err := sonic.Marshal(params.Attributes)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("update product sku", err)
+		return zero, fmt.Errorf("update product sku: %w", err)
 	}
 	packageDetailsBytes, err := sonic.Marshal(params.PackageDetails)
 	if err != nil {
-		return zero, sharedmodel.WrapErr("update product sku", err)
+		return zero, fmt.Errorf("update product sku: %w", err)
 	}
 	// TODO: check biz logic of attribute update
 
@@ -163,7 +163,7 @@ func (b *CatalogHandler) UpdateProductSku(
 		PackageDetails:  packageDetailsBytes,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("db update product sku", err)
+		return zero, fmt.Errorf("db update product sku: %w", err)
 	}
 
 	stock, err := b.inventory.GetStock(ctx, inventorybiz.GetStockParams{
@@ -171,7 +171,7 @@ func (b *CatalogHandler) UpdateProductSku(
 		RefID:   sku.ID,
 	})
 	if err != nil {
-		return zero, sharedmodel.WrapErr("update product sku", err)
+		return zero, fmt.Errorf("update product sku: %w", err)
 	}
 
 	// Invalidate search index for the parent product (spu)
@@ -180,7 +180,7 @@ func (b *CatalogHandler) UpdateProductSku(
 		RefID:           sku.SpuID,
 		IsStaleMetadata: null.BoolFrom(true),
 	}); err != nil {
-		return zero, sharedmodel.WrapErr("db update search sync", err)
+		return zero, fmt.Errorf("db update search sync: %w", err)
 	}
 
 	m := mapProductSku(sku)
@@ -193,12 +193,12 @@ func (b *CatalogHandler) UpdateProductSku(
 // Callers should set Stock and Attributes as needed.
 func mapProductSku(sku catalogdb.CatalogProductSku) catalogmodel.ProductSku {
 	return catalogmodel.ProductSku{
-		ID:             sku.ID,
-		SpuID:          sku.SpuID,
-		Price:          sku.Price,
-		SharedPackaging:     sku.SharedPackaging,
-		DateCreated:    sku.DateCreated,
-		PackageDetails: sku.PackageDetails,
+		ID:              sku.ID,
+		SpuID:           sku.SpuID,
+		Price:           sku.Price,
+		SharedPackaging: sku.SharedPackaging,
+		DateCreated:     sku.DateCreated,
+		PackageDetails:  sku.PackageDetails,
 	}
 }
 
@@ -210,14 +210,14 @@ type DeleteProductSkuParams struct {
 // DeleteProductSku deletes a product SKU by ID.
 func (b *CatalogHandler) DeleteProductSku(ctx restate.Context, params DeleteProductSkuParams) error {
 	if err := validator.Validate(params); err != nil {
-		return sharedmodel.WrapErr("validate delete product sku", err)
+		return fmt.Errorf("validate delete product sku: %w", err)
 	}
 
 	// Delete sku
 	if err := b.storage.Querier().DeleteProductSku(ctx, catalogdb.DeleteProductSkuParams{
 		ID: []uuid.UUID{params.ID},
 	}); err != nil {
-		return sharedmodel.WrapErr("db delete product sku", err)
+		return fmt.Errorf("db delete product sku: %w", err)
 	}
 
 	// TODO: should delete via message queue instead

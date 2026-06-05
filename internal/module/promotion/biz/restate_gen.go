@@ -4,11 +4,12 @@ package promotionbiz
 
 import (
 	"context"
-	"github.com/google/uuid"
 	restateclient "shopnexus-server/internal/infras/restate"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	promotionmodel "shopnexus-server/internal/module/promotion/model"
-	sharedmodel "shopnexus-server/internal/shared/model"
+	"shopnexus-server/internal/shared/paginate"
+
+	"github.com/google/uuid"
 )
 
 const serviceName = "Promotion"
@@ -28,8 +29,8 @@ func (p *PromotionRestateClient) GetPromotion(ctx context.Context, params GetPro
 	return restateclient.Call[promotionmodel.Promotion](ctx, p.client, serviceName, "GetPromotion", params)
 }
 
-func (p *PromotionRestateClient) ListPromotion(ctx context.Context, params ListPromotionParams) (sharedmodel.PaginateResult[promotionmodel.Promotion], error) {
-	return restateclient.Call[sharedmodel.PaginateResult[promotionmodel.Promotion]](ctx, p.client, serviceName, "ListPromotion", params)
+func (p *PromotionRestateClient) ListPromotion(ctx context.Context, params ListPromotionParams) (paginate.PaginateResult[promotionmodel.Promotion], error) {
+	return restateclient.Call[paginate.PaginateResult[promotionmodel.Promotion]](ctx, p.client, serviceName, "ListPromotion", params)
 }
 
 func (p *PromotionRestateClient) CreatePromotion(ctx context.Context, params CreatePromotionParams) (promotionmodel.Promotion, error) {

@@ -9,7 +9,6 @@ import (
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	analyticbiz "shopnexus-server/internal/module/analytic/biz"
-	analyticdb "shopnexus-server/internal/module/analytic/db/sqlc"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
@@ -163,7 +162,7 @@ func (b *CatalogHandler) GetProductDetail(
 			Interactions: []analyticbiz.CreateInteraction{{
 				Account:   *params.Account,
 				EventType: analyticmodel.EventView,
-				RefType:   analyticdb.AnalyticInteractionRefTypeProduct,
+				RefType:   analyticmodel.InteractionRefTypeProduct,
 				RefID:     spu.ID.String(),
 			}},
 		})
