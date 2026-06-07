@@ -2,15 +2,14 @@ package catalogbiz
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"slices"
 	"strings"
 	"time"
 
-	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
-	"github.com/guregu/null/v6"
 	"github.com/samber/lo"
 
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
@@ -18,10 +17,7 @@ import (
 	"shopnexus-server/internal/shared/htmlutil"
 )
 
-const (
-	MetadataSyncBatchSize  = 1000
-	EmbeddingSyncBatchSize = 32
-)
+const EmbeddingSyncBatchSize = 32
 
 // embeddingResult holds dense and sparse vectors returned from the LLM.
 type embeddingResult struct {
@@ -29,34 +25,24 @@ type embeddingResult struct {
 	sparse map[uint32]float32
 }
 
-// SetupCron starts background goroutines for metadata and embedding sync loops.
+// SetupCron starts the background goroutine for the embedding sync loop.
 func (b *CatalogHandler) SetupCron() error {
-	metadataInterval := b.cfg.Search.MetadataSyncInterval
-	if metadataInterval <= 0 {
-		metadataInterval = time.Second
-	}
-
 	embeddingInterval := b.cfg.Search.EmbeddingSyncInterval
 	if embeddingInterval <= 0 {
 		embeddingInterval = time.Second
 	}
 
-	go b.startSyncCron(context.Background(), metadataInterval, true)
-	go b.startSyncCron(context.Background(), embeddingInterval, false)
+	go b.startSyncCron(context.Background(), embeddingInterval)
 	return nil
 }
 
 // startSyncCron runs a ticker loop that syncs stale entities on each tick.
-func (b *CatalogHandler) startSyncCron(ctx context.Context, interval time.Duration, metadataOnly bool) {
-	kind := "embedding"
-	if metadataOnly {
-		kind = "metadata"
-	}
-	log.Printf("Starting %s sync cron job...", kind)
+func (b *CatalogHandler) startSyncCron(ctx context.Context, interval time.Duration) {
+	log.Printf("Starting embedding sync cron job...")
 
 	// Run immediately on startup
-	if err := b.syncStaleEntities(ctx, metadataOnly); err != nil {
-		log.Printf("Initial %s sync failed: %v", kind, err)
+	if err := b.syncStaleEntities(ctx); err != nil {
+		log.Printf("Initial embedding sync failed: %v", err)
 	}
 
 	ticker := time.NewTicker(interval)
@@ -66,13 +52,13 @@ func (b *CatalogHandler) startSyncCron(ctx context.Context, interval time.Durati
 		select {
 		case <-ticker.C:
 		case <-ctx.Done():
-			log.Printf("Stopping %s sync cron job...", kind)
+			log.Printf("Stopping embedding sync cron job...")
 			return
 		}
 
 		b.syncLock.Lock()
-		if err := b.syncStaleEntities(ctx, metadataOnly); err != nil {
-			log.Printf("%s sync failed: %v", kind, err)
+		if err := b.syncStaleEntities(ctx); err != nil {
+			log.Printf("embedding sync failed: %v", err)
 		}
 		b.syncLock.Unlock()
 	}
@@ -80,22 +66,8 @@ func (b *CatalogHandler) startSyncCron(ctx context.Context, interval time.Durati
 
 // syncStaleEntities fetches all stale search_sync rows (regardless of ref_type),
 // groups them, and dispatches to the appropriate per-entity sync function.
-func (b *CatalogHandler) syncStaleEntities(ctx context.Context, metadataOnly bool) error {
-	batchSize := int32(EmbeddingSyncBatchSize)
-	if metadataOnly {
-		batchSize = int32(MetadataSyncBatchSize)
-	}
-
-	params := catalogdb.ListStaleSearchSyncParams{
-		Limit: batchSize,
-	}
-	if metadataOnly {
-		params.IsStaleMetadata = null.BoolFrom(true)
-	} else {
-		params.IsStaleEmbedding = null.BoolFrom(true)
-	}
-
-	stales, err := b.storage.Querier().ListStaleSearchSync(ctx, params)
+func (b *CatalogHandler) syncStaleEntities(ctx context.Context) error {
+	stales, err := b.storage.Querier().ListStaleSearchSync(ctx, EmbeddingSyncBatchSize)
 	if err != nil {
 		return fmt.Errorf("list stale search sync: %w", err)
 	}
@@ -112,15 +84,15 @@ func (b *CatalogHandler) syncStaleEntities(ctx context.Context, metadataOnly boo
 	for refType, rows := range grouped {
 		switch refType {
 		case catalogdb.CatalogSearchSyncRefTypeProductSpu:
-			if err := b.syncProducts(ctx, rows, metadataOnly); err != nil {
+			if err := b.syncProducts(ctx, rows); err != nil {
 				b.logger.Error("sync products", "error", err)
 			}
 		case catalogdb.CatalogSearchSyncRefTypeCategory:
-			if err := b.syncCategories(ctx, rows, metadataOnly); err != nil {
+			if err := b.syncCategories(ctx, rows); err != nil {
 				b.logger.Error("sync categories", "error", err)
 			}
 		case catalogdb.CatalogSearchSyncRefTypeTag:
-			if err := b.syncTags(ctx, rows, metadataOnly); err != nil {
+			if err := b.syncTags(ctx, rows); err != nil {
 				b.logger.Error("sync tags", "error", err)
 			}
 		}
@@ -129,14 +101,13 @@ func (b *CatalogHandler) syncStaleEntities(ctx context.Context, metadataOnly boo
 	return nil
 }
 
-// syncProducts fetches product details directly from DB, embeds if needed,
-// upserts to Milvus, and clears stale flags.
+// syncProducts fetches product details directly from DB, embeds them,
+// upserts the embeddings, and clears stale flags.
 func (b *CatalogHandler) syncProducts(
 	ctx context.Context,
 	stales []catalogdb.ListStaleSearchSyncRow,
-	metadataOnly bool,
 ) error {
-	log.Printf("Syncing %d stale products (metadataOnly=%v)...", len(stales), metadataOnly)
+	log.Printf("Syncing %d stale products...", len(stales))
 
 	// Batch-fetch product details directly from DB (avoids N+1 HTTP via Restate ingress)
 	spuIDs := make([]uuid.UUID, len(stales))
@@ -180,7 +151,10 @@ func (b *CatalogHandler) syncProducts(
 		skuDetails := make([]catalogmodel.ProductDetailSku, 0, len(skusBySpuID[spu.ID]))
 		for _, sku := range skusBySpuID[spu.ID] {
 			var attrs []catalogmodel.ProductAttribute
-			sonic.Unmarshal(sku.Attributes, &attrs)
+			if err = json.Unmarshal(sku.Attributes, &attrs); err != nil {
+				log.Printf("Failed to unmarshal attributes for SKU %s: %v", sku.ID, err)
+				continue
+			}
 			skuDetails = append(skuDetails, catalogmodel.ProductDetailSku{
 				ID:         sku.ID,
 				Price:      sku.Price,
@@ -203,46 +177,34 @@ func (b *CatalogHandler) syncProducts(
 		return nil
 	}
 
-	// Embed if not metadata-only
-	var embeddingMap map[string]embeddingResult
-	if !metadataOnly {
-		texts := make([]string, len(products))
-		for i, p := range products {
-			texts[i] = buildEmbeddingText(p)
-		}
-		embeddings, err := b.llm.Embed(ctx, texts)
-		if err != nil {
-			return fmt.Errorf("embed products: %w", err)
-		}
-		embeddingMap = make(map[string]embeddingResult, len(products))
-		for i, p := range products {
-			embeddingMap[p.ID.String()] = embeddingResult{
-				dense:  embeddings[i].Dense,
-				sparse: embeddings[i].Sparse,
-			}
+	texts := make([]string, len(products))
+	for i, p := range products {
+		texts[i] = buildEmbeddingText(p)
+	}
+	embeddings, err := b.llm.Embed(ctx, texts)
+	if err != nil {
+		return fmt.Errorf("embed products: %w", err)
+	}
+	embeddingMap := make(map[string]embeddingResult, len(products))
+	for i, p := range products {
+		embeddingMap[p.ID.String()] = embeddingResult{
+			dense:  embeddings[i].Dense,
+			sparse: embeddings[i].Sparse,
 		}
 	}
 
-	// Upsert to Milvus
-	if err := b.upsertProducts(ctx, products, embeddingMap, metadataOnly); err != nil {
+	if err = b.upsertProducts(ctx, products, embeddingMap); err != nil {
 		return fmt.Errorf("upsert products: %w", err)
 	}
 
-	// Clear stale flags
-	return b.clearStaleFlagsByRows(ctx, stales, metadataOnly)
+	return b.clearStaleFlagsByRows(ctx, stales)
 }
 
-// syncCategories embeds categories and upserts to the categories collection.
-// Categories have no scalar metadata in Milvus, so metadata-only syncs just clear flags.
+// syncCategories embeds categories and upserts their embeddings.
 func (b *CatalogHandler) syncCategories(
 	ctx context.Context,
 	stales []catalogdb.ListStaleSearchSyncRow,
-	metadataOnly bool,
 ) error {
-	if metadataOnly {
-		return b.clearStaleFlagsByRows(ctx, stales, metadataOnly)
-	}
-
 	log.Printf("Syncing %d stale categories...", len(stales))
 
 	// Collect category UUIDs from stale rows
@@ -260,7 +222,7 @@ func (b *CatalogHandler) syncCategories(
 	}
 
 	if len(categories) == 0 {
-		return b.clearStaleFlagsByRows(ctx, stales, metadataOnly)
+		return b.clearStaleFlagsByRows(ctx, stales)
 	}
 
 	// Embed
@@ -280,25 +242,18 @@ func (b *CatalogHandler) syncCategories(
 		}
 	}
 
-	// Upsert to Milvus
 	if err := b.upsertCategories(ctx, categories, embeddingMap); err != nil {
 		return fmt.Errorf("upsert categories: %w", err)
 	}
 
-	return b.clearStaleFlagsByRows(ctx, stales, metadataOnly)
+	return b.clearStaleFlagsByRows(ctx, stales)
 }
 
-// syncTags embeds tags and upserts to the tags collection.
-// Tags have no scalar metadata in Milvus, so metadata-only syncs just clear flags.
+// syncTags embeds tags and upserts their embeddings.
 func (b *CatalogHandler) syncTags(
 	ctx context.Context,
 	stales []catalogdb.ListStaleSearchSyncRow,
-	metadataOnly bool,
 ) error {
-	if metadataOnly {
-		return b.clearStaleFlagsByRows(ctx, stales, metadataOnly)
-	}
-
 	log.Printf("Syncing %d stale tags...", len(stales))
 
 	// Build a set of stale ref_ids for matching
@@ -326,7 +281,7 @@ func (b *CatalogHandler) syncTags(
 	}
 
 	if len(matchedTags) == 0 {
-		return b.clearStaleFlagsByRows(ctx, stales, metadataOnly)
+		return b.clearStaleFlagsByRows(ctx, stales)
 	}
 
 	// Embed
@@ -347,44 +302,32 @@ func (b *CatalogHandler) syncTags(
 		}
 	}
 
-	// Upsert to Milvus
 	if err := b.upsertTags(ctx, matchedTags, embeddingMap); err != nil {
 		return fmt.Errorf("upsert tags: %w", err)
 	}
 
-	return b.clearStaleFlagsByRows(ctx, stales, metadataOnly)
+	return b.clearStaleFlagsByRows(ctx, stales)
 }
 
-// clearStaleFlagsByRows builds batch update args and clears the appropriate stale flags.
-// If metadataOnly, sets is_stale_metadata=false but keeps is_stale_embedding as-is.
-// If !metadataOnly, sets is_stale_embedding=false but keeps is_stale_metadata as-is.
+// clearStaleFlagsByRows builds batch args and clears the embedding stale flags.
 func (b *CatalogHandler) clearStaleFlagsByRows(
 	ctx context.Context,
 	stales []catalogdb.ListStaleSearchSyncRow,
-	metadataOnly bool,
 ) error {
-	args := make([]catalogdb.UpdateBatchStaleSearchSyncParams, len(stales))
+	args := make([]catalogdb.ClearStaleSearchSyncBatchParams, len(stales))
 	for i, s := range stales {
-		arg := catalogdb.UpdateBatchStaleSearchSyncParams{
+		args[i] = catalogdb.ClearStaleSearchSyncBatchParams{
 			RefType: s.RefType,
 			RefID:   s.RefID,
 		}
-		if metadataOnly {
-			arg.IsStaleMetadata = null.BoolFrom(false)
-			// is_stale_embedding stays as zero value (null.Bool{}) — no change
-		} else {
-			arg.IsStaleEmbedding = null.BoolFrom(false)
-			// is_stale_metadata stays as zero value (null.Bool{}) — no change
-		}
-		args[i] = arg
 	}
 	return b.batchClearFlags(ctx, args)
 }
 
 // batchClearFlags executes the batch update for stale flags.
-func (b *CatalogHandler) batchClearFlags(ctx context.Context, args []catalogdb.UpdateBatchStaleSearchSyncParams) error {
+func (b *CatalogHandler) batchClearFlags(ctx context.Context, args []catalogdb.ClearStaleSearchSyncBatchParams) error {
 	var updateErr error
-	b.storage.Querier().UpdateBatchStaleSearchSync(ctx, args).Exec(func(i int, err error) {
+	b.storage.Querier().ClearStaleSearchSyncBatch(ctx, args).Exec(func(i int, err error) {
 		if err != nil {
 			updateErr = err
 		}

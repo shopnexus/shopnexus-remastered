@@ -14,11 +14,64 @@ import (
 	"github.com/google/uuid"
 	null "github.com/guregu/null/v6"
 	"github.com/jackc/pgx/v5"
+	"github.com/pgvector/pgvector-go"
+	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
 var (
 	ErrBatchAlreadyClosed = errors.New("batch already closed")
 )
+
+const clearStaleSearchSyncBatch = `-- name: ClearStaleSearchSyncBatch :batchexec
+UPDATE catalog.search_sync
+SET is_stale_embedding = false, date_updated = NOW()
+WHERE ref_type = $1 AND ref_id = $2
+`
+
+type ClearStaleSearchSyncBatchBatchResults struct {
+	br     pgx.BatchResults
+	tot    int
+	closed bool
+}
+
+type ClearStaleSearchSyncBatchParams struct {
+	RefType CatalogSearchSyncRefType `json:"ref_type"`
+	RefID   uuid.UUID                `json:"ref_id"`
+}
+
+func (q *Queries) ClearStaleSearchSyncBatch(ctx context.Context, arg []ClearStaleSearchSyncBatchParams) *ClearStaleSearchSyncBatchBatchResults {
+	batch := &pgx.Batch{}
+	for _, a := range arg {
+		vals := []interface{}{
+			a.RefType,
+			a.RefID,
+		}
+		batch.Queue(clearStaleSearchSyncBatch, vals...)
+	}
+	br := q.db.SendBatch(ctx, batch)
+	return &ClearStaleSearchSyncBatchBatchResults{br, len(arg), false}
+}
+
+func (b *ClearStaleSearchSyncBatchBatchResults) Exec(f func(int, error)) {
+	defer b.br.Close()
+	for t := 0; t < b.tot; t++ {
+		if b.closed {
+			if f != nil {
+				f(t, ErrBatchAlreadyClosed)
+			}
+			continue
+		}
+		_, err := b.br.Exec()
+		if f != nil {
+			f(t, err)
+		}
+	}
+}
+
+func (b *ClearStaleSearchSyncBatchBatchResults) Close() error {
+	b.closed = true
+	return b.br.Close()
+}
 
 const createBatchCategory = `-- name: CreateBatchCategory :batchone
 INSERT INTO "catalog"."category" ("id", "name", "description", "parent_id")
@@ -383,9 +436,9 @@ func (b *CreateBatchProductSpuTagBatchResults) Close() error {
 }
 
 const createBatchSearchSync = `-- name: CreateBatchSearchSync :batchone
-INSERT INTO "catalog"."search_sync" ("ref_type", "ref_id", "is_stale_embedding", "is_stale_metadata", "date_created", "date_updated")
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, ref_type, ref_id, is_stale_embedding, is_stale_metadata, date_created, date_updated
+INSERT INTO "catalog"."search_sync" ("ref_type", "ref_id", "is_stale_embedding", "date_created", "date_updated")
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, ref_type, ref_id, is_stale_embedding, date_created, date_updated
 `
 
 type CreateBatchSearchSyncBatchResults struct {
@@ -398,7 +451,6 @@ type CreateBatchSearchSyncParams struct {
 	RefType          CatalogSearchSyncRefType `json:"ref_type"`
 	RefID            uuid.UUID                `json:"ref_id"`
 	IsStaleEmbedding bool                     `json:"is_stale_embedding"`
-	IsStaleMetadata  bool                     `json:"is_stale_metadata"`
 	DateCreated      time.Time                `json:"date_created"`
 	DateUpdated      time.Time                `json:"date_updated"`
 }
@@ -410,7 +462,6 @@ func (q *Queries) CreateBatchSearchSync(ctx context.Context, arg []CreateBatchSe
 			a.RefType,
 			a.RefID,
 			a.IsStaleEmbedding,
-			a.IsStaleMetadata,
 			a.DateCreated,
 			a.DateUpdated,
 		}
@@ -436,7 +487,6 @@ func (b *CreateBatchSearchSyncBatchResults) QueryRow(f func(int, CatalogSearchSy
 			&i.RefType,
 			&i.RefID,
 			&i.IsStaleEmbedding,
-			&i.IsStaleMetadata,
 			&i.DateCreated,
 			&i.DateUpdated,
 		)
@@ -506,44 +556,44 @@ func (b *CreateBatchTagBatchResults) Close() error {
 	return b.br.Close()
 }
 
-const updateBatchStaleSearchSync = `-- name: UpdateBatchStaleSearchSync :batchexec
-UPDATE catalog.search_sync
-SET
-    is_stale_metadata = COALESCE($1, is_stale_metadata),
-    is_stale_embedding = COALESCE($2, is_stale_embedding),
+const upsertAccountInterest = `-- name: UpsertAccountInterest :batchexec
+INSERT INTO catalog.account_interest (account_id, slot, embedding, strength, date_updated)
+VALUES ($1, $2, $3, $4, NOW())
+ON CONFLICT (account_id, slot) DO UPDATE SET
+    embedding = EXCLUDED.embedding,
+    strength = EXCLUDED.strength,
     date_updated = NOW()
-WHERE ref_type = $3 AND ref_id = $4
 `
 
-type UpdateBatchStaleSearchSyncBatchResults struct {
+type UpsertAccountInterestBatchResults struct {
 	br     pgx.BatchResults
 	tot    int
 	closed bool
 }
 
-type UpdateBatchStaleSearchSyncParams struct {
-	IsStaleMetadata  null.Bool                `json:"is_stale_metadata"`
-	IsStaleEmbedding null.Bool                `json:"is_stale_embedding"`
-	RefType          CatalogSearchSyncRefType `json:"ref_type"`
-	RefID            uuid.UUID                `json:"ref_id"`
+type UpsertAccountInterestParams struct {
+	AccountID uuid.UUID       `json:"account_id"`
+	Slot      int16           `json:"slot"`
+	Embedding pgvector.Vector `json:"embedding"`
+	Strength  float32         `json:"strength"`
 }
 
-func (q *Queries) UpdateBatchStaleSearchSync(ctx context.Context, arg []UpdateBatchStaleSearchSyncParams) *UpdateBatchStaleSearchSyncBatchResults {
+func (q *Queries) UpsertAccountInterest(ctx context.Context, arg []UpsertAccountInterestParams) *UpsertAccountInterestBatchResults {
 	batch := &pgx.Batch{}
 	for _, a := range arg {
 		vals := []interface{}{
-			a.IsStaleMetadata,
-			a.IsStaleEmbedding,
-			a.RefType,
-			a.RefID,
+			a.AccountID,
+			a.Slot,
+			a.Embedding,
+			a.Strength,
 		}
-		batch.Queue(updateBatchStaleSearchSync, vals...)
+		batch.Queue(upsertAccountInterest, vals...)
 	}
 	br := q.db.SendBatch(ctx, batch)
-	return &UpdateBatchStaleSearchSyncBatchResults{br, len(arg), false}
+	return &UpsertAccountInterestBatchResults{br, len(arg), false}
 }
 
-func (b *UpdateBatchStaleSearchSyncBatchResults) Exec(f func(int, error)) {
+func (b *UpsertAccountInterestBatchResults) Exec(f func(int, error)) {
 	defer b.br.Close()
 	for t := 0; t < b.tot; t++ {
 		if b.closed {
@@ -559,7 +609,178 @@ func (b *UpdateBatchStaleSearchSyncBatchResults) Exec(f func(int, error)) {
 	}
 }
 
-func (b *UpdateBatchStaleSearchSyncBatchResults) Close() error {
+func (b *UpsertAccountInterestBatchResults) Close() error {
+	b.closed = true
+	return b.br.Close()
+}
+
+const upsertCategoryEmbedding = `-- name: UpsertCategoryEmbedding :batchexec
+INSERT INTO catalog.category_embedding (category_id, embedding, sparse, date_updated)
+VALUES ($1, $2, $3, NOW())
+ON CONFLICT (category_id) DO UPDATE SET
+    embedding = EXCLUDED.embedding,
+    sparse = EXCLUDED.sparse,
+    date_updated = NOW()
+`
+
+type UpsertCategoryEmbeddingBatchResults struct {
+	br     pgx.BatchResults
+	tot    int
+	closed bool
+}
+
+type UpsertCategoryEmbeddingParams struct {
+	CategoryID uuid.UUID                 `json:"category_id"`
+	Embedding  pgvector.Vector           `json:"embedding"`
+	Sparse     *pgvector_go.SparseVector `json:"sparse"`
+}
+
+func (q *Queries) UpsertCategoryEmbedding(ctx context.Context, arg []UpsertCategoryEmbeddingParams) *UpsertCategoryEmbeddingBatchResults {
+	batch := &pgx.Batch{}
+	for _, a := range arg {
+		vals := []interface{}{
+			a.CategoryID,
+			a.Embedding,
+			a.Sparse,
+		}
+		batch.Queue(upsertCategoryEmbedding, vals...)
+	}
+	br := q.db.SendBatch(ctx, batch)
+	return &UpsertCategoryEmbeddingBatchResults{br, len(arg), false}
+}
+
+func (b *UpsertCategoryEmbeddingBatchResults) Exec(f func(int, error)) {
+	defer b.br.Close()
+	for t := 0; t < b.tot; t++ {
+		if b.closed {
+			if f != nil {
+				f(t, ErrBatchAlreadyClosed)
+			}
+			continue
+		}
+		_, err := b.br.Exec()
+		if f != nil {
+			f(t, err)
+		}
+	}
+}
+
+func (b *UpsertCategoryEmbeddingBatchResults) Close() error {
+	b.closed = true
+	return b.br.Close()
+}
+
+const upsertProductEmbedding = `-- name: UpsertProductEmbedding :batchexec
+
+INSERT INTO catalog.product_embedding (spu_id, embedding, sparse, date_updated)
+VALUES ($1, $2, $3, NOW())
+ON CONFLICT (spu_id) DO UPDATE SET
+    embedding = EXCLUDED.embedding,
+    sparse = EXCLUDED.sparse,
+    date_updated = NOW()
+`
+
+type UpsertProductEmbeddingBatchResults struct {
+	br     pgx.BatchResults
+	tot    int
+	closed bool
+}
+
+type UpsertProductEmbeddingParams struct {
+	SpuID     uuid.UUID                 `json:"spu_id"`
+	Embedding pgvector.Vector           `json:"embedding"`
+	Sparse    *pgvector_go.SparseVector `json:"sparse"`
+}
+
+// Hand-written vector queries (pgvector). Embedding upserts, hybrid search,
+// and per-interest-slot ANN. Generated CRUD for these tables is unused.
+func (q *Queries) UpsertProductEmbedding(ctx context.Context, arg []UpsertProductEmbeddingParams) *UpsertProductEmbeddingBatchResults {
+	batch := &pgx.Batch{}
+	for _, a := range arg {
+		vals := []interface{}{
+			a.SpuID,
+			a.Embedding,
+			a.Sparse,
+		}
+		batch.Queue(upsertProductEmbedding, vals...)
+	}
+	br := q.db.SendBatch(ctx, batch)
+	return &UpsertProductEmbeddingBatchResults{br, len(arg), false}
+}
+
+func (b *UpsertProductEmbeddingBatchResults) Exec(f func(int, error)) {
+	defer b.br.Close()
+	for t := 0; t < b.tot; t++ {
+		if b.closed {
+			if f != nil {
+				f(t, ErrBatchAlreadyClosed)
+			}
+			continue
+		}
+		_, err := b.br.Exec()
+		if f != nil {
+			f(t, err)
+		}
+	}
+}
+
+func (b *UpsertProductEmbeddingBatchResults) Close() error {
+	b.closed = true
+	return b.br.Close()
+}
+
+const upsertTagEmbedding = `-- name: UpsertTagEmbedding :batchexec
+INSERT INTO catalog.tag_embedding (tag_id, embedding, sparse, date_updated)
+VALUES ($1, $2, $3, NOW())
+ON CONFLICT (tag_id) DO UPDATE SET
+    embedding = EXCLUDED.embedding,
+    sparse = EXCLUDED.sparse,
+    date_updated = NOW()
+`
+
+type UpsertTagEmbeddingBatchResults struct {
+	br     pgx.BatchResults
+	tot    int
+	closed bool
+}
+
+type UpsertTagEmbeddingParams struct {
+	TagID     string                    `json:"tag_id"`
+	Embedding pgvector.Vector           `json:"embedding"`
+	Sparse    *pgvector_go.SparseVector `json:"sparse"`
+}
+
+func (q *Queries) UpsertTagEmbedding(ctx context.Context, arg []UpsertTagEmbeddingParams) *UpsertTagEmbeddingBatchResults {
+	batch := &pgx.Batch{}
+	for _, a := range arg {
+		vals := []interface{}{
+			a.TagID,
+			a.Embedding,
+			a.Sparse,
+		}
+		batch.Queue(upsertTagEmbedding, vals...)
+	}
+	br := q.db.SendBatch(ctx, batch)
+	return &UpsertTagEmbeddingBatchResults{br, len(arg), false}
+}
+
+func (b *UpsertTagEmbeddingBatchResults) Exec(f func(int, error)) {
+	defer b.br.Close()
+	for t := 0; t < b.tot; t++ {
+		if b.closed {
+			if f != nil {
+				f(t, ErrBatchAlreadyClosed)
+			}
+			continue
+		}
+		_, err := b.br.Exec()
+		if f != nil {
+			f(t, err)
+		}
+	}
+}
+
+func (b *UpsertTagEmbeddingBatchResults) Close() error {
 	b.closed = true
 	return b.br.Close()
 }

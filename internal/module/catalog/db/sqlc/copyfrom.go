@@ -474,7 +474,6 @@ func (r iteratorForCreateCopySearchSync) Values() ([]interface{}, error) {
 		r.rows[0].RefType,
 		r.rows[0].RefID,
 		r.rows[0].IsStaleEmbedding,
-		r.rows[0].IsStaleMetadata,
 		r.rows[0].DateCreated,
 		r.rows[0].DateUpdated,
 	}, nil
@@ -485,7 +484,7 @@ func (r iteratorForCreateCopySearchSync) Err() error {
 }
 
 func (q *Queries) CreateCopySearchSync(ctx context.Context, arg []CreateCopySearchSyncParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"catalog", "search_sync"}, []string{"ref_type", "ref_id", "is_stale_embedding", "is_stale_metadata", "date_created", "date_updated"}, &iteratorForCreateCopySearchSync{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"catalog", "search_sync"}, []string{"ref_type", "ref_id", "is_stale_embedding", "date_created", "date_updated"}, &iteratorForCreateCopySearchSync{rows: arg})
 }
 
 // iteratorForCreateCopyTag implements pgx.CopyFromSource.

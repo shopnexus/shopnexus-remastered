@@ -300,13 +300,12 @@ WHERE (
     ("ref_type" = ANY($2) OR $2 IS NULL) AND
     ("ref_id" = ANY($3) OR $3 IS NULL) AND
     ("is_stale_embedding" = ANY($4) OR $4 IS NULL) AND
-    ("is_stale_metadata" = ANY($5) OR $5 IS NULL) AND
-    ("date_created" = ANY($6) OR $6 IS NULL) AND
-    ("date_created" >= $7 OR $7 IS NULL) AND
-    ("date_created" <= $8 OR $8 IS NULL) AND
-    ("date_updated" = ANY($9) OR $9 IS NULL) AND
-    ("date_updated" >= $10 OR $10 IS NULL) AND
-    ("date_updated" <= $11 OR $11 IS NULL)
+    ("date_created" = ANY($5) OR $5 IS NULL) AND
+    ("date_created" >= $6 OR $6 IS NULL) AND
+    ("date_created" <= $7 OR $7 IS NULL) AND
+    ("date_updated" = ANY($8) OR $8 IS NULL) AND
+    ("date_updated" >= $9 OR $9 IS NULL) AND
+    ("date_updated" <= $10 OR $10 IS NULL)
 )
 `
 
@@ -315,7 +314,6 @@ type CountSearchSyncParams struct {
 	RefType          []CatalogSearchSyncRefType `json:"ref_type"`
 	RefID            []uuid.UUID                `json:"ref_id"`
 	IsStaleEmbedding []bool                     `json:"is_stale_embedding"`
-	IsStaleMetadata  []bool                     `json:"is_stale_metadata"`
 	DateCreated      []time.Time                `json:"date_created"`
 	DateCreatedFrom  null.Time                  `json:"date_created_from"`
 	DateCreatedTo    null.Time                  `json:"date_created_to"`
@@ -330,7 +328,6 @@ func (q *Queries) CountSearchSync(ctx context.Context, arg CountSearchSyncParams
 		arg.RefType,
 		arg.RefID,
 		arg.IsStaleEmbedding,
-		arg.IsStaleMetadata,
 		arg.DateCreated,
 		arg.DateCreatedFrom,
 		arg.DateCreatedTo,
@@ -557,7 +554,6 @@ type CreateCopySearchSyncParams struct {
 	RefType          CatalogSearchSyncRefType `json:"ref_type"`
 	RefID            uuid.UUID                `json:"ref_id"`
 	IsStaleEmbedding bool                     `json:"is_stale_embedding"`
-	IsStaleMetadata  bool                     `json:"is_stale_metadata"`
 	DateCreated      time.Time                `json:"date_created"`
 	DateUpdated      time.Time                `json:"date_updated"`
 }
@@ -744,7 +740,7 @@ func (q *Queries) CreateDefaultProductSpuTag(ctx context.Context, arg CreateDefa
 const createDefaultSearchSync = `-- name: CreateDefaultSearchSync :one
 INSERT INTO "catalog"."search_sync" ("ref_type", "ref_id")
 VALUES ($1, $2)
-RETURNING id, ref_type, ref_id, is_stale_embedding, is_stale_metadata, date_created, date_updated
+RETURNING id, ref_type, ref_id, is_stale_embedding, date_created, date_updated
 `
 
 type CreateDefaultSearchSyncParams struct {
@@ -760,7 +756,6 @@ func (q *Queries) CreateDefaultSearchSync(ctx context.Context, arg CreateDefault
 		&i.RefType,
 		&i.RefID,
 		&i.IsStaleEmbedding,
-		&i.IsStaleMetadata,
 		&i.DateCreated,
 		&i.DateUpdated,
 	)
@@ -905,16 +900,15 @@ func (q *Queries) CreateProductSpuTag(ctx context.Context, arg CreateProductSpuT
 }
 
 const createSearchSync = `-- name: CreateSearchSync :one
-INSERT INTO "catalog"."search_sync" ("ref_type", "ref_id", "is_stale_embedding", "is_stale_metadata", "date_created", "date_updated")
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, ref_type, ref_id, is_stale_embedding, is_stale_metadata, date_created, date_updated
+INSERT INTO "catalog"."search_sync" ("ref_type", "ref_id", "is_stale_embedding", "date_created", "date_updated")
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, ref_type, ref_id, is_stale_embedding, date_created, date_updated
 `
 
 type CreateSearchSyncParams struct {
 	RefType          CatalogSearchSyncRefType `json:"ref_type"`
 	RefID            uuid.UUID                `json:"ref_id"`
 	IsStaleEmbedding bool                     `json:"is_stale_embedding"`
-	IsStaleMetadata  bool                     `json:"is_stale_metadata"`
 	DateCreated      time.Time                `json:"date_created"`
 	DateUpdated      time.Time                `json:"date_updated"`
 }
@@ -924,7 +918,6 @@ func (q *Queries) CreateSearchSync(ctx context.Context, arg CreateSearchSyncPara
 		arg.RefType,
 		arg.RefID,
 		arg.IsStaleEmbedding,
-		arg.IsStaleMetadata,
 		arg.DateCreated,
 		arg.DateUpdated,
 	)
@@ -934,7 +927,6 @@ func (q *Queries) CreateSearchSync(ctx context.Context, arg CreateSearchSyncPara
 		&i.RefType,
 		&i.RefID,
 		&i.IsStaleEmbedding,
-		&i.IsStaleMetadata,
 		&i.DateCreated,
 		&i.DateUpdated,
 	)
@@ -1230,13 +1222,12 @@ WHERE (
     ("ref_type" = ANY($2) OR $2 IS NULL) AND
     ("ref_id" = ANY($3) OR $3 IS NULL) AND
     ("is_stale_embedding" = ANY($4) OR $4 IS NULL) AND
-    ("is_stale_metadata" = ANY($5) OR $5 IS NULL) AND
-    ("date_created" = ANY($6) OR $6 IS NULL) AND
-    ("date_created" >= $7 OR $7 IS NULL) AND
-    ("date_created" <= $8 OR $8 IS NULL) AND
-    ("date_updated" = ANY($9) OR $9 IS NULL) AND
-    ("date_updated" >= $10 OR $10 IS NULL) AND
-    ("date_updated" <= $11 OR $11 IS NULL)
+    ("date_created" = ANY($5) OR $5 IS NULL) AND
+    ("date_created" >= $6 OR $6 IS NULL) AND
+    ("date_created" <= $7 OR $7 IS NULL) AND
+    ("date_updated" = ANY($8) OR $8 IS NULL) AND
+    ("date_updated" >= $9 OR $9 IS NULL) AND
+    ("date_updated" <= $10 OR $10 IS NULL)
 )
 `
 
@@ -1245,7 +1236,6 @@ type DeleteSearchSyncParams struct {
 	RefType          []CatalogSearchSyncRefType `json:"ref_type"`
 	RefID            []uuid.UUID                `json:"ref_id"`
 	IsStaleEmbedding []bool                     `json:"is_stale_embedding"`
-	IsStaleMetadata  []bool                     `json:"is_stale_metadata"`
 	DateCreated      []time.Time                `json:"date_created"`
 	DateCreatedFrom  null.Time                  `json:"date_created_from"`
 	DateCreatedTo    null.Time                  `json:"date_created_to"`
@@ -1260,7 +1250,6 @@ func (q *Queries) DeleteSearchSync(ctx context.Context, arg DeleteSearchSyncPara
 		arg.RefType,
 		arg.RefID,
 		arg.IsStaleEmbedding,
-		arg.IsStaleMetadata,
 		arg.DateCreated,
 		arg.DateCreatedFrom,
 		arg.DateCreatedTo,
@@ -1440,7 +1429,7 @@ func (q *Queries) GetProductSpuTag(ctx context.Context, arg GetProductSpuTagPara
 
 const getSearchSync = `-- name: GetSearchSync :one
 
-SELECT id, ref_type, ref_id, is_stale_embedding, is_stale_metadata, date_created, date_updated
+SELECT id, ref_type, ref_id, is_stale_embedding, date_created, date_updated
 FROM "catalog"."search_sync"
 WHERE ("id" = $1) OR ("ref_type" = $2 AND "ref_id" = $3)
 `
@@ -1462,7 +1451,6 @@ func (q *Queries) GetSearchSync(ctx context.Context, arg GetSearchSyncParams) (C
 		&i.RefType,
 		&i.RefID,
 		&i.IsStaleEmbedding,
-		&i.IsStaleMetadata,
 		&i.DateCreated,
 		&i.DateUpdated,
 	)
@@ -2112,24 +2100,23 @@ func (q *Queries) ListCountProductSpuTag(ctx context.Context, arg ListCountProdu
 }
 
 const listCountSearchSync = `-- name: ListCountSearchSync :many
-SELECT embed_search_sync.id, embed_search_sync.ref_type, embed_search_sync.ref_id, embed_search_sync.is_stale_embedding, embed_search_sync.is_stale_metadata, embed_search_sync.date_created, embed_search_sync.date_updated, COUNT(*) OVER() as total_count
+SELECT embed_search_sync.id, embed_search_sync.ref_type, embed_search_sync.ref_id, embed_search_sync.is_stale_embedding, embed_search_sync.date_created, embed_search_sync.date_updated, COUNT(*) OVER() as total_count
 FROM "catalog"."search_sync" embed_search_sync
 WHERE (
     ("id" = ANY($1) OR $1 IS NULL) AND
     ("ref_type" = ANY($2) OR $2 IS NULL) AND
     ("ref_id" = ANY($3) OR $3 IS NULL) AND
     ("is_stale_embedding" = ANY($4) OR $4 IS NULL) AND
-    ("is_stale_metadata" = ANY($5) OR $5 IS NULL) AND
-    ("date_created" = ANY($6) OR $6 IS NULL) AND
-    ("date_created" >= $7 OR $7 IS NULL) AND
-    ("date_created" <= $8 OR $8 IS NULL) AND
-    ("date_updated" = ANY($9) OR $9 IS NULL) AND
-    ("date_updated" >= $10 OR $10 IS NULL) AND
-    ("date_updated" <= $11 OR $11 IS NULL)
+    ("date_created" = ANY($5) OR $5 IS NULL) AND
+    ("date_created" >= $6 OR $6 IS NULL) AND
+    ("date_created" <= $7 OR $7 IS NULL) AND
+    ("date_updated" = ANY($8) OR $8 IS NULL) AND
+    ("date_updated" >= $9 OR $9 IS NULL) AND
+    ("date_updated" <= $10 OR $10 IS NULL)
 )
 ORDER BY "id"
-LIMIT $13::int
-OFFSET $12::int
+LIMIT $12::int
+OFFSET $11::int
 `
 
 type ListCountSearchSyncParams struct {
@@ -2137,7 +2124,6 @@ type ListCountSearchSyncParams struct {
 	RefType          []CatalogSearchSyncRefType `json:"ref_type"`
 	RefID            []uuid.UUID                `json:"ref_id"`
 	IsStaleEmbedding []bool                     `json:"is_stale_embedding"`
-	IsStaleMetadata  []bool                     `json:"is_stale_metadata"`
 	DateCreated      []time.Time                `json:"date_created"`
 	DateCreatedFrom  null.Time                  `json:"date_created_from"`
 	DateCreatedTo    null.Time                  `json:"date_created_to"`
@@ -2159,7 +2145,6 @@ func (q *Queries) ListCountSearchSync(ctx context.Context, arg ListCountSearchSy
 		arg.RefType,
 		arg.RefID,
 		arg.IsStaleEmbedding,
-		arg.IsStaleMetadata,
 		arg.DateCreated,
 		arg.DateCreatedFrom,
 		arg.DateCreatedTo,
@@ -2181,7 +2166,6 @@ func (q *Queries) ListCountSearchSync(ctx context.Context, arg ListCountSearchSy
 			&i.CatalogSearchSync.RefType,
 			&i.CatalogSearchSync.RefID,
 			&i.CatalogSearchSync.IsStaleEmbedding,
-			&i.CatalogSearchSync.IsStaleMetadata,
 			&i.CatalogSearchSync.DateCreated,
 			&i.CatalogSearchSync.DateUpdated,
 			&i.TotalCount,
@@ -2509,24 +2493,23 @@ func (q *Queries) ListProductSpuTag(ctx context.Context, arg ListProductSpuTagPa
 }
 
 const listSearchSync = `-- name: ListSearchSync :many
-SELECT id, ref_type, ref_id, is_stale_embedding, is_stale_metadata, date_created, date_updated
+SELECT id, ref_type, ref_id, is_stale_embedding, date_created, date_updated
 FROM "catalog"."search_sync"
 WHERE (
     ("id" = ANY($1) OR $1 IS NULL) AND
     ("ref_type" = ANY($2) OR $2 IS NULL) AND
     ("ref_id" = ANY($3) OR $3 IS NULL) AND
     ("is_stale_embedding" = ANY($4) OR $4 IS NULL) AND
-    ("is_stale_metadata" = ANY($5) OR $5 IS NULL) AND
-    ("date_created" = ANY($6) OR $6 IS NULL) AND
-    ("date_created" >= $7 OR $7 IS NULL) AND
-    ("date_created" <= $8 OR $8 IS NULL) AND
-    ("date_updated" = ANY($9) OR $9 IS NULL) AND
-    ("date_updated" >= $10 OR $10 IS NULL) AND
-    ("date_updated" <= $11 OR $11 IS NULL)
+    ("date_created" = ANY($5) OR $5 IS NULL) AND
+    ("date_created" >= $6 OR $6 IS NULL) AND
+    ("date_created" <= $7 OR $7 IS NULL) AND
+    ("date_updated" = ANY($8) OR $8 IS NULL) AND
+    ("date_updated" >= $9 OR $9 IS NULL) AND
+    ("date_updated" <= $10 OR $10 IS NULL)
 )
 ORDER BY "id"
-LIMIT $13::int
-OFFSET $12::int
+LIMIT $12::int
+OFFSET $11::int
 `
 
 type ListSearchSyncParams struct {
@@ -2534,7 +2517,6 @@ type ListSearchSyncParams struct {
 	RefType          []CatalogSearchSyncRefType `json:"ref_type"`
 	RefID            []uuid.UUID                `json:"ref_id"`
 	IsStaleEmbedding []bool                     `json:"is_stale_embedding"`
-	IsStaleMetadata  []bool                     `json:"is_stale_metadata"`
 	DateCreated      []time.Time                `json:"date_created"`
 	DateCreatedFrom  null.Time                  `json:"date_created_from"`
 	DateCreatedTo    null.Time                  `json:"date_created_to"`
@@ -2551,7 +2533,6 @@ func (q *Queries) ListSearchSync(ctx context.Context, arg ListSearchSyncParams) 
 		arg.RefType,
 		arg.RefID,
 		arg.IsStaleEmbedding,
-		arg.IsStaleMetadata,
 		arg.DateCreated,
 		arg.DateCreatedFrom,
 		arg.DateCreatedTo,
@@ -2573,7 +2554,6 @@ func (q *Queries) ListSearchSync(ctx context.Context, arg ListSearchSyncParams) 
 			&i.RefType,
 			&i.RefID,
 			&i.IsStaleEmbedding,
-			&i.IsStaleMetadata,
 			&i.DateCreated,
 			&i.DateUpdated,
 		); err != nil {
@@ -2883,18 +2863,16 @@ UPDATE "catalog"."search_sync"
 SET "ref_type" = COALESCE($1, "ref_type"),
     "ref_id" = COALESCE($2, "ref_id"),
     "is_stale_embedding" = COALESCE($3, "is_stale_embedding"),
-    "is_stale_metadata" = COALESCE($4, "is_stale_metadata"),
-    "date_created" = COALESCE($5, "date_created"),
-    "date_updated" = COALESCE($6, "date_updated")
-WHERE "id" = $7
-RETURNING id, ref_type, ref_id, is_stale_embedding, is_stale_metadata, date_created, date_updated
+    "date_created" = COALESCE($4, "date_created"),
+    "date_updated" = COALESCE($5, "date_updated")
+WHERE "id" = $6
+RETURNING id, ref_type, ref_id, is_stale_embedding, date_created, date_updated
 `
 
 type UpdateSearchSyncParams struct {
 	RefType          NullCatalogSearchSyncRefType `json:"ref_type"`
 	RefID            uuid.NullUUID                `json:"ref_id"`
 	IsStaleEmbedding null.Bool                    `json:"is_stale_embedding"`
-	IsStaleMetadata  null.Bool                    `json:"is_stale_metadata"`
 	DateCreated      null.Time                    `json:"date_created"`
 	DateUpdated      null.Time                    `json:"date_updated"`
 	ID               int64                        `json:"id"`
@@ -2905,7 +2883,6 @@ func (q *Queries) UpdateSearchSync(ctx context.Context, arg UpdateSearchSyncPara
 		arg.RefType,
 		arg.RefID,
 		arg.IsStaleEmbedding,
-		arg.IsStaleMetadata,
 		arg.DateCreated,
 		arg.DateUpdated,
 		arg.ID,
@@ -2916,7 +2893,6 @@ func (q *Queries) UpdateSearchSync(ctx context.Context, arg UpdateSearchSyncPara
 		&i.RefType,
 		&i.RefID,
 		&i.IsStaleEmbedding,
-		&i.IsStaleMetadata,
 		&i.DateCreated,
 		&i.DateUpdated,
 	)

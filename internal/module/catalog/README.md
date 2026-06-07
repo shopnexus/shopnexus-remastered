@@ -68,9 +68,30 @@ erDiagram
   search_sync_ref_type ref_type
   uuid ref_id
   boolean is_stale_embedding
-  boolean is_stale_metadata
   timestamptz date_created
   timestamptz date_updated
+}
+"catalog.product_embedding" {
+  uuid spu_id
+  vector(768) dense
+  sparsevec(250048) sparse
+}
+"catalog.category_embedding" {
+  uuid category_id
+  vector(768) dense
+  sparsevec(250048) sparse
+}
+"catalog.tag_embedding" {
+  varchar(100) tag_id
+  vector(768) dense
+  sparsevec(250048) sparse
+}
+"catalog.account_interest" {
+  uuid account_id
+  int slot
+  vector(768) dense
+  sparsevec(250048) sparse
+  float strength
 }
 "catalog.tag" {
   varchar(100) id
@@ -98,37 +119,39 @@ Tags are free-form labels, lazily created on SPU create/update (if a tag doesn't
 
 ### Search Sync
 
-The `search_sync` table tracks which SPUs need re-indexing in Milvus. Two boolean flags distinguish metadata-only updates (name, price, tags) from full embedding regeneration.
+The `search_sync` table tracks which SPUs need vector re-embedding. A single `is_stale_embedding` flag marks rows that require full embedding regeneration. Scalar metadata (name, price, category, tags) is read live from the catalog tables at query time — no separate metadata sync path.
 
 ## Flows
 
 ### Hybrid Search
 
-Search combines dense vector similarity and sparse BM25 scoring via Milvus, with configurable weights:
+Search is a single SQL query against pgvector tables, with configurable weights:
 
 1. Query text is embedded by a pluggable LLM provider (Python/OpenAI/Bedrock) into a dense vector.
-2. Milvus runs both dense (vector similarity) and sparse (BM25 built-in analyzer) searches.
-3. Results are merged with configurable dense/sparse weight ratio.
-4. Falls back to PostgreSQL `ILIKE` on `slug`, `name`, `description` if Milvus is unavailable.
+2. Two CTEs run in parallel: dense ANN (`product_embedding.dense`) and sparse ANN (`product_embedding.sparse`).
+3. Results from both CTEs are fused using configurable `denseWeight`/`sparseWeight` scores.
+4. Scalar filters (category, price, availability) JOIN live catalog tables — no denormalized copies.
+5. Falls back to PostgreSQL `ILIKE` on `slug`, `name`, `description` if embedding is unavailable.
 
 ### Recommendation
 
 1. Personalized feed cached in Redis sorted sets (`catalog:recommend:product:{account_id}`).
-2. User interactions (views, purchases, reviews) buffered in-memory, flushed in batches to Milvus.
+2. Per interest slot in `account_interest`, an ANN query runs against `product_embedding`; results are fused in Go weighted by each slot's `strength`.
 3. Falls back to most-sold products (via inventory module) when recommendations are insufficient.
 
 ### Background Sync
 
-Two goroutines sync stale products from `search_sync` to Milvus:
+One cron drains `search_sync` rows where `is_stale_embedding = true`:
 
 | Cron | Batch Size | Syncs |
 |------|-----------|-------|
-| Metadata | 1000 | Name, price, tags, category (skips embedding regen) |
-| Embedding | 32 | Full re-index including vector embedding |
+| Embedding | 32 | Regenerate dense + sparse vectors into `product_embedding` |
+
+Scalar metadata (name, price, tags, category) is always read live from catalog tables; there is no metadata sync cron.
 
 ## Implementation Notes
 
-- **Milvus direct**: search talks to Milvus directly, no external search service layer. The catalog module owns the full search pipeline.
+- **pgvector in-process**: search runs as SQL against pgvector columns in the catalog schema — no external search service. The catalog module owns the full search pipeline.
 - **`FOR UPDATE SKIP LOCKED`**: background sync crons use this pattern for concurrent-safe batch processing — multiple instances won't process the same stale records.
 - **Pluggable LLM embedding**: the embedding provider is injected via the `llm.Client` interface. Switching from OpenAI to Bedrock is a config change, not a code change.
 - **Lazy tag creation**: tags are created on-the-fly during SPU create/update. No separate "create tag" step required from the frontend.

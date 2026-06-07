@@ -15,28 +15,16 @@ import (
 	catalogutil "shopnexus-server/internal/module/catalog/util"
 )
 
-// AddInteraction buffers an analytic interaction event and flushes the batch when full.
-func (b *CatalogHandler) AddInteraction(ctx restate.Context, params analyticmodel.Interaction) error {
-	// Buffer the event under lock, release before processing
-	// WIP: storing buffer in memory kinda sucks, but good enough for now
-	b.mu.Lock()
-	b.buffer = append(b.buffer, params)
-	if len(b.buffer) < b.batchSize {
-		b.mu.Unlock()
-		return nil
-	}
-	toInsert := b.buffer
-	b.buffer = make([]analyticmodel.Interaction, 0, b.batchSize)
-	b.mu.Unlock()
-
-	// Process events without holding the buffer lock (involves Milvus network calls)
-	if err := b.ProcessEvents(ctx, toInsert); err != nil {
-		return err
+// AddInteractions processes a batch of analytic interaction events. Batching
+// happens upstream in the bus subscription (see catalog/workers).
+func (b *CatalogHandler) AddInteractions(ctx restate.Context, events []analyticmodel.Interaction) error {
+	if err := b.ProcessEvents(ctx, events); err != nil {
+		return fmt.Errorf("process events: %w", err)
 	}
 
 	// Remove old recommendations for all affected accounts
 	seen := make(map[uuid.UUID]struct{})
-	for _, ev := range toInsert {
+	for _, ev := range events {
 		if !ev.AccountID.Valid {
 			continue
 		}
@@ -58,42 +46,42 @@ func (b *CatalogHandler) AddInteraction(ctx restate.Context, params analyticmode
 	return nil
 }
 
-// ProcessEvents updates account interest vectors in Milvus based on analytic interaction events.
+// ProcessEvents updates account interest vectors in the account_interest table
+// based on analytic interaction events.
 func (b *CatalogHandler) ProcessEvents(ctx restate.Context, events []analyticmodel.Interaction) error {
 	if len(events) == 0 {
 		return nil
 	}
 
 	// 1. Collect unique product IDs
-	itemIDSet := make(map[string]struct{})
+	itemIDSet := make(map[uuid.UUID]struct{})
 	for _, e := range events {
 		if e.RefID != uuid.Nil {
-			itemIDSet[e.RefID.String()] = struct{}{}
+			itemIDSet[e.RefID] = struct{}{}
 		}
 	}
-	itemIDs := make([]string, 0, len(itemIDSet))
+	itemIDs := make([]uuid.UUID, 0, len(itemIDSet))
 	for id := range itemIDSet {
 		itemIDs = append(itemIDs, id)
 	}
 
-	// 2. Fetch product content vectors from Milvus
+	// 2. Fetch product content vectors
 	itemVectors, err := b.getProductVectors(ctx, itemIDs)
 	if err != nil {
 		return fmt.Errorf("get product vectors: %w", err)
 	}
 
 	// 3. Group events by account
-	accountEvents := make(map[string][]analyticmodel.Interaction)
+	accountEvents := make(map[uuid.UUID][]analyticmodel.Interaction)
 	for _, e := range events {
 		if !e.AccountID.Valid {
 			continue
 		}
-		aid := e.AccountID.UUID.String()
-		accountEvents[aid] = append(accountEvents[aid], e)
+		accountEvents[e.AccountID.UUID] = append(accountEvents[e.AccountID.UUID], e)
 	}
 
 	// 4. Fetch existing account interests
-	accountIDs := make([]string, 0, len(accountEvents))
+	accountIDs := make([]uuid.UUID, 0, len(accountEvents))
 	for id := range accountEvents {
 		accountIDs = append(accountIDs, id)
 	}
@@ -126,15 +114,7 @@ func (b *CatalogHandler) ProcessEvents(ctx restate.Context, events []analyticmod
 		}
 
 		// 6. Upsert updated account
-		// account_number removed from analytic; Milvus "number" column now always 0 until collection is migrated.
-		_ = acctEvents
-		if err := b.upsertAccountInterests(
-			ctx,
-			accountID,
-			0,
-			interests,
-			strengths,
-		); err != nil {
+		if err := b.upsertAccountInterests(ctx, accountID, interests, strengths); err != nil {
 			return fmt.Errorf("upsert account %s: %w", accountID, err)
 		}
 	}
@@ -147,25 +127,15 @@ type accountInterests struct {
 	strengths []float32
 }
 
-func aggregateProductWeights(events []analyticmodel.Interaction) map[string]float32 {
-	weights := make(map[string]float32)
+func aggregateProductWeights(events []analyticmodel.Interaction) map[uuid.UUID]float32 {
+	weights := make(map[uuid.UUID]float32)
 	for _, e := range events {
 		if e.RefID == uuid.Nil {
 			continue
 		}
-		weights[e.RefID.String()] += catalogutil.GetEventWeight(strings.ToLower(string(e.EventType)))
+		weights[e.RefID] += catalogutil.GetEventWeight(strings.ToLower(string(e.EventType)))
 	}
 	return weights
-}
-
-func accountOutputFields() []string {
-	fields := make([]string, 0, 1+catalogutil.NumInterests*2)
-	fields = append(fields, "id")
-	for i := 1; i <= catalogutil.NumInterests; i++ {
-		fields = append(fields, fmt.Sprintf("interest_%d", i))
-		fields = append(fields, fmt.Sprintf("strength_%d", i))
-	}
-	return fields
 }
 
 // InterleaveShuffle splits each input slice into numParts chunks,

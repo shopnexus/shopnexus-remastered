@@ -3,8 +3,6 @@ volumes:
   redis-data:
   es-data:
   minio-data:
-  milvus-data:
-  etcd-data:
   server-data:
   restate-data:
 
@@ -35,7 +33,7 @@ x-restate-defaults: &restate-defaults
 services:
   postgres:
     container_name: shopnexus-postgres-prod
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17
     # Production: Don't expose ports externally, only internal network access
     # ports:
     #   - "5432:5432"

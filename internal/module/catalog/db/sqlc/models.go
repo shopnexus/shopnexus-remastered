@@ -12,6 +12,8 @@ import (
 
 	"github.com/google/uuid"
 	null "github.com/guregu/null/v6"
+	"github.com/pgvector/pgvector-go"
+	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
 type CatalogCommentRefType string
@@ -133,11 +135,26 @@ func AllCatalogSearchSyncRefTypeValues() []CatalogSearchSyncRefType {
 	}
 }
 
+type CatalogAccountInterest struct {
+	AccountID   uuid.UUID       `json:"account_id"`
+	Slot        int16           `json:"slot"`
+	Embedding   pgvector.Vector `json:"embedding"`
+	Strength    float32         `json:"strength"`
+	DateUpdated time.Time       `json:"date_updated"`
+}
+
 type CatalogCategory struct {
 	ID          uuid.UUID     `json:"id"`
 	Name        string        `json:"name"`
 	Description string        `json:"description"`
 	ParentID    uuid.NullUUID `json:"parent_id"`
+}
+
+type CatalogCategoryEmbedding struct {
+	CategoryID  uuid.UUID                 `json:"category_id"`
+	Embedding   pgvector.Vector           `json:"embedding"`
+	Sparse      *pgvector_go.SparseVector `json:"sparse"`
+	DateUpdated time.Time                 `json:"date_updated"`
 }
 
 type CatalogComment struct {
@@ -152,6 +169,13 @@ type CatalogComment struct {
 	Score       float64               `json:"score"`
 	DateCreated time.Time             `json:"date_created"`
 	DateUpdated time.Time             `json:"date_updated"`
+}
+
+type CatalogProductEmbedding struct {
+	SpuID       uuid.UUID                 `json:"spu_id"`
+	Embedding   pgvector.Vector           `json:"embedding"`
+	Sparse      *pgvector_go.SparseVector `json:"sparse"`
+	DateUpdated time.Time                 `json:"date_updated"`
 }
 
 type CatalogProductSku struct {
@@ -193,7 +217,6 @@ type CatalogSearchSync struct {
 	RefType          CatalogSearchSyncRefType `json:"ref_type"`
 	RefID            uuid.UUID                `json:"ref_id"`
 	IsStaleEmbedding bool                     `json:"is_stale_embedding"`
-	IsStaleMetadata  bool                     `json:"is_stale_metadata"`
 	DateCreated      time.Time                `json:"date_created"`
 	DateUpdated      time.Time                `json:"date_updated"`
 }
@@ -204,31 +227,9 @@ type CatalogTag struct {
 	Description null.String `json:"description"`
 }
 
-func (n NullCatalogCommentRefType) MarshalJSON() ([]byte, error) {
-	if !n.Valid {
-		return []byte("null"), nil
-	}
-	return json.Marshal(n.CatalogCommentRefType)
-}
-func (n *NullCatalogCommentRefType) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		n.Valid = false
-		return nil
-	}
-	n.Valid = true
-	return json.Unmarshal(b, &n.CatalogCommentRefType)
-}
-func (n NullCatalogSearchSyncRefType) MarshalJSON() ([]byte, error) {
-	if !n.Valid {
-		return []byte("null"), nil
-	}
-	return json.Marshal(n.CatalogSearchSyncRefType)
-}
-func (n *NullCatalogSearchSyncRefType) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		n.Valid = false
-		return nil
-	}
-	n.Valid = true
-	return json.Unmarshal(b, &n.CatalogSearchSyncRefType)
+type CatalogTagEmbedding struct {
+	TagID       string                    `json:"tag_id"`
+	Embedding   pgvector.Vector           `json:"embedding"`
+	Sparse      *pgvector_go.SparseVector `json:"sparse"`
+	DateUpdated time.Time                 `json:"date_updated"`
 }

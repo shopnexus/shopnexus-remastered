@@ -12,6 +12,7 @@ import (
 )
 
 type Querier interface {
+	ClearStaleSearchSyncBatch(ctx context.Context, arg []ClearStaleSearchSyncBatchParams) *ClearStaleSearchSyncBatchBatchResults
 	CountCategory(ctx context.Context, arg CountCategoryParams) (int64, error)
 	CountComment(ctx context.Context, arg CountCommentParams) (int64, error)
 	CountProductSku(ctx context.Context, arg CountProductSkuParams) (int64, error)
@@ -86,6 +87,7 @@ type Querier interface {
 	// Queries for table: catalog.product_spu_tag
 	// ========================================
 	GetProductSpuTag(ctx context.Context, arg GetProductSpuTagParams) (CatalogProductSpuTag, error)
+	GetProductVectors(ctx context.Context, spuIds []uuid.UUID) ([]GetProductVectorsRow, error)
 	// ========================================
 	// Queries for table: catalog.search_sync
 	// ========================================
@@ -95,6 +97,10 @@ type Querier interface {
 	// ========================================
 	GetTag(ctx context.Context, id null.String) (CatalogTag, error)
 	GetVendorProductStats(ctx context.Context, accountID uuid.UUID) (GetVendorProductStatsRow, error)
+	// Dense + sparse ANN with weighted score fusion; scalar filters join live
+	// product tables (replaces Milvus denormalized scalars + WeightedReranker).
+	HybridSearchProduct(ctx context.Context, arg HybridSearchProductParams) ([]HybridSearchProductRow, error)
+	ListAccountInterest(ctx context.Context, accountIds []uuid.UUID) ([]ListAccountInterestRow, error)
 	ListCategory(ctx context.Context, arg ListCategoryParams) ([]CatalogCategory, error)
 	ListComment(ctx context.Context, arg ListCommentParams) ([]CatalogComment, error)
 	ListCountCategory(ctx context.Context, arg ListCountCategoryParams) ([]ListCountCategoryRow, error)
@@ -112,15 +118,17 @@ type Querier interface {
 	ListProductSpuTag(ctx context.Context, arg ListProductSpuTagParams) ([]CatalogProductSpuTag, error)
 	ListRating(ctx context.Context, arg ListRatingParams) ([]ListRatingRow, error)
 	ListSearchSync(ctx context.Context, arg ListSearchSyncParams) ([]CatalogSearchSync, error)
-	ListStaleSearchSync(ctx context.Context, arg ListStaleSearchSyncParams) ([]ListStaleSearchSyncRow, error)
+	ListStaleSearchSync(ctx context.Context, limit int32) ([]ListStaleSearchSyncRow, error)
 	ListTag(ctx context.Context, arg ListTagParams) ([]CatalogTag, error)
+	MarkStaleSearchSync(ctx context.Context, arg MarkStaleSearchSyncParams) error
 	SearchCategory(ctx context.Context, arg SearchCategoryParams) ([]SearchCategoryRow, error)
 	SearchCountProductSpu(ctx context.Context, arg SearchCountProductSpuParams) ([]SearchCountProductSpuRow, error)
 	// Custom product queries
 	// Returns SPU IDs that have ALL of the specified tags (AND logic).
 	SearchCountProductSpuByTags(ctx context.Context, arg SearchCountProductSpuByTagsParams) ([]SearchCountProductSpuByTagsRow, error)
+	// Single dense ANN over active products (used per interest slot for recommendations).
+	SearchProductByVector(ctx context.Context, arg SearchProductByVectorParams) ([]SearchProductByVectorRow, error)
 	SearchTag(ctx context.Context, arg SearchTagParams) ([]SearchTagRow, error)
-	UpdateBatchStaleSearchSync(ctx context.Context, arg []UpdateBatchStaleSearchSyncParams) *UpdateBatchStaleSearchSyncBatchResults
 	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (CatalogCategory, error)
 	UpdateComment(ctx context.Context, arg UpdateCommentParams) (CatalogComment, error)
 	UpdateCommentUpvoteDownvote(ctx context.Context, arg UpdateCommentUpvoteDownvoteParams) error
@@ -128,8 +136,13 @@ type Querier interface {
 	UpdateProductSpu(ctx context.Context, arg UpdateProductSpuParams) (CatalogProductSpu, error)
 	UpdateProductSpuTag(ctx context.Context, arg UpdateProductSpuTagParams) (CatalogProductSpuTag, error)
 	UpdateSearchSync(ctx context.Context, arg UpdateSearchSyncParams) (CatalogSearchSync, error)
-	UpdateStaleSearchSync(ctx context.Context, arg UpdateStaleSearchSyncParams) error
 	UpdateTag(ctx context.Context, arg UpdateTagParams) (CatalogTag, error)
+	UpsertAccountInterest(ctx context.Context, arg []UpsertAccountInterestParams) *UpsertAccountInterestBatchResults
+	UpsertCategoryEmbedding(ctx context.Context, arg []UpsertCategoryEmbeddingParams) *UpsertCategoryEmbeddingBatchResults
+	// Hand-written vector queries (pgvector). Embedding upserts, hybrid search,
+	// and per-interest-slot ANN. Generated CRUD for these tables is unused.
+	UpsertProductEmbedding(ctx context.Context, arg []UpsertProductEmbeddingParams) *UpsertProductEmbeddingBatchResults
+	UpsertTagEmbedding(ctx context.Context, arg []UpsertTagEmbeddingParams) *UpsertTagEmbeddingBatchResults
 }
 
 var _ Querier = (*Queries)(nil)

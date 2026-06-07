@@ -9,23 +9,16 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	null "github.com/guregu/null/v6"
 )
 
 const listStaleSearchSync = `-- name: ListStaleSearchSync :many
 SELECT id, ref_id, ref_type
 FROM catalog.search_sync
-WHERE (is_stale_metadata = $1 OR is_stale_embedding = $2)
+WHERE is_stale_embedding = true
 ORDER BY date_updated ASC
 FOR UPDATE SKIP LOCKED
-LIMIT $3
+LIMIT $1
 `
-
-type ListStaleSearchSyncParams struct {
-	IsStaleMetadata  null.Bool `json:"is_stale_metadata"`
-	IsStaleEmbedding null.Bool `json:"is_stale_embedding"`
-	Limit            int32     `json:"limit"`
-}
 
 type ListStaleSearchSyncRow struct {
 	ID      int64                    `json:"id"`
@@ -33,8 +26,8 @@ type ListStaleSearchSyncRow struct {
 	RefType CatalogSearchSyncRefType `json:"ref_type"`
 }
 
-func (q *Queries) ListStaleSearchSync(ctx context.Context, arg ListStaleSearchSyncParams) ([]ListStaleSearchSyncRow, error) {
-	rows, err := q.db.Query(ctx, listStaleSearchSync, arg.IsStaleMetadata, arg.IsStaleEmbedding, arg.Limit)
+func (q *Queries) ListStaleSearchSync(ctx context.Context, limit int32) ([]ListStaleSearchSyncRow, error) {
+	rows, err := q.db.Query(ctx, listStaleSearchSync, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -53,28 +46,18 @@ func (q *Queries) ListStaleSearchSync(ctx context.Context, arg ListStaleSearchSy
 	return items, nil
 }
 
-const updateStaleSearchSync = `-- name: UpdateStaleSearchSync :exec
+const markStaleSearchSync = `-- name: MarkStaleSearchSync :exec
 UPDATE catalog.search_sync
-SET
-    is_stale_metadata = COALESCE($1, is_stale_metadata),
-    is_stale_embedding = COALESCE($2, is_stale_embedding),
-    date_updated = NOW()
-WHERE ref_type = $3 AND ref_id = $4
+SET is_stale_embedding = true, date_updated = NOW()
+WHERE ref_type = $1 AND ref_id = $2
 `
 
-type UpdateStaleSearchSyncParams struct {
-	IsStaleMetadata  null.Bool                `json:"is_stale_metadata"`
-	IsStaleEmbedding null.Bool                `json:"is_stale_embedding"`
-	RefType          CatalogSearchSyncRefType `json:"ref_type"`
-	RefID            uuid.UUID                `json:"ref_id"`
+type MarkStaleSearchSyncParams struct {
+	RefType CatalogSearchSyncRefType `json:"ref_type"`
+	RefID   uuid.UUID                `json:"ref_id"`
 }
 
-func (q *Queries) UpdateStaleSearchSync(ctx context.Context, arg UpdateStaleSearchSyncParams) error {
-	_, err := q.db.Exec(ctx, updateStaleSearchSync,
-		arg.IsStaleMetadata,
-		arg.IsStaleEmbedding,
-		arg.RefType,
-		arg.RefID,
-	)
+func (q *Queries) MarkStaleSearchSync(ctx context.Context, arg MarkStaleSearchSyncParams) error {
+	_, err := q.db.Exec(ctx, markStaleSearchSync, arg.RefType, arg.RefID)
 	return err
 }
