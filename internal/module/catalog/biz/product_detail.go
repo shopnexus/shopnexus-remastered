@@ -3,6 +3,7 @@ package catalogbiz
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 
 	restate "github.com/restatedev/sdk-go"
 
@@ -15,6 +16,7 @@ import (
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
 	promotionbiz "shopnexus-server/internal/module/promotion/biz"
+	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
@@ -34,12 +36,16 @@ func (b *CatalogHandler) GetProductDetail(
 ) (catalogmodel.ProductDetail, error) {
 	var zero catalogmodel.ProductDetail
 
+	if err := validator.Validate(params); err != nil {
+		return zero, fmt.Errorf("validate get product detail params: %w", err)
+	}
+
 	spu, err := b.GetProductSpu(ctx, GetProductSpuParams{
 		ID:   params.ID,
 		Slug: params.Slug,
 	})
 	if err != nil {
-		return zero, err
+		return zero, fmt.Errorf("get product spu: %w", err)
 	}
 
 	var skusDetail []catalogmodel.ProductDetailSku
@@ -47,7 +53,7 @@ func (b *CatalogHandler) GetProductDetail(
 		SpuID: []uuid.UUID{spu.ID},
 	})
 	if err != nil {
-		return zero, err
+		return zero, fmt.Errorf("list product sku: %w", err)
 	}
 	skuIDs := lo.Map(skus, func(s catalogmodel.ProductSku, _ int) uuid.UUID { return s.ID })
 
@@ -57,7 +63,7 @@ func (b *CatalogHandler) GetProductDetail(
 		RefID:   skuIDs,
 	})
 	if err != nil {
-		return zero, err
+		return zero, fmt.Errorf("list stock: %w", err)
 	}
 	stockMap := lo.KeyBy(listStock.Data, func(s inventorydb.InventoryStock) uuid.UUID { return s.RefID })
 
@@ -80,7 +86,7 @@ func (b *CatalogHandler) GetProductDetail(
 		}},
 	)
 	if err != nil {
-		return zero, err
+		return zero, fmt.Errorf("calculate promoted prices: %w", err)
 	}
 
 	for _, sku := range skus {
@@ -121,7 +127,7 @@ func (b *CatalogHandler) GetProductDetail(
 	})
 	ratingBreakdown := make(map[int]int)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return zero, err
+		return zero, fmt.Errorf("db detail rating: %w", err)
 	}
 	ratingBreakdown[5] = int(rating.FiveCount)
 	ratingBreakdown[4] = int(rating.FourCount)
@@ -158,14 +164,16 @@ func (b *CatalogHandler) GetProductDetail(
 
 	// Track view interaction for authenticated users
 	if params.Account != nil {
-		restate.ServiceSend(ctx, "Analytic", "CreateInteraction").Send(analyticbiz.CreateInteractionParams{
+		if err := b.analytic.Send().CreateInteraction(ctx, analyticbiz.CreateInteractionParams{
 			Interactions: []analyticbiz.CreateInteraction{{
 				Account:   *params.Account,
 				EventType: analyticmodel.EventView,
 				RefType:   analyticmodel.InteractionRefTypeProduct,
 				RefID:     spu.ID.String(),
 			}},
-		})
+		}); err != nil {
+			return zero, fmt.Errorf("track view interaction: %w", err)
+		}
 	}
 
 	return catalogmodel.ProductDetail{
@@ -174,7 +182,7 @@ func (b *CatalogHandler) GetProductDetail(
 		SellerID:    spu.AccountID,
 		Name:        spu.Name,
 		Description: spu.Description,
-		IsEnabled:    spu.IsEnabled,
+		IsEnabled:   spu.IsEnabled,
 		Currency:    spu.Currency,
 		Category:    spu.Category,
 		Rating: catalogmodel.ProductRating{

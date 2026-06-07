@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 
+	"shopnexus-server/internal/infras/bus"
 	analyticconfig "shopnexus-server/internal/module/analytic/config"
 	analyticdb "shopnexus-server/internal/module/analytic/db/sqlc"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
@@ -28,12 +29,6 @@ type AnalyticBiz interface {
 		ctx context.Context,
 		params paginate.Params,
 	) ([]analyticdb.AnalyticProductPopularity, error)
-
-	// Dashboard
-	GetSellerDashboard(
-		ctx context.Context,
-		params analyticmodel.GetSellerDashboardParams,
-	) (analyticmodel.SellerDashboard, error)
 }
 
 type AnalyticStorage = pgsqlc.Storage[*analyticdb.Queries]
@@ -42,7 +37,8 @@ type AnalyticStorage = pgsqlc.Storage[*analyticdb.Queries]
 type AnalyticHandler struct {
 	logger            *slog.Logger
 	storage           AnalyticStorage
-	promotion         promotionbiz.PromotionBiz
+	promotion         promotionbiz.PromotionBizClient
+	bus               bus.Client // interaction events fan out via pub/sub topics
 	popularityWeights map[analyticmodel.Event]float64
 }
 
@@ -55,12 +51,14 @@ func NewAnalyticHandler(
 	cfg *analyticconfig.Config,
 	logger *slog.Logger,
 	storage AnalyticStorage,
-	promotionBiz promotionbiz.PromotionBiz,
+	promotionBiz promotionbiz.PromotionBizClient,
+	busClient bus.Client,
 ) *AnalyticHandler {
 	return &AnalyticHandler{
 		logger:            logger,
 		storage:           storage,
 		promotion:         promotionBiz,
+		bus:               busClient,
 		popularityWeights: cfg.PopularityWeights.WeightMap(),
 	}
 }

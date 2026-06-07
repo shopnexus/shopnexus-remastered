@@ -34,7 +34,7 @@ type ChatStorage = pgsqlc.Storage[*chatdb.Queries]
 // ChatHandler implements the core business logic for the chat module.
 type ChatHandler struct {
 	storage ChatStorage
-	common  commonbiz.CommonBiz
+	common  commonbiz.CommonBizClient
 }
 
 func (b *ChatHandler) ServiceName() string {
@@ -42,6 +42,6 @@ func (b *ChatHandler) ServiceName() string {
 }
 
 // NewChatHandler creates a new ChatHandler with the given dependencies.
-func NewChatHandler(storage ChatStorage, common commonbiz.CommonBiz) *ChatHandler {
+func NewChatHandler(storage ChatStorage, common commonbiz.CommonBizClient) *ChatHandler {
 	return &ChatHandler{storage: storage, common: common}
 }

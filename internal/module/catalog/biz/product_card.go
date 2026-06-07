@@ -224,8 +224,9 @@ type ListProductCardParams struct {
 }
 
 // ListProductCard returns paginated product cards with optional search and vendor filter.
-// When a search query is provided, Milvus handles both semantic ranking and scalar filtering
-// in a single pass. When browsing (no search), Postgres handles filtering and pagination.
+// When a search query is provided, pgvector handles both semantic ranking and scalar
+// filtering in a single SQL query. When browsing (no search), Postgres handles filtering
+// and pagination.
 func (b *CatalogHandler) ListProductCard(
 	ctx restate.Context,
 	params ListProductCardParams,
@@ -240,10 +241,9 @@ func (b *CatalogHandler) ListProductCard(
 	var total int64
 
 	if params.Search.Valid {
-		// --- Search path: Milvus handles ranking + filtering ---
+		// --- Search path: pgvector handles ranking + filtering ---
 		searchParams := SearchParams{
 			Params:          params.Params,
-			Collection:      CollectionProducts,
 			Query:           params.Search.String,
 			Tags:            params.Tags,
 			IsEnabled:       null.BoolFrom(true),
@@ -351,7 +351,7 @@ func (b *CatalogHandler) listProductCardFromDB(
 		)
 	}
 
-	// ILIKE fallback when search is set but Milvus failed
+	// ILIKE fallback when search is set but vector search failed
 	if params.Search.Valid {
 		searchArg.Name = params.Search
 		searchArg.Description = params.Search

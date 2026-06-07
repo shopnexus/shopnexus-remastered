@@ -1,12 +1,12 @@
 package catalogbiz
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	restate "github.com/restatedev/sdk-go"
 
-	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
 	"github.com/gosimple/slug"
 	"github.com/samber/lo"
@@ -51,7 +51,7 @@ func (b *CatalogHandler) getRatingsMap(
 		RefID:   spuIDs,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("db list rating: %w", err)
 	}
 	return lo.KeyBy(ratings, func(r catalogdb.ListRatingRow) uuid.UUID { return r.RefID }), nil
 }
@@ -90,6 +90,10 @@ func (b *CatalogHandler) GetProductSpu(
 	ctx restate.Context,
 	params GetProductSpuParams,
 ) (catalogmodel.ProductSpu, error) {
+	if err := validator.Validate(params); err != nil {
+		return catalogmodel.ProductSpu{}, fmt.Errorf("validate get product spu params: %w", err)
+	}
+
 	var (
 		listSpu paginate.PaginateResult[catalogmodel.ProductSpu]
 		err     error
@@ -213,7 +217,7 @@ func (b *CatalogHandler) ListProductSpu(
 	var spus []catalogmodel.ProductSpu
 	for _, spu := range dbSpus {
 		specs := []catalogmodel.ProductSpecification{}
-		if err := sonic.Unmarshal(spu.Specifications, &specs); err != nil {
+		if err := json.Unmarshal(spu.Specifications, &specs); err != nil {
 			return zero, fmt.Errorf("unmarshal specifications: %w", err)
 		}
 
@@ -227,7 +231,6 @@ func (b *CatalogHandler) ListProductSpu(
 		m.Specifications = specs
 		if sync, ok := syncMap[spu.ID]; ok {
 			m.IsStaleEmbedding = sync.IsStaleEmbedding
-			m.IsStaleMetadata = sync.IsStaleMetadata
 		}
 		spus = append(spus, m)
 	}
@@ -263,10 +266,10 @@ func (b *CatalogHandler) CreateProductSpu(
 	}
 
 	if err := b.assertSellerCurrency(ctx, params.Account, params.Currency); err != nil {
-		return zero, err
+		return zero, fmt.Errorf("assert seller currency: %w", err)
 	}
 
-	specsBytes, err := sonic.Marshal(params.Specifications)
+	specsBytes, err := json.Marshal(params.Specifications)
 	if err != nil {
 		return zero, fmt.Errorf("create product spu: %w", err)
 	}
@@ -348,7 +351,7 @@ func (b *CatalogHandler) UpdateProductSpu(
 
 	if params.Currency.Valid {
 		if err := b.assertSellerCurrency(ctx, params.Account, params.Currency.String); err != nil {
-			return zero, err
+			return zero, fmt.Errorf("assert seller currency: %w", err)
 		}
 	}
 
@@ -370,7 +373,7 @@ func (b *CatalogHandler) UpdateProductSpu(
 		slug.SetValid(GenerateSlug(params.Name.String))
 	}
 
-	specsBytes, err := sonic.Marshal(params.Specifications)
+	specsBytes, err := json.Marshal(params.Specifications)
 	if err != nil {
 		return zero, fmt.Errorf("update product spu: %w", err)
 	}
@@ -401,19 +404,11 @@ func (b *CatalogHandler) UpdateProductSpu(
 		return zero, fmt.Errorf("update product spu: %w", err)
 	}
 
-	// NEXT STEP: Mark the search sync as stale
-	updateSearchSyncArg := catalogdb.UpdateStaleSearchSyncParams{
-		RefType:         catalogdb.CatalogSearchSyncRefTypeProductSpu,
-		RefID:           params.ID,
-		IsStaleMetadata: null.BoolFrom(true),
-	}
-
-	// If the description is changed, we also need to update the embedding
-	if params.Description.Valid {
-		updateSearchSyncArg.IsStaleEmbedding = null.BoolFrom(true)
-	}
-
-	if err = b.storage.Querier().UpdateStaleSearchSync(ctx, updateSearchSyncArg); err != nil {
+	// NEXT STEP: Mark the search embedding as stale (name/description/tags feed the embedding text)
+	if err = b.storage.Querier().MarkStaleSearchSync(ctx, catalogdb.MarkStaleSearchSyncParams{
+		RefType: catalogdb.CatalogSearchSyncRefTypeProductSpu,
+		RefID:   params.ID,
+	}); err != nil {
 		return zero, fmt.Errorf("db update search sync: %w", err)
 	}
 

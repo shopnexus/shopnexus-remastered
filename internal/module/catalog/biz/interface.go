@@ -4,11 +4,10 @@ import (
 	"context"
 	"log/slog"
 	"sync"
-	"time"
 
 	"shopnexus-server/internal/infras/cache"
-	"shopnexus-server/internal/infras/milvus"
 	accountbiz "shopnexus-server/internal/module/account/biz"
+	analyticbiz "shopnexus-server/internal/module/analytic/biz"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
 	catalogconfig "shopnexus-server/internal/module/catalog/config"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
@@ -60,7 +59,6 @@ type CatalogBiz interface {
 	CreateComment(ctx context.Context, params CreateCommentParams) (catalogmodel.Comment, error)
 	UpdateComment(ctx context.Context, params UpdateCommentParams) (catalogmodel.Comment, error)
 	DeleteComment(ctx context.Context, params DeleteCommentParams) error
-	ListReviewableOrders(ctx context.Context, params ListReviewableOrdersParams) ([]catalogmodel.ReviewableOrder, error)
 
 	// Tag
 	ListTag(ctx context.Context, params ListTagParams) (paginate.PaginateResult[catalogdb.CatalogTag], error)
@@ -75,6 +73,7 @@ type CatalogBiz interface {
 	// Search
 	Search(ctx context.Context, params SearchParams) ([]catalogmodel.ProductRecommend, error)
 	GetRecommendations(ctx context.Context, params GetRecommendationsParams) ([]catalogmodel.ProductRecommend, error)
+	AddInteractions(ctx context.Context, events []analyticmodel.Interaction) error
 
 	// Vendor Stats
 	GetVendorStats(ctx context.Context, params GetVendorStatsParams) (VendorStats, error)
@@ -84,26 +83,21 @@ type CatalogStorage = pgsqlc.Storage[*catalogdb.Queries]
 
 // CatalogHandler implements the core business logic for the catalog module.
 type CatalogHandler struct {
-	cfg     *catalogconfig.Config
-	logger  *slog.Logger
-	cache   cache.Client
-	storage CatalogStorage
-	common        commonbiz.CommonBiz
-	account       accountbiz.AccountBiz
-	inventory     inventorybiz.InventoryBiz
-	promotion     promotionbiz.PromotionBiz
+	cfg       *catalogconfig.Config
+	logger    *slog.Logger
+	cache     cache.Client
+	storage   CatalogStorage
+	account   accountbiz.AccountBizClient
+	analytic  analyticbiz.AnalyticBizClient
+	common    commonbiz.CommonBizClient
+	inventory inventorybiz.InventoryBizClient
+	promotion promotionbiz.PromotionBizClient
 
-	// Vector search (replaces searchClient)
-	milvus       *milvus.Client
+	// Vector search
 	llm          llm.Client
 	denseWeight  float32
 	sparseWeight float32
-	batchSize    int
-
-	// Event buffering (moved from SearchClient)
-	mu       sync.Mutex
-	buffer   []analyticmodel.Interaction
-	syncLock sync.Mutex
+	syncLock     sync.Mutex // guards embedding sync runs
 }
 
 // NewCatalogHandler creates a new CatalogHandler with the given dependencies.
@@ -112,33 +106,28 @@ func NewCatalogHandler(
 	logger *slog.Logger,
 	storage CatalogStorage,
 	cache cache.Client,
-	common commonbiz.CommonBiz,
-	account accountbiz.AccountBiz,
-	inventory inventorybiz.InventoryBiz,
-	promotion promotionbiz.PromotionBiz,
-	milvusClient *milvus.Client,
+	account accountbiz.AccountBizClient,
+	analytic analyticbiz.AnalyticBizClient,
+	common commonbiz.CommonBizClient,
+	inventory inventorybiz.InventoryBizClient,
+	promotion promotionbiz.PromotionBizClient,
 	llmClient llm.Client,
 ) *CatalogHandler {
 	b := &CatalogHandler{
-		cfg:     cfg,
-		logger:  logger,
-		cache:   cache,
-		storage: storage,
-		common:  common,
-		account:       account,
-		inventory:     inventory,
-		promotion:     promotion,
+		cfg:       cfg,
+		logger:    logger,
+		cache:     cache,
+		storage:   storage,
+		account:   account,
+		analytic:  analytic,
+		common:    common,
+		inventory: inventory,
+		promotion: promotion,
 
-		milvus:       milvusClient.WithTimeout(5 * time.Second),
 		llm:          llmClient,
 		denseWeight:  cfg.Search.DenseWeight,
 		sparseWeight: cfg.Search.SparseWeight,
-		batchSize:    cfg.Search.InteractionBatchSize,
-	}
-
-	// Setup Milvus collections
-	if err := b.SetupMilvusCollections(context.Background()); err != nil {
-		b.logger.Error("Failed to setup Milvus collections", "error", err)
+		syncLock:     sync.Mutex{},
 	}
 
 	if err := b.SetupCron(); err != nil {

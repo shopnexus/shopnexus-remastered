@@ -75,7 +75,8 @@ type AccountHandler struct {
 	refreshSecret        []byte
 
 	storage AccountStorage
-	common  commonbiz.CommonBiz
+	common  commonbiz.CommonBizClient
+	self    AccountBizClient // self-signals (e.g. welcome notification) stay async via Restate
 }
 
 func (b *AccountHandler) ServiceName() string {
@@ -86,7 +87,8 @@ func (b *AccountHandler) ServiceName() string {
 func NewAccountHandler(
 	cfg *accountconfig.Config,
 	storage AccountStorage,
-	common commonbiz.CommonBiz,
+	common commonbiz.CommonBizClient,
+	self AccountBizClient,
 ) *AccountHandler {
 	return &AccountHandler{
 		tokenDuration:        time.Duration(cfg.JWT.AccessTokenDuration * int64(time.Second)),
@@ -96,5 +98,6 @@ func NewAccountHandler(
 
 		storage: storage,
 		common:  common,
+		self:    self,
 	}
 }

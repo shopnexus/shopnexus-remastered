@@ -4,127 +4,425 @@ package accountbiz
 
 import (
 	"context"
-	restateclient "shopnexus-server/internal/infras/restate"
+	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	"shopnexus-server/internal/shared/paginate"
-
-	"github.com/google/uuid"
+	restatec "shopnexus-server/internal/shared/restate"
 )
 
 const serviceName = "Account"
 
-// AccountRestateClient implements AccountBiz via Restate HTTP ingress.
-type AccountRestateClient struct {
-	client *restateclient.Client
+// AccountBizSender mirrors AccountBiz as one-way (fire-and-forget) calls; outputs are dropped.
+type AccountBizSender interface {
+	Login(ctx context.Context, params LoginParams) error
+	Register(ctx context.Context, params RegisterParams) error
+	Refresh(ctx context.Context, refreshToken string) error
+	GetProfile(ctx context.Context, params GetProfileParams) error
+	ListProfile(ctx context.Context, params ListProfileParams) error
+	UpdateProfile(ctx context.Context, params UpdateProfileParams) error
+	UpdateCountry(ctx context.Context, params UpdateCountryParams) error
+	GetWalletBalance(ctx context.Context, accountID uuid.UUID) error
+	WalletDebit(ctx context.Context, params WalletDebitParams) error
+	WalletCredit(ctx context.Context, params WalletCreditParams) error
+	SuspendAccount(ctx context.Context, params SuspendAccountParams) error
+	ListContact(ctx context.Context, params ListContactParams) error
+	GetContact(ctx context.Context, params GetContactParams) error
+	CreateContact(ctx context.Context, params CreateContactParams) error
+	UpdateContact(ctx context.Context, params UpdateContactParams) error
+	DeleteContact(ctx context.Context, params DeleteContactParams) error
+	GetDefaultContact(ctx context.Context, accountIDs []uuid.UUID) error
+	AddFavorite(ctx context.Context, params AddFavoriteParams) error
+	RemoveFavorite(ctx context.Context, params RemoveFavoriteParams) error
+	ListFavorite(ctx context.Context, params ListFavoriteParams) error
+	CheckFavorites(ctx context.Context, params CheckFavoritesParams) error
+	ListNotification(ctx context.Context, params ListNotificationParams) error
+	CountUnread(ctx context.Context, params CountUnreadParams) error
+	MarkRead(ctx context.Context, params MarkReadParams) error
+	MarkAllRead(ctx context.Context, params MarkAllReadParams) error
+	CreateNotification(ctx context.Context, params CreateNotificationParams) error
 }
 
-var _ AccountBiz = (*AccountRestateClient)(nil)
+// AccountBizFuture mirrors AccountBiz returning response futures for racing
+// or parallel calls. Only usable inside a Restate handler context.
+type AccountBizFuture interface {
+	Login(rctx restate.Context, params LoginParams) restate.ResponseFuture[LoginResult]
+	Register(rctx restate.Context, params RegisterParams) restate.ResponseFuture[RegisterResult]
+	Refresh(rctx restate.Context, refreshToken string) restate.ResponseFuture[RefreshResult]
+	GetProfile(rctx restate.Context, params GetProfileParams) restate.ResponseFuture[accountmodel.Profile]
+	ListProfile(rctx restate.Context, params ListProfileParams) restate.ResponseFuture[paginate.PaginateResult[accountmodel.Profile]]
+	UpdateProfile(rctx restate.Context, params UpdateProfileParams) restate.ResponseFuture[accountmodel.Profile]
+	UpdateCountry(rctx restate.Context, params UpdateCountryParams) restate.ResponseFuture[restate.Void]
+	GetWalletBalance(rctx restate.Context, accountID uuid.UUID) restate.ResponseFuture[int64]
+	WalletDebit(rctx restate.Context, params WalletDebitParams) restate.ResponseFuture[WalletDebitResult]
+	WalletCredit(rctx restate.Context, params WalletCreditParams) restate.ResponseFuture[restate.Void]
+	SuspendAccount(rctx restate.Context, params SuspendAccountParams) restate.ResponseFuture[restate.Void]
+	ListContact(rctx restate.Context, params ListContactParams) restate.ResponseFuture[[]accountdb.AccountContact]
+	GetContact(rctx restate.Context, params GetContactParams) restate.ResponseFuture[accountdb.AccountContact]
+	CreateContact(rctx restate.Context, params CreateContactParams) restate.ResponseFuture[accountdb.AccountContact]
+	UpdateContact(rctx restate.Context, params UpdateContactParams) restate.ResponseFuture[accountdb.AccountContact]
+	DeleteContact(rctx restate.Context, params DeleteContactParams) restate.ResponseFuture[restate.Void]
+	GetDefaultContact(rctx restate.Context, accountIDs []uuid.UUID) restate.ResponseFuture[map[uuid.UUID]accountdb.AccountContact]
+	AddFavorite(rctx restate.Context, params AddFavoriteParams) restate.ResponseFuture[accountdb.AccountFavorite]
+	RemoveFavorite(rctx restate.Context, params RemoveFavoriteParams) restate.ResponseFuture[restate.Void]
+	ListFavorite(rctx restate.Context, params ListFavoriteParams) restate.ResponseFuture[paginate.PaginateResult[accountdb.AccountFavorite]]
+	CheckFavorites(rctx restate.Context, params CheckFavoritesParams) restate.ResponseFuture[map[uuid.UUID]bool]
+	ListNotification(rctx restate.Context, params ListNotificationParams) restate.ResponseFuture[paginate.PaginateResult[accountdb.AccountNotification]]
+	CountUnread(rctx restate.Context, params CountUnreadParams) restate.ResponseFuture[int64]
+	MarkRead(rctx restate.Context, params MarkReadParams) restate.ResponseFuture[restate.Void]
+	MarkAllRead(rctx restate.Context, params MarkAllReadParams) restate.ResponseFuture[restate.Void]
+	CreateNotification(rctx restate.Context, params CreateNotificationParams) restate.ResponseFuture[accountdb.AccountNotification]
+}
+
+// AccountBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
+type AccountBizClient interface {
+	AccountBiz
+	Send() AccountBizSender
+	Future() AccountBizFuture
+}
+
+// AccountRestateClient implements AccountBizClient via Restate HTTP ingress.
+type AccountRestateClient struct {
+	call   *restatec.CallClient
+	send   *AccountRestateSender
+	future *AccountRestateFuture
+}
+
+var _ AccountBizClient = (*AccountRestateClient)(nil)
 
 func NewAccountRestateClient(restateIngressURL string) *AccountRestateClient {
-	return &AccountRestateClient{client: restateclient.NewClient(restateIngressURL)}
+	return &AccountRestateClient{
+		call:   restatec.NewCallClient(restateIngressURL),
+		send:   &AccountRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &AccountRestateFuture{},
+	}
 }
 
+func (p *AccountRestateClient) Send() AccountBizSender { return p.send }
+
+func (p *AccountRestateClient) Future() AccountBizFuture { return p.future }
+
 func (p *AccountRestateClient) Login(ctx context.Context, params LoginParams) (LoginResult, error) {
-	return restateclient.Call[LoginResult](ctx, p.client, serviceName, "Login", params)
+	return restatec.Call[LoginResult](ctx, p.call, serviceName, "Login", params)
 }
 
 func (p *AccountRestateClient) Register(ctx context.Context, params RegisterParams) (RegisterResult, error) {
-	return restateclient.Call[RegisterResult](ctx, p.client, serviceName, "Register", params)
+	return restatec.Call[RegisterResult](ctx, p.call, serviceName, "Register", params)
 }
 
 func (p *AccountRestateClient) Refresh(ctx context.Context, refreshToken string) (RefreshResult, error) {
-	return restateclient.Call[RefreshResult](ctx, p.client, serviceName, "Refresh", refreshToken)
+	return restatec.Call[RefreshResult](ctx, p.call, serviceName, "Refresh", refreshToken)
 }
 
 func (p *AccountRestateClient) GetProfile(ctx context.Context, params GetProfileParams) (accountmodel.Profile, error) {
-	return restateclient.Call[accountmodel.Profile](ctx, p.client, serviceName, "GetProfile", params)
+	return restatec.Call[accountmodel.Profile](ctx, p.call, serviceName, "GetProfile", params)
 }
 
 func (p *AccountRestateClient) ListProfile(ctx context.Context, params ListProfileParams) (paginate.PaginateResult[accountmodel.Profile], error) {
-	return restateclient.Call[paginate.PaginateResult[accountmodel.Profile]](ctx, p.client, serviceName, "ListProfile", params)
+	return restatec.Call[paginate.PaginateResult[accountmodel.Profile]](ctx, p.call, serviceName, "ListProfile", params)
 }
 
 func (p *AccountRestateClient) UpdateProfile(ctx context.Context, params UpdateProfileParams) (accountmodel.Profile, error) {
-	return restateclient.Call[accountmodel.Profile](ctx, p.client, serviceName, "UpdateProfile", params)
+	return restatec.Call[accountmodel.Profile](ctx, p.call, serviceName, "UpdateProfile", params)
 }
 
 func (p *AccountRestateClient) UpdateCountry(ctx context.Context, params UpdateCountryParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "UpdateCountry", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "UpdateCountry", params)
 }
 
 func (p *AccountRestateClient) GetWalletBalance(ctx context.Context, accountID uuid.UUID) (int64, error) {
-	return restateclient.Call[int64](ctx, p.client, serviceName, "GetWalletBalance", accountID)
+	return restatec.Call[int64](ctx, p.call, serviceName, "GetWalletBalance", accountID)
 }
 
 func (p *AccountRestateClient) WalletDebit(ctx context.Context, params WalletDebitParams) (WalletDebitResult, error) {
-	return restateclient.Call[WalletDebitResult](ctx, p.client, serviceName, "WalletDebit", params)
+	return restatec.Call[WalletDebitResult](ctx, p.call, serviceName, "WalletDebit", params)
 }
 
 func (p *AccountRestateClient) WalletCredit(ctx context.Context, params WalletCreditParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "WalletCredit", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "WalletCredit", params)
 }
 
 func (p *AccountRestateClient) SuspendAccount(ctx context.Context, params SuspendAccountParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "SuspendAccount", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "SuspendAccount", params)
 }
 
 func (p *AccountRestateClient) ListContact(ctx context.Context, params ListContactParams) ([]accountdb.AccountContact, error) {
-	return restateclient.Call[[]accountdb.AccountContact](ctx, p.client, serviceName, "ListContact", params)
+	return restatec.Call[[]accountdb.AccountContact](ctx, p.call, serviceName, "ListContact", params)
 }
 
 func (p *AccountRestateClient) GetContact(ctx context.Context, params GetContactParams) (accountdb.AccountContact, error) {
-	return restateclient.Call[accountdb.AccountContact](ctx, p.client, serviceName, "GetContact", params)
+	return restatec.Call[accountdb.AccountContact](ctx, p.call, serviceName, "GetContact", params)
 }
 
 func (p *AccountRestateClient) CreateContact(ctx context.Context, params CreateContactParams) (accountdb.AccountContact, error) {
-	return restateclient.Call[accountdb.AccountContact](ctx, p.client, serviceName, "CreateContact", params)
+	return restatec.Call[accountdb.AccountContact](ctx, p.call, serviceName, "CreateContact", params)
 }
 
 func (p *AccountRestateClient) UpdateContact(ctx context.Context, params UpdateContactParams) (accountdb.AccountContact, error) {
-	return restateclient.Call[accountdb.AccountContact](ctx, p.client, serviceName, "UpdateContact", params)
+	return restatec.Call[accountdb.AccountContact](ctx, p.call, serviceName, "UpdateContact", params)
 }
 
 func (p *AccountRestateClient) DeleteContact(ctx context.Context, params DeleteContactParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "DeleteContact", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "DeleteContact", params)
 }
 
 func (p *AccountRestateClient) GetDefaultContact(ctx context.Context, accountIDs []uuid.UUID) (map[uuid.UUID]accountdb.AccountContact, error) {
-	return restateclient.Call[map[uuid.UUID]accountdb.AccountContact](ctx, p.client, serviceName, "GetDefaultContact", accountIDs)
+	return restatec.Call[map[uuid.UUID]accountdb.AccountContact](ctx, p.call, serviceName, "GetDefaultContact", accountIDs)
 }
 
 func (p *AccountRestateClient) AddFavorite(ctx context.Context, params AddFavoriteParams) (accountdb.AccountFavorite, error) {
-	return restateclient.Call[accountdb.AccountFavorite](ctx, p.client, serviceName, "AddFavorite", params)
+	return restatec.Call[accountdb.AccountFavorite](ctx, p.call, serviceName, "AddFavorite", params)
 }
 
 func (p *AccountRestateClient) RemoveFavorite(ctx context.Context, params RemoveFavoriteParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "RemoveFavorite", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "RemoveFavorite", params)
 }
 
 func (p *AccountRestateClient) ListFavorite(ctx context.Context, params ListFavoriteParams) (paginate.PaginateResult[accountdb.AccountFavorite], error) {
-	return restateclient.Call[paginate.PaginateResult[accountdb.AccountFavorite]](ctx, p.client, serviceName, "ListFavorite", params)
+	return restatec.Call[paginate.PaginateResult[accountdb.AccountFavorite]](ctx, p.call, serviceName, "ListFavorite", params)
 }
 
 func (p *AccountRestateClient) CheckFavorites(ctx context.Context, params CheckFavoritesParams) (map[uuid.UUID]bool, error) {
-	return restateclient.Call[map[uuid.UUID]bool](ctx, p.client, serviceName, "CheckFavorites", params)
+	return restatec.Call[map[uuid.UUID]bool](ctx, p.call, serviceName, "CheckFavorites", params)
 }
 
 func (p *AccountRestateClient) ListNotification(ctx context.Context, params ListNotificationParams) (paginate.PaginateResult[accountdb.AccountNotification], error) {
-	return restateclient.Call[paginate.PaginateResult[accountdb.AccountNotification]](ctx, p.client, serviceName, "ListNotification", params)
+	return restatec.Call[paginate.PaginateResult[accountdb.AccountNotification]](ctx, p.call, serviceName, "ListNotification", params)
 }
 
 func (p *AccountRestateClient) CountUnread(ctx context.Context, params CountUnreadParams) (int64, error) {
-	return restateclient.Call[int64](ctx, p.client, serviceName, "CountUnread", params)
+	return restatec.Call[int64](ctx, p.call, serviceName, "CountUnread", params)
 }
 
 func (p *AccountRestateClient) MarkRead(ctx context.Context, params MarkReadParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "MarkRead", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "MarkRead", params)
 }
 
 func (p *AccountRestateClient) MarkAllRead(ctx context.Context, params MarkAllReadParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "MarkAllRead", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "MarkAllRead", params)
 }
 
 func (p *AccountRestateClient) CreateNotification(ctx context.Context, params CreateNotificationParams) (accountdb.AccountNotification, error) {
-	return restateclient.Call[accountdb.AccountNotification](ctx, p.client, serviceName, "CreateNotification", params)
+	return restatec.Call[accountdb.AccountNotification](ctx, p.call, serviceName, "CreateNotification", params)
+}
+
+// AccountRestateSender implements AccountBizSender.
+type AccountRestateSender struct {
+	client *restatec.SendClient
+}
+
+var _ AccountBizSender = (*AccountRestateSender)(nil)
+
+func (s *AccountRestateSender) Login(ctx context.Context, params LoginParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "Login", params)
+}
+
+func (s *AccountRestateSender) Register(ctx context.Context, params RegisterParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "Register", params)
+}
+
+func (s *AccountRestateSender) Refresh(ctx context.Context, refreshToken string) error {
+	return restatec.Send(ctx, s.client, serviceName, "Refresh", refreshToken)
+}
+
+func (s *AccountRestateSender) GetProfile(ctx context.Context, params GetProfileParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetProfile", params)
+}
+
+func (s *AccountRestateSender) ListProfile(ctx context.Context, params ListProfileParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListProfile", params)
+}
+
+func (s *AccountRestateSender) UpdateProfile(ctx context.Context, params UpdateProfileParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "UpdateProfile", params)
+}
+
+func (s *AccountRestateSender) UpdateCountry(ctx context.Context, params UpdateCountryParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "UpdateCountry", params)
+}
+
+func (s *AccountRestateSender) GetWalletBalance(ctx context.Context, accountID uuid.UUID) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetWalletBalance", accountID)
+}
+
+func (s *AccountRestateSender) WalletDebit(ctx context.Context, params WalletDebitParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "WalletDebit", params)
+}
+
+func (s *AccountRestateSender) WalletCredit(ctx context.Context, params WalletCreditParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "WalletCredit", params)
+}
+
+func (s *AccountRestateSender) SuspendAccount(ctx context.Context, params SuspendAccountParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "SuspendAccount", params)
+}
+
+func (s *AccountRestateSender) ListContact(ctx context.Context, params ListContactParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListContact", params)
+}
+
+func (s *AccountRestateSender) GetContact(ctx context.Context, params GetContactParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetContact", params)
+}
+
+func (s *AccountRestateSender) CreateContact(ctx context.Context, params CreateContactParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "CreateContact", params)
+}
+
+func (s *AccountRestateSender) UpdateContact(ctx context.Context, params UpdateContactParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "UpdateContact", params)
+}
+
+func (s *AccountRestateSender) DeleteContact(ctx context.Context, params DeleteContactParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "DeleteContact", params)
+}
+
+func (s *AccountRestateSender) GetDefaultContact(ctx context.Context, accountIDs []uuid.UUID) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetDefaultContact", accountIDs)
+}
+
+func (s *AccountRestateSender) AddFavorite(ctx context.Context, params AddFavoriteParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "AddFavorite", params)
+}
+
+func (s *AccountRestateSender) RemoveFavorite(ctx context.Context, params RemoveFavoriteParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "RemoveFavorite", params)
+}
+
+func (s *AccountRestateSender) ListFavorite(ctx context.Context, params ListFavoriteParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListFavorite", params)
+}
+
+func (s *AccountRestateSender) CheckFavorites(ctx context.Context, params CheckFavoritesParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "CheckFavorites", params)
+}
+
+func (s *AccountRestateSender) ListNotification(ctx context.Context, params ListNotificationParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListNotification", params)
+}
+
+func (s *AccountRestateSender) CountUnread(ctx context.Context, params CountUnreadParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "CountUnread", params)
+}
+
+func (s *AccountRestateSender) MarkRead(ctx context.Context, params MarkReadParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "MarkRead", params)
+}
+
+func (s *AccountRestateSender) MarkAllRead(ctx context.Context, params MarkAllReadParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "MarkAllRead", params)
+}
+
+func (s *AccountRestateSender) CreateNotification(ctx context.Context, params CreateNotificationParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "CreateNotification", params)
+}
+
+// AccountRestateFuture implements AccountBizFuture via the Restate SDK.
+type AccountRestateFuture struct{}
+
+var _ AccountBizFuture = (*AccountRestateFuture)(nil)
+
+func (f *AccountRestateFuture) Login(rctx restate.Context, params LoginParams) restate.ResponseFuture[LoginResult] {
+	return restate.Service[LoginResult](rctx, serviceName, "Login").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) Register(rctx restate.Context, params RegisterParams) restate.ResponseFuture[RegisterResult] {
+	return restate.Service[RegisterResult](rctx, serviceName, "Register").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) Refresh(rctx restate.Context, refreshToken string) restate.ResponseFuture[RefreshResult] {
+	return restate.Service[RefreshResult](rctx, serviceName, "Refresh").RequestFuture(refreshToken)
+}
+
+func (f *AccountRestateFuture) GetProfile(rctx restate.Context, params GetProfileParams) restate.ResponseFuture[accountmodel.Profile] {
+	return restate.Service[accountmodel.Profile](rctx, serviceName, "GetProfile").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) ListProfile(rctx restate.Context, params ListProfileParams) restate.ResponseFuture[paginate.PaginateResult[accountmodel.Profile]] {
+	return restate.Service[paginate.PaginateResult[accountmodel.Profile]](rctx, serviceName, "ListProfile").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) UpdateProfile(rctx restate.Context, params UpdateProfileParams) restate.ResponseFuture[accountmodel.Profile] {
+	return restate.Service[accountmodel.Profile](rctx, serviceName, "UpdateProfile").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) UpdateCountry(rctx restate.Context, params UpdateCountryParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "UpdateCountry").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) GetWalletBalance(rctx restate.Context, accountID uuid.UUID) restate.ResponseFuture[int64] {
+	return restate.Service[int64](rctx, serviceName, "GetWalletBalance").RequestFuture(accountID)
+}
+
+func (f *AccountRestateFuture) WalletDebit(rctx restate.Context, params WalletDebitParams) restate.ResponseFuture[WalletDebitResult] {
+	return restate.Service[WalletDebitResult](rctx, serviceName, "WalletDebit").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) WalletCredit(rctx restate.Context, params WalletCreditParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "WalletCredit").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) SuspendAccount(rctx restate.Context, params SuspendAccountParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "SuspendAccount").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) ListContact(rctx restate.Context, params ListContactParams) restate.ResponseFuture[[]accountdb.AccountContact] {
+	return restate.Service[[]accountdb.AccountContact](rctx, serviceName, "ListContact").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) GetContact(rctx restate.Context, params GetContactParams) restate.ResponseFuture[accountdb.AccountContact] {
+	return restate.Service[accountdb.AccountContact](rctx, serviceName, "GetContact").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) CreateContact(rctx restate.Context, params CreateContactParams) restate.ResponseFuture[accountdb.AccountContact] {
+	return restate.Service[accountdb.AccountContact](rctx, serviceName, "CreateContact").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) UpdateContact(rctx restate.Context, params UpdateContactParams) restate.ResponseFuture[accountdb.AccountContact] {
+	return restate.Service[accountdb.AccountContact](rctx, serviceName, "UpdateContact").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) DeleteContact(rctx restate.Context, params DeleteContactParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "DeleteContact").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) GetDefaultContact(rctx restate.Context, accountIDs []uuid.UUID) restate.ResponseFuture[map[uuid.UUID]accountdb.AccountContact] {
+	return restate.Service[map[uuid.UUID]accountdb.AccountContact](rctx, serviceName, "GetDefaultContact").RequestFuture(accountIDs)
+}
+
+func (f *AccountRestateFuture) AddFavorite(rctx restate.Context, params AddFavoriteParams) restate.ResponseFuture[accountdb.AccountFavorite] {
+	return restate.Service[accountdb.AccountFavorite](rctx, serviceName, "AddFavorite").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) RemoveFavorite(rctx restate.Context, params RemoveFavoriteParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "RemoveFavorite").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) ListFavorite(rctx restate.Context, params ListFavoriteParams) restate.ResponseFuture[paginate.PaginateResult[accountdb.AccountFavorite]] {
+	return restate.Service[paginate.PaginateResult[accountdb.AccountFavorite]](rctx, serviceName, "ListFavorite").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) CheckFavorites(rctx restate.Context, params CheckFavoritesParams) restate.ResponseFuture[map[uuid.UUID]bool] {
+	return restate.Service[map[uuid.UUID]bool](rctx, serviceName, "CheckFavorites").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) ListNotification(rctx restate.Context, params ListNotificationParams) restate.ResponseFuture[paginate.PaginateResult[accountdb.AccountNotification]] {
+	return restate.Service[paginate.PaginateResult[accountdb.AccountNotification]](rctx, serviceName, "ListNotification").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) CountUnread(rctx restate.Context, params CountUnreadParams) restate.ResponseFuture[int64] {
+	return restate.Service[int64](rctx, serviceName, "CountUnread").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) MarkRead(rctx restate.Context, params MarkReadParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "MarkRead").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) MarkAllRead(rctx restate.Context, params MarkAllReadParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "MarkAllRead").RequestFuture(params)
+}
+
+func (f *AccountRestateFuture) CreateNotification(rctx restate.Context, params CreateNotificationParams) restate.ResponseFuture[accountdb.AccountNotification] {
+	return restate.Service[accountdb.AccountNotification](rctx, serviceName, "CreateNotification").RequestFuture(params)
 }

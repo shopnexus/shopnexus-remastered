@@ -2,14 +2,13 @@ package geocoding
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	neturl "net/url"
 	"strings"
 	"time"
-
-	"github.com/bytedance/sonic"
 )
 
 // NominatimClient implements Provider using OpenStreetMap Nominatim (free, 1 req/sec).
@@ -58,7 +57,7 @@ func (p *NominatimClient) ReverseGeocode(ctx context.Context, lat, lng float64) 
 	}
 
 	var result nominatimResponse
-	if err := sonic.Unmarshal(body, &result); err != nil {
+	if err := json.Unmarshal(body, &result); err != nil {
 		return zero, fmt.Errorf("geocoding: unmarshal: %w", err)
 	}
 
@@ -112,7 +111,7 @@ func (p *NominatimClient) ForwardGeocode(ctx context.Context, address string) (R
 	}
 
 	var results []nominatimSearchResponse
-	if err := sonic.Unmarshal(body, &results); err != nil {
+	if err := json.Unmarshal(body, &results); err != nil {
 		return zero, fmt.Errorf("geocoding: unmarshal: %w", err)
 	}
 
@@ -164,7 +163,7 @@ func (p *NominatimClient) Search(ctx context.Context, query string, limit int) (
 	}
 
 	var results []nominatimSearchResponse
-	if err := sonic.Unmarshal(body, &results); err != nil {
+	if err := json.Unmarshal(body, &results); err != nil {
 		return nil, fmt.Errorf("geocoding: unmarshal: %w", err)
 	}
 

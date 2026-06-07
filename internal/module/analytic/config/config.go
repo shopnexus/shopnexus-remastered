@@ -8,10 +8,7 @@ import (
 )
 
 type Config struct {
-	Postgres          config.Postgres   `mapstructure:"postgres"`
-	Redis             config.Redis      `mapstructure:"redis"`
-	Log               config.Log        `mapstructure:"log"`
-	Restate           config.Restate    `mapstructure:"restate"`
+	config.Shared     `mapstructure:",squash"`
 	PopularityWeights PopularityWeights `mapstructure:"popularityWeights"`
 }
 

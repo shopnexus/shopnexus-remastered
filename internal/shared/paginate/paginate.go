@@ -2,8 +2,8 @@ package paginate
 
 import (
 	"encoding/base64"
+	"encoding/json"
 
-	"github.com/bytedance/sonic"
 	"github.com/guregu/null/v6"
 )
 
@@ -49,7 +49,7 @@ func (p Params) DecodeCursor(dst any) error {
 	if err != nil {
 		return err
 	}
-	return sonic.Unmarshal(decoded, dst)
+	return json.Unmarshal(decoded, dst)
 }
 
 type PaginateResult[T any] struct {
@@ -78,7 +78,7 @@ func (p PaginateResult[T]) EncodeNextCursor() null.String {
 		return null.String{}
 	}
 
-	marshalled, err := sonic.Marshal(p.NextCursor)
+	marshalled, err := json.Marshal(p.NextCursor)
 	if err != nil {
 		return null.String{}
 	}

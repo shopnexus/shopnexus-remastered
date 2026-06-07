@@ -54,7 +54,11 @@ func (b *InventoryHandler) GetStock(ctx restate.Context, params GetStockParams) 
 	if err := validator.Validate(params); err != nil {
 		return zero, fmt.Errorf("validate get stock: %w", err)
 	}
-	return b.getStockByRef(ctx, b.storage, params.RefType, params.RefID)
+	stock, err := b.getStockByRef(ctx, b.storage, params.RefType, params.RefID)
+	if err != nil {
+		return zero, fmt.Errorf("db get stock: %w", err)
+	}
+	return stock, nil
 }
 
 type UpdateStockSettingsParams struct {
@@ -78,10 +82,14 @@ func (b *InventoryHandler) UpdateStockSettings(
 		return zero, fmt.Errorf("db get stock: %w", err)
 	}
 
-	return b.storage.Querier().UpdateStock(ctx, inventorydb.UpdateStockParams{
+	updated, err := b.storage.Querier().UpdateStock(ctx, inventorydb.UpdateStockParams{
 		ID:             stock.ID,
 		SerialRequired: params.SerialRequired,
 	})
+	if err != nil {
+		return zero, fmt.Errorf("db update stock: %w", err)
+	}
+	return updated, nil
 }
 
 type ListStockParams struct {
@@ -144,12 +152,16 @@ func (b *InventoryHandler) CreateStock(
 		return zero, fmt.Errorf("validate create stock: %w", err)
 	}
 
-	return b.storage.Querier().CreateDefaultStock(ctx, inventorydb.CreateDefaultStockParams{
+	created, err := b.storage.Querier().CreateDefaultStock(ctx, inventorydb.CreateDefaultStockParams{
 		RefType:        params.RefType,
 		RefID:          params.RefID,
 		Stock:          params.Stock,
 		SerialRequired: params.SerialRequired,
 	})
+	if err != nil {
+		return zero, fmt.Errorf("db create default stock: %w", err)
+	}
+	return created, nil
 }
 
 type ListStockHistoryParams struct {
@@ -254,10 +266,13 @@ func (b *InventoryHandler) ImportStock(ctx restate.Context, params ImportStockPa
 		}
 	}
 
-	return q.UpdateCurrentStock(ctx, inventorydb.UpdateCurrentStockParams{
+	if err = q.UpdateCurrentStock(ctx, inventorydb.UpdateCurrentStockParams{
 		ID:     stock.ID,
 		Change: params.Change,
-	})
+	}); err != nil {
+		return fmt.Errorf("db update current stock: %w", err)
+	}
+	return nil
 }
 
 type ReserveInventoryItem struct {
@@ -386,10 +401,13 @@ func (b *InventoryHandler) UpdateSerial(ctx restate.Context, params UpdateSerial
 		return fmt.Errorf("validate update serial: %w", err)
 	}
 
-	return b.storage.Querier().UpdateSerialStatus(ctx, inventorydb.UpdateSerialStatusParams{
+	if err := b.storage.Querier().UpdateSerialStatus(ctx, inventorydb.UpdateSerialStatusParams{
 		ID:     params.SerialIDs,
 		Status: params.Status,
-	})
+	}); err != nil {
+		return fmt.Errorf("db update serial status: %w", err)
+	}
+	return nil
 }
 
 type ListSerialParams struct {
@@ -448,9 +466,13 @@ func (b *InventoryHandler) ListMostTakenSku(
 		return nil, fmt.Errorf("validate list most taken: %w", err)
 	}
 
-	return b.storage.Querier().ListMostTakenSku(ctx, inventorydb.ListMostTakenSkuParams{
+	stocks, err := b.storage.Querier().ListMostTakenSku(ctx, inventorydb.ListMostTakenSkuParams{
 		Limit:   params.Limit,
 		Offset:  params.Offset(),
 		RefType: params.RefType,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("db list most taken sku: %w", err)
+	}
+	return stocks, nil
 }

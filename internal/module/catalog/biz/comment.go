@@ -2,8 +2,6 @@ package catalogbiz
 
 import (
 	"fmt"
-	"log/slog"
-	"time"
 
 	restate "github.com/restatedev/sdk-go"
 
@@ -16,18 +14,12 @@ import (
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	"shopnexus-server/internal/shared/paginate"
-	"shopnexus-server/internal/shared/ptrutil"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
 	"github.com/samber/lo"
 )
-
-type ListReviewableOrdersParams struct {
-	Account accountmodel.AuthenticatedAccount
-	SpuID   uuid.UUID `validate:"required"`
-}
 
 type ListCommentParams struct {
 	paginate.Params
@@ -102,82 +94,12 @@ func (b *CatalogHandler) ListComment(
 		return zero, fmt.Errorf("list comment resources: %w", err)
 	}
 
-	// Batch-fetch reply counts
-	replyCountMap := map[uuid.UUID]int64{}
-	if len(commentIDs) > 0 {
-		replyCounts, err := b.storage.Querier().CountRepliesByCommentIDs(ctx, commentIDs)
-		if err != nil {
-			return zero, fmt.Errorf("count replies: %w", err)
-		}
-		for _, rc := range replyCounts {
-			replyCountMap[rc.RefID] = rc.ReplyCount
-		}
-	}
-
-	// Fetch order items for enrichment (SKU name + order date)
-	var orderIDs []uuid.UUID
-	for _, c := range dbComments {
-		if c.OrderID.Valid {
-			orderIDs = append(orderIDs, c.OrderID.UUID)
-		}
-	}
-
-	type orderItemInfo struct {
-		SkuName   string
-		OrderDate *time.Time
-	}
-	orderItemMap := map[uuid.UUID]orderItemInfo{}
-	if len(orderIDs) > 0 {
-		type orderItem struct {
-			SkuName string `json:"sku_name"`
-		}
-		type orderEnrich struct {
-			ID          uuid.UUID   `json:"id"`
-			DateCreated time.Time   `json:"date_created"`
-			Items       []orderItem `json:"items"`
-		}
-		for _, oid := range lo.Uniq(orderIDs) {
-			order, err := restate.Service[orderEnrich](ctx, "Order", "GetBuyerOrder").Request(oid)
-			if err != nil {
-				b.logger.Warn(
-					"fetch order for comment enrichment",
-					slog.String("order_id", oid.String()),
-					slog.Any("error", err),
-				)
-				continue
-			}
-			orderDate := order.DateCreated
-			var skuName string
-			if len(order.Items) > 0 {
-				skuName = order.Items[0].SkuName
-			}
-			orderItemMap[order.ID] = orderItemInfo{
-				SkuName:   skuName,
-				OrderDate: &orderDate,
-			}
-		}
-	}
-
 	var comments []catalogmodel.Comment
 	for _, dbComment := range dbComments {
 		c := catalogmodel.Comment{
-			ID:          dbComment.ID,
-			Profile:     profileMap[dbComment.AccountID],
-			Body:        dbComment.Body,
-			Upvote:      dbComment.Upvote,
-			Downvote:    dbComment.Downvote,
-			Score:       dbComment.Score,
-			OrderID:     ptrutil.PtrIf(dbComment.OrderID.UUID, dbComment.OrderID.Valid),
-			DateCreated: dbComment.DateCreated,
-			DateUpdated: dbComment.DateUpdated,
-			Resources:   resourcesMap[dbComment.ID],
-			ReplyCount:  replyCountMap[dbComment.ID],
-		}
-		if dbComment.OrderID.Valid {
-			if info, ok := orderItemMap[dbComment.OrderID.UUID]; ok {
-				c.OrderItemName = info.SkuName
-				c.OrderDate = info.OrderDate
-			}
+			CatalogComment: dbComment,
+			Profile:        profileMap[dbComment.AccountID],
+			Resources:      resourcesMap[dbComment.ID],
 		}
 		comments = append(comments, c)
 	}
@@ -198,11 +120,17 @@ type CreateCommentParams struct {
 	Score   float64                         `validate:"required,gte=0,lte=1"`
 	OrderID uuid.UUID                       `validate:"required"`
 
+	// Order facts denormalized at creation time. Supplied by the order
+	// module (the review entry point), which owns purchase validation.
+	OrderItemName null.String
+	OrderDate     null.Time
+
 	ResourceIDs []uuid.UUID `validate:"omitempty,dive"`
 }
 
-// CreateComment creates a new comment with resources and tracks review analytics.
-// For product reviews (RefType=ProductSpu), the user must have a completed order for the product.
+// CreateComment stores a comment with resources and tracks review analytics.
+// Purchase eligibility for product reviews is validated upstream by the order
+// module (Order.CreateProductReview) — catalog trusts its internal callers.
 func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateCommentParams) (catalogmodel.Comment, error) {
 	var zero catalogmodel.Comment
 
@@ -210,31 +138,8 @@ func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateComment
 		return zero, fmt.Errorf("validate create comment: %w", err)
 	}
 
-	// Verify purchase for product reviews
+	// One review per order per product.
 	if params.RefType == catalogdb.CatalogCommentRefTypeProductSpu {
-		skuIDs, err := b.getSkuIDsForSpu(ctx, params.RefID)
-		if err != nil {
-			return zero, err
-		}
-
-		type validateParams struct {
-			AccountID uuid.UUID   `json:"account_id"`
-			OrderID   uuid.UUID   `json:"order_id"`
-			SkuIDs    []uuid.UUID `json:"sku_ids"`
-		}
-		valid, err := restate.Service[bool](ctx, "Order", "ValidateOrderForReview").Request(validateParams{
-			AccountID: params.Account.ID,
-			OrderID:   params.OrderID,
-			SkuIDs:    skuIDs,
-		})
-		if err != nil {
-			return zero, fmt.Errorf("validate order for review: %w", err)
-		}
-		if !valid {
-			return zero, catalogmodel.ErrMustPurchaseToReview
-		}
-
-		// Check if this order was already reviewed for this product
 		existing, err := b.storage.Querier().ListCountComment(ctx, catalogdb.ListCountCommentParams{
 			Limit:   null.Int32From(1),
 			RefType: []catalogdb.CatalogCommentRefType{catalogdb.CatalogCommentRefTypeProductSpu},
@@ -323,35 +228,32 @@ func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateComment
 				},
 			)
 		}
-		restate.ServiceSend(ctx, "Analytic", "CreateInteraction").Send(analyticbiz.CreateInteractionParams{
+		if err := b.analytic.Send().CreateInteraction(ctx, analyticbiz.CreateInteractionParams{
 			Interactions: interactions,
-		})
+		}); err != nil {
+			return zero, fmt.Errorf("track review interactions: %w", err)
+		}
 
 		// Notify product seller about new review
 		if spu, err := b.storage.Querier().GetProductSpu(ctx, catalogdb.GetProductSpuParams{
 			ID: uuid.NullUUID{UUID: params.RefID, Valid: true},
 		}); err == nil {
-			restate.ServiceSend(ctx, "Account", "CreateNotification").Send(accountbiz.CreateNotificationParams{
+			if err = b.account.Send().CreateNotification(ctx, accountbiz.CreateNotificationParams{
 				AccountID: spu.AccountID,
 				Type:      accountmodel.NotiNewReview,
 				Channel:   accountmodel.ChannelInApp,
 				Title:     "New review",
 				Content:   "A customer left a review on your product.",
-			})
+			}); err != nil {
+				return zero, fmt.Errorf("notify seller: %w", err)
+			}
 		}
 	}
 
 	return catalogmodel.Comment{
-		ID:          comment.ID,
-		Profile:     profile,
-		Body:        comment.Body,
-		Upvote:      comment.Upvote,
-		Downvote:    comment.Downvote,
-		Score:       comment.Score,
-		OrderID:     ptrutil.PtrIf(comment.OrderID.UUID, comment.OrderID.Valid),
-		DateCreated: comment.DateCreated,
-		DateUpdated: comment.DateUpdated,
-		Resources:   resources,
+		CatalogComment: comment,
+		Profile:        profile,
+		Resources:      resources,
 	}, nil
 }
 
@@ -419,16 +321,9 @@ func (b *CatalogHandler) UpdateComment(ctx restate.Context, params UpdateComment
 	}
 
 	return catalogmodel.Comment{
-		ID:          comment.ID,
-		Profile:     profile,
-		Body:        comment.Body,
-		Upvote:      comment.Upvote,
-		Downvote:    comment.Downvote,
-		Score:       comment.Score,
-		OrderID:     ptrutil.PtrIf(comment.OrderID.UUID, comment.OrderID.Valid),
-		DateCreated: comment.DateCreated,
-		DateUpdated: comment.DateUpdated,
-		Resources:   resources,
+		CatalogComment: comment,
+		Profile:        profile,
+		Resources:      resources,
 	}, nil
 }
 
@@ -461,53 +356,4 @@ func (b *CatalogHandler) DeleteComment(ctx restate.Context, params DeleteComment
 	}
 
 	return nil
-}
-
-// getSkuIDsForSpu returns all SKU IDs belonging to the given SPU.
-func (b *CatalogHandler) getSkuIDsForSpu(ctx restate.Context, spuID uuid.UUID) ([]uuid.UUID, error) {
-	skus, err := b.storage.Querier().ListProductSku(ctx, catalogdb.ListProductSkuParams{
-		SpuID: []uuid.UUID{spuID},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("list product skus: %w", err)
-	}
-	if len(skus) == 0 {
-		return nil, catalogmodel.ErrProductNotFound
-	}
-	return lo.Map(skus, func(sku catalogdb.CatalogProductSku, _ int) uuid.UUID {
-		return sku.ID
-	}), nil
-}
-
-// ListReviewableOrders returns completed orders for a product that the user can review.
-func (b *CatalogHandler) ListReviewableOrders(
-	ctx restate.Context,
-	params ListReviewableOrdersParams,
-) ([]catalogmodel.ReviewableOrder, error) {
-	if err := validator.Validate(params); err != nil {
-		return nil, fmt.Errorf("validate list reviewable orders: %w", err)
-	}
-
-	skuIDs, err := b.getSkuIDsForSpu(ctx, params.SpuID)
-	if err != nil {
-		return nil, err
-	}
-
-	type listParams struct {
-		AccountID uuid.UUID   `json:"account_id"`
-		SkuIDs    []uuid.UUID `json:"sku_ids"`
-	}
-	orders, err := restate.Service[[]catalogmodel.ReviewableOrder](
-		ctx,
-		"Order",
-		"ListReviewableOrders",
-	).Request(listParams{
-		AccountID: params.Account.ID,
-		SkuIDs:    skuIDs,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("list reviewable orders: %w", err)
-	}
-
-	return orders, nil
 }

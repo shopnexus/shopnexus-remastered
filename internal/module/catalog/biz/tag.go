@@ -1,6 +1,8 @@
 package catalogbiz
 
 import (
+	"fmt"
+
 	restate "github.com/restatedev/sdk-go"
 
 	accountmodel "shopnexus-server/internal/module/account/model"
@@ -26,7 +28,7 @@ func (b *CatalogHandler) ListTag(
 	var zero paginate.PaginateResult[catalogdb.CatalogTag]
 
 	if err := validator.Validate(params); err != nil {
-		return zero, err
+		return zero, fmt.Errorf("validate list tag params: %w", err)
 	}
 
 	listTag, err := b.storage.Querier().SearchTag(ctx, catalogdb.SearchTagParams{
@@ -35,7 +37,7 @@ func (b *CatalogHandler) ListTag(
 		Offset: params.Offset(),
 	})
 	if err != nil {
-		return zero, err
+		return zero, fmt.Errorf("db search tag: %w", err)
 	}
 
 	var total null.Int64
@@ -63,12 +65,12 @@ func (b *CatalogHandler) GetTag(ctx restate.Context, params GetTagParams) (catal
 	var zero catalogdb.CatalogTag
 
 	if err := validator.Validate(params); err != nil {
-		return zero, err
+		return zero, fmt.Errorf("validate get tag params: %w", err)
 	}
 
 	tag, err := b.storage.Querier().GetTag(ctx, null.StringFrom(params.Tag))
 	if err != nil {
-		return zero, err
+		return zero, fmt.Errorf("db get tag: %w", err)
 	}
 
 	return tag, nil

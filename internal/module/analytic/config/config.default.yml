@@ -53,3 +53,6 @@ popularityWeights:
   hide_item: -0.35
   not_interested: -0.3
   view_bounce: -0.1
+
+bus:
+  transport: redis

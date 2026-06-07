@@ -27,14 +27,14 @@ type InMemoryCache struct {
 	// Optional: cleanup ticker for expired items
 	cleanupTicker *time.Ticker
 	stopCleanup   chan struct{}
+	closeOnce     sync.Once
 }
 
 // NewInMemoryClient creates a new in-memory cache instance.
 func NewInMemoryClient() *InMemoryCache {
-	cache := &InMemoryCache{
-		items:       make(map[string]*cacheItem),
-		stopCleanup: make(chan struct{}),
-	}
+	cache := new(InMemoryCache)
+	cache.items = make(map[string]*cacheItem)
+	cache.stopCleanup = make(chan struct{})
 
 	// Start background cleanup routine (runs every 5 minutes)
 	cache.cleanupTicker = time.NewTicker(5 * time.Minute)
@@ -185,5 +185,19 @@ func (c *InMemoryCache) copyValue(src, dest any) error {
 	}
 
 	destVal.Set(srcVal)
+	return nil
+}
+
+// Ping always succeeds for the in-memory cache.
+func (c *InMemoryCache) Ping() error {
+	return nil
+}
+
+// Close stops the background cleanup goroutine. Safe to call more than once.
+func (c *InMemoryCache) Close() error {
+	c.closeOnce.Do(func() {
+		c.cleanupTicker.Stop()
+		close(c.stopCleanup)
+	})
 	return nil
 }

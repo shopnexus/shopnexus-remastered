@@ -4,117 +4,397 @@ package catalogbiz
 
 import (
 	"context"
-	restateclient "shopnexus-server/internal/infras/restate"
+	restate "github.com/restatedev/sdk-go"
+	analyticmodel "shopnexus-server/internal/module/analytic/model"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	"shopnexus-server/internal/shared/paginate"
+	restatec "shopnexus-server/internal/shared/restate"
 )
 
 const serviceName = "Catalog"
 
-// CatalogRestateClient implements CatalogBiz via Restate HTTP ingress.
-type CatalogRestateClient struct {
-	client *restateclient.Client
+// CatalogBizSender mirrors CatalogBiz as one-way (fire-and-forget) calls; outputs are dropped.
+type CatalogBizSender interface {
+	GetProductDetail(ctx context.Context, params GetProductDetailParams) error
+	GetProductCard(ctx context.Context, params GetProductCardParams) error
+	ListProductCard(ctx context.Context, params ListProductCardParams) error
+	ListRecommendedProductCard(ctx context.Context, params ListRecommendedProductCardParams) error
+	GetProductSpu(ctx context.Context, params GetProductSpuParams) error
+	ListProductSpu(ctx context.Context, params ListProductSpuParams) error
+	CreateProductSpu(ctx context.Context, params CreateProductSpuParams) error
+	UpdateProductSpu(ctx context.Context, params UpdateProductSpuParams) error
+	DeleteProductSpu(ctx context.Context, params DeleteProductSpuParams) error
+	ListProductSku(ctx context.Context, params ListProductSkuParams) error
+	CreateProductSku(ctx context.Context, params CreateProductSkuParams) error
+	UpdateProductSku(ctx context.Context, params UpdateProductSkuParams) error
+	DeleteProductSku(ctx context.Context, params DeleteProductSkuParams) error
+	ListComment(ctx context.Context, params ListCommentParams) error
+	CreateComment(ctx context.Context, params CreateCommentParams) error
+	UpdateComment(ctx context.Context, params UpdateCommentParams) error
+	DeleteComment(ctx context.Context, params DeleteCommentParams) error
+	ListTag(ctx context.Context, params ListTagParams) error
+	GetTag(ctx context.Context, params GetTagParams) error
+	ListCategory(ctx context.Context, params ListCategoryParams) error
+	Search(ctx context.Context, params SearchParams) error
+	GetRecommendations(ctx context.Context, params GetRecommendationsParams) error
+	AddInteractions(ctx context.Context, events []analyticmodel.Interaction) error
+	GetVendorStats(ctx context.Context, params GetVendorStatsParams) error
 }
 
-var _ CatalogBiz = (*CatalogRestateClient)(nil)
+// CatalogBizFuture mirrors CatalogBiz returning response futures for racing
+// or parallel calls. Only usable inside a Restate handler context.
+type CatalogBizFuture interface {
+	GetProductDetail(rctx restate.Context, params GetProductDetailParams) restate.ResponseFuture[catalogmodel.ProductDetail]
+	GetProductCard(rctx restate.Context, params GetProductCardParams) restate.ResponseFuture[*catalogmodel.ProductCard]
+	ListProductCard(rctx restate.Context, params ListProductCardParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.ProductCard]]
+	ListRecommendedProductCard(rctx restate.Context, params ListRecommendedProductCardParams) restate.ResponseFuture[[]catalogmodel.ProductCard]
+	GetProductSpu(rctx restate.Context, params GetProductSpuParams) restate.ResponseFuture[catalogmodel.ProductSpu]
+	ListProductSpu(rctx restate.Context, params ListProductSpuParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.ProductSpu]]
+	CreateProductSpu(rctx restate.Context, params CreateProductSpuParams) restate.ResponseFuture[catalogmodel.ProductSpu]
+	UpdateProductSpu(rctx restate.Context, params UpdateProductSpuParams) restate.ResponseFuture[catalogmodel.ProductSpu]
+	DeleteProductSpu(rctx restate.Context, params DeleteProductSpuParams) restate.ResponseFuture[restate.Void]
+	ListProductSku(rctx restate.Context, params ListProductSkuParams) restate.ResponseFuture[[]catalogmodel.ProductSku]
+	CreateProductSku(rctx restate.Context, params CreateProductSkuParams) restate.ResponseFuture[catalogmodel.ProductSku]
+	UpdateProductSku(rctx restate.Context, params UpdateProductSkuParams) restate.ResponseFuture[catalogmodel.ProductSku]
+	DeleteProductSku(rctx restate.Context, params DeleteProductSkuParams) restate.ResponseFuture[restate.Void]
+	ListComment(rctx restate.Context, params ListCommentParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.Comment]]
+	CreateComment(rctx restate.Context, params CreateCommentParams) restate.ResponseFuture[catalogmodel.Comment]
+	UpdateComment(rctx restate.Context, params UpdateCommentParams) restate.ResponseFuture[catalogmodel.Comment]
+	DeleteComment(rctx restate.Context, params DeleteCommentParams) restate.ResponseFuture[restate.Void]
+	ListTag(rctx restate.Context, params ListTagParams) restate.ResponseFuture[paginate.PaginateResult[catalogdb.CatalogTag]]
+	GetTag(rctx restate.Context, params GetTagParams) restate.ResponseFuture[catalogdb.CatalogTag]
+	ListCategory(rctx restate.Context, params ListCategoryParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.Category]]
+	Search(rctx restate.Context, params SearchParams) restate.ResponseFuture[[]catalogmodel.ProductRecommend]
+	GetRecommendations(rctx restate.Context, params GetRecommendationsParams) restate.ResponseFuture[[]catalogmodel.ProductRecommend]
+	AddInteractions(rctx restate.Context, events []analyticmodel.Interaction) restate.ResponseFuture[restate.Void]
+	GetVendorStats(rctx restate.Context, params GetVendorStatsParams) restate.ResponseFuture[VendorStats]
+}
+
+// CatalogBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
+type CatalogBizClient interface {
+	CatalogBiz
+	Send() CatalogBizSender
+	Future() CatalogBizFuture
+}
+
+// CatalogRestateClient implements CatalogBizClient via Restate HTTP ingress.
+type CatalogRestateClient struct {
+	call   *restatec.CallClient
+	send   *CatalogRestateSender
+	future *CatalogRestateFuture
+}
+
+var _ CatalogBizClient = (*CatalogRestateClient)(nil)
 
 func NewCatalogRestateClient(restateIngressURL string) *CatalogRestateClient {
-	return &CatalogRestateClient{client: restateclient.NewClient(restateIngressURL)}
+	return &CatalogRestateClient{
+		call:   restatec.NewCallClient(restateIngressURL),
+		send:   &CatalogRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &CatalogRestateFuture{},
+	}
 }
 
+func (p *CatalogRestateClient) Send() CatalogBizSender { return p.send }
+
+func (p *CatalogRestateClient) Future() CatalogBizFuture { return p.future }
+
 func (p *CatalogRestateClient) GetProductDetail(ctx context.Context, params GetProductDetailParams) (catalogmodel.ProductDetail, error) {
-	return restateclient.Call[catalogmodel.ProductDetail](ctx, p.client, serviceName, "GetProductDetail", params)
+	return restatec.Call[catalogmodel.ProductDetail](ctx, p.call, serviceName, "GetProductDetail", params)
 }
 
 func (p *CatalogRestateClient) GetProductCard(ctx context.Context, params GetProductCardParams) (*catalogmodel.ProductCard, error) {
-	return restateclient.Call[*catalogmodel.ProductCard](ctx, p.client, serviceName, "GetProductCard", params)
+	return restatec.Call[*catalogmodel.ProductCard](ctx, p.call, serviceName, "GetProductCard", params)
 }
 
 func (p *CatalogRestateClient) ListProductCard(ctx context.Context, params ListProductCardParams) (paginate.PaginateResult[catalogmodel.ProductCard], error) {
-	return restateclient.Call[paginate.PaginateResult[catalogmodel.ProductCard]](ctx, p.client, serviceName, "ListProductCard", params)
+	return restatec.Call[paginate.PaginateResult[catalogmodel.ProductCard]](ctx, p.call, serviceName, "ListProductCard", params)
 }
 
 func (p *CatalogRestateClient) ListRecommendedProductCard(ctx context.Context, params ListRecommendedProductCardParams) ([]catalogmodel.ProductCard, error) {
-	return restateclient.Call[[]catalogmodel.ProductCard](ctx, p.client, serviceName, "ListRecommendedProductCard", params)
+	return restatec.Call[[]catalogmodel.ProductCard](ctx, p.call, serviceName, "ListRecommendedProductCard", params)
 }
 
 func (p *CatalogRestateClient) GetProductSpu(ctx context.Context, params GetProductSpuParams) (catalogmodel.ProductSpu, error) {
-	return restateclient.Call[catalogmodel.ProductSpu](ctx, p.client, serviceName, "GetProductSpu", params)
+	return restatec.Call[catalogmodel.ProductSpu](ctx, p.call, serviceName, "GetProductSpu", params)
 }
 
 func (p *CatalogRestateClient) ListProductSpu(ctx context.Context, params ListProductSpuParams) (paginate.PaginateResult[catalogmodel.ProductSpu], error) {
-	return restateclient.Call[paginate.PaginateResult[catalogmodel.ProductSpu]](ctx, p.client, serviceName, "ListProductSpu", params)
+	return restatec.Call[paginate.PaginateResult[catalogmodel.ProductSpu]](ctx, p.call, serviceName, "ListProductSpu", params)
 }
 
 func (p *CatalogRestateClient) CreateProductSpu(ctx context.Context, params CreateProductSpuParams) (catalogmodel.ProductSpu, error) {
-	return restateclient.Call[catalogmodel.ProductSpu](ctx, p.client, serviceName, "CreateProductSpu", params)
+	return restatec.Call[catalogmodel.ProductSpu](ctx, p.call, serviceName, "CreateProductSpu", params)
 }
 
 func (p *CatalogRestateClient) UpdateProductSpu(ctx context.Context, params UpdateProductSpuParams) (catalogmodel.ProductSpu, error) {
-	return restateclient.Call[catalogmodel.ProductSpu](ctx, p.client, serviceName, "UpdateProductSpu", params)
+	return restatec.Call[catalogmodel.ProductSpu](ctx, p.call, serviceName, "UpdateProductSpu", params)
 }
 
 func (p *CatalogRestateClient) DeleteProductSpu(ctx context.Context, params DeleteProductSpuParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "DeleteProductSpu", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "DeleteProductSpu", params)
 }
 
 func (p *CatalogRestateClient) ListProductSku(ctx context.Context, params ListProductSkuParams) ([]catalogmodel.ProductSku, error) {
-	return restateclient.Call[[]catalogmodel.ProductSku](ctx, p.client, serviceName, "ListProductSku", params)
+	return restatec.Call[[]catalogmodel.ProductSku](ctx, p.call, serviceName, "ListProductSku", params)
 }
 
 func (p *CatalogRestateClient) CreateProductSku(ctx context.Context, params CreateProductSkuParams) (catalogmodel.ProductSku, error) {
-	return restateclient.Call[catalogmodel.ProductSku](ctx, p.client, serviceName, "CreateProductSku", params)
+	return restatec.Call[catalogmodel.ProductSku](ctx, p.call, serviceName, "CreateProductSku", params)
 }
 
 func (p *CatalogRestateClient) UpdateProductSku(ctx context.Context, params UpdateProductSkuParams) (catalogmodel.ProductSku, error) {
-	return restateclient.Call[catalogmodel.ProductSku](ctx, p.client, serviceName, "UpdateProductSku", params)
+	return restatec.Call[catalogmodel.ProductSku](ctx, p.call, serviceName, "UpdateProductSku", params)
 }
 
 func (p *CatalogRestateClient) DeleteProductSku(ctx context.Context, params DeleteProductSkuParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "DeleteProductSku", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "DeleteProductSku", params)
 }
 
 func (p *CatalogRestateClient) ListComment(ctx context.Context, params ListCommentParams) (paginate.PaginateResult[catalogmodel.Comment], error) {
-	return restateclient.Call[paginate.PaginateResult[catalogmodel.Comment]](ctx, p.client, serviceName, "ListComment", params)
+	return restatec.Call[paginate.PaginateResult[catalogmodel.Comment]](ctx, p.call, serviceName, "ListComment", params)
 }
 
 func (p *CatalogRestateClient) CreateComment(ctx context.Context, params CreateCommentParams) (catalogmodel.Comment, error) {
-	return restateclient.Call[catalogmodel.Comment](ctx, p.client, serviceName, "CreateComment", params)
+	return restatec.Call[catalogmodel.Comment](ctx, p.call, serviceName, "CreateComment", params)
 }
 
 func (p *CatalogRestateClient) UpdateComment(ctx context.Context, params UpdateCommentParams) (catalogmodel.Comment, error) {
-	return restateclient.Call[catalogmodel.Comment](ctx, p.client, serviceName, "UpdateComment", params)
+	return restatec.Call[catalogmodel.Comment](ctx, p.call, serviceName, "UpdateComment", params)
 }
 
 func (p *CatalogRestateClient) DeleteComment(ctx context.Context, params DeleteCommentParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "DeleteComment", params)
-}
-
-func (p *CatalogRestateClient) ListReviewableOrders(ctx context.Context, params ListReviewableOrdersParams) ([]catalogmodel.ReviewableOrder, error) {
-	return restateclient.Call[[]catalogmodel.ReviewableOrder](ctx, p.client, serviceName, "ListReviewableOrders", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "DeleteComment", params)
 }
 
 func (p *CatalogRestateClient) ListTag(ctx context.Context, params ListTagParams) (paginate.PaginateResult[catalogdb.CatalogTag], error) {
-	return restateclient.Call[paginate.PaginateResult[catalogdb.CatalogTag]](ctx, p.client, serviceName, "ListTag", params)
+	return restatec.Call[paginate.PaginateResult[catalogdb.CatalogTag]](ctx, p.call, serviceName, "ListTag", params)
 }
 
 func (p *CatalogRestateClient) GetTag(ctx context.Context, params GetTagParams) (catalogdb.CatalogTag, error) {
-	return restateclient.Call[catalogdb.CatalogTag](ctx, p.client, serviceName, "GetTag", params)
+	return restatec.Call[catalogdb.CatalogTag](ctx, p.call, serviceName, "GetTag", params)
 }
 
 func (p *CatalogRestateClient) ListCategory(ctx context.Context, params ListCategoryParams) (paginate.PaginateResult[catalogmodel.Category], error) {
-	return restateclient.Call[paginate.PaginateResult[catalogmodel.Category]](ctx, p.client, serviceName, "ListCategory", params)
+	return restatec.Call[paginate.PaginateResult[catalogmodel.Category]](ctx, p.call, serviceName, "ListCategory", params)
 }
 
 func (p *CatalogRestateClient) Search(ctx context.Context, params SearchParams) ([]catalogmodel.ProductRecommend, error) {
-	return restateclient.Call[[]catalogmodel.ProductRecommend](ctx, p.client, serviceName, "Search", params)
+	return restatec.Call[[]catalogmodel.ProductRecommend](ctx, p.call, serviceName, "Search", params)
 }
 
 func (p *CatalogRestateClient) GetRecommendations(ctx context.Context, params GetRecommendationsParams) ([]catalogmodel.ProductRecommend, error) {
-	return restateclient.Call[[]catalogmodel.ProductRecommend](ctx, p.client, serviceName, "GetRecommendations", params)
+	return restatec.Call[[]catalogmodel.ProductRecommend](ctx, p.call, serviceName, "GetRecommendations", params)
+}
+
+func (p *CatalogRestateClient) AddInteractions(ctx context.Context, events []analyticmodel.Interaction) error {
+	return restatec.CallVoid(ctx, p.call, serviceName, "AddInteractions", events)
 }
 
 func (p *CatalogRestateClient) GetVendorStats(ctx context.Context, params GetVendorStatsParams) (VendorStats, error) {
-	return restateclient.Call[VendorStats](ctx, p.client, serviceName, "GetVendorStats", params)
+	return restatec.Call[VendorStats](ctx, p.call, serviceName, "GetVendorStats", params)
+}
+
+// CatalogRestateSender implements CatalogBizSender.
+type CatalogRestateSender struct {
+	client *restatec.SendClient
+}
+
+var _ CatalogBizSender = (*CatalogRestateSender)(nil)
+
+func (s *CatalogRestateSender) GetProductDetail(ctx context.Context, params GetProductDetailParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetProductDetail", params)
+}
+
+func (s *CatalogRestateSender) GetProductCard(ctx context.Context, params GetProductCardParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetProductCard", params)
+}
+
+func (s *CatalogRestateSender) ListProductCard(ctx context.Context, params ListProductCardParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListProductCard", params)
+}
+
+func (s *CatalogRestateSender) ListRecommendedProductCard(ctx context.Context, params ListRecommendedProductCardParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListRecommendedProductCard", params)
+}
+
+func (s *CatalogRestateSender) GetProductSpu(ctx context.Context, params GetProductSpuParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetProductSpu", params)
+}
+
+func (s *CatalogRestateSender) ListProductSpu(ctx context.Context, params ListProductSpuParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListProductSpu", params)
+}
+
+func (s *CatalogRestateSender) CreateProductSpu(ctx context.Context, params CreateProductSpuParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "CreateProductSpu", params)
+}
+
+func (s *CatalogRestateSender) UpdateProductSpu(ctx context.Context, params UpdateProductSpuParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "UpdateProductSpu", params)
+}
+
+func (s *CatalogRestateSender) DeleteProductSpu(ctx context.Context, params DeleteProductSpuParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "DeleteProductSpu", params)
+}
+
+func (s *CatalogRestateSender) ListProductSku(ctx context.Context, params ListProductSkuParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListProductSku", params)
+}
+
+func (s *CatalogRestateSender) CreateProductSku(ctx context.Context, params CreateProductSkuParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "CreateProductSku", params)
+}
+
+func (s *CatalogRestateSender) UpdateProductSku(ctx context.Context, params UpdateProductSkuParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "UpdateProductSku", params)
+}
+
+func (s *CatalogRestateSender) DeleteProductSku(ctx context.Context, params DeleteProductSkuParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "DeleteProductSku", params)
+}
+
+func (s *CatalogRestateSender) ListComment(ctx context.Context, params ListCommentParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListComment", params)
+}
+
+func (s *CatalogRestateSender) CreateComment(ctx context.Context, params CreateCommentParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "CreateComment", params)
+}
+
+func (s *CatalogRestateSender) UpdateComment(ctx context.Context, params UpdateCommentParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "UpdateComment", params)
+}
+
+func (s *CatalogRestateSender) DeleteComment(ctx context.Context, params DeleteCommentParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "DeleteComment", params)
+}
+
+func (s *CatalogRestateSender) ListTag(ctx context.Context, params ListTagParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListTag", params)
+}
+
+func (s *CatalogRestateSender) GetTag(ctx context.Context, params GetTagParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetTag", params)
+}
+
+func (s *CatalogRestateSender) ListCategory(ctx context.Context, params ListCategoryParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListCategory", params)
+}
+
+func (s *CatalogRestateSender) Search(ctx context.Context, params SearchParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "Search", params)
+}
+
+func (s *CatalogRestateSender) GetRecommendations(ctx context.Context, params GetRecommendationsParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetRecommendations", params)
+}
+
+func (s *CatalogRestateSender) AddInteractions(ctx context.Context, events []analyticmodel.Interaction) error {
+	return restatec.Send(ctx, s.client, serviceName, "AddInteractions", events)
+}
+
+func (s *CatalogRestateSender) GetVendorStats(ctx context.Context, params GetVendorStatsParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetVendorStats", params)
+}
+
+// CatalogRestateFuture implements CatalogBizFuture via the Restate SDK.
+type CatalogRestateFuture struct{}
+
+var _ CatalogBizFuture = (*CatalogRestateFuture)(nil)
+
+func (f *CatalogRestateFuture) GetProductDetail(rctx restate.Context, params GetProductDetailParams) restate.ResponseFuture[catalogmodel.ProductDetail] {
+	return restate.Service[catalogmodel.ProductDetail](rctx, serviceName, "GetProductDetail").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) GetProductCard(rctx restate.Context, params GetProductCardParams) restate.ResponseFuture[*catalogmodel.ProductCard] {
+	return restate.Service[*catalogmodel.ProductCard](rctx, serviceName, "GetProductCard").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) ListProductCard(rctx restate.Context, params ListProductCardParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.ProductCard]] {
+	return restate.Service[paginate.PaginateResult[catalogmodel.ProductCard]](rctx, serviceName, "ListProductCard").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) ListRecommendedProductCard(rctx restate.Context, params ListRecommendedProductCardParams) restate.ResponseFuture[[]catalogmodel.ProductCard] {
+	return restate.Service[[]catalogmodel.ProductCard](rctx, serviceName, "ListRecommendedProductCard").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) GetProductSpu(rctx restate.Context, params GetProductSpuParams) restate.ResponseFuture[catalogmodel.ProductSpu] {
+	return restate.Service[catalogmodel.ProductSpu](rctx, serviceName, "GetProductSpu").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) ListProductSpu(rctx restate.Context, params ListProductSpuParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.ProductSpu]] {
+	return restate.Service[paginate.PaginateResult[catalogmodel.ProductSpu]](rctx, serviceName, "ListProductSpu").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) CreateProductSpu(rctx restate.Context, params CreateProductSpuParams) restate.ResponseFuture[catalogmodel.ProductSpu] {
+	return restate.Service[catalogmodel.ProductSpu](rctx, serviceName, "CreateProductSpu").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) UpdateProductSpu(rctx restate.Context, params UpdateProductSpuParams) restate.ResponseFuture[catalogmodel.ProductSpu] {
+	return restate.Service[catalogmodel.ProductSpu](rctx, serviceName, "UpdateProductSpu").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) DeleteProductSpu(rctx restate.Context, params DeleteProductSpuParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "DeleteProductSpu").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) ListProductSku(rctx restate.Context, params ListProductSkuParams) restate.ResponseFuture[[]catalogmodel.ProductSku] {
+	return restate.Service[[]catalogmodel.ProductSku](rctx, serviceName, "ListProductSku").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) CreateProductSku(rctx restate.Context, params CreateProductSkuParams) restate.ResponseFuture[catalogmodel.ProductSku] {
+	return restate.Service[catalogmodel.ProductSku](rctx, serviceName, "CreateProductSku").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) UpdateProductSku(rctx restate.Context, params UpdateProductSkuParams) restate.ResponseFuture[catalogmodel.ProductSku] {
+	return restate.Service[catalogmodel.ProductSku](rctx, serviceName, "UpdateProductSku").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) DeleteProductSku(rctx restate.Context, params DeleteProductSkuParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "DeleteProductSku").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) ListComment(rctx restate.Context, params ListCommentParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.Comment]] {
+	return restate.Service[paginate.PaginateResult[catalogmodel.Comment]](rctx, serviceName, "ListComment").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) CreateComment(rctx restate.Context, params CreateCommentParams) restate.ResponseFuture[catalogmodel.Comment] {
+	return restate.Service[catalogmodel.Comment](rctx, serviceName, "CreateComment").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) UpdateComment(rctx restate.Context, params UpdateCommentParams) restate.ResponseFuture[catalogmodel.Comment] {
+	return restate.Service[catalogmodel.Comment](rctx, serviceName, "UpdateComment").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) DeleteComment(rctx restate.Context, params DeleteCommentParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "DeleteComment").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) ListTag(rctx restate.Context, params ListTagParams) restate.ResponseFuture[paginate.PaginateResult[catalogdb.CatalogTag]] {
+	return restate.Service[paginate.PaginateResult[catalogdb.CatalogTag]](rctx, serviceName, "ListTag").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) GetTag(rctx restate.Context, params GetTagParams) restate.ResponseFuture[catalogdb.CatalogTag] {
+	return restate.Service[catalogdb.CatalogTag](rctx, serviceName, "GetTag").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) ListCategory(rctx restate.Context, params ListCategoryParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.Category]] {
+	return restate.Service[paginate.PaginateResult[catalogmodel.Category]](rctx, serviceName, "ListCategory").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) Search(rctx restate.Context, params SearchParams) restate.ResponseFuture[[]catalogmodel.ProductRecommend] {
+	return restate.Service[[]catalogmodel.ProductRecommend](rctx, serviceName, "Search").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) GetRecommendations(rctx restate.Context, params GetRecommendationsParams) restate.ResponseFuture[[]catalogmodel.ProductRecommend] {
+	return restate.Service[[]catalogmodel.ProductRecommend](rctx, serviceName, "GetRecommendations").RequestFuture(params)
+}
+
+func (f *CatalogRestateFuture) AddInteractions(rctx restate.Context, events []analyticmodel.Interaction) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "AddInteractions").RequestFuture(events)
+}
+
+func (f *CatalogRestateFuture) GetVendorStats(rctx restate.Context, params GetVendorStatsParams) restate.ResponseFuture[VendorStats] {
+	return restate.Service[VendorStats](rctx, serviceName, "GetVendorStats").RequestFuture(params)
 }

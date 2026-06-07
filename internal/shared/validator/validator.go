@@ -2,13 +2,13 @@ package validator
 
 import (
 	"database/sql/driver"
+	"encoding/json"
 	stderrors "errors"
 	"fmt"
 	"reflect"
 	"shopnexus-server/internal/shared/errors"
 	"sync"
 
-	"github.com/bytedance/sonic"
 	"github.com/go-playground/locales/en"
 	ut "github.com/go-playground/universal-translator"
 	"github.com/go-playground/validator/v10"
@@ -71,7 +71,7 @@ func (cv *CustomValidator) Validate(i any) error {
 	var valErr validator.ValidationErrors
 	if stderrors.As(err, &valErr) {
 		trans, _ := cv.uni.GetTranslator("en")
-		text, err := sonic.Marshal(valErr.Translate(trans))
+		text, err := json.Marshal(valErr.Translate(trans))
 		if err != nil {
 			// Fallback to the original validation error if JSON marshaling fails
 			return valErr
@@ -120,7 +120,7 @@ func Validate(i any) error {
 
 // Unmarshal unmarshal JSON data into a struct and validate the result.
 func Unmarshal(data []byte, v any) error {
-	err := sonic.Unmarshal(data, v)
+	err := json.Unmarshal(data, v)
 	if err != nil {
 		return err
 	}

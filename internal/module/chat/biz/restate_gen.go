@@ -4,46 +4,144 @@ package chatbiz
 
 import (
 	"context"
-	restateclient "shopnexus-server/internal/infras/restate"
+	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 	chatdb "shopnexus-server/internal/module/chat/db/sqlc"
 	"shopnexus-server/internal/shared/paginate"
-
-	"github.com/google/uuid"
+	restatec "shopnexus-server/internal/shared/restate"
 )
 
 const serviceName = "Chat"
 
-// ChatRestateClient implements ChatBiz via Restate HTTP ingress.
-type ChatRestateClient struct {
-	client *restateclient.Client
+// ChatBizSender mirrors ChatBiz as one-way (fire-and-forget) calls; outputs are dropped.
+type ChatBizSender interface {
+	CreateConversation(ctx context.Context, params CreateConversationParams) error
+	GetConversation(ctx context.Context, id uuid.UUID) error
+	ListConversation(ctx context.Context, params ListConversationParams) error
+	SendMessage(ctx context.Context, params SendMessageParams) error
+	ListMessage(ctx context.Context, params ListMessageParams) error
+	MarkRead(ctx context.Context, params MarkReadParams) error
 }
 
-var _ ChatBiz = (*ChatRestateClient)(nil)
+// ChatBizFuture mirrors ChatBiz returning response futures for racing
+// or parallel calls. Only usable inside a Restate handler context.
+type ChatBizFuture interface {
+	CreateConversation(rctx restate.Context, params CreateConversationParams) restate.ResponseFuture[chatdb.ChatConversation]
+	GetConversation(rctx restate.Context, id uuid.UUID) restate.ResponseFuture[chatdb.ChatConversation]
+	ListConversation(rctx restate.Context, params ListConversationParams) restate.ResponseFuture[paginate.PaginateResult[chatdb.ChatConversation]]
+	SendMessage(rctx restate.Context, params SendMessageParams) restate.ResponseFuture[chatdb.ChatMessage]
+	ListMessage(rctx restate.Context, params ListMessageParams) restate.ResponseFuture[paginate.PaginateResult[chatdb.ChatMessage]]
+	MarkRead(rctx restate.Context, params MarkReadParams) restate.ResponseFuture[restate.Void]
+}
+
+// ChatBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
+type ChatBizClient interface {
+	ChatBiz
+	Send() ChatBizSender
+	Future() ChatBizFuture
+}
+
+// ChatRestateClient implements ChatBizClient via Restate HTTP ingress.
+type ChatRestateClient struct {
+	call   *restatec.CallClient
+	send   *ChatRestateSender
+	future *ChatRestateFuture
+}
+
+var _ ChatBizClient = (*ChatRestateClient)(nil)
 
 func NewChatRestateClient(restateIngressURL string) *ChatRestateClient {
-	return &ChatRestateClient{client: restateclient.NewClient(restateIngressURL)}
+	return &ChatRestateClient{
+		call:   restatec.NewCallClient(restateIngressURL),
+		send:   &ChatRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &ChatRestateFuture{},
+	}
 }
 
+func (p *ChatRestateClient) Send() ChatBizSender { return p.send }
+
+func (p *ChatRestateClient) Future() ChatBizFuture { return p.future }
+
 func (p *ChatRestateClient) CreateConversation(ctx context.Context, params CreateConversationParams) (chatdb.ChatConversation, error) {
-	return restateclient.Call[chatdb.ChatConversation](ctx, p.client, serviceName, "CreateConversation", params)
+	return restatec.Call[chatdb.ChatConversation](ctx, p.call, serviceName, "CreateConversation", params)
 }
 
 func (p *ChatRestateClient) GetConversation(ctx context.Context, id uuid.UUID) (chatdb.ChatConversation, error) {
-	return restateclient.Call[chatdb.ChatConversation](ctx, p.client, serviceName, "GetConversation", id)
+	return restatec.Call[chatdb.ChatConversation](ctx, p.call, serviceName, "GetConversation", id)
 }
 
 func (p *ChatRestateClient) ListConversation(ctx context.Context, params ListConversationParams) (paginate.PaginateResult[chatdb.ChatConversation], error) {
-	return restateclient.Call[paginate.PaginateResult[chatdb.ChatConversation]](ctx, p.client, serviceName, "ListConversation", params)
+	return restatec.Call[paginate.PaginateResult[chatdb.ChatConversation]](ctx, p.call, serviceName, "ListConversation", params)
 }
 
 func (p *ChatRestateClient) SendMessage(ctx context.Context, params SendMessageParams) (chatdb.ChatMessage, error) {
-	return restateclient.Call[chatdb.ChatMessage](ctx, p.client, serviceName, "SendMessage", params)
+	return restatec.Call[chatdb.ChatMessage](ctx, p.call, serviceName, "SendMessage", params)
 }
 
 func (p *ChatRestateClient) ListMessage(ctx context.Context, params ListMessageParams) (paginate.PaginateResult[chatdb.ChatMessage], error) {
-	return restateclient.Call[paginate.PaginateResult[chatdb.ChatMessage]](ctx, p.client, serviceName, "ListMessage", params)
+	return restatec.Call[paginate.PaginateResult[chatdb.ChatMessage]](ctx, p.call, serviceName, "ListMessage", params)
 }
 
 func (p *ChatRestateClient) MarkRead(ctx context.Context, params MarkReadParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "MarkRead", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "MarkRead", params)
+}
+
+// ChatRestateSender implements ChatBizSender.
+type ChatRestateSender struct {
+	client *restatec.SendClient
+}
+
+var _ ChatBizSender = (*ChatRestateSender)(nil)
+
+func (s *ChatRestateSender) CreateConversation(ctx context.Context, params CreateConversationParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "CreateConversation", params)
+}
+
+func (s *ChatRestateSender) GetConversation(ctx context.Context, id uuid.UUID) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetConversation", id)
+}
+
+func (s *ChatRestateSender) ListConversation(ctx context.Context, params ListConversationParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListConversation", params)
+}
+
+func (s *ChatRestateSender) SendMessage(ctx context.Context, params SendMessageParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "SendMessage", params)
+}
+
+func (s *ChatRestateSender) ListMessage(ctx context.Context, params ListMessageParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListMessage", params)
+}
+
+func (s *ChatRestateSender) MarkRead(ctx context.Context, params MarkReadParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "MarkRead", params)
+}
+
+// ChatRestateFuture implements ChatBizFuture via the Restate SDK.
+type ChatRestateFuture struct{}
+
+var _ ChatBizFuture = (*ChatRestateFuture)(nil)
+
+func (f *ChatRestateFuture) CreateConversation(rctx restate.Context, params CreateConversationParams) restate.ResponseFuture[chatdb.ChatConversation] {
+	return restate.Service[chatdb.ChatConversation](rctx, serviceName, "CreateConversation").RequestFuture(params)
+}
+
+func (f *ChatRestateFuture) GetConversation(rctx restate.Context, id uuid.UUID) restate.ResponseFuture[chatdb.ChatConversation] {
+	return restate.Service[chatdb.ChatConversation](rctx, serviceName, "GetConversation").RequestFuture(id)
+}
+
+func (f *ChatRestateFuture) ListConversation(rctx restate.Context, params ListConversationParams) restate.ResponseFuture[paginate.PaginateResult[chatdb.ChatConversation]] {
+	return restate.Service[paginate.PaginateResult[chatdb.ChatConversation]](rctx, serviceName, "ListConversation").RequestFuture(params)
+}
+
+func (f *ChatRestateFuture) SendMessage(rctx restate.Context, params SendMessageParams) restate.ResponseFuture[chatdb.ChatMessage] {
+	return restate.Service[chatdb.ChatMessage](rctx, serviceName, "SendMessage").RequestFuture(params)
+}
+
+func (f *ChatRestateFuture) ListMessage(rctx restate.Context, params ListMessageParams) restate.ResponseFuture[paginate.PaginateResult[chatdb.ChatMessage]] {
+	return restate.Service[paginate.PaginateResult[chatdb.ChatMessage]](rctx, serviceName, "ListMessage").RequestFuture(params)
+}
+
+func (f *ChatRestateFuture) MarkRead(rctx restate.Context, params MarkReadParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "MarkRead").RequestFuture(params)
 }

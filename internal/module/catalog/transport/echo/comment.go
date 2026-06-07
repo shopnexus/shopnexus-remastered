@@ -5,6 +5,7 @@ import (
 
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
+	orderbiz "shopnexus-server/internal/module/order/biz"
 	authclaims "shopnexus-server/internal/shared/claims"
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/response"
@@ -76,6 +77,23 @@ func (h *Handler) CreateComment(c echo.Context) error {
 	claims, err := authclaims.GetClaims(c.Request())
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
+	}
+
+	// Product reviews go through the order module, which owns purchase
+	// validation; replies and other comments hit catalog directly.
+	if req.RefType == catalogdb.CatalogCommentRefTypeProductSpu {
+		result, err := h.order.CreateProductReview(c.Request().Context(), orderbiz.CreateProductReviewParams{
+			Account:     claims.Account,
+			SpuID:       req.RefID,
+			OrderID:     req.OrderID,
+			Body:        req.Body,
+			Score:       req.Score,
+			ResourceIDs: req.ResourceIDs,
+		})
+		if err != nil {
+			return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
+		}
+		return response.FromDTO(c.Response().Writer, http.StatusOK, result)
 	}
 
 	result, err := h.biz.CreateComment(c.Request().Context(), catalogbiz.CreateCommentParams{
@@ -210,7 +228,7 @@ func (h *Handler) ListReviewableOrders(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.ListReviewableOrders(c.Request().Context(), catalogbiz.ListReviewableOrdersParams{
+	result, err := h.order.ListReviewableOrdersBySpu(c.Request().Context(), orderbiz.ListReviewableOrdersBySpuParams{
 		Account: claims.Account,
 		SpuID:   req.SpuID,
 	})

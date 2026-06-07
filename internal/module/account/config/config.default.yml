@@ -33,3 +33,6 @@ jwt:
   accessTokenDuration: 3600
   refreshTokenDuration: 1209600
   refreshSecret: superrefreshsecret456
+
+bus:
+  transport: redis

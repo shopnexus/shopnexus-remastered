@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgxvector "github.com/pgvector/pgvector-go/pgx"
 )
 
 type Options struct {
@@ -50,6 +51,9 @@ func New(opts Options) (*pgxpool.Pool, error) {
 		return nil, err
 	}
 	connConfig.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		if err := pgxvector.RegisterTypes(ctx, conn); err != nil {
+			return fmt.Errorf("register pgvector types: %w", err)
+		}
 		for _, t := range customTypes {
 			conn.TypeMap().RegisterType(t)
 		}

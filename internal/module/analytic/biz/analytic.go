@@ -5,6 +5,7 @@ import (
 
 	restate "github.com/restatedev/sdk-go"
 
+	"shopnexus-server/internal/infras/bus"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	analyticdb "shopnexus-server/internal/module/analytic/db/sqlc"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
@@ -46,7 +47,8 @@ func (b *AnalyticHandler) CreateInteraction(ctx restate.Context, params CreateIn
 			if err == nil {
 				refID, _ := uuid.Parse(ai.RefID)
 
-				// Fan out to HandlePopularityEvent and CatalogBiz.AddInteraction via Restate
+				// Publish to the event bus; subscribers (popularity scoring,
+				// catalog search) consume via their module workers.
 				event := analyticmodel.Interaction{
 					ID:          ai.ID,
 					AccountID:   ai.AccountID,
@@ -56,8 +58,9 @@ func (b *AnalyticHandler) CreateInteraction(ctx restate.Context, params CreateIn
 					Metadata:    ai.Metadata,
 					DateCreated: ai.DateCreated,
 				}
-				restate.ServiceSend(ctx, "Analytic", "HandlePopularityEvent").Send(event)
-				restate.ServiceSend(ctx, "Catalog", "AddInteraction").Send(event)
+				if pubErr := bus.Publish(ctx, b.bus, analyticmodel.TopicInteractionCreated, event); pubErr != nil {
+					b.logger.Error("publish interaction event", "error", pubErr)
+				}
 			} else {
 				b.logger.Error("create analytic interaction: %w", "error", err)
 			}

@@ -14,7 +14,6 @@ import (
 	"shopnexus-server/internal/shared/nullutil"
 	"shopnexus-server/internal/shared/validator"
 
-	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
 	"github.com/samber/lo"
@@ -62,7 +61,7 @@ func (b *CatalogHandler) ListProductSku(
 	var skus []catalogmodel.ProductSku
 	for _, dbSku := range dbSkus {
 		var attributes []catalogmodel.ProductAttribute
-		if err := sonic.Unmarshal(dbSku.Attributes, &attributes); err != nil {
+		if err := json.Unmarshal(dbSku.Attributes, &attributes); err != nil {
 			return zero, fmt.Errorf("unmarshal sku attributes: %w", err)
 		}
 		m := mapProductSku(dbSku)
@@ -90,11 +89,15 @@ func (b *CatalogHandler) CreateProductSku(
 ) (catalogmodel.ProductSku, error) {
 	var zero catalogmodel.ProductSku
 
-	attributesBytes, err := sonic.Marshal(params.Attributes)
+	if err := validator.Validate(params); err != nil {
+		return zero, fmt.Errorf("validate create product sku params: %w", err)
+	}
+
+	attributesBytes, err := json.Marshal(params.Attributes)
 	if err != nil {
 		return zero, fmt.Errorf("create product sku: %w", err)
 	}
-	packagedetailsBytes, err := sonic.Marshal(params.PackageDetails)
+	packagedetailsBytes, err := json.Marshal(params.PackageDetails)
 	if err != nil {
 		return zero, fmt.Errorf("create product sku: %w", err)
 	}
@@ -145,11 +148,11 @@ func (b *CatalogHandler) UpdateProductSku(
 		return zero, fmt.Errorf("validate update product sku: %w", err)
 	}
 
-	attributesBytes, err := sonic.Marshal(params.Attributes)
+	attributesBytes, err := json.Marshal(params.Attributes)
 	if err != nil {
 		return zero, fmt.Errorf("update product sku: %w", err)
 	}
-	packageDetailsBytes, err := sonic.Marshal(params.PackageDetails)
+	packageDetailsBytes, err := json.Marshal(params.PackageDetails)
 	if err != nil {
 		return zero, fmt.Errorf("update product sku: %w", err)
 	}
@@ -174,11 +177,10 @@ func (b *CatalogHandler) UpdateProductSku(
 		return zero, fmt.Errorf("update product sku: %w", err)
 	}
 
-	// Invalidate search index for the parent product (spu)
-	if err := b.storage.Querier().UpdateStaleSearchSync(ctx, catalogdb.UpdateStaleSearchSyncParams{
-		RefType:         catalogdb.CatalogSearchSyncRefTypeProductSpu,
-		RefID:           sku.SpuID,
-		IsStaleMetadata: null.BoolFrom(true),
+	// Re-embed parent product (SKU attributes feed the embedding text)
+	if err := b.storage.Querier().MarkStaleSearchSync(ctx, catalogdb.MarkStaleSearchSyncParams{
+		RefType: catalogdb.CatalogSearchSyncRefTypeProductSpu,
+		RefID:   sku.SpuID,
 	}); err != nil {
 		return zero, fmt.Errorf("db update search sync: %w", err)
 	}

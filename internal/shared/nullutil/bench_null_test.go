@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bytedance/sonic"
 	"github.com/guregu/null/v6"
 	"github.com/labstack/echo/v4"
 
@@ -36,16 +35,15 @@ type testStructNull struct {
 }
 
 var (
-	strVal   = "gaming-keyboard"
-	fltVal   = 29.99
-	intVal   = int64(42)
-	boolVal  = true
-	timeVal  = time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	strVal  = "gaming-keyboard"
+	fltVal  = 29.99
+	intVal  = int64(42)
+	boolVal = true
+	timeVal = time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 
 	jsonWithValue []byte
 	jsonNull      = []byte(`{"name":null,"price":null,"count":null,"active":null,"since":null}`)
 	jsonEmpty     = []byte("{}")
-
 )
 
 func init() {
@@ -117,7 +115,7 @@ func benchSONICMarshalPtr(val bool) func(b *testing.B) {
 		s := makePtr(val)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			sonic.Marshal(s)
+			json.Marshal(s)
 		}
 	}
 }
@@ -127,7 +125,7 @@ func benchSONICMarshalNull(val bool) func(b *testing.B) {
 		s := makeNull(val)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			sonic.Marshal(s)
+			json.Marshal(s)
 		}
 	}
 }
@@ -176,7 +174,7 @@ func benchSONICUnmarshalPtr(data []byte) func(b *testing.B) {
 	return func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			var s testStructPtr
-			sonic.Unmarshal(data, &s)
+			json.Unmarshal(data, &s)
 		}
 	}
 }
@@ -185,7 +183,7 @@ func benchSONICUnmarshalNull(data []byte) func(b *testing.B) {
 	return func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			var s testStructNull
-			sonic.Unmarshal(data, &s)
+			json.Unmarshal(data, &s)
 		}
 	}
 }

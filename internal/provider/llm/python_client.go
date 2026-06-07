@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/bytedance/sonic"
 )
 
 // Compile-time interface check.
@@ -63,7 +61,7 @@ type embedResponse struct {
 
 // Embed sends texts to the Python embedding service and returns dense+sparse vectors.
 func (c *PythonClient) Embed(ctx context.Context, texts []string) ([]EmbedResult, error) {
-	body, err := sonic.Marshal(embedRequest{Texts: texts})
+	body, err := json.Marshal(embedRequest{Texts: texts})
 	if err != nil {
 		return nil, fmt.Errorf("llm/python: marshal request: %w", err)
 	}
@@ -90,7 +88,7 @@ func (c *PythonClient) Embed(ctx context.Context, texts []string) ([]EmbedResult
 	}
 
 	var result embedResponse
-	if err := sonic.Unmarshal(respBody, &result); err != nil {
+	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("llm/python: unmarshal response: %w", err)
 	}
 

@@ -14,11 +14,13 @@ import (
 	accountmodel "shopnexus-server/internal/module/account/model"
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	"shopnexus-server/internal/shared/paginate"
+	"shopnexus-server/internal/shared/validator"
 )
 
 type ListNotificationParams struct {
-	Account accountmodel.AuthenticatedAccount
 	paginate.Params
+
+	Account accountmodel.AuthenticatedAccount
 }
 
 // ListNotification returns paginated notifications for the authenticated account.
@@ -27,6 +29,11 @@ func (b *AccountHandler) ListNotification(
 	params ListNotificationParams,
 ) (paginate.PaginateResult[accountdb.AccountNotification], error) {
 	var zero paginate.PaginateResult[accountdb.AccountNotification]
+
+	if err := validator.Validate(params); err != nil {
+		return zero, fmt.Errorf("validate list notification params: %w", err)
+	}
+
 	params.Params = params.Constrain()
 
 	rows, err := b.storage.Querier().ListNotificationByAccount(ctx, accountdb.ListNotificationByAccountParams{
@@ -35,7 +42,7 @@ func (b *AccountHandler) ListNotification(
 		Offset:    params.Offset(),
 	})
 	if err != nil {
-		return zero, fmt.Errorf("list notifications: %w", err)
+		return zero, fmt.Errorf("db list notification by account: %w", err)
 	}
 
 	var total null.Int64
@@ -58,9 +65,12 @@ type CountUnreadParams struct {
 
 // CountUnread returns the number of unread notifications for the given account.
 func (b *AccountHandler) CountUnread(ctx restate.Context, params CountUnreadParams) (int64, error) {
+	if err := validator.Validate(params); err != nil {
+		return 0, fmt.Errorf("validate count unread params: %w", err)
+	}
 	count, err := b.storage.Querier().CountUnreadByAccount(ctx, params.AccountID)
 	if err != nil {
-		return 0, fmt.Errorf("count unread notifications: %w", err)
+		return 0, fmt.Errorf("db count unread by account: %w", err)
 	}
 	return count, nil
 }
@@ -72,11 +82,14 @@ type MarkReadParams struct {
 
 // MarkRead marks the specified notification IDs as read.
 func (b *AccountHandler) MarkRead(ctx restate.Context, params MarkReadParams) error {
+	if err := validator.Validate(params); err != nil {
+		return fmt.Errorf("validate mark read params: %w", err)
+	}
 	if err := b.storage.Querier().MarkNotificationRead(ctx, accountdb.MarkNotificationReadParams{
 		ID:        params.IDs,
 		AccountID: params.Account.ID,
 	}); err != nil {
-		return fmt.Errorf("mark notification read: %w", err)
+		return fmt.Errorf("db mark notification read: %w", err)
 	}
 
 	return nil
@@ -88,8 +101,11 @@ type MarkAllReadParams struct {
 
 // MarkAllRead marks all unread notifications as read for the given account.
 func (b *AccountHandler) MarkAllRead(ctx restate.Context, params MarkAllReadParams) error {
+	if err := validator.Validate(params); err != nil {
+		return fmt.Errorf("validate mark all read params: %w", err)
+	}
 	if err := b.storage.Querier().MarkAllNotificationRead(ctx, params.AccountID); err != nil {
-		return fmt.Errorf("mark all notifications read: %w", err)
+		return fmt.Errorf("db mark all notification read: %w", err)
 	}
 
 	return nil
@@ -109,6 +125,9 @@ func (b *AccountHandler) CreateNotification(
 	ctx restate.Context,
 	params CreateNotificationParams,
 ) (accountdb.AccountNotification, error) {
+	if err := validator.Validate(params); err != nil {
+		return accountdb.AccountNotification{}, fmt.Errorf("validate create notification params: %w", err)
+	}
 	noti, err := b.storage.Querier().CreateDefaultNotification(ctx, accountdb.CreateDefaultNotificationParams{
 		AccountID: params.AccountID,
 		Type:      string(params.Type),
@@ -118,15 +137,17 @@ func (b *AccountHandler) CreateNotification(
 		Metadata:  params.Metadata,
 	})
 	if err != nil {
-		return accountdb.AccountNotification{}, fmt.Errorf("create notification: %w", err)
+		return accountdb.AccountNotification{}, fmt.Errorf("db create default notification: %w", err)
 	}
 
 	// Push real-time notification to SSE clients
-	restate.ServiceSend(ctx, "Common", "PushEvent").Send(commonbiz.PushEventParams{
+	if err = b.common.Send().PushEvent(ctx, commonbiz.PushEventParams{
 		AccountID: params.AccountID,
 		Type:      commonbiz.SSENotification,
 		Data:      noti,
-	})
+	}); err != nil {
+		return accountdb.AccountNotification{}, fmt.Errorf("push notification event: %w", err)
+	}
 
 	return noti, nil
 }

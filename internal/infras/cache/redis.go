@@ -2,12 +2,12 @@ package cache
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
 	"time"
 
-	"github.com/bytedance/sonic"
 	"github.com/redis/rueidis"
 )
 
@@ -20,11 +20,11 @@ type RedisClient struct {
 
 // NewRedisStructClient initializes a new Redis client for structured data caching.
 func NewRedisStructClient(rdb rueidis.Client, cfg Config) (*RedisClient, error) {
-	if cfg.Encoder != nil {
-		cfg.Encoder = sonic.Marshal
+	if cfg.Encoder == nil {
+		cfg.Encoder = json.Marshal
 	}
-	if cfg.Decoder != nil {
-		cfg.Decoder = sonic.Unmarshal
+	if cfg.Decoder == nil {
+		cfg.Decoder = json.Unmarshal
 	}
 
 	return &RedisClient{
@@ -227,4 +227,15 @@ func (r *RedisClient) ZRevRangeByScore(ctx context.Context, key string, dest any
 	}
 
 	return r.decodeSliceMembers(members, dest)
+}
+
+// Ping reports whether the underlying Redis connection is reachable.
+func (r *RedisClient) Ping() error {
+	return r.Client.Do(context.Background(), r.Client.B().Ping().Build()).Error()
+}
+
+// Close releases the underlying rueidis client.
+func (r *RedisClient) Close() error {
+	r.Client.Close()
+	return nil
 }

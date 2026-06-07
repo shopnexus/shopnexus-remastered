@@ -19,6 +19,13 @@ func (g *Generator) Generate(table *Table) string {
 		return ""
 	}
 
+	// Vector tables (pgvector embeddings) are only ever upserted/ANN-searched
+	// via hand-written queries; generic CRUD is unused and would pull
+	// vector/sparsevec into generated structs. Skip them.
+	if table.HasVectorColumn() {
+		return ""
+	}
+
 	var queries []string
 
 	queries = append(queries, g.generateGet(table))

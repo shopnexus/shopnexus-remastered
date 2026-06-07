@@ -233,13 +233,15 @@ func (a *AccountHandler) Register(ctx restate.Context, params RegisterParams) (R
 	}
 
 	// Welcome notification
-	restate.ServiceSend(ctx, "Account", "CreateNotification").Send(CreateNotificationParams{
+	if err = a.self.Send().CreateNotification(ctx, CreateNotificationParams{
 		AccountID: account.ID,
 		Type:      accountmodel.NotiWelcome,
 		Channel:   accountmodel.ChannelInApp,
 		Title:     "Welcome to ShopNexus",
 		Content:   "Your account has been created successfully. Start exploring!",
-	})
+	}); err != nil {
+		return zero, fmt.Errorf("send welcome notification: %w", err)
+	}
 
 	return RegisterResult{
 		Account:      account,

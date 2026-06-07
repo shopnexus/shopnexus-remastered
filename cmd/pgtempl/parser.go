@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -112,9 +113,32 @@ func (t *Table) UpdatableColumns() []*Column {
 	return cols
 }
 
-// FilterableColumns returns all columns.
+// HasVectorColumn reports whether any column is a pgvector type.
+func (t *Table) HasVectorColumn() bool {
+	for _, c := range t.Columns {
+		if c.IsVector() {
+			return true
+		}
+	}
+	return false
+}
+
+// IsVector reports whether the column is a pgvector type.
+func (c *Column) IsVector() bool {
+	// Strip optional "(dims)" suffix, then match exact base type name.
+	base := strings.ToLower(c.Type)
+	if i := strings.IndexByte(base, '('); i != -1 {
+		base = base[:i]
+	}
+	return base == "vector" || base == "sparsevec" || base == "halfvec"
+}
+
+// FilterableColumns returns columns usable in WHERE-clause filters.
+// Vector columns are excluded — equality/ANY filters on embeddings are meaningless.
 func (t *Table) FilterableColumns() []*Column {
-	return t.Columns
+	return slices.DeleteFunc(slices.Clone(t.Columns), func(c *Column) bool {
+		return c.IsVector()
+	})
 }
 
 // IdentifierSets returns the primary key first, then each unique constraint
@@ -286,6 +310,21 @@ func parseAlterTableStmt(stmt *pgv6.AlterTableStmt, tableMap map[string]*Table, 
 	for _, cmd := range stmt.GetCmds() {
 		atCmd, ok := cmd.GetNode().(*pgv6.Node_AlterTableCmd)
 		if !ok {
+			continue
+		}
+
+		// AT_DropColumn — remove column from columns, PKs, and unique constraints that reference it
+		if atCmd.AlterTableCmd.GetSubtype() == pgv6.AlterTableType_AT_DropColumn {
+			name := atCmd.AlterTableCmd.GetName()
+			tbl.Columns = slices.DeleteFunc(tbl.Columns, func(c *Column) bool {
+				return c.Name == name
+			})
+			tbl.PrimaryKeys = slices.DeleteFunc(tbl.PrimaryKeys, func(c *Column) bool {
+				return c.Name == name
+			})
+			tbl.UniqueConstraints = slices.DeleteFunc(tbl.UniqueConstraints, func(uc *UniqueConstraint) bool {
+				return slices.Contains(uc.Columns, name)
+			})
 			continue
 		}
 

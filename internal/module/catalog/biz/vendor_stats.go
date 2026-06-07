@@ -15,7 +15,7 @@ import (
 )
 
 type GetVendorStatsParams struct {
-	AccountID uuid.UUID `json:"account_id" validate:"required"`
+	AccountID uuid.UUID `validate:"required"`
 }
 
 type VendorStats struct {

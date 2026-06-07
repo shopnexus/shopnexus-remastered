@@ -5,88 +5,297 @@ package commonbiz
 import (
 	"context"
 	"github.com/google/uuid"
-	restateclient "shopnexus-server/internal/infras/restate"
+	restate "github.com/restatedev/sdk-go"
 	commonmodel "shopnexus-server/internal/module/common/model"
 	"shopnexus-server/internal/provider/geocoding"
+	restatec "shopnexus-server/internal/shared/restate"
 )
 
 const serviceName = "Common"
 
-// CommonRestateClient implements CommonBiz via Restate HTTP ingress.
-type CommonRestateClient struct {
-	client *restateclient.Client
+// CommonBizSender mirrors CommonBiz as one-way (fire-and-forget) calls; outputs are dropped.
+type CommonBizSender interface {
+	GetFileURL(ctx context.Context, params GetFileURLParams) error
+	ListOption(ctx context.Context, params ListOptionParams) error
+	UpsertOptions(ctx context.Context, params UpsertOptionsParams) error
+	DeleteOptions(ctx context.Context, params DeleteOptionParams) error
+	UpdateResources(ctx context.Context, params UpdateResourcesParams) error
+	DeleteResources(ctx context.Context, params DeleteResourcesParams) error
+	GetResources(ctx context.Context, params GetResourcesParams) error
+	GetResourcesByIDs(ctx context.Context, resourceIDs []uuid.UUID) error
+	GetResourceByID(ctx context.Context, resourceID uuid.UUID) error
+	ReverseGeocode(ctx context.Context, params ReverseGeocodeParams) error
+	ForwardGeocode(ctx context.Context, params ForwardGeocodeParams) error
+	SearchGeocode(ctx context.Context, params SearchGeocodeParams) error
+	ResolveCountry(ctx context.Context, address string) error
+	PushEvent(ctx context.Context, params PushEventParams) error
+	GetExchangeRates(ctx context.Context, params GetExchangeRatesParams) error
+	ConvertAmount(ctx context.Context, params ConvertAmountParams) error
+	IsSupportedCurrency(ctx context.Context, currency string) error
 }
 
-var _ CommonBiz = (*CommonRestateClient)(nil)
+// CommonBizFuture mirrors CommonBiz returning response futures for racing
+// or parallel calls. Only usable inside a Restate handler context.
+type CommonBizFuture interface {
+	GetFileURL(rctx restate.Context, params GetFileURLParams) restate.ResponseFuture[string]
+	ListOption(rctx restate.Context, params ListOptionParams) restate.ResponseFuture[[]OptionListItem]
+	UpsertOptions(rctx restate.Context, params UpsertOptionsParams) restate.ResponseFuture[restate.Void]
+	DeleteOptions(rctx restate.Context, params DeleteOptionParams) restate.ResponseFuture[restate.Void]
+	UpdateResources(rctx restate.Context, params UpdateResourcesParams) restate.ResponseFuture[[]commonmodel.Resource]
+	DeleteResources(rctx restate.Context, params DeleteResourcesParams) restate.ResponseFuture[restate.Void]
+	GetResources(rctx restate.Context, params GetResourcesParams) restate.ResponseFuture[map[uuid.UUID][]commonmodel.Resource]
+	GetResourcesByIDs(rctx restate.Context, resourceIDs []uuid.UUID) restate.ResponseFuture[map[uuid.UUID]commonmodel.Resource]
+	GetResourceByID(rctx restate.Context, resourceID uuid.UUID) restate.ResponseFuture[*commonmodel.Resource]
+	ReverseGeocode(rctx restate.Context, params ReverseGeocodeParams) restate.ResponseFuture[geocoding.Result]
+	ForwardGeocode(rctx restate.Context, params ForwardGeocodeParams) restate.ResponseFuture[geocoding.Result]
+	SearchGeocode(rctx restate.Context, params SearchGeocodeParams) restate.ResponseFuture[[]geocoding.Result]
+	ResolveCountry(rctx restate.Context, address string) restate.ResponseFuture[string]
+	PushEvent(rctx restate.Context, params PushEventParams) restate.ResponseFuture[restate.Void]
+	GetExchangeRates(rctx restate.Context, params GetExchangeRatesParams) restate.ResponseFuture[commonmodel.ExchangeRateSnapshot]
+	ConvertAmount(rctx restate.Context, params ConvertAmountParams) restate.ResponseFuture[int64]
+	IsSupportedCurrency(rctx restate.Context, currency string) restate.ResponseFuture[bool]
+}
+
+// CommonBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
+type CommonBizClient interface {
+	CommonBiz
+	Send() CommonBizSender
+	Future() CommonBizFuture
+}
+
+// CommonRestateClient implements CommonBizClient via Restate HTTP ingress.
+type CommonRestateClient struct {
+	call   *restatec.CallClient
+	send   *CommonRestateSender
+	future *CommonRestateFuture
+}
+
+var _ CommonBizClient = (*CommonRestateClient)(nil)
 
 func NewCommonRestateClient(restateIngressURL string) *CommonRestateClient {
-	return &CommonRestateClient{client: restateclient.NewClient(restateIngressURL)}
+	return &CommonRestateClient{
+		call:   restatec.NewCallClient(restateIngressURL),
+		send:   &CommonRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &CommonRestateFuture{},
+	}
 }
 
+func (p *CommonRestateClient) Send() CommonBizSender { return p.send }
+
+func (p *CommonRestateClient) Future() CommonBizFuture { return p.future }
+
 func (p *CommonRestateClient) GetFileURL(ctx context.Context, params GetFileURLParams) (string, error) {
-	return restateclient.Call[string](ctx, p.client, serviceName, "GetFileURL", params)
+	return restatec.Call[string](ctx, p.call, serviceName, "GetFileURL", params)
 }
 
 func (p *CommonRestateClient) ListOption(ctx context.Context, params ListOptionParams) ([]OptionListItem, error) {
-	return restateclient.Call[[]OptionListItem](ctx, p.client, serviceName, "ListOption", params)
+	return restatec.Call[[]OptionListItem](ctx, p.call, serviceName, "ListOption", params)
 }
 
 func (p *CommonRestateClient) UpsertOptions(ctx context.Context, params UpsertOptionsParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "UpsertOptions", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "UpsertOptions", params)
 }
 
 func (p *CommonRestateClient) DeleteOptions(ctx context.Context, params DeleteOptionParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "DeleteOptions", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "DeleteOptions", params)
 }
 
 func (p *CommonRestateClient) UpdateResources(ctx context.Context, params UpdateResourcesParams) ([]commonmodel.Resource, error) {
-	return restateclient.Call[[]commonmodel.Resource](ctx, p.client, serviceName, "UpdateResources", params)
+	return restatec.Call[[]commonmodel.Resource](ctx, p.call, serviceName, "UpdateResources", params)
 }
 
 func (p *CommonRestateClient) DeleteResources(ctx context.Context, params DeleteResourcesParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "DeleteResources", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "DeleteResources", params)
 }
 
 func (p *CommonRestateClient) GetResources(ctx context.Context, params GetResourcesParams) (map[uuid.UUID][]commonmodel.Resource, error) {
-	return restateclient.Call[map[uuid.UUID][]commonmodel.Resource](ctx, p.client, serviceName, "GetResources", params)
+	return restatec.Call[map[uuid.UUID][]commonmodel.Resource](ctx, p.call, serviceName, "GetResources", params)
 }
 
 func (p *CommonRestateClient) GetResourcesByIDs(ctx context.Context, resourceIDs []uuid.UUID) (map[uuid.UUID]commonmodel.Resource, error) {
-	return restateclient.Call[map[uuid.UUID]commonmodel.Resource](ctx, p.client, serviceName, "GetResourcesByIDs", resourceIDs)
+	return restatec.Call[map[uuid.UUID]commonmodel.Resource](ctx, p.call, serviceName, "GetResourcesByIDs", resourceIDs)
 }
 
 func (p *CommonRestateClient) GetResourceByID(ctx context.Context, resourceID uuid.UUID) (*commonmodel.Resource, error) {
-	return restateclient.Call[*commonmodel.Resource](ctx, p.client, serviceName, "GetResourceByID", resourceID)
+	return restatec.Call[*commonmodel.Resource](ctx, p.call, serviceName, "GetResourceByID", resourceID)
 }
 
 func (p *CommonRestateClient) ReverseGeocode(ctx context.Context, params ReverseGeocodeParams) (geocoding.Result, error) {
-	return restateclient.Call[geocoding.Result](ctx, p.client, serviceName, "ReverseGeocode", params)
+	return restatec.Call[geocoding.Result](ctx, p.call, serviceName, "ReverseGeocode", params)
 }
 
 func (p *CommonRestateClient) ForwardGeocode(ctx context.Context, params ForwardGeocodeParams) (geocoding.Result, error) {
-	return restateclient.Call[geocoding.Result](ctx, p.client, serviceName, "ForwardGeocode", params)
+	return restatec.Call[geocoding.Result](ctx, p.call, serviceName, "ForwardGeocode", params)
 }
 
 func (p *CommonRestateClient) SearchGeocode(ctx context.Context, params SearchGeocodeParams) ([]geocoding.Result, error) {
-	return restateclient.Call[[]geocoding.Result](ctx, p.client, serviceName, "SearchGeocode", params)
+	return restatec.Call[[]geocoding.Result](ctx, p.call, serviceName, "SearchGeocode", params)
 }
 
 func (p *CommonRestateClient) ResolveCountry(ctx context.Context, address string) (string, error) {
-	return restateclient.Call[string](ctx, p.client, serviceName, "ResolveCountry", address)
+	return restatec.Call[string](ctx, p.call, serviceName, "ResolveCountry", address)
 }
 
 func (p *CommonRestateClient) PushEvent(ctx context.Context, params PushEventParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "PushEvent", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "PushEvent", params)
 }
 
 func (p *CommonRestateClient) GetExchangeRates(ctx context.Context, params GetExchangeRatesParams) (commonmodel.ExchangeRateSnapshot, error) {
-	return restateclient.Call[commonmodel.ExchangeRateSnapshot](ctx, p.client, serviceName, "GetExchangeRates", params)
+	return restatec.Call[commonmodel.ExchangeRateSnapshot](ctx, p.call, serviceName, "GetExchangeRates", params)
 }
 
 func (p *CommonRestateClient) ConvertAmount(ctx context.Context, params ConvertAmountParams) (int64, error) {
-	return restateclient.Call[int64](ctx, p.client, serviceName, "ConvertAmount", params)
+	return restatec.Call[int64](ctx, p.call, serviceName, "ConvertAmount", params)
 }
 
 func (p *CommonRestateClient) IsSupportedCurrency(ctx context.Context, currency string) (bool, error) {
-	return restateclient.Call[bool](ctx, p.client, serviceName, "IsSupportedCurrency", currency)
+	return restatec.Call[bool](ctx, p.call, serviceName, "IsSupportedCurrency", currency)
+}
+
+// CommonRestateSender implements CommonBizSender.
+type CommonRestateSender struct {
+	client *restatec.SendClient
+}
+
+var _ CommonBizSender = (*CommonRestateSender)(nil)
+
+func (s *CommonRestateSender) GetFileURL(ctx context.Context, params GetFileURLParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetFileURL", params)
+}
+
+func (s *CommonRestateSender) ListOption(ctx context.Context, params ListOptionParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListOption", params)
+}
+
+func (s *CommonRestateSender) UpsertOptions(ctx context.Context, params UpsertOptionsParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "UpsertOptions", params)
+}
+
+func (s *CommonRestateSender) DeleteOptions(ctx context.Context, params DeleteOptionParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "DeleteOptions", params)
+}
+
+func (s *CommonRestateSender) UpdateResources(ctx context.Context, params UpdateResourcesParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "UpdateResources", params)
+}
+
+func (s *CommonRestateSender) DeleteResources(ctx context.Context, params DeleteResourcesParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "DeleteResources", params)
+}
+
+func (s *CommonRestateSender) GetResources(ctx context.Context, params GetResourcesParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetResources", params)
+}
+
+func (s *CommonRestateSender) GetResourcesByIDs(ctx context.Context, resourceIDs []uuid.UUID) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetResourcesByIDs", resourceIDs)
+}
+
+func (s *CommonRestateSender) GetResourceByID(ctx context.Context, resourceID uuid.UUID) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetResourceByID", resourceID)
+}
+
+func (s *CommonRestateSender) ReverseGeocode(ctx context.Context, params ReverseGeocodeParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ReverseGeocode", params)
+}
+
+func (s *CommonRestateSender) ForwardGeocode(ctx context.Context, params ForwardGeocodeParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ForwardGeocode", params)
+}
+
+func (s *CommonRestateSender) SearchGeocode(ctx context.Context, params SearchGeocodeParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "SearchGeocode", params)
+}
+
+func (s *CommonRestateSender) ResolveCountry(ctx context.Context, address string) error {
+	return restatec.Send(ctx, s.client, serviceName, "ResolveCountry", address)
+}
+
+func (s *CommonRestateSender) PushEvent(ctx context.Context, params PushEventParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "PushEvent", params)
+}
+
+func (s *CommonRestateSender) GetExchangeRates(ctx context.Context, params GetExchangeRatesParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetExchangeRates", params)
+}
+
+func (s *CommonRestateSender) ConvertAmount(ctx context.Context, params ConvertAmountParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ConvertAmount", params)
+}
+
+func (s *CommonRestateSender) IsSupportedCurrency(ctx context.Context, currency string) error {
+	return restatec.Send(ctx, s.client, serviceName, "IsSupportedCurrency", currency)
+}
+
+// CommonRestateFuture implements CommonBizFuture via the Restate SDK.
+type CommonRestateFuture struct{}
+
+var _ CommonBizFuture = (*CommonRestateFuture)(nil)
+
+func (f *CommonRestateFuture) GetFileURL(rctx restate.Context, params GetFileURLParams) restate.ResponseFuture[string] {
+	return restate.Service[string](rctx, serviceName, "GetFileURL").RequestFuture(params)
+}
+
+func (f *CommonRestateFuture) ListOption(rctx restate.Context, params ListOptionParams) restate.ResponseFuture[[]OptionListItem] {
+	return restate.Service[[]OptionListItem](rctx, serviceName, "ListOption").RequestFuture(params)
+}
+
+func (f *CommonRestateFuture) UpsertOptions(rctx restate.Context, params UpsertOptionsParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "UpsertOptions").RequestFuture(params)
+}
+
+func (f *CommonRestateFuture) DeleteOptions(rctx restate.Context, params DeleteOptionParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "DeleteOptions").RequestFuture(params)
+}
+
+func (f *CommonRestateFuture) UpdateResources(rctx restate.Context, params UpdateResourcesParams) restate.ResponseFuture[[]commonmodel.Resource] {
+	return restate.Service[[]commonmodel.Resource](rctx, serviceName, "UpdateResources").RequestFuture(params)
+}
+
+func (f *CommonRestateFuture) DeleteResources(rctx restate.Context, params DeleteResourcesParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "DeleteResources").RequestFuture(params)
+}
+
+func (f *CommonRestateFuture) GetResources(rctx restate.Context, params GetResourcesParams) restate.ResponseFuture[map[uuid.UUID][]commonmodel.Resource] {
+	return restate.Service[map[uuid.UUID][]commonmodel.Resource](rctx, serviceName, "GetResources").RequestFuture(params)
+}
+
+func (f *CommonRestateFuture) GetResourcesByIDs(rctx restate.Context, resourceIDs []uuid.UUID) restate.ResponseFuture[map[uuid.UUID]commonmodel.Resource] {
+	return restate.Service[map[uuid.UUID]commonmodel.Resource](rctx, serviceName, "GetResourcesByIDs").RequestFuture(resourceIDs)
+}
+
+func (f *CommonRestateFuture) GetResourceByID(rctx restate.Context, resourceID uuid.UUID) restate.ResponseFuture[*commonmodel.Resource] {
+	return restate.Service[*commonmodel.Resource](rctx, serviceName, "GetResourceByID").RequestFuture(resourceID)
+}
+
+func (f *CommonRestateFuture) ReverseGeocode(rctx restate.Context, params ReverseGeocodeParams) restate.ResponseFuture[geocoding.Result] {
+	return restate.Service[geocoding.Result](rctx, serviceName, "ReverseGeocode").RequestFuture(params)
+}
+
+func (f *CommonRestateFuture) ForwardGeocode(rctx restate.Context, params ForwardGeocodeParams) restate.ResponseFuture[geocoding.Result] {
+	return restate.Service[geocoding.Result](rctx, serviceName, "ForwardGeocode").RequestFuture(params)
+}
+
+func (f *CommonRestateFuture) SearchGeocode(rctx restate.Context, params SearchGeocodeParams) restate.ResponseFuture[[]geocoding.Result] {
+	return restate.Service[[]geocoding.Result](rctx, serviceName, "SearchGeocode").RequestFuture(params)
+}
+
+func (f *CommonRestateFuture) ResolveCountry(rctx restate.Context, address string) restate.ResponseFuture[string] {
+	return restate.Service[string](rctx, serviceName, "ResolveCountry").RequestFuture(address)
+}
+
+func (f *CommonRestateFuture) PushEvent(rctx restate.Context, params PushEventParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "PushEvent").RequestFuture(params)
+}
+
+func (f *CommonRestateFuture) GetExchangeRates(rctx restate.Context, params GetExchangeRatesParams) restate.ResponseFuture[commonmodel.ExchangeRateSnapshot] {
+	return restate.Service[commonmodel.ExchangeRateSnapshot](rctx, serviceName, "GetExchangeRates").RequestFuture(params)
+}
+
+func (f *CommonRestateFuture) ConvertAmount(rctx restate.Context, params ConvertAmountParams) restate.ResponseFuture[int64] {
+	return restate.Service[int64](rctx, serviceName, "ConvertAmount").RequestFuture(params)
+}
+
+func (f *CommonRestateFuture) IsSupportedCurrency(rctx restate.Context, currency string) restate.ResponseFuture[bool] {
+	return restate.Service[bool](rctx, serviceName, "IsSupportedCurrency").RequestFuture(currency)
 }

@@ -15,9 +15,9 @@ import (
 )
 
 type ListProductSkuRequest struct {
-	SpuID      uuid.UUID  `query:"spu_id"     validate:"omitempty"`
-	PriceFrom  null.Int64 `query:"price_from" validate:"omitnil,gt=0"`
-	PriceTo    null.Int64 `query:"price_to"   validate:"omitnil,gt=0,gtefield=PriceFrom"`
+	SpuID           uuid.UUID  `query:"spu_id"     validate:"omitempty"`
+	PriceFrom       null.Int64 `query:"price_from" validate:"omitnil,gt=0"`
+	PriceTo         null.Int64 `query:"price_to"   validate:"omitnil,gt=0,gtefield=PriceFrom"`
 	SharedPackaging null.Bool  `query:"combinable" validate:"omitnil"`
 }
 
@@ -31,9 +31,9 @@ func (h *Handler) ListProductSku(c echo.Context) error {
 	}
 
 	result, err := h.biz.ListProductSku(c.Request().Context(), catalogbiz.ListProductSkuParams{
-		SpuID:      []uuid.UUID{req.SpuID},
-		PriceFrom:  req.PriceFrom,
-		PriceTo:    req.PriceTo,
+		SpuID:           []uuid.UUID{req.SpuID},
+		PriceFrom:       req.PriceFrom,
+		PriceTo:         req.PriceTo,
 		SharedPackaging: req.SharedPackaging,
 	})
 	if err != nil {
@@ -43,11 +43,11 @@ func (h *Handler) ListProductSku(c echo.Context) error {
 }
 
 type CreateProductSkuRequest struct {
-	SpuID          uuid.UUID                       `json:"spu_id"          validate:"required"`
-	Price          int64                           `json:"price"           validate:"required,gt=0"`
-	SharedPackaging     bool                            `json:"combinable"      validate:"omitempty"`
-	Attributes     []catalogmodel.ProductAttribute `json:"attributes"      validate:"omitempty,dive"`
-	PackageDetails json.RawMessage                 `json:"package_details" validate:"required"`
+	SpuID           uuid.UUID                       `json:"spu_id"          validate:"required"`
+	Price           int64                           `json:"price"           validate:"required,gt=0"`
+	SharedPackaging bool                            `json:"combinable"      validate:"omitempty"`
+	Attributes      []catalogmodel.ProductAttribute `json:"attributes"      validate:"omitempty,dive"`
+	PackageDetails  json.RawMessage                 `json:"package_details" validate:"required"`
 }
 
 func (h *Handler) CreateProductSku(c echo.Context) error {
@@ -65,12 +65,12 @@ func (h *Handler) CreateProductSku(c echo.Context) error {
 	}
 
 	result, err := h.biz.CreateProductSku(c.Request().Context(), catalogbiz.CreateProductSkuParams{
-		Account:        claims.Account,
-		SpuID:          req.SpuID,
-		Price:          req.Price,
-		SharedPackaging:     req.SharedPackaging,
-		Attributes:     req.Attributes,
-		PackageDetails: req.PackageDetails,
+		Account:         claims.Account,
+		SpuID:           req.SpuID,
+		Price:           req.Price,
+		SharedPackaging: req.SharedPackaging,
+		Attributes:      req.Attributes,
+		PackageDetails:  req.PackageDetails,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
@@ -79,11 +79,11 @@ func (h *Handler) CreateProductSku(c echo.Context) error {
 }
 
 type UpdateProductSkuRequest struct {
-	ID             uuid.UUID                       `json:"id"              validate:"required"`
-	Price          null.Int                        `json:"price"           validate:"omitnil,gt=0"`
-	SharedPackaging     null.Bool                       `json:"combinable"      validate:"omitnil"`
-	Attributes     []catalogmodel.ProductAttribute `json:"attributes"      validate:"omitempty,dive"`
-	PackageDetails json.RawMessage                 `json:"package_details" validate:"omitempty"`
+	ID              uuid.UUID                       `json:"id"              validate:"required"`
+	Price           null.Int                        `json:"price"           validate:"omitnil,gt=0"`
+	SharedPackaging null.Bool                       `json:"combinable"      validate:"omitnil"`
+	Attributes      []catalogmodel.ProductAttribute `json:"attributes"      validate:"omitempty,dive"`
+	PackageDetails  json.RawMessage                 `json:"package_details" validate:"omitempty"`
 }
 
 func (h *Handler) UpdateProductSku(c echo.Context) error {
@@ -101,12 +101,12 @@ func (h *Handler) UpdateProductSku(c echo.Context) error {
 	}
 
 	result, err := h.biz.UpdateProductSku(c.Request().Context(), catalogbiz.UpdateProductSkuParams{
-		Account:        claims.Account,
-		ID:             req.ID,
-		Price:          req.Price,
-		SharedPackaging:     req.SharedPackaging,
-		Attributes:     req.Attributes,
-		PackageDetails: req.PackageDetails,
+		Account:         claims.Account,
+		ID:              req.ID,
+		Price:           req.Price,
+		SharedPackaging: req.SharedPackaging,
+		Attributes:      req.Attributes,
+		PackageDetails:  req.PackageDetails,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)

@@ -139,6 +139,19 @@ sql:
 overrides:
   go:
     overrides:
+      # pgvector sparse (catalog only; sqlc has no native sparsevec mapping)
+      - db_type: "sparsevec"
+        nullable: false
+        go_type:
+          import: "github.com/pgvector/pgvector-go"
+          type: "SparseVector"
+      - db_type: "sparsevec"
+        nullable: true
+        go_type:
+          import: "github.com/pgvector/pgvector-go"
+          type: "SparseVector"
+          pointer: true
+
       # UUID
       - db_type: "uuid"
         nullable: false

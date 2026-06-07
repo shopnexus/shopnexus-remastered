@@ -19,6 +19,8 @@ type Client interface {
 	ZRangeByScore(ctx context.Context, key string, dest any, opts ZRangeOptions) error
 	ZRevRangeByScore(ctx context.Context, key string, dest any, opts ZRangeOptions) error
 
+	Ping() error
+	Close() error
 }
 
 // ZRangeOptions defines optional options for range queries on sorted sets.

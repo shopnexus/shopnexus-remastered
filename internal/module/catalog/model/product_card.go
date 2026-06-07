@@ -15,19 +15,19 @@ type ProductCard struct {
 	CategoryID  uuid.UUID `json:"category_id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
-	IsEnabled    bool      `json:"is_active"`
+	IsEnabled   bool      `json:"is_active"`
 	Currency    string    `json:"currency"`
 	DateCreated time.Time `json:"date_created"`
 	DateUpdated time.Time `json:"date_updated"`
 	DateDeleted null.Time `json:"date_deleted"`
 
-	Price         int64 `json:"price"`
-	OriginalPrice int64 `json:"original_price"`
-	Rating        Rating                  `json:"rating"`
-	IsFavorite    bool                    `json:"is_favorite"`
-	Resources     []commonmodel.Resource  `json:"resources"`
-	Promotions    []ProductCardPromo      `json:"promotions"`
-	Sold          int64                   `json:"sold"`
+	Price         int64                  `json:"price"`
+	OriginalPrice int64                  `json:"original_price"`
+	Rating        Rating                 `json:"rating"`
+	IsFavorite    bool                   `json:"is_favorite"`
+	Resources     []commonmodel.Resource `json:"resources"`
+	Promotions    []ProductCardPromo     `json:"promotions"`
+	Sold          int64                  `json:"sold"`
 }
 
 type ProductCardPromo struct {

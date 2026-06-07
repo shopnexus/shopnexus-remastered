@@ -259,6 +259,7 @@ linters:
         - ^os/exec.Cmd$
         - ^reflect.StructField$
         # public libs
+        - ^github.com/redis/rueidis.ClientOption$
         - ^github.com/Shopify/sarama.Config$
         - ^github.com/Shopify/sarama.ProducerMessage$
         - ^github.com/mitchellh/mapstructure.DecoderConfig$

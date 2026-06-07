@@ -1,6 +1,7 @@
 package response
 
 import (
+	"encoding/json"
 	stderrors "errors"
 	"fmt"
 	"log/slog"
@@ -11,7 +12,6 @@ import (
 	"shopnexus-server/internal/shared/paginate"
 	"strings"
 
-	"github.com/bytedance/sonic"
 	restate "github.com/restatedev/sdk-go"
 )
 
@@ -48,7 +48,7 @@ func writeError(w http.ResponseWriter, httpCode int, err error) error {
 		}
 	}
 
-	data, marshalErr := sonic.Marshal(CommonResponse{
+	data, marshalErr := json.Marshal(CommonResponse{
 		Error: &e,
 	})
 	if marshalErr != nil {

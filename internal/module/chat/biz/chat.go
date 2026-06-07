@@ -11,6 +11,7 @@ import (
 	chatmodel "shopnexus-server/internal/module/chat/model"
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	"shopnexus-server/internal/shared/paginate"
+	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
@@ -27,6 +28,9 @@ func (b *ChatHandler) CreateConversation(
 	params CreateConversationParams,
 ) (chatdb.ChatConversation, error) {
 	var zero chatdb.ChatConversation
+	if err := validator.Validate(params); err != nil {
+		return zero, fmt.Errorf("validate create conversation params: %w", err)
+	}
 
 	existing, err := b.storage.Querier().GetConversationByParticipants(ctx, chatdb.GetConversationByParticipantsParams{
 		BuyerID:  params.Account.ID,
@@ -42,7 +46,7 @@ func (b *ChatHandler) CreateConversation(
 		SellerID: params.SellerID,
 	})
 	if err != nil {
-		return zero, fmt.Errorf("create conversation: %w", err)
+		return zero, fmt.Errorf("db create default conversation: %w", err)
 	}
 
 	return result, nil
@@ -50,12 +54,17 @@ func (b *ChatHandler) CreateConversation(
 
 // GetConversation returns a conversation by its ID.
 func (b *ChatHandler) GetConversation(ctx restate.Context, id uuid.UUID) (chatdb.ChatConversation, error) {
-	return b.storage.Querier().GetConversationByID(ctx, id)
+	conv, err := b.storage.Querier().GetConversationByID(ctx, id)
+	if err != nil {
+		return chatdb.ChatConversation{}, fmt.Errorf("db get conversation by id: %w", err)
+	}
+	return conv, nil
 }
 
 type ListConversationParams struct {
-	Account accountmodel.AuthenticatedAccount
 	paginate.Params
+
+	Account accountmodel.AuthenticatedAccount
 }
 
 // ListConversation returns a paginated list of conversations for the authenticated account.
@@ -64,6 +73,9 @@ func (b *ChatHandler) ListConversation(
 	params ListConversationParams,
 ) (paginate.PaginateResult[chatdb.ChatConversation], error) {
 	var zero paginate.PaginateResult[chatdb.ChatConversation]
+	if err := validator.Validate(params); err != nil {
+		return zero, fmt.Errorf("validate list conversation params: %w", err)
+	}
 
 	conversations, err := b.storage.Querier().ListConversationByAccount(ctx, chatdb.ListConversationByAccountParams{
 		AccountID: params.Account.ID,
@@ -71,12 +83,12 @@ func (b *ChatHandler) ListConversation(
 		Offset:    params.Offset().Int32,
 	})
 	if err != nil {
-		return zero, fmt.Errorf("list conversations: %w", err)
+		return zero, fmt.Errorf("db list conversation by account: %w", err)
 	}
 
 	total, err := b.storage.Querier().CountConversationByAccount(ctx, params.Account.ID)
 	if err != nil {
-		return zero, fmt.Errorf("count conversations: %w", err)
+		return zero, fmt.Errorf("db count conversation by account: %w", err)
 	}
 
 	return paginate.PaginateResult[chatdb.ChatConversation]{
@@ -97,6 +109,9 @@ type SendMessageParams struct {
 // SendMessage sends a message in a conversation the account participates in.
 func (b *ChatHandler) SendMessage(ctx restate.Context, params SendMessageParams) (chatdb.ChatMessage, error) {
 	var zero chatdb.ChatMessage
+	if err := validator.Validate(params); err != nil {
+		return zero, fmt.Errorf("validate send message params: %w", err)
+	}
 
 	conv, err := b.storage.Querier().GetConversationByID(ctx, params.ConversationID)
 	if err != nil {
@@ -115,11 +130,11 @@ func (b *ChatHandler) SendMessage(ctx restate.Context, params SendMessageParams)
 		Data:           params.Metadata,
 	})
 	if err != nil {
-		return zero, fmt.Errorf("create message: %w", err)
+		return zero, fmt.Errorf("db create chat message: %w", err)
 	}
 
 	if err := b.storage.Querier().UpdateConversationLastMessage(ctx, params.ConversationID); err != nil {
-		return zero, fmt.Errorf("update conversation last message: %w", err)
+		return zero, fmt.Errorf("db update conversation last message: %w", err)
 	}
 
 	// Push new_message to both participants via SSE
@@ -128,20 +143,23 @@ func (b *ChatHandler) SendMessage(ctx restate.Context, params SendMessageParams)
 		recipientID = conv.SellerID
 	}
 	for _, id := range []uuid.UUID{params.Account.ID, recipientID} {
-		restate.ServiceSend(ctx, "Common", "PushEvent").Send(commonbiz.PushEventParams{
+		if err = b.common.Send().PushEvent(ctx, commonbiz.PushEventParams{
 			AccountID: id,
 			Type:      commonbiz.SSENewMessage,
 			Data:      msg,
-		})
+		}); err != nil {
+			return zero, fmt.Errorf("push new message event: %w", err)
+		}
 	}
 
 	return msg, nil
 }
 
 type ListMessageParams struct {
+	paginate.Params
+
 	Account        accountmodel.AuthenticatedAccount
 	ConversationID uuid.UUID `validate:"required"`
-	paginate.Params
 }
 
 // ListMessage returns a paginated list of messages in a conversation.
@@ -150,6 +168,9 @@ func (b *ChatHandler) ListMessage(
 	params ListMessageParams,
 ) (paginate.PaginateResult[chatdb.ChatMessage], error) {
 	var zero paginate.PaginateResult[chatdb.ChatMessage]
+	if err := validator.Validate(params); err != nil {
+		return zero, fmt.Errorf("validate list message params: %w", err)
+	}
 	params.Params = params.Constrain()
 
 	conv, err := b.storage.Querier().GetConversationByID(ctx, params.ConversationID)
@@ -167,12 +188,12 @@ func (b *ChatHandler) ListMessage(
 		Offset:         params.Offset().Int32,
 	})
 	if err != nil {
-		return zero, fmt.Errorf("list messages: %w", err)
+		return zero, fmt.Errorf("db list message by conversation: %w", err)
 	}
 
 	total, err := b.storage.Querier().CountMessageByConversation(ctx, params.ConversationID)
 	if err != nil {
-		return zero, fmt.Errorf("count messages: %w", err)
+		return zero, fmt.Errorf("db count message by conversation: %w", err)
 	}
 
 	return paginate.PaginateResult[chatdb.ChatMessage]{
@@ -189,11 +210,14 @@ type MarkReadParams struct {
 
 // MarkRead marks all messages in a conversation as read for the authenticated account.
 func (b *ChatHandler) MarkRead(ctx restate.Context, params MarkReadParams) error {
+	if err := validator.Validate(params); err != nil {
+		return fmt.Errorf("validate mark read params: %w", err)
+	}
 	if err := b.storage.Querier().MarkMessagesRead(ctx, chatdb.MarkMessagesReadParams{
 		ConversationID: params.ConversationID,
 		ReaderID:       params.Account.ID,
 	}); err != nil {
-		return err
+		return fmt.Errorf("db mark messages read: %w", err)
 	}
 
 	// Push read_receipt to the other participant via SSE
@@ -203,14 +227,16 @@ func (b *ChatHandler) MarkRead(ctx restate.Context, params MarkReadParams) error
 		if recipientID == params.Account.ID {
 			recipientID = conv.SellerID
 		}
-		restate.ServiceSend(ctx, "Common", "PushEvent").Send(commonbiz.PushEventParams{
+		if err = b.common.Send().PushEvent(ctx, commonbiz.PushEventParams{
 			AccountID: recipientID,
 			Type:      commonbiz.SSEReadReceipt,
 			Data: map[string]any{
 				"conversation_id": params.ConversationID,
 				"reader_id":       params.Account.ID,
 			},
-		})
+		}); err != nil {
+			return fmt.Errorf("push read receipt event: %w", err)
+		}
 	}
 
 	return nil

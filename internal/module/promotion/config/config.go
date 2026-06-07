@@ -3,10 +3,7 @@ package promotionconfig
 import "shopnexus-server/config"
 
 type Config struct {
-	Postgres config.Postgres `mapstructure:"postgres"`
-	Redis    config.Redis    `mapstructure:"redis"`
-	Log      config.Log      `mapstructure:"log"`
-	Restate  config.Restate  `mapstructure:"restate"`
+	config.Shared `mapstructure:",squash"`
 }
 
 func NewConfig() (*Config, error) {

@@ -35,7 +35,7 @@ func (b *CatalogHandler) ListCategory(
 	var zero paginate.PaginateResult[catalogmodel.Category]
 
 	if err := validator.Validate(params); err != nil {
-		return zero, err
+		return zero, fmt.Errorf("validate list category params: %w", err)
 	}
 
 	dbCategories, err := b.storage.Querier().SearchCategory(ctx, catalogdb.SearchCategoryParams{
@@ -45,7 +45,7 @@ func (b *CatalogHandler) ListCategory(
 		Offset: params.Offset(),
 	})
 	if err != nil {
-		return zero, err
+		return zero, fmt.Errorf("db search category: %w", err)
 	}
 
 	var total null.Int64

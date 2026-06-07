@@ -7,12 +7,9 @@ import (
 )
 
 type Config struct {
-	Postgres  config.Postgres `mapstructure:"postgres"`
-	Redis     config.Redis    `mapstructure:"redis"`
-	Log       config.Log      `mapstructure:"log"`
-	Restate   config.Restate  `mapstructure:"restate"`
-	Exchange  Exchange        `mapstructure:"exchange"`
-	Filestore Filestore       `mapstructure:"filestore"`
+	config.Shared `mapstructure:",squash"`
+	Exchange      Exchange  `mapstructure:"exchange"`
+	Filestore     Filestore `mapstructure:"filestore"`
 }
 
 type Exchange struct {

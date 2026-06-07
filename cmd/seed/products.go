@@ -210,7 +210,6 @@ func processProduct(
 		RefType:          catalogdb.CatalogSearchSyncRefTypeProductSpu,
 		RefID:            spu.ID,
 		IsStaleEmbedding: true,
-		IsStaleMetadata:  true,
 		DateCreated:      time.Now(),
 		DateUpdated:      time.Now(),
 	})

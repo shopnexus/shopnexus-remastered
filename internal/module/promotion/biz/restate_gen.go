@@ -4,47 +4,145 @@ package promotionbiz
 
 import (
 	"context"
-	restateclient "shopnexus-server/internal/infras/restate"
+	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	promotionmodel "shopnexus-server/internal/module/promotion/model"
 	"shopnexus-server/internal/shared/paginate"
-
-	"github.com/google/uuid"
+	restatec "shopnexus-server/internal/shared/restate"
 )
 
 const serviceName = "Promotion"
 
-// PromotionRestateClient implements PromotionBiz via Restate HTTP ingress.
-type PromotionRestateClient struct {
-	client *restateclient.Client
+// PromotionBizSender mirrors PromotionBiz as one-way (fire-and-forget) calls; outputs are dropped.
+type PromotionBizSender interface {
+	GetPromotion(ctx context.Context, params GetPromotionParams) error
+	ListPromotion(ctx context.Context, params ListPromotionParams) error
+	CreatePromotion(ctx context.Context, params CreatePromotionParams) error
+	UpdatePromotion(ctx context.Context, params UpdatePromotionParams) error
+	DeletePromotion(ctx context.Context, params DeletePromotionParams) error
+	CalculatePromotedPrices(ctx context.Context, params CalculatePromotedPricesParams) error
 }
 
-var _ PromotionBiz = (*PromotionRestateClient)(nil)
+// PromotionBizFuture mirrors PromotionBiz returning response futures for racing
+// or parallel calls. Only usable inside a Restate handler context.
+type PromotionBizFuture interface {
+	GetPromotion(rctx restate.Context, params GetPromotionParams) restate.ResponseFuture[promotionmodel.Promotion]
+	ListPromotion(rctx restate.Context, params ListPromotionParams) restate.ResponseFuture[paginate.PaginateResult[promotionmodel.Promotion]]
+	CreatePromotion(rctx restate.Context, params CreatePromotionParams) restate.ResponseFuture[promotionmodel.Promotion]
+	UpdatePromotion(rctx restate.Context, params UpdatePromotionParams) restate.ResponseFuture[promotionmodel.Promotion]
+	DeletePromotion(rctx restate.Context, params DeletePromotionParams) restate.ResponseFuture[restate.Void]
+	CalculatePromotedPrices(rctx restate.Context, params CalculatePromotedPricesParams) restate.ResponseFuture[map[uuid.UUID]*catalogmodel.OrderPrice]
+}
+
+// PromotionBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
+type PromotionBizClient interface {
+	PromotionBiz
+	Send() PromotionBizSender
+	Future() PromotionBizFuture
+}
+
+// PromotionRestateClient implements PromotionBizClient via Restate HTTP ingress.
+type PromotionRestateClient struct {
+	call   *restatec.CallClient
+	send   *PromotionRestateSender
+	future *PromotionRestateFuture
+}
+
+var _ PromotionBizClient = (*PromotionRestateClient)(nil)
 
 func NewPromotionRestateClient(restateIngressURL string) *PromotionRestateClient {
-	return &PromotionRestateClient{client: restateclient.NewClient(restateIngressURL)}
+	return &PromotionRestateClient{
+		call:   restatec.NewCallClient(restateIngressURL),
+		send:   &PromotionRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &PromotionRestateFuture{},
+	}
 }
 
+func (p *PromotionRestateClient) Send() PromotionBizSender { return p.send }
+
+func (p *PromotionRestateClient) Future() PromotionBizFuture { return p.future }
+
 func (p *PromotionRestateClient) GetPromotion(ctx context.Context, params GetPromotionParams) (promotionmodel.Promotion, error) {
-	return restateclient.Call[promotionmodel.Promotion](ctx, p.client, serviceName, "GetPromotion", params)
+	return restatec.Call[promotionmodel.Promotion](ctx, p.call, serviceName, "GetPromotion", params)
 }
 
 func (p *PromotionRestateClient) ListPromotion(ctx context.Context, params ListPromotionParams) (paginate.PaginateResult[promotionmodel.Promotion], error) {
-	return restateclient.Call[paginate.PaginateResult[promotionmodel.Promotion]](ctx, p.client, serviceName, "ListPromotion", params)
+	return restatec.Call[paginate.PaginateResult[promotionmodel.Promotion]](ctx, p.call, serviceName, "ListPromotion", params)
 }
 
 func (p *PromotionRestateClient) CreatePromotion(ctx context.Context, params CreatePromotionParams) (promotionmodel.Promotion, error) {
-	return restateclient.Call[promotionmodel.Promotion](ctx, p.client, serviceName, "CreatePromotion", params)
+	return restatec.Call[promotionmodel.Promotion](ctx, p.call, serviceName, "CreatePromotion", params)
 }
 
 func (p *PromotionRestateClient) UpdatePromotion(ctx context.Context, params UpdatePromotionParams) (promotionmodel.Promotion, error) {
-	return restateclient.Call[promotionmodel.Promotion](ctx, p.client, serviceName, "UpdatePromotion", params)
+	return restatec.Call[promotionmodel.Promotion](ctx, p.call, serviceName, "UpdatePromotion", params)
 }
 
 func (p *PromotionRestateClient) DeletePromotion(ctx context.Context, params DeletePromotionParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "DeletePromotion", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "DeletePromotion", params)
 }
 
 func (p *PromotionRestateClient) CalculatePromotedPrices(ctx context.Context, params CalculatePromotedPricesParams) (map[uuid.UUID]*catalogmodel.OrderPrice, error) {
-	return restateclient.Call[map[uuid.UUID]*catalogmodel.OrderPrice](ctx, p.client, serviceName, "CalculatePromotedPrices", params)
+	return restatec.Call[map[uuid.UUID]*catalogmodel.OrderPrice](ctx, p.call, serviceName, "CalculatePromotedPrices", params)
+}
+
+// PromotionRestateSender implements PromotionBizSender.
+type PromotionRestateSender struct {
+	client *restatec.SendClient
+}
+
+var _ PromotionBizSender = (*PromotionRestateSender)(nil)
+
+func (s *PromotionRestateSender) GetPromotion(ctx context.Context, params GetPromotionParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetPromotion", params)
+}
+
+func (s *PromotionRestateSender) ListPromotion(ctx context.Context, params ListPromotionParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListPromotion", params)
+}
+
+func (s *PromotionRestateSender) CreatePromotion(ctx context.Context, params CreatePromotionParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "CreatePromotion", params)
+}
+
+func (s *PromotionRestateSender) UpdatePromotion(ctx context.Context, params UpdatePromotionParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "UpdatePromotion", params)
+}
+
+func (s *PromotionRestateSender) DeletePromotion(ctx context.Context, params DeletePromotionParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "DeletePromotion", params)
+}
+
+func (s *PromotionRestateSender) CalculatePromotedPrices(ctx context.Context, params CalculatePromotedPricesParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "CalculatePromotedPrices", params)
+}
+
+// PromotionRestateFuture implements PromotionBizFuture via the Restate SDK.
+type PromotionRestateFuture struct{}
+
+var _ PromotionBizFuture = (*PromotionRestateFuture)(nil)
+
+func (f *PromotionRestateFuture) GetPromotion(rctx restate.Context, params GetPromotionParams) restate.ResponseFuture[promotionmodel.Promotion] {
+	return restate.Service[promotionmodel.Promotion](rctx, serviceName, "GetPromotion").RequestFuture(params)
+}
+
+func (f *PromotionRestateFuture) ListPromotion(rctx restate.Context, params ListPromotionParams) restate.ResponseFuture[paginate.PaginateResult[promotionmodel.Promotion]] {
+	return restate.Service[paginate.PaginateResult[promotionmodel.Promotion]](rctx, serviceName, "ListPromotion").RequestFuture(params)
+}
+
+func (f *PromotionRestateFuture) CreatePromotion(rctx restate.Context, params CreatePromotionParams) restate.ResponseFuture[promotionmodel.Promotion] {
+	return restate.Service[promotionmodel.Promotion](rctx, serviceName, "CreatePromotion").RequestFuture(params)
+}
+
+func (f *PromotionRestateFuture) UpdatePromotion(rctx restate.Context, params UpdatePromotionParams) restate.ResponseFuture[promotionmodel.Promotion] {
+	return restate.Service[promotionmodel.Promotion](rctx, serviceName, "UpdatePromotion").RequestFuture(params)
+}
+
+func (f *PromotionRestateFuture) DeletePromotion(rctx restate.Context, params DeletePromotionParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "DeletePromotion").RequestFuture(params)
+}
+
+func (f *PromotionRestateFuture) CalculatePromotedPrices(rctx restate.Context, params CalculatePromotedPricesParams) restate.ResponseFuture[map[uuid.UUID]*catalogmodel.OrderPrice] {
+	return restate.Service[map[uuid.UUID]*catalogmodel.OrderPrice](rctx, serviceName, "CalculatePromotedPrices").RequestFuture(params)
 }

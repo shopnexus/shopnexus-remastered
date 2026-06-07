@@ -19,11 +19,11 @@ import (
 
 // Handler handles HTTP requests for the promotion module.
 type Handler struct {
-	biz promotionbiz.PromotionBiz
+	biz promotionbiz.PromotionBizClient
 }
 
 // NewHandler registers promotion module routes and returns the handler.
-func NewHandler(e *echo.Echo, biz promotionbiz.PromotionBiz) *Handler {
+func NewHandler(e *echo.Echo, biz promotionbiz.PromotionBizClient) *Handler {
 	h := &Handler{biz: biz}
 
 	api := e.Group("/api/v1/catalog/promotion")
@@ -105,18 +105,18 @@ func (h *Handler) ListPromotion(c echo.Context) error {
 // --- Create ---
 
 type CreatePromotionRequest struct {
-	Code        string                    `json:"code"         validate:"required"`
-	Type        promotionmodel.Type       `json:"type"         validate:"required"`
-	Title       string                    `json:"title"        validate:"required"`
-	Description null.String               `json:"description"  validate:"omitnil"`
-	IsEnabled   bool                      `json:"is_enabled"`
-	AutoApply   bool                      `json:"auto_apply"`
-	Group       string                    `json:"group"        validate:"required"`
-	Priority    int32                     `json:"priority"`
-	Data        json.RawMessage           `json:"data"`
-	DateStarted time.Time                 `json:"date_started" validate:"required"`
-	DateEnded   null.Time                 `json:"date_ended"   validate:"omitnil"`
-	Refs        []PromotionRefRequest     `json:"refs"         validate:"dive"`
+	Code        string                `json:"code"         validate:"required"`
+	Type        promotionmodel.Type   `json:"type"         validate:"required"`
+	Title       string                `json:"title"        validate:"required"`
+	Description null.String           `json:"description"  validate:"omitnil"`
+	IsEnabled   bool                  `json:"is_enabled"`
+	AutoApply   bool                  `json:"auto_apply"`
+	Group       string                `json:"group"        validate:"required"`
+	Priority    int32                 `json:"priority"`
+	Data        json.RawMessage       `json:"data"`
+	DateStarted time.Time             `json:"date_started" validate:"required"`
+	DateEnded   null.Time             `json:"date_ended"   validate:"omitnil"`
+	Refs        []PromotionRefRequest `json:"refs"         validate:"dive"`
 }
 
 func (h *Handler) CreatePromotion(c echo.Context) error {

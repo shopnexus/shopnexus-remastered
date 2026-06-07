@@ -176,32 +176,3 @@ type PromotionSchedule struct {
 	NextRunAt   null.Time `json:"next_run_at"`
 	LastRunAt   null.Time `json:"last_run_at"`
 }
-
-func (n NullPromotionRefType) MarshalJSON() ([]byte, error) {
-	if !n.Valid {
-		return []byte("null"), nil
-	}
-	return json.Marshal(n.PromotionRefType)
-}
-func (n *NullPromotionRefType) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		n.Valid = false
-		return nil
-	}
-	n.Valid = true
-	return json.Unmarshal(b, &n.PromotionRefType)
-}
-func (n NullPromotionType) MarshalJSON() ([]byte, error) {
-	if !n.Valid {
-		return []byte("null"), nil
-	}
-	return json.Marshal(n.PromotionType)
-}
-func (n *NullPromotionType) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		n.Valid = false
-		return nil
-	}
-	n.Valid = true
-	return json.Unmarshal(b, &n.PromotionType)
-}

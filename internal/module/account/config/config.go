@@ -3,11 +3,8 @@ package accountconfig
 import "shopnexus-server/config"
 
 type Config struct {
-	Postgres config.Postgres `mapstructure:"postgres"`
-	Redis    config.Redis    `mapstructure:"redis"`
-	Log      config.Log      `mapstructure:"log"`
-	Restate  config.Restate  `mapstructure:"restate"`
-	JWT      JWT             `mapstructure:"jwt"`
+	config.Shared `mapstructure:",squash"`
+	JWT           JWT `mapstructure:"jwt"`
 }
 
 type JWT struct {

@@ -31,12 +31,9 @@ redis:
 search:
   denseWeight: 0.75
   sparseWeight: 0.25
-  interactionBatchSize: 1
-  metadataSyncInterval: 1s
+  interactionBatchSize: 100
+  interactionLinger: 200ms
   embeddingSyncInterval: 1s
-
-milvus:
-  address: "localhost:19530"
 
 llm:
   provider: python
@@ -51,3 +48,6 @@ llm:
     region: "us-east-1"
     embedModelId: "amazon.titan-embed-text-v2:0"
     chatModelId: "anthropic.claude-3-haiku-20240307-v1:0"
+
+bus:
+  transport: redis

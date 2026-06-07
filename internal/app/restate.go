@@ -38,9 +38,7 @@ func SetupRestate(
 
 	// workflows
 	checkoutWf *orderbiz.CheckoutWorkflow,
-	confirmWf *orderbiz.ConfirmWorkflow,
-	payoutWf *orderbiz.PayoutWorkflow,
-	refundWf *orderbiz.RefundWorkflow,
+	fulfillmentWf *orderbiz.FulfillmentWorkflow,
 ) {
 	bindAddress := fmt.Sprintf(":%s", cfg.Restate.ServicePort)
 
@@ -61,9 +59,7 @@ func SetupRestate(
 		Bind(restate.Reflect(orderBiz, retryPolicy)).
 		Bind(restate.Reflect(promotionBiz, retryPolicy)).
 		Bind(restate.Reflect(checkoutWf, retryPolicy)).
-		Bind(restate.Reflect(confirmWf, retryPolicy)).
-		Bind(restate.Reflect(payoutWf, retryPolicy)).
-		Bind(restate.Reflect(refundWf, retryPolicy))
+		Bind(restate.Reflect(fulfillmentWf, retryPolicy))
 
 	go func() {
 		slog.Info("Starting Restate service endpoint", "address", bindAddress)

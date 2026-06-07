@@ -27,7 +27,6 @@ type ProductSpu struct {
 	Specifications []ProductSpecification `json:"specifications"`
 
 	IsStaleEmbedding bool `json:"is_stale_embedding"`
-	IsStaleMetadata  bool `json:"is_stale_metadata"`
 }
 
 type ProductSku struct {

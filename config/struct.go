@@ -2,6 +2,26 @@ package config
 
 import "time"
 
+// Shared is the infra config block embedded (squashed) into every module's
+// Config. Values stay duplicated per module yaml — each module owns its infra
+// connections — but the struct and the fx providers over it (infras/fxinfra)
+// are written once.
+type Shared struct {
+	Postgres Postgres `mapstructure:"postgres"`
+	Redis    Redis    `mapstructure:"redis"`
+	Log      Log      `mapstructure:"log"`
+	Restate  Restate  `mapstructure:"restate"`
+	Bus      Bus      `mapstructure:"bus"`
+}
+
+// SharedConfig returns itself. Embedding promotes it, so every module Config
+// satisfies HasShared with no extra code. (Named SharedConfig because the
+// embedded field is already named Shared.)
+func (s Shared) SharedConfig() Shared { return s }
+
+// HasShared is the constraint for generic infra providers (infras/fxinfra).
+type HasShared interface{ SharedConfig() Shared }
+
 // Postgres is duplicated into every module's Config. Each module then
 // constructs its own connection pool from its own values — no shared root pool.
 type Postgres struct {
@@ -24,6 +44,13 @@ type Redis struct {
 	Port     string `yaml:"port"     mapstructure:"port"     validate:"required"`
 	Password string `yaml:"password" mapstructure:"password"`
 	DB       int64  `yaml:"db"       mapstructure:"db"       validate:"gte=0"`
+}
+
+// Bus is duplicated into every module's Config; transport picks the event bus
+// backing: "memory" shares the app-wide in-process transport, "redis" runs on
+// Redis Streams over the module's own Redis connection.
+type Bus struct {
+	Transport string `yaml:"transport" mapstructure:"transport" validate:"required,oneof=memory redis"`
 }
 
 // Log is duplicated into every module's Config; each module owns its *slog.Logger.

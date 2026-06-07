@@ -2,18 +2,22 @@ package catalogecho
 
 import (
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
+	orderbiz "shopnexus-server/internal/module/order/biz"
 
 	"github.com/labstack/echo/v4"
 )
 
 // Handler handles HTTP requests for the catalog module.
 type Handler struct {
-	biz catalogbiz.CatalogBiz
+	biz catalogbiz.CatalogBizClient
+	// order backs the review endpoints: purchase validation and reviewable
+	// orders are owned by the order module.
+	order orderbiz.OrderBizClient
 }
 
 // NewHandler registers catalog module routes and returns the handler.
-func NewHandler(e *echo.Echo, biz catalogbiz.CatalogBiz) *Handler {
-	h := &Handler{biz: biz}
+func NewHandler(e *echo.Echo, biz catalogbiz.CatalogBizClient, order orderbiz.OrderBizClient) *Handler {
+	h := &Handler{biz: biz, order: order}
 	api := e.Group("/api/v1/catalog")
 
 	// Friendly APIs

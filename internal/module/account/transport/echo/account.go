@@ -13,11 +13,11 @@ import (
 
 // Handler handles HTTP requests for the account module.
 type Handler struct {
-	biz accountbiz.AccountBiz
+	biz accountbiz.AccountBizClient
 }
 
 // NewHandler registers account module routes and returns the handler.
-func NewHandler(e *echo.Echo, biz accountbiz.AccountBiz) *Handler {
+func NewHandler(e *echo.Echo, biz accountbiz.AccountBizClient) *Handler {
 	h := &Handler{biz: biz}
 	api := e.Group("/api/v1/account")
 

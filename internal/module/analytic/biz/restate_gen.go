@@ -4,43 +4,117 @@ package analyticbiz
 
 import (
 	"context"
-	restateclient "shopnexus-server/internal/infras/restate"
+	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 	analyticdb "shopnexus-server/internal/module/analytic/db/sqlc"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
 	"shopnexus-server/internal/shared/paginate"
-
-	"github.com/google/uuid"
+	restatec "shopnexus-server/internal/shared/restate"
 )
 
 const serviceName = "Analytic"
 
-// AnalyticRestateClient implements AnalyticBiz via Restate HTTP ingress.
-type AnalyticRestateClient struct {
-	client *restateclient.Client
+// AnalyticBizSender mirrors AnalyticBiz as one-way (fire-and-forget) calls; outputs are dropped.
+type AnalyticBizSender interface {
+	CreateInteraction(ctx context.Context, params CreateInteractionParams) error
+	HandlePopularityEvent(ctx context.Context, event analyticmodel.Interaction) error
+	GetProductPopularity(ctx context.Context, spuID uuid.UUID) error
+	ListTopProductPopularity(ctx context.Context, params paginate.Params) error
 }
 
-var _ AnalyticBiz = (*AnalyticRestateClient)(nil)
+// AnalyticBizFuture mirrors AnalyticBiz returning response futures for racing
+// or parallel calls. Only usable inside a Restate handler context.
+type AnalyticBizFuture interface {
+	CreateInteraction(rctx restate.Context, params CreateInteractionParams) restate.ResponseFuture[restate.Void]
+	HandlePopularityEvent(rctx restate.Context, event analyticmodel.Interaction) restate.ResponseFuture[restate.Void]
+	GetProductPopularity(rctx restate.Context, spuID uuid.UUID) restate.ResponseFuture[analyticdb.AnalyticProductPopularity]
+	ListTopProductPopularity(rctx restate.Context, params paginate.Params) restate.ResponseFuture[[]analyticdb.AnalyticProductPopularity]
+}
+
+// AnalyticBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
+type AnalyticBizClient interface {
+	AnalyticBiz
+	Send() AnalyticBizSender
+	Future() AnalyticBizFuture
+}
+
+// AnalyticRestateClient implements AnalyticBizClient via Restate HTTP ingress.
+type AnalyticRestateClient struct {
+	call   *restatec.CallClient
+	send   *AnalyticRestateSender
+	future *AnalyticRestateFuture
+}
+
+var _ AnalyticBizClient = (*AnalyticRestateClient)(nil)
 
 func NewAnalyticRestateClient(restateIngressURL string) *AnalyticRestateClient {
-	return &AnalyticRestateClient{client: restateclient.NewClient(restateIngressURL)}
+	return &AnalyticRestateClient{
+		call:   restatec.NewCallClient(restateIngressURL),
+		send:   &AnalyticRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &AnalyticRestateFuture{},
+	}
 }
 
+func (p *AnalyticRestateClient) Send() AnalyticBizSender { return p.send }
+
+func (p *AnalyticRestateClient) Future() AnalyticBizFuture { return p.future }
+
 func (p *AnalyticRestateClient) CreateInteraction(ctx context.Context, params CreateInteractionParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "CreateInteraction", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "CreateInteraction", params)
 }
 
 func (p *AnalyticRestateClient) HandlePopularityEvent(ctx context.Context, event analyticmodel.Interaction) error {
-	return restateclient.Send(ctx, p.client, serviceName, "HandlePopularityEvent", event)
+	return restatec.CallVoid(ctx, p.call, serviceName, "HandlePopularityEvent", event)
 }
 
 func (p *AnalyticRestateClient) GetProductPopularity(ctx context.Context, spuID uuid.UUID) (analyticdb.AnalyticProductPopularity, error) {
-	return restateclient.Call[analyticdb.AnalyticProductPopularity](ctx, p.client, serviceName, "GetProductPopularity", spuID)
+	return restatec.Call[analyticdb.AnalyticProductPopularity](ctx, p.call, serviceName, "GetProductPopularity", spuID)
 }
 
 func (p *AnalyticRestateClient) ListTopProductPopularity(ctx context.Context, params paginate.Params) ([]analyticdb.AnalyticProductPopularity, error) {
-	return restateclient.Call[[]analyticdb.AnalyticProductPopularity](ctx, p.client, serviceName, "ListTopProductPopularity", params)
+	return restatec.Call[[]analyticdb.AnalyticProductPopularity](ctx, p.call, serviceName, "ListTopProductPopularity", params)
 }
 
-func (p *AnalyticRestateClient) GetSellerDashboard(ctx context.Context, params analyticmodel.GetSellerDashboardParams) (analyticmodel.SellerDashboard, error) {
-	return restateclient.Call[analyticmodel.SellerDashboard](ctx, p.client, serviceName, "GetSellerDashboard", params)
+// AnalyticRestateSender implements AnalyticBizSender.
+type AnalyticRestateSender struct {
+	client *restatec.SendClient
+}
+
+var _ AnalyticBizSender = (*AnalyticRestateSender)(nil)
+
+func (s *AnalyticRestateSender) CreateInteraction(ctx context.Context, params CreateInteractionParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "CreateInteraction", params)
+}
+
+func (s *AnalyticRestateSender) HandlePopularityEvent(ctx context.Context, event analyticmodel.Interaction) error {
+	return restatec.Send(ctx, s.client, serviceName, "HandlePopularityEvent", event)
+}
+
+func (s *AnalyticRestateSender) GetProductPopularity(ctx context.Context, spuID uuid.UUID) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetProductPopularity", spuID)
+}
+
+func (s *AnalyticRestateSender) ListTopProductPopularity(ctx context.Context, params paginate.Params) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListTopProductPopularity", params)
+}
+
+// AnalyticRestateFuture implements AnalyticBizFuture via the Restate SDK.
+type AnalyticRestateFuture struct{}
+
+var _ AnalyticBizFuture = (*AnalyticRestateFuture)(nil)
+
+func (f *AnalyticRestateFuture) CreateInteraction(rctx restate.Context, params CreateInteractionParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "CreateInteraction").RequestFuture(params)
+}
+
+func (f *AnalyticRestateFuture) HandlePopularityEvent(rctx restate.Context, event analyticmodel.Interaction) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "HandlePopularityEvent").RequestFuture(event)
+}
+
+func (f *AnalyticRestateFuture) GetProductPopularity(rctx restate.Context, spuID uuid.UUID) restate.ResponseFuture[analyticdb.AnalyticProductPopularity] {
+	return restate.Service[analyticdb.AnalyticProductPopularity](rctx, serviceName, "GetProductPopularity").RequestFuture(spuID)
+}
+
+func (f *AnalyticRestateFuture) ListTopProductPopularity(rctx restate.Context, params paginate.Params) restate.ResponseFuture[[]analyticdb.AnalyticProductPopularity] {
+	return restate.Service[[]analyticdb.AnalyticProductPopularity](rctx, serviceName, "ListTopProductPopularity").RequestFuture(params)
 }

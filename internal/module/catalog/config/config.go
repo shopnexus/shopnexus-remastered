@@ -7,28 +7,20 @@ import (
 )
 
 type Config struct {
-	Postgres config.Postgres `mapstructure:"postgres"`
-	Redis    config.Redis    `mapstructure:"redis"`
-	Log      config.Log      `mapstructure:"log"`
-	Restate  config.Restate  `mapstructure:"restate"`
-	Search   Search          `mapstructure:"search"`
-	Milvus   Milvus          `mapstructure:"milvus"`
-	LLM      LLM             `mapstructure:"llm"`
+	config.Shared `mapstructure:",squash"`
+	Search        Search `mapstructure:"search"`
+	LLM           LLM    `mapstructure:"llm"`
 }
 
 type Search struct {
 	DenseWeight           float32       `yaml:"denseWeight"           mapstructure:"denseWeight"           validate:"required,gte=0,lte=1"`
 	SparseWeight          float32       `yaml:"sparseWeight"          mapstructure:"sparseWeight"          validate:"required,gte=0,lte=1"`
 	InteractionBatchSize  int           `yaml:"interactionBatchSize"  mapstructure:"interactionBatchSize"  validate:"required,gte=1"`
-	MetadataSyncInterval  time.Duration `yaml:"metadataSyncInterval"  mapstructure:"metadataSyncInterval"  validate:"gte=0"`
+	InteractionLinger     time.Duration `yaml:"interactionLinger"     mapstructure:"interactionLinger"     validate:"gte=0"`
 	EmbeddingSyncInterval time.Duration `yaml:"embeddingSyncInterval" mapstructure:"embeddingSyncInterval" validate:"gte=0"`
 }
 
-// Milvus + LLM: only catalog (search embeddings) needs them.
-type Milvus struct {
-	Address string `yaml:"address" mapstructure:"address" validate:"required"`
-}
-
+// LLM config — only catalog (search embeddings) needs it.
 type LLM struct {
 	Provider string     `yaml:"provider" mapstructure:"provider" validate:"required,oneof=python openai bedrock"`
 	Python   LLMPython  `yaml:"python"   mapstructure:"python"`

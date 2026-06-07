@@ -27,3 +27,6 @@ redis:
   port: "6379"
   password: "peaksehopnexuspassword"
   db: 0
+
+bus:
+  transport: redis

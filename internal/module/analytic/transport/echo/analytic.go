@@ -10,6 +10,7 @@ import (
 
 	analyticbiz "shopnexus-server/internal/module/analytic/biz"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
+	orderbiz "shopnexus-server/internal/module/order/biz"
 	authclaims "shopnexus-server/internal/shared/claims"
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/response"
@@ -17,12 +18,15 @@ import (
 
 // Handler handles HTTP requests for the analytic module.
 type Handler struct {
-	biz analyticbiz.AnalyticBiz
+	biz analyticbiz.AnalyticBizClient
+	// order backs the seller dashboard: the composed view is owned by the
+	// order module, which reads its own stats locally.
+	order orderbiz.OrderBizClient
 }
 
 // NewHandler registers analytic module routes and returns the handler.
-func NewHandler(e *echo.Echo, biz analyticbiz.AnalyticBiz) *Handler {
-	h := &Handler{biz: biz}
+func NewHandler(e *echo.Echo, biz analyticbiz.AnalyticBizClient, order orderbiz.OrderBizClient) *Handler {
+	h := &Handler{biz: biz, order: order}
 	api := e.Group("/api/v1/analytic")
 	api.POST("/interaction", h.CreateInteraction)
 	api.GET("/popularity/top", h.ListTopProductPopularity)
@@ -33,9 +37,9 @@ func NewHandler(e *echo.Echo, biz analyticbiz.AnalyticBiz) *Handler {
 }
 
 type CreateInteraction struct {
-	EventType string                                `json:"event_type" validate:"required,min=1"`
-	RefType   analyticmodel.InteractionRefType      `json:"ref_type"   validate:"required,validateFn=Valid"`
-	RefID     string                                `json:"ref_id"     validate:"required"`
+	EventType string                           `json:"event_type" validate:"required,min=1"`
+	RefType   analyticmodel.InteractionRefType `json:"ref_type"   validate:"required,validateFn=Valid"`
+	RefID     string                           `json:"ref_id"     validate:"required"`
 }
 
 type CreateInteractionRequest struct {
@@ -131,7 +135,7 @@ func (h *Handler) GetSellerDashboard(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	params := analyticmodel.GetSellerDashboardParams{
+	params := orderbiz.GetSellerDashboardParams{
 		SellerID:    claims.Account.ID,
 		Granularity: req.Granularity,
 	}
@@ -151,7 +155,7 @@ func (h *Handler) GetSellerDashboard(c echo.Context) error {
 		params.EndDate = t
 	}
 
-	result, err := h.biz.GetSellerDashboard(c.Request().Context(), params)
+	result, err := h.order.GetSellerDashboard(c.Request().Context(), params)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
