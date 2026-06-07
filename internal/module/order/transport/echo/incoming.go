@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
-	"github.com/restatedev/sdk-go/ingress"
 )
 
 type ListSellerPendingItemsRequest struct {
@@ -59,7 +58,7 @@ type ConfirmSellerPendingResponse struct {
 	PaymentURL       string `json:"payment_url"`
 }
 
-// ConfirmSellerPending submits a ConfirmWorkflow and synchronously attaches
+// ConfirmSellerPending submits a FulfillmentWorkflow and synchronously attaches
 // to its shared WaitPaymentURL handler. Mirrors BuyerCheckout: the workflow
 // owns the saga lifecycle, we just bridge the async submit into a sync HTTP
 // response so the seller's UI can redirect to the gateway (or short-circuit
@@ -78,8 +77,8 @@ func (h *Handler) ConfirmSellerPending(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	workflowID := uuid.NewString()
-	input := orderbiz.ConfirmWorkflowInput{
+	workflowID := uuid.New()
+	input := orderbiz.FulfillmentInput{
 		Account:       claims.Account,
 		ItemIDs:       req.ItemIDs,
 		UseWallet:     req.UseWallet,
@@ -90,33 +89,27 @@ func (h *Handler) ConfirmSellerPending(c echo.Context) error {
 
 	ctx := c.Request().Context()
 
-	if _, err := ingress.Workflow[orderbiz.ConfirmWorkflowInput, struct{}](
-		h.ingress, "ConfirmWorkflow", workflowID, "Run",
-	).Send(ctx, input); err != nil {
+	if err := h.fulfillment.Send().Run(ctx, workflowID, input); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
 
-	url, err := ingress.Workflow[struct{}, string](
-		h.ingress, "ConfirmWorkflow", workflowID, "WaitPaymentURL",
-	).Request(ctx, struct{}{})
+	url, err := h.fulfillment.WaitPaymentURL(ctx, workflowID)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
 
 	return response.FromDTO(c.Response().Writer, http.StatusOK, ConfirmSellerPendingResponse{
-		ConfirmSessionID: workflowID,
+		ConfirmSessionID: workflowID.String(),
 		PaymentURL:       url,
 	})
 }
 
-// CancelConfirmSellerPending signals ConfirmWorkflow.CancelConfirm so Run()
-// EnsureConfirmPaymentURL is the multi-attempt entry point for seller
-// confirms. Mirrors EnsureBuyerCheckoutPaymentURL: returns the latest
-// reusable URL when alive, otherwise signals ConfirmWorkflow.
-// RequestNewPaymentURL to mint the next attempt and waits for its URL.
+// EnsureConfirmPaymentURL is the multi-attempt entry point for seller confirms.
+// Mirrors EnsureBuyerCheckoutPaymentURL: returns the latest reusable URL when
+// alive, otherwise signals FulfillmentWorkflow.RequestNewPaymentURL to mint
+// the next attempt and waits for its URL.
 func (h *Handler) EnsureConfirmPaymentURL(c echo.Context) error {
-	sessionIDRaw := c.Param("sessionID")
-	sessionID, err := uuid.Parse(sessionIDRaw)
+	sessionID, err := uuid.Parse(c.Param("sessionID"))
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, fmt.Errorf("invalid session id: %w", err))
 	}
@@ -138,20 +131,19 @@ func (h *Handler) EnsureConfirmPaymentURL(c echo.Context) error {
 		return response.FromDTO(c.Response().Writer, http.StatusOK, EnsurePaymentURLResponse{PaymentURL: state.ReusableURL})
 	}
 
-	url, err := ingress.Workflow[struct{}, string](
-		h.ingress, "ConfirmWorkflow", sessionIDRaw, "RequestNewPaymentURL",
-	).Request(ctx, struct{}{})
+	url, err := h.fulfillment.RequestNewPaymentURL(ctx, sessionID)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
 	return response.FromDTO(c.Response().Writer, http.StatusOK, EnsurePaymentURLResponse{PaymentURL: url})
 }
 
-// unwinds through its saga compensators (rolling back any wallet hold and
-// gateway-side intent).
+// CancelConfirmSellerPending signals FulfillmentWorkflow.CancelConfirm so
+// Run() unwinds through its saga compensators (rolling back any wallet hold
+// and gateway-side intent).
 func (h *Handler) CancelConfirmSellerPending(c echo.Context) error {
-	sessionID := c.Param("sessionID")
-	if _, err := uuid.Parse(sessionID); err != nil {
+	sessionID, err := uuid.Parse(c.Param("sessionID"))
+	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, fmt.Errorf("invalid session id: %w", err))
 	}
 
@@ -159,9 +151,7 @@ func (h *Handler) CancelConfirmSellerPending(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if _, err := ingress.Workflow[struct{}, struct{}](
-		h.ingress, "ConfirmWorkflow", sessionID, "CancelConfirm",
-	).Send(c.Request().Context(), struct{}{}); err != nil {
+	if err := h.fulfillment.Send().CancelConfirm(c.Request().Context(), sessionID); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
 

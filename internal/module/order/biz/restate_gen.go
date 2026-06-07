@@ -5,186 +5,659 @@ package orderbiz
 import (
 	"context"
 	"github.com/google/uuid"
-	restateclient "shopnexus-server/internal/infras/restate"
+	restate "github.com/restatedev/sdk-go"
+	catalogmodel "shopnexus-server/internal/module/catalog/model"
+	buyerorder "shopnexus-server/internal/module/order/biz/buyer_order"
+	"shopnexus-server/internal/module/order/biz/cart"
+	"shopnexus-server/internal/module/order/biz/dashboard"
+	"shopnexus-server/internal/module/order/biz/dispute"
+	orderpayment "shopnexus-server/internal/module/order/biz/payment"
+	"shopnexus-server/internal/module/order/biz/refund"
+	"shopnexus-server/internal/module/order/biz/review"
+	sellerorder "shopnexus-server/internal/module/order/biz/seller_order"
+	ordertransport "shopnexus-server/internal/module/order/biz/transport"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/provider/payment"
 	sharedmodel "shopnexus-server/internal/shared/model"
 	"shopnexus-server/internal/shared/paginate"
+	restatec "shopnexus-server/internal/shared/restate"
 )
 
 const serviceName = "Order"
 
-// OrderRestateClient implements OrderBiz via Restate HTTP ingress.
-type OrderRestateClient struct {
-	client *restateclient.Client
+// OrderBizSender mirrors OrderBiz as one-way (fire-and-forget) calls; outputs are dropped.
+type OrderBizSender interface {
+	ListBuyerPendingItems(ctx context.Context, params buyerorder.ListBuyerPendingItemsParams) error
+	CancelBuyerPending(ctx context.Context, params buyerorder.CancelBuyerPendingParams) error
+	RefundPendingItem(ctx context.Context, params buyerorder.RefundPendingItemParams) error
+	ListBuyerPendingOrders(ctx context.Context, params buyerorder.ListBuyerPendingOrdersParams) error
+	ListBuyerCompletedOrders(ctx context.Context, params buyerorder.ListBuyerCompletedOrdersParams) error
+	ListBuyerCancelledOrders(ctx context.Context, params buyerorder.ListBuyerCancelledOrdersParams) error
+	ListBuyerCancelledItems(ctx context.Context, params buyerorder.ListBuyerCancelledItemsParams) error
+	GetBuyerOrder(ctx context.Context, orderID uuid.UUID) error
+	GetCheckoutSummary(ctx context.Context, params buyerorder.GetCheckoutSummaryParams) error
+	ListSellerPendingItems(ctx context.Context, params sellerorder.ListSellerPendingItemsParams) error
+	RejectSellerPending(ctx context.Context, params sellerorder.RejectSellerPendingParams) error
+	GetSellerOrder(ctx context.Context, orderID uuid.UUID) error
+	ListSellerConfirmed(ctx context.Context, params sellerorder.ListSellerConfirmedParams) error
+	GetCart(ctx context.Context, params cart.GetCartParams) error
+	UpdateCart(ctx context.Context, params cart.UpdateCartParams) error
+	ClearCart(ctx context.Context, params cart.ClearCartParams) error
+	OnPaymentResult(ctx context.Context, params payment.Notification) error
+	GetReusableGatewayURL(ctx context.Context, sessionID uuid.UUID) error
+	ListBuyerRefunds(ctx context.Context, params refund.ListBuyerRefundsParams) error
+	ListSellerRefunds(ctx context.Context, params refund.ListSellerRefundsParams) error
+	CreateBuyerRefund(ctx context.Context, params refund.CreateBuyerRefundParams) error
+	WithdrawBuyerRefund(ctx context.Context, params refund.WithdrawBuyerRefundParams) error
+	SellerApproveRefund(ctx context.Context, params refund.SellerActionParams) error
+	SellerDisputeRefund(ctx context.Context, params refund.SellerDisputeParams) error
+	ListRefundDisputes(ctx context.Context, params dispute.ListRefundDisputesParams) error
+	GetRefundDispute(ctx context.Context, params dispute.GetRefundDisputeParams) error
+	AdminUpholdDispute(ctx context.Context, params dispute.AdminDisputeDecisionParams) error
+	AdminDismissDispute(ctx context.Context, params dispute.AdminDisputeDecisionParams) error
+	OnTransportResult(ctx context.Context, params ordertransport.OnTransportResultParams) error
+	QuoteTransport(ctx context.Context, params ordertransport.QuoteTransportParams) error
+	HasPurchasedProduct(ctx context.Context, params review.HasPurchasedProductParams) error
+	ListReviewableOrders(ctx context.Context, params review.ListReviewableOrdersParams) error
+	ListReviewableOrdersBySpu(ctx context.Context, params review.ListReviewableOrdersBySpuParams) error
+	ValidateOrderForReview(ctx context.Context, params review.ValidateOrderForReviewParams) error
+	CreateProductReview(ctx context.Context, params review.CreateProductReviewParams) error
+	GetSellerOrderStats(ctx context.Context, params dashboard.GetSellerOrderStatsParams) error
+	GetSellerOrderTimeSeries(ctx context.Context, params dashboard.GetSellerOrderTimeSeriesParams) error
+	GetSellerPendingActions(ctx context.Context, params dashboard.GetSellerPendingActionsParams) error
+	GetSellerTopProducts(ctx context.Context, params dashboard.GetSellerTopProductsParams) error
+	GetSellerDashboard(ctx context.Context, params dashboard.GetSellerDashboardParams) error
+	InferCurrency(ctx context.Context, accountID uuid.UUID) error
+	GetOptions(ctx context.Context, params GetOptionsParams) error
 }
 
-var _ OrderBiz = (*OrderRestateClient)(nil)
+// OrderBizFuture mirrors OrderBiz returning response futures for racing
+// or parallel calls. Only usable inside a Restate handler context.
+type OrderBizFuture interface {
+	ListBuyerPendingItems(rctx restate.Context, params buyerorder.ListBuyerPendingItemsParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.OrderItem]]
+	CancelBuyerPending(rctx restate.Context, params buyerorder.CancelBuyerPendingParams) restate.ResponseFuture[restate.Void]
+	RefundPendingItem(rctx restate.Context, params buyerorder.RefundPendingItemParams) restate.ResponseFuture[restate.Void]
+	ListBuyerPendingOrders(rctx restate.Context, params buyerorder.ListBuyerPendingOrdersParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.Order]]
+	ListBuyerCompletedOrders(rctx restate.Context, params buyerorder.ListBuyerCompletedOrdersParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.Order]]
+	ListBuyerCancelledOrders(rctx restate.Context, params buyerorder.ListBuyerCancelledOrdersParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.Order]]
+	ListBuyerCancelledItems(rctx restate.Context, params buyerorder.ListBuyerCancelledItemsParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.OrderItem]]
+	GetBuyerOrder(rctx restate.Context, orderID uuid.UUID) restate.ResponseFuture[ordermodel.Order]
+	GetCheckoutSummary(rctx restate.Context, params buyerorder.GetCheckoutSummaryParams) restate.ResponseFuture[ordermodel.CheckoutSummary]
+	ListSellerPendingItems(rctx restate.Context, params sellerorder.ListSellerPendingItemsParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.OrderItem]]
+	RejectSellerPending(rctx restate.Context, params sellerorder.RejectSellerPendingParams) restate.ResponseFuture[restate.Void]
+	GetSellerOrder(rctx restate.Context, orderID uuid.UUID) restate.ResponseFuture[ordermodel.Order]
+	ListSellerConfirmed(rctx restate.Context, params sellerorder.ListSellerConfirmedParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.Order]]
+	GetCart(rctx restate.Context, params cart.GetCartParams) restate.ResponseFuture[[]ordermodel.CartItem]
+	UpdateCart(rctx restate.Context, params cart.UpdateCartParams) restate.ResponseFuture[restate.Void]
+	ClearCart(rctx restate.Context, params cart.ClearCartParams) restate.ResponseFuture[restate.Void]
+	OnPaymentResult(rctx restate.Context, params payment.Notification) restate.ResponseFuture[restate.Void]
+	GetReusableGatewayURL(rctx restate.Context, sessionID uuid.UUID) restate.ResponseFuture[orderpayment.ReusableGatewayURLState]
+	ListBuyerRefunds(rctx restate.Context, params refund.ListBuyerRefundsParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.Refund]]
+	ListSellerRefunds(rctx restate.Context, params refund.ListSellerRefundsParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.Refund]]
+	CreateBuyerRefund(rctx restate.Context, params refund.CreateBuyerRefundParams) restate.ResponseFuture[ordermodel.Refund]
+	WithdrawBuyerRefund(rctx restate.Context, params refund.WithdrawBuyerRefundParams) restate.ResponseFuture[ordermodel.Refund]
+	SellerApproveRefund(rctx restate.Context, params refund.SellerActionParams) restate.ResponseFuture[ordermodel.Refund]
+	SellerDisputeRefund(rctx restate.Context, params refund.SellerDisputeParams) restate.ResponseFuture[ordermodel.RefundDispute]
+	ListRefundDisputes(rctx restate.Context, params dispute.ListRefundDisputesParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.RefundDispute]]
+	GetRefundDispute(rctx restate.Context, params dispute.GetRefundDisputeParams) restate.ResponseFuture[ordermodel.RefundDispute]
+	AdminUpholdDispute(rctx restate.Context, params dispute.AdminDisputeDecisionParams) restate.ResponseFuture[ordermodel.RefundDispute]
+	AdminDismissDispute(rctx restate.Context, params dispute.AdminDisputeDecisionParams) restate.ResponseFuture[ordermodel.RefundDispute]
+	OnTransportResult(rctx restate.Context, params ordertransport.OnTransportResultParams) restate.ResponseFuture[restate.Void]
+	QuoteTransport(rctx restate.Context, params ordertransport.QuoteTransportParams) restate.ResponseFuture[ordertransport.QuoteTransportResult]
+	HasPurchasedProduct(rctx restate.Context, params review.HasPurchasedProductParams) restate.ResponseFuture[bool]
+	ListReviewableOrders(rctx restate.Context, params review.ListReviewableOrdersParams) restate.ResponseFuture[[]review.ReviewableOrder]
+	ListReviewableOrdersBySpu(rctx restate.Context, params review.ListReviewableOrdersBySpuParams) restate.ResponseFuture[[]review.ReviewableOrder]
+	ValidateOrderForReview(rctx restate.Context, params review.ValidateOrderForReviewParams) restate.ResponseFuture[bool]
+	CreateProductReview(rctx restate.Context, params review.CreateProductReviewParams) restate.ResponseFuture[catalogmodel.Comment]
+	GetSellerOrderStats(rctx restate.Context, params dashboard.GetSellerOrderStatsParams) restate.ResponseFuture[dashboard.SellerOrderStats]
+	GetSellerOrderTimeSeries(rctx restate.Context, params dashboard.GetSellerOrderTimeSeriesParams) restate.ResponseFuture[[]dashboard.SellerOrderTimeSeriesPoint]
+	GetSellerPendingActions(rctx restate.Context, params dashboard.GetSellerPendingActionsParams) restate.ResponseFuture[dashboard.SellerPendingActions]
+	GetSellerTopProducts(rctx restate.Context, params dashboard.GetSellerTopProductsParams) restate.ResponseFuture[[]dashboard.SellerTopProduct]
+	GetSellerDashboard(rctx restate.Context, params dashboard.GetSellerDashboardParams) restate.ResponseFuture[dashboard.SellerDashboard]
+	InferCurrency(rctx restate.Context, accountID uuid.UUID) restate.ResponseFuture[string]
+	GetOptions(rctx restate.Context, params GetOptionsParams) restate.ResponseFuture[[]sharedmodel.Option]
+}
+
+// OrderBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
+type OrderBizClient interface {
+	OrderBiz
+	Send() OrderBizSender
+	Future() OrderBizFuture
+}
+
+// OrderRestateClient implements OrderBizClient via Restate HTTP ingress.
+type OrderRestateClient struct {
+	call   *restatec.CallClient
+	send   *OrderRestateSender
+	future *OrderRestateFuture
+}
+
+var _ OrderBizClient = (*OrderRestateClient)(nil)
 
 func NewOrderRestateClient(restateIngressURL string) *OrderRestateClient {
-	return &OrderRestateClient{client: restateclient.NewClient(restateIngressURL)}
+	return &OrderRestateClient{
+		call:   restatec.NewCallClient(restateIngressURL),
+		send:   &OrderRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &OrderRestateFuture{},
+	}
 }
 
-func (p *OrderRestateClient) ListBuyerPendingItems(ctx context.Context, params ListBuyerPendingItemsParams) (paginate.PaginateResult[ordermodel.OrderItem], error) {
-	return restateclient.Call[paginate.PaginateResult[ordermodel.OrderItem]](ctx, p.client, serviceName, "ListBuyerPendingItems", params)
+func (p *OrderRestateClient) Send() OrderBizSender { return p.send }
+
+func (p *OrderRestateClient) Future() OrderBizFuture { return p.future }
+
+func (p *OrderRestateClient) ListBuyerPendingItems(ctx context.Context, params buyerorder.ListBuyerPendingItemsParams) (paginate.PaginateResult[ordermodel.OrderItem], error) {
+	return restatec.Call[paginate.PaginateResult[ordermodel.OrderItem]](ctx, p.call, serviceName, "ListBuyerPendingItems", params)
 }
 
-func (p *OrderRestateClient) CancelBuyerPending(ctx context.Context, params CancelBuyerPendingParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "CancelBuyerPending", params)
+func (p *OrderRestateClient) CancelBuyerPending(ctx context.Context, params buyerorder.CancelBuyerPendingParams) error {
+	return restatec.CallVoid(ctx, p.call, serviceName, "CancelBuyerPending", params)
 }
 
-func (p *OrderRestateClient) RefundPendingItem(ctx context.Context, params RefundPendingItemParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "RefundPendingItem", params)
+func (p *OrderRestateClient) RefundPendingItem(ctx context.Context, params buyerorder.RefundPendingItemParams) error {
+	return restatec.CallVoid(ctx, p.call, serviceName, "RefundPendingItem", params)
 }
 
-func (p *OrderRestateClient) ListBuyerPendingOrders(ctx context.Context, params ListBuyerPendingOrdersParams) (paginate.PaginateResult[ordermodel.Order], error) {
-	return restateclient.Call[paginate.PaginateResult[ordermodel.Order]](ctx, p.client, serviceName, "ListBuyerPendingOrders", params)
+func (p *OrderRestateClient) ListBuyerPendingOrders(ctx context.Context, params buyerorder.ListBuyerPendingOrdersParams) (paginate.PaginateResult[ordermodel.Order], error) {
+	return restatec.Call[paginate.PaginateResult[ordermodel.Order]](ctx, p.call, serviceName, "ListBuyerPendingOrders", params)
 }
 
-func (p *OrderRestateClient) ListBuyerCompletedOrders(ctx context.Context, params ListBuyerCompletedOrdersParams) (paginate.PaginateResult[ordermodel.Order], error) {
-	return restateclient.Call[paginate.PaginateResult[ordermodel.Order]](ctx, p.client, serviceName, "ListBuyerCompletedOrders", params)
+func (p *OrderRestateClient) ListBuyerCompletedOrders(ctx context.Context, params buyerorder.ListBuyerCompletedOrdersParams) (paginate.PaginateResult[ordermodel.Order], error) {
+	return restatec.Call[paginate.PaginateResult[ordermodel.Order]](ctx, p.call, serviceName, "ListBuyerCompletedOrders", params)
 }
 
-func (p *OrderRestateClient) ListBuyerCancelledOrders(ctx context.Context, params ListBuyerCancelledOrdersParams) (paginate.PaginateResult[ordermodel.Order], error) {
-	return restateclient.Call[paginate.PaginateResult[ordermodel.Order]](ctx, p.client, serviceName, "ListBuyerCancelledOrders", params)
+func (p *OrderRestateClient) ListBuyerCancelledOrders(ctx context.Context, params buyerorder.ListBuyerCancelledOrdersParams) (paginate.PaginateResult[ordermodel.Order], error) {
+	return restatec.Call[paginate.PaginateResult[ordermodel.Order]](ctx, p.call, serviceName, "ListBuyerCancelledOrders", params)
 }
 
-func (p *OrderRestateClient) ListBuyerCancelledItems(ctx context.Context, params ListBuyerCancelledItemsParams) (paginate.PaginateResult[ordermodel.OrderItem], error) {
-	return restateclient.Call[paginate.PaginateResult[ordermodel.OrderItem]](ctx, p.client, serviceName, "ListBuyerCancelledItems", params)
+func (p *OrderRestateClient) ListBuyerCancelledItems(ctx context.Context, params buyerorder.ListBuyerCancelledItemsParams) (paginate.PaginateResult[ordermodel.OrderItem], error) {
+	return restatec.Call[paginate.PaginateResult[ordermodel.OrderItem]](ctx, p.call, serviceName, "ListBuyerCancelledItems", params)
 }
 
 func (p *OrderRestateClient) GetBuyerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error) {
-	return restateclient.Call[ordermodel.Order](ctx, p.client, serviceName, "GetBuyerOrder", orderID)
+	return restatec.Call[ordermodel.Order](ctx, p.call, serviceName, "GetBuyerOrder", orderID)
 }
 
-func (p *OrderRestateClient) GetCheckoutSummary(ctx context.Context, params GetCheckoutSummaryParams) (ordermodel.CheckoutSummary, error) {
-	return restateclient.Call[ordermodel.CheckoutSummary](ctx, p.client, serviceName, "GetCheckoutSummary", params)
+func (p *OrderRestateClient) GetCheckoutSummary(ctx context.Context, params buyerorder.GetCheckoutSummaryParams) (ordermodel.CheckoutSummary, error) {
+	return restatec.Call[ordermodel.CheckoutSummary](ctx, p.call, serviceName, "GetCheckoutSummary", params)
 }
 
-func (p *OrderRestateClient) ListSellerPendingItems(ctx context.Context, params ListSellerPendingItemsParams) (paginate.PaginateResult[ordermodel.OrderItem], error) {
-	return restateclient.Call[paginate.PaginateResult[ordermodel.OrderItem]](ctx, p.client, serviceName, "ListSellerPendingItems", params)
+func (p *OrderRestateClient) ListSellerPendingItems(ctx context.Context, params sellerorder.ListSellerPendingItemsParams) (paginate.PaginateResult[ordermodel.OrderItem], error) {
+	return restatec.Call[paginate.PaginateResult[ordermodel.OrderItem]](ctx, p.call, serviceName, "ListSellerPendingItems", params)
 }
 
-func (p *OrderRestateClient) RejectSellerPending(ctx context.Context, params RejectSellerPendingParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "RejectSellerPending", params)
+func (p *OrderRestateClient) RejectSellerPending(ctx context.Context, params sellerorder.RejectSellerPendingParams) error {
+	return restatec.CallVoid(ctx, p.call, serviceName, "RejectSellerPending", params)
 }
 
 func (p *OrderRestateClient) GetSellerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error) {
-	return restateclient.Call[ordermodel.Order](ctx, p.client, serviceName, "GetSellerOrder", orderID)
+	return restatec.Call[ordermodel.Order](ctx, p.call, serviceName, "GetSellerOrder", orderID)
 }
 
-func (p *OrderRestateClient) ListSellerConfirmed(ctx context.Context, params ListSellerConfirmedParams) (paginate.PaginateResult[ordermodel.Order], error) {
-	return restateclient.Call[paginate.PaginateResult[ordermodel.Order]](ctx, p.client, serviceName, "ListSellerConfirmed", params)
+func (p *OrderRestateClient) ListSellerConfirmed(ctx context.Context, params sellerorder.ListSellerConfirmedParams) (paginate.PaginateResult[ordermodel.Order], error) {
+	return restatec.Call[paginate.PaginateResult[ordermodel.Order]](ctx, p.call, serviceName, "ListSellerConfirmed", params)
 }
 
-func (p *OrderRestateClient) GetCart(ctx context.Context, params GetCartParams) ([]ordermodel.CartItem, error) {
-	return restateclient.Call[[]ordermodel.CartItem](ctx, p.client, serviceName, "GetCart", params)
+func (p *OrderRestateClient) GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItem, error) {
+	return restatec.Call[[]ordermodel.CartItem](ctx, p.call, serviceName, "GetCart", params)
 }
 
-func (p *OrderRestateClient) UpdateCart(ctx context.Context, params UpdateCartParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "UpdateCart", params)
+func (p *OrderRestateClient) UpdateCart(ctx context.Context, params cart.UpdateCartParams) error {
+	return restatec.CallVoid(ctx, p.call, serviceName, "UpdateCart", params)
 }
 
-func (p *OrderRestateClient) ClearCart(ctx context.Context, params ClearCartParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "ClearCart", params)
+func (p *OrderRestateClient) ClearCart(ctx context.Context, params cart.ClearCartParams) error {
+	return restatec.CallVoid(ctx, p.call, serviceName, "ClearCart", params)
 }
 
 func (p *OrderRestateClient) OnPaymentResult(ctx context.Context, params payment.Notification) error {
-	return restateclient.Send(ctx, p.client, serviceName, "OnPaymentResult", params)
+	return restatec.CallVoid(ctx, p.call, serviceName, "OnPaymentResult", params)
 }
 
-func (p *OrderRestateClient) GetReusableGatewayURL(ctx context.Context, sessionID uuid.UUID) (ReusableGatewayURLState, error) {
-	return restateclient.Call[ReusableGatewayURLState](ctx, p.client, serviceName, "GetReusableGatewayURL", sessionID)
+func (p *OrderRestateClient) GetReusableGatewayURL(ctx context.Context, sessionID uuid.UUID) (orderpayment.ReusableGatewayURLState, error) {
+	return restatec.Call[orderpayment.ReusableGatewayURLState](ctx, p.call, serviceName, "GetReusableGatewayURL", sessionID)
 }
 
-func (p *OrderRestateClient) ListBuyerRefunds(ctx context.Context, params ListBuyerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error) {
-	return restateclient.Call[paginate.PaginateResult[ordermodel.Refund]](ctx, p.client, serviceName, "ListBuyerRefunds", params)
+func (p *OrderRestateClient) ListBuyerRefunds(ctx context.Context, params refund.ListBuyerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error) {
+	return restatec.Call[paginate.PaginateResult[ordermodel.Refund]](ctx, p.call, serviceName, "ListBuyerRefunds", params)
 }
 
-func (p *OrderRestateClient) ListSellerRefunds(ctx context.Context, params ListSellerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error) {
-	return restateclient.Call[paginate.PaginateResult[ordermodel.Refund]](ctx, p.client, serviceName, "ListSellerRefunds", params)
+func (p *OrderRestateClient) ListSellerRefunds(ctx context.Context, params refund.ListSellerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error) {
+	return restatec.Call[paginate.PaginateResult[ordermodel.Refund]](ctx, p.call, serviceName, "ListSellerRefunds", params)
 }
 
-func (p *OrderRestateClient) CreateBuyerRefund(ctx context.Context, params CreateBuyerRefundParams) (ordermodel.Refund, error) {
-	return restateclient.Call[ordermodel.Refund](ctx, p.client, serviceName, "CreateBuyerRefund", params)
+func (p *OrderRestateClient) CreateBuyerRefund(ctx context.Context, params refund.CreateBuyerRefundParams) (ordermodel.Refund, error) {
+	return restatec.Call[ordermodel.Refund](ctx, p.call, serviceName, "CreateBuyerRefund", params)
 }
 
-func (p *OrderRestateClient) WithdrawBuyerRefund(ctx context.Context, params WithdrawBuyerRefundParams) (ordermodel.Refund, error) {
-	return restateclient.Call[ordermodel.Refund](ctx, p.client, serviceName, "WithdrawBuyerRefund", params)
+func (p *OrderRestateClient) WithdrawBuyerRefund(ctx context.Context, params refund.WithdrawBuyerRefundParams) (ordermodel.Refund, error) {
+	return restatec.Call[ordermodel.Refund](ctx, p.call, serviceName, "WithdrawBuyerRefund", params)
 }
 
-func (p *OrderRestateClient) SellerApproveRefund(ctx context.Context, params SellerActionParams) (ordermodel.Refund, error) {
-	return restateclient.Call[ordermodel.Refund](ctx, p.client, serviceName, "SellerApproveRefund", params)
+func (p *OrderRestateClient) SellerApproveRefund(ctx context.Context, params refund.SellerActionParams) (ordermodel.Refund, error) {
+	return restatec.Call[ordermodel.Refund](ctx, p.call, serviceName, "SellerApproveRefund", params)
 }
 
-func (p *OrderRestateClient) SellerDisputeRefund(ctx context.Context, params SellerDisputeParams) (ordermodel.RefundDispute, error) {
-	return restateclient.Call[ordermodel.RefundDispute](ctx, p.client, serviceName, "SellerDisputeRefund", params)
+func (p *OrderRestateClient) SellerDisputeRefund(ctx context.Context, params refund.SellerDisputeParams) (ordermodel.RefundDispute, error) {
+	return restatec.Call[ordermodel.RefundDispute](ctx, p.call, serviceName, "SellerDisputeRefund", params)
 }
 
-func (p *OrderRestateClient) MarkRefundDelivered(ctx context.Context, params MarkRefundDeliveredParams) (ordermodel.Refund, error) {
-	return restateclient.Call[ordermodel.Refund](ctx, p.client, serviceName, "MarkRefundDelivered", params)
+func (p *OrderRestateClient) ListRefundDisputes(ctx context.Context, params dispute.ListRefundDisputesParams) (paginate.PaginateResult[ordermodel.RefundDispute], error) {
+	return restatec.Call[paginate.PaginateResult[ordermodel.RefundDispute]](ctx, p.call, serviceName, "ListRefundDisputes", params)
 }
 
-func (p *OrderRestateClient) AutoAcceptRefund(ctx context.Context, params AutoAcceptRefundParams) (ordermodel.Refund, error) {
-	return restateclient.Call[ordermodel.Refund](ctx, p.client, serviceName, "AutoAcceptRefund", params)
+func (p *OrderRestateClient) GetRefundDispute(ctx context.Context, params dispute.GetRefundDisputeParams) (ordermodel.RefundDispute, error) {
+	return restatec.Call[ordermodel.RefundDispute](ctx, p.call, serviceName, "GetRefundDispute", params)
 }
 
-func (p *OrderRestateClient) ListRefundDisputes(ctx context.Context, params ListRefundDisputesParams) (paginate.PaginateResult[ordermodel.RefundDispute], error) {
-	return restateclient.Call[paginate.PaginateResult[ordermodel.RefundDispute]](ctx, p.client, serviceName, "ListRefundDisputes", params)
+func (p *OrderRestateClient) AdminUpholdDispute(ctx context.Context, params dispute.AdminDisputeDecisionParams) (ordermodel.RefundDispute, error) {
+	return restatec.Call[ordermodel.RefundDispute](ctx, p.call, serviceName, "AdminUpholdDispute", params)
 }
 
-func (p *OrderRestateClient) GetRefundDispute(ctx context.Context, params GetRefundDisputeParams) (ordermodel.RefundDispute, error) {
-	return restateclient.Call[ordermodel.RefundDispute](ctx, p.client, serviceName, "GetRefundDispute", params)
+func (p *OrderRestateClient) AdminDismissDispute(ctx context.Context, params dispute.AdminDisputeDecisionParams) (ordermodel.RefundDispute, error) {
+	return restatec.Call[ordermodel.RefundDispute](ctx, p.call, serviceName, "AdminDismissDispute", params)
 }
 
-func (p *OrderRestateClient) AdminUpholdDispute(ctx context.Context, params AdminDisputeDecisionParams) (ordermodel.RefundDispute, error) {
-	return restateclient.Call[ordermodel.RefundDispute](ctx, p.client, serviceName, "AdminUpholdDispute", params)
+func (p *OrderRestateClient) OnTransportResult(ctx context.Context, params ordertransport.OnTransportResultParams) error {
+	return restatec.CallVoid(ctx, p.call, serviceName, "OnTransportResult", params)
 }
 
-func (p *OrderRestateClient) AdminDismissDispute(ctx context.Context, params AdminDisputeDecisionParams) (ordermodel.RefundDispute, error) {
-	return restateclient.Call[ordermodel.RefundDispute](ctx, p.client, serviceName, "AdminDismissDispute", params)
+func (p *OrderRestateClient) QuoteTransport(ctx context.Context, params ordertransport.QuoteTransportParams) (ordertransport.QuoteTransportResult, error) {
+	return restatec.Call[ordertransport.QuoteTransportResult](ctx, p.call, serviceName, "QuoteTransport", params)
 }
 
-func (p *OrderRestateClient) OnTransportResult(ctx context.Context, params OnTransportResultParams) error {
-	return restateclient.Send(ctx, p.client, serviceName, "OnTransportResult", params)
+func (p *OrderRestateClient) HasPurchasedProduct(ctx context.Context, params review.HasPurchasedProductParams) (bool, error) {
+	return restatec.Call[bool](ctx, p.call, serviceName, "HasPurchasedProduct", params)
 }
 
-func (p *OrderRestateClient) QuoteTransport(ctx context.Context, params QuoteTransportParams) (QuoteTransportResult, error) {
-	return restateclient.Call[QuoteTransportResult](ctx, p.client, serviceName, "QuoteTransport", params)
+func (p *OrderRestateClient) ListReviewableOrders(ctx context.Context, params review.ListReviewableOrdersParams) ([]review.ReviewableOrder, error) {
+	return restatec.Call[[]review.ReviewableOrder](ctx, p.call, serviceName, "ListReviewableOrders", params)
 }
 
-func (p *OrderRestateClient) HasPurchasedProduct(ctx context.Context, params HasPurchasedProductParams) (bool, error) {
-	return restateclient.Call[bool](ctx, p.client, serviceName, "HasPurchasedProduct", params)
+func (p *OrderRestateClient) ListReviewableOrdersBySpu(ctx context.Context, params review.ListReviewableOrdersBySpuParams) ([]review.ReviewableOrder, error) {
+	return restatec.Call[[]review.ReviewableOrder](ctx, p.call, serviceName, "ListReviewableOrdersBySpu", params)
 }
 
-func (p *OrderRestateClient) ListReviewableOrders(ctx context.Context, params ListReviewableOrdersParams) ([]ReviewableOrder, error) {
-	return restateclient.Call[[]ReviewableOrder](ctx, p.client, serviceName, "ListReviewableOrders", params)
+func (p *OrderRestateClient) ValidateOrderForReview(ctx context.Context, params review.ValidateOrderForReviewParams) (bool, error) {
+	return restatec.Call[bool](ctx, p.call, serviceName, "ValidateOrderForReview", params)
 }
 
-func (p *OrderRestateClient) ValidateOrderForReview(ctx context.Context, params ValidateOrderForReviewParams) (bool, error) {
-	return restateclient.Call[bool](ctx, p.client, serviceName, "ValidateOrderForReview", params)
+func (p *OrderRestateClient) CreateProductReview(ctx context.Context, params review.CreateProductReviewParams) (catalogmodel.Comment, error) {
+	return restatec.Call[catalogmodel.Comment](ctx, p.call, serviceName, "CreateProductReview", params)
 }
 
-func (p *OrderRestateClient) GetSellerOrderStats(ctx context.Context, params GetSellerOrderStatsParams) (SellerOrderStats, error) {
-	return restateclient.Call[SellerOrderStats](ctx, p.client, serviceName, "GetSellerOrderStats", params)
+func (p *OrderRestateClient) GetSellerOrderStats(ctx context.Context, params dashboard.GetSellerOrderStatsParams) (dashboard.SellerOrderStats, error) {
+	return restatec.Call[dashboard.SellerOrderStats](ctx, p.call, serviceName, "GetSellerOrderStats", params)
 }
 
-func (p *OrderRestateClient) GetSellerOrderTimeSeries(ctx context.Context, params GetSellerOrderTimeSeriesParams) ([]SellerOrderTimeSeriesPoint, error) {
-	return restateclient.Call[[]SellerOrderTimeSeriesPoint](ctx, p.client, serviceName, "GetSellerOrderTimeSeries", params)
+func (p *OrderRestateClient) GetSellerOrderTimeSeries(ctx context.Context, params dashboard.GetSellerOrderTimeSeriesParams) ([]dashboard.SellerOrderTimeSeriesPoint, error) {
+	return restatec.Call[[]dashboard.SellerOrderTimeSeriesPoint](ctx, p.call, serviceName, "GetSellerOrderTimeSeries", params)
 }
 
-func (p *OrderRestateClient) GetSellerPendingActions(ctx context.Context, params GetSellerPendingActionsParams) (SellerPendingActions, error) {
-	return restateclient.Call[SellerPendingActions](ctx, p.client, serviceName, "GetSellerPendingActions", params)
+func (p *OrderRestateClient) GetSellerPendingActions(ctx context.Context, params dashboard.GetSellerPendingActionsParams) (dashboard.SellerPendingActions, error) {
+	return restatec.Call[dashboard.SellerPendingActions](ctx, p.call, serviceName, "GetSellerPendingActions", params)
 }
 
-func (p *OrderRestateClient) GetSellerTopProducts(ctx context.Context, params GetSellerTopProductsParams) ([]SellerTopProduct, error) {
-	return restateclient.Call[[]SellerTopProduct](ctx, p.client, serviceName, "GetSellerTopProducts", params)
+func (p *OrderRestateClient) GetSellerTopProducts(ctx context.Context, params dashboard.GetSellerTopProductsParams) ([]dashboard.SellerTopProduct, error) {
+	return restatec.Call[[]dashboard.SellerTopProduct](ctx, p.call, serviceName, "GetSellerTopProducts", params)
+}
+
+func (p *OrderRestateClient) GetSellerDashboard(ctx context.Context, params dashboard.GetSellerDashboardParams) (dashboard.SellerDashboard, error) {
+	return restatec.Call[dashboard.SellerDashboard](ctx, p.call, serviceName, "GetSellerDashboard", params)
 }
 
 func (p *OrderRestateClient) InferCurrency(ctx context.Context, accountID uuid.UUID) (string, error) {
-	return restateclient.Call[string](ctx, p.client, serviceName, "InferCurrency", accountID)
+	return restatec.Call[string](ctx, p.call, serviceName, "InferCurrency", accountID)
 }
 
 func (p *OrderRestateClient) GetOptions(ctx context.Context, params GetOptionsParams) ([]sharedmodel.Option, error) {
-	return restateclient.Call[[]sharedmodel.Option](ctx, p.client, serviceName, "GetOptions", params)
+	return restatec.Call[[]sharedmodel.Option](ctx, p.call, serviceName, "GetOptions", params)
+}
+
+// OrderRestateSender implements OrderBizSender.
+type OrderRestateSender struct {
+	client *restatec.SendClient
+}
+
+var _ OrderBizSender = (*OrderRestateSender)(nil)
+
+func (s *OrderRestateSender) ListBuyerPendingItems(ctx context.Context, params buyerorder.ListBuyerPendingItemsParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListBuyerPendingItems", params)
+}
+
+func (s *OrderRestateSender) CancelBuyerPending(ctx context.Context, params buyerorder.CancelBuyerPendingParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "CancelBuyerPending", params)
+}
+
+func (s *OrderRestateSender) RefundPendingItem(ctx context.Context, params buyerorder.RefundPendingItemParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "RefundPendingItem", params)
+}
+
+func (s *OrderRestateSender) ListBuyerPendingOrders(ctx context.Context, params buyerorder.ListBuyerPendingOrdersParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListBuyerPendingOrders", params)
+}
+
+func (s *OrderRestateSender) ListBuyerCompletedOrders(ctx context.Context, params buyerorder.ListBuyerCompletedOrdersParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListBuyerCompletedOrders", params)
+}
+
+func (s *OrderRestateSender) ListBuyerCancelledOrders(ctx context.Context, params buyerorder.ListBuyerCancelledOrdersParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListBuyerCancelledOrders", params)
+}
+
+func (s *OrderRestateSender) ListBuyerCancelledItems(ctx context.Context, params buyerorder.ListBuyerCancelledItemsParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListBuyerCancelledItems", params)
+}
+
+func (s *OrderRestateSender) GetBuyerOrder(ctx context.Context, orderID uuid.UUID) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetBuyerOrder", orderID)
+}
+
+func (s *OrderRestateSender) GetCheckoutSummary(ctx context.Context, params buyerorder.GetCheckoutSummaryParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetCheckoutSummary", params)
+}
+
+func (s *OrderRestateSender) ListSellerPendingItems(ctx context.Context, params sellerorder.ListSellerPendingItemsParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListSellerPendingItems", params)
+}
+
+func (s *OrderRestateSender) RejectSellerPending(ctx context.Context, params sellerorder.RejectSellerPendingParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "RejectSellerPending", params)
+}
+
+func (s *OrderRestateSender) GetSellerOrder(ctx context.Context, orderID uuid.UUID) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetSellerOrder", orderID)
+}
+
+func (s *OrderRestateSender) ListSellerConfirmed(ctx context.Context, params sellerorder.ListSellerConfirmedParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListSellerConfirmed", params)
+}
+
+func (s *OrderRestateSender) GetCart(ctx context.Context, params cart.GetCartParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetCart", params)
+}
+
+func (s *OrderRestateSender) UpdateCart(ctx context.Context, params cart.UpdateCartParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "UpdateCart", params)
+}
+
+func (s *OrderRestateSender) ClearCart(ctx context.Context, params cart.ClearCartParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ClearCart", params)
+}
+
+func (s *OrderRestateSender) OnPaymentResult(ctx context.Context, params payment.Notification) error {
+	return restatec.Send(ctx, s.client, serviceName, "OnPaymentResult", params)
+}
+
+func (s *OrderRestateSender) GetReusableGatewayURL(ctx context.Context, sessionID uuid.UUID) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetReusableGatewayURL", sessionID)
+}
+
+func (s *OrderRestateSender) ListBuyerRefunds(ctx context.Context, params refund.ListBuyerRefundsParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListBuyerRefunds", params)
+}
+
+func (s *OrderRestateSender) ListSellerRefunds(ctx context.Context, params refund.ListSellerRefundsParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListSellerRefunds", params)
+}
+
+func (s *OrderRestateSender) CreateBuyerRefund(ctx context.Context, params refund.CreateBuyerRefundParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "CreateBuyerRefund", params)
+}
+
+func (s *OrderRestateSender) WithdrawBuyerRefund(ctx context.Context, params refund.WithdrawBuyerRefundParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "WithdrawBuyerRefund", params)
+}
+
+func (s *OrderRestateSender) SellerApproveRefund(ctx context.Context, params refund.SellerActionParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "SellerApproveRefund", params)
+}
+
+func (s *OrderRestateSender) SellerDisputeRefund(ctx context.Context, params refund.SellerDisputeParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "SellerDisputeRefund", params)
+}
+
+func (s *OrderRestateSender) ListRefundDisputes(ctx context.Context, params dispute.ListRefundDisputesParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListRefundDisputes", params)
+}
+
+func (s *OrderRestateSender) GetRefundDispute(ctx context.Context, params dispute.GetRefundDisputeParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetRefundDispute", params)
+}
+
+func (s *OrderRestateSender) AdminUpholdDispute(ctx context.Context, params dispute.AdminDisputeDecisionParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "AdminUpholdDispute", params)
+}
+
+func (s *OrderRestateSender) AdminDismissDispute(ctx context.Context, params dispute.AdminDisputeDecisionParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "AdminDismissDispute", params)
+}
+
+func (s *OrderRestateSender) OnTransportResult(ctx context.Context, params ordertransport.OnTransportResultParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "OnTransportResult", params)
+}
+
+func (s *OrderRestateSender) QuoteTransport(ctx context.Context, params ordertransport.QuoteTransportParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "QuoteTransport", params)
+}
+
+func (s *OrderRestateSender) HasPurchasedProduct(ctx context.Context, params review.HasPurchasedProductParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "HasPurchasedProduct", params)
+}
+
+func (s *OrderRestateSender) ListReviewableOrders(ctx context.Context, params review.ListReviewableOrdersParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListReviewableOrders", params)
+}
+
+func (s *OrderRestateSender) ListReviewableOrdersBySpu(ctx context.Context, params review.ListReviewableOrdersBySpuParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ListReviewableOrdersBySpu", params)
+}
+
+func (s *OrderRestateSender) ValidateOrderForReview(ctx context.Context, params review.ValidateOrderForReviewParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "ValidateOrderForReview", params)
+}
+
+func (s *OrderRestateSender) CreateProductReview(ctx context.Context, params review.CreateProductReviewParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "CreateProductReview", params)
+}
+
+func (s *OrderRestateSender) GetSellerOrderStats(ctx context.Context, params dashboard.GetSellerOrderStatsParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetSellerOrderStats", params)
+}
+
+func (s *OrderRestateSender) GetSellerOrderTimeSeries(ctx context.Context, params dashboard.GetSellerOrderTimeSeriesParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetSellerOrderTimeSeries", params)
+}
+
+func (s *OrderRestateSender) GetSellerPendingActions(ctx context.Context, params dashboard.GetSellerPendingActionsParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetSellerPendingActions", params)
+}
+
+func (s *OrderRestateSender) GetSellerTopProducts(ctx context.Context, params dashboard.GetSellerTopProductsParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetSellerTopProducts", params)
+}
+
+func (s *OrderRestateSender) GetSellerDashboard(ctx context.Context, params dashboard.GetSellerDashboardParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetSellerDashboard", params)
+}
+
+func (s *OrderRestateSender) InferCurrency(ctx context.Context, accountID uuid.UUID) error {
+	return restatec.Send(ctx, s.client, serviceName, "InferCurrency", accountID)
+}
+
+func (s *OrderRestateSender) GetOptions(ctx context.Context, params GetOptionsParams) error {
+	return restatec.Send(ctx, s.client, serviceName, "GetOptions", params)
+}
+
+// OrderRestateFuture implements OrderBizFuture via the Restate SDK.
+type OrderRestateFuture struct{}
+
+var _ OrderBizFuture = (*OrderRestateFuture)(nil)
+
+func (f *OrderRestateFuture) ListBuyerPendingItems(rctx restate.Context, params buyerorder.ListBuyerPendingItemsParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.OrderItem]] {
+	return restate.Service[paginate.PaginateResult[ordermodel.OrderItem]](rctx, serviceName, "ListBuyerPendingItems").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) CancelBuyerPending(rctx restate.Context, params buyerorder.CancelBuyerPendingParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "CancelBuyerPending").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) RefundPendingItem(rctx restate.Context, params buyerorder.RefundPendingItemParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "RefundPendingItem").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) ListBuyerPendingOrders(rctx restate.Context, params buyerorder.ListBuyerPendingOrdersParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.Order]] {
+	return restate.Service[paginate.PaginateResult[ordermodel.Order]](rctx, serviceName, "ListBuyerPendingOrders").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) ListBuyerCompletedOrders(rctx restate.Context, params buyerorder.ListBuyerCompletedOrdersParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.Order]] {
+	return restate.Service[paginate.PaginateResult[ordermodel.Order]](rctx, serviceName, "ListBuyerCompletedOrders").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) ListBuyerCancelledOrders(rctx restate.Context, params buyerorder.ListBuyerCancelledOrdersParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.Order]] {
+	return restate.Service[paginate.PaginateResult[ordermodel.Order]](rctx, serviceName, "ListBuyerCancelledOrders").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) ListBuyerCancelledItems(rctx restate.Context, params buyerorder.ListBuyerCancelledItemsParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.OrderItem]] {
+	return restate.Service[paginate.PaginateResult[ordermodel.OrderItem]](rctx, serviceName, "ListBuyerCancelledItems").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) GetBuyerOrder(rctx restate.Context, orderID uuid.UUID) restate.ResponseFuture[ordermodel.Order] {
+	return restate.Service[ordermodel.Order](rctx, serviceName, "GetBuyerOrder").RequestFuture(orderID)
+}
+
+func (f *OrderRestateFuture) GetCheckoutSummary(rctx restate.Context, params buyerorder.GetCheckoutSummaryParams) restate.ResponseFuture[ordermodel.CheckoutSummary] {
+	return restate.Service[ordermodel.CheckoutSummary](rctx, serviceName, "GetCheckoutSummary").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) ListSellerPendingItems(rctx restate.Context, params sellerorder.ListSellerPendingItemsParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.OrderItem]] {
+	return restate.Service[paginate.PaginateResult[ordermodel.OrderItem]](rctx, serviceName, "ListSellerPendingItems").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) RejectSellerPending(rctx restate.Context, params sellerorder.RejectSellerPendingParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "RejectSellerPending").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) GetSellerOrder(rctx restate.Context, orderID uuid.UUID) restate.ResponseFuture[ordermodel.Order] {
+	return restate.Service[ordermodel.Order](rctx, serviceName, "GetSellerOrder").RequestFuture(orderID)
+}
+
+func (f *OrderRestateFuture) ListSellerConfirmed(rctx restate.Context, params sellerorder.ListSellerConfirmedParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.Order]] {
+	return restate.Service[paginate.PaginateResult[ordermodel.Order]](rctx, serviceName, "ListSellerConfirmed").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) GetCart(rctx restate.Context, params cart.GetCartParams) restate.ResponseFuture[[]ordermodel.CartItem] {
+	return restate.Service[[]ordermodel.CartItem](rctx, serviceName, "GetCart").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) UpdateCart(rctx restate.Context, params cart.UpdateCartParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "UpdateCart").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) ClearCart(rctx restate.Context, params cart.ClearCartParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "ClearCart").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) OnPaymentResult(rctx restate.Context, params payment.Notification) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "OnPaymentResult").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) GetReusableGatewayURL(rctx restate.Context, sessionID uuid.UUID) restate.ResponseFuture[orderpayment.ReusableGatewayURLState] {
+	return restate.Service[orderpayment.ReusableGatewayURLState](rctx, serviceName, "GetReusableGatewayURL").RequestFuture(sessionID)
+}
+
+func (f *OrderRestateFuture) ListBuyerRefunds(rctx restate.Context, params refund.ListBuyerRefundsParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.Refund]] {
+	return restate.Service[paginate.PaginateResult[ordermodel.Refund]](rctx, serviceName, "ListBuyerRefunds").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) ListSellerRefunds(rctx restate.Context, params refund.ListSellerRefundsParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.Refund]] {
+	return restate.Service[paginate.PaginateResult[ordermodel.Refund]](rctx, serviceName, "ListSellerRefunds").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) CreateBuyerRefund(rctx restate.Context, params refund.CreateBuyerRefundParams) restate.ResponseFuture[ordermodel.Refund] {
+	return restate.Service[ordermodel.Refund](rctx, serviceName, "CreateBuyerRefund").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) WithdrawBuyerRefund(rctx restate.Context, params refund.WithdrawBuyerRefundParams) restate.ResponseFuture[ordermodel.Refund] {
+	return restate.Service[ordermodel.Refund](rctx, serviceName, "WithdrawBuyerRefund").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) SellerApproveRefund(rctx restate.Context, params refund.SellerActionParams) restate.ResponseFuture[ordermodel.Refund] {
+	return restate.Service[ordermodel.Refund](rctx, serviceName, "SellerApproveRefund").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) SellerDisputeRefund(rctx restate.Context, params refund.SellerDisputeParams) restate.ResponseFuture[ordermodel.RefundDispute] {
+	return restate.Service[ordermodel.RefundDispute](rctx, serviceName, "SellerDisputeRefund").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) ListRefundDisputes(rctx restate.Context, params dispute.ListRefundDisputesParams) restate.ResponseFuture[paginate.PaginateResult[ordermodel.RefundDispute]] {
+	return restate.Service[paginate.PaginateResult[ordermodel.RefundDispute]](rctx, serviceName, "ListRefundDisputes").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) GetRefundDispute(rctx restate.Context, params dispute.GetRefundDisputeParams) restate.ResponseFuture[ordermodel.RefundDispute] {
+	return restate.Service[ordermodel.RefundDispute](rctx, serviceName, "GetRefundDispute").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) AdminUpholdDispute(rctx restate.Context, params dispute.AdminDisputeDecisionParams) restate.ResponseFuture[ordermodel.RefundDispute] {
+	return restate.Service[ordermodel.RefundDispute](rctx, serviceName, "AdminUpholdDispute").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) AdminDismissDispute(rctx restate.Context, params dispute.AdminDisputeDecisionParams) restate.ResponseFuture[ordermodel.RefundDispute] {
+	return restate.Service[ordermodel.RefundDispute](rctx, serviceName, "AdminDismissDispute").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) OnTransportResult(rctx restate.Context, params ordertransport.OnTransportResultParams) restate.ResponseFuture[restate.Void] {
+	return restate.Service[restate.Void](rctx, serviceName, "OnTransportResult").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) QuoteTransport(rctx restate.Context, params ordertransport.QuoteTransportParams) restate.ResponseFuture[ordertransport.QuoteTransportResult] {
+	return restate.Service[ordertransport.QuoteTransportResult](rctx, serviceName, "QuoteTransport").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) HasPurchasedProduct(rctx restate.Context, params review.HasPurchasedProductParams) restate.ResponseFuture[bool] {
+	return restate.Service[bool](rctx, serviceName, "HasPurchasedProduct").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) ListReviewableOrders(rctx restate.Context, params review.ListReviewableOrdersParams) restate.ResponseFuture[[]review.ReviewableOrder] {
+	return restate.Service[[]review.ReviewableOrder](rctx, serviceName, "ListReviewableOrders").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) ListReviewableOrdersBySpu(rctx restate.Context, params review.ListReviewableOrdersBySpuParams) restate.ResponseFuture[[]review.ReviewableOrder] {
+	return restate.Service[[]review.ReviewableOrder](rctx, serviceName, "ListReviewableOrdersBySpu").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) ValidateOrderForReview(rctx restate.Context, params review.ValidateOrderForReviewParams) restate.ResponseFuture[bool] {
+	return restate.Service[bool](rctx, serviceName, "ValidateOrderForReview").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) CreateProductReview(rctx restate.Context, params review.CreateProductReviewParams) restate.ResponseFuture[catalogmodel.Comment] {
+	return restate.Service[catalogmodel.Comment](rctx, serviceName, "CreateProductReview").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) GetSellerOrderStats(rctx restate.Context, params dashboard.GetSellerOrderStatsParams) restate.ResponseFuture[dashboard.SellerOrderStats] {
+	return restate.Service[dashboard.SellerOrderStats](rctx, serviceName, "GetSellerOrderStats").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) GetSellerOrderTimeSeries(rctx restate.Context, params dashboard.GetSellerOrderTimeSeriesParams) restate.ResponseFuture[[]dashboard.SellerOrderTimeSeriesPoint] {
+	return restate.Service[[]dashboard.SellerOrderTimeSeriesPoint](rctx, serviceName, "GetSellerOrderTimeSeries").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) GetSellerPendingActions(rctx restate.Context, params dashboard.GetSellerPendingActionsParams) restate.ResponseFuture[dashboard.SellerPendingActions] {
+	return restate.Service[dashboard.SellerPendingActions](rctx, serviceName, "GetSellerPendingActions").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) GetSellerTopProducts(rctx restate.Context, params dashboard.GetSellerTopProductsParams) restate.ResponseFuture[[]dashboard.SellerTopProduct] {
+	return restate.Service[[]dashboard.SellerTopProduct](rctx, serviceName, "GetSellerTopProducts").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) GetSellerDashboard(rctx restate.Context, params dashboard.GetSellerDashboardParams) restate.ResponseFuture[dashboard.SellerDashboard] {
+	return restate.Service[dashboard.SellerDashboard](rctx, serviceName, "GetSellerDashboard").RequestFuture(params)
+}
+
+func (f *OrderRestateFuture) InferCurrency(rctx restate.Context, accountID uuid.UUID) restate.ResponseFuture[string] {
+	return restate.Service[string](rctx, serviceName, "InferCurrency").RequestFuture(accountID)
+}
+
+func (f *OrderRestateFuture) GetOptions(rctx restate.Context, params GetOptionsParams) restate.ResponseFuture[[]sharedmodel.Option] {
+	return restate.Service[[]sharedmodel.Option](rctx, serviceName, "GetOptions").RequestFuture(params)
 }

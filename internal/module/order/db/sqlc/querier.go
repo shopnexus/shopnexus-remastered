@@ -82,6 +82,10 @@ type Querier interface {
 	CreateDefaultTransport(ctx context.Context, arg CreateDefaultTransportParams) (OrderTransport, error)
 	CreateItem(ctx context.Context, arg CreateItemParams) (OrderItem, error)
 	CreateOrder(ctx context.Context, arg CreateOrderParams) (OrderOrder, error)
+	// CreateOrderIdempotent inserts the order row with a caller-chosen ID (the
+	// fulfillment workflow key). ON CONFLICT DO NOTHING makes the durable-Run
+	// retry after a crash-after-commit a no-op instead of a duplicate-key wedge.
+	CreateOrderIdempotent(ctx context.Context, arg CreateOrderIdempotentParams) error
 	CreatePaymentSession(ctx context.Context, arg CreatePaymentSessionParams) (OrderPaymentSession, error)
 	CreateRefund(ctx context.Context, arg CreateRefundParams) (OrderRefund, error)
 	CreateRefundDispute(ctx context.Context, arg CreateRefundDisputeParams) (OrderRefundDispute, error)
@@ -131,10 +135,11 @@ type Querier interface {
 	// Queries for table: order.refund_dispute
 	// ========================================
 	GetRefundDispute(ctx context.Context, id uuid.NullUUID) (OrderRefundDispute, error)
-	// GetRefundSnapshotByOrder is the per-iteration projection PayoutWorkflow
-	// reads while watching escrow. has_active_refund flips while any refund is
-	// in negotiation; last_refund_approved becomes true once the most recent
-	// refund row for this order lands in Accepted.
+	// GetRefundSnapshotByOrder is the per-iteration projection the fulfillment
+	// workflow reads while watching escrow. has_active_refund flips while any
+	// refund is in negotiation; last_refund_approved becomes true once the most
+	// recent refund row for this order lands in Accepted; active_refund_id is the
+	// refund the workflow must resolve inline (zero UUID when none active).
 	GetRefundSnapshotByOrder(ctx context.Context, orderID uuid.UUID) (GetRefundSnapshotByOrderRow, error)
 	// Custom dashboard aggregation queries for seller analytics
 	// Aggregates revenue, order count, and items sold for a seller within a date range.
@@ -157,8 +162,8 @@ type Querier interface {
 	GetTransportByTrackingID(ctx context.Context, trackingID json.RawMessage) (OrderTransport, error)
 	GetTransportWithOrder(ctx context.Context, id int64) (GetTransportWithOrderRow, error)
 	// HasActiveRefundForOrder reports whether any refund row for this order is
-	// still in negotiation (not yet Accepted or Rejected). Used by PayoutWorkflow
-	// to decide whether to release escrow.
+	// still in negotiation (not yet Accepted or Rejected). Used by the fulfillment
+	// workflow to decide whether to release escrow.
 	HasActiveRefundForOrder(ctx context.Context, orderID uuid.UUID) (bool, error)
 	HasPurchasedSku(ctx context.Context, arg HasPurchasedSkuParams) (bool, error)
 	// Pre-confirm items the buyer can no longer act on: either the checkout

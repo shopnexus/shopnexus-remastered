@@ -10,7 +10,6 @@ import (
 
 	"shopnexus-server/internal/infras/ratelimit"
 	orderbiz "shopnexus-server/internal/module/order/biz"
-	orderconfig "shopnexus-server/internal/module/order/config"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/provider/transport"
 	authclaims "shopnexus-server/internal/shared/claims"
@@ -21,20 +20,28 @@ import (
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
 	"github.com/labstack/echo/v4"
-	"github.com/restatedev/sdk-go/ingress"
 )
 
 // Handler handles HTTP requests for the order module.
 type Handler struct {
-	biz     orderbiz.OrderBiz
-	ingress *ingress.Client
+	biz         orderbiz.OrderBizClient
+	checkout    orderbiz.CheckoutWfClient
+	fulfillment orderbiz.FulfillmentWfClient
 }
 
 // NewHandler registers order module routes and returns the handler.
-func NewHandler(e *echo.Echo, biz orderbiz.OrderBiz, handler *orderbiz.OrderHandler, rl *ratelimit.Factory, cfg *orderconfig.Config) *Handler {
+func NewHandler(
+	e *echo.Echo,
+	biz orderbiz.OrderBizClient,
+	handler *orderbiz.OrderHandler,
+	rl *ratelimit.Factory,
+	checkoutWf orderbiz.CheckoutWfClient,
+	fulfillmentWf orderbiz.FulfillmentWfClient,
+) *Handler {
 	h := &Handler{
-		biz:     biz,
-		ingress: ingress.NewClient(cfg.Restate.IngressAddress),
+		biz:         biz,
+		checkout:    checkoutWf,
+		fulfillment: fulfillmentWf,
 	}
 	g := e.Group("/api/v1/order")
 
@@ -361,7 +368,7 @@ func (h *Handler) BuyerCheckout(c echo.Context) error {
 		})
 	}
 
-	workflowID := uuid.NewString()
+	workflowID := uuid.New()
 	input := orderbiz.CheckoutWorkflowInput{
 		Account:       claims.Account,
 		Items:         items,
@@ -377,21 +384,17 @@ func (h *Handler) BuyerCheckout(c echo.Context) error {
 	// Submit Run as fire-and-forget — Restate journal owns the lifecycle from
 	// here. We don't wait for Run() to return; instead we attach to the shared
 	// WaitPaymentURL promise which Run() resolves once the gateway URL is known.
-	if _, err := ingress.Workflow[orderbiz.CheckoutWorkflowInput, struct{}](
-		h.ingress, "CheckoutWorkflow", workflowID, "Run",
-	).Send(ctx, input); err != nil {
+	if err := h.checkout.Send().Run(ctx, workflowID, input); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
 
-	url, err := ingress.Workflow[struct{}, string](
-		h.ingress, "CheckoutWorkflow", workflowID, "WaitPaymentURL",
-	).Request(ctx, struct{}{})
+	url, err := h.checkout.WaitPaymentURL(ctx, workflowID)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
 
 	return response.FromDTO(c.Response().Writer, http.StatusOK, BuyerCheckoutResponse{
-		CheckoutSessionID: workflowID,
+		CheckoutSessionID: workflowID.String(),
 		PaymentURL:        url,
 	})
 }
@@ -407,8 +410,7 @@ type EnsurePaymentURLResponse struct {
 // otherwise signals CheckoutWorkflow.RequestNewPaymentURL to mint the next
 // attempt and waits for its URL. 410 if the session is already terminal.
 func (h *Handler) EnsureBuyerCheckoutPaymentURL(c echo.Context) error {
-	sessionIDRaw := c.Param("sessionID")
-	sessionID, err := uuid.Parse(sessionIDRaw)
+	sessionID, err := uuid.Parse(c.Param("sessionID"))
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, fmt.Errorf("invalid session id: %w", err))
 	}
@@ -430,9 +432,7 @@ func (h *Handler) EnsureBuyerCheckoutPaymentURL(c echo.Context) error {
 		return response.FromDTO(c.Response().Writer, http.StatusOK, EnsurePaymentURLResponse{PaymentURL: state.ReusableURL})
 	}
 
-	url, err := ingress.Workflow[struct{}, string](
-		h.ingress, "CheckoutWorkflow", sessionIDRaw, "RequestNewPaymentURL",
-	).Request(ctx, struct{}{})
+	url, err := h.checkout.RequestNewPaymentURL(ctx, sessionID)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
@@ -441,8 +441,8 @@ func (h *Handler) EnsureBuyerCheckoutPaymentURL(c echo.Context) error {
 
 // CancelBuyerCheckout signals CheckoutWorkflow.CancelCheckout
 func (h *Handler) CancelBuyerCheckout(c echo.Context) error {
-	sessionID := c.Param("sessionID")
-	if _, err := uuid.Parse(sessionID); err != nil {
+	sessionID, err := uuid.Parse(c.Param("sessionID"))
+	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, fmt.Errorf("invalid session id: %w", err))
 	}
 
@@ -450,9 +450,7 @@ func (h *Handler) CancelBuyerCheckout(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if _, err := ingress.Workflow[struct{}, struct{}](
-		h.ingress, "CheckoutWorkflow", sessionID, "CancelCheckout",
-	).Send(c.Request().Context(), struct{}{}); err != nil {
+	if err := h.checkout.Send().CancelCheckout(c.Request().Context(), sessionID); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
 

@@ -1,21 +1,30 @@
 package order
 
 import (
-	"context"
-	"fmt"
-	"log/slog"
-	"os"
+	"encoding/json"
 	"time"
 
-	"github.com/bytedance/sonic"
 	"github.com/redis/rueidis"
 	"go.uber.org/fx"
 
 	"shopnexus-server/internal/infras/cache"
+	"shopnexus-server/internal/infras/fxinfra"
 	"shopnexus-server/internal/infras/locker"
 	redislocker "shopnexus-server/internal/infras/locker/redis"
-	"shopnexus-server/internal/infras/pg"
 	orderbiz "shopnexus-server/internal/module/order/biz"
+	"shopnexus-server/internal/module/order/biz/base"
+	buyerorder "shopnexus-server/internal/module/order/biz/buyer_order"
+	"shopnexus-server/internal/module/order/biz/cart"
+	"shopnexus-server/internal/module/order/biz/dashboard"
+	"shopnexus-server/internal/module/order/biz/dispute"
+	orderpayment "shopnexus-server/internal/module/order/biz/payment"
+	"shopnexus-server/internal/module/order/biz/refund"
+	"shopnexus-server/internal/module/order/biz/review"
+	sellerorder "shopnexus-server/internal/module/order/biz/seller_order"
+	ordertransport "shopnexus-server/internal/module/order/biz/transport"
+	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
+	"shopnexus-server/internal/module/order/biz/workflow/checkout"
+	"shopnexus-server/internal/module/order/biz/workflow/fullfilment"
 	orderconfig "shopnexus-server/internal/module/order/config"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	orderecho "shopnexus-server/internal/module/order/transport/echo"
@@ -30,93 +39,47 @@ import (
 // consumes locker.Client.
 var Module = fx.Module("order",
 	fx.Provide(
-		NewRedis,
-		NewPool,
+		fxinfra.Redis[*orderconfig.Config], // one client shared by NewCache and NewLocker
+		fxinfra.Pool[*orderconfig.Config],
+		fxinfra.Logger[*orderconfig.Config]("order"),
 		NewCache,
-		NewLogger,
 		fx.Private,
 	),
 	fx.Provide(
 		orderconfig.NewConfig,
 		NewLocker,
 		NewOrderStorage,
+		// shared cores + one constructor per domain sub-handler
+		base.New,
+		wfbase.New,
+		buyerorder.New,
+		sellerorder.New,
+		cart.New,
+		orderpayment.New,
+		refund.New,
+		dispute.New,
+		ordertransport.New,
+		review.New,
+		dashboard.New,
 		orderbiz.NewOrderHandler,
 		NewOrderBiz,
 		orderecho.NewHandler,
-		orderbiz.NewCheckoutWorkflow,
-		orderbiz.NewConfirmWorkflow,
-		orderbiz.NewPayoutWorkflow,
-		orderbiz.NewRefundWorkflow,
+		// workflows
+		checkout.New,
+		fullfilment.NewFulfillmentWorkflow,
+		NewCheckoutWf,
+		NewFulfillmentWf,
 	),
 	fx.Invoke(
 		orderecho.NewHandler,
 	),
 )
 
-func NewPool(cfg *orderconfig.Config, lc fx.Lifecycle) (pgsqlc.TxBeginner, error) {
-	pool, err := pg.New(pg.Options{
-		Url:             cfg.Postgres.Url,
-		Host:            cfg.Postgres.Host,
-		Port:            cfg.Postgres.Port,
-		Username:        cfg.Postgres.Username,
-		Password:        cfg.Postgres.Password,
-		Database:        cfg.Postgres.Database,
-		MaxConnections:  cfg.Postgres.MaxConnections,
-		MaxConnIdleTime: cfg.Postgres.MaxConnIdleTime,
-	})
-	if err != nil {
-		return nil, err
-	}
-	lc.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error { return pool.Ping(ctx) },
-		OnStop:  func(context.Context) error { pool.Close(); return nil },
-	})
-	return pool, nil
-}
-
-// NewRedis is fx.Private: only NewCache and NewLocker (both module-internal)
-// share this rueidis.Client; nothing outside the order module sees it.
-func NewRedis(cfg *orderconfig.Config) (rueidis.Client, error) {
-	rdb, err := rueidis.NewClient(rueidis.ClientOption{
-		InitAddress: []string{fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port)},
-		Password:    cfg.Redis.Password,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return rdb, nil
-}
-
 func NewCache(rdb rueidis.Client) (cache.Client, error) {
 	return cache.NewRedisStructClient(rdb, cache.Config{
-		Encoder: sonic.Marshal,
-		Decoder: sonic.Unmarshal,
+		Encoder: json.Marshal,
+		Decoder: json.Unmarshal,
 	})
-}
-
-func NewLogger(cfg *orderconfig.Config) *slog.Logger {
-	return buildLogger(cfg.Log.Level, cfg.Log.AddSource, "order")
-}
-
-// buildLogger is the shared module-logger constructor — copied across module
-// fx.go files to keep each module fully self-describing (no shared helper).
-func buildLogger(levelStr string, addSource bool, module string) *slog.Logger {
-	var level slog.Level
-	switch levelStr {
-	case "debug":
-		level = slog.LevelDebug
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		level = slog.LevelInfo
-	}
-	h := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level:     level,
-		AddSource: addSource,
-	})
-	return slog.New(h).With(slog.String("module", module))
 }
 
 // NewLocker is PUBLIC — order biz needs locker.Client. The underlying
@@ -133,6 +96,16 @@ func NewOrderStorage(pool pgsqlc.TxBeginner) orderbiz.OrderStorage {
 }
 
 // NewOrderBiz creates a Restate-backed client for the order module.
-func NewOrderBiz(cfg *orderconfig.Config) orderbiz.OrderBiz {
+func NewOrderBiz(cfg *orderconfig.Config) orderbiz.OrderBizClient {
 	return orderbiz.NewOrderRestateClient(cfg.Restate.IngressAddress)
+}
+
+// NewCheckoutWf creates a Restate-backed client for the checkout workflow.
+func NewCheckoutWf(cfg *orderconfig.Config) checkout.CheckoutWfClient {
+	return checkout.NewCheckoutWorkflowRestateClient(cfg.Restate.IngressAddress)
+}
+
+// NewFulfillmentWf creates a Restate-backed client for the fulfillment workflow.
+func NewFulfillmentWf(cfg *orderconfig.Config) fullfilment.FulfillmentWfClient {
+	return fullfilment.NewFulfillmentWorkflowRestateClient(cfg.Restate.IngressAddress)
 }

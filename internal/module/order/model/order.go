@@ -2,6 +2,7 @@ package ordermodel
 
 import (
 	"encoding/json"
+	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	"time"
 
 	"github.com/google/uuid"
@@ -78,34 +79,14 @@ type CheckoutSummaryItem struct {
 // CheckoutSummary is the bundle returned to the payment-result page so it can
 // show what the user just paid for without the FE making N hop calls.
 type CheckoutSummary struct {
-	Session PaymentSession        `json:"session"`
-	Items   []CheckoutSummaryItem `json:"items"`
+	Session orderdb.OrderPaymentSession `json:"session"`
+	Items   []CheckoutSummaryItem       `json:"items"`
 }
 
 // OrderItem is the domain-layer item (pre- and post-confirmation).
 // Refund status is derived from negative-amount transactions in the item's payment session.
 type OrderItem struct {
-	ID        int64           `json:"id"`
-	OrderID   uuid.NullUUID   `json:"order_id"`
-	AccountID uuid.UUID       `json:"account_id"`
-	SellerID  uuid.UUID       `json:"seller_id"`
-	SkuID     uuid.UUID       `json:"sku_id"`
-	SpuID     uuid.UUID       `json:"spu_id"`
-	SkuName   string          `json:"sku_name"`
-	Address   string          `json:"address"`
-	Note      null.String     `json:"note"`
-	SerialIDs json.RawMessage `json:"serial_ids"`
-
-	Quantity         int64     `json:"quantity"`
-	TransportOption  string    `json:"transport_option"`
-	SubtotalAmount   int64     `json:"subtotal_amount"`
-	TotalAmount      int64     `json:"total_amount"`
-	SourceCurrency   string    `json:"source_currency"`
-	PaymentSessionID uuid.UUID `json:"payment_session_id"`
-
-	DateCreated   time.Time     `json:"date_created"`
-	DateCancelled null.Time     `json:"date_cancelled"`
-	CancelledByID uuid.NullUUID `json:"cancelled_by_id"`
+	orderdb.OrderItem
 
 	// Hydrated from catalog so the FE can render product cards without
 	// fanning out: slug for the product link, image for the thumbnail.
@@ -113,28 +94,19 @@ type OrderItem struct {
 	ImageURL string `json:"image_url"`
 
 	// Derived (optional loaded):
-	PaymentSession *PaymentSession `json:"payment_session,omitempty"`
+	PaymentSession *orderdb.OrderPaymentSession `json:"payment_session,omitempty"`
 }
 
 // Order is the domain-layer confirmed order (exists only after seller confirm).
 type Order struct {
-	ID          uuid.UUID `json:"id"`
-	BuyerID     uuid.UUID `json:"buyer_id"`
-	SellerID    uuid.UUID `json:"seller_id"`
-	TransportID int64     `json:"transport_id"`
-	Address     string    `json:"address"`
-	DateCreated time.Time `json:"date_created"`
-
-	ConfirmedByID    uuid.UUID   `json:"confirmed_by_id"`
-	ConfirmSessionID uuid.UUID   `json:"confirm_session_id"`
-	Note             null.String `json:"note"`
+	orderdb.OrderOrder
 
 	// Derived (optional loaded):
-	TotalAmount    int64           `json:"total_amount"`
-	Items          []OrderItem     `json:"items"`
-	Transport      *Transport      `json:"transport,omitempty"`
-	ConfirmSession *PaymentSession `json:"confirm_session,omitempty"`
-	PayoutSession  *PaymentSession `json:"payout_session,omitempty"`
+	TotalAmount    int64                        `json:"total_amount"`
+	Items          []OrderItem                  `json:"items"`
+	Transport      *orderdb.OrderTransport      `json:"transport"`
+	ConfirmSession *orderdb.OrderPaymentSession `json:"confirm_session"`
+	PayoutSession  *orderdb.OrderPaymentSession `json:"payout_session"`
 }
 
 // Refund is the v2 refund request. Buyer ships physical return at create

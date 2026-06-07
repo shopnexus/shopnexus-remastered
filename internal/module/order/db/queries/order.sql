@@ -46,3 +46,11 @@ SELECT EXISTS(
 -- name: GetOrderByTransportID :one
 SELECT o.* FROM "order"."order" o
 WHERE o.transport_id = @transport_id;
+
+-- CreateOrderIdempotent inserts the order row with a caller-chosen ID (the
+-- fulfillment workflow key). ON CONFLICT DO NOTHING makes the durable-Run
+-- retry after a crash-after-commit a no-op instead of a duplicate-key wedge.
+-- name: CreateOrderIdempotent :exec
+INSERT INTO "order"."order" ("id", "buyer_id", "seller_id", "transport_id", "address", "date_created", "confirmed_by_id", "confirm_session_id", "note")
+VALUES (@id, @buyer_id, @seller_id, @transport_id, @address, @date_created, @confirmed_by_id, @confirm_session_id, @note)
+ON CONFLICT ("id") DO NOTHING;

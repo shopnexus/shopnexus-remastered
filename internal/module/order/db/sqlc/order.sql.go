@@ -7,10 +7,47 @@ package orderdb
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	null "github.com/guregu/null/v6"
 )
+
+const createOrderIdempotent = `-- name: CreateOrderIdempotent :exec
+INSERT INTO "order"."order" ("id", "buyer_id", "seller_id", "transport_id", "address", "date_created", "confirmed_by_id", "confirm_session_id", "note")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT ("id") DO NOTHING
+`
+
+type CreateOrderIdempotentParams struct {
+	ID               uuid.UUID   `json:"id"`
+	BuyerID          uuid.UUID   `json:"buyer_id"`
+	SellerID         uuid.UUID   `json:"seller_id"`
+	TransportID      int64       `json:"transport_id"`
+	Address          string      `json:"address"`
+	DateCreated      time.Time   `json:"date_created"`
+	ConfirmedByID    uuid.UUID   `json:"confirmed_by_id"`
+	ConfirmSessionID uuid.UUID   `json:"confirm_session_id"`
+	Note             null.String `json:"note"`
+}
+
+// CreateOrderIdempotent inserts the order row with a caller-chosen ID (the
+// fulfillment workflow key). ON CONFLICT DO NOTHING makes the durable-Run
+// retry after a crash-after-commit a no-op instead of a duplicate-key wedge.
+func (q *Queries) CreateOrderIdempotent(ctx context.Context, arg CreateOrderIdempotentParams) error {
+	_, err := q.db.Exec(ctx, createOrderIdempotent,
+		arg.ID,
+		arg.BuyerID,
+		arg.SellerID,
+		arg.TransportID,
+		arg.Address,
+		arg.DateCreated,
+		arg.ConfirmedByID,
+		arg.ConfirmSessionID,
+		arg.Note,
+	)
+	return err
+}
 
 const getOrderByTransportID = `-- name: GetOrderByTransportID :one
 SELECT o.id, o.buyer_id, o.seller_id, o.transport_id, o.address, o.date_created, o.confirmed_by_id, o.confirm_session_id, o.note FROM "order"."order" o

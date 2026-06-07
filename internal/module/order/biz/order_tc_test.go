@@ -3,7 +3,7 @@ package orderbiz_test
 // Unit tests covering TC-01..TC-14 of the order module test plan.
 //
 // The order business logic runs almost entirely inside Restate workflows
-// (CheckoutWorkflow / ConfirmWorkflow / OrderHandler.* methods that take a
+// (CheckoutWorkflow / FulfillmentWorkflow / OrderHandler.* methods that take a
 // restate.Context). End-to-end execution requires a live Restate runtime,
 // a Postgres instance, and the inventory/account/catalog modules — well
 // outside the scope of a unit test.
@@ -279,7 +279,12 @@ func TestTC06_CancelPendingDecision(t *testing.T) {
 	}{
 		{"pending → signal workflow", orderdb.OrderStatusPending, cancelSignalWorkflow, nil},
 		{"success → partial refund", orderdb.OrderStatusSuccess, cancelPartialRefund, nil},
-		{"failed → reject (already cancelled)", orderdb.OrderStatusFailed, cancelReject, ordermodel.ErrItemAlreadyCancelled},
+		{
+			"failed → reject (already cancelled)",
+			orderdb.OrderStatusFailed,
+			cancelReject,
+			ordermodel.ErrItemAlreadyCancelled,
+		},
 		{"cancelled → reject", orderdb.OrderStatusCancelled, cancelReject, ordermodel.ErrItemAlreadyCancelled},
 	}
 	for _, tc := range cases {
@@ -319,7 +324,7 @@ func TestTC06_CancelParamsValidation(t *testing.T) {
 func TestTC07_ConfirmInputValid(t *testing.T) {
 	t.Parallel()
 
-	in := orderbiz.ConfirmWorkflowInput{
+	in := orderbiz.FulfillmentInput{
 		Account: authAcct(t),
 		ItemIDs: []int64{1, 2, 3},
 	}
@@ -331,7 +336,7 @@ func TestTC07_ConfirmInputValid(t *testing.T) {
 func TestTC07_ConfirmRejectsEmptyItems(t *testing.T) {
 	t.Parallel()
 
-	in := orderbiz.ConfirmWorkflowInput{Account: authAcct(t)}
+	in := orderbiz.FulfillmentInput{Account: authAcct(t)}
 	if err := validator.Validate(in); err == nil {
 		t.Fatal("empty ItemIDs must be rejected")
 	}
@@ -394,8 +399,8 @@ func TestTC09_PaymentSuccessRoutes(t *testing.T) {
 		ID:   uuid.New(),
 		Kind: ordermodel.SessionKindSellerConfirmationFee,
 	}
-	if name, _ := orderbiz.WorkflowForSession(confirmSession); name != "ConfirmWorkflow" {
-		t.Errorf("seller-confirmation-fee session must route to ConfirmWorkflow; got %q", name)
+	if name, _ := orderbiz.WorkflowForSession(confirmSession); name != "FulfillmentWorkflow" {
+		t.Errorf("seller-confirmation-fee session must route to FulfillmentWorkflow; got %q", name)
 	}
 }
 

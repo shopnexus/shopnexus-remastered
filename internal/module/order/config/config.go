@@ -3,15 +3,12 @@ package orderconfig
 import "shopnexus-server/config"
 
 type Config struct {
-	Postgres    config.Postgres `mapstructure:"postgres"`
-	Redis       config.Redis    `mapstructure:"redis"`
-	Log         config.Log      `mapstructure:"log"`
-	Restate     config.Restate  `mapstructure:"restate"`
-	Order       Order           `mapstructure:"order"`
-	Vnpay       Vnpay           `mapstructure:"vnpay"`
-	Sepay       Sepay           `mapstructure:"sepay"`
-	CardPayment CardPayment     `mapstructure:"cardPayment"`
-	GHTK        GHTK            `mapstructure:"ghtk"`
+	config.Shared `mapstructure:",squash"`
+	Order         Order       `mapstructure:"order"`
+	Vnpay         Vnpay       `mapstructure:"vnpay"`
+	Sepay         Sepay       `mapstructure:"sepay"`
+	CardPayment   CardPayment `mapstructure:"cardPayment"`
+	GHTK          GHTK        `mapstructure:"ghtk"`
 }
 
 type Order struct {

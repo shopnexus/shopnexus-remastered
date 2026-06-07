@@ -1,0 +1,362 @@
+package fullfilment
+
+import (
+	"encoding/json"
+	"fmt"
+	"time"
+
+	restate "github.com/restatedev/sdk-go"
+
+	"shopnexus-server/internal/infras/metrics"
+	accountbiz "shopnexus-server/internal/module/account/biz"
+	accountmodel "shopnexus-server/internal/module/account/model"
+	"shopnexus-server/internal/module/order/biz/workflow/base"
+	orderdb "shopnexus-server/internal/module/order/db/sqlc"
+	ordermodel "shopnexus-server/internal/module/order/model"
+	"shopnexus-server/internal/provider/transport"
+	"shopnexus-server/internal/shared/saga"
+
+	"github.com/google/uuid"
+	"github.com/guregu/null/v6"
+	"github.com/samber/lo"
+)
+
+// confirm drives the seller confirm-fee saga: validate + lock, charge the
+// confirm fee (wallet and/or gateway), then atomically create the transport,
+// order and item links. The order row is created with ID = workflow key.
+// Clears the saga on the paid path before creating order records.
+func (h *FulfillmentWorkflow) confirm(
+	ctx restate.WorkflowContext,
+	sg *saga.Saga,
+	input FulfillmentInput,
+	orderID uuid.UUID,
+) (res confirmResult, err error) {
+	// Confirm session ID = order ID = workflow key.
+	sessionID := orderID
+	sellerID := input.Account.ID
+
+	// Lock seller pending so two concurrent confirms over an overlapping
+	// ItemIDs slice can't double-spend wallet balance or skip validation.
+	// Scoped to the confirm phase — the escrow phase lives for days and must
+	// not hold it.
+	unlock := h.locker.Lock(ctx, fmt.Sprintf("order:seller-pending:%s", sellerID))
+	defer unlock()
+
+	// Fetch and validate items inside a Run so list ordering and
+	// missing-row checks are journaled (replay returns the exact same slice).
+	orderItems, err := restate.Run(ctx, func(rctx restate.RunContext) ([]orderdb.OrderItem, error) {
+		items, e := h.Storage.Querier().ListItem(rctx, orderdb.ListItemParams{
+			ID: input.ItemIDs,
+		})
+		if e != nil {
+			return nil, fmt.Errorf("db list items: %w", e)
+		}
+		if len(items) != len(input.ItemIDs) {
+			return nil, ordermodel.ErrOrderItemNotFound
+		}
+		return items, nil
+	})
+	if err != nil {
+		return res, fmt.Errorf("fetch items: %w", err)
+	}
+
+	// Validate items and aggregate shared fields. Every item must be owned
+	// by this seller, share buyer/address/transport, and not already be
+	// final. paidTotal is the sum the buyer already paid for these items —
+	// the eventual payout amount when escrow releases.
+	var (
+		buyerID                 uuid.UUID
+		address                 string
+		transportOption         string
+		paidTotal               int64
+		uniquePaymentSessionIDs = make(map[uuid.UUID]struct{})
+	)
+	// Validation outcome is deterministic over journaled orderItems, so any
+	// failure must be terminal — otherwise Restate would retry the same
+	// invariant violation forever. fmt.Errorf("%w") strips the
+	// marker on ordermodel errors, so we re-wrap with restate.TerminalError.
+	for i, item := range orderItems {
+		if item.OrderID.Valid {
+			return res, restate.TerminalError(fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemAlreadyConfirmed))
+		}
+		if item.DateCancelled.Valid {
+			return res, restate.TerminalError(fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemAlreadyCancelled))
+		}
+		if item.SellerID != sellerID {
+			return res, restate.TerminalError(fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemNotOwnedBySeller))
+		}
+		if i == 0 {
+			buyerID = item.AccountID
+			address = item.Address
+			transportOption = item.TransportOption
+		} else {
+			if item.AccountID != buyerID {
+				return res, restate.TerminalError(fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemsNotSameBuyer))
+			}
+			if item.Address != address {
+				return res, restate.TerminalError(fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemsNotSameAddress))
+			}
+			if item.TransportOption != transportOption {
+				return res, restate.TerminalError(
+					fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemsTransportMismatch),
+				)
+			}
+		}
+		paidTotal += item.TotalAmount
+		uniquePaymentSessionIDs[item.PaymentSessionID] = struct{}{}
+	}
+
+	// Verify every unique buyer payment session already settled. Confirming
+	// items the buyer never paid for would mint inventory for free.
+	for psID := range uniquePaymentSessionIDs {
+		status, sErr := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderStatus, error) {
+			session, e := h.Storage.Querier().GetPaymentSession(rctx, uuid.NullUUID{UUID: psID, Valid: true})
+			if e != nil {
+				return "", fmt.Errorf("get payment session: %w", e)
+			}
+			return session.Status, nil
+		})
+		if sErr != nil {
+			return res, fmt.Errorf("check payment session status: %w", sErr)
+		}
+		if status != orderdb.OrderStatusSuccess {
+			return res, ordermodel.ErrPaymentNotSuccess
+		}
+	}
+
+	// Quote transport for the aggregate shipment. One quote covers all
+	// confirmed items because they share the same transport_option and
+	// destination address (asserted above).
+	contactMap, err := h.account.GetDefaultContact(ctx, []uuid.UUID{sellerID})
+	if err != nil {
+		return res, fmt.Errorf("get seller contact: %w", err)
+	}
+	fromAddress := contactMap[sellerID].Address
+
+	transportClient, err := h.GetTransportClient(transportOption)
+	if err != nil {
+		return res, fmt.Errorf("get transport client: %w", err)
+	}
+
+	transportItems := lo.Map(orderItems, func(item orderdb.OrderItem, _ int) transport.ItemMetadata {
+		return transport.ItemMetadata{SkuID: item.SkuID, Quantity: item.Quantity}
+	})
+	quote, err := transportClient.Quote(ctx, transport.QuoteParams{
+		Items:       transportItems,
+		FromAddress: fromAddress,
+		ToAddress:   address,
+	})
+	if err != nil {
+		return res, fmt.Errorf("quote transport: %w", err)
+	}
+
+	platformFee := int64(0) // TODO: plug config
+	confirmFeeTotal := quote.Cost + platformFee
+
+	// Confirm-fee txs are denominated in the seller's currency (the seller
+	// is paying the platform). inferCurrency is cross-module → outside Run.
+	sellerCurrency, err := h.InferCurrency(ctx, sellerID)
+	if err != nil {
+		return res, fmt.Errorf("infer seller currency: %w", err)
+	}
+
+	// Wallet / gateway split for confirmFeeTotal.
+	var confirmFeeWallet, confirmFeeGateway int64
+	if input.UseWallet && confirmFeeTotal > 0 {
+		balance, balErr := h.account.GetWalletBalance(ctx, sellerID)
+		if balErr != nil {
+			return res, fmt.Errorf("get seller wallet balance: %w", balErr)
+		}
+		if balance >= confirmFeeTotal {
+			confirmFeeWallet = confirmFeeTotal
+		} else {
+			confirmFeeWallet = balance
+		}
+	}
+	confirmFeeGateway = confirmFeeTotal - confirmFeeWallet
+
+	if confirmFeeGateway > 0 && input.PaymentOption == "" {
+		return res, ordermodel.ErrInsufficientWalletBalance
+	}
+
+	// Atomically create payment_session and the wallet tx (Pending) in one
+	// Run. Order / transport / item-link rows are deferred to the post-paid
+	// Run below, so we don't have to compensate them on rollback. The wallet
+	// tx UUID is pre-allocated via restate.UUID so retries reuse the same
+	// value and the INSERT is idempotent on PK conflict. Gateway txs are
+	// minted per attempt inside the retry loop, so the compensator marks
+	// every still-Pending child tx by session_id rather than tracking IDs.
+	walletTxID := restate.UUID(ctx)
+
+	sg.Defer("mark_session_and_txs_failed", func(ctx restate.Context) error {
+		return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+			return base.MarkSessionAndAllPendingFailed(
+				rctx,
+				h.Storage.Querier(),
+				sessionID,
+				"confirm saga compensation",
+			)
+		})
+	})
+
+	if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		if _, sErr := h.Storage.Querier().CreateDefaultPaymentSession(rctx, orderdb.CreateDefaultPaymentSessionParams{
+			ID:          sessionID,
+			Kind:        ordermodel.SessionKindSellerConfirmationFee,
+			Status:      orderdb.OrderStatusPending,
+			FromID:      uuid.NullUUID{UUID: sellerID, Valid: true},
+			ToID:        uuid.NullUUID{},
+			Note:        "seller confirmation fee",
+			Currency:    sellerCurrency,
+			TotalAmount: confirmFeeTotal,
+			Data:        json.RawMessage("{}"),
+			DatePaid:    null.Time{},
+			DateExpired: time.Now().Add(base.SessionExpiry),
+		}); sErr != nil {
+			return fmt.Errorf("db create confirm session: %w", sErr)
+		}
+
+		if confirmFeeWallet > 0 {
+			if _, txErr := h.Storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
+				ID:        walletTxID,
+				SessionID: sessionID,
+				Status:    orderdb.OrderStatusPending,
+				Note:      "confirm fee wallet payment",
+				Data:      json.RawMessage("{}"),
+				Amount:    confirmFeeWallet,
+				Currency:  sellerCurrency,
+			}); txErr != nil {
+				return fmt.Errorf("db create confirm_fee wallet tx: %w", txErr)
+			}
+		}
+
+		return nil
+	}); err != nil {
+		return res, fmt.Errorf("create confirm fee session and txs: %w", err)
+	}
+
+	// Wallet debit + mark wallet tx success.
+	if confirmFeeWallet > 0 {
+		if _, dErr := h.account.WalletDebit(ctx, accountbiz.WalletDebitParams{
+			AccountID: sellerID,
+			Amount:    confirmFeeWallet,
+			Reference: fmt.Sprintf("tx:%s", walletTxID),
+			Note:      "confirm fee wallet payment",
+		}); dErr != nil {
+			return res, fmt.Errorf("seller wallet debit: %w", dErr)
+		}
+		// Arm credit compensator AFTER debit confirmed. WalletDebit is atomic
+		// (single CTE under FOR UPDATE) → terminal failure means no debit,
+		// so arming earlier would over-credit on saga fire.
+		sg.Defer("credit_wallet", func(ctx restate.Context) error {
+			return h.account.WalletCredit(ctx, accountbiz.WalletCreditParams{
+				AccountID: sellerID,
+				Amount:    confirmFeeWallet,
+				Type:      "Refund",
+				Reference: fmt.Sprintf("tx:%s", walletTxID),
+				Note:      "saga compensate: confirm fee wallet debit",
+			})
+		})
+		if mErr := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+			_, e := h.Storage.Querier().MarkTransactionSuccess(rctx, orderdb.MarkTransactionSuccessParams{
+				ID:          walletTxID,
+				DateSettled: time.Now(),
+			})
+			return e
+		}); mErr != nil {
+			return res, fmt.Errorf("mark confirm-fee wallet tx success: %w", mErr)
+		}
+	}
+
+	// Gateway payment loop (skipped for wallet-only). Shared with
+	// CheckoutWorkflow via runGatewayPaymentLoop in payment_gateway.go.
+	if confirmFeeGateway > 0 {
+		if err = h.RunGatewayPaymentLoop(ctx, base.GatewayPaymentLoopParams{
+			SessionID:       sessionID,
+			WorkflowID:      orderID,
+			SessionDeadline: time.Now().Add(base.SessionExpiry),
+			NotePrefix:      "confirm fee gateway payment",
+			Description:     fmt.Sprintf("Confirm fee session %s", sessionID),
+			PaymentOption:   input.PaymentOption,
+			Amount:          confirmFeeGateway,
+			Currency:        sellerCurrency,
+			ErrCancelled:    ordermodel.ErrConfirmCancelled,
+			ErrExpired:      ordermodel.ErrConfirmExpired,
+		}); err != nil {
+			return res, fmt.Errorf("gateway payment loop: %w", err)
+		}
+	}
+
+	// Paid path — clear the saga and atomically create transport, order
+	// (ID = workflow key) and item links in one Run. Failure here is a
+	// programmer bug (the seller already paid us); it bubbles as terminal.
+	sg.Clear()
+
+	if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		quoteData, _ := json.Marshal(map[string]int64{"quote": quote.Cost})
+		trRow, tErr := h.Storage.Querier().CreateDefaultTransport(rctx, orderdb.CreateDefaultTransportParams{
+			Option: transportOption,
+			Data:   json.RawMessage(quoteData),
+		})
+		if tErr != nil {
+			return fmt.Errorf("db create transport: %w", tErr)
+		}
+
+		// TODO: remove this mock when a real transport provider is wired up.
+		// Mark the seller→buyer forward leg Success immediately so the order
+		// flips to Completed in the FE without waiting for a real webhook.
+		mockData, _ := json.Marshal(map[string]any{
+			"quote": quote.Cost,
+			"mock":  "auto-delivered",
+		})
+		if trRow, tErr = h.Storage.Querier().UpdateTransportStatusByID(rctx, orderdb.UpdateTransportStatusByIDParams{
+			ID:     trRow.ID,
+			Status: orderdb.NullOrderStatus{OrderStatus: orderdb.OrderStatusSuccess, Valid: true},
+			Data:   json.RawMessage(mockData),
+		}); tErr != nil {
+			return fmt.Errorf("mock transport success: %w", tErr)
+		}
+
+		if oErr := h.Storage.Querier().CreateOrderIdempotent(rctx, orderdb.CreateOrderIdempotentParams{
+			ID:               orderID,
+			BuyerID:          buyerID,
+			SellerID:         sellerID,
+			TransportID:      trRow.ID,
+			Address:          address,
+			DateCreated:      time.Now(),
+			ConfirmedByID:    input.Account.ID,
+			ConfirmSessionID: sessionID,
+			Note:             null.NewString(input.Note, input.Note != ""),
+		}); oErr != nil {
+			return fmt.Errorf("db create order: %w", oErr)
+		}
+
+		if lErr := h.Storage.Querier().SetItemsOrderID(rctx, orderdb.SetItemsOrderIDParams{
+			OrderID: uuid.NullUUID{UUID: orderID, Valid: true},
+			ItemIds: input.ItemIDs,
+		}); lErr != nil {
+			return fmt.Errorf("db set items order id: %w", lErr)
+		}
+
+		return nil
+	}); err != nil {
+		return res, fmt.Errorf("create order records: %w", err)
+	}
+
+	metrics.OrdersCreatedTotal.Inc()
+
+	// Wallet-only confirms never enter the gateway loop — resolve the first
+	// payment-URL promise with an empty URL so the synchronous HTTP caller
+	// short-circuits instead of hanging.
+	if confirmFeeGateway == 0 {
+		_ = restate.Promise[string](ctx, "payment_url_1").Resolve("")
+	}
+
+	itemNames := lo.Map(orderItems, func(it orderdb.OrderItem, _ int) string { return it.SkuName })
+	if err = h.NotifyOrder(ctx, buyerID, orderID, accountmodel.NotiItemsConfirmed, "Items confirmed",
+		fmt.Sprintf("%s has been confirmed by the seller.", ordermodel.SummarizeNames(itemNames))); err != nil {
+		return confirmResult{}, fmt.Errorf("notify items confirmed: %w", err)
+	}
+
+	return confirmResult{SellerID: sellerID, PaidTotal: paidTotal, Currency: sellerCurrency}, nil
+}

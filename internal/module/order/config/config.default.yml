@@ -53,3 +53,6 @@ ghtk:
   apiKey: ""
   clientID: ""
   secret: ""
+
+bus:
+  transport: redis

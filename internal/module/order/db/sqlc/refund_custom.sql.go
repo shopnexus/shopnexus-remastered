@@ -151,7 +151,7 @@ func (q *Queries) CreateBuyerRefund(ctx context.Context, arg CreateBuyerRefundPa
 
 const getRefundSnapshotByOrder = `-- name: GetRefundSnapshotByOrder :one
 WITH all_refunds AS (
-    SELECT "status", "date_created"
+    SELECT "id", "status", "date_created"
     FROM "order"."refund"
     WHERE "order_id" = $1
 )
@@ -163,22 +163,32 @@ SELECT
     COALESCE(
         (SELECT "status" FROM all_refunds ORDER BY "date_created" DESC LIMIT 1) = 'Accepted'::"order"."refund_status",
         false
-    )::BOOLEAN AS last_refund_approved
+    )::BOOLEAN AS last_refund_approved,
+    COALESCE(
+        (
+            SELECT "id" FROM all_refunds
+            WHERE "status" IN ('Shipping', 'AwaitingSellerReview', 'Disputed')
+            ORDER BY "date_created" DESC LIMIT 1
+        ),
+        '00000000-0000-0000-0000-000000000000'::uuid
+    )::uuid AS active_refund_id
 `
 
 type GetRefundSnapshotByOrderRow struct {
-	HasActiveRefund    bool `json:"has_active_refund"`
-	LastRefundApproved bool `json:"last_refund_approved"`
+	HasActiveRefund    bool      `json:"has_active_refund"`
+	LastRefundApproved bool      `json:"last_refund_approved"`
+	ActiveRefundID     uuid.UUID `json:"active_refund_id"`
 }
 
-// GetRefundSnapshotByOrder is the per-iteration projection PayoutWorkflow
-// reads while watching escrow. has_active_refund flips while any refund is
-// in negotiation; last_refund_approved becomes true once the most recent
-// refund row for this order lands in Accepted.
+// GetRefundSnapshotByOrder is the per-iteration projection the fulfillment
+// workflow reads while watching escrow. has_active_refund flips while any
+// refund is in negotiation; last_refund_approved becomes true once the most
+// recent refund row for this order lands in Accepted; active_refund_id is the
+// refund the workflow must resolve inline (zero UUID when none active).
 func (q *Queries) GetRefundSnapshotByOrder(ctx context.Context, orderID uuid.UUID) (GetRefundSnapshotByOrderRow, error) {
 	row := q.db.QueryRow(ctx, getRefundSnapshotByOrder, orderID)
 	var i GetRefundSnapshotByOrderRow
-	err := row.Scan(&i.HasActiveRefund, &i.LastRefundApproved)
+	err := row.Scan(&i.HasActiveRefund, &i.LastRefundApproved, &i.ActiveRefundID)
 	return i, err
 }
 
@@ -191,8 +201,8 @@ SELECT EXISTS (
 `
 
 // HasActiveRefundForOrder reports whether any refund row for this order is
-// still in negotiation (not yet Accepted or Rejected). Used by PayoutWorkflow
-// to decide whether to release escrow.
+// still in negotiation (not yet Accepted or Rejected). Used by the fulfillment
+// workflow to decide whether to release escrow.
 func (q *Queries) HasActiveRefundForOrder(ctx context.Context, orderID uuid.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, hasActiveRefundForOrder, orderID)
 	var has_active bool
