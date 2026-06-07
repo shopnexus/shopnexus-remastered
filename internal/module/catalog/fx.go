@@ -2,18 +2,17 @@ package catalog
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 
-	"github.com/bytedance/sonic"
 	"github.com/redis/rueidis"
 	"go.uber.org/fx"
 
 	"shopnexus-server/internal/infras/cache"
 	"shopnexus-server/internal/infras/milvus"
 	"shopnexus-server/internal/infras/pg"
-	restateclient "shopnexus-server/internal/infras/restate"
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 	catalogconfig "shopnexus-server/internal/module/catalog/config"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
@@ -25,8 +24,7 @@ import (
 // Module provides the catalog module dependencies. Catalog OWNS milvus + llm
 // (it is the only module that uses them). Pool/Cache/Logger are fx.Private —
 // each is constructed from THIS module's own Postgres/Redis/Log config and
-// invisible to other modules. Milvus, LLM and the generic Restate proxy
-// client are PUBLIC because catalog biz consumes them.
+// invisible to other modules.
 var Module = fx.Module("catalog",
 	fx.Provide(
 		NewPool,
@@ -38,7 +36,6 @@ var Module = fx.Module("catalog",
 		catalogconfig.NewConfig,
 		NewMilvusClient,
 		NewLLMClient,
-		NewRestateClient,
 		NewCatalogStorage,
 		catalogbiz.NewCatalogHandler,
 		NewCatalogBiz,
@@ -79,8 +76,8 @@ func NewCache(cfg *catalogconfig.Config) (cache.Client, error) {
 		return nil, err
 	}
 	return cache.NewRedisStructClient(rdb, cache.Config{
-		Encoder: sonic.Marshal,
-		Decoder: sonic.Unmarshal,
+		Encoder: json.Marshal,
+		Decoder: json.Unmarshal,
 	})
 }
 
@@ -144,12 +141,6 @@ func NewLLMClient(cfg *catalogconfig.Config) (llm.Client, error) {
 	default:
 		return nil, fmt.Errorf("unknown LLM provider: %s", cfg.LLM.Provider)
 	}
-}
-
-// NewRestateClient is the catalog-owned generic Restate proxy client (separate
-// from the typed CatalogBiz proxy below). Used by CatalogHandler for ad-hoc calls.
-func NewRestateClient(cfg *catalogconfig.Config) *restateclient.Client {
-	return restateclient.NewClient(cfg.Restate.IngressAddress)
 }
 
 // NewCatalogStorage creates a new catalog storage backed by PostgreSQL.

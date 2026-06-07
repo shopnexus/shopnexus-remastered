@@ -8,7 +8,6 @@ import (
 
 	"shopnexus-server/internal/infras/cache"
 	"shopnexus-server/internal/infras/milvus"
-	restateclient "shopnexus-server/internal/infras/restate"
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
 	catalogconfig "shopnexus-server/internal/module/catalog/config"
@@ -85,11 +84,10 @@ type CatalogStorage = pgsqlc.Storage[*catalogdb.Queries]
 
 // CatalogHandler implements the core business logic for the catalog module.
 type CatalogHandler struct {
-	cfg           *catalogconfig.Config
-	logger        *slog.Logger
-	cache         cache.Client
-	restateClient *restateclient.Client
-	storage       CatalogStorage
+	cfg     *catalogconfig.Config
+	logger  *slog.Logger
+	cache   cache.Client
+	storage CatalogStorage
 	common        commonbiz.CommonBiz
 	account       accountbiz.AccountBiz
 	inventory     inventorybiz.InventoryBiz
@@ -114,7 +112,6 @@ func NewCatalogHandler(
 	logger *slog.Logger,
 	storage CatalogStorage,
 	cache cache.Client,
-	restateClient *restateclient.Client,
 	common commonbiz.CommonBiz,
 	account accountbiz.AccountBiz,
 	inventory inventorybiz.InventoryBiz,
@@ -123,12 +120,11 @@ func NewCatalogHandler(
 	llmClient llm.Client,
 ) *CatalogHandler {
 	b := &CatalogHandler{
-		cfg:           cfg,
-		logger:        logger,
-		cache:         cache,
-		restateClient: restateClient,
-		storage:       storage,
-		common:        common,
+		cfg:     cfg,
+		logger:  logger,
+		cache:   cache,
+		storage: storage,
+		common:  common,
 		account:       account,
 		inventory:     inventory,
 		promotion:     promotion,
