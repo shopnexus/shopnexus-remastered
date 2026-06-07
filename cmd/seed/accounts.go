@@ -49,6 +49,7 @@ func createAccounts(ctx context.Context, store *accountdb.Queries, fake *gofakei
 		account, err := store.CreateAccount(ctx, accountdb.CreateAccountParams{
 			ID:          sa.ID,
 			Status:      accountdb.AccountStatusActive,
+			Role:        accountdb.AccountRoleMember,
 			Email:       null.StringFrom(sa.Email),
 			Username:    null.StringFrom(sa.Username),
 			Phone:       null.StringFrom(fake.Phone()),

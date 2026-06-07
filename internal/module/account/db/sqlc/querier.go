@@ -61,7 +61,7 @@ type Querier interface {
 	// Queries for table: account.account
 	// ========================================
 	GetAccount(ctx context.Context, arg GetAccountParams) (AccountAccount, error)
-	GetAccountDefaults(ctx context.Context, id uuid.UUID) (GetAccountDefaultsRow, error)
+	GetAccountDefaults(ctx context.Context, id uuid.UUID) (uuid.NullUUID, error)
 	// ========================================
 	// Queries for table: account.contact
 	// ========================================

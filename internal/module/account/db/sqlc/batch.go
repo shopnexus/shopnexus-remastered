@@ -21,9 +21,9 @@ var (
 )
 
 const createBatchAccount = `-- name: CreateBatchAccount :batchone
-INSERT INTO "account"."account" ("id", "status", "phone", "email", "username", "password", "date_created", "role")
+INSERT INTO "account"."account" ("id", "status", "role", "phone", "email", "username", "password", "date_created")
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, number, status, phone, email, username, password, date_created, role
+RETURNING id, number, status, role, phone, email, username, password, date_created
 `
 
 type CreateBatchAccountBatchResults struct {
@@ -35,12 +35,12 @@ type CreateBatchAccountBatchResults struct {
 type CreateBatchAccountParams struct {
 	ID          uuid.UUID     `json:"id"`
 	Status      AccountStatus `json:"status"`
+	Role        AccountRole   `json:"role"`
 	Phone       null.String   `json:"phone"`
 	Email       null.String   `json:"email"`
 	Username    null.String   `json:"username"`
 	Password    null.String   `json:"password"`
 	DateCreated time.Time     `json:"date_created"`
-	Role        AccountRole   `json:"role"`
 }
 
 func (q *Queries) CreateBatchAccount(ctx context.Context, arg []CreateBatchAccountParams) *CreateBatchAccountBatchResults {
@@ -49,12 +49,12 @@ func (q *Queries) CreateBatchAccount(ctx context.Context, arg []CreateBatchAccou
 		vals := []interface{}{
 			a.ID,
 			a.Status,
+			a.Role,
 			a.Phone,
 			a.Email,
 			a.Username,
 			a.Password,
 			a.DateCreated,
-			a.Role,
 		}
 		batch.Queue(createBatchAccount, vals...)
 	}
@@ -77,12 +77,12 @@ func (b *CreateBatchAccountBatchResults) QueryRow(f func(int, AccountAccount, er
 			&i.ID,
 			&i.Number,
 			&i.Status,
+			&i.Role,
 			&i.Phone,
 			&i.Email,
 			&i.Username,
 			&i.Password,
 			&i.DateCreated,
-			&i.Role,
 		)
 		if f != nil {
 			f(t, i, err)
@@ -317,9 +317,9 @@ func (b *CreateBatchNotificationBatchResults) Close() error {
 }
 
 const createBatchProfile = `-- name: CreateBatchProfile :batchone
-INSERT INTO "account"."profile" ("id", "gender", "name", "description", "date_of_birth", "avatar_rs_id", "email_verified", "phone_verified", "date_created", "country", "internal_balance", "default_contact_id", "default_wallet_id")
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-RETURNING id, gender, name, description, date_of_birth, avatar_rs_id, email_verified, phone_verified, date_created, country, internal_balance, default_contact_id, default_wallet_id
+INSERT INTO "account"."profile" ("id", "gender", "name", "description", "date_of_birth", "avatar_rs_id", "email_verified", "phone_verified", "date_created", "country", "internal_balance", "default_contact_id")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+RETURNING id, gender, name, description, date_of_birth, avatar_rs_id, email_verified, phone_verified, date_created, country, internal_balance, default_contact_id
 `
 
 type CreateBatchProfileBatchResults struct {
@@ -341,7 +341,6 @@ type CreateBatchProfileParams struct {
 	Country          string            `json:"country"`
 	InternalBalance  int64             `json:"internal_balance"`
 	DefaultContactID uuid.NullUUID     `json:"default_contact_id"`
-	DefaultWalletID  uuid.NullUUID     `json:"default_wallet_id"`
 }
 
 func (q *Queries) CreateBatchProfile(ctx context.Context, arg []CreateBatchProfileParams) *CreateBatchProfileBatchResults {
@@ -360,7 +359,6 @@ func (q *Queries) CreateBatchProfile(ctx context.Context, arg []CreateBatchProfi
 			a.Country,
 			a.InternalBalance,
 			a.DefaultContactID,
-			a.DefaultWalletID,
 		}
 		batch.Queue(createBatchProfile, vals...)
 	}
@@ -392,7 +390,6 @@ func (b *CreateBatchProfileBatchResults) QueryRow(f func(int, AccountProfile, er
 			&i.Country,
 			&i.InternalBalance,
 			&i.DefaultContactID,
-			&i.DefaultWalletID,
 		)
 		if f != nil {
 			f(t, i, err)

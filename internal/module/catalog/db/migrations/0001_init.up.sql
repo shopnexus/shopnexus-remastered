@@ -8,6 +8,8 @@
 
 CREATE SCHEMA IF NOT EXISTS "catalog";
 
+CREATE EXTENSION IF NOT EXISTS vector;
+
 -- Enums
 
 -- Entities a comment can be attached to (product or another comment for threading)
@@ -122,14 +124,13 @@ CREATE TABLE IF NOT EXISTS "catalog"."comment" (
     CONSTRAINT "comment_pkey" PRIMARY KEY ("id")
 );
 
--- Sync queue for the vector search index (Milvus) and full-text search metadata.
--- A background worker polls this table for stale entries and reindexes them.
+-- Sync queue for the vector search index. A background cron polls this table
+-- for stale entries and re-embeds them. Scalar filters read product tables directly.
 CREATE TABLE IF NOT EXISTS "catalog"."search_sync" (
     "id" BIGSERIAL NOT NULL,
     "ref_type" "catalog"."search_sync_ref_type" NOT NULL,
     "ref_id" UUID NOT NULL,
     "is_stale_embedding" BOOLEAN NOT NULL DEFAULT true, -- True when the product text has changed and the embedding must be regenerated
-    "is_stale_metadata" BOOLEAN NOT NULL DEFAULT true, -- True when searchable metadata (price, category, etc.) has changed
     "date_created" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "date_updated" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -137,5 +138,68 @@ CREATE TABLE IF NOT EXISTS "catalog"."search_sync" (
     CONSTRAINT "search_sync_ref_type_ref_id_key" UNIQUE ("ref_type", "ref_id")
 );
 CREATE INDEX IF NOT EXISTS "search_sync_is_stale_embedding_idx" ON "catalog"."search_sync" ("is_stale_embedding");
-CREATE INDEX IF NOT EXISTS "search_sync_is_stale_metadata_idx" ON "catalog"."search_sync" ("is_stale_metadata");
 CREATE INDEX IF NOT EXISTS "search_sync_date_created_idx" ON "catalog"."search_sync" ("date_created");
+
+-- Vector search (pgvector). Dims are tied to the embedding model (MGTE: dense 768,
+-- XLM-R vocab sparse). Switching models (e.g. BGE-M3 dense 1024) = ALTER COLUMN
+-- TYPE + mark all search_sync rows stale so the cron re-embeds everything.
+
+-- Stores dense + sparse embeddings per SPU.
+-- Rows are created by the sync cron; vectors remain NULL until the first embedding pass.
+CREATE TABLE IF NOT EXISTS "catalog"."product_embedding" (
+    "spu_id" UUID NOT NULL,
+    "embedding" vector(768), -- MGTE dense vector; NULL until embedded
+    "sparse" sparsevec(250048), -- MGTE sparse (lexical) vector; NULL until embedded
+    "date_updated" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "product_embedding_pkey" PRIMARY KEY ("spu_id"),
+
+    CONSTRAINT "product_embedding_spu_id_fkey" FOREIGN KEY ("spu_id")
+        REFERENCES "catalog"."product_spu" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE INDEX IF NOT EXISTS "product_embedding_embedding_idx" ON "catalog"."product_embedding" USING hnsw ("embedding" vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS "product_embedding_sparse_idx" ON "catalog"."product_embedding" USING hnsw ("sparse" sparsevec_ip_ops);
+
+-- Stores dense + sparse embeddings per category.
+-- Rows are created by the sync cron; vectors remain NULL until the first embedding pass.
+CREATE TABLE IF NOT EXISTS "catalog"."category_embedding" (
+    "category_id" UUID NOT NULL,
+    "embedding" vector(768), -- MGTE dense vector; NULL until embedded
+    "sparse" sparsevec(250048), -- MGTE sparse (lexical) vector; NULL until embedded
+    "date_updated" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "category_embedding_pkey" PRIMARY KEY ("category_id"),
+
+    CONSTRAINT "category_embedding_category_id_fkey" FOREIGN KEY ("category_id")
+        REFERENCES "catalog"."category" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE INDEX IF NOT EXISTS "category_embedding_embedding_idx" ON "catalog"."category_embedding" USING hnsw ("embedding" vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS "category_embedding_sparse_idx" ON "catalog"."category_embedding" USING hnsw ("sparse" sparsevec_ip_ops);
+
+-- Stores dense + sparse embeddings per tag.
+-- Rows are created by the sync cron; vectors remain NULL until the first embedding pass.
+CREATE TABLE IF NOT EXISTS "catalog"."tag_embedding" (
+    "tag_id" VARCHAR(100) NOT NULL,
+    "embedding" vector(768), -- MGTE dense vector; NULL until embedded
+    "sparse" sparsevec(250048), -- MGTE sparse (lexical) vector; NULL until embedded
+    "date_updated" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "tag_embedding_pkey" PRIMARY KEY ("tag_id"),
+
+    CONSTRAINT "tag_embedding_tag_id_fkey" FOREIGN KEY ("tag_id")
+        REFERENCES "catalog"."tag" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE INDEX IF NOT EXISTS "tag_embedding_embedding_idx" ON "catalog"."tag_embedding" USING hnsw ("embedding" vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS "tag_embedding_sparse_idx" ON "catalog"."tag_embedding" USING hnsw ("sparse" sparsevec_ip_ops);
+
+-- Per-account interest slots.
+-- Always fetched by PK, never ANN-searched — no vector index needed.
+CREATE TABLE IF NOT EXISTS "catalog"."account_interest" (
+    "account_id" UUID NOT NULL, -- cross-module ref to account module; FK intentionally not declared
+    "slot" SMALLINT NOT NULL, -- 1..NumInterests (catalogutil)
+    "embedding" vector(768) NOT NULL,
+    "strength" REAL NOT NULL DEFAULT 0,
+    "date_updated" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "account_interest_pkey" PRIMARY KEY ("account_id", "slot")
+);

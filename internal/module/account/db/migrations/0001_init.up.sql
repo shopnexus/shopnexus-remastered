@@ -2,8 +2,7 @@
 -- Module: Account
 -- Schema: account
 -- Description: User accounts, profiles, contacts, notifications,
---              payment methods, favorites, income history, and wallet.
---              Any account can act as both buyer and seller.
+--              and favorites. Any account can act as both buyer and seller.
 -- =============================================
 
 CREATE SCHEMA IF NOT EXISTS "account";
@@ -12,6 +11,9 @@ CREATE SCHEMA IF NOT EXISTS "account";
 
 -- Account lifecycle state
 CREATE TYPE "account"."status" AS ENUM ('Active', 'Suspended');
+-- Role-based access control. 'Admin' is granted manually by ops; new signups
+-- default to 'Member'.
+CREATE TYPE "account"."role" AS ENUM ('Member', 'Admin');
 -- Self-reported gender for the profile
 CREATE TYPE "account"."gender" AS ENUM ('Male', 'Female', 'Other');
 -- Address classification for contacts
@@ -25,6 +27,7 @@ CREATE TABLE IF NOT EXISTS "account"."account" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "number" BIGINT NOT NULL GENERATED ALWAYS AS IDENTITY,
     "status" "account"."status" NOT NULL DEFAULT 'Active',
+    "role" "account"."role" NOT NULL DEFAULT 'Member',
     "phone" VARCHAR(50),
     "email" VARCHAR(255),
     "username" VARCHAR(100),
@@ -52,9 +55,7 @@ CREATE TABLE IF NOT EXISTS "account"."profile" (
     "country" VARCHAR(2) NOT NULL, -- Explicit for money currency, can only updated when balance is zero
     "internal_balance" BIGINT NOT NULL DEFAULT 0,
 
-    -- Default
     "default_contact_id" UUID,
-    "default_wallet_id" UUID,
 
     CONSTRAINT "profile_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "profile_avatar_rs_id_key" UNIQUE ("avatar_rs_id"),
@@ -128,10 +129,7 @@ CREATE TABLE IF NOT EXISTS "account"."favorite" (
 );
 CREATE INDEX IF NOT EXISTS "favorite_spu_id_idx" ON "account"."favorite" ("spu_id");
 
--- Cross-table FKs from account.account, deferred to here because contact
--- and wallet also FK back to account (circular).
-ALTER TABLE "account"."account"
+-- Deferred to here because contact also FKs back to account (circular).
+ALTER TABLE "account"."profile"
     ADD CONSTRAINT "profile_default_contact_id_fkey" FOREIGN KEY ("default_contact_id")
-        REFERENCES "account"."contact" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
-    ADD CONSTRAINT "profile_default_wallet_id_fkey" FOREIGN KEY ("default_wallet_id")
-        REFERENCES "account"."wallet" ("id") ON DELETE SET NULL ON UPDATE CASCADE;
+        REFERENCES "account"."contact" ("id") ON DELETE SET NULL ON UPDATE CASCADE;

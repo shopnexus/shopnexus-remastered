@@ -32,7 +32,7 @@ func (b *AccountHandler) ListProfile(
 ) (paginate.PaginateResult[accountmodel.Profile], error) {
 	var result paginate.PaginateResult[accountmodel.Profile]
 	if err := validator.Validate(params); err != nil {
-		return result, fmt.Errorf("list profiles: %w", err)
+		return result, fmt.Errorf("validate list profile params: %w", err)
 	}
 
 	listProfile, err := b.storage.Querier().ListCountProfile(ctx, accountdb.ListCountProfileParams{
@@ -41,7 +41,7 @@ func (b *AccountHandler) ListProfile(
 		Offset: params.Offset(),
 	})
 	if err != nil {
-		return result, err
+		return result, fmt.Errorf("db list count profile: %w", err)
 	}
 
 	var total null.Int64
@@ -57,7 +57,7 @@ func (b *AccountHandler) ListProfile(
 		ID: lo.Map(params.AccountIDs, func(id uuid.UUID, _ int) uuid.UUID { return id }),
 	})
 	if err != nil {
-		return result, err
+		return result, fmt.Errorf("db list account: %w", err)
 	}
 
 	accountMap := lo.KeyBy(listAccount, func(account accountdb.AccountAccount) uuid.UUID {
@@ -89,11 +89,15 @@ type GetProfileParams struct {
 func (b *AccountHandler) GetProfile(ctx restate.Context, params GetProfileParams) (accountmodel.Profile, error) {
 	var zero accountmodel.Profile
 
+	if err := validator.Validate(params); err != nil {
+		return zero, fmt.Errorf("validate get profile params: %w", err)
+	}
+
 	account, err := b.storage.Querier().GetAccount(ctx, accountdb.GetAccountParams{
 		ID: uuid.NullUUID{UUID: params.AccountID, Valid: true},
 	})
 	if err != nil {
-		return zero, err
+		return zero, fmt.Errorf("db get account: %w", err)
 	}
 
 	profile, err := b.storage.Querier().GetProfile(ctx, accountdb.GetProfileParams{
@@ -103,7 +107,7 @@ func (b *AccountHandler) GetProfile(ctx restate.Context, params GetProfileParams
 		if stderrors.Is(err, pgx.ErrNoRows) {
 			return b.mapProfile(ctx, account, accountdb.AccountProfile{ID: account.ID}), nil
 		}
-		return zero, err
+		return zero, fmt.Errorf("db get profile: %w", err)
 	}
 
 	m := b.mapProfile(ctx, account, profile)
@@ -136,7 +140,7 @@ func (b *AccountHandler) UpdateProfile(ctx restate.Context, params UpdateProfile
 	var zero accountmodel.Profile
 
 	if err := validator.Validate(params); err != nil {
-		return zero, err
+		return zero, fmt.Errorf("validate update profile params: %w", err)
 	}
 
 	account, err := b.storage.Querier().UpdateAccount(ctx, accountdb.UpdateAccountParams{
@@ -147,7 +151,7 @@ func (b *AccountHandler) UpdateProfile(ctx restate.Context, params UpdateProfile
 		Email:    params.Email,
 	})
 	if err != nil {
-		return zero, fmt.Errorf("update profile: %w", err)
+		return zero, fmt.Errorf("db update account: %w", err)
 	}
 
 	profile, err := b.storage.Querier().UpdateProfile(ctx, accountdb.UpdateProfileParams{
@@ -158,7 +162,7 @@ func (b *AccountHandler) UpdateProfile(ctx restate.Context, params UpdateProfile
 		AvatarRsID:  params.AvatarRsID,
 	})
 	if err != nil {
-		return zero, fmt.Errorf("update profile: %w", err)
+		return zero, fmt.Errorf("db update profile: %w", err)
 	}
 
 	if params.DefaultContactID.Valid {
@@ -166,7 +170,7 @@ func (b *AccountHandler) UpdateProfile(ctx restate.Context, params UpdateProfile
 			ID:               params.AccountID,
 			DefaultContactID: params.DefaultContactID,
 		}); err != nil {
-			return zero, fmt.Errorf("set default contact: %w", err)
+			return zero, fmt.Errorf("db set account default contact: %w", err)
 		}
 	}
 
@@ -188,7 +192,7 @@ func (b *AccountHandler) mapProfile(
 
 	currency, _ := sharedcurrency.Infer(profile.Country)
 
-	defaults, _ := b.storage.Querier().GetAccountDefaults(ctx, account.ID)
+	defaultContactID, _ := b.storage.Querier().GetAccountDefaults(ctx, account.ID)
 
 	return accountmodel.Profile{
 		ID:          account.ID,
@@ -207,14 +211,14 @@ func (b *AccountHandler) mapProfile(
 		PhoneVerified:    profile.PhoneVerified,
 		Country:          profile.Country,
 		Currency:         currency,
-		DefaultContactID: defaults.DefaultContactID,
+		DefaultContactID: defaultContactID,
 		AvatarURL:        url,
 	}
 }
 
 type UpdateCountryParams struct {
-	AccountID uuid.UUID `json:"account_id" validate:"required"`
-	Country   string    `json:"country" validate:"required,len=2,uppercase"`
+	AccountID uuid.UUID `validate:"required"`
+	Country   string    `validate:"required,len=2,uppercase"`
 }
 
 // UpdateCountry sets the profile country. Fails with a conflict error if the
@@ -222,7 +226,7 @@ type UpdateCountryParams struct {
 // wallet currency.
 func (b *AccountHandler) UpdateCountry(ctx restate.Context, params UpdateCountryParams) error {
 	if err := validator.Validate(params); err != nil {
-		return fmt.Errorf("update profile country: %w", err)
+		return fmt.Errorf("validate update country params: %w", err)
 	}
 	if _, err := sharedcurrency.Infer(params.Country); err != nil {
 		return fmt.Errorf("infer currency from country: %w", err)
@@ -235,7 +239,7 @@ func (b *AccountHandler) UpdateCountry(ctx restate.Context, params UpdateCountry
 		})
 		return err
 	}); err != nil {
-		return fmt.Errorf("update profile country: %w", err)
+		return fmt.Errorf("db update profile country: %w", err)
 	}
 	return nil
 }

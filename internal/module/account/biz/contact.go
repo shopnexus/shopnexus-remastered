@@ -243,11 +243,11 @@ func (b *AccountHandler) DeleteContact(ctx restate.Context, params DeleteContact
 	}
 
 	// Check if we're deleting the default contact
-	defaults, err := txStorage.Querier().GetAccountDefaults(ctx, params.Account.ID)
+	defaultContactID, err := txStorage.Querier().GetAccountDefaults(ctx, params.Account.ID)
 	if err != nil {
 		return fmt.Errorf("db get account defaults: %w", err)
 	}
-	isDefault := defaults.DefaultContactID.Valid && defaults.DefaultContactID.UUID == params.ContactID
+	isDefault := defaultContactID.Valid && defaultContactID.UUID == params.ContactID
 
 	// Delete the contact
 	if err = txStorage.Querier().DeleteContact(ctx, accountdb.DeleteContactParams{

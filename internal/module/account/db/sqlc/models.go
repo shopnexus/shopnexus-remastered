@@ -253,12 +253,12 @@ type AccountAccount struct {
 	ID          uuid.UUID     `json:"id"`
 	Number      int64         `json:"number"`
 	Status      AccountStatus `json:"status"`
+	Role        AccountRole   `json:"role"`
 	Phone       null.String   `json:"phone"`
 	Email       null.String   `json:"email"`
 	Username    null.String   `json:"username"`
 	Password    null.String   `json:"password"`
 	DateCreated time.Time     `json:"date_created"`
-	Role        AccountRole   `json:"role"`
 }
 
 type AccountContact struct {
@@ -308,62 +308,4 @@ type AccountProfile struct {
 	Country          string            `json:"country"`
 	InternalBalance  int64             `json:"internal_balance"`
 	DefaultContactID uuid.NullUUID     `json:"default_contact_id"`
-	DefaultWalletID  uuid.NullUUID     `json:"default_wallet_id"`
-}
-
-func (n NullAccountAddressType) MarshalJSON() ([]byte, error) {
-	if !n.Valid {
-		return []byte("null"), nil
-	}
-	return json.Marshal(n.AccountAddressType)
-}
-func (n *NullAccountAddressType) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		n.Valid = false
-		return nil
-	}
-	n.Valid = true
-	return json.Unmarshal(b, &n.AccountAddressType)
-}
-func (n NullAccountGender) MarshalJSON() ([]byte, error) {
-	if !n.Valid {
-		return []byte("null"), nil
-	}
-	return json.Marshal(n.AccountGender)
-}
-func (n *NullAccountGender) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		n.Valid = false
-		return nil
-	}
-	n.Valid = true
-	return json.Unmarshal(b, &n.AccountGender)
-}
-func (n NullAccountRole) MarshalJSON() ([]byte, error) {
-	if !n.Valid {
-		return []byte("null"), nil
-	}
-	return json.Marshal(n.AccountRole)
-}
-func (n *NullAccountRole) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		n.Valid = false
-		return nil
-	}
-	n.Valid = true
-	return json.Unmarshal(b, &n.AccountRole)
-}
-func (n NullAccountStatus) MarshalJSON() ([]byte, error) {
-	if !n.Valid {
-		return []byte("null"), nil
-	}
-	return json.Marshal(n.AccountStatus)
-}
-func (n *NullAccountStatus) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		n.Valid = false
-		return nil
-	}
-	n.Valid = true
-	return json.Unmarshal(b, &n.AccountStatus)
 }

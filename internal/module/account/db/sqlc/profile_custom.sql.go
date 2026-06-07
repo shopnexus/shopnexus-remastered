@@ -14,7 +14,7 @@ import (
 const createSignupProfile = `-- name: CreateSignupProfile :one
 INSERT INTO "account"."profile" ("id", "country", "name")
 VALUES ($1, $2, $3)
-RETURNING id, gender, name, description, date_of_birth, avatar_rs_id, email_verified, phone_verified, date_created, country, internal_balance, default_contact_id, default_wallet_id
+RETURNING id, gender, name, description, date_of_birth, avatar_rs_id, email_verified, phone_verified, date_created, country, internal_balance, default_contact_id
 `
 
 type CreateSignupProfileParams struct {
@@ -39,25 +39,19 @@ func (q *Queries) CreateSignupProfile(ctx context.Context, arg CreateSignupProfi
 		&i.Country,
 		&i.InternalBalance,
 		&i.DefaultContactID,
-		&i.DefaultWalletID,
 	)
 	return i, err
 }
 
 const getAccountDefaults = `-- name: GetAccountDefaults :one
-SELECT "default_contact_id", "default_wallet_id" FROM "account"."profile" WHERE "id" = $1
+SELECT "default_contact_id" FROM "account"."profile" WHERE "id" = $1
 `
 
-type GetAccountDefaultsRow struct {
-	DefaultContactID uuid.NullUUID `json:"default_contact_id"`
-	DefaultWalletID  uuid.NullUUID `json:"default_wallet_id"`
-}
-
-func (q *Queries) GetAccountDefaults(ctx context.Context, id uuid.UUID) (GetAccountDefaultsRow, error) {
+func (q *Queries) GetAccountDefaults(ctx context.Context, id uuid.UUID) (uuid.NullUUID, error) {
 	row := q.db.QueryRow(ctx, getAccountDefaults, id)
-	var i GetAccountDefaultsRow
-	err := row.Scan(&i.DefaultContactID, &i.DefaultWalletID)
-	return i, err
+	var default_contact_id uuid.NullUUID
+	err := row.Scan(&default_contact_id)
+	return default_contact_id, err
 }
 
 const setAccountDefaultContact = `-- name: SetAccountDefaultContact :exec

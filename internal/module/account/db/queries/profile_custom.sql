@@ -14,4 +14,4 @@ SET "default_contact_id" = @default_contact_id
 WHERE "id" = @id;
 
 -- name: GetAccountDefaults :one
-SELECT "default_contact_id", "default_wallet_id" FROM "account"."profile" WHERE "id" = @id;
+SELECT "default_contact_id" FROM "account"."profile" WHERE "id" = @id;
