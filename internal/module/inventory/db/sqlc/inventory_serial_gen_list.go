@@ -12,9 +12,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListSerialFilter filters "inventory"."serial". Each slice field is an IN/ANY match;
+// ListSerialParams filters "inventory"."serial". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListSerialFilter struct {
+type ListSerialParams struct {
+	paginate.Params
+
 	Id              []string
 	StockId         []int64
 	Status          []InventoryStatus
@@ -23,7 +25,7 @@ type ListSerialFilter struct {
 	DateCreatedTo   null.Time
 }
 
-func serialListConds(f ListSerialFilter, conds *[]string, args pgx.NamedArgs) {
+func serialListConds(f ListSerialParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -50,7 +52,7 @@ func serialListConds(f ListSerialFilter, conds *[]string, args pgx.NamedArgs) {
 	}
 }
 
-func serialListSpec(f ListSerialFilter) repolist.Spec[InventorySerial] {
+func serialListSpec(f ListSerialParams) repolist.Spec[InventorySerial] {
 	return repolist.Spec[InventorySerial]{
 		Table: `"inventory"."serial"`,
 		PK:    "id",
@@ -63,6 +65,6 @@ func serialListSpec(f ListSerialFilter) repolist.Spec[InventorySerial] {
 }
 
 // ListSerial runs offset (?page) or cursor (?cursor/?sort) pagination over "inventory"."serial".
-func (q *Queries) ListSerial(ctx context.Context, req repolist.Request, f ListSerialFilter) (paginate.PaginateResult[InventorySerial], error) {
-	return repolist.List(ctx, q.db, serialListSpec(f), req)
+func (q *Queries) ListSerial(ctx context.Context, f ListSerialParams) (paginate.PaginateResult[InventorySerial], error) {
+	return repolist.List(ctx, q.db, serialListSpec(f), f.Params)
 }

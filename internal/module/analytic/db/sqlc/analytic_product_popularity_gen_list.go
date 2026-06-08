@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListProductPopularityFilter filters "analytic"."product_popularity". Each slice field is an IN/ANY match;
+// ListProductPopularityParams filters "analytic"."product_popularity". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListProductPopularityFilter struct {
+type ListProductPopularityParams struct {
+	paginate.Params
+
 	Id                []uuid.UUID
 	Score             []float64
 	ScoreFrom         null.Float
@@ -40,7 +42,7 @@ type ListProductPopularityFilter struct {
 	DateUpdatedTo     null.Time
 }
 
-func productPopularityListConds(f ListProductPopularityFilter, conds *[]string, args pgx.NamedArgs) {
+func productPopularityListConds(f ListProductPopularityParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -131,7 +133,7 @@ func productPopularityListConds(f ListProductPopularityFilter, conds *[]string, 
 	}
 }
 
-func productPopularityListSpec(f ListProductPopularityFilter) repolist.Spec[AnalyticProductPopularity] {
+func productPopularityListSpec(f ListProductPopularityParams) repolist.Spec[AnalyticProductPopularity] {
 	return repolist.Spec[AnalyticProductPopularity]{
 		Table: `"analytic"."product_popularity"`,
 		PK:    "id",
@@ -150,6 +152,6 @@ func productPopularityListSpec(f ListProductPopularityFilter) repolist.Spec[Anal
 }
 
 // ListProductPopularity runs offset (?page) or cursor (?cursor/?sort) pagination over "analytic"."product_popularity".
-func (q *Queries) ListProductPopularity(ctx context.Context, req repolist.Request, f ListProductPopularityFilter) (paginate.PaginateResult[AnalyticProductPopularity], error) {
-	return repolist.List(ctx, q.db, productPopularityListSpec(f), req)
+func (q *Queries) ListProductPopularity(ctx context.Context, f ListProductPopularityParams) (paginate.PaginateResult[AnalyticProductPopularity], error) {
+	return repolist.List(ctx, q.db, productPopularityListSpec(f), f.Params)
 }

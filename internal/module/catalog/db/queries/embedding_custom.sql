@@ -44,50 +44,8 @@ ON CONFLICT (account_id, slot) DO UPDATE SET
     strength = EXCLUDED.strength,
     date_updated = NOW();
 
--- name: HybridSearchProduct :many
--- Dense + sparse ANN with weighted score fusion; scalar filters join live
--- product tables (replaces Milvus denormalized scalars + WeightedReranker).
-WITH dense AS (
-    SELECT spu_id, 1 - (embedding <=> sqlc.arg('query_dense')::vector) AS dscore
-    FROM catalog.product_embedding
-    WHERE embedding IS NOT NULL
-    ORDER BY embedding <=> sqlc.arg('query_dense')::vector
-    LIMIT sqlc.arg('pool')::int
-),
-sparse AS (
-    SELECT spu_id, -(sparse <#> sqlc.narg('query_sparse')::sparsevec) AS sscore
-    FROM catalog.product_embedding
-    WHERE sqlc.narg('query_sparse')::sparsevec IS NOT NULL AND sparse IS NOT NULL
-    ORDER BY sparse <#> sqlc.narg('query_sparse')::sparsevec
-    LIMIT sqlc.arg('pool')::int
-)
-SELECT spu.id,
-    (sqlc.arg('dense_weight')::float4 * COALESCE(d.dscore, 0)
-   + sqlc.arg('sparse_weight')::float4 * COALESCE(s.sscore, 0))::float4 AS score
-FROM catalog.product_spu spu
-LEFT JOIN dense d ON d.spu_id = spu.id
-LEFT JOIN sparse s ON s.spu_id = spu.id
-WHERE (d.spu_id IS NOT NULL OR s.spu_id IS NOT NULL)
-  AND spu.date_deleted IS NULL
-  AND (spu.account_id = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL)
-  AND (spu.category_id = ANY(sqlc.slice('category_id')) OR sqlc.slice('category_id') IS NULL)
-  AND (spu.is_enabled = sqlc.narg('is_enabled') OR sqlc.narg('is_enabled') IS NULL)
-  AND (spu.date_created >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL)
-  AND (spu.date_created <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
-  AND (EXISTS (
-        SELECT 1 FROM catalog.product_sku sku
-        WHERE sku.spu_id = spu.id AND sku.date_deleted IS NULL AND sku.price >= sqlc.narg('price_min')
-      ) OR sqlc.narg('price_min') IS NULL)
-  AND (EXISTS (
-        SELECT 1 FROM catalog.product_sku sku
-        WHERE sku.spu_id = spu.id AND sku.date_deleted IS NULL AND sku.price <= sqlc.narg('price_max')
-      ) OR sqlc.narg('price_max') IS NULL)
-  AND (EXISTS (
-        SELECT 1 FROM catalog.product_spu_tag pt
-        WHERE pt.spu_id = spu.id AND pt.tag = ANY(sqlc.slice('tags'))
-      ) OR sqlc.slice('tags') IS NULL)
-ORDER BY score DESC
-LIMIT sqlc.arg('limit')::int OFFSET sqlc.arg('offset')::int;
+-- HybridSearchProduct is hand-written (CTEs + score fusion + pagination/count);
+-- see internal/module/catalog/db/sqlc/embedding_search.go.
 
 -- name: SearchProductByVector :many
 -- Single dense ANN over active products (used per interest slot for recommendations).

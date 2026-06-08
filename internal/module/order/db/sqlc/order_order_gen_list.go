@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListOrderFilter filters "order"."order". Each slice field is an IN/ANY match;
+// ListOrderParams filters "order"."order". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListOrderFilter struct {
+type ListOrderParams struct {
+	paginate.Params
+
 	Id               []uuid.UUID
 	BuyerId          []uuid.UUID
 	SellerId         []uuid.UUID
@@ -29,7 +31,7 @@ type ListOrderFilter struct {
 	Note             []string
 }
 
-func orderListConds(f ListOrderFilter, conds *[]string, args pgx.NamedArgs) {
+func orderListConds(f ListOrderParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -76,7 +78,7 @@ func orderListConds(f ListOrderFilter, conds *[]string, args pgx.NamedArgs) {
 	}
 }
 
-func orderListSpec(f ListOrderFilter) repolist.Spec[OrderOrder] {
+func orderListSpec(f ListOrderParams) repolist.Spec[OrderOrder] {
 	return repolist.Spec[OrderOrder]{
 		Table: `"order"."order"`,
 		PK:    "id",
@@ -89,6 +91,6 @@ func orderListSpec(f ListOrderFilter) repolist.Spec[OrderOrder] {
 }
 
 // ListOrder runs offset (?page) or cursor (?cursor/?sort) pagination over "order"."order".
-func (q *Queries) ListOrder(ctx context.Context, req repolist.Request, f ListOrderFilter) (paginate.PaginateResult[OrderOrder], error) {
-	return repolist.List(ctx, q.db, orderListSpec(f), req)
+func (q *Queries) ListOrder(ctx context.Context, f ListOrderParams) (paginate.PaginateResult[OrderOrder], error) {
+	return repolist.List(ctx, q.db, orderListSpec(f), f.Params)
 }

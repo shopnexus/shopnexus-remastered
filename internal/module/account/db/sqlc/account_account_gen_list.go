@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListAccountFilter filters "account"."account". Each slice field is an IN/ANY match;
+// ListAccountParams filters "account"."account". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListAccountFilter struct {
+type ListAccountParams struct {
+	paginate.Params
+
 	Id              []uuid.UUID
 	Number          []int64
 	NumberFrom      null.Int
@@ -31,7 +33,7 @@ type ListAccountFilter struct {
 	DateCreatedTo   null.Time
 }
 
-func accountListConds(f ListAccountFilter, conds *[]string, args pgx.NamedArgs) {
+func accountListConds(f ListAccountParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -86,7 +88,7 @@ func accountListConds(f ListAccountFilter, conds *[]string, args pgx.NamedArgs) 
 	}
 }
 
-func accountListSpec(f ListAccountFilter) repolist.Spec[AccountAccount] {
+func accountListSpec(f ListAccountParams) repolist.Spec[AccountAccount] {
 	return repolist.Spec[AccountAccount]{
 		Table: `"account"."account"`,
 		PK:    "id",
@@ -100,6 +102,6 @@ func accountListSpec(f ListAccountFilter) repolist.Spec[AccountAccount] {
 }
 
 // ListAccount runs offset (?page) or cursor (?cursor/?sort) pagination over "account"."account".
-func (q *Queries) ListAccount(ctx context.Context, req repolist.Request, f ListAccountFilter) (paginate.PaginateResult[AccountAccount], error) {
-	return repolist.List(ctx, q.db, accountListSpec(f), req)
+func (q *Queries) ListAccount(ctx context.Context, f ListAccountParams) (paginate.PaginateResult[AccountAccount], error) {
+	return repolist.List(ctx, q.db, accountListSpec(f), f.Params)
 }

@@ -14,7 +14,6 @@ import (
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	"shopnexus-server/internal/shared/paginate"
-	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -45,7 +44,8 @@ func (b *CatalogHandler) ListComment(
 		return zero, fmt.Errorf("validate list comment: %w", err)
 	}
 
-	res, err := b.storage.Querier().ListComment(ctx, repolist.FromParams(params.Params), catalogdb.ListCommentFilter{
+	res, err := b.storage.Querier().ListComment(ctx, catalogdb.ListCommentParams{
+		Params:    params.Params,
 		RefType:   []catalogdb.CatalogCommentRefType{params.RefType},
 		Id:        params.ID,
 		RefId:     params.RefID,
@@ -118,7 +118,7 @@ func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateComment
 
 	// One review per order per product.
 	if params.RefType == catalogdb.CatalogCommentRefTypeProductSpu {
-		existing, err := b.storage.Querier().ListComment(ctx, repolist.Request{Limit: 1}, catalogdb.ListCommentFilter{
+		existing, err := b.storage.Querier().ListComment(ctx, catalogdb.ListCommentParams{Params: paginate.Params{Limit: null.Int32From(1)},
 			RefType: []catalogdb.CatalogCommentRefType{catalogdb.CatalogCommentRefTypeProductSpu},
 			RefId:   []uuid.UUID{params.RefID},
 			OrderId: []uuid.UUID{params.OrderID},

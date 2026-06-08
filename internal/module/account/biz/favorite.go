@@ -8,7 +8,6 @@ import (
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	"shopnexus-server/internal/shared/paginate"
-	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -84,9 +83,8 @@ func (b *AccountHandler) ListFavorite(
 		return zero, fmt.Errorf("validate list favorite params: %w", err)
 	}
 
-	params.Params = params.Constrain()
-
-	res, err := b.storage.Querier().ListFavorite(ctx, repolist.FromParams(params.Params), accountdb.ListFavoriteFilter{
+	res, err := b.storage.Querier().ListFavorite(ctx, accountdb.ListFavoriteParams{
+		Params:    params.Params,
 		AccountId: []uuid.UUID{params.Account.ID},
 	})
 	if err != nil {
@@ -113,7 +111,7 @@ func (b *AccountHandler) CheckFavorites(ctx restate.Context, params CheckFavorit
 		return nil, nil
 	}
 
-	res, err := b.storage.Querier().ListFavorite(ctx, repolist.Request{}, accountdb.ListFavoriteFilter{
+	res, err := b.storage.Querier().ListFavorite(ctx, accountdb.ListFavoriteParams{
 		AccountId: []uuid.UUID{accountID},
 		SpuId:     spuIDs,
 	})

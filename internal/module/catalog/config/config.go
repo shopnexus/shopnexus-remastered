@@ -22,10 +22,11 @@ type Search struct {
 
 // LLM config — only catalog (search embeddings) needs it.
 type LLM struct {
-	Provider string     `yaml:"provider" mapstructure:"provider" validate:"required,oneof=python openai bedrock"`
-	Python   LLMPython  `yaml:"python"   mapstructure:"python"`
-	OpenAI   LLMOpenAI  `yaml:"openai"   mapstructure:"openai"`
-	Bedrock  LLMBedrock `yaml:"bedrock"  mapstructure:"bedrock"`
+	Provider      string        `yaml:"provider"      mapstructure:"provider" validate:"required,oneof=python openai bedrock"`
+	EmbedCacheTTL time.Duration `yaml:"embedCacheTTL" mapstructure:"embedCacheTTL" validate:"gte=0"` // 0 = cache forever
+	Python        LLMPython     `yaml:"python"        mapstructure:"python"`
+	OpenAI        LLMOpenAI     `yaml:"openai"        mapstructure:"openai"`
+	Bedrock       LLMBedrock    `yaml:"bedrock"       mapstructure:"bedrock"`
 }
 
 type LLMPython struct {

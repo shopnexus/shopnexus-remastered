@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListInteractionFilter filters "analytic"."interaction". Each slice field is an IN/ANY match;
+// ListInteractionParams filters "analytic"."interaction". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListInteractionFilter struct {
+type ListInteractionParams struct {
+	paginate.Params
+
 	Id              []int64
 	AccountId       []uuid.UUID
 	SessionId       []string
@@ -31,7 +33,7 @@ type ListInteractionFilter struct {
 	DateCreatedTo   null.Time
 }
 
-func interactionListConds(f ListInteractionFilter, conds *[]string, args pgx.NamedArgs) {
+func interactionListConds(f ListInteractionParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -86,7 +88,7 @@ func interactionListConds(f ListInteractionFilter, conds *[]string, args pgx.Nam
 	}
 }
 
-func interactionListSpec(f ListInteractionFilter) repolist.Spec[AnalyticInteraction] {
+func interactionListSpec(f ListInteractionParams) repolist.Spec[AnalyticInteraction] {
 	return repolist.Spec[AnalyticInteraction]{
 		Table: `"analytic"."interaction"`,
 		PK:    "id",
@@ -100,6 +102,6 @@ func interactionListSpec(f ListInteractionFilter) repolist.Spec[AnalyticInteract
 }
 
 // ListInteraction runs offset (?page) or cursor (?cursor/?sort) pagination over "analytic"."interaction".
-func (q *Queries) ListInteraction(ctx context.Context, req repolist.Request, f ListInteractionFilter) (paginate.PaginateResult[AnalyticInteraction], error) {
-	return repolist.List(ctx, q.db, interactionListSpec(f), req)
+func (q *Queries) ListInteraction(ctx context.Context, f ListInteractionParams) (paginate.PaginateResult[AnalyticInteraction], error) {
+	return repolist.List(ctx, q.db, interactionListSpec(f), f.Params)
 }

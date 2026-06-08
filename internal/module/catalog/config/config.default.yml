@@ -37,6 +37,7 @@ search:
 
 llm:
   provider: python
+  embedCacheTTL: 24h
   python:
     url: "http://localhost:5007"
   openai:

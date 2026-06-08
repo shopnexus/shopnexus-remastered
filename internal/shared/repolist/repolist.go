@@ -47,62 +47,42 @@ type Spec[T any] struct {
 	CursorKeys func(sort []paginate.SortField, row T) []string
 }
 
-// Request is the mode-agnostic input. cursorMode is true when a cursor or an
-// explicit sort is present; otherwise it is offset/page mode.
-type Request struct {
-	Page   int32
-	Limit  int32
-	Cursor string
-	Sort   []paginate.SortField
-}
+// cursorMode reports keyset mode: a cursor or an explicit sort is present;
+// otherwise offset/page mode.
+func cursorMode(p paginate.Params) bool { return p.Cursor.Valid || p.Sort != "" }
 
-func (r Request) cursorMode() bool { return r.Cursor != "" || len(r.Sort) > 0 }
-
-// FromParams builds a Request from the HTTP-bound paginate.Params. Mode is
-// implicit: a cursor or ?sort selects keyset, otherwise ?page offset.
-func FromParams(p paginate.Params) Request {
-	return Request{
-		Page:   p.Page.Int32,
-		Limit:  p.Limit.Int32,
-		Cursor: p.Cursor.String,
-		Sort:   paginate.ParseSort(p.Sort),
-	}
-}
-
-// List runs one table's list query in whichever mode req implies. Bounds policy
-// (default/max limit) belongs to the caller (paginate.Params.Constrain); List
-// honors req.Limit verbatim, where Limit <= 0 in offset mode means "fetch all".
+// List runs one table's list query in whichever mode the HTTP-bound params
+// imply. Bounds policy (default/max limit) belongs to the caller
+// (paginate.Params.Constrain); List honors p.Limit verbatim, where Limit <= 0
+// in offset mode means "fetch all".
 func List[T any](
 	ctx context.Context,
 	conn Conn,
 	spec Spec[T],
-	req Request,
+	p paginate.Params,
 ) (paginate.PaginateResult[T], error) {
 	conds := []string{}
 	args := pgx.NamedArgs{}
 	spec.BindConds(&conds, args)
 
-	if req.cursorMode() {
-		return listKeyset(ctx, conn, spec, req, conds, args)
+	if cursorMode(p) {
+		return listKeyset(ctx, conn, spec, p, conds, args)
 	}
-	return listOffset(ctx, conn, spec, req, conds, args)
+	return listOffset(ctx, conn, spec, p, conds, args)
 }
 
 func listKeyset[T any](
 	ctx context.Context, conn Conn, spec Spec[T],
-	req Request, conds []string, args pgx.NamedArgs,
+	p paginate.Params, conds []string, args pgx.NamedArgs,
 ) (paginate.PaginateResult[T], error) {
 	var zero paginate.PaginateResult[T]
 
-	limit := req.Limit
+	limit := p.Limit.Int32
 	if limit <= 0 {
 		limit = defaultLimit
 	}
 
-	ks := paginate.Keyset{Limit: limit, Sort: req.Sort}
-	if req.Cursor != "" {
-		ks.Cursor = null.StringFrom(req.Cursor)
-	}
+	ks := paginate.Keyset{Limit: limit, Cursor: p.Cursor, Sort: paginate.ParseSort(p.Sort)}
 
 	query, err := buildKeyset(spec, ks, conds, args, limit)
 	if err != nil {
@@ -126,7 +106,7 @@ func listKeyset[T any](
 	}
 
 	return paginate.PaginateResult[T]{
-		PageParams: paginate.Params{Limit: null.Int32From(limit), Cursor: ks.Cursor},
+		PageParams: p,
 		Data:       rows,
 		NextCursor: next, // Total left invalid: cursor mode never counts.
 	}, nil
@@ -134,12 +114,13 @@ func listKeyset[T any](
 
 func listOffset[T any](
 	ctx context.Context, conn Conn, spec Spec[T],
-	req Request, conds []string, args pgx.NamedArgs,
+	p paginate.Params, conds []string, args pgx.NamedArgs,
 ) (paginate.PaginateResult[T], error) {
 	var zero paginate.PaginateResult[T]
 
 	// Fetch-all (accessor) mode: no limit/offset, no count. One query.
-	if req.Limit <= 0 {
+	limit := p.Limit.Int32
+	if limit <= 0 {
 		query := buildAll(spec, conds)
 		data, err := queryRows[T](ctx, conn, query, args)
 		if err != nil {
@@ -148,14 +129,14 @@ func listOffset[T any](
 		return paginate.PaginateResult[T]{Data: data}, nil
 	}
 
-	page := req.Page
+	page := p.Page.Int32
 	if page <= 0 {
 		page = 1
 	}
-	offset := (page - 1) * req.Limit
+	offset := (page - 1) * limit
 
 	// Query 1: the page. Offset mode orders by pk for a deterministic page.
-	listQuery, listArgs := buildOffset(spec, conds, args, req.Limit, offset)
+	listQuery, listArgs := buildOffset(spec, conds, args, limit, offset)
 	data, err := queryRows[T](ctx, conn, listQuery, listArgs)
 	if err != nil {
 		return zero, err
@@ -168,7 +149,7 @@ func listOffset[T any](
 	}
 
 	return paginate.PaginateResult[T]{
-		PageParams: paginate.Params{Page: null.Int32From(page), Limit: null.Int32From(req.Limit)},
+		PageParams: p,
 		Data:       data,
 		Total:      null.IntFrom(total),
 	}, nil

@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListResourceFilter filters "common"."resource". Each slice field is an IN/ANY match;
+// ListResourceParams filters "common"."resource". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListResourceFilter struct {
+type ListResourceParams struct {
+	paginate.Params
+
 	Id            []uuid.UUID
 	UploadedById  []uuid.UUID
 	Provider      []string
@@ -30,7 +32,7 @@ type ListResourceFilter struct {
 	CreatedAtTo   null.Time
 }
 
-func resourceListConds(f ListResourceFilter, conds *[]string, args pgx.NamedArgs) {
+func resourceListConds(f ListResourceParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -81,7 +83,7 @@ func resourceListConds(f ListResourceFilter, conds *[]string, args pgx.NamedArgs
 	}
 }
 
-func resourceListSpec(f ListResourceFilter) repolist.Spec[CommonResource] {
+func resourceListSpec(f ListResourceParams) repolist.Spec[CommonResource] {
 	return repolist.Spec[CommonResource]{
 		Table: `"common"."resource"`,
 		PK:    "id",
@@ -95,6 +97,6 @@ func resourceListSpec(f ListResourceFilter) repolist.Spec[CommonResource] {
 }
 
 // ListResource runs offset (?page) or cursor (?cursor/?sort) pagination over "common"."resource".
-func (q *Queries) ListResource(ctx context.Context, req repolist.Request, f ListResourceFilter) (paginate.PaginateResult[CommonResource], error) {
-	return repolist.List(ctx, q.db, resourceListSpec(f), req)
+func (q *Queries) ListResource(ctx context.Context, f ListResourceParams) (paginate.PaginateResult[CommonResource], error) {
+	return repolist.List(ctx, q.db, resourceListSpec(f), f.Params)
 }

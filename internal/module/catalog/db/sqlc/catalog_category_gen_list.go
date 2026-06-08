@@ -11,16 +11,18 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListCategoryFilter filters "catalog"."category". Each slice field is an IN/ANY match;
+// ListCategoryParams filters "catalog"."category". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListCategoryFilter struct {
+type ListCategoryParams struct {
+	paginate.Params
+
 	Id          []uuid.UUID
 	Name        []string
 	Description []string
 	ParentId    []uuid.UUID
 }
 
-func categoryListConds(f ListCategoryFilter, conds *[]string, args pgx.NamedArgs) {
+func categoryListConds(f ListCategoryParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -39,7 +41,7 @@ func categoryListConds(f ListCategoryFilter, conds *[]string, args pgx.NamedArgs
 	}
 }
 
-func categoryListSpec(f ListCategoryFilter) repolist.Spec[CatalogCategory] {
+func categoryListSpec(f ListCategoryParams) repolist.Spec[CatalogCategory] {
 	return repolist.Spec[CatalogCategory]{
 		Table: `"catalog"."category"`,
 		PK:    "id",
@@ -51,6 +53,6 @@ func categoryListSpec(f ListCategoryFilter) repolist.Spec[CatalogCategory] {
 }
 
 // ListCategory runs offset (?page) or cursor (?cursor/?sort) pagination over "catalog"."category".
-func (q *Queries) ListCategory(ctx context.Context, req repolist.Request, f ListCategoryFilter) (paginate.PaginateResult[CatalogCategory], error) {
-	return repolist.List(ctx, q.db, categoryListSpec(f), req)
+func (q *Queries) ListCategory(ctx context.Context, f ListCategoryParams) (paginate.PaginateResult[CatalogCategory], error) {
+	return repolist.List(ctx, q.db, categoryListSpec(f), f.Params)
 }

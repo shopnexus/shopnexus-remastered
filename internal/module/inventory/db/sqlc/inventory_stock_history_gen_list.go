@@ -12,9 +12,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListStockHistoryFilter filters "inventory"."stock_history". Each slice field is an IN/ANY match;
+// ListStockHistoryParams filters "inventory"."stock_history". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListStockHistoryFilter struct {
+type ListStockHistoryParams struct {
+	paginate.Params
+
 	Id              []int64
 	StockId         []int64
 	Change          []int64
@@ -25,7 +27,7 @@ type ListStockHistoryFilter struct {
 	DateCreatedTo   null.Time
 }
 
-func stockHistoryListConds(f ListStockHistoryFilter, conds *[]string, args pgx.NamedArgs) {
+func stockHistoryListConds(f ListStockHistoryParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -60,7 +62,7 @@ func stockHistoryListConds(f ListStockHistoryFilter, conds *[]string, args pgx.N
 	}
 }
 
-func stockHistoryListSpec(f ListStockHistoryFilter) repolist.Spec[InventoryStockHistory] {
+func stockHistoryListSpec(f ListStockHistoryParams) repolist.Spec[InventoryStockHistory] {
 	return repolist.Spec[InventoryStockHistory]{
 		Table: `"inventory"."stock_history"`,
 		PK:    "id",
@@ -74,6 +76,6 @@ func stockHistoryListSpec(f ListStockHistoryFilter) repolist.Spec[InventoryStock
 }
 
 // ListStockHistory runs offset (?page) or cursor (?cursor/?sort) pagination over "inventory"."stock_history".
-func (q *Queries) ListStockHistory(ctx context.Context, req repolist.Request, f ListStockHistoryFilter) (paginate.PaginateResult[InventoryStockHistory], error) {
-	return repolist.List(ctx, q.db, stockHistoryListSpec(f), req)
+func (q *Queries) ListStockHistory(ctx context.Context, f ListStockHistoryParams) (paginate.PaginateResult[InventoryStockHistory], error) {
+	return repolist.List(ctx, q.db, stockHistoryListSpec(f), f.Params)
 }

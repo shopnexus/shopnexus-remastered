@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListSearchSyncFilter filters "catalog"."search_sync". Each slice field is an IN/ANY match;
+// ListSearchSyncParams filters "catalog"."search_sync". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListSearchSyncFilter struct {
+type ListSearchSyncParams struct {
+	paginate.Params
+
 	Id               []int64
 	RefType          []CatalogSearchSyncRefType
 	RefId            []uuid.UUID
@@ -28,7 +30,7 @@ type ListSearchSyncFilter struct {
 	DateUpdatedTo    null.Time
 }
 
-func searchSyncListConds(f ListSearchSyncFilter, conds *[]string, args pgx.NamedArgs) {
+func searchSyncListConds(f ListSearchSyncParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -71,7 +73,7 @@ func searchSyncListConds(f ListSearchSyncFilter, conds *[]string, args pgx.Named
 	}
 }
 
-func searchSyncListSpec(f ListSearchSyncFilter) repolist.Spec[CatalogSearchSync] {
+func searchSyncListSpec(f ListSearchSyncParams) repolist.Spec[CatalogSearchSync] {
 	return repolist.Spec[CatalogSearchSync]{
 		Table: `"catalog"."search_sync"`,
 		PK:    "id",
@@ -85,6 +87,6 @@ func searchSyncListSpec(f ListSearchSyncFilter) repolist.Spec[CatalogSearchSync]
 }
 
 // ListSearchSync runs offset (?page) or cursor (?cursor/?sort) pagination over "catalog"."search_sync".
-func (q *Queries) ListSearchSync(ctx context.Context, req repolist.Request, f ListSearchSyncFilter) (paginate.PaginateResult[CatalogSearchSync], error) {
-	return repolist.List(ctx, q.db, searchSyncListSpec(f), req)
+func (q *Queries) ListSearchSync(ctx context.Context, f ListSearchSyncParams) (paginate.PaginateResult[CatalogSearchSync], error) {
+	return repolist.List(ctx, q.db, searchSyncListSpec(f), f.Params)
 }

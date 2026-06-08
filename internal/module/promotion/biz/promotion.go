@@ -16,7 +16,6 @@ import (
 	promotiondb "shopnexus-server/internal/module/promotion/db/sqlc"
 	promotionmodel "shopnexus-server/internal/module/promotion/model"
 	"shopnexus-server/internal/shared/paginate"
-	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 )
 
@@ -40,7 +39,7 @@ func (s *PromotionHandler) GetPromotion(
 		return zero, fmt.Errorf("db get promotion: %w", err)
 	}
 
-	refsRes, err := s.storage.Querier().ListRef(ctx, repolist.Request{}, promotiondb.ListRefFilter{
+	refsRes, err := s.storage.Querier().ListRef(ctx, promotiondb.ListRefParams{
 		PromotionId: []uuid.UUID{promo.ID},
 	})
 	if err != nil {
@@ -65,7 +64,7 @@ func (s *PromotionHandler) ListPromotion(
 ) (paginate.PaginateResult[promotionmodel.Promotion], error) {
 	var zero paginate.PaginateResult[promotionmodel.Promotion]
 
-	res, err := s.storage.Querier().ListPromotion(ctx, repolist.FromParams(params.Params), promotiondb.ListPromotionFilter{
+	res, err := s.storage.Querier().ListPromotion(ctx, promotiondb.ListPromotionParams{Params: params.Params,
 		Id: params.ID,
 	})
 	if err != nil {
@@ -76,7 +75,7 @@ func (s *PromotionHandler) ListPromotion(
 		return p.ID
 	})
 
-	refsRes, err := s.storage.Querier().ListRef(ctx, repolist.Request{}, promotiondb.ListRefFilter{
+	refsRes, err := s.storage.Querier().ListRef(ctx, promotiondb.ListRefParams{
 		PromotionId: promoIDs,
 	})
 	if err != nil {

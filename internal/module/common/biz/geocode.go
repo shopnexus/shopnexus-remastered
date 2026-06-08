@@ -1,27 +1,15 @@
 package commonbiz
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	commonmodel "shopnexus-server/internal/module/common/model"
 	"shopnexus-server/internal/provider/geocoding"
 
 	restate "github.com/restatedev/sdk-go"
 )
-
-// forwardGeocodeCacheTTL is long because address -> country mappings rarely
-// change; the cache is the primary defence against Nominatim rate limits.
-const forwardGeocodeCacheTTL = 30 * 24 * time.Hour
-
-func forwardGeocodeCacheKey(address string) string {
-	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(address))))
-	return "geocode:forward:" + hex.EncodeToString(sum[:])[:16]
-}
 
 type ReverseGeocodeParams struct {
 	Latitude  float64 `validate:"required"`
@@ -46,17 +34,9 @@ type ForwardGeocodeParams struct {
 }
 
 // ForwardGeocode resolves a free-form address to coordinates and country.
-// Cached by lowercased address for 30 days to limit Nominatim load and stay
-// within its 1 req/sec public rate limit.
+// The geocoder is wrapped in a read-through cache (see geocoding.CachingClient).
 func (b *CommonHandler) ForwardGeocode(ctx restate.Context, params ForwardGeocodeParams) (geocoding.Result, error) {
 	return restate.Run(ctx, func(ctx restate.RunContext) (geocoding.Result, error) {
-		cacheKey := forwardGeocodeCacheKey(params.Address)
-
-		var cached geocoding.Result
-		if err := b.cache.Get(ctx, cacheKey, &cached); err == nil && cached.Address != "" {
-			return cached, nil
-		}
-
 		result, err := b.geocoder.ForwardGeocode(ctx, params.Address)
 		if err != nil {
 			if errors.Is(err, geocoding.ErrNoResults) {
@@ -64,13 +44,6 @@ func (b *CommonHandler) ForwardGeocode(ctx restate.Context, params ForwardGeocod
 			}
 			return geocoding.Result{}, fmt.Errorf("forward geocode: %w", err)
 		}
-
-		if result.Address != "" {
-			if err := b.cache.Set(ctx, cacheKey, result, forwardGeocodeCacheTTL); err != nil {
-				b.logger.Warn("forward geocode cache set failed", "err", err)
-			}
-		}
-
 		return result, nil
 	})
 }

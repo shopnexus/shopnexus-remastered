@@ -66,7 +66,6 @@ func (b *AnalyticHandler) ListTopProductPopularity(
 	ctx restate.Context,
 	params paginate.Params,
 ) ([]analyticdb.AnalyticProductPopularity, error) {
-	params = params.Constrain()
 	return b.storage.Querier().ListTopProductPopularity(ctx, analyticdb.ListTopProductPopularityParams{
 		Limit:  params.Limit,
 		Offset: params.Offset(),

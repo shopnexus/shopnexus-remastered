@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListNotificationFilter filters "account"."notification". Each slice field is an IN/ANY match;
+// ListNotificationParams filters "account"."notification". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListNotificationFilter struct {
+type ListNotificationParams struct {
+	paginate.Params
+
 	Id                []int64
 	AccountId         []uuid.UUID
 	Type              []string
@@ -34,7 +36,7 @@ type ListNotificationFilter struct {
 	DateScheduledTo   null.Time
 }
 
-func notificationListConds(f ListNotificationFilter, conds *[]string, args pgx.NamedArgs) {
+func notificationListConds(f ListNotificationParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -101,7 +103,7 @@ func notificationListConds(f ListNotificationFilter, conds *[]string, args pgx.N
 	}
 }
 
-func notificationListSpec(f ListNotificationFilter) repolist.Spec[AccountNotification] {
+func notificationListSpec(f ListNotificationParams) repolist.Spec[AccountNotification] {
 	return repolist.Spec[AccountNotification]{
 		Table: `"account"."notification"`,
 		PK:    "id",
@@ -114,6 +116,6 @@ func notificationListSpec(f ListNotificationFilter) repolist.Spec[AccountNotific
 }
 
 // ListNotification runs offset (?page) or cursor (?cursor/?sort) pagination over "account"."notification".
-func (q *Queries) ListNotification(ctx context.Context, req repolist.Request, f ListNotificationFilter) (paginate.PaginateResult[AccountNotification], error) {
-	return repolist.List(ctx, q.db, notificationListSpec(f), req)
+func (q *Queries) ListNotification(ctx context.Context, f ListNotificationParams) (paginate.PaginateResult[AccountNotification], error) {
+	return repolist.List(ctx, q.db, notificationListSpec(f), f.Params)
 }

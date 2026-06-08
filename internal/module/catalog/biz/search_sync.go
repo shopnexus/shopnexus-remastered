@@ -15,7 +15,6 @@ import (
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	"shopnexus-server/internal/shared/htmlutil"
-	"shopnexus-server/internal/shared/repolist"
 )
 
 const EmbeddingSyncBatchSize = 32
@@ -116,7 +115,7 @@ func (b *CatalogHandler) syncProducts(
 		spuIDs[i] = s.RefID
 	}
 
-	spuRes, err := b.storage.Querier().ListProductSpu(ctx, repolist.Request{}, catalogdb.ListProductSpuFilter{
+	spuRes, err := b.storage.Querier().ListProductSpu(ctx, catalogdb.ListProductSpuParams{
 		Id: spuIDs,
 	})
 	if err != nil {
@@ -124,7 +123,7 @@ func (b *CatalogHandler) syncProducts(
 	}
 	dbSpus := spuRes.Data
 
-	skuRes, err := b.storage.Querier().ListProductSku(ctx, repolist.Request{}, catalogdb.ListProductSkuFilter{
+	skuRes, err := b.storage.Querier().ListProductSku(ctx, catalogdb.ListProductSkuParams{
 		SpuId: spuIDs,
 	})
 	if err != nil {
@@ -132,7 +131,7 @@ func (b *CatalogHandler) syncProducts(
 	}
 	skusBySpuID := lo.GroupBy(skuRes.Data, func(s catalogdb.CatalogProductSku) uuid.UUID { return s.SpuID })
 
-	tags, err := b.storage.Querier().ListProductSpuTag(ctx, repolist.Request{}, catalogdb.ListProductSpuTagFilter{SpuId: spuIDs})
+	tags, err := b.storage.Querier().ListProductSpuTag(ctx, catalogdb.ListProductSpuTagParams{SpuId: spuIDs})
 	if err != nil {
 		return fmt.Errorf("list tags for sync: %w", err)
 	}
@@ -142,7 +141,7 @@ func (b *CatalogHandler) syncProducts(
 	)
 
 	categoryIDs := lo.Uniq(lo.Map(dbSpus, func(s catalogdb.CatalogProductSpu, _ int) uuid.UUID { return s.CategoryID }))
-	categories, err := b.storage.Querier().ListCategory(ctx, repolist.Request{}, catalogdb.ListCategoryFilter{Id: categoryIDs})
+	categories, err := b.storage.Querier().ListCategory(ctx, catalogdb.ListCategoryParams{Id: categoryIDs})
 	if err != nil {
 		return fmt.Errorf("list categories for sync: %w", err)
 	}
@@ -169,7 +168,7 @@ func (b *CatalogHandler) syncProducts(
 			Name:        spu.Name,
 			Description: spu.Description,
 			IsEnabled:   spu.IsEnabled,
-			Category:    mapCategory(categoryMap[spu.CategoryID]),
+			Category:    catalogmodel.Category{CatalogCategory: categoryMap[spu.CategoryID]},
 			Skus:        skuDetails,
 			Tags:        tagsBySpuID[spu.ID],
 		})
@@ -216,7 +215,7 @@ func (b *CatalogHandler) syncCategories(
 	}
 
 	// Fetch categories from DB
-	categoriesRes, err := b.storage.Querier().ListCategory(ctx, repolist.Request{}, catalogdb.ListCategoryFilter{
+	categoriesRes, err := b.storage.Querier().ListCategory(ctx, catalogdb.ListCategoryParams{
 		Id: categoryIDs,
 	})
 	if err != nil {
@@ -269,7 +268,7 @@ func (b *CatalogHandler) syncTags(
 	// We fetch all tags and match via uuid.NewSHA1(uuid.NameSpaceURL, []byte(tag.ID)).
 	// Collect tag string IDs from stale rows by reversing the mapping — we need to fetch
 	// all potentially matching tags. Since we can't reverse SHA1, fetch all tags and filter.
-	tags, err := b.storage.Querier().ListTag(ctx, repolist.Request{}, catalogdb.ListTagFilter{})
+	tags, err := b.storage.Querier().ListTag(ctx, catalogdb.ListTagParams{})
 	if err != nil {
 		return fmt.Errorf("list tags for sync: %w", err)
 	}

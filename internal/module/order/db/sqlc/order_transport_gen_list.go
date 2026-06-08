@@ -12,9 +12,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListTransportFilter filters "order"."transport". Each slice field is an IN/ANY match;
+// ListTransportParams filters "order"."transport". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListTransportFilter struct {
+type ListTransportParams struct {
+	paginate.Params
+
 	Id              []int64
 	Option          []string
 	Status          []OrderStatus
@@ -23,7 +25,7 @@ type ListTransportFilter struct {
 	DateCreatedTo   null.Time
 }
 
-func transportListConds(f ListTransportFilter, conds *[]string, args pgx.NamedArgs) {
+func transportListConds(f ListTransportParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -50,7 +52,7 @@ func transportListConds(f ListTransportFilter, conds *[]string, args pgx.NamedAr
 	}
 }
 
-func transportListSpec(f ListTransportFilter) repolist.Spec[OrderTransport] {
+func transportListSpec(f ListTransportParams) repolist.Spec[OrderTransport] {
 	return repolist.Spec[OrderTransport]{
 		Table: `"order"."transport"`,
 		PK:    "id",
@@ -63,6 +65,6 @@ func transportListSpec(f ListTransportFilter) repolist.Spec[OrderTransport] {
 }
 
 // ListTransport runs offset (?page) or cursor (?cursor/?sort) pagination over "order"."transport".
-func (q *Queries) ListTransport(ctx context.Context, req repolist.Request, f ListTransportFilter) (paginate.PaginateResult[OrderTransport], error) {
-	return repolist.List(ctx, q.db, transportListSpec(f), req)
+func (q *Queries) ListTransport(ctx context.Context, f ListTransportParams) (paginate.PaginateResult[OrderTransport], error) {
+	return repolist.List(ctx, q.db, transportListSpec(f), f.Params)
 }

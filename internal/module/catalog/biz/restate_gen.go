@@ -65,7 +65,7 @@ type CatalogBizFuture interface {
 	ListTag(rctx restate.Context, params ListTagParams) restate.ResponseFuture[paginate.PaginateResult[catalogdb.CatalogTag]]
 	GetTag(rctx restate.Context, params GetTagParams) restate.ResponseFuture[catalogdb.CatalogTag]
 	ListCategory(rctx restate.Context, params ListCategoryParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.Category]]
-	Search(rctx restate.Context, params SearchParams) restate.ResponseFuture[[]catalogmodel.ProductRecommend]
+	Search(rctx restate.Context, params SearchParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.ProductRecommend]]
 	GetRecommendations(rctx restate.Context, params GetRecommendationsParams) restate.ResponseFuture[[]catalogmodel.ProductRecommend]
 	AddInteractions(rctx restate.Context, events []analyticmodel.Interaction) restate.ResponseFuture[restate.Void]
 	GetVendorStats(rctx restate.Context, params GetVendorStatsParams) restate.ResponseFuture[VendorStats]
@@ -179,8 +179,8 @@ func (p *CatalogRestateClient) ListCategory(ctx context.Context, params ListCate
 	return restatec.Call[paginate.PaginateResult[catalogmodel.Category]](ctx, p.call, serviceName, "ListCategory", params)
 }
 
-func (p *CatalogRestateClient) Search(ctx context.Context, params SearchParams) ([]catalogmodel.ProductRecommend, error) {
-	return restatec.Call[[]catalogmodel.ProductRecommend](ctx, p.call, serviceName, "Search", params)
+func (p *CatalogRestateClient) Search(ctx context.Context, params SearchParams) (paginate.PaginateResult[catalogmodel.ProductRecommend], error) {
+	return restatec.Call[paginate.PaginateResult[catalogmodel.ProductRecommend]](ctx, p.call, serviceName, "Search", params)
 }
 
 func (p *CatalogRestateClient) GetRecommendations(ctx context.Context, params GetRecommendationsParams) ([]catalogmodel.ProductRecommend, error) {
@@ -383,8 +383,8 @@ func (f *CatalogRestateFuture) ListCategory(rctx restate.Context, params ListCat
 	return restate.Service[paginate.PaginateResult[catalogmodel.Category]](rctx, serviceName, "ListCategory").RequestFuture(params)
 }
 
-func (f *CatalogRestateFuture) Search(rctx restate.Context, params SearchParams) restate.ResponseFuture[[]catalogmodel.ProductRecommend] {
-	return restate.Service[[]catalogmodel.ProductRecommend](rctx, serviceName, "Search").RequestFuture(params)
+func (f *CatalogRestateFuture) Search(rctx restate.Context, params SearchParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.ProductRecommend]] {
+	return restate.Service[paginate.PaginateResult[catalogmodel.ProductRecommend]](rctx, serviceName, "Search").RequestFuture(params)
 }
 
 func (f *CatalogRestateFuture) GetRecommendations(rctx restate.Context, params GetRecommendationsParams) restate.ResponseFuture[[]catalogmodel.ProductRecommend] {

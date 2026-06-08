@@ -7,7 +7,6 @@ import (
 
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	accountmodel "shopnexus-server/internal/module/account/model"
-	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -56,7 +55,7 @@ func (b *AccountHandler) ListContact(
 		return nil, fmt.Errorf("validate list contact: %w", err)
 	}
 
-	res, err := b.storage.Querier().ListContact(ctx, repolist.Request{}, accountdb.ListContactFilter{
+	res, err := b.storage.Querier().ListContact(ctx, accountdb.ListContactParams{
 		AccountId: params.AccountID,
 		Id:        params.ID,
 	})
@@ -260,7 +259,7 @@ func (b *AccountHandler) DeleteContact(ctx restate.Context, params DeleteContact
 
 	// If we deleted the default, reassign to the most recent remaining contact
 	if isDefault {
-		remaining, err := txStorage.Querier().ListContact(ctx, repolist.Request{}, accountdb.ListContactFilter{
+		remaining, err := txStorage.Querier().ListContact(ctx, accountdb.ListContactParams{
 			AccountId: []uuid.UUID{params.Account.ID},
 		})
 		if err != nil {

@@ -15,7 +15,6 @@ import (
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/provider/payment"
-	"shopnexus-server/internal/shared/repolist"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
@@ -348,7 +347,7 @@ func (b *Base) ExecuteRefundCredit(
 	var zero orderdb.OrderRefund
 
 	items, err := restate.Run(ctx, func(rctx restate.RunContext) ([]orderdb.OrderItem, error) {
-		res, e := b.Storage.Querier().ListItem(rctx, repolist.Request{}, orderdb.ListItemFilter{
+		res, e := b.Storage.Querier().ListItem(rctx, orderdb.ListItemParams{
 			OrderId: []uuid.UUID{refund.OrderID},
 		})
 		if e != nil {

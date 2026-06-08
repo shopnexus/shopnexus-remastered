@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListProductSkuFilter filters "catalog"."product_sku". Each slice field is an IN/ANY match;
+// ListProductSkuParams filters "catalog"."product_sku". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListProductSkuFilter struct {
+type ListProductSkuParams struct {
+	paginate.Params
+
 	Id              []uuid.UUID
 	SpuId           []uuid.UUID
 	Price           []int64
@@ -30,7 +32,7 @@ type ListProductSkuFilter struct {
 	DateDeletedTo   null.Time
 }
 
-func productSkuListConds(f ListProductSkuFilter, conds *[]string, args pgx.NamedArgs) {
+func productSkuListConds(f ListProductSkuParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -81,7 +83,7 @@ func productSkuListConds(f ListProductSkuFilter, conds *[]string, args pgx.Named
 	}
 }
 
-func productSkuListSpec(f ListProductSkuFilter) repolist.Spec[CatalogProductSku] {
+func productSkuListSpec(f ListProductSkuParams) repolist.Spec[CatalogProductSku] {
 	return repolist.Spec[CatalogProductSku]{
 		Table: `"catalog"."product_sku"`,
 		PK:    "id",
@@ -95,6 +97,6 @@ func productSkuListSpec(f ListProductSkuFilter) repolist.Spec[CatalogProductSku]
 }
 
 // ListProductSku runs offset (?page) or cursor (?cursor/?sort) pagination over "catalog"."product_sku".
-func (q *Queries) ListProductSku(ctx context.Context, req repolist.Request, f ListProductSkuFilter) (paginate.PaginateResult[CatalogProductSku], error) {
-	return repolist.List(ctx, q.db, productSkuListSpec(f), req)
+func (q *Queries) ListProductSku(ctx context.Context, f ListProductSkuParams) (paginate.PaginateResult[CatalogProductSku], error) {
+	return repolist.List(ctx, q.db, productSkuListSpec(f), f.Params)
 }

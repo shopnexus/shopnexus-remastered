@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListRefundDisputeFilter filters "order"."refund_dispute". Each slice field is an IN/ANY match;
+// ListRefundDisputeParams filters "order"."refund_dispute". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListRefundDisputeFilter struct {
+type ListRefundDisputeParams struct {
+	paginate.Params
+
 	Id               []uuid.UUID
 	RefundId         []uuid.UUID
 	AccountId        []uuid.UUID
@@ -31,7 +33,7 @@ type ListRefundDisputeFilter struct {
 	ResolutionNote   []string
 }
 
-func refundDisputeListConds(f ListRefundDisputeFilter, conds *[]string, args pgx.NamedArgs) {
+func refundDisputeListConds(f ListRefundDisputeParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -86,7 +88,7 @@ func refundDisputeListConds(f ListRefundDisputeFilter, conds *[]string, args pgx
 	}
 }
 
-func refundDisputeListSpec(f ListRefundDisputeFilter) repolist.Spec[OrderRefundDispute] {
+func refundDisputeListSpec(f ListRefundDisputeParams) repolist.Spec[OrderRefundDispute] {
 	return repolist.Spec[OrderRefundDispute]{
 		Table: `"order"."refund_dispute"`,
 		PK:    "id",
@@ -99,6 +101,6 @@ func refundDisputeListSpec(f ListRefundDisputeFilter) repolist.Spec[OrderRefundD
 }
 
 // ListRefundDispute runs offset (?page) or cursor (?cursor/?sort) pagination over "order"."refund_dispute".
-func (q *Queries) ListRefundDispute(ctx context.Context, req repolist.Request, f ListRefundDisputeFilter) (paginate.PaginateResult[OrderRefundDispute], error) {
-	return repolist.List(ctx, q.db, refundDisputeListSpec(f), req)
+func (q *Queries) ListRefundDispute(ctx context.Context, f ListRefundDisputeParams) (paginate.PaginateResult[OrderRefundDispute], error) {
+	return repolist.List(ctx, q.db, refundDisputeListSpec(f), f.Params)
 }

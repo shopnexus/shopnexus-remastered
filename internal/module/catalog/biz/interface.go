@@ -71,7 +71,7 @@ type CatalogBiz interface {
 	) (paginate.PaginateResult[catalogmodel.Category], error)
 
 	// Search
-	Search(ctx context.Context, params SearchParams) ([]catalogmodel.ProductRecommend, error)
+	Search(ctx context.Context, params SearchParams) (paginate.PaginateResult[catalogmodel.ProductRecommend], error)
 	GetRecommendations(ctx context.Context, params GetRecommendationsParams) ([]catalogmodel.ProductRecommend, error)
 	AddInteractions(ctx context.Context, events []analyticmodel.Interaction) error
 

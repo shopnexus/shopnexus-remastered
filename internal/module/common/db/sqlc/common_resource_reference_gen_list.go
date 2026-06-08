@@ -12,9 +12,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListResourceReferenceFilter filters "common"."resource_reference". Each slice field is an IN/ANY match;
+// ListResourceReferenceParams filters "common"."resource_reference". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListResourceReferenceFilter struct {
+type ListResourceReferenceParams struct {
+	paginate.Params
+
 	Id        []int64
 	RsId      []uuid.UUID
 	RefType   []CommonResourceRefType
@@ -24,7 +26,7 @@ type ListResourceReferenceFilter struct {
 	OrderTo   null.Int
 }
 
-func resourceReferenceListConds(f ListResourceReferenceFilter, conds *[]string, args pgx.NamedArgs) {
+func resourceReferenceListConds(f ListResourceReferenceParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -55,7 +57,7 @@ func resourceReferenceListConds(f ListResourceReferenceFilter, conds *[]string, 
 	}
 }
 
-func resourceReferenceListSpec(f ListResourceReferenceFilter) repolist.Spec[CommonResourceReference] {
+func resourceReferenceListSpec(f ListResourceReferenceParams) repolist.Spec[CommonResourceReference] {
 	return repolist.Spec[CommonResourceReference]{
 		Table: `"common"."resource_reference"`,
 		PK:    "id",
@@ -68,6 +70,6 @@ func resourceReferenceListSpec(f ListResourceReferenceFilter) repolist.Spec[Comm
 }
 
 // ListResourceReference runs offset (?page) or cursor (?cursor/?sort) pagination over "common"."resource_reference".
-func (q *Queries) ListResourceReference(ctx context.Context, req repolist.Request, f ListResourceReferenceFilter) (paginate.PaginateResult[CommonResourceReference], error) {
-	return repolist.List(ctx, q.db, resourceReferenceListSpec(f), req)
+func (q *Queries) ListResourceReference(ctx context.Context, f ListResourceReferenceParams) (paginate.PaginateResult[CommonResourceReference], error) {
+	return repolist.List(ctx, q.db, resourceReferenceListSpec(f), f.Params)
 }

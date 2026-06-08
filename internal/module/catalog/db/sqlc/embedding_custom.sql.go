@@ -9,9 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	null "github.com/guregu/null/v6"
 	"github.com/pgvector/pgvector-go"
-	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
 const getProductVectors = `-- name: GetProductVectors :many
@@ -35,111 +33,6 @@ func (q *Queries) GetProductVectors(ctx context.Context, spuIds []uuid.UUID) ([]
 	for rows.Next() {
 		var i GetProductVectorsRow
 		if err := rows.Scan(&i.SpuID, &i.Embedding); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const hybridSearchProduct = `-- name: HybridSearchProduct :many
-WITH dense AS (
-    SELECT spu_id, 1 - (embedding <=> $13::vector) AS dscore
-    FROM catalog.product_embedding
-    WHERE embedding IS NOT NULL
-    ORDER BY embedding <=> $13::vector
-    LIMIT $14::int
-),
-sparse AS (
-    SELECT spu_id, -(sparse <#> $15::sparsevec) AS sscore
-    FROM catalog.product_embedding
-    WHERE $15::sparsevec IS NOT NULL AND sparse IS NOT NULL
-    ORDER BY sparse <#> $15::sparsevec
-    LIMIT $14::int
-)
-SELECT spu.id,
-    ($1::float4 * COALESCE(d.dscore, 0)
-   + $2::float4 * COALESCE(s.sscore, 0))::float4 AS score
-FROM catalog.product_spu spu
-LEFT JOIN dense d ON d.spu_id = spu.id
-LEFT JOIN sparse s ON s.spu_id = spu.id
-WHERE (d.spu_id IS NOT NULL OR s.spu_id IS NOT NULL)
-  AND spu.date_deleted IS NULL
-  AND (spu.account_id = ANY($3) OR $3 IS NULL)
-  AND (spu.category_id = ANY($4) OR $4 IS NULL)
-  AND (spu.is_enabled = $5 OR $5 IS NULL)
-  AND (spu.date_created >= $6 OR $6 IS NULL)
-  AND (spu.date_created <= $7 OR $7 IS NULL)
-  AND (EXISTS (
-        SELECT 1 FROM catalog.product_sku sku
-        WHERE sku.spu_id = spu.id AND sku.date_deleted IS NULL AND sku.price >= $8
-      ) OR $8 IS NULL)
-  AND (EXISTS (
-        SELECT 1 FROM catalog.product_sku sku
-        WHERE sku.spu_id = spu.id AND sku.date_deleted IS NULL AND sku.price <= $9
-      ) OR $9 IS NULL)
-  AND (EXISTS (
-        SELECT 1 FROM catalog.product_spu_tag pt
-        WHERE pt.spu_id = spu.id AND pt.tag = ANY($10)
-      ) OR $10 IS NULL)
-ORDER BY score DESC
-LIMIT $12::int OFFSET $11::int
-`
-
-type HybridSearchProductParams struct {
-	DenseWeight     float32                   `db:"dense_weight" json:"dense_weight"`
-	SparseWeight    float32                   `db:"sparse_weight" json:"sparse_weight"`
-	AccountID       []uuid.UUID               `db:"account_id" json:"account_id"`
-	CategoryID      []uuid.UUID               `db:"category_id" json:"category_id"`
-	IsEnabled       null.Bool                 `db:"is_enabled" json:"is_enabled"`
-	DateCreatedFrom null.Time                 `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo   null.Time                 `db:"date_created_to" json:"date_created_to"`
-	PriceMin        null.Int                  `db:"price_min" json:"price_min"`
-	PriceMax        null.Int                  `db:"price_max" json:"price_max"`
-	Tags            []string                  `db:"tags" json:"tags"`
-	Offset          int32                     `db:"offset" json:"offset"`
-	Limit           int32                     `db:"limit" json:"limit"`
-	QueryDense      pgvector.Vector           `db:"query_dense" json:"query_dense"`
-	Pool            int32                     `db:"pool" json:"pool"`
-	QuerySparse     *pgvector_go.SparseVector `db:"query_sparse" json:"query_sparse"`
-}
-
-type HybridSearchProductRow struct {
-	ID    uuid.UUID `db:"id" json:"id"`
-	Score float32   `db:"score" json:"score"`
-}
-
-// Dense + sparse ANN with weighted score fusion; scalar filters join live
-// product tables (replaces Milvus denormalized scalars + WeightedReranker).
-func (q *Queries) HybridSearchProduct(ctx context.Context, arg HybridSearchProductParams) ([]HybridSearchProductRow, error) {
-	rows, err := q.db.Query(ctx, hybridSearchProduct,
-		arg.DenseWeight,
-		arg.SparseWeight,
-		arg.AccountID,
-		arg.CategoryID,
-		arg.IsEnabled,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.PriceMin,
-		arg.PriceMax,
-		arg.Tags,
-		arg.Offset,
-		arg.Limit,
-		arg.QueryDense,
-		arg.Pool,
-		arg.QuerySparse,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []HybridSearchProductRow{}
-	for rows.Next() {
-		var i HybridSearchProductRow
-		if err := rows.Scan(&i.ID, &i.Score); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -190,6 +83,7 @@ func (q *Queries) ListAccountInterest(ctx context.Context, accountIds []uuid.UUI
 }
 
 const searchProductByVector = `-- name: SearchProductByVector :many
+
 SELECT pe.spu_id, (1 - (pe.embedding <=> $1::vector))::float4 AS score
 FROM catalog.product_embedding pe
 JOIN catalog.product_spu spu ON spu.id = pe.spu_id
@@ -208,6 +102,8 @@ type SearchProductByVectorRow struct {
 	Score float32   `db:"score" json:"score"`
 }
 
+// HybridSearchProduct is hand-written (CTEs + score fusion + pagination/count);
+// see internal/module/catalog/db/sqlc/embedding_search.go.
 // Single dense ANN over active products (used per interest slot for recommendations).
 func (q *Queries) SearchProductByVector(ctx context.Context, arg SearchProductByVectorParams) ([]SearchProductByVectorRow, error) {
 	rows, err := q.db.Query(ctx, searchProductByVector, arg.Query, arg.Limit)

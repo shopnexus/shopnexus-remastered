@@ -10,7 +10,6 @@ import (
 	accountmodel "shopnexus-server/internal/module/account/model"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	commonmodel "shopnexus-server/internal/module/common/model"
-	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -50,7 +49,7 @@ func (b *CommonHandler) UpdateResources(
 		// Next step: Attach resources
 		var createResourceArgs []commondb.CreateCopyDefaultResourceReferenceParams
 
-		res, err := b.storage.Querier().ListResource(ctx, repolist.Request{}, commondb.ListResourceFilter{
+		res, err := b.storage.Querier().ListResource(ctx, commondb.ListResourceParams{
 			Id: params.ResourceIDs,
 		})
 		if err != nil {
@@ -100,7 +99,7 @@ func (b *CommonHandler) DeleteResources(ctx restate.Context, params DeleteResour
 		return fmt.Errorf("validate delete resources: %w", err)
 	}
 
-	res, err := b.storage.Querier().ListResourceReference(ctx, repolist.Request{}, commondb.ListResourceReferenceFilter{
+	res, err := b.storage.Querier().ListResourceReference(ctx, commondb.ListResourceReferenceParams{
 		RefType: []commondb.CommonResourceRefType{params.RefType},
 		RefId:   params.RefID,
 	})
@@ -181,7 +180,7 @@ func (b *CommonHandler) GetResourcesByIDs(
 		}
 	}
 
-	res, err := b.storage.Querier().ListResource(ctx, repolist.Request{}, commondb.ListResourceFilter{
+	res, err := b.storage.Querier().ListResource(ctx, commondb.ListResourceParams{
 		Id: resourceIDs,
 	})
 	if err != nil {

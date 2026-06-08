@@ -113,7 +113,7 @@ func (h *Handler) ListMessage(c echo.Context) error {
 	result, err := h.biz.ListMessage(c.Request().Context(), chatbiz.ListMessageParams{
 		Account:        claims.Account,
 		ConversationID: req.ConversationID,
-		Params:         req.Params,
+		Params:         req.Params.Constrain(),
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)

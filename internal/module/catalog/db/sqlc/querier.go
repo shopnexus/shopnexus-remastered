@@ -97,9 +97,6 @@ type Querier interface {
 	// ========================================
 	GetTag(ctx context.Context, id null.String) (CatalogTag, error)
 	GetVendorProductStats(ctx context.Context, accountID uuid.UUID) (GetVendorProductStatsRow, error)
-	// Dense + sparse ANN with weighted score fusion; scalar filters join live
-	// product tables (replaces Milvus denormalized scalars + WeightedReranker).
-	HybridSearchProduct(ctx context.Context, arg HybridSearchProductParams) ([]HybridSearchProductRow, error)
 	ListAccountInterest(ctx context.Context, accountIds []uuid.UUID) ([]ListAccountInterestRow, error)
 	// Same as ListCountProductSpu but ordered by date_created DESC (newest first)
 	ListCountProductSpuRecent(ctx context.Context, arg ListCountProductSpuRecentParams) ([]ListCountProductSpuRecentRow, error)
@@ -112,6 +109,8 @@ type Querier interface {
 	// Custom product queries
 	// Returns SPU IDs that have ALL of the specified tags (AND logic).
 	SearchCountProductSpuByTags(ctx context.Context, arg SearchCountProductSpuByTagsParams) ([]SearchCountProductSpuByTagsRow, error)
+	// HybridSearchProduct is hand-written (CTEs + score fusion + pagination/count);
+	// see internal/module/catalog/db/sqlc/embedding_search.go.
 	// Single dense ANN over active products (used per interest slot for recommendations).
 	SearchProductByVector(ctx context.Context, arg SearchProductByVectorParams) ([]SearchProductByVectorRow, error)
 	SearchTag(ctx context.Context, arg SearchTagParams) ([]SearchTagRow, error)

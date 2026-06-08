@@ -5,7 +5,6 @@ import (
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	promotiondb "shopnexus-server/internal/module/promotion/db/sqlc"
 	promotionmodel "shopnexus-server/internal/module/promotion/model"
-	"shopnexus-server/internal/shared/repolist"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
@@ -82,7 +81,7 @@ func (s *PromotionHandler) CalculatePromotedPrices(
 
 	// Batch-load refs for all promotions
 	promoIDs := lo.Map(dbPromos, func(p promotiondb.PromotionPromotion, _ int) uuid.UUID { return p.ID })
-	refsRes, err := s.storage.Querier().ListRef(ctx, repolist.Request{}, promotiondb.ListRefFilter{PromotionId: promoIDs})
+	refsRes, err := s.storage.Querier().ListRef(ctx, promotiondb.ListRefParams{PromotionId: promoIDs})
 	if err != nil {
 		return nil, fmt.Errorf("db list promotion refs: %w", err)
 	}

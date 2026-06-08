@@ -95,18 +95,3 @@ type AnalyticProductPopularity struct {
 	ReviewCount   int64     `db:"review_count" json:"review_count"`
 	DateUpdated   time.Time `db:"date_updated" json:"date_updated"`
 }
-
-func (n NullAnalyticInteractionRefType) MarshalJSON() ([]byte, error) {
-	if !n.Valid {
-		return []byte("null"), nil
-	}
-	return json.Marshal(n.AnalyticInteractionRefType)
-}
-func (n *NullAnalyticInteractionRefType) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		n.Valid = false
-		return nil
-	}
-	n.Valid = true
-	return json.Unmarshal(b, &n.AnalyticInteractionRefType)
-}

@@ -96,9 +96,11 @@ All under `/api/v1/common`.
 
 ## Exchange Rates
 
-Goroutine + `time.Ticker` cron (`CommonHandler.SetupExchangeCron`) fetches
-rates from Frankfurter every 6h (configurable via `exchange.refresh_interval`).
-Rates are stored in `common.exchange_rate` keyed on `(base, target)`.
+The `exchange.Client` (CurrencyAPI-backed) is wrapped in `exchange.CachingClient`,
+a read-through cache keyed on `(base, sorted targets)`. `GetExchangeRates` calls
+`FetchLatest` directly: lookups hit the upstream provider only on the first call
+after the cache TTL (`exchange.refreshInterval`, default 6h) expires. All errors
+fail open — an empty `Rates` map is returned and callers display original currency.
 
 Use the `ConvertAmount` biz method for backend-side cross-currency math.
 Frontend reads the snapshot via `GET /api/v1/common/currencies/rates`.

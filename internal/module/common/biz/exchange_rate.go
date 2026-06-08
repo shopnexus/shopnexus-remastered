@@ -1,24 +1,13 @@
 package commonbiz
 
 import (
-	"context"
-	"fmt"
 	"slices"
-	"time"
 
 	restate "github.com/restatedev/sdk-go"
 	"github.com/shopspring/decimal"
 
 	commonmodel "shopnexus-server/internal/module/common/model"
 )
-
-// exchangeRateCacheTTL is longer than the refresh interval so stale rates
-// survive provider outages between successful refreshes.
-const exchangeRateCacheTTL = 24 * time.Hour
-
-func exchangeRateCacheKey(base string) string {
-	return fmt.Sprintf("common:exchange:rates:%s", base)
-}
 
 // GetExchangeRatesParams is an empty envelope required by the Restate
 // ingress client — zero-arg handlers reject requests with a JSON
@@ -70,23 +59,44 @@ func ConvertAmountPure(amount int64, from, to string, ratesFromUSD map[string]de
 		IntPart()
 }
 
-// GetExchangeRates reads the latest snapshot from cache. On cache miss
-// (before the first cron refresh completes) or cache error, returns an
-// empty Rates map with correct metadata — callers fail-open.
+// GetExchangeRates returns the latest snapshot. The exchange.Client is a
+// read-through cache, so this hits the upstream provider only on the first
+// lookup after the TTL expires. On any error (no provider, upstream down)
+// it returns an empty Rates map with correct metadata — callers fail-open.
 func (b *CommonHandler) GetExchangeRates(ctx restate.Context, _ GetExchangeRatesParams) (commonmodel.ExchangeRateSnapshot, error) {
 	base := b.cfg.Exchange.Base
-
-	var snap commonmodel.ExchangeRateSnapshot
-	if err := b.cache.Get(ctx, exchangeRateCacheKey(base), &snap); err != nil {
-		b.logger.Warn("exchange cache get failed", "base", base, "err", err)
+	snap := commonmodel.ExchangeRateSnapshot{
+		Base:      base,
+		Rates:     map[string]decimal.Decimal{},
+		Supported: b.cfg.Exchange.Supported,
 	}
 
-	// Cache miss leaves snap at zero value — Rates will be nil.
-	if snap.Rates == nil {
-		snap.Rates = map[string]decimal.Decimal{}
+	if b.exchange == nil {
+		b.logger.Warn("exchange: no provider configured", "base", base)
+		return snap, nil
 	}
-	snap.Base = base
-	snap.Supported = b.cfg.Exchange.Supported
+
+	targets := make([]string, 0, len(b.cfg.Exchange.Supported))
+	for _, c := range b.cfg.Exchange.Supported {
+		if c != base {
+			targets = append(targets, c)
+		}
+	}
+
+	fetched, err := b.exchange.FetchLatest(ctx, base, targets)
+	if err != nil {
+		b.logger.Warn("exchange fetch failed", "base", base, "err", err)
+		return snap, nil
+	}
+
+	// Provider returns float64 (JSON wire format). Convert to decimal at the
+	// boundary so all internal compute is exact.
+	rates := make(map[string]decimal.Decimal, len(fetched.Rates))
+	for k, v := range fetched.Rates {
+		rates[k] = decimal.NewFromFloat(v)
+	}
+	snap.Rates = rates
+	snap.FetchedAt = fetched.FetchedAt
 	return snap, nil
 }
 
@@ -104,69 +114,4 @@ func (b *CommonHandler) ConvertAmount(ctx restate.Context, p ConvertAmountParams
 // for interface methods; lookup itself never fails.
 func (b *CommonHandler) IsSupportedCurrency(_ restate.Context, currency string) (bool, error) {
 	return slices.Contains(b.cfg.Exchange.Supported, currency), nil
-}
-
-// RefreshExchangeRates fetches the latest rates from the provider and
-// overwrites the cached snapshot. Invoked by SetupExchangeCron on startup
-// and on each ticker.
-func (b *CommonHandler) RefreshExchangeRates(ctx context.Context) error {
-	if b.exchange == nil {
-		return fmt.Errorf("exchange: no provider configured")
-	}
-	base := b.cfg.Exchange.Base
-	targets := make([]string, 0, len(b.cfg.Exchange.Supported))
-	for _, c := range b.cfg.Exchange.Supported {
-		if c != base {
-			targets = append(targets, c)
-		}
-	}
-	fetched, err := b.exchange.FetchLatest(ctx, base, targets)
-	if err != nil {
-		return fmt.Errorf("refresh rates: fetch: %w", err)
-	}
-
-	// Provider returns float64 (JSON wire format from upstream).
-	// Convert to decimal at the boundary so all internal compute is exact.
-	rates := make(map[string]decimal.Decimal, len(fetched.Rates))
-	for k, v := range fetched.Rates {
-		rates[k] = decimal.NewFromFloat(v)
-	}
-	snap := commonmodel.ExchangeRateSnapshot{
-		Base:      base,
-		Rates:     rates,
-		FetchedAt: fetched.FetchedAt,
-	}
-	if err := b.cache.Set(ctx, exchangeRateCacheKey(base), snap, exchangeRateCacheTTL); err != nil {
-		return fmt.Errorf("refresh rates: cache set: %w", err)
-	}
-	return nil
-}
-
-// SetupExchangeCron starts the rate refresh goroutine. Mirrors the
-// catalog search sync pattern. Safe to call once; non-blocking.
-func (b *CommonHandler) SetupExchangeCron() {
-	interval := b.cfg.Exchange.RefreshInterval
-	if interval <= 0 {
-		interval = 6 * time.Hour
-	}
-	go b.exchangeCronLoop(context.Background(), interval)
-}
-
-func (b *CommonHandler) exchangeCronLoop(ctx context.Context, interval time.Duration) {
-	b.logger.Info("exchange rate cron starting", "interval", interval)
-	if err := b.RefreshExchangeRates(ctx); err != nil {
-		b.logger.Warn("initial exchange refresh failed", "err", err)
-	}
-	tick := time.NewTicker(interval)
-	defer tick.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick.C:
-			if err := b.RefreshExchangeRates(ctx); err != nil {
-				b.logger.Warn("periodic exchange refresh failed", "err", err)
-			}
-		}
-	}
 }

@@ -102,4 +102,3 @@ func (h *FulfillmentWorkflow) OnAdminDecision(
 ) error {
 	return restate.Promise[base.AdminDecisionSignal](ctx, "admin_decision_"+sig.RefundID.String()).Resolve(sig)
 }
-

@@ -57,4 +57,3 @@ func (h *CheckoutWorkflow) CancelCheckout(
 ) error {
 	return restate.Promise[struct{}](ctx, "user_cancel").Resolve(struct{}{})
 }
-

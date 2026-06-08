@@ -14,7 +14,6 @@ import (
 	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
-	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 )
 
@@ -62,7 +61,7 @@ func (b *RefundHandler) CreateBuyerRefund(
 			return guardResult{}, ordermodel.ErrItemNotOwnedByBuyer
 		}
 
-		itemsRes, e := b.Storage.Querier().ListItem(rctx, repolist.Request{}, orderdb.ListItemFilter{
+		itemsRes, e := b.Storage.Querier().ListItem(rctx, orderdb.ListItemParams{
 			OrderId: []uuid.UUID{params.OrderID},
 		})
 		if e != nil {

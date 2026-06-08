@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListCommentFilter filters "catalog"."comment". Each slice field is an IN/ANY match;
+// ListCommentParams filters "catalog"."comment". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListCommentFilter struct {
+type ListCommentParams struct {
+	paginate.Params
+
 	Id              []uuid.UUID
 	AccountId       []uuid.UUID
 	OrderId         []uuid.UUID
@@ -39,7 +41,7 @@ type ListCommentFilter struct {
 	DateUpdatedTo   null.Time
 }
 
-func commentListConds(f ListCommentFilter, conds *[]string, args pgx.NamedArgs) {
+func commentListConds(f ListCommentParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -126,7 +128,7 @@ func commentListConds(f ListCommentFilter, conds *[]string, args pgx.NamedArgs) 
 	}
 }
 
-func commentListSpec(f ListCommentFilter) repolist.Spec[CatalogComment] {
+func commentListSpec(f ListCommentParams) repolist.Spec[CatalogComment] {
 	return repolist.Spec[CatalogComment]{
 		Table: `"catalog"."comment"`,
 		PK:    "id",
@@ -143,6 +145,6 @@ func commentListSpec(f ListCommentFilter) repolist.Spec[CatalogComment] {
 }
 
 // ListComment runs offset (?page) or cursor (?cursor/?sort) pagination over "catalog"."comment".
-func (q *Queries) ListComment(ctx context.Context, req repolist.Request, f ListCommentFilter) (paginate.PaginateResult[CatalogComment], error) {
-	return repolist.List(ctx, q.db, commentListSpec(f), req)
+func (q *Queries) ListComment(ctx context.Context, f ListCommentParams) (paginate.PaginateResult[CatalogComment], error) {
+	return repolist.List(ctx, q.db, commentListSpec(f), f.Params)
 }

@@ -1,6 +1,7 @@
 package catalogbiz
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -22,7 +23,6 @@ import (
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
 	promotionbiz "shopnexus-server/internal/module/promotion/biz"
 	"shopnexus-server/internal/shared/paginate"
-	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 )
 
@@ -270,12 +270,8 @@ func (b *CatalogHandler) ListProductCard(
 			return b.listProductCardFromDB(ctx, params)
 		}
 
-		spuIDs = lo.Map(results, func(p catalogmodel.ProductRecommend, _ int) uuid.UUID { return p.ID })
-		// Estimate total: if we got a full page, there are likely more
-		total = int64(params.Page.Int32)*int64(params.Limit.Int32) + 1
-		if len(results) < int(params.Limit.Int32) {
-			total = int64(params.Page.Int32-1)*int64(params.Limit.Int32) + int64(len(results))
-		}
+		spuIDs = lo.Map(results.Data, func(p catalogmodel.ProductRecommend, _ int) uuid.UUID { return p.ID })
+		total = results.Total.Int64 // real count from the hybrid-search count query
 	} else {
 		// --- Browse path: Postgres handles filtering + pagination ---
 		return b.listProductCardFromDB(ctx, params)
@@ -417,7 +413,7 @@ func (b *CatalogHandler) ListRecommendedProductCard(
 		ctx,
 		fmt.Sprintf(catalogmodel.CacheKeyRecommendOffset, params.Account.ID),
 		&feedOffset,
-	); err != nil {
+	); err != nil && !errors.Is(err, cache.ErrCacheMiss) {
 		b.logger.Error("failed to get feed offset for account",
 			slog.String("account_id", params.Account.ID.String()),
 			slog.Any("error", err),
@@ -510,7 +506,7 @@ func (b *CatalogHandler) ListRecommendedProductCard(
 		}
 
 		skuIDs := lo.Map(mostSolds, func(p inventorydb.InventoryStock, _ int) uuid.UUID { return p.RefID })
-		skus, err := b.storage.Querier().ListProductSku(ctx, repolist.Request{}, catalogdb.ListProductSkuFilter{
+		skus, err := b.storage.Querier().ListProductSku(ctx, catalogdb.ListProductSkuParams{
 			Id: skuIDs,
 		})
 		if err != nil {

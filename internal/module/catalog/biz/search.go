@@ -36,26 +36,21 @@ type SearchParams struct {
 
 // Search performs hybrid dense+sparse vector search with scalar filtering.
 // pgvector handles both semantic ranking and scalar filtering in a single SQL query.
-func (b *CatalogHandler) Search(ctx restate.Context, params SearchParams) ([]catalogmodel.ProductRecommend, error) {
+func (b *CatalogHandler) Search(ctx restate.Context, params SearchParams) (paginate.PaginateResult[catalogmodel.ProductRecommend], error) {
+	var zero paginate.PaginateResult[catalogmodel.ProductRecommend]
+
 	if err := validator.Validate(params); err != nil {
-		return nil, fmt.Errorf("validate search params: %w", err)
+		return zero, fmt.Errorf("validate search params: %w", err)
 	}
 
 	embeddings, err := b.llm.Embed(ctx, []string{params.Query})
 	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
+		return zero, fmt.Errorf("embed query: %w", err)
 	}
 	if len(embeddings) == 0 {
-		return nil, catalogmodel.ErrNoEmbeddingsResult
+		return zero, catalogmodel.ErrNoEmbeddingsResult
 	}
 	emb := embeddings[0]
-
-	pag := params.Constrain()
-	limit := pag.Limit.Int32
-	var offset int32
-	if pag.Offset().Valid {
-		offset = pag.Offset().Int32
-	}
 
 	var dateFrom, dateTo null.Time
 	if params.DateCreatedFrom.Valid {
@@ -74,9 +69,16 @@ func (b *CatalogHandler) Search(ctx restate.Context, params SearchParams) ([]cat
 		priceMax = null.IntFrom(int64(params.PriceMax.Float64))
 	}
 
-	rows, err := b.storage.Querier().HybridSearchProduct(ctx, catalogdb.HybridSearchProductParams{
+	// Pool oversamples ANN candidates so post-ANN scalar filters still fill the page.
+	pool := (params.Limit.Int32 + params.Offset().Int32) * 4
+
+	res, err := b.storage.Querier().HybridSearchProduct(ctx, catalogdb.HybridSearchProductParams{
+		Params:          params.Params,
 		DenseWeight:     b.denseWeight,
 		SparseWeight:    b.sparseWeight,
+		QueryDense:      pgvector.NewVector(emb.Dense),
+		QuerySparse:     toSparseVector(emb.Sparse),
+		Pool:            pool,
 		AccountID:       params.AccountID,
 		CategoryID:      params.CategoryID,
 		IsEnabled:       params.IsEnabled,
@@ -85,21 +87,20 @@ func (b *CatalogHandler) Search(ctx restate.Context, params SearchParams) ([]cat
 		PriceMin:        priceMin,
 		PriceMax:        priceMax,
 		Tags:            params.Tags,
-		Offset:          offset,
-		Limit:           limit,
-		QueryDense:      pgvector.NewVector(emb.Dense),
-		QuerySparse:     toSparseVector(emb.Sparse),
-		Pool:            (limit + offset) * 4, // oversample: post-ANN scalar filters eat into the candidate pool
 	})
 	if err != nil {
-		return nil, fmt.Errorf("hybrid search: %w", err)
+		return zero, fmt.Errorf("hybrid search: %w", err)
 	}
 
-	products := make([]catalogmodel.ProductRecommend, 0, len(rows))
-	for _, r := range rows {
+	products := make([]catalogmodel.ProductRecommend, 0, len(res.Data))
+	for _, r := range res.Data {
 		products = append(products, catalogmodel.ProductRecommend{ID: r.ID, Score: r.Score})
 	}
-	return products, nil
+	return paginate.PaginateResult[catalogmodel.ProductRecommend]{
+		PageParams: params.Params,
+		Data:       products,
+		Total:      res.Total,
+	}, nil
 }
 
 type GetRecommendationsParams struct {

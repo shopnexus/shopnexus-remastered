@@ -10,7 +10,6 @@ import (
 	inventorymodel "shopnexus-server/internal/module/inventory/model"
 	"shopnexus-server/internal/shared/idempotency"
 	"shopnexus-server/internal/shared/paginate"
-	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -110,7 +109,7 @@ func (b *InventoryHandler) ListStock(
 		return zero, fmt.Errorf("validate list stock: %w", err)
 	}
 
-	res, err := b.storage.Querier().ListStock(ctx, repolist.FromParams(params.Params), inventorydb.ListStockFilter{
+	res, err := b.storage.Querier().ListStock(ctx, inventorydb.ListStockParams{Params: params.Params,
 		RefType: params.RefType,
 		RefId:   params.RefID,
 	})
@@ -176,7 +175,7 @@ func (b *InventoryHandler) ListStockHistory(
 		return zero, fmt.Errorf("db get stock: %w", err)
 	}
 
-	res, err := b.storage.Querier().ListStockHistory(ctx, repolist.FromParams(params.Params), inventorydb.ListStockHistoryFilter{
+	res, err := b.storage.Querier().ListStockHistory(ctx, inventorydb.ListStockHistoryParams{Params: params.Params,
 		StockId: []int64{stock.ID},
 	})
 	if err != nil {
@@ -405,7 +404,7 @@ func (b *InventoryHandler) ListSerial(
 		return zero, fmt.Errorf("validate list serial: %w", err)
 	}
 
-	res, err := b.storage.Querier().ListSerial(ctx, repolist.FromParams(params.Params), inventorydb.ListSerialFilter{
+	res, err := b.storage.Querier().ListSerial(ctx, inventorydb.ListSerialParams{Params: params.Params,
 		StockId: []int64{params.StockID},
 	})
 	if err != nil {

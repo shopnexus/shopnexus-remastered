@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListItemFilter filters "order"."item". Each slice field is an IN/ANY match;
+// ListItemParams filters "order"."item". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListItemFilter struct {
+type ListItemParams struct {
+	paginate.Params
+
 	Id                 []int64
 	OrderId            []uuid.UUID
 	AccountId          []uuid.UUID
@@ -46,7 +48,7 @@ type ListItemFilter struct {
 	DateCreatedTo      null.Time
 }
 
-func itemListConds(f ListItemFilter, conds *[]string, args pgx.NamedArgs) {
+func itemListConds(f ListItemParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -161,7 +163,7 @@ func itemListConds(f ListItemFilter, conds *[]string, args pgx.NamedArgs) {
 	}
 }
 
-func itemListSpec(f ListItemFilter) repolist.Spec[OrderItem] {
+func itemListSpec(f ListItemParams) repolist.Spec[OrderItem] {
 	return repolist.Spec[OrderItem]{
 		Table: `"order"."item"`,
 		PK:    "id",
@@ -177,6 +179,6 @@ func itemListSpec(f ListItemFilter) repolist.Spec[OrderItem] {
 }
 
 // ListItem runs offset (?page) or cursor (?cursor/?sort) pagination over "order"."item".
-func (q *Queries) ListItem(ctx context.Context, req repolist.Request, f ListItemFilter) (paginate.PaginateResult[OrderItem], error) {
-	return repolist.List(ctx, q.db, itemListSpec(f), req)
+func (q *Queries) ListItem(ctx context.Context, f ListItemParams) (paginate.PaginateResult[OrderItem], error) {
+	return repolist.List(ctx, q.db, itemListSpec(f), f.Params)
 }

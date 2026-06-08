@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListConversationFilter filters "chat"."conversation". Each slice field is an IN/ANY match;
+// ListConversationParams filters "chat"."conversation". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListConversationFilter struct {
+type ListConversationParams struct {
+	paginate.Params
+
 	Id                []uuid.UUID
 	BuyerId           []uuid.UUID
 	SellerId          []uuid.UUID
@@ -27,7 +29,7 @@ type ListConversationFilter struct {
 	DateCreatedTo     null.Time
 }
 
-func conversationListConds(f ListConversationFilter, conds *[]string, args pgx.NamedArgs) {
+func conversationListConds(f ListConversationParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -66,7 +68,7 @@ func conversationListConds(f ListConversationFilter, conds *[]string, args pgx.N
 	}
 }
 
-func conversationListSpec(f ListConversationFilter) repolist.Spec[ChatConversation] {
+func conversationListSpec(f ListConversationParams) repolist.Spec[ChatConversation] {
 	return repolist.Spec[ChatConversation]{
 		Table: `"chat"."conversation"`,
 		PK:    "id",
@@ -79,6 +81,6 @@ func conversationListSpec(f ListConversationFilter) repolist.Spec[ChatConversati
 }
 
 // ListConversation runs offset (?page) or cursor (?cursor/?sort) pagination over "chat"."conversation".
-func (q *Queries) ListConversation(ctx context.Context, req repolist.Request, f ListConversationFilter) (paginate.PaginateResult[ChatConversation], error) {
-	return repolist.List(ctx, q.db, conversationListSpec(f), req)
+func (q *Queries) ListConversation(ctx context.Context, f ListConversationParams) (paginate.PaginateResult[ChatConversation], error) {
+	return repolist.List(ctx, q.db, conversationListSpec(f), f.Params)
 }

@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListFavoriteFilter filters "account"."favorite". Each slice field is an IN/ANY match;
+// ListFavoriteParams filters "account"."favorite". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListFavoriteFilter struct {
+type ListFavoriteParams struct {
+	paginate.Params
+
 	Id              []int64
 	AccountId       []uuid.UUID
 	SpuId           []uuid.UUID
@@ -24,7 +26,7 @@ type ListFavoriteFilter struct {
 	DateCreatedTo   null.Time
 }
 
-func favoriteListConds(f ListFavoriteFilter, conds *[]string, args pgx.NamedArgs) {
+func favoriteListConds(f ListFavoriteParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -51,7 +53,7 @@ func favoriteListConds(f ListFavoriteFilter, conds *[]string, args pgx.NamedArgs
 	}
 }
 
-func favoriteListSpec(f ListFavoriteFilter) repolist.Spec[AccountFavorite] {
+func favoriteListSpec(f ListFavoriteParams) repolist.Spec[AccountFavorite] {
 	return repolist.Spec[AccountFavorite]{
 		Table: `"account"."favorite"`,
 		PK:    "id",
@@ -64,6 +66,6 @@ func favoriteListSpec(f ListFavoriteFilter) repolist.Spec[AccountFavorite] {
 }
 
 // ListFavorite runs offset (?page) or cursor (?cursor/?sort) pagination over "account"."favorite".
-func (q *Queries) ListFavorite(ctx context.Context, req repolist.Request, f ListFavoriteFilter) (paginate.PaginateResult[AccountFavorite], error) {
-	return repolist.List(ctx, q.db, favoriteListSpec(f), req)
+func (q *Queries) ListFavorite(ctx context.Context, f ListFavoriteParams) (paginate.PaginateResult[AccountFavorite], error) {
+	return repolist.List(ctx, q.db, favoriteListSpec(f), f.Params)
 }

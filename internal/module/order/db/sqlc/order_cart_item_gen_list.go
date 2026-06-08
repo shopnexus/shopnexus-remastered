@@ -12,9 +12,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListCartItemFilter filters "order"."cart_item". Each slice field is an IN/ANY match;
+// ListCartItemParams filters "order"."cart_item". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListCartItemFilter struct {
+type ListCartItemParams struct {
+	paginate.Params
+
 	Id           []int64
 	AccountId    []uuid.UUID
 	SkuId        []uuid.UUID
@@ -23,7 +25,7 @@ type ListCartItemFilter struct {
 	QuantityTo   null.Int
 }
 
-func cartItemListConds(f ListCartItemFilter, conds *[]string, args pgx.NamedArgs) {
+func cartItemListConds(f ListCartItemParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -50,7 +52,7 @@ func cartItemListConds(f ListCartItemFilter, conds *[]string, args pgx.NamedArgs
 	}
 }
 
-func cartItemListSpec(f ListCartItemFilter) repolist.Spec[OrderCartItem] {
+func cartItemListSpec(f ListCartItemParams) repolist.Spec[OrderCartItem] {
 	return repolist.Spec[OrderCartItem]{
 		Table: `"order"."cart_item"`,
 		PK:    "id",
@@ -63,6 +65,6 @@ func cartItemListSpec(f ListCartItemFilter) repolist.Spec[OrderCartItem] {
 }
 
 // ListCartItem runs offset (?page) or cursor (?cursor/?sort) pagination over "order"."cart_item".
-func (q *Queries) ListCartItem(ctx context.Context, req repolist.Request, f ListCartItemFilter) (paginate.PaginateResult[OrderCartItem], error) {
-	return repolist.List(ctx, q.db, cartItemListSpec(f), req)
+func (q *Queries) ListCartItem(ctx context.Context, f ListCartItemParams) (paginate.PaginateResult[OrderCartItem], error) {
+	return repolist.List(ctx, q.db, cartItemListSpec(f), f.Params)
 }

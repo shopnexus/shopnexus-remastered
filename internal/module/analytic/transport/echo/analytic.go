@@ -110,7 +110,7 @@ func (h *Handler) ListTopProductPopularity(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.ListTopProductPopularity(c.Request().Context(), req.Params)
+	result, err := h.biz.ListTopProductPopularity(c.Request().Context(), req.Params.Constrain())
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}

@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListPromotionFilter filters "promotion"."promotion". Each slice field is an IN/ANY match;
+// ListPromotionParams filters "promotion"."promotion". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListPromotionFilter struct {
+type ListPromotionParams struct {
+	paginate.Params
+
 	Id              []uuid.UUID
 	Code            []string
 	OwnerId         []uuid.UUID
@@ -42,7 +44,7 @@ type ListPromotionFilter struct {
 	DateUpdatedTo   null.Time
 }
 
-func promotionListConds(f ListPromotionFilter, conds *[]string, args pgx.NamedArgs) {
+func promotionListConds(f ListPromotionParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -141,7 +143,7 @@ func promotionListConds(f ListPromotionFilter, conds *[]string, args pgx.NamedAr
 	}
 }
 
-func promotionListSpec(f ListPromotionFilter) repolist.Spec[PromotionPromotion] {
+func promotionListSpec(f ListPromotionParams) repolist.Spec[PromotionPromotion] {
 	return repolist.Spec[PromotionPromotion]{
 		Table: `"promotion"."promotion"`,
 		PK:    "id",
@@ -157,6 +159,6 @@ func promotionListSpec(f ListPromotionFilter) repolist.Spec[PromotionPromotion] 
 }
 
 // ListPromotion runs offset (?page) or cursor (?cursor/?sort) pagination over "promotion"."promotion".
-func (q *Queries) ListPromotion(ctx context.Context, req repolist.Request, f ListPromotionFilter) (paginate.PaginateResult[PromotionPromotion], error) {
-	return repolist.List(ctx, q.db, promotionListSpec(f), req)
+func (q *Queries) ListPromotion(ctx context.Context, f ListPromotionParams) (paginate.PaginateResult[PromotionPromotion], error) {
+	return repolist.List(ctx, q.db, promotionListSpec(f), f.Params)
 }

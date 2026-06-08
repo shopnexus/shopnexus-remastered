@@ -171,7 +171,6 @@ func (b *ChatHandler) ListMessage(
 	if err := validator.Validate(params); err != nil {
 		return zero, fmt.Errorf("validate list message params: %w", err)
 	}
-	params.Params = params.Constrain()
 
 	conv, err := b.storage.Querier().GetConversationByID(ctx, params.ConversationID)
 	if err != nil {

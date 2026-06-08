@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListPaymentSessionFilter filters "order"."payment_session". Each slice field is an IN/ANY match;
+// ListPaymentSessionParams filters "order"."payment_session". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListPaymentSessionFilter struct {
+type ListPaymentSessionParams struct {
+	paginate.Params
+
 	Id              []uuid.UUID
 	Kind            []string
 	Status          []OrderStatus
@@ -35,7 +37,7 @@ type ListPaymentSessionFilter struct {
 	DateExpiredTo   null.Time
 }
 
-func paymentSessionListConds(f ListPaymentSessionFilter, conds *[]string, args pgx.NamedArgs) {
+func paymentSessionListConds(f ListPaymentSessionParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -106,7 +108,7 @@ func paymentSessionListConds(f ListPaymentSessionFilter, conds *[]string, args p
 	}
 }
 
-func paymentSessionListSpec(f ListPaymentSessionFilter) repolist.Spec[OrderPaymentSession] {
+func paymentSessionListSpec(f ListPaymentSessionParams) repolist.Spec[OrderPaymentSession] {
 	return repolist.Spec[OrderPaymentSession]{
 		Table: `"order"."payment_session"`,
 		PK:    "id",
@@ -121,6 +123,6 @@ func paymentSessionListSpec(f ListPaymentSessionFilter) repolist.Spec[OrderPayme
 }
 
 // ListPaymentSession runs offset (?page) or cursor (?cursor/?sort) pagination over "order"."payment_session".
-func (q *Queries) ListPaymentSession(ctx context.Context, req repolist.Request, f ListPaymentSessionFilter) (paginate.PaginateResult[OrderPaymentSession], error) {
-	return repolist.List(ctx, q.db, paymentSessionListSpec(f), req)
+func (q *Queries) ListPaymentSession(ctx context.Context, f ListPaymentSessionParams) (paginate.PaginateResult[OrderPaymentSession], error) {
+	return repolist.List(ctx, q.db, paymentSessionListSpec(f), f.Params)
 }

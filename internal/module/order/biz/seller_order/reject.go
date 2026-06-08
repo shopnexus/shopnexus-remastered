@@ -12,7 +12,6 @@ import (
 	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
-	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -40,7 +39,7 @@ func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSe
 
 	// Fetch and validate items.
 	items, err := restate.Run(ctx, func(ctx restate.RunContext) ([]orderdb.OrderItem, error) {
-		dbItemsRes, err := b.Storage.Querier().ListItem(ctx, repolist.Request{}, orderdb.ListItemFilter{
+		dbItemsRes, err := b.Storage.Querier().ListItem(ctx, orderdb.ListItemParams{
 			Id: params.ItemIDs,
 		})
 		if err != nil {
@@ -98,7 +97,7 @@ func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSe
 			lo.Map(buyerItemList, func(it orderdb.OrderItem, _ int) uuid.UUID { return it.PaymentSessionID }),
 		)
 		sessions, err := restate.Run(ctx, func(ctx restate.RunContext) ([]orderdb.OrderPaymentSession, error) {
-			res, e := b.Storage.Querier().ListPaymentSession(ctx, repolist.Request{}, orderdb.ListPaymentSessionFilter{Id: sessionIDs})
+			res, e := b.Storage.Querier().ListPaymentSession(ctx, orderdb.ListPaymentSessionParams{Id: sessionIDs})
 			if e != nil {
 				return nil, e
 			}

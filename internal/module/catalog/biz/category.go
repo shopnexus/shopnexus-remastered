@@ -7,9 +7,6 @@ import (
 
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
-	commonbiz "shopnexus-server/internal/module/common/biz"
-	commondb "shopnexus-server/internal/module/common/db/sqlc"
-	commonmodel "shopnexus-server/internal/module/common/model"
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/validator"
 
@@ -17,8 +14,6 @@ import (
 	"github.com/guregu/null/v6"
 	"github.com/samber/lo"
 )
-
-const popularProductLimit = 4
 
 type ListCategoryParams struct {
 	paginate.Params
@@ -53,53 +48,16 @@ func (b *CatalogHandler) ListCategory(
 		total.SetValid(dbCategories[0].TotalCount)
 	}
 
-	categoryIDs := lo.Map(dbCategories, func(row catalogdb.SearchCategoryRow, _ int) uuid.UUID {
-		return row.CatalogCategory.ID
-	})
-
-	// Get popular product SPU IDs per category
-	popularProducts, err := b.storage.Querier().
-		ListPopularProductPerCategory(ctx, catalogdb.ListPopularProductPerCategoryParams{
-			CategoryID:   categoryIDs,
-			ProductLimit: popularProductLimit,
-		})
+	categories, err := b.HydrateCategories(ctx, lo.Map(dbCategories,
+		func(row catalogdb.SearchCategoryRow, _ int) catalogdb.CatalogCategory { return row.CatalogCategory },
+	))
 	if err != nil {
-		return zero, fmt.Errorf("list popular products per category: %w", err)
-	}
-
-	// Fetch resources (images) for all popular product SPUs
-	spuIDs := lo.Map(popularProducts, func(row catalogdb.ListPopularProductPerCategoryRow, _ int) uuid.UUID {
-		return row.SpuID
-	})
-
-	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
-		RefType: commondb.CommonResourceRefTypeProductSpu,
-		RefIDs:  spuIDs,
-	})
-	if err != nil {
-		return zero, fmt.Errorf("get popular product resources: %w", err)
-	}
-
-	// Group: categoryID -> first resource of each popular product
-	categoryResourcesMap := make(map[uuid.UUID][]commonmodel.Resource)
-	for _, row := range popularProducts {
-		resources := resourcesMap[row.SpuID]
-		if len(resources) > 0 {
-			categoryResourcesMap[row.CategoryID] = append(categoryResourcesMap[row.CategoryID], resources[0])
-		}
+		return zero, fmt.Errorf("hydrate categories: %w", err)
 	}
 
 	return paginate.PaginateResult[catalogmodel.Category]{
 		PageParams: params.Params,
-		Data: lo.Map(dbCategories, func(row catalogdb.SearchCategoryRow, _ int) catalogmodel.Category {
-			return catalogmodel.Category{
-				ID:          row.CatalogCategory.ID,
-				Name:        row.CatalogCategory.Name,
-				Description: row.CatalogCategory.Description,
-				ParentID:    row.CatalogCategory.ParentID,
-				Resources:   categoryResourcesMap[row.CatalogCategory.ID],
-			}
-		}),
-		Total: total,
+		Data:       categories,
+		Total:      total,
 	}, nil
 }

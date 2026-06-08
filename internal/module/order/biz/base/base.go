@@ -67,8 +67,6 @@ func (b *Base) TrackInteractions(ctx context.Context, interactions ...analyticbi
 
 // GetHydratedOrder returns a single order by ID with all items and payment
 // details. Backs both the buyer and seller single-order endpoints.
-// context.Context on purpose: keeps it skipped by restate.Reflect when
-// promoted onto the aggregate handler / workflows.
 func (b *Base) GetHydratedOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error) {
 	var zero ordermodel.Order
 
@@ -79,15 +77,15 @@ func (b *Base) GetHydratedOrder(ctx context.Context, orderID uuid.UUID) (ordermo
 		return zero, fmt.Errorf("get order: %w", err)
 	}
 
-	hydrated, err := b.HydrateOrders(ctx, []orderdb.OrderOrder{order})
+	orders, err := b.HydrateOrders(ctx, []orderdb.OrderOrder{order})
 	if err != nil {
 		return zero, fmt.Errorf("hydrate order: %w", err)
 	}
-	if len(hydrated) == 0 {
+	if len(orders) == 0 {
 		return zero, ordermodel.ErrOrderNotFound
 	}
 
-	return hydrated[0], nil
+	return orders[0], nil
 }
 
 // InferCurrency fetches the profile for accountID and resolves its ISO 4217 currency code.

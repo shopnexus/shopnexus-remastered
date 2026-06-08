@@ -12,9 +12,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListOptionFilter filters "common"."option". Each slice field is an IN/ANY match;
+// ListOptionParams filters "common"."option". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListOptionFilter struct {
+type ListOptionParams struct {
+	paginate.Params
+
 	Id           []string
 	OwnerId      []uuid.UUID
 	IsEnabled    []bool
@@ -28,7 +30,7 @@ type ListOptionFilter struct {
 	Provider     []string
 }
 
-func optionListConds(f ListOptionFilter, conds *[]string, args pgx.NamedArgs) {
+func optionListConds(f ListOptionParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -75,7 +77,7 @@ func optionListConds(f ListOptionFilter, conds *[]string, args pgx.NamedArgs) {
 	}
 }
 
-func optionListSpec(f ListOptionFilter) repolist.Spec[CommonOption] {
+func optionListSpec(f ListOptionParams) repolist.Spec[CommonOption] {
 	return repolist.Spec[CommonOption]{
 		Table: `"common"."option"`,
 		PK:    "id",
@@ -88,6 +90,6 @@ func optionListSpec(f ListOptionFilter) repolist.Spec[CommonOption] {
 }
 
 // ListOption runs offset (?page) or cursor (?cursor/?sort) pagination over "common"."option".
-func (q *Queries) ListOption(ctx context.Context, req repolist.Request, f ListOptionFilter) (paginate.PaginateResult[CommonOption], error) {
-	return repolist.List(ctx, q.db, optionListSpec(f), req)
+func (q *Queries) ListOption(ctx context.Context, f ListOptionParams) (paginate.PaginateResult[CommonOption], error) {
+	return repolist.List(ctx, q.db, optionListSpec(f), f.Params)
 }

@@ -34,8 +34,6 @@ func (b *AccountHandler) ListNotification(
 		return zero, fmt.Errorf("validate list notification params: %w", err)
 	}
 
-	params.Params = params.Constrain()
-
 	rows, err := b.storage.Querier().ListNotificationByAccount(ctx, accountdb.ListNotificationByAccountParams{
 		AccountID: params.Account.ID,
 		Limit:     null.Int32From(params.Limit.Int32),

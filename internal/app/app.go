@@ -16,15 +16,12 @@ import (
 	"shopnexus-server/internal/module/inventory"
 	"shopnexus-server/internal/module/order"
 	"shopnexus-server/internal/module/promotion"
-
-	"shopnexus-server/internal/provider/geocoding"
 )
 
 var Module = fx.Module("main",
 	fx.Provide(
 		appconfig.NewConfig,
 		NewEcho,
-		NewGeocodingProvider,
 		NewRateLimiter,
 	),
 
@@ -64,10 +61,6 @@ func SetupLogger(cfg *appconfig.Config) {
 		Level:     level,
 		AddSource: cfg.Log.AddSource,
 	})))
-}
-
-func NewGeocodingProvider() geocoding.Client {
-	return geocoding.NewNominatimProvider()
 }
 
 func NewRateLimiter() *ratelimit.Factory {

@@ -10,15 +10,17 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListTagFilter filters "catalog"."tag". Each slice field is an IN/ANY match;
+// ListTagParams filters "catalog"."tag". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListTagFilter struct {
+type ListTagParams struct {
+	paginate.Params
+
 	Id          []string
 	Name        []string
 	Description []string
 }
 
-func tagListConds(f ListTagFilter, conds *[]string, args pgx.NamedArgs) {
+func tagListConds(f ListTagParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -33,7 +35,7 @@ func tagListConds(f ListTagFilter, conds *[]string, args pgx.NamedArgs) {
 	}
 }
 
-func tagListSpec(f ListTagFilter) repolist.Spec[CatalogTag] {
+func tagListSpec(f ListTagParams) repolist.Spec[CatalogTag] {
 	return repolist.Spec[CatalogTag]{
 		Table: `"catalog"."tag"`,
 		PK:    "id",
@@ -45,6 +47,6 @@ func tagListSpec(f ListTagFilter) repolist.Spec[CatalogTag] {
 }
 
 // ListTag runs offset (?page) or cursor (?cursor/?sort) pagination over "catalog"."tag".
-func (q *Queries) ListTag(ctx context.Context, req repolist.Request, f ListTagFilter) (paginate.PaginateResult[CatalogTag], error) {
-	return repolist.List(ctx, q.db, tagListSpec(f), req)
+func (q *Queries) ListTag(ctx context.Context, f ListTagParams) (paginate.PaginateResult[CatalogTag], error) {
+	return repolist.List(ctx, q.db, tagListSpec(f), f.Params)
 }

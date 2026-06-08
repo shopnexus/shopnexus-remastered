@@ -12,12 +12,10 @@ import (
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
 	"shopnexus-server/internal/shared/nullutil"
-	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/samber/lo"
 )
 
 type ListProductSkuParams struct {
@@ -39,7 +37,7 @@ func (b *CatalogHandler) ListProductSku(
 		return zero, fmt.Errorf("validate list product sku: %w", err)
 	}
 
-	res, err := b.storage.Querier().ListProductSku(ctx, repolist.Request{}, catalogdb.ListProductSkuFilter{
+	res, err := b.storage.Querier().ListProductSku(ctx, catalogdb.ListProductSkuParams{
 		Id:              params.ID,
 		SpuId:           params.SpuID,
 		PriceFrom:       params.PriceFrom,
@@ -50,25 +48,9 @@ func (b *CatalogHandler) ListProductSku(
 		return zero, fmt.Errorf("db list product sku: %w", err)
 	}
 
-	stocks, err := b.inventory.ListStock(ctx, inventorybiz.ListStockParams{
-		RefType: []inventorydb.InventoryStockRefType{inventorydb.InventoryStockRefTypeProductSku},
-		RefID:   lo.Map(res.Data, func(s catalogdb.CatalogProductSku, _ int) uuid.UUID { return s.ID }),
-	})
+	skus, err := b.HydrateProductSkus(ctx, res.Data)
 	if err != nil {
-		return zero, fmt.Errorf("list stock: %w", err)
-	}
-	stockMap := lo.KeyBy(stocks.Data, func(s inventorydb.InventoryStock) uuid.UUID { return s.RefID })
-
-	var skus []catalogmodel.ProductSku
-	for _, dbSku := range res.Data {
-		var attributes []catalogmodel.ProductAttribute
-		if err := json.Unmarshal(dbSku.Attributes, &attributes); err != nil {
-			return zero, fmt.Errorf("unmarshal sku attributes: %w", err)
-		}
-		m := mapProductSku(dbSku)
-		m.Stock = stockMap[dbSku.ID].Stock
-		m.Attributes = attributes
-		skus = append(skus, m)
+		return zero, fmt.Errorf("hydrate product skus: %w", err)
 	}
 
 	return skus, nil
@@ -123,10 +105,11 @@ func (b *CatalogHandler) CreateProductSku(
 		return zero, fmt.Errorf("create product sku: %w", err)
 	}
 
-	m := mapProductSku(sku)
-	m.Stock = 0
-	m.Attributes = params.Attributes
-	return m, nil
+	skus, err := b.HydrateProductSkus(ctx, []catalogdb.CatalogProductSku{sku})
+	if err != nil {
+		return zero, fmt.Errorf("hydrate created product sku: %w", err)
+	}
+	return skus[0], nil
 }
 
 type UpdateProductSkuParams struct {
@@ -170,14 +153,6 @@ func (b *CatalogHandler) UpdateProductSku(
 		return zero, fmt.Errorf("db update product sku: %w", err)
 	}
 
-	stock, err := b.inventory.GetStock(ctx, inventorybiz.GetStockParams{
-		RefType: inventorydb.InventoryStockRefTypeProductSku,
-		RefID:   sku.ID,
-	})
-	if err != nil {
-		return zero, fmt.Errorf("update product sku: %w", err)
-	}
-
 	// Re-embed parent product (SKU attributes feed the embedding text)
 	if err := b.storage.Querier().MarkStaleSearchSync(ctx, catalogdb.MarkStaleSearchSyncParams{
 		RefType: catalogdb.CatalogSearchSyncRefTypeProductSpu,
@@ -186,23 +161,11 @@ func (b *CatalogHandler) UpdateProductSku(
 		return zero, fmt.Errorf("db update search sync: %w", err)
 	}
 
-	m := mapProductSku(sku)
-	m.Stock = stock.Stock
-	m.Attributes = params.Attributes
-	return m, nil
-}
-
-// mapProductSku maps a DB CatalogProductSku row to the model type.
-// Callers should set Stock and Attributes as needed.
-func mapProductSku(sku catalogdb.CatalogProductSku) catalogmodel.ProductSku {
-	return catalogmodel.ProductSku{
-		ID:              sku.ID,
-		SpuID:           sku.SpuID,
-		Price:           sku.Price,
-		SharedPackaging: sku.SharedPackaging,
-		DateCreated:     sku.DateCreated,
-		PackageDetails:  sku.PackageDetails,
+	skus, err := b.HydrateProductSkus(ctx, []catalogdb.CatalogProductSku{sku})
+	if err != nil {
+		return zero, fmt.Errorf("hydrate updated product sku: %w", err)
 	}
+	return skus[0], nil
 }
 
 type DeleteProductSkuParams struct {

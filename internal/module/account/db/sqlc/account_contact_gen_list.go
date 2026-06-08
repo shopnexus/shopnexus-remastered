@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListContactFilter filters "account"."contact". Each slice field is an IN/ANY match;
+// ListContactParams filters "account"."contact". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListContactFilter struct {
+type ListContactParams struct {
+	paginate.Params
+
 	Id              []uuid.UUID
 	AccountId       []uuid.UUID
 	FullName        []string
@@ -34,7 +36,7 @@ type ListContactFilter struct {
 	LongitudeTo     null.Float
 }
 
-func contactListConds(f ListContactFilter, conds *[]string, args pgx.NamedArgs) {
+func contactListConds(f ListContactParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -101,7 +103,7 @@ func contactListConds(f ListContactFilter, conds *[]string, args pgx.NamedArgs) 
 	}
 }
 
-func contactListSpec(f ListContactFilter) repolist.Spec[AccountContact] {
+func contactListSpec(f ListContactParams) repolist.Spec[AccountContact] {
 	return repolist.Spec[AccountContact]{
 		Table: `"account"."contact"`,
 		PK:    "id",
@@ -116,6 +118,6 @@ func contactListSpec(f ListContactFilter) repolist.Spec[AccountContact] {
 }
 
 // ListContact runs offset (?page) or cursor (?cursor/?sort) pagination over "account"."contact".
-func (q *Queries) ListContact(ctx context.Context, req repolist.Request, f ListContactFilter) (paginate.PaginateResult[AccountContact], error) {
-	return repolist.List(ctx, q.db, contactListSpec(f), req)
+func (q *Queries) ListContact(ctx context.Context, f ListContactParams) (paginate.PaginateResult[AccountContact], error) {
+	return repolist.List(ctx, q.db, contactListSpec(f), f.Params)
 }

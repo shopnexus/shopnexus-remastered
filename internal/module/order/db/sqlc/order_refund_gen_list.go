@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListRefundFilter filters "order"."refund". Each slice field is an IN/ANY match;
+// ListRefundParams filters "order"."refund". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListRefundFilter struct {
+type ListRefundParams struct {
+	paginate.Params
+
 	Id                       []uuid.UUID
 	AccountId                []uuid.UUID
 	OrderId                  []uuid.UUID
@@ -39,7 +41,7 @@ type ListRefundFilter struct {
 	RefundTxId               []uuid.UUID
 }
 
-func refundListConds(f ListRefundFilter, conds *[]string, args pgx.NamedArgs) {
+func refundListConds(f ListRefundParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -126,7 +128,7 @@ func refundListConds(f ListRefundFilter, conds *[]string, args pgx.NamedArgs) {
 	}
 }
 
-func refundListSpec(f ListRefundFilter) repolist.Spec[OrderRefund] {
+func refundListSpec(f ListRefundParams) repolist.Spec[OrderRefund] {
 	return repolist.Spec[OrderRefund]{
 		Table: `"order"."refund"`,
 		PK:    "id",
@@ -139,6 +141,6 @@ func refundListSpec(f ListRefundFilter) repolist.Spec[OrderRefund] {
 }
 
 // ListRefund runs offset (?page) or cursor (?cursor/?sort) pagination over "order"."refund".
-func (q *Queries) ListRefund(ctx context.Context, req repolist.Request, f ListRefundFilter) (paginate.PaginateResult[OrderRefund], error) {
-	return repolist.List(ctx, q.db, refundListSpec(f), req)
+func (q *Queries) ListRefund(ctx context.Context, f ListRefundParams) (paginate.PaginateResult[OrderRefund], error) {
+	return repolist.List(ctx, q.db, refundListSpec(f), f.Params)
 }

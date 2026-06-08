@@ -13,7 +13,6 @@ import (
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/paginate"
-	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 )
 
@@ -33,7 +32,7 @@ func (b *RefundHandler) ListBuyerRefunds(
 		return zero, fmt.Errorf("validate list buyer refunds: %w", err)
 	}
 
-	res, err := b.Storage.Querier().ListRefund(ctx, repolist.FromParams(params.Params), orderdb.ListRefundFilter{
+	res, err := b.Storage.Querier().ListRefund(ctx, orderdb.ListRefundParams{Params: params.Params,
 		AccountId: []uuid.UUID{params.BuyerID},
 	})
 	if err != nil {

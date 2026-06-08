@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListScheduleFilter filters "promotion"."schedule". Each slice field is an IN/ANY match;
+// ListScheduleParams filters "promotion"."schedule". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListScheduleFilter struct {
+type ListScheduleParams struct {
+	paginate.Params
+
 	Id            []int64
 	PromotionId   []uuid.UUID
 	Timezone      []string
@@ -31,7 +33,7 @@ type ListScheduleFilter struct {
 	LastRunAtTo   null.Time
 }
 
-func scheduleListConds(f ListScheduleFilter, conds *[]string, args pgx.NamedArgs) {
+func scheduleListConds(f ListScheduleParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -86,7 +88,7 @@ func scheduleListConds(f ListScheduleFilter, conds *[]string, args pgx.NamedArgs
 	}
 }
 
-func scheduleListSpec(f ListScheduleFilter) repolist.Spec[PromotionSchedule] {
+func scheduleListSpec(f ListScheduleParams) repolist.Spec[PromotionSchedule] {
 	return repolist.Spec[PromotionSchedule]{
 		Table: `"promotion"."schedule"`,
 		PK:    "id",
@@ -99,6 +101,6 @@ func scheduleListSpec(f ListScheduleFilter) repolist.Spec[PromotionSchedule] {
 }
 
 // ListSchedule runs offset (?page) or cursor (?cursor/?sort) pagination over "promotion"."schedule".
-func (q *Queries) ListSchedule(ctx context.Context, req repolist.Request, f ListScheduleFilter) (paginate.PaginateResult[PromotionSchedule], error) {
-	return repolist.List(ctx, q.db, scheduleListSpec(f), req)
+func (q *Queries) ListSchedule(ctx context.Context, f ListScheduleParams) (paginate.PaginateResult[PromotionSchedule], error) {
+	return repolist.List(ctx, q.db, scheduleListSpec(f), f.Params)
 }

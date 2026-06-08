@@ -20,10 +20,6 @@ type OrderPrice struct {
 	PromotionCodes []string
 }
 
-func (o *OrderPrice) Total() int64 {
-	return o.ProductCost + o.ShipCost
-}
-
 type RequestOrderPrice struct {
 	SkuID          uuid.UUID
 	SpuID          uuid.UUID
@@ -31,14 +27,6 @@ type RequestOrderPrice struct {
 	Quantity       int64
 	ShipCost       int64
 	PromotionCodes []string
-}
-
-func (ro RequestOrderPrice) ProductCost() int64 {
-	return ro.UnitPrice * ro.Quantity
-}
-
-func (ro RequestOrderPrice) Total() int64 {
-	return ro.ProductCost() + ro.ShipCost
 }
 
 type Rating struct {

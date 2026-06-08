@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListStockFilter filters "inventory"."stock". Each slice field is an IN/ANY match;
+// ListStockParams filters "inventory"."stock". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListStockFilter struct {
+type ListStockParams struct {
+	paginate.Params
+
 	Id              []int64
 	RefType         []InventoryStockRefType
 	RefId           []uuid.UUID
@@ -31,7 +33,7 @@ type ListStockFilter struct {
 	DateCreatedTo   null.Time
 }
 
-func stockListConds(f ListStockFilter, conds *[]string, args pgx.NamedArgs) {
+func stockListConds(f ListStockParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -86,7 +88,7 @@ func stockListConds(f ListStockFilter, conds *[]string, args pgx.NamedArgs) {
 	}
 }
 
-func stockListSpec(f ListStockFilter) repolist.Spec[InventoryStock] {
+func stockListSpec(f ListStockParams) repolist.Spec[InventoryStock] {
 	return repolist.Spec[InventoryStock]{
 		Table: `"inventory"."stock"`,
 		PK:    "id",
@@ -101,6 +103,6 @@ func stockListSpec(f ListStockFilter) repolist.Spec[InventoryStock] {
 }
 
 // ListStock runs offset (?page) or cursor (?cursor/?sort) pagination over "inventory"."stock".
-func (q *Queries) ListStock(ctx context.Context, req repolist.Request, f ListStockFilter) (paginate.PaginateResult[InventoryStock], error) {
-	return repolist.List(ctx, q.db, stockListSpec(f), req)
+func (q *Queries) ListStock(ctx context.Context, f ListStockParams) (paginate.PaginateResult[InventoryStock], error) {
+	return repolist.List(ctx, q.db, stockListSpec(f), f.Params)
 }

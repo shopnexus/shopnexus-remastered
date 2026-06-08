@@ -20,66 +20,10 @@ import (
 	sharedcurrency "shopnexus-server/internal/shared/currency"
 	"shopnexus-server/internal/shared/errors"
 	"shopnexus-server/internal/shared/paginate"
-	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/guregu/null/v6"
 )
-
-func (b *CatalogHandler) getTagsMap(ctx restate.Context, spuID []uuid.UUID) map[uuid.UUID][]string { // map[spuID][]tag
-	res, err := b.storage.Querier().ListProductSpuTag(ctx, repolist.Request{}, catalogdb.ListProductSpuTagFilter{
-		SpuId: spuID,
-	})
-	if err != nil {
-		zero := map[uuid.UUID][]string{}
-		for _, id := range spuID {
-			zero[id] = []string{}
-		}
-		return zero
-	}
-	return lo.GroupByMap(
-		res.Data,
-		func(tag catalogdb.CatalogProductSpuTag) (uuid.UUID, string) { return tag.SpuID, tag.Tag },
-	)
-}
-
-func (b *CatalogHandler) getRatingsMap(
-	ctx restate.Context,
-	spuIDs []uuid.UUID,
-) (map[uuid.UUID]catalogdb.ListRatingRow, error) {
-	ratings, err := b.storage.Querier().ListRating(ctx, catalogdb.ListRatingParams{
-		RefType: catalogdb.CatalogCommentRefTypeProductSpu,
-		RefID:   spuIDs,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("db list rating: %w", err)
-	}
-	return lo.KeyBy(ratings, func(r catalogdb.ListRatingRow) uuid.UUID { return r.RefID }), nil
-}
-
-func (b *CatalogHandler) getCategory(ctx restate.Context, categoryID uuid.UUID) catalogdb.CatalogCategory {
-	category, _ := b.storage.Querier().GetCategory(ctx, catalogdb.GetCategoryParams{
-		ID: uuid.NullUUID{UUID: categoryID, Valid: true},
-	})
-	return category
-}
-
-// getCategoriesMap batch-fetches categories by IDs and returns a map keyed by category ID.
-func (b *CatalogHandler) getCategoriesMap(
-	ctx restate.Context,
-	categoryIDs []uuid.UUID,
-) map[uuid.UUID]catalogdb.CatalogCategory {
-	if len(categoryIDs) == 0 {
-		return map[uuid.UUID]catalogdb.CatalogCategory{}
-	}
-	res, err := b.storage.Querier().ListCategory(ctx, repolist.Request{}, catalogdb.ListCategoryFilter{
-		Id: lo.Uniq(categoryIDs),
-	})
-	if err != nil {
-		return map[uuid.UUID]catalogdb.CatalogCategory{}
-	}
-	return lo.KeyBy(res.Data, func(c catalogdb.CatalogCategory) uuid.UUID { return c.ID })
-}
 
 type GetProductSpuParams struct {
 	ID   uuid.NullUUID `validate:"omitnil"`
@@ -190,50 +134,9 @@ func (b *CatalogHandler) ListProductSpu(
 		})
 	}
 
-	spuIDs := lo.Map(dbSpus, func(spu catalogdb.CatalogProductSpu, _ int) uuid.UUID { return spu.ID })
-	categoryIDs := lo.Map(dbSpus, func(spu catalogdb.CatalogProductSpu, _ int) uuid.UUID { return spu.CategoryID })
-	categoriesMap := b.getCategoriesMap(ctx, categoryIDs)
-
-	ratingMap, err := b.getRatingsMap(ctx, spuIDs)
+	spus, err := b.HydrateProductSpus(ctx, dbSpus)
 	if err != nil {
-		return zero, fmt.Errorf("db list rating: %w", err)
-	}
-
-	tagsMap := b.getTagsMap(ctx, spuIDs)
-
-	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
-		RefType: commondb.CommonResourceRefTypeProductSpu,
-		RefIDs:  spuIDs,
-	})
-	if err != nil {
-		return zero, fmt.Errorf("get product resources: %w", err)
-	}
-
-	// Fetch search sync status
-	syncStatuses, _ := b.storage.Querier().ListSearchSync(ctx, repolist.Request{}, catalogdb.ListSearchSyncFilter{
-		RefId: spuIDs,
-	})
-	syncMap := lo.KeyBy(syncStatuses.Data, func(s catalogdb.CatalogSearchSync) uuid.UUID { return s.RefID })
-
-	var spus []catalogmodel.ProductSpu
-	for _, spu := range dbSpus {
-		specs := []catalogmodel.ProductSpecification{}
-		if err := json.Unmarshal(spu.Specifications, &specs); err != nil {
-			return zero, fmt.Errorf("unmarshal specifications: %w", err)
-		}
-
-		m := b.mapProductSpu(spu, categoriesMap[spu.CategoryID])
-		m.Rating = catalogmodel.ProductRating{
-			Score: ratingMap[spu.ID].Score,
-			Total: ratingMap[spu.ID].Count,
-		}
-		m.Tags = tagsMap[spu.ID]
-		m.Resources = resourcesMap[spu.ID]
-		m.Specifications = specs
-		if sync, ok := syncMap[spu.ID]; ok {
-			m.IsStaleEmbedding = sync.IsStaleEmbedding
-		}
-		spus = append(spus, m)
+		return zero, fmt.Errorf("hydrate product spus: %w", err)
 	}
 
 	return paginate.PaginateResult[catalogmodel.ProductSpu]{
@@ -298,13 +201,12 @@ func (b *CatalogHandler) CreateProductSpu(
 	}
 
 	// Create resources
-	resources, err := b.common.UpdateResources(ctx, commonbiz.UpdateResourcesParams{
+	if _, err := b.common.UpdateResources(ctx, commonbiz.UpdateResourcesParams{
 		Account:     params.Account,
 		RefType:     commondb.CommonResourceRefTypeProductSpu,
 		RefID:       spu.ID,
 		ResourceIDs: params.ResourceIDs,
-	})
-	if err != nil {
+	}); err != nil {
 		return zero, fmt.Errorf("create product spu: %w", err)
 	}
 
@@ -315,13 +217,11 @@ func (b *CatalogHandler) CreateProductSpu(
 		return zero, fmt.Errorf("db create search sync: %w", err)
 	}
 
-	tagsMap := b.getTagsMap(ctx, []uuid.UUID{spu.ID})
-
-	m := b.mapProductSpu(spu, b.getCategory(ctx, spu.CategoryID))
-	m.Tags = tagsMap[spu.ID]
-	m.Resources = resources
-	m.Specifications = params.Specifications
-	return m, nil
+	spus, err := b.HydrateProductSpus(ctx, []catalogdb.CatalogProductSpu{spu})
+	if err != nil {
+		return zero, fmt.Errorf("hydrate created product spu: %w", err)
+	}
+	return spus[0], nil
 }
 
 type UpdateProductSpuParams struct {
@@ -358,7 +258,7 @@ func (b *CatalogHandler) UpdateProductSpu(
 
 	// Ensure the featured SKU (if provided) belongs to the current SPU.
 	if params.FeaturedSkuID.Valid {
-		skus, err := b.storage.Querier().ListProductSku(ctx, repolist.Request{}, catalogdb.ListProductSkuFilter{
+		skus, err := b.storage.Querier().ListProductSku(ctx, catalogdb.ListProductSkuParams{
 			Id: []uuid.UUID{params.FeaturedSkuID.UUID},
 		})
 		if err != nil {
@@ -376,7 +276,7 @@ func (b *CatalogHandler) UpdateProductSpu(
 
 	specsBytes, err := json.Marshal(params.Specifications)
 	if err != nil {
-		return zero, fmt.Errorf("update product spu: %w", err)
+		return zero, fmt.Errorf("marshal product spu specifications: %w", err)
 	}
 
 	// FIRST STEP: Update the product spu
@@ -402,7 +302,7 @@ func (b *CatalogHandler) UpdateProductSpu(
 		SpuID: spu.ID,
 		Tags:  params.Tags,
 	}); err != nil {
-		return zero, fmt.Errorf("update product spu: %w", err)
+		return zero, fmt.Errorf("update product spu tags: %w", err)
 	}
 
 	// NEXT STEP: Mark the search embedding as stale (name/description/tags feed the embedding text)
@@ -414,21 +314,20 @@ func (b *CatalogHandler) UpdateProductSpu(
 	}
 
 	// LAST STEP: Update resources
-	resources, err := b.common.UpdateResources(ctx, commonbiz.UpdateResourcesParams{
+	if _, err := b.common.UpdateResources(ctx, commonbiz.UpdateResourcesParams{
 		Account:     params.Account,
 		RefType:     commondb.CommonResourceRefTypeProductSpu,
 		RefID:       spu.ID,
 		ResourceIDs: params.ResourceIDs,
-	})
-	if err != nil {
-		return zero, fmt.Errorf("update product spu: %w", err)
+	}); err != nil {
+		return zero, fmt.Errorf("update product spu resources: %w", err)
 	}
 
-	m := b.mapProductSpu(spu, b.getCategory(ctx, spu.CategoryID))
-	m.Tags = params.Tags
-	m.Resources = resources
-	m.Specifications = params.Specifications
-	return m, nil
+	spus, err := b.HydrateProductSpus(ctx, []catalogdb.CatalogProductSpu{spu})
+	if err != nil {
+		return zero, fmt.Errorf("hydrate updated product spu: %w", err)
+	}
+	return spus[0], nil
 }
 
 // assertSellerCurrency enforces that an SPU's currency matches the seller's
@@ -493,7 +392,7 @@ func (b *CatalogHandler) updateTags(ctx restate.Context, q *catalogdb.Queries, p
 		return nil
 	}
 
-	dbTags, err := q.ListTag(ctx, repolist.Request{}, catalogdb.ListTagFilter{
+	dbTags, err := q.ListTag(ctx, catalogdb.ListTagParams{
 		Id: params.Tags,
 	})
 	if err != nil {
@@ -535,37 +434,6 @@ func (b *CatalogHandler) updateTags(ctx restate.Context, q *catalogdb.Queries, p
 	}
 
 	return nil
-}
-
-// mapProductSpu maps a DB CatalogProductSpu row to the model type using a pre-fetched category.
-// Callers should set Rating, Tags, Resources, and Specifications as needed.
-func (b *CatalogHandler) mapProductSpu(
-	spu catalogdb.CatalogProductSpu,
-	category catalogdb.CatalogCategory,
-) catalogmodel.ProductSpu {
-	return catalogmodel.ProductSpu{
-		ID:            spu.ID,
-		AccountID:     spu.AccountID,
-		Slug:          spu.Slug,
-		Category:      mapCategory(category),
-		FeaturedSkuID: spu.FeaturedSkuID,
-		Name:          spu.Name,
-		Description:   spu.Description,
-		IsEnabled:     spu.IsEnabled,
-		Currency:      spu.Currency,
-		DateCreated:   spu.DateCreated,
-		DateUpdated:   spu.DateUpdated,
-	}
-}
-
-// mapCategory converts a DB CatalogCategory row to the model type.
-func mapCategory(c catalogdb.CatalogCategory) catalogmodel.Category {
-	return catalogmodel.Category{
-		ID:          c.ID,
-		Name:        c.Name,
-		Description: c.Description,
-		ParentID:    c.ParentID,
-	}
 }
 
 // GenerateSlug creates a URL-friendly slug from a product name with a unique suffix.

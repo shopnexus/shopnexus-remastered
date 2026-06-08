@@ -14,7 +14,10 @@ type Params struct {
 	Sort   string      `query:"sort"` // e.g. -date_created,score; presence (or cursor) => keyset mode
 }
 
-// TODO: sau khi sửa xong null.X thì xoá luôn hàm này
+// Constrain clamps limit (default 10, max 100) and defaults page to 1. This is
+// a TRANSPORT-LAYER policy: call it only when building biz params from an HTTP
+// request. Never call it in the biz layer — biz (and internal/cross-module
+// callers) may legitimately query the full table unbounded.
 func (p Params) Constrain() Params {
 	if p.Limit.Valid {
 		if p.Limit.Int32 > 100 {

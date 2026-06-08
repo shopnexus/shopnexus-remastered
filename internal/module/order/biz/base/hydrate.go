@@ -10,7 +10,6 @@ import (
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
-	"shopnexus-server/internal/shared/repolist"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
@@ -74,14 +73,14 @@ func (b *Base) HydrateOrders(ctx context.Context, orders []orderdb.OrderOrder) (
 	orderIDs := lo.Map(orders, func(o orderdb.OrderOrder, _ int) uuid.UUID { return o.ID })
 	transportIDs := lo.Uniq(lo.Map(orders, func(o orderdb.OrderOrder, _ int) int64 { return o.TransportID }))
 
-	orderItemsRes, err := b.Storage.Querier().ListItem(ctx, repolist.Request{}, orderdb.ListItemFilter{
+	orderItemsRes, err := b.Storage.Querier().ListItem(ctx, orderdb.ListItemParams{
 		OrderId: orderIDs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("db fetch order items: %w", err)
 	}
 	orderItems := orderItemsRes.Data
-	transportsRes, err := b.Storage.Querier().ListTransport(ctx, repolist.Request{}, orderdb.ListTransportFilter{Id: transportIDs})
+	transportsRes, err := b.Storage.Querier().ListTransport(ctx, orderdb.ListTransportParams{Id: transportIDs})
 	if err != nil {
 		return nil, fmt.Errorf("db fetch transports: %w", err)
 	}

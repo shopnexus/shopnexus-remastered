@@ -113,18 +113,3 @@ type CommonResourceReference struct {
 	RefID   uuid.UUID             `db:"ref_id" json:"ref_id"`
 	Order   int32                 `db:"order" json:"order"`
 }
-
-func (n NullCommonResourceRefType) MarshalJSON() ([]byte, error) {
-	if !n.Valid {
-		return []byte("null"), nil
-	}
-	return json.Marshal(n.CommonResourceRefType)
-}
-func (n *NullCommonResourceRefType) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		n.Valid = false
-		return nil
-	}
-	n.Valid = true
-	return json.Unmarshal(b, &n.CommonResourceRefType)
-}

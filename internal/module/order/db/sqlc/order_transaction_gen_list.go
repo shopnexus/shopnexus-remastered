@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListTransactionFilter filters "order"."transaction". Each slice field is an IN/ANY match;
+// ListTransactionParams filters "order"."transaction". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListTransactionFilter struct {
+type ListTransactionParams struct {
+	paginate.Params
+
 	Id              []uuid.UUID
 	SessionId       []uuid.UUID
 	Status          []OrderStatus
@@ -38,7 +40,7 @@ type ListTransactionFilter struct {
 	DateExpiredTo   null.Time
 }
 
-func transactionListConds(f ListTransactionFilter, conds *[]string, args pgx.NamedArgs) {
+func transactionListConds(f ListTransactionParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -121,7 +123,7 @@ func transactionListConds(f ListTransactionFilter, conds *[]string, args pgx.Nam
 	}
 }
 
-func transactionListSpec(f ListTransactionFilter) repolist.Spec[OrderTransaction] {
+func transactionListSpec(f ListTransactionParams) repolist.Spec[OrderTransaction] {
 	return repolist.Spec[OrderTransaction]{
 		Table: `"order"."transaction"`,
 		PK:    "id",
@@ -135,6 +137,6 @@ func transactionListSpec(f ListTransactionFilter) repolist.Spec[OrderTransaction
 }
 
 // ListTransaction runs offset (?page) or cursor (?cursor/?sort) pagination over "order"."transaction".
-func (q *Queries) ListTransaction(ctx context.Context, req repolist.Request, f ListTransactionFilter) (paginate.PaginateResult[OrderTransaction], error) {
-	return repolist.List(ctx, q.db, transactionListSpec(f), req)
+func (q *Queries) ListTransaction(ctx context.Context, f ListTransactionParams) (paginate.PaginateResult[OrderTransaction], error) {
+	return repolist.List(ctx, q.db, transactionListSpec(f), f.Params)
 }

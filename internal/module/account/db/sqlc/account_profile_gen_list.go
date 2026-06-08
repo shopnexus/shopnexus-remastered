@@ -13,9 +13,11 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListProfileFilter filters "account"."profile". Each slice field is an IN/ANY match;
+// ListProfileParams filters "account"."profile". Each slice field is an IN/ANY match;
 // *From/*To pairs are inclusive range bounds. Zero value = no filter.
-type ListProfileFilter struct {
+type ListProfileParams struct {
+	paginate.Params
+
 	Id                  []uuid.UUID
 	Gender              []AccountGender
 	Name                []string
@@ -36,7 +38,7 @@ type ListProfileFilter struct {
 	DefaultContactId    []uuid.UUID
 }
 
-func profileListConds(f ListProfileFilter, conds *[]string, args pgx.NamedArgs) {
+func profileListConds(f ListProfileParams, conds *[]string, args pgx.NamedArgs) {
 	if len(f.Id) > 0 {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
@@ -111,7 +113,7 @@ func profileListConds(f ListProfileFilter, conds *[]string, args pgx.NamedArgs) 
 	}
 }
 
-func profileListSpec(f ListProfileFilter) repolist.Spec[AccountProfile] {
+func profileListSpec(f ListProfileParams) repolist.Spec[AccountProfile] {
 	return repolist.Spec[AccountProfile]{
 		Table: `"account"."profile"`,
 		PK:    "id",
@@ -125,6 +127,6 @@ func profileListSpec(f ListProfileFilter) repolist.Spec[AccountProfile] {
 }
 
 // ListProfile runs offset (?page) or cursor (?cursor/?sort) pagination over "account"."profile".
-func (q *Queries) ListProfile(ctx context.Context, req repolist.Request, f ListProfileFilter) (paginate.PaginateResult[AccountProfile], error) {
-	return repolist.List(ctx, q.db, profileListSpec(f), req)
+func (q *Queries) ListProfile(ctx context.Context, f ListProfileParams) (paginate.PaginateResult[AccountProfile], error) {
+	return repolist.List(ctx, q.db, profileListSpec(f), f.Params)
 }

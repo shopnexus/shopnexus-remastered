@@ -20,7 +20,6 @@ import (
 	"shopnexus-server/internal/module/order/biz/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
-	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -59,7 +58,7 @@ func (b *CartHandler) GetCart(ctx restate.Context, params GetCartParams) ([]orde
 	if err := validator.Validate(params); err != nil {
 		return nil, fmt.Errorf("validate get cart params: %w", err)
 	}
-	cartItemsRes, err := b.Storage.Querier().ListCartItem(ctx, repolist.Request{}, orderdb.ListCartItemFilter{
+	cartItemsRes, err := b.Storage.Querier().ListCartItem(ctx, orderdb.ListCartItemParams{
 		AccountId: []uuid.UUID{params.AccountID},
 	})
 	if err != nil {

@@ -10,7 +10,6 @@ import (
 	accountmodel "shopnexus-server/internal/module/account/model"
 	sharedcurrency "shopnexus-server/internal/shared/currency"
 	"shopnexus-server/internal/shared/paginate"
-	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -36,7 +35,7 @@ func (b *AccountHandler) ListProfile(
 		return result, fmt.Errorf("validate list profile params: %w", err)
 	}
 
-	resProfile, err := b.storage.Querier().ListProfile(ctx, repolist.FromParams(params.Params), accountdb.ListProfileFilter{
+	resProfile, err := b.storage.Querier().ListProfile(ctx, accountdb.ListProfileParams{Params: params.Params,
 		Id: params.AccountIDs,
 	})
 	if err != nil {
@@ -46,7 +45,7 @@ func (b *AccountHandler) ListProfile(
 	total := resProfile.Total
 	dbProfiles := resProfile.Data
 
-	resAccount, err := b.storage.Querier().ListAccount(ctx, repolist.Request{}, accountdb.ListAccountFilter{
+	resAccount, err := b.storage.Querier().ListAccount(ctx, accountdb.ListAccountParams{
 		Id: params.AccountIDs,
 	})
 	if err != nil {
