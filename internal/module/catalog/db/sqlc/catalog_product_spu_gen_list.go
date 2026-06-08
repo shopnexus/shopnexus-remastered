@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListProductSpuParams filters "catalog"."product_spu". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListProductSpuParams filters "catalog"."product_spu". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListProductSpuParams struct {
 	paginate.Params
 
@@ -42,11 +42,11 @@ type ListProductSpuParams struct {
 }
 
 func productSpuListConds(f ListProductSpuParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.Number) > 0 {
+	if f.Number != nil {
 		*conds = append(*conds, `"number" = ANY(@number)`)
 		args["number"] = f.Number
 	}
@@ -58,39 +58,39 @@ func productSpuListConds(f ListProductSpuParams, conds *[]string, args pgx.Named
 		*conds = append(*conds, `"number" <= @number_to`)
 		args["number_to"] = f.NumberTo.Int64
 	}
-	if len(f.Slug) > 0 {
+	if f.Slug != nil {
 		*conds = append(*conds, `"slug" = ANY(@slug)`)
 		args["slug"] = f.Slug
 	}
-	if len(f.AccountId) > 0 {
+	if f.AccountId != nil {
 		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
 		args["account_id"] = f.AccountId
 	}
-	if len(f.CategoryId) > 0 {
+	if f.CategoryId != nil {
 		*conds = append(*conds, `"category_id" = ANY(@category_id)`)
 		args["category_id"] = f.CategoryId
 	}
-	if len(f.FeaturedSkuId) > 0 {
+	if f.FeaturedSkuId != nil {
 		*conds = append(*conds, `"featured_sku_id" = ANY(@featured_sku_id)`)
 		args["featured_sku_id"] = f.FeaturedSkuId
 	}
-	if len(f.Name) > 0 {
+	if f.Name != nil {
 		*conds = append(*conds, `"name" = ANY(@name)`)
 		args["name"] = f.Name
 	}
-	if len(f.Description) > 0 {
+	if f.Description != nil {
 		*conds = append(*conds, `"description" = ANY(@description)`)
 		args["description"] = f.Description
 	}
-	if len(f.IsEnabled) > 0 {
+	if f.IsEnabled != nil {
 		*conds = append(*conds, `"is_enabled" = ANY(@is_enabled)`)
 		args["is_enabled"] = f.IsEnabled
 	}
-	if len(f.Currency) > 0 {
+	if f.Currency != nil {
 		*conds = append(*conds, `"currency" = ANY(@currency)`)
 		args["currency"] = f.Currency
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}
@@ -102,7 +102,7 @@ func productSpuListConds(f ListProductSpuParams, conds *[]string, args pgx.Named
 		*conds = append(*conds, `"date_created" <= @date_created_to`)
 		args["date_created_to"] = f.DateCreatedTo.Time
 	}
-	if len(f.DateUpdated) > 0 {
+	if f.DateUpdated != nil {
 		*conds = append(*conds, `"date_updated" = ANY(@date_updated)`)
 		args["date_updated"] = f.DateUpdated
 	}
@@ -114,7 +114,7 @@ func productSpuListConds(f ListProductSpuParams, conds *[]string, args pgx.Named
 		*conds = append(*conds, `"date_updated" <= @date_updated_to`)
 		args["date_updated_to"] = f.DateUpdatedTo.Time
 	}
-	if len(f.DateDeleted) > 0 {
+	if f.DateDeleted != nil {
 		*conds = append(*conds, `"date_deleted" = ANY(@date_deleted)`)
 		args["date_deleted"] = f.DateDeleted
 	}

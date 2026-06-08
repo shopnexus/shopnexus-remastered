@@ -11,8 +11,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListRefParams filters "promotion"."ref". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListRefParams filters "promotion"."ref". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListRefParams struct {
 	paginate.Params
 
@@ -23,19 +23,19 @@ type ListRefParams struct {
 }
 
 func refListConds(f ListRefParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.PromotionId) > 0 {
+	if f.PromotionId != nil {
 		*conds = append(*conds, `"promotion_id" = ANY(@promotion_id)`)
 		args["promotion_id"] = f.PromotionId
 	}
-	if len(f.RefType) > 0 {
+	if f.RefType != nil {
 		*conds = append(*conds, `"ref_type" = ANY(@ref_type)`)
 		args["ref_type"] = f.RefType
 	}
-	if len(f.RefId) > 0 {
+	if f.RefId != nil {
 		*conds = append(*conds, `"ref_id" = ANY(@ref_id)`)
 		args["ref_id"] = f.RefId
 	}

@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListStockParams filters "inventory"."stock". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListStockParams filters "inventory"."stock". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListStockParams struct {
 	paginate.Params
 
@@ -34,19 +34,19 @@ type ListStockParams struct {
 }
 
 func stockListConds(f ListStockParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.RefType) > 0 {
+	if f.RefType != nil {
 		*conds = append(*conds, `"ref_type" = ANY(@ref_type)`)
 		args["ref_type"] = f.RefType
 	}
-	if len(f.RefId) > 0 {
+	if f.RefId != nil {
 		*conds = append(*conds, `"ref_id" = ANY(@ref_id)`)
 		args["ref_id"] = f.RefId
 	}
-	if len(f.Stock) > 0 {
+	if f.Stock != nil {
 		*conds = append(*conds, `"stock" = ANY(@stock)`)
 		args["stock"] = f.Stock
 	}
@@ -58,7 +58,7 @@ func stockListConds(f ListStockParams, conds *[]string, args pgx.NamedArgs) {
 		*conds = append(*conds, `"stock" <= @stock_to`)
 		args["stock_to"] = f.StockTo.Int64
 	}
-	if len(f.Taken) > 0 {
+	if f.Taken != nil {
 		*conds = append(*conds, `"taken" = ANY(@taken)`)
 		args["taken"] = f.Taken
 	}
@@ -70,11 +70,11 @@ func stockListConds(f ListStockParams, conds *[]string, args pgx.NamedArgs) {
 		*conds = append(*conds, `"taken" <= @taken_to`)
 		args["taken_to"] = f.TakenTo.Int64
 	}
-	if len(f.SerialRequired) > 0 {
+	if f.SerialRequired != nil {
 		*conds = append(*conds, `"serial_required" = ANY(@serial_required)`)
 		args["serial_required"] = f.SerialRequired
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}

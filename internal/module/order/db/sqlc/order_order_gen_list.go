@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListOrderParams filters "order"."order". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListOrderParams filters "order"."order". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListOrderParams struct {
 	paginate.Params
 
@@ -32,27 +32,27 @@ type ListOrderParams struct {
 }
 
 func orderListConds(f ListOrderParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.BuyerId) > 0 {
+	if f.BuyerId != nil {
 		*conds = append(*conds, `"buyer_id" = ANY(@buyer_id)`)
 		args["buyer_id"] = f.BuyerId
 	}
-	if len(f.SellerId) > 0 {
+	if f.SellerId != nil {
 		*conds = append(*conds, `"seller_id" = ANY(@seller_id)`)
 		args["seller_id"] = f.SellerId
 	}
-	if len(f.TransportId) > 0 {
+	if f.TransportId != nil {
 		*conds = append(*conds, `"transport_id" = ANY(@transport_id)`)
 		args["transport_id"] = f.TransportId
 	}
-	if len(f.Address) > 0 {
+	if f.Address != nil {
 		*conds = append(*conds, `"address" = ANY(@address)`)
 		args["address"] = f.Address
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}
@@ -64,15 +64,15 @@ func orderListConds(f ListOrderParams, conds *[]string, args pgx.NamedArgs) {
 		*conds = append(*conds, `"date_created" <= @date_created_to`)
 		args["date_created_to"] = f.DateCreatedTo.Time
 	}
-	if len(f.ConfirmedById) > 0 {
+	if f.ConfirmedById != nil {
 		*conds = append(*conds, `"confirmed_by_id" = ANY(@confirmed_by_id)`)
 		args["confirmed_by_id"] = f.ConfirmedById
 	}
-	if len(f.ConfirmSessionId) > 0 {
+	if f.ConfirmSessionId != nil {
 		*conds = append(*conds, `"confirm_session_id" = ANY(@confirm_session_id)`)
 		args["confirm_session_id"] = f.ConfirmSessionId
 	}
-	if len(f.Note) > 0 {
+	if f.Note != nil {
 		*conds = append(*conds, `"note" = ANY(@note)`)
 		args["note"] = f.Note
 	}

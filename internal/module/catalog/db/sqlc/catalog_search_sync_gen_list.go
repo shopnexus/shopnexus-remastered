@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListSearchSyncParams filters "catalog"."search_sync". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListSearchSyncParams filters "catalog"."search_sync". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListSearchSyncParams struct {
 	paginate.Params
 
@@ -31,23 +31,23 @@ type ListSearchSyncParams struct {
 }
 
 func searchSyncListConds(f ListSearchSyncParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.RefType) > 0 {
+	if f.RefType != nil {
 		*conds = append(*conds, `"ref_type" = ANY(@ref_type)`)
 		args["ref_type"] = f.RefType
 	}
-	if len(f.RefId) > 0 {
+	if f.RefId != nil {
 		*conds = append(*conds, `"ref_id" = ANY(@ref_id)`)
 		args["ref_id"] = f.RefId
 	}
-	if len(f.IsStaleEmbedding) > 0 {
+	if f.IsStaleEmbedding != nil {
 		*conds = append(*conds, `"is_stale_embedding" = ANY(@is_stale_embedding)`)
 		args["is_stale_embedding"] = f.IsStaleEmbedding
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}
@@ -59,7 +59,7 @@ func searchSyncListConds(f ListSearchSyncParams, conds *[]string, args pgx.Named
 		*conds = append(*conds, `"date_created" <= @date_created_to`)
 		args["date_created_to"] = f.DateCreatedTo.Time
 	}
-	if len(f.DateUpdated) > 0 {
+	if f.DateUpdated != nil {
 		*conds = append(*conds, `"date_updated" = ANY(@date_updated)`)
 		args["date_updated"] = f.DateUpdated
 	}

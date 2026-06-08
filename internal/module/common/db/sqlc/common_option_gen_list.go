@@ -12,8 +12,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListOptionParams filters "common"."option". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListOptionParams filters "common"."option". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListOptionParams struct {
 	paginate.Params
 
@@ -31,27 +31,27 @@ type ListOptionParams struct {
 }
 
 func optionListConds(f ListOptionParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.OwnerId) > 0 {
+	if f.OwnerId != nil {
 		*conds = append(*conds, `"owner_id" = ANY(@owner_id)`)
 		args["owner_id"] = f.OwnerId
 	}
-	if len(f.IsEnabled) > 0 {
+	if f.IsEnabled != nil {
 		*conds = append(*conds, `"is_enabled" = ANY(@is_enabled)`)
 		args["is_enabled"] = f.IsEnabled
 	}
-	if len(f.Name) > 0 {
+	if f.Name != nil {
 		*conds = append(*conds, `"name" = ANY(@name)`)
 		args["name"] = f.Name
 	}
-	if len(f.Description) > 0 {
+	if f.Description != nil {
 		*conds = append(*conds, `"description" = ANY(@description)`)
 		args["description"] = f.Description
 	}
-	if len(f.Priority) > 0 {
+	if f.Priority != nil {
 		*conds = append(*conds, `"priority" = ANY(@priority)`)
 		args["priority"] = f.Priority
 	}
@@ -63,15 +63,15 @@ func optionListConds(f ListOptionParams, conds *[]string, args pgx.NamedArgs) {
 		*conds = append(*conds, `"priority" <= @priority_to`)
 		args["priority_to"] = f.PriorityTo.Int64
 	}
-	if len(f.LogoRsId) > 0 {
+	if f.LogoRsId != nil {
 		*conds = append(*conds, `"logo_rs_id" = ANY(@logo_rs_id)`)
 		args["logo_rs_id"] = f.LogoRsId
 	}
-	if len(f.Type) > 0 {
+	if f.Type != nil {
 		*conds = append(*conds, `"type" = ANY(@type)`)
 		args["type"] = f.Type
 	}
-	if len(f.Provider) > 0 {
+	if f.Provider != nil {
 		*conds = append(*conds, `"provider" = ANY(@provider)`)
 		args["provider"] = f.Provider
 	}

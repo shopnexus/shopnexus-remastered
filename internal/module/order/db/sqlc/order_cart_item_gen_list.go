@@ -12,8 +12,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListCartItemParams filters "order"."cart_item". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListCartItemParams filters "order"."cart_item". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListCartItemParams struct {
 	paginate.Params
 
@@ -26,19 +26,19 @@ type ListCartItemParams struct {
 }
 
 func cartItemListConds(f ListCartItemParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.AccountId) > 0 {
+	if f.AccountId != nil {
 		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
 		args["account_id"] = f.AccountId
 	}
-	if len(f.SkuId) > 0 {
+	if f.SkuId != nil {
 		*conds = append(*conds, `"sku_id" = ANY(@sku_id)`)
 		args["sku_id"] = f.SkuId
 	}
-	if len(f.Quantity) > 0 {
+	if f.Quantity != nil {
 		*conds = append(*conds, `"quantity" = ANY(@quantity)`)
 		args["quantity"] = f.Quantity
 	}

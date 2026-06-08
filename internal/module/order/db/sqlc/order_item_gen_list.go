@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListItemParams filters "order"."item". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListItemParams filters "order"."item". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListItemParams struct {
 	paginate.Params
 
@@ -49,43 +49,43 @@ type ListItemParams struct {
 }
 
 func itemListConds(f ListItemParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.OrderId) > 0 {
+	if f.OrderId != nil {
 		*conds = append(*conds, `"order_id" = ANY(@order_id)`)
 		args["order_id"] = f.OrderId
 	}
-	if len(f.AccountId) > 0 {
+	if f.AccountId != nil {
 		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
 		args["account_id"] = f.AccountId
 	}
-	if len(f.SellerId) > 0 {
+	if f.SellerId != nil {
 		*conds = append(*conds, `"seller_id" = ANY(@seller_id)`)
 		args["seller_id"] = f.SellerId
 	}
-	if len(f.SkuId) > 0 {
+	if f.SkuId != nil {
 		*conds = append(*conds, `"sku_id" = ANY(@sku_id)`)
 		args["sku_id"] = f.SkuId
 	}
-	if len(f.SpuId) > 0 {
+	if f.SpuId != nil {
 		*conds = append(*conds, `"spu_id" = ANY(@spu_id)`)
 		args["spu_id"] = f.SpuId
 	}
-	if len(f.SkuName) > 0 {
+	if f.SkuName != nil {
 		*conds = append(*conds, `"sku_name" = ANY(@sku_name)`)
 		args["sku_name"] = f.SkuName
 	}
-	if len(f.Address) > 0 {
+	if f.Address != nil {
 		*conds = append(*conds, `"address" = ANY(@address)`)
 		args["address"] = f.Address
 	}
-	if len(f.Note) > 0 {
+	if f.Note != nil {
 		*conds = append(*conds, `"note" = ANY(@note)`)
 		args["note"] = f.Note
 	}
-	if len(f.Quantity) > 0 {
+	if f.Quantity != nil {
 		*conds = append(*conds, `"quantity" = ANY(@quantity)`)
 		args["quantity"] = f.Quantity
 	}
@@ -97,11 +97,11 @@ func itemListConds(f ListItemParams, conds *[]string, args pgx.NamedArgs) {
 		*conds = append(*conds, `"quantity" <= @quantity_to`)
 		args["quantity_to"] = f.QuantityTo.Int64
 	}
-	if len(f.TransportOption) > 0 {
+	if f.TransportOption != nil {
 		*conds = append(*conds, `"transport_option" = ANY(@transport_option)`)
 		args["transport_option"] = f.TransportOption
 	}
-	if len(f.SubtotalAmount) > 0 {
+	if f.SubtotalAmount != nil {
 		*conds = append(*conds, `"subtotal_amount" = ANY(@subtotal_amount)`)
 		args["subtotal_amount"] = f.SubtotalAmount
 	}
@@ -113,7 +113,7 @@ func itemListConds(f ListItemParams, conds *[]string, args pgx.NamedArgs) {
 		*conds = append(*conds, `"subtotal_amount" <= @subtotal_amount_to`)
 		args["subtotal_amount_to"] = f.SubtotalAmountTo.Int64
 	}
-	if len(f.TotalAmount) > 0 {
+	if f.TotalAmount != nil {
 		*conds = append(*conds, `"total_amount" = ANY(@total_amount)`)
 		args["total_amount"] = f.TotalAmount
 	}
@@ -125,15 +125,15 @@ func itemListConds(f ListItemParams, conds *[]string, args pgx.NamedArgs) {
 		*conds = append(*conds, `"total_amount" <= @total_amount_to`)
 		args["total_amount_to"] = f.TotalAmountTo.Int64
 	}
-	if len(f.SourceCurrency) > 0 {
+	if f.SourceCurrency != nil {
 		*conds = append(*conds, `"source_currency" = ANY(@source_currency)`)
 		args["source_currency"] = f.SourceCurrency
 	}
-	if len(f.PaymentSessionId) > 0 {
+	if f.PaymentSessionId != nil {
 		*conds = append(*conds, `"payment_session_id" = ANY(@payment_session_id)`)
 		args["payment_session_id"] = f.PaymentSessionId
 	}
-	if len(f.DateCancelled) > 0 {
+	if f.DateCancelled != nil {
 		*conds = append(*conds, `"date_cancelled" = ANY(@date_cancelled)`)
 		args["date_cancelled"] = f.DateCancelled
 	}
@@ -145,11 +145,11 @@ func itemListConds(f ListItemParams, conds *[]string, args pgx.NamedArgs) {
 		*conds = append(*conds, `"date_cancelled" <= @date_cancelled_to`)
 		args["date_cancelled_to"] = f.DateCancelledTo.Time
 	}
-	if len(f.CancelledById) > 0 {
+	if f.CancelledById != nil {
 		*conds = append(*conds, `"cancelled_by_id" = ANY(@cancelled_by_id)`)
 		args["cancelled_by_id"] = f.CancelledById
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}

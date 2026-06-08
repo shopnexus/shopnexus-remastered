@@ -12,8 +12,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListStockHistoryParams filters "inventory"."stock_history". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListStockHistoryParams filters "inventory"."stock_history". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListStockHistoryParams struct {
 	paginate.Params
 
@@ -28,15 +28,15 @@ type ListStockHistoryParams struct {
 }
 
 func stockHistoryListConds(f ListStockHistoryParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.StockId) > 0 {
+	if f.StockId != nil {
 		*conds = append(*conds, `"stock_id" = ANY(@stock_id)`)
 		args["stock_id"] = f.StockId
 	}
-	if len(f.Change) > 0 {
+	if f.Change != nil {
 		*conds = append(*conds, `"change" = ANY(@change)`)
 		args["change"] = f.Change
 	}
@@ -48,7 +48,7 @@ func stockHistoryListConds(f ListStockHistoryParams, conds *[]string, args pgx.N
 		*conds = append(*conds, `"change" <= @change_to`)
 		args["change_to"] = f.ChangeTo.Int64
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}

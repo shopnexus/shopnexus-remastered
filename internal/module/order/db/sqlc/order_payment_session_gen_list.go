@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListPaymentSessionParams filters "order"."payment_session". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListPaymentSessionParams filters "order"."payment_session". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListPaymentSessionParams struct {
 	paginate.Params
 
@@ -38,35 +38,35 @@ type ListPaymentSessionParams struct {
 }
 
 func paymentSessionListConds(f ListPaymentSessionParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.Kind) > 0 {
+	if f.Kind != nil {
 		*conds = append(*conds, `"kind" = ANY(@kind)`)
 		args["kind"] = f.Kind
 	}
-	if len(f.Status) > 0 {
+	if f.Status != nil {
 		*conds = append(*conds, `"status" = ANY(@status)`)
 		args["status"] = f.Status
 	}
-	if len(f.FromId) > 0 {
+	if f.FromId != nil {
 		*conds = append(*conds, `"from_id" = ANY(@from_id)`)
 		args["from_id"] = f.FromId
 	}
-	if len(f.ToId) > 0 {
+	if f.ToId != nil {
 		*conds = append(*conds, `"to_id" = ANY(@to_id)`)
 		args["to_id"] = f.ToId
 	}
-	if len(f.Note) > 0 {
+	if f.Note != nil {
 		*conds = append(*conds, `"note" = ANY(@note)`)
 		args["note"] = f.Note
 	}
-	if len(f.Currency) > 0 {
+	if f.Currency != nil {
 		*conds = append(*conds, `"currency" = ANY(@currency)`)
 		args["currency"] = f.Currency
 	}
-	if len(f.TotalAmount) > 0 {
+	if f.TotalAmount != nil {
 		*conds = append(*conds, `"total_amount" = ANY(@total_amount)`)
 		args["total_amount"] = f.TotalAmount
 	}
@@ -78,7 +78,7 @@ func paymentSessionListConds(f ListPaymentSessionParams, conds *[]string, args p
 		*conds = append(*conds, `"total_amount" <= @total_amount_to`)
 		args["total_amount_to"] = f.TotalAmountTo.Int64
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}
@@ -90,11 +90,11 @@ func paymentSessionListConds(f ListPaymentSessionParams, conds *[]string, args p
 		*conds = append(*conds, `"date_created" <= @date_created_to`)
 		args["date_created_to"] = f.DateCreatedTo.Time
 	}
-	if len(f.DatePaid) > 0 {
+	if f.DatePaid != nil {
 		*conds = append(*conds, `"date_paid" = ANY(@date_paid)`)
 		args["date_paid"] = f.DatePaid
 	}
-	if len(f.DateExpired) > 0 {
+	if f.DateExpired != nil {
 		*conds = append(*conds, `"date_expired" = ANY(@date_expired)`)
 		args["date_expired"] = f.DateExpired
 	}

@@ -12,8 +12,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListTransportParams filters "order"."transport". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListTransportParams filters "order"."transport". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListTransportParams struct {
 	paginate.Params
 
@@ -26,19 +26,19 @@ type ListTransportParams struct {
 }
 
 func transportListConds(f ListTransportParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.Option) > 0 {
+	if f.Option != nil {
 		*conds = append(*conds, `"option" = ANY(@option)`)
 		args["option"] = f.Option
 	}
-	if len(f.Status) > 0 {
+	if f.Status != nil {
 		*conds = append(*conds, `"status" = ANY(@status)`)
 		args["status"] = f.Status
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}

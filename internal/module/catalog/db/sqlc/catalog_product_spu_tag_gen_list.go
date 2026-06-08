@@ -11,8 +11,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListProductSpuTagParams filters "catalog"."product_spu_tag". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListProductSpuTagParams filters "catalog"."product_spu_tag". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListProductSpuTagParams struct {
 	paginate.Params
 
@@ -22,15 +22,15 @@ type ListProductSpuTagParams struct {
 }
 
 func productSpuTagListConds(f ListProductSpuTagParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.SpuId) > 0 {
+	if f.SpuId != nil {
 		*conds = append(*conds, `"spu_id" = ANY(@spu_id)`)
 		args["spu_id"] = f.SpuId
 	}
-	if len(f.Tag) > 0 {
+	if f.Tag != nil {
 		*conds = append(*conds, `"tag" = ANY(@tag)`)
 		args["tag"] = f.Tag
 	}

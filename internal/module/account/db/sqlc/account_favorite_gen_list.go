@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListFavoriteParams filters "account"."favorite". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListFavoriteParams filters "account"."favorite". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListFavoriteParams struct {
 	paginate.Params
 
@@ -27,19 +27,19 @@ type ListFavoriteParams struct {
 }
 
 func favoriteListConds(f ListFavoriteParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.AccountId) > 0 {
+	if f.AccountId != nil {
 		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
 		args["account_id"] = f.AccountId
 	}
-	if len(f.SpuId) > 0 {
+	if f.SpuId != nil {
 		*conds = append(*conds, `"spu_id" = ANY(@spu_id)`)
 		args["spu_id"] = f.SpuId
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}

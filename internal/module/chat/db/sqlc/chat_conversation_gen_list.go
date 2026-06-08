@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListConversationParams filters "chat"."conversation". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListConversationParams filters "chat"."conversation". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListConversationParams struct {
 	paginate.Params
 
@@ -30,19 +30,19 @@ type ListConversationParams struct {
 }
 
 func conversationListConds(f ListConversationParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.BuyerId) > 0 {
+	if f.BuyerId != nil {
 		*conds = append(*conds, `"buyer_id" = ANY(@buyer_id)`)
 		args["buyer_id"] = f.BuyerId
 	}
-	if len(f.SellerId) > 0 {
+	if f.SellerId != nil {
 		*conds = append(*conds, `"seller_id" = ANY(@seller_id)`)
 		args["seller_id"] = f.SellerId
 	}
-	if len(f.LastMessageAt) > 0 {
+	if f.LastMessageAt != nil {
 		*conds = append(*conds, `"last_message_at" = ANY(@last_message_at)`)
 		args["last_message_at"] = f.LastMessageAt
 	}
@@ -54,7 +54,7 @@ func conversationListConds(f ListConversationParams, conds *[]string, args pgx.N
 		*conds = append(*conds, `"last_message_at" <= @last_message_at_to`)
 		args["last_message_at_to"] = f.LastMessageAtTo.Time
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}

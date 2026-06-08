@@ -62,8 +62,8 @@ func (g *RepoGenerator) GenerateRepo(table *Table) string {
 
 	// Params struct. Embeds paginate.Params (page/cursor/sort/limit) so one
 	// value carries both pagination and filters; zero Params = fetch all.
-	fmt.Fprintf(&b, "// %s filters %s. Each slice field is an IN/ANY match;\n", filterType, table.FullName())
-	fmt.Fprintf(&b, "// *From/*To pairs are inclusive range bounds. Zero value = no filter.\n")
+	fmt.Fprintf(&b, "// %s filters %s. A slice field is an IN/ANY match: nil = skip,\n", filterType, table.FullName())
+	fmt.Fprintf(&b, "// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.\n")
 	fmt.Fprintf(&b, "type %s struct {\n\tpaginate.Params\n\n%s\n}\n\n", filterType, strings.Join(structLines, "\n"))
 
 	// bindConds.
@@ -99,10 +99,12 @@ func buildFilterField(col *Column, imp *repoImports) (filterField, bool) {
 	field := toPascalCase(col.Name)
 	q := col.Quoted()
 
+	// nil slice = skip the filter; non-nil empty slice = `= ANY('{}')` = match
+	// nothing (so an explicit empty set returns no rows, not all rows).
 	ff := filterField{
 		structLines: []string{fmt.Sprintf("\t%s []%s", field, elem)},
 		bindLines: []string{fmt.Sprintf(
-			"\tif len(f.%s) > 0 {\n\t\t*conds = append(*conds, `%s = ANY(@%s)`)\n\t\targs[%q] = f.%s\n\t}",
+			"\tif f.%s != nil {\n\t\t*conds = append(*conds, `%s = ANY(@%s)`)\n\t\targs[%q] = f.%s\n\t}",
 			field, q, col.Name, col.Name, field)},
 	}
 

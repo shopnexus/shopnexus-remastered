@@ -11,8 +11,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListCategoryParams filters "catalog"."category". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListCategoryParams filters "catalog"."category". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListCategoryParams struct {
 	paginate.Params
 
@@ -23,19 +23,19 @@ type ListCategoryParams struct {
 }
 
 func categoryListConds(f ListCategoryParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.Name) > 0 {
+	if f.Name != nil {
 		*conds = append(*conds, `"name" = ANY(@name)`)
 		args["name"] = f.Name
 	}
-	if len(f.Description) > 0 {
+	if f.Description != nil {
 		*conds = append(*conds, `"description" = ANY(@description)`)
 		args["description"] = f.Description
 	}
-	if len(f.ParentId) > 0 {
+	if f.ParentId != nil {
 		*conds = append(*conds, `"parent_id" = ANY(@parent_id)`)
 		args["parent_id"] = f.ParentId
 	}

@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListAccountParams filters "account"."account". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListAccountParams filters "account"."account". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListAccountParams struct {
 	paginate.Params
 
@@ -34,11 +34,11 @@ type ListAccountParams struct {
 }
 
 func accountListConds(f ListAccountParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.Number) > 0 {
+	if f.Number != nil {
 		*conds = append(*conds, `"number" = ANY(@number)`)
 		args["number"] = f.Number
 	}
@@ -50,31 +50,31 @@ func accountListConds(f ListAccountParams, conds *[]string, args pgx.NamedArgs) 
 		*conds = append(*conds, `"number" <= @number_to`)
 		args["number_to"] = f.NumberTo.Int64
 	}
-	if len(f.Status) > 0 {
+	if f.Status != nil {
 		*conds = append(*conds, `"status" = ANY(@status)`)
 		args["status"] = f.Status
 	}
-	if len(f.Role) > 0 {
+	if f.Role != nil {
 		*conds = append(*conds, `"role" = ANY(@role)`)
 		args["role"] = f.Role
 	}
-	if len(f.Phone) > 0 {
+	if f.Phone != nil {
 		*conds = append(*conds, `"phone" = ANY(@phone)`)
 		args["phone"] = f.Phone
 	}
-	if len(f.Email) > 0 {
+	if f.Email != nil {
 		*conds = append(*conds, `"email" = ANY(@email)`)
 		args["email"] = f.Email
 	}
-	if len(f.Username) > 0 {
+	if f.Username != nil {
 		*conds = append(*conds, `"username" = ANY(@username)`)
 		args["username"] = f.Username
 	}
-	if len(f.Password) > 0 {
+	if f.Password != nil {
 		*conds = append(*conds, `"password" = ANY(@password)`)
 		args["password"] = f.Password
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}

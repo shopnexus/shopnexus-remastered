@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListScheduleParams filters "promotion"."schedule". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListScheduleParams filters "promotion"."schedule". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListScheduleParams struct {
 	paginate.Params
 
@@ -34,23 +34,23 @@ type ListScheduleParams struct {
 }
 
 func scheduleListConds(f ListScheduleParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.PromotionId) > 0 {
+	if f.PromotionId != nil {
 		*conds = append(*conds, `"promotion_id" = ANY(@promotion_id)`)
 		args["promotion_id"] = f.PromotionId
 	}
-	if len(f.Timezone) > 0 {
+	if f.Timezone != nil {
 		*conds = append(*conds, `"timezone" = ANY(@timezone)`)
 		args["timezone"] = f.Timezone
 	}
-	if len(f.CronRule) > 0 {
+	if f.CronRule != nil {
 		*conds = append(*conds, `"cron_rule" = ANY(@cron_rule)`)
 		args["cron_rule"] = f.CronRule
 	}
-	if len(f.Duration) > 0 {
+	if f.Duration != nil {
 		*conds = append(*conds, `"duration" = ANY(@duration)`)
 		args["duration"] = f.Duration
 	}
@@ -62,7 +62,7 @@ func scheduleListConds(f ListScheduleParams, conds *[]string, args pgx.NamedArgs
 		*conds = append(*conds, `"duration" <= @duration_to`)
 		args["duration_to"] = f.DurationTo.Int64
 	}
-	if len(f.NextRunAt) > 0 {
+	if f.NextRunAt != nil {
 		*conds = append(*conds, `"next_run_at" = ANY(@next_run_at)`)
 		args["next_run_at"] = f.NextRunAt
 	}
@@ -74,7 +74,7 @@ func scheduleListConds(f ListScheduleParams, conds *[]string, args pgx.NamedArgs
 		*conds = append(*conds, `"next_run_at" <= @next_run_at_to`)
 		args["next_run_at_to"] = f.NextRunAtTo.Time
 	}
-	if len(f.LastRunAt) > 0 {
+	if f.LastRunAt != nil {
 		*conds = append(*conds, `"last_run_at" = ANY(@last_run_at)`)
 		args["last_run_at"] = f.LastRunAt
 	}

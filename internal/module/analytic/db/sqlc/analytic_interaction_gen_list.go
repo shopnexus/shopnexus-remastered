@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListInteractionParams filters "analytic"."interaction". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListInteractionParams filters "analytic"."interaction". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListInteractionParams struct {
 	paginate.Params
 
@@ -34,23 +34,23 @@ type ListInteractionParams struct {
 }
 
 func interactionListConds(f ListInteractionParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.AccountId) > 0 {
+	if f.AccountId != nil {
 		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
 		args["account_id"] = f.AccountId
 	}
-	if len(f.SessionId) > 0 {
+	if f.SessionId != nil {
 		*conds = append(*conds, `"session_id" = ANY(@session_id)`)
 		args["session_id"] = f.SessionId
 	}
-	if len(f.EventType) > 0 {
+	if f.EventType != nil {
 		*conds = append(*conds, `"event_type" = ANY(@event_type)`)
 		args["event_type"] = f.EventType
 	}
-	if len(f.RefType) > 0 {
+	if f.RefType != nil {
 		*conds = append(*conds, `"ref_type" = ANY(@ref_type)`)
 		args["ref_type"] = f.RefType
 	}
@@ -62,19 +62,19 @@ func interactionListConds(f ListInteractionParams, conds *[]string, args pgx.Nam
 		*conds = append(*conds, `"ref_type" <= @ref_type_to`)
 		args["ref_type_to"] = f.RefTypeTo.Int64
 	}
-	if len(f.RefId) > 0 {
+	if f.RefId != nil {
 		*conds = append(*conds, `"ref_id" = ANY(@ref_id)`)
 		args["ref_id"] = f.RefId
 	}
-	if len(f.UserAgent) > 0 {
+	if f.UserAgent != nil {
 		*conds = append(*conds, `"user_agent" = ANY(@user_agent)`)
 		args["user_agent"] = f.UserAgent
 	}
-	if len(f.IpAddress) > 0 {
+	if f.IpAddress != nil {
 		*conds = append(*conds, `"ip_address" = ANY(@ip_address)`)
 		args["ip_address"] = f.IpAddress
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}

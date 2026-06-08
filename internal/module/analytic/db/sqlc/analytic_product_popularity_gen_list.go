@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListProductPopularityParams filters "analytic"."product_popularity". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListProductPopularityParams filters "analytic"."product_popularity". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListProductPopularityParams struct {
 	paginate.Params
 
@@ -43,11 +43,11 @@ type ListProductPopularityParams struct {
 }
 
 func productPopularityListConds(f ListProductPopularityParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.Score) > 0 {
+	if f.Score != nil {
 		*conds = append(*conds, `"score" = ANY(@score)`)
 		args["score"] = f.Score
 	}
@@ -59,7 +59,7 @@ func productPopularityListConds(f ListProductPopularityParams, conds *[]string, 
 		*conds = append(*conds, `"score" <= @score_to`)
 		args["score_to"] = f.ScoreTo.Float64
 	}
-	if len(f.ViewCount) > 0 {
+	if f.ViewCount != nil {
 		*conds = append(*conds, `"view_count" = ANY(@view_count)`)
 		args["view_count"] = f.ViewCount
 	}
@@ -71,7 +71,7 @@ func productPopularityListConds(f ListProductPopularityParams, conds *[]string, 
 		*conds = append(*conds, `"view_count" <= @view_count_to`)
 		args["view_count_to"] = f.ViewCountTo.Int64
 	}
-	if len(f.PurchaseCount) > 0 {
+	if f.PurchaseCount != nil {
 		*conds = append(*conds, `"purchase_count" = ANY(@purchase_count)`)
 		args["purchase_count"] = f.PurchaseCount
 	}
@@ -83,7 +83,7 @@ func productPopularityListConds(f ListProductPopularityParams, conds *[]string, 
 		*conds = append(*conds, `"purchase_count" <= @purchase_count_to`)
 		args["purchase_count_to"] = f.PurchaseCountTo.Int64
 	}
-	if len(f.FavoriteCount) > 0 {
+	if f.FavoriteCount != nil {
 		*conds = append(*conds, `"favorite_count" = ANY(@favorite_count)`)
 		args["favorite_count"] = f.FavoriteCount
 	}
@@ -95,7 +95,7 @@ func productPopularityListConds(f ListProductPopularityParams, conds *[]string, 
 		*conds = append(*conds, `"favorite_count" <= @favorite_count_to`)
 		args["favorite_count_to"] = f.FavoriteCountTo.Int64
 	}
-	if len(f.CartCount) > 0 {
+	if f.CartCount != nil {
 		*conds = append(*conds, `"cart_count" = ANY(@cart_count)`)
 		args["cart_count"] = f.CartCount
 	}
@@ -107,7 +107,7 @@ func productPopularityListConds(f ListProductPopularityParams, conds *[]string, 
 		*conds = append(*conds, `"cart_count" <= @cart_count_to`)
 		args["cart_count_to"] = f.CartCountTo.Int64
 	}
-	if len(f.ReviewCount) > 0 {
+	if f.ReviewCount != nil {
 		*conds = append(*conds, `"review_count" = ANY(@review_count)`)
 		args["review_count"] = f.ReviewCount
 	}
@@ -119,7 +119,7 @@ func productPopularityListConds(f ListProductPopularityParams, conds *[]string, 
 		*conds = append(*conds, `"review_count" <= @review_count_to`)
 		args["review_count_to"] = f.ReviewCountTo.Int64
 	}
-	if len(f.DateUpdated) > 0 {
+	if f.DateUpdated != nil {
 		*conds = append(*conds, `"date_updated" = ANY(@date_updated)`)
 		args["date_updated"] = f.DateUpdated
 	}

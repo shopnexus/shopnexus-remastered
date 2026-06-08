@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListRefundDisputeParams filters "order"."refund_dispute". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListRefundDisputeParams filters "order"."refund_dispute". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListRefundDisputeParams struct {
 	paginate.Params
 
@@ -34,23 +34,23 @@ type ListRefundDisputeParams struct {
 }
 
 func refundDisputeListConds(f ListRefundDisputeParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.RefundId) > 0 {
+	if f.RefundId != nil {
 		*conds = append(*conds, `"refund_id" = ANY(@refund_id)`)
 		args["refund_id"] = f.RefundId
 	}
-	if len(f.AccountId) > 0 {
+	if f.AccountId != nil {
 		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
 		args["account_id"] = f.AccountId
 	}
-	if len(f.Reason) > 0 {
+	if f.Reason != nil {
 		*conds = append(*conds, `"reason" = ANY(@reason)`)
 		args["reason"] = f.Reason
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}
@@ -62,15 +62,15 @@ func refundDisputeListConds(f ListRefundDisputeParams, conds *[]string, args pgx
 		*conds = append(*conds, `"date_created" <= @date_created_to`)
 		args["date_created_to"] = f.DateCreatedTo.Time
 	}
-	if len(f.Status) > 0 {
+	if f.Status != nil {
 		*conds = append(*conds, `"status" = ANY(@status)`)
 		args["status"] = f.Status
 	}
-	if len(f.ResolvedById) > 0 {
+	if f.ResolvedById != nil {
 		*conds = append(*conds, `"resolved_by_id" = ANY(@resolved_by_id)`)
 		args["resolved_by_id"] = f.ResolvedById
 	}
-	if len(f.DateResolved) > 0 {
+	if f.DateResolved != nil {
 		*conds = append(*conds, `"date_resolved" = ANY(@date_resolved)`)
 		args["date_resolved"] = f.DateResolved
 	}
@@ -82,7 +82,7 @@ func refundDisputeListConds(f ListRefundDisputeParams, conds *[]string, args pgx
 		*conds = append(*conds, `"date_resolved" <= @date_resolved_to`)
 		args["date_resolved_to"] = f.DateResolvedTo.Time
 	}
-	if len(f.ResolutionNote) > 0 {
+	if f.ResolutionNote != nil {
 		*conds = append(*conds, `"resolution_note" = ANY(@resolution_note)`)
 		args["resolution_note"] = f.ResolutionNote
 	}

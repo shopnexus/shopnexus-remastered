@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListProfileParams filters "account"."profile". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListProfileParams filters "account"."profile". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListProfileParams struct {
 	paginate.Params
 
@@ -39,23 +39,23 @@ type ListProfileParams struct {
 }
 
 func profileListConds(f ListProfileParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.Gender) > 0 {
+	if f.Gender != nil {
 		*conds = append(*conds, `"gender" = ANY(@gender)`)
 		args["gender"] = f.Gender
 	}
-	if len(f.Name) > 0 {
+	if f.Name != nil {
 		*conds = append(*conds, `"name" = ANY(@name)`)
 		args["name"] = f.Name
 	}
-	if len(f.Description) > 0 {
+	if f.Description != nil {
 		*conds = append(*conds, `"description" = ANY(@description)`)
 		args["description"] = f.Description
 	}
-	if len(f.DateOfBirth) > 0 {
+	if f.DateOfBirth != nil {
 		*conds = append(*conds, `"date_of_birth" = ANY(@date_of_birth)`)
 		args["date_of_birth"] = f.DateOfBirth
 	}
@@ -67,19 +67,19 @@ func profileListConds(f ListProfileParams, conds *[]string, args pgx.NamedArgs) 
 		*conds = append(*conds, `"date_of_birth" <= @date_of_birth_to`)
 		args["date_of_birth_to"] = f.DateOfBirthTo.Time
 	}
-	if len(f.AvatarRsId) > 0 {
+	if f.AvatarRsId != nil {
 		*conds = append(*conds, `"avatar_rs_id" = ANY(@avatar_rs_id)`)
 		args["avatar_rs_id"] = f.AvatarRsId
 	}
-	if len(f.EmailVerified) > 0 {
+	if f.EmailVerified != nil {
 		*conds = append(*conds, `"email_verified" = ANY(@email_verified)`)
 		args["email_verified"] = f.EmailVerified
 	}
-	if len(f.PhoneVerified) > 0 {
+	if f.PhoneVerified != nil {
 		*conds = append(*conds, `"phone_verified" = ANY(@phone_verified)`)
 		args["phone_verified"] = f.PhoneVerified
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}
@@ -91,11 +91,11 @@ func profileListConds(f ListProfileParams, conds *[]string, args pgx.NamedArgs) 
 		*conds = append(*conds, `"date_created" <= @date_created_to`)
 		args["date_created_to"] = f.DateCreatedTo.Time
 	}
-	if len(f.Country) > 0 {
+	if f.Country != nil {
 		*conds = append(*conds, `"country" = ANY(@country)`)
 		args["country"] = f.Country
 	}
-	if len(f.InternalBalance) > 0 {
+	if f.InternalBalance != nil {
 		*conds = append(*conds, `"internal_balance" = ANY(@internal_balance)`)
 		args["internal_balance"] = f.InternalBalance
 	}
@@ -107,7 +107,7 @@ func profileListConds(f ListProfileParams, conds *[]string, args pgx.NamedArgs) 
 		*conds = append(*conds, `"internal_balance" <= @internal_balance_to`)
 		args["internal_balance_to"] = f.InternalBalanceTo.Int64
 	}
-	if len(f.DefaultContactId) > 0 {
+	if f.DefaultContactId != nil {
 		*conds = append(*conds, `"default_contact_id" = ANY(@default_contact_id)`)
 		args["default_contact_id"] = f.DefaultContactId
 	}

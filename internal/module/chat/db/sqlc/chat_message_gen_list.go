@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListMessageParams filters "chat"."message". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListMessageParams filters "chat"."message". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListMessageParams struct {
 	paginate.Params
 
@@ -30,31 +30,31 @@ type ListMessageParams struct {
 }
 
 func messageListConds(f ListMessageParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.ConversationId) > 0 {
+	if f.ConversationId != nil {
 		*conds = append(*conds, `"conversation_id" = ANY(@conversation_id)`)
 		args["conversation_id"] = f.ConversationId
 	}
-	if len(f.SenderId) > 0 {
+	if f.SenderId != nil {
 		*conds = append(*conds, `"sender_id" = ANY(@sender_id)`)
 		args["sender_id"] = f.SenderId
 	}
-	if len(f.Type) > 0 {
+	if f.Type != nil {
 		*conds = append(*conds, `"type" = ANY(@type)`)
 		args["type"] = f.Type
 	}
-	if len(f.Content) > 0 {
+	if f.Content != nil {
 		*conds = append(*conds, `"content" = ANY(@content)`)
 		args["content"] = f.Content
 	}
-	if len(f.Status) > 0 {
+	if f.Status != nil {
 		*conds = append(*conds, `"status" = ANY(@status)`)
 		args["status"] = f.Status
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}

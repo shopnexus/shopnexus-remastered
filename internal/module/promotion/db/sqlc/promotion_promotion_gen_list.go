@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListPromotionParams filters "promotion"."promotion". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListPromotionParams filters "promotion"."promotion". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListPromotionParams struct {
 	paginate.Params
 
@@ -45,35 +45,35 @@ type ListPromotionParams struct {
 }
 
 func promotionListConds(f ListPromotionParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.Code) > 0 {
+	if f.Code != nil {
 		*conds = append(*conds, `"code" = ANY(@code)`)
 		args["code"] = f.Code
 	}
-	if len(f.OwnerId) > 0 {
+	if f.OwnerId != nil {
 		*conds = append(*conds, `"owner_id" = ANY(@owner_id)`)
 		args["owner_id"] = f.OwnerId
 	}
-	if len(f.Type) > 0 {
+	if f.Type != nil {
 		*conds = append(*conds, `"type" = ANY(@type)`)
 		args["type"] = f.Type
 	}
-	if len(f.Title) > 0 {
+	if f.Title != nil {
 		*conds = append(*conds, `"title" = ANY(@title)`)
 		args["title"] = f.Title
 	}
-	if len(f.Description) > 0 {
+	if f.Description != nil {
 		*conds = append(*conds, `"description" = ANY(@description)`)
 		args["description"] = f.Description
 	}
-	if len(f.IsEnabled) > 0 {
+	if f.IsEnabled != nil {
 		*conds = append(*conds, `"is_enabled" = ANY(@is_enabled)`)
 		args["is_enabled"] = f.IsEnabled
 	}
-	if len(f.Budget) > 0 {
+	if f.Budget != nil {
 		*conds = append(*conds, `"budget" = ANY(@budget)`)
 		args["budget"] = f.Budget
 	}
@@ -85,15 +85,15 @@ func promotionListConds(f ListPromotionParams, conds *[]string, args pgx.NamedAr
 		*conds = append(*conds, `"budget" <= @budget_to`)
 		args["budget_to"] = f.BudgetTo.Int64
 	}
-	if len(f.AutoApply) > 0 {
+	if f.AutoApply != nil {
 		*conds = append(*conds, `"auto_apply" = ANY(@auto_apply)`)
 		args["auto_apply"] = f.AutoApply
 	}
-	if len(f.Group) > 0 {
+	if f.Group != nil {
 		*conds = append(*conds, `"group" = ANY(@group)`)
 		args["group"] = f.Group
 	}
-	if len(f.DateStarted) > 0 {
+	if f.DateStarted != nil {
 		*conds = append(*conds, `"date_started" = ANY(@date_started)`)
 		args["date_started"] = f.DateStarted
 	}
@@ -105,7 +105,7 @@ func promotionListConds(f ListPromotionParams, conds *[]string, args pgx.NamedAr
 		*conds = append(*conds, `"date_started" <= @date_started_to`)
 		args["date_started_to"] = f.DateStartedTo.Time
 	}
-	if len(f.DateEnded) > 0 {
+	if f.DateEnded != nil {
 		*conds = append(*conds, `"date_ended" = ANY(@date_ended)`)
 		args["date_ended"] = f.DateEnded
 	}
@@ -117,7 +117,7 @@ func promotionListConds(f ListPromotionParams, conds *[]string, args pgx.NamedAr
 		*conds = append(*conds, `"date_ended" <= @date_ended_to`)
 		args["date_ended_to"] = f.DateEndedTo.Time
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}
@@ -129,7 +129,7 @@ func promotionListConds(f ListPromotionParams, conds *[]string, args pgx.NamedAr
 		*conds = append(*conds, `"date_created" <= @date_created_to`)
 		args["date_created_to"] = f.DateCreatedTo.Time
 	}
-	if len(f.DateUpdated) > 0 {
+	if f.DateUpdated != nil {
 		*conds = append(*conds, `"date_updated" = ANY(@date_updated)`)
 		args["date_updated"] = f.DateUpdated
 	}

@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListTransactionParams filters "order"."transaction". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListTransactionParams filters "order"."transaction". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListTransactionParams struct {
 	paginate.Params
 
@@ -41,31 +41,31 @@ type ListTransactionParams struct {
 }
 
 func transactionListConds(f ListTransactionParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.SessionId) > 0 {
+	if f.SessionId != nil {
 		*conds = append(*conds, `"session_id" = ANY(@session_id)`)
 		args["session_id"] = f.SessionId
 	}
-	if len(f.Status) > 0 {
+	if f.Status != nil {
 		*conds = append(*conds, `"status" = ANY(@status)`)
 		args["status"] = f.Status
 	}
-	if len(f.Note) > 0 {
+	if f.Note != nil {
 		*conds = append(*conds, `"note" = ANY(@note)`)
 		args["note"] = f.Note
 	}
-	if len(f.Error) > 0 {
+	if f.Error != nil {
 		*conds = append(*conds, `"error" = ANY(@error)`)
 		args["error"] = f.Error
 	}
-	if len(f.PaymentOption) > 0 {
+	if f.PaymentOption != nil {
 		*conds = append(*conds, `"payment_option" = ANY(@payment_option)`)
 		args["payment_option"] = f.PaymentOption
 	}
-	if len(f.Amount) > 0 {
+	if f.Amount != nil {
 		*conds = append(*conds, `"amount" = ANY(@amount)`)
 		args["amount"] = f.Amount
 	}
@@ -77,15 +77,15 @@ func transactionListConds(f ListTransactionParams, conds *[]string, args pgx.Nam
 		*conds = append(*conds, `"amount" <= @amount_to`)
 		args["amount_to"] = f.AmountTo.Int64
 	}
-	if len(f.Currency) > 0 {
+	if f.Currency != nil {
 		*conds = append(*conds, `"currency" = ANY(@currency)`)
 		args["currency"] = f.Currency
 	}
-	if len(f.ReversesId) > 0 {
+	if f.ReversesId != nil {
 		*conds = append(*conds, `"reverses_id" = ANY(@reverses_id)`)
 		args["reverses_id"] = f.ReversesId
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}
@@ -97,7 +97,7 @@ func transactionListConds(f ListTransactionParams, conds *[]string, args pgx.Nam
 		*conds = append(*conds, `"date_created" <= @date_created_to`)
 		args["date_created_to"] = f.DateCreatedTo.Time
 	}
-	if len(f.DateSettled) > 0 {
+	if f.DateSettled != nil {
 		*conds = append(*conds, `"date_settled" = ANY(@date_settled)`)
 		args["date_settled"] = f.DateSettled
 	}
@@ -109,7 +109,7 @@ func transactionListConds(f ListTransactionParams, conds *[]string, args pgx.Nam
 		*conds = append(*conds, `"date_settled" <= @date_settled_to`)
 		args["date_settled_to"] = f.DateSettledTo.Time
 	}
-	if len(f.DateExpired) > 0 {
+	if f.DateExpired != nil {
 		*conds = append(*conds, `"date_expired" = ANY(@date_expired)`)
 		args["date_expired"] = f.DateExpired
 	}

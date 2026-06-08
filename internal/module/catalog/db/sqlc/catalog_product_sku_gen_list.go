@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListProductSkuParams filters "catalog"."product_sku". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListProductSkuParams filters "catalog"."product_sku". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListProductSkuParams struct {
 	paginate.Params
 
@@ -33,15 +33,15 @@ type ListProductSkuParams struct {
 }
 
 func productSkuListConds(f ListProductSkuParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.SpuId) > 0 {
+	if f.SpuId != nil {
 		*conds = append(*conds, `"spu_id" = ANY(@spu_id)`)
 		args["spu_id"] = f.SpuId
 	}
-	if len(f.Price) > 0 {
+	if f.Price != nil {
 		*conds = append(*conds, `"price" = ANY(@price)`)
 		args["price"] = f.Price
 	}
@@ -53,11 +53,11 @@ func productSkuListConds(f ListProductSkuParams, conds *[]string, args pgx.Named
 		*conds = append(*conds, `"price" <= @price_to`)
 		args["price_to"] = f.PriceTo.Int64
 	}
-	if len(f.SharedPackaging) > 0 {
+	if f.SharedPackaging != nil {
 		*conds = append(*conds, `"shared_packaging" = ANY(@shared_packaging)`)
 		args["shared_packaging"] = f.SharedPackaging
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}
@@ -69,7 +69,7 @@ func productSkuListConds(f ListProductSkuParams, conds *[]string, args pgx.Named
 		*conds = append(*conds, `"date_created" <= @date_created_to`)
 		args["date_created_to"] = f.DateCreatedTo.Time
 	}
-	if len(f.DateDeleted) > 0 {
+	if f.DateDeleted != nil {
 		*conds = append(*conds, `"date_deleted" = ANY(@date_deleted)`)
 		args["date_deleted"] = f.DateDeleted
 	}

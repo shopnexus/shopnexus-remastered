@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListNotificationParams filters "account"."notification". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListNotificationParams filters "account"."notification". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListNotificationParams struct {
 	paginate.Params
 
@@ -37,35 +37,35 @@ type ListNotificationParams struct {
 }
 
 func notificationListConds(f ListNotificationParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.AccountId) > 0 {
+	if f.AccountId != nil {
 		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
 		args["account_id"] = f.AccountId
 	}
-	if len(f.Type) > 0 {
+	if f.Type != nil {
 		*conds = append(*conds, `"type" = ANY(@type)`)
 		args["type"] = f.Type
 	}
-	if len(f.Channel) > 0 {
+	if f.Channel != nil {
 		*conds = append(*conds, `"channel" = ANY(@channel)`)
 		args["channel"] = f.Channel
 	}
-	if len(f.Title) > 0 {
+	if f.Title != nil {
 		*conds = append(*conds, `"title" = ANY(@title)`)
 		args["title"] = f.Title
 	}
-	if len(f.IsRead) > 0 {
+	if f.IsRead != nil {
 		*conds = append(*conds, `"is_read" = ANY(@is_read)`)
 		args["is_read"] = f.IsRead
 	}
-	if len(f.Content) > 0 {
+	if f.Content != nil {
 		*conds = append(*conds, `"content" = ANY(@content)`)
 		args["content"] = f.Content
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}
@@ -77,7 +77,7 @@ func notificationListConds(f ListNotificationParams, conds *[]string, args pgx.N
 		*conds = append(*conds, `"date_created" <= @date_created_to`)
 		args["date_created_to"] = f.DateCreatedTo.Time
 	}
-	if len(f.DateSent) > 0 {
+	if f.DateSent != nil {
 		*conds = append(*conds, `"date_sent" = ANY(@date_sent)`)
 		args["date_sent"] = f.DateSent
 	}
@@ -89,7 +89,7 @@ func notificationListConds(f ListNotificationParams, conds *[]string, args pgx.N
 		*conds = append(*conds, `"date_sent" <= @date_sent_to`)
 		args["date_sent_to"] = f.DateSentTo.Time
 	}
-	if len(f.DateScheduled) > 0 {
+	if f.DateScheduled != nil {
 		*conds = append(*conds, `"date_scheduled" = ANY(@date_scheduled)`)
 		args["date_scheduled"] = f.DateScheduled
 	}

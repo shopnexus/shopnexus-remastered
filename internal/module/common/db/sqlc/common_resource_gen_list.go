@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListResourceParams filters "common"."resource". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListResourceParams filters "common"."resource". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListResourceParams struct {
 	paginate.Params
 
@@ -33,27 +33,27 @@ type ListResourceParams struct {
 }
 
 func resourceListConds(f ListResourceParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.UploadedById) > 0 {
+	if f.UploadedById != nil {
 		*conds = append(*conds, `"uploaded_by_id" = ANY(@uploaded_by_id)`)
 		args["uploaded_by_id"] = f.UploadedById
 	}
-	if len(f.Provider) > 0 {
+	if f.Provider != nil {
 		*conds = append(*conds, `"provider" = ANY(@provider)`)
 		args["provider"] = f.Provider
 	}
-	if len(f.ObjectKey) > 0 {
+	if f.ObjectKey != nil {
 		*conds = append(*conds, `"object_key" = ANY(@object_key)`)
 		args["object_key"] = f.ObjectKey
 	}
-	if len(f.Mime) > 0 {
+	if f.Mime != nil {
 		*conds = append(*conds, `"mime" = ANY(@mime)`)
 		args["mime"] = f.Mime
 	}
-	if len(f.Size) > 0 {
+	if f.Size != nil {
 		*conds = append(*conds, `"size" = ANY(@size)`)
 		args["size"] = f.Size
 	}
@@ -65,11 +65,11 @@ func resourceListConds(f ListResourceParams, conds *[]string, args pgx.NamedArgs
 		*conds = append(*conds, `"size" <= @size_to`)
 		args["size_to"] = f.SizeTo.Int64
 	}
-	if len(f.Checksum) > 0 {
+	if f.Checksum != nil {
 		*conds = append(*conds, `"checksum" = ANY(@checksum)`)
 		args["checksum"] = f.Checksum
 	}
-	if len(f.CreatedAt) > 0 {
+	if f.CreatedAt != nil {
 		*conds = append(*conds, `"created_at" = ANY(@created_at)`)
 		args["created_at"] = f.CreatedAt
 	}

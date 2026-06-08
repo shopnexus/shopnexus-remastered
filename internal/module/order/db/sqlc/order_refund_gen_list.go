@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListRefundParams filters "order"."refund". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListRefundParams filters "order"."refund". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListRefundParams struct {
 	paginate.Params
 
@@ -42,23 +42,23 @@ type ListRefundParams struct {
 }
 
 func refundListConds(f ListRefundParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.AccountId) > 0 {
+	if f.AccountId != nil {
 		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
 		args["account_id"] = f.AccountId
 	}
-	if len(f.OrderId) > 0 {
+	if f.OrderId != nil {
 		*conds = append(*conds, `"order_id" = ANY(@order_id)`)
 		args["order_id"] = f.OrderId
 	}
-	if len(f.Reason) > 0 {
+	if f.Reason != nil {
 		*conds = append(*conds, `"reason" = ANY(@reason)`)
 		args["reason"] = f.Reason
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}
@@ -70,15 +70,15 @@ func refundListConds(f ListRefundParams, conds *[]string, args pgx.NamedArgs) {
 		*conds = append(*conds, `"date_created" <= @date_created_to`)
 		args["date_created_to"] = f.DateCreatedTo.Time
 	}
-	if len(f.Status) > 0 {
+	if f.Status != nil {
 		*conds = append(*conds, `"status" = ANY(@status)`)
 		args["status"] = f.Status
 	}
-	if len(f.ReturnTransportId) > 0 {
+	if f.ReturnTransportId != nil {
 		*conds = append(*conds, `"return_transport_id" = ANY(@return_transport_id)`)
 		args["return_transport_id"] = f.ReturnTransportId
 	}
-	if len(f.DateReceivedBySeller) > 0 {
+	if f.DateReceivedBySeller != nil {
 		*conds = append(*conds, `"date_received_by_seller" = ANY(@date_received_by_seller)`)
 		args["date_received_by_seller"] = f.DateReceivedBySeller
 	}
@@ -90,7 +90,7 @@ func refundListConds(f ListRefundParams, conds *[]string, args pgx.NamedArgs) {
 		*conds = append(*conds, `"date_received_by_seller" <= @date_received_by_seller_to`)
 		args["date_received_by_seller_to"] = f.DateReceivedBySellerTo.Time
 	}
-	if len(f.ReviewDeadline) > 0 {
+	if f.ReviewDeadline != nil {
 		*conds = append(*conds, `"review_deadline" = ANY(@review_deadline)`)
 		args["review_deadline"] = f.ReviewDeadline
 	}
@@ -102,7 +102,7 @@ func refundListConds(f ListRefundParams, conds *[]string, args pgx.NamedArgs) {
 		*conds = append(*conds, `"review_deadline" <= @review_deadline_to`)
 		args["review_deadline_to"] = f.ReviewDeadlineTo.Time
 	}
-	if len(f.SellerDecisionAt) > 0 {
+	if f.SellerDecisionAt != nil {
 		*conds = append(*conds, `"seller_decision_at" = ANY(@seller_decision_at)`)
 		args["seller_decision_at"] = f.SellerDecisionAt
 	}
@@ -114,15 +114,15 @@ func refundListConds(f ListRefundParams, conds *[]string, args pgx.NamedArgs) {
 		*conds = append(*conds, `"seller_decision_at" <= @seller_decision_at_to`)
 		args["seller_decision_at_to"] = f.SellerDecisionAtTo.Time
 	}
-	if len(f.ReturnToBuyerTransportId) > 0 {
+	if f.ReturnToBuyerTransportId != nil {
 		*conds = append(*conds, `"return_to_buyer_transport_id" = ANY(@return_to_buyer_transport_id)`)
 		args["return_to_buyer_transport_id"] = f.ReturnToBuyerTransportId
 	}
-	if len(f.RejectionReason) > 0 {
+	if f.RejectionReason != nil {
 		*conds = append(*conds, `"rejection_reason" = ANY(@rejection_reason)`)
 		args["rejection_reason"] = f.RejectionReason
 	}
-	if len(f.RefundTxId) > 0 {
+	if f.RefundTxId != nil {
 		*conds = append(*conds, `"refund_tx_id" = ANY(@refund_tx_id)`)
 		args["refund_tx_id"] = f.RefundTxId
 	}

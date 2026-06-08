@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListCommentParams filters "catalog"."comment". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListCommentParams filters "catalog"."comment". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListCommentParams struct {
 	paginate.Params
 
@@ -42,31 +42,31 @@ type ListCommentParams struct {
 }
 
 func commentListConds(f ListCommentParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.AccountId) > 0 {
+	if f.AccountId != nil {
 		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
 		args["account_id"] = f.AccountId
 	}
-	if len(f.OrderId) > 0 {
+	if f.OrderId != nil {
 		*conds = append(*conds, `"order_id" = ANY(@order_id)`)
 		args["order_id"] = f.OrderId
 	}
-	if len(f.RefType) > 0 {
+	if f.RefType != nil {
 		*conds = append(*conds, `"ref_type" = ANY(@ref_type)`)
 		args["ref_type"] = f.RefType
 	}
-	if len(f.RefId) > 0 {
+	if f.RefId != nil {
 		*conds = append(*conds, `"ref_id" = ANY(@ref_id)`)
 		args["ref_id"] = f.RefId
 	}
-	if len(f.Body) > 0 {
+	if f.Body != nil {
 		*conds = append(*conds, `"body" = ANY(@body)`)
 		args["body"] = f.Body
 	}
-	if len(f.Upvote) > 0 {
+	if f.Upvote != nil {
 		*conds = append(*conds, `"upvote" = ANY(@upvote)`)
 		args["upvote"] = f.Upvote
 	}
@@ -78,7 +78,7 @@ func commentListConds(f ListCommentParams, conds *[]string, args pgx.NamedArgs) 
 		*conds = append(*conds, `"upvote" <= @upvote_to`)
 		args["upvote_to"] = f.UpvoteTo.Int64
 	}
-	if len(f.Downvote) > 0 {
+	if f.Downvote != nil {
 		*conds = append(*conds, `"downvote" = ANY(@downvote)`)
 		args["downvote"] = f.Downvote
 	}
@@ -90,7 +90,7 @@ func commentListConds(f ListCommentParams, conds *[]string, args pgx.NamedArgs) 
 		*conds = append(*conds, `"downvote" <= @downvote_to`)
 		args["downvote_to"] = f.DownvoteTo.Int64
 	}
-	if len(f.Score) > 0 {
+	if f.Score != nil {
 		*conds = append(*conds, `"score" = ANY(@score)`)
 		args["score"] = f.Score
 	}
@@ -102,7 +102,7 @@ func commentListConds(f ListCommentParams, conds *[]string, args pgx.NamedArgs) 
 		*conds = append(*conds, `"score" <= @score_to`)
 		args["score_to"] = f.ScoreTo.Float64
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}
@@ -114,7 +114,7 @@ func commentListConds(f ListCommentParams, conds *[]string, args pgx.NamedArgs) 
 		*conds = append(*conds, `"date_created" <= @date_created_to`)
 		args["date_created_to"] = f.DateCreatedTo.Time
 	}
-	if len(f.DateUpdated) > 0 {
+	if f.DateUpdated != nil {
 		*conds = append(*conds, `"date_updated" = ANY(@date_updated)`)
 		args["date_updated"] = f.DateUpdated
 	}

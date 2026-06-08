@@ -12,8 +12,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListResourceReferenceParams filters "common"."resource_reference". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListResourceReferenceParams filters "common"."resource_reference". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListResourceReferenceParams struct {
 	paginate.Params
 
@@ -27,23 +27,23 @@ type ListResourceReferenceParams struct {
 }
 
 func resourceReferenceListConds(f ListResourceReferenceParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.RsId) > 0 {
+	if f.RsId != nil {
 		*conds = append(*conds, `"rs_id" = ANY(@rs_id)`)
 		args["rs_id"] = f.RsId
 	}
-	if len(f.RefType) > 0 {
+	if f.RefType != nil {
 		*conds = append(*conds, `"ref_type" = ANY(@ref_type)`)
 		args["ref_type"] = f.RefType
 	}
-	if len(f.RefId) > 0 {
+	if f.RefId != nil {
 		*conds = append(*conds, `"ref_id" = ANY(@ref_id)`)
 		args["ref_id"] = f.RefId
 	}
-	if len(f.Order) > 0 {
+	if f.Order != nil {
 		*conds = append(*conds, `"order" = ANY(@order)`)
 		args["order"] = f.Order
 	}

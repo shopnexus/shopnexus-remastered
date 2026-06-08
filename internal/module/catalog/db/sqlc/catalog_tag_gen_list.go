@@ -10,8 +10,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListTagParams filters "catalog"."tag". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListTagParams filters "catalog"."tag". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListTagParams struct {
 	paginate.Params
 
@@ -21,15 +21,15 @@ type ListTagParams struct {
 }
 
 func tagListConds(f ListTagParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.Name) > 0 {
+	if f.Name != nil {
 		*conds = append(*conds, `"name" = ANY(@name)`)
 		args["name"] = f.Name
 	}
-	if len(f.Description) > 0 {
+	if f.Description != nil {
 		*conds = append(*conds, `"description" = ANY(@description)`)
 		args["description"] = f.Description
 	}

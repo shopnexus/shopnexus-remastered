@@ -13,8 +13,8 @@ import (
 	"shopnexus-server/internal/shared/repolist"
 )
 
-// ListContactParams filters "account"."contact". Each slice field is an IN/ANY match;
-// *From/*To pairs are inclusive range bounds. Zero value = no filter.
+// ListContactParams filters "account"."contact". A slice field is an IN/ANY match: nil = skip,
+// non-nil empty = match nothing. *From/*To pairs are inclusive range bounds.
 type ListContactParams struct {
 	paginate.Params
 
@@ -37,31 +37,31 @@ type ListContactParams struct {
 }
 
 func contactListConds(f ListContactParams, conds *[]string, args pgx.NamedArgs) {
-	if len(f.Id) > 0 {
+	if f.Id != nil {
 		*conds = append(*conds, `"id" = ANY(@id)`)
 		args["id"] = f.Id
 	}
-	if len(f.AccountId) > 0 {
+	if f.AccountId != nil {
 		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
 		args["account_id"] = f.AccountId
 	}
-	if len(f.FullName) > 0 {
+	if f.FullName != nil {
 		*conds = append(*conds, `"full_name" = ANY(@full_name)`)
 		args["full_name"] = f.FullName
 	}
-	if len(f.Phone) > 0 {
+	if f.Phone != nil {
 		*conds = append(*conds, `"phone" = ANY(@phone)`)
 		args["phone"] = f.Phone
 	}
-	if len(f.PhoneVerified) > 0 {
+	if f.PhoneVerified != nil {
 		*conds = append(*conds, `"phone_verified" = ANY(@phone_verified)`)
 		args["phone_verified"] = f.PhoneVerified
 	}
-	if len(f.AddressType) > 0 {
+	if f.AddressType != nil {
 		*conds = append(*conds, `"address_type" = ANY(@address_type)`)
 		args["address_type"] = f.AddressType
 	}
-	if len(f.DateCreated) > 0 {
+	if f.DateCreated != nil {
 		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
 		args["date_created"] = f.DateCreated
 	}
@@ -73,11 +73,11 @@ func contactListConds(f ListContactParams, conds *[]string, args pgx.NamedArgs) 
 		*conds = append(*conds, `"date_created" <= @date_created_to`)
 		args["date_created_to"] = f.DateCreatedTo.Time
 	}
-	if len(f.Address) > 0 {
+	if f.Address != nil {
 		*conds = append(*conds, `"address" = ANY(@address)`)
 		args["address"] = f.Address
 	}
-	if len(f.Latitude) > 0 {
+	if f.Latitude != nil {
 		*conds = append(*conds, `"latitude" = ANY(@latitude)`)
 		args["latitude"] = f.Latitude
 	}
@@ -89,7 +89,7 @@ func contactListConds(f ListContactParams, conds *[]string, args pgx.NamedArgs) 
 		*conds = append(*conds, `"latitude" <= @latitude_to`)
 		args["latitude_to"] = f.LatitudeTo.Float64
 	}
-	if len(f.Longitude) > 0 {
+	if f.Longitude != nil {
 		*conds = append(*conds, `"longitude" = ANY(@longitude)`)
 		args["longitude"] = f.Longitude
 	}
