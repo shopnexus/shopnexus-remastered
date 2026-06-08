@@ -33,16 +33,16 @@ type CreateBatchOptionBatchResults struct {
 }
 
 type CreateBatchOptionParams struct {
-	ID          string          `json:"id"`
-	OwnerID     uuid.NullUUID   `json:"owner_id"`
-	IsEnabled   bool            `json:"is_enabled"`
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Priority    int32           `json:"priority"`
-	LogoRsID    uuid.NullUUID   `json:"logo_rs_id"`
-	Data        json.RawMessage `json:"data"`
-	Type        string          `json:"type"`
-	Provider    string          `json:"provider"`
+	ID          string          `db:"id" json:"id"`
+	OwnerID     uuid.NullUUID   `db:"owner_id" json:"owner_id"`
+	IsEnabled   bool            `db:"is_enabled" json:"is_enabled"`
+	Name        string          `db:"name" json:"name"`
+	Description string          `db:"description" json:"description"`
+	Priority    int32           `db:"priority" json:"priority"`
+	LogoRsID    uuid.NullUUID   `db:"logo_rs_id" json:"logo_rs_id"`
+	Data        json.RawMessage `db:"data" json:"data"`
+	Type        string          `db:"type" json:"type"`
+	Provider    string          `db:"provider" json:"provider"`
 }
 
 func (q *Queries) CreateBatchOption(ctx context.Context, arg []CreateBatchOptionParams) *CreateBatchOptionBatchResults {
@@ -113,15 +113,15 @@ type CreateBatchResourceBatchResults struct {
 }
 
 type CreateBatchResourceParams struct {
-	ID           uuid.UUID       `json:"id"`
-	UploadedByID uuid.NullUUID   `json:"uploaded_by_id"`
-	Provider     string          `json:"provider"`
-	ObjectKey    string          `json:"object_key"`
-	Mime         string          `json:"mime"`
-	Size         int64           `json:"size"`
-	Metadata     json.RawMessage `json:"metadata"`
-	Checksum     null.String     `json:"checksum"`
-	CreatedAt    time.Time       `json:"created_at"`
+	ID           uuid.UUID       `db:"id" json:"id"`
+	UploadedByID uuid.NullUUID   `db:"uploaded_by_id" json:"uploaded_by_id"`
+	Provider     string          `db:"provider" json:"provider"`
+	ObjectKey    string          `db:"object_key" json:"object_key"`
+	Mime         string          `db:"mime" json:"mime"`
+	Size         int64           `db:"size" json:"size"`
+	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
+	Checksum     null.String     `db:"checksum" json:"checksum"`
+	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
 }
 
 func (q *Queries) CreateBatchResource(ctx context.Context, arg []CreateBatchResourceParams) *CreateBatchResourceBatchResults {
@@ -190,10 +190,10 @@ type CreateBatchResourceReferenceBatchResults struct {
 }
 
 type CreateBatchResourceReferenceParams struct {
-	RsID    uuid.UUID             `json:"rs_id"`
-	RefType CommonResourceRefType `json:"ref_type"`
-	RefID   uuid.UUID             `json:"ref_id"`
-	Order   int32                 `json:"order"`
+	RsID    uuid.UUID             `db:"rs_id" json:"rs_id"`
+	RefType CommonResourceRefType `db:"ref_type" json:"ref_type"`
+	RefID   uuid.UUID             `db:"ref_id" json:"ref_id"`
+	Order   int32                 `db:"order" json:"order"`
 }
 
 func (q *Queries) CreateBatchResourceReference(ctx context.Context, arg []CreateBatchResourceReferenceParams) *CreateBatchResourceReferenceBatchResults {

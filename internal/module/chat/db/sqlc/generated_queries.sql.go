@@ -31,15 +31,15 @@ WHERE (
 `
 
 type CountConversationParams struct {
-	ID                []uuid.UUID `json:"id"`
-	BuyerID           []uuid.UUID `json:"buyer_id"`
-	SellerID          []uuid.UUID `json:"seller_id"`
-	LastMessageAt     []null.Time `json:"last_message_at"`
-	LastMessageAtFrom null.Time   `json:"last_message_at_from"`
-	LastMessageAtTo   null.Time   `json:"last_message_at_to"`
-	DateCreated       []time.Time `json:"date_created"`
-	DateCreatedFrom   null.Time   `json:"date_created_from"`
-	DateCreatedTo     null.Time   `json:"date_created_to"`
+	ID                []uuid.UUID `db:"id" json:"id"`
+	BuyerID           []uuid.UUID `db:"buyer_id" json:"buyer_id"`
+	SellerID          []uuid.UUID `db:"seller_id" json:"seller_id"`
+	LastMessageAt     []null.Time `db:"last_message_at" json:"last_message_at"`
+	LastMessageAtFrom null.Time   `db:"last_message_at_from" json:"last_message_at_from"`
+	LastMessageAtTo   null.Time   `db:"last_message_at_to" json:"last_message_at_to"`
+	DateCreated       []time.Time `db:"date_created" json:"date_created"`
+	DateCreatedFrom   null.Time   `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo     null.Time   `db:"date_created_to" json:"date_created_to"`
 }
 
 func (q *Queries) CountConversation(ctx context.Context, arg CountConversationParams) (int64, error) {
@@ -77,16 +77,16 @@ WHERE (
 `
 
 type CountMessageParams struct {
-	ID              []int64             `json:"id"`
-	ConversationID  []uuid.UUID         `json:"conversation_id"`
-	SenderID        []uuid.UUID         `json:"sender_id"`
-	Type            []ChatMessageType   `json:"type"`
-	Content         []string            `json:"content"`
-	Status          []ChatMessageStatus `json:"status"`
-	Data            []json.RawMessage   `json:"data"`
-	DateCreated     []time.Time         `json:"date_created"`
-	DateCreatedFrom null.Time           `json:"date_created_from"`
-	DateCreatedTo   null.Time           `json:"date_created_to"`
+	ID              []int64             `db:"id" json:"id"`
+	ConversationID  []uuid.UUID         `db:"conversation_id" json:"conversation_id"`
+	SenderID        []uuid.UUID         `db:"sender_id" json:"sender_id"`
+	Type            []ChatMessageType   `db:"type" json:"type"`
+	Content         []string            `db:"content" json:"content"`
+	Status          []ChatMessageStatus `db:"status" json:"status"`
+	Data            []json.RawMessage   `db:"data" json:"data"`
+	DateCreated     []time.Time         `db:"date_created" json:"date_created"`
+	DateCreatedFrom null.Time           `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time           `db:"date_created_to" json:"date_created_to"`
 }
 
 func (q *Queries) CountMessage(ctx context.Context, arg CountMessageParams) (int64, error) {
@@ -114,11 +114,11 @@ RETURNING id, buyer_id, seller_id, last_message_at, date_created
 `
 
 type CreateConversationParams struct {
-	ID            uuid.UUID `json:"id"`
-	BuyerID       uuid.UUID `json:"buyer_id"`
-	SellerID      uuid.UUID `json:"seller_id"`
-	LastMessageAt null.Time `json:"last_message_at"`
-	DateCreated   time.Time `json:"date_created"`
+	ID            uuid.UUID `db:"id" json:"id"`
+	BuyerID       uuid.UUID `db:"buyer_id" json:"buyer_id"`
+	SellerID      uuid.UUID `db:"seller_id" json:"seller_id"`
+	LastMessageAt null.Time `db:"last_message_at" json:"last_message_at"`
+	DateCreated   time.Time `db:"date_created" json:"date_created"`
 }
 
 func (q *Queries) CreateConversation(ctx context.Context, arg CreateConversationParams) (ChatConversation, error) {
@@ -141,35 +141,35 @@ func (q *Queries) CreateConversation(ctx context.Context, arg CreateConversation
 }
 
 type CreateCopyConversationParams struct {
-	ID            uuid.UUID `json:"id"`
-	BuyerID       uuid.UUID `json:"buyer_id"`
-	SellerID      uuid.UUID `json:"seller_id"`
-	LastMessageAt null.Time `json:"last_message_at"`
-	DateCreated   time.Time `json:"date_created"`
+	ID            uuid.UUID `db:"id" json:"id"`
+	BuyerID       uuid.UUID `db:"buyer_id" json:"buyer_id"`
+	SellerID      uuid.UUID `db:"seller_id" json:"seller_id"`
+	LastMessageAt null.Time `db:"last_message_at" json:"last_message_at"`
+	DateCreated   time.Time `db:"date_created" json:"date_created"`
 }
 
 type CreateCopyDefaultConversationParams struct {
-	BuyerID       uuid.UUID `json:"buyer_id"`
-	SellerID      uuid.UUID `json:"seller_id"`
-	LastMessageAt null.Time `json:"last_message_at"`
+	BuyerID       uuid.UUID `db:"buyer_id" json:"buyer_id"`
+	SellerID      uuid.UUID `db:"seller_id" json:"seller_id"`
+	LastMessageAt null.Time `db:"last_message_at" json:"last_message_at"`
 }
 
 type CreateCopyDefaultMessageParams struct {
-	ConversationID uuid.UUID       `json:"conversation_id"`
-	SenderID       uuid.UUID       `json:"sender_id"`
-	Type           ChatMessageType `json:"type"`
-	Content        string          `json:"content"`
-	Data           json.RawMessage `json:"data"`
+	ConversationID uuid.UUID       `db:"conversation_id" json:"conversation_id"`
+	SenderID       uuid.UUID       `db:"sender_id" json:"sender_id"`
+	Type           ChatMessageType `db:"type" json:"type"`
+	Content        string          `db:"content" json:"content"`
+	Data           json.RawMessage `db:"data" json:"data"`
 }
 
 type CreateCopyMessageParams struct {
-	ConversationID uuid.UUID         `json:"conversation_id"`
-	SenderID       uuid.UUID         `json:"sender_id"`
-	Type           ChatMessageType   `json:"type"`
-	Content        string            `json:"content"`
-	Status         ChatMessageStatus `json:"status"`
-	Data           json.RawMessage   `json:"data"`
-	DateCreated    time.Time         `json:"date_created"`
+	ConversationID uuid.UUID         `db:"conversation_id" json:"conversation_id"`
+	SenderID       uuid.UUID         `db:"sender_id" json:"sender_id"`
+	Type           ChatMessageType   `db:"type" json:"type"`
+	Content        string            `db:"content" json:"content"`
+	Status         ChatMessageStatus `db:"status" json:"status"`
+	Data           json.RawMessage   `db:"data" json:"data"`
+	DateCreated    time.Time         `db:"date_created" json:"date_created"`
 }
 
 const createDefaultConversation = `-- name: CreateDefaultConversation :one
@@ -179,9 +179,9 @@ RETURNING id, buyer_id, seller_id, last_message_at, date_created
 `
 
 type CreateDefaultConversationParams struct {
-	BuyerID       uuid.UUID `json:"buyer_id"`
-	SellerID      uuid.UUID `json:"seller_id"`
-	LastMessageAt null.Time `json:"last_message_at"`
+	BuyerID       uuid.UUID `db:"buyer_id" json:"buyer_id"`
+	SellerID      uuid.UUID `db:"seller_id" json:"seller_id"`
+	LastMessageAt null.Time `db:"last_message_at" json:"last_message_at"`
 }
 
 func (q *Queries) CreateDefaultConversation(ctx context.Context, arg CreateDefaultConversationParams) (ChatConversation, error) {
@@ -204,11 +204,11 @@ RETURNING id, conversation_id, sender_id, type, content, status, data, date_crea
 `
 
 type CreateDefaultMessageParams struct {
-	ConversationID uuid.UUID       `json:"conversation_id"`
-	SenderID       uuid.UUID       `json:"sender_id"`
-	Type           ChatMessageType `json:"type"`
-	Content        string          `json:"content"`
-	Data           json.RawMessage `json:"data"`
+	ConversationID uuid.UUID       `db:"conversation_id" json:"conversation_id"`
+	SenderID       uuid.UUID       `db:"sender_id" json:"sender_id"`
+	Type           ChatMessageType `db:"type" json:"type"`
+	Content        string          `db:"content" json:"content"`
+	Data           json.RawMessage `db:"data" json:"data"`
 }
 
 func (q *Queries) CreateDefaultMessage(ctx context.Context, arg CreateDefaultMessageParams) (ChatMessage, error) {
@@ -240,13 +240,13 @@ RETURNING id, conversation_id, sender_id, type, content, status, data, date_crea
 `
 
 type CreateMessageParams struct {
-	ConversationID uuid.UUID         `json:"conversation_id"`
-	SenderID       uuid.UUID         `json:"sender_id"`
-	Type           ChatMessageType   `json:"type"`
-	Content        string            `json:"content"`
-	Status         ChatMessageStatus `json:"status"`
-	Data           json.RawMessage   `json:"data"`
-	DateCreated    time.Time         `json:"date_created"`
+	ConversationID uuid.UUID         `db:"conversation_id" json:"conversation_id"`
+	SenderID       uuid.UUID         `db:"sender_id" json:"sender_id"`
+	Type           ChatMessageType   `db:"type" json:"type"`
+	Content        string            `db:"content" json:"content"`
+	Status         ChatMessageStatus `db:"status" json:"status"`
+	Data           json.RawMessage   `db:"data" json:"data"`
+	DateCreated    time.Time         `db:"date_created" json:"date_created"`
 }
 
 func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (ChatMessage, error) {
@@ -289,15 +289,15 @@ WHERE (
 `
 
 type DeleteConversationParams struct {
-	ID                []uuid.UUID `json:"id"`
-	BuyerID           []uuid.UUID `json:"buyer_id"`
-	SellerID          []uuid.UUID `json:"seller_id"`
-	LastMessageAt     []null.Time `json:"last_message_at"`
-	LastMessageAtFrom null.Time   `json:"last_message_at_from"`
-	LastMessageAtTo   null.Time   `json:"last_message_at_to"`
-	DateCreated       []time.Time `json:"date_created"`
-	DateCreatedFrom   null.Time   `json:"date_created_from"`
-	DateCreatedTo     null.Time   `json:"date_created_to"`
+	ID                []uuid.UUID `db:"id" json:"id"`
+	BuyerID           []uuid.UUID `db:"buyer_id" json:"buyer_id"`
+	SellerID          []uuid.UUID `db:"seller_id" json:"seller_id"`
+	LastMessageAt     []null.Time `db:"last_message_at" json:"last_message_at"`
+	LastMessageAtFrom null.Time   `db:"last_message_at_from" json:"last_message_at_from"`
+	LastMessageAtTo   null.Time   `db:"last_message_at_to" json:"last_message_at_to"`
+	DateCreated       []time.Time `db:"date_created" json:"date_created"`
+	DateCreatedFrom   null.Time   `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo     null.Time   `db:"date_created_to" json:"date_created_to"`
 }
 
 func (q *Queries) DeleteConversation(ctx context.Context, arg DeleteConversationParams) error {
@@ -332,16 +332,16 @@ WHERE (
 `
 
 type DeleteMessageParams struct {
-	ID              []int64             `json:"id"`
-	ConversationID  []uuid.UUID         `json:"conversation_id"`
-	SenderID        []uuid.UUID         `json:"sender_id"`
-	Type            []ChatMessageType   `json:"type"`
-	Content         []string            `json:"content"`
-	Status          []ChatMessageStatus `json:"status"`
-	Data            []json.RawMessage   `json:"data"`
-	DateCreated     []time.Time         `json:"date_created"`
-	DateCreatedFrom null.Time           `json:"date_created_from"`
-	DateCreatedTo   null.Time           `json:"date_created_to"`
+	ID              []int64             `db:"id" json:"id"`
+	ConversationID  []uuid.UUID         `db:"conversation_id" json:"conversation_id"`
+	SenderID        []uuid.UUID         `db:"sender_id" json:"sender_id"`
+	Type            []ChatMessageType   `db:"type" json:"type"`
+	Content         []string            `db:"content" json:"content"`
+	Status          []ChatMessageStatus `db:"status" json:"status"`
+	Data            []json.RawMessage   `db:"data" json:"data"`
+	DateCreated     []time.Time         `db:"date_created" json:"date_created"`
+	DateCreatedFrom null.Time           `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time           `db:"date_created_to" json:"date_created_to"`
 }
 
 func (q *Queries) DeleteMessage(ctx context.Context, arg DeleteMessageParams) error {
@@ -370,9 +370,9 @@ WHERE ("id" = $1) OR ("buyer_id" = $2 AND "seller_id" = $3)
 `
 
 type GetConversationParams struct {
-	ID       uuid.NullUUID `json:"id"`
-	BuyerID  uuid.NullUUID `json:"buyer_id"`
-	SellerID uuid.NullUUID `json:"seller_id"`
+	ID       uuid.NullUUID `db:"id" json:"id"`
+	BuyerID  uuid.NullUUID `db:"buyer_id" json:"buyer_id"`
+	SellerID uuid.NullUUID `db:"seller_id" json:"seller_id"`
 }
 
 // Code generated by pgtempl. DO NOT EDIT.
@@ -419,314 +419,6 @@ func (q *Queries) GetMessage(ctx context.Context, id null.Int) (ChatMessage, err
 	return i, err
 }
 
-const listConversation = `-- name: ListConversation :many
-SELECT id, buyer_id, seller_id, last_message_at, date_created
-FROM "chat"."conversation"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("buyer_id" = ANY($2) OR $2 IS NULL) AND
-    ("seller_id" = ANY($3) OR $3 IS NULL) AND
-    ("last_message_at" = ANY($4) OR $4 IS NULL) AND
-    ("last_message_at" >= $5 OR $5 IS NULL) AND
-    ("last_message_at" <= $6 OR $6 IS NULL) AND
-    ("date_created" = ANY($7) OR $7 IS NULL) AND
-    ("date_created" >= $8 OR $8 IS NULL) AND
-    ("date_created" <= $9 OR $9 IS NULL)
-)
-ORDER BY "id"
-LIMIT $11::int
-OFFSET $10::int
-`
-
-type ListConversationParams struct {
-	ID                []uuid.UUID `json:"id"`
-	BuyerID           []uuid.UUID `json:"buyer_id"`
-	SellerID          []uuid.UUID `json:"seller_id"`
-	LastMessageAt     []null.Time `json:"last_message_at"`
-	LastMessageAtFrom null.Time   `json:"last_message_at_from"`
-	LastMessageAtTo   null.Time   `json:"last_message_at_to"`
-	DateCreated       []time.Time `json:"date_created"`
-	DateCreatedFrom   null.Time   `json:"date_created_from"`
-	DateCreatedTo     null.Time   `json:"date_created_to"`
-	Offset            null.Int32  `json:"offset"`
-	Limit             null.Int32  `json:"limit"`
-}
-
-func (q *Queries) ListConversation(ctx context.Context, arg ListConversationParams) ([]ChatConversation, error) {
-	rows, err := q.db.Query(ctx, listConversation,
-		arg.ID,
-		arg.BuyerID,
-		arg.SellerID,
-		arg.LastMessageAt,
-		arg.LastMessageAtFrom,
-		arg.LastMessageAtTo,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ChatConversation{}
-	for rows.Next() {
-		var i ChatConversation
-		if err := rows.Scan(
-			&i.ID,
-			&i.BuyerID,
-			&i.SellerID,
-			&i.LastMessageAt,
-			&i.DateCreated,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCountConversation = `-- name: ListCountConversation :many
-SELECT embed_conversation.id, embed_conversation.buyer_id, embed_conversation.seller_id, embed_conversation.last_message_at, embed_conversation.date_created, COUNT(*) OVER() as total_count
-FROM "chat"."conversation" embed_conversation
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("buyer_id" = ANY($2) OR $2 IS NULL) AND
-    ("seller_id" = ANY($3) OR $3 IS NULL) AND
-    ("last_message_at" = ANY($4) OR $4 IS NULL) AND
-    ("last_message_at" >= $5 OR $5 IS NULL) AND
-    ("last_message_at" <= $6 OR $6 IS NULL) AND
-    ("date_created" = ANY($7) OR $7 IS NULL) AND
-    ("date_created" >= $8 OR $8 IS NULL) AND
-    ("date_created" <= $9 OR $9 IS NULL)
-)
-ORDER BY "id"
-LIMIT $11::int
-OFFSET $10::int
-`
-
-type ListCountConversationParams struct {
-	ID                []uuid.UUID `json:"id"`
-	BuyerID           []uuid.UUID `json:"buyer_id"`
-	SellerID          []uuid.UUID `json:"seller_id"`
-	LastMessageAt     []null.Time `json:"last_message_at"`
-	LastMessageAtFrom null.Time   `json:"last_message_at_from"`
-	LastMessageAtTo   null.Time   `json:"last_message_at_to"`
-	DateCreated       []time.Time `json:"date_created"`
-	DateCreatedFrom   null.Time   `json:"date_created_from"`
-	DateCreatedTo     null.Time   `json:"date_created_to"`
-	Offset            null.Int32  `json:"offset"`
-	Limit             null.Int32  `json:"limit"`
-}
-
-type ListCountConversationRow struct {
-	ChatConversation ChatConversation `json:"chat_conversation"`
-	TotalCount       int64            `json:"total_count"`
-}
-
-func (q *Queries) ListCountConversation(ctx context.Context, arg ListCountConversationParams) ([]ListCountConversationRow, error) {
-	rows, err := q.db.Query(ctx, listCountConversation,
-		arg.ID,
-		arg.BuyerID,
-		arg.SellerID,
-		arg.LastMessageAt,
-		arg.LastMessageAtFrom,
-		arg.LastMessageAtTo,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountConversationRow{}
-	for rows.Next() {
-		var i ListCountConversationRow
-		if err := rows.Scan(
-			&i.ChatConversation.ID,
-			&i.ChatConversation.BuyerID,
-			&i.ChatConversation.SellerID,
-			&i.ChatConversation.LastMessageAt,
-			&i.ChatConversation.DateCreated,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCountMessage = `-- name: ListCountMessage :many
-SELECT embed_message.id, embed_message.conversation_id, embed_message.sender_id, embed_message.type, embed_message.content, embed_message.status, embed_message.data, embed_message.date_created, COUNT(*) OVER() as total_count
-FROM "chat"."message" embed_message
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("conversation_id" = ANY($2) OR $2 IS NULL) AND
-    ("sender_id" = ANY($3) OR $3 IS NULL) AND
-    ("type" = ANY($4) OR $4 IS NULL) AND
-    ("content" = ANY($5) OR $5 IS NULL) AND
-    ("status" = ANY($6) OR $6 IS NULL) AND
-    ("data" = ANY($7) OR $7 IS NULL) AND
-    ("date_created" = ANY($8) OR $8 IS NULL) AND
-    ("date_created" >= $9 OR $9 IS NULL) AND
-    ("date_created" <= $10 OR $10 IS NULL)
-)
-ORDER BY "id"
-LIMIT $12::int
-OFFSET $11::int
-`
-
-type ListCountMessageParams struct {
-	ID              []int64             `json:"id"`
-	ConversationID  []uuid.UUID         `json:"conversation_id"`
-	SenderID        []uuid.UUID         `json:"sender_id"`
-	Type            []ChatMessageType   `json:"type"`
-	Content         []string            `json:"content"`
-	Status          []ChatMessageStatus `json:"status"`
-	Data            []json.RawMessage   `json:"data"`
-	DateCreated     []time.Time         `json:"date_created"`
-	DateCreatedFrom null.Time           `json:"date_created_from"`
-	DateCreatedTo   null.Time           `json:"date_created_to"`
-	Offset          null.Int32          `json:"offset"`
-	Limit           null.Int32          `json:"limit"`
-}
-
-type ListCountMessageRow struct {
-	ChatMessage ChatMessage `json:"chat_message"`
-	TotalCount  int64       `json:"total_count"`
-}
-
-func (q *Queries) ListCountMessage(ctx context.Context, arg ListCountMessageParams) ([]ListCountMessageRow, error) {
-	rows, err := q.db.Query(ctx, listCountMessage,
-		arg.ID,
-		arg.ConversationID,
-		arg.SenderID,
-		arg.Type,
-		arg.Content,
-		arg.Status,
-		arg.Data,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountMessageRow{}
-	for rows.Next() {
-		var i ListCountMessageRow
-		if err := rows.Scan(
-			&i.ChatMessage.ID,
-			&i.ChatMessage.ConversationID,
-			&i.ChatMessage.SenderID,
-			&i.ChatMessage.Type,
-			&i.ChatMessage.Content,
-			&i.ChatMessage.Status,
-			&i.ChatMessage.Data,
-			&i.ChatMessage.DateCreated,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listMessage = `-- name: ListMessage :many
-SELECT id, conversation_id, sender_id, type, content, status, data, date_created
-FROM "chat"."message"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("conversation_id" = ANY($2) OR $2 IS NULL) AND
-    ("sender_id" = ANY($3) OR $3 IS NULL) AND
-    ("type" = ANY($4) OR $4 IS NULL) AND
-    ("content" = ANY($5) OR $5 IS NULL) AND
-    ("status" = ANY($6) OR $6 IS NULL) AND
-    ("data" = ANY($7) OR $7 IS NULL) AND
-    ("date_created" = ANY($8) OR $8 IS NULL) AND
-    ("date_created" >= $9 OR $9 IS NULL) AND
-    ("date_created" <= $10 OR $10 IS NULL)
-)
-ORDER BY "id"
-LIMIT $12::int
-OFFSET $11::int
-`
-
-type ListMessageParams struct {
-	ID              []int64             `json:"id"`
-	ConversationID  []uuid.UUID         `json:"conversation_id"`
-	SenderID        []uuid.UUID         `json:"sender_id"`
-	Type            []ChatMessageType   `json:"type"`
-	Content         []string            `json:"content"`
-	Status          []ChatMessageStatus `json:"status"`
-	Data            []json.RawMessage   `json:"data"`
-	DateCreated     []time.Time         `json:"date_created"`
-	DateCreatedFrom null.Time           `json:"date_created_from"`
-	DateCreatedTo   null.Time           `json:"date_created_to"`
-	Offset          null.Int32          `json:"offset"`
-	Limit           null.Int32          `json:"limit"`
-}
-
-func (q *Queries) ListMessage(ctx context.Context, arg ListMessageParams) ([]ChatMessage, error) {
-	rows, err := q.db.Query(ctx, listMessage,
-		arg.ID,
-		arg.ConversationID,
-		arg.SenderID,
-		arg.Type,
-		arg.Content,
-		arg.Status,
-		arg.Data,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ChatMessage{}
-	for rows.Next() {
-		var i ChatMessage
-		if err := rows.Scan(
-			&i.ID,
-			&i.ConversationID,
-			&i.SenderID,
-			&i.Type,
-			&i.Content,
-			&i.Status,
-			&i.Data,
-			&i.DateCreated,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const updateConversation = `-- name: UpdateConversation :one
 UPDATE "chat"."conversation"
 SET "buyer_id" = COALESCE($1, "buyer_id"),
@@ -738,12 +430,12 @@ RETURNING id, buyer_id, seller_id, last_message_at, date_created
 `
 
 type UpdateConversationParams struct {
-	BuyerID           uuid.NullUUID `json:"buyer_id"`
-	SellerID          uuid.NullUUID `json:"seller_id"`
-	NullLastMessageAt bool          `json:"null_last_message_at"`
-	LastMessageAt     null.Time     `json:"last_message_at"`
-	DateCreated       null.Time     `json:"date_created"`
-	ID                uuid.UUID     `json:"id"`
+	BuyerID           uuid.NullUUID `db:"buyer_id" json:"buyer_id"`
+	SellerID          uuid.NullUUID `db:"seller_id" json:"seller_id"`
+	NullLastMessageAt bool          `db:"null_last_message_at" json:"null_last_message_at"`
+	LastMessageAt     null.Time     `db:"last_message_at" json:"last_message_at"`
+	DateCreated       null.Time     `db:"date_created" json:"date_created"`
+	ID                uuid.UUID     `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateConversation(ctx context.Context, arg UpdateConversationParams) (ChatConversation, error) {
@@ -780,15 +472,15 @@ RETURNING id, conversation_id, sender_id, type, content, status, data, date_crea
 `
 
 type UpdateMessageParams struct {
-	ConversationID uuid.NullUUID         `json:"conversation_id"`
-	SenderID       uuid.NullUUID         `json:"sender_id"`
-	Type           NullChatMessageType   `json:"type"`
-	Content        null.String           `json:"content"`
-	Status         NullChatMessageStatus `json:"status"`
-	NullData       bool                  `json:"null_data"`
-	Data           json.RawMessage       `json:"data"`
-	DateCreated    null.Time             `json:"date_created"`
-	ID             int64                 `json:"id"`
+	ConversationID uuid.NullUUID         `db:"conversation_id" json:"conversation_id"`
+	SenderID       uuid.NullUUID         `db:"sender_id" json:"sender_id"`
+	Type           NullChatMessageType   `db:"type" json:"type"`
+	Content        null.String           `db:"content" json:"content"`
+	Status         NullChatMessageStatus `db:"status" json:"status"`
+	NullData       bool                  `db:"null_data" json:"null_data"`
+	Data           json.RawMessage       `db:"data" json:"data"`
+	DateCreated    null.Time             `db:"date_created" json:"date_created"`
+	ID             int64                 `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateMessage(ctx context.Context, arg UpdateMessageParams) (ChatMessage, error) {

@@ -28,12 +28,12 @@ OFFSET $5
 `
 
 type ListSortedOptionParams struct {
-	ID        []string      `json:"id"`
-	IsEnabled []bool        `json:"is_enabled"`
-	Type      []string      `json:"type"`
-	AccountID uuid.NullUUID `json:"account_id"`
-	Offset    pgtype.Int4   `json:"offset"`
-	Limit     pgtype.Int4   `json:"limit"`
+	ID        []string      `db:"id" json:"id"`
+	IsEnabled []bool        `db:"is_enabled" json:"is_enabled"`
+	Type      []string      `db:"type" json:"type"`
+	AccountID uuid.NullUUID `db:"account_id" json:"account_id"`
+	Offset    pgtype.Int4   `db:"offset" json:"offset"`
+	Limit     pgtype.Int4   `db:"limit" json:"limit"`
 }
 
 func (q *Queries) ListSortedOption(ctx context.Context, arg ListSortedOptionParams) ([]CommonOption, error) {
@@ -89,16 +89,16 @@ ON CONFLICT ("id") DO UPDATE SET
 `
 
 type UpsertOptionParams struct {
-	ID          string          `json:"id"`
-	OwnerID     uuid.NullUUID   `json:"owner_id"`
-	IsEnabled   bool            `json:"is_enabled"`
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Priority    int32           `json:"priority"`
-	LogoRsID    uuid.NullUUID   `json:"logo_rs_id"`
-	Data        json.RawMessage `json:"data"`
-	Type        string          `json:"type"`
-	Provider    string          `json:"provider"`
+	ID          string          `db:"id" json:"id"`
+	OwnerID     uuid.NullUUID   `db:"owner_id" json:"owner_id"`
+	IsEnabled   bool            `db:"is_enabled" json:"is_enabled"`
+	Name        string          `db:"name" json:"name"`
+	Description string          `db:"description" json:"description"`
+	Priority    int32           `db:"priority" json:"priority"`
+	LogoRsID    uuid.NullUUID   `db:"logo_rs_id" json:"logo_rs_id"`
+	Data        json.RawMessage `db:"data" json:"data"`
+	Type        string          `db:"type" json:"type"`
+	Provider    string          `db:"provider" json:"provider"`
 }
 
 func (q *Queries) UpsertOption(ctx context.Context, arg UpsertOptionParams) error {

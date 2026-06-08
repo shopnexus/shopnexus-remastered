@@ -43,14 +43,14 @@ WHERE t.id = $1
 `
 
 type GetTransportWithOrderRow struct {
-	ID            int64           `json:"id"`
-	Option        string          `json:"option"`
-	Status        NullOrderStatus `json:"status"`
-	Data          json.RawMessage `json:"data"`
-	DateCreated   time.Time       `json:"date_created"`
-	OrderID       uuid.UUID       `json:"order_id"`
-	OrderBuyerID  uuid.UUID       `json:"order_buyer_id"`
-	OrderSellerID uuid.UUID       `json:"order_seller_id"`
+	ID            int64           `db:"id" json:"id"`
+	Option        string          `db:"option" json:"option"`
+	Status        NullOrderStatus `db:"status" json:"status"`
+	Data          json.RawMessage `db:"data" json:"data"`
+	DateCreated   time.Time       `db:"date_created" json:"date_created"`
+	OrderID       uuid.UUID       `db:"order_id" json:"order_id"`
+	OrderBuyerID  uuid.UUID       `db:"order_buyer_id" json:"order_buyer_id"`
+	OrderSellerID uuid.UUID       `db:"order_seller_id" json:"order_seller_id"`
 }
 
 func (q *Queries) GetTransportWithOrder(ctx context.Context, id int64) (GetTransportWithOrderRow, error) {
@@ -77,9 +77,9 @@ RETURNING id, option, status, data, date_created
 `
 
 type UpdateTransportStatusByIDParams struct {
-	Status NullOrderStatus `json:"status"`
-	Data   json.RawMessage `json:"data"`
-	ID     int64           `json:"id"`
+	Status NullOrderStatus `db:"status" json:"status"`
+	Data   json.RawMessage `db:"data" json:"data"`
+	ID     int64           `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateTransportStatusByID(ctx context.Context, arg UpdateTransportStatusByIDParams) (OrderTransport, error) {

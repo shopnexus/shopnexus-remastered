@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/guregu/null/v6"
 	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 
@@ -194,29 +193,13 @@ func (b *ReviewHandler) CreateProductReview(
 		return zero, catalogmodel.ErrMustPurchaseToReview
 	}
 
-	// Denormalized order facts, read locally.
-	order, err := b.GetHydratedOrder(ctx, params.OrderID)
-	if err != nil {
-		return zero, fmt.Errorf("load order for review: %w", err)
-	}
-	skuIDSet := lo.SliceToMap(skuIDs, func(id uuid.UUID) (uuid.UUID, struct{}) { return id, struct{}{} })
-	var itemName string
-	for _, item := range order.Items {
-		if _, ok := skuIDSet[item.SkuID]; ok {
-			itemName = item.SkuName
-			break
-		}
-	}
-
 	return b.catalog.CreateComment(ctx, catalogbiz.CreateCommentParams{
-		Account:       params.Account,
-		RefType:       catalogdb.CatalogCommentRefTypeProductSpu,
-		RefID:         params.SpuID,
-		Body:          params.Body,
-		Score:         params.Score,
-		OrderID:       params.OrderID,
-		OrderItemName: null.NewString(itemName, itemName != ""),
-		OrderDate:     null.TimeFrom(order.DateCreated),
-		ResourceIDs:   params.ResourceIDs,
+		Account:     params.Account,
+		RefType:     catalogdb.CatalogCommentRefTypeProductSpu,
+		RefID:       params.SpuID,
+		Body:        params.Body,
+		Score:       params.Score,
+		OrderID:     params.OrderID,
+		ResourceIDs: params.ResourceIDs,
 	})
 }

@@ -22,6 +22,7 @@ import (
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
 	promotionbiz "shopnexus-server/internal/module/promotion/biz"
 	"shopnexus-server/internal/shared/paginate"
+	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 )
 
@@ -509,14 +510,14 @@ func (b *CatalogHandler) ListRecommendedProductCard(
 		}
 
 		skuIDs := lo.Map(mostSolds, func(p inventorydb.InventoryStock, _ int) uuid.UUID { return p.RefID })
-		skus, err := b.storage.Querier().ListProductSku(ctx, catalogdb.ListProductSkuParams{
-			ID: skuIDs,
+		skus, err := b.storage.Querier().ListProductSku(ctx, repolist.Request{}, catalogdb.ListProductSkuFilter{
+			Id: skuIDs,
 		})
 		if err != nil {
 			return zero, fmt.Errorf("db list product sku: %w", err)
 		}
 
-		uniqueSpuIDs := lo.UniqMap(skus, func(s catalogdb.CatalogProductSku, _ int) uuid.UUID { return s.SpuID })
+		uniqueSpuIDs := lo.UniqMap(skus.Data, func(s catalogdb.CatalogProductSku, _ int) uuid.UUID { return s.SpuID })
 		rcmProducts = append(
 			rcmProducts,
 			lo.Map(uniqueSpuIDs, func(spuID uuid.UUID, _ int) catalogmodel.ProductRecommend {

@@ -7,6 +7,7 @@ import (
 
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	accountmodel "shopnexus-server/internal/module/account/model"
+	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -55,15 +56,15 @@ func (b *AccountHandler) ListContact(
 		return nil, fmt.Errorf("validate list contact: %w", err)
 	}
 
-	contacts, err := b.storage.Querier().ListContact(ctx, accountdb.ListContactParams{
-		AccountID: params.AccountID,
-		ID:        params.ID,
+	res, err := b.storage.Querier().ListContact(ctx, repolist.Request{}, accountdb.ListContactFilter{
+		AccountId: params.AccountID,
+		Id:        params.ID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("db list contact: %w", err)
 	}
 
-	return contacts, nil
+	return res.Data, nil
 }
 
 type GetContactParams struct {
@@ -259,16 +260,16 @@ func (b *AccountHandler) DeleteContact(ctx restate.Context, params DeleteContact
 
 	// If we deleted the default, reassign to the most recent remaining contact
 	if isDefault {
-		remaining, err := txStorage.Querier().ListContact(ctx, accountdb.ListContactParams{
-			AccountID: []uuid.UUID{params.Account.ID},
+		remaining, err := txStorage.Querier().ListContact(ctx, repolist.Request{}, accountdb.ListContactFilter{
+			AccountId: []uuid.UUID{params.Account.ID},
 		})
 		if err != nil {
 			return fmt.Errorf("db list contact: %w", err)
 		}
-		if len(remaining) > 0 {
+		if len(remaining.Data) > 0 {
 			if err = txStorage.Querier().SetAccountDefaultContact(ctx, accountdb.SetAccountDefaultContactParams{
 				ID:               params.Account.ID,
-				DefaultContactID: uuid.NullUUID{UUID: remaining[0].ID, Valid: true},
+				DefaultContactID: uuid.NullUUID{UUID: remaining.Data[0].ID, Valid: true},
 			}); err != nil {
 				return fmt.Errorf("db set account default contact: %w", err)
 			}

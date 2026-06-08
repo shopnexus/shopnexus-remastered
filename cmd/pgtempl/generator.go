@@ -30,8 +30,8 @@ func (g *Generator) Generate(table *Table) string {
 
 	queries = append(queries, g.generateGet(table))
 	queries = append(queries, g.generateCount(table))
-	queries = append(queries, g.generateList(table))
-	queries = append(queries, g.generateListCount(table))
+	// List / ListCount are no longer SQL templates — the repo layer (-emit repo)
+	// owns listing via repolist, scanning with pgx. Get/Count/Create*/Update/Delete stay.
 	queries = append(queries, g.generateCreate(table))
 	queries = append(queries, g.generateCreateBatch(table))
 	queries = append(queries, g.generateCreateCopy(table))
@@ -137,50 +137,6 @@ func (g *Generator) generateCount(table *Table) string {
 	where := filterWhereClause(table)
 
 	return fmt.Sprintf("-- name: %s :one\nSELECT COUNT(*)\nFROM %s\n%s;", name, table.FullName(), where)
-}
-
-// generateList builds the LIST query.
-func (g *Generator) generateList(table *Table) string {
-	name := g.queryName("List", table)
-	where := filterWhereClause(table)
-
-	return fmt.Sprintf(
-		"-- name: %s :many\nSELECT *\nFROM %s\n%s\nORDER BY %s\nLIMIT sqlc.narg('limit')::int\nOFFSET sqlc.narg('offset')::int;",
-		name,
-		table.FullName(),
-		where,
-		pkOrderBy(table),
-	)
-}
-
-// generateListCount builds the LISTCOUNT query.
-func (g *Generator) generateListCount(table *Table) string {
-	name := g.queryName("ListCount", table)
-	where := filterWhereClause(table)
-	embedAlias := "embed_" + table.Name
-
-	return fmt.Sprintf(
-		"-- name: %s :many\nSELECT sqlc.embed(%s), COUNT(*) OVER() as total_count\nFROM %s %s\n%s\nORDER BY %s\nLIMIT sqlc.narg('limit')::int\nOFFSET sqlc.narg('offset')::int;",
-		name,
-		embedAlias,
-		table.FullName(),
-		embedAlias,
-		where,
-		pkOrderBy(table),
-	)
-}
-
-// pkOrderBy returns the ORDER BY column list using the table's primary key.
-// Falls back to "id" when no PK is declared, preserving prior behavior.
-func pkOrderBy(table *Table) string {
-	if len(table.PrimaryKeys) == 0 {
-		return `"id"`
-	}
-	parts := make([]string, 0, len(table.PrimaryKeys))
-	for _, c := range table.PrimaryKeys {
-		parts = append(parts, c.Quoted())
-	}
-	return strings.Join(parts, ", ")
 }
 
 // columnList returns quoted column names joined with ", ".

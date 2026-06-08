@@ -35,19 +35,19 @@ WHERE (
 `
 
 type CountAccountParams struct {
-	ID              []uuid.UUID     `json:"id"`
-	Number          []int64         `json:"number"`
-	NumberFrom      null.Int        `json:"number_from"`
-	NumberTo        null.Int        `json:"number_to"`
-	Status          []AccountStatus `json:"status"`
-	Role            []AccountRole   `json:"role"`
-	Phone           []null.String   `json:"phone"`
-	Email           []null.String   `json:"email"`
-	Username        []null.String   `json:"username"`
-	Password        []null.String   `json:"password"`
-	DateCreated     []time.Time     `json:"date_created"`
-	DateCreatedFrom null.Time       `json:"date_created_from"`
-	DateCreatedTo   null.Time       `json:"date_created_to"`
+	ID              []uuid.UUID     `db:"id" json:"id"`
+	Number          []int64         `db:"number" json:"number"`
+	NumberFrom      null.Int        `db:"number_from" json:"number_from"`
+	NumberTo        null.Int        `db:"number_to" json:"number_to"`
+	Status          []AccountStatus `db:"status" json:"status"`
+	Role            []AccountRole   `db:"role" json:"role"`
+	Phone           []null.String   `db:"phone" json:"phone"`
+	Email           []null.String   `db:"email" json:"email"`
+	Username        []null.String   `db:"username" json:"username"`
+	Password        []null.String   `db:"password" json:"password"`
+	DateCreated     []time.Time     `db:"date_created" json:"date_created"`
+	DateCreatedFrom null.Time       `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time       `db:"date_created_to" json:"date_created_to"`
 }
 
 func (q *Queries) CountAccount(ctx context.Context, arg CountAccountParams) (int64, error) {
@@ -95,22 +95,22 @@ WHERE (
 `
 
 type CountContactParams struct {
-	ID              []uuid.UUID          `json:"id"`
-	AccountID       []uuid.UUID          `json:"account_id"`
-	FullName        []string             `json:"full_name"`
-	Phone           []string             `json:"phone"`
-	PhoneVerified   []bool               `json:"phone_verified"`
-	AddressType     []AccountAddressType `json:"address_type"`
-	DateCreated     []time.Time          `json:"date_created"`
-	DateCreatedFrom null.Time            `json:"date_created_from"`
-	DateCreatedTo   null.Time            `json:"date_created_to"`
-	Address         []string             `json:"address"`
-	Latitude        []float64            `json:"latitude"`
-	LatitudeFrom    null.Float           `json:"latitude_from"`
-	LatitudeTo      null.Float           `json:"latitude_to"`
-	Longitude       []float64            `json:"longitude"`
-	LongitudeFrom   null.Float           `json:"longitude_from"`
-	LongitudeTo     null.Float           `json:"longitude_to"`
+	ID              []uuid.UUID          `db:"id" json:"id"`
+	AccountID       []uuid.UUID          `db:"account_id" json:"account_id"`
+	FullName        []string             `db:"full_name" json:"full_name"`
+	Phone           []string             `db:"phone" json:"phone"`
+	PhoneVerified   []bool               `db:"phone_verified" json:"phone_verified"`
+	AddressType     []AccountAddressType `db:"address_type" json:"address_type"`
+	DateCreated     []time.Time          `db:"date_created" json:"date_created"`
+	DateCreatedFrom null.Time            `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time            `db:"date_created_to" json:"date_created_to"`
+	Address         []string             `db:"address" json:"address"`
+	Latitude        []float64            `db:"latitude" json:"latitude"`
+	LatitudeFrom    null.Float           `db:"latitude_from" json:"latitude_from"`
+	LatitudeTo      null.Float           `db:"latitude_to" json:"latitude_to"`
+	Longitude       []float64            `db:"longitude" json:"longitude"`
+	LongitudeFrom   null.Float           `db:"longitude_from" json:"longitude_from"`
+	LongitudeTo     null.Float           `db:"longitude_to" json:"longitude_to"`
 }
 
 func (q *Queries) CountContact(ctx context.Context, arg CountContactParams) (int64, error) {
@@ -151,12 +151,12 @@ WHERE (
 `
 
 type CountFavoriteParams struct {
-	ID              []int64     `json:"id"`
-	AccountID       []uuid.UUID `json:"account_id"`
-	SpuID           []uuid.UUID `json:"spu_id"`
-	DateCreated     []time.Time `json:"date_created"`
-	DateCreatedFrom null.Time   `json:"date_created_from"`
-	DateCreatedTo   null.Time   `json:"date_created_to"`
+	ID              []int64     `db:"id" json:"id"`
+	AccountID       []uuid.UUID `db:"account_id" json:"account_id"`
+	SpuID           []uuid.UUID `db:"spu_id" json:"spu_id"`
+	DateCreated     []time.Time `db:"date_created" json:"date_created"`
+	DateCreatedFrom null.Time   `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time   `db:"date_created_to" json:"date_created_to"`
 }
 
 func (q *Queries) CountFavorite(ctx context.Context, arg CountFavoriteParams) (int64, error) {
@@ -198,23 +198,23 @@ WHERE (
 `
 
 type CountNotificationParams struct {
-	ID                []int64           `json:"id"`
-	AccountID         []uuid.UUID       `json:"account_id"`
-	Type              []string          `json:"type"`
-	Channel           []string          `json:"channel"`
-	Title             []string          `json:"title"`
-	IsRead            []bool            `json:"is_read"`
-	Content           []string          `json:"content"`
-	Metadata          []json.RawMessage `json:"metadata"`
-	DateCreated       []time.Time       `json:"date_created"`
-	DateCreatedFrom   null.Time         `json:"date_created_from"`
-	DateCreatedTo     null.Time         `json:"date_created_to"`
-	DateSent          []null.Time       `json:"date_sent"`
-	DateSentFrom      null.Time         `json:"date_sent_from"`
-	DateSentTo        null.Time         `json:"date_sent_to"`
-	DateScheduled     []null.Time       `json:"date_scheduled"`
-	DateScheduledFrom null.Time         `json:"date_scheduled_from"`
-	DateScheduledTo   null.Time         `json:"date_scheduled_to"`
+	ID                []int64           `db:"id" json:"id"`
+	AccountID         []uuid.UUID       `db:"account_id" json:"account_id"`
+	Type              []string          `db:"type" json:"type"`
+	Channel           []string          `db:"channel" json:"channel"`
+	Title             []string          `db:"title" json:"title"`
+	IsRead            []bool            `db:"is_read" json:"is_read"`
+	Content           []string          `db:"content" json:"content"`
+	Metadata          []json.RawMessage `db:"metadata" json:"metadata"`
+	DateCreated       []time.Time       `db:"date_created" json:"date_created"`
+	DateCreatedFrom   null.Time         `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo     null.Time         `db:"date_created_to" json:"date_created_to"`
+	DateSent          []null.Time       `db:"date_sent" json:"date_sent"`
+	DateSentFrom      null.Time         `db:"date_sent_from" json:"date_sent_from"`
+	DateSentTo        null.Time         `db:"date_sent_to" json:"date_sent_to"`
+	DateScheduled     []null.Time       `db:"date_scheduled" json:"date_scheduled"`
+	DateScheduledFrom null.Time         `db:"date_scheduled_from" json:"date_scheduled_from"`
+	DateScheduledTo   null.Time         `db:"date_scheduled_to" json:"date_scheduled_to"`
 }
 
 func (q *Queries) CountNotification(ctx context.Context, arg CountNotificationParams) (int64, error) {
@@ -268,24 +268,24 @@ WHERE (
 `
 
 type CountProfileParams struct {
-	ID                  []uuid.UUID         `json:"id"`
-	Gender              []NullAccountGender `json:"gender"`
-	Name                []string            `json:"name"`
-	Description         []string            `json:"description"`
-	DateOfBirth         []null.Time         `json:"date_of_birth"`
-	DateOfBirthFrom     null.Time           `json:"date_of_birth_from"`
-	DateOfBirthTo       null.Time           `json:"date_of_birth_to"`
-	AvatarRsID          []uuid.NullUUID     `json:"avatar_rs_id"`
-	EmailVerified       []bool              `json:"email_verified"`
-	PhoneVerified       []bool              `json:"phone_verified"`
-	DateCreated         []time.Time         `json:"date_created"`
-	DateCreatedFrom     null.Time           `json:"date_created_from"`
-	DateCreatedTo       null.Time           `json:"date_created_to"`
-	Country             []string            `json:"country"`
-	InternalBalance     []int64             `json:"internal_balance"`
-	InternalBalanceFrom null.Int            `json:"internal_balance_from"`
-	InternalBalanceTo   null.Int            `json:"internal_balance_to"`
-	DefaultContactID    []uuid.NullUUID     `json:"default_contact_id"`
+	ID                  []uuid.UUID         `db:"id" json:"id"`
+	Gender              []NullAccountGender `db:"gender" json:"gender"`
+	Name                []string            `db:"name" json:"name"`
+	Description         []string            `db:"description" json:"description"`
+	DateOfBirth         []null.Time         `db:"date_of_birth" json:"date_of_birth"`
+	DateOfBirthFrom     null.Time           `db:"date_of_birth_from" json:"date_of_birth_from"`
+	DateOfBirthTo       null.Time           `db:"date_of_birth_to" json:"date_of_birth_to"`
+	AvatarRsID          []uuid.NullUUID     `db:"avatar_rs_id" json:"avatar_rs_id"`
+	EmailVerified       []bool              `db:"email_verified" json:"email_verified"`
+	PhoneVerified       []bool              `db:"phone_verified" json:"phone_verified"`
+	DateCreated         []time.Time         `db:"date_created" json:"date_created"`
+	DateCreatedFrom     null.Time           `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo       null.Time           `db:"date_created_to" json:"date_created_to"`
+	Country             []string            `db:"country" json:"country"`
+	InternalBalance     []int64             `db:"internal_balance" json:"internal_balance"`
+	InternalBalanceFrom null.Int            `db:"internal_balance_from" json:"internal_balance_from"`
+	InternalBalanceTo   null.Int            `db:"internal_balance_to" json:"internal_balance_to"`
+	DefaultContactID    []uuid.NullUUID     `db:"default_contact_id" json:"default_contact_id"`
 }
 
 func (q *Queries) CountProfile(ctx context.Context, arg CountProfileParams) (int64, error) {
@@ -321,14 +321,14 @@ RETURNING id, number, status, role, phone, email, username, password, date_creat
 `
 
 type CreateAccountParams struct {
-	ID          uuid.UUID     `json:"id"`
-	Status      AccountStatus `json:"status"`
-	Role        AccountRole   `json:"role"`
-	Phone       null.String   `json:"phone"`
-	Email       null.String   `json:"email"`
-	Username    null.String   `json:"username"`
-	Password    null.String   `json:"password"`
-	DateCreated time.Time     `json:"date_created"`
+	ID          uuid.UUID     `db:"id" json:"id"`
+	Status      AccountStatus `db:"status" json:"status"`
+	Role        AccountRole   `db:"role" json:"role"`
+	Phone       null.String   `db:"phone" json:"phone"`
+	Email       null.String   `db:"email" json:"email"`
+	Username    null.String   `db:"username" json:"username"`
+	Password    null.String   `db:"password" json:"password"`
+	DateCreated time.Time     `db:"date_created" json:"date_created"`
 }
 
 func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (AccountAccount, error) {
@@ -364,16 +364,16 @@ RETURNING id, account_id, full_name, phone, phone_verified, address_type, date_c
 `
 
 type CreateContactParams struct {
-	ID            uuid.UUID          `json:"id"`
-	AccountID     uuid.UUID          `json:"account_id"`
-	FullName      string             `json:"full_name"`
-	Phone         string             `json:"phone"`
-	PhoneVerified bool               `json:"phone_verified"`
-	AddressType   AccountAddressType `json:"address_type"`
-	DateCreated   time.Time          `json:"date_created"`
-	Address       string             `json:"address"`
-	Latitude      float64            `json:"latitude"`
-	Longitude     float64            `json:"longitude"`
+	ID            uuid.UUID          `db:"id" json:"id"`
+	AccountID     uuid.UUID          `db:"account_id" json:"account_id"`
+	FullName      string             `db:"full_name" json:"full_name"`
+	Phone         string             `db:"phone" json:"phone"`
+	PhoneVerified bool               `db:"phone_verified" json:"phone_verified"`
+	AddressType   AccountAddressType `db:"address_type" json:"address_type"`
+	DateCreated   time.Time          `db:"date_created" json:"date_created"`
+	Address       string             `db:"address" json:"address"`
+	Latitude      float64            `db:"latitude" json:"latitude"`
+	Longitude     float64            `db:"longitude" json:"longitude"`
 }
 
 func (q *Queries) CreateContact(ctx context.Context, arg CreateContactParams) (AccountContact, error) {
@@ -406,104 +406,104 @@ func (q *Queries) CreateContact(ctx context.Context, arg CreateContactParams) (A
 }
 
 type CreateCopyAccountParams struct {
-	ID          uuid.UUID     `json:"id"`
-	Status      AccountStatus `json:"status"`
-	Role        AccountRole   `json:"role"`
-	Phone       null.String   `json:"phone"`
-	Email       null.String   `json:"email"`
-	Username    null.String   `json:"username"`
-	Password    null.String   `json:"password"`
-	DateCreated time.Time     `json:"date_created"`
+	ID          uuid.UUID     `db:"id" json:"id"`
+	Status      AccountStatus `db:"status" json:"status"`
+	Role        AccountRole   `db:"role" json:"role"`
+	Phone       null.String   `db:"phone" json:"phone"`
+	Email       null.String   `db:"email" json:"email"`
+	Username    null.String   `db:"username" json:"username"`
+	Password    null.String   `db:"password" json:"password"`
+	DateCreated time.Time     `db:"date_created" json:"date_created"`
 }
 
 type CreateCopyContactParams struct {
-	ID            uuid.UUID          `json:"id"`
-	AccountID     uuid.UUID          `json:"account_id"`
-	FullName      string             `json:"full_name"`
-	Phone         string             `json:"phone"`
-	PhoneVerified bool               `json:"phone_verified"`
-	AddressType   AccountAddressType `json:"address_type"`
-	DateCreated   time.Time          `json:"date_created"`
-	Address       string             `json:"address"`
-	Latitude      float64            `json:"latitude"`
-	Longitude     float64            `json:"longitude"`
+	ID            uuid.UUID          `db:"id" json:"id"`
+	AccountID     uuid.UUID          `db:"account_id" json:"account_id"`
+	FullName      string             `db:"full_name" json:"full_name"`
+	Phone         string             `db:"phone" json:"phone"`
+	PhoneVerified bool               `db:"phone_verified" json:"phone_verified"`
+	AddressType   AccountAddressType `db:"address_type" json:"address_type"`
+	DateCreated   time.Time          `db:"date_created" json:"date_created"`
+	Address       string             `db:"address" json:"address"`
+	Latitude      float64            `db:"latitude" json:"latitude"`
+	Longitude     float64            `db:"longitude" json:"longitude"`
 }
 
 type CreateCopyDefaultAccountParams struct {
-	Phone    null.String `json:"phone"`
-	Email    null.String `json:"email"`
-	Username null.String `json:"username"`
-	Password null.String `json:"password"`
+	Phone    null.String `db:"phone" json:"phone"`
+	Email    null.String `db:"email" json:"email"`
+	Username null.String `db:"username" json:"username"`
+	Password null.String `db:"password" json:"password"`
 }
 
 type CreateCopyDefaultContactParams struct {
-	AccountID   uuid.UUID          `json:"account_id"`
-	FullName    string             `json:"full_name"`
-	Phone       string             `json:"phone"`
-	AddressType AccountAddressType `json:"address_type"`
-	Address     string             `json:"address"`
-	Latitude    float64            `json:"latitude"`
-	Longitude   float64            `json:"longitude"`
+	AccountID   uuid.UUID          `db:"account_id" json:"account_id"`
+	FullName    string             `db:"full_name" json:"full_name"`
+	Phone       string             `db:"phone" json:"phone"`
+	AddressType AccountAddressType `db:"address_type" json:"address_type"`
+	Address     string             `db:"address" json:"address"`
+	Latitude    float64            `db:"latitude" json:"latitude"`
+	Longitude   float64            `db:"longitude" json:"longitude"`
 }
 
 type CreateCopyDefaultFavoriteParams struct {
-	AccountID uuid.UUID `json:"account_id"`
-	SpuID     uuid.UUID `json:"spu_id"`
+	AccountID uuid.UUID `db:"account_id" json:"account_id"`
+	SpuID     uuid.UUID `db:"spu_id" json:"spu_id"`
 }
 
 type CreateCopyDefaultNotificationParams struct {
-	AccountID     uuid.UUID       `json:"account_id"`
-	Type          string          `json:"type"`
-	Channel       string          `json:"channel"`
-	Title         string          `json:"title"`
-	Content       string          `json:"content"`
-	Metadata      json.RawMessage `json:"metadata"`
-	DateSent      null.Time       `json:"date_sent"`
-	DateScheduled null.Time       `json:"date_scheduled"`
+	AccountID     uuid.UUID       `db:"account_id" json:"account_id"`
+	Type          string          `db:"type" json:"type"`
+	Channel       string          `db:"channel" json:"channel"`
+	Title         string          `db:"title" json:"title"`
+	Content       string          `db:"content" json:"content"`
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	DateSent      null.Time       `db:"date_sent" json:"date_sent"`
+	DateScheduled null.Time       `db:"date_scheduled" json:"date_scheduled"`
 }
 
 type CreateCopyDefaultProfileParams struct {
-	ID               uuid.UUID         `json:"id"`
-	Gender           NullAccountGender `json:"gender"`
-	Name             string            `json:"name"`
-	DateOfBirth      null.Time         `json:"date_of_birth"`
-	AvatarRsID       uuid.NullUUID     `json:"avatar_rs_id"`
-	Country          string            `json:"country"`
-	DefaultContactID uuid.NullUUID     `json:"default_contact_id"`
+	ID               uuid.UUID         `db:"id" json:"id"`
+	Gender           NullAccountGender `db:"gender" json:"gender"`
+	Name             string            `db:"name" json:"name"`
+	DateOfBirth      null.Time         `db:"date_of_birth" json:"date_of_birth"`
+	AvatarRsID       uuid.NullUUID     `db:"avatar_rs_id" json:"avatar_rs_id"`
+	Country          string            `db:"country" json:"country"`
+	DefaultContactID uuid.NullUUID     `db:"default_contact_id" json:"default_contact_id"`
 }
 
 type CreateCopyFavoriteParams struct {
-	AccountID   uuid.UUID `json:"account_id"`
-	SpuID       uuid.UUID `json:"spu_id"`
-	DateCreated time.Time `json:"date_created"`
+	AccountID   uuid.UUID `db:"account_id" json:"account_id"`
+	SpuID       uuid.UUID `db:"spu_id" json:"spu_id"`
+	DateCreated time.Time `db:"date_created" json:"date_created"`
 }
 
 type CreateCopyNotificationParams struct {
-	AccountID     uuid.UUID       `json:"account_id"`
-	Type          string          `json:"type"`
-	Channel       string          `json:"channel"`
-	Title         string          `json:"title"`
-	IsRead        bool            `json:"is_read"`
-	Content       string          `json:"content"`
-	Metadata      json.RawMessage `json:"metadata"`
-	DateCreated   time.Time       `json:"date_created"`
-	DateSent      null.Time       `json:"date_sent"`
-	DateScheduled null.Time       `json:"date_scheduled"`
+	AccountID     uuid.UUID       `db:"account_id" json:"account_id"`
+	Type          string          `db:"type" json:"type"`
+	Channel       string          `db:"channel" json:"channel"`
+	Title         string          `db:"title" json:"title"`
+	IsRead        bool            `db:"is_read" json:"is_read"`
+	Content       string          `db:"content" json:"content"`
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	DateCreated   time.Time       `db:"date_created" json:"date_created"`
+	DateSent      null.Time       `db:"date_sent" json:"date_sent"`
+	DateScheduled null.Time       `db:"date_scheduled" json:"date_scheduled"`
 }
 
 type CreateCopyProfileParams struct {
-	ID               uuid.UUID         `json:"id"`
-	Gender           NullAccountGender `json:"gender"`
-	Name             string            `json:"name"`
-	Description      string            `json:"description"`
-	DateOfBirth      null.Time         `json:"date_of_birth"`
-	AvatarRsID       uuid.NullUUID     `json:"avatar_rs_id"`
-	EmailVerified    bool              `json:"email_verified"`
-	PhoneVerified    bool              `json:"phone_verified"`
-	DateCreated      time.Time         `json:"date_created"`
-	Country          string            `json:"country"`
-	InternalBalance  int64             `json:"internal_balance"`
-	DefaultContactID uuid.NullUUID     `json:"default_contact_id"`
+	ID               uuid.UUID         `db:"id" json:"id"`
+	Gender           NullAccountGender `db:"gender" json:"gender"`
+	Name             string            `db:"name" json:"name"`
+	Description      string            `db:"description" json:"description"`
+	DateOfBirth      null.Time         `db:"date_of_birth" json:"date_of_birth"`
+	AvatarRsID       uuid.NullUUID     `db:"avatar_rs_id" json:"avatar_rs_id"`
+	EmailVerified    bool              `db:"email_verified" json:"email_verified"`
+	PhoneVerified    bool              `db:"phone_verified" json:"phone_verified"`
+	DateCreated      time.Time         `db:"date_created" json:"date_created"`
+	Country          string            `db:"country" json:"country"`
+	InternalBalance  int64             `db:"internal_balance" json:"internal_balance"`
+	DefaultContactID uuid.NullUUID     `db:"default_contact_id" json:"default_contact_id"`
 }
 
 const createDefaultAccount = `-- name: CreateDefaultAccount :one
@@ -513,10 +513,10 @@ RETURNING id, number, status, role, phone, email, username, password, date_creat
 `
 
 type CreateDefaultAccountParams struct {
-	Phone    null.String `json:"phone"`
-	Email    null.String `json:"email"`
-	Username null.String `json:"username"`
-	Password null.String `json:"password"`
+	Phone    null.String `db:"phone" json:"phone"`
+	Email    null.String `db:"email" json:"email"`
+	Username null.String `db:"username" json:"username"`
+	Password null.String `db:"password" json:"password"`
 }
 
 func (q *Queries) CreateDefaultAccount(ctx context.Context, arg CreateDefaultAccountParams) (AccountAccount, error) {
@@ -548,13 +548,13 @@ RETURNING id, account_id, full_name, phone, phone_verified, address_type, date_c
 `
 
 type CreateDefaultContactParams struct {
-	AccountID   uuid.UUID          `json:"account_id"`
-	FullName    string             `json:"full_name"`
-	Phone       string             `json:"phone"`
-	AddressType AccountAddressType `json:"address_type"`
-	Address     string             `json:"address"`
-	Latitude    float64            `json:"latitude"`
-	Longitude   float64            `json:"longitude"`
+	AccountID   uuid.UUID          `db:"account_id" json:"account_id"`
+	FullName    string             `db:"full_name" json:"full_name"`
+	Phone       string             `db:"phone" json:"phone"`
+	AddressType AccountAddressType `db:"address_type" json:"address_type"`
+	Address     string             `db:"address" json:"address"`
+	Latitude    float64            `db:"latitude" json:"latitude"`
+	Longitude   float64            `db:"longitude" json:"longitude"`
 }
 
 func (q *Queries) CreateDefaultContact(ctx context.Context, arg CreateDefaultContactParams) (AccountContact, error) {
@@ -590,8 +590,8 @@ RETURNING id, account_id, spu_id, date_created
 `
 
 type CreateDefaultFavoriteParams struct {
-	AccountID uuid.UUID `json:"account_id"`
-	SpuID     uuid.UUID `json:"spu_id"`
+	AccountID uuid.UUID `db:"account_id" json:"account_id"`
+	SpuID     uuid.UUID `db:"spu_id" json:"spu_id"`
 }
 
 func (q *Queries) CreateDefaultFavorite(ctx context.Context, arg CreateDefaultFavoriteParams) (AccountFavorite, error) {
@@ -613,14 +613,14 @@ RETURNING id, account_id, type, channel, title, is_read, content, metadata, date
 `
 
 type CreateDefaultNotificationParams struct {
-	AccountID     uuid.UUID       `json:"account_id"`
-	Type          string          `json:"type"`
-	Channel       string          `json:"channel"`
-	Title         string          `json:"title"`
-	Content       string          `json:"content"`
-	Metadata      json.RawMessage `json:"metadata"`
-	DateSent      null.Time       `json:"date_sent"`
-	DateScheduled null.Time       `json:"date_scheduled"`
+	AccountID     uuid.UUID       `db:"account_id" json:"account_id"`
+	Type          string          `db:"type" json:"type"`
+	Channel       string          `db:"channel" json:"channel"`
+	Title         string          `db:"title" json:"title"`
+	Content       string          `db:"content" json:"content"`
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	DateSent      null.Time       `db:"date_sent" json:"date_sent"`
+	DateScheduled null.Time       `db:"date_scheduled" json:"date_scheduled"`
 }
 
 func (q *Queries) CreateDefaultNotification(ctx context.Context, arg CreateDefaultNotificationParams) (AccountNotification, error) {
@@ -658,13 +658,13 @@ RETURNING id, gender, name, description, date_of_birth, avatar_rs_id, email_veri
 `
 
 type CreateDefaultProfileParams struct {
-	ID               uuid.UUID         `json:"id"`
-	Gender           NullAccountGender `json:"gender"`
-	Name             string            `json:"name"`
-	DateOfBirth      null.Time         `json:"date_of_birth"`
-	AvatarRsID       uuid.NullUUID     `json:"avatar_rs_id"`
-	Country          string            `json:"country"`
-	DefaultContactID uuid.NullUUID     `json:"default_contact_id"`
+	ID               uuid.UUID         `db:"id" json:"id"`
+	Gender           NullAccountGender `db:"gender" json:"gender"`
+	Name             string            `db:"name" json:"name"`
+	DateOfBirth      null.Time         `db:"date_of_birth" json:"date_of_birth"`
+	AvatarRsID       uuid.NullUUID     `db:"avatar_rs_id" json:"avatar_rs_id"`
+	Country          string            `db:"country" json:"country"`
+	DefaultContactID uuid.NullUUID     `db:"default_contact_id" json:"default_contact_id"`
 }
 
 func (q *Queries) CreateDefaultProfile(ctx context.Context, arg CreateDefaultProfileParams) (AccountProfile, error) {
@@ -702,9 +702,9 @@ RETURNING id, account_id, spu_id, date_created
 `
 
 type CreateFavoriteParams struct {
-	AccountID   uuid.UUID `json:"account_id"`
-	SpuID       uuid.UUID `json:"spu_id"`
-	DateCreated time.Time `json:"date_created"`
+	AccountID   uuid.UUID `db:"account_id" json:"account_id"`
+	SpuID       uuid.UUID `db:"spu_id" json:"spu_id"`
+	DateCreated time.Time `db:"date_created" json:"date_created"`
 }
 
 func (q *Queries) CreateFavorite(ctx context.Context, arg CreateFavoriteParams) (AccountFavorite, error) {
@@ -726,16 +726,16 @@ RETURNING id, account_id, type, channel, title, is_read, content, metadata, date
 `
 
 type CreateNotificationParams struct {
-	AccountID     uuid.UUID       `json:"account_id"`
-	Type          string          `json:"type"`
-	Channel       string          `json:"channel"`
-	Title         string          `json:"title"`
-	IsRead        bool            `json:"is_read"`
-	Content       string          `json:"content"`
-	Metadata      json.RawMessage `json:"metadata"`
-	DateCreated   time.Time       `json:"date_created"`
-	DateSent      null.Time       `json:"date_sent"`
-	DateScheduled null.Time       `json:"date_scheduled"`
+	AccountID     uuid.UUID       `db:"account_id" json:"account_id"`
+	Type          string          `db:"type" json:"type"`
+	Channel       string          `db:"channel" json:"channel"`
+	Title         string          `db:"title" json:"title"`
+	IsRead        bool            `db:"is_read" json:"is_read"`
+	Content       string          `db:"content" json:"content"`
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	DateCreated   time.Time       `db:"date_created" json:"date_created"`
+	DateSent      null.Time       `db:"date_sent" json:"date_sent"`
+	DateScheduled null.Time       `db:"date_scheduled" json:"date_scheduled"`
 }
 
 func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotificationParams) (AccountNotification, error) {
@@ -775,18 +775,18 @@ RETURNING id, gender, name, description, date_of_birth, avatar_rs_id, email_veri
 `
 
 type CreateProfileParams struct {
-	ID               uuid.UUID         `json:"id"`
-	Gender           NullAccountGender `json:"gender"`
-	Name             string            `json:"name"`
-	Description      string            `json:"description"`
-	DateOfBirth      null.Time         `json:"date_of_birth"`
-	AvatarRsID       uuid.NullUUID     `json:"avatar_rs_id"`
-	EmailVerified    bool              `json:"email_verified"`
-	PhoneVerified    bool              `json:"phone_verified"`
-	DateCreated      time.Time         `json:"date_created"`
-	Country          string            `json:"country"`
-	InternalBalance  int64             `json:"internal_balance"`
-	DefaultContactID uuid.NullUUID     `json:"default_contact_id"`
+	ID               uuid.UUID         `db:"id" json:"id"`
+	Gender           NullAccountGender `db:"gender" json:"gender"`
+	Name             string            `db:"name" json:"name"`
+	Description      string            `db:"description" json:"description"`
+	DateOfBirth      null.Time         `db:"date_of_birth" json:"date_of_birth"`
+	AvatarRsID       uuid.NullUUID     `db:"avatar_rs_id" json:"avatar_rs_id"`
+	EmailVerified    bool              `db:"email_verified" json:"email_verified"`
+	PhoneVerified    bool              `db:"phone_verified" json:"phone_verified"`
+	DateCreated      time.Time         `db:"date_created" json:"date_created"`
+	Country          string            `db:"country" json:"country"`
+	InternalBalance  int64             `db:"internal_balance" json:"internal_balance"`
+	DefaultContactID uuid.NullUUID     `db:"default_contact_id" json:"default_contact_id"`
 }
 
 func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (AccountProfile, error) {
@@ -842,19 +842,19 @@ WHERE (
 `
 
 type DeleteAccountParams struct {
-	ID              []uuid.UUID     `json:"id"`
-	Number          []int64         `json:"number"`
-	NumberFrom      null.Int        `json:"number_from"`
-	NumberTo        null.Int        `json:"number_to"`
-	Status          []AccountStatus `json:"status"`
-	Role            []AccountRole   `json:"role"`
-	Phone           []null.String   `json:"phone"`
-	Email           []null.String   `json:"email"`
-	Username        []null.String   `json:"username"`
-	Password        []null.String   `json:"password"`
-	DateCreated     []time.Time     `json:"date_created"`
-	DateCreatedFrom null.Time       `json:"date_created_from"`
-	DateCreatedTo   null.Time       `json:"date_created_to"`
+	ID              []uuid.UUID     `db:"id" json:"id"`
+	Number          []int64         `db:"number" json:"number"`
+	NumberFrom      null.Int        `db:"number_from" json:"number_from"`
+	NumberTo        null.Int        `db:"number_to" json:"number_to"`
+	Status          []AccountStatus `db:"status" json:"status"`
+	Role            []AccountRole   `db:"role" json:"role"`
+	Phone           []null.String   `db:"phone" json:"phone"`
+	Email           []null.String   `db:"email" json:"email"`
+	Username        []null.String   `db:"username" json:"username"`
+	Password        []null.String   `db:"password" json:"password"`
+	DateCreated     []time.Time     `db:"date_created" json:"date_created"`
+	DateCreatedFrom null.Time       `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time       `db:"date_created_to" json:"date_created_to"`
 }
 
 func (q *Queries) DeleteAccount(ctx context.Context, arg DeleteAccountParams) error {
@@ -899,22 +899,22 @@ WHERE (
 `
 
 type DeleteContactParams struct {
-	ID              []uuid.UUID          `json:"id"`
-	AccountID       []uuid.UUID          `json:"account_id"`
-	FullName        []string             `json:"full_name"`
-	Phone           []string             `json:"phone"`
-	PhoneVerified   []bool               `json:"phone_verified"`
-	AddressType     []AccountAddressType `json:"address_type"`
-	DateCreated     []time.Time          `json:"date_created"`
-	DateCreatedFrom null.Time            `json:"date_created_from"`
-	DateCreatedTo   null.Time            `json:"date_created_to"`
-	Address         []string             `json:"address"`
-	Latitude        []float64            `json:"latitude"`
-	LatitudeFrom    null.Float           `json:"latitude_from"`
-	LatitudeTo      null.Float           `json:"latitude_to"`
-	Longitude       []float64            `json:"longitude"`
-	LongitudeFrom   null.Float           `json:"longitude_from"`
-	LongitudeTo     null.Float           `json:"longitude_to"`
+	ID              []uuid.UUID          `db:"id" json:"id"`
+	AccountID       []uuid.UUID          `db:"account_id" json:"account_id"`
+	FullName        []string             `db:"full_name" json:"full_name"`
+	Phone           []string             `db:"phone" json:"phone"`
+	PhoneVerified   []bool               `db:"phone_verified" json:"phone_verified"`
+	AddressType     []AccountAddressType `db:"address_type" json:"address_type"`
+	DateCreated     []time.Time          `db:"date_created" json:"date_created"`
+	DateCreatedFrom null.Time            `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time            `db:"date_created_to" json:"date_created_to"`
+	Address         []string             `db:"address" json:"address"`
+	Latitude        []float64            `db:"latitude" json:"latitude"`
+	LatitudeFrom    null.Float           `db:"latitude_from" json:"latitude_from"`
+	LatitudeTo      null.Float           `db:"latitude_to" json:"latitude_to"`
+	Longitude       []float64            `db:"longitude" json:"longitude"`
+	LongitudeFrom   null.Float           `db:"longitude_from" json:"longitude_from"`
+	LongitudeTo     null.Float           `db:"longitude_to" json:"longitude_to"`
 }
 
 func (q *Queries) DeleteContact(ctx context.Context, arg DeleteContactParams) error {
@@ -952,12 +952,12 @@ WHERE (
 `
 
 type DeleteFavoriteParams struct {
-	ID              []int64     `json:"id"`
-	AccountID       []uuid.UUID `json:"account_id"`
-	SpuID           []uuid.UUID `json:"spu_id"`
-	DateCreated     []time.Time `json:"date_created"`
-	DateCreatedFrom null.Time   `json:"date_created_from"`
-	DateCreatedTo   null.Time   `json:"date_created_to"`
+	ID              []int64     `db:"id" json:"id"`
+	AccountID       []uuid.UUID `db:"account_id" json:"account_id"`
+	SpuID           []uuid.UUID `db:"spu_id" json:"spu_id"`
+	DateCreated     []time.Time `db:"date_created" json:"date_created"`
+	DateCreatedFrom null.Time   `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time   `db:"date_created_to" json:"date_created_to"`
 }
 
 func (q *Queries) DeleteFavorite(ctx context.Context, arg DeleteFavoriteParams) error {
@@ -996,23 +996,23 @@ WHERE (
 `
 
 type DeleteNotificationParams struct {
-	ID                []int64           `json:"id"`
-	AccountID         []uuid.UUID       `json:"account_id"`
-	Type              []string          `json:"type"`
-	Channel           []string          `json:"channel"`
-	Title             []string          `json:"title"`
-	IsRead            []bool            `json:"is_read"`
-	Content           []string          `json:"content"`
-	Metadata          []json.RawMessage `json:"metadata"`
-	DateCreated       []time.Time       `json:"date_created"`
-	DateCreatedFrom   null.Time         `json:"date_created_from"`
-	DateCreatedTo     null.Time         `json:"date_created_to"`
-	DateSent          []null.Time       `json:"date_sent"`
-	DateSentFrom      null.Time         `json:"date_sent_from"`
-	DateSentTo        null.Time         `json:"date_sent_to"`
-	DateScheduled     []null.Time       `json:"date_scheduled"`
-	DateScheduledFrom null.Time         `json:"date_scheduled_from"`
-	DateScheduledTo   null.Time         `json:"date_scheduled_to"`
+	ID                []int64           `db:"id" json:"id"`
+	AccountID         []uuid.UUID       `db:"account_id" json:"account_id"`
+	Type              []string          `db:"type" json:"type"`
+	Channel           []string          `db:"channel" json:"channel"`
+	Title             []string          `db:"title" json:"title"`
+	IsRead            []bool            `db:"is_read" json:"is_read"`
+	Content           []string          `db:"content" json:"content"`
+	Metadata          []json.RawMessage `db:"metadata" json:"metadata"`
+	DateCreated       []time.Time       `db:"date_created" json:"date_created"`
+	DateCreatedFrom   null.Time         `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo     null.Time         `db:"date_created_to" json:"date_created_to"`
+	DateSent          []null.Time       `db:"date_sent" json:"date_sent"`
+	DateSentFrom      null.Time         `db:"date_sent_from" json:"date_sent_from"`
+	DateSentTo        null.Time         `db:"date_sent_to" json:"date_sent_to"`
+	DateScheduled     []null.Time       `db:"date_scheduled" json:"date_scheduled"`
+	DateScheduledFrom null.Time         `db:"date_scheduled_from" json:"date_scheduled_from"`
+	DateScheduledTo   null.Time         `db:"date_scheduled_to" json:"date_scheduled_to"`
 }
 
 func (q *Queries) DeleteNotification(ctx context.Context, arg DeleteNotificationParams) error {
@@ -1063,24 +1063,24 @@ WHERE (
 `
 
 type DeleteProfileParams struct {
-	ID                  []uuid.UUID         `json:"id"`
-	Gender              []NullAccountGender `json:"gender"`
-	Name                []string            `json:"name"`
-	Description         []string            `json:"description"`
-	DateOfBirth         []null.Time         `json:"date_of_birth"`
-	DateOfBirthFrom     null.Time           `json:"date_of_birth_from"`
-	DateOfBirthTo       null.Time           `json:"date_of_birth_to"`
-	AvatarRsID          []uuid.NullUUID     `json:"avatar_rs_id"`
-	EmailVerified       []bool              `json:"email_verified"`
-	PhoneVerified       []bool              `json:"phone_verified"`
-	DateCreated         []time.Time         `json:"date_created"`
-	DateCreatedFrom     null.Time           `json:"date_created_from"`
-	DateCreatedTo       null.Time           `json:"date_created_to"`
-	Country             []string            `json:"country"`
-	InternalBalance     []int64             `json:"internal_balance"`
-	InternalBalanceFrom null.Int            `json:"internal_balance_from"`
-	InternalBalanceTo   null.Int            `json:"internal_balance_to"`
-	DefaultContactID    []uuid.NullUUID     `json:"default_contact_id"`
+	ID                  []uuid.UUID         `db:"id" json:"id"`
+	Gender              []NullAccountGender `db:"gender" json:"gender"`
+	Name                []string            `db:"name" json:"name"`
+	Description         []string            `db:"description" json:"description"`
+	DateOfBirth         []null.Time         `db:"date_of_birth" json:"date_of_birth"`
+	DateOfBirthFrom     null.Time           `db:"date_of_birth_from" json:"date_of_birth_from"`
+	DateOfBirthTo       null.Time           `db:"date_of_birth_to" json:"date_of_birth_to"`
+	AvatarRsID          []uuid.NullUUID     `db:"avatar_rs_id" json:"avatar_rs_id"`
+	EmailVerified       []bool              `db:"email_verified" json:"email_verified"`
+	PhoneVerified       []bool              `db:"phone_verified" json:"phone_verified"`
+	DateCreated         []time.Time         `db:"date_created" json:"date_created"`
+	DateCreatedFrom     null.Time           `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo       null.Time           `db:"date_created_to" json:"date_created_to"`
+	Country             []string            `db:"country" json:"country"`
+	InternalBalance     []int64             `db:"internal_balance" json:"internal_balance"`
+	InternalBalanceFrom null.Int            `db:"internal_balance_from" json:"internal_balance_from"`
+	InternalBalanceTo   null.Int            `db:"internal_balance_to" json:"internal_balance_to"`
+	DefaultContactID    []uuid.NullUUID     `db:"default_contact_id" json:"default_contact_id"`
 }
 
 func (q *Queries) DeleteProfile(ctx context.Context, arg DeleteProfileParams) error {
@@ -1117,10 +1117,10 @@ WHERE ("id" = $1) OR ("phone" = $2) OR ("email" = $3) OR ("username" = $4)
 `
 
 type GetAccountParams struct {
-	ID       uuid.NullUUID `json:"id"`
-	Phone    null.String   `json:"phone"`
-	Email    null.String   `json:"email"`
-	Username null.String   `json:"username"`
+	ID       uuid.NullUUID `db:"id" json:"id"`
+	Phone    null.String   `db:"phone" json:"phone"`
+	Email    null.String   `db:"email" json:"email"`
+	Username null.String   `db:"username" json:"username"`
 }
 
 // Code generated by pgtempl. DO NOT EDIT.
@@ -1186,9 +1186,9 @@ WHERE ("id" = $1) OR ("account_id" = $2 AND "spu_id" = $3)
 `
 
 type GetFavoriteParams struct {
-	ID        null.Int      `json:"id"`
-	AccountID uuid.NullUUID `json:"account_id"`
-	SpuID     uuid.NullUUID `json:"spu_id"`
+	ID        null.Int      `db:"id" json:"id"`
+	AccountID uuid.NullUUID `db:"account_id" json:"account_id"`
+	SpuID     uuid.NullUUID `db:"spu_id" json:"spu_id"`
 }
 
 // ========================================
@@ -1243,8 +1243,8 @@ WHERE ("id" = $1) OR ("avatar_rs_id" = $2)
 `
 
 type GetProfileParams struct {
-	ID         uuid.NullUUID `json:"id"`
-	AvatarRsID uuid.NullUUID `json:"avatar_rs_id"`
+	ID         uuid.NullUUID `db:"id" json:"id"`
+	AvatarRsID uuid.NullUUID `db:"avatar_rs_id" json:"avatar_rs_id"`
 }
 
 // ========================================
@@ -1270,938 +1270,6 @@ func (q *Queries) GetProfile(ctx context.Context, arg GetProfileParams) (Account
 	return i, err
 }
 
-const listAccount = `-- name: ListAccount :many
-SELECT id, number, status, role, phone, email, username, password, date_created
-FROM "account"."account"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("number" = ANY($2) OR $2 IS NULL) AND
-    ("number" >= $3 OR $3 IS NULL) AND
-    ("number" <= $4 OR $4 IS NULL) AND
-    ("status" = ANY($5) OR $5 IS NULL) AND
-    ("role" = ANY($6) OR $6 IS NULL) AND
-    ("phone" = ANY($7) OR $7 IS NULL) AND
-    ("email" = ANY($8) OR $8 IS NULL) AND
-    ("username" = ANY($9) OR $9 IS NULL) AND
-    ("password" = ANY($10) OR $10 IS NULL) AND
-    ("date_created" = ANY($11) OR $11 IS NULL) AND
-    ("date_created" >= $12 OR $12 IS NULL) AND
-    ("date_created" <= $13 OR $13 IS NULL)
-)
-ORDER BY "id"
-LIMIT $15::int
-OFFSET $14::int
-`
-
-type ListAccountParams struct {
-	ID              []uuid.UUID     `json:"id"`
-	Number          []int64         `json:"number"`
-	NumberFrom      null.Int        `json:"number_from"`
-	NumberTo        null.Int        `json:"number_to"`
-	Status          []AccountStatus `json:"status"`
-	Role            []AccountRole   `json:"role"`
-	Phone           []null.String   `json:"phone"`
-	Email           []null.String   `json:"email"`
-	Username        []null.String   `json:"username"`
-	Password        []null.String   `json:"password"`
-	DateCreated     []time.Time     `json:"date_created"`
-	DateCreatedFrom null.Time       `json:"date_created_from"`
-	DateCreatedTo   null.Time       `json:"date_created_to"`
-	Offset          null.Int32      `json:"offset"`
-	Limit           null.Int32      `json:"limit"`
-}
-
-func (q *Queries) ListAccount(ctx context.Context, arg ListAccountParams) ([]AccountAccount, error) {
-	rows, err := q.db.Query(ctx, listAccount,
-		arg.ID,
-		arg.Number,
-		arg.NumberFrom,
-		arg.NumberTo,
-		arg.Status,
-		arg.Role,
-		arg.Phone,
-		arg.Email,
-		arg.Username,
-		arg.Password,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AccountAccount{}
-	for rows.Next() {
-		var i AccountAccount
-		if err := rows.Scan(
-			&i.ID,
-			&i.Number,
-			&i.Status,
-			&i.Role,
-			&i.Phone,
-			&i.Email,
-			&i.Username,
-			&i.Password,
-			&i.DateCreated,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listContact = `-- name: ListContact :many
-SELECT id, account_id, full_name, phone, phone_verified, address_type, date_created, address, latitude, longitude
-FROM "account"."contact"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("account_id" = ANY($2) OR $2 IS NULL) AND
-    ("full_name" = ANY($3) OR $3 IS NULL) AND
-    ("phone" = ANY($4) OR $4 IS NULL) AND
-    ("phone_verified" = ANY($5) OR $5 IS NULL) AND
-    ("address_type" = ANY($6) OR $6 IS NULL) AND
-    ("date_created" = ANY($7) OR $7 IS NULL) AND
-    ("date_created" >= $8 OR $8 IS NULL) AND
-    ("date_created" <= $9 OR $9 IS NULL) AND
-    ("address" = ANY($10) OR $10 IS NULL) AND
-    ("latitude" = ANY($11) OR $11 IS NULL) AND
-    ("latitude" >= $12 OR $12 IS NULL) AND
-    ("latitude" <= $13 OR $13 IS NULL) AND
-    ("longitude" = ANY($14) OR $14 IS NULL) AND
-    ("longitude" >= $15 OR $15 IS NULL) AND
-    ("longitude" <= $16 OR $16 IS NULL)
-)
-ORDER BY "id"
-LIMIT $18::int
-OFFSET $17::int
-`
-
-type ListContactParams struct {
-	ID              []uuid.UUID          `json:"id"`
-	AccountID       []uuid.UUID          `json:"account_id"`
-	FullName        []string             `json:"full_name"`
-	Phone           []string             `json:"phone"`
-	PhoneVerified   []bool               `json:"phone_verified"`
-	AddressType     []AccountAddressType `json:"address_type"`
-	DateCreated     []time.Time          `json:"date_created"`
-	DateCreatedFrom null.Time            `json:"date_created_from"`
-	DateCreatedTo   null.Time            `json:"date_created_to"`
-	Address         []string             `json:"address"`
-	Latitude        []float64            `json:"latitude"`
-	LatitudeFrom    null.Float           `json:"latitude_from"`
-	LatitudeTo      null.Float           `json:"latitude_to"`
-	Longitude       []float64            `json:"longitude"`
-	LongitudeFrom   null.Float           `json:"longitude_from"`
-	LongitudeTo     null.Float           `json:"longitude_to"`
-	Offset          null.Int32           `json:"offset"`
-	Limit           null.Int32           `json:"limit"`
-}
-
-func (q *Queries) ListContact(ctx context.Context, arg ListContactParams) ([]AccountContact, error) {
-	rows, err := q.db.Query(ctx, listContact,
-		arg.ID,
-		arg.AccountID,
-		arg.FullName,
-		arg.Phone,
-		arg.PhoneVerified,
-		arg.AddressType,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Address,
-		arg.Latitude,
-		arg.LatitudeFrom,
-		arg.LatitudeTo,
-		arg.Longitude,
-		arg.LongitudeFrom,
-		arg.LongitudeTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AccountContact{}
-	for rows.Next() {
-		var i AccountContact
-		if err := rows.Scan(
-			&i.ID,
-			&i.AccountID,
-			&i.FullName,
-			&i.Phone,
-			&i.PhoneVerified,
-			&i.AddressType,
-			&i.DateCreated,
-			&i.Address,
-			&i.Latitude,
-			&i.Longitude,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCountAccount = `-- name: ListCountAccount :many
-SELECT embed_account.id, embed_account.number, embed_account.status, embed_account.role, embed_account.phone, embed_account.email, embed_account.username, embed_account.password, embed_account.date_created, COUNT(*) OVER() as total_count
-FROM "account"."account" embed_account
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("number" = ANY($2) OR $2 IS NULL) AND
-    ("number" >= $3 OR $3 IS NULL) AND
-    ("number" <= $4 OR $4 IS NULL) AND
-    ("status" = ANY($5) OR $5 IS NULL) AND
-    ("role" = ANY($6) OR $6 IS NULL) AND
-    ("phone" = ANY($7) OR $7 IS NULL) AND
-    ("email" = ANY($8) OR $8 IS NULL) AND
-    ("username" = ANY($9) OR $9 IS NULL) AND
-    ("password" = ANY($10) OR $10 IS NULL) AND
-    ("date_created" = ANY($11) OR $11 IS NULL) AND
-    ("date_created" >= $12 OR $12 IS NULL) AND
-    ("date_created" <= $13 OR $13 IS NULL)
-)
-ORDER BY "id"
-LIMIT $15::int
-OFFSET $14::int
-`
-
-type ListCountAccountParams struct {
-	ID              []uuid.UUID     `json:"id"`
-	Number          []int64         `json:"number"`
-	NumberFrom      null.Int        `json:"number_from"`
-	NumberTo        null.Int        `json:"number_to"`
-	Status          []AccountStatus `json:"status"`
-	Role            []AccountRole   `json:"role"`
-	Phone           []null.String   `json:"phone"`
-	Email           []null.String   `json:"email"`
-	Username        []null.String   `json:"username"`
-	Password        []null.String   `json:"password"`
-	DateCreated     []time.Time     `json:"date_created"`
-	DateCreatedFrom null.Time       `json:"date_created_from"`
-	DateCreatedTo   null.Time       `json:"date_created_to"`
-	Offset          null.Int32      `json:"offset"`
-	Limit           null.Int32      `json:"limit"`
-}
-
-type ListCountAccountRow struct {
-	AccountAccount AccountAccount `json:"account_account"`
-	TotalCount     int64          `json:"total_count"`
-}
-
-func (q *Queries) ListCountAccount(ctx context.Context, arg ListCountAccountParams) ([]ListCountAccountRow, error) {
-	rows, err := q.db.Query(ctx, listCountAccount,
-		arg.ID,
-		arg.Number,
-		arg.NumberFrom,
-		arg.NumberTo,
-		arg.Status,
-		arg.Role,
-		arg.Phone,
-		arg.Email,
-		arg.Username,
-		arg.Password,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountAccountRow{}
-	for rows.Next() {
-		var i ListCountAccountRow
-		if err := rows.Scan(
-			&i.AccountAccount.ID,
-			&i.AccountAccount.Number,
-			&i.AccountAccount.Status,
-			&i.AccountAccount.Role,
-			&i.AccountAccount.Phone,
-			&i.AccountAccount.Email,
-			&i.AccountAccount.Username,
-			&i.AccountAccount.Password,
-			&i.AccountAccount.DateCreated,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCountContact = `-- name: ListCountContact :many
-SELECT embed_contact.id, embed_contact.account_id, embed_contact.full_name, embed_contact.phone, embed_contact.phone_verified, embed_contact.address_type, embed_contact.date_created, embed_contact.address, embed_contact.latitude, embed_contact.longitude, COUNT(*) OVER() as total_count
-FROM "account"."contact" embed_contact
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("account_id" = ANY($2) OR $2 IS NULL) AND
-    ("full_name" = ANY($3) OR $3 IS NULL) AND
-    ("phone" = ANY($4) OR $4 IS NULL) AND
-    ("phone_verified" = ANY($5) OR $5 IS NULL) AND
-    ("address_type" = ANY($6) OR $6 IS NULL) AND
-    ("date_created" = ANY($7) OR $7 IS NULL) AND
-    ("date_created" >= $8 OR $8 IS NULL) AND
-    ("date_created" <= $9 OR $9 IS NULL) AND
-    ("address" = ANY($10) OR $10 IS NULL) AND
-    ("latitude" = ANY($11) OR $11 IS NULL) AND
-    ("latitude" >= $12 OR $12 IS NULL) AND
-    ("latitude" <= $13 OR $13 IS NULL) AND
-    ("longitude" = ANY($14) OR $14 IS NULL) AND
-    ("longitude" >= $15 OR $15 IS NULL) AND
-    ("longitude" <= $16 OR $16 IS NULL)
-)
-ORDER BY "id"
-LIMIT $18::int
-OFFSET $17::int
-`
-
-type ListCountContactParams struct {
-	ID              []uuid.UUID          `json:"id"`
-	AccountID       []uuid.UUID          `json:"account_id"`
-	FullName        []string             `json:"full_name"`
-	Phone           []string             `json:"phone"`
-	PhoneVerified   []bool               `json:"phone_verified"`
-	AddressType     []AccountAddressType `json:"address_type"`
-	DateCreated     []time.Time          `json:"date_created"`
-	DateCreatedFrom null.Time            `json:"date_created_from"`
-	DateCreatedTo   null.Time            `json:"date_created_to"`
-	Address         []string             `json:"address"`
-	Latitude        []float64            `json:"latitude"`
-	LatitudeFrom    null.Float           `json:"latitude_from"`
-	LatitudeTo      null.Float           `json:"latitude_to"`
-	Longitude       []float64            `json:"longitude"`
-	LongitudeFrom   null.Float           `json:"longitude_from"`
-	LongitudeTo     null.Float           `json:"longitude_to"`
-	Offset          null.Int32           `json:"offset"`
-	Limit           null.Int32           `json:"limit"`
-}
-
-type ListCountContactRow struct {
-	AccountContact AccountContact `json:"account_contact"`
-	TotalCount     int64          `json:"total_count"`
-}
-
-func (q *Queries) ListCountContact(ctx context.Context, arg ListCountContactParams) ([]ListCountContactRow, error) {
-	rows, err := q.db.Query(ctx, listCountContact,
-		arg.ID,
-		arg.AccountID,
-		arg.FullName,
-		arg.Phone,
-		arg.PhoneVerified,
-		arg.AddressType,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Address,
-		arg.Latitude,
-		arg.LatitudeFrom,
-		arg.LatitudeTo,
-		arg.Longitude,
-		arg.LongitudeFrom,
-		arg.LongitudeTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountContactRow{}
-	for rows.Next() {
-		var i ListCountContactRow
-		if err := rows.Scan(
-			&i.AccountContact.ID,
-			&i.AccountContact.AccountID,
-			&i.AccountContact.FullName,
-			&i.AccountContact.Phone,
-			&i.AccountContact.PhoneVerified,
-			&i.AccountContact.AddressType,
-			&i.AccountContact.DateCreated,
-			&i.AccountContact.Address,
-			&i.AccountContact.Latitude,
-			&i.AccountContact.Longitude,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCountFavorite = `-- name: ListCountFavorite :many
-SELECT embed_favorite.id, embed_favorite.account_id, embed_favorite.spu_id, embed_favorite.date_created, COUNT(*) OVER() as total_count
-FROM "account"."favorite" embed_favorite
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("account_id" = ANY($2) OR $2 IS NULL) AND
-    ("spu_id" = ANY($3) OR $3 IS NULL) AND
-    ("date_created" = ANY($4) OR $4 IS NULL) AND
-    ("date_created" >= $5 OR $5 IS NULL) AND
-    ("date_created" <= $6 OR $6 IS NULL)
-)
-ORDER BY "id"
-LIMIT $8::int
-OFFSET $7::int
-`
-
-type ListCountFavoriteParams struct {
-	ID              []int64     `json:"id"`
-	AccountID       []uuid.UUID `json:"account_id"`
-	SpuID           []uuid.UUID `json:"spu_id"`
-	DateCreated     []time.Time `json:"date_created"`
-	DateCreatedFrom null.Time   `json:"date_created_from"`
-	DateCreatedTo   null.Time   `json:"date_created_to"`
-	Offset          null.Int32  `json:"offset"`
-	Limit           null.Int32  `json:"limit"`
-}
-
-type ListCountFavoriteRow struct {
-	AccountFavorite AccountFavorite `json:"account_favorite"`
-	TotalCount      int64           `json:"total_count"`
-}
-
-func (q *Queries) ListCountFavorite(ctx context.Context, arg ListCountFavoriteParams) ([]ListCountFavoriteRow, error) {
-	rows, err := q.db.Query(ctx, listCountFavorite,
-		arg.ID,
-		arg.AccountID,
-		arg.SpuID,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountFavoriteRow{}
-	for rows.Next() {
-		var i ListCountFavoriteRow
-		if err := rows.Scan(
-			&i.AccountFavorite.ID,
-			&i.AccountFavorite.AccountID,
-			&i.AccountFavorite.SpuID,
-			&i.AccountFavorite.DateCreated,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCountNotification = `-- name: ListCountNotification :many
-SELECT embed_notification.id, embed_notification.account_id, embed_notification.type, embed_notification.channel, embed_notification.title, embed_notification.is_read, embed_notification.content, embed_notification.metadata, embed_notification.date_created, embed_notification.date_sent, embed_notification.date_scheduled, COUNT(*) OVER() as total_count
-FROM "account"."notification" embed_notification
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("account_id" = ANY($2) OR $2 IS NULL) AND
-    ("type" = ANY($3) OR $3 IS NULL) AND
-    ("channel" = ANY($4) OR $4 IS NULL) AND
-    ("title" = ANY($5) OR $5 IS NULL) AND
-    ("is_read" = ANY($6) OR $6 IS NULL) AND
-    ("content" = ANY($7) OR $7 IS NULL) AND
-    ("metadata" = ANY($8) OR $8 IS NULL) AND
-    ("date_created" = ANY($9) OR $9 IS NULL) AND
-    ("date_created" >= $10 OR $10 IS NULL) AND
-    ("date_created" <= $11 OR $11 IS NULL) AND
-    ("date_sent" = ANY($12) OR $12 IS NULL) AND
-    ("date_sent" >= $13 OR $13 IS NULL) AND
-    ("date_sent" <= $14 OR $14 IS NULL) AND
-    ("date_scheduled" = ANY($15) OR $15 IS NULL) AND
-    ("date_scheduled" >= $16 OR $16 IS NULL) AND
-    ("date_scheduled" <= $17 OR $17 IS NULL)
-)
-ORDER BY "id"
-LIMIT $19::int
-OFFSET $18::int
-`
-
-type ListCountNotificationParams struct {
-	ID                []int64           `json:"id"`
-	AccountID         []uuid.UUID       `json:"account_id"`
-	Type              []string          `json:"type"`
-	Channel           []string          `json:"channel"`
-	Title             []string          `json:"title"`
-	IsRead            []bool            `json:"is_read"`
-	Content           []string          `json:"content"`
-	Metadata          []json.RawMessage `json:"metadata"`
-	DateCreated       []time.Time       `json:"date_created"`
-	DateCreatedFrom   null.Time         `json:"date_created_from"`
-	DateCreatedTo     null.Time         `json:"date_created_to"`
-	DateSent          []null.Time       `json:"date_sent"`
-	DateSentFrom      null.Time         `json:"date_sent_from"`
-	DateSentTo        null.Time         `json:"date_sent_to"`
-	DateScheduled     []null.Time       `json:"date_scheduled"`
-	DateScheduledFrom null.Time         `json:"date_scheduled_from"`
-	DateScheduledTo   null.Time         `json:"date_scheduled_to"`
-	Offset            null.Int32        `json:"offset"`
-	Limit             null.Int32        `json:"limit"`
-}
-
-type ListCountNotificationRow struct {
-	AccountNotification AccountNotification `json:"account_notification"`
-	TotalCount          int64               `json:"total_count"`
-}
-
-func (q *Queries) ListCountNotification(ctx context.Context, arg ListCountNotificationParams) ([]ListCountNotificationRow, error) {
-	rows, err := q.db.Query(ctx, listCountNotification,
-		arg.ID,
-		arg.AccountID,
-		arg.Type,
-		arg.Channel,
-		arg.Title,
-		arg.IsRead,
-		arg.Content,
-		arg.Metadata,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.DateSent,
-		arg.DateSentFrom,
-		arg.DateSentTo,
-		arg.DateScheduled,
-		arg.DateScheduledFrom,
-		arg.DateScheduledTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountNotificationRow{}
-	for rows.Next() {
-		var i ListCountNotificationRow
-		if err := rows.Scan(
-			&i.AccountNotification.ID,
-			&i.AccountNotification.AccountID,
-			&i.AccountNotification.Type,
-			&i.AccountNotification.Channel,
-			&i.AccountNotification.Title,
-			&i.AccountNotification.IsRead,
-			&i.AccountNotification.Content,
-			&i.AccountNotification.Metadata,
-			&i.AccountNotification.DateCreated,
-			&i.AccountNotification.DateSent,
-			&i.AccountNotification.DateScheduled,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCountProfile = `-- name: ListCountProfile :many
-SELECT embed_profile.id, embed_profile.gender, embed_profile.name, embed_profile.description, embed_profile.date_of_birth, embed_profile.avatar_rs_id, embed_profile.email_verified, embed_profile.phone_verified, embed_profile.date_created, embed_profile.country, embed_profile.internal_balance, embed_profile.default_contact_id, COUNT(*) OVER() as total_count
-FROM "account"."profile" embed_profile
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("gender" = ANY($2) OR $2 IS NULL) AND
-    ("name" = ANY($3) OR $3 IS NULL) AND
-    ("description" = ANY($4) OR $4 IS NULL) AND
-    ("date_of_birth" = ANY($5) OR $5 IS NULL) AND
-    ("date_of_birth" >= $6 OR $6 IS NULL) AND
-    ("date_of_birth" <= $7 OR $7 IS NULL) AND
-    ("avatar_rs_id" = ANY($8) OR $8 IS NULL) AND
-    ("email_verified" = ANY($9) OR $9 IS NULL) AND
-    ("phone_verified" = ANY($10) OR $10 IS NULL) AND
-    ("date_created" = ANY($11) OR $11 IS NULL) AND
-    ("date_created" >= $12 OR $12 IS NULL) AND
-    ("date_created" <= $13 OR $13 IS NULL) AND
-    ("country" = ANY($14) OR $14 IS NULL) AND
-    ("internal_balance" = ANY($15) OR $15 IS NULL) AND
-    ("internal_balance" >= $16 OR $16 IS NULL) AND
-    ("internal_balance" <= $17 OR $17 IS NULL) AND
-    ("default_contact_id" = ANY($18) OR $18 IS NULL)
-)
-ORDER BY "id"
-LIMIT $20::int
-OFFSET $19::int
-`
-
-type ListCountProfileParams struct {
-	ID                  []uuid.UUID         `json:"id"`
-	Gender              []NullAccountGender `json:"gender"`
-	Name                []string            `json:"name"`
-	Description         []string            `json:"description"`
-	DateOfBirth         []null.Time         `json:"date_of_birth"`
-	DateOfBirthFrom     null.Time           `json:"date_of_birth_from"`
-	DateOfBirthTo       null.Time           `json:"date_of_birth_to"`
-	AvatarRsID          []uuid.NullUUID     `json:"avatar_rs_id"`
-	EmailVerified       []bool              `json:"email_verified"`
-	PhoneVerified       []bool              `json:"phone_verified"`
-	DateCreated         []time.Time         `json:"date_created"`
-	DateCreatedFrom     null.Time           `json:"date_created_from"`
-	DateCreatedTo       null.Time           `json:"date_created_to"`
-	Country             []string            `json:"country"`
-	InternalBalance     []int64             `json:"internal_balance"`
-	InternalBalanceFrom null.Int            `json:"internal_balance_from"`
-	InternalBalanceTo   null.Int            `json:"internal_balance_to"`
-	DefaultContactID    []uuid.NullUUID     `json:"default_contact_id"`
-	Offset              null.Int32          `json:"offset"`
-	Limit               null.Int32          `json:"limit"`
-}
-
-type ListCountProfileRow struct {
-	AccountProfile AccountProfile `json:"account_profile"`
-	TotalCount     int64          `json:"total_count"`
-}
-
-func (q *Queries) ListCountProfile(ctx context.Context, arg ListCountProfileParams) ([]ListCountProfileRow, error) {
-	rows, err := q.db.Query(ctx, listCountProfile,
-		arg.ID,
-		arg.Gender,
-		arg.Name,
-		arg.Description,
-		arg.DateOfBirth,
-		arg.DateOfBirthFrom,
-		arg.DateOfBirthTo,
-		arg.AvatarRsID,
-		arg.EmailVerified,
-		arg.PhoneVerified,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Country,
-		arg.InternalBalance,
-		arg.InternalBalanceFrom,
-		arg.InternalBalanceTo,
-		arg.DefaultContactID,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountProfileRow{}
-	for rows.Next() {
-		var i ListCountProfileRow
-		if err := rows.Scan(
-			&i.AccountProfile.ID,
-			&i.AccountProfile.Gender,
-			&i.AccountProfile.Name,
-			&i.AccountProfile.Description,
-			&i.AccountProfile.DateOfBirth,
-			&i.AccountProfile.AvatarRsID,
-			&i.AccountProfile.EmailVerified,
-			&i.AccountProfile.PhoneVerified,
-			&i.AccountProfile.DateCreated,
-			&i.AccountProfile.Country,
-			&i.AccountProfile.InternalBalance,
-			&i.AccountProfile.DefaultContactID,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listFavorite = `-- name: ListFavorite :many
-SELECT id, account_id, spu_id, date_created
-FROM "account"."favorite"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("account_id" = ANY($2) OR $2 IS NULL) AND
-    ("spu_id" = ANY($3) OR $3 IS NULL) AND
-    ("date_created" = ANY($4) OR $4 IS NULL) AND
-    ("date_created" >= $5 OR $5 IS NULL) AND
-    ("date_created" <= $6 OR $6 IS NULL)
-)
-ORDER BY "id"
-LIMIT $8::int
-OFFSET $7::int
-`
-
-type ListFavoriteParams struct {
-	ID              []int64     `json:"id"`
-	AccountID       []uuid.UUID `json:"account_id"`
-	SpuID           []uuid.UUID `json:"spu_id"`
-	DateCreated     []time.Time `json:"date_created"`
-	DateCreatedFrom null.Time   `json:"date_created_from"`
-	DateCreatedTo   null.Time   `json:"date_created_to"`
-	Offset          null.Int32  `json:"offset"`
-	Limit           null.Int32  `json:"limit"`
-}
-
-func (q *Queries) ListFavorite(ctx context.Context, arg ListFavoriteParams) ([]AccountFavorite, error) {
-	rows, err := q.db.Query(ctx, listFavorite,
-		arg.ID,
-		arg.AccountID,
-		arg.SpuID,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AccountFavorite{}
-	for rows.Next() {
-		var i AccountFavorite
-		if err := rows.Scan(
-			&i.ID,
-			&i.AccountID,
-			&i.SpuID,
-			&i.DateCreated,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listNotification = `-- name: ListNotification :many
-SELECT id, account_id, type, channel, title, is_read, content, metadata, date_created, date_sent, date_scheduled
-FROM "account"."notification"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("account_id" = ANY($2) OR $2 IS NULL) AND
-    ("type" = ANY($3) OR $3 IS NULL) AND
-    ("channel" = ANY($4) OR $4 IS NULL) AND
-    ("title" = ANY($5) OR $5 IS NULL) AND
-    ("is_read" = ANY($6) OR $6 IS NULL) AND
-    ("content" = ANY($7) OR $7 IS NULL) AND
-    ("metadata" = ANY($8) OR $8 IS NULL) AND
-    ("date_created" = ANY($9) OR $9 IS NULL) AND
-    ("date_created" >= $10 OR $10 IS NULL) AND
-    ("date_created" <= $11 OR $11 IS NULL) AND
-    ("date_sent" = ANY($12) OR $12 IS NULL) AND
-    ("date_sent" >= $13 OR $13 IS NULL) AND
-    ("date_sent" <= $14 OR $14 IS NULL) AND
-    ("date_scheduled" = ANY($15) OR $15 IS NULL) AND
-    ("date_scheduled" >= $16 OR $16 IS NULL) AND
-    ("date_scheduled" <= $17 OR $17 IS NULL)
-)
-ORDER BY "id"
-LIMIT $19::int
-OFFSET $18::int
-`
-
-type ListNotificationParams struct {
-	ID                []int64           `json:"id"`
-	AccountID         []uuid.UUID       `json:"account_id"`
-	Type              []string          `json:"type"`
-	Channel           []string          `json:"channel"`
-	Title             []string          `json:"title"`
-	IsRead            []bool            `json:"is_read"`
-	Content           []string          `json:"content"`
-	Metadata          []json.RawMessage `json:"metadata"`
-	DateCreated       []time.Time       `json:"date_created"`
-	DateCreatedFrom   null.Time         `json:"date_created_from"`
-	DateCreatedTo     null.Time         `json:"date_created_to"`
-	DateSent          []null.Time       `json:"date_sent"`
-	DateSentFrom      null.Time         `json:"date_sent_from"`
-	DateSentTo        null.Time         `json:"date_sent_to"`
-	DateScheduled     []null.Time       `json:"date_scheduled"`
-	DateScheduledFrom null.Time         `json:"date_scheduled_from"`
-	DateScheduledTo   null.Time         `json:"date_scheduled_to"`
-	Offset            null.Int32        `json:"offset"`
-	Limit             null.Int32        `json:"limit"`
-}
-
-func (q *Queries) ListNotification(ctx context.Context, arg ListNotificationParams) ([]AccountNotification, error) {
-	rows, err := q.db.Query(ctx, listNotification,
-		arg.ID,
-		arg.AccountID,
-		arg.Type,
-		arg.Channel,
-		arg.Title,
-		arg.IsRead,
-		arg.Content,
-		arg.Metadata,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.DateSent,
-		arg.DateSentFrom,
-		arg.DateSentTo,
-		arg.DateScheduled,
-		arg.DateScheduledFrom,
-		arg.DateScheduledTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AccountNotification{}
-	for rows.Next() {
-		var i AccountNotification
-		if err := rows.Scan(
-			&i.ID,
-			&i.AccountID,
-			&i.Type,
-			&i.Channel,
-			&i.Title,
-			&i.IsRead,
-			&i.Content,
-			&i.Metadata,
-			&i.DateCreated,
-			&i.DateSent,
-			&i.DateScheduled,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listProfile = `-- name: ListProfile :many
-SELECT id, gender, name, description, date_of_birth, avatar_rs_id, email_verified, phone_verified, date_created, country, internal_balance, default_contact_id
-FROM "account"."profile"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("gender" = ANY($2) OR $2 IS NULL) AND
-    ("name" = ANY($3) OR $3 IS NULL) AND
-    ("description" = ANY($4) OR $4 IS NULL) AND
-    ("date_of_birth" = ANY($5) OR $5 IS NULL) AND
-    ("date_of_birth" >= $6 OR $6 IS NULL) AND
-    ("date_of_birth" <= $7 OR $7 IS NULL) AND
-    ("avatar_rs_id" = ANY($8) OR $8 IS NULL) AND
-    ("email_verified" = ANY($9) OR $9 IS NULL) AND
-    ("phone_verified" = ANY($10) OR $10 IS NULL) AND
-    ("date_created" = ANY($11) OR $11 IS NULL) AND
-    ("date_created" >= $12 OR $12 IS NULL) AND
-    ("date_created" <= $13 OR $13 IS NULL) AND
-    ("country" = ANY($14) OR $14 IS NULL) AND
-    ("internal_balance" = ANY($15) OR $15 IS NULL) AND
-    ("internal_balance" >= $16 OR $16 IS NULL) AND
-    ("internal_balance" <= $17 OR $17 IS NULL) AND
-    ("default_contact_id" = ANY($18) OR $18 IS NULL)
-)
-ORDER BY "id"
-LIMIT $20::int
-OFFSET $19::int
-`
-
-type ListProfileParams struct {
-	ID                  []uuid.UUID         `json:"id"`
-	Gender              []NullAccountGender `json:"gender"`
-	Name                []string            `json:"name"`
-	Description         []string            `json:"description"`
-	DateOfBirth         []null.Time         `json:"date_of_birth"`
-	DateOfBirthFrom     null.Time           `json:"date_of_birth_from"`
-	DateOfBirthTo       null.Time           `json:"date_of_birth_to"`
-	AvatarRsID          []uuid.NullUUID     `json:"avatar_rs_id"`
-	EmailVerified       []bool              `json:"email_verified"`
-	PhoneVerified       []bool              `json:"phone_verified"`
-	DateCreated         []time.Time         `json:"date_created"`
-	DateCreatedFrom     null.Time           `json:"date_created_from"`
-	DateCreatedTo       null.Time           `json:"date_created_to"`
-	Country             []string            `json:"country"`
-	InternalBalance     []int64             `json:"internal_balance"`
-	InternalBalanceFrom null.Int            `json:"internal_balance_from"`
-	InternalBalanceTo   null.Int            `json:"internal_balance_to"`
-	DefaultContactID    []uuid.NullUUID     `json:"default_contact_id"`
-	Offset              null.Int32          `json:"offset"`
-	Limit               null.Int32          `json:"limit"`
-}
-
-func (q *Queries) ListProfile(ctx context.Context, arg ListProfileParams) ([]AccountProfile, error) {
-	rows, err := q.db.Query(ctx, listProfile,
-		arg.ID,
-		arg.Gender,
-		arg.Name,
-		arg.Description,
-		arg.DateOfBirth,
-		arg.DateOfBirthFrom,
-		arg.DateOfBirthTo,
-		arg.AvatarRsID,
-		arg.EmailVerified,
-		arg.PhoneVerified,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Country,
-		arg.InternalBalance,
-		arg.InternalBalanceFrom,
-		arg.InternalBalanceTo,
-		arg.DefaultContactID,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AccountProfile{}
-	for rows.Next() {
-		var i AccountProfile
-		if err := rows.Scan(
-			&i.ID,
-			&i.Gender,
-			&i.Name,
-			&i.Description,
-			&i.DateOfBirth,
-			&i.AvatarRsID,
-			&i.EmailVerified,
-			&i.PhoneVerified,
-			&i.DateCreated,
-			&i.Country,
-			&i.InternalBalance,
-			&i.DefaultContactID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const updateAccount = `-- name: UpdateAccount :one
 UPDATE "account"."account"
 SET "status" = COALESCE($1, "status"),
@@ -2216,18 +1284,18 @@ RETURNING id, number, status, role, phone, email, username, password, date_creat
 `
 
 type UpdateAccountParams struct {
-	Status       NullAccountStatus `json:"status"`
-	Role         NullAccountRole   `json:"role"`
-	NullPhone    bool              `json:"null_phone"`
-	Phone        null.String       `json:"phone"`
-	NullEmail    bool              `json:"null_email"`
-	Email        null.String       `json:"email"`
-	NullUsername bool              `json:"null_username"`
-	Username     null.String       `json:"username"`
-	NullPassword bool              `json:"null_password"`
-	Password     null.String       `json:"password"`
-	DateCreated  null.Time         `json:"date_created"`
-	ID           uuid.UUID         `json:"id"`
+	Status       NullAccountStatus `db:"status" json:"status"`
+	Role         NullAccountRole   `db:"role" json:"role"`
+	NullPhone    bool              `db:"null_phone" json:"null_phone"`
+	Phone        null.String       `db:"phone" json:"phone"`
+	NullEmail    bool              `db:"null_email" json:"null_email"`
+	Email        null.String       `db:"email" json:"email"`
+	NullUsername bool              `db:"null_username" json:"null_username"`
+	Username     null.String       `db:"username" json:"username"`
+	NullPassword bool              `db:"null_password" json:"null_password"`
+	Password     null.String       `db:"password" json:"password"`
+	DateCreated  null.Time         `db:"date_created" json:"date_created"`
+	ID           uuid.UUID         `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (AccountAccount, error) {
@@ -2276,16 +1344,16 @@ RETURNING id, account_id, full_name, phone, phone_verified, address_type, date_c
 `
 
 type UpdateContactParams struct {
-	AccountID     uuid.NullUUID          `json:"account_id"`
-	FullName      null.String            `json:"full_name"`
-	Phone         null.String            `json:"phone"`
-	PhoneVerified null.Bool              `json:"phone_verified"`
-	AddressType   NullAccountAddressType `json:"address_type"`
-	DateCreated   null.Time              `json:"date_created"`
-	Address       null.String            `json:"address"`
-	Latitude      null.Float             `json:"latitude"`
-	Longitude     null.Float             `json:"longitude"`
-	ID            uuid.UUID              `json:"id"`
+	AccountID     uuid.NullUUID          `db:"account_id" json:"account_id"`
+	FullName      null.String            `db:"full_name" json:"full_name"`
+	Phone         null.String            `db:"phone" json:"phone"`
+	PhoneVerified null.Bool              `db:"phone_verified" json:"phone_verified"`
+	AddressType   NullAccountAddressType `db:"address_type" json:"address_type"`
+	DateCreated   null.Time              `db:"date_created" json:"date_created"`
+	Address       null.String            `db:"address" json:"address"`
+	Latitude      null.Float             `db:"latitude" json:"latitude"`
+	Longitude     null.Float             `db:"longitude" json:"longitude"`
+	ID            uuid.UUID              `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateContact(ctx context.Context, arg UpdateContactParams) (AccountContact, error) {
@@ -2327,10 +1395,10 @@ RETURNING id, account_id, spu_id, date_created
 `
 
 type UpdateFavoriteParams struct {
-	AccountID   uuid.NullUUID `json:"account_id"`
-	SpuID       uuid.NullUUID `json:"spu_id"`
-	DateCreated null.Time     `json:"date_created"`
-	ID          int64         `json:"id"`
+	AccountID   uuid.NullUUID `db:"account_id" json:"account_id"`
+	SpuID       uuid.NullUUID `db:"spu_id" json:"spu_id"`
+	DateCreated null.Time     `db:"date_created" json:"date_created"`
+	ID          int64         `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateFavorite(ctx context.Context, arg UpdateFavoriteParams) (AccountFavorite, error) {
@@ -2367,20 +1435,20 @@ RETURNING id, account_id, type, channel, title, is_read, content, metadata, date
 `
 
 type UpdateNotificationParams struct {
-	AccountID         uuid.NullUUID   `json:"account_id"`
-	Type              null.String     `json:"type"`
-	Channel           null.String     `json:"channel"`
-	Title             null.String     `json:"title"`
-	IsRead            null.Bool       `json:"is_read"`
-	Content           null.String     `json:"content"`
-	NullMetadata      bool            `json:"null_metadata"`
-	Metadata          json.RawMessage `json:"metadata"`
-	DateCreated       null.Time       `json:"date_created"`
-	NullDateSent      bool            `json:"null_date_sent"`
-	DateSent          null.Time       `json:"date_sent"`
-	NullDateScheduled bool            `json:"null_date_scheduled"`
-	DateScheduled     null.Time       `json:"date_scheduled"`
-	ID                int64           `json:"id"`
+	AccountID         uuid.NullUUID   `db:"account_id" json:"account_id"`
+	Type              null.String     `db:"type" json:"type"`
+	Channel           null.String     `db:"channel" json:"channel"`
+	Title             null.String     `db:"title" json:"title"`
+	IsRead            null.Bool       `db:"is_read" json:"is_read"`
+	Content           null.String     `db:"content" json:"content"`
+	NullMetadata      bool            `db:"null_metadata" json:"null_metadata"`
+	Metadata          json.RawMessage `db:"metadata" json:"metadata"`
+	DateCreated       null.Time       `db:"date_created" json:"date_created"`
+	NullDateSent      bool            `db:"null_date_sent" json:"null_date_sent"`
+	DateSent          null.Time       `db:"date_sent" json:"date_sent"`
+	NullDateScheduled bool            `db:"null_date_scheduled" json:"null_date_scheduled"`
+	DateScheduled     null.Time       `db:"date_scheduled" json:"date_scheduled"`
+	ID                int64           `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateNotification(ctx context.Context, arg UpdateNotificationParams) (AccountNotification, error) {
@@ -2435,22 +1503,22 @@ RETURNING id, gender, name, description, date_of_birth, avatar_rs_id, email_veri
 `
 
 type UpdateProfileParams struct {
-	NullGender           bool              `json:"null_gender"`
-	Gender               NullAccountGender `json:"gender"`
-	Name                 null.String       `json:"name"`
-	Description          null.String       `json:"description"`
-	NullDateOfBirth      bool              `json:"null_date_of_birth"`
-	DateOfBirth          null.Time         `json:"date_of_birth"`
-	NullAvatarRsID       bool              `json:"null_avatar_rs_id"`
-	AvatarRsID           uuid.NullUUID     `json:"avatar_rs_id"`
-	EmailVerified        null.Bool         `json:"email_verified"`
-	PhoneVerified        null.Bool         `json:"phone_verified"`
-	DateCreated          null.Time         `json:"date_created"`
-	Country              null.String       `json:"country"`
-	InternalBalance      null.Int          `json:"internal_balance"`
-	NullDefaultContactID bool              `json:"null_default_contact_id"`
-	DefaultContactID     uuid.NullUUID     `json:"default_contact_id"`
-	ID                   uuid.UUID         `json:"id"`
+	NullGender           bool              `db:"null_gender" json:"null_gender"`
+	Gender               NullAccountGender `db:"gender" json:"gender"`
+	Name                 null.String       `db:"name" json:"name"`
+	Description          null.String       `db:"description" json:"description"`
+	NullDateOfBirth      bool              `db:"null_date_of_birth" json:"null_date_of_birth"`
+	DateOfBirth          null.Time         `db:"date_of_birth" json:"date_of_birth"`
+	NullAvatarRsID       bool              `db:"null_avatar_rs_id" json:"null_avatar_rs_id"`
+	AvatarRsID           uuid.NullUUID     `db:"avatar_rs_id" json:"avatar_rs_id"`
+	EmailVerified        null.Bool         `db:"email_verified" json:"email_verified"`
+	PhoneVerified        null.Bool         `db:"phone_verified" json:"phone_verified"`
+	DateCreated          null.Time         `db:"date_created" json:"date_created"`
+	Country              null.String       `db:"country" json:"country"`
+	InternalBalance      null.Int          `db:"internal_balance" json:"internal_balance"`
+	NullDefaultContactID bool              `db:"null_default_contact_id" json:"null_default_contact_id"`
+	DefaultContactID     uuid.NullUUID     `db:"default_contact_id" json:"default_contact_id"`
+	ID                   uuid.UUID         `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (AccountProfile, error) {

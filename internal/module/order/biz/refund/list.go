@@ -13,6 +13,7 @@ import (
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/paginate"
+	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 )
 
@@ -32,30 +33,25 @@ func (b *RefundHandler) ListBuyerRefunds(
 		return zero, fmt.Errorf("validate list buyer refunds: %w", err)
 	}
 
-	rows, err := b.Storage.Querier().ListCountRefund(ctx, orderdb.ListCountRefundParams{
-		AccountID: []uuid.UUID{params.BuyerID},
-		Offset:    params.Offset(),
-		Limit:     params.Limit,
+	res, err := b.Storage.Querier().ListRefund(ctx, repolist.FromParams(params.Params), orderdb.ListRefundFilter{
+		AccountId: []uuid.UUID{params.BuyerID},
 	})
 	if err != nil {
 		return zero, fmt.Errorf("list buyer refunds: %w", err)
 	}
-	if len(rows) == 0 {
+	if len(res.Data) == 0 {
 		return zero, nil
 	}
 
-	refunds, err := b.HydrateRefunds(
-		ctx,
-		lo.Map(rows, func(r orderdb.ListCountRefundRow, _ int) orderdb.OrderRefund { return r.OrderRefund })...,
-	)
+	refunds, err := b.HydrateRefunds(ctx, res.Data...)
 	if err != nil {
 		return zero, fmt.Errorf("hydrate buyer refunds: %w", err)
 	}
 
 	return paginate.PaginateResult[ordermodel.Refund]{
-		PageParams: params.Params,
+		PageParams: res.PageParams,
 		Data:       refunds,
-		Total:      null.IntFrom(rows[0].TotalCount),
+		Total:      res.Total,
 	}, nil
 }
 

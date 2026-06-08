@@ -29,13 +29,13 @@ WHERE c.id = ANY($2)
 `
 
 type ListPopularProductPerCategoryParams struct {
-	ProductLimit int32       `json:"product_limit"`
-	CategoryID   []uuid.UUID `json:"category_id"`
+	ProductLimit int32       `db:"product_limit" json:"product_limit"`
+	CategoryID   []uuid.UUID `db:"category_id" json:"category_id"`
 }
 
 type ListPopularProductPerCategoryRow struct {
-	CategoryID uuid.UUID `json:"category_id"`
-	SpuID      uuid.UUID `json:"spu_id"`
+	CategoryID uuid.UUID `db:"category_id" json:"category_id"`
+	SpuID      uuid.UUID `db:"spu_id" json:"spu_id"`
 }
 
 func (q *Queries) ListPopularProductPerCategory(ctx context.Context, arg ListPopularProductPerCategoryParams) ([]ListPopularProductPerCategoryRow, error) {

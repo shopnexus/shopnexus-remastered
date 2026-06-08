@@ -30,50 +30,6 @@ WHERE (
     ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
 );
 
--- name: ListAccount :many
-SELECT *
-FROM "account"."account"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("number" = ANY(sqlc.slice('number')) OR sqlc.slice('number') IS NULL) AND
-    ("number" >= sqlc.narg('number_from') OR sqlc.narg('number_from') IS NULL) AND
-    ("number" <= sqlc.narg('number_to') OR sqlc.narg('number_to') IS NULL) AND
-    ("status" = ANY(sqlc.slice('status')) OR sqlc.slice('status') IS NULL) AND
-    ("role" = ANY(sqlc.slice('role')) OR sqlc.slice('role') IS NULL) AND
-    ("phone" = ANY(sqlc.slice('phone')) OR sqlc.slice('phone') IS NULL) AND
-    ("email" = ANY(sqlc.slice('email')) OR sqlc.slice('email') IS NULL) AND
-    ("username" = ANY(sqlc.slice('username')) OR sqlc.slice('username') IS NULL) AND
-    ("password" = ANY(sqlc.slice('password')) OR sqlc.slice('password') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountAccount :many
-SELECT sqlc.embed(embed_account), COUNT(*) OVER() as total_count
-FROM "account"."account" embed_account
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("number" = ANY(sqlc.slice('number')) OR sqlc.slice('number') IS NULL) AND
-    ("number" >= sqlc.narg('number_from') OR sqlc.narg('number_from') IS NULL) AND
-    ("number" <= sqlc.narg('number_to') OR sqlc.narg('number_to') IS NULL) AND
-    ("status" = ANY(sqlc.slice('status')) OR sqlc.slice('status') IS NULL) AND
-    ("role" = ANY(sqlc.slice('role')) OR sqlc.slice('role') IS NULL) AND
-    ("phone" = ANY(sqlc.slice('phone')) OR sqlc.slice('phone') IS NULL) AND
-    ("email" = ANY(sqlc.slice('email')) OR sqlc.slice('email') IS NULL) AND
-    ("username" = ANY(sqlc.slice('username')) OR sqlc.slice('username') IS NULL) AND
-    ("password" = ANY(sqlc.slice('password')) OR sqlc.slice('password') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
 -- name: CreateAccount :one
 INSERT INTO "account"."account" ("id", "status", "role", "phone", "email", "username", "password", "date_created")
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -159,60 +115,6 @@ WHERE (
     ("internal_balance" <= sqlc.narg('internal_balance_to') OR sqlc.narg('internal_balance_to') IS NULL) AND
     ("default_contact_id" = ANY(sqlc.slice('default_contact_id')) OR sqlc.slice('default_contact_id') IS NULL)
 );
-
--- name: ListProfile :many
-SELECT *
-FROM "account"."profile"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("gender" = ANY(sqlc.slice('gender')) OR sqlc.slice('gender') IS NULL) AND
-    ("name" = ANY(sqlc.slice('name')) OR sqlc.slice('name') IS NULL) AND
-    ("description" = ANY(sqlc.slice('description')) OR sqlc.slice('description') IS NULL) AND
-    ("date_of_birth" = ANY(sqlc.slice('date_of_birth')) OR sqlc.slice('date_of_birth') IS NULL) AND
-    ("date_of_birth" >= sqlc.narg('date_of_birth_from') OR sqlc.narg('date_of_birth_from') IS NULL) AND
-    ("date_of_birth" <= sqlc.narg('date_of_birth_to') OR sqlc.narg('date_of_birth_to') IS NULL) AND
-    ("avatar_rs_id" = ANY(sqlc.slice('avatar_rs_id')) OR sqlc.slice('avatar_rs_id') IS NULL) AND
-    ("email_verified" = ANY(sqlc.slice('email_verified')) OR sqlc.slice('email_verified') IS NULL) AND
-    ("phone_verified" = ANY(sqlc.slice('phone_verified')) OR sqlc.slice('phone_verified') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("country" = ANY(sqlc.slice('country')) OR sqlc.slice('country') IS NULL) AND
-    ("internal_balance" = ANY(sqlc.slice('internal_balance')) OR sqlc.slice('internal_balance') IS NULL) AND
-    ("internal_balance" >= sqlc.narg('internal_balance_from') OR sqlc.narg('internal_balance_from') IS NULL) AND
-    ("internal_balance" <= sqlc.narg('internal_balance_to') OR sqlc.narg('internal_balance_to') IS NULL) AND
-    ("default_contact_id" = ANY(sqlc.slice('default_contact_id')) OR sqlc.slice('default_contact_id') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountProfile :many
-SELECT sqlc.embed(embed_profile), COUNT(*) OVER() as total_count
-FROM "account"."profile" embed_profile
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("gender" = ANY(sqlc.slice('gender')) OR sqlc.slice('gender') IS NULL) AND
-    ("name" = ANY(sqlc.slice('name')) OR sqlc.slice('name') IS NULL) AND
-    ("description" = ANY(sqlc.slice('description')) OR sqlc.slice('description') IS NULL) AND
-    ("date_of_birth" = ANY(sqlc.slice('date_of_birth')) OR sqlc.slice('date_of_birth') IS NULL) AND
-    ("date_of_birth" >= sqlc.narg('date_of_birth_from') OR sqlc.narg('date_of_birth_from') IS NULL) AND
-    ("date_of_birth" <= sqlc.narg('date_of_birth_to') OR sqlc.narg('date_of_birth_to') IS NULL) AND
-    ("avatar_rs_id" = ANY(sqlc.slice('avatar_rs_id')) OR sqlc.slice('avatar_rs_id') IS NULL) AND
-    ("email_verified" = ANY(sqlc.slice('email_verified')) OR sqlc.slice('email_verified') IS NULL) AND
-    ("phone_verified" = ANY(sqlc.slice('phone_verified')) OR sqlc.slice('phone_verified') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("country" = ANY(sqlc.slice('country')) OR sqlc.slice('country') IS NULL) AND
-    ("internal_balance" = ANY(sqlc.slice('internal_balance')) OR sqlc.slice('internal_balance') IS NULL) AND
-    ("internal_balance" >= sqlc.narg('internal_balance_from') OR sqlc.narg('internal_balance_from') IS NULL) AND
-    ("internal_balance" <= sqlc.narg('internal_balance_to') OR sqlc.narg('internal_balance_to') IS NULL) AND
-    ("default_contact_id" = ANY(sqlc.slice('default_contact_id')) OR sqlc.slice('default_contact_id') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
 
 -- name: CreateProfile :one
 INSERT INTO "account"."profile" ("id", "gender", "name", "description", "date_of_birth", "avatar_rs_id", "email_verified", "phone_verified", "date_created", "country", "internal_balance", "default_contact_id")
@@ -307,56 +209,6 @@ WHERE (
     ("longitude" <= sqlc.narg('longitude_to') OR sqlc.narg('longitude_to') IS NULL)
 );
 
--- name: ListContact :many
-SELECT *
-FROM "account"."contact"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("full_name" = ANY(sqlc.slice('full_name')) OR sqlc.slice('full_name') IS NULL) AND
-    ("phone" = ANY(sqlc.slice('phone')) OR sqlc.slice('phone') IS NULL) AND
-    ("phone_verified" = ANY(sqlc.slice('phone_verified')) OR sqlc.slice('phone_verified') IS NULL) AND
-    ("address_type" = ANY(sqlc.slice('address_type')) OR sqlc.slice('address_type') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("address" = ANY(sqlc.slice('address')) OR sqlc.slice('address') IS NULL) AND
-    ("latitude" = ANY(sqlc.slice('latitude')) OR sqlc.slice('latitude') IS NULL) AND
-    ("latitude" >= sqlc.narg('latitude_from') OR sqlc.narg('latitude_from') IS NULL) AND
-    ("latitude" <= sqlc.narg('latitude_to') OR sqlc.narg('latitude_to') IS NULL) AND
-    ("longitude" = ANY(sqlc.slice('longitude')) OR sqlc.slice('longitude') IS NULL) AND
-    ("longitude" >= sqlc.narg('longitude_from') OR sqlc.narg('longitude_from') IS NULL) AND
-    ("longitude" <= sqlc.narg('longitude_to') OR sqlc.narg('longitude_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountContact :many
-SELECT sqlc.embed(embed_contact), COUNT(*) OVER() as total_count
-FROM "account"."contact" embed_contact
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("full_name" = ANY(sqlc.slice('full_name')) OR sqlc.slice('full_name') IS NULL) AND
-    ("phone" = ANY(sqlc.slice('phone')) OR sqlc.slice('phone') IS NULL) AND
-    ("phone_verified" = ANY(sqlc.slice('phone_verified')) OR sqlc.slice('phone_verified') IS NULL) AND
-    ("address_type" = ANY(sqlc.slice('address_type')) OR sqlc.slice('address_type') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("address" = ANY(sqlc.slice('address')) OR sqlc.slice('address') IS NULL) AND
-    ("latitude" = ANY(sqlc.slice('latitude')) OR sqlc.slice('latitude') IS NULL) AND
-    ("latitude" >= sqlc.narg('latitude_from') OR sqlc.narg('latitude_from') IS NULL) AND
-    ("latitude" <= sqlc.narg('latitude_to') OR sqlc.narg('latitude_to') IS NULL) AND
-    ("longitude" = ANY(sqlc.slice('longitude')) OR sqlc.slice('longitude') IS NULL) AND
-    ("longitude" >= sqlc.narg('longitude_from') OR sqlc.narg('longitude_from') IS NULL) AND
-    ("longitude" <= sqlc.narg('longitude_to') OR sqlc.narg('longitude_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
 -- name: CreateContact :one
 INSERT INTO "account"."contact" ("id", "account_id", "full_name", "phone", "phone_verified", "address_type", "date_created", "address", "latitude", "longitude")
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -447,58 +299,6 @@ WHERE (
     ("date_scheduled" <= sqlc.narg('date_scheduled_to') OR sqlc.narg('date_scheduled_to') IS NULL)
 );
 
--- name: ListNotification :many
-SELECT *
-FROM "account"."notification"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("type" = ANY(sqlc.slice('type')) OR sqlc.slice('type') IS NULL) AND
-    ("channel" = ANY(sqlc.slice('channel')) OR sqlc.slice('channel') IS NULL) AND
-    ("title" = ANY(sqlc.slice('title')) OR sqlc.slice('title') IS NULL) AND
-    ("is_read" = ANY(sqlc.slice('is_read')) OR sqlc.slice('is_read') IS NULL) AND
-    ("content" = ANY(sqlc.slice('content')) OR sqlc.slice('content') IS NULL) AND
-    ("metadata" = ANY(sqlc.slice('metadata')) OR sqlc.slice('metadata') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("date_sent" = ANY(sqlc.slice('date_sent')) OR sqlc.slice('date_sent') IS NULL) AND
-    ("date_sent" >= sqlc.narg('date_sent_from') OR sqlc.narg('date_sent_from') IS NULL) AND
-    ("date_sent" <= sqlc.narg('date_sent_to') OR sqlc.narg('date_sent_to') IS NULL) AND
-    ("date_scheduled" = ANY(sqlc.slice('date_scheduled')) OR sqlc.slice('date_scheduled') IS NULL) AND
-    ("date_scheduled" >= sqlc.narg('date_scheduled_from') OR sqlc.narg('date_scheduled_from') IS NULL) AND
-    ("date_scheduled" <= sqlc.narg('date_scheduled_to') OR sqlc.narg('date_scheduled_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountNotification :many
-SELECT sqlc.embed(embed_notification), COUNT(*) OVER() as total_count
-FROM "account"."notification" embed_notification
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("type" = ANY(sqlc.slice('type')) OR sqlc.slice('type') IS NULL) AND
-    ("channel" = ANY(sqlc.slice('channel')) OR sqlc.slice('channel') IS NULL) AND
-    ("title" = ANY(sqlc.slice('title')) OR sqlc.slice('title') IS NULL) AND
-    ("is_read" = ANY(sqlc.slice('is_read')) OR sqlc.slice('is_read') IS NULL) AND
-    ("content" = ANY(sqlc.slice('content')) OR sqlc.slice('content') IS NULL) AND
-    ("metadata" = ANY(sqlc.slice('metadata')) OR sqlc.slice('metadata') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("date_sent" = ANY(sqlc.slice('date_sent')) OR sqlc.slice('date_sent') IS NULL) AND
-    ("date_sent" >= sqlc.narg('date_sent_from') OR sqlc.narg('date_sent_from') IS NULL) AND
-    ("date_sent" <= sqlc.narg('date_sent_to') OR sqlc.narg('date_sent_to') IS NULL) AND
-    ("date_scheduled" = ANY(sqlc.slice('date_scheduled')) OR sqlc.slice('date_scheduled') IS NULL) AND
-    ("date_scheduled" >= sqlc.narg('date_scheduled_from') OR sqlc.narg('date_scheduled_from') IS NULL) AND
-    ("date_scheduled" <= sqlc.narg('date_scheduled_to') OR sqlc.narg('date_scheduled_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
 -- name: CreateNotification :one
 INSERT INTO "account"."notification" ("account_id", "type", "channel", "title", "is_read", "content", "metadata", "date_created", "date_sent", "date_scheduled")
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -579,36 +379,6 @@ WHERE (
     ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
     ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
 );
-
--- name: ListFavorite :many
-SELECT *
-FROM "account"."favorite"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("spu_id" = ANY(sqlc.slice('spu_id')) OR sqlc.slice('spu_id') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountFavorite :many
-SELECT sqlc.embed(embed_favorite), COUNT(*) OVER() as total_count
-FROM "account"."favorite" embed_favorite
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("spu_id" = ANY(sqlc.slice('spu_id')) OR sqlc.slice('spu_id') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
 
 -- name: CreateFavorite :one
 INSERT INTO "account"."favorite" ("account_id", "spu_id", "date_created")

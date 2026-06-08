@@ -10,6 +10,7 @@ import (
 	accountmodel "shopnexus-server/internal/module/account/model"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	commonmodel "shopnexus-server/internal/module/common/model"
+	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -49,12 +50,13 @@ func (b *CommonHandler) UpdateResources(
 		// Next step: Attach resources
 		var createResourceArgs []commondb.CreateCopyDefaultResourceReferenceParams
 
-		resources, err := b.storage.Querier().ListResource(ctx, commondb.ListResourceParams{
-			ID: params.ResourceIDs,
+		res, err := b.storage.Querier().ListResource(ctx, repolist.Request{}, commondb.ListResourceFilter{
+			Id: params.ResourceIDs,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("db update resources: %w", err)
 		}
+		resources := res.Data
 		if len(resources) != len(params.ResourceIDs) {
 			// Some resources not found or not belong to the user
 			return nil, commonmodel.ErrResourceNotFound
@@ -98,13 +100,14 @@ func (b *CommonHandler) DeleteResources(ctx restate.Context, params DeleteResour
 		return fmt.Errorf("validate delete resources: %w", err)
 	}
 
-	deletedResources, err := b.storage.Querier().ListResourceReference(ctx, commondb.ListResourceReferenceParams{
+	res, err := b.storage.Querier().ListResourceReference(ctx, repolist.Request{}, commondb.ListResourceReferenceFilter{
 		RefType: []commondb.CommonResourceRefType{params.RefType},
-		RefID:   params.RefID,
+		RefId:   params.RefID,
 	})
 	if err != nil {
 		return fmt.Errorf("db delete resources: %w", err)
 	}
+	deletedResources := res.Data
 
 	var deletedIDs []uuid.UUID
 	for _, dr := range deletedResources {
@@ -178,12 +181,13 @@ func (b *CommonHandler) GetResourcesByIDs(
 		}
 	}
 
-	resources, err := b.storage.Querier().ListResource(ctx, commondb.ListResourceParams{
-		ID: resourceIDs,
+	res, err := b.storage.Querier().ListResource(ctx, repolist.Request{}, commondb.ListResourceFilter{
+		Id: resourceIDs,
 	})
 	if err != nil {
 		return result, nil
 	}
+	resources := res.Data
 
 	for _, rs := range resources {
 		result[rs.ID] = commonmodel.Resource{

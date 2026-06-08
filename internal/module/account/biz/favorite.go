@@ -8,10 +8,10 @@ import (
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	"shopnexus-server/internal/shared/paginate"
+	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
-	"github.com/guregu/null/v6"
 )
 
 type AddFavoriteParams struct {
@@ -86,27 +86,14 @@ func (b *AccountHandler) ListFavorite(
 
 	params.Params = params.Constrain()
 
-	rows, err := b.storage.Querier().ListCountFavorite(ctx, accountdb.ListCountFavoriteParams{
-		AccountID: []uuid.UUID{params.Account.ID},
-		Limit:     null.Int32From(params.Limit.Int32),
-		Offset:    params.Offset(),
+	res, err := b.storage.Querier().ListFavorite(ctx, repolist.FromParams(params.Params), accountdb.ListFavoriteFilter{
+		AccountId: []uuid.UUID{params.Account.ID},
 	})
 	if err != nil {
-		return zero, fmt.Errorf("db list count favorite: %w", err)
+		return zero, fmt.Errorf("db list favorite: %w", err)
 	}
 
-	favorites := make([]accountdb.AccountFavorite, len(rows))
-	var total int64
-	for i, row := range rows {
-		favorites[i] = row.AccountFavorite
-		total = row.TotalCount
-	}
-
-	return paginate.PaginateResult[accountdb.AccountFavorite]{
-		PageParams: params.Params,
-		Data:       favorites,
-		Total:      null.IntFrom(total),
-	}, nil
+	return res, nil
 }
 
 type CheckFavoritesParams struct {
@@ -126,17 +113,17 @@ func (b *AccountHandler) CheckFavorites(ctx restate.Context, params CheckFavorit
 		return nil, nil
 	}
 
-	rows, err := b.storage.Querier().ListCountFavorite(ctx, accountdb.ListCountFavoriteParams{
-		AccountID: []uuid.UUID{accountID},
-		SpuID:     spuIDs,
+	res, err := b.storage.Querier().ListFavorite(ctx, repolist.Request{}, accountdb.ListFavoriteFilter{
+		AccountId: []uuid.UUID{accountID},
+		SpuId:     spuIDs,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("db list count favorite: %w", err)
+		return nil, fmt.Errorf("db list favorite: %w", err)
 	}
 
-	result := make(map[uuid.UUID]bool, len(rows))
-	for _, row := range rows {
-		result[row.AccountFavorite.SpuID] = true
+	result := make(map[uuid.UUID]bool, len(res.Data))
+	for _, row := range res.Data {
+		result[row.SpuID] = true
 	}
 	return result, nil
 }

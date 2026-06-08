@@ -31,15 +31,15 @@ OFFSET $3::int
 `
 
 type SearchCategoryParams struct {
-	ID     []uuid.UUID `json:"id"`
-	Search null.String `json:"search"`
-	Offset null.Int32  `json:"offset"`
-	Limit  null.Int32  `json:"limit"`
+	ID     []uuid.UUID `db:"id" json:"id"`
+	Search null.String `db:"search" json:"search"`
+	Offset null.Int32  `db:"offset" json:"offset"`
+	Limit  null.Int32  `db:"limit" json:"limit"`
 }
 
 type SearchCategoryRow struct {
-	CatalogCategory CatalogCategory `json:"catalog_category"`
-	TotalCount      int64           `json:"total_count"`
+	CatalogCategory CatalogCategory `db:"catalog_category" json:"catalog_category"`
+	TotalCount      int64           `db:"total_count" json:"total_count"`
 }
 
 func (q *Queries) SearchCategory(ctx context.Context, arg SearchCategoryParams) ([]SearchCategoryRow, error) {
@@ -92,15 +92,15 @@ OFFSET $3::int
 `
 
 type SearchTagParams struct {
-	ID     []string    `json:"id"`
-	Search null.String `json:"search"`
-	Offset null.Int32  `json:"offset"`
-	Limit  null.Int32  `json:"limit"`
+	ID     []string    `db:"id" json:"id"`
+	Search null.String `db:"search" json:"search"`
+	Offset null.Int32  `db:"offset" json:"offset"`
+	Limit  null.Int32  `db:"limit" json:"limit"`
 }
 
 type SearchTagRow struct {
-	CatalogTag CatalogTag `json:"catalog_tag"`
-	TotalCount int64      `json:"total_count"`
+	CatalogTag CatalogTag `db:"catalog_tag" json:"catalog_tag"`
+	TotalCount int64      `db:"total_count" json:"total_count"`
 }
 
 func (q *Queries) SearchTag(ctx context.Context, arg SearchTagParams) ([]SearchTagRow, error) {

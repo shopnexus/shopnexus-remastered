@@ -20,8 +20,8 @@ GROUP BY ref_id
 `
 
 type CountRepliesByCommentIDsRow struct {
-	RefID      uuid.UUID `json:"ref_id"`
-	ReplyCount int64     `json:"reply_count"`
+	RefID      uuid.UUID `db:"ref_id" json:"ref_id"`
+	ReplyCount int64     `db:"reply_count" json:"reply_count"`
 }
 
 // Custom comment queries

@@ -12,6 +12,7 @@ import (
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
 	"shopnexus-server/internal/shared/nullutil"
+	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -38,9 +39,9 @@ func (b *CatalogHandler) ListProductSku(
 		return zero, fmt.Errorf("validate list product sku: %w", err)
 	}
 
-	dbSkus, err := b.storage.Querier().ListProductSku(ctx, catalogdb.ListProductSkuParams{
-		ID:              params.ID,
-		SpuID:           params.SpuID,
+	res, err := b.storage.Querier().ListProductSku(ctx, repolist.Request{}, catalogdb.ListProductSkuFilter{
+		Id:              params.ID,
+		SpuId:           params.SpuID,
 		PriceFrom:       params.PriceFrom,
 		PriceTo:         params.PriceTo,
 		SharedPackaging: nullutil.NullBoolToSlice(params.SharedPackaging),
@@ -51,7 +52,7 @@ func (b *CatalogHandler) ListProductSku(
 
 	stocks, err := b.inventory.ListStock(ctx, inventorybiz.ListStockParams{
 		RefType: []inventorydb.InventoryStockRefType{inventorydb.InventoryStockRefTypeProductSku},
-		RefID:   lo.Map(dbSkus, func(s catalogdb.CatalogProductSku, _ int) uuid.UUID { return s.ID }),
+		RefID:   lo.Map(res.Data, func(s catalogdb.CatalogProductSku, _ int) uuid.UUID { return s.ID }),
 	})
 	if err != nil {
 		return zero, fmt.Errorf("list stock: %w", err)
@@ -59,7 +60,7 @@ func (b *CatalogHandler) ListProductSku(
 	stockMap := lo.KeyBy(stocks.Data, func(s inventorydb.InventoryStock) uuid.UUID { return s.RefID })
 
 	var skus []catalogmodel.ProductSku
-	for _, dbSku := range dbSkus {
+	for _, dbSku := range res.Data {
 		var attributes []catalogmodel.ProductAttribute
 		if err := json.Unmarshal(dbSku.Attributes, &attributes); err != nil {
 			return zero, fmt.Errorf("unmarshal sku attributes: %w", err)

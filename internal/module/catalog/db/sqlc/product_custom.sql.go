@@ -27,15 +27,15 @@ OFFSET $3::int
 `
 
 type SearchCountProductSpuByTagsParams struct {
-	Tags     []string   `json:"tags"`
-	TagCount int32      `json:"tag_count"`
-	Offset   null.Int32 `json:"offset"`
-	Limit    null.Int32 `json:"limit"`
+	Tags     []string   `db:"tags" json:"tags"`
+	TagCount int32      `db:"tag_count" json:"tag_count"`
+	Offset   null.Int32 `db:"offset" json:"offset"`
+	Limit    null.Int32 `db:"limit" json:"limit"`
 }
 
 type SearchCountProductSpuByTagsRow struct {
-	ID         uuid.UUID `json:"id"`
-	TotalCount int64     `json:"total_count"`
+	ID         uuid.UUID `db:"id" json:"id"`
+	TotalCount int64     `db:"total_count" json:"total_count"`
 }
 
 // Custom product queries

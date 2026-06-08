@@ -21,8 +21,8 @@ WHERE id = $2
 `
 
 type AdjustInventoryParams struct {
-	Amount  int64 `json:"amount"`
-	StockID int64 `json:"stock_id"`
+	Amount  int64 `db:"amount" json:"amount"`
+	StockID int64 `db:"stock_id" json:"stock_id"`
 }
 
 func (q *Queries) AdjustInventory(ctx context.Context, arg AdjustInventoryParams) (int64, error) {
@@ -70,13 +70,13 @@ LIMIT $2
 `
 
 type GetAvailableSerialsParams struct {
-	StockID int64 `json:"stock_id"`
-	Amount  int32 `json:"amount"`
+	StockID int64 `db:"stock_id" json:"stock_id"`
+	Amount  int32 `db:"amount" json:"amount"`
 }
 
 type GetAvailableSerialsRow struct {
-	ID      string `json:"id"`
-	StockID int64  `json:"stock_id"`
+	ID      string `db:"id" json:"id"`
+	StockID int64  `db:"stock_id" json:"stock_id"`
 }
 
 func (q *Queries) GetAvailableSerials(ctx context.Context, arg GetAvailableSerialsParams) ([]GetAvailableSerialsRow, error) {
@@ -109,9 +109,9 @@ OFFSET $2::int
 `
 
 type ListMostTakenSkuParams struct {
-	RefType InventoryStockRefType `json:"ref_type"`
-	Offset  null.Int32            `json:"offset"`
-	Limit   null.Int32            `json:"limit"`
+	RefType InventoryStockRefType `db:"ref_type" json:"ref_type"`
+	Offset  null.Int32            `db:"offset" json:"offset"`
+	Limit   null.Int32            `db:"limit" json:"limit"`
 }
 
 func (q *Queries) ListMostTakenSku(ctx context.Context, arg ListMostTakenSkuParams) ([]InventoryStock, error) {
@@ -149,9 +149,9 @@ WHERE "ref_id" = $2 AND "ref_type" = $3 AND "taken" >= $1
 `
 
 type ReleaseInventoryParams struct {
-	Amount  int64                 `json:"amount"`
-	RefID   uuid.UUID             `json:"ref_id"`
-	RefType InventoryStockRefType `json:"ref_type"`
+	Amount  int64                 `db:"amount" json:"amount"`
+	RefID   uuid.UUID             `db:"ref_id" json:"ref_id"`
+	RefType InventoryStockRefType `db:"ref_type" json:"ref_type"`
 }
 
 func (q *Queries) ReleaseInventory(ctx context.Context, arg ReleaseInventoryParams) (int64, error) {
@@ -169,8 +169,8 @@ WHERE id = $2
 `
 
 type UpdateCurrentStockParams struct {
-	Change int64 `json:"change"`
-	ID     int64 `json:"id"`
+	Change int64 `db:"change" json:"change"`
+	ID     int64 `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateCurrentStock(ctx context.Context, arg UpdateCurrentStockParams) error {
@@ -185,8 +185,8 @@ WHERE id = ANY($2)
 `
 
 type UpdateSerialStatusParams struct {
-	Status InventoryStatus `json:"status"`
-	ID     []string        `json:"id"`
+	Status InventoryStatus `db:"status" json:"status"`
+	ID     []string        `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateSerialStatus(ctx context.Context, arg UpdateSerialStatusParams) error {

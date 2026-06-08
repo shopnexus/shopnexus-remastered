@@ -138,8 +138,8 @@ LIMIT $2::INTEGER
 `
 
 type ListExpiredPendingSessionsParams struct {
-	Cutoff     time.Time `json:"cutoff"`
-	LimitCount int32     `json:"limit_count"`
+	Cutoff     time.Time `db:"cutoff" json:"cutoff"`
+	LimitCount int32     `db:"limit_count" json:"limit_count"`
 }
 
 func (q *Queries) ListExpiredPendingSessions(ctx context.Context, arg ListExpiredPendingSessionsParams) ([]OrderPaymentSession, error) {
@@ -241,8 +241,8 @@ RETURNING id, kind, status, from_id, to_id, note, currency, total_amount, fx_sna
 `
 
 type MarkPaymentSessionSuccessParams struct {
-	DatePaid time.Time `json:"date_paid"`
-	ID       uuid.UUID `json:"id"`
+	DatePaid time.Time `db:"date_paid" json:"date_paid"`
+	ID       uuid.UUID `db:"id" json:"id"`
 }
 
 func (q *Queries) MarkPaymentSessionSuccess(ctx context.Context, arg MarkPaymentSessionSuccessParams) (OrderPaymentSession, error) {
@@ -273,8 +273,8 @@ UPDATE "order"."payment_session" SET "data" = $1 WHERE "id" = $2
 `
 
 type SetPaymentSessionDataParams struct {
-	Data json.RawMessage `json:"data"`
-	ID   uuid.UUID       `json:"id"`
+	Data json.RawMessage `db:"data" json:"data"`
+	ID   uuid.UUID       `db:"id" json:"id"`
 }
 
 // =============================================

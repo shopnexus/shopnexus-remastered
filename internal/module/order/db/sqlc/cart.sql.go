@@ -19,8 +19,8 @@ RETURNING id, account_id, sku_id, quantity
 `
 
 type RemoveCheckoutItemParams struct {
-	AccountID uuid.UUID   `json:"account_id"`
-	SkuID     []uuid.UUID `json:"sku_id"`
+	AccountID uuid.UUID   `db:"account_id" json:"account_id"`
+	SkuID     []uuid.UUID `db:"sku_id" json:"sku_id"`
 }
 
 func (q *Queries) RemoveCheckoutItem(ctx context.Context, arg RemoveCheckoutItemParams) ([]OrderCartItem, error) {
@@ -59,9 +59,9 @@ ON CONFLICT (account_id, sku_id) DO UPDATE
 `
 
 type RestoreCheckoutItemsParams struct {
-	AccountIds []uuid.UUID `json:"account_ids"`
-	SkuIds     []uuid.UUID `json:"sku_ids"`
-	Quantities []int64     `json:"quantities"`
+	AccountIds []uuid.UUID `db:"account_ids" json:"account_ids"`
+	SkuIds     []uuid.UUID `db:"sku_ids" json:"sku_ids"`
+	Quantities []int64     `db:"quantities" json:"quantities"`
 }
 
 func (q *Queries) RestoreCheckoutItems(ctx context.Context, arg RestoreCheckoutItemsParams) error {
@@ -82,9 +82,9 @@ WHERE NOT EXISTS (SELECT 1 FROM updated)
 `
 
 type UpdateCartParams struct {
-	AccountID uuid.UUID `json:"account_id"`
-	SkuID     uuid.UUID `json:"sku_id"`
-	Quantity  int64     `json:"quantity"`
+	AccountID uuid.UUID `db:"account_id" json:"account_id"`
+	SkuID     uuid.UUID `db:"sku_id" json:"sku_id"`
+	Quantity  int64     `db:"quantity" json:"quantity"`
 }
 
 func (q *Queries) UpdateCart(ctx context.Context, arg UpdateCartParams) error {

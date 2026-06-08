@@ -215,8 +215,8 @@ WHERE "session_id" = $2 AND "status" = 'Pending'
 `
 
 type MarkPendingTxsFailedBySessionParams struct {
-	Error     null.String `json:"error"`
-	SessionID uuid.UUID   `json:"session_id"`
+	Error     null.String `db:"error" json:"error"`
+	SessionID uuid.UUID   `db:"session_id" json:"session_id"`
 }
 
 // Saga-compensator for multi-attempt sessions: mark every still-Pending tx
@@ -263,8 +263,8 @@ RETURNING id, session_id, status, note, error, payment_option, data, amount, cur
 `
 
 type MarkTransactionSuccessParams struct {
-	DateSettled time.Time `json:"date_settled"`
-	ID          uuid.UUID `json:"id"`
+	DateSettled time.Time `db:"date_settled" json:"date_settled"`
+	ID          uuid.UUID `db:"id" json:"id"`
 }
 
 func (q *Queries) MarkTransactionSuccess(ctx context.Context, arg MarkTransactionSuccessParams) (OrderTransaction, error) {
@@ -296,8 +296,8 @@ WHERE "id" = ANY($2) AND "status" = 'Pending'
 `
 
 type MarkTransactionsFailedParams struct {
-	Error null.String `json:"error"`
-	ID    []uuid.UUID `json:"id"`
+	Error null.String `db:"error" json:"error"`
+	ID    []uuid.UUID `db:"id" json:"id"`
 }
 
 func (q *Queries) MarkTransactionsFailed(ctx context.Context, arg MarkTransactionsFailedParams) error {
@@ -312,8 +312,8 @@ UPDATE "order"."transaction" SET "data" = $1 WHERE "id" = $2
 `
 
 type SetTransactionDataParams struct {
-	Data json.RawMessage `json:"data"`
-	ID   uuid.UUID       `json:"id"`
+	Data json.RawMessage `db:"data" json:"data"`
+	ID   uuid.UUID       `db:"id" json:"id"`
 }
 
 // =============================================

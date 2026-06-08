@@ -21,9 +21,9 @@ WHERE id = $3
 `
 
 type UpdateCommentUpvoteDownvoteParams struct {
-	UpvoteDelta   null.Int  `json:"upvote_delta"`
-	DownvoteDelta null.Int  `json:"downvote_delta"`
-	ID            uuid.UUID `json:"id"`
+	UpvoteDelta   null.Int  `db:"upvote_delta" json:"upvote_delta"`
+	DownvoteDelta null.Int  `db:"downvote_delta" json:"downvote_delta"`
+	ID            uuid.UUID `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateCommentUpvoteDownvote(ctx context.Context, arg UpdateCommentUpvoteDownvoteParams) error {

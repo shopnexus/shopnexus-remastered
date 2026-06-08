@@ -15,6 +15,7 @@ import (
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	"shopnexus-server/internal/shared/htmlutil"
+	"shopnexus-server/internal/shared/repolist"
 )
 
 const EmbeddingSyncBatchSize = 32
@@ -115,36 +116,37 @@ func (b *CatalogHandler) syncProducts(
 		spuIDs[i] = s.RefID
 	}
 
-	dbSpus, err := b.storage.Querier().ListProductSpu(ctx, catalogdb.ListProductSpuParams{
-		ID: spuIDs,
+	spuRes, err := b.storage.Querier().ListProductSpu(ctx, repolist.Request{}, catalogdb.ListProductSpuFilter{
+		Id: spuIDs,
 	})
 	if err != nil {
 		return fmt.Errorf("list spus for sync: %w", err)
 	}
+	dbSpus := spuRes.Data
 
-	dbSkus, err := b.storage.Querier().ListProductSku(ctx, catalogdb.ListProductSkuParams{
-		SpuID: spuIDs,
+	skuRes, err := b.storage.Querier().ListProductSku(ctx, repolist.Request{}, catalogdb.ListProductSkuFilter{
+		SpuId: spuIDs,
 	})
 	if err != nil {
 		return fmt.Errorf("list skus for sync: %w", err)
 	}
-	skusBySpuID := lo.GroupBy(dbSkus, func(s catalogdb.CatalogProductSku) uuid.UUID { return s.SpuID })
+	skusBySpuID := lo.GroupBy(skuRes.Data, func(s catalogdb.CatalogProductSku) uuid.UUID { return s.SpuID })
 
-	tags, err := b.storage.Querier().ListProductSpuTag(ctx, catalogdb.ListProductSpuTagParams{SpuID: spuIDs})
+	tags, err := b.storage.Querier().ListProductSpuTag(ctx, repolist.Request{}, catalogdb.ListProductSpuTagFilter{SpuId: spuIDs})
 	if err != nil {
 		return fmt.Errorf("list tags for sync: %w", err)
 	}
 	tagsBySpuID := lo.GroupByMap(
-		tags,
+		tags.Data,
 		func(t catalogdb.CatalogProductSpuTag) (uuid.UUID, string) { return t.SpuID, t.Tag },
 	)
 
 	categoryIDs := lo.Uniq(lo.Map(dbSpus, func(s catalogdb.CatalogProductSpu, _ int) uuid.UUID { return s.CategoryID }))
-	categories, err := b.storage.Querier().ListCategory(ctx, catalogdb.ListCategoryParams{ID: categoryIDs})
+	categories, err := b.storage.Querier().ListCategory(ctx, repolist.Request{}, catalogdb.ListCategoryFilter{Id: categoryIDs})
 	if err != nil {
 		return fmt.Errorf("list categories for sync: %w", err)
 	}
-	categoryMap := lo.KeyBy(categories, func(c catalogdb.CatalogCategory) uuid.UUID { return c.ID })
+	categoryMap := lo.KeyBy(categories.Data, func(c catalogdb.CatalogCategory) uuid.UUID { return c.ID })
 
 	var products []catalogmodel.ProductDetail
 	for _, spu := range dbSpus {
@@ -214,12 +216,13 @@ func (b *CatalogHandler) syncCategories(
 	}
 
 	// Fetch categories from DB
-	categories, err := b.storage.Querier().ListCategory(ctx, catalogdb.ListCategoryParams{
-		ID: categoryIDs,
+	categoriesRes, err := b.storage.Querier().ListCategory(ctx, repolist.Request{}, catalogdb.ListCategoryFilter{
+		Id: categoryIDs,
 	})
 	if err != nil {
 		return fmt.Errorf("list categories for sync: %w", err)
 	}
+	categories := categoriesRes.Data
 
 	if len(categories) == 0 {
 		return b.clearStaleFlagsByRows(ctx, stales)
@@ -266,14 +269,14 @@ func (b *CatalogHandler) syncTags(
 	// We fetch all tags and match via uuid.NewSHA1(uuid.NameSpaceURL, []byte(tag.ID)).
 	// Collect tag string IDs from stale rows by reversing the mapping — we need to fetch
 	// all potentially matching tags. Since we can't reverse SHA1, fetch all tags and filter.
-	tags, err := b.storage.Querier().ListTag(ctx, catalogdb.ListTagParams{})
+	tags, err := b.storage.Querier().ListTag(ctx, repolist.Request{}, catalogdb.ListTagFilter{})
 	if err != nil {
 		return fmt.Errorf("list tags for sync: %w", err)
 	}
 
 	// Filter to only stale tags
 	var matchedTags []catalogdb.CatalogTag
-	for _, t := range tags {
+	for _, t := range tags.Data {
 		tagUUID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(t.ID))
 		if _, ok := staleRefIDs[tagUUID]; ok {
 			matchedTags = append(matchedTags, t)

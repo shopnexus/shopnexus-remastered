@@ -47,12 +47,6 @@ type Querier interface {
 	// ========================================
 	GetSchedule(ctx context.Context, id null.Int) (PromotionSchedule, error)
 	ListActivePromotion(ctx context.Context, arg ListActivePromotionParams) ([]PromotionPromotion, error)
-	ListCountPromotion(ctx context.Context, arg ListCountPromotionParams) ([]ListCountPromotionRow, error)
-	ListCountRef(ctx context.Context, arg ListCountRefParams) ([]ListCountRefRow, error)
-	ListCountSchedule(ctx context.Context, arg ListCountScheduleParams) ([]ListCountScheduleRow, error)
-	ListPromotion(ctx context.Context, arg ListPromotionParams) ([]PromotionPromotion, error)
-	ListRef(ctx context.Context, arg ListRefParams) ([]PromotionRef, error)
-	ListSchedule(ctx context.Context, arg ListScheduleParams) ([]PromotionSchedule, error)
 	UpdatePromotion(ctx context.Context, arg UpdatePromotionParams) (PromotionPromotion, error)
 	UpdateRef(ctx context.Context, arg UpdateRefParams) (PromotionRef, error)
 	UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) (PromotionSchedule, error)

@@ -47,31 +47,31 @@ WHERE (
 `
 
 type CountPromotionParams struct {
-	ID              []uuid.UUID       `json:"id"`
-	Code            []string          `json:"code"`
-	OwnerID         []uuid.NullUUID   `json:"owner_id"`
-	Type            []PromotionType   `json:"type"`
-	Title           []string          `json:"title"`
-	Description     []null.String     `json:"description"`
-	IsEnabled       []bool            `json:"is_enabled"`
-	Budget          []int64           `json:"budget"`
-	BudgetFrom      null.Int          `json:"budget_from"`
-	BudgetTo        null.Int          `json:"budget_to"`
-	AutoApply       []bool            `json:"auto_apply"`
-	Group           []string          `json:"group"`
-	Data            []json.RawMessage `json:"data"`
-	DateStarted     []time.Time       `json:"date_started"`
-	DateStartedFrom null.Time         `json:"date_started_from"`
-	DateStartedTo   null.Time         `json:"date_started_to"`
-	DateEnded       []null.Time       `json:"date_ended"`
-	DateEndedFrom   null.Time         `json:"date_ended_from"`
-	DateEndedTo     null.Time         `json:"date_ended_to"`
-	DateCreated     []time.Time       `json:"date_created"`
-	DateCreatedFrom null.Time         `json:"date_created_from"`
-	DateCreatedTo   null.Time         `json:"date_created_to"`
-	DateUpdated     []time.Time       `json:"date_updated"`
-	DateUpdatedFrom null.Time         `json:"date_updated_from"`
-	DateUpdatedTo   null.Time         `json:"date_updated_to"`
+	ID              []uuid.UUID       `db:"id" json:"id"`
+	Code            []string          `db:"code" json:"code"`
+	OwnerID         []uuid.NullUUID   `db:"owner_id" json:"owner_id"`
+	Type            []PromotionType   `db:"type" json:"type"`
+	Title           []string          `db:"title" json:"title"`
+	Description     []null.String     `db:"description" json:"description"`
+	IsEnabled       []bool            `db:"is_enabled" json:"is_enabled"`
+	Budget          []int64           `db:"budget" json:"budget"`
+	BudgetFrom      null.Int          `db:"budget_from" json:"budget_from"`
+	BudgetTo        null.Int          `db:"budget_to" json:"budget_to"`
+	AutoApply       []bool            `db:"auto_apply" json:"auto_apply"`
+	Group           []string          `db:"group" json:"group"`
+	Data            []json.RawMessage `db:"data" json:"data"`
+	DateStarted     []time.Time       `db:"date_started" json:"date_started"`
+	DateStartedFrom null.Time         `db:"date_started_from" json:"date_started_from"`
+	DateStartedTo   null.Time         `db:"date_started_to" json:"date_started_to"`
+	DateEnded       []null.Time       `db:"date_ended" json:"date_ended"`
+	DateEndedFrom   null.Time         `db:"date_ended_from" json:"date_ended_from"`
+	DateEndedTo     null.Time         `db:"date_ended_to" json:"date_ended_to"`
+	DateCreated     []time.Time       `db:"date_created" json:"date_created"`
+	DateCreatedFrom null.Time         `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time         `db:"date_created_to" json:"date_created_to"`
+	DateUpdated     []time.Time       `db:"date_updated" json:"date_updated"`
+	DateUpdatedFrom null.Time         `db:"date_updated_from" json:"date_updated_from"`
+	DateUpdatedTo   null.Time         `db:"date_updated_to" json:"date_updated_to"`
 }
 
 func (q *Queries) CountPromotion(ctx context.Context, arg CountPromotionParams) (int64, error) {
@@ -119,10 +119,10 @@ WHERE (
 `
 
 type CountRefParams struct {
-	ID          []int64            `json:"id"`
-	PromotionID []uuid.UUID        `json:"promotion_id"`
-	RefType     []PromotionRefType `json:"ref_type"`
-	RefID       []uuid.UUID        `json:"ref_id"`
+	ID          []int64            `db:"id" json:"id"`
+	PromotionID []uuid.UUID        `db:"promotion_id" json:"promotion_id"`
+	RefType     []PromotionRefType `db:"ref_type" json:"ref_type"`
+	RefID       []uuid.UUID        `db:"ref_id" json:"ref_id"`
 }
 
 func (q *Queries) CountRef(ctx context.Context, arg CountRefParams) (int64, error) {
@@ -158,19 +158,19 @@ WHERE (
 `
 
 type CountScheduleParams struct {
-	ID            []int64     `json:"id"`
-	PromotionID   []uuid.UUID `json:"promotion_id"`
-	Timezone      []string    `json:"timezone"`
-	CronRule      []string    `json:"cron_rule"`
-	Duration      []int32     `json:"duration"`
-	DurationFrom  null.Int32  `json:"duration_from"`
-	DurationTo    null.Int32  `json:"duration_to"`
-	NextRunAt     []null.Time `json:"next_run_at"`
-	NextRunAtFrom null.Time   `json:"next_run_at_from"`
-	NextRunAtTo   null.Time   `json:"next_run_at_to"`
-	LastRunAt     []null.Time `json:"last_run_at"`
-	LastRunAtFrom null.Time   `json:"last_run_at_from"`
-	LastRunAtTo   null.Time   `json:"last_run_at_to"`
+	ID            []int64     `db:"id" json:"id"`
+	PromotionID   []uuid.UUID `db:"promotion_id" json:"promotion_id"`
+	Timezone      []string    `db:"timezone" json:"timezone"`
+	CronRule      []string    `db:"cron_rule" json:"cron_rule"`
+	Duration      []int32     `db:"duration" json:"duration"`
+	DurationFrom  null.Int32  `db:"duration_from" json:"duration_from"`
+	DurationTo    null.Int32  `db:"duration_to" json:"duration_to"`
+	NextRunAt     []null.Time `db:"next_run_at" json:"next_run_at"`
+	NextRunAtFrom null.Time   `db:"next_run_at_from" json:"next_run_at_from"`
+	NextRunAtTo   null.Time   `db:"next_run_at_to" json:"next_run_at_to"`
+	LastRunAt     []null.Time `db:"last_run_at" json:"last_run_at"`
+	LastRunAtFrom null.Time   `db:"last_run_at_from" json:"last_run_at_from"`
+	LastRunAtTo   null.Time   `db:"last_run_at_to" json:"last_run_at_to"`
 }
 
 func (q *Queries) CountSchedule(ctx context.Context, arg CountScheduleParams) (int64, error) {
@@ -195,66 +195,66 @@ func (q *Queries) CountSchedule(ctx context.Context, arg CountScheduleParams) (i
 }
 
 type CreateCopyDefaultPromotionParams struct {
-	Code        string          `json:"code"`
-	OwnerID     uuid.NullUUID   `json:"owner_id"`
-	Type        PromotionType   `json:"type"`
-	Title       string          `json:"title"`
-	Description null.String     `json:"description"`
-	IsEnabled   bool            `json:"is_enabled"`
-	Budget      int64           `json:"budget"`
-	AutoApply   bool            `json:"auto_apply"`
-	Group       string          `json:"group"`
-	Data        json.RawMessage `json:"data"`
-	DateStarted time.Time       `json:"date_started"`
-	DateEnded   null.Time       `json:"date_ended"`
+	Code        string          `db:"code" json:"code"`
+	OwnerID     uuid.NullUUID   `db:"owner_id" json:"owner_id"`
+	Type        PromotionType   `db:"type" json:"type"`
+	Title       string          `db:"title" json:"title"`
+	Description null.String     `db:"description" json:"description"`
+	IsEnabled   bool            `db:"is_enabled" json:"is_enabled"`
+	Budget      int64           `db:"budget" json:"budget"`
+	AutoApply   bool            `db:"auto_apply" json:"auto_apply"`
+	Group       string          `db:"group" json:"group"`
+	Data        json.RawMessage `db:"data" json:"data"`
+	DateStarted time.Time       `db:"date_started" json:"date_started"`
+	DateEnded   null.Time       `db:"date_ended" json:"date_ended"`
 }
 
 type CreateCopyDefaultRefParams struct {
-	PromotionID uuid.UUID        `json:"promotion_id"`
-	RefType     PromotionRefType `json:"ref_type"`
-	RefID       uuid.UUID        `json:"ref_id"`
+	PromotionID uuid.UUID        `db:"promotion_id" json:"promotion_id"`
+	RefType     PromotionRefType `db:"ref_type" json:"ref_type"`
+	RefID       uuid.UUID        `db:"ref_id" json:"ref_id"`
 }
 
 type CreateCopyDefaultScheduleParams struct {
-	PromotionID uuid.UUID `json:"promotion_id"`
-	Timezone    string    `json:"timezone"`
-	CronRule    string    `json:"cron_rule"`
-	Duration    int32     `json:"duration"`
-	NextRunAt   null.Time `json:"next_run_at"`
-	LastRunAt   null.Time `json:"last_run_at"`
+	PromotionID uuid.UUID `db:"promotion_id" json:"promotion_id"`
+	Timezone    string    `db:"timezone" json:"timezone"`
+	CronRule    string    `db:"cron_rule" json:"cron_rule"`
+	Duration    int32     `db:"duration" json:"duration"`
+	NextRunAt   null.Time `db:"next_run_at" json:"next_run_at"`
+	LastRunAt   null.Time `db:"last_run_at" json:"last_run_at"`
 }
 
 type CreateCopyPromotionParams struct {
-	ID          uuid.UUID       `json:"id"`
-	Code        string          `json:"code"`
-	OwnerID     uuid.NullUUID   `json:"owner_id"`
-	Type        PromotionType   `json:"type"`
-	Title       string          `json:"title"`
-	Description null.String     `json:"description"`
-	IsEnabled   bool            `json:"is_enabled"`
-	Budget      int64           `json:"budget"`
-	AutoApply   bool            `json:"auto_apply"`
-	Group       string          `json:"group"`
-	Data        json.RawMessage `json:"data"`
-	DateStarted time.Time       `json:"date_started"`
-	DateEnded   null.Time       `json:"date_ended"`
-	DateCreated time.Time       `json:"date_created"`
-	DateUpdated time.Time       `json:"date_updated"`
+	ID          uuid.UUID       `db:"id" json:"id"`
+	Code        string          `db:"code" json:"code"`
+	OwnerID     uuid.NullUUID   `db:"owner_id" json:"owner_id"`
+	Type        PromotionType   `db:"type" json:"type"`
+	Title       string          `db:"title" json:"title"`
+	Description null.String     `db:"description" json:"description"`
+	IsEnabled   bool            `db:"is_enabled" json:"is_enabled"`
+	Budget      int64           `db:"budget" json:"budget"`
+	AutoApply   bool            `db:"auto_apply" json:"auto_apply"`
+	Group       string          `db:"group" json:"group"`
+	Data        json.RawMessage `db:"data" json:"data"`
+	DateStarted time.Time       `db:"date_started" json:"date_started"`
+	DateEnded   null.Time       `db:"date_ended" json:"date_ended"`
+	DateCreated time.Time       `db:"date_created" json:"date_created"`
+	DateUpdated time.Time       `db:"date_updated" json:"date_updated"`
 }
 
 type CreateCopyRefParams struct {
-	PromotionID uuid.UUID        `json:"promotion_id"`
-	RefType     PromotionRefType `json:"ref_type"`
-	RefID       uuid.UUID        `json:"ref_id"`
+	PromotionID uuid.UUID        `db:"promotion_id" json:"promotion_id"`
+	RefType     PromotionRefType `db:"ref_type" json:"ref_type"`
+	RefID       uuid.UUID        `db:"ref_id" json:"ref_id"`
 }
 
 type CreateCopyScheduleParams struct {
-	PromotionID uuid.UUID `json:"promotion_id"`
-	Timezone    string    `json:"timezone"`
-	CronRule    string    `json:"cron_rule"`
-	Duration    int32     `json:"duration"`
-	NextRunAt   null.Time `json:"next_run_at"`
-	LastRunAt   null.Time `json:"last_run_at"`
+	PromotionID uuid.UUID `db:"promotion_id" json:"promotion_id"`
+	Timezone    string    `db:"timezone" json:"timezone"`
+	CronRule    string    `db:"cron_rule" json:"cron_rule"`
+	Duration    int32     `db:"duration" json:"duration"`
+	NextRunAt   null.Time `db:"next_run_at" json:"next_run_at"`
+	LastRunAt   null.Time `db:"last_run_at" json:"last_run_at"`
 }
 
 const createDefaultPromotion = `-- name: CreateDefaultPromotion :one
@@ -264,18 +264,18 @@ RETURNING id, code, owner_id, type, title, description, is_enabled, budget, auto
 `
 
 type CreateDefaultPromotionParams struct {
-	Code        string          `json:"code"`
-	OwnerID     uuid.NullUUID   `json:"owner_id"`
-	Type        PromotionType   `json:"type"`
-	Title       string          `json:"title"`
-	Description null.String     `json:"description"`
-	IsEnabled   bool            `json:"is_enabled"`
-	Budget      int64           `json:"budget"`
-	AutoApply   bool            `json:"auto_apply"`
-	Group       string          `json:"group"`
-	Data        json.RawMessage `json:"data"`
-	DateStarted time.Time       `json:"date_started"`
-	DateEnded   null.Time       `json:"date_ended"`
+	Code        string          `db:"code" json:"code"`
+	OwnerID     uuid.NullUUID   `db:"owner_id" json:"owner_id"`
+	Type        PromotionType   `db:"type" json:"type"`
+	Title       string          `db:"title" json:"title"`
+	Description null.String     `db:"description" json:"description"`
+	IsEnabled   bool            `db:"is_enabled" json:"is_enabled"`
+	Budget      int64           `db:"budget" json:"budget"`
+	AutoApply   bool            `db:"auto_apply" json:"auto_apply"`
+	Group       string          `db:"group" json:"group"`
+	Data        json.RawMessage `db:"data" json:"data"`
+	DateStarted time.Time       `db:"date_started" json:"date_started"`
+	DateEnded   null.Time       `db:"date_ended" json:"date_ended"`
 }
 
 func (q *Queries) CreateDefaultPromotion(ctx context.Context, arg CreateDefaultPromotionParams) (PromotionPromotion, error) {
@@ -321,9 +321,9 @@ RETURNING id, promotion_id, ref_type, ref_id
 `
 
 type CreateDefaultRefParams struct {
-	PromotionID uuid.UUID        `json:"promotion_id"`
-	RefType     PromotionRefType `json:"ref_type"`
-	RefID       uuid.UUID        `json:"ref_id"`
+	PromotionID uuid.UUID        `db:"promotion_id" json:"promotion_id"`
+	RefType     PromotionRefType `db:"ref_type" json:"ref_type"`
+	RefID       uuid.UUID        `db:"ref_id" json:"ref_id"`
 }
 
 func (q *Queries) CreateDefaultRef(ctx context.Context, arg CreateDefaultRefParams) (PromotionRef, error) {
@@ -345,12 +345,12 @@ RETURNING id, promotion_id, timezone, cron_rule, duration, next_run_at, last_run
 `
 
 type CreateDefaultScheduleParams struct {
-	PromotionID uuid.UUID `json:"promotion_id"`
-	Timezone    string    `json:"timezone"`
-	CronRule    string    `json:"cron_rule"`
-	Duration    int32     `json:"duration"`
-	NextRunAt   null.Time `json:"next_run_at"`
-	LastRunAt   null.Time `json:"last_run_at"`
+	PromotionID uuid.UUID `db:"promotion_id" json:"promotion_id"`
+	Timezone    string    `db:"timezone" json:"timezone"`
+	CronRule    string    `db:"cron_rule" json:"cron_rule"`
+	Duration    int32     `db:"duration" json:"duration"`
+	NextRunAt   null.Time `db:"next_run_at" json:"next_run_at"`
+	LastRunAt   null.Time `db:"last_run_at" json:"last_run_at"`
 }
 
 func (q *Queries) CreateDefaultSchedule(ctx context.Context, arg CreateDefaultScheduleParams) (PromotionSchedule, error) {
@@ -382,21 +382,21 @@ RETURNING id, code, owner_id, type, title, description, is_enabled, budget, auto
 `
 
 type CreatePromotionParams struct {
-	ID          uuid.UUID       `json:"id"`
-	Code        string          `json:"code"`
-	OwnerID     uuid.NullUUID   `json:"owner_id"`
-	Type        PromotionType   `json:"type"`
-	Title       string          `json:"title"`
-	Description null.String     `json:"description"`
-	IsEnabled   bool            `json:"is_enabled"`
-	Budget      int64           `json:"budget"`
-	AutoApply   bool            `json:"auto_apply"`
-	Group       string          `json:"group"`
-	Data        json.RawMessage `json:"data"`
-	DateStarted time.Time       `json:"date_started"`
-	DateEnded   null.Time       `json:"date_ended"`
-	DateCreated time.Time       `json:"date_created"`
-	DateUpdated time.Time       `json:"date_updated"`
+	ID          uuid.UUID       `db:"id" json:"id"`
+	Code        string          `db:"code" json:"code"`
+	OwnerID     uuid.NullUUID   `db:"owner_id" json:"owner_id"`
+	Type        PromotionType   `db:"type" json:"type"`
+	Title       string          `db:"title" json:"title"`
+	Description null.String     `db:"description" json:"description"`
+	IsEnabled   bool            `db:"is_enabled" json:"is_enabled"`
+	Budget      int64           `db:"budget" json:"budget"`
+	AutoApply   bool            `db:"auto_apply" json:"auto_apply"`
+	Group       string          `db:"group" json:"group"`
+	Data        json.RawMessage `db:"data" json:"data"`
+	DateStarted time.Time       `db:"date_started" json:"date_started"`
+	DateEnded   null.Time       `db:"date_ended" json:"date_ended"`
+	DateCreated time.Time       `db:"date_created" json:"date_created"`
+	DateUpdated time.Time       `db:"date_updated" json:"date_updated"`
 }
 
 func (q *Queries) CreatePromotion(ctx context.Context, arg CreatePromotionParams) (PromotionPromotion, error) {
@@ -445,9 +445,9 @@ RETURNING id, promotion_id, ref_type, ref_id
 `
 
 type CreateRefParams struct {
-	PromotionID uuid.UUID        `json:"promotion_id"`
-	RefType     PromotionRefType `json:"ref_type"`
-	RefID       uuid.UUID        `json:"ref_id"`
+	PromotionID uuid.UUID        `db:"promotion_id" json:"promotion_id"`
+	RefType     PromotionRefType `db:"ref_type" json:"ref_type"`
+	RefID       uuid.UUID        `db:"ref_id" json:"ref_id"`
 }
 
 func (q *Queries) CreateRef(ctx context.Context, arg CreateRefParams) (PromotionRef, error) {
@@ -469,12 +469,12 @@ RETURNING id, promotion_id, timezone, cron_rule, duration, next_run_at, last_run
 `
 
 type CreateScheduleParams struct {
-	PromotionID uuid.UUID `json:"promotion_id"`
-	Timezone    string    `json:"timezone"`
-	CronRule    string    `json:"cron_rule"`
-	Duration    int32     `json:"duration"`
-	NextRunAt   null.Time `json:"next_run_at"`
-	LastRunAt   null.Time `json:"last_run_at"`
+	PromotionID uuid.UUID `db:"promotion_id" json:"promotion_id"`
+	Timezone    string    `db:"timezone" json:"timezone"`
+	CronRule    string    `db:"cron_rule" json:"cron_rule"`
+	Duration    int32     `db:"duration" json:"duration"`
+	NextRunAt   null.Time `db:"next_run_at" json:"next_run_at"`
+	LastRunAt   null.Time `db:"last_run_at" json:"last_run_at"`
 }
 
 func (q *Queries) CreateSchedule(ctx context.Context, arg CreateScheduleParams) (PromotionSchedule, error) {
@@ -531,31 +531,31 @@ WHERE (
 `
 
 type DeletePromotionParams struct {
-	ID              []uuid.UUID       `json:"id"`
-	Code            []string          `json:"code"`
-	OwnerID         []uuid.NullUUID   `json:"owner_id"`
-	Type            []PromotionType   `json:"type"`
-	Title           []string          `json:"title"`
-	Description     []null.String     `json:"description"`
-	IsEnabled       []bool            `json:"is_enabled"`
-	Budget          []int64           `json:"budget"`
-	BudgetFrom      null.Int          `json:"budget_from"`
-	BudgetTo        null.Int          `json:"budget_to"`
-	AutoApply       []bool            `json:"auto_apply"`
-	Group           []string          `json:"group"`
-	Data            []json.RawMessage `json:"data"`
-	DateStarted     []time.Time       `json:"date_started"`
-	DateStartedFrom null.Time         `json:"date_started_from"`
-	DateStartedTo   null.Time         `json:"date_started_to"`
-	DateEnded       []null.Time       `json:"date_ended"`
-	DateEndedFrom   null.Time         `json:"date_ended_from"`
-	DateEndedTo     null.Time         `json:"date_ended_to"`
-	DateCreated     []time.Time       `json:"date_created"`
-	DateCreatedFrom null.Time         `json:"date_created_from"`
-	DateCreatedTo   null.Time         `json:"date_created_to"`
-	DateUpdated     []time.Time       `json:"date_updated"`
-	DateUpdatedFrom null.Time         `json:"date_updated_from"`
-	DateUpdatedTo   null.Time         `json:"date_updated_to"`
+	ID              []uuid.UUID       `db:"id" json:"id"`
+	Code            []string          `db:"code" json:"code"`
+	OwnerID         []uuid.NullUUID   `db:"owner_id" json:"owner_id"`
+	Type            []PromotionType   `db:"type" json:"type"`
+	Title           []string          `db:"title" json:"title"`
+	Description     []null.String     `db:"description" json:"description"`
+	IsEnabled       []bool            `db:"is_enabled" json:"is_enabled"`
+	Budget          []int64           `db:"budget" json:"budget"`
+	BudgetFrom      null.Int          `db:"budget_from" json:"budget_from"`
+	BudgetTo        null.Int          `db:"budget_to" json:"budget_to"`
+	AutoApply       []bool            `db:"auto_apply" json:"auto_apply"`
+	Group           []string          `db:"group" json:"group"`
+	Data            []json.RawMessage `db:"data" json:"data"`
+	DateStarted     []time.Time       `db:"date_started" json:"date_started"`
+	DateStartedFrom null.Time         `db:"date_started_from" json:"date_started_from"`
+	DateStartedTo   null.Time         `db:"date_started_to" json:"date_started_to"`
+	DateEnded       []null.Time       `db:"date_ended" json:"date_ended"`
+	DateEndedFrom   null.Time         `db:"date_ended_from" json:"date_ended_from"`
+	DateEndedTo     null.Time         `db:"date_ended_to" json:"date_ended_to"`
+	DateCreated     []time.Time       `db:"date_created" json:"date_created"`
+	DateCreatedFrom null.Time         `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time         `db:"date_created_to" json:"date_created_to"`
+	DateUpdated     []time.Time       `db:"date_updated" json:"date_updated"`
+	DateUpdatedFrom null.Time         `db:"date_updated_from" json:"date_updated_from"`
+	DateUpdatedTo   null.Time         `db:"date_updated_to" json:"date_updated_to"`
 }
 
 func (q *Queries) DeletePromotion(ctx context.Context, arg DeletePromotionParams) error {
@@ -600,10 +600,10 @@ WHERE (
 `
 
 type DeleteRefParams struct {
-	ID          []int64            `json:"id"`
-	PromotionID []uuid.UUID        `json:"promotion_id"`
-	RefType     []PromotionRefType `json:"ref_type"`
-	RefID       []uuid.UUID        `json:"ref_id"`
+	ID          []int64            `db:"id" json:"id"`
+	PromotionID []uuid.UUID        `db:"promotion_id" json:"promotion_id"`
+	RefType     []PromotionRefType `db:"ref_type" json:"ref_type"`
+	RefID       []uuid.UUID        `db:"ref_id" json:"ref_id"`
 }
 
 func (q *Queries) DeleteRef(ctx context.Context, arg DeleteRefParams) error {
@@ -636,19 +636,19 @@ WHERE (
 `
 
 type DeleteScheduleParams struct {
-	ID            []int64     `json:"id"`
-	PromotionID   []uuid.UUID `json:"promotion_id"`
-	Timezone      []string    `json:"timezone"`
-	CronRule      []string    `json:"cron_rule"`
-	Duration      []int32     `json:"duration"`
-	DurationFrom  null.Int32  `json:"duration_from"`
-	DurationTo    null.Int32  `json:"duration_to"`
-	NextRunAt     []null.Time `json:"next_run_at"`
-	NextRunAtFrom null.Time   `json:"next_run_at_from"`
-	NextRunAtTo   null.Time   `json:"next_run_at_to"`
-	LastRunAt     []null.Time `json:"last_run_at"`
-	LastRunAtFrom null.Time   `json:"last_run_at_from"`
-	LastRunAtTo   null.Time   `json:"last_run_at_to"`
+	ID            []int64     `db:"id" json:"id"`
+	PromotionID   []uuid.UUID `db:"promotion_id" json:"promotion_id"`
+	Timezone      []string    `db:"timezone" json:"timezone"`
+	CronRule      []string    `db:"cron_rule" json:"cron_rule"`
+	Duration      []int32     `db:"duration" json:"duration"`
+	DurationFrom  null.Int32  `db:"duration_from" json:"duration_from"`
+	DurationTo    null.Int32  `db:"duration_to" json:"duration_to"`
+	NextRunAt     []null.Time `db:"next_run_at" json:"next_run_at"`
+	NextRunAtFrom null.Time   `db:"next_run_at_from" json:"next_run_at_from"`
+	NextRunAtTo   null.Time   `db:"next_run_at_to" json:"next_run_at_to"`
+	LastRunAt     []null.Time `db:"last_run_at" json:"last_run_at"`
+	LastRunAtFrom null.Time   `db:"last_run_at_from" json:"last_run_at_from"`
+	LastRunAtTo   null.Time   `db:"last_run_at_to" json:"last_run_at_to"`
 }
 
 func (q *Queries) DeleteSchedule(ctx context.Context, arg DeleteScheduleParams) error {
@@ -680,8 +680,8 @@ WHERE ("id" = $1) OR ("code" = $2)
 `
 
 type GetPromotionParams struct {
-	ID   uuid.NullUUID `json:"id"`
-	Code null.String   `json:"code"`
+	ID   uuid.NullUUID `db:"id" json:"id"`
+	Code null.String   `db:"code" json:"code"`
 }
 
 // Code generated by pgtempl. DO NOT EDIT.
@@ -720,10 +720,10 @@ WHERE ("id" = $1) OR ("promotion_id" = $2 AND "ref_type" = $3 AND "ref_id" = $4)
 `
 
 type GetRefParams struct {
-	ID          null.Int             `json:"id"`
-	PromotionID uuid.NullUUID        `json:"promotion_id"`
-	RefType     NullPromotionRefType `json:"ref_type"`
-	RefID       uuid.NullUUID        `json:"ref_id"`
+	ID          null.Int             `db:"id" json:"id"`
+	PromotionID uuid.NullUUID        `db:"promotion_id" json:"promotion_id"`
+	RefType     NullPromotionRefType `db:"ref_type" json:"ref_type"`
+	RefID       uuid.NullUUID        `db:"ref_id" json:"ref_id"`
 }
 
 // ========================================
@@ -771,562 +771,6 @@ func (q *Queries) GetSchedule(ctx context.Context, id null.Int) (PromotionSchedu
 	return i, err
 }
 
-const listCountPromotion = `-- name: ListCountPromotion :many
-SELECT embed_promotion.id, embed_promotion.code, embed_promotion.owner_id, embed_promotion.type, embed_promotion.title, embed_promotion.description, embed_promotion.is_enabled, embed_promotion.budget, embed_promotion.auto_apply, embed_promotion."group", embed_promotion.data, embed_promotion.date_started, embed_promotion.date_ended, embed_promotion.date_created, embed_promotion.date_updated, COUNT(*) OVER() as total_count
-FROM "promotion"."promotion" embed_promotion
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("code" = ANY($2) OR $2 IS NULL) AND
-    ("owner_id" = ANY($3) OR $3 IS NULL) AND
-    ("type" = ANY($4) OR $4 IS NULL) AND
-    ("title" = ANY($5) OR $5 IS NULL) AND
-    ("description" = ANY($6) OR $6 IS NULL) AND
-    ("is_enabled" = ANY($7) OR $7 IS NULL) AND
-    ("budget" = ANY($8) OR $8 IS NULL) AND
-    ("budget" >= $9 OR $9 IS NULL) AND
-    ("budget" <= $10 OR $10 IS NULL) AND
-    ("auto_apply" = ANY($11) OR $11 IS NULL) AND
-    ("group" = ANY($12) OR $12 IS NULL) AND
-    ("data" = ANY($13) OR $13 IS NULL) AND
-    ("date_started" = ANY($14) OR $14 IS NULL) AND
-    ("date_started" >= $15 OR $15 IS NULL) AND
-    ("date_started" <= $16 OR $16 IS NULL) AND
-    ("date_ended" = ANY($17) OR $17 IS NULL) AND
-    ("date_ended" >= $18 OR $18 IS NULL) AND
-    ("date_ended" <= $19 OR $19 IS NULL) AND
-    ("date_created" = ANY($20) OR $20 IS NULL) AND
-    ("date_created" >= $21 OR $21 IS NULL) AND
-    ("date_created" <= $22 OR $22 IS NULL) AND
-    ("date_updated" = ANY($23) OR $23 IS NULL) AND
-    ("date_updated" >= $24 OR $24 IS NULL) AND
-    ("date_updated" <= $25 OR $25 IS NULL)
-)
-ORDER BY "id"
-LIMIT $27::int
-OFFSET $26::int
-`
-
-type ListCountPromotionParams struct {
-	ID              []uuid.UUID       `json:"id"`
-	Code            []string          `json:"code"`
-	OwnerID         []uuid.NullUUID   `json:"owner_id"`
-	Type            []PromotionType   `json:"type"`
-	Title           []string          `json:"title"`
-	Description     []null.String     `json:"description"`
-	IsEnabled       []bool            `json:"is_enabled"`
-	Budget          []int64           `json:"budget"`
-	BudgetFrom      null.Int          `json:"budget_from"`
-	BudgetTo        null.Int          `json:"budget_to"`
-	AutoApply       []bool            `json:"auto_apply"`
-	Group           []string          `json:"group"`
-	Data            []json.RawMessage `json:"data"`
-	DateStarted     []time.Time       `json:"date_started"`
-	DateStartedFrom null.Time         `json:"date_started_from"`
-	DateStartedTo   null.Time         `json:"date_started_to"`
-	DateEnded       []null.Time       `json:"date_ended"`
-	DateEndedFrom   null.Time         `json:"date_ended_from"`
-	DateEndedTo     null.Time         `json:"date_ended_to"`
-	DateCreated     []time.Time       `json:"date_created"`
-	DateCreatedFrom null.Time         `json:"date_created_from"`
-	DateCreatedTo   null.Time         `json:"date_created_to"`
-	DateUpdated     []time.Time       `json:"date_updated"`
-	DateUpdatedFrom null.Time         `json:"date_updated_from"`
-	DateUpdatedTo   null.Time         `json:"date_updated_to"`
-	Offset          null.Int32        `json:"offset"`
-	Limit           null.Int32        `json:"limit"`
-}
-
-type ListCountPromotionRow struct {
-	PromotionPromotion PromotionPromotion `json:"promotion_promotion"`
-	TotalCount         int64              `json:"total_count"`
-}
-
-func (q *Queries) ListCountPromotion(ctx context.Context, arg ListCountPromotionParams) ([]ListCountPromotionRow, error) {
-	rows, err := q.db.Query(ctx, listCountPromotion,
-		arg.ID,
-		arg.Code,
-		arg.OwnerID,
-		arg.Type,
-		arg.Title,
-		arg.Description,
-		arg.IsEnabled,
-		arg.Budget,
-		arg.BudgetFrom,
-		arg.BudgetTo,
-		arg.AutoApply,
-		arg.Group,
-		arg.Data,
-		arg.DateStarted,
-		arg.DateStartedFrom,
-		arg.DateStartedTo,
-		arg.DateEnded,
-		arg.DateEndedFrom,
-		arg.DateEndedTo,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.DateUpdated,
-		arg.DateUpdatedFrom,
-		arg.DateUpdatedTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountPromotionRow{}
-	for rows.Next() {
-		var i ListCountPromotionRow
-		if err := rows.Scan(
-			&i.PromotionPromotion.ID,
-			&i.PromotionPromotion.Code,
-			&i.PromotionPromotion.OwnerID,
-			&i.PromotionPromotion.Type,
-			&i.PromotionPromotion.Title,
-			&i.PromotionPromotion.Description,
-			&i.PromotionPromotion.IsEnabled,
-			&i.PromotionPromotion.Budget,
-			&i.PromotionPromotion.AutoApply,
-			&i.PromotionPromotion.Group,
-			&i.PromotionPromotion.Data,
-			&i.PromotionPromotion.DateStarted,
-			&i.PromotionPromotion.DateEnded,
-			&i.PromotionPromotion.DateCreated,
-			&i.PromotionPromotion.DateUpdated,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCountRef = `-- name: ListCountRef :many
-SELECT embed_ref.id, embed_ref.promotion_id, embed_ref.ref_type, embed_ref.ref_id, COUNT(*) OVER() as total_count
-FROM "promotion"."ref" embed_ref
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("promotion_id" = ANY($2) OR $2 IS NULL) AND
-    ("ref_type" = ANY($3) OR $3 IS NULL) AND
-    ("ref_id" = ANY($4) OR $4 IS NULL)
-)
-ORDER BY "id"
-LIMIT $6::int
-OFFSET $5::int
-`
-
-type ListCountRefParams struct {
-	ID          []int64            `json:"id"`
-	PromotionID []uuid.UUID        `json:"promotion_id"`
-	RefType     []PromotionRefType `json:"ref_type"`
-	RefID       []uuid.UUID        `json:"ref_id"`
-	Offset      null.Int32         `json:"offset"`
-	Limit       null.Int32         `json:"limit"`
-}
-
-type ListCountRefRow struct {
-	PromotionRef PromotionRef `json:"promotion_ref"`
-	TotalCount   int64        `json:"total_count"`
-}
-
-func (q *Queries) ListCountRef(ctx context.Context, arg ListCountRefParams) ([]ListCountRefRow, error) {
-	rows, err := q.db.Query(ctx, listCountRef,
-		arg.ID,
-		arg.PromotionID,
-		arg.RefType,
-		arg.RefID,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountRefRow{}
-	for rows.Next() {
-		var i ListCountRefRow
-		if err := rows.Scan(
-			&i.PromotionRef.ID,
-			&i.PromotionRef.PromotionID,
-			&i.PromotionRef.RefType,
-			&i.PromotionRef.RefID,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCountSchedule = `-- name: ListCountSchedule :many
-SELECT embed_schedule.id, embed_schedule.promotion_id, embed_schedule.timezone, embed_schedule.cron_rule, embed_schedule.duration, embed_schedule.next_run_at, embed_schedule.last_run_at, COUNT(*) OVER() as total_count
-FROM "promotion"."schedule" embed_schedule
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("promotion_id" = ANY($2) OR $2 IS NULL) AND
-    ("timezone" = ANY($3) OR $3 IS NULL) AND
-    ("cron_rule" = ANY($4) OR $4 IS NULL) AND
-    ("duration" = ANY($5) OR $5 IS NULL) AND
-    ("duration" >= $6 OR $6 IS NULL) AND
-    ("duration" <= $7 OR $7 IS NULL) AND
-    ("next_run_at" = ANY($8) OR $8 IS NULL) AND
-    ("next_run_at" >= $9 OR $9 IS NULL) AND
-    ("next_run_at" <= $10 OR $10 IS NULL) AND
-    ("last_run_at" = ANY($11) OR $11 IS NULL) AND
-    ("last_run_at" >= $12 OR $12 IS NULL) AND
-    ("last_run_at" <= $13 OR $13 IS NULL)
-)
-ORDER BY "id"
-LIMIT $15::int
-OFFSET $14::int
-`
-
-type ListCountScheduleParams struct {
-	ID            []int64     `json:"id"`
-	PromotionID   []uuid.UUID `json:"promotion_id"`
-	Timezone      []string    `json:"timezone"`
-	CronRule      []string    `json:"cron_rule"`
-	Duration      []int32     `json:"duration"`
-	DurationFrom  null.Int32  `json:"duration_from"`
-	DurationTo    null.Int32  `json:"duration_to"`
-	NextRunAt     []null.Time `json:"next_run_at"`
-	NextRunAtFrom null.Time   `json:"next_run_at_from"`
-	NextRunAtTo   null.Time   `json:"next_run_at_to"`
-	LastRunAt     []null.Time `json:"last_run_at"`
-	LastRunAtFrom null.Time   `json:"last_run_at_from"`
-	LastRunAtTo   null.Time   `json:"last_run_at_to"`
-	Offset        null.Int32  `json:"offset"`
-	Limit         null.Int32  `json:"limit"`
-}
-
-type ListCountScheduleRow struct {
-	PromotionSchedule PromotionSchedule `json:"promotion_schedule"`
-	TotalCount        int64             `json:"total_count"`
-}
-
-func (q *Queries) ListCountSchedule(ctx context.Context, arg ListCountScheduleParams) ([]ListCountScheduleRow, error) {
-	rows, err := q.db.Query(ctx, listCountSchedule,
-		arg.ID,
-		arg.PromotionID,
-		arg.Timezone,
-		arg.CronRule,
-		arg.Duration,
-		arg.DurationFrom,
-		arg.DurationTo,
-		arg.NextRunAt,
-		arg.NextRunAtFrom,
-		arg.NextRunAtTo,
-		arg.LastRunAt,
-		arg.LastRunAtFrom,
-		arg.LastRunAtTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountScheduleRow{}
-	for rows.Next() {
-		var i ListCountScheduleRow
-		if err := rows.Scan(
-			&i.PromotionSchedule.ID,
-			&i.PromotionSchedule.PromotionID,
-			&i.PromotionSchedule.Timezone,
-			&i.PromotionSchedule.CronRule,
-			&i.PromotionSchedule.Duration,
-			&i.PromotionSchedule.NextRunAt,
-			&i.PromotionSchedule.LastRunAt,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listPromotion = `-- name: ListPromotion :many
-SELECT id, code, owner_id, type, title, description, is_enabled, budget, auto_apply, "group", data, date_started, date_ended, date_created, date_updated
-FROM "promotion"."promotion"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("code" = ANY($2) OR $2 IS NULL) AND
-    ("owner_id" = ANY($3) OR $3 IS NULL) AND
-    ("type" = ANY($4) OR $4 IS NULL) AND
-    ("title" = ANY($5) OR $5 IS NULL) AND
-    ("description" = ANY($6) OR $6 IS NULL) AND
-    ("is_enabled" = ANY($7) OR $7 IS NULL) AND
-    ("budget" = ANY($8) OR $8 IS NULL) AND
-    ("budget" >= $9 OR $9 IS NULL) AND
-    ("budget" <= $10 OR $10 IS NULL) AND
-    ("auto_apply" = ANY($11) OR $11 IS NULL) AND
-    ("group" = ANY($12) OR $12 IS NULL) AND
-    ("data" = ANY($13) OR $13 IS NULL) AND
-    ("date_started" = ANY($14) OR $14 IS NULL) AND
-    ("date_started" >= $15 OR $15 IS NULL) AND
-    ("date_started" <= $16 OR $16 IS NULL) AND
-    ("date_ended" = ANY($17) OR $17 IS NULL) AND
-    ("date_ended" >= $18 OR $18 IS NULL) AND
-    ("date_ended" <= $19 OR $19 IS NULL) AND
-    ("date_created" = ANY($20) OR $20 IS NULL) AND
-    ("date_created" >= $21 OR $21 IS NULL) AND
-    ("date_created" <= $22 OR $22 IS NULL) AND
-    ("date_updated" = ANY($23) OR $23 IS NULL) AND
-    ("date_updated" >= $24 OR $24 IS NULL) AND
-    ("date_updated" <= $25 OR $25 IS NULL)
-)
-ORDER BY "id"
-LIMIT $27::int
-OFFSET $26::int
-`
-
-type ListPromotionParams struct {
-	ID              []uuid.UUID       `json:"id"`
-	Code            []string          `json:"code"`
-	OwnerID         []uuid.NullUUID   `json:"owner_id"`
-	Type            []PromotionType   `json:"type"`
-	Title           []string          `json:"title"`
-	Description     []null.String     `json:"description"`
-	IsEnabled       []bool            `json:"is_enabled"`
-	Budget          []int64           `json:"budget"`
-	BudgetFrom      null.Int          `json:"budget_from"`
-	BudgetTo        null.Int          `json:"budget_to"`
-	AutoApply       []bool            `json:"auto_apply"`
-	Group           []string          `json:"group"`
-	Data            []json.RawMessage `json:"data"`
-	DateStarted     []time.Time       `json:"date_started"`
-	DateStartedFrom null.Time         `json:"date_started_from"`
-	DateStartedTo   null.Time         `json:"date_started_to"`
-	DateEnded       []null.Time       `json:"date_ended"`
-	DateEndedFrom   null.Time         `json:"date_ended_from"`
-	DateEndedTo     null.Time         `json:"date_ended_to"`
-	DateCreated     []time.Time       `json:"date_created"`
-	DateCreatedFrom null.Time         `json:"date_created_from"`
-	DateCreatedTo   null.Time         `json:"date_created_to"`
-	DateUpdated     []time.Time       `json:"date_updated"`
-	DateUpdatedFrom null.Time         `json:"date_updated_from"`
-	DateUpdatedTo   null.Time         `json:"date_updated_to"`
-	Offset          null.Int32        `json:"offset"`
-	Limit           null.Int32        `json:"limit"`
-}
-
-func (q *Queries) ListPromotion(ctx context.Context, arg ListPromotionParams) ([]PromotionPromotion, error) {
-	rows, err := q.db.Query(ctx, listPromotion,
-		arg.ID,
-		arg.Code,
-		arg.OwnerID,
-		arg.Type,
-		arg.Title,
-		arg.Description,
-		arg.IsEnabled,
-		arg.Budget,
-		arg.BudgetFrom,
-		arg.BudgetTo,
-		arg.AutoApply,
-		arg.Group,
-		arg.Data,
-		arg.DateStarted,
-		arg.DateStartedFrom,
-		arg.DateStartedTo,
-		arg.DateEnded,
-		arg.DateEndedFrom,
-		arg.DateEndedTo,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.DateUpdated,
-		arg.DateUpdatedFrom,
-		arg.DateUpdatedTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []PromotionPromotion{}
-	for rows.Next() {
-		var i PromotionPromotion
-		if err := rows.Scan(
-			&i.ID,
-			&i.Code,
-			&i.OwnerID,
-			&i.Type,
-			&i.Title,
-			&i.Description,
-			&i.IsEnabled,
-			&i.Budget,
-			&i.AutoApply,
-			&i.Group,
-			&i.Data,
-			&i.DateStarted,
-			&i.DateEnded,
-			&i.DateCreated,
-			&i.DateUpdated,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listRef = `-- name: ListRef :many
-SELECT id, promotion_id, ref_type, ref_id
-FROM "promotion"."ref"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("promotion_id" = ANY($2) OR $2 IS NULL) AND
-    ("ref_type" = ANY($3) OR $3 IS NULL) AND
-    ("ref_id" = ANY($4) OR $4 IS NULL)
-)
-ORDER BY "id"
-LIMIT $6::int
-OFFSET $5::int
-`
-
-type ListRefParams struct {
-	ID          []int64            `json:"id"`
-	PromotionID []uuid.UUID        `json:"promotion_id"`
-	RefType     []PromotionRefType `json:"ref_type"`
-	RefID       []uuid.UUID        `json:"ref_id"`
-	Offset      null.Int32         `json:"offset"`
-	Limit       null.Int32         `json:"limit"`
-}
-
-func (q *Queries) ListRef(ctx context.Context, arg ListRefParams) ([]PromotionRef, error) {
-	rows, err := q.db.Query(ctx, listRef,
-		arg.ID,
-		arg.PromotionID,
-		arg.RefType,
-		arg.RefID,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []PromotionRef{}
-	for rows.Next() {
-		var i PromotionRef
-		if err := rows.Scan(
-			&i.ID,
-			&i.PromotionID,
-			&i.RefType,
-			&i.RefID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listSchedule = `-- name: ListSchedule :many
-SELECT id, promotion_id, timezone, cron_rule, duration, next_run_at, last_run_at
-FROM "promotion"."schedule"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("promotion_id" = ANY($2) OR $2 IS NULL) AND
-    ("timezone" = ANY($3) OR $3 IS NULL) AND
-    ("cron_rule" = ANY($4) OR $4 IS NULL) AND
-    ("duration" = ANY($5) OR $5 IS NULL) AND
-    ("duration" >= $6 OR $6 IS NULL) AND
-    ("duration" <= $7 OR $7 IS NULL) AND
-    ("next_run_at" = ANY($8) OR $8 IS NULL) AND
-    ("next_run_at" >= $9 OR $9 IS NULL) AND
-    ("next_run_at" <= $10 OR $10 IS NULL) AND
-    ("last_run_at" = ANY($11) OR $11 IS NULL) AND
-    ("last_run_at" >= $12 OR $12 IS NULL) AND
-    ("last_run_at" <= $13 OR $13 IS NULL)
-)
-ORDER BY "id"
-LIMIT $15::int
-OFFSET $14::int
-`
-
-type ListScheduleParams struct {
-	ID            []int64     `json:"id"`
-	PromotionID   []uuid.UUID `json:"promotion_id"`
-	Timezone      []string    `json:"timezone"`
-	CronRule      []string    `json:"cron_rule"`
-	Duration      []int32     `json:"duration"`
-	DurationFrom  null.Int32  `json:"duration_from"`
-	DurationTo    null.Int32  `json:"duration_to"`
-	NextRunAt     []null.Time `json:"next_run_at"`
-	NextRunAtFrom null.Time   `json:"next_run_at_from"`
-	NextRunAtTo   null.Time   `json:"next_run_at_to"`
-	LastRunAt     []null.Time `json:"last_run_at"`
-	LastRunAtFrom null.Time   `json:"last_run_at_from"`
-	LastRunAtTo   null.Time   `json:"last_run_at_to"`
-	Offset        null.Int32  `json:"offset"`
-	Limit         null.Int32  `json:"limit"`
-}
-
-func (q *Queries) ListSchedule(ctx context.Context, arg ListScheduleParams) ([]PromotionSchedule, error) {
-	rows, err := q.db.Query(ctx, listSchedule,
-		arg.ID,
-		arg.PromotionID,
-		arg.Timezone,
-		arg.CronRule,
-		arg.Duration,
-		arg.DurationFrom,
-		arg.DurationTo,
-		arg.NextRunAt,
-		arg.NextRunAtFrom,
-		arg.NextRunAtTo,
-		arg.LastRunAt,
-		arg.LastRunAtFrom,
-		arg.LastRunAtTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []PromotionSchedule{}
-	for rows.Next() {
-		var i PromotionSchedule
-		if err := rows.Scan(
-			&i.ID,
-			&i.PromotionID,
-			&i.Timezone,
-			&i.CronRule,
-			&i.Duration,
-			&i.NextRunAt,
-			&i.LastRunAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const updatePromotion = `-- name: UpdatePromotion :one
 UPDATE "promotion"."promotion"
 SET "code" = COALESCE($1, "code"),
@@ -1348,25 +792,25 @@ RETURNING id, code, owner_id, type, title, description, is_enabled, budget, auto
 `
 
 type UpdatePromotionParams struct {
-	Code            null.String       `json:"code"`
-	NullOwnerID     bool              `json:"null_owner_id"`
-	OwnerID         uuid.NullUUID     `json:"owner_id"`
-	Type            NullPromotionType `json:"type"`
-	Title           null.String       `json:"title"`
-	NullDescription bool              `json:"null_description"`
-	Description     null.String       `json:"description"`
-	IsEnabled       null.Bool         `json:"is_enabled"`
-	Budget          null.Int          `json:"budget"`
-	AutoApply       null.Bool         `json:"auto_apply"`
-	Group           null.String       `json:"group"`
-	NullData        bool              `json:"null_data"`
-	Data            json.RawMessage   `json:"data"`
-	DateStarted     null.Time         `json:"date_started"`
-	NullDateEnded   bool              `json:"null_date_ended"`
-	DateEnded       null.Time         `json:"date_ended"`
-	DateCreated     null.Time         `json:"date_created"`
-	DateUpdated     null.Time         `json:"date_updated"`
-	ID              uuid.UUID         `json:"id"`
+	Code            null.String       `db:"code" json:"code"`
+	NullOwnerID     bool              `db:"null_owner_id" json:"null_owner_id"`
+	OwnerID         uuid.NullUUID     `db:"owner_id" json:"owner_id"`
+	Type            NullPromotionType `db:"type" json:"type"`
+	Title           null.String       `db:"title" json:"title"`
+	NullDescription bool              `db:"null_description" json:"null_description"`
+	Description     null.String       `db:"description" json:"description"`
+	IsEnabled       null.Bool         `db:"is_enabled" json:"is_enabled"`
+	Budget          null.Int          `db:"budget" json:"budget"`
+	AutoApply       null.Bool         `db:"auto_apply" json:"auto_apply"`
+	Group           null.String       `db:"group" json:"group"`
+	NullData        bool              `db:"null_data" json:"null_data"`
+	Data            json.RawMessage   `db:"data" json:"data"`
+	DateStarted     null.Time         `db:"date_started" json:"date_started"`
+	NullDateEnded   bool              `db:"null_date_ended" json:"null_date_ended"`
+	DateEnded       null.Time         `db:"date_ended" json:"date_ended"`
+	DateCreated     null.Time         `db:"date_created" json:"date_created"`
+	DateUpdated     null.Time         `db:"date_updated" json:"date_updated"`
+	ID              uuid.UUID         `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdatePromotion(ctx context.Context, arg UpdatePromotionParams) (PromotionPromotion, error) {
@@ -1422,10 +866,10 @@ RETURNING id, promotion_id, ref_type, ref_id
 `
 
 type UpdateRefParams struct {
-	PromotionID uuid.NullUUID        `json:"promotion_id"`
-	RefType     NullPromotionRefType `json:"ref_type"`
-	RefID       uuid.NullUUID        `json:"ref_id"`
-	ID          int64                `json:"id"`
+	PromotionID uuid.NullUUID        `db:"promotion_id" json:"promotion_id"`
+	RefType     NullPromotionRefType `db:"ref_type" json:"ref_type"`
+	RefID       uuid.NullUUID        `db:"ref_id" json:"ref_id"`
+	ID          int64                `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateRef(ctx context.Context, arg UpdateRefParams) (PromotionRef, error) {
@@ -1458,15 +902,15 @@ RETURNING id, promotion_id, timezone, cron_rule, duration, next_run_at, last_run
 `
 
 type UpdateScheduleParams struct {
-	PromotionID   uuid.NullUUID `json:"promotion_id"`
-	Timezone      null.String   `json:"timezone"`
-	CronRule      null.String   `json:"cron_rule"`
-	Duration      null.Int32    `json:"duration"`
-	NullNextRunAt bool          `json:"null_next_run_at"`
-	NextRunAt     null.Time     `json:"next_run_at"`
-	NullLastRunAt bool          `json:"null_last_run_at"`
-	LastRunAt     null.Time     `json:"last_run_at"`
-	ID            int64         `json:"id"`
+	PromotionID   uuid.NullUUID `db:"promotion_id" json:"promotion_id"`
+	Timezone      null.String   `db:"timezone" json:"timezone"`
+	CronRule      null.String   `db:"cron_rule" json:"cron_rule"`
+	Duration      null.Int32    `db:"duration" json:"duration"`
+	NullNextRunAt bool          `db:"null_next_run_at" json:"null_next_run_at"`
+	NextRunAt     null.Time     `db:"next_run_at" json:"next_run_at"`
+	NullLastRunAt bool          `db:"null_last_run_at" json:"null_last_run_at"`
+	LastRunAt     null.Time     `db:"last_run_at" json:"last_run_at"`
+	ID            int64         `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) (PromotionSchedule, error) {

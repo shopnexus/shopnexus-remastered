@@ -16,6 +16,7 @@ import (
 	promotiondb "shopnexus-server/internal/module/promotion/db/sqlc"
 	promotionmodel "shopnexus-server/internal/module/promotion/model"
 	"shopnexus-server/internal/shared/paginate"
+	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 )
 
@@ -39,14 +40,14 @@ func (s *PromotionHandler) GetPromotion(
 		return zero, fmt.Errorf("db get promotion: %w", err)
 	}
 
-	refs, err := s.storage.Querier().ListRef(ctx, promotiondb.ListRefParams{
-		PromotionID: []uuid.UUID{promo.ID},
+	refsRes, err := s.storage.Querier().ListRef(ctx, repolist.Request{}, promotiondb.ListRefFilter{
+		PromotionId: []uuid.UUID{promo.ID},
 	})
 	if err != nil {
 		return zero, fmt.Errorf("db list promotion refs: %w", err)
 	}
 
-	return mapPromotion(promo, refs), nil
+	return mapPromotion(promo, refsRes.Data), nil
 }
 
 // --- List ---
@@ -64,37 +65,31 @@ func (s *PromotionHandler) ListPromotion(
 ) (paginate.PaginateResult[promotionmodel.Promotion], error) {
 	var zero paginate.PaginateResult[promotionmodel.Promotion]
 
-	rows, err := s.storage.Querier().ListCountPromotion(ctx, promotiondb.ListCountPromotionParams{
-		Limit:  params.Limit,
-		Offset: params.Offset(),
-		ID:     params.ID,
+	res, err := s.storage.Querier().ListPromotion(ctx, repolist.FromParams(params.Params), promotiondb.ListPromotionFilter{
+		Id: params.ID,
 	})
 	if err != nil {
 		return zero, fmt.Errorf("db list promotions: %w", err)
 	}
 
-	promoIDs := lo.Map(rows, func(r promotiondb.ListCountPromotionRow, _ int) uuid.UUID {
-		return r.PromotionPromotion.ID
+	promoIDs := lo.Map(res.Data, func(p promotiondb.PromotionPromotion, _ int) uuid.UUID {
+		return p.ID
 	})
 
-	refs, err := s.storage.Querier().ListRef(ctx, promotiondb.ListRefParams{
-		PromotionID: promoIDs,
+	refsRes, err := s.storage.Querier().ListRef(ctx, repolist.Request{}, promotiondb.ListRefFilter{
+		PromotionId: promoIDs,
 	})
 	if err != nil {
 		return zero, fmt.Errorf("db list promotion refs: %w", err)
 	}
-	refsMap := lo.GroupBy(refs, func(r promotiondb.PromotionRef) uuid.UUID { return r.PromotionID })
-
-	var total null.Int64
-	if len(rows) > 0 {
-		total.SetValid(rows[0].TotalCount)
-	}
+	refsMap := lo.GroupBy(refsRes.Data, func(r promotiondb.PromotionRef) uuid.UUID { return r.PromotionID })
 
 	return paginate.PaginateResult[promotionmodel.Promotion]{
-		PageParams: params.Params,
-		Total:      total,
-		Data: lo.Map(rows, func(r promotiondb.ListCountPromotionRow, _ int) promotionmodel.Promotion {
-			return mapPromotion(r.PromotionPromotion, refsMap[r.PromotionPromotion.ID])
+		PageParams: res.PageParams,
+		Total:      res.Total,
+		NextCursor: res.NextCursor,
+		Data: lo.Map(res.Data, func(p promotiondb.PromotionPromotion, _ int) promotionmodel.Promotion {
+			return mapPromotion(p, refsMap[p.ID])
 		}),
 	}, nil
 }

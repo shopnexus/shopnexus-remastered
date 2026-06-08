@@ -11,6 +11,7 @@ import (
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
+	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 )
 
@@ -54,15 +55,15 @@ func (b *CatalogHandler) GetVendorStats(ctx restate.Context, params GetVendorSta
 		})
 
 		// Get all SKUs for these SPUs
-		skus, err := b.storage.Querier().ListProductSku(ctx, catalogdb.ListProductSkuParams{
-			SpuID: spuIDs,
+		skus, err := b.storage.Querier().ListProductSku(ctx, repolist.Request{}, catalogdb.ListProductSkuFilter{
+			SpuId: spuIDs,
 		})
 		if err != nil {
 			return zero, fmt.Errorf("db list vendor skus: %w", err)
 		}
 
-		if len(skus) > 0 {
-			skuIDs := lo.Map(skus, func(s catalogdb.CatalogProductSku, _ int) uuid.UUID { return s.ID })
+		if len(skus.Data) > 0 {
+			skuIDs := lo.Map(skus.Data, func(s catalogdb.CatalogProductSku, _ int) uuid.UUID { return s.ID })
 			stocks, err := b.inventory.ListStock(ctx, inventorybiz.ListStockParams{
 				RefType: []inventorydb.InventoryStockRefType{inventorydb.InventoryStockRefTypeProductSku},
 				RefID:   skuIDs,

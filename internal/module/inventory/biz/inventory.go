@@ -10,6 +10,7 @@ import (
 	inventorymodel "shopnexus-server/internal/module/inventory/model"
 	"shopnexus-server/internal/shared/idempotency"
 	"shopnexus-server/internal/shared/paginate"
+	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -109,29 +110,18 @@ func (b *InventoryHandler) ListStock(
 		return zero, fmt.Errorf("validate list stock: %w", err)
 	}
 
-	rows, err := b.storage.Querier().ListCountStock(ctx, inventorydb.ListCountStockParams{
-		Limit:   params.Limit,
-		Offset:  params.Offset(),
+	res, err := b.storage.Querier().ListStock(ctx, repolist.FromParams(params.Params), inventorydb.ListStockFilter{
 		RefType: params.RefType,
-		RefID:   params.RefID,
+		RefId:   params.RefID,
 	})
 	if err != nil {
 		return zero, fmt.Errorf("db list stock: %w", err)
 	}
 
-	var total null.Int64
-	if len(rows) > 0 {
-		total.SetValid(rows[0].TotalCount)
-	}
-
-	stocks := lo.Map(rows, func(r inventorydb.ListCountStockRow, _ int) inventorydb.InventoryStock {
-		return r.InventoryStock
-	})
-
 	return paginate.PaginateResult[inventorydb.InventoryStock]{
-		PageParams: params.Params,
-		Total:      total,
-		Data:       stocks,
+		PageParams: res.PageParams,
+		Total:      res.Total,
+		Data:       res.Data,
 	}, nil
 }
 
@@ -186,28 +176,17 @@ func (b *InventoryHandler) ListStockHistory(
 		return zero, fmt.Errorf("db get stock: %w", err)
 	}
 
-	rows, err := b.storage.Querier().ListCountStockHistory(ctx, inventorydb.ListCountStockHistoryParams{
-		StockID: []int64{stock.ID},
-		Limit:   params.Limit,
-		Offset:  params.Offset(),
+	res, err := b.storage.Querier().ListStockHistory(ctx, repolist.FromParams(params.Params), inventorydb.ListStockHistoryFilter{
+		StockId: []int64{stock.ID},
 	})
 	if err != nil {
 		return zero, fmt.Errorf("db list stock history: %w", err)
 	}
 
-	var total null.Int64
-	if len(rows) > 0 {
-		total.SetValid(rows[0].TotalCount)
-	}
-
-	histories := lo.Map(rows, func(r inventorydb.ListCountStockHistoryRow, _ int) inventorydb.InventoryStockHistory {
-		return r.InventoryStockHistory
-	})
-
 	return paginate.PaginateResult[inventorydb.InventoryStockHistory]{
-		PageParams: params.Params,
-		Total:      total,
-		Data:       histories,
+		PageParams: res.PageParams,
+		Total:      res.Total,
+		Data:       res.Data,
 	}, nil
 }
 
@@ -426,28 +405,17 @@ func (b *InventoryHandler) ListSerial(
 		return zero, fmt.Errorf("validate list serial: %w", err)
 	}
 
-	rows, err := b.storage.Querier().ListCountSerial(ctx, inventorydb.ListCountSerialParams{
-		StockID: []int64{params.StockID},
-		Limit:   params.Limit,
-		Offset:  params.Offset(),
+	res, err := b.storage.Querier().ListSerial(ctx, repolist.FromParams(params.Params), inventorydb.ListSerialFilter{
+		StockId: []int64{params.StockID},
 	})
 	if err != nil {
 		return zero, fmt.Errorf("db list serial: %w", err)
 	}
 
-	var total null.Int64
-	if len(rows) > 0 {
-		total.SetValid(rows[0].TotalCount)
-	}
-
-	serials := lo.Map(rows, func(r inventorydb.ListCountSerialRow, _ int) inventorydb.InventorySerial {
-		return r.InventorySerial
-	})
-
 	return paginate.PaginateResult[inventorydb.InventorySerial]{
-		PageParams: params.Params,
-		Total:      total,
-		Data:       serials,
+		PageParams: res.PageParams,
+		Total:      res.Total,
+		Data:       res.Data,
 	}, nil
 }
 

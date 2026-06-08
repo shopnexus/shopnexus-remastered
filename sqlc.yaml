@@ -14,6 +14,7 @@ sql:
         emit_prepared_queries: true
         emit_empty_slices: true # For api empty data response
         emit_json_tags: true # Custom dto
+        emit_db_tags: true # pgx.RowToStructByName for hand-written dynamic queries
         emit_enum_valid_method: true
         emit_all_enum_values: true
 
@@ -31,6 +32,7 @@ sql:
         emit_prepared_queries: true
         emit_empty_slices: true # For api empty data response
         emit_json_tags: true # Custom dto
+        emit_db_tags: true # pgx.RowToStructByName for hand-written dynamic queries
         emit_enum_valid_method: true
         emit_all_enum_values: true
 
@@ -48,6 +50,7 @@ sql:
         emit_prepared_queries: true
         emit_empty_slices: true # For api empty data response
         emit_json_tags: true # Custom dto
+        emit_db_tags: true # pgx.RowToStructByName for hand-written dynamic queries
         emit_enum_valid_method: true
         emit_all_enum_values: true
 
@@ -65,6 +68,7 @@ sql:
         emit_prepared_queries: true
         emit_empty_slices: true # For api empty data response
         emit_json_tags: true # Custom dto
+        emit_db_tags: true # pgx.RowToStructByName for hand-written dynamic queries
         emit_enum_valid_method: true
         emit_all_enum_values: true
 
@@ -82,6 +86,7 @@ sql:
         emit_prepared_queries: true
         emit_empty_slices: true # For api empty data response
         emit_json_tags: true # Custom dto
+        emit_db_tags: true # pgx.RowToStructByName for hand-written dynamic queries
         emit_enum_valid_method: true
         emit_all_enum_values: true
 
@@ -99,6 +104,7 @@ sql:
         emit_prepared_queries: true
         emit_empty_slices: true # For api empty data response
         emit_json_tags: true # Custom dto
+        emit_db_tags: true # pgx.RowToStructByName for hand-written dynamic queries
         emit_enum_valid_method: true
         emit_all_enum_values: true
 
@@ -116,6 +122,7 @@ sql:
         emit_prepared_queries: true
         emit_empty_slices: true # For api empty data response
         emit_json_tags: true # Custom dto
+        emit_db_tags: true # pgx.RowToStructByName for hand-written dynamic queries
         emit_enum_valid_method: true
         emit_all_enum_values: true
 
@@ -133,6 +140,7 @@ sql:
         emit_prepared_queries: true
         emit_empty_slices: true
         emit_json_tags: true
+        emit_db_tags: true # pgx.RowToStructByName for hand-written dynamic queries
         emit_enum_valid_method: true
         emit_all_enum_values: true
 

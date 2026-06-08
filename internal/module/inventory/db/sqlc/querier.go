@@ -51,13 +51,7 @@ type Querier interface {
 	// Queries for table: inventory.stock_history
 	// ========================================
 	GetStockHistory(ctx context.Context, id null.Int) (InventoryStockHistory, error)
-	ListCountSerial(ctx context.Context, arg ListCountSerialParams) ([]ListCountSerialRow, error)
-	ListCountStock(ctx context.Context, arg ListCountStockParams) ([]ListCountStockRow, error)
-	ListCountStockHistory(ctx context.Context, arg ListCountStockHistoryParams) ([]ListCountStockHistoryRow, error)
 	ListMostTakenSku(ctx context.Context, arg ListMostTakenSkuParams) ([]InventoryStock, error)
-	ListSerial(ctx context.Context, arg ListSerialParams) ([]InventorySerial, error)
-	ListStock(ctx context.Context, arg ListStockParams) ([]InventoryStock, error)
-	ListStockHistory(ctx context.Context, arg ListStockHistoryParams) ([]InventoryStockHistory, error)
 	ReleaseInventory(ctx context.Context, arg ReleaseInventoryParams) (int64, error)
 	UpdateCurrentStock(ctx context.Context, arg UpdateCurrentStockParams) error
 	UpdateSerial(ctx context.Context, arg UpdateSerialParams) (InventorySerial, error)

@@ -14,6 +14,7 @@ import (
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	"shopnexus-server/internal/shared/paginate"
+	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -22,7 +23,7 @@ import (
 )
 
 type ListCommentParams struct {
-	paginate.Params
+	paginate.Params // Page | Cursor | Sort | Limit
 
 	Account   accountmodel.AuthenticatedAccount
 	RefType   catalogdb.CatalogCommentRefType `validate:"required,validateFn=Valid"`
@@ -44,42 +45,30 @@ func (b *CatalogHandler) ListComment(
 		return zero, fmt.Errorf("validate list comment: %w", err)
 	}
 
-	arg := catalogdb.ListCountCommentParams{
-		Limit:     params.Limit,
-		Offset:    params.Offset(),
-		ID:        params.ID,
-		AccountID: params.AccountID,
+	res, err := b.storage.Querier().ListComment(ctx, repolist.FromParams(params.Params), catalogdb.ListCommentFilter{
 		RefType:   []catalogdb.CatalogCommentRefType{params.RefType},
-		RefID:     params.RefID,
+		Id:        params.ID,
+		RefId:     params.RefID,
+		AccountId: params.AccountID,
 		ScoreFrom: params.ScoreFrom,
 		ScoreTo:   params.ScoreTo,
-	}
-
-	listComment, err := b.storage.Querier().ListCountComment(ctx, arg)
+	})
 	if err != nil {
 		return zero, fmt.Errorf("db list comment: %w", err)
 	}
-
-	if len(listComment) == 0 {
+	if len(res.Data) == 0 {
 		return zero, nil
 	}
 
-	accountIDs := lo.Map(
-		listComment,
-		func(c catalogdb.ListCountCommentRow, _ int) uuid.UUID { return c.CatalogComment.AccountID },
-	)
-	commentIDs := lo.Map(listComment, func(c catalogdb.ListCountCommentRow, _ int) uuid.UUID { return c.CatalogComment.ID })
+	accountIDs := lo.Map(res.Data, func(c catalogdb.CatalogComment, _ int) uuid.UUID { return c.AccountID })
+	commentIDs := lo.Map(res.Data, func(c catalogdb.CatalogComment, _ int) uuid.UUID { return c.ID })
 
-	// Map accounts to comments
 	listProfile, err := b.account.ListProfile(ctx, accountbiz.ListProfileParams{AccountIDs: accountIDs})
 	if err != nil {
 		return zero, fmt.Errorf("list comment profiles: %w", err)
 	}
-
-	// map[accountID]catalogdb.AccountProfile
 	profileMap := lo.KeyBy(listProfile.Data, func(a accountmodel.Profile) uuid.UUID { return a.ID })
 
-	// Map resources to comments
 	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeComment,
 		RefIDs:  commentIDs,
@@ -88,21 +77,20 @@ func (b *CatalogHandler) ListComment(
 		return zero, fmt.Errorf("list comment resources: %w", err)
 	}
 
-	var comments []catalogmodel.Comment
-	for _, dbComment := range listComment {
-		c := catalogmodel.Comment{
-			CatalogComment: dbComment.CatalogComment,
-			Profile:        profileMap[dbComment.CatalogComment.AccountID],
-			Resources:      resourcesMap[dbComment.CatalogComment.ID],
+	comments := lo.Map(res.Data, func(c catalogdb.CatalogComment, _ int) catalogmodel.Comment {
+		return catalogmodel.Comment{
+			CatalogComment: c,
+			Profile:        profileMap[c.AccountID],
+			Resources:      resourcesMap[c.ID],
 		}
-		comments = append(comments, c)
-	}
+	})
 
+	// Carry pagination metadata (Total / NextCursor / PageParams) from the repo.
 	return paginate.PaginateResult[catalogmodel.Comment]{
-		PageParams: params.Params,
+		PageParams: res.PageParams,
 		Data:       comments,
-		Total:      null.IntFrom(listComment[0].TotalCount),
-    
+		Total:      res.Total,
+		NextCursor: res.NextCursor,
 	}, nil
 }
 
@@ -114,11 +102,6 @@ type CreateCommentParams struct {
 	Body    string                          `validate:"required,min=1,max=1000"`
 	Score   float64                         `validate:"required,gte=0,lte=1"`
 	OrderID uuid.UUID                       `validate:"required"`
-
-	// Order facts denormalized at creation time. Supplied by the order
-	// module (the review entry point), which owns purchase validation.
-	OrderItemName null.String
-	OrderDate     null.Time
 
 	ResourceIDs []uuid.UUID `validate:"omitempty,dive"`
 }
@@ -135,16 +118,15 @@ func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateComment
 
 	// One review per order per product.
 	if params.RefType == catalogdb.CatalogCommentRefTypeProductSpu {
-		existing, err := b.storage.Querier().ListCountComment(ctx, catalogdb.ListCountCommentParams{
-			Limit:   null.Int32From(1),
+		existing, err := b.storage.Querier().ListComment(ctx, repolist.Request{Limit: 1}, catalogdb.ListCommentFilter{
 			RefType: []catalogdb.CatalogCommentRefType{catalogdb.CatalogCommentRefTypeProductSpu},
-			RefID:   []uuid.UUID{params.RefID},
-			OrderID: []uuid.NullUUID{{UUID: params.OrderID, Valid: true}},
+			RefId:   []uuid.UUID{params.RefID},
+			OrderId: []uuid.UUID{params.OrderID},
 		})
 		if err != nil {
 			return zero, fmt.Errorf("check existing review: %w", err)
 		}
-		if len(existing) > 0 && existing[0].TotalCount > 0 {
+		if len(existing.Data) > 0 {
 			return zero, catalogmodel.ErrOrderAlreadyReviewed
 		}
 	}

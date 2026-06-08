@@ -37,10 +37,6 @@ type Querier interface {
 	// ========================================
 	GetProductPopularity(ctx context.Context, id uuid.NullUUID) (AnalyticProductPopularity, error)
 	GetProductPopularityByID(ctx context.Context, id uuid.UUID) (AnalyticProductPopularity, error)
-	ListCountInteraction(ctx context.Context, arg ListCountInteractionParams) ([]ListCountInteractionRow, error)
-	ListCountProductPopularity(ctx context.Context, arg ListCountProductPopularityParams) ([]ListCountProductPopularityRow, error)
-	ListInteraction(ctx context.Context, arg ListInteractionParams) ([]AnalyticInteraction, error)
-	ListProductPopularity(ctx context.Context, arg ListProductPopularityParams) ([]AnalyticProductPopularity, error)
 	ListTopProductPopularity(ctx context.Context, arg ListTopProductPopularityParams) ([]AnalyticProductPopularity, error)
 	UpdateInteraction(ctx context.Context, arg UpdateInteractionParams) (AnalyticInteraction, error)
 	UpdateProductPopularity(ctx context.Context, arg UpdateProductPopularityParams) (AnalyticProductPopularity, error)

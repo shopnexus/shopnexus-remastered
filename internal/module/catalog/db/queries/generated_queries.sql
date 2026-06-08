@@ -21,32 +21,6 @@ WHERE (
     ("parent_id" = ANY(sqlc.slice('parent_id')) OR sqlc.slice('parent_id') IS NULL)
 );
 
--- name: ListCategory :many
-SELECT *
-FROM "catalog"."category"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("name" = ANY(sqlc.slice('name')) OR sqlc.slice('name') IS NULL) AND
-    ("description" = ANY(sqlc.slice('description')) OR sqlc.slice('description') IS NULL) AND
-    ("parent_id" = ANY(sqlc.slice('parent_id')) OR sqlc.slice('parent_id') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountCategory :many
-SELECT sqlc.embed(embed_category), COUNT(*) OVER() as total_count
-FROM "catalog"."category" embed_category
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("name" = ANY(sqlc.slice('name')) OR sqlc.slice('name') IS NULL) AND
-    ("description" = ANY(sqlc.slice('description')) OR sqlc.slice('description') IS NULL) AND
-    ("parent_id" = ANY(sqlc.slice('parent_id')) OR sqlc.slice('parent_id') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
 -- name: CreateCategory :one
 INSERT INTO "catalog"."category" ("id", "name", "description", "parent_id")
 VALUES ($1, $2, $3, $4)
@@ -123,68 +97,6 @@ WHERE (
     ("date_deleted" >= sqlc.narg('date_deleted_from') OR sqlc.narg('date_deleted_from') IS NULL) AND
     ("date_deleted" <= sqlc.narg('date_deleted_to') OR sqlc.narg('date_deleted_to') IS NULL)
 );
-
--- name: ListProductSpu :many
-SELECT *
-FROM "catalog"."product_spu"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("number" = ANY(sqlc.slice('number')) OR sqlc.slice('number') IS NULL) AND
-    ("number" >= sqlc.narg('number_from') OR sqlc.narg('number_from') IS NULL) AND
-    ("number" <= sqlc.narg('number_to') OR sqlc.narg('number_to') IS NULL) AND
-    ("slug" = ANY(sqlc.slice('slug')) OR sqlc.slice('slug') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("category_id" = ANY(sqlc.slice('category_id')) OR sqlc.slice('category_id') IS NULL) AND
-    ("featured_sku_id" = ANY(sqlc.slice('featured_sku_id')) OR sqlc.slice('featured_sku_id') IS NULL) AND
-    ("name" = ANY(sqlc.slice('name')) OR sqlc.slice('name') IS NULL) AND
-    ("description" = ANY(sqlc.slice('description')) OR sqlc.slice('description') IS NULL) AND
-    ("is_enabled" = ANY(sqlc.slice('is_enabled')) OR sqlc.slice('is_enabled') IS NULL) AND
-    ("currency" = ANY(sqlc.slice('currency')) OR sqlc.slice('currency') IS NULL) AND
-    ("specifications" = ANY(sqlc.slice('specifications')) OR sqlc.slice('specifications') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("date_updated" = ANY(sqlc.slice('date_updated')) OR sqlc.slice('date_updated') IS NULL) AND
-    ("date_updated" >= sqlc.narg('date_updated_from') OR sqlc.narg('date_updated_from') IS NULL) AND
-    ("date_updated" <= sqlc.narg('date_updated_to') OR sqlc.narg('date_updated_to') IS NULL) AND
-    ("date_deleted" = ANY(sqlc.slice('date_deleted')) OR sqlc.slice('date_deleted') IS NULL) AND
-    ("date_deleted" >= sqlc.narg('date_deleted_from') OR sqlc.narg('date_deleted_from') IS NULL) AND
-    ("date_deleted" <= sqlc.narg('date_deleted_to') OR sqlc.narg('date_deleted_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountProductSpu :many
-SELECT sqlc.embed(embed_product_spu), COUNT(*) OVER() as total_count
-FROM "catalog"."product_spu" embed_product_spu
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("number" = ANY(sqlc.slice('number')) OR sqlc.slice('number') IS NULL) AND
-    ("number" >= sqlc.narg('number_from') OR sqlc.narg('number_from') IS NULL) AND
-    ("number" <= sqlc.narg('number_to') OR sqlc.narg('number_to') IS NULL) AND
-    ("slug" = ANY(sqlc.slice('slug')) OR sqlc.slice('slug') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("category_id" = ANY(sqlc.slice('category_id')) OR sqlc.slice('category_id') IS NULL) AND
-    ("featured_sku_id" = ANY(sqlc.slice('featured_sku_id')) OR sqlc.slice('featured_sku_id') IS NULL) AND
-    ("name" = ANY(sqlc.slice('name')) OR sqlc.slice('name') IS NULL) AND
-    ("description" = ANY(sqlc.slice('description')) OR sqlc.slice('description') IS NULL) AND
-    ("is_enabled" = ANY(sqlc.slice('is_enabled')) OR sqlc.slice('is_enabled') IS NULL) AND
-    ("currency" = ANY(sqlc.slice('currency')) OR sqlc.slice('currency') IS NULL) AND
-    ("specifications" = ANY(sqlc.slice('specifications')) OR sqlc.slice('specifications') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("date_updated" = ANY(sqlc.slice('date_updated')) OR sqlc.slice('date_updated') IS NULL) AND
-    ("date_updated" >= sqlc.narg('date_updated_from') OR sqlc.narg('date_updated_from') IS NULL) AND
-    ("date_updated" <= sqlc.narg('date_updated_to') OR sqlc.narg('date_updated_to') IS NULL) AND
-    ("date_deleted" = ANY(sqlc.slice('date_deleted')) OR sqlc.slice('date_deleted') IS NULL) AND
-    ("date_deleted" >= sqlc.narg('date_deleted_from') OR sqlc.narg('date_deleted_from') IS NULL) AND
-    ("date_deleted" <= sqlc.narg('date_deleted_to') OR sqlc.narg('date_deleted_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
 
 -- name: CreateProductSpu :one
 INSERT INTO "catalog"."product_spu" ("id", "slug", "account_id", "category_id", "featured_sku_id", "name", "description", "is_enabled", "currency", "specifications", "date_created", "date_updated", "date_deleted")
@@ -282,52 +194,6 @@ WHERE (
     ("date_deleted" <= sqlc.narg('date_deleted_to') OR sqlc.narg('date_deleted_to') IS NULL)
 );
 
--- name: ListProductSku :many
-SELECT *
-FROM "catalog"."product_sku"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("spu_id" = ANY(sqlc.slice('spu_id')) OR sqlc.slice('spu_id') IS NULL) AND
-    ("price" = ANY(sqlc.slice('price')) OR sqlc.slice('price') IS NULL) AND
-    ("price" >= sqlc.narg('price_from') OR sqlc.narg('price_from') IS NULL) AND
-    ("price" <= sqlc.narg('price_to') OR sqlc.narg('price_to') IS NULL) AND
-    ("shared_packaging" = ANY(sqlc.slice('shared_packaging')) OR sqlc.slice('shared_packaging') IS NULL) AND
-    ("attributes" = ANY(sqlc.slice('attributes')) OR sqlc.slice('attributes') IS NULL) AND
-    ("package_details" = ANY(sqlc.slice('package_details')) OR sqlc.slice('package_details') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("date_deleted" = ANY(sqlc.slice('date_deleted')) OR sqlc.slice('date_deleted') IS NULL) AND
-    ("date_deleted" >= sqlc.narg('date_deleted_from') OR sqlc.narg('date_deleted_from') IS NULL) AND
-    ("date_deleted" <= sqlc.narg('date_deleted_to') OR sqlc.narg('date_deleted_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountProductSku :many
-SELECT sqlc.embed(embed_product_sku), COUNT(*) OVER() as total_count
-FROM "catalog"."product_sku" embed_product_sku
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("spu_id" = ANY(sqlc.slice('spu_id')) OR sqlc.slice('spu_id') IS NULL) AND
-    ("price" = ANY(sqlc.slice('price')) OR sqlc.slice('price') IS NULL) AND
-    ("price" >= sqlc.narg('price_from') OR sqlc.narg('price_from') IS NULL) AND
-    ("price" <= sqlc.narg('price_to') OR sqlc.narg('price_to') IS NULL) AND
-    ("shared_packaging" = ANY(sqlc.slice('shared_packaging')) OR sqlc.slice('shared_packaging') IS NULL) AND
-    ("attributes" = ANY(sqlc.slice('attributes')) OR sqlc.slice('attributes') IS NULL) AND
-    ("package_details" = ANY(sqlc.slice('package_details')) OR sqlc.slice('package_details') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("date_deleted" = ANY(sqlc.slice('date_deleted')) OR sqlc.slice('date_deleted') IS NULL) AND
-    ("date_deleted" >= sqlc.narg('date_deleted_from') OR sqlc.narg('date_deleted_from') IS NULL) AND
-    ("date_deleted" <= sqlc.narg('date_deleted_to') OR sqlc.narg('date_deleted_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
 -- name: CreateProductSku :one
 INSERT INTO "catalog"."product_sku" ("id", "spu_id", "price", "shared_packaging", "attributes", "package_details", "date_created", "date_deleted")
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -400,30 +266,6 @@ WHERE (
     ("description" = ANY(sqlc.slice('description')) OR sqlc.slice('description') IS NULL)
 );
 
--- name: ListTag :many
-SELECT *
-FROM "catalog"."tag"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("name" = ANY(sqlc.slice('name')) OR sqlc.slice('name') IS NULL) AND
-    ("description" = ANY(sqlc.slice('description')) OR sqlc.slice('description') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountTag :many
-SELECT sqlc.embed(embed_tag), COUNT(*) OVER() as total_count
-FROM "catalog"."tag" embed_tag
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("name" = ANY(sqlc.slice('name')) OR sqlc.slice('name') IS NULL) AND
-    ("description" = ANY(sqlc.slice('description')) OR sqlc.slice('description') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
 -- name: CreateTag :one
 INSERT INTO "catalog"."tag" ("id", "name", "description")
 VALUES ($1, $2, $3)
@@ -479,30 +321,6 @@ WHERE (
     ("spu_id" = ANY(sqlc.slice('spu_id')) OR sqlc.slice('spu_id') IS NULL) AND
     ("tag" = ANY(sqlc.slice('tag')) OR sqlc.slice('tag') IS NULL)
 );
-
--- name: ListProductSpuTag :many
-SELECT *
-FROM "catalog"."product_spu_tag"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("spu_id" = ANY(sqlc.slice('spu_id')) OR sqlc.slice('spu_id') IS NULL) AND
-    ("tag" = ANY(sqlc.slice('tag')) OR sqlc.slice('tag') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountProductSpuTag :many
-SELECT sqlc.embed(embed_product_spu_tag), COUNT(*) OVER() as total_count
-FROM "catalog"."product_spu_tag" embed_product_spu_tag
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("spu_id" = ANY(sqlc.slice('spu_id')) OR sqlc.slice('spu_id') IS NULL) AND
-    ("tag" = ANY(sqlc.slice('tag')) OR sqlc.slice('tag') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
 
 -- name: CreateProductSpuTag :one
 INSERT INTO "catalog"."product_spu_tag" ("spu_id", "tag")
@@ -577,66 +395,6 @@ WHERE (
     ("date_updated" >= sqlc.narg('date_updated_from') OR sqlc.narg('date_updated_from') IS NULL) AND
     ("date_updated" <= sqlc.narg('date_updated_to') OR sqlc.narg('date_updated_to') IS NULL)
 );
-
--- name: ListComment :many
-SELECT *
-FROM "catalog"."comment"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("order_id" = ANY(sqlc.slice('order_id')) OR sqlc.slice('order_id') IS NULL) AND
-    ("ref_type" = ANY(sqlc.slice('ref_type')) OR sqlc.slice('ref_type') IS NULL) AND
-    ("ref_id" = ANY(sqlc.slice('ref_id')) OR sqlc.slice('ref_id') IS NULL) AND
-    ("body" = ANY(sqlc.slice('body')) OR sqlc.slice('body') IS NULL) AND
-    ("upvote" = ANY(sqlc.slice('upvote')) OR sqlc.slice('upvote') IS NULL) AND
-    ("upvote" >= sqlc.narg('upvote_from') OR sqlc.narg('upvote_from') IS NULL) AND
-    ("upvote" <= sqlc.narg('upvote_to') OR sqlc.narg('upvote_to') IS NULL) AND
-    ("downvote" = ANY(sqlc.slice('downvote')) OR sqlc.slice('downvote') IS NULL) AND
-    ("downvote" >= sqlc.narg('downvote_from') OR sqlc.narg('downvote_from') IS NULL) AND
-    ("downvote" <= sqlc.narg('downvote_to') OR sqlc.narg('downvote_to') IS NULL) AND
-    ("score" = ANY(sqlc.slice('score')) OR sqlc.slice('score') IS NULL) AND
-    ("score" >= sqlc.narg('score_from') OR sqlc.narg('score_from') IS NULL) AND
-    ("score" <= sqlc.narg('score_to') OR sqlc.narg('score_to') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("date_updated" = ANY(sqlc.slice('date_updated')) OR sqlc.slice('date_updated') IS NULL) AND
-    ("date_updated" >= sqlc.narg('date_updated_from') OR sqlc.narg('date_updated_from') IS NULL) AND
-    ("date_updated" <= sqlc.narg('date_updated_to') OR sqlc.narg('date_updated_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountComment :many
-SELECT sqlc.embed(embed_comment), COUNT(*) OVER() as total_count
-FROM "catalog"."comment" embed_comment
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("order_id" = ANY(sqlc.slice('order_id')) OR sqlc.slice('order_id') IS NULL) AND
-    ("ref_type" = ANY(sqlc.slice('ref_type')) OR sqlc.slice('ref_type') IS NULL) AND
-    ("ref_id" = ANY(sqlc.slice('ref_id')) OR sqlc.slice('ref_id') IS NULL) AND
-    ("body" = ANY(sqlc.slice('body')) OR sqlc.slice('body') IS NULL) AND
-    ("upvote" = ANY(sqlc.slice('upvote')) OR sqlc.slice('upvote') IS NULL) AND
-    ("upvote" >= sqlc.narg('upvote_from') OR sqlc.narg('upvote_from') IS NULL) AND
-    ("upvote" <= sqlc.narg('upvote_to') OR sqlc.narg('upvote_to') IS NULL) AND
-    ("downvote" = ANY(sqlc.slice('downvote')) OR sqlc.slice('downvote') IS NULL) AND
-    ("downvote" >= sqlc.narg('downvote_from') OR sqlc.narg('downvote_from') IS NULL) AND
-    ("downvote" <= sqlc.narg('downvote_to') OR sqlc.narg('downvote_to') IS NULL) AND
-    ("score" = ANY(sqlc.slice('score')) OR sqlc.slice('score') IS NULL) AND
-    ("score" >= sqlc.narg('score_from') OR sqlc.narg('score_from') IS NULL) AND
-    ("score" <= sqlc.narg('score_to') OR sqlc.narg('score_to') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("date_updated" = ANY(sqlc.slice('date_updated')) OR sqlc.slice('date_updated') IS NULL) AND
-    ("date_updated" >= sqlc.narg('date_updated_from') OR sqlc.narg('date_updated_from') IS NULL) AND
-    ("date_updated" <= sqlc.narg('date_updated_to') OR sqlc.narg('date_updated_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
 
 -- name: CreateComment :one
 INSERT INTO "catalog"."comment" ("id", "account_id", "order_id", "ref_type", "ref_id", "body", "upvote", "downvote", "score", "date_created", "date_updated")
@@ -726,44 +484,6 @@ WHERE (
     ("date_updated" >= sqlc.narg('date_updated_from') OR sqlc.narg('date_updated_from') IS NULL) AND
     ("date_updated" <= sqlc.narg('date_updated_to') OR sqlc.narg('date_updated_to') IS NULL)
 );
-
--- name: ListSearchSync :many
-SELECT *
-FROM "catalog"."search_sync"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("ref_type" = ANY(sqlc.slice('ref_type')) OR sqlc.slice('ref_type') IS NULL) AND
-    ("ref_id" = ANY(sqlc.slice('ref_id')) OR sqlc.slice('ref_id') IS NULL) AND
-    ("is_stale_embedding" = ANY(sqlc.slice('is_stale_embedding')) OR sqlc.slice('is_stale_embedding') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("date_updated" = ANY(sqlc.slice('date_updated')) OR sqlc.slice('date_updated') IS NULL) AND
-    ("date_updated" >= sqlc.narg('date_updated_from') OR sqlc.narg('date_updated_from') IS NULL) AND
-    ("date_updated" <= sqlc.narg('date_updated_to') OR sqlc.narg('date_updated_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountSearchSync :many
-SELECT sqlc.embed(embed_search_sync), COUNT(*) OVER() as total_count
-FROM "catalog"."search_sync" embed_search_sync
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("ref_type" = ANY(sqlc.slice('ref_type')) OR sqlc.slice('ref_type') IS NULL) AND
-    ("ref_id" = ANY(sqlc.slice('ref_id')) OR sqlc.slice('ref_id') IS NULL) AND
-    ("is_stale_embedding" = ANY(sqlc.slice('is_stale_embedding')) OR sqlc.slice('is_stale_embedding') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("date_updated" = ANY(sqlc.slice('date_updated')) OR sqlc.slice('date_updated') IS NULL) AND
-    ("date_updated" >= sqlc.narg('date_updated_from') OR sqlc.narg('date_updated_from') IS NULL) AND
-    ("date_updated" <= sqlc.narg('date_updated_to') OR sqlc.narg('date_updated_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
 
 -- name: CreateSearchSync :one
 INSERT INTO "catalog"."search_sync" ("ref_type", "ref_id", "is_stale_embedding", "date_created", "date_updated")

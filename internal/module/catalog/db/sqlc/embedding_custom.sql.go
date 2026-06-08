@@ -21,8 +21,8 @@ WHERE spu_id = ANY($1::uuid[]) AND embedding IS NOT NULL
 `
 
 type GetProductVectorsRow struct {
-	SpuID     uuid.UUID       `json:"spu_id"`
-	Embedding pgvector.Vector `json:"embedding"`
+	SpuID     uuid.UUID       `db:"spu_id" json:"spu_id"`
+	Embedding pgvector.Vector `db:"embedding" json:"embedding"`
 }
 
 func (q *Queries) GetProductVectors(ctx context.Context, spuIds []uuid.UUID) ([]GetProductVectorsRow, error) {
@@ -90,26 +90,26 @@ LIMIT $12::int OFFSET $11::int
 `
 
 type HybridSearchProductParams struct {
-	DenseWeight     float32                   `json:"dense_weight"`
-	SparseWeight    float32                   `json:"sparse_weight"`
-	AccountID       []uuid.UUID               `json:"account_id"`
-	CategoryID      []uuid.UUID               `json:"category_id"`
-	IsEnabled       null.Bool                 `json:"is_enabled"`
-	DateCreatedFrom null.Time                 `json:"date_created_from"`
-	DateCreatedTo   null.Time                 `json:"date_created_to"`
-	PriceMin        null.Int                  `json:"price_min"`
-	PriceMax        null.Int                  `json:"price_max"`
-	Tags            []string                  `json:"tags"`
-	Offset          int32                     `json:"offset"`
-	Limit           int32                     `json:"limit"`
-	QueryDense      pgvector.Vector           `json:"query_dense"`
-	Pool            int32                     `json:"pool"`
-	QuerySparse     *pgvector_go.SparseVector `json:"query_sparse"`
+	DenseWeight     float32                   `db:"dense_weight" json:"dense_weight"`
+	SparseWeight    float32                   `db:"sparse_weight" json:"sparse_weight"`
+	AccountID       []uuid.UUID               `db:"account_id" json:"account_id"`
+	CategoryID      []uuid.UUID               `db:"category_id" json:"category_id"`
+	IsEnabled       null.Bool                 `db:"is_enabled" json:"is_enabled"`
+	DateCreatedFrom null.Time                 `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time                 `db:"date_created_to" json:"date_created_to"`
+	PriceMin        null.Int                  `db:"price_min" json:"price_min"`
+	PriceMax        null.Int                  `db:"price_max" json:"price_max"`
+	Tags            []string                  `db:"tags" json:"tags"`
+	Offset          int32                     `db:"offset" json:"offset"`
+	Limit           int32                     `db:"limit" json:"limit"`
+	QueryDense      pgvector.Vector           `db:"query_dense" json:"query_dense"`
+	Pool            int32                     `db:"pool" json:"pool"`
+	QuerySparse     *pgvector_go.SparseVector `db:"query_sparse" json:"query_sparse"`
 }
 
 type HybridSearchProductRow struct {
-	ID    uuid.UUID `json:"id"`
-	Score float32   `json:"score"`
+	ID    uuid.UUID `db:"id" json:"id"`
+	Score float32   `db:"score" json:"score"`
 }
 
 // Dense + sparse ANN with weighted score fusion; scalar filters join live
@@ -158,10 +158,10 @@ ORDER BY account_id, slot
 `
 
 type ListAccountInterestRow struct {
-	AccountID uuid.UUID       `json:"account_id"`
-	Slot      int16           `json:"slot"`
-	Embedding pgvector.Vector `json:"embedding"`
-	Strength  float32         `json:"strength"`
+	AccountID uuid.UUID       `db:"account_id" json:"account_id"`
+	Slot      int16           `db:"slot" json:"slot"`
+	Embedding pgvector.Vector `db:"embedding" json:"embedding"`
+	Strength  float32         `db:"strength" json:"strength"`
 }
 
 func (q *Queries) ListAccountInterest(ctx context.Context, accountIds []uuid.UUID) ([]ListAccountInterestRow, error) {
@@ -199,13 +199,13 @@ LIMIT $2::int
 `
 
 type SearchProductByVectorParams struct {
-	Query pgvector.Vector `json:"query"`
-	Limit int32           `json:"limit"`
+	Query pgvector.Vector `db:"query" json:"query"`
+	Limit int32           `db:"limit" json:"limit"`
 }
 
 type SearchProductByVectorRow struct {
-	SpuID uuid.UUID `json:"spu_id"`
-	Score float32   `json:"score"`
+	SpuID uuid.UUID `db:"spu_id" json:"spu_id"`
+	Score float32   `db:"score" json:"score"`
 }
 
 // Single dense ANN over active products (used per interest slot for recommendations).

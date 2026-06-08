@@ -10,6 +10,7 @@ import (
 	accountmodel "shopnexus-server/internal/module/account/model"
 	sharedcurrency "shopnexus-server/internal/shared/currency"
 	"shopnexus-server/internal/shared/paginate"
+	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -35,32 +36,24 @@ func (b *AccountHandler) ListProfile(
 		return result, fmt.Errorf("validate list profile params: %w", err)
 	}
 
-	listProfile, err := b.storage.Querier().ListCountProfile(ctx, accountdb.ListCountProfileParams{
-		ID:     params.AccountIDs,
-		Limit:  params.Limit,
-		Offset: params.Offset(),
+	resProfile, err := b.storage.Querier().ListProfile(ctx, repolist.FromParams(params.Params), accountdb.ListProfileFilter{
+		Id: params.AccountIDs,
 	})
 	if err != nil {
-		return result, fmt.Errorf("db list count profile: %w", err)
+		return result, fmt.Errorf("db list profile: %w", err)
 	}
 
-	var total null.Int64
-	if len(listProfile) > 0 {
-		total.SetValid(listProfile[0].TotalCount)
-	}
+	total := resProfile.Total
+	dbProfiles := resProfile.Data
 
-	dbProfiles := lo.Map(listProfile, func(row accountdb.ListCountProfileRow, _ int) accountdb.AccountProfile {
-		return row.AccountProfile
-	})
-
-	listAccount, err := b.storage.Querier().ListAccount(ctx, accountdb.ListAccountParams{
-		ID: lo.Map(params.AccountIDs, func(id uuid.UUID, _ int) uuid.UUID { return id }),
+	resAccount, err := b.storage.Querier().ListAccount(ctx, repolist.Request{}, accountdb.ListAccountFilter{
+		Id: params.AccountIDs,
 	})
 	if err != nil {
 		return result, fmt.Errorf("db list account: %w", err)
 	}
 
-	accountMap := lo.KeyBy(listAccount, func(account accountdb.AccountAccount) uuid.UUID {
+	accountMap := lo.KeyBy(resAccount.Data, func(account accountdb.AccountAccount) uuid.UUID {
 		return account.ID
 	})
 

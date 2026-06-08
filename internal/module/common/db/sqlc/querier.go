@@ -46,12 +46,6 @@ type Querier interface {
 	// Queries for table: common.resource_reference
 	// ========================================
 	GetResourceReference(ctx context.Context, id null.Int) (CommonResourceReference, error)
-	ListCountOption(ctx context.Context, arg ListCountOptionParams) ([]ListCountOptionRow, error)
-	ListCountResource(ctx context.Context, arg ListCountResourceParams) ([]ListCountResourceRow, error)
-	ListCountResourceReference(ctx context.Context, arg ListCountResourceReferenceParams) ([]ListCountResourceReferenceRow, error)
-	ListOption(ctx context.Context, arg ListOptionParams) ([]CommonOption, error)
-	ListResource(ctx context.Context, arg ListResourceParams) ([]CommonResource, error)
-	ListResourceReference(ctx context.Context, arg ListResourceReferenceParams) ([]CommonResourceReference, error)
 	ListSortedOption(ctx context.Context, arg ListSortedOptionParams) ([]CommonOption, error)
 	ListSortedResources(ctx context.Context, arg ListSortedResourcesParams) ([]ListSortedResourcesRow, error)
 	UpdateOption(ctx context.Context, arg UpdateOptionParams) (CommonOption, error)

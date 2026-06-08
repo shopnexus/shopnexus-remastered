@@ -16,7 +16,7 @@ import (
 )
 
 type ListCommentRequest struct {
-	paginate.Params
+	paginate.Params // page | cursor | sort | limit
 
 	RefType   catalogdb.CatalogCommentRefType `query:"ref_type"   validate:"required"`
 	RefID     uuid.UUID                       `query:"ref_id"     validate:"required"`

@@ -33,15 +33,15 @@ type CreateBatchInteractionBatchResults struct {
 }
 
 type CreateBatchInteractionParams struct {
-	AccountID   uuid.NullUUID              `json:"account_id"`
-	SessionID   null.String                `json:"session_id"`
-	EventType   string                     `json:"event_type"`
-	RefType     AnalyticInteractionRefType `json:"ref_type"`
-	RefID       string                     `json:"ref_id"`
-	Metadata    json.RawMessage            `json:"metadata"`
-	UserAgent   null.String                `json:"user_agent"`
-	IpAddress   null.String                `json:"ip_address"`
-	DateCreated time.Time                  `json:"date_created"`
+	AccountID   uuid.NullUUID              `db:"account_id" json:"account_id"`
+	SessionID   null.String                `db:"session_id" json:"session_id"`
+	EventType   string                     `db:"event_type" json:"event_type"`
+	RefType     AnalyticInteractionRefType `db:"ref_type" json:"ref_type"`
+	RefID       string                     `db:"ref_id" json:"ref_id"`
+	Metadata    json.RawMessage            `db:"metadata" json:"metadata"`
+	UserAgent   null.String                `db:"user_agent" json:"user_agent"`
+	IpAddress   null.String                `db:"ip_address" json:"ip_address"`
+	DateCreated time.Time                  `db:"date_created" json:"date_created"`
 }
 
 func (q *Queries) CreateBatchInteraction(ctx context.Context, arg []CreateBatchInteractionParams) *CreateBatchInteractionBatchResults {
@@ -111,14 +111,14 @@ type CreateBatchProductPopularityBatchResults struct {
 }
 
 type CreateBatchProductPopularityParams struct {
-	ID            uuid.UUID `json:"id"`
-	Score         float64   `json:"score"`
-	ViewCount     int64     `json:"view_count"`
-	PurchaseCount int64     `json:"purchase_count"`
-	FavoriteCount int64     `json:"favorite_count"`
-	CartCount     int64     `json:"cart_count"`
-	ReviewCount   int64     `json:"review_count"`
-	DateUpdated   time.Time `json:"date_updated"`
+	ID            uuid.UUID `db:"id" json:"id"`
+	Score         float64   `db:"score" json:"score"`
+	ViewCount     int64     `db:"view_count" json:"view_count"`
+	PurchaseCount int64     `db:"purchase_count" json:"purchase_count"`
+	FavoriteCount int64     `db:"favorite_count" json:"favorite_count"`
+	CartCount     int64     `db:"cart_count" json:"cart_count"`
+	ReviewCount   int64     `db:"review_count" json:"review_count"`
+	DateUpdated   time.Time `db:"date_updated" json:"date_updated"`
 }
 
 func (q *Queries) CreateBatchProductPopularity(ctx context.Context, arg []CreateBatchProductPopularityParams) *CreateBatchProductPopularityBatchResults {

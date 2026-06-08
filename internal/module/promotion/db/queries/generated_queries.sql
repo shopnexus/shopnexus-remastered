@@ -42,74 +42,6 @@ WHERE (
     ("date_updated" <= sqlc.narg('date_updated_to') OR sqlc.narg('date_updated_to') IS NULL)
 );
 
--- name: ListPromotion :many
-SELECT *
-FROM "promotion"."promotion"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("code" = ANY(sqlc.slice('code')) OR sqlc.slice('code') IS NULL) AND
-    ("owner_id" = ANY(sqlc.slice('owner_id')) OR sqlc.slice('owner_id') IS NULL) AND
-    ("type" = ANY(sqlc.slice('type')) OR sqlc.slice('type') IS NULL) AND
-    ("title" = ANY(sqlc.slice('title')) OR sqlc.slice('title') IS NULL) AND
-    ("description" = ANY(sqlc.slice('description')) OR sqlc.slice('description') IS NULL) AND
-    ("is_enabled" = ANY(sqlc.slice('is_enabled')) OR sqlc.slice('is_enabled') IS NULL) AND
-    ("budget" = ANY(sqlc.slice('budget')) OR sqlc.slice('budget') IS NULL) AND
-    ("budget" >= sqlc.narg('budget_from') OR sqlc.narg('budget_from') IS NULL) AND
-    ("budget" <= sqlc.narg('budget_to') OR sqlc.narg('budget_to') IS NULL) AND
-    ("auto_apply" = ANY(sqlc.slice('auto_apply')) OR sqlc.slice('auto_apply') IS NULL) AND
-    ("group" = ANY(sqlc.slice('group')) OR sqlc.slice('group') IS NULL) AND
-    ("data" = ANY(sqlc.slice('data')) OR sqlc.slice('data') IS NULL) AND
-    ("date_started" = ANY(sqlc.slice('date_started')) OR sqlc.slice('date_started') IS NULL) AND
-    ("date_started" >= sqlc.narg('date_started_from') OR sqlc.narg('date_started_from') IS NULL) AND
-    ("date_started" <= sqlc.narg('date_started_to') OR sqlc.narg('date_started_to') IS NULL) AND
-    ("date_ended" = ANY(sqlc.slice('date_ended')) OR sqlc.slice('date_ended') IS NULL) AND
-    ("date_ended" >= sqlc.narg('date_ended_from') OR sqlc.narg('date_ended_from') IS NULL) AND
-    ("date_ended" <= sqlc.narg('date_ended_to') OR sqlc.narg('date_ended_to') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("date_updated" = ANY(sqlc.slice('date_updated')) OR sqlc.slice('date_updated') IS NULL) AND
-    ("date_updated" >= sqlc.narg('date_updated_from') OR sqlc.narg('date_updated_from') IS NULL) AND
-    ("date_updated" <= sqlc.narg('date_updated_to') OR sqlc.narg('date_updated_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountPromotion :many
-SELECT sqlc.embed(embed_promotion), COUNT(*) OVER() as total_count
-FROM "promotion"."promotion" embed_promotion
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("code" = ANY(sqlc.slice('code')) OR sqlc.slice('code') IS NULL) AND
-    ("owner_id" = ANY(sqlc.slice('owner_id')) OR sqlc.slice('owner_id') IS NULL) AND
-    ("type" = ANY(sqlc.slice('type')) OR sqlc.slice('type') IS NULL) AND
-    ("title" = ANY(sqlc.slice('title')) OR sqlc.slice('title') IS NULL) AND
-    ("description" = ANY(sqlc.slice('description')) OR sqlc.slice('description') IS NULL) AND
-    ("is_enabled" = ANY(sqlc.slice('is_enabled')) OR sqlc.slice('is_enabled') IS NULL) AND
-    ("budget" = ANY(sqlc.slice('budget')) OR sqlc.slice('budget') IS NULL) AND
-    ("budget" >= sqlc.narg('budget_from') OR sqlc.narg('budget_from') IS NULL) AND
-    ("budget" <= sqlc.narg('budget_to') OR sqlc.narg('budget_to') IS NULL) AND
-    ("auto_apply" = ANY(sqlc.slice('auto_apply')) OR sqlc.slice('auto_apply') IS NULL) AND
-    ("group" = ANY(sqlc.slice('group')) OR sqlc.slice('group') IS NULL) AND
-    ("data" = ANY(sqlc.slice('data')) OR sqlc.slice('data') IS NULL) AND
-    ("date_started" = ANY(sqlc.slice('date_started')) OR sqlc.slice('date_started') IS NULL) AND
-    ("date_started" >= sqlc.narg('date_started_from') OR sqlc.narg('date_started_from') IS NULL) AND
-    ("date_started" <= sqlc.narg('date_started_to') OR sqlc.narg('date_started_to') IS NULL) AND
-    ("date_ended" = ANY(sqlc.slice('date_ended')) OR sqlc.slice('date_ended') IS NULL) AND
-    ("date_ended" >= sqlc.narg('date_ended_from') OR sqlc.narg('date_ended_from') IS NULL) AND
-    ("date_ended" <= sqlc.narg('date_ended_to') OR sqlc.narg('date_ended_to') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("date_updated" = ANY(sqlc.slice('date_updated')) OR sqlc.slice('date_updated') IS NULL) AND
-    ("date_updated" >= sqlc.narg('date_updated_from') OR sqlc.narg('date_updated_from') IS NULL) AND
-    ("date_updated" <= sqlc.narg('date_updated_to') OR sqlc.narg('date_updated_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
 -- name: CreatePromotion :one
 INSERT INTO "promotion"."promotion" ("id", "code", "owner_id", "type", "title", "description", "is_enabled", "budget", "auto_apply", "group", "data", "date_started", "date_ended", "date_created", "date_updated")
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
@@ -201,32 +133,6 @@ WHERE (
     ("ref_id" = ANY(sqlc.slice('ref_id')) OR sqlc.slice('ref_id') IS NULL)
 );
 
--- name: ListRef :many
-SELECT *
-FROM "promotion"."ref"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("promotion_id" = ANY(sqlc.slice('promotion_id')) OR sqlc.slice('promotion_id') IS NULL) AND
-    ("ref_type" = ANY(sqlc.slice('ref_type')) OR sqlc.slice('ref_type') IS NULL) AND
-    ("ref_id" = ANY(sqlc.slice('ref_id')) OR sqlc.slice('ref_id') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountRef :many
-SELECT sqlc.embed(embed_ref), COUNT(*) OVER() as total_count
-FROM "promotion"."ref" embed_ref
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("promotion_id" = ANY(sqlc.slice('promotion_id')) OR sqlc.slice('promotion_id') IS NULL) AND
-    ("ref_type" = ANY(sqlc.slice('ref_type')) OR sqlc.slice('ref_type') IS NULL) AND
-    ("ref_id" = ANY(sqlc.slice('ref_id')) OR sqlc.slice('ref_id') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
 -- name: CreateRef :one
 INSERT INTO "promotion"."ref" ("promotion_id", "ref_type", "ref_id")
 VALUES ($1, $2, $3)
@@ -294,50 +200,6 @@ WHERE (
     ("last_run_at" >= sqlc.narg('last_run_at_from') OR sqlc.narg('last_run_at_from') IS NULL) AND
     ("last_run_at" <= sqlc.narg('last_run_at_to') OR sqlc.narg('last_run_at_to') IS NULL)
 );
-
--- name: ListSchedule :many
-SELECT *
-FROM "promotion"."schedule"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("promotion_id" = ANY(sqlc.slice('promotion_id')) OR sqlc.slice('promotion_id') IS NULL) AND
-    ("timezone" = ANY(sqlc.slice('timezone')) OR sqlc.slice('timezone') IS NULL) AND
-    ("cron_rule" = ANY(sqlc.slice('cron_rule')) OR sqlc.slice('cron_rule') IS NULL) AND
-    ("duration" = ANY(sqlc.slice('duration')) OR sqlc.slice('duration') IS NULL) AND
-    ("duration" >= sqlc.narg('duration_from') OR sqlc.narg('duration_from') IS NULL) AND
-    ("duration" <= sqlc.narg('duration_to') OR sqlc.narg('duration_to') IS NULL) AND
-    ("next_run_at" = ANY(sqlc.slice('next_run_at')) OR sqlc.slice('next_run_at') IS NULL) AND
-    ("next_run_at" >= sqlc.narg('next_run_at_from') OR sqlc.narg('next_run_at_from') IS NULL) AND
-    ("next_run_at" <= sqlc.narg('next_run_at_to') OR sqlc.narg('next_run_at_to') IS NULL) AND
-    ("last_run_at" = ANY(sqlc.slice('last_run_at')) OR sqlc.slice('last_run_at') IS NULL) AND
-    ("last_run_at" >= sqlc.narg('last_run_at_from') OR sqlc.narg('last_run_at_from') IS NULL) AND
-    ("last_run_at" <= sqlc.narg('last_run_at_to') OR sqlc.narg('last_run_at_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountSchedule :many
-SELECT sqlc.embed(embed_schedule), COUNT(*) OVER() as total_count
-FROM "promotion"."schedule" embed_schedule
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("promotion_id" = ANY(sqlc.slice('promotion_id')) OR sqlc.slice('promotion_id') IS NULL) AND
-    ("timezone" = ANY(sqlc.slice('timezone')) OR sqlc.slice('timezone') IS NULL) AND
-    ("cron_rule" = ANY(sqlc.slice('cron_rule')) OR sqlc.slice('cron_rule') IS NULL) AND
-    ("duration" = ANY(sqlc.slice('duration')) OR sqlc.slice('duration') IS NULL) AND
-    ("duration" >= sqlc.narg('duration_from') OR sqlc.narg('duration_from') IS NULL) AND
-    ("duration" <= sqlc.narg('duration_to') OR sqlc.narg('duration_to') IS NULL) AND
-    ("next_run_at" = ANY(sqlc.slice('next_run_at')) OR sqlc.slice('next_run_at') IS NULL) AND
-    ("next_run_at" >= sqlc.narg('next_run_at_from') OR sqlc.narg('next_run_at_from') IS NULL) AND
-    ("next_run_at" <= sqlc.narg('next_run_at_to') OR sqlc.narg('next_run_at_to') IS NULL) AND
-    ("last_run_at" = ANY(sqlc.slice('last_run_at')) OR sqlc.slice('last_run_at') IS NULL) AND
-    ("last_run_at" >= sqlc.narg('last_run_at_from') OR sqlc.narg('last_run_at_from') IS NULL) AND
-    ("last_run_at" <= sqlc.narg('last_run_at_to') OR sqlc.narg('last_run_at_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
 
 -- name: CreateSchedule :one
 INSERT INTO "promotion"."schedule" ("promotion_id", "timezone", "cron_rule", "duration", "next_run_at", "last_run_at")

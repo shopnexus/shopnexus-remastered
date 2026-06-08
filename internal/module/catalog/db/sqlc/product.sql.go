@@ -29,19 +29,19 @@ GROUP BY ref_id
 `
 
 type DetailRatingParams struct {
-	RefType CatalogCommentRefType `json:"ref_type"`
-	RefID   uuid.UUID             `json:"ref_id"`
+	RefType CatalogCommentRefType `db:"ref_type" json:"ref_type"`
+	RefID   uuid.UUID             `db:"ref_id" json:"ref_id"`
 }
 
 type DetailRatingRow struct {
-	RefID      uuid.UUID `json:"ref_id"`
-	Score      float64   `json:"score"`
-	Count      int64     `json:"count"`
-	FiveCount  int64     `json:"five_count"`
-	FourCount  int64     `json:"four_count"`
-	ThreeCount int64     `json:"three_count"`
-	TwoCount   int64     `json:"two_count"`
-	OneCount   int64     `json:"one_count"`
+	RefID      uuid.UUID `db:"ref_id" json:"ref_id"`
+	Score      float64   `db:"score" json:"score"`
+	Count      int64     `db:"count" json:"count"`
+	FiveCount  int64     `db:"five_count" json:"five_count"`
+	FourCount  int64     `db:"four_count" json:"four_count"`
+	ThreeCount int64     `db:"three_count" json:"three_count"`
+	TwoCount   int64     `db:"two_count" json:"two_count"`
+	OneCount   int64     `db:"one_count" json:"one_count"`
 }
 
 func (q *Queries) DetailRating(ctx context.Context, arg DetailRatingParams) (DetailRatingRow, error) {
@@ -77,18 +77,18 @@ OFFSET $6::int
 `
 
 type ListCountProductSpuRecentParams struct {
-	ID         []uuid.UUID `json:"id"`
-	Slug       []string    `json:"slug"`
-	AccountID  []uuid.UUID `json:"account_id"`
-	CategoryID []uuid.UUID `json:"category_id"`
-	IsEnabled  []bool      `json:"is_enabled"`
-	Offset     null.Int32  `json:"offset"`
-	Limit      null.Int32  `json:"limit"`
+	ID         []uuid.UUID `db:"id" json:"id"`
+	Slug       []string    `db:"slug" json:"slug"`
+	AccountID  []uuid.UUID `db:"account_id" json:"account_id"`
+	CategoryID []uuid.UUID `db:"category_id" json:"category_id"`
+	IsEnabled  []bool      `db:"is_enabled" json:"is_enabled"`
+	Offset     null.Int32  `db:"offset" json:"offset"`
+	Limit      null.Int32  `db:"limit" json:"limit"`
 }
 
 type ListCountProductSpuRecentRow struct {
-	CatalogProductSpu CatalogProductSpu `json:"catalog_product_spu"`
-	TotalCount        int64             `json:"total_count"`
+	CatalogProductSpu CatalogProductSpu `db:"catalog_product_spu" json:"catalog_product_spu"`
+	TotalCount        int64             `db:"total_count" json:"total_count"`
 }
 
 // Same as ListCountProductSpu but ordered by date_created DESC (newest first)
@@ -147,14 +147,14 @@ GROUP BY ref_id
 `
 
 type ListRatingParams struct {
-	RefType CatalogCommentRefType `json:"ref_type"`
-	RefID   []uuid.UUID           `json:"ref_id"`
+	RefType CatalogCommentRefType `db:"ref_type" json:"ref_type"`
+	RefID   []uuid.UUID           `db:"ref_id" json:"ref_id"`
 }
 
 type ListRatingRow struct {
-	RefID uuid.UUID `json:"ref_id"`
-	Score float64   `json:"score"`
-	Count int64     `json:"count"`
+	RefID uuid.UUID `db:"ref_id" json:"ref_id"`
+	Score float64   `db:"score" json:"score"`
+	Count int64     `db:"count" json:"count"`
 }
 
 func (q *Queries) ListRating(ctx context.Context, arg ListRatingParams) ([]ListRatingRow, error) {
@@ -206,27 +206,27 @@ OFFSET $15::int
 `
 
 type SearchCountProductSpuParams struct {
-	ID              []uuid.UUID     `json:"id"`
-	AccountID       []uuid.UUID     `json:"account_id"`
-	CategoryID      []uuid.UUID     `json:"category_id"`
-	FeaturedSkuID   []uuid.NullUUID `json:"featured_sku_id"`
-	IsEnabled       []bool          `json:"is_enabled"`
-	DateCreated     []time.Time     `json:"date_created"`
-	DateCreatedFrom null.Time       `json:"date_created_from"`
-	DateCreatedTo   null.Time       `json:"date_created_to"`
-	DateUpdated     []time.Time     `json:"date_updated"`
-	DateUpdatedFrom null.Time       `json:"date_updated_from"`
-	DateUpdatedTo   null.Time       `json:"date_updated_to"`
-	Slug            null.String     `json:"slug"`
-	Name            null.String     `json:"name"`
-	Description     null.String     `json:"description"`
-	Offset          null.Int32      `json:"offset"`
-	Limit           null.Int32      `json:"limit"`
+	ID              []uuid.UUID     `db:"id" json:"id"`
+	AccountID       []uuid.UUID     `db:"account_id" json:"account_id"`
+	CategoryID      []uuid.UUID     `db:"category_id" json:"category_id"`
+	FeaturedSkuID   []uuid.NullUUID `db:"featured_sku_id" json:"featured_sku_id"`
+	IsEnabled       []bool          `db:"is_enabled" json:"is_enabled"`
+	DateCreated     []time.Time     `db:"date_created" json:"date_created"`
+	DateCreatedFrom null.Time       `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time       `db:"date_created_to" json:"date_created_to"`
+	DateUpdated     []time.Time     `db:"date_updated" json:"date_updated"`
+	DateUpdatedFrom null.Time       `db:"date_updated_from" json:"date_updated_from"`
+	DateUpdatedTo   null.Time       `db:"date_updated_to" json:"date_updated_to"`
+	Slug            null.String     `db:"slug" json:"slug"`
+	Name            null.String     `db:"name" json:"name"`
+	Description     null.String     `db:"description" json:"description"`
+	Offset          null.Int32      `db:"offset" json:"offset"`
+	Limit           null.Int32      `db:"limit" json:"limit"`
 }
 
 type SearchCountProductSpuRow struct {
-	CatalogProductSpu CatalogProductSpu `json:"catalog_product_spu"`
-	TotalCount        int64             `json:"total_count"`
+	CatalogProductSpu CatalogProductSpu `db:"catalog_product_spu" json:"catalog_product_spu"`
+	TotalCount        int64             `db:"total_count" json:"total_count"`
 }
 
 func (q *Queries) SearchCountProductSpu(ctx context.Context, arg SearchCountProductSpuParams) ([]SearchCountProductSpuRow, error) {

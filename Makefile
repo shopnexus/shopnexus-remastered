@@ -18,6 +18,7 @@ pgtempl:
 sqlcgen: pgtempl
 	sqlc generate
 	go run ./cmd/nullmarshal/
+	go run ./cmd/pgtempl/ -module all -skip-schema-prefix -emit repo
 
 nullmarshal:
 	go run ./cmd/nullmarshal/

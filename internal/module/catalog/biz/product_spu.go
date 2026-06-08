@@ -20,14 +20,15 @@ import (
 	sharedcurrency "shopnexus-server/internal/shared/currency"
 	"shopnexus-server/internal/shared/errors"
 	"shopnexus-server/internal/shared/paginate"
+	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/guregu/null/v6"
 )
 
 func (b *CatalogHandler) getTagsMap(ctx restate.Context, spuID []uuid.UUID) map[uuid.UUID][]string { // map[spuID][]tag
-	tags, err := b.storage.Querier().ListProductSpuTag(ctx, catalogdb.ListProductSpuTagParams{
-		SpuID: spuID,
+	res, err := b.storage.Querier().ListProductSpuTag(ctx, repolist.Request{}, catalogdb.ListProductSpuTagFilter{
+		SpuId: spuID,
 	})
 	if err != nil {
 		zero := map[uuid.UUID][]string{}
@@ -37,7 +38,7 @@ func (b *CatalogHandler) getTagsMap(ctx restate.Context, spuID []uuid.UUID) map[
 		return zero
 	}
 	return lo.GroupByMap(
-		tags,
+		res.Data,
 		func(tag catalogdb.CatalogProductSpuTag) (uuid.UUID, string) { return tag.SpuID, tag.Tag },
 	)
 }
@@ -71,13 +72,13 @@ func (b *CatalogHandler) getCategoriesMap(
 	if len(categoryIDs) == 0 {
 		return map[uuid.UUID]catalogdb.CatalogCategory{}
 	}
-	categories, err := b.storage.Querier().ListCategory(ctx, catalogdb.ListCategoryParams{
-		ID: lo.Uniq(categoryIDs),
+	res, err := b.storage.Querier().ListCategory(ctx, repolist.Request{}, catalogdb.ListCategoryFilter{
+		Id: lo.Uniq(categoryIDs),
 	})
 	if err != nil {
 		return map[uuid.UUID]catalogdb.CatalogCategory{}
 	}
-	return lo.KeyBy(categories, func(c catalogdb.CatalogCategory) uuid.UUID { return c.ID })
+	return lo.KeyBy(res.Data, func(c catalogdb.CatalogCategory) uuid.UUID { return c.ID })
 }
 
 type GetProductSpuParams struct {
@@ -209,10 +210,10 @@ func (b *CatalogHandler) ListProductSpu(
 	}
 
 	// Fetch search sync status
-	syncStatuses, _ := b.storage.Querier().ListSearchSync(ctx, catalogdb.ListSearchSyncParams{
-		RefID: spuIDs,
+	syncStatuses, _ := b.storage.Querier().ListSearchSync(ctx, repolist.Request{}, catalogdb.ListSearchSyncFilter{
+		RefId: spuIDs,
 	})
-	syncMap := lo.KeyBy(syncStatuses, func(s catalogdb.CatalogSearchSync) uuid.UUID { return s.RefID })
+	syncMap := lo.KeyBy(syncStatuses.Data, func(s catalogdb.CatalogSearchSync) uuid.UUID { return s.RefID })
 
 	var spus []catalogmodel.ProductSpu
 	for _, spu := range dbSpus {
@@ -357,13 +358,13 @@ func (b *CatalogHandler) UpdateProductSpu(
 
 	// Ensure the featured SKU (if provided) belongs to the current SPU.
 	if params.FeaturedSkuID.Valid {
-		skus, err := b.storage.Querier().ListProductSku(ctx, catalogdb.ListProductSkuParams{
-			ID: []uuid.UUID{params.FeaturedSkuID.UUID},
+		skus, err := b.storage.Querier().ListProductSku(ctx, repolist.Request{}, catalogdb.ListProductSkuFilter{
+			Id: []uuid.UUID{params.FeaturedSkuID.UUID},
 		})
 		if err != nil {
 			return zero, fmt.Errorf("db validate featured sku: %w", err)
 		}
-		if len(skus) == 0 || skus[0].SpuID != params.ID {
+		if len(skus.Data) == 0 || skus.Data[0].SpuID != params.ID {
 			return zero, catalogmodel.ErrSkuNotBelongToSpu
 		}
 	}
@@ -492,16 +493,16 @@ func (b *CatalogHandler) updateTags(ctx restate.Context, q *catalogdb.Queries, p
 		return nil
 	}
 
-	dbTags, err := q.ListTag(ctx, catalogdb.ListTagParams{
-		ID: params.Tags,
+	dbTags, err := q.ListTag(ctx, repolist.Request{}, catalogdb.ListTagFilter{
+		Id: params.Tags,
 	})
 	if err != nil {
 		return fmt.Errorf("db list tags: %w", err)
 	}
 
 	var nonExistingTags []string
-	existingTagSet := make(map[string]struct{}, len(dbTags))
-	for _, t := range dbTags {
+	existingTagSet := make(map[string]struct{}, len(dbTags.Data))
+	for _, t := range dbTags.Data {
 		existingTagSet[t.ID] = struct{}{}
 	}
 	for _, tag := range params.Tags {

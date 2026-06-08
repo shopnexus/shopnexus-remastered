@@ -30,50 +30,6 @@ WHERE (
     ("created_at" <= sqlc.narg('created_at_to') OR sqlc.narg('created_at_to') IS NULL)
 );
 
--- name: ListResource :many
-SELECT *
-FROM "common"."resource"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("uploaded_by_id" = ANY(sqlc.slice('uploaded_by_id')) OR sqlc.slice('uploaded_by_id') IS NULL) AND
-    ("provider" = ANY(sqlc.slice('provider')) OR sqlc.slice('provider') IS NULL) AND
-    ("object_key" = ANY(sqlc.slice('object_key')) OR sqlc.slice('object_key') IS NULL) AND
-    ("mime" = ANY(sqlc.slice('mime')) OR sqlc.slice('mime') IS NULL) AND
-    ("size" = ANY(sqlc.slice('size')) OR sqlc.slice('size') IS NULL) AND
-    ("size" >= sqlc.narg('size_from') OR sqlc.narg('size_from') IS NULL) AND
-    ("size" <= sqlc.narg('size_to') OR sqlc.narg('size_to') IS NULL) AND
-    ("metadata" = ANY(sqlc.slice('metadata')) OR sqlc.slice('metadata') IS NULL) AND
-    ("checksum" = ANY(sqlc.slice('checksum')) OR sqlc.slice('checksum') IS NULL) AND
-    ("created_at" = ANY(sqlc.slice('created_at')) OR sqlc.slice('created_at') IS NULL) AND
-    ("created_at" >= sqlc.narg('created_at_from') OR sqlc.narg('created_at_from') IS NULL) AND
-    ("created_at" <= sqlc.narg('created_at_to') OR sqlc.narg('created_at_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountResource :many
-SELECT sqlc.embed(embed_resource), COUNT(*) OVER() as total_count
-FROM "common"."resource" embed_resource
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("uploaded_by_id" = ANY(sqlc.slice('uploaded_by_id')) OR sqlc.slice('uploaded_by_id') IS NULL) AND
-    ("provider" = ANY(sqlc.slice('provider')) OR sqlc.slice('provider') IS NULL) AND
-    ("object_key" = ANY(sqlc.slice('object_key')) OR sqlc.slice('object_key') IS NULL) AND
-    ("mime" = ANY(sqlc.slice('mime')) OR sqlc.slice('mime') IS NULL) AND
-    ("size" = ANY(sqlc.slice('size')) OR sqlc.slice('size') IS NULL) AND
-    ("size" >= sqlc.narg('size_from') OR sqlc.narg('size_from') IS NULL) AND
-    ("size" <= sqlc.narg('size_to') OR sqlc.narg('size_to') IS NULL) AND
-    ("metadata" = ANY(sqlc.slice('metadata')) OR sqlc.slice('metadata') IS NULL) AND
-    ("checksum" = ANY(sqlc.slice('checksum')) OR sqlc.slice('checksum') IS NULL) AND
-    ("created_at" = ANY(sqlc.slice('created_at')) OR sqlc.slice('created_at') IS NULL) AND
-    ("created_at" >= sqlc.narg('created_at_from') OR sqlc.narg('created_at_from') IS NULL) AND
-    ("created_at" <= sqlc.narg('created_at_to') OR sqlc.narg('created_at_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
 -- name: CreateResource :one
 INSERT INTO "common"."resource" ("id", "uploaded_by_id", "provider", "object_key", "mime", "size", "metadata", "checksum", "created_at")
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -150,38 +106,6 @@ WHERE (
     ("order" <= sqlc.narg('order_to') OR sqlc.narg('order_to') IS NULL)
 );
 
--- name: ListResourceReference :many
-SELECT *
-FROM "common"."resource_reference"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("rs_id" = ANY(sqlc.slice('rs_id')) OR sqlc.slice('rs_id') IS NULL) AND
-    ("ref_type" = ANY(sqlc.slice('ref_type')) OR sqlc.slice('ref_type') IS NULL) AND
-    ("ref_id" = ANY(sqlc.slice('ref_id')) OR sqlc.slice('ref_id') IS NULL) AND
-    ("order" = ANY(sqlc.slice('order')) OR sqlc.slice('order') IS NULL) AND
-    ("order" >= sqlc.narg('order_from') OR sqlc.narg('order_from') IS NULL) AND
-    ("order" <= sqlc.narg('order_to') OR sqlc.narg('order_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountResourceReference :many
-SELECT sqlc.embed(embed_resource_reference), COUNT(*) OVER() as total_count
-FROM "common"."resource_reference" embed_resource_reference
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("rs_id" = ANY(sqlc.slice('rs_id')) OR sqlc.slice('rs_id') IS NULL) AND
-    ("ref_type" = ANY(sqlc.slice('ref_type')) OR sqlc.slice('ref_type') IS NULL) AND
-    ("ref_id" = ANY(sqlc.slice('ref_id')) OR sqlc.slice('ref_id') IS NULL) AND
-    ("order" = ANY(sqlc.slice('order')) OR sqlc.slice('order') IS NULL) AND
-    ("order" >= sqlc.narg('order_from') OR sqlc.narg('order_from') IS NULL) AND
-    ("order" <= sqlc.narg('order_to') OR sqlc.narg('order_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
 -- name: CreateResourceReference :one
 INSERT INTO "common"."resource_reference" ("rs_id", "ref_type", "ref_id", "order")
 VALUES ($1, $2, $3, $4)
@@ -252,48 +176,6 @@ WHERE (
     ("type" = ANY(sqlc.slice('type')) OR sqlc.slice('type') IS NULL) AND
     ("provider" = ANY(sqlc.slice('provider')) OR sqlc.slice('provider') IS NULL)
 );
-
--- name: ListOption :many
-SELECT *
-FROM "common"."option"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("owner_id" = ANY(sqlc.slice('owner_id')) OR sqlc.slice('owner_id') IS NULL) AND
-    ("is_enabled" = ANY(sqlc.slice('is_enabled')) OR sqlc.slice('is_enabled') IS NULL) AND
-    ("name" = ANY(sqlc.slice('name')) OR sqlc.slice('name') IS NULL) AND
-    ("description" = ANY(sqlc.slice('description')) OR sqlc.slice('description') IS NULL) AND
-    ("priority" = ANY(sqlc.slice('priority')) OR sqlc.slice('priority') IS NULL) AND
-    ("priority" >= sqlc.narg('priority_from') OR sqlc.narg('priority_from') IS NULL) AND
-    ("priority" <= sqlc.narg('priority_to') OR sqlc.narg('priority_to') IS NULL) AND
-    ("logo_rs_id" = ANY(sqlc.slice('logo_rs_id')) OR sqlc.slice('logo_rs_id') IS NULL) AND
-    ("data" = ANY(sqlc.slice('data')) OR sqlc.slice('data') IS NULL) AND
-    ("type" = ANY(sqlc.slice('type')) OR sqlc.slice('type') IS NULL) AND
-    ("provider" = ANY(sqlc.slice('provider')) OR sqlc.slice('provider') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountOption :many
-SELECT sqlc.embed(embed_option), COUNT(*) OVER() as total_count
-FROM "common"."option" embed_option
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("owner_id" = ANY(sqlc.slice('owner_id')) OR sqlc.slice('owner_id') IS NULL) AND
-    ("is_enabled" = ANY(sqlc.slice('is_enabled')) OR sqlc.slice('is_enabled') IS NULL) AND
-    ("name" = ANY(sqlc.slice('name')) OR sqlc.slice('name') IS NULL) AND
-    ("description" = ANY(sqlc.slice('description')) OR sqlc.slice('description') IS NULL) AND
-    ("priority" = ANY(sqlc.slice('priority')) OR sqlc.slice('priority') IS NULL) AND
-    ("priority" >= sqlc.narg('priority_from') OR sqlc.narg('priority_from') IS NULL) AND
-    ("priority" <= sqlc.narg('priority_to') OR sqlc.narg('priority_to') IS NULL) AND
-    ("logo_rs_id" = ANY(sqlc.slice('logo_rs_id')) OR sqlc.slice('logo_rs_id') IS NULL) AND
-    ("data" = ANY(sqlc.slice('data')) OR sqlc.slice('data') IS NULL) AND
-    ("type" = ANY(sqlc.slice('type')) OR sqlc.slice('type') IS NULL) AND
-    ("provider" = ANY(sqlc.slice('provider')) OR sqlc.slice('provider') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
 
 -- name: CreateOption :one
 INSERT INTO "common"."option" ("id", "owner_id", "is_enabled", "name", "description", "priority", "logo_rs_id", "data", "type", "provider")

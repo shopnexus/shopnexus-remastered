@@ -29,17 +29,17 @@ LIMIT $6::INTEGER OFFSET $5::INTEGER
 `
 
 type ListRefundDisputesParams struct {
-	Status         NullOrderDisputeStatus `json:"status"`
-	RefundID       uuid.NullUUID          `json:"refund_id"`
-	CallerBuyerID  uuid.NullUUID          `json:"caller_buyer_id"`
-	CallerSellerID uuid.NullUUID          `json:"caller_seller_id"`
-	Offset         null.Int32             `json:"offset"`
-	Limit          null.Int32             `json:"limit"`
+	Status         NullOrderDisputeStatus `db:"status" json:"status"`
+	RefundID       uuid.NullUUID          `db:"refund_id" json:"refund_id"`
+	CallerBuyerID  uuid.NullUUID          `db:"caller_buyer_id" json:"caller_buyer_id"`
+	CallerSellerID uuid.NullUUID          `db:"caller_seller_id" json:"caller_seller_id"`
+	Offset         null.Int32             `db:"offset" json:"offset"`
+	Limit          null.Int32             `db:"limit" json:"limit"`
 }
 
 type ListRefundDisputesRow struct {
-	OrderRefundDispute OrderRefundDispute `json:"order_refund_dispute"`
-	TotalCount         int64              `json:"total_count"`
+	OrderRefundDispute OrderRefundDispute `db:"order_refund_dispute" json:"order_refund_dispute"`
+	TotalCount         int64              `db:"total_count" json:"total_count"`
 }
 
 // ListRefundDisputes powers the admin queue, with COUNT(*) OVER() for
@@ -94,9 +94,9 @@ RETURNING id, refund_id, account_id, reason, date_created, status, resolved_by_i
 `
 
 type OpenRefundDisputeParams struct {
-	RefundID  uuid.UUID `json:"refund_id"`
-	AccountID uuid.UUID `json:"account_id"`
-	Reason    string    `json:"reason"`
+	RefundID  uuid.UUID `db:"refund_id" json:"refund_id"`
+	AccountID uuid.UUID `db:"account_id" json:"account_id"`
+	Reason    string    `db:"reason" json:"reason"`
 }
 
 // =============================================
@@ -138,10 +138,10 @@ RETURNING id, refund_id, account_id, reason, date_created, status, resolved_by_i
 `
 
 type ResolveRefundDisputeParams struct {
-	Status         OrderDisputeStatus `json:"status"`
-	ResolvedByID   uuid.NullUUID      `json:"resolved_by_id"`
-	ResolutionNote null.String        `json:"resolution_note"`
-	ID             uuid.UUID          `json:"id"`
+	Status         OrderDisputeStatus `db:"status" json:"status"`
+	ResolvedByID   uuid.NullUUID      `db:"resolved_by_id" json:"resolved_by_id"`
+	ResolutionNote null.String        `db:"resolution_note" json:"resolution_note"`
+	ID             uuid.UUID          `db:"id" json:"id"`
 }
 
 // ResolveRefundDispute closes an Open dispute with the admin's verdict.

@@ -26,42 +26,6 @@ WHERE (
     ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
 );
 
--- name: ListConversation :many
-SELECT *
-FROM "chat"."conversation"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("buyer_id" = ANY(sqlc.slice('buyer_id')) OR sqlc.slice('buyer_id') IS NULL) AND
-    ("seller_id" = ANY(sqlc.slice('seller_id')) OR sqlc.slice('seller_id') IS NULL) AND
-    ("last_message_at" = ANY(sqlc.slice('last_message_at')) OR sqlc.slice('last_message_at') IS NULL) AND
-    ("last_message_at" >= sqlc.narg('last_message_at_from') OR sqlc.narg('last_message_at_from') IS NULL) AND
-    ("last_message_at" <= sqlc.narg('last_message_at_to') OR sqlc.narg('last_message_at_to') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountConversation :many
-SELECT sqlc.embed(embed_conversation), COUNT(*) OVER() as total_count
-FROM "chat"."conversation" embed_conversation
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("buyer_id" = ANY(sqlc.slice('buyer_id')) OR sqlc.slice('buyer_id') IS NULL) AND
-    ("seller_id" = ANY(sqlc.slice('seller_id')) OR sqlc.slice('seller_id') IS NULL) AND
-    ("last_message_at" = ANY(sqlc.slice('last_message_at')) OR sqlc.slice('last_message_at') IS NULL) AND
-    ("last_message_at" >= sqlc.narg('last_message_at_from') OR sqlc.narg('last_message_at_from') IS NULL) AND
-    ("last_message_at" <= sqlc.narg('last_message_at_to') OR sqlc.narg('last_message_at_to') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
 -- name: CreateConversation :one
 INSERT INTO "chat"."conversation" ("id", "buyer_id", "seller_id", "last_message_at", "date_created")
 VALUES ($1, $2, $3, $4, $5)
@@ -132,44 +96,6 @@ WHERE (
     ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
     ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
 );
-
--- name: ListMessage :many
-SELECT *
-FROM "chat"."message"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("conversation_id" = ANY(sqlc.slice('conversation_id')) OR sqlc.slice('conversation_id') IS NULL) AND
-    ("sender_id" = ANY(sqlc.slice('sender_id')) OR sqlc.slice('sender_id') IS NULL) AND
-    ("type" = ANY(sqlc.slice('type')) OR sqlc.slice('type') IS NULL) AND
-    ("content" = ANY(sqlc.slice('content')) OR sqlc.slice('content') IS NULL) AND
-    ("status" = ANY(sqlc.slice('status')) OR sqlc.slice('status') IS NULL) AND
-    ("data" = ANY(sqlc.slice('data')) OR sqlc.slice('data') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountMessage :many
-SELECT sqlc.embed(embed_message), COUNT(*) OVER() as total_count
-FROM "chat"."message" embed_message
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("conversation_id" = ANY(sqlc.slice('conversation_id')) OR sqlc.slice('conversation_id') IS NULL) AND
-    ("sender_id" = ANY(sqlc.slice('sender_id')) OR sqlc.slice('sender_id') IS NULL) AND
-    ("type" = ANY(sqlc.slice('type')) OR sqlc.slice('type') IS NULL) AND
-    ("content" = ANY(sqlc.slice('content')) OR sqlc.slice('content') IS NULL) AND
-    ("status" = ANY(sqlc.slice('status')) OR sqlc.slice('status') IS NULL) AND
-    ("data" = ANY(sqlc.slice('data')) OR sqlc.slice('data') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
 
 -- name: CreateMessage :one
 INSERT INTO "chat"."message" ("conversation_id", "sender_id", "type", "content", "status", "data", "date_created")

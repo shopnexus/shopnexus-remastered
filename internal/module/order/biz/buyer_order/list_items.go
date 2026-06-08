@@ -6,6 +6,7 @@ import (
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/paginate"
+	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -69,11 +70,12 @@ func (b *BuyerHandler) listBuyerItems(
 		sessionIDs := lo.Uniq(
 			lo.Map(enriched, func(it ordermodel.OrderItem, _ int) uuid.UUID { return it.PaymentSessionID }),
 		)
-		var sessions []orderdb.OrderPaymentSession
-		sessions, err = b.Storage.Querier().ListPaymentSession(ctx, orderdb.ListPaymentSessionParams{ID: sessionIDs})
+		var sessionsRes paginate.PaginateResult[orderdb.OrderPaymentSession]
+		sessionsRes, err = b.Storage.Querier().ListPaymentSession(ctx, repolist.Request{}, orderdb.ListPaymentSessionFilter{Id: sessionIDs})
 		if err != nil {
 			return zero, fmt.Errorf("db fetch payment sessions: %w", err)
 		}
+		sessions := sessionsRes.Data
 		sessionMap := lo.KeyBy(sessions, func(s orderdb.OrderPaymentSession) uuid.UUID { return s.ID })
 		for i := range enriched {
 			if s, ok := sessionMap[enriched[i].PaymentSessionID]; ok {

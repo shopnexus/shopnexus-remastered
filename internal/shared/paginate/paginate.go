@@ -11,6 +11,7 @@ type Params struct {
 	Page   null.Int32  `query:"page"   validate:"omitnil,gt=0"`
 	Cursor null.String `query:"cursor" validate:"omitnil"`
 	Limit  null.Int32  `query:"limit"  validate:"omitnil,gt=0"`
+	Sort   string      `query:"sort"` // e.g. -date_created,score; presence (or cursor) => keyset mode
 }
 
 // TODO: sau khi sửa xong null.X thì xoá luôn hàm này
@@ -55,8 +56,8 @@ func (p Params) DecodeCursor(dst any) error {
 type PaginateResult[T any] struct {
 	PageParams Params
 	Data       []T
-	Total      null.Int64 // Only valid for page-based pagination, not cursor-based.
-	NextCursor any
+	Total      null.Int64  // Only valid for page-based (offset) pagination.
+	NextCursor null.String // Already-encoded keyset cursor; only valid for cursor mode.
 }
 
 func (p PaginateResult[T]) NextPage() null.Int32 {
@@ -73,15 +74,8 @@ func (p PaginateResult[T]) NextPage() null.Int32 {
 	return null.Int32{}
 }
 
+// EncodeNextCursor returns the already-encoded keyset cursor (set by the repo
+// layer via EncodeKeyset). Kept as a method so response helpers stay unchanged.
 func (p PaginateResult[T]) EncodeNextCursor() null.String {
-	if p.NextCursor == nil {
-		return null.String{}
-	}
-
-	marshalled, err := json.Marshal(p.NextCursor)
-	if err != nil {
-		return null.String{}
-	}
-
-	return null.StringFrom(base64.StdEncoding.EncodeToString(marshalled))
+	return p.NextCursor
 }

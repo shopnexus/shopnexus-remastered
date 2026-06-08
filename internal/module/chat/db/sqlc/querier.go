@@ -42,11 +42,7 @@ type Querier interface {
 	// Queries for table: chat.message
 	// ========================================
 	GetMessage(ctx context.Context, id null.Int) (ChatMessage, error)
-	ListConversation(ctx context.Context, arg ListConversationParams) ([]ChatConversation, error)
 	ListConversationByAccount(ctx context.Context, arg ListConversationByAccountParams) ([]ChatConversation, error)
-	ListCountConversation(ctx context.Context, arg ListCountConversationParams) ([]ListCountConversationRow, error)
-	ListCountMessage(ctx context.Context, arg ListCountMessageParams) ([]ListCountMessageRow, error)
-	ListMessage(ctx context.Context, arg ListMessageParams) ([]ChatMessage, error)
 	ListMessageByConversation(ctx context.Context, arg ListMessageByConversationParams) ([]ChatMessage, error)
 	MarkMessagesRead(ctx context.Context, arg MarkMessagesReadParams) error
 	UpdateConversation(ctx context.Context, arg UpdateConversationParams) (ChatConversation, error)

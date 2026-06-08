@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"go/format"
 	"log"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ func main() {
 		tableName        = flag.String("table", "", "Specific table (format: schema.table)")
 		singleFile       = flag.String("single-file", "", "Generate all queries into a single file")
 		skipSchemaPrefix = flag.Bool("skip-schema-prefix", false, "Query names without schema prefix")
+		emit             = flag.String("emit", "sql", "What to emit: sql (sqlc query templates) | repo (Go list/pagination repo)")
 		help             = flag.Bool("help", false, "Show help")
 	)
 	flag.Parse()
@@ -59,14 +61,15 @@ func main() {
 	}
 
 	for _, mod := range modules {
-		if err := generateForModule(mod, *outputDir, *tableName, *singleFile, *skipSchemaPrefix); err != nil {
+		if err := generateForModule(mod, *outputDir, *tableName, *singleFile, *skipSchemaPrefix, *emit); err != nil {
 			log.Printf("Error generating for module %s: %v", mod, err)
 		}
 	}
 }
 
-// generateForModule generates queries for a single module.
-func generateForModule(module, outputDir, tableName string, singleFile string, skipSchemaPrefix bool) error {
+// generateForModule generates queries (emit=sql) or Go repo code (emit=repo)
+// for a single module.
+func generateForModule(module, outputDir, tableName string, singleFile string, skipSchemaPrefix bool, emit string) error {
 	migrationsDir := filepath.Join("internal", "module", module, "db", "migrations")
 	files, err := discoverMigrations(migrationsDir)
 	if err != nil {
@@ -89,6 +92,20 @@ func generateForModule(module, outputDir, tableName string, singleFile string, s
 			}
 		}
 		tables = filtered
+	}
+
+	if emit == "repo" {
+		out := outputDir
+		if out == "" {
+			out = filepath.Join("internal", "module", module, "db", "sqlc")
+		}
+		if err := os.MkdirAll(out, 0755); err != nil {
+			return fmt.Errorf("create output dir: %w", err)
+		}
+		gen := &RepoGenerator{Package: module + "db", IncludeSchema: !skipSchemaPrefix}
+		writeRepoFiles(tables, gen, out)
+		fmt.Printf("[%s] Generated repo list code in %s\n", module, out)
+		return nil
 	}
 
 	out := outputDir
@@ -163,6 +180,26 @@ func writePerTable(tables []*Table, gen *Generator, outputDir string) {
 			log.Fatalf("Error writing %s: %v", path, err)
 		}
 		fmt.Printf("Generated queries for table: %s.%s\n", t.Schema, t.Name)
+	}
+}
+
+// writeRepoFiles emits one <schema>_<table>_gen_list.go per eligible table.
+func writeRepoFiles(tables []*Table, gen *RepoGenerator, outputDir string) {
+	for _, t := range tables {
+		body := gen.GenerateRepo(t)
+		if body == "" {
+			fmt.Printf("Skipping repo (key-only/vector): %s.%s\n", t.Schema, t.Name)
+			continue
+		}
+		formatted, err := format.Source([]byte(body))
+		if err != nil {
+			log.Fatalf("gofmt %s.%s: %v\nraw:\n%s", t.Schema, t.Name, err, body)
+		}
+		path := filepath.Join(outputDir, t.SafeFileName()+"_gen_list.go")
+		if err := os.WriteFile(path, formatted, 0644); err != nil {
+			log.Fatalf("write %s: %v", path, err)
+		}
+		fmt.Printf("Generated repo list for table: %s.%s\n", t.Schema, t.Name)
 	}
 }
 

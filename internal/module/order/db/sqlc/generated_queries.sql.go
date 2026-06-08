@@ -28,12 +28,12 @@ WHERE (
 `
 
 type CountCartItemParams struct {
-	ID           []int64     `json:"id"`
-	AccountID    []uuid.UUID `json:"account_id"`
-	SkuID        []uuid.UUID `json:"sku_id"`
-	Quantity     []int64     `json:"quantity"`
-	QuantityFrom null.Int    `json:"quantity_from"`
-	QuantityTo   null.Int    `json:"quantity_to"`
+	ID           []int64     `db:"id" json:"id"`
+	AccountID    []uuid.UUID `db:"account_id" json:"account_id"`
+	SkuID        []uuid.UUID `db:"sku_id" json:"sku_id"`
+	Quantity     []int64     `db:"quantity" json:"quantity"`
+	QuantityFrom null.Int    `db:"quantity_from" json:"quantity_from"`
+	QuantityTo   null.Int    `db:"quantity_to" json:"quantity_to"`
 }
 
 func (q *Queries) CountCartItem(ctx context.Context, arg CountCartItemParams) (int64, error) {
@@ -87,35 +87,35 @@ WHERE (
 `
 
 type CountItemParams struct {
-	ID                 []int64           `json:"id"`
-	OrderID            []uuid.NullUUID   `json:"order_id"`
-	AccountID          []uuid.UUID       `json:"account_id"`
-	SellerID           []uuid.UUID       `json:"seller_id"`
-	SkuID              []uuid.UUID       `json:"sku_id"`
-	SpuID              []uuid.UUID       `json:"spu_id"`
-	SkuName            []string          `json:"sku_name"`
-	Address            []string          `json:"address"`
-	Note               []null.String     `json:"note"`
-	SerialIds          []json.RawMessage `json:"serial_ids"`
-	Quantity           []int64           `json:"quantity"`
-	QuantityFrom       null.Int          `json:"quantity_from"`
-	QuantityTo         null.Int          `json:"quantity_to"`
-	TransportOption    []string          `json:"transport_option"`
-	SubtotalAmount     []int64           `json:"subtotal_amount"`
-	SubtotalAmountFrom null.Int          `json:"subtotal_amount_from"`
-	SubtotalAmountTo   null.Int          `json:"subtotal_amount_to"`
-	TotalAmount        []int64           `json:"total_amount"`
-	TotalAmountFrom    null.Int          `json:"total_amount_from"`
-	TotalAmountTo      null.Int          `json:"total_amount_to"`
-	SourceCurrency     []string          `json:"source_currency"`
-	PaymentSessionID   []uuid.UUID       `json:"payment_session_id"`
-	DateCancelled      []null.Time       `json:"date_cancelled"`
-	DateCancelledFrom  null.Time         `json:"date_cancelled_from"`
-	DateCancelledTo    null.Time         `json:"date_cancelled_to"`
-	CancelledByID      []uuid.NullUUID   `json:"cancelled_by_id"`
-	DateCreated        []time.Time       `json:"date_created"`
-	DateCreatedFrom    null.Time         `json:"date_created_from"`
-	DateCreatedTo      null.Time         `json:"date_created_to"`
+	ID                 []int64           `db:"id" json:"id"`
+	OrderID            []uuid.NullUUID   `db:"order_id" json:"order_id"`
+	AccountID          []uuid.UUID       `db:"account_id" json:"account_id"`
+	SellerID           []uuid.UUID       `db:"seller_id" json:"seller_id"`
+	SkuID              []uuid.UUID       `db:"sku_id" json:"sku_id"`
+	SpuID              []uuid.UUID       `db:"spu_id" json:"spu_id"`
+	SkuName            []string          `db:"sku_name" json:"sku_name"`
+	Address            []string          `db:"address" json:"address"`
+	Note               []null.String     `db:"note" json:"note"`
+	SerialIds          []json.RawMessage `db:"serial_ids" json:"serial_ids"`
+	Quantity           []int64           `db:"quantity" json:"quantity"`
+	QuantityFrom       null.Int          `db:"quantity_from" json:"quantity_from"`
+	QuantityTo         null.Int          `db:"quantity_to" json:"quantity_to"`
+	TransportOption    []string          `db:"transport_option" json:"transport_option"`
+	SubtotalAmount     []int64           `db:"subtotal_amount" json:"subtotal_amount"`
+	SubtotalAmountFrom null.Int          `db:"subtotal_amount_from" json:"subtotal_amount_from"`
+	SubtotalAmountTo   null.Int          `db:"subtotal_amount_to" json:"subtotal_amount_to"`
+	TotalAmount        []int64           `db:"total_amount" json:"total_amount"`
+	TotalAmountFrom    null.Int          `db:"total_amount_from" json:"total_amount_from"`
+	TotalAmountTo      null.Int          `db:"total_amount_to" json:"total_amount_to"`
+	SourceCurrency     []string          `db:"source_currency" json:"source_currency"`
+	PaymentSessionID   []uuid.UUID       `db:"payment_session_id" json:"payment_session_id"`
+	DateCancelled      []null.Time       `db:"date_cancelled" json:"date_cancelled"`
+	DateCancelledFrom  null.Time         `db:"date_cancelled_from" json:"date_cancelled_from"`
+	DateCancelledTo    null.Time         `db:"date_cancelled_to" json:"date_cancelled_to"`
+	CancelledByID      []uuid.NullUUID   `db:"cancelled_by_id" json:"cancelled_by_id"`
+	DateCreated        []time.Time       `db:"date_created" json:"date_created"`
+	DateCreatedFrom    null.Time         `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo      null.Time         `db:"date_created_to" json:"date_created_to"`
 }
 
 func (q *Queries) CountItem(ctx context.Context, arg CountItemParams) (int64, error) {
@@ -174,17 +174,17 @@ WHERE (
 `
 
 type CountOrderParams struct {
-	ID               []uuid.UUID   `json:"id"`
-	BuyerID          []uuid.UUID   `json:"buyer_id"`
-	SellerID         []uuid.UUID   `json:"seller_id"`
-	TransportID      []int64       `json:"transport_id"`
-	Address          []string      `json:"address"`
-	DateCreated      []time.Time   `json:"date_created"`
-	DateCreatedFrom  null.Time     `json:"date_created_from"`
-	DateCreatedTo    null.Time     `json:"date_created_to"`
-	ConfirmedByID    []uuid.UUID   `json:"confirmed_by_id"`
-	ConfirmSessionID []uuid.UUID   `json:"confirm_session_id"`
-	Note             []null.String `json:"note"`
+	ID               []uuid.UUID   `db:"id" json:"id"`
+	BuyerID          []uuid.UUID   `db:"buyer_id" json:"buyer_id"`
+	SellerID         []uuid.UUID   `db:"seller_id" json:"seller_id"`
+	TransportID      []int64       `db:"transport_id" json:"transport_id"`
+	Address          []string      `db:"address" json:"address"`
+	DateCreated      []time.Time   `db:"date_created" json:"date_created"`
+	DateCreatedFrom  null.Time     `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo    null.Time     `db:"date_created_to" json:"date_created_to"`
+	ConfirmedByID    []uuid.UUID   `db:"confirmed_by_id" json:"confirmed_by_id"`
+	ConfirmSessionID []uuid.UUID   `db:"confirm_session_id" json:"confirm_session_id"`
+	Note             []null.String `db:"note" json:"note"`
 }
 
 func (q *Queries) CountOrder(ctx context.Context, arg CountOrderParams) (int64, error) {
@@ -233,25 +233,25 @@ WHERE (
 `
 
 type CountPaymentSessionParams struct {
-	ID              []uuid.UUID       `json:"id"`
-	Kind            []string          `json:"kind"`
-	Status          []OrderStatus     `json:"status"`
-	FromID          []uuid.NullUUID   `json:"from_id"`
-	ToID            []uuid.NullUUID   `json:"to_id"`
-	Note            []string          `json:"note"`
-	Currency        []string          `json:"currency"`
-	TotalAmount     []int64           `json:"total_amount"`
-	TotalAmountFrom null.Int          `json:"total_amount_from"`
-	TotalAmountTo   null.Int          `json:"total_amount_to"`
-	FxSnapshot      []json.RawMessage `json:"fx_snapshot"`
-	Data            []json.RawMessage `json:"data"`
-	DateCreated     []time.Time       `json:"date_created"`
-	DateCreatedFrom null.Time         `json:"date_created_from"`
-	DateCreatedTo   null.Time         `json:"date_created_to"`
-	DatePaid        []null.Time       `json:"date_paid"`
-	DateExpired     []time.Time       `json:"date_expired"`
-	DateExpiredFrom null.Time         `json:"date_expired_from"`
-	DateExpiredTo   null.Time         `json:"date_expired_to"`
+	ID              []uuid.UUID       `db:"id" json:"id"`
+	Kind            []string          `db:"kind" json:"kind"`
+	Status          []OrderStatus     `db:"status" json:"status"`
+	FromID          []uuid.NullUUID   `db:"from_id" json:"from_id"`
+	ToID            []uuid.NullUUID   `db:"to_id" json:"to_id"`
+	Note            []string          `db:"note" json:"note"`
+	Currency        []string          `db:"currency" json:"currency"`
+	TotalAmount     []int64           `db:"total_amount" json:"total_amount"`
+	TotalAmountFrom null.Int          `db:"total_amount_from" json:"total_amount_from"`
+	TotalAmountTo   null.Int          `db:"total_amount_to" json:"total_amount_to"`
+	FxSnapshot      []json.RawMessage `db:"fx_snapshot" json:"fx_snapshot"`
+	Data            []json.RawMessage `db:"data" json:"data"`
+	DateCreated     []time.Time       `db:"date_created" json:"date_created"`
+	DateCreatedFrom null.Time         `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time         `db:"date_created_to" json:"date_created_to"`
+	DatePaid        []null.Time       `db:"date_paid" json:"date_paid"`
+	DateExpired     []time.Time       `db:"date_expired" json:"date_expired"`
+	DateExpiredFrom null.Time         `db:"date_expired_from" json:"date_expired_from"`
+	DateExpiredTo   null.Time         `db:"date_expired_to" json:"date_expired_to"`
 }
 
 func (q *Queries) CountPaymentSession(ctx context.Context, arg CountPaymentSessionParams) (int64, error) {
@@ -310,27 +310,27 @@ WHERE (
 `
 
 type CountRefundParams struct {
-	ID                       []uuid.UUID         `json:"id"`
-	AccountID                []uuid.UUID         `json:"account_id"`
-	OrderID                  []uuid.UUID         `json:"order_id"`
-	Reason                   []string            `json:"reason"`
-	DateCreated              []time.Time         `json:"date_created"`
-	DateCreatedFrom          null.Time           `json:"date_created_from"`
-	DateCreatedTo            null.Time           `json:"date_created_to"`
-	Status                   []OrderRefundStatus `json:"status"`
-	ReturnTransportID        []int64             `json:"return_transport_id"`
-	DateReceivedBySeller     []null.Time         `json:"date_received_by_seller"`
-	DateReceivedBySellerFrom null.Time           `json:"date_received_by_seller_from"`
-	DateReceivedBySellerTo   null.Time           `json:"date_received_by_seller_to"`
-	ReviewDeadline           []null.Time         `json:"review_deadline"`
-	ReviewDeadlineFrom       null.Time           `json:"review_deadline_from"`
-	ReviewDeadlineTo         null.Time           `json:"review_deadline_to"`
-	SellerDecisionAt         []null.Time         `json:"seller_decision_at"`
-	SellerDecisionAtFrom     null.Time           `json:"seller_decision_at_from"`
-	SellerDecisionAtTo       null.Time           `json:"seller_decision_at_to"`
-	ReturnToBuyerTransportID []null.Int          `json:"return_to_buyer_transport_id"`
-	RejectionReason          []null.String       `json:"rejection_reason"`
-	RefundTxID               []uuid.NullUUID     `json:"refund_tx_id"`
+	ID                       []uuid.UUID         `db:"id" json:"id"`
+	AccountID                []uuid.UUID         `db:"account_id" json:"account_id"`
+	OrderID                  []uuid.UUID         `db:"order_id" json:"order_id"`
+	Reason                   []string            `db:"reason" json:"reason"`
+	DateCreated              []time.Time         `db:"date_created" json:"date_created"`
+	DateCreatedFrom          null.Time           `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo            null.Time           `db:"date_created_to" json:"date_created_to"`
+	Status                   []OrderRefundStatus `db:"status" json:"status"`
+	ReturnTransportID        []int64             `db:"return_transport_id" json:"return_transport_id"`
+	DateReceivedBySeller     []null.Time         `db:"date_received_by_seller" json:"date_received_by_seller"`
+	DateReceivedBySellerFrom null.Time           `db:"date_received_by_seller_from" json:"date_received_by_seller_from"`
+	DateReceivedBySellerTo   null.Time           `db:"date_received_by_seller_to" json:"date_received_by_seller_to"`
+	ReviewDeadline           []null.Time         `db:"review_deadline" json:"review_deadline"`
+	ReviewDeadlineFrom       null.Time           `db:"review_deadline_from" json:"review_deadline_from"`
+	ReviewDeadlineTo         null.Time           `db:"review_deadline_to" json:"review_deadline_to"`
+	SellerDecisionAt         []null.Time         `db:"seller_decision_at" json:"seller_decision_at"`
+	SellerDecisionAtFrom     null.Time           `db:"seller_decision_at_from" json:"seller_decision_at_from"`
+	SellerDecisionAtTo       null.Time           `db:"seller_decision_at_to" json:"seller_decision_at_to"`
+	ReturnToBuyerTransportID []null.Int          `db:"return_to_buyer_transport_id" json:"return_to_buyer_transport_id"`
+	RejectionReason          []null.String       `db:"rejection_reason" json:"rejection_reason"`
+	RefundTxID               []uuid.NullUUID     `db:"refund_tx_id" json:"refund_tx_id"`
 }
 
 func (q *Queries) CountRefund(ctx context.Context, arg CountRefundParams) (int64, error) {
@@ -383,19 +383,19 @@ WHERE (
 `
 
 type CountRefundDisputeParams struct {
-	ID               []uuid.UUID          `json:"id"`
-	RefundID         []uuid.UUID          `json:"refund_id"`
-	AccountID        []uuid.UUID          `json:"account_id"`
-	Reason           []string             `json:"reason"`
-	DateCreated      []time.Time          `json:"date_created"`
-	DateCreatedFrom  null.Time            `json:"date_created_from"`
-	DateCreatedTo    null.Time            `json:"date_created_to"`
-	Status           []OrderDisputeStatus `json:"status"`
-	ResolvedByID     []uuid.NullUUID      `json:"resolved_by_id"`
-	DateResolved     []null.Time          `json:"date_resolved"`
-	DateResolvedFrom null.Time            `json:"date_resolved_from"`
-	DateResolvedTo   null.Time            `json:"date_resolved_to"`
-	ResolutionNote   []null.String        `json:"resolution_note"`
+	ID               []uuid.UUID          `db:"id" json:"id"`
+	RefundID         []uuid.UUID          `db:"refund_id" json:"refund_id"`
+	AccountID        []uuid.UUID          `db:"account_id" json:"account_id"`
+	Reason           []string             `db:"reason" json:"reason"`
+	DateCreated      []time.Time          `db:"date_created" json:"date_created"`
+	DateCreatedFrom  null.Time            `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo    null.Time            `db:"date_created_to" json:"date_created_to"`
+	Status           []OrderDisputeStatus `db:"status" json:"status"`
+	ResolvedByID     []uuid.NullUUID      `db:"resolved_by_id" json:"resolved_by_id"`
+	DateResolved     []null.Time          `db:"date_resolved" json:"date_resolved"`
+	DateResolvedFrom null.Time            `db:"date_resolved_from" json:"date_resolved_from"`
+	DateResolvedTo   null.Time            `db:"date_resolved_to" json:"date_resolved_to"`
+	ResolutionNote   []null.String        `db:"resolution_note" json:"resolution_note"`
 }
 
 func (q *Queries) CountRefundDispute(ctx context.Context, arg CountRefundDisputeParams) (int64, error) {
@@ -448,27 +448,27 @@ WHERE (
 `
 
 type CountTransactionParams struct {
-	ID              []uuid.UUID       `json:"id"`
-	SessionID       []uuid.UUID       `json:"session_id"`
-	Status          []OrderStatus     `json:"status"`
-	Note            []string          `json:"note"`
-	Error           []null.String     `json:"error"`
-	PaymentOption   []null.String     `json:"payment_option"`
-	Data            []json.RawMessage `json:"data"`
-	Amount          []int64           `json:"amount"`
-	AmountFrom      null.Int          `json:"amount_from"`
-	AmountTo        null.Int          `json:"amount_to"`
-	Currency        []string          `json:"currency"`
-	ReversesID      []uuid.NullUUID   `json:"reverses_id"`
-	DateCreated     []time.Time       `json:"date_created"`
-	DateCreatedFrom null.Time         `json:"date_created_from"`
-	DateCreatedTo   null.Time         `json:"date_created_to"`
-	DateSettled     []null.Time       `json:"date_settled"`
-	DateSettledFrom null.Time         `json:"date_settled_from"`
-	DateSettledTo   null.Time         `json:"date_settled_to"`
-	DateExpired     []null.Time       `json:"date_expired"`
-	DateExpiredFrom null.Time         `json:"date_expired_from"`
-	DateExpiredTo   null.Time         `json:"date_expired_to"`
+	ID              []uuid.UUID       `db:"id" json:"id"`
+	SessionID       []uuid.UUID       `db:"session_id" json:"session_id"`
+	Status          []OrderStatus     `db:"status" json:"status"`
+	Note            []string          `db:"note" json:"note"`
+	Error           []null.String     `db:"error" json:"error"`
+	PaymentOption   []null.String     `db:"payment_option" json:"payment_option"`
+	Data            []json.RawMessage `db:"data" json:"data"`
+	Amount          []int64           `db:"amount" json:"amount"`
+	AmountFrom      null.Int          `db:"amount_from" json:"amount_from"`
+	AmountTo        null.Int          `db:"amount_to" json:"amount_to"`
+	Currency        []string          `db:"currency" json:"currency"`
+	ReversesID      []uuid.NullUUID   `db:"reverses_id" json:"reverses_id"`
+	DateCreated     []time.Time       `db:"date_created" json:"date_created"`
+	DateCreatedFrom null.Time         `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time         `db:"date_created_to" json:"date_created_to"`
+	DateSettled     []null.Time       `db:"date_settled" json:"date_settled"`
+	DateSettledFrom null.Time         `db:"date_settled_from" json:"date_settled_from"`
+	DateSettledTo   null.Time         `db:"date_settled_to" json:"date_settled_to"`
+	DateExpired     []null.Time       `db:"date_expired" json:"date_expired"`
+	DateExpiredFrom null.Time         `db:"date_expired_from" json:"date_expired_from"`
+	DateExpiredTo   null.Time         `db:"date_expired_to" json:"date_expired_to"`
 }
 
 func (q *Queries) CountTransaction(ctx context.Context, arg CountTransactionParams) (int64, error) {
@@ -515,13 +515,13 @@ WHERE (
 `
 
 type CountTransportParams struct {
-	ID              []int64           `json:"id"`
-	Option          []string          `json:"option"`
-	Status          []NullOrderStatus `json:"status"`
-	Data            []json.RawMessage `json:"data"`
-	DateCreated     []time.Time       `json:"date_created"`
-	DateCreatedFrom null.Time         `json:"date_created_from"`
-	DateCreatedTo   null.Time         `json:"date_created_to"`
+	ID              []int64           `db:"id" json:"id"`
+	Option          []string          `db:"option" json:"option"`
+	Status          []NullOrderStatus `db:"status" json:"status"`
+	Data            []json.RawMessage `db:"data" json:"data"`
+	DateCreated     []time.Time       `db:"date_created" json:"date_created"`
+	DateCreatedFrom null.Time         `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time         `db:"date_created_to" json:"date_created_to"`
 }
 
 func (q *Queries) CountTransport(ctx context.Context, arg CountTransportParams) (int64, error) {
@@ -546,9 +546,9 @@ RETURNING id, account_id, sku_id, quantity
 `
 
 type CreateCartItemParams struct {
-	AccountID uuid.UUID `json:"account_id"`
-	SkuID     uuid.UUID `json:"sku_id"`
-	Quantity  int64     `json:"quantity"`
+	AccountID uuid.UUID `db:"account_id" json:"account_id"`
+	SkuID     uuid.UUID `db:"sku_id" json:"sku_id"`
+	Quantity  int64     `db:"quantity" json:"quantity"`
 }
 
 func (q *Queries) CreateCartItem(ctx context.Context, arg CreateCartItemParams) (OrderCartItem, error) {
@@ -564,202 +564,202 @@ func (q *Queries) CreateCartItem(ctx context.Context, arg CreateCartItemParams) 
 }
 
 type CreateCopyCartItemParams struct {
-	AccountID uuid.UUID `json:"account_id"`
-	SkuID     uuid.UUID `json:"sku_id"`
-	Quantity  int64     `json:"quantity"`
+	AccountID uuid.UUID `db:"account_id" json:"account_id"`
+	SkuID     uuid.UUID `db:"sku_id" json:"sku_id"`
+	Quantity  int64     `db:"quantity" json:"quantity"`
 }
 
 type CreateCopyDefaultCartItemParams struct {
-	AccountID uuid.UUID `json:"account_id"`
-	SkuID     uuid.UUID `json:"sku_id"`
-	Quantity  int64     `json:"quantity"`
+	AccountID uuid.UUID `db:"account_id" json:"account_id"`
+	SkuID     uuid.UUID `db:"sku_id" json:"sku_id"`
+	Quantity  int64     `db:"quantity" json:"quantity"`
 }
 
 type CreateCopyDefaultItemParams struct {
-	OrderID          uuid.NullUUID   `json:"order_id"`
-	AccountID        uuid.UUID       `json:"account_id"`
-	SellerID         uuid.UUID       `json:"seller_id"`
-	SkuID            uuid.UUID       `json:"sku_id"`
-	SpuID            uuid.UUID       `json:"spu_id"`
-	SkuName          string          `json:"sku_name"`
-	Address          string          `json:"address"`
-	Note             null.String     `json:"note"`
-	SerialIds        json.RawMessage `json:"serial_ids"`
-	Quantity         int64           `json:"quantity"`
-	TransportOption  string          `json:"transport_option"`
-	SubtotalAmount   int64           `json:"subtotal_amount"`
-	TotalAmount      int64           `json:"total_amount"`
-	SourceCurrency   string          `json:"source_currency"`
-	PaymentSessionID uuid.UUID       `json:"payment_session_id"`
-	DateCancelled    null.Time       `json:"date_cancelled"`
-	CancelledByID    uuid.NullUUID   `json:"cancelled_by_id"`
+	OrderID          uuid.NullUUID   `db:"order_id" json:"order_id"`
+	AccountID        uuid.UUID       `db:"account_id" json:"account_id"`
+	SellerID         uuid.UUID       `db:"seller_id" json:"seller_id"`
+	SkuID            uuid.UUID       `db:"sku_id" json:"sku_id"`
+	SpuID            uuid.UUID       `db:"spu_id" json:"spu_id"`
+	SkuName          string          `db:"sku_name" json:"sku_name"`
+	Address          string          `db:"address" json:"address"`
+	Note             null.String     `db:"note" json:"note"`
+	SerialIds        json.RawMessage `db:"serial_ids" json:"serial_ids"`
+	Quantity         int64           `db:"quantity" json:"quantity"`
+	TransportOption  string          `db:"transport_option" json:"transport_option"`
+	SubtotalAmount   int64           `db:"subtotal_amount" json:"subtotal_amount"`
+	TotalAmount      int64           `db:"total_amount" json:"total_amount"`
+	SourceCurrency   string          `db:"source_currency" json:"source_currency"`
+	PaymentSessionID uuid.UUID       `db:"payment_session_id" json:"payment_session_id"`
+	DateCancelled    null.Time       `db:"date_cancelled" json:"date_cancelled"`
+	CancelledByID    uuid.NullUUID   `db:"cancelled_by_id" json:"cancelled_by_id"`
 }
 
 type CreateCopyDefaultOrderParams struct {
-	BuyerID          uuid.UUID   `json:"buyer_id"`
-	SellerID         uuid.UUID   `json:"seller_id"`
-	TransportID      int64       `json:"transport_id"`
-	Address          string      `json:"address"`
-	ConfirmedByID    uuid.UUID   `json:"confirmed_by_id"`
-	ConfirmSessionID uuid.UUID   `json:"confirm_session_id"`
-	Note             null.String `json:"note"`
+	BuyerID          uuid.UUID   `db:"buyer_id" json:"buyer_id"`
+	SellerID         uuid.UUID   `db:"seller_id" json:"seller_id"`
+	TransportID      int64       `db:"transport_id" json:"transport_id"`
+	Address          string      `db:"address" json:"address"`
+	ConfirmedByID    uuid.UUID   `db:"confirmed_by_id" json:"confirmed_by_id"`
+	ConfirmSessionID uuid.UUID   `db:"confirm_session_id" json:"confirm_session_id"`
+	Note             null.String `db:"note" json:"note"`
 }
 
 type CreateCopyDefaultPaymentSessionParams struct {
-	ID          uuid.UUID       `json:"id"`
-	Kind        string          `json:"kind"`
-	Status      OrderStatus     `json:"status"`
-	FromID      uuid.NullUUID   `json:"from_id"`
-	ToID        uuid.NullUUID   `json:"to_id"`
-	Note        string          `json:"note"`
-	Currency    string          `json:"currency"`
-	TotalAmount int64           `json:"total_amount"`
-	FxSnapshot  json.RawMessage `json:"fx_snapshot"`
-	Data        json.RawMessage `json:"data"`
-	DatePaid    null.Time       `json:"date_paid"`
-	DateExpired time.Time       `json:"date_expired"`
+	ID          uuid.UUID       `db:"id" json:"id"`
+	Kind        string          `db:"kind" json:"kind"`
+	Status      OrderStatus     `db:"status" json:"status"`
+	FromID      uuid.NullUUID   `db:"from_id" json:"from_id"`
+	ToID        uuid.NullUUID   `db:"to_id" json:"to_id"`
+	Note        string          `db:"note" json:"note"`
+	Currency    string          `db:"currency" json:"currency"`
+	TotalAmount int64           `db:"total_amount" json:"total_amount"`
+	FxSnapshot  json.RawMessage `db:"fx_snapshot" json:"fx_snapshot"`
+	Data        json.RawMessage `db:"data" json:"data"`
+	DatePaid    null.Time       `db:"date_paid" json:"date_paid"`
+	DateExpired time.Time       `db:"date_expired" json:"date_expired"`
 }
 
 type CreateCopyDefaultRefundParams struct {
-	AccountID                uuid.UUID     `json:"account_id"`
-	OrderID                  uuid.UUID     `json:"order_id"`
-	Reason                   string        `json:"reason"`
-	ReturnTransportID        int64         `json:"return_transport_id"`
-	DateReceivedBySeller     null.Time     `json:"date_received_by_seller"`
-	ReviewDeadline           null.Time     `json:"review_deadline"`
-	SellerDecisionAt         null.Time     `json:"seller_decision_at"`
-	ReturnToBuyerTransportID null.Int      `json:"return_to_buyer_transport_id"`
-	RejectionReason          null.String   `json:"rejection_reason"`
-	RefundTxID               uuid.NullUUID `json:"refund_tx_id"`
+	AccountID                uuid.UUID     `db:"account_id" json:"account_id"`
+	OrderID                  uuid.UUID     `db:"order_id" json:"order_id"`
+	Reason                   string        `db:"reason" json:"reason"`
+	ReturnTransportID        int64         `db:"return_transport_id" json:"return_transport_id"`
+	DateReceivedBySeller     null.Time     `db:"date_received_by_seller" json:"date_received_by_seller"`
+	ReviewDeadline           null.Time     `db:"review_deadline" json:"review_deadline"`
+	SellerDecisionAt         null.Time     `db:"seller_decision_at" json:"seller_decision_at"`
+	ReturnToBuyerTransportID null.Int      `db:"return_to_buyer_transport_id" json:"return_to_buyer_transport_id"`
+	RejectionReason          null.String   `db:"rejection_reason" json:"rejection_reason"`
+	RefundTxID               uuid.NullUUID `db:"refund_tx_id" json:"refund_tx_id"`
 }
 
 type CreateCopyDefaultRefundDisputeParams struct {
-	RefundID       uuid.UUID     `json:"refund_id"`
-	AccountID      uuid.UUID     `json:"account_id"`
-	Reason         string        `json:"reason"`
-	ResolvedByID   uuid.NullUUID `json:"resolved_by_id"`
-	DateResolved   null.Time     `json:"date_resolved"`
-	ResolutionNote null.String   `json:"resolution_note"`
+	RefundID       uuid.UUID     `db:"refund_id" json:"refund_id"`
+	AccountID      uuid.UUID     `db:"account_id" json:"account_id"`
+	Reason         string        `db:"reason" json:"reason"`
+	ResolvedByID   uuid.NullUUID `db:"resolved_by_id" json:"resolved_by_id"`
+	DateResolved   null.Time     `db:"date_resolved" json:"date_resolved"`
+	ResolutionNote null.String   `db:"resolution_note" json:"resolution_note"`
 }
 
 type CreateCopyDefaultTransactionParams struct {
-	ID            uuid.UUID       `json:"id"`
-	SessionID     uuid.UUID       `json:"session_id"`
-	Status        OrderStatus     `json:"status"`
-	Note          string          `json:"note"`
-	Error         null.String     `json:"error"`
-	PaymentOption null.String     `json:"payment_option"`
-	Data          json.RawMessage `json:"data"`
-	Amount        int64           `json:"amount"`
-	Currency      string          `json:"currency"`
-	ReversesID    uuid.NullUUID   `json:"reverses_id"`
-	DateSettled   null.Time       `json:"date_settled"`
-	DateExpired   null.Time       `json:"date_expired"`
+	ID            uuid.UUID       `db:"id" json:"id"`
+	SessionID     uuid.UUID       `db:"session_id" json:"session_id"`
+	Status        OrderStatus     `db:"status" json:"status"`
+	Note          string          `db:"note" json:"note"`
+	Error         null.String     `db:"error" json:"error"`
+	PaymentOption null.String     `db:"payment_option" json:"payment_option"`
+	Data          json.RawMessage `db:"data" json:"data"`
+	Amount        int64           `db:"amount" json:"amount"`
+	Currency      string          `db:"currency" json:"currency"`
+	ReversesID    uuid.NullUUID   `db:"reverses_id" json:"reverses_id"`
+	DateSettled   null.Time       `db:"date_settled" json:"date_settled"`
+	DateExpired   null.Time       `db:"date_expired" json:"date_expired"`
 }
 
 type CreateCopyDefaultTransportParams struct {
-	Option string          `json:"option"`
-	Data   json.RawMessage `json:"data"`
+	Option string          `db:"option" json:"option"`
+	Data   json.RawMessage `db:"data" json:"data"`
 }
 
 type CreateCopyItemParams struct {
-	OrderID          uuid.NullUUID   `json:"order_id"`
-	AccountID        uuid.UUID       `json:"account_id"`
-	SellerID         uuid.UUID       `json:"seller_id"`
-	SkuID            uuid.UUID       `json:"sku_id"`
-	SpuID            uuid.UUID       `json:"spu_id"`
-	SkuName          string          `json:"sku_name"`
-	Address          string          `json:"address"`
-	Note             null.String     `json:"note"`
-	SerialIds        json.RawMessage `json:"serial_ids"`
-	Quantity         int64           `json:"quantity"`
-	TransportOption  string          `json:"transport_option"`
-	SubtotalAmount   int64           `json:"subtotal_amount"`
-	TotalAmount      int64           `json:"total_amount"`
-	SourceCurrency   string          `json:"source_currency"`
-	PaymentSessionID uuid.UUID       `json:"payment_session_id"`
-	DateCancelled    null.Time       `json:"date_cancelled"`
-	CancelledByID    uuid.NullUUID   `json:"cancelled_by_id"`
-	DateCreated      time.Time       `json:"date_created"`
+	OrderID          uuid.NullUUID   `db:"order_id" json:"order_id"`
+	AccountID        uuid.UUID       `db:"account_id" json:"account_id"`
+	SellerID         uuid.UUID       `db:"seller_id" json:"seller_id"`
+	SkuID            uuid.UUID       `db:"sku_id" json:"sku_id"`
+	SpuID            uuid.UUID       `db:"spu_id" json:"spu_id"`
+	SkuName          string          `db:"sku_name" json:"sku_name"`
+	Address          string          `db:"address" json:"address"`
+	Note             null.String     `db:"note" json:"note"`
+	SerialIds        json.RawMessage `db:"serial_ids" json:"serial_ids"`
+	Quantity         int64           `db:"quantity" json:"quantity"`
+	TransportOption  string          `db:"transport_option" json:"transport_option"`
+	SubtotalAmount   int64           `db:"subtotal_amount" json:"subtotal_amount"`
+	TotalAmount      int64           `db:"total_amount" json:"total_amount"`
+	SourceCurrency   string          `db:"source_currency" json:"source_currency"`
+	PaymentSessionID uuid.UUID       `db:"payment_session_id" json:"payment_session_id"`
+	DateCancelled    null.Time       `db:"date_cancelled" json:"date_cancelled"`
+	CancelledByID    uuid.NullUUID   `db:"cancelled_by_id" json:"cancelled_by_id"`
+	DateCreated      time.Time       `db:"date_created" json:"date_created"`
 }
 
 type CreateCopyOrderParams struct {
-	ID               uuid.UUID   `json:"id"`
-	BuyerID          uuid.UUID   `json:"buyer_id"`
-	SellerID         uuid.UUID   `json:"seller_id"`
-	TransportID      int64       `json:"transport_id"`
-	Address          string      `json:"address"`
-	DateCreated      time.Time   `json:"date_created"`
-	ConfirmedByID    uuid.UUID   `json:"confirmed_by_id"`
-	ConfirmSessionID uuid.UUID   `json:"confirm_session_id"`
-	Note             null.String `json:"note"`
+	ID               uuid.UUID   `db:"id" json:"id"`
+	BuyerID          uuid.UUID   `db:"buyer_id" json:"buyer_id"`
+	SellerID         uuid.UUID   `db:"seller_id" json:"seller_id"`
+	TransportID      int64       `db:"transport_id" json:"transport_id"`
+	Address          string      `db:"address" json:"address"`
+	DateCreated      time.Time   `db:"date_created" json:"date_created"`
+	ConfirmedByID    uuid.UUID   `db:"confirmed_by_id" json:"confirmed_by_id"`
+	ConfirmSessionID uuid.UUID   `db:"confirm_session_id" json:"confirm_session_id"`
+	Note             null.String `db:"note" json:"note"`
 }
 
 type CreateCopyPaymentSessionParams struct {
-	ID          uuid.UUID       `json:"id"`
-	Kind        string          `json:"kind"`
-	Status      OrderStatus     `json:"status"`
-	FromID      uuid.NullUUID   `json:"from_id"`
-	ToID        uuid.NullUUID   `json:"to_id"`
-	Note        string          `json:"note"`
-	Currency    string          `json:"currency"`
-	TotalAmount int64           `json:"total_amount"`
-	FxSnapshot  json.RawMessage `json:"fx_snapshot"`
-	Data        json.RawMessage `json:"data"`
-	DateCreated time.Time       `json:"date_created"`
-	DatePaid    null.Time       `json:"date_paid"`
-	DateExpired time.Time       `json:"date_expired"`
+	ID          uuid.UUID       `db:"id" json:"id"`
+	Kind        string          `db:"kind" json:"kind"`
+	Status      OrderStatus     `db:"status" json:"status"`
+	FromID      uuid.NullUUID   `db:"from_id" json:"from_id"`
+	ToID        uuid.NullUUID   `db:"to_id" json:"to_id"`
+	Note        string          `db:"note" json:"note"`
+	Currency    string          `db:"currency" json:"currency"`
+	TotalAmount int64           `db:"total_amount" json:"total_amount"`
+	FxSnapshot  json.RawMessage `db:"fx_snapshot" json:"fx_snapshot"`
+	Data        json.RawMessage `db:"data" json:"data"`
+	DateCreated time.Time       `db:"date_created" json:"date_created"`
+	DatePaid    null.Time       `db:"date_paid" json:"date_paid"`
+	DateExpired time.Time       `db:"date_expired" json:"date_expired"`
 }
 
 type CreateCopyRefundParams struct {
-	ID                       uuid.UUID         `json:"id"`
-	AccountID                uuid.UUID         `json:"account_id"`
-	OrderID                  uuid.UUID         `json:"order_id"`
-	Reason                   string            `json:"reason"`
-	DateCreated              time.Time         `json:"date_created"`
-	Status                   OrderRefundStatus `json:"status"`
-	ReturnTransportID        int64             `json:"return_transport_id"`
-	DateReceivedBySeller     null.Time         `json:"date_received_by_seller"`
-	ReviewDeadline           null.Time         `json:"review_deadline"`
-	SellerDecisionAt         null.Time         `json:"seller_decision_at"`
-	ReturnToBuyerTransportID null.Int          `json:"return_to_buyer_transport_id"`
-	RejectionReason          null.String       `json:"rejection_reason"`
-	RefundTxID               uuid.NullUUID     `json:"refund_tx_id"`
+	ID                       uuid.UUID         `db:"id" json:"id"`
+	AccountID                uuid.UUID         `db:"account_id" json:"account_id"`
+	OrderID                  uuid.UUID         `db:"order_id" json:"order_id"`
+	Reason                   string            `db:"reason" json:"reason"`
+	DateCreated              time.Time         `db:"date_created" json:"date_created"`
+	Status                   OrderRefundStatus `db:"status" json:"status"`
+	ReturnTransportID        int64             `db:"return_transport_id" json:"return_transport_id"`
+	DateReceivedBySeller     null.Time         `db:"date_received_by_seller" json:"date_received_by_seller"`
+	ReviewDeadline           null.Time         `db:"review_deadline" json:"review_deadline"`
+	SellerDecisionAt         null.Time         `db:"seller_decision_at" json:"seller_decision_at"`
+	ReturnToBuyerTransportID null.Int          `db:"return_to_buyer_transport_id" json:"return_to_buyer_transport_id"`
+	RejectionReason          null.String       `db:"rejection_reason" json:"rejection_reason"`
+	RefundTxID               uuid.NullUUID     `db:"refund_tx_id" json:"refund_tx_id"`
 }
 
 type CreateCopyRefundDisputeParams struct {
-	ID             uuid.UUID          `json:"id"`
-	RefundID       uuid.UUID          `json:"refund_id"`
-	AccountID      uuid.UUID          `json:"account_id"`
-	Reason         string             `json:"reason"`
-	DateCreated    time.Time          `json:"date_created"`
-	Status         OrderDisputeStatus `json:"status"`
-	ResolvedByID   uuid.NullUUID      `json:"resolved_by_id"`
-	DateResolved   null.Time          `json:"date_resolved"`
-	ResolutionNote null.String        `json:"resolution_note"`
+	ID             uuid.UUID          `db:"id" json:"id"`
+	RefundID       uuid.UUID          `db:"refund_id" json:"refund_id"`
+	AccountID      uuid.UUID          `db:"account_id" json:"account_id"`
+	Reason         string             `db:"reason" json:"reason"`
+	DateCreated    time.Time          `db:"date_created" json:"date_created"`
+	Status         OrderDisputeStatus `db:"status" json:"status"`
+	ResolvedByID   uuid.NullUUID      `db:"resolved_by_id" json:"resolved_by_id"`
+	DateResolved   null.Time          `db:"date_resolved" json:"date_resolved"`
+	ResolutionNote null.String        `db:"resolution_note" json:"resolution_note"`
 }
 
 type CreateCopyTransactionParams struct {
-	ID            uuid.UUID       `json:"id"`
-	SessionID     uuid.UUID       `json:"session_id"`
-	Status        OrderStatus     `json:"status"`
-	Note          string          `json:"note"`
-	Error         null.String     `json:"error"`
-	PaymentOption null.String     `json:"payment_option"`
-	Data          json.RawMessage `json:"data"`
-	Amount        int64           `json:"amount"`
-	Currency      string          `json:"currency"`
-	ReversesID    uuid.NullUUID   `json:"reverses_id"`
-	DateCreated   time.Time       `json:"date_created"`
-	DateSettled   null.Time       `json:"date_settled"`
-	DateExpired   null.Time       `json:"date_expired"`
+	ID            uuid.UUID       `db:"id" json:"id"`
+	SessionID     uuid.UUID       `db:"session_id" json:"session_id"`
+	Status        OrderStatus     `db:"status" json:"status"`
+	Note          string          `db:"note" json:"note"`
+	Error         null.String     `db:"error" json:"error"`
+	PaymentOption null.String     `db:"payment_option" json:"payment_option"`
+	Data          json.RawMessage `db:"data" json:"data"`
+	Amount        int64           `db:"amount" json:"amount"`
+	Currency      string          `db:"currency" json:"currency"`
+	ReversesID    uuid.NullUUID   `db:"reverses_id" json:"reverses_id"`
+	DateCreated   time.Time       `db:"date_created" json:"date_created"`
+	DateSettled   null.Time       `db:"date_settled" json:"date_settled"`
+	DateExpired   null.Time       `db:"date_expired" json:"date_expired"`
 }
 
 type CreateCopyTransportParams struct {
-	Option      string          `json:"option"`
-	Status      NullOrderStatus `json:"status"`
-	Data        json.RawMessage `json:"data"`
-	DateCreated time.Time       `json:"date_created"`
+	Option      string          `db:"option" json:"option"`
+	Status      NullOrderStatus `db:"status" json:"status"`
+	Data        json.RawMessage `db:"data" json:"data"`
+	DateCreated time.Time       `db:"date_created" json:"date_created"`
 }
 
 const createDefaultCartItem = `-- name: CreateDefaultCartItem :one
@@ -769,9 +769,9 @@ RETURNING id, account_id, sku_id, quantity
 `
 
 type CreateDefaultCartItemParams struct {
-	AccountID uuid.UUID `json:"account_id"`
-	SkuID     uuid.UUID `json:"sku_id"`
-	Quantity  int64     `json:"quantity"`
+	AccountID uuid.UUID `db:"account_id" json:"account_id"`
+	SkuID     uuid.UUID `db:"sku_id" json:"sku_id"`
+	Quantity  int64     `db:"quantity" json:"quantity"`
 }
 
 func (q *Queries) CreateDefaultCartItem(ctx context.Context, arg CreateDefaultCartItemParams) (OrderCartItem, error) {
@@ -793,23 +793,23 @@ RETURNING id, order_id, account_id, seller_id, sku_id, spu_id, sku_name, address
 `
 
 type CreateDefaultItemParams struct {
-	OrderID          uuid.NullUUID   `json:"order_id"`
-	AccountID        uuid.UUID       `json:"account_id"`
-	SellerID         uuid.UUID       `json:"seller_id"`
-	SkuID            uuid.UUID       `json:"sku_id"`
-	SpuID            uuid.UUID       `json:"spu_id"`
-	SkuName          string          `json:"sku_name"`
-	Address          string          `json:"address"`
-	Note             null.String     `json:"note"`
-	SerialIds        json.RawMessage `json:"serial_ids"`
-	Quantity         int64           `json:"quantity"`
-	TransportOption  string          `json:"transport_option"`
-	SubtotalAmount   int64           `json:"subtotal_amount"`
-	TotalAmount      int64           `json:"total_amount"`
-	SourceCurrency   string          `json:"source_currency"`
-	PaymentSessionID uuid.UUID       `json:"payment_session_id"`
-	DateCancelled    null.Time       `json:"date_cancelled"`
-	CancelledByID    uuid.NullUUID   `json:"cancelled_by_id"`
+	OrderID          uuid.NullUUID   `db:"order_id" json:"order_id"`
+	AccountID        uuid.UUID       `db:"account_id" json:"account_id"`
+	SellerID         uuid.UUID       `db:"seller_id" json:"seller_id"`
+	SkuID            uuid.UUID       `db:"sku_id" json:"sku_id"`
+	SpuID            uuid.UUID       `db:"spu_id" json:"spu_id"`
+	SkuName          string          `db:"sku_name" json:"sku_name"`
+	Address          string          `db:"address" json:"address"`
+	Note             null.String     `db:"note" json:"note"`
+	SerialIds        json.RawMessage `db:"serial_ids" json:"serial_ids"`
+	Quantity         int64           `db:"quantity" json:"quantity"`
+	TransportOption  string          `db:"transport_option" json:"transport_option"`
+	SubtotalAmount   int64           `db:"subtotal_amount" json:"subtotal_amount"`
+	TotalAmount      int64           `db:"total_amount" json:"total_amount"`
+	SourceCurrency   string          `db:"source_currency" json:"source_currency"`
+	PaymentSessionID uuid.UUID       `db:"payment_session_id" json:"payment_session_id"`
+	DateCancelled    null.Time       `db:"date_cancelled" json:"date_cancelled"`
+	CancelledByID    uuid.NullUUID   `db:"cancelled_by_id" json:"cancelled_by_id"`
 }
 
 func (q *Queries) CreateDefaultItem(ctx context.Context, arg CreateDefaultItemParams) (OrderItem, error) {
@@ -864,13 +864,13 @@ RETURNING id, buyer_id, seller_id, transport_id, address, date_created, confirme
 `
 
 type CreateDefaultOrderParams struct {
-	BuyerID          uuid.UUID   `json:"buyer_id"`
-	SellerID         uuid.UUID   `json:"seller_id"`
-	TransportID      int64       `json:"transport_id"`
-	Address          string      `json:"address"`
-	ConfirmedByID    uuid.UUID   `json:"confirmed_by_id"`
-	ConfirmSessionID uuid.UUID   `json:"confirm_session_id"`
-	Note             null.String `json:"note"`
+	BuyerID          uuid.UUID   `db:"buyer_id" json:"buyer_id"`
+	SellerID         uuid.UUID   `db:"seller_id" json:"seller_id"`
+	TransportID      int64       `db:"transport_id" json:"transport_id"`
+	Address          string      `db:"address" json:"address"`
+	ConfirmedByID    uuid.UUID   `db:"confirmed_by_id" json:"confirmed_by_id"`
+	ConfirmSessionID uuid.UUID   `db:"confirm_session_id" json:"confirm_session_id"`
+	Note             null.String `db:"note" json:"note"`
 }
 
 func (q *Queries) CreateDefaultOrder(ctx context.Context, arg CreateDefaultOrderParams) (OrderOrder, error) {
@@ -905,18 +905,18 @@ RETURNING id, kind, status, from_id, to_id, note, currency, total_amount, fx_sna
 `
 
 type CreateDefaultPaymentSessionParams struct {
-	ID          uuid.UUID       `json:"id"`
-	Kind        string          `json:"kind"`
-	Status      OrderStatus     `json:"status"`
-	FromID      uuid.NullUUID   `json:"from_id"`
-	ToID        uuid.NullUUID   `json:"to_id"`
-	Note        string          `json:"note"`
-	Currency    string          `json:"currency"`
-	TotalAmount int64           `json:"total_amount"`
-	FxSnapshot  json.RawMessage `json:"fx_snapshot"`
-	Data        json.RawMessage `json:"data"`
-	DatePaid    null.Time       `json:"date_paid"`
-	DateExpired time.Time       `json:"date_expired"`
+	ID          uuid.UUID       `db:"id" json:"id"`
+	Kind        string          `db:"kind" json:"kind"`
+	Status      OrderStatus     `db:"status" json:"status"`
+	FromID      uuid.NullUUID   `db:"from_id" json:"from_id"`
+	ToID        uuid.NullUUID   `db:"to_id" json:"to_id"`
+	Note        string          `db:"note" json:"note"`
+	Currency    string          `db:"currency" json:"currency"`
+	TotalAmount int64           `db:"total_amount" json:"total_amount"`
+	FxSnapshot  json.RawMessage `db:"fx_snapshot" json:"fx_snapshot"`
+	Data        json.RawMessage `db:"data" json:"data"`
+	DatePaid    null.Time       `db:"date_paid" json:"date_paid"`
+	DateExpired time.Time       `db:"date_expired" json:"date_expired"`
 }
 
 func (q *Queries) CreateDefaultPaymentSession(ctx context.Context, arg CreateDefaultPaymentSessionParams) (OrderPaymentSession, error) {
@@ -960,16 +960,16 @@ RETURNING id, account_id, order_id, reason, date_created, status, return_transpo
 `
 
 type CreateDefaultRefundParams struct {
-	AccountID                uuid.UUID     `json:"account_id"`
-	OrderID                  uuid.UUID     `json:"order_id"`
-	Reason                   string        `json:"reason"`
-	ReturnTransportID        int64         `json:"return_transport_id"`
-	DateReceivedBySeller     null.Time     `json:"date_received_by_seller"`
-	ReviewDeadline           null.Time     `json:"review_deadline"`
-	SellerDecisionAt         null.Time     `json:"seller_decision_at"`
-	ReturnToBuyerTransportID null.Int      `json:"return_to_buyer_transport_id"`
-	RejectionReason          null.String   `json:"rejection_reason"`
-	RefundTxID               uuid.NullUUID `json:"refund_tx_id"`
+	AccountID                uuid.UUID     `db:"account_id" json:"account_id"`
+	OrderID                  uuid.UUID     `db:"order_id" json:"order_id"`
+	Reason                   string        `db:"reason" json:"reason"`
+	ReturnTransportID        int64         `db:"return_transport_id" json:"return_transport_id"`
+	DateReceivedBySeller     null.Time     `db:"date_received_by_seller" json:"date_received_by_seller"`
+	ReviewDeadline           null.Time     `db:"review_deadline" json:"review_deadline"`
+	SellerDecisionAt         null.Time     `db:"seller_decision_at" json:"seller_decision_at"`
+	ReturnToBuyerTransportID null.Int      `db:"return_to_buyer_transport_id" json:"return_to_buyer_transport_id"`
+	RejectionReason          null.String   `db:"rejection_reason" json:"rejection_reason"`
+	RefundTxID               uuid.NullUUID `db:"refund_tx_id" json:"refund_tx_id"`
 }
 
 func (q *Queries) CreateDefaultRefund(ctx context.Context, arg CreateDefaultRefundParams) (OrderRefund, error) {
@@ -1011,12 +1011,12 @@ RETURNING id, refund_id, account_id, reason, date_created, status, resolved_by_i
 `
 
 type CreateDefaultRefundDisputeParams struct {
-	RefundID       uuid.UUID     `json:"refund_id"`
-	AccountID      uuid.UUID     `json:"account_id"`
-	Reason         string        `json:"reason"`
-	ResolvedByID   uuid.NullUUID `json:"resolved_by_id"`
-	DateResolved   null.Time     `json:"date_resolved"`
-	ResolutionNote null.String   `json:"resolution_note"`
+	RefundID       uuid.UUID     `db:"refund_id" json:"refund_id"`
+	AccountID      uuid.UUID     `db:"account_id" json:"account_id"`
+	Reason         string        `db:"reason" json:"reason"`
+	ResolvedByID   uuid.NullUUID `db:"resolved_by_id" json:"resolved_by_id"`
+	DateResolved   null.Time     `db:"date_resolved" json:"date_resolved"`
+	ResolutionNote null.String   `db:"resolution_note" json:"resolution_note"`
 }
 
 func (q *Queries) CreateDefaultRefundDispute(ctx context.Context, arg CreateDefaultRefundDisputeParams) (OrderRefundDispute, error) {
@@ -1050,18 +1050,18 @@ RETURNING id, session_id, status, note, error, payment_option, data, amount, cur
 `
 
 type CreateDefaultTransactionParams struct {
-	ID            uuid.UUID       `json:"id"`
-	SessionID     uuid.UUID       `json:"session_id"`
-	Status        OrderStatus     `json:"status"`
-	Note          string          `json:"note"`
-	Error         null.String     `json:"error"`
-	PaymentOption null.String     `json:"payment_option"`
-	Data          json.RawMessage `json:"data"`
-	Amount        int64           `json:"amount"`
-	Currency      string          `json:"currency"`
-	ReversesID    uuid.NullUUID   `json:"reverses_id"`
-	DateSettled   null.Time       `json:"date_settled"`
-	DateExpired   null.Time       `json:"date_expired"`
+	ID            uuid.UUID       `db:"id" json:"id"`
+	SessionID     uuid.UUID       `db:"session_id" json:"session_id"`
+	Status        OrderStatus     `db:"status" json:"status"`
+	Note          string          `db:"note" json:"note"`
+	Error         null.String     `db:"error" json:"error"`
+	PaymentOption null.String     `db:"payment_option" json:"payment_option"`
+	Data          json.RawMessage `db:"data" json:"data"`
+	Amount        int64           `db:"amount" json:"amount"`
+	Currency      string          `db:"currency" json:"currency"`
+	ReversesID    uuid.NullUUID   `db:"reverses_id" json:"reverses_id"`
+	DateSettled   null.Time       `db:"date_settled" json:"date_settled"`
+	DateExpired   null.Time       `db:"date_expired" json:"date_expired"`
 }
 
 func (q *Queries) CreateDefaultTransaction(ctx context.Context, arg CreateDefaultTransactionParams) (OrderTransaction, error) {
@@ -1105,8 +1105,8 @@ RETURNING id, option, status, data, date_created
 `
 
 type CreateDefaultTransportParams struct {
-	Option string          `json:"option"`
-	Data   json.RawMessage `json:"data"`
+	Option string          `db:"option" json:"option"`
+	Data   json.RawMessage `db:"data" json:"data"`
 }
 
 func (q *Queries) CreateDefaultTransport(ctx context.Context, arg CreateDefaultTransportParams) (OrderTransport, error) {
@@ -1129,24 +1129,24 @@ RETURNING id, order_id, account_id, seller_id, sku_id, spu_id, sku_name, address
 `
 
 type CreateItemParams struct {
-	OrderID          uuid.NullUUID   `json:"order_id"`
-	AccountID        uuid.UUID       `json:"account_id"`
-	SellerID         uuid.UUID       `json:"seller_id"`
-	SkuID            uuid.UUID       `json:"sku_id"`
-	SpuID            uuid.UUID       `json:"spu_id"`
-	SkuName          string          `json:"sku_name"`
-	Address          string          `json:"address"`
-	Note             null.String     `json:"note"`
-	SerialIds        json.RawMessage `json:"serial_ids"`
-	Quantity         int64           `json:"quantity"`
-	TransportOption  string          `json:"transport_option"`
-	SubtotalAmount   int64           `json:"subtotal_amount"`
-	TotalAmount      int64           `json:"total_amount"`
-	SourceCurrency   string          `json:"source_currency"`
-	PaymentSessionID uuid.UUID       `json:"payment_session_id"`
-	DateCancelled    null.Time       `json:"date_cancelled"`
-	CancelledByID    uuid.NullUUID   `json:"cancelled_by_id"`
-	DateCreated      time.Time       `json:"date_created"`
+	OrderID          uuid.NullUUID   `db:"order_id" json:"order_id"`
+	AccountID        uuid.UUID       `db:"account_id" json:"account_id"`
+	SellerID         uuid.UUID       `db:"seller_id" json:"seller_id"`
+	SkuID            uuid.UUID       `db:"sku_id" json:"sku_id"`
+	SpuID            uuid.UUID       `db:"spu_id" json:"spu_id"`
+	SkuName          string          `db:"sku_name" json:"sku_name"`
+	Address          string          `db:"address" json:"address"`
+	Note             null.String     `db:"note" json:"note"`
+	SerialIds        json.RawMessage `db:"serial_ids" json:"serial_ids"`
+	Quantity         int64           `db:"quantity" json:"quantity"`
+	TransportOption  string          `db:"transport_option" json:"transport_option"`
+	SubtotalAmount   int64           `db:"subtotal_amount" json:"subtotal_amount"`
+	TotalAmount      int64           `db:"total_amount" json:"total_amount"`
+	SourceCurrency   string          `db:"source_currency" json:"source_currency"`
+	PaymentSessionID uuid.UUID       `db:"payment_session_id" json:"payment_session_id"`
+	DateCancelled    null.Time       `db:"date_cancelled" json:"date_cancelled"`
+	CancelledByID    uuid.NullUUID   `db:"cancelled_by_id" json:"cancelled_by_id"`
+	DateCreated      time.Time       `db:"date_created" json:"date_created"`
 }
 
 func (q *Queries) CreateItem(ctx context.Context, arg CreateItemParams) (OrderItem, error) {
@@ -1202,15 +1202,15 @@ RETURNING id, buyer_id, seller_id, transport_id, address, date_created, confirme
 `
 
 type CreateOrderParams struct {
-	ID               uuid.UUID   `json:"id"`
-	BuyerID          uuid.UUID   `json:"buyer_id"`
-	SellerID         uuid.UUID   `json:"seller_id"`
-	TransportID      int64       `json:"transport_id"`
-	Address          string      `json:"address"`
-	DateCreated      time.Time   `json:"date_created"`
-	ConfirmedByID    uuid.UUID   `json:"confirmed_by_id"`
-	ConfirmSessionID uuid.UUID   `json:"confirm_session_id"`
-	Note             null.String `json:"note"`
+	ID               uuid.UUID   `db:"id" json:"id"`
+	BuyerID          uuid.UUID   `db:"buyer_id" json:"buyer_id"`
+	SellerID         uuid.UUID   `db:"seller_id" json:"seller_id"`
+	TransportID      int64       `db:"transport_id" json:"transport_id"`
+	Address          string      `db:"address" json:"address"`
+	DateCreated      time.Time   `db:"date_created" json:"date_created"`
+	ConfirmedByID    uuid.UUID   `db:"confirmed_by_id" json:"confirmed_by_id"`
+	ConfirmSessionID uuid.UUID   `db:"confirm_session_id" json:"confirm_session_id"`
+	Note             null.String `db:"note" json:"note"`
 }
 
 func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (OrderOrder, error) {
@@ -1247,19 +1247,19 @@ RETURNING id, kind, status, from_id, to_id, note, currency, total_amount, fx_sna
 `
 
 type CreatePaymentSessionParams struct {
-	ID          uuid.UUID       `json:"id"`
-	Kind        string          `json:"kind"`
-	Status      OrderStatus     `json:"status"`
-	FromID      uuid.NullUUID   `json:"from_id"`
-	ToID        uuid.NullUUID   `json:"to_id"`
-	Note        string          `json:"note"`
-	Currency    string          `json:"currency"`
-	TotalAmount int64           `json:"total_amount"`
-	FxSnapshot  json.RawMessage `json:"fx_snapshot"`
-	Data        json.RawMessage `json:"data"`
-	DateCreated time.Time       `json:"date_created"`
-	DatePaid    null.Time       `json:"date_paid"`
-	DateExpired time.Time       `json:"date_expired"`
+	ID          uuid.UUID       `db:"id" json:"id"`
+	Kind        string          `db:"kind" json:"kind"`
+	Status      OrderStatus     `db:"status" json:"status"`
+	FromID      uuid.NullUUID   `db:"from_id" json:"from_id"`
+	ToID        uuid.NullUUID   `db:"to_id" json:"to_id"`
+	Note        string          `db:"note" json:"note"`
+	Currency    string          `db:"currency" json:"currency"`
+	TotalAmount int64           `db:"total_amount" json:"total_amount"`
+	FxSnapshot  json.RawMessage `db:"fx_snapshot" json:"fx_snapshot"`
+	Data        json.RawMessage `db:"data" json:"data"`
+	DateCreated time.Time       `db:"date_created" json:"date_created"`
+	DatePaid    null.Time       `db:"date_paid" json:"date_paid"`
+	DateExpired time.Time       `db:"date_expired" json:"date_expired"`
 }
 
 func (q *Queries) CreatePaymentSession(ctx context.Context, arg CreatePaymentSessionParams) (OrderPaymentSession, error) {
@@ -1304,19 +1304,19 @@ RETURNING id, account_id, order_id, reason, date_created, status, return_transpo
 `
 
 type CreateRefundParams struct {
-	ID                       uuid.UUID         `json:"id"`
-	AccountID                uuid.UUID         `json:"account_id"`
-	OrderID                  uuid.UUID         `json:"order_id"`
-	Reason                   string            `json:"reason"`
-	DateCreated              time.Time         `json:"date_created"`
-	Status                   OrderRefundStatus `json:"status"`
-	ReturnTransportID        int64             `json:"return_transport_id"`
-	DateReceivedBySeller     null.Time         `json:"date_received_by_seller"`
-	ReviewDeadline           null.Time         `json:"review_deadline"`
-	SellerDecisionAt         null.Time         `json:"seller_decision_at"`
-	ReturnToBuyerTransportID null.Int          `json:"return_to_buyer_transport_id"`
-	RejectionReason          null.String       `json:"rejection_reason"`
-	RefundTxID               uuid.NullUUID     `json:"refund_tx_id"`
+	ID                       uuid.UUID         `db:"id" json:"id"`
+	AccountID                uuid.UUID         `db:"account_id" json:"account_id"`
+	OrderID                  uuid.UUID         `db:"order_id" json:"order_id"`
+	Reason                   string            `db:"reason" json:"reason"`
+	DateCreated              time.Time         `db:"date_created" json:"date_created"`
+	Status                   OrderRefundStatus `db:"status" json:"status"`
+	ReturnTransportID        int64             `db:"return_transport_id" json:"return_transport_id"`
+	DateReceivedBySeller     null.Time         `db:"date_received_by_seller" json:"date_received_by_seller"`
+	ReviewDeadline           null.Time         `db:"review_deadline" json:"review_deadline"`
+	SellerDecisionAt         null.Time         `db:"seller_decision_at" json:"seller_decision_at"`
+	ReturnToBuyerTransportID null.Int          `db:"return_to_buyer_transport_id" json:"return_to_buyer_transport_id"`
+	RejectionReason          null.String       `db:"rejection_reason" json:"rejection_reason"`
+	RefundTxID               uuid.NullUUID     `db:"refund_tx_id" json:"refund_tx_id"`
 }
 
 func (q *Queries) CreateRefund(ctx context.Context, arg CreateRefundParams) (OrderRefund, error) {
@@ -1361,15 +1361,15 @@ RETURNING id, refund_id, account_id, reason, date_created, status, resolved_by_i
 `
 
 type CreateRefundDisputeParams struct {
-	ID             uuid.UUID          `json:"id"`
-	RefundID       uuid.UUID          `json:"refund_id"`
-	AccountID      uuid.UUID          `json:"account_id"`
-	Reason         string             `json:"reason"`
-	DateCreated    time.Time          `json:"date_created"`
-	Status         OrderDisputeStatus `json:"status"`
-	ResolvedByID   uuid.NullUUID      `json:"resolved_by_id"`
-	DateResolved   null.Time          `json:"date_resolved"`
-	ResolutionNote null.String        `json:"resolution_note"`
+	ID             uuid.UUID          `db:"id" json:"id"`
+	RefundID       uuid.UUID          `db:"refund_id" json:"refund_id"`
+	AccountID      uuid.UUID          `db:"account_id" json:"account_id"`
+	Reason         string             `db:"reason" json:"reason"`
+	DateCreated    time.Time          `db:"date_created" json:"date_created"`
+	Status         OrderDisputeStatus `db:"status" json:"status"`
+	ResolvedByID   uuid.NullUUID      `db:"resolved_by_id" json:"resolved_by_id"`
+	DateResolved   null.Time          `db:"date_resolved" json:"date_resolved"`
+	ResolutionNote null.String        `db:"resolution_note" json:"resolution_note"`
 }
 
 func (q *Queries) CreateRefundDispute(ctx context.Context, arg CreateRefundDisputeParams) (OrderRefundDispute, error) {
@@ -1406,19 +1406,19 @@ RETURNING id, session_id, status, note, error, payment_option, data, amount, cur
 `
 
 type CreateTransactionParams struct {
-	ID            uuid.UUID       `json:"id"`
-	SessionID     uuid.UUID       `json:"session_id"`
-	Status        OrderStatus     `json:"status"`
-	Note          string          `json:"note"`
-	Error         null.String     `json:"error"`
-	PaymentOption null.String     `json:"payment_option"`
-	Data          json.RawMessage `json:"data"`
-	Amount        int64           `json:"amount"`
-	Currency      string          `json:"currency"`
-	ReversesID    uuid.NullUUID   `json:"reverses_id"`
-	DateCreated   time.Time       `json:"date_created"`
-	DateSettled   null.Time       `json:"date_settled"`
-	DateExpired   null.Time       `json:"date_expired"`
+	ID            uuid.UUID       `db:"id" json:"id"`
+	SessionID     uuid.UUID       `db:"session_id" json:"session_id"`
+	Status        OrderStatus     `db:"status" json:"status"`
+	Note          string          `db:"note" json:"note"`
+	Error         null.String     `db:"error" json:"error"`
+	PaymentOption null.String     `db:"payment_option" json:"payment_option"`
+	Data          json.RawMessage `db:"data" json:"data"`
+	Amount        int64           `db:"amount" json:"amount"`
+	Currency      string          `db:"currency" json:"currency"`
+	ReversesID    uuid.NullUUID   `db:"reverses_id" json:"reverses_id"`
+	DateCreated   time.Time       `db:"date_created" json:"date_created"`
+	DateSettled   null.Time       `db:"date_settled" json:"date_settled"`
+	DateExpired   null.Time       `db:"date_expired" json:"date_expired"`
 }
 
 func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionParams) (OrderTransaction, error) {
@@ -1463,10 +1463,10 @@ RETURNING id, option, status, data, date_created
 `
 
 type CreateTransportParams struct {
-	Option      string          `json:"option"`
-	Status      NullOrderStatus `json:"status"`
-	Data        json.RawMessage `json:"data"`
-	DateCreated time.Time       `json:"date_created"`
+	Option      string          `db:"option" json:"option"`
+	Status      NullOrderStatus `db:"status" json:"status"`
+	Data        json.RawMessage `db:"data" json:"data"`
+	DateCreated time.Time       `db:"date_created" json:"date_created"`
 }
 
 func (q *Queries) CreateTransport(ctx context.Context, arg CreateTransportParams) (OrderTransport, error) {
@@ -1500,12 +1500,12 @@ WHERE (
 `
 
 type DeleteCartItemParams struct {
-	ID           []int64     `json:"id"`
-	AccountID    []uuid.UUID `json:"account_id"`
-	SkuID        []uuid.UUID `json:"sku_id"`
-	Quantity     []int64     `json:"quantity"`
-	QuantityFrom null.Int    `json:"quantity_from"`
-	QuantityTo   null.Int    `json:"quantity_to"`
+	ID           []int64     `db:"id" json:"id"`
+	AccountID    []uuid.UUID `db:"account_id" json:"account_id"`
+	SkuID        []uuid.UUID `db:"sku_id" json:"sku_id"`
+	Quantity     []int64     `db:"quantity" json:"quantity"`
+	QuantityFrom null.Int    `db:"quantity_from" json:"quantity_from"`
+	QuantityTo   null.Int    `db:"quantity_to" json:"quantity_to"`
 }
 
 func (q *Queries) DeleteCartItem(ctx context.Context, arg DeleteCartItemParams) error {
@@ -1556,35 +1556,35 @@ WHERE (
 `
 
 type DeleteItemParams struct {
-	ID                 []int64           `json:"id"`
-	OrderID            []uuid.NullUUID   `json:"order_id"`
-	AccountID          []uuid.UUID       `json:"account_id"`
-	SellerID           []uuid.UUID       `json:"seller_id"`
-	SkuID              []uuid.UUID       `json:"sku_id"`
-	SpuID              []uuid.UUID       `json:"spu_id"`
-	SkuName            []string          `json:"sku_name"`
-	Address            []string          `json:"address"`
-	Note               []null.String     `json:"note"`
-	SerialIds          []json.RawMessage `json:"serial_ids"`
-	Quantity           []int64           `json:"quantity"`
-	QuantityFrom       null.Int          `json:"quantity_from"`
-	QuantityTo         null.Int          `json:"quantity_to"`
-	TransportOption    []string          `json:"transport_option"`
-	SubtotalAmount     []int64           `json:"subtotal_amount"`
-	SubtotalAmountFrom null.Int          `json:"subtotal_amount_from"`
-	SubtotalAmountTo   null.Int          `json:"subtotal_amount_to"`
-	TotalAmount        []int64           `json:"total_amount"`
-	TotalAmountFrom    null.Int          `json:"total_amount_from"`
-	TotalAmountTo      null.Int          `json:"total_amount_to"`
-	SourceCurrency     []string          `json:"source_currency"`
-	PaymentSessionID   []uuid.UUID       `json:"payment_session_id"`
-	DateCancelled      []null.Time       `json:"date_cancelled"`
-	DateCancelledFrom  null.Time         `json:"date_cancelled_from"`
-	DateCancelledTo    null.Time         `json:"date_cancelled_to"`
-	CancelledByID      []uuid.NullUUID   `json:"cancelled_by_id"`
-	DateCreated        []time.Time       `json:"date_created"`
-	DateCreatedFrom    null.Time         `json:"date_created_from"`
-	DateCreatedTo      null.Time         `json:"date_created_to"`
+	ID                 []int64           `db:"id" json:"id"`
+	OrderID            []uuid.NullUUID   `db:"order_id" json:"order_id"`
+	AccountID          []uuid.UUID       `db:"account_id" json:"account_id"`
+	SellerID           []uuid.UUID       `db:"seller_id" json:"seller_id"`
+	SkuID              []uuid.UUID       `db:"sku_id" json:"sku_id"`
+	SpuID              []uuid.UUID       `db:"spu_id" json:"spu_id"`
+	SkuName            []string          `db:"sku_name" json:"sku_name"`
+	Address            []string          `db:"address" json:"address"`
+	Note               []null.String     `db:"note" json:"note"`
+	SerialIds          []json.RawMessage `db:"serial_ids" json:"serial_ids"`
+	Quantity           []int64           `db:"quantity" json:"quantity"`
+	QuantityFrom       null.Int          `db:"quantity_from" json:"quantity_from"`
+	QuantityTo         null.Int          `db:"quantity_to" json:"quantity_to"`
+	TransportOption    []string          `db:"transport_option" json:"transport_option"`
+	SubtotalAmount     []int64           `db:"subtotal_amount" json:"subtotal_amount"`
+	SubtotalAmountFrom null.Int          `db:"subtotal_amount_from" json:"subtotal_amount_from"`
+	SubtotalAmountTo   null.Int          `db:"subtotal_amount_to" json:"subtotal_amount_to"`
+	TotalAmount        []int64           `db:"total_amount" json:"total_amount"`
+	TotalAmountFrom    null.Int          `db:"total_amount_from" json:"total_amount_from"`
+	TotalAmountTo      null.Int          `db:"total_amount_to" json:"total_amount_to"`
+	SourceCurrency     []string          `db:"source_currency" json:"source_currency"`
+	PaymentSessionID   []uuid.UUID       `db:"payment_session_id" json:"payment_session_id"`
+	DateCancelled      []null.Time       `db:"date_cancelled" json:"date_cancelled"`
+	DateCancelledFrom  null.Time         `db:"date_cancelled_from" json:"date_cancelled_from"`
+	DateCancelledTo    null.Time         `db:"date_cancelled_to" json:"date_cancelled_to"`
+	CancelledByID      []uuid.NullUUID   `db:"cancelled_by_id" json:"cancelled_by_id"`
+	DateCreated        []time.Time       `db:"date_created" json:"date_created"`
+	DateCreatedFrom    null.Time         `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo      null.Time         `db:"date_created_to" json:"date_created_to"`
 }
 
 func (q *Queries) DeleteItem(ctx context.Context, arg DeleteItemParams) error {
@@ -1640,17 +1640,17 @@ WHERE (
 `
 
 type DeleteOrderParams struct {
-	ID               []uuid.UUID   `json:"id"`
-	BuyerID          []uuid.UUID   `json:"buyer_id"`
-	SellerID         []uuid.UUID   `json:"seller_id"`
-	TransportID      []int64       `json:"transport_id"`
-	Address          []string      `json:"address"`
-	DateCreated      []time.Time   `json:"date_created"`
-	DateCreatedFrom  null.Time     `json:"date_created_from"`
-	DateCreatedTo    null.Time     `json:"date_created_to"`
-	ConfirmedByID    []uuid.UUID   `json:"confirmed_by_id"`
-	ConfirmSessionID []uuid.UUID   `json:"confirm_session_id"`
-	Note             []null.String `json:"note"`
+	ID               []uuid.UUID   `db:"id" json:"id"`
+	BuyerID          []uuid.UUID   `db:"buyer_id" json:"buyer_id"`
+	SellerID         []uuid.UUID   `db:"seller_id" json:"seller_id"`
+	TransportID      []int64       `db:"transport_id" json:"transport_id"`
+	Address          []string      `db:"address" json:"address"`
+	DateCreated      []time.Time   `db:"date_created" json:"date_created"`
+	DateCreatedFrom  null.Time     `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo    null.Time     `db:"date_created_to" json:"date_created_to"`
+	ConfirmedByID    []uuid.UUID   `db:"confirmed_by_id" json:"confirmed_by_id"`
+	ConfirmSessionID []uuid.UUID   `db:"confirm_session_id" json:"confirm_session_id"`
+	Note             []null.String `db:"note" json:"note"`
 }
 
 func (q *Queries) DeleteOrder(ctx context.Context, arg DeleteOrderParams) error {
@@ -1696,25 +1696,25 @@ WHERE (
 `
 
 type DeletePaymentSessionParams struct {
-	ID              []uuid.UUID       `json:"id"`
-	Kind            []string          `json:"kind"`
-	Status          []OrderStatus     `json:"status"`
-	FromID          []uuid.NullUUID   `json:"from_id"`
-	ToID            []uuid.NullUUID   `json:"to_id"`
-	Note            []string          `json:"note"`
-	Currency        []string          `json:"currency"`
-	TotalAmount     []int64           `json:"total_amount"`
-	TotalAmountFrom null.Int          `json:"total_amount_from"`
-	TotalAmountTo   null.Int          `json:"total_amount_to"`
-	FxSnapshot      []json.RawMessage `json:"fx_snapshot"`
-	Data            []json.RawMessage `json:"data"`
-	DateCreated     []time.Time       `json:"date_created"`
-	DateCreatedFrom null.Time         `json:"date_created_from"`
-	DateCreatedTo   null.Time         `json:"date_created_to"`
-	DatePaid        []null.Time       `json:"date_paid"`
-	DateExpired     []time.Time       `json:"date_expired"`
-	DateExpiredFrom null.Time         `json:"date_expired_from"`
-	DateExpiredTo   null.Time         `json:"date_expired_to"`
+	ID              []uuid.UUID       `db:"id" json:"id"`
+	Kind            []string          `db:"kind" json:"kind"`
+	Status          []OrderStatus     `db:"status" json:"status"`
+	FromID          []uuid.NullUUID   `db:"from_id" json:"from_id"`
+	ToID            []uuid.NullUUID   `db:"to_id" json:"to_id"`
+	Note            []string          `db:"note" json:"note"`
+	Currency        []string          `db:"currency" json:"currency"`
+	TotalAmount     []int64           `db:"total_amount" json:"total_amount"`
+	TotalAmountFrom null.Int          `db:"total_amount_from" json:"total_amount_from"`
+	TotalAmountTo   null.Int          `db:"total_amount_to" json:"total_amount_to"`
+	FxSnapshot      []json.RawMessage `db:"fx_snapshot" json:"fx_snapshot"`
+	Data            []json.RawMessage `db:"data" json:"data"`
+	DateCreated     []time.Time       `db:"date_created" json:"date_created"`
+	DateCreatedFrom null.Time         `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time         `db:"date_created_to" json:"date_created_to"`
+	DatePaid        []null.Time       `db:"date_paid" json:"date_paid"`
+	DateExpired     []time.Time       `db:"date_expired" json:"date_expired"`
+	DateExpiredFrom null.Time         `db:"date_expired_from" json:"date_expired_from"`
+	DateExpiredTo   null.Time         `db:"date_expired_to" json:"date_expired_to"`
 }
 
 func (q *Queries) DeletePaymentSession(ctx context.Context, arg DeletePaymentSessionParams) error {
@@ -1770,27 +1770,27 @@ WHERE (
 `
 
 type DeleteRefundParams struct {
-	ID                       []uuid.UUID         `json:"id"`
-	AccountID                []uuid.UUID         `json:"account_id"`
-	OrderID                  []uuid.UUID         `json:"order_id"`
-	Reason                   []string            `json:"reason"`
-	DateCreated              []time.Time         `json:"date_created"`
-	DateCreatedFrom          null.Time           `json:"date_created_from"`
-	DateCreatedTo            null.Time           `json:"date_created_to"`
-	Status                   []OrderRefundStatus `json:"status"`
-	ReturnTransportID        []int64             `json:"return_transport_id"`
-	DateReceivedBySeller     []null.Time         `json:"date_received_by_seller"`
-	DateReceivedBySellerFrom null.Time           `json:"date_received_by_seller_from"`
-	DateReceivedBySellerTo   null.Time           `json:"date_received_by_seller_to"`
-	ReviewDeadline           []null.Time         `json:"review_deadline"`
-	ReviewDeadlineFrom       null.Time           `json:"review_deadline_from"`
-	ReviewDeadlineTo         null.Time           `json:"review_deadline_to"`
-	SellerDecisionAt         []null.Time         `json:"seller_decision_at"`
-	SellerDecisionAtFrom     null.Time           `json:"seller_decision_at_from"`
-	SellerDecisionAtTo       null.Time           `json:"seller_decision_at_to"`
-	ReturnToBuyerTransportID []null.Int          `json:"return_to_buyer_transport_id"`
-	RejectionReason          []null.String       `json:"rejection_reason"`
-	RefundTxID               []uuid.NullUUID     `json:"refund_tx_id"`
+	ID                       []uuid.UUID         `db:"id" json:"id"`
+	AccountID                []uuid.UUID         `db:"account_id" json:"account_id"`
+	OrderID                  []uuid.UUID         `db:"order_id" json:"order_id"`
+	Reason                   []string            `db:"reason" json:"reason"`
+	DateCreated              []time.Time         `db:"date_created" json:"date_created"`
+	DateCreatedFrom          null.Time           `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo            null.Time           `db:"date_created_to" json:"date_created_to"`
+	Status                   []OrderRefundStatus `db:"status" json:"status"`
+	ReturnTransportID        []int64             `db:"return_transport_id" json:"return_transport_id"`
+	DateReceivedBySeller     []null.Time         `db:"date_received_by_seller" json:"date_received_by_seller"`
+	DateReceivedBySellerFrom null.Time           `db:"date_received_by_seller_from" json:"date_received_by_seller_from"`
+	DateReceivedBySellerTo   null.Time           `db:"date_received_by_seller_to" json:"date_received_by_seller_to"`
+	ReviewDeadline           []null.Time         `db:"review_deadline" json:"review_deadline"`
+	ReviewDeadlineFrom       null.Time           `db:"review_deadline_from" json:"review_deadline_from"`
+	ReviewDeadlineTo         null.Time           `db:"review_deadline_to" json:"review_deadline_to"`
+	SellerDecisionAt         []null.Time         `db:"seller_decision_at" json:"seller_decision_at"`
+	SellerDecisionAtFrom     null.Time           `db:"seller_decision_at_from" json:"seller_decision_at_from"`
+	SellerDecisionAtTo       null.Time           `db:"seller_decision_at_to" json:"seller_decision_at_to"`
+	ReturnToBuyerTransportID []null.Int          `db:"return_to_buyer_transport_id" json:"return_to_buyer_transport_id"`
+	RejectionReason          []null.String       `db:"rejection_reason" json:"rejection_reason"`
+	RefundTxID               []uuid.NullUUID     `db:"refund_tx_id" json:"refund_tx_id"`
 }
 
 func (q *Queries) DeleteRefund(ctx context.Context, arg DeleteRefundParams) error {
@@ -1840,19 +1840,19 @@ WHERE (
 `
 
 type DeleteRefundDisputeParams struct {
-	ID               []uuid.UUID          `json:"id"`
-	RefundID         []uuid.UUID          `json:"refund_id"`
-	AccountID        []uuid.UUID          `json:"account_id"`
-	Reason           []string             `json:"reason"`
-	DateCreated      []time.Time          `json:"date_created"`
-	DateCreatedFrom  null.Time            `json:"date_created_from"`
-	DateCreatedTo    null.Time            `json:"date_created_to"`
-	Status           []OrderDisputeStatus `json:"status"`
-	ResolvedByID     []uuid.NullUUID      `json:"resolved_by_id"`
-	DateResolved     []null.Time          `json:"date_resolved"`
-	DateResolvedFrom null.Time            `json:"date_resolved_from"`
-	DateResolvedTo   null.Time            `json:"date_resolved_to"`
-	ResolutionNote   []null.String        `json:"resolution_note"`
+	ID               []uuid.UUID          `db:"id" json:"id"`
+	RefundID         []uuid.UUID          `db:"refund_id" json:"refund_id"`
+	AccountID        []uuid.UUID          `db:"account_id" json:"account_id"`
+	Reason           []string             `db:"reason" json:"reason"`
+	DateCreated      []time.Time          `db:"date_created" json:"date_created"`
+	DateCreatedFrom  null.Time            `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo    null.Time            `db:"date_created_to" json:"date_created_to"`
+	Status           []OrderDisputeStatus `db:"status" json:"status"`
+	ResolvedByID     []uuid.NullUUID      `db:"resolved_by_id" json:"resolved_by_id"`
+	DateResolved     []null.Time          `db:"date_resolved" json:"date_resolved"`
+	DateResolvedFrom null.Time            `db:"date_resolved_from" json:"date_resolved_from"`
+	DateResolvedTo   null.Time            `db:"date_resolved_to" json:"date_resolved_to"`
+	ResolutionNote   []null.String        `db:"resolution_note" json:"resolution_note"`
 }
 
 func (q *Queries) DeleteRefundDispute(ctx context.Context, arg DeleteRefundDisputeParams) error {
@@ -1902,27 +1902,27 @@ WHERE (
 `
 
 type DeleteTransactionParams struct {
-	ID              []uuid.UUID       `json:"id"`
-	SessionID       []uuid.UUID       `json:"session_id"`
-	Status          []OrderStatus     `json:"status"`
-	Note            []string          `json:"note"`
-	Error           []null.String     `json:"error"`
-	PaymentOption   []null.String     `json:"payment_option"`
-	Data            []json.RawMessage `json:"data"`
-	Amount          []int64           `json:"amount"`
-	AmountFrom      null.Int          `json:"amount_from"`
-	AmountTo        null.Int          `json:"amount_to"`
-	Currency        []string          `json:"currency"`
-	ReversesID      []uuid.NullUUID   `json:"reverses_id"`
-	DateCreated     []time.Time       `json:"date_created"`
-	DateCreatedFrom null.Time         `json:"date_created_from"`
-	DateCreatedTo   null.Time         `json:"date_created_to"`
-	DateSettled     []null.Time       `json:"date_settled"`
-	DateSettledFrom null.Time         `json:"date_settled_from"`
-	DateSettledTo   null.Time         `json:"date_settled_to"`
-	DateExpired     []null.Time       `json:"date_expired"`
-	DateExpiredFrom null.Time         `json:"date_expired_from"`
-	DateExpiredTo   null.Time         `json:"date_expired_to"`
+	ID              []uuid.UUID       `db:"id" json:"id"`
+	SessionID       []uuid.UUID       `db:"session_id" json:"session_id"`
+	Status          []OrderStatus     `db:"status" json:"status"`
+	Note            []string          `db:"note" json:"note"`
+	Error           []null.String     `db:"error" json:"error"`
+	PaymentOption   []null.String     `db:"payment_option" json:"payment_option"`
+	Data            []json.RawMessage `db:"data" json:"data"`
+	Amount          []int64           `db:"amount" json:"amount"`
+	AmountFrom      null.Int          `db:"amount_from" json:"amount_from"`
+	AmountTo        null.Int          `db:"amount_to" json:"amount_to"`
+	Currency        []string          `db:"currency" json:"currency"`
+	ReversesID      []uuid.NullUUID   `db:"reverses_id" json:"reverses_id"`
+	DateCreated     []time.Time       `db:"date_created" json:"date_created"`
+	DateCreatedFrom null.Time         `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time         `db:"date_created_to" json:"date_created_to"`
+	DateSettled     []null.Time       `db:"date_settled" json:"date_settled"`
+	DateSettledFrom null.Time         `db:"date_settled_from" json:"date_settled_from"`
+	DateSettledTo   null.Time         `db:"date_settled_to" json:"date_settled_to"`
+	DateExpired     []null.Time       `db:"date_expired" json:"date_expired"`
+	DateExpiredFrom null.Time         `db:"date_expired_from" json:"date_expired_from"`
+	DateExpiredTo   null.Time         `db:"date_expired_to" json:"date_expired_to"`
 }
 
 func (q *Queries) DeleteTransaction(ctx context.Context, arg DeleteTransactionParams) error {
@@ -1966,13 +1966,13 @@ WHERE (
 `
 
 type DeleteTransportParams struct {
-	ID              []int64           `json:"id"`
-	Option          []string          `json:"option"`
-	Status          []NullOrderStatus `json:"status"`
-	Data            []json.RawMessage `json:"data"`
-	DateCreated     []time.Time       `json:"date_created"`
-	DateCreatedFrom null.Time         `json:"date_created_from"`
-	DateCreatedTo   null.Time         `json:"date_created_to"`
+	ID              []int64           `db:"id" json:"id"`
+	Option          []string          `db:"option" json:"option"`
+	Status          []NullOrderStatus `db:"status" json:"status"`
+	Data            []json.RawMessage `db:"data" json:"data"`
+	DateCreated     []time.Time       `db:"date_created" json:"date_created"`
+	DateCreatedFrom null.Time         `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo   null.Time         `db:"date_created_to" json:"date_created_to"`
 }
 
 func (q *Queries) DeleteTransport(ctx context.Context, arg DeleteTransportParams) error {
@@ -1998,9 +1998,9 @@ WHERE ("id" = $1) OR ("account_id" = $2 AND "sku_id" = $3)
 `
 
 type GetCartItemParams struct {
-	ID        null.Int      `json:"id"`
-	AccountID uuid.NullUUID `json:"account_id"`
-	SkuID     uuid.NullUUID `json:"sku_id"`
+	ID        null.Int      `db:"id" json:"id"`
+	AccountID uuid.NullUUID `db:"account_id" json:"account_id"`
+	SkuID     uuid.NullUUID `db:"sku_id" json:"sku_id"`
 }
 
 // Code generated by pgtempl. DO NOT EDIT.
@@ -2065,8 +2065,8 @@ WHERE ("id" = $1) OR ("transport_id" = $2)
 `
 
 type GetOrderParams struct {
-	ID          uuid.NullUUID `json:"id"`
-	TransportID null.Int      `json:"transport_id"`
+	ID          uuid.NullUUID `db:"id" json:"id"`
+	TransportID null.Int      `db:"transport_id" json:"transport_id"`
 }
 
 // ========================================
@@ -2128,9 +2128,9 @@ WHERE ("id" = $1) OR ("return_transport_id" = $2) OR ("return_to_buyer_transport
 `
 
 type GetRefundParams struct {
-	ID                       uuid.NullUUID `json:"id"`
-	ReturnTransportID        null.Int      `json:"return_transport_id"`
-	ReturnToBuyerTransportID null.Int      `json:"return_to_buyer_transport_id"`
+	ID                       uuid.NullUUID `db:"id" json:"id"`
+	ReturnTransportID        null.Int      `db:"return_transport_id" json:"return_transport_id"`
+	ReturnToBuyerTransportID null.Int      `db:"return_to_buyer_transport_id" json:"return_to_buyer_transport_id"`
 }
 
 // ========================================
@@ -2238,1610 +2238,6 @@ func (q *Queries) GetTransport(ctx context.Context, id null.Int) (OrderTransport
 	return i, err
 }
 
-const listCartItem = `-- name: ListCartItem :many
-SELECT id, account_id, sku_id, quantity
-FROM "order"."cart_item"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("account_id" = ANY($2) OR $2 IS NULL) AND
-    ("sku_id" = ANY($3) OR $3 IS NULL) AND
-    ("quantity" = ANY($4) OR $4 IS NULL) AND
-    ("quantity" >= $5 OR $5 IS NULL) AND
-    ("quantity" <= $6 OR $6 IS NULL)
-)
-ORDER BY "id"
-LIMIT $8::int
-OFFSET $7::int
-`
-
-type ListCartItemParams struct {
-	ID           []int64     `json:"id"`
-	AccountID    []uuid.UUID `json:"account_id"`
-	SkuID        []uuid.UUID `json:"sku_id"`
-	Quantity     []int64     `json:"quantity"`
-	QuantityFrom null.Int    `json:"quantity_from"`
-	QuantityTo   null.Int    `json:"quantity_to"`
-	Offset       null.Int32  `json:"offset"`
-	Limit        null.Int32  `json:"limit"`
-}
-
-func (q *Queries) ListCartItem(ctx context.Context, arg ListCartItemParams) ([]OrderCartItem, error) {
-	rows, err := q.db.Query(ctx, listCartItem,
-		arg.ID,
-		arg.AccountID,
-		arg.SkuID,
-		arg.Quantity,
-		arg.QuantityFrom,
-		arg.QuantityTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []OrderCartItem{}
-	for rows.Next() {
-		var i OrderCartItem
-		if err := rows.Scan(
-			&i.ID,
-			&i.AccountID,
-			&i.SkuID,
-			&i.Quantity,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCountCartItem = `-- name: ListCountCartItem :many
-SELECT embed_cart_item.id, embed_cart_item.account_id, embed_cart_item.sku_id, embed_cart_item.quantity, COUNT(*) OVER() as total_count
-FROM "order"."cart_item" embed_cart_item
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("account_id" = ANY($2) OR $2 IS NULL) AND
-    ("sku_id" = ANY($3) OR $3 IS NULL) AND
-    ("quantity" = ANY($4) OR $4 IS NULL) AND
-    ("quantity" >= $5 OR $5 IS NULL) AND
-    ("quantity" <= $6 OR $6 IS NULL)
-)
-ORDER BY "id"
-LIMIT $8::int
-OFFSET $7::int
-`
-
-type ListCountCartItemParams struct {
-	ID           []int64     `json:"id"`
-	AccountID    []uuid.UUID `json:"account_id"`
-	SkuID        []uuid.UUID `json:"sku_id"`
-	Quantity     []int64     `json:"quantity"`
-	QuantityFrom null.Int    `json:"quantity_from"`
-	QuantityTo   null.Int    `json:"quantity_to"`
-	Offset       null.Int32  `json:"offset"`
-	Limit        null.Int32  `json:"limit"`
-}
-
-type ListCountCartItemRow struct {
-	OrderCartItem OrderCartItem `json:"order_cart_item"`
-	TotalCount    int64         `json:"total_count"`
-}
-
-func (q *Queries) ListCountCartItem(ctx context.Context, arg ListCountCartItemParams) ([]ListCountCartItemRow, error) {
-	rows, err := q.db.Query(ctx, listCountCartItem,
-		arg.ID,
-		arg.AccountID,
-		arg.SkuID,
-		arg.Quantity,
-		arg.QuantityFrom,
-		arg.QuantityTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountCartItemRow{}
-	for rows.Next() {
-		var i ListCountCartItemRow
-		if err := rows.Scan(
-			&i.OrderCartItem.ID,
-			&i.OrderCartItem.AccountID,
-			&i.OrderCartItem.SkuID,
-			&i.OrderCartItem.Quantity,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCountItem = `-- name: ListCountItem :many
-SELECT embed_item.id, embed_item.order_id, embed_item.account_id, embed_item.seller_id, embed_item.sku_id, embed_item.spu_id, embed_item.sku_name, embed_item.address, embed_item.note, embed_item.serial_ids, embed_item.quantity, embed_item.transport_option, embed_item.subtotal_amount, embed_item.total_amount, embed_item.source_currency, embed_item.payment_session_id, embed_item.date_cancelled, embed_item.cancelled_by_id, embed_item.date_created, COUNT(*) OVER() as total_count
-FROM "order"."item" embed_item
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("order_id" = ANY($2) OR $2 IS NULL) AND
-    ("account_id" = ANY($3) OR $3 IS NULL) AND
-    ("seller_id" = ANY($4) OR $4 IS NULL) AND
-    ("sku_id" = ANY($5) OR $5 IS NULL) AND
-    ("spu_id" = ANY($6) OR $6 IS NULL) AND
-    ("sku_name" = ANY($7) OR $7 IS NULL) AND
-    ("address" = ANY($8) OR $8 IS NULL) AND
-    ("note" = ANY($9) OR $9 IS NULL) AND
-    ("serial_ids" = ANY($10) OR $10 IS NULL) AND
-    ("quantity" = ANY($11) OR $11 IS NULL) AND
-    ("quantity" >= $12 OR $12 IS NULL) AND
-    ("quantity" <= $13 OR $13 IS NULL) AND
-    ("transport_option" = ANY($14) OR $14 IS NULL) AND
-    ("subtotal_amount" = ANY($15) OR $15 IS NULL) AND
-    ("subtotal_amount" >= $16 OR $16 IS NULL) AND
-    ("subtotal_amount" <= $17 OR $17 IS NULL) AND
-    ("total_amount" = ANY($18) OR $18 IS NULL) AND
-    ("total_amount" >= $19 OR $19 IS NULL) AND
-    ("total_amount" <= $20 OR $20 IS NULL) AND
-    ("source_currency" = ANY($21) OR $21 IS NULL) AND
-    ("payment_session_id" = ANY($22) OR $22 IS NULL) AND
-    ("date_cancelled" = ANY($23) OR $23 IS NULL) AND
-    ("date_cancelled" >= $24 OR $24 IS NULL) AND
-    ("date_cancelled" <= $25 OR $25 IS NULL) AND
-    ("cancelled_by_id" = ANY($26) OR $26 IS NULL) AND
-    ("date_created" = ANY($27) OR $27 IS NULL) AND
-    ("date_created" >= $28 OR $28 IS NULL) AND
-    ("date_created" <= $29 OR $29 IS NULL)
-)
-ORDER BY "id"
-LIMIT $31::int
-OFFSET $30::int
-`
-
-type ListCountItemParams struct {
-	ID                 []int64           `json:"id"`
-	OrderID            []uuid.NullUUID   `json:"order_id"`
-	AccountID          []uuid.UUID       `json:"account_id"`
-	SellerID           []uuid.UUID       `json:"seller_id"`
-	SkuID              []uuid.UUID       `json:"sku_id"`
-	SpuID              []uuid.UUID       `json:"spu_id"`
-	SkuName            []string          `json:"sku_name"`
-	Address            []string          `json:"address"`
-	Note               []null.String     `json:"note"`
-	SerialIds          []json.RawMessage `json:"serial_ids"`
-	Quantity           []int64           `json:"quantity"`
-	QuantityFrom       null.Int          `json:"quantity_from"`
-	QuantityTo         null.Int          `json:"quantity_to"`
-	TransportOption    []string          `json:"transport_option"`
-	SubtotalAmount     []int64           `json:"subtotal_amount"`
-	SubtotalAmountFrom null.Int          `json:"subtotal_amount_from"`
-	SubtotalAmountTo   null.Int          `json:"subtotal_amount_to"`
-	TotalAmount        []int64           `json:"total_amount"`
-	TotalAmountFrom    null.Int          `json:"total_amount_from"`
-	TotalAmountTo      null.Int          `json:"total_amount_to"`
-	SourceCurrency     []string          `json:"source_currency"`
-	PaymentSessionID   []uuid.UUID       `json:"payment_session_id"`
-	DateCancelled      []null.Time       `json:"date_cancelled"`
-	DateCancelledFrom  null.Time         `json:"date_cancelled_from"`
-	DateCancelledTo    null.Time         `json:"date_cancelled_to"`
-	CancelledByID      []uuid.NullUUID   `json:"cancelled_by_id"`
-	DateCreated        []time.Time       `json:"date_created"`
-	DateCreatedFrom    null.Time         `json:"date_created_from"`
-	DateCreatedTo      null.Time         `json:"date_created_to"`
-	Offset             null.Int32        `json:"offset"`
-	Limit              null.Int32        `json:"limit"`
-}
-
-type ListCountItemRow struct {
-	OrderItem  OrderItem `json:"order_item"`
-	TotalCount int64     `json:"total_count"`
-}
-
-func (q *Queries) ListCountItem(ctx context.Context, arg ListCountItemParams) ([]ListCountItemRow, error) {
-	rows, err := q.db.Query(ctx, listCountItem,
-		arg.ID,
-		arg.OrderID,
-		arg.AccountID,
-		arg.SellerID,
-		arg.SkuID,
-		arg.SpuID,
-		arg.SkuName,
-		arg.Address,
-		arg.Note,
-		arg.SerialIds,
-		arg.Quantity,
-		arg.QuantityFrom,
-		arg.QuantityTo,
-		arg.TransportOption,
-		arg.SubtotalAmount,
-		arg.SubtotalAmountFrom,
-		arg.SubtotalAmountTo,
-		arg.TotalAmount,
-		arg.TotalAmountFrom,
-		arg.TotalAmountTo,
-		arg.SourceCurrency,
-		arg.PaymentSessionID,
-		arg.DateCancelled,
-		arg.DateCancelledFrom,
-		arg.DateCancelledTo,
-		arg.CancelledByID,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountItemRow{}
-	for rows.Next() {
-		var i ListCountItemRow
-		if err := rows.Scan(
-			&i.OrderItem.ID,
-			&i.OrderItem.OrderID,
-			&i.OrderItem.AccountID,
-			&i.OrderItem.SellerID,
-			&i.OrderItem.SkuID,
-			&i.OrderItem.SpuID,
-			&i.OrderItem.SkuName,
-			&i.OrderItem.Address,
-			&i.OrderItem.Note,
-			&i.OrderItem.SerialIds,
-			&i.OrderItem.Quantity,
-			&i.OrderItem.TransportOption,
-			&i.OrderItem.SubtotalAmount,
-			&i.OrderItem.TotalAmount,
-			&i.OrderItem.SourceCurrency,
-			&i.OrderItem.PaymentSessionID,
-			&i.OrderItem.DateCancelled,
-			&i.OrderItem.CancelledByID,
-			&i.OrderItem.DateCreated,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCountOrder = `-- name: ListCountOrder :many
-SELECT embed_order.id, embed_order.buyer_id, embed_order.seller_id, embed_order.transport_id, embed_order.address, embed_order.date_created, embed_order.confirmed_by_id, embed_order.confirm_session_id, embed_order.note, COUNT(*) OVER() as total_count
-FROM "order"."order" embed_order
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("buyer_id" = ANY($2) OR $2 IS NULL) AND
-    ("seller_id" = ANY($3) OR $3 IS NULL) AND
-    ("transport_id" = ANY($4) OR $4 IS NULL) AND
-    ("address" = ANY($5) OR $5 IS NULL) AND
-    ("date_created" = ANY($6) OR $6 IS NULL) AND
-    ("date_created" >= $7 OR $7 IS NULL) AND
-    ("date_created" <= $8 OR $8 IS NULL) AND
-    ("confirmed_by_id" = ANY($9) OR $9 IS NULL) AND
-    ("confirm_session_id" = ANY($10) OR $10 IS NULL) AND
-    ("note" = ANY($11) OR $11 IS NULL)
-)
-ORDER BY "id"
-LIMIT $13::int
-OFFSET $12::int
-`
-
-type ListCountOrderParams struct {
-	ID               []uuid.UUID   `json:"id"`
-	BuyerID          []uuid.UUID   `json:"buyer_id"`
-	SellerID         []uuid.UUID   `json:"seller_id"`
-	TransportID      []int64       `json:"transport_id"`
-	Address          []string      `json:"address"`
-	DateCreated      []time.Time   `json:"date_created"`
-	DateCreatedFrom  null.Time     `json:"date_created_from"`
-	DateCreatedTo    null.Time     `json:"date_created_to"`
-	ConfirmedByID    []uuid.UUID   `json:"confirmed_by_id"`
-	ConfirmSessionID []uuid.UUID   `json:"confirm_session_id"`
-	Note             []null.String `json:"note"`
-	Offset           null.Int32    `json:"offset"`
-	Limit            null.Int32    `json:"limit"`
-}
-
-type ListCountOrderRow struct {
-	OrderOrder OrderOrder `json:"order_order"`
-	TotalCount int64      `json:"total_count"`
-}
-
-func (q *Queries) ListCountOrder(ctx context.Context, arg ListCountOrderParams) ([]ListCountOrderRow, error) {
-	rows, err := q.db.Query(ctx, listCountOrder,
-		arg.ID,
-		arg.BuyerID,
-		arg.SellerID,
-		arg.TransportID,
-		arg.Address,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.ConfirmedByID,
-		arg.ConfirmSessionID,
-		arg.Note,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountOrderRow{}
-	for rows.Next() {
-		var i ListCountOrderRow
-		if err := rows.Scan(
-			&i.OrderOrder.ID,
-			&i.OrderOrder.BuyerID,
-			&i.OrderOrder.SellerID,
-			&i.OrderOrder.TransportID,
-			&i.OrderOrder.Address,
-			&i.OrderOrder.DateCreated,
-			&i.OrderOrder.ConfirmedByID,
-			&i.OrderOrder.ConfirmSessionID,
-			&i.OrderOrder.Note,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCountPaymentSession = `-- name: ListCountPaymentSession :many
-SELECT embed_payment_session.id, embed_payment_session.kind, embed_payment_session.status, embed_payment_session.from_id, embed_payment_session.to_id, embed_payment_session.note, embed_payment_session.currency, embed_payment_session.total_amount, embed_payment_session.fx_snapshot, embed_payment_session.data, embed_payment_session.date_created, embed_payment_session.date_paid, embed_payment_session.date_expired, COUNT(*) OVER() as total_count
-FROM "order"."payment_session" embed_payment_session
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("kind" = ANY($2) OR $2 IS NULL) AND
-    ("status" = ANY($3) OR $3 IS NULL) AND
-    ("from_id" = ANY($4) OR $4 IS NULL) AND
-    ("to_id" = ANY($5) OR $5 IS NULL) AND
-    ("note" = ANY($6) OR $6 IS NULL) AND
-    ("currency" = ANY($7) OR $7 IS NULL) AND
-    ("total_amount" = ANY($8) OR $8 IS NULL) AND
-    ("total_amount" >= $9 OR $9 IS NULL) AND
-    ("total_amount" <= $10 OR $10 IS NULL) AND
-    ("fx_snapshot" = ANY($11) OR $11 IS NULL) AND
-    ("data" = ANY($12) OR $12 IS NULL) AND
-    ("date_created" = ANY($13) OR $13 IS NULL) AND
-    ("date_created" >= $14 OR $14 IS NULL) AND
-    ("date_created" <= $15 OR $15 IS NULL) AND
-    ("date_paid" = ANY($16) OR $16 IS NULL) AND
-    ("date_expired" = ANY($17) OR $17 IS NULL) AND
-    ("date_expired" >= $18 OR $18 IS NULL) AND
-    ("date_expired" <= $19 OR $19 IS NULL)
-)
-ORDER BY "id"
-LIMIT $21::int
-OFFSET $20::int
-`
-
-type ListCountPaymentSessionParams struct {
-	ID              []uuid.UUID       `json:"id"`
-	Kind            []string          `json:"kind"`
-	Status          []OrderStatus     `json:"status"`
-	FromID          []uuid.NullUUID   `json:"from_id"`
-	ToID            []uuid.NullUUID   `json:"to_id"`
-	Note            []string          `json:"note"`
-	Currency        []string          `json:"currency"`
-	TotalAmount     []int64           `json:"total_amount"`
-	TotalAmountFrom null.Int          `json:"total_amount_from"`
-	TotalAmountTo   null.Int          `json:"total_amount_to"`
-	FxSnapshot      []json.RawMessage `json:"fx_snapshot"`
-	Data            []json.RawMessage `json:"data"`
-	DateCreated     []time.Time       `json:"date_created"`
-	DateCreatedFrom null.Time         `json:"date_created_from"`
-	DateCreatedTo   null.Time         `json:"date_created_to"`
-	DatePaid        []null.Time       `json:"date_paid"`
-	DateExpired     []time.Time       `json:"date_expired"`
-	DateExpiredFrom null.Time         `json:"date_expired_from"`
-	DateExpiredTo   null.Time         `json:"date_expired_to"`
-	Offset          null.Int32        `json:"offset"`
-	Limit           null.Int32        `json:"limit"`
-}
-
-type ListCountPaymentSessionRow struct {
-	OrderPaymentSession OrderPaymentSession `json:"order_payment_session"`
-	TotalCount          int64               `json:"total_count"`
-}
-
-func (q *Queries) ListCountPaymentSession(ctx context.Context, arg ListCountPaymentSessionParams) ([]ListCountPaymentSessionRow, error) {
-	rows, err := q.db.Query(ctx, listCountPaymentSession,
-		arg.ID,
-		arg.Kind,
-		arg.Status,
-		arg.FromID,
-		arg.ToID,
-		arg.Note,
-		arg.Currency,
-		arg.TotalAmount,
-		arg.TotalAmountFrom,
-		arg.TotalAmountTo,
-		arg.FxSnapshot,
-		arg.Data,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.DatePaid,
-		arg.DateExpired,
-		arg.DateExpiredFrom,
-		arg.DateExpiredTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountPaymentSessionRow{}
-	for rows.Next() {
-		var i ListCountPaymentSessionRow
-		if err := rows.Scan(
-			&i.OrderPaymentSession.ID,
-			&i.OrderPaymentSession.Kind,
-			&i.OrderPaymentSession.Status,
-			&i.OrderPaymentSession.FromID,
-			&i.OrderPaymentSession.ToID,
-			&i.OrderPaymentSession.Note,
-			&i.OrderPaymentSession.Currency,
-			&i.OrderPaymentSession.TotalAmount,
-			&i.OrderPaymentSession.FxSnapshot,
-			&i.OrderPaymentSession.Data,
-			&i.OrderPaymentSession.DateCreated,
-			&i.OrderPaymentSession.DatePaid,
-			&i.OrderPaymentSession.DateExpired,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCountRefund = `-- name: ListCountRefund :many
-SELECT embed_refund.id, embed_refund.account_id, embed_refund.order_id, embed_refund.reason, embed_refund.date_created, embed_refund.status, embed_refund.return_transport_id, embed_refund.date_received_by_seller, embed_refund.review_deadline, embed_refund.seller_decision_at, embed_refund.return_to_buyer_transport_id, embed_refund.rejection_reason, embed_refund.refund_tx_id, COUNT(*) OVER() as total_count
-FROM "order"."refund" embed_refund
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("account_id" = ANY($2) OR $2 IS NULL) AND
-    ("order_id" = ANY($3) OR $3 IS NULL) AND
-    ("reason" = ANY($4) OR $4 IS NULL) AND
-    ("date_created" = ANY($5) OR $5 IS NULL) AND
-    ("date_created" >= $6 OR $6 IS NULL) AND
-    ("date_created" <= $7 OR $7 IS NULL) AND
-    ("status" = ANY($8) OR $8 IS NULL) AND
-    ("return_transport_id" = ANY($9) OR $9 IS NULL) AND
-    ("date_received_by_seller" = ANY($10) OR $10 IS NULL) AND
-    ("date_received_by_seller" >= $11 OR $11 IS NULL) AND
-    ("date_received_by_seller" <= $12 OR $12 IS NULL) AND
-    ("review_deadline" = ANY($13) OR $13 IS NULL) AND
-    ("review_deadline" >= $14 OR $14 IS NULL) AND
-    ("review_deadline" <= $15 OR $15 IS NULL) AND
-    ("seller_decision_at" = ANY($16) OR $16 IS NULL) AND
-    ("seller_decision_at" >= $17 OR $17 IS NULL) AND
-    ("seller_decision_at" <= $18 OR $18 IS NULL) AND
-    ("return_to_buyer_transport_id" = ANY($19) OR $19 IS NULL) AND
-    ("rejection_reason" = ANY($20) OR $20 IS NULL) AND
-    ("refund_tx_id" = ANY($21) OR $21 IS NULL)
-)
-ORDER BY "id"
-LIMIT $23::int
-OFFSET $22::int
-`
-
-type ListCountRefundParams struct {
-	ID                       []uuid.UUID         `json:"id"`
-	AccountID                []uuid.UUID         `json:"account_id"`
-	OrderID                  []uuid.UUID         `json:"order_id"`
-	Reason                   []string            `json:"reason"`
-	DateCreated              []time.Time         `json:"date_created"`
-	DateCreatedFrom          null.Time           `json:"date_created_from"`
-	DateCreatedTo            null.Time           `json:"date_created_to"`
-	Status                   []OrderRefundStatus `json:"status"`
-	ReturnTransportID        []int64             `json:"return_transport_id"`
-	DateReceivedBySeller     []null.Time         `json:"date_received_by_seller"`
-	DateReceivedBySellerFrom null.Time           `json:"date_received_by_seller_from"`
-	DateReceivedBySellerTo   null.Time           `json:"date_received_by_seller_to"`
-	ReviewDeadline           []null.Time         `json:"review_deadline"`
-	ReviewDeadlineFrom       null.Time           `json:"review_deadline_from"`
-	ReviewDeadlineTo         null.Time           `json:"review_deadline_to"`
-	SellerDecisionAt         []null.Time         `json:"seller_decision_at"`
-	SellerDecisionAtFrom     null.Time           `json:"seller_decision_at_from"`
-	SellerDecisionAtTo       null.Time           `json:"seller_decision_at_to"`
-	ReturnToBuyerTransportID []null.Int          `json:"return_to_buyer_transport_id"`
-	RejectionReason          []null.String       `json:"rejection_reason"`
-	RefundTxID               []uuid.NullUUID     `json:"refund_tx_id"`
-	Offset                   null.Int32          `json:"offset"`
-	Limit                    null.Int32          `json:"limit"`
-}
-
-type ListCountRefundRow struct {
-	OrderRefund OrderRefund `json:"order_refund"`
-	TotalCount  int64       `json:"total_count"`
-}
-
-func (q *Queries) ListCountRefund(ctx context.Context, arg ListCountRefundParams) ([]ListCountRefundRow, error) {
-	rows, err := q.db.Query(ctx, listCountRefund,
-		arg.ID,
-		arg.AccountID,
-		arg.OrderID,
-		arg.Reason,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Status,
-		arg.ReturnTransportID,
-		arg.DateReceivedBySeller,
-		arg.DateReceivedBySellerFrom,
-		arg.DateReceivedBySellerTo,
-		arg.ReviewDeadline,
-		arg.ReviewDeadlineFrom,
-		arg.ReviewDeadlineTo,
-		arg.SellerDecisionAt,
-		arg.SellerDecisionAtFrom,
-		arg.SellerDecisionAtTo,
-		arg.ReturnToBuyerTransportID,
-		arg.RejectionReason,
-		arg.RefundTxID,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountRefundRow{}
-	for rows.Next() {
-		var i ListCountRefundRow
-		if err := rows.Scan(
-			&i.OrderRefund.ID,
-			&i.OrderRefund.AccountID,
-			&i.OrderRefund.OrderID,
-			&i.OrderRefund.Reason,
-			&i.OrderRefund.DateCreated,
-			&i.OrderRefund.Status,
-			&i.OrderRefund.ReturnTransportID,
-			&i.OrderRefund.DateReceivedBySeller,
-			&i.OrderRefund.ReviewDeadline,
-			&i.OrderRefund.SellerDecisionAt,
-			&i.OrderRefund.ReturnToBuyerTransportID,
-			&i.OrderRefund.RejectionReason,
-			&i.OrderRefund.RefundTxID,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCountRefundDispute = `-- name: ListCountRefundDispute :many
-SELECT embed_refund_dispute.id, embed_refund_dispute.refund_id, embed_refund_dispute.account_id, embed_refund_dispute.reason, embed_refund_dispute.date_created, embed_refund_dispute.status, embed_refund_dispute.resolved_by_id, embed_refund_dispute.date_resolved, embed_refund_dispute.resolution_note, COUNT(*) OVER() as total_count
-FROM "order"."refund_dispute" embed_refund_dispute
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("refund_id" = ANY($2) OR $2 IS NULL) AND
-    ("account_id" = ANY($3) OR $3 IS NULL) AND
-    ("reason" = ANY($4) OR $4 IS NULL) AND
-    ("date_created" = ANY($5) OR $5 IS NULL) AND
-    ("date_created" >= $6 OR $6 IS NULL) AND
-    ("date_created" <= $7 OR $7 IS NULL) AND
-    ("status" = ANY($8) OR $8 IS NULL) AND
-    ("resolved_by_id" = ANY($9) OR $9 IS NULL) AND
-    ("date_resolved" = ANY($10) OR $10 IS NULL) AND
-    ("date_resolved" >= $11 OR $11 IS NULL) AND
-    ("date_resolved" <= $12 OR $12 IS NULL) AND
-    ("resolution_note" = ANY($13) OR $13 IS NULL)
-)
-ORDER BY "id"
-LIMIT $15::int
-OFFSET $14::int
-`
-
-type ListCountRefundDisputeParams struct {
-	ID               []uuid.UUID          `json:"id"`
-	RefundID         []uuid.UUID          `json:"refund_id"`
-	AccountID        []uuid.UUID          `json:"account_id"`
-	Reason           []string             `json:"reason"`
-	DateCreated      []time.Time          `json:"date_created"`
-	DateCreatedFrom  null.Time            `json:"date_created_from"`
-	DateCreatedTo    null.Time            `json:"date_created_to"`
-	Status           []OrderDisputeStatus `json:"status"`
-	ResolvedByID     []uuid.NullUUID      `json:"resolved_by_id"`
-	DateResolved     []null.Time          `json:"date_resolved"`
-	DateResolvedFrom null.Time            `json:"date_resolved_from"`
-	DateResolvedTo   null.Time            `json:"date_resolved_to"`
-	ResolutionNote   []null.String        `json:"resolution_note"`
-	Offset           null.Int32           `json:"offset"`
-	Limit            null.Int32           `json:"limit"`
-}
-
-type ListCountRefundDisputeRow struct {
-	OrderRefundDispute OrderRefundDispute `json:"order_refund_dispute"`
-	TotalCount         int64              `json:"total_count"`
-}
-
-func (q *Queries) ListCountRefundDispute(ctx context.Context, arg ListCountRefundDisputeParams) ([]ListCountRefundDisputeRow, error) {
-	rows, err := q.db.Query(ctx, listCountRefundDispute,
-		arg.ID,
-		arg.RefundID,
-		arg.AccountID,
-		arg.Reason,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Status,
-		arg.ResolvedByID,
-		arg.DateResolved,
-		arg.DateResolvedFrom,
-		arg.DateResolvedTo,
-		arg.ResolutionNote,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountRefundDisputeRow{}
-	for rows.Next() {
-		var i ListCountRefundDisputeRow
-		if err := rows.Scan(
-			&i.OrderRefundDispute.ID,
-			&i.OrderRefundDispute.RefundID,
-			&i.OrderRefundDispute.AccountID,
-			&i.OrderRefundDispute.Reason,
-			&i.OrderRefundDispute.DateCreated,
-			&i.OrderRefundDispute.Status,
-			&i.OrderRefundDispute.ResolvedByID,
-			&i.OrderRefundDispute.DateResolved,
-			&i.OrderRefundDispute.ResolutionNote,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCountTransaction = `-- name: ListCountTransaction :many
-SELECT embed_transaction.id, embed_transaction.session_id, embed_transaction.status, embed_transaction.note, embed_transaction.error, embed_transaction.payment_option, embed_transaction.data, embed_transaction.amount, embed_transaction.currency, embed_transaction.reverses_id, embed_transaction.date_created, embed_transaction.date_settled, embed_transaction.date_expired, COUNT(*) OVER() as total_count
-FROM "order"."transaction" embed_transaction
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("session_id" = ANY($2) OR $2 IS NULL) AND
-    ("status" = ANY($3) OR $3 IS NULL) AND
-    ("note" = ANY($4) OR $4 IS NULL) AND
-    ("error" = ANY($5) OR $5 IS NULL) AND
-    ("payment_option" = ANY($6) OR $6 IS NULL) AND
-    ("data" = ANY($7) OR $7 IS NULL) AND
-    ("amount" = ANY($8) OR $8 IS NULL) AND
-    ("amount" >= $9 OR $9 IS NULL) AND
-    ("amount" <= $10 OR $10 IS NULL) AND
-    ("currency" = ANY($11) OR $11 IS NULL) AND
-    ("reverses_id" = ANY($12) OR $12 IS NULL) AND
-    ("date_created" = ANY($13) OR $13 IS NULL) AND
-    ("date_created" >= $14 OR $14 IS NULL) AND
-    ("date_created" <= $15 OR $15 IS NULL) AND
-    ("date_settled" = ANY($16) OR $16 IS NULL) AND
-    ("date_settled" >= $17 OR $17 IS NULL) AND
-    ("date_settled" <= $18 OR $18 IS NULL) AND
-    ("date_expired" = ANY($19) OR $19 IS NULL) AND
-    ("date_expired" >= $20 OR $20 IS NULL) AND
-    ("date_expired" <= $21 OR $21 IS NULL)
-)
-ORDER BY "id"
-LIMIT $23::int
-OFFSET $22::int
-`
-
-type ListCountTransactionParams struct {
-	ID              []uuid.UUID       `json:"id"`
-	SessionID       []uuid.UUID       `json:"session_id"`
-	Status          []OrderStatus     `json:"status"`
-	Note            []string          `json:"note"`
-	Error           []null.String     `json:"error"`
-	PaymentOption   []null.String     `json:"payment_option"`
-	Data            []json.RawMessage `json:"data"`
-	Amount          []int64           `json:"amount"`
-	AmountFrom      null.Int          `json:"amount_from"`
-	AmountTo        null.Int          `json:"amount_to"`
-	Currency        []string          `json:"currency"`
-	ReversesID      []uuid.NullUUID   `json:"reverses_id"`
-	DateCreated     []time.Time       `json:"date_created"`
-	DateCreatedFrom null.Time         `json:"date_created_from"`
-	DateCreatedTo   null.Time         `json:"date_created_to"`
-	DateSettled     []null.Time       `json:"date_settled"`
-	DateSettledFrom null.Time         `json:"date_settled_from"`
-	DateSettledTo   null.Time         `json:"date_settled_to"`
-	DateExpired     []null.Time       `json:"date_expired"`
-	DateExpiredFrom null.Time         `json:"date_expired_from"`
-	DateExpiredTo   null.Time         `json:"date_expired_to"`
-	Offset          null.Int32        `json:"offset"`
-	Limit           null.Int32        `json:"limit"`
-}
-
-type ListCountTransactionRow struct {
-	OrderTransaction OrderTransaction `json:"order_transaction"`
-	TotalCount       int64            `json:"total_count"`
-}
-
-func (q *Queries) ListCountTransaction(ctx context.Context, arg ListCountTransactionParams) ([]ListCountTransactionRow, error) {
-	rows, err := q.db.Query(ctx, listCountTransaction,
-		arg.ID,
-		arg.SessionID,
-		arg.Status,
-		arg.Note,
-		arg.Error,
-		arg.PaymentOption,
-		arg.Data,
-		arg.Amount,
-		arg.AmountFrom,
-		arg.AmountTo,
-		arg.Currency,
-		arg.ReversesID,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.DateSettled,
-		arg.DateSettledFrom,
-		arg.DateSettledTo,
-		arg.DateExpired,
-		arg.DateExpiredFrom,
-		arg.DateExpiredTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountTransactionRow{}
-	for rows.Next() {
-		var i ListCountTransactionRow
-		if err := rows.Scan(
-			&i.OrderTransaction.ID,
-			&i.OrderTransaction.SessionID,
-			&i.OrderTransaction.Status,
-			&i.OrderTransaction.Note,
-			&i.OrderTransaction.Error,
-			&i.OrderTransaction.PaymentOption,
-			&i.OrderTransaction.Data,
-			&i.OrderTransaction.Amount,
-			&i.OrderTransaction.Currency,
-			&i.OrderTransaction.ReversesID,
-			&i.OrderTransaction.DateCreated,
-			&i.OrderTransaction.DateSettled,
-			&i.OrderTransaction.DateExpired,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCountTransport = `-- name: ListCountTransport :many
-SELECT embed_transport.id, embed_transport.option, embed_transport.status, embed_transport.data, embed_transport.date_created, COUNT(*) OVER() as total_count
-FROM "order"."transport" embed_transport
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("option" = ANY($2) OR $2 IS NULL) AND
-    ("status" = ANY($3) OR $3 IS NULL) AND
-    ("data" = ANY($4) OR $4 IS NULL) AND
-    ("date_created" = ANY($5) OR $5 IS NULL) AND
-    ("date_created" >= $6 OR $6 IS NULL) AND
-    ("date_created" <= $7 OR $7 IS NULL)
-)
-ORDER BY "id"
-LIMIT $9::int
-OFFSET $8::int
-`
-
-type ListCountTransportParams struct {
-	ID              []int64           `json:"id"`
-	Option          []string          `json:"option"`
-	Status          []NullOrderStatus `json:"status"`
-	Data            []json.RawMessage `json:"data"`
-	DateCreated     []time.Time       `json:"date_created"`
-	DateCreatedFrom null.Time         `json:"date_created_from"`
-	DateCreatedTo   null.Time         `json:"date_created_to"`
-	Offset          null.Int32        `json:"offset"`
-	Limit           null.Int32        `json:"limit"`
-}
-
-type ListCountTransportRow struct {
-	OrderTransport OrderTransport `json:"order_transport"`
-	TotalCount     int64          `json:"total_count"`
-}
-
-func (q *Queries) ListCountTransport(ctx context.Context, arg ListCountTransportParams) ([]ListCountTransportRow, error) {
-	rows, err := q.db.Query(ctx, listCountTransport,
-		arg.ID,
-		arg.Option,
-		arg.Status,
-		arg.Data,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCountTransportRow{}
-	for rows.Next() {
-		var i ListCountTransportRow
-		if err := rows.Scan(
-			&i.OrderTransport.ID,
-			&i.OrderTransport.Option,
-			&i.OrderTransport.Status,
-			&i.OrderTransport.Data,
-			&i.OrderTransport.DateCreated,
-			&i.TotalCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listItem = `-- name: ListItem :many
-SELECT id, order_id, account_id, seller_id, sku_id, spu_id, sku_name, address, note, serial_ids, quantity, transport_option, subtotal_amount, total_amount, source_currency, payment_session_id, date_cancelled, cancelled_by_id, date_created
-FROM "order"."item"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("order_id" = ANY($2) OR $2 IS NULL) AND
-    ("account_id" = ANY($3) OR $3 IS NULL) AND
-    ("seller_id" = ANY($4) OR $4 IS NULL) AND
-    ("sku_id" = ANY($5) OR $5 IS NULL) AND
-    ("spu_id" = ANY($6) OR $6 IS NULL) AND
-    ("sku_name" = ANY($7) OR $7 IS NULL) AND
-    ("address" = ANY($8) OR $8 IS NULL) AND
-    ("note" = ANY($9) OR $9 IS NULL) AND
-    ("serial_ids" = ANY($10) OR $10 IS NULL) AND
-    ("quantity" = ANY($11) OR $11 IS NULL) AND
-    ("quantity" >= $12 OR $12 IS NULL) AND
-    ("quantity" <= $13 OR $13 IS NULL) AND
-    ("transport_option" = ANY($14) OR $14 IS NULL) AND
-    ("subtotal_amount" = ANY($15) OR $15 IS NULL) AND
-    ("subtotal_amount" >= $16 OR $16 IS NULL) AND
-    ("subtotal_amount" <= $17 OR $17 IS NULL) AND
-    ("total_amount" = ANY($18) OR $18 IS NULL) AND
-    ("total_amount" >= $19 OR $19 IS NULL) AND
-    ("total_amount" <= $20 OR $20 IS NULL) AND
-    ("source_currency" = ANY($21) OR $21 IS NULL) AND
-    ("payment_session_id" = ANY($22) OR $22 IS NULL) AND
-    ("date_cancelled" = ANY($23) OR $23 IS NULL) AND
-    ("date_cancelled" >= $24 OR $24 IS NULL) AND
-    ("date_cancelled" <= $25 OR $25 IS NULL) AND
-    ("cancelled_by_id" = ANY($26) OR $26 IS NULL) AND
-    ("date_created" = ANY($27) OR $27 IS NULL) AND
-    ("date_created" >= $28 OR $28 IS NULL) AND
-    ("date_created" <= $29 OR $29 IS NULL)
-)
-ORDER BY "id"
-LIMIT $31::int
-OFFSET $30::int
-`
-
-type ListItemParams struct {
-	ID                 []int64           `json:"id"`
-	OrderID            []uuid.NullUUID   `json:"order_id"`
-	AccountID          []uuid.UUID       `json:"account_id"`
-	SellerID           []uuid.UUID       `json:"seller_id"`
-	SkuID              []uuid.UUID       `json:"sku_id"`
-	SpuID              []uuid.UUID       `json:"spu_id"`
-	SkuName            []string          `json:"sku_name"`
-	Address            []string          `json:"address"`
-	Note               []null.String     `json:"note"`
-	SerialIds          []json.RawMessage `json:"serial_ids"`
-	Quantity           []int64           `json:"quantity"`
-	QuantityFrom       null.Int          `json:"quantity_from"`
-	QuantityTo         null.Int          `json:"quantity_to"`
-	TransportOption    []string          `json:"transport_option"`
-	SubtotalAmount     []int64           `json:"subtotal_amount"`
-	SubtotalAmountFrom null.Int          `json:"subtotal_amount_from"`
-	SubtotalAmountTo   null.Int          `json:"subtotal_amount_to"`
-	TotalAmount        []int64           `json:"total_amount"`
-	TotalAmountFrom    null.Int          `json:"total_amount_from"`
-	TotalAmountTo      null.Int          `json:"total_amount_to"`
-	SourceCurrency     []string          `json:"source_currency"`
-	PaymentSessionID   []uuid.UUID       `json:"payment_session_id"`
-	DateCancelled      []null.Time       `json:"date_cancelled"`
-	DateCancelledFrom  null.Time         `json:"date_cancelled_from"`
-	DateCancelledTo    null.Time         `json:"date_cancelled_to"`
-	CancelledByID      []uuid.NullUUID   `json:"cancelled_by_id"`
-	DateCreated        []time.Time       `json:"date_created"`
-	DateCreatedFrom    null.Time         `json:"date_created_from"`
-	DateCreatedTo      null.Time         `json:"date_created_to"`
-	Offset             null.Int32        `json:"offset"`
-	Limit              null.Int32        `json:"limit"`
-}
-
-func (q *Queries) ListItem(ctx context.Context, arg ListItemParams) ([]OrderItem, error) {
-	rows, err := q.db.Query(ctx, listItem,
-		arg.ID,
-		arg.OrderID,
-		arg.AccountID,
-		arg.SellerID,
-		arg.SkuID,
-		arg.SpuID,
-		arg.SkuName,
-		arg.Address,
-		arg.Note,
-		arg.SerialIds,
-		arg.Quantity,
-		arg.QuantityFrom,
-		arg.QuantityTo,
-		arg.TransportOption,
-		arg.SubtotalAmount,
-		arg.SubtotalAmountFrom,
-		arg.SubtotalAmountTo,
-		arg.TotalAmount,
-		arg.TotalAmountFrom,
-		arg.TotalAmountTo,
-		arg.SourceCurrency,
-		arg.PaymentSessionID,
-		arg.DateCancelled,
-		arg.DateCancelledFrom,
-		arg.DateCancelledTo,
-		arg.CancelledByID,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []OrderItem{}
-	for rows.Next() {
-		var i OrderItem
-		if err := rows.Scan(
-			&i.ID,
-			&i.OrderID,
-			&i.AccountID,
-			&i.SellerID,
-			&i.SkuID,
-			&i.SpuID,
-			&i.SkuName,
-			&i.Address,
-			&i.Note,
-			&i.SerialIds,
-			&i.Quantity,
-			&i.TransportOption,
-			&i.SubtotalAmount,
-			&i.TotalAmount,
-			&i.SourceCurrency,
-			&i.PaymentSessionID,
-			&i.DateCancelled,
-			&i.CancelledByID,
-			&i.DateCreated,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listOrder = `-- name: ListOrder :many
-SELECT id, buyer_id, seller_id, transport_id, address, date_created, confirmed_by_id, confirm_session_id, note
-FROM "order"."order"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("buyer_id" = ANY($2) OR $2 IS NULL) AND
-    ("seller_id" = ANY($3) OR $3 IS NULL) AND
-    ("transport_id" = ANY($4) OR $4 IS NULL) AND
-    ("address" = ANY($5) OR $5 IS NULL) AND
-    ("date_created" = ANY($6) OR $6 IS NULL) AND
-    ("date_created" >= $7 OR $7 IS NULL) AND
-    ("date_created" <= $8 OR $8 IS NULL) AND
-    ("confirmed_by_id" = ANY($9) OR $9 IS NULL) AND
-    ("confirm_session_id" = ANY($10) OR $10 IS NULL) AND
-    ("note" = ANY($11) OR $11 IS NULL)
-)
-ORDER BY "id"
-LIMIT $13::int
-OFFSET $12::int
-`
-
-type ListOrderParams struct {
-	ID               []uuid.UUID   `json:"id"`
-	BuyerID          []uuid.UUID   `json:"buyer_id"`
-	SellerID         []uuid.UUID   `json:"seller_id"`
-	TransportID      []int64       `json:"transport_id"`
-	Address          []string      `json:"address"`
-	DateCreated      []time.Time   `json:"date_created"`
-	DateCreatedFrom  null.Time     `json:"date_created_from"`
-	DateCreatedTo    null.Time     `json:"date_created_to"`
-	ConfirmedByID    []uuid.UUID   `json:"confirmed_by_id"`
-	ConfirmSessionID []uuid.UUID   `json:"confirm_session_id"`
-	Note             []null.String `json:"note"`
-	Offset           null.Int32    `json:"offset"`
-	Limit            null.Int32    `json:"limit"`
-}
-
-func (q *Queries) ListOrder(ctx context.Context, arg ListOrderParams) ([]OrderOrder, error) {
-	rows, err := q.db.Query(ctx, listOrder,
-		arg.ID,
-		arg.BuyerID,
-		arg.SellerID,
-		arg.TransportID,
-		arg.Address,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.ConfirmedByID,
-		arg.ConfirmSessionID,
-		arg.Note,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []OrderOrder{}
-	for rows.Next() {
-		var i OrderOrder
-		if err := rows.Scan(
-			&i.ID,
-			&i.BuyerID,
-			&i.SellerID,
-			&i.TransportID,
-			&i.Address,
-			&i.DateCreated,
-			&i.ConfirmedByID,
-			&i.ConfirmSessionID,
-			&i.Note,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listPaymentSession = `-- name: ListPaymentSession :many
-SELECT id, kind, status, from_id, to_id, note, currency, total_amount, fx_snapshot, data, date_created, date_paid, date_expired
-FROM "order"."payment_session"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("kind" = ANY($2) OR $2 IS NULL) AND
-    ("status" = ANY($3) OR $3 IS NULL) AND
-    ("from_id" = ANY($4) OR $4 IS NULL) AND
-    ("to_id" = ANY($5) OR $5 IS NULL) AND
-    ("note" = ANY($6) OR $6 IS NULL) AND
-    ("currency" = ANY($7) OR $7 IS NULL) AND
-    ("total_amount" = ANY($8) OR $8 IS NULL) AND
-    ("total_amount" >= $9 OR $9 IS NULL) AND
-    ("total_amount" <= $10 OR $10 IS NULL) AND
-    ("fx_snapshot" = ANY($11) OR $11 IS NULL) AND
-    ("data" = ANY($12) OR $12 IS NULL) AND
-    ("date_created" = ANY($13) OR $13 IS NULL) AND
-    ("date_created" >= $14 OR $14 IS NULL) AND
-    ("date_created" <= $15 OR $15 IS NULL) AND
-    ("date_paid" = ANY($16) OR $16 IS NULL) AND
-    ("date_expired" = ANY($17) OR $17 IS NULL) AND
-    ("date_expired" >= $18 OR $18 IS NULL) AND
-    ("date_expired" <= $19 OR $19 IS NULL)
-)
-ORDER BY "id"
-LIMIT $21::int
-OFFSET $20::int
-`
-
-type ListPaymentSessionParams struct {
-	ID              []uuid.UUID       `json:"id"`
-	Kind            []string          `json:"kind"`
-	Status          []OrderStatus     `json:"status"`
-	FromID          []uuid.NullUUID   `json:"from_id"`
-	ToID            []uuid.NullUUID   `json:"to_id"`
-	Note            []string          `json:"note"`
-	Currency        []string          `json:"currency"`
-	TotalAmount     []int64           `json:"total_amount"`
-	TotalAmountFrom null.Int          `json:"total_amount_from"`
-	TotalAmountTo   null.Int          `json:"total_amount_to"`
-	FxSnapshot      []json.RawMessage `json:"fx_snapshot"`
-	Data            []json.RawMessage `json:"data"`
-	DateCreated     []time.Time       `json:"date_created"`
-	DateCreatedFrom null.Time         `json:"date_created_from"`
-	DateCreatedTo   null.Time         `json:"date_created_to"`
-	DatePaid        []null.Time       `json:"date_paid"`
-	DateExpired     []time.Time       `json:"date_expired"`
-	DateExpiredFrom null.Time         `json:"date_expired_from"`
-	DateExpiredTo   null.Time         `json:"date_expired_to"`
-	Offset          null.Int32        `json:"offset"`
-	Limit           null.Int32        `json:"limit"`
-}
-
-func (q *Queries) ListPaymentSession(ctx context.Context, arg ListPaymentSessionParams) ([]OrderPaymentSession, error) {
-	rows, err := q.db.Query(ctx, listPaymentSession,
-		arg.ID,
-		arg.Kind,
-		arg.Status,
-		arg.FromID,
-		arg.ToID,
-		arg.Note,
-		arg.Currency,
-		arg.TotalAmount,
-		arg.TotalAmountFrom,
-		arg.TotalAmountTo,
-		arg.FxSnapshot,
-		arg.Data,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.DatePaid,
-		arg.DateExpired,
-		arg.DateExpiredFrom,
-		arg.DateExpiredTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []OrderPaymentSession{}
-	for rows.Next() {
-		var i OrderPaymentSession
-		if err := rows.Scan(
-			&i.ID,
-			&i.Kind,
-			&i.Status,
-			&i.FromID,
-			&i.ToID,
-			&i.Note,
-			&i.Currency,
-			&i.TotalAmount,
-			&i.FxSnapshot,
-			&i.Data,
-			&i.DateCreated,
-			&i.DatePaid,
-			&i.DateExpired,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listRefund = `-- name: ListRefund :many
-SELECT id, account_id, order_id, reason, date_created, status, return_transport_id, date_received_by_seller, review_deadline, seller_decision_at, return_to_buyer_transport_id, rejection_reason, refund_tx_id
-FROM "order"."refund"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("account_id" = ANY($2) OR $2 IS NULL) AND
-    ("order_id" = ANY($3) OR $3 IS NULL) AND
-    ("reason" = ANY($4) OR $4 IS NULL) AND
-    ("date_created" = ANY($5) OR $5 IS NULL) AND
-    ("date_created" >= $6 OR $6 IS NULL) AND
-    ("date_created" <= $7 OR $7 IS NULL) AND
-    ("status" = ANY($8) OR $8 IS NULL) AND
-    ("return_transport_id" = ANY($9) OR $9 IS NULL) AND
-    ("date_received_by_seller" = ANY($10) OR $10 IS NULL) AND
-    ("date_received_by_seller" >= $11 OR $11 IS NULL) AND
-    ("date_received_by_seller" <= $12 OR $12 IS NULL) AND
-    ("review_deadline" = ANY($13) OR $13 IS NULL) AND
-    ("review_deadline" >= $14 OR $14 IS NULL) AND
-    ("review_deadline" <= $15 OR $15 IS NULL) AND
-    ("seller_decision_at" = ANY($16) OR $16 IS NULL) AND
-    ("seller_decision_at" >= $17 OR $17 IS NULL) AND
-    ("seller_decision_at" <= $18 OR $18 IS NULL) AND
-    ("return_to_buyer_transport_id" = ANY($19) OR $19 IS NULL) AND
-    ("rejection_reason" = ANY($20) OR $20 IS NULL) AND
-    ("refund_tx_id" = ANY($21) OR $21 IS NULL)
-)
-ORDER BY "id"
-LIMIT $23::int
-OFFSET $22::int
-`
-
-type ListRefundParams struct {
-	ID                       []uuid.UUID         `json:"id"`
-	AccountID                []uuid.UUID         `json:"account_id"`
-	OrderID                  []uuid.UUID         `json:"order_id"`
-	Reason                   []string            `json:"reason"`
-	DateCreated              []time.Time         `json:"date_created"`
-	DateCreatedFrom          null.Time           `json:"date_created_from"`
-	DateCreatedTo            null.Time           `json:"date_created_to"`
-	Status                   []OrderRefundStatus `json:"status"`
-	ReturnTransportID        []int64             `json:"return_transport_id"`
-	DateReceivedBySeller     []null.Time         `json:"date_received_by_seller"`
-	DateReceivedBySellerFrom null.Time           `json:"date_received_by_seller_from"`
-	DateReceivedBySellerTo   null.Time           `json:"date_received_by_seller_to"`
-	ReviewDeadline           []null.Time         `json:"review_deadline"`
-	ReviewDeadlineFrom       null.Time           `json:"review_deadline_from"`
-	ReviewDeadlineTo         null.Time           `json:"review_deadline_to"`
-	SellerDecisionAt         []null.Time         `json:"seller_decision_at"`
-	SellerDecisionAtFrom     null.Time           `json:"seller_decision_at_from"`
-	SellerDecisionAtTo       null.Time           `json:"seller_decision_at_to"`
-	ReturnToBuyerTransportID []null.Int          `json:"return_to_buyer_transport_id"`
-	RejectionReason          []null.String       `json:"rejection_reason"`
-	RefundTxID               []uuid.NullUUID     `json:"refund_tx_id"`
-	Offset                   null.Int32          `json:"offset"`
-	Limit                    null.Int32          `json:"limit"`
-}
-
-func (q *Queries) ListRefund(ctx context.Context, arg ListRefundParams) ([]OrderRefund, error) {
-	rows, err := q.db.Query(ctx, listRefund,
-		arg.ID,
-		arg.AccountID,
-		arg.OrderID,
-		arg.Reason,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Status,
-		arg.ReturnTransportID,
-		arg.DateReceivedBySeller,
-		arg.DateReceivedBySellerFrom,
-		arg.DateReceivedBySellerTo,
-		arg.ReviewDeadline,
-		arg.ReviewDeadlineFrom,
-		arg.ReviewDeadlineTo,
-		arg.SellerDecisionAt,
-		arg.SellerDecisionAtFrom,
-		arg.SellerDecisionAtTo,
-		arg.ReturnToBuyerTransportID,
-		arg.RejectionReason,
-		arg.RefundTxID,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []OrderRefund{}
-	for rows.Next() {
-		var i OrderRefund
-		if err := rows.Scan(
-			&i.ID,
-			&i.AccountID,
-			&i.OrderID,
-			&i.Reason,
-			&i.DateCreated,
-			&i.Status,
-			&i.ReturnTransportID,
-			&i.DateReceivedBySeller,
-			&i.ReviewDeadline,
-			&i.SellerDecisionAt,
-			&i.ReturnToBuyerTransportID,
-			&i.RejectionReason,
-			&i.RefundTxID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listRefundDispute = `-- name: ListRefundDispute :many
-SELECT id, refund_id, account_id, reason, date_created, status, resolved_by_id, date_resolved, resolution_note
-FROM "order"."refund_dispute"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("refund_id" = ANY($2) OR $2 IS NULL) AND
-    ("account_id" = ANY($3) OR $3 IS NULL) AND
-    ("reason" = ANY($4) OR $4 IS NULL) AND
-    ("date_created" = ANY($5) OR $5 IS NULL) AND
-    ("date_created" >= $6 OR $6 IS NULL) AND
-    ("date_created" <= $7 OR $7 IS NULL) AND
-    ("status" = ANY($8) OR $8 IS NULL) AND
-    ("resolved_by_id" = ANY($9) OR $9 IS NULL) AND
-    ("date_resolved" = ANY($10) OR $10 IS NULL) AND
-    ("date_resolved" >= $11 OR $11 IS NULL) AND
-    ("date_resolved" <= $12 OR $12 IS NULL) AND
-    ("resolution_note" = ANY($13) OR $13 IS NULL)
-)
-ORDER BY "id"
-LIMIT $15::int
-OFFSET $14::int
-`
-
-type ListRefundDisputeParams struct {
-	ID               []uuid.UUID          `json:"id"`
-	RefundID         []uuid.UUID          `json:"refund_id"`
-	AccountID        []uuid.UUID          `json:"account_id"`
-	Reason           []string             `json:"reason"`
-	DateCreated      []time.Time          `json:"date_created"`
-	DateCreatedFrom  null.Time            `json:"date_created_from"`
-	DateCreatedTo    null.Time            `json:"date_created_to"`
-	Status           []OrderDisputeStatus `json:"status"`
-	ResolvedByID     []uuid.NullUUID      `json:"resolved_by_id"`
-	DateResolved     []null.Time          `json:"date_resolved"`
-	DateResolvedFrom null.Time            `json:"date_resolved_from"`
-	DateResolvedTo   null.Time            `json:"date_resolved_to"`
-	ResolutionNote   []null.String        `json:"resolution_note"`
-	Offset           null.Int32           `json:"offset"`
-	Limit            null.Int32           `json:"limit"`
-}
-
-func (q *Queries) ListRefundDispute(ctx context.Context, arg ListRefundDisputeParams) ([]OrderRefundDispute, error) {
-	rows, err := q.db.Query(ctx, listRefundDispute,
-		arg.ID,
-		arg.RefundID,
-		arg.AccountID,
-		arg.Reason,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Status,
-		arg.ResolvedByID,
-		arg.DateResolved,
-		arg.DateResolvedFrom,
-		arg.DateResolvedTo,
-		arg.ResolutionNote,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []OrderRefundDispute{}
-	for rows.Next() {
-		var i OrderRefundDispute
-		if err := rows.Scan(
-			&i.ID,
-			&i.RefundID,
-			&i.AccountID,
-			&i.Reason,
-			&i.DateCreated,
-			&i.Status,
-			&i.ResolvedByID,
-			&i.DateResolved,
-			&i.ResolutionNote,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listTransaction = `-- name: ListTransaction :many
-SELECT id, session_id, status, note, error, payment_option, data, amount, currency, reverses_id, date_created, date_settled, date_expired
-FROM "order"."transaction"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("session_id" = ANY($2) OR $2 IS NULL) AND
-    ("status" = ANY($3) OR $3 IS NULL) AND
-    ("note" = ANY($4) OR $4 IS NULL) AND
-    ("error" = ANY($5) OR $5 IS NULL) AND
-    ("payment_option" = ANY($6) OR $6 IS NULL) AND
-    ("data" = ANY($7) OR $7 IS NULL) AND
-    ("amount" = ANY($8) OR $8 IS NULL) AND
-    ("amount" >= $9 OR $9 IS NULL) AND
-    ("amount" <= $10 OR $10 IS NULL) AND
-    ("currency" = ANY($11) OR $11 IS NULL) AND
-    ("reverses_id" = ANY($12) OR $12 IS NULL) AND
-    ("date_created" = ANY($13) OR $13 IS NULL) AND
-    ("date_created" >= $14 OR $14 IS NULL) AND
-    ("date_created" <= $15 OR $15 IS NULL) AND
-    ("date_settled" = ANY($16) OR $16 IS NULL) AND
-    ("date_settled" >= $17 OR $17 IS NULL) AND
-    ("date_settled" <= $18 OR $18 IS NULL) AND
-    ("date_expired" = ANY($19) OR $19 IS NULL) AND
-    ("date_expired" >= $20 OR $20 IS NULL) AND
-    ("date_expired" <= $21 OR $21 IS NULL)
-)
-ORDER BY "id"
-LIMIT $23::int
-OFFSET $22::int
-`
-
-type ListTransactionParams struct {
-	ID              []uuid.UUID       `json:"id"`
-	SessionID       []uuid.UUID       `json:"session_id"`
-	Status          []OrderStatus     `json:"status"`
-	Note            []string          `json:"note"`
-	Error           []null.String     `json:"error"`
-	PaymentOption   []null.String     `json:"payment_option"`
-	Data            []json.RawMessage `json:"data"`
-	Amount          []int64           `json:"amount"`
-	AmountFrom      null.Int          `json:"amount_from"`
-	AmountTo        null.Int          `json:"amount_to"`
-	Currency        []string          `json:"currency"`
-	ReversesID      []uuid.NullUUID   `json:"reverses_id"`
-	DateCreated     []time.Time       `json:"date_created"`
-	DateCreatedFrom null.Time         `json:"date_created_from"`
-	DateCreatedTo   null.Time         `json:"date_created_to"`
-	DateSettled     []null.Time       `json:"date_settled"`
-	DateSettledFrom null.Time         `json:"date_settled_from"`
-	DateSettledTo   null.Time         `json:"date_settled_to"`
-	DateExpired     []null.Time       `json:"date_expired"`
-	DateExpiredFrom null.Time         `json:"date_expired_from"`
-	DateExpiredTo   null.Time         `json:"date_expired_to"`
-	Offset          null.Int32        `json:"offset"`
-	Limit           null.Int32        `json:"limit"`
-}
-
-func (q *Queries) ListTransaction(ctx context.Context, arg ListTransactionParams) ([]OrderTransaction, error) {
-	rows, err := q.db.Query(ctx, listTransaction,
-		arg.ID,
-		arg.SessionID,
-		arg.Status,
-		arg.Note,
-		arg.Error,
-		arg.PaymentOption,
-		arg.Data,
-		arg.Amount,
-		arg.AmountFrom,
-		arg.AmountTo,
-		arg.Currency,
-		arg.ReversesID,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.DateSettled,
-		arg.DateSettledFrom,
-		arg.DateSettledTo,
-		arg.DateExpired,
-		arg.DateExpiredFrom,
-		arg.DateExpiredTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []OrderTransaction{}
-	for rows.Next() {
-		var i OrderTransaction
-		if err := rows.Scan(
-			&i.ID,
-			&i.SessionID,
-			&i.Status,
-			&i.Note,
-			&i.Error,
-			&i.PaymentOption,
-			&i.Data,
-			&i.Amount,
-			&i.Currency,
-			&i.ReversesID,
-			&i.DateCreated,
-			&i.DateSettled,
-			&i.DateExpired,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listTransport = `-- name: ListTransport :many
-SELECT id, option, status, data, date_created
-FROM "order"."transport"
-WHERE (
-    ("id" = ANY($1) OR $1 IS NULL) AND
-    ("option" = ANY($2) OR $2 IS NULL) AND
-    ("status" = ANY($3) OR $3 IS NULL) AND
-    ("data" = ANY($4) OR $4 IS NULL) AND
-    ("date_created" = ANY($5) OR $5 IS NULL) AND
-    ("date_created" >= $6 OR $6 IS NULL) AND
-    ("date_created" <= $7 OR $7 IS NULL)
-)
-ORDER BY "id"
-LIMIT $9::int
-OFFSET $8::int
-`
-
-type ListTransportParams struct {
-	ID              []int64           `json:"id"`
-	Option          []string          `json:"option"`
-	Status          []NullOrderStatus `json:"status"`
-	Data            []json.RawMessage `json:"data"`
-	DateCreated     []time.Time       `json:"date_created"`
-	DateCreatedFrom null.Time         `json:"date_created_from"`
-	DateCreatedTo   null.Time         `json:"date_created_to"`
-	Offset          null.Int32        `json:"offset"`
-	Limit           null.Int32        `json:"limit"`
-}
-
-func (q *Queries) ListTransport(ctx context.Context, arg ListTransportParams) ([]OrderTransport, error) {
-	rows, err := q.db.Query(ctx, listTransport,
-		arg.ID,
-		arg.Option,
-		arg.Status,
-		arg.Data,
-		arg.DateCreated,
-		arg.DateCreatedFrom,
-		arg.DateCreatedTo,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []OrderTransport{}
-	for rows.Next() {
-		var i OrderTransport
-		if err := rows.Scan(
-			&i.ID,
-			&i.Option,
-			&i.Status,
-			&i.Data,
-			&i.DateCreated,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const updateCartItem = `-- name: UpdateCartItem :one
 UPDATE "order"."cart_item"
 SET "account_id" = COALESCE($1, "account_id"),
@@ -3852,10 +2248,10 @@ RETURNING id, account_id, sku_id, quantity
 `
 
 type UpdateCartItemParams struct {
-	AccountID uuid.NullUUID `json:"account_id"`
-	SkuID     uuid.NullUUID `json:"sku_id"`
-	Quantity  null.Int      `json:"quantity"`
-	ID        int64         `json:"id"`
+	AccountID uuid.NullUUID `db:"account_id" json:"account_id"`
+	SkuID     uuid.NullUUID `db:"sku_id" json:"sku_id"`
+	Quantity  null.Int      `db:"quantity" json:"quantity"`
+	ID        int64         `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateCartItem(ctx context.Context, arg UpdateCartItemParams) (OrderCartItem, error) {
@@ -3900,30 +2296,30 @@ RETURNING id, order_id, account_id, seller_id, sku_id, spu_id, sku_name, address
 `
 
 type UpdateItemParams struct {
-	NullOrderID       bool            `json:"null_order_id"`
-	OrderID           uuid.NullUUID   `json:"order_id"`
-	AccountID         uuid.NullUUID   `json:"account_id"`
-	SellerID          uuid.NullUUID   `json:"seller_id"`
-	SkuID             uuid.NullUUID   `json:"sku_id"`
-	SpuID             uuid.NullUUID   `json:"spu_id"`
-	SkuName           null.String     `json:"sku_name"`
-	Address           null.String     `json:"address"`
-	NullNote          bool            `json:"null_note"`
-	Note              null.String     `json:"note"`
-	NullSerialIds     bool            `json:"null_serial_ids"`
-	SerialIds         json.RawMessage `json:"serial_ids"`
-	Quantity          null.Int        `json:"quantity"`
-	TransportOption   null.String     `json:"transport_option"`
-	SubtotalAmount    null.Int        `json:"subtotal_amount"`
-	TotalAmount       null.Int        `json:"total_amount"`
-	SourceCurrency    null.String     `json:"source_currency"`
-	PaymentSessionID  uuid.NullUUID   `json:"payment_session_id"`
-	NullDateCancelled bool            `json:"null_date_cancelled"`
-	DateCancelled     null.Time       `json:"date_cancelled"`
-	NullCancelledByID bool            `json:"null_cancelled_by_id"`
-	CancelledByID     uuid.NullUUID   `json:"cancelled_by_id"`
-	DateCreated       null.Time       `json:"date_created"`
-	ID                int64           `json:"id"`
+	NullOrderID       bool            `db:"null_order_id" json:"null_order_id"`
+	OrderID           uuid.NullUUID   `db:"order_id" json:"order_id"`
+	AccountID         uuid.NullUUID   `db:"account_id" json:"account_id"`
+	SellerID          uuid.NullUUID   `db:"seller_id" json:"seller_id"`
+	SkuID             uuid.NullUUID   `db:"sku_id" json:"sku_id"`
+	SpuID             uuid.NullUUID   `db:"spu_id" json:"spu_id"`
+	SkuName           null.String     `db:"sku_name" json:"sku_name"`
+	Address           null.String     `db:"address" json:"address"`
+	NullNote          bool            `db:"null_note" json:"null_note"`
+	Note              null.String     `db:"note" json:"note"`
+	NullSerialIds     bool            `db:"null_serial_ids" json:"null_serial_ids"`
+	SerialIds         json.RawMessage `db:"serial_ids" json:"serial_ids"`
+	Quantity          null.Int        `db:"quantity" json:"quantity"`
+	TransportOption   null.String     `db:"transport_option" json:"transport_option"`
+	SubtotalAmount    null.Int        `db:"subtotal_amount" json:"subtotal_amount"`
+	TotalAmount       null.Int        `db:"total_amount" json:"total_amount"`
+	SourceCurrency    null.String     `db:"source_currency" json:"source_currency"`
+	PaymentSessionID  uuid.NullUUID   `db:"payment_session_id" json:"payment_session_id"`
+	NullDateCancelled bool            `db:"null_date_cancelled" json:"null_date_cancelled"`
+	DateCancelled     null.Time       `db:"date_cancelled" json:"date_cancelled"`
+	NullCancelledByID bool            `db:"null_cancelled_by_id" json:"null_cancelled_by_id"`
+	CancelledByID     uuid.NullUUID   `db:"cancelled_by_id" json:"cancelled_by_id"`
+	DateCreated       null.Time       `db:"date_created" json:"date_created"`
+	ID                int64           `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateItem(ctx context.Context, arg UpdateItemParams) (OrderItem, error) {
@@ -3993,16 +2389,16 @@ RETURNING id, buyer_id, seller_id, transport_id, address, date_created, confirme
 `
 
 type UpdateOrderParams struct {
-	BuyerID          uuid.NullUUID `json:"buyer_id"`
-	SellerID         uuid.NullUUID `json:"seller_id"`
-	TransportID      null.Int      `json:"transport_id"`
-	Address          null.String   `json:"address"`
-	DateCreated      null.Time     `json:"date_created"`
-	ConfirmedByID    uuid.NullUUID `json:"confirmed_by_id"`
-	ConfirmSessionID uuid.NullUUID `json:"confirm_session_id"`
-	NullNote         bool          `json:"null_note"`
-	Note             null.String   `json:"note"`
-	ID               uuid.UUID     `json:"id"`
+	BuyerID          uuid.NullUUID `db:"buyer_id" json:"buyer_id"`
+	SellerID         uuid.NullUUID `db:"seller_id" json:"seller_id"`
+	TransportID      null.Int      `db:"transport_id" json:"transport_id"`
+	Address          null.String   `db:"address" json:"address"`
+	DateCreated      null.Time     `db:"date_created" json:"date_created"`
+	ConfirmedByID    uuid.NullUUID `db:"confirmed_by_id" json:"confirmed_by_id"`
+	ConfirmSessionID uuid.NullUUID `db:"confirm_session_id" json:"confirm_session_id"`
+	NullNote         bool          `db:"null_note" json:"null_note"`
+	Note             null.String   `db:"note" json:"note"`
+	ID               uuid.UUID     `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateOrder(ctx context.Context, arg UpdateOrderParams) (OrderOrder, error) {
@@ -4052,23 +2448,23 @@ RETURNING id, kind, status, from_id, to_id, note, currency, total_amount, fx_sna
 `
 
 type UpdatePaymentSessionParams struct {
-	Kind           null.String     `json:"kind"`
-	Status         NullOrderStatus `json:"status"`
-	NullFromID     bool            `json:"null_from_id"`
-	FromID         uuid.NullUUID   `json:"from_id"`
-	NullToID       bool            `json:"null_to_id"`
-	ToID           uuid.NullUUID   `json:"to_id"`
-	Note           null.String     `json:"note"`
-	Currency       null.String     `json:"currency"`
-	TotalAmount    null.Int        `json:"total_amount"`
-	NullFxSnapshot bool            `json:"null_fx_snapshot"`
-	FxSnapshot     json.RawMessage `json:"fx_snapshot"`
-	Data           json.RawMessage `json:"data"`
-	DateCreated    null.Time       `json:"date_created"`
-	NullDatePaid   bool            `json:"null_date_paid"`
-	DatePaid       null.Time       `json:"date_paid"`
-	DateExpired    null.Time       `json:"date_expired"`
-	ID             uuid.UUID       `json:"id"`
+	Kind           null.String     `db:"kind" json:"kind"`
+	Status         NullOrderStatus `db:"status" json:"status"`
+	NullFromID     bool            `db:"null_from_id" json:"null_from_id"`
+	FromID         uuid.NullUUID   `db:"from_id" json:"from_id"`
+	NullToID       bool            `db:"null_to_id" json:"null_to_id"`
+	ToID           uuid.NullUUID   `db:"to_id" json:"to_id"`
+	Note           null.String     `db:"note" json:"note"`
+	Currency       null.String     `db:"currency" json:"currency"`
+	TotalAmount    null.Int        `db:"total_amount" json:"total_amount"`
+	NullFxSnapshot bool            `db:"null_fx_snapshot" json:"null_fx_snapshot"`
+	FxSnapshot     json.RawMessage `db:"fx_snapshot" json:"fx_snapshot"`
+	Data           json.RawMessage `db:"data" json:"data"`
+	DateCreated    null.Time       `db:"date_created" json:"date_created"`
+	NullDatePaid   bool            `db:"null_date_paid" json:"null_date_paid"`
+	DatePaid       null.Time       `db:"date_paid" json:"date_paid"`
+	DateExpired    null.Time       `db:"date_expired" json:"date_expired"`
+	ID             uuid.UUID       `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdatePaymentSession(ctx context.Context, arg UpdatePaymentSessionParams) (OrderPaymentSession, error) {
@@ -4129,25 +2525,25 @@ RETURNING id, account_id, order_id, reason, date_created, status, return_transpo
 `
 
 type UpdateRefundParams struct {
-	AccountID                    uuid.NullUUID         `json:"account_id"`
-	OrderID                      uuid.NullUUID         `json:"order_id"`
-	Reason                       null.String           `json:"reason"`
-	DateCreated                  null.Time             `json:"date_created"`
-	Status                       NullOrderRefundStatus `json:"status"`
-	ReturnTransportID            null.Int              `json:"return_transport_id"`
-	NullDateReceivedBySeller     bool                  `json:"null_date_received_by_seller"`
-	DateReceivedBySeller         null.Time             `json:"date_received_by_seller"`
-	NullReviewDeadline           bool                  `json:"null_review_deadline"`
-	ReviewDeadline               null.Time             `json:"review_deadline"`
-	NullSellerDecisionAt         bool                  `json:"null_seller_decision_at"`
-	SellerDecisionAt             null.Time             `json:"seller_decision_at"`
-	NullReturnToBuyerTransportID bool                  `json:"null_return_to_buyer_transport_id"`
-	ReturnToBuyerTransportID     null.Int              `json:"return_to_buyer_transport_id"`
-	NullRejectionReason          bool                  `json:"null_rejection_reason"`
-	RejectionReason              null.String           `json:"rejection_reason"`
-	NullRefundTxID               bool                  `json:"null_refund_tx_id"`
-	RefundTxID                   uuid.NullUUID         `json:"refund_tx_id"`
-	ID                           uuid.UUID             `json:"id"`
+	AccountID                    uuid.NullUUID         `db:"account_id" json:"account_id"`
+	OrderID                      uuid.NullUUID         `db:"order_id" json:"order_id"`
+	Reason                       null.String           `db:"reason" json:"reason"`
+	DateCreated                  null.Time             `db:"date_created" json:"date_created"`
+	Status                       NullOrderRefundStatus `db:"status" json:"status"`
+	ReturnTransportID            null.Int              `db:"return_transport_id" json:"return_transport_id"`
+	NullDateReceivedBySeller     bool                  `db:"null_date_received_by_seller" json:"null_date_received_by_seller"`
+	DateReceivedBySeller         null.Time             `db:"date_received_by_seller" json:"date_received_by_seller"`
+	NullReviewDeadline           bool                  `db:"null_review_deadline" json:"null_review_deadline"`
+	ReviewDeadline               null.Time             `db:"review_deadline" json:"review_deadline"`
+	NullSellerDecisionAt         bool                  `db:"null_seller_decision_at" json:"null_seller_decision_at"`
+	SellerDecisionAt             null.Time             `db:"seller_decision_at" json:"seller_decision_at"`
+	NullReturnToBuyerTransportID bool                  `db:"null_return_to_buyer_transport_id" json:"null_return_to_buyer_transport_id"`
+	ReturnToBuyerTransportID     null.Int              `db:"return_to_buyer_transport_id" json:"return_to_buyer_transport_id"`
+	NullRejectionReason          bool                  `db:"null_rejection_reason" json:"null_rejection_reason"`
+	RejectionReason              null.String           `db:"rejection_reason" json:"rejection_reason"`
+	NullRefundTxID               bool                  `db:"null_refund_tx_id" json:"null_refund_tx_id"`
+	RefundTxID                   uuid.NullUUID         `db:"refund_tx_id" json:"refund_tx_id"`
+	ID                           uuid.UUID             `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateRefund(ctx context.Context, arg UpdateRefundParams) (OrderRefund, error) {
@@ -4206,18 +2602,18 @@ RETURNING id, refund_id, account_id, reason, date_created, status, resolved_by_i
 `
 
 type UpdateRefundDisputeParams struct {
-	RefundID           uuid.NullUUID          `json:"refund_id"`
-	AccountID          uuid.NullUUID          `json:"account_id"`
-	Reason             null.String            `json:"reason"`
-	DateCreated        null.Time              `json:"date_created"`
-	Status             NullOrderDisputeStatus `json:"status"`
-	NullResolvedByID   bool                   `json:"null_resolved_by_id"`
-	ResolvedByID       uuid.NullUUID          `json:"resolved_by_id"`
-	NullDateResolved   bool                   `json:"null_date_resolved"`
-	DateResolved       null.Time              `json:"date_resolved"`
-	NullResolutionNote bool                   `json:"null_resolution_note"`
-	ResolutionNote     null.String            `json:"resolution_note"`
-	ID                 uuid.UUID              `json:"id"`
+	RefundID           uuid.NullUUID          `db:"refund_id" json:"refund_id"`
+	AccountID          uuid.NullUUID          `db:"account_id" json:"account_id"`
+	Reason             null.String            `db:"reason" json:"reason"`
+	DateCreated        null.Time              `db:"date_created" json:"date_created"`
+	Status             NullOrderDisputeStatus `db:"status" json:"status"`
+	NullResolvedByID   bool                   `db:"null_resolved_by_id" json:"null_resolved_by_id"`
+	ResolvedByID       uuid.NullUUID          `db:"resolved_by_id" json:"resolved_by_id"`
+	NullDateResolved   bool                   `db:"null_date_resolved" json:"null_date_resolved"`
+	DateResolved       null.Time              `db:"date_resolved" json:"date_resolved"`
+	NullResolutionNote bool                   `db:"null_resolution_note" json:"null_resolution_note"`
+	ResolutionNote     null.String            `db:"resolution_note" json:"resolution_note"`
+	ID                 uuid.UUID              `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateRefundDispute(ctx context.Context, arg UpdateRefundDisputeParams) (OrderRefundDispute, error) {
@@ -4269,24 +2665,24 @@ RETURNING id, session_id, status, note, error, payment_option, data, amount, cur
 `
 
 type UpdateTransactionParams struct {
-	SessionID         uuid.NullUUID   `json:"session_id"`
-	Status            NullOrderStatus `json:"status"`
-	Note              null.String     `json:"note"`
-	NullError         bool            `json:"null_error"`
-	Error             null.String     `json:"error"`
-	NullPaymentOption bool            `json:"null_payment_option"`
-	PaymentOption     null.String     `json:"payment_option"`
-	Data              json.RawMessage `json:"data"`
-	Amount            null.Int        `json:"amount"`
-	Currency          null.String     `json:"currency"`
-	NullReversesID    bool            `json:"null_reverses_id"`
-	ReversesID        uuid.NullUUID   `json:"reverses_id"`
-	DateCreated       null.Time       `json:"date_created"`
-	NullDateSettled   bool            `json:"null_date_settled"`
-	DateSettled       null.Time       `json:"date_settled"`
-	NullDateExpired   bool            `json:"null_date_expired"`
-	DateExpired       null.Time       `json:"date_expired"`
-	ID                uuid.UUID       `json:"id"`
+	SessionID         uuid.NullUUID   `db:"session_id" json:"session_id"`
+	Status            NullOrderStatus `db:"status" json:"status"`
+	Note              null.String     `db:"note" json:"note"`
+	NullError         bool            `db:"null_error" json:"null_error"`
+	Error             null.String     `db:"error" json:"error"`
+	NullPaymentOption bool            `db:"null_payment_option" json:"null_payment_option"`
+	PaymentOption     null.String     `db:"payment_option" json:"payment_option"`
+	Data              json.RawMessage `db:"data" json:"data"`
+	Amount            null.Int        `db:"amount" json:"amount"`
+	Currency          null.String     `db:"currency" json:"currency"`
+	NullReversesID    bool            `db:"null_reverses_id" json:"null_reverses_id"`
+	ReversesID        uuid.NullUUID   `db:"reverses_id" json:"reverses_id"`
+	DateCreated       null.Time       `db:"date_created" json:"date_created"`
+	NullDateSettled   bool            `db:"null_date_settled" json:"null_date_settled"`
+	DateSettled       null.Time       `db:"date_settled" json:"date_settled"`
+	NullDateExpired   bool            `db:"null_date_expired" json:"null_date_expired"`
+	DateExpired       null.Time       `db:"date_expired" json:"date_expired"`
+	ID                uuid.UUID       `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateTransaction(ctx context.Context, arg UpdateTransactionParams) (OrderTransaction, error) {
@@ -4340,12 +2736,12 @@ RETURNING id, option, status, data, date_created
 `
 
 type UpdateTransportParams struct {
-	Option      null.String     `json:"option"`
-	NullStatus  bool            `json:"null_status"`
-	Status      NullOrderStatus `json:"status"`
-	Data        json.RawMessage `json:"data"`
-	DateCreated null.Time       `json:"date_created"`
-	ID          int64           `json:"id"`
+	Option      null.String     `db:"option" json:"option"`
+	NullStatus  bool            `db:"null_status" json:"null_status"`
+	Status      NullOrderStatus `db:"status" json:"status"`
+	Data        json.RawMessage `db:"data" json:"data"`
+	DateCreated null.Time       `db:"date_created" json:"date_created"`
+	ID          int64           `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateTransport(ctx context.Context, arg UpdateTransportParams) (OrderTransport, error) {

@@ -14,6 +14,7 @@ import (
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/provider/transport"
+	"shopnexus-server/internal/shared/repolist"
 	"shopnexus-server/internal/shared/saga"
 
 	"github.com/google/uuid"
@@ -45,12 +46,13 @@ func (h *FulfillmentWorkflow) confirm(
 	// Fetch and validate items inside a Run so list ordering and
 	// missing-row checks are journaled (replay returns the exact same slice).
 	orderItems, err := restate.Run(ctx, func(rctx restate.RunContext) ([]orderdb.OrderItem, error) {
-		items, e := h.Storage.Querier().ListItem(rctx, orderdb.ListItemParams{
-			ID: input.ItemIDs,
+		res, e := h.Storage.Querier().ListItem(rctx, repolist.Request{}, orderdb.ListItemFilter{
+			Id: input.ItemIDs,
 		})
 		if e != nil {
 			return nil, fmt.Errorf("db list items: %w", e)
 		}
+		items := res.Data
 		if len(items) != len(input.ItemIDs) {
 			return nil, ordermodel.ErrOrderItemNotFound
 		}

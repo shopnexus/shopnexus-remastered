@@ -35,8 +35,8 @@ type ClearStaleSearchSyncBatchBatchResults struct {
 }
 
 type ClearStaleSearchSyncBatchParams struct {
-	RefType CatalogSearchSyncRefType `json:"ref_type"`
-	RefID   uuid.UUID                `json:"ref_id"`
+	RefType CatalogSearchSyncRefType `db:"ref_type" json:"ref_type"`
+	RefID   uuid.UUID                `db:"ref_id" json:"ref_id"`
 }
 
 func (q *Queries) ClearStaleSearchSyncBatch(ctx context.Context, arg []ClearStaleSearchSyncBatchParams) *ClearStaleSearchSyncBatchBatchResults {
@@ -86,10 +86,10 @@ type CreateBatchCategoryBatchResults struct {
 }
 
 type CreateBatchCategoryParams struct {
-	ID          uuid.UUID     `json:"id"`
-	Name        string        `json:"name"`
-	Description string        `json:"description"`
-	ParentID    uuid.NullUUID `json:"parent_id"`
+	ID          uuid.UUID     `db:"id" json:"id"`
+	Name        string        `db:"name" json:"name"`
+	Description string        `db:"description" json:"description"`
+	ParentID    uuid.NullUUID `db:"parent_id" json:"parent_id"`
 }
 
 func (q *Queries) CreateBatchCategory(ctx context.Context, arg []CreateBatchCategoryParams) *CreateBatchCategoryBatchResults {
@@ -148,17 +148,17 @@ type CreateBatchCommentBatchResults struct {
 }
 
 type CreateBatchCommentParams struct {
-	ID          uuid.UUID             `json:"id"`
-	AccountID   uuid.UUID             `json:"account_id"`
-	OrderID     uuid.NullUUID         `json:"order_id"`
-	RefType     CatalogCommentRefType `json:"ref_type"`
-	RefID       uuid.UUID             `json:"ref_id"`
-	Body        string                `json:"body"`
-	Upvote      int64                 `json:"upvote"`
-	Downvote    int64                 `json:"downvote"`
-	Score       float64               `json:"score"`
-	DateCreated time.Time             `json:"date_created"`
-	DateUpdated time.Time             `json:"date_updated"`
+	ID          uuid.UUID             `db:"id" json:"id"`
+	AccountID   uuid.UUID             `db:"account_id" json:"account_id"`
+	OrderID     uuid.NullUUID         `db:"order_id" json:"order_id"`
+	RefType     CatalogCommentRefType `db:"ref_type" json:"ref_type"`
+	RefID       uuid.UUID             `db:"ref_id" json:"ref_id"`
+	Body        string                `db:"body" json:"body"`
+	Upvote      int64                 `db:"upvote" json:"upvote"`
+	Downvote    int64                 `db:"downvote" json:"downvote"`
+	Score       float64               `db:"score" json:"score"`
+	DateCreated time.Time             `db:"date_created" json:"date_created"`
+	DateUpdated time.Time             `db:"date_updated" json:"date_updated"`
 }
 
 func (q *Queries) CreateBatchComment(ctx context.Context, arg []CreateBatchCommentParams) *CreateBatchCommentBatchResults {
@@ -231,14 +231,14 @@ type CreateBatchProductSkuBatchResults struct {
 }
 
 type CreateBatchProductSkuParams struct {
-	ID              uuid.UUID       `json:"id"`
-	SpuID           uuid.UUID       `json:"spu_id"`
-	Price           int64           `json:"price"`
-	SharedPackaging bool            `json:"shared_packaging"`
-	Attributes      json.RawMessage `json:"attributes"`
-	PackageDetails  json.RawMessage `json:"package_details"`
-	DateCreated     time.Time       `json:"date_created"`
-	DateDeleted     null.Time       `json:"date_deleted"`
+	ID              uuid.UUID       `db:"id" json:"id"`
+	SpuID           uuid.UUID       `db:"spu_id" json:"spu_id"`
+	Price           int64           `db:"price" json:"price"`
+	SharedPackaging bool            `db:"shared_packaging" json:"shared_packaging"`
+	Attributes      json.RawMessage `db:"attributes" json:"attributes"`
+	PackageDetails  json.RawMessage `db:"package_details" json:"package_details"`
+	DateCreated     time.Time       `db:"date_created" json:"date_created"`
+	DateDeleted     null.Time       `db:"date_deleted" json:"date_deleted"`
 }
 
 func (q *Queries) CreateBatchProductSku(ctx context.Context, arg []CreateBatchProductSkuParams) *CreateBatchProductSkuBatchResults {
@@ -305,19 +305,19 @@ type CreateBatchProductSpuBatchResults struct {
 }
 
 type CreateBatchProductSpuParams struct {
-	ID             uuid.UUID       `json:"id"`
-	Slug           string          `json:"slug"`
-	AccountID      uuid.UUID       `json:"account_id"`
-	CategoryID     uuid.UUID       `json:"category_id"`
-	FeaturedSkuID  uuid.NullUUID   `json:"featured_sku_id"`
-	Name           string          `json:"name"`
-	Description    string          `json:"description"`
-	IsEnabled      bool            `json:"is_enabled"`
-	Currency       string          `json:"currency"`
-	Specifications json.RawMessage `json:"specifications"`
-	DateCreated    time.Time       `json:"date_created"`
-	DateUpdated    time.Time       `json:"date_updated"`
-	DateDeleted    null.Time       `json:"date_deleted"`
+	ID             uuid.UUID       `db:"id" json:"id"`
+	Slug           string          `db:"slug" json:"slug"`
+	AccountID      uuid.UUID       `db:"account_id" json:"account_id"`
+	CategoryID     uuid.UUID       `db:"category_id" json:"category_id"`
+	FeaturedSkuID  uuid.NullUUID   `db:"featured_sku_id" json:"featured_sku_id"`
+	Name           string          `db:"name" json:"name"`
+	Description    string          `db:"description" json:"description"`
+	IsEnabled      bool            `db:"is_enabled" json:"is_enabled"`
+	Currency       string          `db:"currency" json:"currency"`
+	Specifications json.RawMessage `db:"specifications" json:"specifications"`
+	DateCreated    time.Time       `db:"date_created" json:"date_created"`
+	DateUpdated    time.Time       `db:"date_updated" json:"date_updated"`
+	DateDeleted    null.Time       `db:"date_deleted" json:"date_deleted"`
 }
 
 func (q *Queries) CreateBatchProductSpu(ctx context.Context, arg []CreateBatchProductSpuParams) *CreateBatchProductSpuBatchResults {
@@ -395,8 +395,8 @@ type CreateBatchProductSpuTagBatchResults struct {
 }
 
 type CreateBatchProductSpuTagParams struct {
-	SpuID uuid.UUID `json:"spu_id"`
-	Tag   string    `json:"tag"`
+	SpuID uuid.UUID `db:"spu_id" json:"spu_id"`
+	Tag   string    `db:"tag" json:"tag"`
 }
 
 func (q *Queries) CreateBatchProductSpuTag(ctx context.Context, arg []CreateBatchProductSpuTagParams) *CreateBatchProductSpuTagBatchResults {
@@ -448,11 +448,11 @@ type CreateBatchSearchSyncBatchResults struct {
 }
 
 type CreateBatchSearchSyncParams struct {
-	RefType          CatalogSearchSyncRefType `json:"ref_type"`
-	RefID            uuid.UUID                `json:"ref_id"`
-	IsStaleEmbedding bool                     `json:"is_stale_embedding"`
-	DateCreated      time.Time                `json:"date_created"`
-	DateUpdated      time.Time                `json:"date_updated"`
+	RefType          CatalogSearchSyncRefType `db:"ref_type" json:"ref_type"`
+	RefID            uuid.UUID                `db:"ref_id" json:"ref_id"`
+	IsStaleEmbedding bool                     `db:"is_stale_embedding" json:"is_stale_embedding"`
+	DateCreated      time.Time                `db:"date_created" json:"date_created"`
+	DateUpdated      time.Time                `db:"date_updated" json:"date_updated"`
 }
 
 func (q *Queries) CreateBatchSearchSync(ctx context.Context, arg []CreateBatchSearchSyncParams) *CreateBatchSearchSyncBatchResults {
@@ -514,9 +514,9 @@ type CreateBatchTagBatchResults struct {
 }
 
 type CreateBatchTagParams struct {
-	ID          string      `json:"id"`
-	Name        string      `json:"name"`
-	Description null.String `json:"description"`
+	ID          string      `db:"id" json:"id"`
+	Name        string      `db:"name" json:"name"`
+	Description null.String `db:"description" json:"description"`
 }
 
 func (q *Queries) CreateBatchTag(ctx context.Context, arg []CreateBatchTagParams) *CreateBatchTagBatchResults {
@@ -572,10 +572,10 @@ type UpsertAccountInterestBatchResults struct {
 }
 
 type UpsertAccountInterestParams struct {
-	AccountID uuid.UUID       `json:"account_id"`
-	Slot      int16           `json:"slot"`
-	Embedding pgvector.Vector `json:"embedding"`
-	Strength  float32         `json:"strength"`
+	AccountID uuid.UUID       `db:"account_id" json:"account_id"`
+	Slot      int16           `db:"slot" json:"slot"`
+	Embedding pgvector.Vector `db:"embedding" json:"embedding"`
+	Strength  float32         `db:"strength" json:"strength"`
 }
 
 func (q *Queries) UpsertAccountInterest(ctx context.Context, arg []UpsertAccountInterestParams) *UpsertAccountInterestBatchResults {
@@ -630,9 +630,9 @@ type UpsertCategoryEmbeddingBatchResults struct {
 }
 
 type UpsertCategoryEmbeddingParams struct {
-	CategoryID uuid.UUID                 `json:"category_id"`
-	Embedding  pgvector.Vector           `json:"embedding"`
-	Sparse     *pgvector_go.SparseVector `json:"sparse"`
+	CategoryID uuid.UUID                 `db:"category_id" json:"category_id"`
+	Embedding  pgvector.Vector           `db:"embedding" json:"embedding"`
+	Sparse     *pgvector_go.SparseVector `db:"sparse" json:"sparse"`
 }
 
 func (q *Queries) UpsertCategoryEmbedding(ctx context.Context, arg []UpsertCategoryEmbeddingParams) *UpsertCategoryEmbeddingBatchResults {
@@ -687,9 +687,9 @@ type UpsertProductEmbeddingBatchResults struct {
 }
 
 type UpsertProductEmbeddingParams struct {
-	SpuID     uuid.UUID                 `json:"spu_id"`
-	Embedding pgvector.Vector           `json:"embedding"`
-	Sparse    *pgvector_go.SparseVector `json:"sparse"`
+	SpuID     uuid.UUID                 `db:"spu_id" json:"spu_id"`
+	Embedding pgvector.Vector           `db:"embedding" json:"embedding"`
+	Sparse    *pgvector_go.SparseVector `db:"sparse" json:"sparse"`
 }
 
 // Hand-written vector queries (pgvector). Embedding upserts, hybrid search,
@@ -745,9 +745,9 @@ type UpsertTagEmbeddingBatchResults struct {
 }
 
 type UpsertTagEmbeddingParams struct {
-	TagID     string                    `json:"tag_id"`
-	Embedding pgvector.Vector           `json:"embedding"`
-	Sparse    *pgvector_go.SparseVector `json:"sparse"`
+	TagID     string                    `db:"tag_id" json:"tag_id"`
+	Embedding pgvector.Vector           `db:"embedding" json:"embedding"`
+	Sparse    *pgvector_go.SparseVector `db:"sparse" json:"sparse"`
 }
 
 func (q *Queries) UpsertTagEmbedding(ctx context.Context, arg []UpsertTagEmbeddingParams) *UpsertTagEmbeddingBatchResults {

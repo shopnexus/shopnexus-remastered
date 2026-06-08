@@ -18,9 +18,9 @@ RETURNING id, gender, name, description, date_of_birth, avatar_rs_id, email_veri
 `
 
 type CreateSignupProfileParams struct {
-	ID      uuid.UUID `json:"id"`
-	Country string    `json:"country"`
-	Name    string    `json:"name"`
+	ID      uuid.UUID `db:"id" json:"id"`
+	Country string    `db:"country" json:"country"`
+	Name    string    `db:"name" json:"name"`
 }
 
 func (q *Queries) CreateSignupProfile(ctx context.Context, arg CreateSignupProfileParams) (AccountProfile, error) {
@@ -61,8 +61,8 @@ WHERE "id" = $2
 `
 
 type SetAccountDefaultContactParams struct {
-	DefaultContactID uuid.NullUUID `json:"default_contact_id"`
-	ID               uuid.UUID     `json:"id"`
+	DefaultContactID uuid.NullUUID `db:"default_contact_id" json:"default_contact_id"`
+	ID               uuid.UUID     `db:"id" json:"id"`
 }
 
 func (q *Queries) SetAccountDefaultContact(ctx context.Context, arg SetAccountDefaultContactParams) error {
@@ -77,8 +77,8 @@ WHERE "id" = $2 AND "internal_balance" = 0
 `
 
 type UpdateProfileCountryParams struct {
-	Country string    `json:"country"`
-	ID      uuid.UUID `json:"id"`
+	Country string    `db:"country" json:"country"`
+	ID      uuid.UUID `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateProfileCountry(ctx context.Context, arg UpdateProfileCountryParams) (int64, error) {

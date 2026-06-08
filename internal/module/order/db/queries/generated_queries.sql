@@ -23,36 +23,6 @@ WHERE (
     ("quantity" <= sqlc.narg('quantity_to') OR sqlc.narg('quantity_to') IS NULL)
 );
 
--- name: ListCartItem :many
-SELECT *
-FROM "order"."cart_item"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("sku_id" = ANY(sqlc.slice('sku_id')) OR sqlc.slice('sku_id') IS NULL) AND
-    ("quantity" = ANY(sqlc.slice('quantity')) OR sqlc.slice('quantity') IS NULL) AND
-    ("quantity" >= sqlc.narg('quantity_from') OR sqlc.narg('quantity_from') IS NULL) AND
-    ("quantity" <= sqlc.narg('quantity_to') OR sqlc.narg('quantity_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountCartItem :many
-SELECT sqlc.embed(embed_cart_item), COUNT(*) OVER() as total_count
-FROM "order"."cart_item" embed_cart_item
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("sku_id" = ANY(sqlc.slice('sku_id')) OR sqlc.slice('sku_id') IS NULL) AND
-    ("quantity" = ANY(sqlc.slice('quantity')) OR sqlc.slice('quantity') IS NULL) AND
-    ("quantity" >= sqlc.narg('quantity_from') OR sqlc.narg('quantity_from') IS NULL) AND
-    ("quantity" <= sqlc.narg('quantity_to') OR sqlc.narg('quantity_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
 -- name: CreateCartItem :one
 INSERT INTO "order"."cart_item" ("account_id", "sku_id", "quantity")
 VALUES ($1, $2, $3)
@@ -128,62 +98,6 @@ WHERE (
     ("date_expired" >= sqlc.narg('date_expired_from') OR sqlc.narg('date_expired_from') IS NULL) AND
     ("date_expired" <= sqlc.narg('date_expired_to') OR sqlc.narg('date_expired_to') IS NULL)
 );
-
--- name: ListPaymentSession :many
-SELECT *
-FROM "order"."payment_session"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("kind" = ANY(sqlc.slice('kind')) OR sqlc.slice('kind') IS NULL) AND
-    ("status" = ANY(sqlc.slice('status')) OR sqlc.slice('status') IS NULL) AND
-    ("from_id" = ANY(sqlc.slice('from_id')) OR sqlc.slice('from_id') IS NULL) AND
-    ("to_id" = ANY(sqlc.slice('to_id')) OR sqlc.slice('to_id') IS NULL) AND
-    ("note" = ANY(sqlc.slice('note')) OR sqlc.slice('note') IS NULL) AND
-    ("currency" = ANY(sqlc.slice('currency')) OR sqlc.slice('currency') IS NULL) AND
-    ("total_amount" = ANY(sqlc.slice('total_amount')) OR sqlc.slice('total_amount') IS NULL) AND
-    ("total_amount" >= sqlc.narg('total_amount_from') OR sqlc.narg('total_amount_from') IS NULL) AND
-    ("total_amount" <= sqlc.narg('total_amount_to') OR sqlc.narg('total_amount_to') IS NULL) AND
-    ("fx_snapshot" = ANY(sqlc.slice('fx_snapshot')) OR sqlc.slice('fx_snapshot') IS NULL) AND
-    ("data" = ANY(sqlc.slice('data')) OR sqlc.slice('data') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("date_paid" = ANY(sqlc.slice('date_paid')) OR sqlc.slice('date_paid') IS NULL) AND
-    ("date_expired" = ANY(sqlc.slice('date_expired')) OR sqlc.slice('date_expired') IS NULL) AND
-    ("date_expired" >= sqlc.narg('date_expired_from') OR sqlc.narg('date_expired_from') IS NULL) AND
-    ("date_expired" <= sqlc.narg('date_expired_to') OR sqlc.narg('date_expired_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountPaymentSession :many
-SELECT sqlc.embed(embed_payment_session), COUNT(*) OVER() as total_count
-FROM "order"."payment_session" embed_payment_session
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("kind" = ANY(sqlc.slice('kind')) OR sqlc.slice('kind') IS NULL) AND
-    ("status" = ANY(sqlc.slice('status')) OR sqlc.slice('status') IS NULL) AND
-    ("from_id" = ANY(sqlc.slice('from_id')) OR sqlc.slice('from_id') IS NULL) AND
-    ("to_id" = ANY(sqlc.slice('to_id')) OR sqlc.slice('to_id') IS NULL) AND
-    ("note" = ANY(sqlc.slice('note')) OR sqlc.slice('note') IS NULL) AND
-    ("currency" = ANY(sqlc.slice('currency')) OR sqlc.slice('currency') IS NULL) AND
-    ("total_amount" = ANY(sqlc.slice('total_amount')) OR sqlc.slice('total_amount') IS NULL) AND
-    ("total_amount" >= sqlc.narg('total_amount_from') OR sqlc.narg('total_amount_from') IS NULL) AND
-    ("total_amount" <= sqlc.narg('total_amount_to') OR sqlc.narg('total_amount_to') IS NULL) AND
-    ("fx_snapshot" = ANY(sqlc.slice('fx_snapshot')) OR sqlc.slice('fx_snapshot') IS NULL) AND
-    ("data" = ANY(sqlc.slice('data')) OR sqlc.slice('data') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("date_paid" = ANY(sqlc.slice('date_paid')) OR sqlc.slice('date_paid') IS NULL) AND
-    ("date_expired" = ANY(sqlc.slice('date_expired')) OR sqlc.slice('date_expired') IS NULL) AND
-    ("date_expired" >= sqlc.narg('date_expired_from') OR sqlc.narg('date_expired_from') IS NULL) AND
-    ("date_expired" <= sqlc.narg('date_expired_to') OR sqlc.narg('date_expired_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
 
 -- name: CreatePaymentSession :one
 INSERT INTO "order"."payment_session" ("id", "kind", "status", "from_id", "to_id", "note", "currency", "total_amount", "fx_snapshot", "data", "date_created", "date_paid", "date_expired")
@@ -285,66 +199,6 @@ WHERE (
     ("date_expired" <= sqlc.narg('date_expired_to') OR sqlc.narg('date_expired_to') IS NULL)
 );
 
--- name: ListTransaction :many
-SELECT *
-FROM "order"."transaction"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("session_id" = ANY(sqlc.slice('session_id')) OR sqlc.slice('session_id') IS NULL) AND
-    ("status" = ANY(sqlc.slice('status')) OR sqlc.slice('status') IS NULL) AND
-    ("note" = ANY(sqlc.slice('note')) OR sqlc.slice('note') IS NULL) AND
-    ("error" = ANY(sqlc.slice('error')) OR sqlc.slice('error') IS NULL) AND
-    ("payment_option" = ANY(sqlc.slice('payment_option')) OR sqlc.slice('payment_option') IS NULL) AND
-    ("data" = ANY(sqlc.slice('data')) OR sqlc.slice('data') IS NULL) AND
-    ("amount" = ANY(sqlc.slice('amount')) OR sqlc.slice('amount') IS NULL) AND
-    ("amount" >= sqlc.narg('amount_from') OR sqlc.narg('amount_from') IS NULL) AND
-    ("amount" <= sqlc.narg('amount_to') OR sqlc.narg('amount_to') IS NULL) AND
-    ("currency" = ANY(sqlc.slice('currency')) OR sqlc.slice('currency') IS NULL) AND
-    ("reverses_id" = ANY(sqlc.slice('reverses_id')) OR sqlc.slice('reverses_id') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("date_settled" = ANY(sqlc.slice('date_settled')) OR sqlc.slice('date_settled') IS NULL) AND
-    ("date_settled" >= sqlc.narg('date_settled_from') OR sqlc.narg('date_settled_from') IS NULL) AND
-    ("date_settled" <= sqlc.narg('date_settled_to') OR sqlc.narg('date_settled_to') IS NULL) AND
-    ("date_expired" = ANY(sqlc.slice('date_expired')) OR sqlc.slice('date_expired') IS NULL) AND
-    ("date_expired" >= sqlc.narg('date_expired_from') OR sqlc.narg('date_expired_from') IS NULL) AND
-    ("date_expired" <= sqlc.narg('date_expired_to') OR sqlc.narg('date_expired_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountTransaction :many
-SELECT sqlc.embed(embed_transaction), COUNT(*) OVER() as total_count
-FROM "order"."transaction" embed_transaction
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("session_id" = ANY(sqlc.slice('session_id')) OR sqlc.slice('session_id') IS NULL) AND
-    ("status" = ANY(sqlc.slice('status')) OR sqlc.slice('status') IS NULL) AND
-    ("note" = ANY(sqlc.slice('note')) OR sqlc.slice('note') IS NULL) AND
-    ("error" = ANY(sqlc.slice('error')) OR sqlc.slice('error') IS NULL) AND
-    ("payment_option" = ANY(sqlc.slice('payment_option')) OR sqlc.slice('payment_option') IS NULL) AND
-    ("data" = ANY(sqlc.slice('data')) OR sqlc.slice('data') IS NULL) AND
-    ("amount" = ANY(sqlc.slice('amount')) OR sqlc.slice('amount') IS NULL) AND
-    ("amount" >= sqlc.narg('amount_from') OR sqlc.narg('amount_from') IS NULL) AND
-    ("amount" <= sqlc.narg('amount_to') OR sqlc.narg('amount_to') IS NULL) AND
-    ("currency" = ANY(sqlc.slice('currency')) OR sqlc.slice('currency') IS NULL) AND
-    ("reverses_id" = ANY(sqlc.slice('reverses_id')) OR sqlc.slice('reverses_id') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("date_settled" = ANY(sqlc.slice('date_settled')) OR sqlc.slice('date_settled') IS NULL) AND
-    ("date_settled" >= sqlc.narg('date_settled_from') OR sqlc.narg('date_settled_from') IS NULL) AND
-    ("date_settled" <= sqlc.narg('date_settled_to') OR sqlc.narg('date_settled_to') IS NULL) AND
-    ("date_expired" = ANY(sqlc.slice('date_expired')) OR sqlc.slice('date_expired') IS NULL) AND
-    ("date_expired" >= sqlc.narg('date_expired_from') OR sqlc.narg('date_expired_from') IS NULL) AND
-    ("date_expired" <= sqlc.narg('date_expired_to') OR sqlc.narg('date_expired_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
 -- name: CreateTransaction :one
 INSERT INTO "order"."transaction" ("id", "session_id", "status", "note", "error", "payment_option", "data", "amount", "currency", "reverses_id", "date_created", "date_settled", "date_expired")
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -433,38 +287,6 @@ WHERE (
     ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
 );
 
--- name: ListTransport :many
-SELECT *
-FROM "order"."transport"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("option" = ANY(sqlc.slice('option')) OR sqlc.slice('option') IS NULL) AND
-    ("status" = ANY(sqlc.slice('status')) OR sqlc.slice('status') IS NULL) AND
-    ("data" = ANY(sqlc.slice('data')) OR sqlc.slice('data') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountTransport :many
-SELECT sqlc.embed(embed_transport), COUNT(*) OVER() as total_count
-FROM "order"."transport" embed_transport
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("option" = ANY(sqlc.slice('option')) OR sqlc.slice('option') IS NULL) AND
-    ("status" = ANY(sqlc.slice('status')) OR sqlc.slice('status') IS NULL) AND
-    ("data" = ANY(sqlc.slice('data')) OR sqlc.slice('data') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
 -- name: CreateTransport :one
 INSERT INTO "order"."transport" ("option", "status", "data", "date_created")
 VALUES ($1, $2, $3, $4)
@@ -534,46 +356,6 @@ WHERE (
     ("confirm_session_id" = ANY(sqlc.slice('confirm_session_id')) OR sqlc.slice('confirm_session_id') IS NULL) AND
     ("note" = ANY(sqlc.slice('note')) OR sqlc.slice('note') IS NULL)
 );
-
--- name: ListOrder :many
-SELECT *
-FROM "order"."order"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("buyer_id" = ANY(sqlc.slice('buyer_id')) OR sqlc.slice('buyer_id') IS NULL) AND
-    ("seller_id" = ANY(sqlc.slice('seller_id')) OR sqlc.slice('seller_id') IS NULL) AND
-    ("transport_id" = ANY(sqlc.slice('transport_id')) OR sqlc.slice('transport_id') IS NULL) AND
-    ("address" = ANY(sqlc.slice('address')) OR sqlc.slice('address') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("confirmed_by_id" = ANY(sqlc.slice('confirmed_by_id')) OR sqlc.slice('confirmed_by_id') IS NULL) AND
-    ("confirm_session_id" = ANY(sqlc.slice('confirm_session_id')) OR sqlc.slice('confirm_session_id') IS NULL) AND
-    ("note" = ANY(sqlc.slice('note')) OR sqlc.slice('note') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountOrder :many
-SELECT sqlc.embed(embed_order), COUNT(*) OVER() as total_count
-FROM "order"."order" embed_order
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("buyer_id" = ANY(sqlc.slice('buyer_id')) OR sqlc.slice('buyer_id') IS NULL) AND
-    ("seller_id" = ANY(sqlc.slice('seller_id')) OR sqlc.slice('seller_id') IS NULL) AND
-    ("transport_id" = ANY(sqlc.slice('transport_id')) OR sqlc.slice('transport_id') IS NULL) AND
-    ("address" = ANY(sqlc.slice('address')) OR sqlc.slice('address') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("confirmed_by_id" = ANY(sqlc.slice('confirmed_by_id')) OR sqlc.slice('confirmed_by_id') IS NULL) AND
-    ("confirm_session_id" = ANY(sqlc.slice('confirm_session_id')) OR sqlc.slice('confirm_session_id') IS NULL) AND
-    ("note" = ANY(sqlc.slice('note')) OR sqlc.slice('note') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
 
 -- name: CreateOrder :one
 INSERT INTO "order"."order" ("id", "buyer_id", "seller_id", "transport_id", "address", "date_created", "confirmed_by_id", "confirm_session_id", "note")
@@ -670,82 +452,6 @@ WHERE (
     ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
     ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
 );
-
--- name: ListItem :many
-SELECT *
-FROM "order"."item"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("order_id" = ANY(sqlc.slice('order_id')) OR sqlc.slice('order_id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("seller_id" = ANY(sqlc.slice('seller_id')) OR sqlc.slice('seller_id') IS NULL) AND
-    ("sku_id" = ANY(sqlc.slice('sku_id')) OR sqlc.slice('sku_id') IS NULL) AND
-    ("spu_id" = ANY(sqlc.slice('spu_id')) OR sqlc.slice('spu_id') IS NULL) AND
-    ("sku_name" = ANY(sqlc.slice('sku_name')) OR sqlc.slice('sku_name') IS NULL) AND
-    ("address" = ANY(sqlc.slice('address')) OR sqlc.slice('address') IS NULL) AND
-    ("note" = ANY(sqlc.slice('note')) OR sqlc.slice('note') IS NULL) AND
-    ("serial_ids" = ANY(sqlc.slice('serial_ids')) OR sqlc.slice('serial_ids') IS NULL) AND
-    ("quantity" = ANY(sqlc.slice('quantity')) OR sqlc.slice('quantity') IS NULL) AND
-    ("quantity" >= sqlc.narg('quantity_from') OR sqlc.narg('quantity_from') IS NULL) AND
-    ("quantity" <= sqlc.narg('quantity_to') OR sqlc.narg('quantity_to') IS NULL) AND
-    ("transport_option" = ANY(sqlc.slice('transport_option')) OR sqlc.slice('transport_option') IS NULL) AND
-    ("subtotal_amount" = ANY(sqlc.slice('subtotal_amount')) OR sqlc.slice('subtotal_amount') IS NULL) AND
-    ("subtotal_amount" >= sqlc.narg('subtotal_amount_from') OR sqlc.narg('subtotal_amount_from') IS NULL) AND
-    ("subtotal_amount" <= sqlc.narg('subtotal_amount_to') OR sqlc.narg('subtotal_amount_to') IS NULL) AND
-    ("total_amount" = ANY(sqlc.slice('total_amount')) OR sqlc.slice('total_amount') IS NULL) AND
-    ("total_amount" >= sqlc.narg('total_amount_from') OR sqlc.narg('total_amount_from') IS NULL) AND
-    ("total_amount" <= sqlc.narg('total_amount_to') OR sqlc.narg('total_amount_to') IS NULL) AND
-    ("source_currency" = ANY(sqlc.slice('source_currency')) OR sqlc.slice('source_currency') IS NULL) AND
-    ("payment_session_id" = ANY(sqlc.slice('payment_session_id')) OR sqlc.slice('payment_session_id') IS NULL) AND
-    ("date_cancelled" = ANY(sqlc.slice('date_cancelled')) OR sqlc.slice('date_cancelled') IS NULL) AND
-    ("date_cancelled" >= sqlc.narg('date_cancelled_from') OR sqlc.narg('date_cancelled_from') IS NULL) AND
-    ("date_cancelled" <= sqlc.narg('date_cancelled_to') OR sqlc.narg('date_cancelled_to') IS NULL) AND
-    ("cancelled_by_id" = ANY(sqlc.slice('cancelled_by_id')) OR sqlc.slice('cancelled_by_id') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountItem :many
-SELECT sqlc.embed(embed_item), COUNT(*) OVER() as total_count
-FROM "order"."item" embed_item
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("order_id" = ANY(sqlc.slice('order_id')) OR sqlc.slice('order_id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("seller_id" = ANY(sqlc.slice('seller_id')) OR sqlc.slice('seller_id') IS NULL) AND
-    ("sku_id" = ANY(sqlc.slice('sku_id')) OR sqlc.slice('sku_id') IS NULL) AND
-    ("spu_id" = ANY(sqlc.slice('spu_id')) OR sqlc.slice('spu_id') IS NULL) AND
-    ("sku_name" = ANY(sqlc.slice('sku_name')) OR sqlc.slice('sku_name') IS NULL) AND
-    ("address" = ANY(sqlc.slice('address')) OR sqlc.slice('address') IS NULL) AND
-    ("note" = ANY(sqlc.slice('note')) OR sqlc.slice('note') IS NULL) AND
-    ("serial_ids" = ANY(sqlc.slice('serial_ids')) OR sqlc.slice('serial_ids') IS NULL) AND
-    ("quantity" = ANY(sqlc.slice('quantity')) OR sqlc.slice('quantity') IS NULL) AND
-    ("quantity" >= sqlc.narg('quantity_from') OR sqlc.narg('quantity_from') IS NULL) AND
-    ("quantity" <= sqlc.narg('quantity_to') OR sqlc.narg('quantity_to') IS NULL) AND
-    ("transport_option" = ANY(sqlc.slice('transport_option')) OR sqlc.slice('transport_option') IS NULL) AND
-    ("subtotal_amount" = ANY(sqlc.slice('subtotal_amount')) OR sqlc.slice('subtotal_amount') IS NULL) AND
-    ("subtotal_amount" >= sqlc.narg('subtotal_amount_from') OR sqlc.narg('subtotal_amount_from') IS NULL) AND
-    ("subtotal_amount" <= sqlc.narg('subtotal_amount_to') OR sqlc.narg('subtotal_amount_to') IS NULL) AND
-    ("total_amount" = ANY(sqlc.slice('total_amount')) OR sqlc.slice('total_amount') IS NULL) AND
-    ("total_amount" >= sqlc.narg('total_amount_from') OR sqlc.narg('total_amount_from') IS NULL) AND
-    ("total_amount" <= sqlc.narg('total_amount_to') OR sqlc.narg('total_amount_to') IS NULL) AND
-    ("source_currency" = ANY(sqlc.slice('source_currency')) OR sqlc.slice('source_currency') IS NULL) AND
-    ("payment_session_id" = ANY(sqlc.slice('payment_session_id')) OR sqlc.slice('payment_session_id') IS NULL) AND
-    ("date_cancelled" = ANY(sqlc.slice('date_cancelled')) OR sqlc.slice('date_cancelled') IS NULL) AND
-    ("date_cancelled" >= sqlc.narg('date_cancelled_from') OR sqlc.narg('date_cancelled_from') IS NULL) AND
-    ("date_cancelled" <= sqlc.narg('date_cancelled_to') OR sqlc.narg('date_cancelled_to') IS NULL) AND
-    ("cancelled_by_id" = ANY(sqlc.slice('cancelled_by_id')) OR sqlc.slice('cancelled_by_id') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
 
 -- name: CreateItem :one
 INSERT INTO "order"."item" ("order_id", "account_id", "seller_id", "sku_id", "spu_id", "sku_name", "address", "note", "serial_ids", "quantity", "transport_option", "subtotal_amount", "total_amount", "source_currency", "payment_session_id", "date_cancelled", "cancelled_by_id", "date_created")
@@ -863,66 +569,6 @@ WHERE (
     ("refund_tx_id" = ANY(sqlc.slice('refund_tx_id')) OR sqlc.slice('refund_tx_id') IS NULL)
 );
 
--- name: ListRefund :many
-SELECT *
-FROM "order"."refund"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("order_id" = ANY(sqlc.slice('order_id')) OR sqlc.slice('order_id') IS NULL) AND
-    ("reason" = ANY(sqlc.slice('reason')) OR sqlc.slice('reason') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("status" = ANY(sqlc.slice('status')) OR sqlc.slice('status') IS NULL) AND
-    ("return_transport_id" = ANY(sqlc.slice('return_transport_id')) OR sqlc.slice('return_transport_id') IS NULL) AND
-    ("date_received_by_seller" = ANY(sqlc.slice('date_received_by_seller')) OR sqlc.slice('date_received_by_seller') IS NULL) AND
-    ("date_received_by_seller" >= sqlc.narg('date_received_by_seller_from') OR sqlc.narg('date_received_by_seller_from') IS NULL) AND
-    ("date_received_by_seller" <= sqlc.narg('date_received_by_seller_to') OR sqlc.narg('date_received_by_seller_to') IS NULL) AND
-    ("review_deadline" = ANY(sqlc.slice('review_deadline')) OR sqlc.slice('review_deadline') IS NULL) AND
-    ("review_deadline" >= sqlc.narg('review_deadline_from') OR sqlc.narg('review_deadline_from') IS NULL) AND
-    ("review_deadline" <= sqlc.narg('review_deadline_to') OR sqlc.narg('review_deadline_to') IS NULL) AND
-    ("seller_decision_at" = ANY(sqlc.slice('seller_decision_at')) OR sqlc.slice('seller_decision_at') IS NULL) AND
-    ("seller_decision_at" >= sqlc.narg('seller_decision_at_from') OR sqlc.narg('seller_decision_at_from') IS NULL) AND
-    ("seller_decision_at" <= sqlc.narg('seller_decision_at_to') OR sqlc.narg('seller_decision_at_to') IS NULL) AND
-    ("return_to_buyer_transport_id" = ANY(sqlc.slice('return_to_buyer_transport_id')) OR sqlc.slice('return_to_buyer_transport_id') IS NULL) AND
-    ("rejection_reason" = ANY(sqlc.slice('rejection_reason')) OR sqlc.slice('rejection_reason') IS NULL) AND
-    ("refund_tx_id" = ANY(sqlc.slice('refund_tx_id')) OR sqlc.slice('refund_tx_id') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountRefund :many
-SELECT sqlc.embed(embed_refund), COUNT(*) OVER() as total_count
-FROM "order"."refund" embed_refund
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("order_id" = ANY(sqlc.slice('order_id')) OR sqlc.slice('order_id') IS NULL) AND
-    ("reason" = ANY(sqlc.slice('reason')) OR sqlc.slice('reason') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("status" = ANY(sqlc.slice('status')) OR sqlc.slice('status') IS NULL) AND
-    ("return_transport_id" = ANY(sqlc.slice('return_transport_id')) OR sqlc.slice('return_transport_id') IS NULL) AND
-    ("date_received_by_seller" = ANY(sqlc.slice('date_received_by_seller')) OR sqlc.slice('date_received_by_seller') IS NULL) AND
-    ("date_received_by_seller" >= sqlc.narg('date_received_by_seller_from') OR sqlc.narg('date_received_by_seller_from') IS NULL) AND
-    ("date_received_by_seller" <= sqlc.narg('date_received_by_seller_to') OR sqlc.narg('date_received_by_seller_to') IS NULL) AND
-    ("review_deadline" = ANY(sqlc.slice('review_deadline')) OR sqlc.slice('review_deadline') IS NULL) AND
-    ("review_deadline" >= sqlc.narg('review_deadline_from') OR sqlc.narg('review_deadline_from') IS NULL) AND
-    ("review_deadline" <= sqlc.narg('review_deadline_to') OR sqlc.narg('review_deadline_to') IS NULL) AND
-    ("seller_decision_at" = ANY(sqlc.slice('seller_decision_at')) OR sqlc.slice('seller_decision_at') IS NULL) AND
-    ("seller_decision_at" >= sqlc.narg('seller_decision_at_from') OR sqlc.narg('seller_decision_at_from') IS NULL) AND
-    ("seller_decision_at" <= sqlc.narg('seller_decision_at_to') OR sqlc.narg('seller_decision_at_to') IS NULL) AND
-    ("return_to_buyer_transport_id" = ANY(sqlc.slice('return_to_buyer_transport_id')) OR sqlc.slice('return_to_buyer_transport_id') IS NULL) AND
-    ("rejection_reason" = ANY(sqlc.slice('rejection_reason')) OR sqlc.slice('rejection_reason') IS NULL) AND
-    ("refund_tx_id" = ANY(sqlc.slice('refund_tx_id')) OR sqlc.slice('refund_tx_id') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
 -- name: CreateRefund :one
 INSERT INTO "order"."refund" ("id", "account_id", "order_id", "reason", "date_created", "status", "return_transport_id", "date_received_by_seller", "review_deadline", "seller_decision_at", "return_to_buyer_transport_id", "rejection_reason", "refund_tx_id")
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -1016,50 +662,6 @@ WHERE (
     ("date_resolved" <= sqlc.narg('date_resolved_to') OR sqlc.narg('date_resolved_to') IS NULL) AND
     ("resolution_note" = ANY(sqlc.slice('resolution_note')) OR sqlc.slice('resolution_note') IS NULL)
 );
-
--- name: ListRefundDispute :many
-SELECT *
-FROM "order"."refund_dispute"
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("refund_id" = ANY(sqlc.slice('refund_id')) OR sqlc.slice('refund_id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("reason" = ANY(sqlc.slice('reason')) OR sqlc.slice('reason') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("status" = ANY(sqlc.slice('status')) OR sqlc.slice('status') IS NULL) AND
-    ("resolved_by_id" = ANY(sqlc.slice('resolved_by_id')) OR sqlc.slice('resolved_by_id') IS NULL) AND
-    ("date_resolved" = ANY(sqlc.slice('date_resolved')) OR sqlc.slice('date_resolved') IS NULL) AND
-    ("date_resolved" >= sqlc.narg('date_resolved_from') OR sqlc.narg('date_resolved_from') IS NULL) AND
-    ("date_resolved" <= sqlc.narg('date_resolved_to') OR sqlc.narg('date_resolved_to') IS NULL) AND
-    ("resolution_note" = ANY(sqlc.slice('resolution_note')) OR sqlc.slice('resolution_note') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
-
--- name: ListCountRefundDispute :many
-SELECT sqlc.embed(embed_refund_dispute), COUNT(*) OVER() as total_count
-FROM "order"."refund_dispute" embed_refund_dispute
-WHERE (
-    ("id" = ANY(sqlc.slice('id')) OR sqlc.slice('id') IS NULL) AND
-    ("refund_id" = ANY(sqlc.slice('refund_id')) OR sqlc.slice('refund_id') IS NULL) AND
-    ("account_id" = ANY(sqlc.slice('account_id')) OR sqlc.slice('account_id') IS NULL) AND
-    ("reason" = ANY(sqlc.slice('reason')) OR sqlc.slice('reason') IS NULL) AND
-    ("date_created" = ANY(sqlc.slice('date_created')) OR sqlc.slice('date_created') IS NULL) AND
-    ("date_created" >= sqlc.narg('date_created_from') OR sqlc.narg('date_created_from') IS NULL) AND
-    ("date_created" <= sqlc.narg('date_created_to') OR sqlc.narg('date_created_to') IS NULL) AND
-    ("status" = ANY(sqlc.slice('status')) OR sqlc.slice('status') IS NULL) AND
-    ("resolved_by_id" = ANY(sqlc.slice('resolved_by_id')) OR sqlc.slice('resolved_by_id') IS NULL) AND
-    ("date_resolved" = ANY(sqlc.slice('date_resolved')) OR sqlc.slice('date_resolved') IS NULL) AND
-    ("date_resolved" >= sqlc.narg('date_resolved_from') OR sqlc.narg('date_resolved_from') IS NULL) AND
-    ("date_resolved" <= sqlc.narg('date_resolved_to') OR sqlc.narg('date_resolved_to') IS NULL) AND
-    ("resolution_note" = ANY(sqlc.slice('resolution_note')) OR sqlc.slice('resolution_note') IS NULL)
-)
-ORDER BY "id"
-LIMIT sqlc.narg('limit')::int
-OFFSET sqlc.narg('offset')::int;
 
 -- name: CreateRefundDispute :one
 INSERT INTO "order"."refund_dispute" ("id", "refund_id", "account_id", "reason", "date_created", "status", "resolved_by_id", "date_resolved", "resolution_note")
