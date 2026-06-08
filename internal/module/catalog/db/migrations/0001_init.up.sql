@@ -9,6 +9,16 @@
 CREATE SCHEMA IF NOT EXISTS "catalog";
 
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA public; -- accent-insensitive search
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;  -- trigram similarity
+
+-- Accent-stripping normalizer for diacritic-insensitive search. unaccent() alone
+-- is STABLE (resolves its dictionary via search_path) so it can't index; pinning
+-- the dictionary makes this IMMUTABLE. translate() handles đ/Đ, which
+-- unaccent.rules omits.
+CREATE FUNCTION "catalog"."f_unaccent"(text) RETURNS text
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+    AS $$ SELECT translate(public.unaccent('public.unaccent', $1), 'đĐ', 'dD') $$;
 
 -- Enums
 
@@ -57,6 +67,8 @@ CREATE TABLE IF NOT EXISTS "catalog"."product_spu" (
 );
 CREATE INDEX IF NOT EXISTS "product_spu_account_id_idx" ON "catalog"."product_spu" ("account_id");
 CREATE INDEX IF NOT EXISTS "product_spu_category_id_idx" ON "catalog"."product_spu" ("category_id");
+CREATE INDEX IF NOT EXISTS "product_spu_name_unaccent_trgm_idx"
+    ON "catalog"."product_spu" USING gin ("catalog"."f_unaccent"("name") gin_trgm_ops);
 
 -- SKU (Stock Keeping Unit): a specific purchasable variant of an SPU (e.g. size=L, color=Red).
 CREATE TABLE IF NOT EXISTS "catalog"."product_sku" (

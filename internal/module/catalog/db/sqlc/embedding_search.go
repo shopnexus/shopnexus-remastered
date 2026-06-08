@@ -18,11 +18,13 @@ import (
 type HybridSearchProductParams struct {
 	paginate.Params
 
-	DenseWeight  float32
-	SparseWeight float32
-	QueryDense   pgvector.Vector
-	QuerySparse  *pgvector.SparseVector
-	Pool         int32 // ANN candidate pool per CTE (oversample before scalar filters)
+	DenseWeight   float32
+	SparseWeight  float32
+	LexicalWeight float32 // accent-insensitive trigram match on product name
+	QueryDense    pgvector.Vector
+	QuerySparse   *pgvector.SparseVector
+	QueryText     string // raw query text for the lexical (unaccent + trigram) pool
+	Pool          int32  // ANN candidate pool per CTE (oversample before scalar filters)
 
 	AccountID       []uuid.UUID
 	CategoryID      []uuid.UUID
@@ -39,29 +41,47 @@ type HybridSearchProductRow struct {
 	Score float32   `db:"score"`
 }
 
-// hybridSearchCTE builds the dense + sparse ANN candidate pools. Shared verbatim
-// by the page query and the count query so their candidate set can't drift.
+// hybridSearchCTE builds the dense + sparse + lexical candidate pools, each
+// emitting a per-pool rank (1 = best). Fusion is Reciprocal Rank Fusion, not a
+// weighted sum of raw scores: dense/lexical scores are [0,1] but the sparse
+// inner-product is unbounded, so a raw sum lets one noisy sparse hit outscore an
+// exact name match. RRF fuses by rank, which is scale-free. Shared verbatim by
+// the page + count queries so their candidate set can't drift.
 const hybridSearchCTE = `WITH dense AS (
-	SELECT spu_id, 1 - (embedding <=> @query_dense::vector) AS dscore
+	SELECT spu_id, ROW_NUMBER() OVER (ORDER BY embedding <=> @query_dense::vector) AS rnk
 	FROM catalog.product_embedding
 	WHERE embedding IS NOT NULL
 	ORDER BY embedding <=> @query_dense::vector
 	LIMIT @pool::int
 ),
 sparse AS (
-	SELECT spu_id, -(sparse <#> @query_sparse::sparsevec) AS sscore
+	SELECT spu_id, ROW_NUMBER() OVER (ORDER BY sparse <#> @query_sparse::sparsevec) AS rnk
 	FROM catalog.product_embedding
 	WHERE @query_sparse::sparsevec IS NOT NULL AND sparse IS NOT NULL
 	ORDER BY sparse <#> @query_sparse::sparsevec
 	LIMIT @pool::int
+),
+lexical AS (
+	-- word_similarity (not similarity): query is short, names are long, so match
+	-- the query against the best extent of the name instead of the whole string.
+	SELECT id AS spu_id, ROW_NUMBER() OVER (ORDER BY word_similarity(catalog.f_unaccent(@query_text), catalog.f_unaccent(name)) DESC) AS rnk
+	FROM catalog.product_spu
+	WHERE @query_text <> '' AND catalog.f_unaccent(name) %> catalog.f_unaccent(@query_text)
+	ORDER BY word_similarity(catalog.f_unaccent(@query_text), catalog.f_unaccent(name)) DESC
+	LIMIT @pool::int
 )`
+
+// rrfK dampens the rank contribution (standard RRF constant). Larger = flatter
+// curve across ranks; 60 is the canonical default.
+const rrfK = 60
 
 // hybridSearchFromWhere joins the ANN pools to live product tables and applies
 // scalar filters. Shared by page + count.
 const hybridSearchFromWhere = `FROM catalog.product_spu spu
 LEFT JOIN dense d ON d.spu_id = spu.id
 LEFT JOIN sparse s ON s.spu_id = spu.id
-WHERE (d.spu_id IS NOT NULL OR s.spu_id IS NOT NULL)
+LEFT JOIN lexical l ON l.spu_id = spu.id
+WHERE (d.spu_id IS NOT NULL OR s.spu_id IS NOT NULL OR l.spu_id IS NOT NULL)
   AND spu.date_deleted IS NULL
   AND (spu.account_id = ANY(@account_id) OR @account_id IS NULL)
   AND (spu.category_id = ANY(@category_id) OR @category_id IS NULL)
@@ -84,9 +104,11 @@ func (q *Queries) HybridSearchProduct(
 	args := pgx.NamedArgs{
 		"query_dense":       arg.QueryDense,
 		"query_sparse":      arg.QuerySparse,
+		"query_text":        arg.QueryText,
 		"pool":              arg.Pool,
 		"dense_weight":      arg.DenseWeight,
 		"sparse_weight":     arg.SparseWeight,
+		"lexical_weight":    arg.LexicalWeight,
 		"account_id":        arg.AccountID,
 		"category_id":       arg.CategoryID,
 		"is_enabled":        arg.IsEnabled,
@@ -97,9 +119,13 @@ func (q *Queries) HybridSearchProduct(
 		"tags":              arg.Tags,
 	}
 
+	args["rrf_k"] = rrfK
+
 	page := hybridSearchCTE + `
 SELECT spu.id,
-	(@dense_weight::float4 * COALESCE(d.dscore, 0) + @sparse_weight::float4 * COALESCE(s.sscore, 0))::float4 AS score
+	(@dense_weight::float4   * COALESCE(1.0 / (@rrf_k + d.rnk), 0)
+	+ @sparse_weight::float4  * COALESCE(1.0 / (@rrf_k + s.rnk), 0)
+	+ @lexical_weight::float4 * COALESCE(1.0 / (@rrf_k + l.rnk), 0))::float4 AS score
 ` + hybridSearchFromWhere + `
 ORDER BY score DESC`
 	if arg.Limit.Int32 > 0 {

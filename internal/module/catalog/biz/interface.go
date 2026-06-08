@@ -94,10 +94,11 @@ type CatalogHandler struct {
 	promotion promotionbiz.PromotionBizClient
 
 	// Vector search
-	llm          llm.Client
-	denseWeight  float32
-	sparseWeight float32
-	syncLock     sync.Mutex // guards embedding sync runs
+	llm           llm.Client
+	denseWeight   float32
+	sparseWeight  float32
+	lexicalWeight float32
+	syncLock      sync.Mutex // guards embedding sync runs
 }
 
 // NewCatalogHandler creates a new CatalogHandler with the given dependencies.
@@ -124,10 +125,11 @@ func NewCatalogHandler(
 		inventory: inventory,
 		promotion: promotion,
 
-		llm:          llmClient,
-		denseWeight:  cfg.Search.DenseWeight,
-		sparseWeight: cfg.Search.SparseWeight,
-		syncLock:     sync.Mutex{},
+		llm:           llmClient,
+		denseWeight:   cfg.Search.DenseWeight,
+		sparseWeight:  cfg.Search.SparseWeight,
+		lexicalWeight: cfg.Search.LexicalWeight,
+		syncLock:      sync.Mutex{},
 	}
 
 	if err := b.SetupCron(); err != nil {

@@ -22,4 +22,10 @@ DROP TABLE IF EXISTS "catalog"."category";
 DROP TYPE IF EXISTS "catalog"."comment_ref_type";
 DROP TYPE IF EXISTS "catalog"."search_sync_ref_type";
 
+DROP FUNCTION IF EXISTS "catalog"."f_unaccent"(text);
+
 DROP SCHEMA IF EXISTS "catalog";
+
+-- Extensions live in public and are catalog-only; drop after the schema.
+DROP EXTENSION IF EXISTS pg_trgm;
+DROP EXTENSION IF EXISTS unaccent;

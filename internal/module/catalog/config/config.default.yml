@@ -29,8 +29,10 @@ redis:
   db: 0
 
 search:
-  denseWeight: 0.75
-  sparseWeight: 0.25
+  # Reciprocal Rank Fusion weights (scale-free, applied to 1/(k+rank) per signal).
+  denseWeight: 0.6   # semantic recall; degrades gracefully on accentless queries
+  sparseWeight: 0.3  # exact-term lexical match; noisy/blind on accentless queries
+  lexicalWeight: 1.0 # unaccent+trigram name match; authoritative, so weighted highest
   interactionBatchSize: 100
   interactionLinger: 200ms
   embeddingSyncInterval: 1s
