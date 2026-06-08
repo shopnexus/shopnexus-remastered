@@ -1,7 +1,6 @@
 package refund
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -9,7 +8,8 @@ import (
 
 	"shopnexus-server/internal/infras/metrics"
 	accountmodel "shopnexus-server/internal/module/account/model"
-	"shopnexus-server/internal/module/order/biz/base"
+	commonbiz "shopnexus-server/internal/module/common/biz"
+	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
@@ -40,7 +40,7 @@ func (b *RefundHandler) SellerApproveRefund(
 	if err != nil {
 		return zero, fmt.Errorf("load seller refund: %w", err)
 	}
-	if !base.MapRefund(refund).CanSellerDecide() {
+	if !(ordermodel.Refund{OrderRefund: refund}).CanSellerDecide() {
 		return zero, ordermodel.ErrRefundWrongStage
 	}
 
@@ -61,14 +61,18 @@ func (b *RefundHandler) SellerApproveRefund(
 		return zero, fmt.Errorf("notify refund: %w", err)
 	}
 
-	return base.MapRefund(updated), nil
+	refunds, err := b.HydrateRefunds(ctx, updated)
+	if err != nil {
+		return zero, fmt.Errorf("hydrate refund: %w", err)
+	}
+	return refunds[0], nil
 }
 
 type SellerDisputeParams struct {
 	Account     accountmodel.AuthenticatedAccount
-	RefundID    uuid.UUID           `validate:"required"`
-	Reason      string              `validate:"required,min=1,max=1000"`
-	Attachments []DisputeAttachment `validate:"required,min=1,max=20,dive"`
+	RefundID    uuid.UUID   `validate:"required"`
+	Reason      string      `validate:"required,min=1,max=1000"`
+	ResourceIDs []uuid.UUID `validate:"required,min=1,max=20,dive"` // seller's evidence photos
 }
 
 // SellerDisputeRefund escalates the refund to admin. The seller provides a
@@ -90,13 +94,8 @@ func (b *RefundHandler) SellerDisputeRefund(
 	if err != nil {
 		return zero, fmt.Errorf("load seller refund: %w", err)
 	}
-	if !base.MapRefund(refund).CanSellerDecide() {
+	if !(ordermodel.Refund{OrderRefund: refund}).CanSellerDecide() {
 		return zero, ordermodel.ErrRefundWrongStage
-	}
-
-	attachmentsJSON, err := json.Marshal(params.Attachments)
-	if err != nil {
-		return zero, fmt.Errorf("marshal attachments: %w", err)
 	}
 
 	dispute, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefundDispute, error) {
@@ -104,14 +103,24 @@ func (b *RefundHandler) SellerDisputeRefund(
 			return orderdb.OrderRefundDispute{}, fmt.Errorf("dispute refund: %w", e)
 		}
 		return b.Storage.Querier().OpenRefundDispute(rctx, orderdb.OpenRefundDisputeParams{
-			RefundID:    refund.ID,
-			AccountID:   params.Account.ID,
-			Reason:      params.Reason,
-			Attachments: attachmentsJSON,
+			RefundID:  refund.ID,
+			AccountID: params.Account.ID,
+			Reason:    params.Reason,
 		})
 	})
 	if err != nil {
 		return zero, fmt.Errorf("open dispute: %w", err)
+	}
+
+	// Update the seller's evidence photos via the common resource system.
+	resources, err := b.common.UpdateResources(ctx, commonbiz.UpdateResourcesParams{
+		Account:     params.Account,
+		RefType:     commondb.CommonResourceRefTypeRefundDispute,
+		RefID:       dispute.ID,
+		ResourceIDs: params.ResourceIDs,
+	})
+	if err != nil {
+		return zero, fmt.Errorf("update dispute resources: %w", err)
 	}
 
 	if err = b.fulfillment.Send().OnSellerDecision(ctx, refund.OrderID, wfbase.SellerDecisionSignal{RefundID: refund.ID, Approved: false}); err != nil {
@@ -123,7 +132,7 @@ func (b *RefundHandler) SellerDisputeRefund(
 		return zero, fmt.Errorf("notify refund: %w", err)
 	}
 
-	return base.MapRefundDispute(dispute), nil
+	return ordermodel.RefundDispute{OrderRefundDispute: dispute, Resources: resources}, nil
 }
 
 // loadAndAuthSeller fetches the refund and verifies the caller is the order's

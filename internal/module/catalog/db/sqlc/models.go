@@ -233,3 +233,32 @@ type CatalogTagEmbedding struct {
 	Sparse      *pgvector_go.SparseVector `json:"sparse"`
 	DateUpdated time.Time                 `json:"date_updated"`
 }
+
+func (n NullCatalogCommentRefType) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.CatalogCommentRefType)
+}
+func (n *NullCatalogCommentRefType) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.CatalogCommentRefType)
+}
+func (n NullCatalogSearchSyncRefType) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.CatalogSearchSyncRefType)
+}
+func (n *NullCatalogSearchSyncRefType) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.CatalogSearchSyncRefType)
+}

@@ -88,7 +88,6 @@ func (h *CheckoutWorkflow) Run(
 
 	// Step 1.5: Load buyer profile and enforce address country match.
 	buyerProfile, err := h.account.GetProfile(ctx, accountbiz.GetProfileParams{
-		Issuer:    input.Account,
 		AccountID: input.Account.ID,
 	})
 	if err != nil {

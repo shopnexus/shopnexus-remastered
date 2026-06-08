@@ -12,12 +12,28 @@ erDiagram
 "catalog.product_sku" }o--|| "catalog.product_spu" : "spu_id"
 "catalog.product_spu_tag" }o--|| "catalog.product_spu" : "spu_id"
 "catalog.product_spu_tag" }o--|| "catalog.tag" : "tag"
+"catalog.product_embedding" |o--|| "catalog.product_spu" : "spu_id"
+"catalog.category_embedding" |o--|| "catalog.category" : "category_id"
+"catalog.tag_embedding" |o--|| "catalog.tag" : "tag_id"
 
+"catalog.account_interest" {
+  uuid account_id
+  smallint slot
+  vector(768) embedding
+  real strength
+  timestamptz date_updated
+}
 "catalog.category" {
   uuid id
   varchar(100) name
   text description
   uuid parent_id
+}
+"catalog.category_embedding" {
+  uuid category_id
+  vector(768) embedding
+  sparsevec(250048) sparse
+  timestamptz date_updated
 }
 "catalog.comment" {
   uuid id
@@ -30,6 +46,12 @@ erDiagram
   bigint downvote
   float8 score
   timestamptz date_created
+  timestamptz date_updated
+}
+"catalog.product_embedding" {
+  uuid spu_id
+  vector(768) embedding
+  sparsevec(250048) sparse
   timestamptz date_updated
 }
 "catalog.product_sku" {
@@ -71,32 +93,16 @@ erDiagram
   timestamptz date_created
   timestamptz date_updated
 }
-"catalog.product_embedding" {
-  uuid spu_id
-  vector(768) dense
-  sparsevec(250048) sparse
-}
-"catalog.category_embedding" {
-  uuid category_id
-  vector(768) dense
-  sparsevec(250048) sparse
-}
-"catalog.tag_embedding" {
-  varchar(100) tag_id
-  vector(768) dense
-  sparsevec(250048) sparse
-}
-"catalog.account_interest" {
-  uuid account_id
-  int slot
-  vector(768) dense
-  sparsevec(250048) sparse
-  float strength
-}
 "catalog.tag" {
   varchar(100) id
   varchar(100) name
   varchar(255) description
+}
+"catalog.tag_embedding" {
+  varchar(100) tag_id
+  vector(768) embedding
+  sparsevec(250048) sparse
+  timestamptz date_updated
 }
 ```
 <!--END_SECTION:mermaid-->

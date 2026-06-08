@@ -78,7 +78,7 @@ func (b *AccountHandler) ListProfile(
 }
 
 type GetProfileParams struct {
-	Issuer    accountmodel.AuthenticatedAccount // Who is requesting the profile
+	Issuer    accountmodel.AuthenticatedAccount `validate:"omitempty"`
 	AccountID uuid.UUID
 }
 

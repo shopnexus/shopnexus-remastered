@@ -44,7 +44,7 @@ func (b *CatalogHandler) ListComment(
 		return zero, fmt.Errorf("validate list comment: %w", err)
 	}
 
-	listComment, err := b.storage.Querier().ListCountComment(ctx, catalogdb.ListCountCommentParams{
+	arg := catalogdb.ListCountCommentParams{
 		Limit:     params.Limit,
 		Offset:    params.Offset(),
 		ID:        params.ID,
@@ -53,35 +53,29 @@ func (b *CatalogHandler) ListComment(
 		RefID:     params.RefID,
 		ScoreFrom: params.ScoreFrom,
 		ScoreTo:   params.ScoreTo,
-	})
+	}
+
+	listComment, err := b.storage.Querier().ListCountComment(ctx, arg)
 	if err != nil {
 		return zero, fmt.Errorf("db list comment: %w", err)
 	}
 
-	var total null.Int64
-	if len(listComment) > 0 {
-		total.SetValid(listComment[0].TotalCount)
+	if len(listComment) == 0 {
+		return zero, nil
 	}
 
-	dbComments := lo.Map(listComment, func(row catalogdb.ListCountCommentRow, _ int) catalogdb.CatalogComment {
-		return row.CatalogComment
-	})
-
-	var commentIDs []uuid.UUID
-	var accountIDs []uuid.UUID
-	for _, row := range dbComments {
-		commentIDs = append(commentIDs, row.ID)
-		accountIDs = append(accountIDs, row.AccountID)
-	}
+	accountIDs := lo.Map(
+		listComment,
+		func(c catalogdb.ListCountCommentRow, _ int) uuid.UUID { return c.CatalogComment.AccountID },
+	)
+	commentIDs := lo.Map(listComment, func(c catalogdb.ListCountCommentRow, _ int) uuid.UUID { return c.CatalogComment.ID })
 
 	// Map accounts to comments
-	listProfile, err := b.account.ListProfile(ctx, accountbiz.ListProfileParams{
-		Issuer:     params.Account,
-		AccountIDs: accountIDs,
-	})
+	listProfile, err := b.account.ListProfile(ctx, accountbiz.ListProfileParams{AccountIDs: accountIDs})
 	if err != nil {
 		return zero, fmt.Errorf("list comment profiles: %w", err)
 	}
+
 	// map[accountID]catalogdb.AccountProfile
 	profileMap := lo.KeyBy(listProfile.Data, func(a accountmodel.Profile) uuid.UUID { return a.ID })
 
@@ -95,11 +89,11 @@ func (b *CatalogHandler) ListComment(
 	}
 
 	var comments []catalogmodel.Comment
-	for _, dbComment := range dbComments {
+	for _, dbComment := range listComment {
 		c := catalogmodel.Comment{
-			CatalogComment: dbComment,
-			Profile:        profileMap[dbComment.AccountID],
-			Resources:      resourcesMap[dbComment.ID],
+			CatalogComment: dbComment.CatalogComment,
+			Profile:        profileMap[dbComment.CatalogComment.AccountID],
+			Resources:      resourcesMap[dbComment.CatalogComment.ID],
 		}
 		comments = append(comments, c)
 	}
@@ -107,7 +101,8 @@ func (b *CatalogHandler) ListComment(
 	return paginate.PaginateResult[catalogmodel.Comment]{
 		PageParams: params.Params,
 		Data:       comments,
-		Total:      total,
+		Total:      null.IntFrom(listComment[0].TotalCount),
+    
 	}, nil
 }
 
@@ -178,7 +173,6 @@ func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateComment
 	}
 
 	profile, err := b.account.GetProfile(ctx, accountbiz.GetProfileParams{
-		Issuer:    params.Account,
 		AccountID: comment.AccountID,
 	})
 	if err != nil {
@@ -313,7 +307,6 @@ func (b *CatalogHandler) UpdateComment(ctx restate.Context, params UpdateComment
 	}
 
 	profile, err := b.account.GetProfile(ctx, accountbiz.GetProfileParams{
-		Issuer:    params.Account,
 		AccountID: comment.AccountID,
 	})
 	if err != nil {

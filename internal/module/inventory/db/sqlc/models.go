@@ -6,6 +6,7 @@ package inventorydb
 
 import (
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -160,4 +161,33 @@ type InventoryStockHistory struct {
 	StockID     int64     `json:"stock_id"`
 	Change      int64     `json:"change"`
 	DateCreated time.Time `json:"date_created"`
+}
+
+func (n NullInventoryStatus) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.InventoryStatus)
+}
+func (n *NullInventoryStatus) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.InventoryStatus)
+}
+func (n NullInventoryStockRefType) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.InventoryStockRefType)
+}
+func (n *NullInventoryStockRefType) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.InventoryStockRefType)
 }

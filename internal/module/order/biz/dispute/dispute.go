@@ -3,6 +3,7 @@ package dispute
 import (
 	"context"
 
+	commonbiz "shopnexus-server/internal/module/common/biz"
 	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	"shopnexus-server/internal/module/order/biz/workflow/fullfilment"
 	ordermodel "shopnexus-server/internal/module/order/model"
@@ -15,11 +16,16 @@ import (
 type DisputeHandler struct {
 	*wfbase.Base
 
+	common      commonbiz.CommonBizClient
 	fulfillment fullfilment.FulfillmentWfClient
 }
 
-func New(c *wfbase.Base, fulfillment fullfilment.FulfillmentWfClient) *DisputeHandler {
-	return &DisputeHandler{c, fulfillment}
+func New(
+	c *wfbase.Base,
+	common commonbiz.CommonBizClient,
+	fulfillment fullfilment.FulfillmentWfClient,
+) *DisputeHandler {
+	return &DisputeHandler{c, common, fulfillment}
 }
 
 // DisputeBiz covers refund disputes (seller-initiated, admin-resolved).

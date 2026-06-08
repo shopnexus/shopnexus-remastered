@@ -10,7 +10,6 @@ import (
 
 	"shopnexus-server/internal/infras/metrics"
 	accountmodel "shopnexus-server/internal/module/account/model"
-	"shopnexus-server/internal/module/order/biz/base"
 	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
@@ -92,7 +91,12 @@ func (b *DisputeHandler) AdminUpholdDispute(
 		return zero, err
 	}
 
-	return base.MapRefundDispute(updatedDispute), nil
+	disputes, err := b.HydrateRefundDisputes(ctx, updatedDispute)
+	if err != nil {
+		return zero, fmt.Errorf("hydrate dispute: %w", err)
+	}
+
+	return disputes[0], nil
 }
 
 // AdminDismissDispute: admin sides with the buyer. Refund flips to Accepted
@@ -150,7 +154,11 @@ func (b *DisputeHandler) AdminDismissDispute(
 		return zero, err
 	}
 
-	return base.MapRefundDispute(updatedDispute), nil
+	disputes, err := b.HydrateRefundDisputes(ctx, updatedDispute)
+	if err != nil {
+		return zero, fmt.Errorf("hydrate dispute: %w", err)
+	}
+	return disputes[0], nil
 }
 
 type disputeContext struct {

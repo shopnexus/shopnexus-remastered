@@ -7,15 +7,16 @@ Manages the full order lifecycle: cart, checkout, seller confirmation, payment, 
 <!--START_SECTION:mermaid-->
 ```mermaid
 erDiagram
-"order.order" }o--|| "order.transport" : "transport_id"
-"order.item" }o--|o "order.order" : "order_id"
-"order.item" }o--|| "order.payment_session" : "payment_session_id"
 "order.transaction" }o--|| "order.payment_session" : "session_id"
 "order.transaction" }o--|o "order.transaction" : "reverses_id"
+"order.order" }o--|| "order.payment_session" : "confirm_session_id"
+"order.order" |o--|| "order.transport" : "transport_id"
+"order.item" }o--|| "order.payment_session" : "payment_session_id"
+"order.item" }o--|o "order.order" : "order_id"
+"order.refund" }o--|o "order.transaction" : "refund_tx_id"
 "order.refund" |o--|o "order.transport" : "return_to_buyer_transport_id"
 "order.refund" |o--|| "order.transport" : "return_transport_id"
 "order.refund" }o--|| "order.order" : "order_id"
-"order.refund" }o--|o "order.transaction" : "refund_tx_id"
 "order.refund_dispute" }o--|| "order.refund" : "refund_id"
 
 "order.cart_item" {
@@ -100,6 +101,21 @@ erDiagram
   text resolution_note
 }
 "order.transaction" {
+  uuid id
+  uuid session_id
+  status status
+  text note
+  text error
+  text payment_option
+  jsonb data
+  bigint amount
+  varchar(3) currency
+  uuid reverses_id
+  timestamptz date_created
+  timestamptz date_settled
+  timestamptz date_expired
+}
+"order.transaction_settled" {
   uuid id
   uuid session_id
   status status

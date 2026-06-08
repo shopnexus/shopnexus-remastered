@@ -11,7 +11,7 @@ CREATE SCHEMA IF NOT EXISTS "common";
 -- Enums
 
 -- Entity types that can have media attachments
-CREATE TYPE "common"."resource_ref_type" AS ENUM ('ProductSpu', 'ProductSku', 'Refund', 'ReturnDispute', 'Comment');
+CREATE TYPE "common"."resource_ref_type" AS ENUM ('ProductSpu', 'ProductSku', 'Refund', 'RefundDispute', 'Comment');
 
 -- Tables
 

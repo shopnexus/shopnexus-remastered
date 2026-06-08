@@ -1,7 +1,4 @@
-.PHONY: run dev generate pgtempl sqlcgen nullmarshal genenum migrate seed seedcmt build register schema erdiagram cloc cloc-modules test test-order
-
-# Downgrade protobuf registration conflict to warning (restate-sdk vs milvus share "internal.proto")
-export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn
+.PHONY: run dev generate pgtempl sqlcgen nullmarshal migrate seed build schema erdiagram cloc cloc-modules test test-order
 
 dev:
 	air
@@ -24,10 +21,6 @@ sqlcgen: pgtempl
 
 nullmarshal:
 	go run ./cmd/nullmarshal/
-
-# Regen Valid() + NullXxx{Value,Valid} wrappers for domain string enums (model/*.go //go:generate directives)
-genenum:
-	go generate ./internal/module/*/model/
 
 migrate:
 	go run ./cmd/migrate/

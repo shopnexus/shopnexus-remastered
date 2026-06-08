@@ -1,7 +1,5 @@
 package accountmodel
 
-//go:generate go run shopnexus-server/cmd/genenum -type=Status,Role,Gender,AddressType
-
 // Status is the account lifecycle state, decoupled from the DB enum.
 type Status string
 

@@ -207,7 +207,6 @@ CREATE TABLE IF NOT EXISTS "order"."refund" (
     "account_id" UUID NOT NULL, -- buyer
     "order_id" UUID NOT NULL,
     "reason" TEXT NOT NULL,
-    "attachments" JSONB NOT NULL DEFAULT '[]'::JSONB, -- evidence photos (mandatory at create)
     "date_created" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     "status" "order"."refund_status" NOT NULL DEFAULT 'Shipping',
@@ -253,7 +252,6 @@ CREATE TABLE IF NOT EXISTS "order"."refund_dispute" (
     "refund_id" UUID NOT NULL,
     "account_id" UUID NOT NULL, -- seller (the disputer)
     "reason" TEXT NOT NULL,
-    "attachments" JSONB NOT NULL DEFAULT '[]'::JSONB, -- seller's evidence (photos of received goods)
     "date_created" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     "status" "order"."dispute_status" NOT NULL DEFAULT 'Open',

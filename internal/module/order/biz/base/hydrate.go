@@ -129,3 +129,47 @@ func (b *Base) HydrateOrders(ctx context.Context, orders []orderdb.OrderOrder) (
 
 	return result, nil
 }
+
+func (b *Base) HydrateRefunds(ctx context.Context, rows ...orderdb.OrderRefund) ([]ordermodel.Refund, error) {
+	if len(rows) == 0 {
+		return nil, nil
+	}
+
+	// Map resources to refunds
+	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
+		RefType: commondb.CommonResourceRefTypeRefund,
+		RefIDs:  lo.Map(rows, func(r orderdb.OrderRefund, _ int) uuid.UUID { return r.ID }),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list refund resources: %w", err)
+	}
+
+	return lo.Map(rows, func(r orderdb.OrderRefund, _ int) ordermodel.Refund {
+		return ordermodel.Refund{
+			OrderRefund: r,
+			Resources:   resourcesMap[r.ID],
+		}
+	}), nil
+}
+
+func (b *Base) HydrateRefundDisputes(ctx context.Context, rows ...orderdb.OrderRefundDispute) ([]ordermodel.RefundDispute, error) {
+	if len(rows) == 0 {
+		return nil, nil
+	}
+
+	// Map resources to disputes
+	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
+		RefType: commondb.CommonResourceRefTypeRefundDispute,
+		RefIDs:  lo.Map(rows, func(r orderdb.OrderRefundDispute, _ int) uuid.UUID { return r.ID }),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list dispute resources: %w", err)
+	}
+
+	return lo.Map(rows, func(r orderdb.OrderRefundDispute, _ int) ordermodel.RefundDispute {
+		return ordermodel.RefundDispute{
+			OrderRefundDispute: r,
+			Resources:          resourcesMap[r.ID],
+		}
+	}), nil
+}

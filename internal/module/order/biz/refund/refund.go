@@ -3,6 +3,7 @@ package refund
 import (
 	"context"
 
+	commonbiz "shopnexus-server/internal/module/common/biz"
 	"shopnexus-server/internal/module/order/biz/workflow/fullfilment"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/paginate"
@@ -15,11 +16,12 @@ import (
 type RefundHandler struct {
 	*wfbase.Base
 
+	common      commonbiz.CommonBizClient
 	fulfillment fullfilment.FulfillmentWfClient
 }
 
-func New(c *wfbase.Base, fulfillment fullfilment.FulfillmentWfClient) *RefundHandler {
-	return &RefundHandler{c, fulfillment}
+func New(c *wfbase.Base, common commonbiz.CommonBizClient, fulfillment fullfilment.FulfillmentWfClient) *RefundHandler {
+	return &RefundHandler{c, common, fulfillment}
 }
 
 // RefundBiz covers the v2 refund lifecycle (buyer ships return → seller decides → admin if disputed).
@@ -36,12 +38,4 @@ type RefundBiz interface {
 	WithdrawBuyerRefund(ctx context.Context, params WithdrawBuyerRefundParams) (ordermodel.Refund, error)
 	SellerApproveRefund(ctx context.Context, params SellerActionParams) (ordermodel.Refund, error)
 	SellerDisputeRefund(ctx context.Context, params SellerDisputeParams) (ordermodel.RefundDispute, error)
-}
-
-// DisputeAttachment is a single piece of evidence (image URL + meta). Used by
-// the refund-create and seller-dispute flows.
-type DisputeAttachment struct {
-	URL  string `json:"url"  validate:"required,url,max=1000"`
-	Kind string `json:"kind" validate:"omitempty,max=50"`
-	Name string `json:"name" validate:"omitempty,max=255"`
 }

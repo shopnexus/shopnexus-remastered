@@ -274,7 +274,6 @@ type OrderRefund struct {
 	AccountID                uuid.UUID         `json:"account_id"`
 	OrderID                  uuid.UUID         `json:"order_id"`
 	Reason                   string            `json:"reason"`
-	Attachments              json.RawMessage   `json:"attachments"`
 	DateCreated              time.Time         `json:"date_created"`
 	Status                   OrderRefundStatus `json:"status"`
 	ReturnTransportID        int64             `json:"return_transport_id"`
@@ -291,7 +290,6 @@ type OrderRefundDispute struct {
 	RefundID       uuid.UUID          `json:"refund_id"`
 	AccountID      uuid.UUID          `json:"account_id"`
 	Reason         string             `json:"reason"`
-	Attachments    json.RawMessage    `json:"attachments"`
 	DateCreated    time.Time          `json:"date_created"`
 	Status         OrderDisputeStatus `json:"status"`
 	ResolvedByID   uuid.NullUUID      `json:"resolved_by_id"`
@@ -337,4 +335,47 @@ type OrderTransport struct {
 	Status      NullOrderStatus `json:"status"`
 	Data        json.RawMessage `json:"data"`
 	DateCreated time.Time       `json:"date_created"`
+}
+
+func (n NullOrderDisputeStatus) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.OrderDisputeStatus)
+}
+func (n *NullOrderDisputeStatus) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.OrderDisputeStatus)
+}
+func (n NullOrderRefundStatus) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.OrderRefundStatus)
+}
+func (n *NullOrderRefundStatus) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.OrderRefundStatus)
+}
+func (n NullOrderStatus) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.OrderStatus)
+}
+func (n *NullOrderStatus) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.OrderStatus)
 }

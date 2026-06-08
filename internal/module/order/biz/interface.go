@@ -67,7 +67,6 @@ type (
 
 	ReusableGatewayURLState = orderpayment.ReusableGatewayURLState
 
-	DisputeAttachment         = refund.DisputeAttachment
 	CreateBuyerRefundParams   = refund.CreateBuyerRefundParams
 	WithdrawBuyerRefundParams = refund.WithdrawBuyerRefundParams
 	SellerActionParams        = refund.SellerActionParams

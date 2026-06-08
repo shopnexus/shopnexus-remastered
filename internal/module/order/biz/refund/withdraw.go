@@ -8,7 +8,6 @@ import (
 
 	"shopnexus-server/internal/infras/metrics"
 	accountmodel "shopnexus-server/internal/module/account/model"
-	"shopnexus-server/internal/module/order/biz/base"
 	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
@@ -75,5 +74,9 @@ func (b *RefundHandler) WithdrawBuyerRefund(
 		}
 	}
 
-	return base.MapRefund(refund), nil
+	refunds, err := b.HydrateRefunds(ctx, refund)
+	if err != nil {
+		return zero, fmt.Errorf("hydrate refund: %w", err)
+	}
+	return refunds[0], nil
 }

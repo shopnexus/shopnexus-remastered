@@ -4,9 +4,12 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/guregu/null/v6"
 	restate "github.com/restatedev/sdk-go"
+	"github.com/samber/lo"
 
-	"shopnexus-server/internal/module/order/biz/base"
+	commonbiz "shopnexus-server/internal/module/common/biz"
+	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/paginate"
@@ -28,20 +31,32 @@ func (b *RefundHandler) ListBuyerRefunds(
 	if err := validator.Validate(params); err != nil {
 		return zero, fmt.Errorf("validate list buyer refunds: %w", err)
 	}
-	pagination := params.Params.Constrain()
-	rows, err := b.Storage.Querier().ListBuyerRefunds(ctx, orderdb.ListBuyerRefundsParams{
-		AccountID:   params.BuyerID,
-		OffsetCount: pagination.Offset().Int32,
-		LimitCount:  pagination.Limit.Int32,
+
+	rows, err := b.Storage.Querier().ListCountRefund(ctx, orderdb.ListCountRefundParams{
+		AccountID: []uuid.UUID{params.BuyerID},
+		Offset:    params.Offset(),
+		Limit:     params.Limit,
 	})
 	if err != nil {
 		return zero, fmt.Errorf("list buyer refunds: %w", err)
 	}
-	data := make([]ordermodel.Refund, 0, len(rows))
-	for _, r := range rows {
-		data = append(data, base.MapRefund(r))
+	if len(rows) == 0 {
+		return zero, nil
 	}
-	return paginate.PaginateResult[ordermodel.Refund]{PageParams: pagination, Data: data}, nil
+
+	refunds, err := b.HydrateRefunds(
+		ctx,
+		lo.Map(rows, func(r orderdb.ListCountRefundRow, _ int) orderdb.OrderRefund { return r.OrderRefund })...,
+	)
+	if err != nil {
+		return zero, fmt.Errorf("hydrate buyer refunds: %w", err)
+	}
+
+	return paginate.PaginateResult[ordermodel.Refund]{
+		PageParams: params.Params,
+		Data:       refunds,
+		Total:      null.IntFrom(rows[0].TotalCount),
+	}, nil
 }
 
 type ListSellerRefundsParams struct {
@@ -59,18 +74,36 @@ func (b *RefundHandler) ListSellerRefunds(
 	if err := validator.Validate(params); err != nil {
 		return zero, fmt.Errorf("validate list seller refunds: %w", err)
 	}
-	pagination := params.Params.Constrain()
 	rows, err := b.Storage.Querier().ListSellerRefunds(ctx, orderdb.ListSellerRefundsParams{
-		SellerID:    params.SellerID,
-		OffsetCount: pagination.Offset().Int32,
-		LimitCount:  pagination.Limit.Int32,
+		SellerID: params.SellerID,
+		Offset:   params.Offset(),
+		Limit:    params.Limit,
 	})
 	if err != nil {
 		return zero, fmt.Errorf("list seller refunds: %w", err)
 	}
-	data := make([]ordermodel.Refund, 0, len(rows))
-	for _, r := range rows {
-		data = append(data, base.MapRefund(r))
+	if len(rows) == 0 {
+		return zero, nil
 	}
-	return paginate.PaginateResult[ordermodel.Refund]{PageParams: pagination, Data: data}, nil
+
+	// Map resources to refunds
+	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
+		RefType: commondb.CommonResourceRefTypeRefund,
+		RefIDs:  lo.Map(rows, func(r orderdb.ListSellerRefundsRow, _ int) uuid.UUID { return r.OrderRefund.ID }),
+	})
+	if err != nil {
+		return zero, fmt.Errorf("list refund resources: %w", err)
+	}
+
+	refunds := lo.Map(rows, func(r orderdb.ListSellerRefundsRow, _ int) ordermodel.Refund {
+		return ordermodel.Refund{
+			OrderRefund: r.OrderRefund,
+			Resources:   resourcesMap[r.OrderRefund.ID],
+		}
+	})
+	return paginate.PaginateResult[ordermodel.Refund]{
+		PageParams: params.Params,
+		Data:       refunds,
+		Total:      null.IntFrom(rows[0].TotalCount),
+	}, nil
 }

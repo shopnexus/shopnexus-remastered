@@ -7,24 +7,24 @@ package orderdb
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/google/uuid"
 	null "github.com/guregu/null/v6"
 )
 
 const listRefundDisputes = `-- name: ListRefundDisputes :many
-SELECT d.id, d.refund_id, d.account_id, d.reason, d.attachments, d.date_created, d.status, d.resolved_by_id, d.date_resolved, d.resolution_note FROM "order"."refund_dispute" d
-JOIN "order"."refund" r ON r."id" = d."refund_id"
+SELECT embed_refund_dispute.id, embed_refund_dispute.refund_id, embed_refund_dispute.account_id, embed_refund_dispute.reason, embed_refund_dispute.date_created, embed_refund_dispute.status, embed_refund_dispute.resolved_by_id, embed_refund_dispute.date_resolved, embed_refund_dispute.resolution_note, COUNT(*) OVER() AS total_count
+FROM "order"."refund_dispute" embed_refund_dispute
+JOIN "order"."refund" r ON r."id" = embed_refund_dispute."refund_id"
 JOIN "order"."order" o ON o."id" = r."order_id"
-WHERE ($1::"order"."dispute_status" IS NULL OR d."status" = $1)
-  AND ($2::UUID IS NULL OR d."refund_id" = $2)
+WHERE ($1::"order"."dispute_status" IS NULL OR embed_refund_dispute."status" = $1)
+  AND ($2::UUID IS NULL OR embed_refund_dispute."refund_id" = $2)
   AND (
        $3::UUID IS NULL
     OR r."account_id" = $3
     OR o."seller_id"   = $4
   )
-ORDER BY d."date_created" DESC
+ORDER BY embed_refund_dispute."date_created" DESC
 LIMIT $6::INTEGER OFFSET $5::INTEGER
 `
 
@@ -33,39 +33,45 @@ type ListRefundDisputesParams struct {
 	RefundID       uuid.NullUUID          `json:"refund_id"`
 	CallerBuyerID  uuid.NullUUID          `json:"caller_buyer_id"`
 	CallerSellerID uuid.NullUUID          `json:"caller_seller_id"`
-	OffsetCount    int32                  `json:"offset_count"`
-	LimitCount     int32                  `json:"limit_count"`
+	Offset         null.Int32             `json:"offset"`
+	Limit          null.Int32             `json:"limit"`
 }
 
-// ListRefundDisputes powers the admin queue. Filters by status; admins see
-// everything, buyers/sellers see their own.
-func (q *Queries) ListRefundDisputes(ctx context.Context, arg ListRefundDisputesParams) ([]OrderRefundDispute, error) {
+type ListRefundDisputesRow struct {
+	OrderRefundDispute OrderRefundDispute `json:"order_refund_dispute"`
+	TotalCount         int64              `json:"total_count"`
+}
+
+// ListRefundDisputes powers the admin queue, with COUNT(*) OVER() for
+// page-based pagination. Filters by status; admins see everything,
+// buyers/sellers see their own.
+func (q *Queries) ListRefundDisputes(ctx context.Context, arg ListRefundDisputesParams) ([]ListRefundDisputesRow, error) {
 	rows, err := q.db.Query(ctx, listRefundDisputes,
 		arg.Status,
 		arg.RefundID,
 		arg.CallerBuyerID,
 		arg.CallerSellerID,
-		arg.OffsetCount,
-		arg.LimitCount,
+		arg.Offset,
+		arg.Limit,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []OrderRefundDispute{}
+	items := []ListRefundDisputesRow{}
 	for rows.Next() {
-		var i OrderRefundDispute
+		var i ListRefundDisputesRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.RefundID,
-			&i.AccountID,
-			&i.Reason,
-			&i.Attachments,
-			&i.DateCreated,
-			&i.Status,
-			&i.ResolvedByID,
-			&i.DateResolved,
-			&i.ResolutionNote,
+			&i.OrderRefundDispute.ID,
+			&i.OrderRefundDispute.RefundID,
+			&i.OrderRefundDispute.AccountID,
+			&i.OrderRefundDispute.Reason,
+			&i.OrderRefundDispute.DateCreated,
+			&i.OrderRefundDispute.Status,
+			&i.OrderRefundDispute.ResolvedByID,
+			&i.OrderRefundDispute.DateResolved,
+			&i.OrderRefundDispute.ResolutionNote,
+			&i.TotalCount,
 		); err != nil {
 			return nil, err
 		}
@@ -80,18 +86,17 @@ func (q *Queries) ListRefundDisputes(ctx context.Context, arg ListRefundDisputes
 const openRefundDispute = `-- name: OpenRefundDispute :one
 
 INSERT INTO "order"."refund_dispute" (
-    "refund_id", "account_id", "reason", "attachments"
+    "refund_id", "account_id", "reason"
 ) VALUES (
-    $1, $2, $3, $4
+    $1, $2, $3
 )
-RETURNING id, refund_id, account_id, reason, attachments, date_created, status, resolved_by_id, date_resolved, resolution_note
+RETURNING id, refund_id, account_id, reason, date_created, status, resolved_by_id, date_resolved, resolution_note
 `
 
 type OpenRefundDisputeParams struct {
-	RefundID    uuid.UUID       `json:"refund_id"`
-	AccountID   uuid.UUID       `json:"account_id"`
-	Reason      string          `json:"reason"`
-	Attachments json.RawMessage `json:"attachments"`
+	RefundID  uuid.UUID `json:"refund_id"`
+	AccountID uuid.UUID `json:"account_id"`
+	Reason    string    `json:"reason"`
 }
 
 // =============================================
@@ -103,21 +108,16 @@ type OpenRefundDisputeParams struct {
 // OpenRefundDispute inserts the seller's escalation. Status defaults to
 // 'Open' via the table default; admin will transition to SellerWins or
 // BuyerWins via ResolveRefundDispute. Named OpenRefundDispute to avoid
-// collision with pgtempl's auto-generated CreateRefundDispute.
+// collision with pgtempl's auto-generated CreateRefundDispute. Evidence
+// photos attach separately via the common resource system (RefType=ReturnDispute).
 func (q *Queries) OpenRefundDispute(ctx context.Context, arg OpenRefundDisputeParams) (OrderRefundDispute, error) {
-	row := q.db.QueryRow(ctx, openRefundDispute,
-		arg.RefundID,
-		arg.AccountID,
-		arg.Reason,
-		arg.Attachments,
-	)
+	row := q.db.QueryRow(ctx, openRefundDispute, arg.RefundID, arg.AccountID, arg.Reason)
 	var i OrderRefundDispute
 	err := row.Scan(
 		&i.ID,
 		&i.RefundID,
 		&i.AccountID,
 		&i.Reason,
-		&i.Attachments,
 		&i.DateCreated,
 		&i.Status,
 		&i.ResolvedByID,
@@ -134,7 +134,7 @@ SET "status" = $1,
     "resolution_note" = $3,
     "date_resolved" = CURRENT_TIMESTAMP
 WHERE "id" = $4 AND "status" = 'Open'
-RETURNING id, refund_id, account_id, reason, attachments, date_created, status, resolved_by_id, date_resolved, resolution_note
+RETURNING id, refund_id, account_id, reason, date_created, status, resolved_by_id, date_resolved, resolution_note
 `
 
 type ResolveRefundDisputeParams struct {
@@ -160,7 +160,6 @@ func (q *Queries) ResolveRefundDispute(ctx context.Context, arg ResolveRefundDis
 		&i.RefundID,
 		&i.AccountID,
 		&i.Reason,
-		&i.Attachments,
 		&i.DateCreated,
 		&i.Status,
 		&i.ResolvedByID,

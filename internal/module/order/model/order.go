@@ -1,69 +1,15 @@
 package ordermodel
 
 import (
-	"encoding/json"
+	commonmodel "shopnexus-server/internal/module/common/model"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
-	"time"
 
 	"github.com/google/uuid"
-	"github.com/guregu/null/v6"
 )
-
-// PaymentSession is the domain-layer payment intent: one logical money flow
-// (checkout, confirmation fee, payout). Has 0..N child Transaction rail movements.
-type PaymentSession struct {
-	ID          uuid.UUID       `json:"id"`
-	Kind        string          `json:"kind"`
-	Status      Status          `json:"status"`
-	FromID      uuid.NullUUID   `json:"from_id"`
-	ToID        uuid.NullUUID   `json:"to_id"`
-	Note        string          `json:"note"`
-	Currency    string          `json:"currency"`
-	TotalAmount int64           `json:"total_amount"`
-	FxSnapshot  json.RawMessage `json:"fx_snapshot,omitempty"`
-	Data        json.RawMessage `json:"data"`
-
-	DateCreated time.Time `json:"date_created"`
-	DatePaid    null.Time `json:"date_paid"`
-	DateExpired time.Time `json:"date_expired"`
-}
-
-// Transaction is the domain-layer ledger leg: one rail movement within a payment session.
-// Reversals are NEW rows with negative amount + ReversesID pointing to the original.
-type Transaction struct {
-	ID            uuid.UUID       `json:"id"`
-	SessionID     uuid.UUID       `json:"session_id"`
-	Status        Status          `json:"status"`
-	Note          string          `json:"note"`
-	Error         null.String     `json:"error"`
-	PaymentOption null.String     `json:"payment_option"`
-	Data          json.RawMessage `json:"data"`
-
-	Amount   int64  `json:"amount"`
-	Currency string `json:"currency"`
-
-	ReversesID uuid.NullUUID `json:"reverses_id"`
-
-	DateCreated time.Time `json:"date_created"`
-	DateSettled null.Time `json:"date_settled"`
-	DateExpired null.Time `json:"date_expired"`
-}
-
-// Transport is the domain-layer representation of a shipping record.
-// Status is serialized as a plain string ("" when DB row had NULL) so FE
-// consumers can compare against enum values directly instead of unwrapping
-// the {order_status, valid} sqlc null wrapper.
-type Transport struct {
-	ID          int64           `json:"id"`
-	OptionID    string          `json:"option_id"`
-	Status      Status          `json:"status"`
-	Data        json.RawMessage `json:"data"`
-	DateCreated time.Time       `json:"date_created"`
-}
 
 // CheckoutSummaryItem is the projection of an OrderItem with the catalog data
 // the payment-result page needs to render: product name, primary image, qty,
-// per-line totals. Lightweight on purpose — the result page is read-only.
+// per-line totals.
 type CheckoutSummaryItem struct {
 	ID          int64     `json:"id"`
 	SkuID       uuid.UUID `json:"sku_id"`
@@ -111,39 +57,19 @@ type Order struct {
 
 // Refund is the v2 refund request. Buyer ships physical return at create
 // time; seller decides within 3 days of delivery or auto-accept fires.
+// Resources carries the buyer's evidence photos (common resource system).
 type Refund struct {
-	ID          uuid.UUID       `json:"id"`
-	AccountID   uuid.UUID       `json:"account_id"`
-	OrderID     uuid.UUID       `json:"order_id"`
-	Reason      string          `json:"reason"`
-	Attachments json.RawMessage `json:"attachments"`
-	DateCreated time.Time       `json:"date_created"`
-	Status      RefundStatus    `json:"status"`
+	orderdb.OrderRefund
 
-	ReturnTransportID    int64     `json:"return_transport_id"`
-	DateReceivedBySeller null.Time `json:"date_received_by_seller"`
-	ReviewDeadline       null.Time `json:"review_deadline"`
-
-	SellerDecisionAt null.Time `json:"seller_decision_at"`
-
-	ReturnToBuyerTransportID null.Int    `json:"return_to_buyer_transport_id"`
-	RejectionReason          null.String `json:"rejection_reason"`
-
-	RefundTxID uuid.NullUUID `json:"refund_tx_id"`
+	Resources []commonmodel.Resource `json:"resources"`
 }
 
 // RefundDispute is the seller-initiated escalation against a refund.
+// Resources carries the seller's evidence photos (common resource system).
 type RefundDispute struct {
-	ID             uuid.UUID       `json:"id"`
-	RefundID       uuid.UUID       `json:"refund_id"`
-	AccountID      uuid.UUID       `json:"account_id"`
-	Reason         string          `json:"reason"`
-	Attachments    json.RawMessage `json:"attachments"`
-	Status         DisputeStatus   `json:"status"`
-	DateCreated    time.Time       `json:"date_created"`
-	ResolvedByID   uuid.NullUUID   `json:"resolved_by_id"`
-	DateResolved   null.Time       `json:"date_resolved"`
-	ResolutionNote null.String     `json:"resolution_note"`
+	orderdb.OrderRefundDispute
+
+	Resources []commonmodel.Resource `json:"resources"`
 }
 
 // SessionKind values mirror the strings stored in payment_session.kind.

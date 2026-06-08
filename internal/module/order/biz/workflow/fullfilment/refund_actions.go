@@ -9,9 +9,9 @@ import (
 	restate "github.com/restatedev/sdk-go"
 
 	accountmodel "shopnexus-server/internal/module/account/model"
-	orderbase "shopnexus-server/internal/module/order/biz/base"
 	"shopnexus-server/internal/module/order/biz/workflow/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
+	ordermodel "shopnexus-server/internal/module/order/model"
 )
 
 // Refund v2 timers, consumed only by the escrow loop + the actions below.
@@ -38,7 +38,7 @@ func (h *FulfillmentWorkflow) autoAcceptRefund(ctx restate.WorkflowContext, refu
 	}
 	// Idempotent: a manual seller decision may have already closed the refund.
 	// Treat that as success.
-	if !orderbase.MapRefund(refund).CanSellerDecide() {
+	if !(ordermodel.Refund{OrderRefund: refund}).CanSellerDecide() {
 		return nil
 	}
 

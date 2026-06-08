@@ -7,26 +7,22 @@ Handles user identity, authentication, and account-related data. Accounts are **
 <!--START_SECTION:mermaid-->
 ```mermaid
 erDiagram
-"account.account" }o--|o "account.contact" : "default_contact_id"
-"account.account" }o--|o "account.wallet" : "default_wallet_id"
-"account.contact" }o--|| "account.account" : "account_id"
 "account.profile" |o--|| "account.account" : "id"
+"account.profile" }o--|o "account.contact" : "default_contact_id"
+"account.contact" }o--|| "account.account" : "account_id"
 "account.notification" }o--|| "account.account" : "account_id"
 "account.favorite" }o--|| "account.account" : "account_id"
-"account.wallet" }o--|| "account.account" : "account_id"
 
 "account.account" {
   uuid id
   bigint number
   status status
+  role role
   varchar(50) phone
   varchar(255) email
   varchar(100) username
   varchar(255) password
   timestamptz date_created
-  uuid default_contact_id
-  uuid default_wallet_id
-  role role
 }
 "account.contact" {
   uuid id
@@ -69,18 +65,9 @@ erDiagram
   boolean email_verified
   boolean phone_verified
   timestamptz date_created
-  bigint internal_balance
   varchar(2) country
+  bigint internal_balance
   uuid default_contact_id
-  uuid default_wallet_id
-}
-"account.wallet" {
-  uuid id
-  uuid account_id
-  varchar(100) option
-  varchar(100) label
-  jsonb data
-  timestamptz date_created
 }
 ```
 <!--END_SECTION:mermaid-->

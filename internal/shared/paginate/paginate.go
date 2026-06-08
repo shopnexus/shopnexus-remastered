@@ -10,7 +10,7 @@ import (
 type Params struct {
 	Page   null.Int32  `query:"page"   validate:"omitnil,gt=0"`
 	Cursor null.String `query:"cursor" validate:"omitnil"`
-	Limit  null.Int32  `query:"limit"  validate:"omitnil,gt=0,lte=100"`
+	Limit  null.Int32  `query:"limit"  validate:"omitnil,gt=0"`
 }
 
 // TODO: sau khi sửa xong null.X thì xoá luôn hàm này

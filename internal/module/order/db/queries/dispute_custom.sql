@@ -8,12 +8,13 @@
 -- OpenRefundDispute inserts the seller's escalation. Status defaults to
 -- 'Open' via the table default; admin will transition to SellerWins or
 -- BuyerWins via ResolveRefundDispute. Named OpenRefundDispute to avoid
--- collision with pgtempl's auto-generated CreateRefundDispute.
+-- collision with pgtempl's auto-generated CreateRefundDispute. Evidence
+-- photos attach separately via the common resource system (RefType=ReturnDispute).
 -- name: OpenRefundDispute :one
 INSERT INTO "order"."refund_dispute" (
-    "refund_id", "account_id", "reason", "attachments"
+    "refund_id", "account_id", "reason"
 ) VALUES (
-    @refund_id, @account_id, @reason, @attachments
+    @refund_id, @account_id, @reason
 )
 RETURNING *;
 
@@ -29,18 +30,20 @@ SET "status" = @status,
 WHERE "id" = @id AND "status" = 'Open'
 RETURNING *;
 
--- ListRefundDisputes powers the admin queue. Filters by status; admins see
--- everything, buyers/sellers see their own.
+-- ListRefundDisputes powers the admin queue, with COUNT(*) OVER() for
+-- page-based pagination. Filters by status; admins see everything,
+-- buyers/sellers see their own.
 -- name: ListRefundDisputes :many
-SELECT d.* FROM "order"."refund_dispute" d
-JOIN "order"."refund" r ON r."id" = d."refund_id"
+SELECT sqlc.embed(embed_refund_dispute), COUNT(*) OVER() AS total_count
+FROM "order"."refund_dispute" embed_refund_dispute
+JOIN "order"."refund" r ON r."id" = embed_refund_dispute."refund_id"
 JOIN "order"."order" o ON o."id" = r."order_id"
-WHERE (sqlc.narg('status')::"order"."dispute_status" IS NULL OR d."status" = sqlc.narg('status'))
-  AND (sqlc.narg('refund_id')::UUID IS NULL OR d."refund_id" = sqlc.narg('refund_id'))
+WHERE (sqlc.narg('status')::"order"."dispute_status" IS NULL OR embed_refund_dispute."status" = sqlc.narg('status'))
+  AND (sqlc.narg('refund_id')::UUID IS NULL OR embed_refund_dispute."refund_id" = sqlc.narg('refund_id'))
   AND (
        sqlc.narg('caller_buyer_id')::UUID IS NULL
     OR r."account_id" = sqlc.narg('caller_buyer_id')
     OR o."seller_id"   = sqlc.narg('caller_seller_id')
   )
-ORDER BY d."date_created" DESC
-LIMIT @limit_count::INTEGER OFFSET @offset_count::INTEGER;
+ORDER BY embed_refund_dispute."date_created" DESC
+LIMIT sqlc.narg('limit')::INTEGER OFFSET sqlc.narg('offset')::INTEGER;

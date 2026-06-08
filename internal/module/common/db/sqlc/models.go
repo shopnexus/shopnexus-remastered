@@ -20,7 +20,7 @@ const (
 	CommonResourceRefTypeProductSpu    CommonResourceRefType = "ProductSpu"
 	CommonResourceRefTypeProductSku    CommonResourceRefType = "ProductSku"
 	CommonResourceRefTypeRefund        CommonResourceRefType = "Refund"
-	CommonResourceRefTypeReturnDispute CommonResourceRefType = "ReturnDispute"
+	CommonResourceRefTypeRefundDispute CommonResourceRefType = "RefundDispute"
 	CommonResourceRefTypeComment       CommonResourceRefType = "Comment"
 )
 
@@ -64,7 +64,7 @@ func (e CommonResourceRefType) Valid() bool {
 	case CommonResourceRefTypeProductSpu,
 		CommonResourceRefTypeProductSku,
 		CommonResourceRefTypeRefund,
-		CommonResourceRefTypeReturnDispute,
+		CommonResourceRefTypeRefundDispute,
 		CommonResourceRefTypeComment:
 		return true
 	}
@@ -76,7 +76,7 @@ func AllCommonResourceRefTypeValues() []CommonResourceRefType {
 		CommonResourceRefTypeProductSpu,
 		CommonResourceRefTypeProductSku,
 		CommonResourceRefTypeRefund,
-		CommonResourceRefTypeReturnDispute,
+		CommonResourceRefTypeRefundDispute,
 		CommonResourceRefTypeComment,
 	}
 }
@@ -112,4 +112,19 @@ type CommonResourceReference struct {
 	RefType CommonResourceRefType `json:"ref_type"`
 	RefID   uuid.UUID             `json:"ref_id"`
 	Order   int32                 `json:"order"`
+}
+
+func (n NullCommonResourceRefType) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.CommonResourceRefType)
+}
+func (n *NullCommonResourceRefType) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.CommonResourceRefType)
 }

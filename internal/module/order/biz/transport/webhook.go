@@ -34,9 +34,9 @@ var validTransitions = map[orderdb.OrderStatus]map[orderdb.OrderStatus]bool{
 }
 
 type OnTransportResultParams struct {
-	TrackingID string            `validate:"omitempty"`
-	Status     ordermodel.Status `validate:"required,validateFn=Valid"`
-	Data       json.RawMessage   `validate:"omitempty"`
+	TrackingID string              `validate:"omitempty"`
+	Status     orderdb.OrderStatus `validate:"required,validateFn=Valid"`
+	Data       json.RawMessage     `validate:"omitempty"`
 }
 
 // OnTransportResult updates a transport record's status and data field.

@@ -9,7 +9,8 @@ import (
 
 	"shopnexus-server/internal/infras/metrics"
 	accountmodel "shopnexus-server/internal/module/account/model"
-	"shopnexus-server/internal/module/order/biz/base"
+	commonbiz "shopnexus-server/internal/module/common/biz"
+	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
@@ -18,10 +19,10 @@ import (
 
 type CreateBuyerRefundParams struct {
 	Account      accountmodel.AuthenticatedAccount
-	OrderID      uuid.UUID           `validate:"required"`
-	Reason       string              `validate:"required,min=1,max=1000"`
-	Attachments  []DisputeAttachment `validate:"required,min=1,max=20,dive"`
-	ReturnOption string              `validate:"required,min=1,max=100"`
+	OrderID      uuid.UUID   `validate:"required"`
+	Reason       string      `validate:"required,min=1,max=1000"`
+	ResourceIDs  []uuid.UUID `validate:"required,min=1,max=20,dive"` // evidence photos, mandatory
+	ReturnOption string      `validate:"required,min=1,max=100"`
 }
 
 // CreateBuyerRefund opens a refund. The buyer simultaneously commits to
@@ -38,7 +39,7 @@ func (b *RefundHandler) CreateBuyerRefund(
 	if err = validator.Validate(params); err != nil {
 		return zero, fmt.Errorf("validate create refund: %w", err)
 	}
-	if len(params.Attachments) == 0 {
+	if len(params.ResourceIDs) == 0 {
 		return zero, ordermodel.ErrRefundEvidenceRequired
 	}
 
@@ -99,11 +100,6 @@ func (b *RefundHandler) CreateBuyerRefund(
 		return zero, ordermodel.ErrRefundAlreadyAccepted
 	}
 
-	attachmentsJSON, err := json.Marshal(params.Attachments)
-	if err != nil {
-		return zero, fmt.Errorf("marshal attachments: %w", err)
-	}
-
 	// Create return transport + refund row in the same Run so a failure mid-way
 	// doesn't leave an orphan transport. Transport starts in NULL/Pending — the
 	// workflow's mock timer (or the real provider webhook) will mark it Success
@@ -121,12 +117,23 @@ func (b *RefundHandler) CreateBuyerRefund(
 			AccountID:         params.Account.ID,
 			OrderID:           params.OrderID,
 			Reason:            params.Reason,
-			Attachments:       attachmentsJSON,
 			ReturnTransportID: returnTransport.ID,
 		})
 	})
 	if err != nil {
 		return zero, fmt.Errorf("create refund: %w", err)
+	}
+
+	// Attach the buyer's evidence photos to the refund via the common resource
+	// system (RefType=Refund).
+	resources, err := b.common.UpdateResources(ctx, commonbiz.UpdateResourcesParams{
+		Account:     params.Account,
+		RefType:     commondb.CommonResourceRefTypeRefund,
+		RefID:       refund.ID,
+		ResourceIDs: params.ResourceIDs,
+	})
+	if err != nil {
+		return zero, fmt.Errorf("attach refund resources: %w", err)
 	}
 
 	// Wake the order's fulfillment workflow: its escrow loop snapshots the
@@ -140,5 +147,5 @@ func (b *RefundHandler) CreateBuyerRefund(
 		return zero, fmt.Errorf("notify refund: %w", err)
 	}
 
-	return base.MapRefund(refund), nil
+	return ordermodel.Refund{OrderRefund: refund, Resources: resources}, nil
 }

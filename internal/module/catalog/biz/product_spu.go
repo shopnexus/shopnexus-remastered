@@ -440,7 +440,6 @@ func (b *CatalogHandler) assertSellerCurrency(
 	currency string,
 ) error {
 	profile, err := b.account.GetProfile(ctx, accountbiz.GetProfileParams{
-		Issuer:    seller,
 		AccountID: seller.ID,
 	})
 	if err != nil {

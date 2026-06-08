@@ -20,6 +20,7 @@ func (h *Handler) GetMe(c echo.Context) error {
 	}
 
 	profile, err := h.biz.GetProfile(c.Request().Context(), accountbiz.GetProfileParams{
+		Issuer:    claims.Account,
 		AccountID: claims.Account.ID,
 	})
 	if err != nil {

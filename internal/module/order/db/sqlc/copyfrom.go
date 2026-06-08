@@ -517,7 +517,6 @@ func (r iteratorForCreateCopyRefund) Values() ([]interface{}, error) {
 		r.rows[0].AccountID,
 		r.rows[0].OrderID,
 		r.rows[0].Reason,
-		r.rows[0].Attachments,
 		r.rows[0].DateCreated,
 		r.rows[0].Status,
 		r.rows[0].ReturnTransportID,
@@ -535,7 +534,7 @@ func (r iteratorForCreateCopyRefund) Err() error {
 }
 
 func (q *Queries) CreateCopyRefund(ctx context.Context, arg []CreateCopyRefundParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"order", "refund"}, []string{"id", "account_id", "order_id", "reason", "attachments", "date_created", "status", "return_transport_id", "date_received_by_seller", "review_deadline", "seller_decision_at", "return_to_buyer_transport_id", "rejection_reason", "refund_tx_id"}, &iteratorForCreateCopyRefund{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"order", "refund"}, []string{"id", "account_id", "order_id", "reason", "date_created", "status", "return_transport_id", "date_received_by_seller", "review_deadline", "seller_decision_at", "return_to_buyer_transport_id", "rejection_reason", "refund_tx_id"}, &iteratorForCreateCopyRefund{rows: arg})
 }
 
 // iteratorForCreateCopyRefundDispute implements pgx.CopyFromSource.
@@ -562,7 +561,6 @@ func (r iteratorForCreateCopyRefundDispute) Values() ([]interface{}, error) {
 		r.rows[0].RefundID,
 		r.rows[0].AccountID,
 		r.rows[0].Reason,
-		r.rows[0].Attachments,
 		r.rows[0].DateCreated,
 		r.rows[0].Status,
 		r.rows[0].ResolvedByID,
@@ -576,7 +574,7 @@ func (r iteratorForCreateCopyRefundDispute) Err() error {
 }
 
 func (q *Queries) CreateCopyRefundDispute(ctx context.Context, arg []CreateCopyRefundDisputeParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"order", "refund_dispute"}, []string{"id", "refund_id", "account_id", "reason", "attachments", "date_created", "status", "resolved_by_id", "date_resolved", "resolution_note"}, &iteratorForCreateCopyRefundDispute{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"order", "refund_dispute"}, []string{"id", "refund_id", "account_id", "reason", "date_created", "status", "resolved_by_id", "date_resolved", "resolution_note"}, &iteratorForCreateCopyRefundDispute{rows: arg})
 }
 
 // iteratorForCreateCopyTransaction implements pgx.CopyFromSource.

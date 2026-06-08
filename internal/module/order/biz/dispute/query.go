@@ -4,10 +4,13 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/guregu/null/v6"
 	restate "github.com/restatedev/sdk-go"
+	"github.com/samber/lo"
 
 	accountmodel "shopnexus-server/internal/module/account/model"
-	"shopnexus-server/internal/module/order/biz/base"
+	commonbiz "shopnexus-server/internal/module/common/biz"
+	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/paginate"
@@ -34,7 +37,6 @@ func (b *DisputeHandler) ListRefundDisputes(
 	if err := validator.Validate(params); err != nil {
 		return zero, fmt.Errorf("validate list disputes: %w", err)
 	}
-	pagination := params.Params.Constrain()
 
 	var (
 		statusFilter orderdb.NullOrderDisputeStatus
@@ -61,18 +63,36 @@ func (b *DisputeHandler) ListRefundDisputes(
 		RefundID:       refundFilter,
 		CallerBuyerID:  buyerFilter,
 		CallerSellerID: sellerFilter,
-		OffsetCount:    pagination.Offset().Int32,
-		LimitCount:     pagination.Limit.Int32,
+		Offset:         params.Offset(),
+		Limit:          params.Limit,
 	})
 	if err != nil {
 		return zero, fmt.Errorf("list disputes: %w", err)
 	}
-
-	data := make([]ordermodel.RefundDispute, 0, len(rows))
-	for _, r := range rows {
-		data = append(data, base.MapRefundDispute(r))
+	if len(rows) == 0 {
+		return zero, nil
 	}
-	return paginate.PaginateResult[ordermodel.RefundDispute]{PageParams: pagination, Data: data}, nil
+
+	// Map resources to disputes
+	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
+		RefType: commondb.CommonResourceRefTypeRefundDispute,
+		RefIDs:  lo.Map(rows, func(r orderdb.ListRefundDisputesRow, _ int) uuid.UUID { return r.OrderRefundDispute.ID }),
+	})
+	if err != nil {
+		return zero, fmt.Errorf("list dispute resources: %w", err)
+	}
+
+	disputes := lo.Map(rows, func(r orderdb.ListRefundDisputesRow, _ int) ordermodel.RefundDispute {
+		return ordermodel.RefundDispute{
+			OrderRefundDispute: r.OrderRefundDispute,
+			Resources:          resourcesMap[r.OrderRefundDispute.ID],
+		}
+	})
+	return paginate.PaginateResult[ordermodel.RefundDispute]{
+		PageParams: params.Params,
+		Data:       disputes,
+		Total:      null.IntFrom(rows[0].TotalCount),
+	}, nil
 }
 
 type GetRefundDisputeParams struct {
@@ -91,12 +111,12 @@ func (b *DisputeHandler) GetRefundDispute(
 		return zero, fmt.Errorf("validate get dispute: %w", err)
 	}
 
-	dispute, err := b.Storage.Querier().GetRefundDispute(ctx, uuid.NullUUID{UUID: params.DisputeID, Valid: true})
+	dbDispute, err := b.Storage.Querier().GetRefundDispute(ctx, uuid.NullUUID{UUID: params.DisputeID, Valid: true})
 	if err != nil {
 		return zero, ordermodel.ErrDisputeNotFound
 	}
 	refund, err := b.Storage.Querier().GetRefund(ctx, orderdb.GetRefundParams{
-		ID: uuid.NullUUID{UUID: dispute.RefundID, Valid: true},
+		ID: uuid.NullUUID{UUID: dbDispute.RefundID, Valid: true},
 	})
 	if err != nil {
 		return zero, fmt.Errorf("get refund: %w", err)
@@ -112,5 +132,10 @@ func (b *DisputeHandler) GetRefundDispute(
 		params.Account.ID != order.SellerID {
 		return zero, ordermodel.ErrDisputeNotAuthorized
 	}
-	return base.MapRefundDispute(dispute), nil
+
+	disputes, err := b.HydrateRefundDisputes(ctx, dbDispute)
+	if err != nil {
+		return zero, fmt.Errorf("hydrate dispute: %w", err)
+	}
+	return disputes[0], nil
 }

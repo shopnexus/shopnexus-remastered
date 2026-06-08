@@ -15,10 +15,10 @@ import (
 // --- Buyer: create refund ---
 
 type CreateBuyerRefundRequest struct {
-	OrderID      uuid.UUID                    `json:"order_id"      validate:"required"`
-	Reason       string                       `json:"reason"        validate:"required,min=1,max=1000"`
-	Attachments  []orderbiz.DisputeAttachment `json:"attachments"   validate:"required,min=1,max=20,dive"`
-	ReturnOption string                       `json:"return_option" validate:"required,min=1,max=100"`
+	OrderID      uuid.UUID   `json:"order_id"      validate:"required"`
+	Reason       string      `json:"reason"        validate:"required,min=1,max=1000"`
+	ResourceIDs  []uuid.UUID `json:"resource_ids"  validate:"required,min=1,max=20,dive"`
+	ReturnOption string      `json:"return_option" validate:"required,min=1,max=100"`
 }
 
 func (h *Handler) CreateBuyerRefund(c echo.Context) error {
@@ -39,7 +39,7 @@ func (h *Handler) CreateBuyerRefund(c echo.Context) error {
 		Account:      claims.Account,
 		OrderID:      req.OrderID,
 		Reason:       req.Reason,
-		Attachments:  req.Attachments,
+		ResourceIDs:  req.ResourceIDs,
 		ReturnOption: req.ReturnOption,
 	})
 	if err != nil {
@@ -142,8 +142,8 @@ func (h *Handler) SellerApproveRefund(c echo.Context) error {
 // --- Seller: dispute refund ---
 
 type SellerDisputeRefundRequest struct {
-	Reason      string                       `json:"reason"      validate:"required,min=1,max=1000"`
-	Attachments []orderbiz.DisputeAttachment `json:"attachments" validate:"required,min=1,max=20,dive"`
+	Reason      string      `json:"reason"       validate:"required,min=1,max=1000"`
+	ResourceIDs []uuid.UUID `json:"resource_ids" validate:"required,min=1,max=20,dive"`
 }
 
 func (h *Handler) SellerDisputeRefund(c echo.Context) error {
@@ -166,7 +166,7 @@ func (h *Handler) SellerDisputeRefund(c echo.Context) error {
 		Account:     claims.Account,
 		RefundID:    refundID,
 		Reason:      req.Reason,
-		Attachments: req.Attachments,
+		ResourceIDs: req.ResourceIDs,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
