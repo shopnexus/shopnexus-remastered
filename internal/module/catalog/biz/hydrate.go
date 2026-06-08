@@ -109,6 +109,7 @@ func (b *CatalogHandler) HydrateProductSkus(
 		skus = append(skus, catalogmodel.ProductSku{
 			CatalogProductSku: dbSku,
 			Stock:             stockMap[dbSku.ID].Stock,
+			Taken:             stockMap[dbSku.ID].Taken,
 			Attributes:        attributes,
 		})
 	}

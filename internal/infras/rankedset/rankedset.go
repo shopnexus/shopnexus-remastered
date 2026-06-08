@@ -8,7 +8,7 @@ import (
 	"github.com/guregu/null/v6"
 )
 
-// Client stores members scored for ranked retrieval (recommendation feeds, leaderboards).
+// Client stores members scored for ranked retrieval (like heap trees or sorted sets).
 type Client interface {
 	Add(ctx context.Context, key string, value any, score float64) error
 	TopByScore(ctx context.Context, key string, dest any, opts RangeOptions) error

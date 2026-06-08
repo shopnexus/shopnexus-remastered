@@ -1,13 +1,20 @@
 package catalogmodel
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 )
 
 const (
-	CacheRecommendSize       = 100
-	CacheKeyRecommendProduct = "catalog:recommend:product:%s"
-	CacheKeyRecommendOffset  = "catalog:recommend:offset:%s"
+	// CacheRecommendSize is the recommend pool size K: top ranked SPU ids per account.
+	CacheRecommendSize = 100
+
+	// CacheKeyRecommendPool keys the per-account recommend pool (JSON []uuid) in KV.
+	CacheKeyRecommendPool = "catalog:recommend:pool:%s"
+
+	// RecommendPoolTTL bounds how long a built pool is reused before recompute.
+	RecommendPoolTTL = 10 * time.Minute
 )
 
 // OrderPrice is the final price of a order after applying promotions.

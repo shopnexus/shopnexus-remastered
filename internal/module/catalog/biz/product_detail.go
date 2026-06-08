@@ -16,6 +16,7 @@ import (
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
 	promotionbiz "shopnexus-server/internal/module/promotion/biz"
+	promotionmodel "shopnexus-server/internal/module/promotion/model"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -81,8 +82,8 @@ func (b *CatalogHandler) GetProductDetail(
 
 	priceMap, err := b.promotion.CalculatePromotedPrices(
 		ctx,
-		promotionbiz.CalculatePromotedPricesParams{Prices: requestPrices, SpuMap: map[uuid.UUID]catalogmodel.ProductSpu{
-			spu.ID: spu,
+		promotionbiz.CalculatePromotedPricesParams{Prices: requestPrices, SpuMap: map[uuid.UUID]promotionmodel.PromoSpu{
+			spu.ID: {ID: spu.ID, CategoryID: spu.Category.ID},
 		}},
 	)
 	if err != nil {

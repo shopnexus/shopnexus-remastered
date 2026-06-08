@@ -4,16 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	rand2 "math/rand/v2"
 
 	restate "github.com/restatedev/sdk-go"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
 	"github.com/samber/lo"
-	"github.com/samber/lo/mutable"
 
 	"shopnexus-server/internal/infras/cache"
-	"shopnexus-server/internal/infras/rankedset"
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
@@ -23,6 +22,7 @@ import (
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
 	promotionbiz "shopnexus-server/internal/module/promotion/biz"
+	promotionmodel "shopnexus-server/internal/module/promotion/model"
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/validator"
 )
@@ -35,14 +35,16 @@ func (b *CatalogHandler) buildProductCards(
 	var zero map[uuid.UUID]*catalogmodel.ProductCard
 	var productMap = make(map[uuid.UUID]*catalogmodel.ProductCard)
 
-	listSpu, err := b.ListProductSpu(ctx, ListProductSpuParams{
-		ID: spuIDs,
+	listSpu, err := b.storage.Querier().ListProductSpu(ctx, catalogdb.ListProductSpuParams{
+		Id: spuIDs,
 	})
 	if err != nil {
 		return zero, fmt.Errorf("list product spus: %w", err)
 	}
 	spus := listSpu.Data
-	spuMap := lo.KeyBy(spus, func(spu catalogmodel.ProductSpu) uuid.UUID { return spu.ID })
+	spuMap := lo.SliceToMap(spus, func(spu catalogdb.CatalogProductSpu) (uuid.UUID, promotionmodel.PromoSpu) {
+		return spu.ID, promotionmodel.PromoSpu{ID: spu.ID, CategoryID: spu.CategoryID}
+	})
 
 	// Get featured SKUs for each spu
 	var featuredIDs []uuid.UUID
@@ -60,26 +62,8 @@ func (b *CatalogHandler) buildProductCards(
 		return zero, fmt.Errorf("list product skus: %w", err)
 	}
 
-	// map[spuID]FeaturedSKU
+	// map[spuID]FeaturedSKU — Taken (sold count) already hydrated, no extra stock query
 	featuredMap := lo.KeyBy(featuredSkus, func(row catalogmodel.ProductSku) uuid.UUID { return row.SpuID })
-
-	// Get stock (taken/sold) for featured SKUs
-	featuredStocks, err := b.inventory.ListStock(ctx, inventorybiz.ListStockParams{
-		RefType: []inventorydb.InventoryStockRefType{inventorydb.InventoryStockRefTypeProductSku},
-		RefID:   featuredIDs,
-	})
-	if err != nil {
-		return zero, fmt.Errorf("list featured stock: %w", err)
-	}
-	// map[refID (skuID)] -> taken
-	stockTakenMap := lo.KeyBy(featuredStocks.Data, func(s inventorydb.InventoryStock) uuid.UUID { return s.RefID })
-	// map[spuID] -> taken (through featured sku)
-	soldMap := make(map[uuid.UUID]int64)
-	for spuID, featured := range featuredMap {
-		if stock, ok := stockTakenMap[featured.ID]; ok {
-			soldMap[spuID] = stock.Taken
-		}
-	}
 
 	// Build price request inputs for featured SKUs
 	requestPrices := make([]catalogmodel.RequestOrderPrice, 0, len(featuredSkus))
@@ -160,7 +144,7 @@ func (b *CatalogHandler) buildProductCards(
 			ID:          spu.ID,
 			Slug:        spu.Slug,
 			SellerID:    spu.AccountID,
-			CategoryID:  spu.Category.ID,
+			CategoryID:  spu.CategoryID,
 			Name:        spu.Name,
 			Description: spu.Description,
 			IsEnabled:   spu.IsEnabled,
@@ -177,7 +161,7 @@ func (b *CatalogHandler) buildProductCards(
 			},
 			IsFavorite: favoriteSet[spu.ID],
 			Resources:  resources,
-			Sold:       soldMap[spu.ID],
+			Sold:       featured.Taken,
 		}
 	}
 
@@ -401,145 +385,116 @@ func (b *CatalogHandler) ListRecommendedProductCard(
 	params ListRecommendedProductCardParams,
 ) ([]catalogmodel.ProductCard, error) {
 	var zero []catalogmodel.ProductCard
-	var rcmProducts []catalogmodel.ProductRecommend
-	var err error
 
 	if err := validator.Validate(params); err != nil {
 		return zero, fmt.Errorf("validate list recommended: %w", err)
 	}
 
-	// Get current feed offset
-	var feedOffset int64 = 0
-	if err = b.cache.Get(
+	pool, err := b.getRecommendPool(ctx, params.Account)
+	if err != nil {
+		return zero, fmt.Errorf("recommend pool: %w", err)
+	}
+
+	// Shuffle the whole pool with Restate's deterministic RNG (replay-safe), then
+	// take a fresh window. FE dedups repeats across infinite-scroll pages.
+	rand2.New(restate.RandSource(ctx)).Shuffle(len(pool), func(i, j int) {
+		pool[i], pool[j] = pool[j], pool[i]
+	})
+	if params.Limit < len(pool) {
+		pool = pool[:params.Limit]
+	}
+
+	cardMap, err := b.buildProductCards(
 		ctx,
-		fmt.Sprintf(catalogmodel.CacheKeyRecommendOffset, params.Account.ID),
-		&feedOffset,
-	); err != nil && !errors.Is(err, cache.ErrCacheMiss) {
-		b.logger.Error("failed to get feed offset for account",
-			slog.String("account_id", params.Account.ID.String()),
-			slog.Any("error", err),
-		)
-	}
-	// Retrieve all recommended products from cache
-	if err := b.ranked.TopByScore(
-		ctx,
-		fmt.Sprintf(catalogmodel.CacheKeyRecommendProduct, params.Account.ID),
-		&rcmProducts,
-		rankedset.RangeOptions{
-			Offset: null.IntFrom(feedOffset),
-			Limit:  null.IntFrom(int64(params.Limit)),
-		},
-	); err != nil {
-		return zero, fmt.Errorf("get recommended products: %w", err)
-	}
-	feedOffset += int64(len(rcmProducts))
-
-	// if current feed offset is exceeding the size or there is no recommendation in cache, refresh the feed
-	if feedOffset >= catalogmodel.CacheRecommendSize || len(rcmProducts) == 0 {
-		recommendations, err := b.GetRecommendations(ctx, GetRecommendationsParams{
-			Account: params.Account,
-			Limit:   catalogmodel.CacheRecommendSize,
-		})
-		if err != nil {
-			b.logger.Error("failed to get recommendations for account",
-				slog.String("account_id", params.Account.ID.String()),
-				slog.Any("error", err),
-			)
-		}
-		// Reset feed offset
-		feedOffset = 0
-
-		// Remove all old recommendations
-		if err = b.ranked.Delete(
-			ctx,
-			fmt.Sprintf(catalogmodel.CacheKeyRecommendProduct, params.Account.ID),
-		); err != nil {
-			b.logger.Error(
-				"failed to reset feed offset for account",
-				slog.String("account_id", params.Account.ID.String()),
-				slog.Any("error", err),
-			)
-		}
-
-		// Adding new feed
-		for _, p := range recommendations {
-			if err = b.ranked.Add(
-				ctx,
-				fmt.Sprintf(catalogmodel.CacheKeyRecommendProduct, params.Account.ID),
-				p,
-				float64(p.Score),
-			); err != nil {
-				return zero, fmt.Errorf("cache recommended product: %w", err)
-			}
-		}
-	}
-
-	// Update feed offset in cache
-	if err = b.cache.Set(
-		ctx,
-		fmt.Sprintf(catalogmodel.CacheKeyRecommendOffset, params.Account.ID),
-		feedOffset,
-		0,
-	); err != nil {
-		b.logger.Error(
-			"failed to update feed offset for account",
-			slog.String("account_id", params.Account.ID.String()),
-			slog.Any("error", err),
-		)
-	}
-
-	// Amount of most sold products to fill the recommendations
-	amount := int32(params.Limit - len(rcmProducts))
-	if amount > 0 {
-		mostSolds, err := b.inventory.ListMostTakenSku(ctx, inventorybiz.ListMostTakenSkuParams{
-			Params: paginate.Params{
-				Limit: null.Int32From(amount * 100),
-			},
-			RefType: inventorydb.InventoryStockRefTypeProductSku,
-		})
-		if err != nil {
-			return zero, fmt.Errorf("list most taken sku: %w", err)
-		}
-		// Take random amount of shuffled most sold products
-		mutable.Shuffle(mostSolds)
-		if int32(len(mostSolds)) > amount {
-			mostSolds = mostSolds[:amount]
-		}
-
-		skuIDs := lo.Map(mostSolds, func(p inventorydb.InventoryStock, _ int) uuid.UUID { return p.RefID })
-		skus, err := b.storage.Querier().ListProductSku(ctx, catalogdb.ListProductSkuParams{
-			Id: skuIDs,
-		})
-		if err != nil {
-			return zero, fmt.Errorf("db list product sku: %w", err)
-		}
-
-		uniqueSpuIDs := lo.UniqMap(skus.Data, func(s catalogdb.CatalogProductSku, _ int) uuid.UUID { return s.SpuID })
-		rcmProducts = append(
-			rcmProducts,
-			lo.Map(uniqueSpuIDs, func(spuID uuid.UUID, _ int) catalogmodel.ProductRecommend {
-				return catalogmodel.ProductRecommend{
-					ID:    spuID,
-					Score: 0, // most sold has score 0
-				}
-			})...)
-	}
-
-	productCardMap, err := b.buildProductCards(
-		ctx,
-		lo.Map(rcmProducts, func(p catalogmodel.ProductRecommend, _ int) uuid.UUID { return p.ID }),
-		uuid.NullUUID{UUID: params.Account.ID, Valid: true},
+		pool,
+		uuid.NullUUID{UUID: params.Account.ID, Valid: params.Account.ID != uuid.Nil},
 	)
 	if err != nil {
 		return zero, fmt.Errorf("build product cards: %w", err)
 	}
 
-	products := []catalogmodel.ProductCard{}
-	for _, rcm := range rcmProducts {
-		if productCardMap[rcm.ID] != nil {
-			products = append(products, *productCardMap[rcm.ID])
+	cards := make([]catalogmodel.ProductCard, 0, len(pool))
+	for _, id := range pool {
+		if card := cardMap[id]; card != nil {
+			cards = append(cards, *card)
+		}
+	}
+	return cards, nil
+}
+
+// getRecommendPool returns up to CacheRecommendSize ranked SPU ids for the account:
+// personalized (pgvector) first, trending backfill after. Cached in KV with a TTL
+// and invalidated on interaction events (see AddInteractions).
+func (b *CatalogHandler) getRecommendPool(
+	ctx restate.Context,
+	account accountmodel.AuthenticatedAccount,
+) ([]uuid.UUID, error) {
+	key := fmt.Sprintf(catalogmodel.CacheKeyRecommendPool, account.ID)
+
+	var pool []uuid.UUID
+	if err := b.cache.Get(ctx, key, &pool); err == nil {
+		return pool, nil
+	} else if !errors.Is(err, cache.ErrCacheMiss) {
+		b.logger.Error("get recommend pool",
+			slog.String("account_id", account.ID.String()), slog.Any("error", err))
+	}
+
+	// Personalized recommendations (pgvector ANN). Guests have no interests.
+	if account.ID != uuid.Nil {
+		recs, err := b.GetRecommendations(ctx, GetRecommendationsParams{
+			Account: account,
+			Limit:   catalogmodel.CacheRecommendSize,
+		})
+		if err != nil {
+			b.logger.Error("get recommendations",
+				slog.String("account_id", account.ID.String()), slog.Any("error", err))
+		}
+		for _, r := range recs {
+			pool = append(pool, r.ID)
 		}
 	}
 
-	return products, nil
+	// Backfill with trending (most-sold) SPUs, skipping ones already picked.
+	if len(pool) < catalogmodel.CacheRecommendSize {
+		trending, err := b.trendingSpuIDs(ctx, catalogmodel.CacheRecommendSize)
+		if err != nil {
+			return nil, err
+		}
+		seen := lo.SliceToMap(pool, func(id uuid.UUID) (uuid.UUID, struct{}) {
+			return id, struct{}{}
+		})
+		for _, id := range trending {
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			pool = append(pool, id)
+			if len(pool) >= catalogmodel.CacheRecommendSize {
+				break
+			}
+		}
+	}
+
+	if err := b.cache.Set(ctx, key, pool, catalogmodel.RecommendPoolTTL); err != nil {
+		b.logger.Error("set recommend pool",
+			slog.String("account_id", account.ID.String()), slog.Any("error", err))
+	}
+	return pool, nil
+}
+
+// trendingSpuIDs returns unique SPU ids backing the most-taken (best-selling) SKUs.
+func (b *CatalogHandler) trendingSpuIDs(ctx restate.Context, limit int32) ([]uuid.UUID, error) {
+	stocks, err := b.inventory.ListMostTakenSku(ctx, inventorybiz.ListMostTakenSkuParams{
+		Params:  paginate.Params{Limit: null.Int32From(limit)},
+		RefType: inventorydb.InventoryStockRefTypeProductSku,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list most taken sku: %w", err)
+	}
+
+	skuIDs := lo.Map(stocks, func(s inventorydb.InventoryStock, _ int) uuid.UUID { return s.RefID })
+	skus, err := b.storage.Querier().ListProductSku(ctx, catalogdb.ListProductSkuParams{Id: skuIDs})
+	if err != nil {
+		return nil, fmt.Errorf("db list product sku: %w", err)
+	}
+	return lo.UniqMap(skus.Data, func(s catalogdb.CatalogProductSku, _ int) uuid.UUID { return s.SpuID }), nil
 }

@@ -38,7 +38,7 @@ type groupWinner struct {
 
 type CalculatePromotedPricesParams struct {
 	Prices []catalogmodel.RequestOrderPrice
-	SpuMap map[uuid.UUID]catalogmodel.ProductSpu
+	SpuMap map[uuid.UUID]promotionmodel.PromoSpu
 }
 
 // CalculatePromotedPrices calculates promoted prices for the given SKUs.
@@ -205,14 +205,14 @@ func applyWinners(
 
 // isApplicable checks if a promotion applies to a given SKU via ref matching.
 // A promotion with no refs applies to everything.
-func isApplicable(promo promotionmodel.Promotion, spu catalogmodel.ProductSpu, skuID uuid.UUID) bool {
+func isApplicable(promo promotionmodel.Promotion, spu promotionmodel.PromoSpu, skuID uuid.UUID) bool {
 	if len(promo.Refs) == 0 {
 		return true
 	}
 	for _, ref := range promo.Refs {
 		switch ref.RefType {
 		case promotionmodel.RefTypeCategory:
-			if spu.Category.ID == ref.RefID {
+			if spu.CategoryID == ref.RefID {
 				return true
 			}
 		case promotionmodel.RefTypeProductSpu:

@@ -27,5 +27,6 @@ type ProductSku struct {
 	catalogdb.CatalogProductSku
 
 	Stock      int64              `json:"stock"`
+	Taken      int64              `json:"taken"` // reserved or sold count, from inventory stock
 	Attributes []ProductAttribute `json:"attributes"`
 }

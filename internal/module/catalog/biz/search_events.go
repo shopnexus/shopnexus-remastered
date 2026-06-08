@@ -22,7 +22,7 @@ func (b *CatalogHandler) AddInteractions(ctx restate.Context, events []analyticm
 		return fmt.Errorf("process events: %w", err)
 	}
 
-	// Remove old recommendations for all affected accounts
+	// Interests changed → invalidate each affected account's recommend pool.
 	seen := make(map[uuid.UUID]struct{})
 	for _, ev := range events {
 		if !ev.AccountID.Valid {
@@ -34,10 +34,10 @@ func (b *CatalogHandler) AddInteractions(ctx restate.Context, events []analyticm
 		seen[ev.AccountID.UUID] = struct{}{}
 		if err := b.cache.Delete(
 			ctx,
-			fmt.Sprintf(catalogmodel.CacheKeyRecommendProduct, ev.AccountID.UUID.String()),
+			fmt.Sprintf(catalogmodel.CacheKeyRecommendPool, ev.AccountID.UUID.String()),
 		); err != nil {
 			b.logger.Error(
-				"failed to reset feed offset for account",
+				"invalidate recommend pool",
 				slog.String("account_id", ev.AccountID.UUID.String()),
 				slog.Any("error", err),
 			)

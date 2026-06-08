@@ -35,3 +35,11 @@ type PromotionRef struct {
 	RefType RefType   `validate:"required,validateFn=Valid"`
 	RefID   uuid.UUID `validate:"required"`
 }
+
+// PromoSpu is the minimal SPU shape promotion matching needs: SPU id + its
+// category. Keeps CalculatePromotedPrices params lean across the Restate
+// boundary (no full ProductSpu) and decouples promotion from catalog.
+type PromoSpu struct {
+	ID         uuid.UUID `json:"id"`
+	CategoryID uuid.UUID `json:"category_id"`
+}
