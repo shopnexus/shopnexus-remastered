@@ -2,10 +2,14 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/guregu/null/v6"
 )
+
+// ErrCacheMiss is returned by Get when the key is absent.
+var ErrCacheMiss = errors.New("cache: key not found")
 
 // Client defines methods for caching structured data (e.g., User, Post, ...).
 type Client interface {

@@ -54,7 +54,7 @@ func (r *RedisClient) Get(ctx context.Context, key string, dest any) error {
 	resp := r.Client.Do(ctx, r.Client.B().Get().Key(key).Build())
 	if err := resp.Error(); err != nil {
 		if errors.Is(err, rueidis.Nil) {
-			return nil
+			return ErrCacheMiss
 		}
 		return fmt.Errorf("failed to get key from Redis: %w", err)
 	}

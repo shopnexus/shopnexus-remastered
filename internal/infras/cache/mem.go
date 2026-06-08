@@ -57,7 +57,7 @@ func (c *InMemoryCache) Get(ctx context.Context, key string, dest any) error {
 	c.mu.RUnlock()
 
 	if !exists {
-		return errors.New("key not found")
+		return ErrCacheMiss
 	}
 
 	// Check if item is expired
@@ -66,7 +66,7 @@ func (c *InMemoryCache) Get(ctx context.Context, key string, dest any) error {
 		c.mu.Lock()
 		delete(c.items, key)
 		c.mu.Unlock()
-		return errors.New("key not found")
+		return ErrCacheMiss
 	}
 
 	// Copy value to destination using reflection
