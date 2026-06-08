@@ -7,11 +7,12 @@ import "time"
 // connections — but the struct and the fx providers over it (infras/fxinfra)
 // are written once.
 type Shared struct {
-	Postgres Postgres `mapstructure:"postgres"`
-	Redis    Redis    `mapstructure:"redis"`
-	Log      Log      `mapstructure:"log"`
-	Restate  Restate  `mapstructure:"restate"`
-	Bus      Bus      `mapstructure:"bus"`
+	Postgres  Postgres  `mapstructure:"postgres"`
+	Redis     Redis     `mapstructure:"redis"`
+	Log       Log       `mapstructure:"log"`
+	Restate   Restate   `mapstructure:"restate"`
+	Bus       Bus       `mapstructure:"bus"`
+	RankedSet RankedSet `mapstructure:"rankedset"`
 }
 
 // SharedConfig returns itself. Embedding promotes it, so every module Config
@@ -50,6 +51,13 @@ type Redis struct {
 // backing: "memory" shares the app-wide in-process transport, "redis" runs on
 // Redis Streams over the module's own Redis connection.
 type Bus struct {
+	Transport string `yaml:"transport" mapstructure:"transport" validate:"required,oneof=memory redis"`
+}
+
+// RankedSet is duplicated into every module's Config; transport picks the
+// ranked-set backing: "memory" is in-process (dev / single instance), "redis"
+// runs on a sorted set over the module's own Redis connection.
+type RankedSet struct {
 	Transport string `yaml:"transport" mapstructure:"transport" validate:"required,oneof=memory redis"`
 }
 

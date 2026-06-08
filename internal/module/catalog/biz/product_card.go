@@ -13,6 +13,7 @@ import (
 	"github.com/samber/lo/mutable"
 
 	"shopnexus-server/internal/infras/cache"
+	"shopnexus-server/internal/infras/rankedset"
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
@@ -420,11 +421,11 @@ func (b *CatalogHandler) ListRecommendedProductCard(
 		)
 	}
 	// Retrieve all recommended products from cache
-	if err := b.cache.ZRevRangeByScore(
+	if err := b.ranked.TopByScore(
 		ctx,
 		fmt.Sprintf(catalogmodel.CacheKeyRecommendProduct, params.Account.ID),
 		&rcmProducts,
-		cache.ZRangeOptions{
+		rankedset.RangeOptions{
 			Offset: null.IntFrom(feedOffset),
 			Limit:  null.IntFrom(int64(params.Limit)),
 		},
@@ -449,7 +450,7 @@ func (b *CatalogHandler) ListRecommendedProductCard(
 		feedOffset = 0
 
 		// Remove all old recommendations
-		if err = b.cache.Delete(
+		if err = b.ranked.Delete(
 			ctx,
 			fmt.Sprintf(catalogmodel.CacheKeyRecommendProduct, params.Account.ID),
 		); err != nil {
@@ -462,7 +463,7 @@ func (b *CatalogHandler) ListRecommendedProductCard(
 
 		// Adding new feed
 		for _, p := range recommendations {
-			if err = b.cache.ZAdd(
+			if err = b.ranked.Add(
 				ctx,
 				fmt.Sprintf(catalogmodel.CacheKeyRecommendProduct, params.Account.ID),
 				p,

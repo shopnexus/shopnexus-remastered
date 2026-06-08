@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"time"
-
-	"github.com/guregu/null/v6"
 )
 
 // ErrCacheMiss is returned by Get when the key is absent.
@@ -18,21 +16,8 @@ type Client interface {
 	Delete(ctx context.Context, key string) error
 	Exists(ctx context.Context, key string) (bool, error)
 
-	ZAdd(ctx context.Context, key string, value any, score float64) error
-	ZRem(ctx context.Context, key string, value any) error
-	ZRangeByScore(ctx context.Context, key string, dest any, opts ZRangeOptions) error
-	ZRevRangeByScore(ctx context.Context, key string, dest any, opts ZRangeOptions) error
-
 	Ping() error
 	Close() error
-}
-
-// ZRangeOptions defines optional options for range queries on sorted sets.
-type ZRangeOptions struct {
-	Start  null.Float
-	Stop   null.Float
-	Offset null.Int
-	Limit  null.Int // Negative limit means no limit (from redis docs)
 }
 
 // Config provides custom encoding and decoding functions for struct caching.

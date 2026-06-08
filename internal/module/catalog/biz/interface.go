@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"shopnexus-server/internal/infras/cache"
+	"shopnexus-server/internal/infras/rankedset"
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	analyticbiz "shopnexus-server/internal/module/analytic/biz"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
@@ -86,6 +87,7 @@ type CatalogHandler struct {
 	cfg       *catalogconfig.Config
 	logger    *slog.Logger
 	cache     cache.Client
+	ranked    rankedset.Client
 	storage   CatalogStorage
 	account   accountbiz.AccountBizClient
 	analytic  analyticbiz.AnalyticBizClient
@@ -107,6 +109,7 @@ func NewCatalogHandler(
 	logger *slog.Logger,
 	storage CatalogStorage,
 	cache cache.Client,
+	ranked rankedset.Client,
 	account accountbiz.AccountBizClient,
 	analytic analyticbiz.AnalyticBizClient,
 	common commonbiz.CommonBizClient,
@@ -118,6 +121,7 @@ func NewCatalogHandler(
 		cfg:       cfg,
 		logger:    logger,
 		cache:     cache,
+		ranked:    ranked,
 		storage:   storage,
 		account:   account,
 		analytic:  analytic,

@@ -56,3 +56,6 @@ ghtk:
 
 bus:
   transport: redis
+
+rankedset:
+  transport: redis # memory = in-process (dev / single instance), redis = sorted set

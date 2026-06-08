@@ -6,13 +6,13 @@ import (
 
 	"go.uber.org/fx"
 
+	"shopnexus-server/internal/infras/cache"
 	"shopnexus-server/internal/infras/fxinfra"
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 	catalogconfig "shopnexus-server/internal/module/catalog/config"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	catalogecho "shopnexus-server/internal/module/catalog/transport/echo"
 	catalogworkers "shopnexus-server/internal/module/catalog/workers"
-	"shopnexus-server/internal/infras/cache"
 	"shopnexus-server/internal/provider/llm"
 	"shopnexus-server/internal/shared/pgsqlc"
 )

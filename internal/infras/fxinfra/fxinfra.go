@@ -23,6 +23,7 @@ import (
 	"shopnexus-server/internal/infras/bus"
 	"shopnexus-server/internal/infras/cache"
 	"shopnexus-server/internal/infras/pg"
+	"shopnexus-server/internal/infras/rankedset"
 	"shopnexus-server/internal/shared/pgsqlc"
 )
 
@@ -35,6 +36,7 @@ func Providers[C config.HasShared](module string) fx.Option {
 		Pool[C],
 		Cache[C],
 		Bus[C],
+		RankedSet[C],
 		fx.Private,
 	)
 }
@@ -115,6 +117,42 @@ func Cache[C config.HasShared](cfg C, lc fx.Lifecycle) (cache.Client, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+	lc.Append(fx.Hook{
+		OnStart: func(context.Context) error { return c.Ping() },
+		OnStop:  func(context.Context) error { return c.Close() },
+	})
+	return c, nil
+}
+
+// RankedSet builds the module's ranked set: "memory" is an in-process store
+// (dev / single instance), "redis" runs on a sorted set over the module's own
+// rueidis client, pinged on start and closed on stop.
+func RankedSet[C config.HasShared](cfg C, lc fx.Lifecycle) (rankedset.Client, error) {
+	var (
+		c   rankedset.Client
+		err error
+	)
+	switch cfg.SharedConfig().RankedSet.Transport {
+	case "memory":
+		c = rankedset.NewMemoryRankedSet(rankedset.Config{
+			Encoder: json.Marshal,
+			Decoder: json.Unmarshal,
+		})
+	case "redis":
+		rdb, rerr := Redis(cfg)
+		if rerr != nil {
+			return nil, rerr
+		}
+		c, err = rankedset.NewRedisRankedSet(rdb, rankedset.Config{
+			Encoder: json.Marshal,
+			Decoder: json.Unmarshal,
+		})
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("rankedset: unknown transport %q", cfg.SharedConfig().RankedSet.Transport)
 	}
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error { return c.Ping() },
