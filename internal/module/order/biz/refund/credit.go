@@ -63,6 +63,11 @@ func (b *RefundHandler) CreditFromSession(
 // auto-accept timeout, admin dismiss). Callers outside the fulfillment
 // workflow must signal it afterwards (Send().OnRefundChanged) so its escrow
 // loop re-snapshots; the in-workflow caller re-snapshots on loop continue.
+//
+// TODO(idempotency): de-journaled, so a retry re-runs the DB writes. The
+// deterministic refundTxID + ON CONFLICT DO NOTHING on CreateDefaultTransaction
+// (load-existing on conflict) would make it safe at every retry level. Until
+// then callers must guard replay themselves (the workflow wraps it in restate.Run).
 func (b *RefundHandler) ExecuteRefundCredit(
 	ctx context.Context,
 	refund orderdb.OrderRefund,

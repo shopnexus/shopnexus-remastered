@@ -41,7 +41,11 @@ func (h *FulfillmentWorkflow) autoAcceptRefund(ctx restate.WorkflowContext, refu
 		return nil
 	}
 
-	updated, err := h.refund.ExecuteRefundCredit(ctx, refund, refund.AccountID, ordermodel.RefundCreditReasonAutoAccepted)
+	// ExecuteRefundCredit is plain (de-journaled); wrap so workflow replay
+	// returns the recorded result instead of re-running its DB writes.
+	updated, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
+		return h.refund.ExecuteRefundCredit(rctx, refund, refund.AccountID, ordermodel.RefundCreditReasonAutoAccepted)
+	})
 	if err != nil {
 		return fmt.Errorf("execute refund credit: %w", err)
 	}
