@@ -6,9 +6,6 @@ import (
 	"net/http"
 	"os"
 
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
-
 	appconfig "shopnexus-server/internal/app/config"
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	analyticbiz "shopnexus-server/internal/module/analytic/biz"
@@ -47,11 +44,16 @@ func SetupBestEffort(
 	promotionbiz.RegisterPromotionBestEffort(srv, promotionBiz)
 
 	bindAddress := fmt.Sprintf(":%s", cfg.BestEffort.Port)
-	handler := h2c.NewHandler(srv.Handler(), &http2.Server{})
+
+	// Serve HTTP/1.1 + unencrypted HTTP/2 (h2c) without the deprecated h2c wrapper.
+	var protocols http.Protocols
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+	server := &http.Server{Addr: bindAddress, Handler: srv.Handler(), Protocols: &protocols}
 
 	go func() {
 		slog.Info("Starting BestEffort service endpoint", "address", bindAddress)
-		if err := http.ListenAndServe(bindAddress, handler); err != nil {
+		if err := server.ListenAndServe(); err != nil {
 			slog.Error("BestEffort server error", slog.Any("error", err))
 			os.Exit(1)
 		}
