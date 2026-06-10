@@ -157,9 +157,10 @@ func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSe
 		}
 
 		// Create per-session refund txs and cancel each item atomically.
+		// deterministic key: retries must reuse it so the idempotency ledger dedupes
 		preMintedRefundTxIDs := make([]uuid.UUID, len(refundPlans))
 		for i := range refundPlans {
-			preMintedRefundTxIDs[i] = restate.UUID(ctx)
+			preMintedRefundTxIDs[i] = uuid.NewSHA1(uuid.NameSpaceOID, fmt.Appendf(nil, "seller-reject-refund:item:%d", refundPlans[i].Item.ID))
 		}
 		refundTxIDs, err := restate.Run(ctx, func(ctx restate.RunContext) ([]uuid.UUID, error) {
 			var txIDs []uuid.UUID

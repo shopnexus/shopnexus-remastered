@@ -398,7 +398,8 @@ func (b *Base) ExecuteRefundCredit(
 	}
 	originalTxID := uuid.NullUUID{UUID: originalTx.ID, Valid: true}
 
-	refundTxID := restate.UUID(ctx)
+	// deterministic key: retries must reuse it so the idempotency ledger dedupes
+	refundTxID := uuid.NewSHA1(uuid.NameSpaceOID, fmt.Appendf(nil, "refund-credit:refund:%s", refund.ID))
 	updated, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
 		refundTx, e := b.Storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
 			ID:            refundTxID,
