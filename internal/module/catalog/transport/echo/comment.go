@@ -40,7 +40,7 @@ func (h *Handler) ListComment(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.Guaranteed().ListComment(c.Request().Context(), catalogbiz.ListCommentParams{
+	result, err := h.biz.ListComment(c.Request().Context(), catalogbiz.ListCommentParams{
 		Params:    req.Params.Constrain(),
 		Account:   claims.Account,
 		RefType:   req.RefType,
@@ -96,7 +96,7 @@ func (h *Handler) CreateComment(c echo.Context) error {
 		return response.FromDTO(c.Response().Writer, http.StatusOK, result)
 	}
 
-	result, err := h.biz.Guaranteed().CreateComment(c.Request().Context(), catalogbiz.CreateCommentParams{
+	result, err := h.biz.Call().CreateComment(c.Request().Context(), catalogbiz.CreateCommentParams{
 		Account:     claims.Account,
 		RefType:     req.RefType,
 		RefID:       req.RefID,
@@ -133,7 +133,7 @@ func (h *Handler) UpdateComment(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	comment, err := h.biz.Guaranteed().UpdateComment(c.Request().Context(), catalogbiz.UpdateCommentParams{
+	comment, err := h.biz.Call().UpdateComment(c.Request().Context(), catalogbiz.UpdateCommentParams{
 		Account:     claims.Account,
 		ID:          req.ID,
 		Body:        req.Body,
@@ -175,7 +175,7 @@ func (h *Handler) VoteComment(c echo.Context) error {
 		params.DownvoteDelta = null.IntFrom(1)
 	}
 
-	comment, err := h.biz.Guaranteed().UpdateComment(c.Request().Context(), params)
+	comment, err := h.biz.Call().UpdateComment(c.Request().Context(), params)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
@@ -200,7 +200,7 @@ func (h *Handler) DeleteComment(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if err := h.biz.Guaranteed().DeleteComment(c.Request().Context(), catalogbiz.DeleteCommentParams{
+	if err := h.biz.Call().DeleteComment(c.Request().Context(), catalogbiz.DeleteCommentParams{
 		Account:    claims.Account,
 		CommentIDs: req.IDs,
 	}); err != nil {

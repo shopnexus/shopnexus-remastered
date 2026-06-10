@@ -23,14 +23,14 @@ func (b *Base) EnrichItems(ctx context.Context, dbItems []orderdb.OrderItem) ([]
 	}
 
 	skuIDs := lo.Uniq(lo.Map(dbItems, func(it orderdb.OrderItem, _ int) uuid.UUID { return it.SkuID }))
-	skus, err := b.catalog.Guaranteed().ListProductSku(ctx, catalogbiz.ListProductSkuParams{ID: skuIDs})
+	skus, err := b.catalog.ListProductSku(ctx, catalogbiz.ListProductSkuParams{ID: skuIDs})
 	if err != nil {
 		return nil, fmt.Errorf("enrich items: list skus: %w", err)
 	}
 	skuMap := lo.KeyBy(skus, func(s catalogmodel.ProductSku) uuid.UUID { return s.ID })
 
 	spuIDs := lo.Uniq(lo.Map(skus, func(s catalogmodel.ProductSku, _ int) uuid.UUID { return s.SpuID }))
-	listSpu, err := b.catalog.Guaranteed().ListProductSpu(ctx, catalogbiz.ListProductSpuParams{ID: spuIDs})
+	listSpu, err := b.catalog.ListProductSpu(ctx, catalogbiz.ListProductSpuParams{ID: spuIDs})
 	if err != nil {
 		return nil, fmt.Errorf("enrich items: list spus: %w", err)
 	}

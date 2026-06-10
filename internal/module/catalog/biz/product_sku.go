@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
+	restate "github.com/restatedev/sdk-go"
 )
 
 type ListProductSkuParams struct {
@@ -66,7 +67,7 @@ type CreateProductSkuParams struct {
 
 // CreateProductSku creates a new product SKU and initializes its inventory stock.
 func (b *CatalogHandler) CreateProductSku(
-	ctx context.Context,
+	ctx restate.Context,
 	params CreateProductSkuParams,
 ) (catalogmodel.ProductSku, error) {
 	var zero catalogmodel.ProductSku
@@ -84,18 +85,25 @@ func (b *CatalogHandler) CreateProductSku(
 		return zero, fmt.Errorf("create product sku: %w", err)
 	}
 
-	// Create sku
-	sku, err := b.storage.Querier().CreateDefaultProductSku(ctx, catalogdb.CreateDefaultProductSkuParams{
-		SpuID:           params.SpuID,
-		Price:           params.Price,
-		SharedPackaging: params.SharedPackaging,
-		Attributes:      attributesBytes,
-		PackageDetails:  packagedetailsBytes,
+	// execution: create the SKU.
+	sku, err := restate.Run(ctx, func(rctx restate.RunContext) (catalogdb.CatalogProductSku, error) {
+		sku, err := b.storage.Querier().CreateDefaultProductSku(rctx, catalogdb.CreateDefaultProductSkuParams{
+			SpuID:           params.SpuID,
+			Price:           params.Price,
+			SharedPackaging: params.SharedPackaging,
+			Attributes:      attributesBytes,
+			PackageDetails:  packagedetailsBytes,
+		})
+		if err != nil {
+			return catalogdb.CatalogProductSku{}, fmt.Errorf("db create product sku: %w", err)
+		}
+		return sku, nil
 	})
 	if err != nil {
-		return zero, fmt.Errorf("db create product sku: %w", err)
+		return zero, err
 	}
 
+	// execution: initialize inventory stock (cross-module).
 	if _, err := b.inventory.Call().CreateStock(ctx, inventorybiz.CreateStockParams{
 		RefID:   sku.ID,
 		RefType: inventorydb.InventoryStockRefTypeProductSku,
@@ -122,7 +130,7 @@ type UpdateProductSkuParams struct {
 
 // UpdateProductSku updates a product SKU and invalidates the parent SPU search index.
 func (b *CatalogHandler) UpdateProductSku(
-	ctx context.Context,
+	ctx restate.Context,
 	params UpdateProductSkuParams,
 ) (catalogmodel.ProductSku, error) {
 	var zero catalogmodel.ProductSku
@@ -141,23 +149,30 @@ func (b *CatalogHandler) UpdateProductSku(
 	}
 	// TODO: check biz logic of attribute update
 
-	sku, err := b.storage.Querier().UpdateProductSku(ctx, catalogdb.UpdateProductSkuParams{
-		ID:              params.ID,
-		Price:           params.Price,
-		SharedPackaging: params.SharedPackaging,
-		Attributes:      attributesBytes,
-		PackageDetails:  packageDetailsBytes,
+	// execution: update the SKU and mark the parent SPU search index stale.
+	sku, err := restate.Run(ctx, func(rctx restate.RunContext) (catalogdb.CatalogProductSku, error) {
+		sku, err := b.storage.Querier().UpdateProductSku(rctx, catalogdb.UpdateProductSkuParams{
+			ID:              params.ID,
+			Price:           params.Price,
+			SharedPackaging: params.SharedPackaging,
+			Attributes:      attributesBytes,
+			PackageDetails:  packageDetailsBytes,
+		})
+		if err != nil {
+			return catalogdb.CatalogProductSku{}, fmt.Errorf("db update product sku: %w", err)
+		}
+
+		// Re-embed parent product (SKU attributes feed the embedding text).
+		if err := b.storage.Querier().MarkStaleSearchSync(rctx, catalogdb.MarkStaleSearchSyncParams{
+			RefType: catalogdb.CatalogSearchSyncRefTypeProductSpu,
+			RefID:   sku.SpuID,
+		}); err != nil {
+			return catalogdb.CatalogProductSku{}, fmt.Errorf("db update search sync: %w", err)
+		}
+		return sku, nil
 	})
 	if err != nil {
-		return zero, fmt.Errorf("db update product sku: %w", err)
-	}
-
-	// Re-embed parent product (SKU attributes feed the embedding text)
-	if err := b.storage.Querier().MarkStaleSearchSync(ctx, catalogdb.MarkStaleSearchSyncParams{
-		RefType: catalogdb.CatalogSearchSyncRefTypeProductSpu,
-		RefID:   sku.SpuID,
-	}); err != nil {
-		return zero, fmt.Errorf("db update search sync: %w", err)
+		return zero, err
 	}
 
 	skus, err := b.HydrateProductSkus(ctx, []catalogdb.CatalogProductSku{sku})
@@ -173,16 +188,21 @@ type DeleteProductSkuParams struct {
 }
 
 // DeleteProductSku deletes a product SKU by ID.
-func (b *CatalogHandler) DeleteProductSku(ctx context.Context, params DeleteProductSkuParams) error {
+func (b *CatalogHandler) DeleteProductSku(ctx restate.Context, params DeleteProductSkuParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate delete product sku: %w", err)
 	}
 
-	// Delete sku
-	if err := b.storage.Querier().DeleteProductSku(ctx, catalogdb.DeleteProductSkuParams{
-		ID: []uuid.UUID{params.ID},
+	// execution: delete the SKU.
+	if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		if err := b.storage.Querier().DeleteProductSku(rctx, catalogdb.DeleteProductSkuParams{
+			ID: []uuid.UUID{params.ID},
+		}); err != nil {
+			return fmt.Errorf("db delete product sku: %w", err)
+		}
+		return nil
 	}); err != nil {
-		return fmt.Errorf("db delete product sku: %w", err)
+		return err
 	}
 
 	// TODO: should delete via message queue instead

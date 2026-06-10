@@ -155,7 +155,7 @@ func (b *CatalogHandler) GetProductDetail(
 	// Check favorite for authenticated user
 	var isFavorite bool
 	if params.Account != nil {
-		favoriteSet, _ := b.account.Guaranteed().CheckFavorites(
+		favoriteSet, _ := b.account.CheckFavorites(
 			ctx,
 			accountbiz.CheckFavoritesParams{AccountID: params.Account.ID, SpuIDs: []uuid.UUID{spu.ID}},
 		)

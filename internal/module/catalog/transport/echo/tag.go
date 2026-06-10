@@ -27,7 +27,7 @@ func (h *Handler) ListTag(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.Guaranteed().ListTag(c.Request().Context(), catalogbiz.ListTagParams{
+	result, err := h.biz.ListTag(c.Request().Context(), catalogbiz.ListTagParams{
 		Params: req.Params.Constrain(),
 		Search: req.Search,
 	})
@@ -55,7 +55,7 @@ func (h *Handler) GetTag(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.Guaranteed().GetTag(c.Request().Context(), catalogbiz.GetTagParams{
+	result, err := h.biz.GetTag(c.Request().Context(), catalogbiz.GetTagParams{
 		Account: claims.Account,
 		Tag:     req.Tag,
 	})

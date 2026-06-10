@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
@@ -16,12 +17,20 @@ import (
 
 // AddInteractions processes a batch of analytic interaction events. Batching
 // happens upstream in the bus subscription (see catalog/workers).
-func (b *CatalogHandler) AddInteractions(ctx context.Context, events []analyticmodel.Interaction) error {
-	if err := b.processEvents(ctx, events); err != nil {
-		return fmt.Errorf("process events: %w", err)
+func (b *CatalogHandler) AddInteractions(ctx restate.Context, events []analyticmodel.Interaction) error {
+	// execution: update account interest vectors from the event batch.
+	if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		if err := b.processEvents(rctx, events); err != nil {
+			return fmt.Errorf("process events: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
-	// Interests changed → invalidate each affected account's recommend pool.
+	// tail: interests changed → invalidate each affected account's recommend pool.
+	// Each cache delete is idempotent and journaled in its own Run so a retry
+	// never re-runs an invalidation that already completed.
 	seen := make(map[uuid.UUID]struct{})
 	for _, ev := range events {
 		if !ev.AccountID.Valid {
@@ -31,16 +40,20 @@ func (b *CatalogHandler) AddInteractions(ctx context.Context, events []analyticm
 			continue
 		}
 		seen[ev.AccountID.UUID] = struct{}{}
-		if err := b.cache.Delete(
-			ctx,
-			fmt.Sprintf(catalogmodel.CacheKeyRecommendPool, ev.AccountID.UUID.String()),
-		); err != nil {
-			b.logger.Error(
-				"invalidate recommend pool",
-				slog.String("account_id", ev.AccountID.UUID.String()),
-				slog.Any("error", err),
-			)
-		}
+		accountID := ev.AccountID.UUID
+		_ = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+			if err := b.cache.Delete(
+				rctx,
+				fmt.Sprintf(catalogmodel.CacheKeyRecommendPool, accountID.String()),
+			); err != nil {
+				b.logger.Error(
+					"invalidate recommend pool",
+					slog.String("account_id", accountID.String()),
+					slog.Any("error", err),
+				)
+			}
+			return nil
+		})
 	}
 	return nil
 }

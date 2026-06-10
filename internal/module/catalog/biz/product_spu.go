@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gosimple/slug"
+	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 
 	accountbiz "shopnexus-server/internal/module/account/biz"
@@ -159,7 +160,7 @@ type CreateProductSpuParams struct {
 
 // CreateProductSpu creates a new product SPU with tags, resources, and search sync entry.
 func (b *CatalogHandler) CreateProductSpu(
-	ctx context.Context,
+	ctx restate.Context,
 	params CreateProductSpuParams,
 ) (catalogmodel.ProductSpu, error) {
 	var zero catalogmodel.ProductSpu
@@ -168,6 +169,7 @@ func (b *CatalogHandler) CreateProductSpu(
 		return zero, fmt.Errorf("validate create product spu: %w", err)
 	}
 
+	// decision: enforce the seller-currency invariant before writing.
 	if err := b.assertSellerCurrency(ctx, params.Account, params.Currency); err != nil {
 		return zero, fmt.Errorf("assert seller currency: %w", err)
 	}
@@ -177,26 +179,39 @@ func (b *CatalogHandler) CreateProductSpu(
 		return zero, fmt.Errorf("create product spu: %w", err)
 	}
 
-	spu, err := b.storage.Querier().CreateDefaultProductSpu(ctx, catalogdb.CreateDefaultProductSpuParams{
-		Slug:           GenerateSlug(params.Name),
-		AccountID:      params.Account.ID,
-		CategoryID:     params.CategoryID,
-		Name:           params.Name,
-		Description:    params.Description,
-		IsEnabled:      params.IsEnabled,
-		Currency:       params.Currency,
-		Specifications: specsBytes,
+	// execution: create the SPU with its tags and search-sync entry.
+	spu, err := restate.Run(ctx, func(rctx restate.RunContext) (catalogdb.CatalogProductSpu, error) {
+		spu, err := b.storage.Querier().CreateDefaultProductSpu(rctx, catalogdb.CreateDefaultProductSpuParams{
+			Slug:           GenerateSlug(params.Name),
+			AccountID:      params.Account.ID,
+			CategoryID:     params.CategoryID,
+			Name:           params.Name,
+			Description:    params.Description,
+			IsEnabled:      params.IsEnabled,
+			Currency:       params.Currency,
+			Specifications: specsBytes,
+		})
+		if err != nil {
+			return catalogdb.CatalogProductSpu{}, fmt.Errorf("db create product spu: %w", err)
+		}
+
+		if err := b.updateTags(rctx, b.storage.Querier(), updateTagsParams{
+			SpuID: spu.ID,
+			Tags:  params.Tags,
+		}); err != nil {
+			return catalogdb.CatalogProductSpu{}, fmt.Errorf("create product spu: %w", err)
+		}
+
+		if _, err := b.storage.Querier().CreateDefaultSearchSync(rctx, catalogdb.CreateDefaultSearchSyncParams{
+			RefType: catalogdb.CatalogSearchSyncRefTypeProductSpu,
+			RefID:   spu.ID,
+		}); err != nil {
+			return catalogdb.CatalogProductSpu{}, fmt.Errorf("db create search sync: %w", err)
+		}
+		return spu, nil
 	})
 	if err != nil {
-		return zero, fmt.Errorf("db create product spu: %w", err)
-	}
-
-	// Create tags
-	if err := b.updateTags(ctx, b.storage.Querier(), updateTagsParams{
-		SpuID: spu.ID,
-		Tags:  params.Tags,
-	}); err != nil {
-		return zero, fmt.Errorf("create product spu: %w", err)
+		return zero, err
 	}
 
 	// Create resources
@@ -207,13 +222,6 @@ func (b *CatalogHandler) CreateProductSpu(
 		ResourceIDs: params.ResourceIDs,
 	}); err != nil {
 		return zero, fmt.Errorf("create product spu: %w", err)
-	}
-
-	if _, err := b.storage.Querier().CreateDefaultSearchSync(ctx, catalogdb.CreateDefaultSearchSyncParams{
-		RefType: catalogdb.CatalogSearchSyncRefTypeProductSpu,
-		RefID:   spu.ID,
-	}); err != nil {
-		return zero, fmt.Errorf("db create search sync: %w", err)
 	}
 
 	spus, err := b.HydrateProductSpus(ctx, []catalogdb.CatalogProductSpu{spu})
@@ -240,32 +248,13 @@ type UpdateProductSpuParams struct {
 
 // UpdateProductSpu updates an existing product SPU and marks the search index as stale.
 func (b *CatalogHandler) UpdateProductSpu(
-	ctx context.Context,
+	ctx restate.Context,
 	params UpdateProductSpuParams,
 ) (catalogmodel.ProductSpu, error) {
 	var zero catalogmodel.ProductSpu
 
 	if err := validator.Validate(params); err != nil {
 		return zero, fmt.Errorf("validate update product spu: %w", err)
-	}
-
-	if params.Currency.Valid {
-		if err := b.assertSellerCurrency(ctx, params.Account, params.Currency.String); err != nil {
-			return zero, fmt.Errorf("assert seller currency: %w", err)
-		}
-	}
-
-	// Ensure the featured SKU (if provided) belongs to the current SPU.
-	if params.FeaturedSkuID.Valid {
-		skus, err := b.storage.Querier().ListProductSku(ctx, catalogdb.ListProductSkuParams{
-			Id: []uuid.UUID{params.FeaturedSkuID.UUID},
-		})
-		if err != nil {
-			return zero, fmt.Errorf("db validate featured sku: %w", err)
-		}
-		if len(skus.Data) == 0 || skus.Data[0].SpuID != params.ID {
-			return zero, catalogmodel.ErrSkuNotBelongToSpu
-		}
 	}
 
 	var slug null.String
@@ -278,41 +267,66 @@ func (b *CatalogHandler) UpdateProductSpu(
 		return zero, fmt.Errorf("marshal product spu specifications: %w", err)
 	}
 
-	// FIRST STEP: Update the product spu
-	spu, err := b.storage.Querier().UpdateProductSpu(ctx, catalogdb.UpdateProductSpuParams{
-		ID:            params.ID,
-		Slug:          slug,
-		FeaturedSkuID: params.FeaturedSkuID,
-		CategoryID:    params.CategoryID,
-		Name:          params.Name,
-		Description:   params.Description,
-		IsEnabled:     params.IsEnabled,
-		Currency:      params.Currency,
-		// TODO: auto fill the current_timestampt in pgtempl tool
-		// DateUpdated:    time.Now(),
-		Specifications: specsBytes,
+	// decision: validate currency + featured SKU, then write the SPU, tags, and
+	// stale-search marker in one journaled step.
+	spu, err := restate.Run(ctx, func(rctx restate.RunContext) (catalogdb.CatalogProductSpu, error) {
+		if params.Currency.Valid {
+			if err := b.assertSellerCurrency(rctx, params.Account, params.Currency.String); err != nil {
+				return catalogdb.CatalogProductSpu{}, fmt.Errorf("assert seller currency: %w", err)
+			}
+		}
+
+		// Ensure the featured SKU (if provided) belongs to the current SPU.
+		if params.FeaturedSkuID.Valid {
+			skus, err := b.storage.Querier().ListProductSku(rctx, catalogdb.ListProductSkuParams{
+				Id: []uuid.UUID{params.FeaturedSkuID.UUID},
+			})
+			if err != nil {
+				return catalogdb.CatalogProductSpu{}, fmt.Errorf("db validate featured sku: %w", err)
+			}
+			if len(skus.Data) == 0 || skus.Data[0].SpuID != params.ID {
+				return catalogdb.CatalogProductSpu{}, catalogmodel.ErrSkuNotBelongToSpu
+			}
+		}
+
+		spu, err := b.storage.Querier().UpdateProductSpu(rctx, catalogdb.UpdateProductSpuParams{
+			ID:            params.ID,
+			Slug:          slug,
+			FeaturedSkuID: params.FeaturedSkuID,
+			CategoryID:    params.CategoryID,
+			Name:          params.Name,
+			Description:   params.Description,
+			IsEnabled:     params.IsEnabled,
+			Currency:      params.Currency,
+			// TODO: auto fill the current_timestampt in pgtempl tool
+			// DateUpdated:    time.Now(),
+			Specifications: specsBytes,
+		})
+		if err != nil {
+			return catalogdb.CatalogProductSpu{}, fmt.Errorf("db update product spu: %w", err)
+		}
+
+		if err := b.updateTags(rctx, b.storage.Querier(), updateTagsParams{
+			SpuID: spu.ID,
+			Tags:  params.Tags,
+		}); err != nil {
+			return catalogdb.CatalogProductSpu{}, fmt.Errorf("update product spu tags: %w", err)
+		}
+
+		// Mark the search embedding stale (name/description/tags feed the embedding text).
+		if err := b.storage.Querier().MarkStaleSearchSync(rctx, catalogdb.MarkStaleSearchSyncParams{
+			RefType: catalogdb.CatalogSearchSyncRefTypeProductSpu,
+			RefID:   params.ID,
+		}); err != nil {
+			return catalogdb.CatalogProductSpu{}, fmt.Errorf("db update search sync: %w", err)
+		}
+		return spu, nil
 	})
 	if err != nil {
-		return zero, fmt.Errorf("db update product spu: %w", err)
+		return zero, err
 	}
 
-	// NEXT STEP: Update tags
-	if err := b.updateTags(ctx, b.storage.Querier(), updateTagsParams{
-		SpuID: spu.ID,
-		Tags:  params.Tags,
-	}); err != nil {
-		return zero, fmt.Errorf("update product spu tags: %w", err)
-	}
-
-	// NEXT STEP: Mark the search embedding as stale (name/description/tags feed the embedding text)
-	if err = b.storage.Querier().MarkStaleSearchSync(ctx, catalogdb.MarkStaleSearchSyncParams{
-		RefType: catalogdb.CatalogSearchSyncRefTypeProductSpu,
-		RefID:   params.ID,
-	}); err != nil {
-		return zero, fmt.Errorf("db update search sync: %w", err)
-	}
-
-	// LAST STEP: Update resources
+	// execution: update resources (cross-module).
 	if _, err := b.common.Call().UpdateResources(ctx, commonbiz.UpdateResourcesParams{
 		Account:     params.Account,
 		RefType:     commondb.CommonResourceRefTypeProductSpu,
@@ -338,7 +352,7 @@ func (b *CatalogHandler) assertSellerCurrency(
 	seller accountmodel.AuthenticatedAccount,
 	currency string,
 ) error {
-	profile, err := b.account.Guaranteed().GetProfile(ctx, accountbiz.GetProfileParams{
+	profile, err := b.account.GetProfile(ctx, accountbiz.GetProfileParams{
 		AccountID: seller.ID,
 	})
 	if err != nil {
@@ -360,18 +374,20 @@ type DeleteProductSpuParams struct {
 }
 
 // DeleteProductSpu deletes a product SPU by ID.
-func (b *CatalogHandler) DeleteProductSpu(ctx context.Context, params DeleteProductSpuParams) error {
+func (b *CatalogHandler) DeleteProductSpu(ctx restate.Context, params DeleteProductSpuParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate delete product spu: %w", err)
 	}
 
-	if err := b.storage.Querier().DeleteProductSpu(ctx, catalogdb.DeleteProductSpuParams{
-		ID: []uuid.UUID{params.ID},
-	}); err != nil {
-		return fmt.Errorf("db delete product spu: %w", err)
-	}
-
-	return nil
+	// execution: delete the SPU.
+	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		if err := b.storage.Querier().DeleteProductSpu(rctx, catalogdb.DeleteProductSpuParams{
+			ID: []uuid.UUID{params.ID},
+		}); err != nil {
+			return fmt.Errorf("db delete product spu: %w", err)
+		}
+		return nil
+	})
 }
 
 type updateTagsParams struct {

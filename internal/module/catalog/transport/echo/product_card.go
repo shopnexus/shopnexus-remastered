@@ -52,7 +52,7 @@ func (h *Handler) ListProductCard(c echo.Context) error {
 		params.AccountID = uuid.NullUUID{UUID: claims.Account.ID, Valid: true}
 	}
 
-	result, err := h.biz.Guaranteed().ListProductCard(c.Request().Context(), params)
+	result, err := h.biz.ListProductCard(c.Request().Context(), params)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
@@ -73,7 +73,7 @@ func (h *Handler) GetProductCard(c echo.Context) error {
 		params.AccountID = uuid.NullUUID{UUID: claims.Account.ID, Valid: true}
 	}
 
-	result, err := h.biz.Guaranteed().GetProductCard(c.Request().Context(), params)
+	result, err := h.biz.GetProductCard(c.Request().Context(), params)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
@@ -95,7 +95,7 @@ func (h *Handler) ListRecommendedProductCard(c echo.Context) error {
 
 	claims, _ := authclaims.GetClaims(c.Request())
 
-	result, err := h.biz.Guaranteed().ListRecommendedProductCard(c.Request().Context(), catalogbiz.ListRecommendedProductCardParams{
+	result, err := h.biz.ListRecommendedProductCard(c.Request().Context(), catalogbiz.ListRecommendedProductCardParams{
 		Account: claims.Account,
 		Limit:   req.Limit,
 	})

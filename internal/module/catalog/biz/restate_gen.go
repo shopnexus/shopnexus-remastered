@@ -16,184 +16,120 @@ import (
 
 const serviceName = "Catalog"
 
-// CatalogBizSender mirrors CatalogBiz as one-way (fire-and-forget) calls; outputs are dropped.
+// CatalogBizCall mirrors the command methods of CatalogBiz as request-response calls.
+type CatalogBizCall interface {
+	CreateProductSpu(ctx context.Context, params CreateProductSpuParams) (catalogmodel.ProductSpu, error)
+	UpdateProductSpu(ctx context.Context, params UpdateProductSpuParams) (catalogmodel.ProductSpu, error)
+	DeleteProductSpu(ctx context.Context, params DeleteProductSpuParams) error
+	CreateProductSku(ctx context.Context, params CreateProductSkuParams) (catalogmodel.ProductSku, error)
+	UpdateProductSku(ctx context.Context, params UpdateProductSkuParams) (catalogmodel.ProductSku, error)
+	DeleteProductSku(ctx context.Context, params DeleteProductSkuParams) error
+	CreateComment(ctx context.Context, params CreateCommentParams) (catalogmodel.Comment, error)
+	UpdateComment(ctx context.Context, params UpdateCommentParams) (catalogmodel.Comment, error)
+	DeleteComment(ctx context.Context, params DeleteCommentParams) error
+	AddInteractions(ctx context.Context, events []analyticmodel.Interaction) error
+}
+
+// CatalogBizSender mirrors the command methods of CatalogBiz as one-way (fire-and-forget) calls.
 type CatalogBizSender interface {
-	GetProductDetail(ctx context.Context, params GetProductDetailParams) error
-	GetProductCard(ctx context.Context, params GetProductCardParams) error
-	ListProductCard(ctx context.Context, params ListProductCardParams) error
-	ListRecommendedProductCard(ctx context.Context, params ListRecommendedProductCardParams) error
-	GetProductSpu(ctx context.Context, params GetProductSpuParams) error
-	ListProductSpu(ctx context.Context, params ListProductSpuParams) error
 	CreateProductSpu(ctx context.Context, params CreateProductSpuParams) error
 	UpdateProductSpu(ctx context.Context, params UpdateProductSpuParams) error
 	DeleteProductSpu(ctx context.Context, params DeleteProductSpuParams) error
-	ListProductSku(ctx context.Context, params ListProductSkuParams) error
 	CreateProductSku(ctx context.Context, params CreateProductSkuParams) error
 	UpdateProductSku(ctx context.Context, params UpdateProductSkuParams) error
 	DeleteProductSku(ctx context.Context, params DeleteProductSkuParams) error
-	ListComment(ctx context.Context, params ListCommentParams) error
 	CreateComment(ctx context.Context, params CreateCommentParams) error
 	UpdateComment(ctx context.Context, params UpdateCommentParams) error
 	DeleteComment(ctx context.Context, params DeleteCommentParams) error
-	ListTag(ctx context.Context, params ListTagParams) error
-	GetTag(ctx context.Context, params GetTagParams) error
-	ListCategory(ctx context.Context, params ListCategoryParams) error
-	Search(ctx context.Context, params SearchParams) error
-	GetRecommendations(ctx context.Context, params GetRecommendationsParams) error
 	AddInteractions(ctx context.Context, events []analyticmodel.Interaction) error
-	GetVendorStats(ctx context.Context, params GetVendorStatsParams) error
 }
 
-// CatalogBizFuture mirrors CatalogBiz returning response futures for racing
-// or parallel calls. Only usable inside a Restate handler context.
+// CatalogBizFuture mirrors the command methods of CatalogBiz returning response futures for
+// racing or parallel calls. Only usable inside a Restate handler context.
 type CatalogBizFuture interface {
-	GetProductDetail(rctx restate.Context, params GetProductDetailParams) restate.ResponseFuture[catalogmodel.ProductDetail]
-	GetProductCard(rctx restate.Context, params GetProductCardParams) restate.ResponseFuture[*catalogmodel.ProductCard]
-	ListProductCard(rctx restate.Context, params ListProductCardParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.ProductCard]]
-	ListRecommendedProductCard(rctx restate.Context, params ListRecommendedProductCardParams) restate.ResponseFuture[[]catalogmodel.ProductCard]
-	GetProductSpu(rctx restate.Context, params GetProductSpuParams) restate.ResponseFuture[catalogmodel.ProductSpu]
-	ListProductSpu(rctx restate.Context, params ListProductSpuParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.ProductSpu]]
 	CreateProductSpu(rctx restate.Context, params CreateProductSpuParams) restate.ResponseFuture[catalogmodel.ProductSpu]
 	UpdateProductSpu(rctx restate.Context, params UpdateProductSpuParams) restate.ResponseFuture[catalogmodel.ProductSpu]
 	DeleteProductSpu(rctx restate.Context, params DeleteProductSpuParams) restate.ResponseFuture[restate.Void]
-	ListProductSku(rctx restate.Context, params ListProductSkuParams) restate.ResponseFuture[[]catalogmodel.ProductSku]
 	CreateProductSku(rctx restate.Context, params CreateProductSkuParams) restate.ResponseFuture[catalogmodel.ProductSku]
 	UpdateProductSku(rctx restate.Context, params UpdateProductSkuParams) restate.ResponseFuture[catalogmodel.ProductSku]
 	DeleteProductSku(rctx restate.Context, params DeleteProductSkuParams) restate.ResponseFuture[restate.Void]
-	ListComment(rctx restate.Context, params ListCommentParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.Comment]]
 	CreateComment(rctx restate.Context, params CreateCommentParams) restate.ResponseFuture[catalogmodel.Comment]
 	UpdateComment(rctx restate.Context, params UpdateCommentParams) restate.ResponseFuture[catalogmodel.Comment]
 	DeleteComment(rctx restate.Context, params DeleteCommentParams) restate.ResponseFuture[restate.Void]
-	ListTag(rctx restate.Context, params ListTagParams) restate.ResponseFuture[paginate.PaginateResult[catalogdb.CatalogTag]]
-	GetTag(rctx restate.Context, params GetTagParams) restate.ResponseFuture[catalogdb.CatalogTag]
-	ListCategory(rctx restate.Context, params ListCategoryParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.Category]]
-	Search(rctx restate.Context, params SearchParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.ProductRecommend]]
-	GetRecommendations(rctx restate.Context, params GetRecommendationsParams) restate.ResponseFuture[[]catalogmodel.ProductRecommend]
 	AddInteractions(rctx restate.Context, events []analyticmodel.Interaction) restate.ResponseFuture[restate.Void]
-	GetVendorStats(rctx restate.Context, params GetVendorStatsParams) restate.ResponseFuture[VendorStats]
 }
 
-// CatalogBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
+// CatalogBizClient is the cross-module client: query methods are flat (non-durable),
+// Call()/Future()/Send() reach the durable command surfaces.
 type CatalogBizClient interface {
-	Guaranteed() CatalogBizGuaranteed
-	BestEffort() CatalogBizBestEffort
+	GetProductDetail(ctx context.Context, params GetProductDetailParams) (catalogmodel.ProductDetail, error)
+	GetProductCard(ctx context.Context, params GetProductCardParams) (*catalogmodel.ProductCard, error)
+	ListProductCard(ctx context.Context, params ListProductCardParams) (paginate.PaginateResult[catalogmodel.ProductCard], error)
+	ListRecommendedProductCard(ctx context.Context, params ListRecommendedProductCardParams) ([]catalogmodel.ProductCard, error)
+	GetProductSpu(ctx context.Context, params GetProductSpuParams) (catalogmodel.ProductSpu, error)
+	ListProductSpu(ctx context.Context, params ListProductSpuParams) (paginate.PaginateResult[catalogmodel.ProductSpu], error)
+	ListProductSku(ctx context.Context, params ListProductSkuParams) ([]catalogmodel.ProductSku, error)
+	ListComment(ctx context.Context, params ListCommentParams) (paginate.PaginateResult[catalogmodel.Comment], error)
+	ListTag(ctx context.Context, params ListTagParams) (paginate.PaginateResult[catalogdb.CatalogTag], error)
+	GetTag(ctx context.Context, params GetTagParams) (catalogdb.CatalogTag, error)
+	ListCategory(ctx context.Context, params ListCategoryParams) (paginate.PaginateResult[catalogmodel.Category], error)
+	Search(ctx context.Context, params SearchParams) (paginate.PaginateResult[catalogmodel.ProductRecommend], error)
+	GetRecommendations(ctx context.Context, params GetRecommendationsParams) ([]catalogmodel.ProductRecommend, error)
+	GetVendorStats(ctx context.Context, params GetVendorStatsParams) (VendorStats, error)
+	Call() CatalogBizCall
+	Future() CatalogBizFuture
+	Send() CatalogBizSender
 }
 
-// CatalogRestateClient implements CatalogBizClient via Restate HTTP ingress.
-type CatalogRestateClient struct {
-	call   *restatec.CallClient
-	send   *CatalogRestateSender
-	future *CatalogRestateFuture
+// CatalogRestateCall implements CatalogBizCall via Restate HTTP ingress.
+type CatalogRestateCall struct {
+	call *restatec.CallClient
 }
 
-var _ CatalogBizGuaranteed = (*CatalogRestateClient)(nil)
+var _ CatalogBizCall = (*CatalogRestateCall)(nil)
 
-func NewCatalogRestateClient(restateIngressURL string) *CatalogRestateClient {
-	return &CatalogRestateClient{
-		call:   restatec.NewCallClient(restateIngressURL),
-		send:   &CatalogRestateSender{client: restatec.NewSendClient(restateIngressURL)},
-		future: &CatalogRestateFuture{},
-	}
+func NewCatalogRestateCall(restateIngressURL string) *CatalogRestateCall {
+	return &CatalogRestateCall{call: restatec.NewCallClient(restateIngressURL)}
 }
 
-func (p *CatalogRestateClient) Send() CatalogBizSender { return p.send }
-
-func (p *CatalogRestateClient) Future() CatalogBizFuture { return p.future }
-
-func (p *CatalogRestateClient) GetProductDetail(ctx context.Context, params GetProductDetailParams) (catalogmodel.ProductDetail, error) {
-	return restatec.Call[catalogmodel.ProductDetail](ctx, p.call, serviceName, "GetProductDetail", params)
-}
-
-func (p *CatalogRestateClient) GetProductCard(ctx context.Context, params GetProductCardParams) (*catalogmodel.ProductCard, error) {
-	return restatec.Call[*catalogmodel.ProductCard](ctx, p.call, serviceName, "GetProductCard", params)
-}
-
-func (p *CatalogRestateClient) ListProductCard(ctx context.Context, params ListProductCardParams) (paginate.PaginateResult[catalogmodel.ProductCard], error) {
-	return restatec.Call[paginate.PaginateResult[catalogmodel.ProductCard]](ctx, p.call, serviceName, "ListProductCard", params)
-}
-
-func (p *CatalogRestateClient) ListRecommendedProductCard(ctx context.Context, params ListRecommendedProductCardParams) ([]catalogmodel.ProductCard, error) {
-	return restatec.Call[[]catalogmodel.ProductCard](ctx, p.call, serviceName, "ListRecommendedProductCard", params)
-}
-
-func (p *CatalogRestateClient) GetProductSpu(ctx context.Context, params GetProductSpuParams) (catalogmodel.ProductSpu, error) {
-	return restatec.Call[catalogmodel.ProductSpu](ctx, p.call, serviceName, "GetProductSpu", params)
-}
-
-func (p *CatalogRestateClient) ListProductSpu(ctx context.Context, params ListProductSpuParams) (paginate.PaginateResult[catalogmodel.ProductSpu], error) {
-	return restatec.Call[paginate.PaginateResult[catalogmodel.ProductSpu]](ctx, p.call, serviceName, "ListProductSpu", params)
-}
-
-func (p *CatalogRestateClient) CreateProductSpu(ctx context.Context, params CreateProductSpuParams) (catalogmodel.ProductSpu, error) {
+func (p *CatalogRestateCall) CreateProductSpu(ctx context.Context, params CreateProductSpuParams) (catalogmodel.ProductSpu, error) {
 	return restatec.Call[catalogmodel.ProductSpu](ctx, p.call, serviceName, "CreateProductSpu", params)
 }
 
-func (p *CatalogRestateClient) UpdateProductSpu(ctx context.Context, params UpdateProductSpuParams) (catalogmodel.ProductSpu, error) {
+func (p *CatalogRestateCall) UpdateProductSpu(ctx context.Context, params UpdateProductSpuParams) (catalogmodel.ProductSpu, error) {
 	return restatec.Call[catalogmodel.ProductSpu](ctx, p.call, serviceName, "UpdateProductSpu", params)
 }
 
-func (p *CatalogRestateClient) DeleteProductSpu(ctx context.Context, params DeleteProductSpuParams) error {
+func (p *CatalogRestateCall) DeleteProductSpu(ctx context.Context, params DeleteProductSpuParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "DeleteProductSpu", params)
 }
 
-func (p *CatalogRestateClient) ListProductSku(ctx context.Context, params ListProductSkuParams) ([]catalogmodel.ProductSku, error) {
-	return restatec.Call[[]catalogmodel.ProductSku](ctx, p.call, serviceName, "ListProductSku", params)
-}
-
-func (p *CatalogRestateClient) CreateProductSku(ctx context.Context, params CreateProductSkuParams) (catalogmodel.ProductSku, error) {
+func (p *CatalogRestateCall) CreateProductSku(ctx context.Context, params CreateProductSkuParams) (catalogmodel.ProductSku, error) {
 	return restatec.Call[catalogmodel.ProductSku](ctx, p.call, serviceName, "CreateProductSku", params)
 }
 
-func (p *CatalogRestateClient) UpdateProductSku(ctx context.Context, params UpdateProductSkuParams) (catalogmodel.ProductSku, error) {
+func (p *CatalogRestateCall) UpdateProductSku(ctx context.Context, params UpdateProductSkuParams) (catalogmodel.ProductSku, error) {
 	return restatec.Call[catalogmodel.ProductSku](ctx, p.call, serviceName, "UpdateProductSku", params)
 }
 
-func (p *CatalogRestateClient) DeleteProductSku(ctx context.Context, params DeleteProductSkuParams) error {
+func (p *CatalogRestateCall) DeleteProductSku(ctx context.Context, params DeleteProductSkuParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "DeleteProductSku", params)
 }
 
-func (p *CatalogRestateClient) ListComment(ctx context.Context, params ListCommentParams) (paginate.PaginateResult[catalogmodel.Comment], error) {
-	return restatec.Call[paginate.PaginateResult[catalogmodel.Comment]](ctx, p.call, serviceName, "ListComment", params)
-}
-
-func (p *CatalogRestateClient) CreateComment(ctx context.Context, params CreateCommentParams) (catalogmodel.Comment, error) {
+func (p *CatalogRestateCall) CreateComment(ctx context.Context, params CreateCommentParams) (catalogmodel.Comment, error) {
 	return restatec.Call[catalogmodel.Comment](ctx, p.call, serviceName, "CreateComment", params)
 }
 
-func (p *CatalogRestateClient) UpdateComment(ctx context.Context, params UpdateCommentParams) (catalogmodel.Comment, error) {
+func (p *CatalogRestateCall) UpdateComment(ctx context.Context, params UpdateCommentParams) (catalogmodel.Comment, error) {
 	return restatec.Call[catalogmodel.Comment](ctx, p.call, serviceName, "UpdateComment", params)
 }
 
-func (p *CatalogRestateClient) DeleteComment(ctx context.Context, params DeleteCommentParams) error {
+func (p *CatalogRestateCall) DeleteComment(ctx context.Context, params DeleteCommentParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "DeleteComment", params)
 }
 
-func (p *CatalogRestateClient) ListTag(ctx context.Context, params ListTagParams) (paginate.PaginateResult[catalogdb.CatalogTag], error) {
-	return restatec.Call[paginate.PaginateResult[catalogdb.CatalogTag]](ctx, p.call, serviceName, "ListTag", params)
-}
-
-func (p *CatalogRestateClient) GetTag(ctx context.Context, params GetTagParams) (catalogdb.CatalogTag, error) {
-	return restatec.Call[catalogdb.CatalogTag](ctx, p.call, serviceName, "GetTag", params)
-}
-
-func (p *CatalogRestateClient) ListCategory(ctx context.Context, params ListCategoryParams) (paginate.PaginateResult[catalogmodel.Category], error) {
-	return restatec.Call[paginate.PaginateResult[catalogmodel.Category]](ctx, p.call, serviceName, "ListCategory", params)
-}
-
-func (p *CatalogRestateClient) Search(ctx context.Context, params SearchParams) (paginate.PaginateResult[catalogmodel.ProductRecommend], error) {
-	return restatec.Call[paginate.PaginateResult[catalogmodel.ProductRecommend]](ctx, p.call, serviceName, "Search", params)
-}
-
-func (p *CatalogRestateClient) GetRecommendations(ctx context.Context, params GetRecommendationsParams) ([]catalogmodel.ProductRecommend, error) {
-	return restatec.Call[[]catalogmodel.ProductRecommend](ctx, p.call, serviceName, "GetRecommendations", params)
-}
-
-func (p *CatalogRestateClient) AddInteractions(ctx context.Context, events []analyticmodel.Interaction) error {
+func (p *CatalogRestateCall) AddInteractions(ctx context.Context, events []analyticmodel.Interaction) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "AddInteractions", events)
-}
-
-func (p *CatalogRestateClient) GetVendorStats(ctx context.Context, params GetVendorStatsParams) (VendorStats, error) {
-	return restatec.Call[VendorStats](ctx, p.call, serviceName, "GetVendorStats", params)
 }
 
 // CatalogRestateSender implements CatalogBizSender.
@@ -202,30 +138,6 @@ type CatalogRestateSender struct {
 }
 
 var _ CatalogBizSender = (*CatalogRestateSender)(nil)
-
-func (s *CatalogRestateSender) GetProductDetail(ctx context.Context, params GetProductDetailParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetProductDetail", params)
-}
-
-func (s *CatalogRestateSender) GetProductCard(ctx context.Context, params GetProductCardParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetProductCard", params)
-}
-
-func (s *CatalogRestateSender) ListProductCard(ctx context.Context, params ListProductCardParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListProductCard", params)
-}
-
-func (s *CatalogRestateSender) ListRecommendedProductCard(ctx context.Context, params ListRecommendedProductCardParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListRecommendedProductCard", params)
-}
-
-func (s *CatalogRestateSender) GetProductSpu(ctx context.Context, params GetProductSpuParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetProductSpu", params)
-}
-
-func (s *CatalogRestateSender) ListProductSpu(ctx context.Context, params ListProductSpuParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListProductSpu", params)
-}
 
 func (s *CatalogRestateSender) CreateProductSpu(ctx context.Context, params CreateProductSpuParams) error {
 	return restatec.Send(ctx, s.client, serviceName, "CreateProductSpu", params)
@@ -237,10 +149,6 @@ func (s *CatalogRestateSender) UpdateProductSpu(ctx context.Context, params Upda
 
 func (s *CatalogRestateSender) DeleteProductSpu(ctx context.Context, params DeleteProductSpuParams) error {
 	return restatec.Send(ctx, s.client, serviceName, "DeleteProductSpu", params)
-}
-
-func (s *CatalogRestateSender) ListProductSku(ctx context.Context, params ListProductSkuParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListProductSku", params)
 }
 
 func (s *CatalogRestateSender) CreateProductSku(ctx context.Context, params CreateProductSkuParams) error {
@@ -255,10 +163,6 @@ func (s *CatalogRestateSender) DeleteProductSku(ctx context.Context, params Dele
 	return restatec.Send(ctx, s.client, serviceName, "DeleteProductSku", params)
 }
 
-func (s *CatalogRestateSender) ListComment(ctx context.Context, params ListCommentParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListComment", params)
-}
-
 func (s *CatalogRestateSender) CreateComment(ctx context.Context, params CreateCommentParams) error {
 	return restatec.Send(ctx, s.client, serviceName, "CreateComment", params)
 }
@@ -271,62 +175,14 @@ func (s *CatalogRestateSender) DeleteComment(ctx context.Context, params DeleteC
 	return restatec.Send(ctx, s.client, serviceName, "DeleteComment", params)
 }
 
-func (s *CatalogRestateSender) ListTag(ctx context.Context, params ListTagParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListTag", params)
-}
-
-func (s *CatalogRestateSender) GetTag(ctx context.Context, params GetTagParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetTag", params)
-}
-
-func (s *CatalogRestateSender) ListCategory(ctx context.Context, params ListCategoryParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListCategory", params)
-}
-
-func (s *CatalogRestateSender) Search(ctx context.Context, params SearchParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "Search", params)
-}
-
-func (s *CatalogRestateSender) GetRecommendations(ctx context.Context, params GetRecommendationsParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetRecommendations", params)
-}
-
 func (s *CatalogRestateSender) AddInteractions(ctx context.Context, events []analyticmodel.Interaction) error {
 	return restatec.Send(ctx, s.client, serviceName, "AddInteractions", events)
-}
-
-func (s *CatalogRestateSender) GetVendorStats(ctx context.Context, params GetVendorStatsParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetVendorStats", params)
 }
 
 // CatalogRestateFuture implements CatalogBizFuture via the Restate SDK.
 type CatalogRestateFuture struct{}
 
 var _ CatalogBizFuture = (*CatalogRestateFuture)(nil)
-
-func (f *CatalogRestateFuture) GetProductDetail(rctx restate.Context, params GetProductDetailParams) restate.ResponseFuture[catalogmodel.ProductDetail] {
-	return restate.Service[catalogmodel.ProductDetail](rctx, serviceName, "GetProductDetail").RequestFuture(params)
-}
-
-func (f *CatalogRestateFuture) GetProductCard(rctx restate.Context, params GetProductCardParams) restate.ResponseFuture[*catalogmodel.ProductCard] {
-	return restate.Service[*catalogmodel.ProductCard](rctx, serviceName, "GetProductCard").RequestFuture(params)
-}
-
-func (f *CatalogRestateFuture) ListProductCard(rctx restate.Context, params ListProductCardParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.ProductCard]] {
-	return restate.Service[paginate.PaginateResult[catalogmodel.ProductCard]](rctx, serviceName, "ListProductCard").RequestFuture(params)
-}
-
-func (f *CatalogRestateFuture) ListRecommendedProductCard(rctx restate.Context, params ListRecommendedProductCardParams) restate.ResponseFuture[[]catalogmodel.ProductCard] {
-	return restate.Service[[]catalogmodel.ProductCard](rctx, serviceName, "ListRecommendedProductCard").RequestFuture(params)
-}
-
-func (f *CatalogRestateFuture) GetProductSpu(rctx restate.Context, params GetProductSpuParams) restate.ResponseFuture[catalogmodel.ProductSpu] {
-	return restate.Service[catalogmodel.ProductSpu](rctx, serviceName, "GetProductSpu").RequestFuture(params)
-}
-
-func (f *CatalogRestateFuture) ListProductSpu(rctx restate.Context, params ListProductSpuParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.ProductSpu]] {
-	return restate.Service[paginate.PaginateResult[catalogmodel.ProductSpu]](rctx, serviceName, "ListProductSpu").RequestFuture(params)
-}
 
 func (f *CatalogRestateFuture) CreateProductSpu(rctx restate.Context, params CreateProductSpuParams) restate.ResponseFuture[catalogmodel.ProductSpu] {
 	return restate.Service[catalogmodel.ProductSpu](rctx, serviceName, "CreateProductSpu").RequestFuture(params)
@@ -338,10 +194,6 @@ func (f *CatalogRestateFuture) UpdateProductSpu(rctx restate.Context, params Upd
 
 func (f *CatalogRestateFuture) DeleteProductSpu(rctx restate.Context, params DeleteProductSpuParams) restate.ResponseFuture[restate.Void] {
 	return restate.Service[restate.Void](rctx, serviceName, "DeleteProductSpu").RequestFuture(params)
-}
-
-func (f *CatalogRestateFuture) ListProductSku(rctx restate.Context, params ListProductSkuParams) restate.ResponseFuture[[]catalogmodel.ProductSku] {
-	return restate.Service[[]catalogmodel.ProductSku](rctx, serviceName, "ListProductSku").RequestFuture(params)
 }
 
 func (f *CatalogRestateFuture) CreateProductSku(rctx restate.Context, params CreateProductSkuParams) restate.ResponseFuture[catalogmodel.ProductSku] {
@@ -356,10 +208,6 @@ func (f *CatalogRestateFuture) DeleteProductSku(rctx restate.Context, params Del
 	return restate.Service[restate.Void](rctx, serviceName, "DeleteProductSku").RequestFuture(params)
 }
 
-func (f *CatalogRestateFuture) ListComment(rctx restate.Context, params ListCommentParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.Comment]] {
-	return restate.Service[paginate.PaginateResult[catalogmodel.Comment]](rctx, serviceName, "ListComment").RequestFuture(params)
-}
-
 func (f *CatalogRestateFuture) CreateComment(rctx restate.Context, params CreateCommentParams) restate.ResponseFuture[catalogmodel.Comment] {
 	return restate.Service[catalogmodel.Comment](rctx, serviceName, "CreateComment").RequestFuture(params)
 }
@@ -372,32 +220,8 @@ func (f *CatalogRestateFuture) DeleteComment(rctx restate.Context, params Delete
 	return restate.Service[restate.Void](rctx, serviceName, "DeleteComment").RequestFuture(params)
 }
 
-func (f *CatalogRestateFuture) ListTag(rctx restate.Context, params ListTagParams) restate.ResponseFuture[paginate.PaginateResult[catalogdb.CatalogTag]] {
-	return restate.Service[paginate.PaginateResult[catalogdb.CatalogTag]](rctx, serviceName, "ListTag").RequestFuture(params)
-}
-
-func (f *CatalogRestateFuture) GetTag(rctx restate.Context, params GetTagParams) restate.ResponseFuture[catalogdb.CatalogTag] {
-	return restate.Service[catalogdb.CatalogTag](rctx, serviceName, "GetTag").RequestFuture(params)
-}
-
-func (f *CatalogRestateFuture) ListCategory(rctx restate.Context, params ListCategoryParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.Category]] {
-	return restate.Service[paginate.PaginateResult[catalogmodel.Category]](rctx, serviceName, "ListCategory").RequestFuture(params)
-}
-
-func (f *CatalogRestateFuture) Search(rctx restate.Context, params SearchParams) restate.ResponseFuture[paginate.PaginateResult[catalogmodel.ProductRecommend]] {
-	return restate.Service[paginate.PaginateResult[catalogmodel.ProductRecommend]](rctx, serviceName, "Search").RequestFuture(params)
-}
-
-func (f *CatalogRestateFuture) GetRecommendations(rctx restate.Context, params GetRecommendationsParams) restate.ResponseFuture[[]catalogmodel.ProductRecommend] {
-	return restate.Service[[]catalogmodel.ProductRecommend](rctx, serviceName, "GetRecommendations").RequestFuture(params)
-}
-
 func (f *CatalogRestateFuture) AddInteractions(rctx restate.Context, events []analyticmodel.Interaction) restate.ResponseFuture[restate.Void] {
 	return restate.Service[restate.Void](rctx, serviceName, "AddInteractions").RequestFuture(events)
-}
-
-func (f *CatalogRestateFuture) GetVendorStats(rctx restate.Context, params GetVendorStatsParams) restate.ResponseFuture[VendorStats] {
-	return restate.Service[VendorStats](rctx, serviceName, "GetVendorStats").RequestFuture(params)
 }
 
 // CatalogService adapts CatalogBiz into restate.Context handlers for restate.Reflect.
@@ -505,22 +329,28 @@ func (s *CatalogService) GetVendorStats(ctx restate.Context, params GetVendorSta
 	return s.biz.GetVendorStats(ctx, params)
 }
 
-// CatalogBizGuaranteed is the guaranteed (durable Restate) surface.
-type CatalogBizGuaranteed interface {
-	CatalogBiz
-	Send() CatalogBizSender
-	Future() CatalogBizFuture
+// CatalogBizFlat is the flat (non-durable query) surface of CatalogBiz.
+type CatalogBizFlat interface {
+	GetProductDetail(ctx context.Context, params GetProductDetailParams) (catalogmodel.ProductDetail, error)
+	GetProductCard(ctx context.Context, params GetProductCardParams) (*catalogmodel.ProductCard, error)
+	ListProductCard(ctx context.Context, params ListProductCardParams) (paginate.PaginateResult[catalogmodel.ProductCard], error)
+	ListRecommendedProductCard(ctx context.Context, params ListRecommendedProductCardParams) ([]catalogmodel.ProductCard, error)
+	GetProductSpu(ctx context.Context, params GetProductSpuParams) (catalogmodel.ProductSpu, error)
+	ListProductSpu(ctx context.Context, params ListProductSpuParams) (paginate.PaginateResult[catalogmodel.ProductSpu], error)
+	ListProductSku(ctx context.Context, params ListProductSkuParams) ([]catalogmodel.ProductSku, error)
+	ListComment(ctx context.Context, params ListCommentParams) (paginate.PaginateResult[catalogmodel.Comment], error)
+	ListTag(ctx context.Context, params ListTagParams) (paginate.PaginateResult[catalogdb.CatalogTag], error)
+	GetTag(ctx context.Context, params GetTagParams) (catalogdb.CatalogTag, error)
+	ListCategory(ctx context.Context, params ListCategoryParams) (paginate.PaginateResult[catalogmodel.Category], error)
+	Search(ctx context.Context, params SearchParams) (paginate.PaginateResult[catalogmodel.ProductRecommend], error)
+	GetRecommendations(ctx context.Context, params GetRecommendationsParams) ([]catalogmodel.ProductRecommend, error)
+	GetVendorStats(ctx context.Context, params GetVendorStatsParams) (VendorStats, error)
 }
 
-// CatalogBizBestEffort is the best-effort (non-durable) surface: sync request-response only.
-type CatalogBizBestEffort interface {
-	CatalogBiz
-}
-
-// catalogBizBestEffortLocal delegates BestEffort calls to the in-process biz.
+// catalogBizBestEffortLocal delegates flat queries to the in-process biz.
 type catalogBizBestEffortLocal struct{ biz CatalogBiz }
 
-var _ CatalogBizBestEffort = (*catalogBizBestEffortLocal)(nil)
+var _ CatalogBizFlat = (*catalogBizBestEffortLocal)(nil)
 
 func (b *catalogBizBestEffortLocal) GetProductDetail(ctx context.Context, params GetProductDetailParams) (catalogmodel.ProductDetail, error) {
 	return b.biz.GetProductDetail(ctx, params)
@@ -546,48 +376,12 @@ func (b *catalogBizBestEffortLocal) ListProductSpu(ctx context.Context, params L
 	return b.biz.ListProductSpu(ctx, params)
 }
 
-func (b *catalogBizBestEffortLocal) CreateProductSpu(ctx context.Context, params CreateProductSpuParams) (catalogmodel.ProductSpu, error) {
-	return b.biz.CreateProductSpu(ctx, params)
-}
-
-func (b *catalogBizBestEffortLocal) UpdateProductSpu(ctx context.Context, params UpdateProductSpuParams) (catalogmodel.ProductSpu, error) {
-	return b.biz.UpdateProductSpu(ctx, params)
-}
-
-func (b *catalogBizBestEffortLocal) DeleteProductSpu(ctx context.Context, params DeleteProductSpuParams) error {
-	return b.biz.DeleteProductSpu(ctx, params)
-}
-
 func (b *catalogBizBestEffortLocal) ListProductSku(ctx context.Context, params ListProductSkuParams) ([]catalogmodel.ProductSku, error) {
 	return b.biz.ListProductSku(ctx, params)
 }
 
-func (b *catalogBizBestEffortLocal) CreateProductSku(ctx context.Context, params CreateProductSkuParams) (catalogmodel.ProductSku, error) {
-	return b.biz.CreateProductSku(ctx, params)
-}
-
-func (b *catalogBizBestEffortLocal) UpdateProductSku(ctx context.Context, params UpdateProductSkuParams) (catalogmodel.ProductSku, error) {
-	return b.biz.UpdateProductSku(ctx, params)
-}
-
-func (b *catalogBizBestEffortLocal) DeleteProductSku(ctx context.Context, params DeleteProductSkuParams) error {
-	return b.biz.DeleteProductSku(ctx, params)
-}
-
 func (b *catalogBizBestEffortLocal) ListComment(ctx context.Context, params ListCommentParams) (paginate.PaginateResult[catalogmodel.Comment], error) {
 	return b.biz.ListComment(ctx, params)
-}
-
-func (b *catalogBizBestEffortLocal) CreateComment(ctx context.Context, params CreateCommentParams) (catalogmodel.Comment, error) {
-	return b.biz.CreateComment(ctx, params)
-}
-
-func (b *catalogBizBestEffortLocal) UpdateComment(ctx context.Context, params UpdateCommentParams) (catalogmodel.Comment, error) {
-	return b.biz.UpdateComment(ctx, params)
-}
-
-func (b *catalogBizBestEffortLocal) DeleteComment(ctx context.Context, params DeleteCommentParams) error {
-	return b.biz.DeleteComment(ctx, params)
 }
 
 func (b *catalogBizBestEffortLocal) ListTag(ctx context.Context, params ListTagParams) (paginate.PaginateResult[catalogdb.CatalogTag], error) {
@@ -610,18 +404,14 @@ func (b *catalogBizBestEffortLocal) GetRecommendations(ctx context.Context, para
 	return b.biz.GetRecommendations(ctx, params)
 }
 
-func (b *catalogBizBestEffortLocal) AddInteractions(ctx context.Context, events []analyticmodel.Interaction) error {
-	return b.biz.AddInteractions(ctx, events)
-}
-
 func (b *catalogBizBestEffortLocal) GetVendorStats(ctx context.Context, params GetVendorStatsParams) (VendorStats, error) {
 	return b.biz.GetVendorStats(ctx, params)
 }
 
-// catalogBizBestEffortRemote routes BestEffort calls over HTTP/2.
+// catalogBizBestEffortRemote routes flat queries over HTTP/2.
 type catalogBizBestEffortRemote struct{ call *besteffort.CallClient }
 
-var _ CatalogBizBestEffort = (*catalogBizBestEffortRemote)(nil)
+var _ CatalogBizFlat = (*catalogBizBestEffortRemote)(nil)
 
 func (b *catalogBizBestEffortRemote) GetProductDetail(ctx context.Context, params GetProductDetailParams) (catalogmodel.ProductDetail, error) {
 	return besteffort.Call[catalogmodel.ProductDetail](ctx, b.call, serviceName, "GetProductDetail", params)
@@ -647,48 +437,12 @@ func (b *catalogBizBestEffortRemote) ListProductSpu(ctx context.Context, params 
 	return besteffort.Call[paginate.PaginateResult[catalogmodel.ProductSpu]](ctx, b.call, serviceName, "ListProductSpu", params)
 }
 
-func (b *catalogBizBestEffortRemote) CreateProductSpu(ctx context.Context, params CreateProductSpuParams) (catalogmodel.ProductSpu, error) {
-	return besteffort.Call[catalogmodel.ProductSpu](ctx, b.call, serviceName, "CreateProductSpu", params)
-}
-
-func (b *catalogBizBestEffortRemote) UpdateProductSpu(ctx context.Context, params UpdateProductSpuParams) (catalogmodel.ProductSpu, error) {
-	return besteffort.Call[catalogmodel.ProductSpu](ctx, b.call, serviceName, "UpdateProductSpu", params)
-}
-
-func (b *catalogBizBestEffortRemote) DeleteProductSpu(ctx context.Context, params DeleteProductSpuParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "DeleteProductSpu", params)
-}
-
 func (b *catalogBizBestEffortRemote) ListProductSku(ctx context.Context, params ListProductSkuParams) ([]catalogmodel.ProductSku, error) {
 	return besteffort.Call[[]catalogmodel.ProductSku](ctx, b.call, serviceName, "ListProductSku", params)
 }
 
-func (b *catalogBizBestEffortRemote) CreateProductSku(ctx context.Context, params CreateProductSkuParams) (catalogmodel.ProductSku, error) {
-	return besteffort.Call[catalogmodel.ProductSku](ctx, b.call, serviceName, "CreateProductSku", params)
-}
-
-func (b *catalogBizBestEffortRemote) UpdateProductSku(ctx context.Context, params UpdateProductSkuParams) (catalogmodel.ProductSku, error) {
-	return besteffort.Call[catalogmodel.ProductSku](ctx, b.call, serviceName, "UpdateProductSku", params)
-}
-
-func (b *catalogBizBestEffortRemote) DeleteProductSku(ctx context.Context, params DeleteProductSkuParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "DeleteProductSku", params)
-}
-
 func (b *catalogBizBestEffortRemote) ListComment(ctx context.Context, params ListCommentParams) (paginate.PaginateResult[catalogmodel.Comment], error) {
 	return besteffort.Call[paginate.PaginateResult[catalogmodel.Comment]](ctx, b.call, serviceName, "ListComment", params)
-}
-
-func (b *catalogBizBestEffortRemote) CreateComment(ctx context.Context, params CreateCommentParams) (catalogmodel.Comment, error) {
-	return besteffort.Call[catalogmodel.Comment](ctx, b.call, serviceName, "CreateComment", params)
-}
-
-func (b *catalogBizBestEffortRemote) UpdateComment(ctx context.Context, params UpdateCommentParams) (catalogmodel.Comment, error) {
-	return besteffort.Call[catalogmodel.Comment](ctx, b.call, serviceName, "UpdateComment", params)
-}
-
-func (b *catalogBizBestEffortRemote) DeleteComment(ctx context.Context, params DeleteCommentParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "DeleteComment", params)
 }
 
 func (b *catalogBizBestEffortRemote) ListTag(ctx context.Context, params ListTagParams) (paginate.PaginateResult[catalogdb.CatalogTag], error) {
@@ -711,43 +465,104 @@ func (b *catalogBizBestEffortRemote) GetRecommendations(ctx context.Context, par
 	return besteffort.Call[[]catalogmodel.ProductRecommend](ctx, b.call, serviceName, "GetRecommendations", params)
 }
 
-func (b *catalogBizBestEffortRemote) AddInteractions(ctx context.Context, events []analyticmodel.Interaction) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "AddInteractions", events)
-}
-
 func (b *catalogBizBestEffortRemote) GetVendorStats(ctx context.Context, params GetVendorStatsParams) (VendorStats, error) {
 	return besteffort.Call[VendorStats](ctx, b.call, serviceName, "GetVendorStats", params)
 }
 
-// CatalogBizClient selects the guaranteed (durable) or best-effort (non-durable) transport.
+// catalogBizClient holds the flat query impl and the durable command proxies.
 type catalogBizClient struct {
-	*CatalogRestateClient
-	bestEffort CatalogBizBestEffort
+	flat   CatalogBizFlat
+	call   *CatalogRestateCall
+	send   *CatalogRestateSender
+	future *CatalogRestateFuture
 }
 
 var _ CatalogBizClient = (*catalogBizClient)(nil)
 
-func (c *catalogBizClient) Guaranteed() CatalogBizGuaranteed { return c.CatalogRestateClient }
+func (c *catalogBizClient) GetProductDetail(ctx context.Context, params GetProductDetailParams) (catalogmodel.ProductDetail, error) {
+	return c.flat.GetProductDetail(ctx, params)
+}
 
-func (c *catalogBizClient) BestEffort() CatalogBizBestEffort { return c.bestEffort }
+func (c *catalogBizClient) GetProductCard(ctx context.Context, params GetProductCardParams) (*catalogmodel.ProductCard, error) {
+	return c.flat.GetProductCard(ctx, params)
+}
 
-// NewCatalogBizClientInProcess builds a client whose BestEffort calls the in-process biz.
+func (c *catalogBizClient) ListProductCard(ctx context.Context, params ListProductCardParams) (paginate.PaginateResult[catalogmodel.ProductCard], error) {
+	return c.flat.ListProductCard(ctx, params)
+}
+
+func (c *catalogBizClient) ListRecommendedProductCard(ctx context.Context, params ListRecommendedProductCardParams) ([]catalogmodel.ProductCard, error) {
+	return c.flat.ListRecommendedProductCard(ctx, params)
+}
+
+func (c *catalogBizClient) GetProductSpu(ctx context.Context, params GetProductSpuParams) (catalogmodel.ProductSpu, error) {
+	return c.flat.GetProductSpu(ctx, params)
+}
+
+func (c *catalogBizClient) ListProductSpu(ctx context.Context, params ListProductSpuParams) (paginate.PaginateResult[catalogmodel.ProductSpu], error) {
+	return c.flat.ListProductSpu(ctx, params)
+}
+
+func (c *catalogBizClient) ListProductSku(ctx context.Context, params ListProductSkuParams) ([]catalogmodel.ProductSku, error) {
+	return c.flat.ListProductSku(ctx, params)
+}
+
+func (c *catalogBizClient) ListComment(ctx context.Context, params ListCommentParams) (paginate.PaginateResult[catalogmodel.Comment], error) {
+	return c.flat.ListComment(ctx, params)
+}
+
+func (c *catalogBizClient) ListTag(ctx context.Context, params ListTagParams) (paginate.PaginateResult[catalogdb.CatalogTag], error) {
+	return c.flat.ListTag(ctx, params)
+}
+
+func (c *catalogBizClient) GetTag(ctx context.Context, params GetTagParams) (catalogdb.CatalogTag, error) {
+	return c.flat.GetTag(ctx, params)
+}
+
+func (c *catalogBizClient) ListCategory(ctx context.Context, params ListCategoryParams) (paginate.PaginateResult[catalogmodel.Category], error) {
+	return c.flat.ListCategory(ctx, params)
+}
+
+func (c *catalogBizClient) Search(ctx context.Context, params SearchParams) (paginate.PaginateResult[catalogmodel.ProductRecommend], error) {
+	return c.flat.Search(ctx, params)
+}
+
+func (c *catalogBizClient) GetRecommendations(ctx context.Context, params GetRecommendationsParams) ([]catalogmodel.ProductRecommend, error) {
+	return c.flat.GetRecommendations(ctx, params)
+}
+
+func (c *catalogBizClient) GetVendorStats(ctx context.Context, params GetVendorStatsParams) (VendorStats, error) {
+	return c.flat.GetVendorStats(ctx, params)
+}
+
+func (c *catalogBizClient) Call() CatalogBizCall { return c.call }
+
+func (c *catalogBizClient) Future() CatalogBizFuture { return c.future }
+
+func (c *catalogBizClient) Send() CatalogBizSender { return c.send }
+
+// NewCatalogBizClientInProcess builds a client whose flat queries call the in-process biz.
 func NewCatalogBizClientInProcess(restateIngressURL string, biz CatalogBiz) CatalogBizClient {
 	return &catalogBizClient{
-		CatalogRestateClient: NewCatalogRestateClient(restateIngressURL),
-		bestEffort:           &catalogBizBestEffortLocal{biz: biz},
+		flat:   &catalogBizBestEffortLocal{biz: biz},
+		call:   NewCatalogRestateCall(restateIngressURL),
+		send:   &CatalogRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &CatalogRestateFuture{},
 	}
 }
 
-// NewCatalogBizClientRemote builds a client whose BestEffort calls a remote BestEffort server.
+// NewCatalogBizClientRemote builds a client whose flat queries call a remote besteffort server.
 func NewCatalogBizClientRemote(restateIngressURL, bestEffortURL string) CatalogBizClient {
 	return &catalogBizClient{
-		CatalogRestateClient: NewCatalogRestateClient(restateIngressURL),
-		bestEffort:           &catalogBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+		flat:   &catalogBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+		call:   NewCatalogRestateCall(restateIngressURL),
+		send:   &CatalogRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &CatalogRestateFuture{},
 	}
 }
 
-// RegisterCatalogBestEffort wires biz methods onto a BestEffort HTTP/2 server.
+// RegisterCatalogBestEffort wires the query methods onto a besteffort HTTP server.
+// Commands are served by Restate, not here.
 func RegisterCatalogBestEffort(s *besteffort.Server, biz CatalogBiz) {
 	s.Handle(serviceName, "GetProductDetail", func(ctx context.Context, body []byte) (any, error) {
 		var p GetProductDetailParams
@@ -791,27 +606,6 @@ func RegisterCatalogBestEffort(s *besteffort.Server, biz CatalogBiz) {
 		}
 		return biz.ListProductSpu(ctx, p)
 	})
-	s.Handle(serviceName, "CreateProductSpu", func(ctx context.Context, body []byte) (any, error) {
-		var p CreateProductSpuParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.CreateProductSpu(ctx, p)
-	})
-	s.Handle(serviceName, "UpdateProductSpu", func(ctx context.Context, body []byte) (any, error) {
-		var p UpdateProductSpuParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.UpdateProductSpu(ctx, p)
-	})
-	s.Handle(serviceName, "DeleteProductSpu", func(ctx context.Context, body []byte) (any, error) {
-		var p DeleteProductSpuParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.DeleteProductSpu(ctx, p)
-	})
 	s.Handle(serviceName, "ListProductSku", func(ctx context.Context, body []byte) (any, error) {
 		var p ListProductSkuParams
 		if err := json.Unmarshal(body, &p); err != nil {
@@ -819,54 +613,12 @@ func RegisterCatalogBestEffort(s *besteffort.Server, biz CatalogBiz) {
 		}
 		return biz.ListProductSku(ctx, p)
 	})
-	s.Handle(serviceName, "CreateProductSku", func(ctx context.Context, body []byte) (any, error) {
-		var p CreateProductSkuParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.CreateProductSku(ctx, p)
-	})
-	s.Handle(serviceName, "UpdateProductSku", func(ctx context.Context, body []byte) (any, error) {
-		var p UpdateProductSkuParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.UpdateProductSku(ctx, p)
-	})
-	s.Handle(serviceName, "DeleteProductSku", func(ctx context.Context, body []byte) (any, error) {
-		var p DeleteProductSkuParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.DeleteProductSku(ctx, p)
-	})
 	s.Handle(serviceName, "ListComment", func(ctx context.Context, body []byte) (any, error) {
 		var p ListCommentParams
 		if err := json.Unmarshal(body, &p); err != nil {
 			return nil, err
 		}
 		return biz.ListComment(ctx, p)
-	})
-	s.Handle(serviceName, "CreateComment", func(ctx context.Context, body []byte) (any, error) {
-		var p CreateCommentParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.CreateComment(ctx, p)
-	})
-	s.Handle(serviceName, "UpdateComment", func(ctx context.Context, body []byte) (any, error) {
-		var p UpdateCommentParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.UpdateComment(ctx, p)
-	})
-	s.Handle(serviceName, "DeleteComment", func(ctx context.Context, body []byte) (any, error) {
-		var p DeleteCommentParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.DeleteComment(ctx, p)
 	})
 	s.Handle(serviceName, "ListTag", func(ctx context.Context, body []byte) (any, error) {
 		var p ListTagParams
@@ -902,13 +654,6 @@ func RegisterCatalogBestEffort(s *besteffort.Server, biz CatalogBiz) {
 			return nil, err
 		}
 		return biz.GetRecommendations(ctx, p)
-	})
-	s.Handle(serviceName, "AddInteractions", func(ctx context.Context, body []byte) (any, error) {
-		var p []analyticmodel.Interaction
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.AddInteractions(ctx, p)
 	})
 	s.Handle(serviceName, "GetVendorStats", func(ctx context.Context, body []byte) (any, error) {
 		var p GetVendorStatsParams

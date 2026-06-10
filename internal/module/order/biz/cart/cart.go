@@ -65,7 +65,7 @@ func (b *CartHandler) GetCart(ctx context.Context, params GetCartParams) ([]orde
 	}
 	cartItems := cartItemsRes.Data
 
-	skus, err := b.catalog.Guaranteed().ListProductSku(ctx, catalogbiz.ListProductSkuParams{
+	skus, err := b.catalog.ListProductSku(ctx, catalogbiz.ListProductSkuParams{
 		ID: lo.Map(cartItems, func(c orderdb.OrderCartItem, _ int) uuid.UUID { return c.SkuID }),
 	})
 	if err != nil {
@@ -85,7 +85,7 @@ func (b *CartHandler) GetCart(ctx context.Context, params GetCartParams) ([]orde
 		return nil, fmt.Errorf("get cart resources: %w", err)
 	}
 
-	listSpu, err := b.catalog.Guaranteed().ListProductSpu(ctx, catalogbiz.ListProductSpuParams{
+	listSpu, err := b.catalog.ListProductSpu(ctx, catalogbiz.ListProductSpuParams{
 		ID: spuIDs,
 	})
 	if err != nil {

@@ -119,7 +119,7 @@ func (b *CatalogHandler) buildProductCards(
 	// Check favorites for authenticated user
 	var favoriteSet map[uuid.UUID]bool
 	if accountID.Valid {
-		favoriteSet, _ = b.account.Guaranteed().CheckFavorites(
+		favoriteSet, _ = b.account.CheckFavorites(
 			ctx,
 			accountbiz.CheckFavoritesParams{AccountID: accountID.UUID, SpuIDs: spuIDs},
 		)

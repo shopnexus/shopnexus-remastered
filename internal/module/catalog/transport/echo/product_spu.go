@@ -41,7 +41,7 @@ func (h *Handler) ListProductSpu(c echo.Context) error {
 		accountID = []uuid.UUID{claims.Account.ID}
 	}
 
-	result, err := h.biz.Guaranteed().ListProductSpu(c.Request().Context(), catalogbiz.ListProductSpuParams{
+	result, err := h.biz.ListProductSpu(c.Request().Context(), catalogbiz.ListProductSpuParams{
 		Params:     req.Params.Constrain(),
 		Account:    claims.Account,
 		Search:     req.Search,
@@ -69,7 +69,7 @@ func (h *Handler) GetProductSpu(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.Guaranteed().ListProductSpu(c.Request().Context(), catalogbiz.ListProductSpuParams{
+	result, err := h.biz.ListProductSpu(c.Request().Context(), catalogbiz.ListProductSpuParams{
 		ID: []uuid.UUID{req.ID},
 	})
 	if err != nil {
@@ -104,7 +104,7 @@ func (h *Handler) CreateProductSpu(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	spu, err := h.biz.Guaranteed().CreateProductSpu(c.Request().Context(), catalogbiz.CreateProductSpuParams{
+	spu, err := h.biz.Call().CreateProductSpu(c.Request().Context(), catalogbiz.CreateProductSpuParams{
 		Account:        claims.Account,
 		CategoryID:     req.CategoryID,
 		Name:           req.Name,
@@ -149,7 +149,7 @@ func (h *Handler) UpdateProductSpu(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	spu, err := h.biz.Guaranteed().UpdateProductSpu(c.Request().Context(), catalogbiz.UpdateProductSpuParams{
+	spu, err := h.biz.Call().UpdateProductSpu(c.Request().Context(), catalogbiz.UpdateProductSpuParams{
 		Account:        claims.Account,
 		ID:             req.ID,
 		FeaturedSkuID:  req.FeaturedSkuID,
@@ -187,7 +187,7 @@ func (h *Handler) DeleteProductSpu(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if err := h.biz.Guaranteed().DeleteProductSpu(c.Request().Context(), catalogbiz.DeleteProductSpuParams{
+	if err := h.biz.Call().DeleteProductSpu(c.Request().Context(), catalogbiz.DeleteProductSpuParams{
 		Account: claims.Account,
 		ID:      req.ID,
 	}); err != nil {

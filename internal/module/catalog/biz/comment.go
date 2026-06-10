@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
+	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 )
 
@@ -62,7 +63,7 @@ func (b *CatalogHandler) ListComment(
 	accountIDs := lo.Map(res.Data, func(c catalogdb.CatalogComment, _ int) uuid.UUID { return c.AccountID })
 	commentIDs := lo.Map(res.Data, func(c catalogdb.CatalogComment, _ int) uuid.UUID { return c.ID })
 
-	listProfile, err := b.account.Guaranteed().ListProfile(ctx, accountbiz.ListProfileParams{AccountIDs: accountIDs})
+	listProfile, err := b.account.ListProfile(ctx, accountbiz.ListProfileParams{AccountIDs: accountIDs})
 	if err != nil {
 		return zero, fmt.Errorf("list comment profiles: %w", err)
 	}
@@ -108,38 +109,44 @@ type CreateCommentParams struct {
 // CreateComment stores a comment with resources and tracks review analytics.
 // Purchase eligibility for product reviews is validated upstream by the order
 // module (Order.CreateProductReview) — catalog trusts its internal callers.
-func (b *CatalogHandler) CreateComment(ctx context.Context, params CreateCommentParams) (catalogmodel.Comment, error) {
+func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateCommentParams) (catalogmodel.Comment, error) {
 	var zero catalogmodel.Comment
 
 	if err := validator.Validate(params); err != nil {
 		return zero, fmt.Errorf("validate create comment: %w", err)
 	}
 
-	// One review per order per product.
-	if params.RefType == catalogdb.CatalogCommentRefTypeProductSpu {
-		existing, err := b.storage.Querier().ListComment(ctx, catalogdb.ListCommentParams{Params: paginate.Params{Limit: null.Int32From(1)},
-			RefType: []catalogdb.CatalogCommentRefType{catalogdb.CatalogCommentRefTypeProductSpu},
-			RefId:   []uuid.UUID{params.RefID},
-			OrderId: []uuid.UUID{params.OrderID},
+	// decision: enforce one review per order per product, then create the comment.
+	comment, err := restate.Run(ctx, func(rctx restate.RunContext) (catalogdb.CatalogComment, error) {
+		if params.RefType == catalogdb.CatalogCommentRefTypeProductSpu {
+			existing, err := b.storage.Querier().ListComment(rctx, catalogdb.ListCommentParams{Params: paginate.Params{Limit: null.Int32From(1)},
+				RefType: []catalogdb.CatalogCommentRefType{catalogdb.CatalogCommentRefTypeProductSpu},
+				RefId:   []uuid.UUID{params.RefID},
+				OrderId: []uuid.UUID{params.OrderID},
+			})
+			if err != nil {
+				return catalogdb.CatalogComment{}, fmt.Errorf("check existing review: %w", err)
+			}
+			if len(existing.Data) > 0 {
+				return catalogdb.CatalogComment{}, catalogmodel.ErrOrderAlreadyReviewed
+			}
+		}
+
+		comment, err := b.storage.Querier().CreateDefaultComment(rctx, catalogdb.CreateDefaultCommentParams{
+			AccountID: params.Account.ID,
+			RefType:   params.RefType,
+			RefID:     params.RefID,
+			Body:      params.Body,
+			Score:     params.Score,
+			OrderID:   uuid.NullUUID{UUID: params.OrderID, Valid: params.OrderID != uuid.Nil},
 		})
 		if err != nil {
-			return zero, fmt.Errorf("check existing review: %w", err)
+			return catalogdb.CatalogComment{}, fmt.Errorf("db create comment: %w", err)
 		}
-		if len(existing.Data) > 0 {
-			return zero, catalogmodel.ErrOrderAlreadyReviewed
-		}
-	}
-
-	comment, err := b.storage.Querier().CreateDefaultComment(ctx, catalogdb.CreateDefaultCommentParams{
-		AccountID: params.Account.ID,
-		RefType:   params.RefType,
-		RefID:     params.RefID,
-		Body:      params.Body,
-		Score:     params.Score,
-		OrderID:   uuid.NullUUID{UUID: params.OrderID, Valid: params.OrderID != uuid.Nil},
+		return comment, nil
 	})
 	if err != nil {
-		return zero, fmt.Errorf("db create comment: %w", err)
+		return zero, err
 	}
 
 	// Attach resources
@@ -153,14 +160,15 @@ func (b *CatalogHandler) CreateComment(ctx context.Context, params CreateComment
 		return zero, fmt.Errorf("create comment: %w", err)
 	}
 
-	profile, err := b.account.Guaranteed().GetProfile(ctx, accountbiz.GetProfileParams{
+	profile, err := b.account.GetProfile(ctx, accountbiz.GetProfileParams{
 		AccountID: comment.AccountID,
 	})
 	if err != nil {
 		return zero, fmt.Errorf("get comment profile: %w", err)
 	}
 
-	// Track analytic interactions for product reviews
+	// tail: track analytics + notify seller. Each cross-module Send is journaled
+	// individually by Restate — no Run wrapper, so a retry never re-sends one.
 	if params.RefType == catalogdb.CatalogCommentRefTypeProductSpu {
 		refID := params.RefID.String()
 		interactions := []analyticbiz.CreateInteraction{
@@ -213,7 +221,7 @@ func (b *CatalogHandler) CreateComment(ctx context.Context, params CreateComment
 		if spu, err := b.storage.Querier().GetProductSpu(ctx, catalogdb.GetProductSpuParams{
 			ID: uuid.NullUUID{UUID: params.RefID, Valid: true},
 		}); err == nil {
-			if err = b.account.Guaranteed().Send().CreateNotification(ctx, accountbiz.CreateNotificationParams{
+			if err = b.account.Send().CreateNotification(ctx, accountbiz.CreateNotificationParams{
 				AccountID: spu.AccountID,
 				Type:      accountmodel.NotiNewReview,
 				Channel:   accountmodel.ChannelInApp,
@@ -246,32 +254,37 @@ type UpdateCommentParams struct {
 }
 
 // UpdateComment updates a comment's body, score, votes, and attached resources.
-func (b *CatalogHandler) UpdateComment(ctx context.Context, params UpdateCommentParams) (catalogmodel.Comment, error) {
+func (b *CatalogHandler) UpdateComment(ctx restate.Context, params UpdateCommentParams) (catalogmodel.Comment, error) {
 	var zero catalogmodel.Comment
 
 	if err := validator.Validate(params); err != nil {
 		return zero, fmt.Errorf("validate update comment: %w", err)
 	}
 
-	// Update base comment info
-	comment, err := b.storage.Querier().UpdateComment(ctx, catalogdb.UpdateCommentParams{
-		ID:    params.ID,
-		Body:  params.Body,
-		Score: params.Score,
+	// execution: update base comment + vote counts.
+	comment, err := restate.Run(ctx, func(rctx restate.RunContext) (catalogdb.CatalogComment, error) {
+		comment, err := b.storage.Querier().UpdateComment(rctx, catalogdb.UpdateCommentParams{
+			ID:    params.ID,
+			Body:  params.Body,
+			Score: params.Score,
+		})
+		if err != nil {
+			return catalogdb.CatalogComment{}, fmt.Errorf("db update comment: %w", err)
+		}
+
+		if params.UpvoteDelta.Valid || params.DownvoteDelta.Valid {
+			if err := b.storage.Querier().UpdateCommentUpvoteDownvote(rctx, catalogdb.UpdateCommentUpvoteDownvoteParams{
+				ID:            params.ID,
+				UpvoteDelta:   params.UpvoteDelta,
+				DownvoteDelta: params.DownvoteDelta,
+			}); err != nil {
+				return catalogdb.CatalogComment{}, fmt.Errorf("db update comment upvote/downvote: %w", err)
+			}
+		}
+		return comment, nil
 	})
 	if err != nil {
-		return zero, fmt.Errorf("db update comment: %w", err)
-	}
-
-	// Update upvote/downvote count
-	if params.UpvoteDelta.Valid || params.DownvoteDelta.Valid {
-		if err := b.storage.Querier().UpdateCommentUpvoteDownvote(ctx, catalogdb.UpdateCommentUpvoteDownvoteParams{
-			ID:            params.ID,
-			UpvoteDelta:   params.UpvoteDelta,
-			DownvoteDelta: params.DownvoteDelta,
-		}); err != nil {
-			return zero, fmt.Errorf("db update comment upvote/downvote: %w", err)
-		}
+		return zero, err
 	}
 
 	// Update resources
@@ -287,7 +300,7 @@ func (b *CatalogHandler) UpdateComment(ctx context.Context, params UpdateComment
 		return zero, fmt.Errorf("update comment: %w", err)
 	}
 
-	profile, err := b.account.Guaranteed().GetProfile(ctx, accountbiz.GetProfileParams{
+	profile, err := b.account.GetProfile(ctx, accountbiz.GetProfileParams{
 		AccountID: comment.AccountID,
 	})
 	if err != nil {
@@ -308,16 +321,21 @@ type DeleteCommentParams struct {
 }
 
 // DeleteComment deletes comments and their associated resources.
-func (b *CatalogHandler) DeleteComment(ctx context.Context, params DeleteCommentParams) error {
+func (b *CatalogHandler) DeleteComment(ctx restate.Context, params DeleteCommentParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate delete comment: %w", err)
 	}
 
-	// Delete base comments
-	if err := b.storage.Querier().DeleteComment(ctx, catalogdb.DeleteCommentParams{
-		ID: params.CommentIDs,
+	// execution: delete base comments.
+	if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		if err := b.storage.Querier().DeleteComment(rctx, catalogdb.DeleteCommentParams{
+			ID: params.CommentIDs,
+		}); err != nil {
+			return fmt.Errorf("db delete comment: %w", err)
+		}
+		return nil
 	}); err != nil {
-		return fmt.Errorf("db delete comment: %w", err)
+		return err
 	}
 
 	// Remove associated resources

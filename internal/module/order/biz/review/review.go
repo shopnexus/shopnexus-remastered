@@ -114,7 +114,7 @@ func (b *ReviewHandler) ValidateOrderForReview(ctx context.Context, params Valid
 
 // spuSkuIDs resolves all SKU IDs of an SPU via the catalog module.
 func (b *ReviewHandler) spuSkuIDs(ctx context.Context, spuID uuid.UUID) ([]uuid.UUID, error) {
-	skus, err := b.catalog.Guaranteed().ListProductSku(ctx, catalogbiz.ListProductSkuParams{
+	skus, err := b.catalog.ListProductSku(ctx, catalogbiz.ListProductSkuParams{
 		SpuID: []uuid.UUID{spuID},
 	})
 	if err != nil {
@@ -192,7 +192,7 @@ func (b *ReviewHandler) CreateProductReview(
 		return zero, catalogmodel.ErrMustPurchaseToReview
 	}
 
-	return b.catalog.Guaranteed().CreateComment(ctx, catalogbiz.CreateCommentParams{
+	return b.catalog.Call().CreateComment(ctx, catalogbiz.CreateCommentParams{
 		Account:     params.Account,
 		RefType:     catalogdb.CatalogCommentRefTypeProductSpu,
 		RefID:       params.SpuID,

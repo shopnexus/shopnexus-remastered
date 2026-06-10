@@ -28,7 +28,7 @@ func (h *Handler) ListCategory(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.Guaranteed().ListCategory(c.Request().Context(), catalogbiz.ListCategoryParams{
+	result, err := h.biz.ListCategory(c.Request().Context(), catalogbiz.ListCategoryParams{
 		Params: req.Params.Constrain(),
 		ID:     req.ID,
 		Search: req.Search,
@@ -52,7 +52,7 @@ func (h *Handler) GetCategory(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.Guaranteed().ListCategory(c.Request().Context(), catalogbiz.ListCategoryParams{
+	result, err := h.biz.ListCategory(c.Request().Context(), catalogbiz.ListCategoryParams{
 		Params: paginate.Params{
 			Limit: null.Int32From(1),
 		}.Constrain(),

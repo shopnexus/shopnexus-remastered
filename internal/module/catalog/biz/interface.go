@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"sync"
 
+	restate "github.com/restatedev/sdk-go"
+
 	"shopnexus-server/internal/infras/cache"
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	analyticbiz "shopnexus-server/internal/module/analytic/biz"
@@ -44,21 +46,21 @@ type CatalogBiz interface {
 		ctx context.Context,
 		params ListProductSpuParams,
 	) (paginate.PaginateResult[catalogmodel.ProductSpu], error)
-	CreateProductSpu(ctx context.Context, params CreateProductSpuParams) (catalogmodel.ProductSpu, error)
-	UpdateProductSpu(ctx context.Context, params UpdateProductSpuParams) (catalogmodel.ProductSpu, error)
-	DeleteProductSpu(ctx context.Context, params DeleteProductSpuParams) error
+	CreateProductSpu(ctx restate.Context, params CreateProductSpuParams) (catalogmodel.ProductSpu, error)
+	UpdateProductSpu(ctx restate.Context, params UpdateProductSpuParams) (catalogmodel.ProductSpu, error)
+	DeleteProductSpu(ctx restate.Context, params DeleteProductSpuParams) error
 
 	// Product SKU
 	ListProductSku(ctx context.Context, params ListProductSkuParams) ([]catalogmodel.ProductSku, error)
-	CreateProductSku(ctx context.Context, params CreateProductSkuParams) (catalogmodel.ProductSku, error)
-	UpdateProductSku(ctx context.Context, params UpdateProductSkuParams) (catalogmodel.ProductSku, error)
-	DeleteProductSku(ctx context.Context, params DeleteProductSkuParams) error
+	CreateProductSku(ctx restate.Context, params CreateProductSkuParams) (catalogmodel.ProductSku, error)
+	UpdateProductSku(ctx restate.Context, params UpdateProductSkuParams) (catalogmodel.ProductSku, error)
+	DeleteProductSku(ctx restate.Context, params DeleteProductSkuParams) error
 
 	// Comment
 	ListComment(ctx context.Context, params ListCommentParams) (paginate.PaginateResult[catalogmodel.Comment], error)
-	CreateComment(ctx context.Context, params CreateCommentParams) (catalogmodel.Comment, error)
-	UpdateComment(ctx context.Context, params UpdateCommentParams) (catalogmodel.Comment, error)
-	DeleteComment(ctx context.Context, params DeleteCommentParams) error
+	CreateComment(ctx restate.Context, params CreateCommentParams) (catalogmodel.Comment, error)
+	UpdateComment(ctx restate.Context, params UpdateCommentParams) (catalogmodel.Comment, error)
+	DeleteComment(ctx restate.Context, params DeleteCommentParams) error
 
 	// Tag
 	ListTag(ctx context.Context, params ListTagParams) (paginate.PaginateResult[catalogdb.CatalogTag], error)
@@ -73,7 +75,7 @@ type CatalogBiz interface {
 	// Search
 	Search(ctx context.Context, params SearchParams) (paginate.PaginateResult[catalogmodel.ProductRecommend], error)
 	GetRecommendations(ctx context.Context, params GetRecommendationsParams) ([]catalogmodel.ProductRecommend, error)
-	AddInteractions(ctx context.Context, events []analyticmodel.Interaction) error
+	AddInteractions(ctx restate.Context, events []analyticmodel.Interaction) error
 
 	// Vendor Stats
 	GetVendorStats(ctx context.Context, params GetVendorStatsParams) (VendorStats, error)
