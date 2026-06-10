@@ -146,3 +146,36 @@ func (f *PromotionRestateFuture) DeletePromotion(rctx restate.Context, params De
 func (f *PromotionRestateFuture) CalculatePromotedPrices(rctx restate.Context, params CalculatePromotedPricesParams) restate.ResponseFuture[map[uuid.UUID]*catalogmodel.OrderPrice] {
 	return restate.Service[map[uuid.UUID]*catalogmodel.OrderPrice](rctx, serviceName, "CalculatePromotedPrices").RequestFuture(params)
 }
+
+// PromotionService adapts PromotionBiz into restate.Context handlers for restate.Reflect.
+type PromotionService struct {
+	biz PromotionBiz
+}
+
+func NewPromotionService(biz PromotionBiz) *PromotionService { return &PromotionService{biz: biz} }
+
+func (s *PromotionService) ServiceName() string { return serviceName }
+
+func (s *PromotionService) GetPromotion(ctx restate.Context, params GetPromotionParams) (promotionmodel.Promotion, error) {
+	return s.biz.GetPromotion(ctx, params)
+}
+
+func (s *PromotionService) ListPromotion(ctx restate.Context, params ListPromotionParams) (paginate.PaginateResult[promotionmodel.Promotion], error) {
+	return s.biz.ListPromotion(ctx, params)
+}
+
+func (s *PromotionService) CreatePromotion(ctx restate.Context, params CreatePromotionParams) (promotionmodel.Promotion, error) {
+	return s.biz.CreatePromotion(ctx, params)
+}
+
+func (s *PromotionService) UpdatePromotion(ctx restate.Context, params UpdatePromotionParams) (promotionmodel.Promotion, error) {
+	return s.biz.UpdatePromotion(ctx, params)
+}
+
+func (s *PromotionService) DeletePromotion(ctx restate.Context, params DeletePromotionParams) error {
+	return s.biz.DeletePromotion(ctx, params)
+}
+
+func (s *PromotionService) CalculatePromotedPrices(ctx restate.Context, params CalculatePromotedPricesParams) (map[uuid.UUID]*catalogmodel.OrderPrice, error) {
+	return s.biz.CalculatePromotedPrices(ctx, params)
+}

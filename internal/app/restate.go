@@ -57,7 +57,7 @@ func SetupRestate(
 		Bind(restate.Reflect(commonBiz, retryPolicy)).
 		Bind(restate.Reflect(inventorybiz.NewInventoryService(inventoryBiz), retryPolicy)).
 		Bind(restate.Reflect(orderBiz, retryPolicy)).
-		Bind(restate.Reflect(promotionBiz, retryPolicy)).
+		Bind(restate.Reflect(promotionbiz.NewPromotionService(promotionBiz), retryPolicy)).
 		Bind(restate.Reflect(checkoutWf, retryPolicy)).
 		Bind(restate.Reflect(fulfillmentWf, retryPolicy))
 

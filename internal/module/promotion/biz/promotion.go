@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	restate "github.com/restatedev/sdk-go"
-
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
 	"github.com/samber/lo"
@@ -27,7 +25,7 @@ type GetPromotionParams struct {
 
 // GetPromotion returns a promotion by ID, including its refs.
 func (s *PromotionHandler) GetPromotion(
-	ctx restate.Context,
+	ctx context.Context,
 	params GetPromotionParams,
 ) (promotionmodel.Promotion, error) {
 	var zero promotionmodel.Promotion
@@ -59,7 +57,7 @@ type ListPromotionParams struct {
 
 // ListPromotion returns a paginated list of promotions with their refs.
 func (s *PromotionHandler) ListPromotion(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListPromotionParams,
 ) (paginate.PaginateResult[promotionmodel.Promotion], error) {
 	var zero paginate.PaginateResult[promotionmodel.Promotion]
@@ -114,7 +112,7 @@ type CreatePromotionParams struct {
 
 // CreatePromotion creates a new promotion with the given parameters and refs.
 func (b *PromotionHandler) CreatePromotion(
-	ctx restate.Context,
+	ctx context.Context,
 	params CreatePromotionParams,
 ) (promotionmodel.Promotion, error) {
 	var zero promotionmodel.Promotion
@@ -173,7 +171,7 @@ type UpdatePromotionParams struct {
 
 // UpdatePromotion updates the specified promotion fields and optionally replaces its refs.
 func (s *PromotionHandler) UpdatePromotion(
-	ctx restate.Context,
+	ctx context.Context,
 	params UpdatePromotionParams,
 ) (promotionmodel.Promotion, error) {
 	var zero promotionmodel.Promotion
@@ -225,7 +223,7 @@ type DeletePromotionParams struct {
 }
 
 // DeletePromotion deletes the promotion with the given ID.
-func (s *PromotionHandler) DeletePromotion(ctx restate.Context, params DeletePromotionParams) error {
+func (s *PromotionHandler) DeletePromotion(ctx context.Context, params DeletePromotionParams) error {
 	return s.storage.Querier().DeletePromotion(ctx, promotiondb.DeletePromotionParams{
 		ID: []uuid.UUID{params.ID},
 	})
