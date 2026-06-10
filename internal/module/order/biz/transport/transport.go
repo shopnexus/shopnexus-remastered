@@ -7,6 +7,8 @@ import (
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	"shopnexus-server/internal/module/order/biz/base"
+
+	restate "github.com/restatedev/sdk-go"
 )
 
 // TransportHandler implements TransportBiz over the shared core.
@@ -32,7 +34,7 @@ func New(
 
 // TransportBiz covers transport webhooks and shipping-cost quoting.
 type TransportBiz interface {
-	OnTransportResult(ctx context.Context, params OnTransportResultParams) error
+	OnTransportResult(ctx restate.Context, params OnTransportResultParams) error
 	// QuoteTransport returns per-item shipping cost previews for the buyer's
 	// checkout summary. Side-effect free — no inventory, no session.
 	QuoteTransport(ctx context.Context, params QuoteTransportParams) (QuoteTransportResult, error)

@@ -11,6 +11,7 @@ import (
 	"shopnexus-server/internal/shared/paginate"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 )
 
 // SellerHandler implements SellerOrderBiz over the module core
@@ -38,7 +39,7 @@ type SellerOrderBiz interface {
 		ctx context.Context,
 		params ListSellerPendingItemsParams,
 	) (paginate.PaginateResult[ordermodel.OrderItem], error)
-	RejectSellerPending(ctx context.Context, params RejectSellerPendingParams) error
+	RejectSellerPending(ctx restate.Context, params RejectSellerPendingParams) error
 	GetSellerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error)
 	ListSellerConfirmed(
 		ctx context.Context,

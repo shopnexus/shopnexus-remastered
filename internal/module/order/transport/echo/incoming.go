@@ -31,7 +31,7 @@ func (h *Handler) ListSellerPendingItems(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.Guaranteed().ListSellerPendingItems(c.Request().Context(), orderbiz.ListSellerPendingItemsParams{
+	result, err := h.biz.ListSellerPendingItems(c.Request().Context(), orderbiz.ListSellerPendingItemsParams{
 		SellerID: claims.Account.ID,
 		Params:   req.Params.Constrain(),
 	})
@@ -120,7 +120,7 @@ func (h *Handler) EnsureConfirmPaymentURL(c echo.Context) error {
 
 	ctx := c.Request().Context()
 
-	state, err := h.biz.Guaranteed().GetReusableGatewayURL(ctx, sessionID)
+	state, err := h.biz.GetReusableGatewayURL(ctx, sessionID)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
@@ -176,7 +176,7 @@ func (h *Handler) RejectSellerPending(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if err := h.biz.Guaranteed().RejectSellerPending(c.Request().Context(), orderbiz.RejectSellerPendingParams{
+	if err := h.biz.Call().RejectSellerPending(c.Request().Context(), orderbiz.RejectSellerPendingParams{
 		Account: claims.Account,
 		ItemIDs: req.ItemIDs,
 	}); err != nil {

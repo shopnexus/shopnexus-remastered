@@ -8,6 +8,8 @@ import (
 	"shopnexus-server/internal/module/order/biz/workflow/fullfilment"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/paginate"
+
+	restate "github.com/restatedev/sdk-go"
 )
 
 // RefundHandler implements RefundBiz over the module core (it drives the
@@ -33,8 +35,8 @@ type RefundBiz interface {
 		ctx context.Context,
 		params ListSellerRefundsParams,
 	) (paginate.PaginateResult[ordermodel.Refund], error)
-	CreateBuyerRefund(ctx context.Context, params CreateBuyerRefundParams) (ordermodel.Refund, error)
-	WithdrawBuyerRefund(ctx context.Context, params WithdrawBuyerRefundParams) (ordermodel.Refund, error)
-	SellerApproveRefund(ctx context.Context, params SellerActionParams) (ordermodel.Refund, error)
-	SellerDisputeRefund(ctx context.Context, params SellerDisputeParams) (ordermodel.RefundDispute, error)
+	CreateBuyerRefund(ctx restate.Context, params CreateBuyerRefundParams) (ordermodel.Refund, error)
+	WithdrawBuyerRefund(ctx restate.Context, params WithdrawBuyerRefundParams) (ordermodel.Refund, error)
+	SellerApproveRefund(ctx restate.Context, params SellerActionParams) (ordermodel.Refund, error)
+	SellerDisputeRefund(ctx restate.Context, params SellerDisputeParams) (ordermodel.RefundDispute, error)
 }

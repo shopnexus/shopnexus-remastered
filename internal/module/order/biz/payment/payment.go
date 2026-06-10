@@ -10,6 +10,7 @@ import (
 	"shopnexus-server/internal/provider/payment"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 )
 
 // PaymentHandler implements PaymentBiz over the shared core.
@@ -35,6 +36,6 @@ func New(
 
 // PaymentBiz covers payment-result intake and gateway-URL reuse.
 type PaymentBiz interface {
-	OnPaymentResult(ctx context.Context, params payment.Notification) error
+	OnPaymentResult(ctx restate.Context, params payment.Notification) error
 	GetReusableGatewayURL(ctx context.Context, sessionID uuid.UUID) (ReusableGatewayURLState, error)
 }

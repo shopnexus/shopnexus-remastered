@@ -13,6 +13,8 @@ import (
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/validator"
+
+	restate "github.com/restatedev/sdk-go"
 )
 
 // SellerActionParams covers SellerApproveRefund (no body needed).
@@ -24,7 +26,7 @@ type SellerActionParams struct {
 // SellerApproveRefund is the happy path: seller agrees with the refund after
 // receiving the returned goods. Triggers the auto-credit flow.
 func (b *RefundHandler) SellerApproveRefund(
-	ctx context.Context,
+	ctx restate.Context,
 	params SellerActionParams,
 ) (ordermodel.Refund, error) {
 	var zero ordermodel.Refund
@@ -35,19 +37,28 @@ func (b *RefundHandler) SellerApproveRefund(
 		return zero, fmt.Errorf("validate seller approve: %w", err)
 	}
 
-	refund, err := b.loadAndAuthSeller(ctx, params.RefundID, params.Account.ID)
+	// decision: load + authorize the refund and confirm the seller can still decide.
+	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
+		r, e := b.loadAndAuthSeller(rctx, params.RefundID, params.Account.ID)
+		if e != nil {
+			return orderdb.OrderRefund{}, fmt.Errorf("load seller refund: %w", e)
+		}
+		if !(ordermodel.Refund{OrderRefund: r}).CanSellerDecide() {
+			return orderdb.OrderRefund{}, ordermodel.ErrRefundWrongStage
+		}
+		return r, nil
+	})
 	if err != nil {
-		return zero, fmt.Errorf("load seller refund: %w", err)
-	}
-	if !(ordermodel.Refund{OrderRefund: refund}).CanSellerDecide() {
-		return zero, ordermodel.ErrRefundWrongStage
+		return zero, err
 	}
 
+	// execution: run the credit flow. ExecuteRefundCredit self-journals its phases.
 	updated, err := b.ExecuteRefundCredit(ctx, refund, params.Account.ID, ordermodel.RefundCreditReasonSellerApproved)
 	if err != nil {
 		return zero, fmt.Errorf("execute refund credit: %w", err)
 	}
 
+	// tail: signal the workflow + notify the buyer. Each Send self-journals.
 	if err = b.fulfillment.Send().OnSellerDecision(ctx, refund.OrderID, ordermodel.SellerDecisionSignal{RefundID: refund.ID, Approved: true}); err != nil {
 		return zero, fmt.Errorf("signal seller decision: %w", err)
 	}
@@ -78,7 +89,7 @@ type SellerDisputeParams struct {
 // reason and evidence photos; the refund row flips to Disputed and a dispute
 // row is opened.
 func (b *RefundHandler) SellerDisputeRefund(
-	ctx context.Context,
+	ctx restate.Context,
 	params SellerDisputeParams,
 ) (ordermodel.RefundDispute, error) {
 	var zero ordermodel.RefundDispute
@@ -89,29 +100,37 @@ func (b *RefundHandler) SellerDisputeRefund(
 		return zero, fmt.Errorf("validate seller dispute: %w", err)
 	}
 
-	refund, err := b.loadAndAuthSeller(ctx, params.RefundID, params.Account.ID)
+	// decision: load + authorize the refund and confirm the seller can still decide.
+	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
+		r, e := b.loadAndAuthSeller(rctx, params.RefundID, params.Account.ID)
+		if e != nil {
+			return orderdb.OrderRefund{}, fmt.Errorf("load seller refund: %w", e)
+		}
+		if !(ordermodel.Refund{OrderRefund: r}).CanSellerDecide() {
+			return orderdb.OrderRefund{}, ordermodel.ErrRefundWrongStage
+		}
+		return r, nil
+	})
 	if err != nil {
-		return zero, fmt.Errorf("load seller refund: %w", err)
-	}
-	if !(ordermodel.Refund{OrderRefund: refund}).CanSellerDecide() {
-		return zero, ordermodel.ErrRefundWrongStage
+		return zero, err
 	}
 
-	dispute, err := func() (orderdb.OrderRefundDispute, error) {
-		if _, e := b.Storage.Querier().SellerDisputeRefund(ctx, refund.ID); e != nil {
+	// execution: flip the refund to Disputed and open the dispute row.
+	dispute, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefundDispute, error) {
+		if _, e := b.Storage.Querier().SellerDisputeRefund(rctx, refund.ID); e != nil {
 			return orderdb.OrderRefundDispute{}, fmt.Errorf("dispute refund: %w", e)
 		}
-		return b.Storage.Querier().OpenRefundDispute(ctx, orderdb.OpenRefundDisputeParams{
+		return b.Storage.Querier().OpenRefundDispute(rctx, orderdb.OpenRefundDisputeParams{
 			RefundID:  refund.ID,
 			AccountID: params.Account.ID,
 			Reason:    params.Reason,
 		})
-	}()
+	})
 	if err != nil {
 		return zero, fmt.Errorf("open dispute: %w", err)
 	}
 
-	// Update the seller's evidence photos via the common resource system.
+	// tail: update the seller's evidence photos via the common resource system.
 	resources, err := b.common.Call().UpdateResources(ctx, commonbiz.UpdateResourcesParams{
 		Account:     params.Account,
 		RefType:     commondb.CommonResourceRefTypeRefundDispute,

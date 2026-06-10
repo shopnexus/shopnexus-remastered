@@ -11,6 +11,7 @@ import (
 	"shopnexus-server/internal/shared/paginate"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 )
 
 // BuyerHandler implements BuyerOrderBiz over the shared core and signals the
@@ -38,8 +39,8 @@ type BuyerOrderBiz interface {
 		ctx context.Context,
 		params ListBuyerPendingItemsParams,
 	) (paginate.PaginateResult[ordermodel.OrderItem], error)
-	CancelBuyerPending(ctx context.Context, params CancelBuyerPendingParams) error
-	RefundPendingItem(ctx context.Context, params RefundPendingItemParams) error
+	CancelBuyerPending(ctx restate.Context, params CancelBuyerPendingParams) error
+	RefundPendingItem(ctx restate.Context, params RefundPendingItemParams) error
 	ListBuyerPendingOrders(
 		ctx context.Context,
 		params ListBuyerPendingOrdersParams,

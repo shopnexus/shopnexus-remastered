@@ -9,6 +9,8 @@ import (
 	"shopnexus-server/internal/module/order/biz/workflow/fullfilment"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/paginate"
+
+	restate "github.com/restatedev/sdk-go"
 )
 
 // DisputeHandler implements DisputeBiz over the module core (admin dismiss
@@ -38,6 +40,6 @@ type DisputeBiz interface {
 		params ListRefundDisputesParams,
 	) (paginate.PaginateResult[ordermodel.RefundDispute], error)
 	GetRefundDispute(ctx context.Context, params GetRefundDisputeParams) (ordermodel.RefundDispute, error)
-	AdminUpholdDispute(ctx context.Context, params AdminDisputeDecisionParams) (ordermodel.RefundDispute, error)
-	AdminDismissDispute(ctx context.Context, params AdminDisputeDecisionParams) (ordermodel.RefundDispute, error)
+	AdminUpholdDispute(ctx restate.Context, params AdminDisputeDecisionParams) (ordermodel.RefundDispute, error)
+	AdminDismissDispute(ctx restate.Context, params AdminDisputeDecisionParams) (ordermodel.RefundDispute, error)
 }

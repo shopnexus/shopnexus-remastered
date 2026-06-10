@@ -1,7 +1,6 @@
 package payment
 
 import (
-	"context"
 	"fmt"
 
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
@@ -10,10 +9,11 @@ import (
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 )
 
 // OnPaymentResult is the unified entry point for gateway IPN webhooks.
-func (b *PaymentHandler) OnPaymentResult(ctx context.Context, params payment.Notification) error {
+func (b *PaymentHandler) OnPaymentResult(ctx restate.Context, params payment.Notification) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate on payment result: %w", err)
 	}
@@ -23,18 +23,24 @@ func (b *PaymentHandler) OnPaymentResult(ctx context.Context, params payment.Not
 		return fmt.Errorf("parse tx id: %w", err)
 	}
 
-	tx, err := b.Storage.Querier().GetTransaction(ctx, uuid.NullUUID{UUID: txID, Valid: true})
+	// decision: load the tx and its owning session to route the signal.
+	session, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderPaymentSession, error) {
+		tx, err := b.Storage.Querier().GetTransaction(rctx, uuid.NullUUID{UUID: txID, Valid: true})
+		if err != nil {
+			return orderdb.OrderPaymentSession{}, fmt.Errorf("get transaction: %w", err)
+		}
+		s, err := b.Storage.Querier().GetPaymentSession(rctx, uuid.NullUUID{UUID: tx.SessionID, Valid: true})
+		if err != nil {
+			return orderdb.OrderPaymentSession{}, fmt.Errorf("get session: %w", err)
+		}
+		return s, nil
+	})
 	if err != nil {
-		return fmt.Errorf("get transaction: %w", err)
+		return err
 	}
 
-	// load session + resolve TxID if the webhook didn't supply one.
-	session, err := b.Storage.Querier().GetPaymentSession(ctx, uuid.NullUUID{UUID: tx.SessionID, Valid: true})
-	if err != nil {
-		return fmt.Errorf("get session: %w", err)
-	}
-
-	// signal owning workflow's payment_event promise.
+	// tail: signal the owning workflow's payment_event promise. The cross-workflow
+	// Send self-journals.
 	switch session.Kind {
 	case ordermodel.SessionKindBuyerCheckout:
 		err = b.checkout.Send().PaymentNotification(ctx, session.ID, params)

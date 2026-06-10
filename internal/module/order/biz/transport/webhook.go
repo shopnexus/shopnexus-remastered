@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -13,6 +12,7 @@ import (
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 )
 
 // validTransitions defines which OrderStatus transitions are allowed on the transport table.
@@ -40,7 +40,7 @@ type OnTransportResultParams struct {
 }
 
 // OnTransportResult updates a transport record's status and data field.
-func (b *TransportHandler) OnTransportResult(ctx context.Context, params OnTransportResultParams) error {
+func (b *TransportHandler) OnTransportResult(ctx restate.Context, params OnTransportResultParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate on transport result: %w", err)
 	}
@@ -50,11 +50,11 @@ func (b *TransportHandler) OnTransportResult(ctx context.Context, params OnTrans
 		TrackingID  string `json:"tracking_id"`
 	}
 
-	// Step 1: Lookup by tracking ID, validate transition, update status.
-	fetched, err := func() (transportInfo, error) {
+	// execution: lookup by tracking ID, validate the transition, update status.
+	fetched, err := restate.Run(ctx, func(rctx restate.RunContext) (transportInfo, error) {
 		var zero transportInfo
 
-		tr, err := b.Storage.Querier().GetTransportByTrackingID(ctx, json.RawMessage(`"`+params.TrackingID+`"`))
+		tr, err := b.Storage.Querier().GetTransportByTrackingID(rctx, json.RawMessage(`"`+params.TrackingID+`"`))
 		if err != nil {
 			return zero, ordermodel.ErrOrderNotFound
 		}
@@ -74,7 +74,7 @@ func (b *TransportHandler) OnTransportResult(ctx context.Context, params OnTrans
 			dataJSON = json.RawMessage("{}")
 		}
 
-		if _, err = b.Storage.Querier().UpdateTransportStatusByID(ctx, orderdb.UpdateTransportStatusByIDParams{
+		if _, err = b.Storage.Querier().UpdateTransportStatusByID(rctx, orderdb.UpdateTransportStatusByIDParams{
 			ID:     tr.ID,
 			Status: orderdb.NullOrderStatus{OrderStatus: orderdb.OrderStatus(params.Status), Valid: true},
 			Data:   dataJSON,
@@ -86,15 +86,17 @@ func (b *TransportHandler) OnTransportResult(ctx context.Context, params OnTrans
 			TransportID: tr.ID,
 			TrackingID:  params.TrackingID,
 		}, nil
-	}()
+	})
 	if err != nil {
 		return fmt.Errorf("update transport status: %w", err)
 	}
 
-	// Step 2: If Delivered (Success), fetch orders on this transport and signal
-	// the order's FulfillmentWorkflow so it can re-arm its escrow-release evaluation.
+	// tail: If Delivered (Success), fetch the order on this transport and notify
+	// the buyer. The notify Send self-journals.
 	if orderdb.OrderStatus(params.Status) == orderdb.OrderStatusSuccess {
-		order, err := b.Storage.Querier().GetOrderByTransportID(ctx, fetched.TransportID)
+		order, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderOrder, error) {
+			return b.Storage.Querier().GetOrderByTransportID(rctx, fetched.TransportID)
+		})
 		if err != nil {
 			return fmt.Errorf("fetch order by transport ID: %w", err)
 		}
@@ -124,8 +126,8 @@ func (b *TransportHandler) OnTransportResult(ctx context.Context, params OnTrans
 		OrderID  uuid.UUID `json:"order_id"`
 		HasOrder bool      `json:"has_order"`
 	}
-	info, fetchErr := func() (orderInfo, error) {
-		r, err := b.Storage.Querier().GetTransportWithOrder(ctx, fetched.TransportID)
+	info, fetchErr := restate.Run(ctx, func(rctx restate.RunContext) (orderInfo, error) {
+		r, err := b.Storage.Querier().GetTransportWithOrder(rctx, fetched.TransportID)
 		if err != nil {
 			// Transport may not yet be linked to an order (early status updates).
 			return orderInfo{HasOrder: false}, nil
@@ -136,7 +138,7 @@ func (b *TransportHandler) OnTransportResult(ctx context.Context, params OnTrans
 			OrderID:  r.OrderID,
 			HasOrder: true,
 		}, nil
-	}()
+	})
 	if fetchErr != nil {
 		b.Logger.Warn("skip notifications: could not fetch transport order info",
 			slog.String("tracking_id", params.TrackingID),

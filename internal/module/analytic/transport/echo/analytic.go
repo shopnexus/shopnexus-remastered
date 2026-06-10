@@ -155,7 +155,7 @@ func (h *Handler) GetSellerDashboard(c echo.Context) error {
 		params.EndDate = t
 	}
 
-	result, err := h.order.Guaranteed().GetSellerDashboard(c.Request().Context(), params)
+	result, err := h.order.GetSellerDashboard(c.Request().Context(), params)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}

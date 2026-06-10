@@ -22,6 +22,7 @@ import (
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 )
 
@@ -44,8 +45,8 @@ func New(
 // CartBiz covers the buyer's shopping cart.
 type CartBiz interface {
 	GetCart(ctx context.Context, params GetCartParams) ([]ordermodel.CartItem, error)
-	UpdateCart(ctx context.Context, params UpdateCartParams) error
-	ClearCart(ctx context.Context, params ClearCartParams) error
+	UpdateCart(ctx restate.Context, params UpdateCartParams) error
+	ClearCart(ctx restate.Context, params ClearCartParams) error
 }
 
 type GetCartParams struct {
@@ -125,17 +126,18 @@ type UpdateCartParams struct {
 }
 
 // UpdateCart adds, updates, or removes a cart item and tracks the interaction.
-func (b *CartHandler) UpdateCart(ctx context.Context, params UpdateCartParams) error {
+func (b *CartHandler) UpdateCart(ctx restate.Context, params UpdateCartParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate update cart: %w", err)
 	}
 
-	// Track which event type to send after the durable step
-	eventType, err := func() (analyticmodel.Event, error) {
+	// execution: resolve the new quantity, then add/update/remove the cart row.
+	// Returns the analytic event type to emit afterwards.
+	eventType, err := restate.Run(ctx, func(rctx restate.RunContext) (analyticmodel.Event, error) {
 		var newQuantity int64
 
 		if params.DeltaQuantity.Valid {
-			cartItem, err := b.Storage.Querier().GetCartItem(ctx, orderdb.GetCartItemParams{
+			cartItem, err := b.Storage.Querier().GetCartItem(rctx, orderdb.GetCartItemParams{
 				AccountID: uuid.NullUUID{UUID: params.Account.ID, Valid: true},
 				SkuID:     uuid.NullUUID{UUID: params.SkuID, Valid: true},
 			})
@@ -151,7 +153,7 @@ func (b *CartHandler) UpdateCart(ctx context.Context, params UpdateCartParams) e
 
 		// If quantity = 0, remove cart item and return early
 		if params.Quantity.Valid && params.Quantity.Int64 <= 0 {
-			if err := b.Storage.Querier().DeleteCartItem(ctx, orderdb.DeleteCartItemParams{
+			if err := b.Storage.Querier().DeleteCartItem(rctx, orderdb.DeleteCartItemParams{
 				AccountID: []uuid.UUID{params.Account.ID},
 				SkuID:     []uuid.UUID{params.SkuID},
 			}); err != nil {
@@ -160,7 +162,7 @@ func (b *CartHandler) UpdateCart(ctx context.Context, params UpdateCartParams) e
 			return analyticmodel.EventRemoveFromCart, nil
 		}
 
-		if err := b.Storage.Querier().UpdateCart(ctx, orderdb.UpdateCartParams{
+		if err := b.Storage.Querier().UpdateCart(rctx, orderdb.UpdateCartParams{
 			AccountID: params.Account.ID,
 			SkuID:     params.SkuID,
 			Quantity:  newQuantity,
@@ -168,11 +170,12 @@ func (b *CartHandler) UpdateCart(ctx context.Context, params UpdateCartParams) e
 			return "", err
 		}
 		return analyticmodel.EventAddToCart, nil
-	}()
+	})
 	if err != nil {
 		return fmt.Errorf("db update cart: %w", err)
 	}
 
+	// tail: track the interaction. The cross-module Send self-journals.
 	if err = b.TrackInteractions(ctx, analyticbiz.CreateInteraction{
 		Account:   params.Account,
 		EventType: eventType,
@@ -189,8 +192,11 @@ type ClearCartParams struct {
 }
 
 // ClearCart removes all items from the account's cart.
-func (b *CartHandler) ClearCart(ctx context.Context, params ClearCartParams) error {
-	return b.Storage.Querier().DeleteCartItem(ctx, orderdb.DeleteCartItemParams{
-		AccountID: []uuid.UUID{params.Account.ID},
+func (b *CartHandler) ClearCart(ctx restate.Context, params ClearCartParams) error {
+	// execution: drop every cart row for the account.
+	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		return b.Storage.Querier().DeleteCartItem(rctx, orderdb.DeleteCartItemParams{
+			AccountID: []uuid.UUID{params.Account.ID},
+		})
 	})
 }

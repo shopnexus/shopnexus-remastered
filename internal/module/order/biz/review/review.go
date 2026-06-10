@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 
 	accountmodel "shopnexus-server/internal/module/account/model"
@@ -36,7 +37,7 @@ type ReviewBiz interface {
 	ListReviewableOrders(ctx context.Context, params ListReviewableOrdersParams) ([]ReviewableOrder, error)
 	ListReviewableOrdersBySpu(ctx context.Context, params ListReviewableOrdersBySpuParams) ([]ReviewableOrder, error)
 	ValidateOrderForReview(ctx context.Context, params ValidateOrderForReviewParams) (bool, error)
-	CreateProductReview(ctx context.Context, params CreateProductReviewParams) (catalogmodel.Comment, error)
+	CreateProductReview(ctx restate.Context, params CreateProductReviewParams) (catalogmodel.Comment, error)
 }
 
 type HasPurchasedProductParams struct {
@@ -166,7 +167,7 @@ type CreateProductReviewParams struct {
 // then forwards the review to the catalog store with denormalized order facts
 // (item name + order date) so catalog never calls back into order.
 func (b *ReviewHandler) CreateProductReview(
-	ctx context.Context,
+	ctx restate.Context,
 	params CreateProductReviewParams,
 ) (catalogmodel.Comment, error) {
 	var zero catalogmodel.Comment
@@ -180,10 +181,13 @@ func (b *ReviewHandler) CreateProductReview(
 		return zero, err
 	}
 
-	valid, err := b.Storage.Querier().ValidateOrderForReview(ctx, orderdb.ValidateOrderForReviewParams{
-		OrderID: params.OrderID,
-		BuyerID: params.Account.ID,
-		SkuIds:  skuIDs,
+	// decision: verify the order is reviewable by this buyer.
+	valid, err := restate.Run(ctx, func(rctx restate.RunContext) (bool, error) {
+		return b.Storage.Querier().ValidateOrderForReview(rctx, orderdb.ValidateOrderForReviewParams{
+			OrderID: params.OrderID,
+			BuyerID: params.Account.ID,
+			SkuIds:  skuIDs,
+		})
 	})
 	if err != nil {
 		return zero, fmt.Errorf("validate order for review: %w", err)
@@ -192,6 +196,8 @@ func (b *ReviewHandler) CreateProductReview(
 		return zero, catalogmodel.ErrMustPurchaseToReview
 	}
 
+	// execution: forward the review to the catalog store. The cross-module Call
+	// self-journals at restate.Context level.
 	return b.catalog.Call().CreateComment(ctx, catalogbiz.CreateCommentParams{
 		Account:     params.Account,
 		RefType:     catalogdb.CatalogCommentRefTypeProductSpu,

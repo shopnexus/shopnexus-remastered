@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
+	restate "github.com/restatedev/sdk-go"
 
 	"shopnexus-server/internal/infras/metrics"
 	accountmodel "shopnexus-server/internal/module/account/model"
@@ -19,7 +20,7 @@ import (
 // and a return-to-buyer transport is spawned so the goods go back. Payout to
 // seller proceeds normally (escrow released by the order's FulfillmentWorkflow on next tick).
 func (b *DisputeHandler) AdminUpholdDispute(
-	ctx context.Context,
+	ctx restate.Context,
 	params AdminDisputeDecisionParams,
 ) (ordermodel.RefundDispute, error) {
 	var zero ordermodel.RefundDispute
@@ -33,51 +34,53 @@ func (b *DisputeHandler) AdminUpholdDispute(
 		return zero, ordermodel.ErrAdminRequired
 	}
 
-	pre, err := b.loadDisputeForResolution(ctx, params.DisputeID)
+	// decision: load the open dispute + its refund/order.
+	pre, err := restate.Run(ctx, func(rctx restate.RunContext) (disputeContext, error) {
+		return b.loadDisputeForResolution(rctx, params.DisputeID)
+	})
 	if err != nil {
 		return zero, fmt.Errorf("load dispute: %w", err)
 	}
 
-	// Create the return-to-buyer transport so the goods leave the seller's
-	// hands. Mock-Success same as the forward leg.
-	returnTransport, err := func() (orderdb.OrderTransport, error) {
-		t, e := b.Storage.Querier().CreateDefaultTransport(ctx, orderdb.CreateDefaultTransportParams{
+	// execution: spawn the return-to-buyer transport (mock-Success same as the
+	// forward leg), uphold the refund and resolve the dispute as seller-wins.
+	updatedDispute, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefundDispute, error) {
+		t, e := b.Storage.Querier().CreateDefaultTransport(rctx, orderdb.CreateDefaultTransportParams{
 			Option: "default",
 			Data:   json.RawMessage(`{"direction":"return","leg":"seller-to-buyer"}`),
 		})
 		if e != nil {
-			return orderdb.OrderTransport{}, e
+			return orderdb.OrderRefundDispute{}, fmt.Errorf("create return-to-buyer transport: %w", e)
 		}
 		// TODO: remove mock when real transport provider is wired up.
-		return b.Storage.Querier().UpdateTransportStatusByID(ctx, orderdb.UpdateTransportStatusByIDParams{
+		returnTransport, e := b.Storage.Querier().UpdateTransportStatusByID(rctx, orderdb.UpdateTransportStatusByIDParams{
 			ID:     t.ID,
 			Status: orderdb.NullOrderStatus{OrderStatus: orderdb.OrderStatusSuccess, Valid: true},
 			Data:   json.RawMessage(`{"direction":"return","leg":"seller-to-buyer","mock":"auto-delivered"}`),
 		})
-	}()
-	if err != nil {
-		return zero, fmt.Errorf("create return-to-buyer transport: %w", err)
-	}
+		if e != nil {
+			return orderdb.OrderRefundDispute{}, fmt.Errorf("create return-to-buyer transport: %w", e)
+		}
 
-	updatedDispute, err := func() (orderdb.OrderRefundDispute, error) {
-		if _, e := b.Storage.Querier().AdminUpholdDispute(ctx, orderdb.AdminUpholdDisputeParams{
+		if _, e := b.Storage.Querier().AdminUpholdDispute(rctx, orderdb.AdminUpholdDisputeParams{
 			ID:                       pre.Refund.ID,
 			ReturnToBuyerTransportID: null.IntFrom(returnTransport.ID),
 			RejectionReason:          null.StringFrom(params.Note),
 		}); e != nil {
 			return orderdb.OrderRefundDispute{}, fmt.Errorf("uphold refund: %w", e)
 		}
-		return b.Storage.Querier().ResolveRefundDispute(ctx, orderdb.ResolveRefundDisputeParams{
+		return b.Storage.Querier().ResolveRefundDispute(rctx, orderdb.ResolveRefundDisputeParams{
 			ID:             pre.Dispute.ID,
 			Status:         orderdb.OrderDisputeStatusSellerWins,
 			ResolvedByID:   uuid.NullUUID{UUID: params.Account.ID, Valid: true},
 			ResolutionNote: null.StringFrom(params.Note),
 		})
-	}()
+	})
 	if err != nil {
 		return zero, fmt.Errorf("resolve dispute (uphold): %w", err)
 	}
 
+	// tail: signal the workflow + notify both parties. Each Send self-journals.
 	if err = b.fulfillment.Send().OnAdminDecision(ctx, pre.Refund.OrderID, ordermodel.AdminDecisionSignal{RefundID: pre.Refund.ID, Upheld: true}); err != nil {
 		return zero, fmt.Errorf("signal admin decision: %w", err)
 	}
@@ -101,7 +104,7 @@ func (b *DisputeHandler) AdminUpholdDispute(
 // AdminDismissDispute: admin sides with the buyer. Refund flips to Accepted
 // via the shared credit flow; the seller does not get paid.
 func (b *DisputeHandler) AdminDismissDispute(
-	ctx context.Context,
+	ctx restate.Context,
 	params AdminDisputeDecisionParams,
 ) (ordermodel.RefundDispute, error) {
 	var zero ordermodel.RefundDispute
@@ -115,11 +118,16 @@ func (b *DisputeHandler) AdminDismissDispute(
 		return zero, ordermodel.ErrAdminRequired
 	}
 
-	pre, err := b.loadDisputeForResolution(ctx, params.DisputeID)
+	// decision: load the open dispute + its refund/order.
+	pre, err := restate.Run(ctx, func(rctx restate.RunContext) (disputeContext, error) {
+		return b.loadDisputeForResolution(rctx, params.DisputeID)
+	})
 	if err != nil {
 		return zero, fmt.Errorf("load dispute: %w", err)
 	}
 
+	// execution: run the credit flow (self-journals), then resolve the dispute
+	// as buyer-wins.
 	if _, err := b.refund.ExecuteRefundCredit(
 		ctx,
 		pre.Refund,
@@ -129,16 +137,19 @@ func (b *DisputeHandler) AdminDismissDispute(
 		return zero, fmt.Errorf("execute refund credit: %w", err)
 	}
 
-	updatedDispute, err := b.Storage.Querier().ResolveRefundDispute(ctx, orderdb.ResolveRefundDisputeParams{
-		ID:             pre.Dispute.ID,
-		Status:         orderdb.OrderDisputeStatusBuyerWins,
-		ResolvedByID:   uuid.NullUUID{UUID: params.Account.ID, Valid: true},
-		ResolutionNote: null.StringFrom(params.Note),
+	updatedDispute, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefundDispute, error) {
+		return b.Storage.Querier().ResolveRefundDispute(rctx, orderdb.ResolveRefundDisputeParams{
+			ID:             pre.Dispute.ID,
+			Status:         orderdb.OrderDisputeStatusBuyerWins,
+			ResolvedByID:   uuid.NullUUID{UUID: params.Account.ID, Valid: true},
+			ResolutionNote: null.StringFrom(params.Note),
+		})
 	})
 	if err != nil {
 		return zero, fmt.Errorf("resolve dispute (dismiss): %w", err)
 	}
 
+	// tail: signal the workflow + notify both parties. Each Send self-journals.
 	if err = b.fulfillment.Send().OnAdminDecision(ctx, pre.Refund.OrderID, ordermodel.AdminDecisionSignal{RefundID: pre.Refund.ID, Upheld: false}); err != nil {
 		return zero, fmt.Errorf("signal admin decision: %w", err)
 	}

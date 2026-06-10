@@ -1,7 +1,6 @@
 package refund
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 
@@ -15,6 +14,8 @@ import (
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/pgsqlc"
 	"shopnexus-server/internal/shared/validator"
+
+	restate "github.com/restatedev/sdk-go"
 )
 
 type CreateBuyerRefundParams struct {
@@ -29,7 +30,7 @@ type CreateBuyerRefundParams struct {
 // shipping the goods back: a return transport row is created on the spot and
 // the refund starts in Shipping. Required: reason + photos + return option.
 func (b *RefundHandler) CreateBuyerRefund(
-	ctx context.Context,
+	ctx restate.Context,
 	params CreateBuyerRefundParams,
 ) (ordermodel.Refund, error) {
 	var zero ordermodel.Refund
@@ -42,78 +43,97 @@ func (b *RefundHandler) CreateBuyerRefund(
 
 	// TODO: lock here to prevent TOCTOU - maybe lock Refund?
 
-	// Check if the order exists & belongs to the buyer
-	order, err := b.Storage.Querier().GetOrder(ctx, orderdb.GetOrderParams{
-		ID: uuid.NullUUID{UUID: params.OrderID, Valid: true},
-	})
-	if err != nil {
-		return zero, fmt.Errorf("get order: %w", err)
+	// decision: the order exists, belongs to the buyer, has a non-cancelled paid
+	// item, and has no active refund.
+	type decision struct {
+		Order orderdb.OrderOrder
 	}
-	if order.BuyerID != params.Account.ID {
-		return zero, ordermodel.ErrItemNotOwnedByBuyer
-	}
+	dec, err := restate.Run(ctx, func(rctx restate.RunContext) (decision, error) {
+		var zero decision
 
-	// Ensure the order has at least one non-cancelled item
-	listItems, err := b.Storage.Querier().ListItem(ctx, orderdb.ListItemParams{
-		OrderId: []uuid.UUID{params.OrderID},
-	})
-	if err != nil {
-		return zero, fmt.Errorf("list items: %w", err)
-	}
-	items := listItems.Data
-	var anyItem orderdb.OrderItem
-	for _, it := range items {
-		if !it.DateCancelled.Valid {
-			anyItem = it
-			break
-		}
-	}
-	// If all items are cancelled, the order is effectively cancelled and thus ineligible for refunds.
-	if anyItem.ID == 0 {
-		return zero, ordermodel.ErrItemAlreadyCancelled
-	}
-
-	// Order must have a settled positive tx in the buyer's session.
-	txs, err := b.Storage.Querier().ListTransactionsBySession(ctx, anyItem.PaymentSessionID)
-	if err != nil {
-		return zero, fmt.Errorf("list txs: %w", err)
-	}
-	if _, paid := ordermodel.FindOriginalCharge(txs); !paid {
-		return zero, ordermodel.ErrRefundOrderNotPaid
-	}
-
-	active, err := b.Storage.Querier().HasActiveRefundForOrder(ctx, params.OrderID)
-	if err != nil {
-		return zero, fmt.Errorf("check active refund: %w", err)
-	}
-	if active {
-		return zero, ordermodel.ErrRefundAlreadyAccepted
-	}
-
-	var refund orderdb.OrderRefund
-
-	if err := b.Storage.Transact(ctx, func(s pgsqlc.Storage[*orderdb.Queries]) error {
-		returnTransport, err := s.Querier().CreateDefaultTransport(ctx, orderdb.CreateDefaultTransportParams{
-			Option: params.ReturnOption,
-			Data:   json.RawMessage(`{"direction":"return","leg":"buyer-to-seller"}`),
+		order, err := b.Storage.Querier().GetOrder(rctx, orderdb.GetOrderParams{
+			ID: uuid.NullUUID{UUID: params.OrderID, Valid: true},
 		})
 		if err != nil {
-			return fmt.Errorf("create return transport: %w", err)
+			return zero, fmt.Errorf("get order: %w", err)
+		}
+		if order.BuyerID != params.Account.ID {
+			return zero, ordermodel.ErrItemNotOwnedByBuyer
 		}
 
-		refund, err = s.Querier().CreateBuyerRefund(ctx, orderdb.CreateBuyerRefundParams{
-			AccountID:         params.Account.ID,
-			OrderID:           params.OrderID,
-			Reason:            params.Reason,
-			ReturnTransportID: returnTransport.ID,
+		// Ensure the order has at least one non-cancelled item
+		listItems, err := b.Storage.Querier().ListItem(rctx, orderdb.ListItemParams{
+			OrderId: []uuid.UUID{params.OrderID},
 		})
 		if err != nil {
-			return fmt.Errorf("create refund: %w", err)
+			return zero, fmt.Errorf("list items: %w", err)
+		}
+		var anyItem orderdb.OrderItem
+		for _, it := range listItems.Data {
+			if !it.DateCancelled.Valid {
+				anyItem = it
+				break
+			}
+		}
+		// If all items are cancelled, the order is effectively cancelled and thus ineligible for refunds.
+		if anyItem.ID == 0 {
+			return zero, ordermodel.ErrItemAlreadyCancelled
 		}
 
-		return nil
-	}); err != nil {
-		return zero, fmt.Errorf("create refund transaction: %w", err)
+		// Order must have a settled positive tx in the buyer's session.
+		txs, err := b.Storage.Querier().ListTransactionsBySession(rctx, anyItem.PaymentSessionID)
+		if err != nil {
+			return zero, fmt.Errorf("list txs: %w", err)
+		}
+		if _, paid := ordermodel.FindOriginalCharge(txs); !paid {
+			return zero, ordermodel.ErrRefundOrderNotPaid
+		}
+
+		active, err := b.Storage.Querier().HasActiveRefundForOrder(rctx, params.OrderID)
+		if err != nil {
+			return zero, fmt.Errorf("check active refund: %w", err)
+		}
+		if active {
+			return zero, ordermodel.ErrRefundAlreadyAccepted
+		}
+
+		return decision{Order: order}, nil
+	})
+	if err != nil {
+		return zero, err
+	}
+	order := dec.Order
+
+	// execution: create the return transport + refund row in one tx.
+	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
+		var refund orderdb.OrderRefund
+		if err := b.Storage.Transact(rctx, func(s pgsqlc.Storage[*orderdb.Queries]) error {
+			returnTransport, err := s.Querier().CreateDefaultTransport(rctx, orderdb.CreateDefaultTransportParams{
+				Option: params.ReturnOption,
+				Data:   json.RawMessage(`{"direction":"return","leg":"buyer-to-seller"}`),
+			})
+			if err != nil {
+				return fmt.Errorf("create return transport: %w", err)
+			}
+
+			refund, err = s.Querier().CreateBuyerRefund(rctx, orderdb.CreateBuyerRefundParams{
+				AccountID:         params.Account.ID,
+				OrderID:           params.OrderID,
+				Reason:            params.Reason,
+				ReturnTransportID: returnTransport.ID,
+			})
+			if err != nil {
+				return fmt.Errorf("create refund: %w", err)
+			}
+
+			return nil
+		}); err != nil {
+			return orderdb.OrderRefund{}, fmt.Errorf("create refund transaction: %w", err)
+		}
+		return refund, nil
+	})
+	if err != nil {
+		return zero, err
 	}
 
 	// TODO(saga): tail steps below run outside the tx. Once de-journaled, a

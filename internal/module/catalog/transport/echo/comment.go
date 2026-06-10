@@ -82,7 +82,7 @@ func (h *Handler) CreateComment(c echo.Context) error {
 	// Product reviews go through the order module, which owns purchase
 	// validation; replies and other comments hit catalog directly.
 	if req.RefType == catalogdb.CatalogCommentRefTypeProductSpu {
-		result, err := h.order.Guaranteed().CreateProductReview(c.Request().Context(), orderbiz.CreateProductReviewParams{
+		result, err := h.order.Call().CreateProductReview(c.Request().Context(), orderbiz.CreateProductReviewParams{
 			Account:     claims.Account,
 			SpuID:       req.RefID,
 			OrderID:     req.OrderID,
@@ -228,7 +228,7 @@ func (h *Handler) ListReviewableOrders(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.order.Guaranteed().ListReviewableOrdersBySpu(c.Request().Context(), orderbiz.ListReviewableOrdersBySpuParams{
+	result, err := h.order.ListReviewableOrdersBySpu(c.Request().Context(), orderbiz.ListReviewableOrdersBySpuParams{
 		Account: claims.Account,
 		SpuID:   req.SpuID,
 	})
