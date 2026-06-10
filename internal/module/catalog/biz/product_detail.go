@@ -58,7 +58,7 @@ func (b *CatalogHandler) GetProductDetail(
 	skuIDs := lo.Map(skus, func(s catalogmodel.ProductSku, _ int) uuid.UUID { return s.ID })
 
 	// Get sold count from inventory
-	listStock, err := b.inventory.Guaranteed().ListStock(ctx, inventorybiz.ListStockParams{
+	listStock, err := b.inventory.ListStock(ctx, inventorybiz.ListStockParams{
 		RefType: []inventorydb.InventoryStockRefType{inventorydb.InventoryStockRefTypeProductSku},
 		RefID:   skuIDs,
 	})

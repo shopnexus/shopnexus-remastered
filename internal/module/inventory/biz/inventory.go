@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
+	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 )
 
@@ -68,7 +69,7 @@ type UpdateStockSettingsParams struct {
 
 // UpdateStockSettings updates stock settings like serial_required.
 func (b *InventoryHandler) UpdateStockSettings(
-	ctx context.Context,
+	ctx restate.Context,
 	params UpdateStockSettingsParams,
 ) (inventorydb.InventoryStock, error) {
 	var zero inventorydb.InventoryStock
@@ -76,19 +77,22 @@ func (b *InventoryHandler) UpdateStockSettings(
 		return zero, fmt.Errorf("validate update stock settings: %w", err)
 	}
 
-	stock, err := b.getStockByRef(ctx, b.storage, params.RefType, params.RefID)
-	if err != nil {
-		return zero, fmt.Errorf("db get stock: %w", err)
-	}
+	// execution: load the stock, then update its settings.
+	return restate.Run(ctx, func(rctx restate.RunContext) (inventorydb.InventoryStock, error) {
+		stock, err := b.getStockByRef(rctx, b.storage, params.RefType, params.RefID)
+		if err != nil {
+			return zero, fmt.Errorf("db get stock: %w", err)
+		}
 
-	updated, err := b.storage.Querier().UpdateStock(ctx, inventorydb.UpdateStockParams{
-		ID:             stock.ID,
-		SerialRequired: params.SerialRequired,
+		updated, err := b.storage.Querier().UpdateStock(rctx, inventorydb.UpdateStockParams{
+			ID:             stock.ID,
+			SerialRequired: params.SerialRequired,
+		})
+		if err != nil {
+			return zero, fmt.Errorf("db update stock: %w", err)
+		}
+		return updated, nil
 	})
-	if err != nil {
-		return zero, fmt.Errorf("db update stock: %w", err)
-	}
-	return updated, nil
 }
 
 type ListStockParams struct {
@@ -132,7 +136,7 @@ type CreateStockParams struct {
 
 // CreateStock creates a new stock record for the given reference.
 func (b *InventoryHandler) CreateStock(
-	ctx context.Context,
+	ctx restate.Context,
 	params CreateStockParams,
 ) (inventorydb.InventoryStock, error) {
 	var zero inventorydb.InventoryStock
@@ -140,16 +144,19 @@ func (b *InventoryHandler) CreateStock(
 		return zero, fmt.Errorf("validate create stock: %w", err)
 	}
 
-	created, err := b.storage.Querier().CreateDefaultStock(ctx, inventorydb.CreateDefaultStockParams{
-		RefType:        params.RefType,
-		RefID:          params.RefID,
-		Stock:          params.Stock,
-		SerialRequired: params.SerialRequired,
+	// execution: create the default stock record.
+	return restate.Run(ctx, func(rctx restate.RunContext) (inventorydb.InventoryStock, error) {
+		created, err := b.storage.Querier().CreateDefaultStock(rctx, inventorydb.CreateDefaultStockParams{
+			RefType:        params.RefType,
+			RefID:          params.RefID,
+			Stock:          params.Stock,
+			SerialRequired: params.SerialRequired,
+		})
+		if err != nil {
+			return zero, fmt.Errorf("db create default stock: %w", err)
+		}
+		return created, nil
 	})
-	if err != nil {
-		return zero, fmt.Errorf("db create default stock: %w", err)
-	}
-	return created, nil
 }
 
 type ListStockHistoryParams struct {
@@ -196,60 +203,70 @@ type ImportStockParams struct {
 }
 
 // ImportStock adds stock quantity and optionally creates serial records.
-func (b *InventoryHandler) ImportStock(ctx context.Context, params ImportStockParams) error {
+func (b *InventoryHandler) ImportStock(ctx restate.Context, params ImportStockParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate import stock: %w", err)
 	}
 
-	q := b.storage.Querier()
-
-	stock, err := b.getStockByRef(ctx, b.storage, params.RefType, params.RefID)
+	// decision: load the target stock.
+	stock, err := restate.Run(ctx, func(rctx restate.RunContext) (inventorydb.InventoryStock, error) {
+		stock, err := b.getStockByRef(rctx, b.storage, params.RefType, params.RefID)
+		if err != nil {
+			return inventorydb.InventoryStock{}, fmt.Errorf("db get stock: %w", err)
+		}
+		return stock, nil
+	})
 	if err != nil {
-		return fmt.Errorf("db get stock: %w", err)
+		return err
 	}
 
-	if _, err := q.CreateDefaultStockHistory(ctx, inventorydb.CreateDefaultStockHistoryParams{
-		StockID: stock.ID,
-		Change:  params.Change,
-	}); err != nil {
-		return fmt.Errorf("db create stock history: %w", err)
-	}
+	// execution: record history, mint serials for serialized stock, bump current stock.
+	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		q := b.storage.Querier()
 
-	// Create serials for serialized stock
-	if stock.SerialRequired {
-		var args []inventorydb.CreateCopyDefaultSerialParams
+		if _, err := q.CreateDefaultStockHistory(rctx, inventorydb.CreateDefaultStockHistoryParams{
+			StockID: stock.ID,
+			Change:  params.Change,
+		}); err != nil {
+			return fmt.Errorf("db create stock history: %w", err)
+		}
 
-		if len(params.SerialIDs) != 0 {
-			if len(params.SerialIDs) != int(params.Change) {
-				return inventorymodel.ErrSerialCountMismatch
+		// Create serials for serialized stock
+		if stock.SerialRequired {
+			var args []inventorydb.CreateCopyDefaultSerialParams
+
+			if len(params.SerialIDs) != 0 {
+				if len(params.SerialIDs) != int(params.Change) {
+					return inventorymodel.ErrSerialCountMismatch
+				}
+				for _, id := range params.SerialIDs {
+					args = append(args, inventorydb.CreateCopyDefaultSerialParams{
+						ID:      id,
+						StockID: stock.ID,
+					})
+				}
+			} else {
+				for range params.Change {
+					args = append(args, inventorydb.CreateCopyDefaultSerialParams{
+						ID:      uuid.NewString(),
+						StockID: stock.ID,
+					})
+				}
 			}
-			for _, id := range params.SerialIDs {
-				args = append(args, inventorydb.CreateCopyDefaultSerialParams{
-					ID:      id,
-					StockID: stock.ID,
-				})
-			}
-		} else {
-			for range params.Change {
-				args = append(args, inventorydb.CreateCopyDefaultSerialParams{
-					ID:      uuid.NewString(),
-					StockID: stock.ID,
-				})
+
+			if _, err := q.CreateCopyDefaultSerial(rctx, args); err != nil {
+				return fmt.Errorf("db create serials: %w", err)
 			}
 		}
 
-		if _, err = q.CreateCopyDefaultSerial(ctx, args); err != nil {
-			return fmt.Errorf("db create serials: %w", err)
+		if err := q.UpdateCurrentStock(rctx, inventorydb.UpdateCurrentStockParams{
+			ID:     stock.ID,
+			Change: params.Change,
+		}); err != nil {
+			return fmt.Errorf("db update current stock: %w", err)
 		}
-	}
-
-	if err = q.UpdateCurrentStock(ctx, inventorydb.UpdateCurrentStockParams{
-		ID:     stock.ID,
-		Change: params.Change,
-	}); err != nil {
-		return fmt.Errorf("db update current stock: %w", err)
-	}
-	return nil
+		return nil
+	})
 }
 
 type ReserveInventoryItem struct {
@@ -274,7 +291,7 @@ type ReserveInventoryParams struct {
 
 // ReserveInventory reserves stock for the given items and assigns serial IDs when required.
 func (b *InventoryHandler) ReserveInventory(
-	ctx context.Context,
+	ctx restate.Context,
 	params ReserveInventoryParams,
 ) (results []ReserveInventoryResult, err error) {
 	defer metrics.TrackHandler("inventory", "ReserveInventory", &err)()
@@ -286,85 +303,91 @@ func (b *InventoryHandler) ReserveInventory(
 		metrics.InventoryReservesTotal.WithLabelValues(result).Add(float64(len(params.Items)))
 	}()
 
-	txStorage, err := b.storage.BeginTx(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer txStorage.Rollback(ctx)
-
-	if err = params.Keys.Apply(ctx, txStorage.Querier()); err != nil {
-		return nil, fmt.Errorf("check idempotency keys: %w", err)
-	}
-
-	for _, item := range params.Items {
-		var stock inventorydb.InventoryStock
-		stock, err = b.getStockByRef(ctx, txStorage, item.RefType, item.RefID)
+	// execution: single-module atomic reserve. Idempotency keys + stock adjust + serial
+	// assignment all commit together; nothing crosses module boundaries, so no saga.
+	results, err = restate.Run(ctx, func(rctx restate.RunContext) ([]ReserveInventoryResult, error) {
+		txStorage, err := b.storage.BeginTx(rctx)
 		if err != nil {
-			return nil, fmt.Errorf("db get stock: %w", err)
+			return nil, fmt.Errorf("begin transaction: %w", err)
+		}
+		defer txStorage.Rollback(rctx)
+
+		if err = params.Keys.Apply(rctx, txStorage.Querier()); err != nil {
+			return nil, fmt.Errorf("check idempotency keys: %w", err)
 		}
 
-		label := item.DisplayName
-		if label == "" {
-			label = refTypeLabel(item.RefType)
-		}
+		var out []ReserveInventoryResult
+		for _, item := range params.Items {
+			var stock inventorydb.InventoryStock
+			stock, err = b.getStockByRef(rctx, txStorage, item.RefType, item.RefID)
+			if err != nil {
+				return nil, fmt.Errorf("db get stock: %w", err)
+			}
 
-		if stock.Stock < item.Amount {
-			return nil, inventorymodel.ErrOutOfStock.Fmt(label, item.Amount, stock.Stock)
-		}
+			label := item.DisplayName
+			if label == "" {
+				label = refTypeLabel(item.RefType)
+			}
 
-		var rowsAffected int64
-		rowsAffected, err = txStorage.Querier().AdjustInventory(ctx, inventorydb.AdjustInventoryParams{
-			StockID: stock.ID,
-			Amount:  item.Amount,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("db adjust inventory: %w", err)
-		}
-		if rowsAffected == 0 {
-			return nil, inventorymodel.ErrOutOfStockRace.Fmt(label)
-		}
+			if stock.Stock < item.Amount {
+				return nil, inventorymodel.ErrOutOfStock.Fmt(label, item.Amount, stock.Stock)
+			}
 
-		result := ReserveInventoryResult{
-			RefType: item.RefType,
-			RefID:   item.RefID,
-		}
-
-		if stock.SerialRequired {
-			var serials []inventorydb.GetAvailableSerialsRow
-			serials, err = txStorage.Querier().GetAvailableSerials(ctx, inventorydb.GetAvailableSerialsParams{
+			var rowsAffected int64
+			rowsAffected, err = txStorage.Querier().AdjustInventory(rctx, inventorydb.AdjustInventoryParams{
 				StockID: stock.ID,
-				Amount:  int32(item.Amount),
+				Amount:  item.Amount,
 			})
 			if err != nil {
-				return nil, fmt.Errorf("db get available serials: %w", err)
+				return nil, fmt.Errorf("db adjust inventory: %w", err)
+			}
+			if rowsAffected == 0 {
+				return nil, inventorymodel.ErrOutOfStockRace.Fmt(label)
 			}
 
-			if len(serials) != int(item.Amount) {
-				return nil, inventorymodel.ErrSerialShortage.Fmt(len(serials), label, item.Amount)
+			result := ReserveInventoryResult{
+				RefType: item.RefType,
+				RefID:   item.RefID,
 			}
 
-			serialIDs := lo.Map(serials, func(row inventorydb.GetAvailableSerialsRow, _ int) string {
-				return row.ID
-			})
+			if stock.SerialRequired {
+				var serials []inventorydb.GetAvailableSerialsRow
+				serials, err = txStorage.Querier().GetAvailableSerials(rctx, inventorydb.GetAvailableSerialsParams{
+					StockID: stock.ID,
+					Amount:  int32(item.Amount),
+				})
+				if err != nil {
+					return nil, fmt.Errorf("db get available serials: %w", err)
+				}
 
-			if err = txStorage.Querier().UpdateSerialStatus(ctx, inventorydb.UpdateSerialStatusParams{
-				ID:     serialIDs,
-				Status: inventorydb.InventoryStatusTaken,
-			}); err != nil {
-				return nil, fmt.Errorf("db update serial status: %w", err)
+				if len(serials) != int(item.Amount) {
+					return nil, inventorymodel.ErrSerialShortage.Fmt(len(serials), label, item.Amount)
+				}
+
+				serialIDs := lo.Map(serials, func(row inventorydb.GetAvailableSerialsRow, _ int) string {
+					return row.ID
+				})
+
+				if err = txStorage.Querier().UpdateSerialStatus(rctx, inventorydb.UpdateSerialStatusParams{
+					ID:     serialIDs,
+					Status: inventorydb.InventoryStatusTaken,
+				}); err != nil {
+					return nil, fmt.Errorf("db update serial status: %w", err)
+				}
+
+				result.SerialIDs = serialIDs
 			}
 
-			result.SerialIDs = serialIDs
+			out = append(out, result)
 		}
 
-		results = append(results, result)
-	}
+		if err = txStorage.Commit(rctx); err != nil {
+			return nil, fmt.Errorf("commit transaction: %w", err)
+		}
 
-	if err = txStorage.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit transaction: %w", err)
-	}
-
-	return results, nil
+		return out, nil
+	})
+	return results, err
 }
 
 type UpdateSerialParams struct {
@@ -373,18 +396,21 @@ type UpdateSerialParams struct {
 }
 
 // UpdateSerial updates the status of the given serial IDs.
-func (b *InventoryHandler) UpdateSerial(ctx context.Context, params UpdateSerialParams) error {
+func (b *InventoryHandler) UpdateSerial(ctx restate.Context, params UpdateSerialParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate update serial: %w", err)
 	}
 
-	if err := b.storage.Querier().UpdateSerialStatus(ctx, inventorydb.UpdateSerialStatusParams{
-		ID:     params.SerialIDs,
-		Status: params.Status,
-	}); err != nil {
-		return fmt.Errorf("db update serial status: %w", err)
-	}
-	return nil
+	// execution: update serial statuses.
+	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		if err := b.storage.Querier().UpdateSerialStatus(rctx, inventorydb.UpdateSerialStatusParams{
+			ID:     params.SerialIDs,
+			Status: params.Status,
+		}); err != nil {
+			return fmt.Errorf("db update serial status: %w", err)
+		}
+		return nil
+	})
 }
 
 type ListSerialParams struct {

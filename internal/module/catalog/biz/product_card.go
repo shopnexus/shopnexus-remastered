@@ -465,7 +465,7 @@ func (b *CatalogHandler) getRecommendPool(
 
 // trendingSpuIDs returns unique SPU ids backing the most-taken (best-selling) SKUs.
 func (b *CatalogHandler) trendingSpuIDs(ctx context.Context, limit int32) ([]uuid.UUID, error) {
-	stocks, err := b.inventory.Guaranteed().ListMostTakenSku(ctx, inventorybiz.ListMostTakenSkuParams{
+	stocks, err := b.inventory.ListMostTakenSku(ctx, inventorybiz.ListMostTakenSkuParams{
 		Params:  paginate.Params{Limit: null.Int32From(limit)},
 		RefType: inventorydb.InventoryStockRefTypeProductSku,
 	})

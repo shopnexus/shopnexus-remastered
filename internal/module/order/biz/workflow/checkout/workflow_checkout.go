@@ -227,7 +227,7 @@ func (h *CheckoutWorkflow) Run(
 	// so a failure or partial commit unwinds without double-incrementing stock.
 	reserveKey := restate.UUID(ctx)
 	saga.Defer("release_inventory", func(ctx restate.Context) error {
-		return h.inventory.Guaranteed().ReleaseInventory(ctx, inventorybiz.ReleaseInventoryParams{
+		return h.inventory.Call().ReleaseInventory(ctx, inventorybiz.ReleaseInventoryParams{
 			Keys: idempotency.Keys{ConsumeKey: reserveKey},
 			Items: lo.Map(input.Items, func(item CheckoutItem, _ int) inventorybiz.ReleaseInventoryItem {
 				return inventorybiz.ReleaseInventoryItem{
@@ -238,7 +238,7 @@ func (h *CheckoutWorkflow) Run(
 			}),
 		})
 	})
-	inventories, err := h.inventory.Guaranteed().ReserveInventory(ctx, inventorybiz.ReserveInventoryParams{
+	inventories, err := h.inventory.Call().ReserveInventory(ctx, inventorybiz.ReserveInventoryParams{
 		Keys: idempotency.Keys{ClaimKey: reserveKey},
 		Items: lo.Map(input.Items, func(item CheckoutItem, _ int) inventorybiz.ReserveInventoryItem {
 			var displayName string

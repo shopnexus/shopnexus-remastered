@@ -6,6 +6,8 @@ import (
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/pgsqlc"
+
+	restate "github.com/restatedev/sdk-go"
 )
 
 // InventoryBiz is the client interface for InventoryBizHandler, which is used by other modules to call InventoryBizHandler methods.
@@ -14,12 +16,12 @@ import (
 type InventoryBiz interface {
 	// Stock
 	GetStock(ctx context.Context, params GetStockParams) (inventorydb.InventoryStock, error)
-	UpdateStockSettings(ctx context.Context, params UpdateStockSettingsParams) (inventorydb.InventoryStock, error)
+	UpdateStockSettings(ctx restate.Context, params UpdateStockSettingsParams) (inventorydb.InventoryStock, error)
 	ListStock(
 		ctx context.Context,
 		params ListStockParams,
 	) (paginate.PaginateResult[inventorydb.InventoryStock], error)
-	CreateStock(ctx context.Context, params CreateStockParams) (inventorydb.InventoryStock, error)
+	CreateStock(ctx restate.Context, params CreateStockParams) (inventorydb.InventoryStock, error)
 
 	// Stock History
 	ListStockHistory(
@@ -28,14 +30,14 @@ type InventoryBiz interface {
 	) (paginate.PaginateResult[inventorydb.InventoryStockHistory], error)
 
 	// Import
-	ImportStock(ctx context.Context, params ImportStockParams) error
+	ImportStock(ctx restate.Context, params ImportStockParams) error
 
 	// Reserve
-	ReserveInventory(ctx context.Context, params ReserveInventoryParams) ([]ReserveInventoryResult, error)
-	ReleaseInventory(ctx context.Context, params ReleaseInventoryParams) error
+	ReserveInventory(ctx restate.Context, params ReserveInventoryParams) ([]ReserveInventoryResult, error)
+	ReleaseInventory(ctx restate.Context, params ReleaseInventoryParams) error
 
 	// Serial
-	UpdateSerial(ctx context.Context, params UpdateSerialParams) error
+	UpdateSerial(ctx restate.Context, params UpdateSerialParams) error
 	ListSerial(
 		ctx context.Context,
 		params ListSerialParams,

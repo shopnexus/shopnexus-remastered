@@ -134,7 +134,7 @@ func (b *BuyerHandler) RefundPendingItem(
 		// deterministic key: retries must reuse it so the idempotency ledger dedupes
 		releaseKey := uuid.NewSHA1(uuid.NameSpaceOID, fmt.Appendf(nil, "cancel-release:item:%d", params.Item.ID))
 		sagaTx.Defer("reserve_inventory", func(ctx context.Context) error {
-			_, e := b.inventory.Guaranteed().ReserveInventory(ctx, inventorybiz.ReserveInventoryParams{
+			_, e := b.inventory.Call().ReserveInventory(ctx, inventorybiz.ReserveInventoryParams{
 				Keys: idempotency.Keys{ConsumeKey: releaseKey},
 				Items: []inventorybiz.ReserveInventoryItem{{
 					RefType: inventorydb.InventoryStockRefTypeProductSku,
@@ -144,7 +144,7 @@ func (b *BuyerHandler) RefundPendingItem(
 			})
 			return e
 		})
-		if err = b.inventory.Guaranteed().ReleaseInventory(ctx, inventorybiz.ReleaseInventoryParams{
+		if err = b.inventory.Call().ReleaseInventory(ctx, inventorybiz.ReleaseInventoryParams{
 			Keys: idempotency.Keys{ClaimKey: releaseKey},
 			Items: []inventorybiz.ReleaseInventoryItem{{
 				RefType: inventorydb.InventoryStockRefTypeProductSku,

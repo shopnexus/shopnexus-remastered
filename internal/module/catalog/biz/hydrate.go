@@ -89,7 +89,7 @@ func (b *CatalogHandler) HydrateProductSkus(
 		return []catalogmodel.ProductSku{}, nil
 	}
 
-	stocks, err := b.inventory.Guaranteed().ListStock(ctx, inventorybiz.ListStockParams{
+	stocks, err := b.inventory.ListStock(ctx, inventorybiz.ListStockParams{
 		RefType: []inventorydb.InventoryStockRefType{inventorydb.InventoryStockRefTypeProductSku},
 		RefID:   lo.Map(dbSkus, func(s catalogdb.CatalogProductSku, _ int) uuid.UUID { return s.ID }),
 	})

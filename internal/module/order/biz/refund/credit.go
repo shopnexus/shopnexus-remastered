@@ -202,7 +202,7 @@ func (b *RefundHandler) ExecuteRefundCredit(
 		}, true
 	})
 	if len(releaseItems) > 0 {
-		if err := b.Inventory().Guaranteed().ReleaseInventory(ctx, inventorybiz.ReleaseInventoryParams{
+		if err := b.Inventory().Call().ReleaseInventory(ctx, inventorybiz.ReleaseInventoryParams{
 			Items: releaseItems,
 		}); err != nil {
 			return zero, fmt.Errorf("release inventory: %w", err)

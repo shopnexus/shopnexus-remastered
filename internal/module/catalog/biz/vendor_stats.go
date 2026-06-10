@@ -62,7 +62,7 @@ func (b *CatalogHandler) GetVendorStats(ctx context.Context, params GetVendorSta
 
 		if len(skus.Data) > 0 {
 			skuIDs := lo.Map(skus.Data, func(s catalogdb.CatalogProductSku, _ int) uuid.UUID { return s.ID })
-			stocks, err := b.inventory.Guaranteed().ListStock(ctx, inventorybiz.ListStockParams{
+			stocks, err := b.inventory.ListStock(ctx, inventorybiz.ListStockParams{
 				RefType: []inventorydb.InventoryStockRefType{inventorydb.InventoryStockRefTypeProductSku},
 				RefID:   skuIDs,
 			})

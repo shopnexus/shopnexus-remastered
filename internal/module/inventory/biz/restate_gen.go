@@ -14,106 +14,83 @@ import (
 
 const serviceName = "Inventory"
 
-// InventoryBizSender mirrors InventoryBiz as one-way (fire-and-forget) calls; outputs are dropped.
+// InventoryBizCall mirrors the command methods of InventoryBiz as request-response calls.
+type InventoryBizCall interface {
+	UpdateStockSettings(ctx context.Context, params UpdateStockSettingsParams) (inventorydb.InventoryStock, error)
+	CreateStock(ctx context.Context, params CreateStockParams) (inventorydb.InventoryStock, error)
+	ImportStock(ctx context.Context, params ImportStockParams) error
+	ReserveInventory(ctx context.Context, params ReserveInventoryParams) ([]ReserveInventoryResult, error)
+	ReleaseInventory(ctx context.Context, params ReleaseInventoryParams) error
+	UpdateSerial(ctx context.Context, params UpdateSerialParams) error
+}
+
+// InventoryBizSender mirrors the command methods of InventoryBiz as one-way (fire-and-forget) calls.
 type InventoryBizSender interface {
-	GetStock(ctx context.Context, params GetStockParams) error
 	UpdateStockSettings(ctx context.Context, params UpdateStockSettingsParams) error
-	ListStock(ctx context.Context, params ListStockParams) error
 	CreateStock(ctx context.Context, params CreateStockParams) error
-	ListStockHistory(ctx context.Context, params ListStockHistoryParams) error
 	ImportStock(ctx context.Context, params ImportStockParams) error
 	ReserveInventory(ctx context.Context, params ReserveInventoryParams) error
 	ReleaseInventory(ctx context.Context, params ReleaseInventoryParams) error
 	UpdateSerial(ctx context.Context, params UpdateSerialParams) error
-	ListSerial(ctx context.Context, params ListSerialParams) error
-	ListMostTakenSku(ctx context.Context, params ListMostTakenSkuParams) error
 }
 
-// InventoryBizFuture mirrors InventoryBiz returning response futures for racing
-// or parallel calls. Only usable inside a Restate handler context.
+// InventoryBizFuture mirrors the command methods of InventoryBiz returning response futures for
+// racing or parallel calls. Only usable inside a Restate handler context.
 type InventoryBizFuture interface {
-	GetStock(rctx restate.Context, params GetStockParams) restate.ResponseFuture[inventorydb.InventoryStock]
 	UpdateStockSettings(rctx restate.Context, params UpdateStockSettingsParams) restate.ResponseFuture[inventorydb.InventoryStock]
-	ListStock(rctx restate.Context, params ListStockParams) restate.ResponseFuture[paginate.PaginateResult[inventorydb.InventoryStock]]
 	CreateStock(rctx restate.Context, params CreateStockParams) restate.ResponseFuture[inventorydb.InventoryStock]
-	ListStockHistory(rctx restate.Context, params ListStockHistoryParams) restate.ResponseFuture[paginate.PaginateResult[inventorydb.InventoryStockHistory]]
 	ImportStock(rctx restate.Context, params ImportStockParams) restate.ResponseFuture[restate.Void]
 	ReserveInventory(rctx restate.Context, params ReserveInventoryParams) restate.ResponseFuture[[]ReserveInventoryResult]
 	ReleaseInventory(rctx restate.Context, params ReleaseInventoryParams) restate.ResponseFuture[restate.Void]
 	UpdateSerial(rctx restate.Context, params UpdateSerialParams) restate.ResponseFuture[restate.Void]
-	ListSerial(rctx restate.Context, params ListSerialParams) restate.ResponseFuture[paginate.PaginateResult[inventorydb.InventorySerial]]
-	ListMostTakenSku(rctx restate.Context, params ListMostTakenSkuParams) restate.ResponseFuture[[]inventorydb.InventoryStock]
 }
 
-// InventoryBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
+// InventoryBizClient is the cross-module client: query methods are flat (non-durable),
+// Call()/Future()/Send() reach the durable command surfaces.
 type InventoryBizClient interface {
-	Guaranteed() InventoryBizGuaranteed
-	BestEffort() InventoryBizBestEffort
+	GetStock(ctx context.Context, params GetStockParams) (inventorydb.InventoryStock, error)
+	ListStock(ctx context.Context, params ListStockParams) (paginate.PaginateResult[inventorydb.InventoryStock], error)
+	ListStockHistory(ctx context.Context, params ListStockHistoryParams) (paginate.PaginateResult[inventorydb.InventoryStockHistory], error)
+	ListSerial(ctx context.Context, params ListSerialParams) (paginate.PaginateResult[inventorydb.InventorySerial], error)
+	ListMostTakenSku(ctx context.Context, params ListMostTakenSkuParams) ([]inventorydb.InventoryStock, error)
+	Call() InventoryBizCall
+	Future() InventoryBizFuture
+	Send() InventoryBizSender
 }
 
-// InventoryRestateClient implements InventoryBizClient via Restate HTTP ingress.
-type InventoryRestateClient struct {
-	call   *restatec.CallClient
-	send   *InventoryRestateSender
-	future *InventoryRestateFuture
+// InventoryRestateCall implements InventoryBizCall via Restate HTTP ingress.
+type InventoryRestateCall struct {
+	call *restatec.CallClient
 }
 
-var _ InventoryBizGuaranteed = (*InventoryRestateClient)(nil)
+var _ InventoryBizCall = (*InventoryRestateCall)(nil)
 
-func NewInventoryRestateClient(restateIngressURL string) *InventoryRestateClient {
-	return &InventoryRestateClient{
-		call:   restatec.NewCallClient(restateIngressURL),
-		send:   &InventoryRestateSender{client: restatec.NewSendClient(restateIngressURL)},
-		future: &InventoryRestateFuture{},
-	}
+func NewInventoryRestateCall(restateIngressURL string) *InventoryRestateCall {
+	return &InventoryRestateCall{call: restatec.NewCallClient(restateIngressURL)}
 }
 
-func (p *InventoryRestateClient) Send() InventoryBizSender { return p.send }
-
-func (p *InventoryRestateClient) Future() InventoryBizFuture { return p.future }
-
-func (p *InventoryRestateClient) GetStock(ctx context.Context, params GetStockParams) (inventorydb.InventoryStock, error) {
-	return restatec.Call[inventorydb.InventoryStock](ctx, p.call, serviceName, "GetStock", params)
-}
-
-func (p *InventoryRestateClient) UpdateStockSettings(ctx context.Context, params UpdateStockSettingsParams) (inventorydb.InventoryStock, error) {
+func (p *InventoryRestateCall) UpdateStockSettings(ctx context.Context, params UpdateStockSettingsParams) (inventorydb.InventoryStock, error) {
 	return restatec.Call[inventorydb.InventoryStock](ctx, p.call, serviceName, "UpdateStockSettings", params)
 }
 
-func (p *InventoryRestateClient) ListStock(ctx context.Context, params ListStockParams) (paginate.PaginateResult[inventorydb.InventoryStock], error) {
-	return restatec.Call[paginate.PaginateResult[inventorydb.InventoryStock]](ctx, p.call, serviceName, "ListStock", params)
-}
-
-func (p *InventoryRestateClient) CreateStock(ctx context.Context, params CreateStockParams) (inventorydb.InventoryStock, error) {
+func (p *InventoryRestateCall) CreateStock(ctx context.Context, params CreateStockParams) (inventorydb.InventoryStock, error) {
 	return restatec.Call[inventorydb.InventoryStock](ctx, p.call, serviceName, "CreateStock", params)
 }
 
-func (p *InventoryRestateClient) ListStockHistory(ctx context.Context, params ListStockHistoryParams) (paginate.PaginateResult[inventorydb.InventoryStockHistory], error) {
-	return restatec.Call[paginate.PaginateResult[inventorydb.InventoryStockHistory]](ctx, p.call, serviceName, "ListStockHistory", params)
-}
-
-func (p *InventoryRestateClient) ImportStock(ctx context.Context, params ImportStockParams) error {
+func (p *InventoryRestateCall) ImportStock(ctx context.Context, params ImportStockParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "ImportStock", params)
 }
 
-func (p *InventoryRestateClient) ReserveInventory(ctx context.Context, params ReserveInventoryParams) ([]ReserveInventoryResult, error) {
+func (p *InventoryRestateCall) ReserveInventory(ctx context.Context, params ReserveInventoryParams) ([]ReserveInventoryResult, error) {
 	return restatec.Call[[]ReserveInventoryResult](ctx, p.call, serviceName, "ReserveInventory", params)
 }
 
-func (p *InventoryRestateClient) ReleaseInventory(ctx context.Context, params ReleaseInventoryParams) error {
+func (p *InventoryRestateCall) ReleaseInventory(ctx context.Context, params ReleaseInventoryParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "ReleaseInventory", params)
 }
 
-func (p *InventoryRestateClient) UpdateSerial(ctx context.Context, params UpdateSerialParams) error {
+func (p *InventoryRestateCall) UpdateSerial(ctx context.Context, params UpdateSerialParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "UpdateSerial", params)
-}
-
-func (p *InventoryRestateClient) ListSerial(ctx context.Context, params ListSerialParams) (paginate.PaginateResult[inventorydb.InventorySerial], error) {
-	return restatec.Call[paginate.PaginateResult[inventorydb.InventorySerial]](ctx, p.call, serviceName, "ListSerial", params)
-}
-
-func (p *InventoryRestateClient) ListMostTakenSku(ctx context.Context, params ListMostTakenSkuParams) ([]inventorydb.InventoryStock, error) {
-	return restatec.Call[[]inventorydb.InventoryStock](ctx, p.call, serviceName, "ListMostTakenSku", params)
 }
 
 // InventoryRestateSender implements InventoryBizSender.
@@ -123,24 +100,12 @@ type InventoryRestateSender struct {
 
 var _ InventoryBizSender = (*InventoryRestateSender)(nil)
 
-func (s *InventoryRestateSender) GetStock(ctx context.Context, params GetStockParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetStock", params)
-}
-
 func (s *InventoryRestateSender) UpdateStockSettings(ctx context.Context, params UpdateStockSettingsParams) error {
 	return restatec.Send(ctx, s.client, serviceName, "UpdateStockSettings", params)
 }
 
-func (s *InventoryRestateSender) ListStock(ctx context.Context, params ListStockParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListStock", params)
-}
-
 func (s *InventoryRestateSender) CreateStock(ctx context.Context, params CreateStockParams) error {
 	return restatec.Send(ctx, s.client, serviceName, "CreateStock", params)
-}
-
-func (s *InventoryRestateSender) ListStockHistory(ctx context.Context, params ListStockHistoryParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListStockHistory", params)
 }
 
 func (s *InventoryRestateSender) ImportStock(ctx context.Context, params ImportStockParams) error {
@@ -159,37 +124,17 @@ func (s *InventoryRestateSender) UpdateSerial(ctx context.Context, params Update
 	return restatec.Send(ctx, s.client, serviceName, "UpdateSerial", params)
 }
 
-func (s *InventoryRestateSender) ListSerial(ctx context.Context, params ListSerialParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListSerial", params)
-}
-
-func (s *InventoryRestateSender) ListMostTakenSku(ctx context.Context, params ListMostTakenSkuParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListMostTakenSku", params)
-}
-
 // InventoryRestateFuture implements InventoryBizFuture via the Restate SDK.
 type InventoryRestateFuture struct{}
 
 var _ InventoryBizFuture = (*InventoryRestateFuture)(nil)
 
-func (f *InventoryRestateFuture) GetStock(rctx restate.Context, params GetStockParams) restate.ResponseFuture[inventorydb.InventoryStock] {
-	return restate.Service[inventorydb.InventoryStock](rctx, serviceName, "GetStock").RequestFuture(params)
-}
-
 func (f *InventoryRestateFuture) UpdateStockSettings(rctx restate.Context, params UpdateStockSettingsParams) restate.ResponseFuture[inventorydb.InventoryStock] {
 	return restate.Service[inventorydb.InventoryStock](rctx, serviceName, "UpdateStockSettings").RequestFuture(params)
 }
 
-func (f *InventoryRestateFuture) ListStock(rctx restate.Context, params ListStockParams) restate.ResponseFuture[paginate.PaginateResult[inventorydb.InventoryStock]] {
-	return restate.Service[paginate.PaginateResult[inventorydb.InventoryStock]](rctx, serviceName, "ListStock").RequestFuture(params)
-}
-
 func (f *InventoryRestateFuture) CreateStock(rctx restate.Context, params CreateStockParams) restate.ResponseFuture[inventorydb.InventoryStock] {
 	return restate.Service[inventorydb.InventoryStock](rctx, serviceName, "CreateStock").RequestFuture(params)
-}
-
-func (f *InventoryRestateFuture) ListStockHistory(rctx restate.Context, params ListStockHistoryParams) restate.ResponseFuture[paginate.PaginateResult[inventorydb.InventoryStockHistory]] {
-	return restate.Service[paginate.PaginateResult[inventorydb.InventoryStockHistory]](rctx, serviceName, "ListStockHistory").RequestFuture(params)
 }
 
 func (f *InventoryRestateFuture) ImportStock(rctx restate.Context, params ImportStockParams) restate.ResponseFuture[restate.Void] {
@@ -206,14 +151,6 @@ func (f *InventoryRestateFuture) ReleaseInventory(rctx restate.Context, params R
 
 func (f *InventoryRestateFuture) UpdateSerial(rctx restate.Context, params UpdateSerialParams) restate.ResponseFuture[restate.Void] {
 	return restate.Service[restate.Void](rctx, serviceName, "UpdateSerial").RequestFuture(params)
-}
-
-func (f *InventoryRestateFuture) ListSerial(rctx restate.Context, params ListSerialParams) restate.ResponseFuture[paginate.PaginateResult[inventorydb.InventorySerial]] {
-	return restate.Service[paginate.PaginateResult[inventorydb.InventorySerial]](rctx, serviceName, "ListSerial").RequestFuture(params)
-}
-
-func (f *InventoryRestateFuture) ListMostTakenSku(rctx restate.Context, params ListMostTakenSkuParams) restate.ResponseFuture[[]inventorydb.InventoryStock] {
-	return restate.Service[[]inventorydb.InventoryStock](rctx, serviceName, "ListMostTakenSku").RequestFuture(params)
 }
 
 // InventoryService adapts InventoryBiz into restate.Context handlers for restate.Reflect.
@@ -269,57 +206,30 @@ func (s *InventoryService) ListMostTakenSku(ctx restate.Context, params ListMost
 	return s.biz.ListMostTakenSku(ctx, params)
 }
 
-// InventoryBizGuaranteed is the guaranteed (durable Restate) surface.
-type InventoryBizGuaranteed interface {
-	InventoryBiz
-	Send() InventoryBizSender
-	Future() InventoryBizFuture
+// InventoryBizFlat is the flat (non-durable query) surface of InventoryBiz.
+type InventoryBizFlat interface {
+	GetStock(ctx context.Context, params GetStockParams) (inventorydb.InventoryStock, error)
+	ListStock(ctx context.Context, params ListStockParams) (paginate.PaginateResult[inventorydb.InventoryStock], error)
+	ListStockHistory(ctx context.Context, params ListStockHistoryParams) (paginate.PaginateResult[inventorydb.InventoryStockHistory], error)
+	ListSerial(ctx context.Context, params ListSerialParams) (paginate.PaginateResult[inventorydb.InventorySerial], error)
+	ListMostTakenSku(ctx context.Context, params ListMostTakenSkuParams) ([]inventorydb.InventoryStock, error)
 }
 
-// InventoryBizBestEffort is the best-effort (non-durable) surface: sync request-response only.
-type InventoryBizBestEffort interface {
-	InventoryBiz
-}
-
-// inventoryBizBestEffortLocal delegates BestEffort calls to the in-process biz.
+// inventoryBizBestEffortLocal delegates flat queries to the in-process biz.
 type inventoryBizBestEffortLocal struct{ biz InventoryBiz }
 
-var _ InventoryBizBestEffort = (*inventoryBizBestEffortLocal)(nil)
+var _ InventoryBizFlat = (*inventoryBizBestEffortLocal)(nil)
 
 func (b *inventoryBizBestEffortLocal) GetStock(ctx context.Context, params GetStockParams) (inventorydb.InventoryStock, error) {
 	return b.biz.GetStock(ctx, params)
-}
-
-func (b *inventoryBizBestEffortLocal) UpdateStockSettings(ctx context.Context, params UpdateStockSettingsParams) (inventorydb.InventoryStock, error) {
-	return b.biz.UpdateStockSettings(ctx, params)
 }
 
 func (b *inventoryBizBestEffortLocal) ListStock(ctx context.Context, params ListStockParams) (paginate.PaginateResult[inventorydb.InventoryStock], error) {
 	return b.biz.ListStock(ctx, params)
 }
 
-func (b *inventoryBizBestEffortLocal) CreateStock(ctx context.Context, params CreateStockParams) (inventorydb.InventoryStock, error) {
-	return b.biz.CreateStock(ctx, params)
-}
-
 func (b *inventoryBizBestEffortLocal) ListStockHistory(ctx context.Context, params ListStockHistoryParams) (paginate.PaginateResult[inventorydb.InventoryStockHistory], error) {
 	return b.biz.ListStockHistory(ctx, params)
-}
-
-func (b *inventoryBizBestEffortLocal) ImportStock(ctx context.Context, params ImportStockParams) error {
-	return b.biz.ImportStock(ctx, params)
-}
-
-func (b *inventoryBizBestEffortLocal) ReserveInventory(ctx context.Context, params ReserveInventoryParams) ([]ReserveInventoryResult, error) {
-	return b.biz.ReserveInventory(ctx, params)
-}
-
-func (b *inventoryBizBestEffortLocal) ReleaseInventory(ctx context.Context, params ReleaseInventoryParams) error {
-	return b.biz.ReleaseInventory(ctx, params)
-}
-
-func (b *inventoryBizBestEffortLocal) UpdateSerial(ctx context.Context, params UpdateSerialParams) error {
-	return b.biz.UpdateSerial(ctx, params)
 }
 
 func (b *inventoryBizBestEffortLocal) ListSerial(ctx context.Context, params ListSerialParams) (paginate.PaginateResult[inventorydb.InventorySerial], error) {
@@ -330,45 +240,21 @@ func (b *inventoryBizBestEffortLocal) ListMostTakenSku(ctx context.Context, para
 	return b.biz.ListMostTakenSku(ctx, params)
 }
 
-// inventoryBizBestEffortRemote routes BestEffort calls over HTTP/2.
+// inventoryBizBestEffortRemote routes flat queries over HTTP/2.
 type inventoryBizBestEffortRemote struct{ call *besteffort.CallClient }
 
-var _ InventoryBizBestEffort = (*inventoryBizBestEffortRemote)(nil)
+var _ InventoryBizFlat = (*inventoryBizBestEffortRemote)(nil)
 
 func (b *inventoryBizBestEffortRemote) GetStock(ctx context.Context, params GetStockParams) (inventorydb.InventoryStock, error) {
 	return besteffort.Call[inventorydb.InventoryStock](ctx, b.call, serviceName, "GetStock", params)
-}
-
-func (b *inventoryBizBestEffortRemote) UpdateStockSettings(ctx context.Context, params UpdateStockSettingsParams) (inventorydb.InventoryStock, error) {
-	return besteffort.Call[inventorydb.InventoryStock](ctx, b.call, serviceName, "UpdateStockSettings", params)
 }
 
 func (b *inventoryBizBestEffortRemote) ListStock(ctx context.Context, params ListStockParams) (paginate.PaginateResult[inventorydb.InventoryStock], error) {
 	return besteffort.Call[paginate.PaginateResult[inventorydb.InventoryStock]](ctx, b.call, serviceName, "ListStock", params)
 }
 
-func (b *inventoryBizBestEffortRemote) CreateStock(ctx context.Context, params CreateStockParams) (inventorydb.InventoryStock, error) {
-	return besteffort.Call[inventorydb.InventoryStock](ctx, b.call, serviceName, "CreateStock", params)
-}
-
 func (b *inventoryBizBestEffortRemote) ListStockHistory(ctx context.Context, params ListStockHistoryParams) (paginate.PaginateResult[inventorydb.InventoryStockHistory], error) {
 	return besteffort.Call[paginate.PaginateResult[inventorydb.InventoryStockHistory]](ctx, b.call, serviceName, "ListStockHistory", params)
-}
-
-func (b *inventoryBizBestEffortRemote) ImportStock(ctx context.Context, params ImportStockParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "ImportStock", params)
-}
-
-func (b *inventoryBizBestEffortRemote) ReserveInventory(ctx context.Context, params ReserveInventoryParams) ([]ReserveInventoryResult, error) {
-	return besteffort.Call[[]ReserveInventoryResult](ctx, b.call, serviceName, "ReserveInventory", params)
-}
-
-func (b *inventoryBizBestEffortRemote) ReleaseInventory(ctx context.Context, params ReleaseInventoryParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "ReleaseInventory", params)
-}
-
-func (b *inventoryBizBestEffortRemote) UpdateSerial(ctx context.Context, params UpdateSerialParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "UpdateSerial", params)
 }
 
 func (b *inventoryBizBestEffortRemote) ListSerial(ctx context.Context, params ListSerialParams) (paginate.PaginateResult[inventorydb.InventorySerial], error) {
@@ -379,35 +265,64 @@ func (b *inventoryBizBestEffortRemote) ListMostTakenSku(ctx context.Context, par
 	return besteffort.Call[[]inventorydb.InventoryStock](ctx, b.call, serviceName, "ListMostTakenSku", params)
 }
 
-// InventoryBizClient selects the guaranteed (durable) or best-effort (non-durable) transport.
+// inventoryBizClient holds the flat query impl and the durable command proxies.
 type inventoryBizClient struct {
-	*InventoryRestateClient
-	bestEffort InventoryBizBestEffort
+	flat   InventoryBizFlat
+	call   *InventoryRestateCall
+	send   *InventoryRestateSender
+	future *InventoryRestateFuture
 }
 
 var _ InventoryBizClient = (*inventoryBizClient)(nil)
 
-func (c *inventoryBizClient) Guaranteed() InventoryBizGuaranteed { return c.InventoryRestateClient }
+func (c *inventoryBizClient) GetStock(ctx context.Context, params GetStockParams) (inventorydb.InventoryStock, error) {
+	return c.flat.GetStock(ctx, params)
+}
 
-func (c *inventoryBizClient) BestEffort() InventoryBizBestEffort { return c.bestEffort }
+func (c *inventoryBizClient) ListStock(ctx context.Context, params ListStockParams) (paginate.PaginateResult[inventorydb.InventoryStock], error) {
+	return c.flat.ListStock(ctx, params)
+}
 
-// NewInventoryBizClientInProcess builds a client whose BestEffort calls the in-process biz.
+func (c *inventoryBizClient) ListStockHistory(ctx context.Context, params ListStockHistoryParams) (paginate.PaginateResult[inventorydb.InventoryStockHistory], error) {
+	return c.flat.ListStockHistory(ctx, params)
+}
+
+func (c *inventoryBizClient) ListSerial(ctx context.Context, params ListSerialParams) (paginate.PaginateResult[inventorydb.InventorySerial], error) {
+	return c.flat.ListSerial(ctx, params)
+}
+
+func (c *inventoryBizClient) ListMostTakenSku(ctx context.Context, params ListMostTakenSkuParams) ([]inventorydb.InventoryStock, error) {
+	return c.flat.ListMostTakenSku(ctx, params)
+}
+
+func (c *inventoryBizClient) Call() InventoryBizCall { return c.call }
+
+func (c *inventoryBizClient) Future() InventoryBizFuture { return c.future }
+
+func (c *inventoryBizClient) Send() InventoryBizSender { return c.send }
+
+// NewInventoryBizClientInProcess builds a client whose flat queries call the in-process biz.
 func NewInventoryBizClientInProcess(restateIngressURL string, biz InventoryBiz) InventoryBizClient {
 	return &inventoryBizClient{
-		InventoryRestateClient: NewInventoryRestateClient(restateIngressURL),
-		bestEffort:             &inventoryBizBestEffortLocal{biz: biz},
+		flat:   &inventoryBizBestEffortLocal{biz: biz},
+		call:   NewInventoryRestateCall(restateIngressURL),
+		send:   &InventoryRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &InventoryRestateFuture{},
 	}
 }
 
-// NewInventoryBizClientRemote builds a client whose BestEffort calls a remote BestEffort server.
+// NewInventoryBizClientRemote builds a client whose flat queries call a remote besteffort server.
 func NewInventoryBizClientRemote(restateIngressURL, bestEffortURL string) InventoryBizClient {
 	return &inventoryBizClient{
-		InventoryRestateClient: NewInventoryRestateClient(restateIngressURL),
-		bestEffort:             &inventoryBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+		flat:   &inventoryBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+		call:   NewInventoryRestateCall(restateIngressURL),
+		send:   &InventoryRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &InventoryRestateFuture{},
 	}
 }
 
-// RegisterInventoryBestEffort wires biz methods onto a BestEffort HTTP/2 server.
+// RegisterInventoryBestEffort wires the query methods onto a besteffort HTTP server.
+// Commands are served by Restate, not here.
 func RegisterInventoryBestEffort(s *besteffort.Server, biz InventoryBiz) {
 	s.Handle(serviceName, "GetStock", func(ctx context.Context, body []byte) (any, error) {
 		var p GetStockParams
@@ -416,13 +331,6 @@ func RegisterInventoryBestEffort(s *besteffort.Server, biz InventoryBiz) {
 		}
 		return biz.GetStock(ctx, p)
 	})
-	s.Handle(serviceName, "UpdateStockSettings", func(ctx context.Context, body []byte) (any, error) {
-		var p UpdateStockSettingsParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.UpdateStockSettings(ctx, p)
-	})
 	s.Handle(serviceName, "ListStock", func(ctx context.Context, body []byte) (any, error) {
 		var p ListStockParams
 		if err := json.Unmarshal(body, &p); err != nil {
@@ -430,47 +338,12 @@ func RegisterInventoryBestEffort(s *besteffort.Server, biz InventoryBiz) {
 		}
 		return biz.ListStock(ctx, p)
 	})
-	s.Handle(serviceName, "CreateStock", func(ctx context.Context, body []byte) (any, error) {
-		var p CreateStockParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.CreateStock(ctx, p)
-	})
 	s.Handle(serviceName, "ListStockHistory", func(ctx context.Context, body []byte) (any, error) {
 		var p ListStockHistoryParams
 		if err := json.Unmarshal(body, &p); err != nil {
 			return nil, err
 		}
 		return biz.ListStockHistory(ctx, p)
-	})
-	s.Handle(serviceName, "ImportStock", func(ctx context.Context, body []byte) (any, error) {
-		var p ImportStockParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.ImportStock(ctx, p)
-	})
-	s.Handle(serviceName, "ReserveInventory", func(ctx context.Context, body []byte) (any, error) {
-		var p ReserveInventoryParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.ReserveInventory(ctx, p)
-	})
-	s.Handle(serviceName, "ReleaseInventory", func(ctx context.Context, body []byte) (any, error) {
-		var p ReleaseInventoryParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.ReleaseInventory(ctx, p)
-	})
-	s.Handle(serviceName, "UpdateSerial", func(ctx context.Context, body []byte) (any, error) {
-		var p UpdateSerialParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.UpdateSerial(ctx, p)
 	})
 	s.Handle(serviceName, "ListSerial", func(ctx context.Context, body []byte) (any, error) {
 		var p ListSerialParams
