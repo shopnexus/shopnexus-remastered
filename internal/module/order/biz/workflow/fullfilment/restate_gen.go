@@ -6,7 +6,7 @@ import (
 	"context"
 	"github.com/google/uuid"
 	restate "github.com/restatedev/sdk-go"
-	"shopnexus-server/internal/module/order/biz/workflow/base"
+	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/provider/payment"
 	restatec "shopnexus-server/internal/shared/restate"
 )
@@ -21,9 +21,9 @@ type FulfillmentWfSender interface {
 	PaymentNotification(ctx context.Context, orderID uuid.UUID, noti payment.Notification) error
 	CancelConfirm(ctx context.Context, orderID uuid.UUID) error
 	OnRefundChanged(ctx context.Context, orderID uuid.UUID) error
-	OnBuyerWithdrew(ctx context.Context, orderID uuid.UUID, sig base.RefundSignal) error
-	OnSellerDecision(ctx context.Context, orderID uuid.UUID, sig base.SellerDecisionSignal) error
-	OnAdminDecision(ctx context.Context, orderID uuid.UUID, sig base.AdminDecisionSignal) error
+	OnBuyerWithdrew(ctx context.Context, orderID uuid.UUID, sig ordermodel.RefundSignal) error
+	OnSellerDecision(ctx context.Context, orderID uuid.UUID, sig ordermodel.SellerDecisionSignal) error
+	OnAdminDecision(ctx context.Context, orderID uuid.UUID, sig ordermodel.AdminDecisionSignal) error
 }
 
 // FulfillmentWfFuture mirrors FulfillmentWf returning response futures for racing
@@ -35,9 +35,9 @@ type FulfillmentWfFuture interface {
 	PaymentNotification(rctx restate.Context, orderID uuid.UUID, noti payment.Notification) restate.ResponseFuture[restate.Void]
 	CancelConfirm(rctx restate.Context, orderID uuid.UUID) restate.ResponseFuture[restate.Void]
 	OnRefundChanged(rctx restate.Context, orderID uuid.UUID) restate.ResponseFuture[restate.Void]
-	OnBuyerWithdrew(rctx restate.Context, orderID uuid.UUID, sig base.RefundSignal) restate.ResponseFuture[restate.Void]
-	OnSellerDecision(rctx restate.Context, orderID uuid.UUID, sig base.SellerDecisionSignal) restate.ResponseFuture[restate.Void]
-	OnAdminDecision(rctx restate.Context, orderID uuid.UUID, sig base.AdminDecisionSignal) restate.ResponseFuture[restate.Void]
+	OnBuyerWithdrew(rctx restate.Context, orderID uuid.UUID, sig ordermodel.RefundSignal) restate.ResponseFuture[restate.Void]
+	OnSellerDecision(rctx restate.Context, orderID uuid.UUID, sig ordermodel.SellerDecisionSignal) restate.ResponseFuture[restate.Void]
+	OnAdminDecision(rctx restate.Context, orderID uuid.UUID, sig ordermodel.AdminDecisionSignal) restate.ResponseFuture[restate.Void]
 }
 
 // FulfillmentWfClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
@@ -92,15 +92,15 @@ func (p *FulfillmentWorkflowRestateClient) OnRefundChanged(ctx context.Context, 
 	return restatec.CallWorkflowVoid(ctx, p.call, serviceName, orderID.String(), "OnRefundChanged", nil)
 }
 
-func (p *FulfillmentWorkflowRestateClient) OnBuyerWithdrew(ctx context.Context, orderID uuid.UUID, sig base.RefundSignal) error {
+func (p *FulfillmentWorkflowRestateClient) OnBuyerWithdrew(ctx context.Context, orderID uuid.UUID, sig ordermodel.RefundSignal) error {
 	return restatec.CallWorkflowVoid(ctx, p.call, serviceName, orderID.String(), "OnBuyerWithdrew", sig)
 }
 
-func (p *FulfillmentWorkflowRestateClient) OnSellerDecision(ctx context.Context, orderID uuid.UUID, sig base.SellerDecisionSignal) error {
+func (p *FulfillmentWorkflowRestateClient) OnSellerDecision(ctx context.Context, orderID uuid.UUID, sig ordermodel.SellerDecisionSignal) error {
 	return restatec.CallWorkflowVoid(ctx, p.call, serviceName, orderID.String(), "OnSellerDecision", sig)
 }
 
-func (p *FulfillmentWorkflowRestateClient) OnAdminDecision(ctx context.Context, orderID uuid.UUID, sig base.AdminDecisionSignal) error {
+func (p *FulfillmentWorkflowRestateClient) OnAdminDecision(ctx context.Context, orderID uuid.UUID, sig ordermodel.AdminDecisionSignal) error {
 	return restatec.CallWorkflowVoid(ctx, p.call, serviceName, orderID.String(), "OnAdminDecision", sig)
 }
 
@@ -135,15 +135,15 @@ func (s *FulfillmentWorkflowRestateSender) OnRefundChanged(ctx context.Context, 
 	return restatec.SendWorkflow(ctx, s.client, serviceName, orderID.String(), "OnRefundChanged", nil)
 }
 
-func (s *FulfillmentWorkflowRestateSender) OnBuyerWithdrew(ctx context.Context, orderID uuid.UUID, sig base.RefundSignal) error {
+func (s *FulfillmentWorkflowRestateSender) OnBuyerWithdrew(ctx context.Context, orderID uuid.UUID, sig ordermodel.RefundSignal) error {
 	return restatec.SendWorkflow(ctx, s.client, serviceName, orderID.String(), "OnBuyerWithdrew", sig)
 }
 
-func (s *FulfillmentWorkflowRestateSender) OnSellerDecision(ctx context.Context, orderID uuid.UUID, sig base.SellerDecisionSignal) error {
+func (s *FulfillmentWorkflowRestateSender) OnSellerDecision(ctx context.Context, orderID uuid.UUID, sig ordermodel.SellerDecisionSignal) error {
 	return restatec.SendWorkflow(ctx, s.client, serviceName, orderID.String(), "OnSellerDecision", sig)
 }
 
-func (s *FulfillmentWorkflowRestateSender) OnAdminDecision(ctx context.Context, orderID uuid.UUID, sig base.AdminDecisionSignal) error {
+func (s *FulfillmentWorkflowRestateSender) OnAdminDecision(ctx context.Context, orderID uuid.UUID, sig ordermodel.AdminDecisionSignal) error {
 	return restatec.SendWorkflow(ctx, s.client, serviceName, orderID.String(), "OnAdminDecision", sig)
 }
 
@@ -176,14 +176,14 @@ func (f *FulfillmentWorkflowRestateFuture) OnRefundChanged(rctx restate.Context,
 	return restate.Workflow[restate.Void](rctx, serviceName, orderID.String(), "OnRefundChanged").RequestFuture(nil)
 }
 
-func (f *FulfillmentWorkflowRestateFuture) OnBuyerWithdrew(rctx restate.Context, orderID uuid.UUID, sig base.RefundSignal) restate.ResponseFuture[restate.Void] {
+func (f *FulfillmentWorkflowRestateFuture) OnBuyerWithdrew(rctx restate.Context, orderID uuid.UUID, sig ordermodel.RefundSignal) restate.ResponseFuture[restate.Void] {
 	return restate.Workflow[restate.Void](rctx, serviceName, orderID.String(), "OnBuyerWithdrew").RequestFuture(sig)
 }
 
-func (f *FulfillmentWorkflowRestateFuture) OnSellerDecision(rctx restate.Context, orderID uuid.UUID, sig base.SellerDecisionSignal) restate.ResponseFuture[restate.Void] {
+func (f *FulfillmentWorkflowRestateFuture) OnSellerDecision(rctx restate.Context, orderID uuid.UUID, sig ordermodel.SellerDecisionSignal) restate.ResponseFuture[restate.Void] {
 	return restate.Workflow[restate.Void](rctx, serviceName, orderID.String(), "OnSellerDecision").RequestFuture(sig)
 }
 
-func (f *FulfillmentWorkflowRestateFuture) OnAdminDecision(rctx restate.Context, orderID uuid.UUID, sig base.AdminDecisionSignal) restate.ResponseFuture[restate.Void] {
+func (f *FulfillmentWorkflowRestateFuture) OnAdminDecision(rctx restate.Context, orderID uuid.UUID, sig ordermodel.AdminDecisionSignal) restate.ResponseFuture[restate.Void] {
 	return restate.Workflow[restate.Void](rctx, serviceName, orderID.String(), "OnAdminDecision").RequestFuture(sig)
 }

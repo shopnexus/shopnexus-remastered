@@ -276,21 +276,13 @@ paymentLoop:
 	return nil
 }
 
-type CreditFromSessionParams struct {
-	SessionID  uuid.UUID
-	AccountID  uuid.UUID
-	CreditType string
-	Reference  string
-	Note       string
-}
-
 // CreditFromSession credits the recipient with the sum of positive-amount Success
 // transactions in the given session. Use this when a session is being voided or
 // refunded — credits only legs that actually settled, never minting balance for
 // unsettled / failed / pending legs. Returns the amount credited; 0 means no-op.
 func (b *Base) CreditFromSession(
 	ctx Context,
-	params CreditFromSessionParams,
+	params ordermodel.CreditFromSessionParams,
 ) (int64, error) {
 	settled, err := restate.Run(ctx, func(ctx restate.RunContext) (int64, error) {
 		txs, err := b.Storage.Querier().ListTransactionsBySession(ctx, params.SessionID)
@@ -324,14 +316,6 @@ func (b *Base) CreditFromSession(
 	return settled, nil
 }
 
-type RefundCreditReason string
-
-const (
-	RefundCreditReasonSellerApproved RefundCreditReason = "seller-approved"
-	RefundCreditReasonAutoAccepted   RefundCreditReason = "auto-accepted (seller silent)"
-	RefundCreditReasonAdminDismissed RefundCreditReason = "admin-dismissed dispute"
-)
-
 // ExecuteRefundCredit performs the actual credit flow: insert refund tx,
 // flip refund.status to Accepted, cancel items, credit buyer wallet, restock
 // inventory. Used by all 3 paths that end in Accepted (seller approve,
@@ -342,7 +326,7 @@ func (b *Base) ExecuteRefundCredit(
 	ctx Context,
 	refund orderdb.OrderRefund,
 	deciderID uuid.UUID,
-	reason RefundCreditReason,
+	reason ordermodel.RefundCreditReason,
 ) (orderdb.OrderRefund, error) {
 	var zero orderdb.OrderRefund
 
@@ -392,7 +376,7 @@ func (b *Base) ExecuteRefundCredit(
 	if err != nil {
 		return zero, fmt.Errorf("list session txs: %w", err)
 	}
-	originalTx, ok := FindOriginalCharge(sessionTxs)
+	originalTx, ok := ordermodel.FindOriginalCharge(sessionTxs)
 	if !ok {
 		return zero, fmt.Errorf("no original tx: %w", ordermodel.ErrOrderItemNotFound)
 	}
@@ -456,7 +440,7 @@ func (b *Base) ExecuteRefundCredit(
 		return zero, fmt.Errorf("execute refund ops: %w", err)
 	}
 
-	if _, err := b.CreditFromSession(ctx, CreditFromSessionParams{
+	if _, err := b.CreditFromSession(ctx, ordermodel.CreditFromSessionParams{
 		SessionID:  anyItem.PaymentSessionID,
 		AccountID:  order.BuyerID,
 		CreditType: "Refund",

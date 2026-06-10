@@ -13,10 +13,10 @@ import (
 	"shopnexus-server/internal/module/order/biz/review"
 	sellerorder "shopnexus-server/internal/module/order/biz/seller_order"
 	ordertransport "shopnexus-server/internal/module/order/biz/transport"
-	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	"shopnexus-server/internal/module/order/biz/workflow/checkout"
 	"shopnexus-server/internal/module/order/biz/workflow/fullfilment"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
+	ordermodel "shopnexus-server/internal/module/order/model"
 	sharedmodel "shopnexus-server/internal/shared/model"
 
 	"github.com/google/uuid"
@@ -46,7 +46,7 @@ type OrderStorage = base.OrderStorage
 
 type (
 	CheckoutItem            = base.CheckoutItem
-	CreditFromSessionParams = wfbase.CreditFromSessionParams
+	CreditFromSessionParams = ordermodel.CreditFromSessionParams
 
 	ListBuyerPendingItemsParams    = buyerorder.ListBuyerPendingItemsParams
 	CancelBuyerPendingParams       = buyerorder.CancelBuyerPendingParams

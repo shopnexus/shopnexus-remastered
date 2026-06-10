@@ -10,7 +10,6 @@ import (
 	accountmodel "shopnexus-server/internal/module/account/model"
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
-	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/compensate"
@@ -121,7 +120,7 @@ func (b *BuyerHandler) RefundPendingItem(
 			if err != nil {
 				return uuid.NullUUID{}, err
 			}
-			if originalTx, ok := wfbase.FindOriginalCharge(txs); ok {
+			if originalTx, ok := ordermodel.FindOriginalCharge(txs); ok {
 				return uuid.NullUUID{UUID: originalTx.ID, Valid: true}, nil
 			}
 			return uuid.NullUUID{}, ordermodel.ErrOrderItemNotFound

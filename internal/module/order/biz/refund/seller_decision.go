@@ -10,7 +10,6 @@ import (
 	accountmodel "shopnexus-server/internal/module/account/model"
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
-	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/validator"
@@ -44,12 +43,12 @@ func (b *RefundHandler) SellerApproveRefund(
 		return zero, ordermodel.ErrRefundWrongStage
 	}
 
-	updated, err := b.ExecuteRefundCredit(ctx, refund, params.Account.ID, wfbase.RefundCreditReasonSellerApproved)
+	updated, err := b.ExecuteRefundCredit(ctx, refund, params.Account.ID, ordermodel.RefundCreditReasonSellerApproved)
 	if err != nil {
 		return zero, fmt.Errorf("execute refund credit: %w", err)
 	}
 
-	if err = b.fulfillment.Send().OnSellerDecision(ctx, refund.OrderID, wfbase.SellerDecisionSignal{RefundID: refund.ID, Approved: true}); err != nil {
+	if err = b.fulfillment.Send().OnSellerDecision(ctx, refund.OrderID, ordermodel.SellerDecisionSignal{RefundID: refund.ID, Approved: true}); err != nil {
 		return zero, fmt.Errorf("signal seller decision: %w", err)
 	}
 	if err = b.fulfillment.Send().OnRefundChanged(ctx, refund.OrderID); err != nil {
@@ -123,7 +122,7 @@ func (b *RefundHandler) SellerDisputeRefund(
 		return zero, fmt.Errorf("update dispute resources: %w", err)
 	}
 
-	if err = b.fulfillment.Send().OnSellerDecision(ctx, refund.OrderID, wfbase.SellerDecisionSignal{RefundID: refund.ID, Approved: false}); err != nil {
+	if err = b.fulfillment.Send().OnSellerDecision(ctx, refund.OrderID, ordermodel.SellerDecisionSignal{RefundID: refund.ID, Approved: false}); err != nil {
 		return zero, fmt.Errorf("signal seller decision: %w", err)
 	}
 

@@ -9,7 +9,6 @@ import (
 	accountmodel "shopnexus-server/internal/module/account/model"
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
-	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/validator"
@@ -121,7 +120,7 @@ func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSe
 			if err != nil {
 				return fmt.Errorf("db list session txs: %w", err)
 			}
-			if originalTx, ok := wfbase.FindOriginalCharge(sessionTxs); ok {
+			if originalTx, ok := ordermodel.FindOriginalCharge(sessionTxs); ok {
 				originalTxBySession[sid] = originalTx.ID
 			}
 		}
@@ -217,7 +216,7 @@ func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSe
 		_ = totalRefund // kept above only for the empty-list short-circuit clarity
 		if len(refundTxIDs) > 0 {
 			for _, plan := range refundPlans {
-				if _, err := b.CreditFromSession(ctx, wfbase.CreditFromSessionParams{
+				if _, err := b.CreditFromSession(ctx, ordermodel.CreditFromSessionParams{
 					SessionID:  plan.Item.PaymentSessionID,
 					AccountID:  buyerID,
 					CreditType: "Refund",

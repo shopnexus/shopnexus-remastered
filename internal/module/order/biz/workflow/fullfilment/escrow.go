@@ -239,7 +239,7 @@ func (h *FulfillmentWorkflow) resolveRefund(ctx restate.WorkflowContext, refundI
 	}
 
 	// Phase 2: race {seller decision | auto-accept after review window}.
-	decision := restate.Promise[base.SellerDecisionSignal](ctx, "seller_decision_"+refundID.String())
+	decision := restate.Promise[ordermodel.SellerDecisionSignal](ctx, "seller_decision_"+refundID.String())
 	reviewDeadline := restate.After(ctx, sellerReviewWindow)
 	winner, err = restate.WaitFirst(ctx, decision, reviewDeadline)
 	if err != nil {
@@ -262,7 +262,7 @@ func (h *FulfillmentWorkflow) resolveRefund(ctx restate.WorkflowContext, refundI
 
 	// Phase 3: disputed → admin verdict (no SLA timer; manual resolution).
 	// The dispute handlers update the refund row; the snapshot decides next.
-	if _, err = restate.Promise[base.AdminDecisionSignal](
+	if _, err = restate.Promise[ordermodel.AdminDecisionSignal](
 		ctx,
 		"admin_decision_"+refundID.String(),
 	).Result(); err != nil {

@@ -9,7 +9,6 @@ import (
 	restate "github.com/restatedev/sdk-go"
 
 	accountmodel "shopnexus-server/internal/module/account/model"
-	"shopnexus-server/internal/module/order/biz/workflow/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 )
@@ -42,7 +41,7 @@ func (h *FulfillmentWorkflow) autoAcceptRefund(ctx restate.WorkflowContext, refu
 		return nil
 	}
 
-	updated, err := h.ExecuteRefundCredit(ctx, refund, refund.AccountID, base.RefundCreditReasonAutoAccepted)
+	updated, err := h.ExecuteRefundCredit(ctx, refund, refund.AccountID, ordermodel.RefundCreditReasonAutoAccepted)
 	if err != nil {
 		return fmt.Errorf("execute refund credit: %w", err)
 	}

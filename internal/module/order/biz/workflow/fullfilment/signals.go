@@ -5,7 +5,6 @@ import (
 
 	restate "github.com/restatedev/sdk-go"
 
-	"shopnexus-server/internal/module/order/biz/workflow/base"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/provider/payment"
 )
@@ -82,7 +81,7 @@ func (h *FulfillmentWorkflow) OnRefundChanged(
 // shipping phase.
 func (h *FulfillmentWorkflow) OnBuyerWithdrew(
 	ctx restate.WorkflowSharedContext,
-	sig base.RefundSignal,
+	sig ordermodel.RefundSignal,
 ) error {
 	return restate.Promise[any](ctx, "withdrawn_"+sig.RefundID.String()).Resolve(nil)
 }
@@ -90,15 +89,15 @@ func (h *FulfillmentWorkflow) OnBuyerWithdrew(
 // OnSellerDecision is signalled by SellerApproveRefund and SellerDisputeRefund.
 func (h *FulfillmentWorkflow) OnSellerDecision(
 	ctx restate.WorkflowSharedContext,
-	sig base.SellerDecisionSignal,
+	sig ordermodel.SellerDecisionSignal,
 ) error {
-	return restate.Promise[base.SellerDecisionSignal](ctx, "seller_decision_"+sig.RefundID.String()).Resolve(sig)
+	return restate.Promise[ordermodel.SellerDecisionSignal](ctx, "seller_decision_"+sig.RefundID.String()).Resolve(sig)
 }
 
 // OnAdminDecision is signalled by AdminUpholdDispute and AdminDismissDispute.
 func (h *FulfillmentWorkflow) OnAdminDecision(
 	ctx restate.WorkflowSharedContext,
-	sig base.AdminDecisionSignal,
+	sig ordermodel.AdminDecisionSignal,
 ) error {
-	return restate.Promise[base.AdminDecisionSignal](ctx, "admin_decision_"+sig.RefundID.String()).Resolve(sig)
+	return restate.Promise[ordermodel.AdminDecisionSignal](ctx, "admin_decision_"+sig.RefundID.String()).Resolve(sig)
 }

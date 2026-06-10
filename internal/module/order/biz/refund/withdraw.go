@@ -8,7 +8,6 @@ import (
 
 	"shopnexus-server/internal/infras/metrics"
 	accountmodel "shopnexus-server/internal/module/account/model"
-	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/validator"
@@ -54,7 +53,7 @@ func (b *RefundHandler) WithdrawBuyerRefund(
 	}
 
 	// Tell the workflow to exit the refund phase early; escrow resumes.
-	if err = b.fulfillment.Send().OnBuyerWithdrew(ctx, refund.OrderID, wfbase.RefundSignal{RefundID: refund.ID}); err != nil {
+	if err = b.fulfillment.Send().OnBuyerWithdrew(ctx, refund.OrderID, ordermodel.RefundSignal{RefundID: refund.ID}); err != nil {
 		return zero, fmt.Errorf("signal buyer withdrew: %w", err)
 	}
 	if err = b.fulfillment.Send().OnRefundChanged(ctx, refund.OrderID); err != nil {

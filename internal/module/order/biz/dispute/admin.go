@@ -10,7 +10,6 @@ import (
 
 	"shopnexus-server/internal/infras/metrics"
 	accountmodel "shopnexus-server/internal/module/account/model"
-	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/validator"
@@ -79,7 +78,7 @@ func (b *DisputeHandler) AdminUpholdDispute(
 		return zero, fmt.Errorf("resolve dispute (uphold): %w", err)
 	}
 
-	if err = b.fulfillment.Send().OnAdminDecision(ctx, pre.Refund.OrderID, wfbase.AdminDecisionSignal{RefundID: pre.Refund.ID, Upheld: true}); err != nil {
+	if err = b.fulfillment.Send().OnAdminDecision(ctx, pre.Refund.OrderID, ordermodel.AdminDecisionSignal{RefundID: pre.Refund.ID, Upheld: true}); err != nil {
 		return zero, fmt.Errorf("signal admin decision: %w", err)
 	}
 	if err = b.fulfillment.Send().OnRefundChanged(ctx, pre.Refund.OrderID); err != nil {
@@ -125,7 +124,7 @@ func (b *DisputeHandler) AdminDismissDispute(
 		ctx,
 		pre.Refund,
 		params.Account.ID,
-		wfbase.RefundCreditReasonAdminDismissed,
+		ordermodel.RefundCreditReasonAdminDismissed,
 	); err != nil {
 		return zero, fmt.Errorf("execute refund credit: %w", err)
 	}
@@ -142,7 +141,7 @@ func (b *DisputeHandler) AdminDismissDispute(
 		return zero, fmt.Errorf("resolve dispute (dismiss): %w", err)
 	}
 
-	if err = b.fulfillment.Send().OnAdminDecision(ctx, pre.Refund.OrderID, wfbase.AdminDecisionSignal{RefundID: pre.Refund.ID, Upheld: false}); err != nil {
+	if err = b.fulfillment.Send().OnAdminDecision(ctx, pre.Refund.OrderID, ordermodel.AdminDecisionSignal{RefundID: pre.Refund.ID, Upheld: false}); err != nil {
 		return zero, fmt.Errorf("signal admin decision: %w", err)
 	}
 	if err = b.fulfillment.Send().OnRefundChanged(ctx, pre.Refund.OrderID); err != nil {

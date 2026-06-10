@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"shopnexus-server/internal/module/order/biz/workflow/base"
+	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/provider/payment"
 )
 
@@ -21,7 +21,7 @@ type FulfillmentWf interface {
 	PaymentNotification(ctx context.Context, orderID uuid.UUID, noti payment.Notification) error
 	CancelConfirm(ctx context.Context, orderID uuid.UUID) error
 	OnRefundChanged(ctx context.Context, orderID uuid.UUID) error
-	OnBuyerWithdrew(ctx context.Context, orderID uuid.UUID, sig base.RefundSignal) error
-	OnSellerDecision(ctx context.Context, orderID uuid.UUID, sig base.SellerDecisionSignal) error
-	OnAdminDecision(ctx context.Context, orderID uuid.UUID, sig base.AdminDecisionSignal) error
+	OnBuyerWithdrew(ctx context.Context, orderID uuid.UUID, sig ordermodel.RefundSignal) error
+	OnSellerDecision(ctx context.Context, orderID uuid.UUID, sig ordermodel.SellerDecisionSignal) error
+	OnAdminDecision(ctx context.Context, orderID uuid.UUID, sig ordermodel.AdminDecisionSignal) error
 }
