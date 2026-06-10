@@ -1,14 +1,15 @@
 package inventorybiz
 
 import (
+	"context"
 	"fmt"
+
 	"shopnexus-server/internal/infras/metrics"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
 	inventorymodel "shopnexus-server/internal/module/inventory/model"
 	"shopnexus-server/internal/shared/idempotency"
 
 	"github.com/google/uuid"
-	restate "github.com/restatedev/sdk-go"
 )
 
 type ReleaseInventoryParams struct {
@@ -22,7 +23,7 @@ type ReleaseInventoryItem struct {
 	Amount  int64
 }
 
-func (b *InventoryHandler) ReleaseInventory(ctx restate.Context, params ReleaseInventoryParams) (err error) {
+func (b *InventoryHandler) ReleaseInventory(ctx context.Context, params ReleaseInventoryParams) (err error) {
 	defer metrics.TrackHandler("inventory", "ReleaseInventory", &err)()
 
 	txStorage, err := b.storage.BeginTx(ctx)

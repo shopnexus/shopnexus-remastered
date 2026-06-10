@@ -1,9 +1,8 @@
 package inventorybiz
 
 import (
+	"context"
 	"fmt"
-
-	restate "github.com/restatedev/sdk-go"
 
 	"shopnexus-server/internal/infras/metrics"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
@@ -32,7 +31,7 @@ func refTypeLabel(t inventorydb.InventoryStockRefType) string {
 
 // getStockByRef is a shared helper to look up stock by (ref_type, ref_id).
 func (b *InventoryHandler) getStockByRef(
-	ctx restate.Context,
+	ctx context.Context,
 	store InventoryStorage,
 	refType inventorydb.InventoryStockRefType,
 	refID uuid.UUID,
@@ -49,7 +48,7 @@ type GetStockParams struct {
 }
 
 // GetStock returns stock info for the given reference type and ID.
-func (b *InventoryHandler) GetStock(ctx restate.Context, params GetStockParams) (inventorydb.InventoryStock, error) {
+func (b *InventoryHandler) GetStock(ctx context.Context, params GetStockParams) (inventorydb.InventoryStock, error) {
 	var zero inventorydb.InventoryStock
 	if err := validator.Validate(params); err != nil {
 		return zero, fmt.Errorf("validate get stock: %w", err)
@@ -69,7 +68,7 @@ type UpdateStockSettingsParams struct {
 
 // UpdateStockSettings updates stock settings like serial_required.
 func (b *InventoryHandler) UpdateStockSettings(
-	ctx restate.Context,
+	ctx context.Context,
 	params UpdateStockSettingsParams,
 ) (inventorydb.InventoryStock, error) {
 	var zero inventorydb.InventoryStock
@@ -101,7 +100,7 @@ type ListStockParams struct {
 
 // ListStock returns a paginated list of stock records filtered by ref type and ID.
 func (b *InventoryHandler) ListStock(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListStockParams,
 ) (paginate.PaginateResult[inventorydb.InventoryStock], error) {
 	var zero paginate.PaginateResult[inventorydb.InventoryStock]
@@ -133,7 +132,7 @@ type CreateStockParams struct {
 
 // CreateStock creates a new stock record for the given reference.
 func (b *InventoryHandler) CreateStock(
-	ctx restate.Context,
+	ctx context.Context,
 	params CreateStockParams,
 ) (inventorydb.InventoryStock, error) {
 	var zero inventorydb.InventoryStock
@@ -162,7 +161,7 @@ type ListStockHistoryParams struct {
 
 // ListStockHistory returns a paginated list of stock change history for the given reference.
 func (b *InventoryHandler) ListStockHistory(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListStockHistoryParams,
 ) (paginate.PaginateResult[inventorydb.InventoryStockHistory], error) {
 	var zero paginate.PaginateResult[inventorydb.InventoryStockHistory]
@@ -197,7 +196,7 @@ type ImportStockParams struct {
 }
 
 // ImportStock adds stock quantity and optionally creates serial records.
-func (b *InventoryHandler) ImportStock(ctx restate.Context, params ImportStockParams) error {
+func (b *InventoryHandler) ImportStock(ctx context.Context, params ImportStockParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate import stock: %w", err)
 	}
@@ -275,7 +274,7 @@ type ReserveInventoryParams struct {
 
 // ReserveInventory reserves stock for the given items and assigns serial IDs when required.
 func (b *InventoryHandler) ReserveInventory(
-	ctx restate.Context,
+	ctx context.Context,
 	params ReserveInventoryParams,
 ) (results []ReserveInventoryResult, err error) {
 	defer metrics.TrackHandler("inventory", "ReserveInventory", &err)()
@@ -374,7 +373,7 @@ type UpdateSerialParams struct {
 }
 
 // UpdateSerial updates the status of the given serial IDs.
-func (b *InventoryHandler) UpdateSerial(ctx restate.Context, params UpdateSerialParams) error {
+func (b *InventoryHandler) UpdateSerial(ctx context.Context, params UpdateSerialParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate update serial: %w", err)
 	}
@@ -396,7 +395,7 @@ type ListSerialParams struct {
 
 // ListSerial returns a paginated list of serials for the given stock ID.
 func (b *InventoryHandler) ListSerial(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListSerialParams,
 ) (paginate.PaginateResult[inventorydb.InventorySerial], error) {
 	var zero paginate.PaginateResult[inventorydb.InventorySerial]
@@ -426,7 +425,7 @@ type ListMostTakenSkuParams struct {
 
 // ListMostTakenSku returns the most reserved SKUs ordered by taken count.
 func (b *InventoryHandler) ListMostTakenSku(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListMostTakenSkuParams,
 ) ([]inventorydb.InventoryStock, error) {
 	if err := validator.Validate(params); err != nil {

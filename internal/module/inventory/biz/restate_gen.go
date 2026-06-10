@@ -214,3 +214,56 @@ func (f *InventoryRestateFuture) ListSerial(rctx restate.Context, params ListSer
 func (f *InventoryRestateFuture) ListMostTakenSku(rctx restate.Context, params ListMostTakenSkuParams) restate.ResponseFuture[[]inventorydb.InventoryStock] {
 	return restate.Service[[]inventorydb.InventoryStock](rctx, serviceName, "ListMostTakenSku").RequestFuture(params)
 }
+
+// InventoryService adapts InventoryBiz into restate.Context handlers for restate.Reflect.
+type InventoryService struct {
+	biz InventoryBiz
+}
+
+func NewInventoryService(biz InventoryBiz) *InventoryService { return &InventoryService{biz: biz} }
+
+func (s *InventoryService) ServiceName() string { return serviceName }
+
+func (s *InventoryService) GetStock(ctx restate.Context, params GetStockParams) (inventorydb.InventoryStock, error) {
+	return s.biz.GetStock(ctx, params)
+}
+
+func (s *InventoryService) UpdateStockSettings(ctx restate.Context, params UpdateStockSettingsParams) (inventorydb.InventoryStock, error) {
+	return s.biz.UpdateStockSettings(ctx, params)
+}
+
+func (s *InventoryService) ListStock(ctx restate.Context, params ListStockParams) (paginate.PaginateResult[inventorydb.InventoryStock], error) {
+	return s.biz.ListStock(ctx, params)
+}
+
+func (s *InventoryService) CreateStock(ctx restate.Context, params CreateStockParams) (inventorydb.InventoryStock, error) {
+	return s.biz.CreateStock(ctx, params)
+}
+
+func (s *InventoryService) ListStockHistory(ctx restate.Context, params ListStockHistoryParams) (paginate.PaginateResult[inventorydb.InventoryStockHistory], error) {
+	return s.biz.ListStockHistory(ctx, params)
+}
+
+func (s *InventoryService) ImportStock(ctx restate.Context, params ImportStockParams) error {
+	return s.biz.ImportStock(ctx, params)
+}
+
+func (s *InventoryService) ReserveInventory(ctx restate.Context, params ReserveInventoryParams) ([]ReserveInventoryResult, error) {
+	return s.biz.ReserveInventory(ctx, params)
+}
+
+func (s *InventoryService) ReleaseInventory(ctx restate.Context, params ReleaseInventoryParams) error {
+	return s.biz.ReleaseInventory(ctx, params)
+}
+
+func (s *InventoryService) UpdateSerial(ctx restate.Context, params UpdateSerialParams) error {
+	return s.biz.UpdateSerial(ctx, params)
+}
+
+func (s *InventoryService) ListSerial(ctx restate.Context, params ListSerialParams) (paginate.PaginateResult[inventorydb.InventorySerial], error) {
+	return s.biz.ListSerial(ctx, params)
+}
+
+func (s *InventoryService) ListMostTakenSku(ctx restate.Context, params ListMostTakenSkuParams) ([]inventorydb.InventoryStock, error) {
+	return s.biz.ListMostTakenSku(ctx, params)
+}
