@@ -1,10 +1,9 @@
 package catalogbiz
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-
-	restate "github.com/restatedev/sdk-go"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
@@ -24,7 +23,7 @@ const popularProductLimit = 4
 // category, rating, tags, resources, and embedding-sync status so callers
 // avoid per-row fan-out.
 func (b *CatalogHandler) HydrateProductSpus(
-	ctx restate.Context,
+	ctx context.Context,
 	dbSpus []catalogdb.CatalogProductSpu,
 ) ([]catalogmodel.ProductSpu, error) {
 	if len(dbSpus) == 0 {
@@ -83,7 +82,7 @@ func (b *CatalogHandler) HydrateProductSpus(
 // HydrateProductSkus turns DB SKU rows into rich models, batch-fetching live
 // stock and parsing the attributes blob.
 func (b *CatalogHandler) HydrateProductSkus(
-	ctx restate.Context,
+	ctx context.Context,
 	dbSkus []catalogdb.CatalogProductSku,
 ) ([]catalogmodel.ProductSku, error) {
 	if len(dbSkus) == 0 {
@@ -120,7 +119,7 @@ func (b *CatalogHandler) HydrateProductSkus(
 // HydrateCategories turns DB category rows into rich models, attaching the
 // first image of each category's popular products as representative resources.
 func (b *CatalogHandler) HydrateCategories(
-	ctx restate.Context,
+	ctx context.Context,
 	dbCategories []catalogdb.CatalogCategory,
 ) ([]catalogmodel.Category, error) {
 	if len(dbCategories) == 0 {
@@ -167,7 +166,7 @@ func (b *CatalogHandler) HydrateCategories(
 }
 
 // getTagsMap returns map[spuID][]tag for the given SPUs.
-func (b *CatalogHandler) getTagsMap(ctx restate.Context, spuIDs []uuid.UUID) map[uuid.UUID][]string {
+func (b *CatalogHandler) getTagsMap(ctx context.Context, spuIDs []uuid.UUID) map[uuid.UUID][]string {
 	res, err := b.storage.Querier().ListProductSpuTag(ctx, catalogdb.ListProductSpuTagParams{
 		SpuId: spuIDs,
 	})
@@ -186,7 +185,7 @@ func (b *CatalogHandler) getTagsMap(ctx restate.Context, spuIDs []uuid.UUID) map
 
 // getRatingsMap returns map[spuID]rating for the given SPUs.
 func (b *CatalogHandler) getRatingsMap(
-	ctx restate.Context,
+	ctx context.Context,
 	spuIDs []uuid.UUID,
 ) (map[uuid.UUID]catalogdb.ListRatingRow, error) {
 	ratings, err := b.storage.Querier().ListRating(ctx, catalogdb.ListRatingParams{
@@ -201,7 +200,7 @@ func (b *CatalogHandler) getRatingsMap(
 
 // getCategoriesMap batch-fetches categories by IDs, keyed by category ID.
 func (b *CatalogHandler) getCategoriesMap(
-	ctx restate.Context,
+	ctx context.Context,
 	categoryIDs []uuid.UUID,
 ) map[uuid.UUID]catalogdb.CatalogCategory {
 	if len(categoryIDs) == 0 {

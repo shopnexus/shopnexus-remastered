@@ -1,9 +1,8 @@
 package catalogbiz
 
 import (
+	"context"
 	"fmt"
-
-	restate "github.com/restatedev/sdk-go"
 
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
@@ -24,7 +23,7 @@ type ListCategoryParams struct {
 
 // ListCategory returns paginated categories with popular product images.
 func (b *CatalogHandler) ListCategory(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListCategoryParams,
 ) (paginate.PaginateResult[catalogmodel.Category], error) {
 	var zero paginate.PaginateResult[catalogmodel.Category]

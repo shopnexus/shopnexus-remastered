@@ -1,9 +1,8 @@
 package catalogbiz
 
 import (
+	"context"
 	"fmt"
-
-	restate "github.com/restatedev/sdk-go"
 
 	accountmodel "shopnexus-server/internal/module/account/model"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
@@ -22,7 +21,7 @@ type ListTagParams struct {
 
 // ListTag returns paginated tags with optional text search.
 func (b *CatalogHandler) ListTag(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListTagParams,
 ) (paginate.PaginateResult[catalogdb.CatalogTag], error) {
 	var zero paginate.PaginateResult[catalogdb.CatalogTag]
@@ -61,7 +60,7 @@ type GetTagParams struct {
 }
 
 // GetTag returns a single tag by its name.
-func (b *CatalogHandler) GetTag(ctx restate.Context, params GetTagParams) (catalogdb.CatalogTag, error) {
+func (b *CatalogHandler) GetTag(ctx context.Context, params GetTagParams) (catalogdb.CatalogTag, error) {
 	var zero catalogdb.CatalogTag
 
 	if err := validator.Validate(params); err != nil {

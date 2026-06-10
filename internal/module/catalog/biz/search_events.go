@@ -1,12 +1,11 @@
 package catalogbiz
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"strings"
-
-	restate "github.com/restatedev/sdk-go"
 
 	"github.com/google/uuid"
 
@@ -17,8 +16,8 @@ import (
 
 // AddInteractions processes a batch of analytic interaction events. Batching
 // happens upstream in the bus subscription (see catalog/workers).
-func (b *CatalogHandler) AddInteractions(ctx restate.Context, events []analyticmodel.Interaction) error {
-	if err := b.ProcessEvents(ctx, events); err != nil {
+func (b *CatalogHandler) AddInteractions(ctx context.Context, events []analyticmodel.Interaction) error {
+	if err := b.processEvents(ctx, events); err != nil {
 		return fmt.Errorf("process events: %w", err)
 	}
 
@@ -46,9 +45,9 @@ func (b *CatalogHandler) AddInteractions(ctx restate.Context, events []analyticm
 	return nil
 }
 
-// ProcessEvents updates account interest vectors in the account_interest table
+// processEvents updates account interest vectors in the account_interest table
 // based on analytic interaction events.
-func (b *CatalogHandler) ProcessEvents(ctx restate.Context, events []analyticmodel.Interaction) error {
+func (b *CatalogHandler) processEvents(ctx context.Context, events []analyticmodel.Interaction) error {
 	if len(events) == 0 {
 		return nil
 	}

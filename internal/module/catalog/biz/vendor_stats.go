@@ -1,9 +1,8 @@
 package catalogbiz
 
 import (
+	"context"
 	"fmt"
-
-	restate "github.com/restatedev/sdk-go"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
@@ -26,7 +25,7 @@ type VendorStats struct {
 }
 
 // GetVendorStats returns aggregate stats for a vendor: product count, average rating, and total sold.
-func (b *CatalogHandler) GetVendorStats(ctx restate.Context, params GetVendorStatsParams) (VendorStats, error) {
+func (b *CatalogHandler) GetVendorStats(ctx context.Context, params GetVendorStatsParams) (VendorStats, error) {
 	var zero VendorStats
 	if err := validator.Validate(params); err != nil {
 		return zero, fmt.Errorf("validate get vendor stats: %w", err)

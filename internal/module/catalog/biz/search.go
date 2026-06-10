@@ -1,11 +1,10 @@
 package catalogbiz
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"time"
-
-	restate "github.com/restatedev/sdk-go"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
@@ -36,7 +35,7 @@ type SearchParams struct {
 
 // Search performs hybrid dense+sparse vector search with scalar filtering.
 // pgvector handles both semantic ranking and scalar filtering in a single SQL query.
-func (b *CatalogHandler) Search(ctx restate.Context, params SearchParams) (paginate.PaginateResult[catalogmodel.ProductRecommend], error) {
+func (b *CatalogHandler) Search(ctx context.Context, params SearchParams) (paginate.PaginateResult[catalogmodel.ProductRecommend], error) {
 	var zero paginate.PaginateResult[catalogmodel.ProductRecommend]
 
 	if err := validator.Validate(params); err != nil {
@@ -114,7 +113,7 @@ type GetRecommendationsParams struct {
 // It runs one ANN search per active slot, fused with strength-normalized weights
 // (replaces the Milvus multi-request WeightedReranker).
 func (b *CatalogHandler) GetRecommendations(
-	ctx restate.Context,
+	ctx context.Context,
 	params GetRecommendationsParams,
 ) ([]catalogmodel.ProductRecommend, error) {
 	if err := validator.Validate(params); err != nil {

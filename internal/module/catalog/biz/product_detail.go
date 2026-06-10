@@ -1,11 +1,10 @@
 package catalogbiz
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-
-	restate "github.com/restatedev/sdk-go"
 
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountmodel "shopnexus-server/internal/module/account/model"
@@ -32,7 +31,7 @@ type GetProductDetailParams struct {
 
 // GetProductDetail returns full product detail including SKUs, pricing, ratings, and promotions.
 func (b *CatalogHandler) GetProductDetail(
-	ctx restate.Context,
+	ctx context.Context,
 	params GetProductDetailParams,
 ) (catalogmodel.ProductDetail, error) {
 	var zero catalogmodel.ProductDetail

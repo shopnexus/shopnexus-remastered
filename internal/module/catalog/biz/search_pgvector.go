@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pgvector/pgvector-go"
-	restate "github.com/restatedev/sdk-go"
 
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
@@ -36,7 +35,7 @@ func toSparseVector(m map[uint32]float32) *pgvector.SparseVector {
 func toVector(v []float32) pgvector.Vector { return pgvector.NewVector(v) }
 
 // getProductVectors fetches dense embeddings for the given product IDs.
-func (b *CatalogHandler) getProductVectors(ctx restate.Context, ids []uuid.UUID) (map[uuid.UUID][]float32, error) {
+func (b *CatalogHandler) getProductVectors(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]float32, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -56,7 +55,7 @@ func (b *CatalogHandler) getProductVectors(ctx restate.Context, ids []uuid.UUID)
 // getAccountInterests fetches interest vectors and strengths for the given account IDs,
 // reshaping the per-slot rows into fixed-size NumInterests slices (slot is 1-based).
 func (b *CatalogHandler) getAccountInterests(
-	ctx restate.Context,
+	ctx context.Context,
 	ids []uuid.UUID,
 ) (map[uuid.UUID]accountInterests, error) {
 	if len(ids) == 0 {
@@ -88,7 +87,7 @@ func (b *CatalogHandler) getAccountInterests(
 
 // upsertAccountInterests upserts an account's NumInterests interest vectors and strengths.
 func (b *CatalogHandler) upsertAccountInterests(
-	ctx restate.Context,
+	ctx context.Context,
 	accountID uuid.UUID,
 	interests [][]float32,
 	strengths []float32,

@@ -1,9 +1,8 @@
 package catalogbiz
 
 import (
+	"context"
 	"fmt"
-
-	restate "github.com/restatedev/sdk-go"
 
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountmodel "shopnexus-server/internal/module/account/model"
@@ -35,7 +34,7 @@ type ListCommentParams struct {
 
 // ListComment returns paginated comments with author profiles and attached resources.
 func (b *CatalogHandler) ListComment(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListCommentParams,
 ) (paginate.PaginateResult[catalogmodel.Comment], error) {
 	var zero paginate.PaginateResult[catalogmodel.Comment]
@@ -109,7 +108,7 @@ type CreateCommentParams struct {
 // CreateComment stores a comment with resources and tracks review analytics.
 // Purchase eligibility for product reviews is validated upstream by the order
 // module (Order.CreateProductReview) — catalog trusts its internal callers.
-func (b *CatalogHandler) CreateComment(ctx restate.Context, params CreateCommentParams) (catalogmodel.Comment, error) {
+func (b *CatalogHandler) CreateComment(ctx context.Context, params CreateCommentParams) (catalogmodel.Comment, error) {
 	var zero catalogmodel.Comment
 
 	if err := validator.Validate(params); err != nil {
@@ -247,7 +246,7 @@ type UpdateCommentParams struct {
 }
 
 // UpdateComment updates a comment's body, score, votes, and attached resources.
-func (b *CatalogHandler) UpdateComment(ctx restate.Context, params UpdateCommentParams) (catalogmodel.Comment, error) {
+func (b *CatalogHandler) UpdateComment(ctx context.Context, params UpdateCommentParams) (catalogmodel.Comment, error) {
 	var zero catalogmodel.Comment
 
 	if err := validator.Validate(params); err != nil {
@@ -309,7 +308,7 @@ type DeleteCommentParams struct {
 }
 
 // DeleteComment deletes comments and their associated resources.
-func (b *CatalogHandler) DeleteComment(ctx restate.Context, params DeleteCommentParams) error {
+func (b *CatalogHandler) DeleteComment(ctx context.Context, params DeleteCommentParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate delete comment: %w", err)
 	}

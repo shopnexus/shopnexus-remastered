@@ -1,12 +1,11 @@
 package catalogbiz
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	rand2 "math/rand/v2"
-
-	restate "github.com/restatedev/sdk-go"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
@@ -28,7 +27,7 @@ import (
 )
 
 func (b *CatalogHandler) buildProductCards(
-	ctx restate.Context,
+	ctx context.Context,
 	spuIDs []uuid.UUID,
 	accountID uuid.NullUUID,
 ) (map[uuid.UUID]*catalogmodel.ProductCard, error) {
@@ -175,7 +174,7 @@ type GetProductCardParams struct {
 
 // GetProductCard returns a single product card by SPU ID.
 func (b *CatalogHandler) GetProductCard(
-	ctx restate.Context,
+	ctx context.Context,
 	params GetProductCardParams,
 ) (*catalogmodel.ProductCard, error) {
 	if err := validator.Validate(params); err != nil {
@@ -214,7 +213,7 @@ type ListProductCardParams struct {
 // filtering in a single SQL query. When browsing (no search), Postgres handles filtering
 // and pagination.
 func (b *CatalogHandler) ListProductCard(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListProductCardParams,
 ) (paginate.PaginateResult[catalogmodel.ProductCard], error) {
 	var zero paginate.PaginateResult[catalogmodel.ProductCard]
@@ -295,7 +294,7 @@ func (b *CatalogHandler) ListProductCard(
 // through the shared list runtime via ListProductCardBrowse; this layer only
 // resolves the tag pre-filter and enriches the page into cards.
 func (b *CatalogHandler) listProductCardFromDB(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListProductCardParams,
 ) (paginate.PaginateResult[catalogmodel.ProductCard], error) {
 	var zero paginate.PaginateResult[catalogmodel.ProductCard]
@@ -364,7 +363,7 @@ type ListRecommendedProductCardParams struct {
 
 // ListRecommendedProductCard returns personalized product card recommendations for the authenticated user.
 func (b *CatalogHandler) ListRecommendedProductCard(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListRecommendedProductCardParams,
 ) ([]catalogmodel.ProductCard, error) {
 	var zero []catalogmodel.ProductCard
@@ -378,9 +377,9 @@ func (b *CatalogHandler) ListRecommendedProductCard(
 		return zero, fmt.Errorf("recommend pool: %w", err)
 	}
 
-	// Shuffle the whole pool with Restate's deterministic RNG (replay-safe), then
-	// take a fresh window. FE dedups repeats across infinite-scroll pages.
-	rand2.New(restate.RandSource(ctx)).Shuffle(len(pool), func(i, j int) {
+	// Shuffle the whole pool, then take a fresh window. FE dedups repeats across
+	// infinite-scroll pages.
+	rand2.Shuffle(len(pool), func(i, j int) {
 		pool[i], pool[j] = pool[j], pool[i]
 	})
 	if params.Limit < len(pool) {
@@ -409,7 +408,7 @@ func (b *CatalogHandler) ListRecommendedProductCard(
 // personalized (pgvector) first, trending backfill after. Cached in KV with a TTL
 // and invalidated on interaction events (see AddInteractions).
 func (b *CatalogHandler) getRecommendPool(
-	ctx restate.Context,
+	ctx context.Context,
 	account accountmodel.AuthenticatedAccount,
 ) ([]uuid.UUID, error) {
 	key := fmt.Sprintf(catalogmodel.CacheKeyRecommendPool, account.ID)
@@ -465,7 +464,7 @@ func (b *CatalogHandler) getRecommendPool(
 }
 
 // trendingSpuIDs returns unique SPU ids backing the most-taken (best-selling) SKUs.
-func (b *CatalogHandler) trendingSpuIDs(ctx restate.Context, limit int32) ([]uuid.UUID, error) {
+func (b *CatalogHandler) trendingSpuIDs(ctx context.Context, limit int32) ([]uuid.UUID, error) {
 	stocks, err := b.inventory.ListMostTakenSku(ctx, inventorybiz.ListMostTakenSkuParams{
 		Params:  paginate.Params{Limit: null.Int32From(limit)},
 		RefType: inventorydb.InventoryStockRefTypeProductSku,

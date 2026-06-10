@@ -1,10 +1,9 @@
 package catalogbiz
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-
-	restate "github.com/restatedev/sdk-go"
 
 	accountmodel "shopnexus-server/internal/module/account/model"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
@@ -28,7 +27,7 @@ type ListProductSkuParams struct {
 
 // ListProductSku returns product SKUs filtered by ID, SPU, price range, or combinability.
 func (b *CatalogHandler) ListProductSku(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListProductSkuParams,
 ) ([]catalogmodel.ProductSku, error) {
 	var zero []catalogmodel.ProductSku
@@ -67,7 +66,7 @@ type CreateProductSkuParams struct {
 
 // CreateProductSku creates a new product SKU and initializes its inventory stock.
 func (b *CatalogHandler) CreateProductSku(
-	ctx restate.Context,
+	ctx context.Context,
 	params CreateProductSkuParams,
 ) (catalogmodel.ProductSku, error) {
 	var zero catalogmodel.ProductSku
@@ -123,7 +122,7 @@ type UpdateProductSkuParams struct {
 
 // UpdateProductSku updates a product SKU and invalidates the parent SPU search index.
 func (b *CatalogHandler) UpdateProductSku(
-	ctx restate.Context,
+	ctx context.Context,
 	params UpdateProductSkuParams,
 ) (catalogmodel.ProductSku, error) {
 	var zero catalogmodel.ProductSku
@@ -174,7 +173,7 @@ type DeleteProductSkuParams struct {
 }
 
 // DeleteProductSku deletes a product SKU by ID.
-func (b *CatalogHandler) DeleteProductSku(ctx restate.Context, params DeleteProductSkuParams) error {
+func (b *CatalogHandler) DeleteProductSku(ctx context.Context, params DeleteProductSkuParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate delete product sku: %w", err)
 	}

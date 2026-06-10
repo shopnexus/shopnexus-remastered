@@ -1,11 +1,10 @@
 package catalogbiz
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	restate "github.com/restatedev/sdk-go"
 
 	"github.com/google/uuid"
 	"github.com/gosimple/slug"
@@ -32,7 +31,7 @@ type GetProductSpuParams struct {
 
 // GetProductSpu returns a single product SPU by ID or slug.
 func (b *CatalogHandler) GetProductSpu(
-	ctx restate.Context,
+	ctx context.Context,
 	params GetProductSpuParams,
 ) (catalogmodel.ProductSpu, error) {
 	if err := validator.Validate(params); err != nil {
@@ -80,7 +79,7 @@ type ListProductSpuParams struct {
 
 // ListProductSpu returns paginated product SPUs with optional filters for category and active status.
 func (b *CatalogHandler) ListProductSpu(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListProductSpuParams,
 ) (paginate.PaginateResult[catalogmodel.ProductSpu], error) {
 	var zero paginate.PaginateResult[catalogmodel.ProductSpu]
@@ -160,7 +159,7 @@ type CreateProductSpuParams struct {
 
 // CreateProductSpu creates a new product SPU with tags, resources, and search sync entry.
 func (b *CatalogHandler) CreateProductSpu(
-	ctx restate.Context,
+	ctx context.Context,
 	params CreateProductSpuParams,
 ) (catalogmodel.ProductSpu, error) {
 	var zero catalogmodel.ProductSpu
@@ -241,7 +240,7 @@ type UpdateProductSpuParams struct {
 
 // UpdateProductSpu updates an existing product SPU and marks the search index as stale.
 func (b *CatalogHandler) UpdateProductSpu(
-	ctx restate.Context,
+	ctx context.Context,
 	params UpdateProductSpuParams,
 ) (catalogmodel.ProductSpu, error) {
 	var zero catalogmodel.ProductSpu
@@ -335,7 +334,7 @@ func (b *CatalogHandler) UpdateProductSpu(
 // invariant spu.currency == Infer(seller.country) so checkout does not need a
 // second FX conversion when debiting the seller's wallet.
 func (b *CatalogHandler) assertSellerCurrency(
-	ctx restate.Context,
+	ctx context.Context,
 	seller accountmodel.AuthenticatedAccount,
 	currency string,
 ) error {
@@ -361,7 +360,7 @@ type DeleteProductSpuParams struct {
 }
 
 // DeleteProductSpu deletes a product SPU by ID.
-func (b *CatalogHandler) DeleteProductSpu(ctx restate.Context, params DeleteProductSpuParams) error {
+func (b *CatalogHandler) DeleteProductSpu(ctx context.Context, params DeleteProductSpuParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate delete product spu: %w", err)
 	}
@@ -381,7 +380,7 @@ type updateTagsParams struct {
 }
 
 // updateTags replaces all tags for the given SPU. It must be called within an existing transaction.
-func (b *CatalogHandler) updateTags(ctx restate.Context, q *catalogdb.Queries, params updateTagsParams) error {
+func (b *CatalogHandler) updateTags(ctx context.Context, q *catalogdb.Queries, params updateTagsParams) error {
 	if err := q.DeleteProductSpuTag(ctx, catalogdb.DeleteProductSpuTagParams{
 		SpuID: []uuid.UUID{params.SpuID},
 	}); err != nil {
