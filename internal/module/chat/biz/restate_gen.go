@@ -145,3 +145,36 @@ func (f *ChatRestateFuture) ListMessage(rctx restate.Context, params ListMessage
 func (f *ChatRestateFuture) MarkRead(rctx restate.Context, params MarkReadParams) restate.ResponseFuture[restate.Void] {
 	return restate.Service[restate.Void](rctx, serviceName, "MarkRead").RequestFuture(params)
 }
+
+// ChatService adapts ChatBiz into restate.Context handlers for restate.Reflect.
+type ChatService struct {
+	biz ChatBiz
+}
+
+func NewChatService(biz ChatBiz) *ChatService { return &ChatService{biz: biz} }
+
+func (s *ChatService) ServiceName() string { return serviceName }
+
+func (s *ChatService) CreateConversation(ctx restate.Context, params CreateConversationParams) (chatdb.ChatConversation, error) {
+	return s.biz.CreateConversation(ctx, params)
+}
+
+func (s *ChatService) GetConversation(ctx restate.Context, id uuid.UUID) (chatdb.ChatConversation, error) {
+	return s.biz.GetConversation(ctx, id)
+}
+
+func (s *ChatService) ListConversation(ctx restate.Context, params ListConversationParams) (paginate.PaginateResult[chatdb.ChatConversation], error) {
+	return s.biz.ListConversation(ctx, params)
+}
+
+func (s *ChatService) SendMessage(ctx restate.Context, params SendMessageParams) (chatdb.ChatMessage, error) {
+	return s.biz.SendMessage(ctx, params)
+}
+
+func (s *ChatService) ListMessage(ctx restate.Context, params ListMessageParams) (paginate.PaginateResult[chatdb.ChatMessage], error) {
+	return s.biz.ListMessage(ctx, params)
+}
+
+func (s *ChatService) MarkRead(ctx restate.Context, params MarkReadParams) error {
+	return s.biz.MarkRead(ctx, params)
+}

@@ -1,10 +1,9 @@
 package chatbiz
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-
-	restate "github.com/restatedev/sdk-go"
 
 	accountmodel "shopnexus-server/internal/module/account/model"
 	chatdb "shopnexus-server/internal/module/chat/db/sqlc"
@@ -24,7 +23,7 @@ type CreateConversationParams struct {
 
 // CreateConversation creates a new conversation between a customer and vendor, or returns the existing one.
 func (b *ChatHandler) CreateConversation(
-	ctx restate.Context,
+	ctx context.Context,
 	params CreateConversationParams,
 ) (chatdb.ChatConversation, error) {
 	var zero chatdb.ChatConversation
@@ -53,7 +52,7 @@ func (b *ChatHandler) CreateConversation(
 }
 
 // GetConversation returns a conversation by its ID.
-func (b *ChatHandler) GetConversation(ctx restate.Context, id uuid.UUID) (chatdb.ChatConversation, error) {
+func (b *ChatHandler) GetConversation(ctx context.Context, id uuid.UUID) (chatdb.ChatConversation, error) {
 	conv, err := b.storage.Querier().GetConversationByID(ctx, id)
 	if err != nil {
 		return chatdb.ChatConversation{}, fmt.Errorf("db get conversation by id: %w", err)
@@ -69,7 +68,7 @@ type ListConversationParams struct {
 
 // ListConversation returns a paginated list of conversations for the authenticated account.
 func (b *ChatHandler) ListConversation(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListConversationParams,
 ) (paginate.PaginateResult[chatdb.ChatConversation], error) {
 	var zero paginate.PaginateResult[chatdb.ChatConversation]
@@ -107,7 +106,7 @@ type SendMessageParams struct {
 }
 
 // SendMessage sends a message in a conversation the account participates in.
-func (b *ChatHandler) SendMessage(ctx restate.Context, params SendMessageParams) (chatdb.ChatMessage, error) {
+func (b *ChatHandler) SendMessage(ctx context.Context, params SendMessageParams) (chatdb.ChatMessage, error) {
 	var zero chatdb.ChatMessage
 	if err := validator.Validate(params); err != nil {
 		return zero, fmt.Errorf("validate send message params: %w", err)
@@ -164,7 +163,7 @@ type ListMessageParams struct {
 
 // ListMessage returns a paginated list of messages in a conversation.
 func (b *ChatHandler) ListMessage(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListMessageParams,
 ) (paginate.PaginateResult[chatdb.ChatMessage], error) {
 	var zero paginate.PaginateResult[chatdb.ChatMessage]
@@ -208,7 +207,7 @@ type MarkReadParams struct {
 }
 
 // MarkRead marks all messages in a conversation as read for the authenticated account.
-func (b *ChatHandler) MarkRead(ctx restate.Context, params MarkReadParams) error {
+func (b *ChatHandler) MarkRead(ctx context.Context, params MarkReadParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate mark read params: %w", err)
 	}
