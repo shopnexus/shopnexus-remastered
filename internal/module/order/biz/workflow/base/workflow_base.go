@@ -10,7 +10,6 @@ import (
 
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
-	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
 	orderbase "shopnexus-server/internal/module/order/biz/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
@@ -19,7 +18,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
 	restate "github.com/restatedev/sdk-go"
-	"github.com/samber/lo"
 )
 
 // Context and WorkflowContext mirror their restate counterparts under
@@ -58,6 +56,11 @@ func New(
 ) *Base {
 	return &Base{c, account, inventory}
 }
+
+// Account and Inventory expose the workflow-shared cross-module clients to
+// handlers that embed *Base from another package (e.g. the refund credit flow).
+func (b *Base) Account() accountbiz.AccountBizClient       { return b.account }
+func (b *Base) Inventory() inventorybiz.InventoryBizClient { return b.inventory }
 
 // initGatewayPayment charges the gateway for one attempt and persists the
 // redirect URL on the attempt's tx.
@@ -274,203 +277,4 @@ paymentLoop:
 		}
 	}
 	return nil
-}
-
-// CreditFromSession credits the recipient with the sum of positive-amount Success
-// transactions in the given session. Use this when a session is being voided or
-// refunded — credits only legs that actually settled, never minting balance for
-// unsettled / failed / pending legs. Returns the amount credited; 0 means no-op.
-func (b *Base) CreditFromSession(
-	ctx Context,
-	params ordermodel.CreditFromSessionParams,
-) (int64, error) {
-	settled, err := restate.Run(ctx, func(ctx restate.RunContext) (int64, error) {
-		txs, err := b.Storage.Querier().ListTransactionsBySession(ctx, params.SessionID)
-		if err != nil {
-			return 0, fmt.Errorf("list session txs: %w", err)
-		}
-		var total int64
-		for _, tx := range txs {
-			if tx.Status == orderdb.OrderStatusSuccess && tx.Amount > 0 {
-				total += tx.Amount
-			}
-		}
-		return total, nil
-	})
-	if err != nil {
-		return 0, fmt.Errorf("read session txs: %w", err)
-	}
-	if settled == 0 {
-		return 0, nil
-	}
-
-	if err = b.account.WalletCredit(ctx, accountbiz.WalletCreditParams{
-		AccountID: params.AccountID,
-		Amount:    settled,
-		Type:      params.CreditType,
-		Reference: fmt.Sprintf("session:%s %s", params.SessionID, params.Reference),
-		Note:      params.Note,
-	}); err != nil {
-		return 0, fmt.Errorf("wallet credit from session: %w", err)
-	}
-	return settled, nil
-}
-
-// ExecuteRefundCredit performs the actual credit flow: insert refund tx,
-// flip refund.status to Accepted, cancel items, credit buyer wallet, restock
-// inventory. Used by all 3 paths that end in Accepted (seller approve,
-// auto-accept timeout, admin dismiss). Callers outside the fulfillment
-// workflow must signal it afterwards (Send().OnRefundChanged) so its escrow
-// loop re-snapshots; the in-workflow caller re-snapshots on loop continue.
-func (b *Base) ExecuteRefundCredit(
-	ctx Context,
-	refund orderdb.OrderRefund,
-	deciderID uuid.UUID,
-	reason ordermodel.RefundCreditReason,
-) (orderdb.OrderRefund, error) {
-	var zero orderdb.OrderRefund
-
-	items, err := restate.Run(ctx, func(rctx restate.RunContext) ([]orderdb.OrderItem, error) {
-		res, e := b.Storage.Querier().ListItem(rctx, orderdb.ListItemParams{
-			OrderId: []uuid.UUID{refund.OrderID},
-		})
-		if e != nil {
-			return nil, e
-		}
-		return res.Data, nil
-	})
-	if err != nil {
-		return zero, fmt.Errorf("list items: %w", err)
-	}
-	var anyItem orderdb.OrderItem
-	var refundAmount int64
-	for _, it := range items {
-		if !it.DateCancelled.Valid {
-			if anyItem.ID == 0 {
-				anyItem = it
-			}
-			refundAmount += it.TotalAmount
-		}
-	}
-	if anyItem.ID == 0 {
-		return zero, fmt.Errorf("no non-cancelled items: %w", ordermodel.ErrOrderItemNotFound)
-	}
-
-	order, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderOrder, error) {
-		return b.Storage.Querier().GetOrder(rctx, orderdb.GetOrderParams{
-			ID: uuid.NullUUID{UUID: refund.OrderID, Valid: true},
-		})
-	})
-	if err != nil {
-		return zero, fmt.Errorf("get order: %w", err)
-	}
-
-	buyerCurrency, err := b.InferCurrency(ctx, order.BuyerID)
-	if err != nil {
-		return zero, fmt.Errorf("infer currency: %w", err)
-	}
-
-	sessionTxs, err := restate.Run(ctx, func(rctx restate.RunContext) ([]orderdb.OrderTransaction, error) {
-		return b.Storage.Querier().ListTransactionsBySession(rctx, anyItem.PaymentSessionID)
-	})
-	if err != nil {
-		return zero, fmt.Errorf("list session txs: %w", err)
-	}
-	originalTx, ok := ordermodel.FindOriginalCharge(sessionTxs)
-	if !ok {
-		return zero, fmt.Errorf("no original tx: %w", ordermodel.ErrOrderItemNotFound)
-	}
-	originalTxID := uuid.NullUUID{UUID: originalTx.ID, Valid: true}
-
-	// deterministic key: retries must reuse it so the idempotency ledger dedupes
-	refundTxID := uuid.NewSHA1(uuid.NameSpaceOID, fmt.Appendf(nil, "refund-credit:refund:%s", refund.ID))
-	updated, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
-		refundTx, e := b.Storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
-			ID:            refundTxID,
-			SessionID:     anyItem.PaymentSessionID,
-			Status:        orderdb.OrderStatusSuccess,
-			Note:          fmt.Sprintf("refund %s: %s", refund.ID, reason),
-			Error:         null.String{},
-			PaymentOption: null.String{},
-			Data:          json.RawMessage("{}"),
-			Amount:        -refundAmount,
-			Currency:      buyerCurrency,
-			ReversesID:    originalTxID,
-			DateSettled:   null.TimeFrom(time.Now()),
-			DateExpired:   null.Time{},
-		})
-		if e != nil {
-			return orderdb.OrderRefund{}, fmt.Errorf("create refund tx: %w", e)
-		}
-
-		// Pick the right SQL based on the source state.
-		var u orderdb.OrderRefund
-		switch refund.Status {
-		case orderdb.OrderRefundStatusAwaitingSellerReview:
-			u, e = b.Storage.Querier().SellerApproveRefund(rctx, orderdb.SellerApproveRefundParams{
-				ID:         refund.ID,
-				RefundTxID: uuid.NullUUID{UUID: refundTx.ID, Valid: true},
-			})
-		case orderdb.OrderRefundStatusDisputed:
-			u, e = b.Storage.Querier().AdminDismissDispute(rctx, orderdb.AdminDismissDisputeParams{
-				ID:         refund.ID,
-				RefundTxID: uuid.NullUUID{UUID: refundTx.ID, Valid: true},
-			})
-		default:
-			return orderdb.OrderRefund{}, ordermodel.ErrRefundWrongStage
-		}
-		if e != nil {
-			return orderdb.OrderRefund{}, fmt.Errorf("approve refund: %w", e)
-		}
-
-		for _, it := range items {
-			if it.DateCancelled.Valid {
-				continue
-			}
-			if _, ce := b.Storage.Querier().CancelItem(rctx, orderdb.CancelItemParams{
-				ID:            it.ID,
-				CancelledByID: uuid.NullUUID{UUID: deciderID, Valid: true},
-			}); ce != nil {
-				return orderdb.OrderRefund{}, fmt.Errorf("cancel item: %w", ce)
-			}
-		}
-		return u, nil
-	})
-	if err != nil {
-		return zero, fmt.Errorf("execute refund ops: %w", err)
-	}
-
-	if _, err := b.CreditFromSession(ctx, ordermodel.CreditFromSessionParams{
-		SessionID:  anyItem.PaymentSessionID,
-		AccountID:  order.BuyerID,
-		CreditType: "Refund",
-		Reference:  fmt.Sprintf("refund:%s", refund.ID),
-		Note:       fmt.Sprintf("refund accepted (%s)", reason),
-	}); err != nil {
-		return zero, fmt.Errorf("wallet credit: %w", err)
-	}
-
-	// Restock inventory for every item we just cancelled. Mirrors the release
-	// path in CancelBuyerPending / RejectSellerPending so the SKU quantity goes
-	// back up when the refund settles. Cross-module call lives outside the
-	// durable Run because the inventory module owns its own idempotency.
-	releaseItems := lo.FilterMap(items, func(it orderdb.OrderItem, _ int) (inventorybiz.ReleaseInventoryItem, bool) {
-		if it.DateCancelled.Valid {
-			return inventorybiz.ReleaseInventoryItem{}, false
-		}
-		return inventorybiz.ReleaseInventoryItem{
-			RefType: inventorydb.InventoryStockRefTypeProductSku,
-			RefID:   it.SkuID,
-			Amount:  it.Quantity,
-		}, true
-	})
-	if len(releaseItems) > 0 {
-		if err := b.inventory.ReleaseInventory(ctx, inventorybiz.ReleaseInventoryParams{
-			Items: releaseItems,
-		}); err != nil {
-			return zero, fmt.Errorf("release inventory: %w", err)
-		}
-	}
-
-	return updated, nil
 }

@@ -1,6 +1,7 @@
 package fullfilment
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -11,6 +12,8 @@ import (
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	"shopnexus-server/internal/module/order/biz/workflow/base"
+	orderdb "shopnexus-server/internal/module/order/db/sqlc"
+	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/saga"
 	"shopnexus-server/internal/shared/validator"
 
@@ -29,6 +32,20 @@ const (
 	mockTransportDeliveryDelay = 30 * time.Second
 )
 
+// RefundCrediter is the slice of the refund handler the escrow loop drives on
+// auto-accept. Declared here (not imported from the refund package) so the
+// dependency points one way: fulfillment → refund handler, never the reverse —
+// the refund package already imports this package for FulfillmentWfClient.
+// Exported so fx binds *refund.RefundHandler to it via fx.As.
+type RefundCrediter interface {
+	ExecuteRefundCredit(
+		ctx context.Context,
+		refund orderdb.OrderRefund,
+		deciderID uuid.UUID,
+		reason ordermodel.RefundCreditReason,
+	) (orderdb.OrderRefund, error)
+}
+
 // FulfillmentWorkflow drives one order's full lifecycle: seller confirm-fee
 // saga → order creation → escrow watch → payout release or refund. The
 // workflow key, the confirm session ID and the order ID are the same UUID,
@@ -39,14 +56,16 @@ type FulfillmentWorkflow struct {
 
 	account accountbiz.AccountBizClient
 	locker  locker.Client
+	refund  RefundCrediter
 }
 
 func NewFulfillmentWorkflow(
 	c *base.Base,
 	account accountbiz.AccountBizClient,
 	locker locker.Client,
+	refund RefundCrediter,
 ) *FulfillmentWorkflow {
-	return &FulfillmentWorkflow{c, account, locker}
+	return &FulfillmentWorkflow{c, account, locker, refund}
 }
 
 func (h *FulfillmentWorkflow) ServiceName() string { return "FulfillmentWorkflow" }

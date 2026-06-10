@@ -5,6 +5,7 @@ import (
 
 	"shopnexus-server/internal/infras/locker"
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
+	"shopnexus-server/internal/module/order/biz/refund"
 	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/paginate"
@@ -20,14 +21,16 @@ type SellerHandler struct {
 
 	inventory inventorybiz.InventoryBizClient
 	locker    locker.Client
+	refund    *refund.RefundHandler
 }
 
 func New(
 	c *wfbase.Base,
 	inventory inventorybiz.InventoryBizClient,
 	locker locker.Client,
+	refund *refund.RefundHandler,
 ) *SellerHandler {
-	return &SellerHandler{c, inventory, locker}
+	return &SellerHandler{c, inventory, locker, refund}
 }
 
 // SellerOrderBiz covers the seller's incoming pending items and confirmed orders.

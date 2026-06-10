@@ -216,7 +216,7 @@ func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSe
 		_ = totalRefund // kept above only for the empty-list short-circuit clarity
 		if len(refundTxIDs) > 0 {
 			for _, plan := range refundPlans {
-				if _, err := b.CreditFromSession(ctx, ordermodel.CreditFromSessionParams{
+				if _, err := b.refund.CreditFromSession(ctx, ordermodel.CreditFromSessionParams{
 					SessionID:  plan.Item.PaymentSessionID,
 					AccountID:  buyerID,
 					CreditType: "Refund",

@@ -120,7 +120,7 @@ func (b *DisputeHandler) AdminDismissDispute(
 		return zero, fmt.Errorf("load dispute: %w", err)
 	}
 
-	if _, err := b.ExecuteRefundCredit(
+	if _, err := b.refund.ExecuteRefundCredit(
 		ctx,
 		pre.Refund,
 		params.Account.ID,

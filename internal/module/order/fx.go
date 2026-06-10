@@ -57,6 +57,10 @@ var Module = fx.Module("order",
 		cart.New,
 		orderpayment.New,
 		refund.New,
+		// FulfillmentWorkflow drives the refund credit flow on auto-accept; bind
+		// the single RefundHandler to fulfillment's RefundCrediter interface
+		// (one-way dep avoids the fulfillment↔refund import cycle).
+		func(h *refund.RefundHandler) fullfilment.RefundCrediter { return h },
 		dispute.New,
 		ordertransport.New,
 		review.New,

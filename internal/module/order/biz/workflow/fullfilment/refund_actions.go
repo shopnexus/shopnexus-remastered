@@ -41,7 +41,7 @@ func (h *FulfillmentWorkflow) autoAcceptRefund(ctx restate.WorkflowContext, refu
 		return nil
 	}
 
-	updated, err := h.ExecuteRefundCredit(ctx, refund, refund.AccountID, ordermodel.RefundCreditReasonAutoAccepted)
+	updated, err := h.refund.ExecuteRefundCredit(ctx, refund, refund.AccountID, ordermodel.RefundCreditReasonAutoAccepted)
 	if err != nil {
 		return fmt.Errorf("execute refund credit: %w", err)
 	}
