@@ -50,3 +50,47 @@ func TestEmitsGuaranteedAdapter(t *testing.T) {
 		}
 	}
 }
+
+func TestEmitsGuaranteedBestEffortClient(t *testing.T) {
+	got := generate(t)
+	for _, want := range []string{
+		// Guaranteed surface
+		"type SvcBizGuaranteed interface {",
+		"Send() SvcBizSender",
+		"Future() SvcBizFuture",
+		// BestEffort surface
+		"type SvcBizBestEffort interface {",
+		// In-process local impl
+		"type svcBizBestEffortLocal struct{ biz SvcBiz }",
+		"func (b *svcBizBestEffortLocal) GetThing(ctx context.Context, id int64) (string, error) {",
+		"return b.biz.GetThing(ctx, id)",
+		"func (b *svcBizBestEffortLocal) DoThing(ctx context.Context, id int64) error {",
+		"return b.biz.DoThing(ctx, id)",
+		// HTTP/2 remote impl
+		"type svcBizBestEffortRemote struct{ call *besteffort.CallClient }",
+		"func (b *svcBizBestEffortRemote) GetThing(ctx context.Context, id int64) (string, error) {",
+		"return besteffort.Call[string](ctx, b.call, serviceName, \"GetThing\", id)",
+		"func (b *svcBizBestEffortRemote) DoThing(ctx context.Context, id int64) error {",
+		"return besteffort.CallVoid(ctx, b.call, serviceName, \"DoThing\", id)",
+		// Unified client interface keeps embed + adds selectors
+		"Guaranteed() SvcBizGuaranteed",
+		"BestEffort() SvcBizBestEffort",
+		// Unified client struct + constructors
+		"type svcBizClient struct {",
+		"*SvcRestateClient",
+		"bestEffort SvcBizBestEffort",
+		"func (c *svcBizClient) Guaranteed() SvcBizGuaranteed { return c.SvcRestateClient }",
+		"func (c *svcBizClient) BestEffort() SvcBizBestEffort { return c.bestEffort }",
+		"func NewSvcBizClientInProcess(restateIngressURL string, biz SvcBiz) SvcBizClient {",
+		"func NewSvcBizClientRemote(restateIngressURL, bestEffortURL string) SvcBizClient {",
+		// BestEffort server registration
+		"func RegisterSvcBestEffort(s *besteffort.Server, biz SvcBiz) {",
+		"s.Handle(serviceName, \"GetThing\", func(ctx context.Context, body []byte) (any, error) {",
+		"return biz.GetThing(ctx, p)",
+		"return nil, biz.DoThing(ctx, p)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("generated output missing %q\n---\n%s", want, got)
+		}
+	}
+}

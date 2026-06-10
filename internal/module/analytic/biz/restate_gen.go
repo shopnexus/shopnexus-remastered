@@ -4,10 +4,12 @@ package analyticbiz
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/google/uuid"
 	restate "github.com/restatedev/sdk-go"
 	analyticdb "shopnexus-server/internal/module/analytic/db/sqlc"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
+	"shopnexus-server/internal/shared/besteffort"
 	"shopnexus-server/internal/shared/paginate"
 	restatec "shopnexus-server/internal/shared/restate"
 )
@@ -36,6 +38,8 @@ type AnalyticBizClient interface {
 	AnalyticBiz
 	Send() AnalyticBizSender
 	Future() AnalyticBizFuture
+	Guaranteed() AnalyticBizGuaranteed
+	BestEffort() AnalyticBizBestEffort
 }
 
 // AnalyticRestateClient implements AnalyticBizClient via Restate HTTP ingress.
@@ -45,7 +49,7 @@ type AnalyticRestateClient struct {
 	future *AnalyticRestateFuture
 }
 
-var _ AnalyticBizClient = (*AnalyticRestateClient)(nil)
+var _ AnalyticBizGuaranteed = (*AnalyticRestateClient)(nil)
 
 func NewAnalyticRestateClient(restateIngressURL string) *AnalyticRestateClient {
 	return &AnalyticRestateClient{
@@ -142,4 +146,118 @@ func (s *AnalyticService) GetProductPopularity(ctx restate.Context, spuID uuid.U
 
 func (s *AnalyticService) ListTopProductPopularity(ctx restate.Context, params paginate.Params) ([]analyticdb.AnalyticProductPopularity, error) {
 	return s.biz.ListTopProductPopularity(ctx, params)
+}
+
+// AnalyticBizGuaranteed is the guaranteed (durable Restate) surface.
+type AnalyticBizGuaranteed interface {
+	AnalyticBiz
+	Send() AnalyticBizSender
+	Future() AnalyticBizFuture
+}
+
+// AnalyticBizBestEffort is the best-effort (non-durable) surface: sync request-response only.
+type AnalyticBizBestEffort interface {
+	AnalyticBiz
+}
+
+// analyticBizBestEffortLocal delegates BestEffort calls to the in-process biz.
+type analyticBizBestEffortLocal struct{ biz AnalyticBiz }
+
+var _ AnalyticBizBestEffort = (*analyticBizBestEffortLocal)(nil)
+
+func (b *analyticBizBestEffortLocal) CreateInteraction(ctx context.Context, params CreateInteractionParams) error {
+	return b.biz.CreateInteraction(ctx, params)
+}
+
+func (b *analyticBizBestEffortLocal) HandlePopularityEvent(ctx context.Context, event analyticmodel.Interaction) error {
+	return b.biz.HandlePopularityEvent(ctx, event)
+}
+
+func (b *analyticBizBestEffortLocal) GetProductPopularity(ctx context.Context, spuID uuid.UUID) (analyticdb.AnalyticProductPopularity, error) {
+	return b.biz.GetProductPopularity(ctx, spuID)
+}
+
+func (b *analyticBizBestEffortLocal) ListTopProductPopularity(ctx context.Context, params paginate.Params) ([]analyticdb.AnalyticProductPopularity, error) {
+	return b.biz.ListTopProductPopularity(ctx, params)
+}
+
+// analyticBizBestEffortRemote routes BestEffort calls over HTTP/2.
+type analyticBizBestEffortRemote struct{ call *besteffort.CallClient }
+
+var _ AnalyticBizBestEffort = (*analyticBizBestEffortRemote)(nil)
+
+func (b *analyticBizBestEffortRemote) CreateInteraction(ctx context.Context, params CreateInteractionParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "CreateInteraction", params)
+}
+
+func (b *analyticBizBestEffortRemote) HandlePopularityEvent(ctx context.Context, event analyticmodel.Interaction) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "HandlePopularityEvent", event)
+}
+
+func (b *analyticBizBestEffortRemote) GetProductPopularity(ctx context.Context, spuID uuid.UUID) (analyticdb.AnalyticProductPopularity, error) {
+	return besteffort.Call[analyticdb.AnalyticProductPopularity](ctx, b.call, serviceName, "GetProductPopularity", spuID)
+}
+
+func (b *analyticBizBestEffortRemote) ListTopProductPopularity(ctx context.Context, params paginate.Params) ([]analyticdb.AnalyticProductPopularity, error) {
+	return besteffort.Call[[]analyticdb.AnalyticProductPopularity](ctx, b.call, serviceName, "ListTopProductPopularity", params)
+}
+
+// AnalyticBizClient selects the guaranteed (durable) or best-effort (non-durable) transport.
+type analyticBizClient struct {
+	*AnalyticRestateClient
+	bestEffort AnalyticBizBestEffort
+}
+
+var _ AnalyticBizClient = (*analyticBizClient)(nil)
+
+func (c *analyticBizClient) Guaranteed() AnalyticBizGuaranteed { return c.AnalyticRestateClient }
+
+func (c *analyticBizClient) BestEffort() AnalyticBizBestEffort { return c.bestEffort }
+
+// NewAnalyticBizClientInProcess builds a client whose BestEffort calls the in-process biz.
+func NewAnalyticBizClientInProcess(restateIngressURL string, biz AnalyticBiz) AnalyticBizClient {
+	return &analyticBizClient{
+		AnalyticRestateClient: NewAnalyticRestateClient(restateIngressURL),
+		bestEffort:            &analyticBizBestEffortLocal{biz: biz},
+	}
+}
+
+// NewAnalyticBizClientRemote builds a client whose BestEffort calls a remote BestEffort server.
+func NewAnalyticBizClientRemote(restateIngressURL, bestEffortURL string) AnalyticBizClient {
+	return &analyticBizClient{
+		AnalyticRestateClient: NewAnalyticRestateClient(restateIngressURL),
+		bestEffort:            &analyticBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+	}
+}
+
+// RegisterAnalyticBestEffort wires biz methods onto a BestEffort HTTP/2 server.
+func RegisterAnalyticBestEffort(s *besteffort.Server, biz AnalyticBiz) {
+	s.Handle(serviceName, "CreateInteraction", func(ctx context.Context, body []byte) (any, error) {
+		var p CreateInteractionParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.CreateInteraction(ctx, p)
+	})
+	s.Handle(serviceName, "HandlePopularityEvent", func(ctx context.Context, body []byte) (any, error) {
+		var p analyticmodel.Interaction
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.HandlePopularityEvent(ctx, p)
+	})
+	s.Handle(serviceName, "GetProductPopularity", func(ctx context.Context, body []byte) (any, error) {
+		var p uuid.UUID
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetProductPopularity(ctx, p)
+	})
+	s.Handle(serviceName, "ListTopProductPopularity", func(ctx context.Context, body []byte) (any, error) {
+		var p paginate.Params
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListTopProductPopularity(ctx, p)
+	})
 }

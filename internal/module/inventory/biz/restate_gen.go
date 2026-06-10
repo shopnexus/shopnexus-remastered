@@ -4,8 +4,10 @@ package inventorybiz
 
 import (
 	"context"
+	"encoding/json"
 	restate "github.com/restatedev/sdk-go"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
+	"shopnexus-server/internal/shared/besteffort"
 	"shopnexus-server/internal/shared/paginate"
 	restatec "shopnexus-server/internal/shared/restate"
 )
@@ -48,6 +50,8 @@ type InventoryBizClient interface {
 	InventoryBiz
 	Send() InventoryBizSender
 	Future() InventoryBizFuture
+	Guaranteed() InventoryBizGuaranteed
+	BestEffort() InventoryBizBestEffort
 }
 
 // InventoryRestateClient implements InventoryBizClient via Restate HTTP ingress.
@@ -57,7 +61,7 @@ type InventoryRestateClient struct {
 	future *InventoryRestateFuture
 }
 
-var _ InventoryBizClient = (*InventoryRestateClient)(nil)
+var _ InventoryBizGuaranteed = (*InventoryRestateClient)(nil)
 
 func NewInventoryRestateClient(restateIngressURL string) *InventoryRestateClient {
 	return &InventoryRestateClient{
@@ -266,4 +270,223 @@ func (s *InventoryService) ListSerial(ctx restate.Context, params ListSerialPara
 
 func (s *InventoryService) ListMostTakenSku(ctx restate.Context, params ListMostTakenSkuParams) ([]inventorydb.InventoryStock, error) {
 	return s.biz.ListMostTakenSku(ctx, params)
+}
+
+// InventoryBizGuaranteed is the guaranteed (durable Restate) surface.
+type InventoryBizGuaranteed interface {
+	InventoryBiz
+	Send() InventoryBizSender
+	Future() InventoryBizFuture
+}
+
+// InventoryBizBestEffort is the best-effort (non-durable) surface: sync request-response only.
+type InventoryBizBestEffort interface {
+	InventoryBiz
+}
+
+// inventoryBizBestEffortLocal delegates BestEffort calls to the in-process biz.
+type inventoryBizBestEffortLocal struct{ biz InventoryBiz }
+
+var _ InventoryBizBestEffort = (*inventoryBizBestEffortLocal)(nil)
+
+func (b *inventoryBizBestEffortLocal) GetStock(ctx context.Context, params GetStockParams) (inventorydb.InventoryStock, error) {
+	return b.biz.GetStock(ctx, params)
+}
+
+func (b *inventoryBizBestEffortLocal) UpdateStockSettings(ctx context.Context, params UpdateStockSettingsParams) (inventorydb.InventoryStock, error) {
+	return b.biz.UpdateStockSettings(ctx, params)
+}
+
+func (b *inventoryBizBestEffortLocal) ListStock(ctx context.Context, params ListStockParams) (paginate.PaginateResult[inventorydb.InventoryStock], error) {
+	return b.biz.ListStock(ctx, params)
+}
+
+func (b *inventoryBizBestEffortLocal) CreateStock(ctx context.Context, params CreateStockParams) (inventorydb.InventoryStock, error) {
+	return b.biz.CreateStock(ctx, params)
+}
+
+func (b *inventoryBizBestEffortLocal) ListStockHistory(ctx context.Context, params ListStockHistoryParams) (paginate.PaginateResult[inventorydb.InventoryStockHistory], error) {
+	return b.biz.ListStockHistory(ctx, params)
+}
+
+func (b *inventoryBizBestEffortLocal) ImportStock(ctx context.Context, params ImportStockParams) error {
+	return b.biz.ImportStock(ctx, params)
+}
+
+func (b *inventoryBizBestEffortLocal) ReserveInventory(ctx context.Context, params ReserveInventoryParams) ([]ReserveInventoryResult, error) {
+	return b.biz.ReserveInventory(ctx, params)
+}
+
+func (b *inventoryBizBestEffortLocal) ReleaseInventory(ctx context.Context, params ReleaseInventoryParams) error {
+	return b.biz.ReleaseInventory(ctx, params)
+}
+
+func (b *inventoryBizBestEffortLocal) UpdateSerial(ctx context.Context, params UpdateSerialParams) error {
+	return b.biz.UpdateSerial(ctx, params)
+}
+
+func (b *inventoryBizBestEffortLocal) ListSerial(ctx context.Context, params ListSerialParams) (paginate.PaginateResult[inventorydb.InventorySerial], error) {
+	return b.biz.ListSerial(ctx, params)
+}
+
+func (b *inventoryBizBestEffortLocal) ListMostTakenSku(ctx context.Context, params ListMostTakenSkuParams) ([]inventorydb.InventoryStock, error) {
+	return b.biz.ListMostTakenSku(ctx, params)
+}
+
+// inventoryBizBestEffortRemote routes BestEffort calls over HTTP/2.
+type inventoryBizBestEffortRemote struct{ call *besteffort.CallClient }
+
+var _ InventoryBizBestEffort = (*inventoryBizBestEffortRemote)(nil)
+
+func (b *inventoryBizBestEffortRemote) GetStock(ctx context.Context, params GetStockParams) (inventorydb.InventoryStock, error) {
+	return besteffort.Call[inventorydb.InventoryStock](ctx, b.call, serviceName, "GetStock", params)
+}
+
+func (b *inventoryBizBestEffortRemote) UpdateStockSettings(ctx context.Context, params UpdateStockSettingsParams) (inventorydb.InventoryStock, error) {
+	return besteffort.Call[inventorydb.InventoryStock](ctx, b.call, serviceName, "UpdateStockSettings", params)
+}
+
+func (b *inventoryBizBestEffortRemote) ListStock(ctx context.Context, params ListStockParams) (paginate.PaginateResult[inventorydb.InventoryStock], error) {
+	return besteffort.Call[paginate.PaginateResult[inventorydb.InventoryStock]](ctx, b.call, serviceName, "ListStock", params)
+}
+
+func (b *inventoryBizBestEffortRemote) CreateStock(ctx context.Context, params CreateStockParams) (inventorydb.InventoryStock, error) {
+	return besteffort.Call[inventorydb.InventoryStock](ctx, b.call, serviceName, "CreateStock", params)
+}
+
+func (b *inventoryBizBestEffortRemote) ListStockHistory(ctx context.Context, params ListStockHistoryParams) (paginate.PaginateResult[inventorydb.InventoryStockHistory], error) {
+	return besteffort.Call[paginate.PaginateResult[inventorydb.InventoryStockHistory]](ctx, b.call, serviceName, "ListStockHistory", params)
+}
+
+func (b *inventoryBizBestEffortRemote) ImportStock(ctx context.Context, params ImportStockParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "ImportStock", params)
+}
+
+func (b *inventoryBizBestEffortRemote) ReserveInventory(ctx context.Context, params ReserveInventoryParams) ([]ReserveInventoryResult, error) {
+	return besteffort.Call[[]ReserveInventoryResult](ctx, b.call, serviceName, "ReserveInventory", params)
+}
+
+func (b *inventoryBizBestEffortRemote) ReleaseInventory(ctx context.Context, params ReleaseInventoryParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "ReleaseInventory", params)
+}
+
+func (b *inventoryBizBestEffortRemote) UpdateSerial(ctx context.Context, params UpdateSerialParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "UpdateSerial", params)
+}
+
+func (b *inventoryBizBestEffortRemote) ListSerial(ctx context.Context, params ListSerialParams) (paginate.PaginateResult[inventorydb.InventorySerial], error) {
+	return besteffort.Call[paginate.PaginateResult[inventorydb.InventorySerial]](ctx, b.call, serviceName, "ListSerial", params)
+}
+
+func (b *inventoryBizBestEffortRemote) ListMostTakenSku(ctx context.Context, params ListMostTakenSkuParams) ([]inventorydb.InventoryStock, error) {
+	return besteffort.Call[[]inventorydb.InventoryStock](ctx, b.call, serviceName, "ListMostTakenSku", params)
+}
+
+// InventoryBizClient selects the guaranteed (durable) or best-effort (non-durable) transport.
+type inventoryBizClient struct {
+	*InventoryRestateClient
+	bestEffort InventoryBizBestEffort
+}
+
+var _ InventoryBizClient = (*inventoryBizClient)(nil)
+
+func (c *inventoryBizClient) Guaranteed() InventoryBizGuaranteed { return c.InventoryRestateClient }
+
+func (c *inventoryBizClient) BestEffort() InventoryBizBestEffort { return c.bestEffort }
+
+// NewInventoryBizClientInProcess builds a client whose BestEffort calls the in-process biz.
+func NewInventoryBizClientInProcess(restateIngressURL string, biz InventoryBiz) InventoryBizClient {
+	return &inventoryBizClient{
+		InventoryRestateClient: NewInventoryRestateClient(restateIngressURL),
+		bestEffort:             &inventoryBizBestEffortLocal{biz: biz},
+	}
+}
+
+// NewInventoryBizClientRemote builds a client whose BestEffort calls a remote BestEffort server.
+func NewInventoryBizClientRemote(restateIngressURL, bestEffortURL string) InventoryBizClient {
+	return &inventoryBizClient{
+		InventoryRestateClient: NewInventoryRestateClient(restateIngressURL),
+		bestEffort:             &inventoryBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+	}
+}
+
+// RegisterInventoryBestEffort wires biz methods onto a BestEffort HTTP/2 server.
+func RegisterInventoryBestEffort(s *besteffort.Server, biz InventoryBiz) {
+	s.Handle(serviceName, "GetStock", func(ctx context.Context, body []byte) (any, error) {
+		var p GetStockParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetStock(ctx, p)
+	})
+	s.Handle(serviceName, "UpdateStockSettings", func(ctx context.Context, body []byte) (any, error) {
+		var p UpdateStockSettingsParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.UpdateStockSettings(ctx, p)
+	})
+	s.Handle(serviceName, "ListStock", func(ctx context.Context, body []byte) (any, error) {
+		var p ListStockParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListStock(ctx, p)
+	})
+	s.Handle(serviceName, "CreateStock", func(ctx context.Context, body []byte) (any, error) {
+		var p CreateStockParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.CreateStock(ctx, p)
+	})
+	s.Handle(serviceName, "ListStockHistory", func(ctx context.Context, body []byte) (any, error) {
+		var p ListStockHistoryParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListStockHistory(ctx, p)
+	})
+	s.Handle(serviceName, "ImportStock", func(ctx context.Context, body []byte) (any, error) {
+		var p ImportStockParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.ImportStock(ctx, p)
+	})
+	s.Handle(serviceName, "ReserveInventory", func(ctx context.Context, body []byte) (any, error) {
+		var p ReserveInventoryParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ReserveInventory(ctx, p)
+	})
+	s.Handle(serviceName, "ReleaseInventory", func(ctx context.Context, body []byte) (any, error) {
+		var p ReleaseInventoryParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.ReleaseInventory(ctx, p)
+	})
+	s.Handle(serviceName, "UpdateSerial", func(ctx context.Context, body []byte) (any, error) {
+		var p UpdateSerialParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.UpdateSerial(ctx, p)
+	})
+	s.Handle(serviceName, "ListSerial", func(ctx context.Context, body []byte) (any, error) {
+		var p ListSerialParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListSerial(ctx, p)
+	})
+	s.Handle(serviceName, "ListMostTakenSku", func(ctx context.Context, body []byte) (any, error) {
+		var p ListMostTakenSkuParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListMostTakenSku(ctx, p)
+	})
 }

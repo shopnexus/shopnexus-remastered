@@ -4,10 +4,12 @@ package catalogbiz
 
 import (
 	"context"
+	"encoding/json"
 	restate "github.com/restatedev/sdk-go"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
+	"shopnexus-server/internal/shared/besteffort"
 	"shopnexus-server/internal/shared/paginate"
 	restatec "shopnexus-server/internal/shared/restate"
 )
@@ -76,6 +78,8 @@ type CatalogBizClient interface {
 	CatalogBiz
 	Send() CatalogBizSender
 	Future() CatalogBizFuture
+	Guaranteed() CatalogBizGuaranteed
+	BestEffort() CatalogBizBestEffort
 }
 
 // CatalogRestateClient implements CatalogBizClient via Restate HTTP ingress.
@@ -85,7 +89,7 @@ type CatalogRestateClient struct {
 	future *CatalogRestateFuture
 }
 
-var _ CatalogBizClient = (*CatalogRestateClient)(nil)
+var _ CatalogBizGuaranteed = (*CatalogRestateClient)(nil)
 
 func NewCatalogRestateClient(restateIngressURL string) *CatalogRestateClient {
 	return &CatalogRestateClient{
@@ -502,4 +506,418 @@ func (s *CatalogService) AddInteractions(ctx restate.Context, events []analyticm
 
 func (s *CatalogService) GetVendorStats(ctx restate.Context, params GetVendorStatsParams) (VendorStats, error) {
 	return s.biz.GetVendorStats(ctx, params)
+}
+
+// CatalogBizGuaranteed is the guaranteed (durable Restate) surface.
+type CatalogBizGuaranteed interface {
+	CatalogBiz
+	Send() CatalogBizSender
+	Future() CatalogBizFuture
+}
+
+// CatalogBizBestEffort is the best-effort (non-durable) surface: sync request-response only.
+type CatalogBizBestEffort interface {
+	CatalogBiz
+}
+
+// catalogBizBestEffortLocal delegates BestEffort calls to the in-process biz.
+type catalogBizBestEffortLocal struct{ biz CatalogBiz }
+
+var _ CatalogBizBestEffort = (*catalogBizBestEffortLocal)(nil)
+
+func (b *catalogBizBestEffortLocal) GetProductDetail(ctx context.Context, params GetProductDetailParams) (catalogmodel.ProductDetail, error) {
+	return b.biz.GetProductDetail(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) GetProductCard(ctx context.Context, params GetProductCardParams) (*catalogmodel.ProductCard, error) {
+	return b.biz.GetProductCard(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) ListProductCard(ctx context.Context, params ListProductCardParams) (paginate.PaginateResult[catalogmodel.ProductCard], error) {
+	return b.biz.ListProductCard(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) ListRecommendedProductCard(ctx context.Context, params ListRecommendedProductCardParams) ([]catalogmodel.ProductCard, error) {
+	return b.biz.ListRecommendedProductCard(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) GetProductSpu(ctx context.Context, params GetProductSpuParams) (catalogmodel.ProductSpu, error) {
+	return b.biz.GetProductSpu(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) ListProductSpu(ctx context.Context, params ListProductSpuParams) (paginate.PaginateResult[catalogmodel.ProductSpu], error) {
+	return b.biz.ListProductSpu(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) CreateProductSpu(ctx context.Context, params CreateProductSpuParams) (catalogmodel.ProductSpu, error) {
+	return b.biz.CreateProductSpu(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) UpdateProductSpu(ctx context.Context, params UpdateProductSpuParams) (catalogmodel.ProductSpu, error) {
+	return b.biz.UpdateProductSpu(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) DeleteProductSpu(ctx context.Context, params DeleteProductSpuParams) error {
+	return b.biz.DeleteProductSpu(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) ListProductSku(ctx context.Context, params ListProductSkuParams) ([]catalogmodel.ProductSku, error) {
+	return b.biz.ListProductSku(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) CreateProductSku(ctx context.Context, params CreateProductSkuParams) (catalogmodel.ProductSku, error) {
+	return b.biz.CreateProductSku(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) UpdateProductSku(ctx context.Context, params UpdateProductSkuParams) (catalogmodel.ProductSku, error) {
+	return b.biz.UpdateProductSku(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) DeleteProductSku(ctx context.Context, params DeleteProductSkuParams) error {
+	return b.biz.DeleteProductSku(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) ListComment(ctx context.Context, params ListCommentParams) (paginate.PaginateResult[catalogmodel.Comment], error) {
+	return b.biz.ListComment(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) CreateComment(ctx context.Context, params CreateCommentParams) (catalogmodel.Comment, error) {
+	return b.biz.CreateComment(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) UpdateComment(ctx context.Context, params UpdateCommentParams) (catalogmodel.Comment, error) {
+	return b.biz.UpdateComment(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) DeleteComment(ctx context.Context, params DeleteCommentParams) error {
+	return b.biz.DeleteComment(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) ListTag(ctx context.Context, params ListTagParams) (paginate.PaginateResult[catalogdb.CatalogTag], error) {
+	return b.biz.ListTag(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) GetTag(ctx context.Context, params GetTagParams) (catalogdb.CatalogTag, error) {
+	return b.biz.GetTag(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) ListCategory(ctx context.Context, params ListCategoryParams) (paginate.PaginateResult[catalogmodel.Category], error) {
+	return b.biz.ListCategory(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) Search(ctx context.Context, params SearchParams) (paginate.PaginateResult[catalogmodel.ProductRecommend], error) {
+	return b.biz.Search(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) GetRecommendations(ctx context.Context, params GetRecommendationsParams) ([]catalogmodel.ProductRecommend, error) {
+	return b.biz.GetRecommendations(ctx, params)
+}
+
+func (b *catalogBizBestEffortLocal) AddInteractions(ctx context.Context, events []analyticmodel.Interaction) error {
+	return b.biz.AddInteractions(ctx, events)
+}
+
+func (b *catalogBizBestEffortLocal) GetVendorStats(ctx context.Context, params GetVendorStatsParams) (VendorStats, error) {
+	return b.biz.GetVendorStats(ctx, params)
+}
+
+// catalogBizBestEffortRemote routes BestEffort calls over HTTP/2.
+type catalogBizBestEffortRemote struct{ call *besteffort.CallClient }
+
+var _ CatalogBizBestEffort = (*catalogBizBestEffortRemote)(nil)
+
+func (b *catalogBizBestEffortRemote) GetProductDetail(ctx context.Context, params GetProductDetailParams) (catalogmodel.ProductDetail, error) {
+	return besteffort.Call[catalogmodel.ProductDetail](ctx, b.call, serviceName, "GetProductDetail", params)
+}
+
+func (b *catalogBizBestEffortRemote) GetProductCard(ctx context.Context, params GetProductCardParams) (*catalogmodel.ProductCard, error) {
+	return besteffort.Call[*catalogmodel.ProductCard](ctx, b.call, serviceName, "GetProductCard", params)
+}
+
+func (b *catalogBizBestEffortRemote) ListProductCard(ctx context.Context, params ListProductCardParams) (paginate.PaginateResult[catalogmodel.ProductCard], error) {
+	return besteffort.Call[paginate.PaginateResult[catalogmodel.ProductCard]](ctx, b.call, serviceName, "ListProductCard", params)
+}
+
+func (b *catalogBizBestEffortRemote) ListRecommendedProductCard(ctx context.Context, params ListRecommendedProductCardParams) ([]catalogmodel.ProductCard, error) {
+	return besteffort.Call[[]catalogmodel.ProductCard](ctx, b.call, serviceName, "ListRecommendedProductCard", params)
+}
+
+func (b *catalogBizBestEffortRemote) GetProductSpu(ctx context.Context, params GetProductSpuParams) (catalogmodel.ProductSpu, error) {
+	return besteffort.Call[catalogmodel.ProductSpu](ctx, b.call, serviceName, "GetProductSpu", params)
+}
+
+func (b *catalogBizBestEffortRemote) ListProductSpu(ctx context.Context, params ListProductSpuParams) (paginate.PaginateResult[catalogmodel.ProductSpu], error) {
+	return besteffort.Call[paginate.PaginateResult[catalogmodel.ProductSpu]](ctx, b.call, serviceName, "ListProductSpu", params)
+}
+
+func (b *catalogBizBestEffortRemote) CreateProductSpu(ctx context.Context, params CreateProductSpuParams) (catalogmodel.ProductSpu, error) {
+	return besteffort.Call[catalogmodel.ProductSpu](ctx, b.call, serviceName, "CreateProductSpu", params)
+}
+
+func (b *catalogBizBestEffortRemote) UpdateProductSpu(ctx context.Context, params UpdateProductSpuParams) (catalogmodel.ProductSpu, error) {
+	return besteffort.Call[catalogmodel.ProductSpu](ctx, b.call, serviceName, "UpdateProductSpu", params)
+}
+
+func (b *catalogBizBestEffortRemote) DeleteProductSpu(ctx context.Context, params DeleteProductSpuParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "DeleteProductSpu", params)
+}
+
+func (b *catalogBizBestEffortRemote) ListProductSku(ctx context.Context, params ListProductSkuParams) ([]catalogmodel.ProductSku, error) {
+	return besteffort.Call[[]catalogmodel.ProductSku](ctx, b.call, serviceName, "ListProductSku", params)
+}
+
+func (b *catalogBizBestEffortRemote) CreateProductSku(ctx context.Context, params CreateProductSkuParams) (catalogmodel.ProductSku, error) {
+	return besteffort.Call[catalogmodel.ProductSku](ctx, b.call, serviceName, "CreateProductSku", params)
+}
+
+func (b *catalogBizBestEffortRemote) UpdateProductSku(ctx context.Context, params UpdateProductSkuParams) (catalogmodel.ProductSku, error) {
+	return besteffort.Call[catalogmodel.ProductSku](ctx, b.call, serviceName, "UpdateProductSku", params)
+}
+
+func (b *catalogBizBestEffortRemote) DeleteProductSku(ctx context.Context, params DeleteProductSkuParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "DeleteProductSku", params)
+}
+
+func (b *catalogBizBestEffortRemote) ListComment(ctx context.Context, params ListCommentParams) (paginate.PaginateResult[catalogmodel.Comment], error) {
+	return besteffort.Call[paginate.PaginateResult[catalogmodel.Comment]](ctx, b.call, serviceName, "ListComment", params)
+}
+
+func (b *catalogBizBestEffortRemote) CreateComment(ctx context.Context, params CreateCommentParams) (catalogmodel.Comment, error) {
+	return besteffort.Call[catalogmodel.Comment](ctx, b.call, serviceName, "CreateComment", params)
+}
+
+func (b *catalogBizBestEffortRemote) UpdateComment(ctx context.Context, params UpdateCommentParams) (catalogmodel.Comment, error) {
+	return besteffort.Call[catalogmodel.Comment](ctx, b.call, serviceName, "UpdateComment", params)
+}
+
+func (b *catalogBizBestEffortRemote) DeleteComment(ctx context.Context, params DeleteCommentParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "DeleteComment", params)
+}
+
+func (b *catalogBizBestEffortRemote) ListTag(ctx context.Context, params ListTagParams) (paginate.PaginateResult[catalogdb.CatalogTag], error) {
+	return besteffort.Call[paginate.PaginateResult[catalogdb.CatalogTag]](ctx, b.call, serviceName, "ListTag", params)
+}
+
+func (b *catalogBizBestEffortRemote) GetTag(ctx context.Context, params GetTagParams) (catalogdb.CatalogTag, error) {
+	return besteffort.Call[catalogdb.CatalogTag](ctx, b.call, serviceName, "GetTag", params)
+}
+
+func (b *catalogBizBestEffortRemote) ListCategory(ctx context.Context, params ListCategoryParams) (paginate.PaginateResult[catalogmodel.Category], error) {
+	return besteffort.Call[paginate.PaginateResult[catalogmodel.Category]](ctx, b.call, serviceName, "ListCategory", params)
+}
+
+func (b *catalogBizBestEffortRemote) Search(ctx context.Context, params SearchParams) (paginate.PaginateResult[catalogmodel.ProductRecommend], error) {
+	return besteffort.Call[paginate.PaginateResult[catalogmodel.ProductRecommend]](ctx, b.call, serviceName, "Search", params)
+}
+
+func (b *catalogBizBestEffortRemote) GetRecommendations(ctx context.Context, params GetRecommendationsParams) ([]catalogmodel.ProductRecommend, error) {
+	return besteffort.Call[[]catalogmodel.ProductRecommend](ctx, b.call, serviceName, "GetRecommendations", params)
+}
+
+func (b *catalogBizBestEffortRemote) AddInteractions(ctx context.Context, events []analyticmodel.Interaction) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "AddInteractions", events)
+}
+
+func (b *catalogBizBestEffortRemote) GetVendorStats(ctx context.Context, params GetVendorStatsParams) (VendorStats, error) {
+	return besteffort.Call[VendorStats](ctx, b.call, serviceName, "GetVendorStats", params)
+}
+
+// CatalogBizClient selects the guaranteed (durable) or best-effort (non-durable) transport.
+type catalogBizClient struct {
+	*CatalogRestateClient
+	bestEffort CatalogBizBestEffort
+}
+
+var _ CatalogBizClient = (*catalogBizClient)(nil)
+
+func (c *catalogBizClient) Guaranteed() CatalogBizGuaranteed { return c.CatalogRestateClient }
+
+func (c *catalogBizClient) BestEffort() CatalogBizBestEffort { return c.bestEffort }
+
+// NewCatalogBizClientInProcess builds a client whose BestEffort calls the in-process biz.
+func NewCatalogBizClientInProcess(restateIngressURL string, biz CatalogBiz) CatalogBizClient {
+	return &catalogBizClient{
+		CatalogRestateClient: NewCatalogRestateClient(restateIngressURL),
+		bestEffort:           &catalogBizBestEffortLocal{biz: biz},
+	}
+}
+
+// NewCatalogBizClientRemote builds a client whose BestEffort calls a remote BestEffort server.
+func NewCatalogBizClientRemote(restateIngressURL, bestEffortURL string) CatalogBizClient {
+	return &catalogBizClient{
+		CatalogRestateClient: NewCatalogRestateClient(restateIngressURL),
+		bestEffort:           &catalogBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+	}
+}
+
+// RegisterCatalogBestEffort wires biz methods onto a BestEffort HTTP/2 server.
+func RegisterCatalogBestEffort(s *besteffort.Server, biz CatalogBiz) {
+	s.Handle(serviceName, "GetProductDetail", func(ctx context.Context, body []byte) (any, error) {
+		var p GetProductDetailParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetProductDetail(ctx, p)
+	})
+	s.Handle(serviceName, "GetProductCard", func(ctx context.Context, body []byte) (any, error) {
+		var p GetProductCardParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetProductCard(ctx, p)
+	})
+	s.Handle(serviceName, "ListProductCard", func(ctx context.Context, body []byte) (any, error) {
+		var p ListProductCardParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListProductCard(ctx, p)
+	})
+	s.Handle(serviceName, "ListRecommendedProductCard", func(ctx context.Context, body []byte) (any, error) {
+		var p ListRecommendedProductCardParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListRecommendedProductCard(ctx, p)
+	})
+	s.Handle(serviceName, "GetProductSpu", func(ctx context.Context, body []byte) (any, error) {
+		var p GetProductSpuParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetProductSpu(ctx, p)
+	})
+	s.Handle(serviceName, "ListProductSpu", func(ctx context.Context, body []byte) (any, error) {
+		var p ListProductSpuParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListProductSpu(ctx, p)
+	})
+	s.Handle(serviceName, "CreateProductSpu", func(ctx context.Context, body []byte) (any, error) {
+		var p CreateProductSpuParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.CreateProductSpu(ctx, p)
+	})
+	s.Handle(serviceName, "UpdateProductSpu", func(ctx context.Context, body []byte) (any, error) {
+		var p UpdateProductSpuParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.UpdateProductSpu(ctx, p)
+	})
+	s.Handle(serviceName, "DeleteProductSpu", func(ctx context.Context, body []byte) (any, error) {
+		var p DeleteProductSpuParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.DeleteProductSpu(ctx, p)
+	})
+	s.Handle(serviceName, "ListProductSku", func(ctx context.Context, body []byte) (any, error) {
+		var p ListProductSkuParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListProductSku(ctx, p)
+	})
+	s.Handle(serviceName, "CreateProductSku", func(ctx context.Context, body []byte) (any, error) {
+		var p CreateProductSkuParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.CreateProductSku(ctx, p)
+	})
+	s.Handle(serviceName, "UpdateProductSku", func(ctx context.Context, body []byte) (any, error) {
+		var p UpdateProductSkuParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.UpdateProductSku(ctx, p)
+	})
+	s.Handle(serviceName, "DeleteProductSku", func(ctx context.Context, body []byte) (any, error) {
+		var p DeleteProductSkuParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.DeleteProductSku(ctx, p)
+	})
+	s.Handle(serviceName, "ListComment", func(ctx context.Context, body []byte) (any, error) {
+		var p ListCommentParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListComment(ctx, p)
+	})
+	s.Handle(serviceName, "CreateComment", func(ctx context.Context, body []byte) (any, error) {
+		var p CreateCommentParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.CreateComment(ctx, p)
+	})
+	s.Handle(serviceName, "UpdateComment", func(ctx context.Context, body []byte) (any, error) {
+		var p UpdateCommentParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.UpdateComment(ctx, p)
+	})
+	s.Handle(serviceName, "DeleteComment", func(ctx context.Context, body []byte) (any, error) {
+		var p DeleteCommentParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.DeleteComment(ctx, p)
+	})
+	s.Handle(serviceName, "ListTag", func(ctx context.Context, body []byte) (any, error) {
+		var p ListTagParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListTag(ctx, p)
+	})
+	s.Handle(serviceName, "GetTag", func(ctx context.Context, body []byte) (any, error) {
+		var p GetTagParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetTag(ctx, p)
+	})
+	s.Handle(serviceName, "ListCategory", func(ctx context.Context, body []byte) (any, error) {
+		var p ListCategoryParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListCategory(ctx, p)
+	})
+	s.Handle(serviceName, "Search", func(ctx context.Context, body []byte) (any, error) {
+		var p SearchParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.Search(ctx, p)
+	})
+	s.Handle(serviceName, "GetRecommendations", func(ctx context.Context, body []byte) (any, error) {
+		var p GetRecommendationsParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetRecommendations(ctx, p)
+	})
+	s.Handle(serviceName, "AddInteractions", func(ctx context.Context, body []byte) (any, error) {
+		var p []analyticmodel.Interaction
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.AddInteractions(ctx, p)
+	})
+	s.Handle(serviceName, "GetVendorStats", func(ctx context.Context, body []byte) (any, error) {
+		var p GetVendorStatsParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetVendorStats(ctx, p)
+	})
 }

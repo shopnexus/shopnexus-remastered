@@ -37,5 +37,5 @@ func NewPromotionStorage(pool pgsqlc.TxBeginner) promotionbiz.PromotionStorage {
 
 // NewPromotionBiz creates a Restate-backed client for the promotion module.
 func NewPromotionBiz(cfg *promotionconfig.Config) promotionbiz.PromotionBizClient {
-	return promotionbiz.NewPromotionRestateClient(cfg.Restate.IngressAddress)
+	return promotionbiz.NewPromotionBizClientRemote(cfg.Restate.IngressAddress, cfg.Restate.IngressAddress)
 }

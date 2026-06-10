@@ -4,6 +4,7 @@ package orderbiz
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/google/uuid"
 	restate "github.com/restatedev/sdk-go"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
@@ -18,6 +19,7 @@ import (
 	ordertransport "shopnexus-server/internal/module/order/biz/transport"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/provider/payment"
+	"shopnexus-server/internal/shared/besteffort"
 	sharedmodel "shopnexus-server/internal/shared/model"
 	"shopnexus-server/internal/shared/paginate"
 	restatec "shopnexus-server/internal/shared/restate"
@@ -123,6 +125,8 @@ type OrderBizClient interface {
 	OrderBiz
 	Send() OrderBizSender
 	Future() OrderBizFuture
+	Guaranteed() OrderBizGuaranteed
+	BestEffort() OrderBizBestEffort
 }
 
 // OrderRestateClient implements OrderBizClient via Restate HTTP ingress.
@@ -132,7 +136,7 @@ type OrderRestateClient struct {
 	future *OrderRestateFuture
 }
 
-var _ OrderBizClient = (*OrderRestateClient)(nil)
+var _ OrderBizGuaranteed = (*OrderRestateClient)(nil)
 
 func NewOrderRestateClient(restateIngressURL string) *OrderRestateClient {
 	return &OrderRestateClient{
@@ -837,4 +841,688 @@ func (s *OrderService) InferCurrency(ctx restate.Context, accountID uuid.UUID) (
 
 func (s *OrderService) GetOptions(ctx restate.Context, params GetOptionsParams) ([]sharedmodel.Option, error) {
 	return s.biz.GetOptions(ctx, params)
+}
+
+// OrderBizGuaranteed is the guaranteed (durable Restate) surface.
+type OrderBizGuaranteed interface {
+	OrderBiz
+	Send() OrderBizSender
+	Future() OrderBizFuture
+}
+
+// OrderBizBestEffort is the best-effort (non-durable) surface: sync request-response only.
+type OrderBizBestEffort interface {
+	OrderBiz
+}
+
+// orderBizBestEffortLocal delegates BestEffort calls to the in-process biz.
+type orderBizBestEffortLocal struct{ biz OrderBiz }
+
+var _ OrderBizBestEffort = (*orderBizBestEffortLocal)(nil)
+
+func (b *orderBizBestEffortLocal) ListBuyerPendingItems(ctx context.Context, params buyerorder.ListBuyerPendingItemsParams) (paginate.PaginateResult[ordermodel.OrderItem], error) {
+	return b.biz.ListBuyerPendingItems(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) CancelBuyerPending(ctx context.Context, params buyerorder.CancelBuyerPendingParams) error {
+	return b.biz.CancelBuyerPending(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) RefundPendingItem(ctx context.Context, params buyerorder.RefundPendingItemParams) error {
+	return b.biz.RefundPendingItem(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) ListBuyerPendingOrders(ctx context.Context, params buyerorder.ListBuyerPendingOrdersParams) (paginate.PaginateResult[ordermodel.Order], error) {
+	return b.biz.ListBuyerPendingOrders(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) ListBuyerCompletedOrders(ctx context.Context, params buyerorder.ListBuyerCompletedOrdersParams) (paginate.PaginateResult[ordermodel.Order], error) {
+	return b.biz.ListBuyerCompletedOrders(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) ListBuyerCancelledOrders(ctx context.Context, params buyerorder.ListBuyerCancelledOrdersParams) (paginate.PaginateResult[ordermodel.Order], error) {
+	return b.biz.ListBuyerCancelledOrders(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) ListBuyerCancelledItems(ctx context.Context, params buyerorder.ListBuyerCancelledItemsParams) (paginate.PaginateResult[ordermodel.OrderItem], error) {
+	return b.biz.ListBuyerCancelledItems(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) GetBuyerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error) {
+	return b.biz.GetBuyerOrder(ctx, orderID)
+}
+
+func (b *orderBizBestEffortLocal) GetCheckoutSummary(ctx context.Context, params buyerorder.GetCheckoutSummaryParams) (ordermodel.CheckoutSummary, error) {
+	return b.biz.GetCheckoutSummary(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) ListSellerPendingItems(ctx context.Context, params sellerorder.ListSellerPendingItemsParams) (paginate.PaginateResult[ordermodel.OrderItem], error) {
+	return b.biz.ListSellerPendingItems(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) RejectSellerPending(ctx context.Context, params sellerorder.RejectSellerPendingParams) error {
+	return b.biz.RejectSellerPending(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) GetSellerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error) {
+	return b.biz.GetSellerOrder(ctx, orderID)
+}
+
+func (b *orderBizBestEffortLocal) ListSellerConfirmed(ctx context.Context, params sellerorder.ListSellerConfirmedParams) (paginate.PaginateResult[ordermodel.Order], error) {
+	return b.biz.ListSellerConfirmed(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItem, error) {
+	return b.biz.GetCart(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) UpdateCart(ctx context.Context, params cart.UpdateCartParams) error {
+	return b.biz.UpdateCart(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) ClearCart(ctx context.Context, params cart.ClearCartParams) error {
+	return b.biz.ClearCart(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) OnPaymentResult(ctx context.Context, params payment.Notification) error {
+	return b.biz.OnPaymentResult(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) GetReusableGatewayURL(ctx context.Context, sessionID uuid.UUID) (orderpayment.ReusableGatewayURLState, error) {
+	return b.biz.GetReusableGatewayURL(ctx, sessionID)
+}
+
+func (b *orderBizBestEffortLocal) ListBuyerRefunds(ctx context.Context, params refund.ListBuyerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error) {
+	return b.biz.ListBuyerRefunds(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) ListSellerRefunds(ctx context.Context, params refund.ListSellerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error) {
+	return b.biz.ListSellerRefunds(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) CreateBuyerRefund(ctx context.Context, params refund.CreateBuyerRefundParams) (ordermodel.Refund, error) {
+	return b.biz.CreateBuyerRefund(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) WithdrawBuyerRefund(ctx context.Context, params refund.WithdrawBuyerRefundParams) (ordermodel.Refund, error) {
+	return b.biz.WithdrawBuyerRefund(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) SellerApproveRefund(ctx context.Context, params refund.SellerActionParams) (ordermodel.Refund, error) {
+	return b.biz.SellerApproveRefund(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) SellerDisputeRefund(ctx context.Context, params refund.SellerDisputeParams) (ordermodel.RefundDispute, error) {
+	return b.biz.SellerDisputeRefund(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) ListRefundDisputes(ctx context.Context, params dispute.ListRefundDisputesParams) (paginate.PaginateResult[ordermodel.RefundDispute], error) {
+	return b.biz.ListRefundDisputes(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) GetRefundDispute(ctx context.Context, params dispute.GetRefundDisputeParams) (ordermodel.RefundDispute, error) {
+	return b.biz.GetRefundDispute(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) AdminUpholdDispute(ctx context.Context, params dispute.AdminDisputeDecisionParams) (ordermodel.RefundDispute, error) {
+	return b.biz.AdminUpholdDispute(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) AdminDismissDispute(ctx context.Context, params dispute.AdminDisputeDecisionParams) (ordermodel.RefundDispute, error) {
+	return b.biz.AdminDismissDispute(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) OnTransportResult(ctx context.Context, params ordertransport.OnTransportResultParams) error {
+	return b.biz.OnTransportResult(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) QuoteTransport(ctx context.Context, params ordertransport.QuoteTransportParams) (ordertransport.QuoteTransportResult, error) {
+	return b.biz.QuoteTransport(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) HasPurchasedProduct(ctx context.Context, params review.HasPurchasedProductParams) (bool, error) {
+	return b.biz.HasPurchasedProduct(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) ListReviewableOrders(ctx context.Context, params review.ListReviewableOrdersParams) ([]review.ReviewableOrder, error) {
+	return b.biz.ListReviewableOrders(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) ListReviewableOrdersBySpu(ctx context.Context, params review.ListReviewableOrdersBySpuParams) ([]review.ReviewableOrder, error) {
+	return b.biz.ListReviewableOrdersBySpu(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) ValidateOrderForReview(ctx context.Context, params review.ValidateOrderForReviewParams) (bool, error) {
+	return b.biz.ValidateOrderForReview(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) CreateProductReview(ctx context.Context, params review.CreateProductReviewParams) (catalogmodel.Comment, error) {
+	return b.biz.CreateProductReview(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) GetSellerOrderStats(ctx context.Context, params dashboard.GetSellerOrderStatsParams) (dashboard.SellerOrderStats, error) {
+	return b.biz.GetSellerOrderStats(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) GetSellerOrderTimeSeries(ctx context.Context, params dashboard.GetSellerOrderTimeSeriesParams) ([]dashboard.SellerOrderTimeSeriesPoint, error) {
+	return b.biz.GetSellerOrderTimeSeries(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) GetSellerPendingActions(ctx context.Context, params dashboard.GetSellerPendingActionsParams) (dashboard.SellerPendingActions, error) {
+	return b.biz.GetSellerPendingActions(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) GetSellerTopProducts(ctx context.Context, params dashboard.GetSellerTopProductsParams) ([]dashboard.SellerTopProduct, error) {
+	return b.biz.GetSellerTopProducts(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) GetSellerDashboard(ctx context.Context, params dashboard.GetSellerDashboardParams) (dashboard.SellerDashboard, error) {
+	return b.biz.GetSellerDashboard(ctx, params)
+}
+
+func (b *orderBizBestEffortLocal) InferCurrency(ctx context.Context, accountID uuid.UUID) (string, error) {
+	return b.biz.InferCurrency(ctx, accountID)
+}
+
+func (b *orderBizBestEffortLocal) GetOptions(ctx context.Context, params GetOptionsParams) ([]sharedmodel.Option, error) {
+	return b.biz.GetOptions(ctx, params)
+}
+
+// orderBizBestEffortRemote routes BestEffort calls over HTTP/2.
+type orderBizBestEffortRemote struct{ call *besteffort.CallClient }
+
+var _ OrderBizBestEffort = (*orderBizBestEffortRemote)(nil)
+
+func (b *orderBizBestEffortRemote) ListBuyerPendingItems(ctx context.Context, params buyerorder.ListBuyerPendingItemsParams) (paginate.PaginateResult[ordermodel.OrderItem], error) {
+	return besteffort.Call[paginate.PaginateResult[ordermodel.OrderItem]](ctx, b.call, serviceName, "ListBuyerPendingItems", params)
+}
+
+func (b *orderBizBestEffortRemote) CancelBuyerPending(ctx context.Context, params buyerorder.CancelBuyerPendingParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "CancelBuyerPending", params)
+}
+
+func (b *orderBizBestEffortRemote) RefundPendingItem(ctx context.Context, params buyerorder.RefundPendingItemParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "RefundPendingItem", params)
+}
+
+func (b *orderBizBestEffortRemote) ListBuyerPendingOrders(ctx context.Context, params buyerorder.ListBuyerPendingOrdersParams) (paginate.PaginateResult[ordermodel.Order], error) {
+	return besteffort.Call[paginate.PaginateResult[ordermodel.Order]](ctx, b.call, serviceName, "ListBuyerPendingOrders", params)
+}
+
+func (b *orderBizBestEffortRemote) ListBuyerCompletedOrders(ctx context.Context, params buyerorder.ListBuyerCompletedOrdersParams) (paginate.PaginateResult[ordermodel.Order], error) {
+	return besteffort.Call[paginate.PaginateResult[ordermodel.Order]](ctx, b.call, serviceName, "ListBuyerCompletedOrders", params)
+}
+
+func (b *orderBizBestEffortRemote) ListBuyerCancelledOrders(ctx context.Context, params buyerorder.ListBuyerCancelledOrdersParams) (paginate.PaginateResult[ordermodel.Order], error) {
+	return besteffort.Call[paginate.PaginateResult[ordermodel.Order]](ctx, b.call, serviceName, "ListBuyerCancelledOrders", params)
+}
+
+func (b *orderBizBestEffortRemote) ListBuyerCancelledItems(ctx context.Context, params buyerorder.ListBuyerCancelledItemsParams) (paginate.PaginateResult[ordermodel.OrderItem], error) {
+	return besteffort.Call[paginate.PaginateResult[ordermodel.OrderItem]](ctx, b.call, serviceName, "ListBuyerCancelledItems", params)
+}
+
+func (b *orderBizBestEffortRemote) GetBuyerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error) {
+	return besteffort.Call[ordermodel.Order](ctx, b.call, serviceName, "GetBuyerOrder", orderID)
+}
+
+func (b *orderBizBestEffortRemote) GetCheckoutSummary(ctx context.Context, params buyerorder.GetCheckoutSummaryParams) (ordermodel.CheckoutSummary, error) {
+	return besteffort.Call[ordermodel.CheckoutSummary](ctx, b.call, serviceName, "GetCheckoutSummary", params)
+}
+
+func (b *orderBizBestEffortRemote) ListSellerPendingItems(ctx context.Context, params sellerorder.ListSellerPendingItemsParams) (paginate.PaginateResult[ordermodel.OrderItem], error) {
+	return besteffort.Call[paginate.PaginateResult[ordermodel.OrderItem]](ctx, b.call, serviceName, "ListSellerPendingItems", params)
+}
+
+func (b *orderBizBestEffortRemote) RejectSellerPending(ctx context.Context, params sellerorder.RejectSellerPendingParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "RejectSellerPending", params)
+}
+
+func (b *orderBizBestEffortRemote) GetSellerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error) {
+	return besteffort.Call[ordermodel.Order](ctx, b.call, serviceName, "GetSellerOrder", orderID)
+}
+
+func (b *orderBizBestEffortRemote) ListSellerConfirmed(ctx context.Context, params sellerorder.ListSellerConfirmedParams) (paginate.PaginateResult[ordermodel.Order], error) {
+	return besteffort.Call[paginate.PaginateResult[ordermodel.Order]](ctx, b.call, serviceName, "ListSellerConfirmed", params)
+}
+
+func (b *orderBizBestEffortRemote) GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItem, error) {
+	return besteffort.Call[[]ordermodel.CartItem](ctx, b.call, serviceName, "GetCart", params)
+}
+
+func (b *orderBizBestEffortRemote) UpdateCart(ctx context.Context, params cart.UpdateCartParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "UpdateCart", params)
+}
+
+func (b *orderBizBestEffortRemote) ClearCart(ctx context.Context, params cart.ClearCartParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "ClearCart", params)
+}
+
+func (b *orderBizBestEffortRemote) OnPaymentResult(ctx context.Context, params payment.Notification) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "OnPaymentResult", params)
+}
+
+func (b *orderBizBestEffortRemote) GetReusableGatewayURL(ctx context.Context, sessionID uuid.UUID) (orderpayment.ReusableGatewayURLState, error) {
+	return besteffort.Call[orderpayment.ReusableGatewayURLState](ctx, b.call, serviceName, "GetReusableGatewayURL", sessionID)
+}
+
+func (b *orderBizBestEffortRemote) ListBuyerRefunds(ctx context.Context, params refund.ListBuyerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error) {
+	return besteffort.Call[paginate.PaginateResult[ordermodel.Refund]](ctx, b.call, serviceName, "ListBuyerRefunds", params)
+}
+
+func (b *orderBizBestEffortRemote) ListSellerRefunds(ctx context.Context, params refund.ListSellerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error) {
+	return besteffort.Call[paginate.PaginateResult[ordermodel.Refund]](ctx, b.call, serviceName, "ListSellerRefunds", params)
+}
+
+func (b *orderBizBestEffortRemote) CreateBuyerRefund(ctx context.Context, params refund.CreateBuyerRefundParams) (ordermodel.Refund, error) {
+	return besteffort.Call[ordermodel.Refund](ctx, b.call, serviceName, "CreateBuyerRefund", params)
+}
+
+func (b *orderBizBestEffortRemote) WithdrawBuyerRefund(ctx context.Context, params refund.WithdrawBuyerRefundParams) (ordermodel.Refund, error) {
+	return besteffort.Call[ordermodel.Refund](ctx, b.call, serviceName, "WithdrawBuyerRefund", params)
+}
+
+func (b *orderBizBestEffortRemote) SellerApproveRefund(ctx context.Context, params refund.SellerActionParams) (ordermodel.Refund, error) {
+	return besteffort.Call[ordermodel.Refund](ctx, b.call, serviceName, "SellerApproveRefund", params)
+}
+
+func (b *orderBizBestEffortRemote) SellerDisputeRefund(ctx context.Context, params refund.SellerDisputeParams) (ordermodel.RefundDispute, error) {
+	return besteffort.Call[ordermodel.RefundDispute](ctx, b.call, serviceName, "SellerDisputeRefund", params)
+}
+
+func (b *orderBizBestEffortRemote) ListRefundDisputes(ctx context.Context, params dispute.ListRefundDisputesParams) (paginate.PaginateResult[ordermodel.RefundDispute], error) {
+	return besteffort.Call[paginate.PaginateResult[ordermodel.RefundDispute]](ctx, b.call, serviceName, "ListRefundDisputes", params)
+}
+
+func (b *orderBizBestEffortRemote) GetRefundDispute(ctx context.Context, params dispute.GetRefundDisputeParams) (ordermodel.RefundDispute, error) {
+	return besteffort.Call[ordermodel.RefundDispute](ctx, b.call, serviceName, "GetRefundDispute", params)
+}
+
+func (b *orderBizBestEffortRemote) AdminUpholdDispute(ctx context.Context, params dispute.AdminDisputeDecisionParams) (ordermodel.RefundDispute, error) {
+	return besteffort.Call[ordermodel.RefundDispute](ctx, b.call, serviceName, "AdminUpholdDispute", params)
+}
+
+func (b *orderBizBestEffortRemote) AdminDismissDispute(ctx context.Context, params dispute.AdminDisputeDecisionParams) (ordermodel.RefundDispute, error) {
+	return besteffort.Call[ordermodel.RefundDispute](ctx, b.call, serviceName, "AdminDismissDispute", params)
+}
+
+func (b *orderBizBestEffortRemote) OnTransportResult(ctx context.Context, params ordertransport.OnTransportResultParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "OnTransportResult", params)
+}
+
+func (b *orderBizBestEffortRemote) QuoteTransport(ctx context.Context, params ordertransport.QuoteTransportParams) (ordertransport.QuoteTransportResult, error) {
+	return besteffort.Call[ordertransport.QuoteTransportResult](ctx, b.call, serviceName, "QuoteTransport", params)
+}
+
+func (b *orderBizBestEffortRemote) HasPurchasedProduct(ctx context.Context, params review.HasPurchasedProductParams) (bool, error) {
+	return besteffort.Call[bool](ctx, b.call, serviceName, "HasPurchasedProduct", params)
+}
+
+func (b *orderBizBestEffortRemote) ListReviewableOrders(ctx context.Context, params review.ListReviewableOrdersParams) ([]review.ReviewableOrder, error) {
+	return besteffort.Call[[]review.ReviewableOrder](ctx, b.call, serviceName, "ListReviewableOrders", params)
+}
+
+func (b *orderBizBestEffortRemote) ListReviewableOrdersBySpu(ctx context.Context, params review.ListReviewableOrdersBySpuParams) ([]review.ReviewableOrder, error) {
+	return besteffort.Call[[]review.ReviewableOrder](ctx, b.call, serviceName, "ListReviewableOrdersBySpu", params)
+}
+
+func (b *orderBizBestEffortRemote) ValidateOrderForReview(ctx context.Context, params review.ValidateOrderForReviewParams) (bool, error) {
+	return besteffort.Call[bool](ctx, b.call, serviceName, "ValidateOrderForReview", params)
+}
+
+func (b *orderBizBestEffortRemote) CreateProductReview(ctx context.Context, params review.CreateProductReviewParams) (catalogmodel.Comment, error) {
+	return besteffort.Call[catalogmodel.Comment](ctx, b.call, serviceName, "CreateProductReview", params)
+}
+
+func (b *orderBizBestEffortRemote) GetSellerOrderStats(ctx context.Context, params dashboard.GetSellerOrderStatsParams) (dashboard.SellerOrderStats, error) {
+	return besteffort.Call[dashboard.SellerOrderStats](ctx, b.call, serviceName, "GetSellerOrderStats", params)
+}
+
+func (b *orderBizBestEffortRemote) GetSellerOrderTimeSeries(ctx context.Context, params dashboard.GetSellerOrderTimeSeriesParams) ([]dashboard.SellerOrderTimeSeriesPoint, error) {
+	return besteffort.Call[[]dashboard.SellerOrderTimeSeriesPoint](ctx, b.call, serviceName, "GetSellerOrderTimeSeries", params)
+}
+
+func (b *orderBizBestEffortRemote) GetSellerPendingActions(ctx context.Context, params dashboard.GetSellerPendingActionsParams) (dashboard.SellerPendingActions, error) {
+	return besteffort.Call[dashboard.SellerPendingActions](ctx, b.call, serviceName, "GetSellerPendingActions", params)
+}
+
+func (b *orderBizBestEffortRemote) GetSellerTopProducts(ctx context.Context, params dashboard.GetSellerTopProductsParams) ([]dashboard.SellerTopProduct, error) {
+	return besteffort.Call[[]dashboard.SellerTopProduct](ctx, b.call, serviceName, "GetSellerTopProducts", params)
+}
+
+func (b *orderBizBestEffortRemote) GetSellerDashboard(ctx context.Context, params dashboard.GetSellerDashboardParams) (dashboard.SellerDashboard, error) {
+	return besteffort.Call[dashboard.SellerDashboard](ctx, b.call, serviceName, "GetSellerDashboard", params)
+}
+
+func (b *orderBizBestEffortRemote) InferCurrency(ctx context.Context, accountID uuid.UUID) (string, error) {
+	return besteffort.Call[string](ctx, b.call, serviceName, "InferCurrency", accountID)
+}
+
+func (b *orderBizBestEffortRemote) GetOptions(ctx context.Context, params GetOptionsParams) ([]sharedmodel.Option, error) {
+	return besteffort.Call[[]sharedmodel.Option](ctx, b.call, serviceName, "GetOptions", params)
+}
+
+// OrderBizClient selects the guaranteed (durable) or best-effort (non-durable) transport.
+type orderBizClient struct {
+	*OrderRestateClient
+	bestEffort OrderBizBestEffort
+}
+
+var _ OrderBizClient = (*orderBizClient)(nil)
+
+func (c *orderBizClient) Guaranteed() OrderBizGuaranteed { return c.OrderRestateClient }
+
+func (c *orderBizClient) BestEffort() OrderBizBestEffort { return c.bestEffort }
+
+// NewOrderBizClientInProcess builds a client whose BestEffort calls the in-process biz.
+func NewOrderBizClientInProcess(restateIngressURL string, biz OrderBiz) OrderBizClient {
+	return &orderBizClient{
+		OrderRestateClient: NewOrderRestateClient(restateIngressURL),
+		bestEffort:         &orderBizBestEffortLocal{biz: biz},
+	}
+}
+
+// NewOrderBizClientRemote builds a client whose BestEffort calls a remote BestEffort server.
+func NewOrderBizClientRemote(restateIngressURL, bestEffortURL string) OrderBizClient {
+	return &orderBizClient{
+		OrderRestateClient: NewOrderRestateClient(restateIngressURL),
+		bestEffort:         &orderBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+	}
+}
+
+// RegisterOrderBestEffort wires biz methods onto a BestEffort HTTP/2 server.
+func RegisterOrderBestEffort(s *besteffort.Server, biz OrderBiz) {
+	s.Handle(serviceName, "ListBuyerPendingItems", func(ctx context.Context, body []byte) (any, error) {
+		var p buyerorder.ListBuyerPendingItemsParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListBuyerPendingItems(ctx, p)
+	})
+	s.Handle(serviceName, "CancelBuyerPending", func(ctx context.Context, body []byte) (any, error) {
+		var p buyerorder.CancelBuyerPendingParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.CancelBuyerPending(ctx, p)
+	})
+	s.Handle(serviceName, "RefundPendingItem", func(ctx context.Context, body []byte) (any, error) {
+		var p buyerorder.RefundPendingItemParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.RefundPendingItem(ctx, p)
+	})
+	s.Handle(serviceName, "ListBuyerPendingOrders", func(ctx context.Context, body []byte) (any, error) {
+		var p buyerorder.ListBuyerPendingOrdersParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListBuyerPendingOrders(ctx, p)
+	})
+	s.Handle(serviceName, "ListBuyerCompletedOrders", func(ctx context.Context, body []byte) (any, error) {
+		var p buyerorder.ListBuyerCompletedOrdersParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListBuyerCompletedOrders(ctx, p)
+	})
+	s.Handle(serviceName, "ListBuyerCancelledOrders", func(ctx context.Context, body []byte) (any, error) {
+		var p buyerorder.ListBuyerCancelledOrdersParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListBuyerCancelledOrders(ctx, p)
+	})
+	s.Handle(serviceName, "ListBuyerCancelledItems", func(ctx context.Context, body []byte) (any, error) {
+		var p buyerorder.ListBuyerCancelledItemsParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListBuyerCancelledItems(ctx, p)
+	})
+	s.Handle(serviceName, "GetBuyerOrder", func(ctx context.Context, body []byte) (any, error) {
+		var p uuid.UUID
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetBuyerOrder(ctx, p)
+	})
+	s.Handle(serviceName, "GetCheckoutSummary", func(ctx context.Context, body []byte) (any, error) {
+		var p buyerorder.GetCheckoutSummaryParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetCheckoutSummary(ctx, p)
+	})
+	s.Handle(serviceName, "ListSellerPendingItems", func(ctx context.Context, body []byte) (any, error) {
+		var p sellerorder.ListSellerPendingItemsParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListSellerPendingItems(ctx, p)
+	})
+	s.Handle(serviceName, "RejectSellerPending", func(ctx context.Context, body []byte) (any, error) {
+		var p sellerorder.RejectSellerPendingParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.RejectSellerPending(ctx, p)
+	})
+	s.Handle(serviceName, "GetSellerOrder", func(ctx context.Context, body []byte) (any, error) {
+		var p uuid.UUID
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetSellerOrder(ctx, p)
+	})
+	s.Handle(serviceName, "ListSellerConfirmed", func(ctx context.Context, body []byte) (any, error) {
+		var p sellerorder.ListSellerConfirmedParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListSellerConfirmed(ctx, p)
+	})
+	s.Handle(serviceName, "GetCart", func(ctx context.Context, body []byte) (any, error) {
+		var p cart.GetCartParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetCart(ctx, p)
+	})
+	s.Handle(serviceName, "UpdateCart", func(ctx context.Context, body []byte) (any, error) {
+		var p cart.UpdateCartParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.UpdateCart(ctx, p)
+	})
+	s.Handle(serviceName, "ClearCart", func(ctx context.Context, body []byte) (any, error) {
+		var p cart.ClearCartParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.ClearCart(ctx, p)
+	})
+	s.Handle(serviceName, "OnPaymentResult", func(ctx context.Context, body []byte) (any, error) {
+		var p payment.Notification
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.OnPaymentResult(ctx, p)
+	})
+	s.Handle(serviceName, "GetReusableGatewayURL", func(ctx context.Context, body []byte) (any, error) {
+		var p uuid.UUID
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetReusableGatewayURL(ctx, p)
+	})
+	s.Handle(serviceName, "ListBuyerRefunds", func(ctx context.Context, body []byte) (any, error) {
+		var p refund.ListBuyerRefundsParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListBuyerRefunds(ctx, p)
+	})
+	s.Handle(serviceName, "ListSellerRefunds", func(ctx context.Context, body []byte) (any, error) {
+		var p refund.ListSellerRefundsParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListSellerRefunds(ctx, p)
+	})
+	s.Handle(serviceName, "CreateBuyerRefund", func(ctx context.Context, body []byte) (any, error) {
+		var p refund.CreateBuyerRefundParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.CreateBuyerRefund(ctx, p)
+	})
+	s.Handle(serviceName, "WithdrawBuyerRefund", func(ctx context.Context, body []byte) (any, error) {
+		var p refund.WithdrawBuyerRefundParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.WithdrawBuyerRefund(ctx, p)
+	})
+	s.Handle(serviceName, "SellerApproveRefund", func(ctx context.Context, body []byte) (any, error) {
+		var p refund.SellerActionParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.SellerApproveRefund(ctx, p)
+	})
+	s.Handle(serviceName, "SellerDisputeRefund", func(ctx context.Context, body []byte) (any, error) {
+		var p refund.SellerDisputeParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.SellerDisputeRefund(ctx, p)
+	})
+	s.Handle(serviceName, "ListRefundDisputes", func(ctx context.Context, body []byte) (any, error) {
+		var p dispute.ListRefundDisputesParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListRefundDisputes(ctx, p)
+	})
+	s.Handle(serviceName, "GetRefundDispute", func(ctx context.Context, body []byte) (any, error) {
+		var p dispute.GetRefundDisputeParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetRefundDispute(ctx, p)
+	})
+	s.Handle(serviceName, "AdminUpholdDispute", func(ctx context.Context, body []byte) (any, error) {
+		var p dispute.AdminDisputeDecisionParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.AdminUpholdDispute(ctx, p)
+	})
+	s.Handle(serviceName, "AdminDismissDispute", func(ctx context.Context, body []byte) (any, error) {
+		var p dispute.AdminDisputeDecisionParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.AdminDismissDispute(ctx, p)
+	})
+	s.Handle(serviceName, "OnTransportResult", func(ctx context.Context, body []byte) (any, error) {
+		var p ordertransport.OnTransportResultParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.OnTransportResult(ctx, p)
+	})
+	s.Handle(serviceName, "QuoteTransport", func(ctx context.Context, body []byte) (any, error) {
+		var p ordertransport.QuoteTransportParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.QuoteTransport(ctx, p)
+	})
+	s.Handle(serviceName, "HasPurchasedProduct", func(ctx context.Context, body []byte) (any, error) {
+		var p review.HasPurchasedProductParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.HasPurchasedProduct(ctx, p)
+	})
+	s.Handle(serviceName, "ListReviewableOrders", func(ctx context.Context, body []byte) (any, error) {
+		var p review.ListReviewableOrdersParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListReviewableOrders(ctx, p)
+	})
+	s.Handle(serviceName, "ListReviewableOrdersBySpu", func(ctx context.Context, body []byte) (any, error) {
+		var p review.ListReviewableOrdersBySpuParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListReviewableOrdersBySpu(ctx, p)
+	})
+	s.Handle(serviceName, "ValidateOrderForReview", func(ctx context.Context, body []byte) (any, error) {
+		var p review.ValidateOrderForReviewParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ValidateOrderForReview(ctx, p)
+	})
+	s.Handle(serviceName, "CreateProductReview", func(ctx context.Context, body []byte) (any, error) {
+		var p review.CreateProductReviewParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.CreateProductReview(ctx, p)
+	})
+	s.Handle(serviceName, "GetSellerOrderStats", func(ctx context.Context, body []byte) (any, error) {
+		var p dashboard.GetSellerOrderStatsParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetSellerOrderStats(ctx, p)
+	})
+	s.Handle(serviceName, "GetSellerOrderTimeSeries", func(ctx context.Context, body []byte) (any, error) {
+		var p dashboard.GetSellerOrderTimeSeriesParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetSellerOrderTimeSeries(ctx, p)
+	})
+	s.Handle(serviceName, "GetSellerPendingActions", func(ctx context.Context, body []byte) (any, error) {
+		var p dashboard.GetSellerPendingActionsParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetSellerPendingActions(ctx, p)
+	})
+	s.Handle(serviceName, "GetSellerTopProducts", func(ctx context.Context, body []byte) (any, error) {
+		var p dashboard.GetSellerTopProductsParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetSellerTopProducts(ctx, p)
+	})
+	s.Handle(serviceName, "GetSellerDashboard", func(ctx context.Context, body []byte) (any, error) {
+		var p dashboard.GetSellerDashboardParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetSellerDashboard(ctx, p)
+	})
+	s.Handle(serviceName, "InferCurrency", func(ctx context.Context, body []byte) (any, error) {
+		var p uuid.UUID
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.InferCurrency(ctx, p)
+	})
+	s.Handle(serviceName, "GetOptions", func(ctx context.Context, body []byte) (any, error) {
+		var p GetOptionsParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetOptions(ctx, p)
+	})
 }

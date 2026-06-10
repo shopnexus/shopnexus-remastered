@@ -369,6 +369,10 @@ func main() {
 	}
 	usedImports["restatec"] = "shopnexus-server/internal/shared/restate"
 	usedImports["restate"] = "github.com/restatedev/sdk-go"
+	if !isWorkflow {
+		usedImports["besteffort"] = "shopnexus-server/internal/shared/besteffort"
+		usedImports["json"] = "encoding/json"
+	}
 
 	// Generate output
 	var buf bytes.Buffer
@@ -432,20 +436,37 @@ func main() {
 	}
 	buf.WriteString("}\n\n")
 
-	// Client interface: the cross-module DI type.
+	// Client interface: the cross-module DI type. For services it also exposes
+	// Guaranteed()/BestEffort() transport selectors (still embeds the biz +
+	// Send/Future for now so existing call sites keep compiling).
 	fmt.Fprintf(
 		&buf,
 		"// %s is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.\n",
 		clientIface,
 	)
-	fmt.Fprintf(
-		&buf,
-		"type %s interface {\n\t%s\n\tSend() %s\n\tFuture() %s\n}\n\n",
-		clientIface,
-		ifaceRef,
-		senderIface,
-		futureIface,
-	)
+	if isWorkflow {
+		fmt.Fprintf(
+			&buf,
+			"type %s interface {\n\t%s\n\tSend() %s\n\tFuture() %s\n}\n\n",
+			clientIface,
+			ifaceRef,
+			senderIface,
+			futureIface,
+		)
+	} else {
+		guaranteedIface := *ifaceName + "Guaranteed"
+		bestEffortIface := *ifaceName + "BestEffort"
+		fmt.Fprintf(
+			&buf,
+			"type %s interface {\n\t%s\n\tSend() %s\n\tFuture() %s\n\tGuaranteed() %s\n\tBestEffort() %s\n}\n\n",
+			clientIface,
+			ifaceRef,
+			senderIface,
+			futureIface,
+			guaranteedIface,
+			bestEffortIface,
+		)
+	}
 
 	// Request-response proxy.
 	fmt.Fprintf(&buf, "// %s implements %s via Restate HTTP ingress.\n", *proxyType, clientIface)
@@ -456,7 +477,13 @@ func main() {
 		senderType,
 		futureType,
 	)
-	fmt.Fprintf(&buf, "var _ %s = (*%s)(nil)\n\n", clientIface, *proxyType)
+	// The Restate proxy satisfies the guaranteed surface; for services that is
+	// <Iface>Guaranteed, for workflows the (unchanged) <Iface>Client.
+	proxyAssertIface := clientIface
+	if !isWorkflow {
+		proxyAssertIface = *ifaceName + "Guaranteed"
+	}
+	fmt.Fprintf(&buf, "var _ %s = (*%s)(nil)\n\n", proxyAssertIface, *proxyType)
 	fmt.Fprintf(&buf, "func New%s(restateIngressURL string) *%s {\n", *proxyType, *proxyType)
 	fmt.Fprintf(
 		&buf,
@@ -491,6 +518,7 @@ func main() {
 
 	if !isWorkflow {
 		writeServiceAdapter(&buf, *serviceName, ifaceRef, methods)
+		writeBestEffortClient(&buf, *ifaceName, ifaceRef, *proxyType, *serviceName, clientIface, senderIface, futureIface, methods)
 	}
 
 	formatted, err := format.Source(buf.Bytes())
@@ -637,6 +665,123 @@ func writeServiceAdapter(buf *bytes.Buffer, serviceName, ifaceRef string, method
 		}
 		fmt.Fprintf(buf, "\treturn s.biz.%s(%s)\n}\n\n", m.Name, args)
 	}
+}
+
+// lowerFirst lowercases the first rune of s (e.g. Catalog → catalog).
+func lowerFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	r := []rune(s)
+	r[0] = unicode.ToLower(r[0])
+	return string(r)
+}
+
+// writeBestEffortClient emits the Guaranteed/BestEffort transport split:
+// the two surface interfaces, in-process + HTTP/2 BestEffort impls, the unified
+// client (which for now still embeds the biz surface so call sites keep
+// compiling), its InProcess/Remote constructors, and the BestEffort HTTP/2
+// server registration.
+func writeBestEffortClient(
+	buf *bytes.Buffer,
+	ifaceName, ifaceRef, proxyType, serviceName, clientIface, senderIface, futureIface string,
+	methods []methodInfo,
+) {
+	guaranteedIface := ifaceName + "Guaranteed"
+	bestEffortIface := ifaceName + "BestEffort"
+	lower := lowerFirst(ifaceName)
+	localType := lower + "BestEffortLocal"
+	remoteType := lower + "BestEffortRemote"
+	clientType := lower + "Client"
+
+	// Guaranteed surface = current Restate proxy behavior.
+	fmt.Fprintf(buf, "// %s is the guaranteed (durable Restate) surface.\n", guaranteedIface)
+	fmt.Fprintf(buf, "type %s interface {\n\t%s\n\tSend() %s\n\tFuture() %s\n}\n\n",
+		guaranteedIface, ifaceRef, senderIface, futureIface)
+
+	// BestEffort surface = sync request-response only.
+	fmt.Fprintf(buf, "// %s is the best-effort (non-durable) surface: sync request-response only.\n", bestEffortIface)
+	fmt.Fprintf(buf, "type %s interface {\n\t%s\n}\n\n", bestEffortIface, ifaceRef)
+
+	// In-process BestEffort: delegates to the biz directly.
+	fmt.Fprintf(buf, "// %s delegates BestEffort calls to the in-process biz.\n", localType)
+	fmt.Fprintf(buf, "type %s struct{ biz %s }\n\n", localType, ifaceRef)
+	fmt.Fprintf(buf, "var _ %s = (*%s)(nil)\n\n", bestEffortIface, localType)
+	for _, m := range methods {
+		fmt.Fprintf(buf, "func (b *%s) %s(%s) ", localType, m.Name, m.params("ctx context.Context"))
+		if m.HasOutput {
+			fmt.Fprintf(buf, "(%s, error)", m.OutputType)
+		} else {
+			buf.WriteString("error")
+		}
+		buf.WriteString(" {\n")
+		args := "ctx"
+		if m.HasInput {
+			args += ", " + m.InputName
+		}
+		fmt.Fprintf(buf, "\treturn b.biz.%s(%s)\n}\n\n", m.Name, args)
+	}
+
+	// HTTP/2 BestEffort: posts JSON to the BestEffort server.
+	fmt.Fprintf(buf, "// %s routes BestEffort calls over HTTP/2.\n", remoteType)
+	fmt.Fprintf(buf, "type %s struct{ call *besteffort.CallClient }\n\n", remoteType)
+	fmt.Fprintf(buf, "var _ %s = (*%s)(nil)\n\n", bestEffortIface, remoteType)
+	for _, m := range methods {
+		fmt.Fprintf(buf, "func (b *%s) %s(%s) ", remoteType, m.Name, m.params("ctx context.Context"))
+		inputArg := "nil"
+		if m.HasInput {
+			inputArg = m.InputName
+		}
+		if m.HasOutput {
+			fmt.Fprintf(buf, "(%s, error) {\n", m.OutputType)
+			fmt.Fprintf(buf, "\treturn besteffort.Call[%s](ctx, b.call, serviceName, %q, %s)\n}\n\n",
+				m.OutputType, m.Name, inputArg)
+		} else {
+			buf.WriteString("error {\n")
+			fmt.Fprintf(buf, "\treturn besteffort.CallVoid(ctx, b.call, serviceName, %q, %s)\n}\n\n",
+				m.Name, inputArg)
+		}
+	}
+
+	// Unified client. Still embeds the biz surface + Send/Future for now so
+	// existing call sites keep compiling; a later task removes those.
+	fmt.Fprintf(buf, "// %s selects the guaranteed (durable) or best-effort (non-durable) transport.\n", clientIface)
+	fmt.Fprintf(buf, "type %s struct {\n\t*%s\n\tbestEffort %s\n}\n\n", clientType, proxyType, bestEffortIface)
+	fmt.Fprintf(buf, "var _ %s = (*%s)(nil)\n\n", clientIface, clientType)
+	fmt.Fprintf(buf, "func (c *%s) Guaranteed() %s { return c.%s }\n\n", clientType, guaranteedIface, proxyType)
+	fmt.Fprintf(buf, "func (c *%s) BestEffort() %s { return c.bestEffort }\n\n", clientType, bestEffortIface)
+
+	// In-process variant (monolith): BestEffort calls the biz directly.
+	fmt.Fprintf(buf, "// New%sInProcess builds a client whose BestEffort calls the in-process biz.\n", clientIface)
+	fmt.Fprintf(buf, "func New%sInProcess(restateIngressURL string, biz %s) %s {\n", clientIface, ifaceRef, clientIface)
+	fmt.Fprintf(buf, "\treturn &%s{\n\t\t%s: New%s(restateIngressURL),\n\t\tbestEffort: &%s{biz: biz},\n\t}\n}\n\n",
+		clientType, proxyType, proxyType, localType)
+
+	// Remote variant (split): BestEffort over HTTP/2.
+	fmt.Fprintf(buf, "// New%sRemote builds a client whose BestEffort calls a remote BestEffort server.\n", clientIface)
+	fmt.Fprintf(buf, "func New%sRemote(restateIngressURL, bestEffortURL string) %s {\n", clientIface, clientIface)
+	fmt.Fprintf(buf, "\treturn &%s{\n\t\t%s: New%s(restateIngressURL),\n\t\tbestEffort: &%s{call: besteffort.NewCallClient(bestEffortURL)},\n\t}\n}\n\n",
+		clientType, proxyType, proxyType, remoteType)
+
+	// BestEffort HTTP/2 server registration (server side).
+	fmt.Fprintf(buf, "// Register%sBestEffort wires biz methods onto a BestEffort HTTP/2 server.\n", serviceName)
+	fmt.Fprintf(buf, "func Register%sBestEffort(s *besteffort.Server, biz %s) {\n", serviceName, ifaceRef)
+	for _, m := range methods {
+		fmt.Fprintf(buf, "\ts.Handle(serviceName, %q, func(ctx context.Context, body []byte) (any, error) {\n", m.Name)
+		callArgs := "ctx"
+		if m.HasInput {
+			fmt.Fprintf(buf, "\t\tvar p %s\n", m.InputType)
+			buf.WriteString("\t\tif err := json.Unmarshal(body, &p); err != nil {\n\t\t\treturn nil, err\n\t\t}\n")
+			callArgs += ", p"
+		}
+		if m.HasOutput {
+			fmt.Fprintf(buf, "\t\treturn biz.%s(%s)\n", m.Name, callArgs)
+		} else {
+			fmt.Fprintf(buf, "\t\treturn nil, biz.%s(%s)\n", m.Name, callArgs)
+		}
+		buf.WriteString("\t})\n")
+	}
+	buf.WriteString("}\n\n")
 }
 
 // writeSendMethod emits a one-way method on the sender proxy; outputs are dropped.

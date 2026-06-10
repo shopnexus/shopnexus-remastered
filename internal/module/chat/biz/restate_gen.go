@@ -4,9 +4,11 @@ package chatbiz
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/google/uuid"
 	restate "github.com/restatedev/sdk-go"
 	chatdb "shopnexus-server/internal/module/chat/db/sqlc"
+	"shopnexus-server/internal/shared/besteffort"
 	"shopnexus-server/internal/shared/paginate"
 	restatec "shopnexus-server/internal/shared/restate"
 )
@@ -39,6 +41,8 @@ type ChatBizClient interface {
 	ChatBiz
 	Send() ChatBizSender
 	Future() ChatBizFuture
+	Guaranteed() ChatBizGuaranteed
+	BestEffort() ChatBizBestEffort
 }
 
 // ChatRestateClient implements ChatBizClient via Restate HTTP ingress.
@@ -48,7 +52,7 @@ type ChatRestateClient struct {
 	future *ChatRestateFuture
 }
 
-var _ ChatBizClient = (*ChatRestateClient)(nil)
+var _ ChatBizGuaranteed = (*ChatRestateClient)(nil)
 
 func NewChatRestateClient(restateIngressURL string) *ChatRestateClient {
 	return &ChatRestateClient{
@@ -177,4 +181,148 @@ func (s *ChatService) ListMessage(ctx restate.Context, params ListMessageParams)
 
 func (s *ChatService) MarkRead(ctx restate.Context, params MarkReadParams) error {
 	return s.biz.MarkRead(ctx, params)
+}
+
+// ChatBizGuaranteed is the guaranteed (durable Restate) surface.
+type ChatBizGuaranteed interface {
+	ChatBiz
+	Send() ChatBizSender
+	Future() ChatBizFuture
+}
+
+// ChatBizBestEffort is the best-effort (non-durable) surface: sync request-response only.
+type ChatBizBestEffort interface {
+	ChatBiz
+}
+
+// chatBizBestEffortLocal delegates BestEffort calls to the in-process biz.
+type chatBizBestEffortLocal struct{ biz ChatBiz }
+
+var _ ChatBizBestEffort = (*chatBizBestEffortLocal)(nil)
+
+func (b *chatBizBestEffortLocal) CreateConversation(ctx context.Context, params CreateConversationParams) (chatdb.ChatConversation, error) {
+	return b.biz.CreateConversation(ctx, params)
+}
+
+func (b *chatBizBestEffortLocal) GetConversation(ctx context.Context, id uuid.UUID) (chatdb.ChatConversation, error) {
+	return b.biz.GetConversation(ctx, id)
+}
+
+func (b *chatBizBestEffortLocal) ListConversation(ctx context.Context, params ListConversationParams) (paginate.PaginateResult[chatdb.ChatConversation], error) {
+	return b.biz.ListConversation(ctx, params)
+}
+
+func (b *chatBizBestEffortLocal) SendMessage(ctx context.Context, params SendMessageParams) (chatdb.ChatMessage, error) {
+	return b.biz.SendMessage(ctx, params)
+}
+
+func (b *chatBizBestEffortLocal) ListMessage(ctx context.Context, params ListMessageParams) (paginate.PaginateResult[chatdb.ChatMessage], error) {
+	return b.biz.ListMessage(ctx, params)
+}
+
+func (b *chatBizBestEffortLocal) MarkRead(ctx context.Context, params MarkReadParams) error {
+	return b.biz.MarkRead(ctx, params)
+}
+
+// chatBizBestEffortRemote routes BestEffort calls over HTTP/2.
+type chatBizBestEffortRemote struct{ call *besteffort.CallClient }
+
+var _ ChatBizBestEffort = (*chatBizBestEffortRemote)(nil)
+
+func (b *chatBizBestEffortRemote) CreateConversation(ctx context.Context, params CreateConversationParams) (chatdb.ChatConversation, error) {
+	return besteffort.Call[chatdb.ChatConversation](ctx, b.call, serviceName, "CreateConversation", params)
+}
+
+func (b *chatBizBestEffortRemote) GetConversation(ctx context.Context, id uuid.UUID) (chatdb.ChatConversation, error) {
+	return besteffort.Call[chatdb.ChatConversation](ctx, b.call, serviceName, "GetConversation", id)
+}
+
+func (b *chatBizBestEffortRemote) ListConversation(ctx context.Context, params ListConversationParams) (paginate.PaginateResult[chatdb.ChatConversation], error) {
+	return besteffort.Call[paginate.PaginateResult[chatdb.ChatConversation]](ctx, b.call, serviceName, "ListConversation", params)
+}
+
+func (b *chatBizBestEffortRemote) SendMessage(ctx context.Context, params SendMessageParams) (chatdb.ChatMessage, error) {
+	return besteffort.Call[chatdb.ChatMessage](ctx, b.call, serviceName, "SendMessage", params)
+}
+
+func (b *chatBizBestEffortRemote) ListMessage(ctx context.Context, params ListMessageParams) (paginate.PaginateResult[chatdb.ChatMessage], error) {
+	return besteffort.Call[paginate.PaginateResult[chatdb.ChatMessage]](ctx, b.call, serviceName, "ListMessage", params)
+}
+
+func (b *chatBizBestEffortRemote) MarkRead(ctx context.Context, params MarkReadParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "MarkRead", params)
+}
+
+// ChatBizClient selects the guaranteed (durable) or best-effort (non-durable) transport.
+type chatBizClient struct {
+	*ChatRestateClient
+	bestEffort ChatBizBestEffort
+}
+
+var _ ChatBizClient = (*chatBizClient)(nil)
+
+func (c *chatBizClient) Guaranteed() ChatBizGuaranteed { return c.ChatRestateClient }
+
+func (c *chatBizClient) BestEffort() ChatBizBestEffort { return c.bestEffort }
+
+// NewChatBizClientInProcess builds a client whose BestEffort calls the in-process biz.
+func NewChatBizClientInProcess(restateIngressURL string, biz ChatBiz) ChatBizClient {
+	return &chatBizClient{
+		ChatRestateClient: NewChatRestateClient(restateIngressURL),
+		bestEffort:        &chatBizBestEffortLocal{biz: biz},
+	}
+}
+
+// NewChatBizClientRemote builds a client whose BestEffort calls a remote BestEffort server.
+func NewChatBizClientRemote(restateIngressURL, bestEffortURL string) ChatBizClient {
+	return &chatBizClient{
+		ChatRestateClient: NewChatRestateClient(restateIngressURL),
+		bestEffort:        &chatBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+	}
+}
+
+// RegisterChatBestEffort wires biz methods onto a BestEffort HTTP/2 server.
+func RegisterChatBestEffort(s *besteffort.Server, biz ChatBiz) {
+	s.Handle(serviceName, "CreateConversation", func(ctx context.Context, body []byte) (any, error) {
+		var p CreateConversationParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.CreateConversation(ctx, p)
+	})
+	s.Handle(serviceName, "GetConversation", func(ctx context.Context, body []byte) (any, error) {
+		var p uuid.UUID
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetConversation(ctx, p)
+	})
+	s.Handle(serviceName, "ListConversation", func(ctx context.Context, body []byte) (any, error) {
+		var p ListConversationParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListConversation(ctx, p)
+	})
+	s.Handle(serviceName, "SendMessage", func(ctx context.Context, body []byte) (any, error) {
+		var p SendMessageParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.SendMessage(ctx, p)
+	})
+	s.Handle(serviceName, "ListMessage", func(ctx context.Context, body []byte) (any, error) {
+		var p ListMessageParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListMessage(ctx, p)
+	})
+	s.Handle(serviceName, "MarkRead", func(ctx context.Context, body []byte) (any, error) {
+		var p MarkReadParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.MarkRead(ctx, p)
+	})
 }

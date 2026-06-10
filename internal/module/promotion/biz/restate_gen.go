@@ -4,10 +4,12 @@ package promotionbiz
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/google/uuid"
 	restate "github.com/restatedev/sdk-go"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	promotionmodel "shopnexus-server/internal/module/promotion/model"
+	"shopnexus-server/internal/shared/besteffort"
 	"shopnexus-server/internal/shared/paginate"
 	restatec "shopnexus-server/internal/shared/restate"
 )
@@ -40,6 +42,8 @@ type PromotionBizClient interface {
 	PromotionBiz
 	Send() PromotionBizSender
 	Future() PromotionBizFuture
+	Guaranteed() PromotionBizGuaranteed
+	BestEffort() PromotionBizBestEffort
 }
 
 // PromotionRestateClient implements PromotionBizClient via Restate HTTP ingress.
@@ -49,7 +53,7 @@ type PromotionRestateClient struct {
 	future *PromotionRestateFuture
 }
 
-var _ PromotionBizClient = (*PromotionRestateClient)(nil)
+var _ PromotionBizGuaranteed = (*PromotionRestateClient)(nil)
 
 func NewPromotionRestateClient(restateIngressURL string) *PromotionRestateClient {
 	return &PromotionRestateClient{
@@ -178,4 +182,148 @@ func (s *PromotionService) DeletePromotion(ctx restate.Context, params DeletePro
 
 func (s *PromotionService) CalculatePromotedPrices(ctx restate.Context, params CalculatePromotedPricesParams) (map[uuid.UUID]*catalogmodel.OrderPrice, error) {
 	return s.biz.CalculatePromotedPrices(ctx, params)
+}
+
+// PromotionBizGuaranteed is the guaranteed (durable Restate) surface.
+type PromotionBizGuaranteed interface {
+	PromotionBiz
+	Send() PromotionBizSender
+	Future() PromotionBizFuture
+}
+
+// PromotionBizBestEffort is the best-effort (non-durable) surface: sync request-response only.
+type PromotionBizBestEffort interface {
+	PromotionBiz
+}
+
+// promotionBizBestEffortLocal delegates BestEffort calls to the in-process biz.
+type promotionBizBestEffortLocal struct{ biz PromotionBiz }
+
+var _ PromotionBizBestEffort = (*promotionBizBestEffortLocal)(nil)
+
+func (b *promotionBizBestEffortLocal) GetPromotion(ctx context.Context, params GetPromotionParams) (promotionmodel.Promotion, error) {
+	return b.biz.GetPromotion(ctx, params)
+}
+
+func (b *promotionBizBestEffortLocal) ListPromotion(ctx context.Context, params ListPromotionParams) (paginate.PaginateResult[promotionmodel.Promotion], error) {
+	return b.biz.ListPromotion(ctx, params)
+}
+
+func (b *promotionBizBestEffortLocal) CreatePromotion(ctx context.Context, params CreatePromotionParams) (promotionmodel.Promotion, error) {
+	return b.biz.CreatePromotion(ctx, params)
+}
+
+func (b *promotionBizBestEffortLocal) UpdatePromotion(ctx context.Context, params UpdatePromotionParams) (promotionmodel.Promotion, error) {
+	return b.biz.UpdatePromotion(ctx, params)
+}
+
+func (b *promotionBizBestEffortLocal) DeletePromotion(ctx context.Context, params DeletePromotionParams) error {
+	return b.biz.DeletePromotion(ctx, params)
+}
+
+func (b *promotionBizBestEffortLocal) CalculatePromotedPrices(ctx context.Context, params CalculatePromotedPricesParams) (map[uuid.UUID]*catalogmodel.OrderPrice, error) {
+	return b.biz.CalculatePromotedPrices(ctx, params)
+}
+
+// promotionBizBestEffortRemote routes BestEffort calls over HTTP/2.
+type promotionBizBestEffortRemote struct{ call *besteffort.CallClient }
+
+var _ PromotionBizBestEffort = (*promotionBizBestEffortRemote)(nil)
+
+func (b *promotionBizBestEffortRemote) GetPromotion(ctx context.Context, params GetPromotionParams) (promotionmodel.Promotion, error) {
+	return besteffort.Call[promotionmodel.Promotion](ctx, b.call, serviceName, "GetPromotion", params)
+}
+
+func (b *promotionBizBestEffortRemote) ListPromotion(ctx context.Context, params ListPromotionParams) (paginate.PaginateResult[promotionmodel.Promotion], error) {
+	return besteffort.Call[paginate.PaginateResult[promotionmodel.Promotion]](ctx, b.call, serviceName, "ListPromotion", params)
+}
+
+func (b *promotionBizBestEffortRemote) CreatePromotion(ctx context.Context, params CreatePromotionParams) (promotionmodel.Promotion, error) {
+	return besteffort.Call[promotionmodel.Promotion](ctx, b.call, serviceName, "CreatePromotion", params)
+}
+
+func (b *promotionBizBestEffortRemote) UpdatePromotion(ctx context.Context, params UpdatePromotionParams) (promotionmodel.Promotion, error) {
+	return besteffort.Call[promotionmodel.Promotion](ctx, b.call, serviceName, "UpdatePromotion", params)
+}
+
+func (b *promotionBizBestEffortRemote) DeletePromotion(ctx context.Context, params DeletePromotionParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "DeletePromotion", params)
+}
+
+func (b *promotionBizBestEffortRemote) CalculatePromotedPrices(ctx context.Context, params CalculatePromotedPricesParams) (map[uuid.UUID]*catalogmodel.OrderPrice, error) {
+	return besteffort.Call[map[uuid.UUID]*catalogmodel.OrderPrice](ctx, b.call, serviceName, "CalculatePromotedPrices", params)
+}
+
+// PromotionBizClient selects the guaranteed (durable) or best-effort (non-durable) transport.
+type promotionBizClient struct {
+	*PromotionRestateClient
+	bestEffort PromotionBizBestEffort
+}
+
+var _ PromotionBizClient = (*promotionBizClient)(nil)
+
+func (c *promotionBizClient) Guaranteed() PromotionBizGuaranteed { return c.PromotionRestateClient }
+
+func (c *promotionBizClient) BestEffort() PromotionBizBestEffort { return c.bestEffort }
+
+// NewPromotionBizClientInProcess builds a client whose BestEffort calls the in-process biz.
+func NewPromotionBizClientInProcess(restateIngressURL string, biz PromotionBiz) PromotionBizClient {
+	return &promotionBizClient{
+		PromotionRestateClient: NewPromotionRestateClient(restateIngressURL),
+		bestEffort:             &promotionBizBestEffortLocal{biz: biz},
+	}
+}
+
+// NewPromotionBizClientRemote builds a client whose BestEffort calls a remote BestEffort server.
+func NewPromotionBizClientRemote(restateIngressURL, bestEffortURL string) PromotionBizClient {
+	return &promotionBizClient{
+		PromotionRestateClient: NewPromotionRestateClient(restateIngressURL),
+		bestEffort:             &promotionBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+	}
+}
+
+// RegisterPromotionBestEffort wires biz methods onto a BestEffort HTTP/2 server.
+func RegisterPromotionBestEffort(s *besteffort.Server, biz PromotionBiz) {
+	s.Handle(serviceName, "GetPromotion", func(ctx context.Context, body []byte) (any, error) {
+		var p GetPromotionParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetPromotion(ctx, p)
+	})
+	s.Handle(serviceName, "ListPromotion", func(ctx context.Context, body []byte) (any, error) {
+		var p ListPromotionParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListPromotion(ctx, p)
+	})
+	s.Handle(serviceName, "CreatePromotion", func(ctx context.Context, body []byte) (any, error) {
+		var p CreatePromotionParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.CreatePromotion(ctx, p)
+	})
+	s.Handle(serviceName, "UpdatePromotion", func(ctx context.Context, body []byte) (any, error) {
+		var p UpdatePromotionParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.UpdatePromotion(ctx, p)
+	})
+	s.Handle(serviceName, "DeletePromotion", func(ctx context.Context, body []byte) (any, error) {
+		var p DeletePromotionParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.DeletePromotion(ctx, p)
+	})
+	s.Handle(serviceName, "CalculatePromotedPrices", func(ctx context.Context, body []byte) (any, error) {
+		var p CalculatePromotedPricesParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.CalculatePromotedPrices(ctx, p)
+	})
 }

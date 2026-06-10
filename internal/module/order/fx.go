@@ -101,7 +101,7 @@ func NewOrderStorage(pool pgsqlc.TxBeginner) orderbiz.OrderStorage {
 
 // NewOrderBiz creates a Restate-backed client for the order module.
 func NewOrderBiz(cfg *orderconfig.Config) orderbiz.OrderBizClient {
-	return orderbiz.NewOrderRestateClient(cfg.Restate.IngressAddress)
+	return orderbiz.NewOrderBizClientRemote(cfg.Restate.IngressAddress, cfg.Restate.IngressAddress)
 }
 
 // NewCheckoutWf creates a Restate-backed client for the checkout workflow.

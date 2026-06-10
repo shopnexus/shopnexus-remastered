@@ -4,10 +4,12 @@ package commonbiz
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/google/uuid"
 	restate "github.com/restatedev/sdk-go"
 	commonmodel "shopnexus-server/internal/module/common/model"
 	"shopnexus-server/internal/provider/geocoding"
+	"shopnexus-server/internal/shared/besteffort"
 	restatec "shopnexus-server/internal/shared/restate"
 )
 
@@ -61,6 +63,8 @@ type CommonBizClient interface {
 	CommonBiz
 	Send() CommonBizSender
 	Future() CommonBizFuture
+	Guaranteed() CommonBizGuaranteed
+	BestEffort() CommonBizBestEffort
 }
 
 // CommonRestateClient implements CommonBizClient via Restate HTTP ingress.
@@ -70,7 +74,7 @@ type CommonRestateClient struct {
 	future *CommonRestateFuture
 }
 
-var _ CommonBizClient = (*CommonRestateClient)(nil)
+var _ CommonBizGuaranteed = (*CommonRestateClient)(nil)
 
 func NewCommonRestateClient(restateIngressURL string) *CommonRestateClient {
 	return &CommonRestateClient{
@@ -375,4 +379,313 @@ func (s *CommonService) ConvertAmount(ctx restate.Context, params ConvertAmountP
 
 func (s *CommonService) IsSupportedCurrency(ctx restate.Context, currency string) (bool, error) {
 	return s.biz.IsSupportedCurrency(ctx, currency)
+}
+
+// CommonBizGuaranteed is the guaranteed (durable Restate) surface.
+type CommonBizGuaranteed interface {
+	CommonBiz
+	Send() CommonBizSender
+	Future() CommonBizFuture
+}
+
+// CommonBizBestEffort is the best-effort (non-durable) surface: sync request-response only.
+type CommonBizBestEffort interface {
+	CommonBiz
+}
+
+// commonBizBestEffortLocal delegates BestEffort calls to the in-process biz.
+type commonBizBestEffortLocal struct{ biz CommonBiz }
+
+var _ CommonBizBestEffort = (*commonBizBestEffortLocal)(nil)
+
+func (b *commonBizBestEffortLocal) GetFileURL(ctx context.Context, params GetFileURLParams) (string, error) {
+	return b.biz.GetFileURL(ctx, params)
+}
+
+func (b *commonBizBestEffortLocal) ListOption(ctx context.Context, params ListOptionParams) ([]OptionListItem, error) {
+	return b.biz.ListOption(ctx, params)
+}
+
+func (b *commonBizBestEffortLocal) UpsertOptions(ctx context.Context, params UpsertOptionsParams) error {
+	return b.biz.UpsertOptions(ctx, params)
+}
+
+func (b *commonBizBestEffortLocal) DeleteOptions(ctx context.Context, params DeleteOptionParams) error {
+	return b.biz.DeleteOptions(ctx, params)
+}
+
+func (b *commonBizBestEffortLocal) UpdateResources(ctx context.Context, params UpdateResourcesParams) ([]commonmodel.Resource, error) {
+	return b.biz.UpdateResources(ctx, params)
+}
+
+func (b *commonBizBestEffortLocal) DeleteResources(ctx context.Context, params DeleteResourcesParams) error {
+	return b.biz.DeleteResources(ctx, params)
+}
+
+func (b *commonBizBestEffortLocal) GetResources(ctx context.Context, params GetResourcesParams) (map[uuid.UUID][]commonmodel.Resource, error) {
+	return b.biz.GetResources(ctx, params)
+}
+
+func (b *commonBizBestEffortLocal) GetResourcesByIDs(ctx context.Context, resourceIDs []uuid.UUID) (map[uuid.UUID]commonmodel.Resource, error) {
+	return b.biz.GetResourcesByIDs(ctx, resourceIDs)
+}
+
+func (b *commonBizBestEffortLocal) GetResourceByID(ctx context.Context, resourceID uuid.UUID) (*commonmodel.Resource, error) {
+	return b.biz.GetResourceByID(ctx, resourceID)
+}
+
+func (b *commonBizBestEffortLocal) ReverseGeocode(ctx context.Context, params ReverseGeocodeParams) (geocoding.Result, error) {
+	return b.biz.ReverseGeocode(ctx, params)
+}
+
+func (b *commonBizBestEffortLocal) ForwardGeocode(ctx context.Context, params ForwardGeocodeParams) (geocoding.Result, error) {
+	return b.biz.ForwardGeocode(ctx, params)
+}
+
+func (b *commonBizBestEffortLocal) SearchGeocode(ctx context.Context, params SearchGeocodeParams) ([]geocoding.Result, error) {
+	return b.biz.SearchGeocode(ctx, params)
+}
+
+func (b *commonBizBestEffortLocal) ResolveCountry(ctx context.Context, address string) (string, error) {
+	return b.biz.ResolveCountry(ctx, address)
+}
+
+func (b *commonBizBestEffortLocal) PushEvent(ctx context.Context, params PushEventParams) error {
+	return b.biz.PushEvent(ctx, params)
+}
+
+func (b *commonBizBestEffortLocal) GetExchangeRates(ctx context.Context, params GetExchangeRatesParams) (commonmodel.ExchangeRateSnapshot, error) {
+	return b.biz.GetExchangeRates(ctx, params)
+}
+
+func (b *commonBizBestEffortLocal) ConvertAmount(ctx context.Context, params ConvertAmountParams) (int64, error) {
+	return b.biz.ConvertAmount(ctx, params)
+}
+
+func (b *commonBizBestEffortLocal) IsSupportedCurrency(ctx context.Context, currency string) (bool, error) {
+	return b.biz.IsSupportedCurrency(ctx, currency)
+}
+
+// commonBizBestEffortRemote routes BestEffort calls over HTTP/2.
+type commonBizBestEffortRemote struct{ call *besteffort.CallClient }
+
+var _ CommonBizBestEffort = (*commonBizBestEffortRemote)(nil)
+
+func (b *commonBizBestEffortRemote) GetFileURL(ctx context.Context, params GetFileURLParams) (string, error) {
+	return besteffort.Call[string](ctx, b.call, serviceName, "GetFileURL", params)
+}
+
+func (b *commonBizBestEffortRemote) ListOption(ctx context.Context, params ListOptionParams) ([]OptionListItem, error) {
+	return besteffort.Call[[]OptionListItem](ctx, b.call, serviceName, "ListOption", params)
+}
+
+func (b *commonBizBestEffortRemote) UpsertOptions(ctx context.Context, params UpsertOptionsParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "UpsertOptions", params)
+}
+
+func (b *commonBizBestEffortRemote) DeleteOptions(ctx context.Context, params DeleteOptionParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "DeleteOptions", params)
+}
+
+func (b *commonBizBestEffortRemote) UpdateResources(ctx context.Context, params UpdateResourcesParams) ([]commonmodel.Resource, error) {
+	return besteffort.Call[[]commonmodel.Resource](ctx, b.call, serviceName, "UpdateResources", params)
+}
+
+func (b *commonBizBestEffortRemote) DeleteResources(ctx context.Context, params DeleteResourcesParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "DeleteResources", params)
+}
+
+func (b *commonBizBestEffortRemote) GetResources(ctx context.Context, params GetResourcesParams) (map[uuid.UUID][]commonmodel.Resource, error) {
+	return besteffort.Call[map[uuid.UUID][]commonmodel.Resource](ctx, b.call, serviceName, "GetResources", params)
+}
+
+func (b *commonBizBestEffortRemote) GetResourcesByIDs(ctx context.Context, resourceIDs []uuid.UUID) (map[uuid.UUID]commonmodel.Resource, error) {
+	return besteffort.Call[map[uuid.UUID]commonmodel.Resource](ctx, b.call, serviceName, "GetResourcesByIDs", resourceIDs)
+}
+
+func (b *commonBizBestEffortRemote) GetResourceByID(ctx context.Context, resourceID uuid.UUID) (*commonmodel.Resource, error) {
+	return besteffort.Call[*commonmodel.Resource](ctx, b.call, serviceName, "GetResourceByID", resourceID)
+}
+
+func (b *commonBizBestEffortRemote) ReverseGeocode(ctx context.Context, params ReverseGeocodeParams) (geocoding.Result, error) {
+	return besteffort.Call[geocoding.Result](ctx, b.call, serviceName, "ReverseGeocode", params)
+}
+
+func (b *commonBizBestEffortRemote) ForwardGeocode(ctx context.Context, params ForwardGeocodeParams) (geocoding.Result, error) {
+	return besteffort.Call[geocoding.Result](ctx, b.call, serviceName, "ForwardGeocode", params)
+}
+
+func (b *commonBizBestEffortRemote) SearchGeocode(ctx context.Context, params SearchGeocodeParams) ([]geocoding.Result, error) {
+	return besteffort.Call[[]geocoding.Result](ctx, b.call, serviceName, "SearchGeocode", params)
+}
+
+func (b *commonBizBestEffortRemote) ResolveCountry(ctx context.Context, address string) (string, error) {
+	return besteffort.Call[string](ctx, b.call, serviceName, "ResolveCountry", address)
+}
+
+func (b *commonBizBestEffortRemote) PushEvent(ctx context.Context, params PushEventParams) error {
+	return besteffort.CallVoid(ctx, b.call, serviceName, "PushEvent", params)
+}
+
+func (b *commonBizBestEffortRemote) GetExchangeRates(ctx context.Context, params GetExchangeRatesParams) (commonmodel.ExchangeRateSnapshot, error) {
+	return besteffort.Call[commonmodel.ExchangeRateSnapshot](ctx, b.call, serviceName, "GetExchangeRates", params)
+}
+
+func (b *commonBizBestEffortRemote) ConvertAmount(ctx context.Context, params ConvertAmountParams) (int64, error) {
+	return besteffort.Call[int64](ctx, b.call, serviceName, "ConvertAmount", params)
+}
+
+func (b *commonBizBestEffortRemote) IsSupportedCurrency(ctx context.Context, currency string) (bool, error) {
+	return besteffort.Call[bool](ctx, b.call, serviceName, "IsSupportedCurrency", currency)
+}
+
+// CommonBizClient selects the guaranteed (durable) or best-effort (non-durable) transport.
+type commonBizClient struct {
+	*CommonRestateClient
+	bestEffort CommonBizBestEffort
+}
+
+var _ CommonBizClient = (*commonBizClient)(nil)
+
+func (c *commonBizClient) Guaranteed() CommonBizGuaranteed { return c.CommonRestateClient }
+
+func (c *commonBizClient) BestEffort() CommonBizBestEffort { return c.bestEffort }
+
+// NewCommonBizClientInProcess builds a client whose BestEffort calls the in-process biz.
+func NewCommonBizClientInProcess(restateIngressURL string, biz CommonBiz) CommonBizClient {
+	return &commonBizClient{
+		CommonRestateClient: NewCommonRestateClient(restateIngressURL),
+		bestEffort:          &commonBizBestEffortLocal{biz: biz},
+	}
+}
+
+// NewCommonBizClientRemote builds a client whose BestEffort calls a remote BestEffort server.
+func NewCommonBizClientRemote(restateIngressURL, bestEffortURL string) CommonBizClient {
+	return &commonBizClient{
+		CommonRestateClient: NewCommonRestateClient(restateIngressURL),
+		bestEffort:          &commonBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+	}
+}
+
+// RegisterCommonBestEffort wires biz methods onto a BestEffort HTTP/2 server.
+func RegisterCommonBestEffort(s *besteffort.Server, biz CommonBiz) {
+	s.Handle(serviceName, "GetFileURL", func(ctx context.Context, body []byte) (any, error) {
+		var p GetFileURLParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetFileURL(ctx, p)
+	})
+	s.Handle(serviceName, "ListOption", func(ctx context.Context, body []byte) (any, error) {
+		var p ListOptionParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ListOption(ctx, p)
+	})
+	s.Handle(serviceName, "UpsertOptions", func(ctx context.Context, body []byte) (any, error) {
+		var p UpsertOptionsParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.UpsertOptions(ctx, p)
+	})
+	s.Handle(serviceName, "DeleteOptions", func(ctx context.Context, body []byte) (any, error) {
+		var p DeleteOptionParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.DeleteOptions(ctx, p)
+	})
+	s.Handle(serviceName, "UpdateResources", func(ctx context.Context, body []byte) (any, error) {
+		var p UpdateResourcesParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.UpdateResources(ctx, p)
+	})
+	s.Handle(serviceName, "DeleteResources", func(ctx context.Context, body []byte) (any, error) {
+		var p DeleteResourcesParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.DeleteResources(ctx, p)
+	})
+	s.Handle(serviceName, "GetResources", func(ctx context.Context, body []byte) (any, error) {
+		var p GetResourcesParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetResources(ctx, p)
+	})
+	s.Handle(serviceName, "GetResourcesByIDs", func(ctx context.Context, body []byte) (any, error) {
+		var p []uuid.UUID
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetResourcesByIDs(ctx, p)
+	})
+	s.Handle(serviceName, "GetResourceByID", func(ctx context.Context, body []byte) (any, error) {
+		var p uuid.UUID
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetResourceByID(ctx, p)
+	})
+	s.Handle(serviceName, "ReverseGeocode", func(ctx context.Context, body []byte) (any, error) {
+		var p ReverseGeocodeParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ReverseGeocode(ctx, p)
+	})
+	s.Handle(serviceName, "ForwardGeocode", func(ctx context.Context, body []byte) (any, error) {
+		var p ForwardGeocodeParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ForwardGeocode(ctx, p)
+	})
+	s.Handle(serviceName, "SearchGeocode", func(ctx context.Context, body []byte) (any, error) {
+		var p SearchGeocodeParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.SearchGeocode(ctx, p)
+	})
+	s.Handle(serviceName, "ResolveCountry", func(ctx context.Context, body []byte) (any, error) {
+		var p string
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ResolveCountry(ctx, p)
+	})
+	s.Handle(serviceName, "PushEvent", func(ctx context.Context, body []byte) (any, error) {
+		var p PushEventParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return nil, biz.PushEvent(ctx, p)
+	})
+	s.Handle(serviceName, "GetExchangeRates", func(ctx context.Context, body []byte) (any, error) {
+		var p GetExchangeRatesParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.GetExchangeRates(ctx, p)
+	})
+	s.Handle(serviceName, "ConvertAmount", func(ctx context.Context, body []byte) (any, error) {
+		var p ConvertAmountParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ConvertAmount(ctx, p)
+	})
+	s.Handle(serviceName, "IsSupportedCurrency", func(ctx context.Context, body []byte) (any, error) {
+		var p string
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.IsSupportedCurrency(ctx, p)
+	})
 }
