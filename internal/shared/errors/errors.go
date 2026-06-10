@@ -1,6 +1,7 @@
 package errors
 
 import (
+	stderrors "errors"
 	"fmt"
 	"net/http"
 
@@ -20,8 +21,9 @@ func (e Errorf) Fmt(args ...any) error {
 
 // codedError carries the app code: errors.As finds it same-process, the trailing " [code]" tag survives a Restate hop.
 type codedError struct {
-	code string
-	err  error
+	httpStatus uint16
+	code       string
+	err        error
 }
 
 func (e *codedError) Error() string { return e.err.Error() + " [" + e.code + "]" }
@@ -29,7 +31,16 @@ func (e *codedError) Unwrap() error { return e.err }
 func (e *codedError) Code() string  { return e.code }
 
 func newCoded(status uint16, code string, err error) error {
-	return restate.TerminalError(&codedError{code: code, err: err}, restate.Code(status))
+	return restate.TerminalError(&codedError{httpStatus: status, code: code, err: err}, restate.Code(status))
+}
+
+// Decompose extracts (status, code, untagged message) from a coded domain error.
+func Decompose(err error) (status uint16, code, message string, ok bool) {
+	var ce *codedError
+	if !stderrors.As(err, &ce) {
+		return 0, "", "", false
+	}
+	return ce.httpStatus, ce.code, ce.err.Error(), true
 }
 
 func NewError(status uint16, code string, message string) error {
