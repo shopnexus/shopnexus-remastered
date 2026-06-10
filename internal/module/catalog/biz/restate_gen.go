@@ -398,3 +398,108 @@ func (f *CatalogRestateFuture) AddInteractions(rctx restate.Context, events []an
 func (f *CatalogRestateFuture) GetVendorStats(rctx restate.Context, params GetVendorStatsParams) restate.ResponseFuture[VendorStats] {
 	return restate.Service[VendorStats](rctx, serviceName, "GetVendorStats").RequestFuture(params)
 }
+
+// CatalogService adapts CatalogBiz into restate.Context handlers for restate.Reflect.
+type CatalogService struct {
+	biz CatalogBiz
+}
+
+func NewCatalogService(biz CatalogBiz) *CatalogService { return &CatalogService{biz: biz} }
+
+func (s *CatalogService) ServiceName() string { return serviceName }
+
+func (s *CatalogService) GetProductDetail(ctx restate.Context, params GetProductDetailParams) (catalogmodel.ProductDetail, error) {
+	return s.biz.GetProductDetail(ctx, params)
+}
+
+func (s *CatalogService) GetProductCard(ctx restate.Context, params GetProductCardParams) (*catalogmodel.ProductCard, error) {
+	return s.biz.GetProductCard(ctx, params)
+}
+
+func (s *CatalogService) ListProductCard(ctx restate.Context, params ListProductCardParams) (paginate.PaginateResult[catalogmodel.ProductCard], error) {
+	return s.biz.ListProductCard(ctx, params)
+}
+
+func (s *CatalogService) ListRecommendedProductCard(ctx restate.Context, params ListRecommendedProductCardParams) ([]catalogmodel.ProductCard, error) {
+	return s.biz.ListRecommendedProductCard(ctx, params)
+}
+
+func (s *CatalogService) GetProductSpu(ctx restate.Context, params GetProductSpuParams) (catalogmodel.ProductSpu, error) {
+	return s.biz.GetProductSpu(ctx, params)
+}
+
+func (s *CatalogService) ListProductSpu(ctx restate.Context, params ListProductSpuParams) (paginate.PaginateResult[catalogmodel.ProductSpu], error) {
+	return s.biz.ListProductSpu(ctx, params)
+}
+
+func (s *CatalogService) CreateProductSpu(ctx restate.Context, params CreateProductSpuParams) (catalogmodel.ProductSpu, error) {
+	return s.biz.CreateProductSpu(ctx, params)
+}
+
+func (s *CatalogService) UpdateProductSpu(ctx restate.Context, params UpdateProductSpuParams) (catalogmodel.ProductSpu, error) {
+	return s.biz.UpdateProductSpu(ctx, params)
+}
+
+func (s *CatalogService) DeleteProductSpu(ctx restate.Context, params DeleteProductSpuParams) error {
+	return s.biz.DeleteProductSpu(ctx, params)
+}
+
+func (s *CatalogService) ListProductSku(ctx restate.Context, params ListProductSkuParams) ([]catalogmodel.ProductSku, error) {
+	return s.biz.ListProductSku(ctx, params)
+}
+
+func (s *CatalogService) CreateProductSku(ctx restate.Context, params CreateProductSkuParams) (catalogmodel.ProductSku, error) {
+	return s.biz.CreateProductSku(ctx, params)
+}
+
+func (s *CatalogService) UpdateProductSku(ctx restate.Context, params UpdateProductSkuParams) (catalogmodel.ProductSku, error) {
+	return s.biz.UpdateProductSku(ctx, params)
+}
+
+func (s *CatalogService) DeleteProductSku(ctx restate.Context, params DeleteProductSkuParams) error {
+	return s.biz.DeleteProductSku(ctx, params)
+}
+
+func (s *CatalogService) ListComment(ctx restate.Context, params ListCommentParams) (paginate.PaginateResult[catalogmodel.Comment], error) {
+	return s.biz.ListComment(ctx, params)
+}
+
+func (s *CatalogService) CreateComment(ctx restate.Context, params CreateCommentParams) (catalogmodel.Comment, error) {
+	return s.biz.CreateComment(ctx, params)
+}
+
+func (s *CatalogService) UpdateComment(ctx restate.Context, params UpdateCommentParams) (catalogmodel.Comment, error) {
+	return s.biz.UpdateComment(ctx, params)
+}
+
+func (s *CatalogService) DeleteComment(ctx restate.Context, params DeleteCommentParams) error {
+	return s.biz.DeleteComment(ctx, params)
+}
+
+func (s *CatalogService) ListTag(ctx restate.Context, params ListTagParams) (paginate.PaginateResult[catalogdb.CatalogTag], error) {
+	return s.biz.ListTag(ctx, params)
+}
+
+func (s *CatalogService) GetTag(ctx restate.Context, params GetTagParams) (catalogdb.CatalogTag, error) {
+	return s.biz.GetTag(ctx, params)
+}
+
+func (s *CatalogService) ListCategory(ctx restate.Context, params ListCategoryParams) (paginate.PaginateResult[catalogmodel.Category], error) {
+	return s.biz.ListCategory(ctx, params)
+}
+
+func (s *CatalogService) Search(ctx restate.Context, params SearchParams) (paginate.PaginateResult[catalogmodel.ProductRecommend], error) {
+	return s.biz.Search(ctx, params)
+}
+
+func (s *CatalogService) GetRecommendations(ctx restate.Context, params GetRecommendationsParams) ([]catalogmodel.ProductRecommend, error) {
+	return s.biz.GetRecommendations(ctx, params)
+}
+
+func (s *CatalogService) AddInteractions(ctx restate.Context, events []analyticmodel.Interaction) error {
+	return s.biz.AddInteractions(ctx, events)
+}
+
+func (s *CatalogService) GetVendorStats(ctx restate.Context, params GetVendorStatsParams) (VendorStats, error) {
+	return s.biz.GetVendorStats(ctx, params)
+}

@@ -489,6 +489,10 @@ func main() {
 		writeFutureMethod(&buf, futureType, m, isWorkflow)
 	}
 
+	if !isWorkflow {
+		writeServiceAdapter(&buf, *serviceName, ifaceRef, methods)
+	}
+
 	formatted, err := format.Source(buf.Bytes())
 	if err != nil {
 		log.Fatalf("gofmt: %v\nraw output:\n%s", err, buf.String())
@@ -606,6 +610,33 @@ func writeCallMethod(buf *bytes.Buffer, proxyType string, m methodInfo, isWorkfl
 	}
 
 	buf.WriteString("}\n\n")
+}
+
+// writeServiceAdapter emits the Guaranteed adapter: a struct wrapping the biz
+// interface with restate.Context methods and ServiceName() for restate.Reflect.
+func writeServiceAdapter(buf *bytes.Buffer, serviceName, ifaceRef string, methods []methodInfo) {
+	adapter := serviceName + "Service"
+
+	fmt.Fprintf(buf, "// %s adapts %s into restate.Context handlers for restate.Reflect.\n", adapter, ifaceRef)
+	fmt.Fprintf(buf, "type %s struct {\n\tbiz %s\n}\n\n", adapter, ifaceRef)
+	fmt.Fprintf(buf, "func New%s(biz %s) *%s { return &%s{biz: biz} }\n\n", adapter, ifaceRef, adapter, adapter)
+	fmt.Fprintf(buf, "func (s *%s) ServiceName() string { return serviceName }\n\n", adapter)
+
+	for _, m := range methods {
+		fmt.Fprintf(buf, "func (s *%s) %s(%s) ", adapter, m.Name, m.params("ctx restate.Context"))
+		if m.HasOutput {
+			fmt.Fprintf(buf, "(%s, error)", m.OutputType)
+		} else {
+			buf.WriteString("error")
+		}
+		buf.WriteString(" {\n")
+
+		args := "ctx"
+		if m.HasInput {
+			args += ", " + m.InputName
+		}
+		fmt.Fprintf(buf, "\treturn s.biz.%s(%s)\n}\n\n", m.Name, args)
+	}
 }
 
 // writeSendMethod emits a one-way method on the sender proxy; outputs are dropped.
