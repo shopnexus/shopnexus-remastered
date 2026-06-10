@@ -1,6 +1,7 @@
 package buyerorder
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -12,13 +13,12 @@ import (
 	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	"shopnexus-server/internal/shared/compensate"
 	"shopnexus-server/internal/shared/idempotency"
-	"shopnexus-server/internal/shared/saga"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	restate "github.com/restatedev/sdk-go"
 )
 
 type CancelBuyerPendingParams struct {
@@ -27,12 +27,12 @@ type CancelBuyerPendingParams struct {
 }
 
 // CancelBuyerPending cancels a pre-confirm pending item.
-func (b *BuyerHandler) CancelBuyerPending(ctx restate.Context, params CancelBuyerPendingParams) error {
+func (b *BuyerHandler) CancelBuyerPending(ctx context.Context, params CancelBuyerPendingParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate cancel pending item: %w", err)
 	}
 
-	item, err := restate.Run(ctx, func(ctx restate.RunContext) (orderdb.OrderItem, error) {
+	item, err := func() (orderdb.OrderItem, error) {
 		var zero orderdb.OrderItem
 		dbItem, err := b.Storage.Querier().GetItem(ctx, null.IntFrom(params.ItemID))
 		if err != nil {
@@ -48,14 +48,12 @@ func (b *BuyerHandler) CancelBuyerPending(ctx restate.Context, params CancelBuye
 			return zero, ordermodel.ErrItemAlreadyCancelled
 		}
 		return dbItem, nil
-	})
+	}()
 	if err != nil {
 		return fmt.Errorf("fetch item: %w", err)
 	}
 
-	paymentSession, err := restate.Run(ctx, func(ctx restate.RunContext) (orderdb.OrderPaymentSession, error) {
-		return b.Storage.Querier().GetPaymentSession(ctx, uuid.NullUUID{UUID: item.PaymentSessionID, Valid: true})
-	})
+	paymentSession, err := b.Storage.Querier().GetPaymentSession(ctx, uuid.NullUUID{UUID: item.PaymentSessionID, Valid: true})
 	if err != nil {
 		return fmt.Errorf("db get payment session: %w", err)
 	}
@@ -101,10 +99,10 @@ type RefundPendingItemParams struct {
 
 // RefundPendingItem refunds a single paid item (not yet confirmed).
 func (b *BuyerHandler) RefundPendingItem(
-	ctx restate.Context,
+	ctx context.Context,
 	params RefundPendingItemParams,
 ) error {
-	sagaTx := saga.New(ctx)
+	sagaTx := compensate.New(ctx)
 
 	return sagaTx.Wrap(func() error {
 		var err error
@@ -117,9 +115,9 @@ func (b *BuyerHandler) RefundPendingItem(
 		// Step 1: find the original positive Success tx — refund leg reverses it.
 		// Single original tx per session (no split-tender).
 		var originalTxID uuid.NullUUID
-		originalTxID, err = restate.Run(ctx, func(rctx restate.RunContext) (uuid.NullUUID, error) {
+		originalTxID, err = func() (uuid.NullUUID, error) {
 			var txs []orderdb.OrderTransaction
-			txs, err = b.Storage.Querier().ListTransactionsBySession(rctx, params.PaymentSessionID)
+			txs, err = b.Storage.Querier().ListTransactionsBySession(ctx, params.PaymentSessionID)
 			if err != nil {
 				return uuid.NullUUID{}, err
 			}
@@ -127,26 +125,25 @@ func (b *BuyerHandler) RefundPendingItem(
 				return uuid.NullUUID{UUID: originalTx.ID, Valid: true}, nil
 			}
 			return uuid.NullUUID{}, ordermodel.ErrOrderItemNotFound
-		})
+		}()
 		if err != nil {
 			return fmt.Errorf("find original tx: %w", err)
 		}
 
 		// Step 2: release inventory
 		// Saga key paired across forward (Release, claims) and compensator (Reserve, consumes).
-		releaseKey := restate.UUID(ctx)
-		sagaTx.Defer("reserve_inventory", func(ctx restate.Context) error {
-			return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-				_, e := b.inventory.ReserveInventory(rctx, inventorybiz.ReserveInventoryParams{
-					Keys: idempotency.Keys{ConsumeKey: releaseKey},
-					Items: []inventorybiz.ReserveInventoryItem{{
-						RefType: inventorydb.InventoryStockRefTypeProductSku,
-						RefID:   params.Item.SkuID,
-						Amount:  params.Item.Quantity,
-					}},
-				})
-				return e
+		// deterministic key: retries must reuse it so the idempotency ledger dedupes
+		releaseKey := uuid.NewSHA1(uuid.NameSpaceOID, fmt.Appendf(nil, "cancel-release:item:%d", params.Item.ID))
+		sagaTx.Defer("reserve_inventory", func(ctx context.Context) error {
+			_, e := b.inventory.ReserveInventory(ctx, inventorybiz.ReserveInventoryParams{
+				Keys: idempotency.Keys{ConsumeKey: releaseKey},
+				Items: []inventorybiz.ReserveInventoryItem{{
+					RefType: inventorydb.InventoryStockRefTypeProductSku,
+					RefID:   params.Item.SkuID,
+					Amount:  params.Item.Quantity,
+				}},
 			})
+			return e
 		})
 		if err = b.inventory.ReleaseInventory(ctx, inventorybiz.ReleaseInventoryParams{
 			Keys: idempotency.Keys{ClaimKey: releaseKey},
@@ -162,16 +159,14 @@ func (b *BuyerHandler) RefundPendingItem(
 		// Step 3: credit only the partial item amount
 		// Compensator debits the same amount
 		creditRef := fmt.Sprintf("partial-refund:item:%d", params.Item.ID)
-		sagaTx.Defer("wallet_debit", func(ctx restate.Context) error {
-			return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-				_, e := b.account.WalletDebit(rctx, accountbiz.WalletDebitParams{
-					AccountID: params.Item.AccountID,
-					Amount:    params.Item.TotalAmount,
-					Reference: "rollback:" + creditRef,
-					Note:      "rollback partial refund credit",
-				})
-				return e
+		sagaTx.Defer("wallet_debit", func(ctx context.Context) error {
+			_, e := b.account.WalletDebit(ctx, accountbiz.WalletDebitParams{
+				AccountID: params.Item.AccountID,
+				Amount:    params.Item.TotalAmount,
+				Reference: "rollback:" + creditRef,
+				Note:      "rollback partial refund credit",
 			})
+			return e
 		})
 		if err = b.account.WalletCredit(ctx, accountbiz.WalletCreditParams{
 			AccountID: params.Item.AccountID,
@@ -184,35 +179,35 @@ func (b *BuyerHandler) RefundPendingItem(
 		}
 
 		// Step 4 (last, no compensator): atomic refund tx + cancel item.
-		refundTxID := restate.UUID(ctx)
-		if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-			txStorage, e := b.Storage.BeginTx(rctx)
-			if e != nil {
-				return fmt.Errorf("begin tx: %w", e)
-			}
+		// deterministic key: retries must reuse it so the idempotency ledger dedupes
+		refundTxID := uuid.NewSHA1(uuid.NameSpaceOID, fmt.Appendf(nil, "cancel-refund:item:%d", params.Item.ID))
+		txStorage, e := b.Storage.BeginTx(ctx)
+		if e != nil {
+			return fmt.Errorf("begin tx: %w", e)
+		}
+		defer txStorage.Rollback(ctx)
 
-			if _, e = txStorage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
-				ID:          refundTxID,
-				SessionID:   params.PaymentSessionID,
-				Status:      orderdb.OrderStatusSuccess,
-				Note:        "buyer cancel pre-confirm",
-				Data:        json.RawMessage("{}"),
-				Amount:      -params.Item.TotalAmount,
-				Currency:    buyerCurrency,
-				ReversesID:  originalTxID,
-				DateSettled: null.TimeFrom(time.Now()),
-			}); e != nil {
-				return fmt.Errorf("db create refund tx: %w", e)
-			}
-			if _, e = txStorage.Querier().CancelItem(rctx, orderdb.CancelItemParams{
-				CancelledByID: uuid.NullUUID{UUID: params.Item.AccountID, Valid: true},
-				ID:            params.Item.ID,
-			}); e != nil {
-				return fmt.Errorf("db cancel item: %w", e)
-			}
+		if _, e = txStorage.Querier().CreateDefaultTransaction(ctx, orderdb.CreateDefaultTransactionParams{
+			ID:          refundTxID,
+			SessionID:   params.PaymentSessionID,
+			Status:      orderdb.OrderStatusSuccess,
+			Note:        "buyer cancel pre-confirm",
+			Data:        json.RawMessage("{}"),
+			Amount:      -params.Item.TotalAmount,
+			Currency:    buyerCurrency,
+			ReversesID:  originalTxID,
+			DateSettled: null.TimeFrom(time.Now()),
+		}); e != nil {
+			return fmt.Errorf("db create refund tx: %w", e)
+		}
+		if _, e = txStorage.Querier().CancelItem(ctx, orderdb.CancelItemParams{
+			CancelledByID: uuid.NullUUID{UUID: params.Item.AccountID, Valid: true},
+			ID:            params.Item.ID,
+		}); e != nil {
+			return fmt.Errorf("db cancel item: %w", e)
+		}
 
-			return txStorage.Commit(rctx)
-		}); err != nil {
+		if err = txStorage.Commit(ctx); err != nil {
 			return fmt.Errorf("refund tx + cancel item: %w", err)
 		}
 
