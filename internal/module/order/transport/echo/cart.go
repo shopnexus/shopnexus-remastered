@@ -30,7 +30,7 @@ func (h *Handler) GetCart(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.GetCart(c.Request().Context(), orderbiz.GetCartParams{
+	result, err := h.biz.Guaranteed().GetCart(c.Request().Context(), orderbiz.GetCartParams{
 		AccountID: claims.Account.ID,
 	})
 	if err != nil {
@@ -60,7 +60,7 @@ func (h *Handler) UpdateCart(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if err = h.biz.UpdateCart(c.Request().Context(), orderbiz.UpdateCartParams{
+	if err = h.biz.Guaranteed().UpdateCart(c.Request().Context(), orderbiz.UpdateCartParams{
 		Account:       claims.Account,
 		SkuID:         req.SkuID,
 		Quantity:      req.Quantity,
@@ -89,7 +89,7 @@ func (h *Handler) ClearCart(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if err := h.biz.ClearCart(c.Request().Context(), orderbiz.ClearCartParams{
+	if err := h.biz.Guaranteed().ClearCart(c.Request().Context(), orderbiz.ClearCartParams{
 		Account: claims.Account,
 	}); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)

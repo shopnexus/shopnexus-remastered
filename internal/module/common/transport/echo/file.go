@@ -45,7 +45,7 @@ func (h *Handler) UploadFile(c echo.Context) error {
 	}
 
 	// Get the full resource details
-	resourceMap, _ := h.biz.GetResourcesByIDs(c.Request().Context(), []uuid.UUID{result.ResourceID})
+	resourceMap, _ := h.biz.Guaranteed().GetResourcesByIDs(c.Request().Context(), []uuid.UUID{result.ResourceID})
 	resource, ok := resourceMap[result.ResourceID]
 	if !ok {
 		return response.FromError(

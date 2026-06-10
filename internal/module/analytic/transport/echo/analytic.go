@@ -60,7 +60,7 @@ func (h *Handler) CreateInteraction(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if err := h.biz.CreateInteraction(c.Request().Context(), analyticbiz.CreateInteractionParams{
+	if err := h.biz.Guaranteed().CreateInteraction(c.Request().Context(), analyticbiz.CreateInteractionParams{
 		Interactions: lo.Map(req.Interactions, func(i CreateInteraction, _ int) analyticbiz.CreateInteraction {
 			return analyticbiz.CreateInteraction{
 				Account:   claims.Account,
@@ -89,7 +89,7 @@ func (h *Handler) GetProductPopularity(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.GetProductPopularity(c.Request().Context(), req.SpuID)
+	result, err := h.biz.Guaranteed().GetProductPopularity(c.Request().Context(), req.SpuID)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
@@ -110,7 +110,7 @@ func (h *Handler) ListTopProductPopularity(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.ListTopProductPopularity(c.Request().Context(), req.Params.Constrain())
+	result, err := h.biz.Guaranteed().ListTopProductPopularity(c.Request().Context(), req.Params.Constrain())
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
@@ -155,7 +155,7 @@ func (h *Handler) GetSellerDashboard(c echo.Context) error {
 		params.EndDate = t
 	}
 
-	result, err := h.order.GetSellerDashboard(c.Request().Context(), params)
+	result, err := h.order.Guaranteed().GetSellerDashboard(c.Request().Context(), params)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}

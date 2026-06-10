@@ -76,7 +76,7 @@ func (b *CatalogHandler) buildProductCards(
 		})
 	}
 
-	priceMap, err := b.promotion.CalculatePromotedPrices(
+	priceMap, err := b.promotion.Guaranteed().CalculatePromotedPrices(
 		ctx,
 		promotionbiz.CalculatePromotedPricesParams{Prices: requestPrices, SpuMap: spuMap},
 	)
@@ -90,7 +90,7 @@ func (b *CatalogHandler) buildProductCards(
 	}
 
 	// Get first image of the product
-	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
+	resourcesMap, err := b.common.Guaranteed().GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeProductSpu,
 		RefIDs:  spuIDs,
 	})
@@ -119,7 +119,7 @@ func (b *CatalogHandler) buildProductCards(
 	// Check favorites for authenticated user
 	var favoriteSet map[uuid.UUID]bool
 	if accountID.Valid {
-		favoriteSet, _ = b.account.CheckFavorites(
+		favoriteSet, _ = b.account.Guaranteed().CheckFavorites(
 			ctx,
 			accountbiz.CheckFavoritesParams{AccountID: accountID.UUID, SpuIDs: spuIDs},
 		)
@@ -465,7 +465,7 @@ func (b *CatalogHandler) getRecommendPool(
 
 // trendingSpuIDs returns unique SPU ids backing the most-taken (best-selling) SKUs.
 func (b *CatalogHandler) trendingSpuIDs(ctx context.Context, limit int32) ([]uuid.UUID, error) {
-	stocks, err := b.inventory.ListMostTakenSku(ctx, inventorybiz.ListMostTakenSkuParams{
+	stocks, err := b.inventory.Guaranteed().ListMostTakenSku(ctx, inventorybiz.ListMostTakenSkuParams{
 		Params:  paginate.Params{Limit: null.Int32From(limit)},
 		RefType: inventorydb.InventoryStockRefTypeProductSku,
 	})

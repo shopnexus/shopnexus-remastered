@@ -122,9 +122,6 @@ type OrderBizFuture interface {
 
 // OrderBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
 type OrderBizClient interface {
-	OrderBiz
-	Send() OrderBizSender
-	Future() OrderBizFuture
 	Guaranteed() OrderBizGuaranteed
 	BestEffort() OrderBizBestEffort
 }

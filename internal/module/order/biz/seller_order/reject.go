@@ -74,7 +74,7 @@ func (b *SellerHandler) RejectSellerPending(ctx context.Context, params RejectSe
 			Amount:  item.Quantity,
 		}
 	})
-	if err := b.inventory.ReleaseInventory(ctx, inventorybiz.ReleaseInventoryParams{
+	if err := b.inventory.Guaranteed().ReleaseInventory(ctx, inventorybiz.ReleaseInventoryParams{
 		Items: releaseItems,
 	}); err != nil {
 		return fmt.Errorf("release inventory: %w", err)

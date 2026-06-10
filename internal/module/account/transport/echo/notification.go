@@ -26,7 +26,7 @@ func (h *Handler) ListNotification(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.ListNotification(c.Request().Context(), accountbiz.ListNotificationParams{
+	result, err := h.biz.Guaranteed().ListNotification(c.Request().Context(), accountbiz.ListNotificationParams{
 		Account: claims.Account,
 		Params:  req.Params.Constrain(),
 	})
@@ -43,7 +43,7 @@ func (h *Handler) CountUnread(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	count, err := h.biz.CountUnread(c.Request().Context(), accountbiz.CountUnreadParams{
+	count, err := h.biz.Guaranteed().CountUnread(c.Request().Context(), accountbiz.CountUnreadParams{
 		AccountID: claims.Account.ID,
 	})
 	if err != nil {
@@ -71,7 +71,7 @@ func (h *Handler) MarkRead(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if err := h.biz.MarkRead(c.Request().Context(), accountbiz.MarkReadParams{
+	if err := h.biz.Guaranteed().MarkRead(c.Request().Context(), accountbiz.MarkReadParams{
 		Account: claims.Account,
 		IDs:     req.IDs,
 	}); err != nil {
@@ -87,7 +87,7 @@ func (h *Handler) MarkAllRead(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if err := h.biz.MarkAllRead(c.Request().Context(), accountbiz.MarkAllReadParams{
+	if err := h.biz.Guaranteed().MarkAllRead(c.Request().Context(), accountbiz.MarkAllReadParams{
 		AccountID: claims.Account.ID,
 	}); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)

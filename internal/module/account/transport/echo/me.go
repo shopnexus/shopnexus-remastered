@@ -19,7 +19,7 @@ func (h *Handler) GetMe(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	profile, err := h.biz.GetProfile(c.Request().Context(), accountbiz.GetProfileParams{
+	profile, err := h.biz.Guaranteed().GetProfile(c.Request().Context(), accountbiz.GetProfileParams{
 		Issuer:    claims.Account,
 		AccountID: claims.Account.ID,
 	})
@@ -62,7 +62,7 @@ func (h *Handler) UpdateMe(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.UpdateProfile(c.Request().Context(), accountbiz.UpdateProfileParams{
+	result, err := h.biz.Guaranteed().UpdateProfile(c.Request().Context(), accountbiz.UpdateProfileParams{
 		Issuer:           claims.Account,
 		AccountID:        claims.Account.ID,
 		Status:           req.Status,

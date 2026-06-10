@@ -30,7 +30,7 @@ func (h *Handler) ListOption(c echo.Context) error {
 		accountID = uuid.NullUUID{UUID: claims.Account.ID, Valid: true}
 	}
 
-	result, err := h.biz.ListOption(c.Request().Context(), commonbiz.ListOptionParams{
+	result, err := h.biz.Guaranteed().ListOption(c.Request().Context(), commonbiz.ListOptionParams{
 		Type:      []string{req.Type},
 		IsEnabled: []bool{true},
 		AccountID: accountID,
@@ -50,7 +50,7 @@ func (h *Handler) UpsertOptions(c echo.Context) error {
 	if err := c.Validate(&req); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
-	if err := h.biz.UpsertOptions(c.Request().Context(), req); err != nil {
+	if err := h.biz.Guaranteed().UpsertOptions(c.Request().Context(), req); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
 	return response.FromMessage(c.Response().Writer, http.StatusOK, "Options upserted")
@@ -64,7 +64,7 @@ func (h *Handler) DeleteOptions(c echo.Context) error {
 	if err := c.Validate(&req); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
-	if err := h.biz.DeleteOptions(c.Request().Context(), req); err != nil {
+	if err := h.biz.Guaranteed().DeleteOptions(c.Request().Context(), req); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
 	return response.FromMessage(c.Response().Writer, http.StatusOK, "Options deleted")

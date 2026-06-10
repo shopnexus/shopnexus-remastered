@@ -75,9 +75,6 @@ type CatalogBizFuture interface {
 
 // CatalogBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
 type CatalogBizClient interface {
-	CatalogBiz
-	Send() CatalogBizSender
-	Future() CatalogBizFuture
 	Guaranteed() CatalogBizGuaranteed
 	BestEffort() CatalogBizBestEffort
 }

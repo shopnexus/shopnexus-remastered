@@ -54,7 +54,7 @@ func (b *TransportHandler) QuoteTransport(
 
 	skuIDs := lo.Map(params.Items, func(i base.CheckoutItem, _ int) uuid.UUID { return i.SkuID })
 
-	skus, err := b.catalog.ListProductSku(ctx, catalogbiz.ListProductSkuParams{
+	skus, err := b.catalog.Guaranteed().ListProductSku(ctx, catalogbiz.ListProductSkuParams{
 		ID: skuIDs,
 	})
 	if err != nil {
@@ -64,7 +64,7 @@ func (b *TransportHandler) QuoteTransport(
 		return zero, ordermodel.ErrOrderItemNotFound
 	}
 
-	listSpu, err := b.catalog.ListProductSpu(ctx, catalogbiz.ListProductSpuParams{
+	listSpu, err := b.catalog.Guaranteed().ListProductSpu(ctx, catalogbiz.ListProductSpuParams{
 		Account: params.Account,
 		ID:      lo.Map(skus, func(s catalogmodel.ProductSku, _ int) uuid.UUID { return s.SpuID }),
 	})
@@ -79,7 +79,7 @@ func (b *TransportHandler) QuoteTransport(
 		return spuMap[s.SpuID].AccountID
 	}))
 
-	sellerContacts, err := b.account.GetDefaultContact(ctx, sellerIDs)
+	sellerContacts, err := b.account.Guaranteed().GetDefaultContact(ctx, sellerIDs)
 	if err != nil {
 		return zero, fmt.Errorf("fetch seller contacts: %w", err)
 	}

@@ -96,7 +96,7 @@ func (b *CatalogHandler) CreateProductSku(
 		return zero, fmt.Errorf("db create product sku: %w", err)
 	}
 
-	if _, err := b.inventory.CreateStock(ctx, inventorybiz.CreateStockParams{
+	if _, err := b.inventory.Guaranteed().CreateStock(ctx, inventorybiz.CreateStockParams{
 		RefID:   sku.ID,
 		RefType: inventorydb.InventoryStockRefTypeProductSku,
 		Stock:   0,

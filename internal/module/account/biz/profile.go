@@ -175,7 +175,7 @@ func (b *AccountHandler) mapProfile(
 	account accountdb.AccountAccount,
 	profile accountdb.AccountProfile,
 ) accountmodel.Profile {
-	avatar, _ := b.common.GetResourceByID(ctx, profile.AvatarRsID.UUID)
+	avatar, _ := b.common.Guaranteed().GetResourceByID(ctx, profile.AvatarRsID.UUID)
 	var url null.String
 	if avatar != nil {
 		url.SetValid(avatar.Url)

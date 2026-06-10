@@ -35,7 +35,7 @@ func (h *Handler) CreateBuyerRefund(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.CreateBuyerRefund(c.Request().Context(), orderbiz.CreateBuyerRefundParams{
+	result, err := h.biz.Guaranteed().CreateBuyerRefund(c.Request().Context(), orderbiz.CreateBuyerRefundParams{
 		Account:      claims.Account,
 		OrderID:      req.OrderID,
 		Reason:       req.Reason,
@@ -65,7 +65,7 @@ func (h *Handler) ListBuyerRefunds(c echo.Context) error {
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-	result, err := h.biz.ListBuyerRefunds(c.Request().Context(), orderbiz.ListBuyerRefundsParams{
+	result, err := h.biz.Guaranteed().ListBuyerRefunds(c.Request().Context(), orderbiz.ListBuyerRefundsParams{
 		BuyerID: claims.Account.ID,
 		Params:  req.Params.Constrain(),
 	})
@@ -87,7 +87,7 @@ func (h *Handler) ListSellerRefunds(c echo.Context) error {
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-	result, err := h.biz.ListSellerRefunds(c.Request().Context(), orderbiz.ListSellerRefundsParams{
+	result, err := h.biz.Guaranteed().ListSellerRefunds(c.Request().Context(), orderbiz.ListSellerRefundsParams{
 		SellerID: claims.Account.ID,
 		Params:   req.Params.Constrain(),
 	})
@@ -108,7 +108,7 @@ func (h *Handler) WithdrawBuyerRefund(c echo.Context) error {
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-	result, err := h.biz.WithdrawBuyerRefund(c.Request().Context(), orderbiz.WithdrawBuyerRefundParams{
+	result, err := h.biz.Guaranteed().WithdrawBuyerRefund(c.Request().Context(), orderbiz.WithdrawBuyerRefundParams{
 		Account:  claims.Account,
 		RefundID: refundID,
 	})
@@ -129,7 +129,7 @@ func (h *Handler) SellerApproveRefund(c echo.Context) error {
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-	result, err := h.biz.SellerApproveRefund(c.Request().Context(), orderbiz.SellerActionParams{
+	result, err := h.biz.Guaranteed().SellerApproveRefund(c.Request().Context(), orderbiz.SellerActionParams{
 		Account:  claims.Account,
 		RefundID: refundID,
 	})
@@ -162,7 +162,7 @@ func (h *Handler) SellerDisputeRefund(c echo.Context) error {
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-	result, err := h.biz.SellerDisputeRefund(c.Request().Context(), orderbiz.SellerDisputeParams{
+	result, err := h.biz.Guaranteed().SellerDisputeRefund(c.Request().Context(), orderbiz.SellerDisputeParams{
 		Account:     claims.Account,
 		RefundID:    refundID,
 		Reason:      req.Reason,

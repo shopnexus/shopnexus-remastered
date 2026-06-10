@@ -14,7 +14,7 @@ func (b *PaymentHandler) SetupPaymentMap() error {
 	configs := b.PaymentConfigs()
 
 	go func() {
-		if err := b.common.Send().UpsertOptions(context.Background(), commonbiz.UpsertOptionsParams{
+		if err := b.common.Guaranteed().Send().UpsertOptions(context.Background(), commonbiz.UpsertOptionsParams{
 			Type:    string(sharedmodel.OptionTypePayment),
 			Configs: configs,
 		}); err != nil {

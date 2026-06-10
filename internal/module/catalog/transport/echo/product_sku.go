@@ -30,7 +30,7 @@ func (h *Handler) ListProductSku(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.ListProductSku(c.Request().Context(), catalogbiz.ListProductSkuParams{
+	result, err := h.biz.Guaranteed().ListProductSku(c.Request().Context(), catalogbiz.ListProductSkuParams{
 		SpuID:           []uuid.UUID{req.SpuID},
 		PriceFrom:       req.PriceFrom,
 		PriceTo:         req.PriceTo,
@@ -64,7 +64,7 @@ func (h *Handler) CreateProductSku(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.CreateProductSku(c.Request().Context(), catalogbiz.CreateProductSkuParams{
+	result, err := h.biz.Guaranteed().CreateProductSku(c.Request().Context(), catalogbiz.CreateProductSkuParams{
 		Account:         claims.Account,
 		SpuID:           req.SpuID,
 		Price:           req.Price,
@@ -100,7 +100,7 @@ func (h *Handler) UpdateProductSku(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.UpdateProductSku(c.Request().Context(), catalogbiz.UpdateProductSkuParams{
+	result, err := h.biz.Guaranteed().UpdateProductSku(c.Request().Context(), catalogbiz.UpdateProductSkuParams{
 		Account:         claims.Account,
 		ID:              req.ID,
 		Price:           req.Price,
@@ -132,7 +132,7 @@ func (h *Handler) DeleteProductSku(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if err := h.biz.DeleteProductSku(c.Request().Context(), catalogbiz.DeleteProductSkuParams{
+	if err := h.biz.Guaranteed().DeleteProductSku(c.Request().Context(), catalogbiz.DeleteProductSkuParams{
 		Account: claims.Account,
 		ID:      req.ID,
 	}); err != nil {

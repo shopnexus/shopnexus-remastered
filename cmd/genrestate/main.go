@@ -458,11 +458,8 @@ func main() {
 		bestEffortIface := *ifaceName + "BestEffort"
 		fmt.Fprintf(
 			&buf,
-			"type %s interface {\n\t%s\n\tSend() %s\n\tFuture() %s\n\tGuaranteed() %s\n\tBestEffort() %s\n}\n\n",
+			"type %s interface {\n\tGuaranteed() %s\n\tBestEffort() %s\n}\n\n",
 			clientIface,
-			ifaceRef,
-			senderIface,
-			futureIface,
 			guaranteedIface,
 			bestEffortIface,
 		)

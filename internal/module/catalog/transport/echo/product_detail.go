@@ -36,7 +36,7 @@ func (h *Handler) GetProductDetail(c echo.Context) error {
 		params.Account = &claims.Account
 	}
 
-	result, err := h.biz.GetProductDetail(c.Request().Context(), params)
+	result, err := h.biz.Guaranteed().GetProductDetail(c.Request().Context(), params)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}

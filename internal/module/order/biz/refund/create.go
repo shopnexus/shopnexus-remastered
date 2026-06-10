@@ -121,7 +121,7 @@ func (b *RefundHandler) CreateBuyerRefund(
 	// resources/signal/notify lost. Needs a saga (compensate or re-entry resume).
 	// Attach the buyer's evidence photos to the refund via the common resource
 	// system (RefType=Refund).
-	resources, err := b.common.UpdateResources(ctx, commonbiz.UpdateResourcesParams{
+	resources, err := b.common.Guaranteed().UpdateResources(ctx, commonbiz.UpdateResourcesParams{
 		Account:     params.Account,
 		RefType:     commondb.CommonResourceRefTypeRefund,
 		RefID:       refund.ID,

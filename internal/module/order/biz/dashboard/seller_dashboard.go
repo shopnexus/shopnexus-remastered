@@ -136,7 +136,7 @@ func (b *DashboardHandler) GetSellerDashboard(
 	}
 
 	// Average rating from catalog
-	vendorStats, err := b.catalog.GetVendorStats(ctx, catalogbiz.GetVendorStatsParams{
+	vendorStats, err := b.catalog.Guaranteed().GetVendorStats(ctx, catalogbiz.GetVendorStatsParams{
 		AccountID: params.SellerID,
 	})
 	if err != nil {

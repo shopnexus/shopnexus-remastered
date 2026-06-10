@@ -122,7 +122,7 @@ func NewHandler(
 		if client == nil {
 			continue
 		}
-		if key := client.WireWebhooks(e, h.biz.OnPaymentResult, registered); key != "" {
+		if key := client.WireWebhooks(e, h.biz.Guaranteed().OnPaymentResult, registered); key != "" {
 			registered[key] = struct{}{}
 		}
 	}
@@ -133,7 +133,7 @@ func NewHandler(
 		if err != nil {
 			return fmt.Errorf("marshal transport webhook data: %w", err)
 		}
-		return biz.OnTransportResult(ctx, orderbiz.OnTransportResultParams{
+		return biz.Guaranteed().OnTransportResult(ctx, orderbiz.OnTransportResultParams{
 			TrackingID: result.TransportID,
 			Status:     orderdb.OrderStatus(result.Status),
 			Data:       data,
@@ -175,7 +175,7 @@ func (h *Handler) GetBuyerOrder(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.GetBuyerOrder(c.Request().Context(), req.ID)
+	result, err := h.biz.Guaranteed().GetBuyerOrder(c.Request().Context(), req.ID)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
@@ -201,7 +201,7 @@ func (h *Handler) GetCheckoutSummary(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.GetCheckoutSummary(c.Request().Context(), orderbiz.GetCheckoutSummaryParams{
+	result, err := h.biz.Guaranteed().GetCheckoutSummary(c.Request().Context(), orderbiz.GetCheckoutSummaryParams{
 		AccountID: claims.Account.ID,
 		TxID:      req.TxID,
 	})
@@ -227,7 +227,7 @@ func (h *Handler) GetSellerOrder(c echo.Context) error {
 	if _, err := authclaims.GetClaims(c.Request()); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-	result, err := h.biz.GetSellerOrder(c.Request().Context(), req.ID)
+	result, err := h.biz.Guaranteed().GetSellerOrder(c.Request().Context(), req.ID)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
@@ -253,7 +253,7 @@ func (h *Handler) ListSellerConfirmed(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.ListSellerConfirmed(c.Request().Context(), orderbiz.ListSellerConfirmedParams{
+	result, err := h.biz.Guaranteed().ListSellerConfirmed(c.Request().Context(), orderbiz.ListSellerConfirmedParams{
 		SellerID: claims.Account.ID,
 		Search:   req.Search,
 		Params:   req.Params.Constrain(),
@@ -301,7 +301,7 @@ func (h *Handler) QuoteBuyerTransport(c echo.Context) error {
 		})
 	}
 
-	result, err := h.biz.QuoteTransport(c.Request().Context(), orderbiz.QuoteTransportParams{
+	result, err := h.biz.Guaranteed().QuoteTransport(c.Request().Context(), orderbiz.QuoteTransportParams{
 		Account: claims.Account,
 		Address: req.Address,
 		Items:   items,
@@ -421,7 +421,7 @@ func (h *Handler) EnsureBuyerCheckoutPaymentURL(c echo.Context) error {
 
 	ctx := c.Request().Context()
 
-	state, err := h.biz.GetReusableGatewayURL(ctx, sessionID)
+	state, err := h.biz.Guaranteed().GetReusableGatewayURL(ctx, sessionID)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
@@ -477,7 +477,7 @@ func (h *Handler) ListBuyerPendingItems(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.ListBuyerPendingItems(c.Request().Context(), orderbiz.ListBuyerPendingItemsParams{
+	result, err := h.biz.Guaranteed().ListBuyerPendingItems(c.Request().Context(), orderbiz.ListBuyerPendingItemsParams{
 		AccountID: claims.Account.ID,
 		Params:    req.Params.Constrain(),
 	})
@@ -500,7 +500,7 @@ func (h *Handler) CancelBuyerPending(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if err := h.biz.CancelBuyerPending(c.Request().Context(), orderbiz.CancelBuyerPendingParams{
+	if err := h.biz.Guaranteed().CancelBuyerPending(c.Request().Context(), orderbiz.CancelBuyerPendingParams{
 		AccountID: claims.Account.ID,
 		ItemID:    itemID,
 	}); err != nil {
@@ -528,7 +528,7 @@ func (h *Handler) ListBuyerPendingOrders(c echo.Context) error {
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-	result, err := h.biz.ListBuyerPendingOrders(c.Request().Context(), orderbiz.ListBuyerPendingOrdersParams{
+	result, err := h.biz.Guaranteed().ListBuyerPendingOrders(c.Request().Context(), orderbiz.ListBuyerPendingOrdersParams{
 		BuyerID: claims.Account.ID,
 		Params:  req.Params.Constrain(),
 	})
@@ -556,7 +556,7 @@ func (h *Handler) ListBuyerCompletedOrders(c echo.Context) error {
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-	result, err := h.biz.ListBuyerCompletedOrders(c.Request().Context(), orderbiz.ListBuyerCompletedOrdersParams{
+	result, err := h.biz.Guaranteed().ListBuyerCompletedOrders(c.Request().Context(), orderbiz.ListBuyerCompletedOrdersParams{
 		BuyerID: claims.Account.ID,
 		Params:  req.Params.Constrain(),
 	})
@@ -584,7 +584,7 @@ func (h *Handler) ListBuyerCancelledOrders(c echo.Context) error {
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-	result, err := h.biz.ListBuyerCancelledOrders(c.Request().Context(), orderbiz.ListBuyerCancelledOrdersParams{
+	result, err := h.biz.Guaranteed().ListBuyerCancelledOrders(c.Request().Context(), orderbiz.ListBuyerCancelledOrdersParams{
 		BuyerID: claims.Account.ID,
 		Params:  req.Params.Constrain(),
 	})
@@ -612,7 +612,7 @@ func (h *Handler) ListBuyerCancelledItems(c echo.Context) error {
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-	result, err := h.biz.ListBuyerCancelledItems(c.Request().Context(), orderbiz.ListBuyerCancelledItemsParams{
+	result, err := h.biz.Guaranteed().ListBuyerCancelledItems(c.Request().Context(), orderbiz.ListBuyerCancelledItemsParams{
 		AccountID: claims.Account.ID,
 		Params:    req.Params.Constrain(),
 	})

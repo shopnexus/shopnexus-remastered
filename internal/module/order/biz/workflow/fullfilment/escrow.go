@@ -153,7 +153,7 @@ func (h *FulfillmentWorkflow) escrow(
 			// no-ops on the now-Success rows, so a terminal failure of the
 			// wallet credit below does NOT auto-revert the marks — operator
 			// intervention is required for that gap.
-			if err = h.account.WalletCredit(ctx, accountbiz.WalletCreditParams{
+			if err = h.account.Guaranteed().WalletCredit(ctx, accountbiz.WalletCreditParams{
 				AccountID: conf.SellerID,
 				Amount:    conf.PaidTotal,
 				Type:      "Payout",

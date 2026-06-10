@@ -45,7 +45,7 @@ func (b *RefundHandler) CreditFromSession(
 		return 0, nil
 	}
 
-	if err = b.Account().WalletCredit(ctx, accountbiz.WalletCreditParams{
+	if err = b.Account().Guaranteed().WalletCredit(ctx, accountbiz.WalletCreditParams{
 		AccountID: params.AccountID,
 		Amount:    settled,
 		Type:      params.CreditType,
@@ -202,7 +202,7 @@ func (b *RefundHandler) ExecuteRefundCredit(
 		}, true
 	})
 	if len(releaseItems) > 0 {
-		if err := b.Inventory().ReleaseInventory(ctx, inventorybiz.ReleaseInventoryParams{
+		if err := b.Inventory().Guaranteed().ReleaseInventory(ctx, inventorybiz.ReleaseInventoryParams{
 			Items: releaseItems,
 		}); err != nil {
 			return zero, fmt.Errorf("release inventory: %w", err)

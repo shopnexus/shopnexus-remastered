@@ -38,9 +38,6 @@ type ChatBizFuture interface {
 
 // ChatBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
 type ChatBizClient interface {
-	ChatBiz
-	Send() ChatBizSender
-	Future() ChatBizFuture
 	Guaranteed() ChatBizGuaranteed
 	BestEffort() ChatBizBestEffort
 }

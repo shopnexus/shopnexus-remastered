@@ -232,7 +232,7 @@ func (a *AccountHandler) Register(ctx context.Context, params RegisterParams) (R
 	}
 
 	// Welcome notification
-	if err = a.self.Send().CreateNotification(ctx, CreateNotificationParams{
+	if err = a.self.Guaranteed().Send().CreateNotification(ctx, CreateNotificationParams{
 		AccountID: account.ID,
 		Type:      accountmodel.NotiWelcome,
 		Channel:   accountmodel.ChannelInApp,

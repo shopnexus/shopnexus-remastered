@@ -60,9 +60,6 @@ type CommonBizFuture interface {
 
 // CommonBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
 type CommonBizClient interface {
-	CommonBiz
-	Send() CommonBizSender
-	Future() CommonBizFuture
 	Guaranteed() CommonBizGuaranteed
 	BestEffort() CommonBizBestEffort
 }

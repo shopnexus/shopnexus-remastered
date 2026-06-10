@@ -200,7 +200,7 @@ func (b *CatalogHandler) CreateProductSpu(
 	}
 
 	// Create resources
-	if _, err := b.common.UpdateResources(ctx, commonbiz.UpdateResourcesParams{
+	if _, err := b.common.Guaranteed().UpdateResources(ctx, commonbiz.UpdateResourcesParams{
 		Account:     params.Account,
 		RefType:     commondb.CommonResourceRefTypeProductSpu,
 		RefID:       spu.ID,
@@ -313,7 +313,7 @@ func (b *CatalogHandler) UpdateProductSpu(
 	}
 
 	// LAST STEP: Update resources
-	if _, err := b.common.UpdateResources(ctx, commonbiz.UpdateResourcesParams{
+	if _, err := b.common.Guaranteed().UpdateResources(ctx, commonbiz.UpdateResourcesParams{
 		Account:     params.Account,
 		RefType:     commondb.CommonResourceRefTypeProductSpu,
 		RefID:       spu.ID,
@@ -338,7 +338,7 @@ func (b *CatalogHandler) assertSellerCurrency(
 	seller accountmodel.AuthenticatedAccount,
 	currency string,
 ) error {
-	profile, err := b.account.GetProfile(ctx, accountbiz.GetProfileParams{
+	profile, err := b.account.Guaranteed().GetProfile(ctx, accountbiz.GetProfileParams{
 		AccountID: seller.ID,
 	})
 	if err != nil {

@@ -32,7 +32,7 @@ func (h *Handler) ListRefundDisputes(c echo.Context) error {
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-	result, err := h.biz.ListRefundDisputes(c.Request().Context(), orderbiz.ListRefundDisputesParams{
+	result, err := h.biz.Guaranteed().ListRefundDisputes(c.Request().Context(), orderbiz.ListRefundDisputesParams{
 		Account: claims.Account,
 		Status:  orderdb.OrderDisputeStatus(req.Status),
 		Params:  req.Params.Constrain(),
@@ -59,7 +59,7 @@ func (h *Handler) ListRefundDisputesByRefund(c echo.Context) error {
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-	result, err := h.biz.ListRefundDisputes(c.Request().Context(), orderbiz.ListRefundDisputesParams{
+	result, err := h.biz.Guaranteed().ListRefundDisputes(c.Request().Context(), orderbiz.ListRefundDisputesParams{
 		Account:  claims.Account,
 		RefundID: uuid.NullUUID{UUID: refundID, Valid: true},
 		Status:   orderdb.OrderDisputeStatus(req.Status),
@@ -80,7 +80,7 @@ func (h *Handler) GetRefundDispute(c echo.Context) error {
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
-	result, err := h.biz.GetRefundDispute(c.Request().Context(), orderbiz.GetRefundDisputeParams{
+	result, err := h.biz.Guaranteed().GetRefundDispute(c.Request().Context(), orderbiz.GetRefundDisputeParams{
 		Account:   claims.Account,
 		DisputeID: disputeID,
 	})
@@ -127,9 +127,9 @@ func (h *Handler) adminDecideDispute(c echo.Context, uphold bool) error {
 	}
 	var result interface{}
 	if uphold {
-		result, err = h.biz.AdminUpholdDispute(c.Request().Context(), params)
+		result, err = h.biz.Guaranteed().AdminUpholdDispute(c.Request().Context(), params)
 	} else {
-		result, err = h.biz.AdminDismissDispute(c.Request().Context(), params)
+		result, err = h.biz.Guaranteed().AdminDismissDispute(c.Request().Context(), params)
 	}
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)

@@ -79,9 +79,6 @@ type AccountBizFuture interface {
 
 // AccountBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
 type AccountBizClient interface {
-	AccountBiz
-	Send() AccountBizSender
-	Future() AccountBizFuture
 	Guaranteed() AccountBizGuaranteed
 	BestEffort() AccountBizBestEffort
 }

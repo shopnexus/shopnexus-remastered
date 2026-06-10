@@ -47,9 +47,6 @@ type InventoryBizFuture interface {
 
 // InventoryBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
 type InventoryBizClient interface {
-	InventoryBiz
-	Send() InventoryBizSender
-	Future() InventoryBizFuture
 	Guaranteed() InventoryBizGuaranteed
 	BestEffort() InventoryBizBestEffort
 }

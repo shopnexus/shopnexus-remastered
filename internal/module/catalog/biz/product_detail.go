@@ -58,7 +58,7 @@ func (b *CatalogHandler) GetProductDetail(
 	skuIDs := lo.Map(skus, func(s catalogmodel.ProductSku, _ int) uuid.UUID { return s.ID })
 
 	// Get sold count from inventory
-	listStock, err := b.inventory.ListStock(ctx, inventorybiz.ListStockParams{
+	listStock, err := b.inventory.Guaranteed().ListStock(ctx, inventorybiz.ListStockParams{
 		RefType: []inventorydb.InventoryStockRefType{inventorydb.InventoryStockRefTypeProductSku},
 		RefID:   skuIDs,
 	})
@@ -79,7 +79,7 @@ func (b *CatalogHandler) GetProductDetail(
 		})
 	}
 
-	priceMap, err := b.promotion.CalculatePromotedPrices(
+	priceMap, err := b.promotion.Guaranteed().CalculatePromotedPrices(
 		ctx,
 		promotionbiz.CalculatePromotedPricesParams{Prices: requestPrices, SpuMap: map[uuid.UUID]promotionmodel.PromoSpu{
 			spu.ID: {ID: spu.ID, CategoryID: spu.Category.ID},
@@ -155,7 +155,7 @@ func (b *CatalogHandler) GetProductDetail(
 	// Check favorite for authenticated user
 	var isFavorite bool
 	if params.Account != nil {
-		favoriteSet, _ := b.account.CheckFavorites(
+		favoriteSet, _ := b.account.Guaranteed().CheckFavorites(
 			ctx,
 			accountbiz.CheckFavoritesParams{AccountID: params.Account.ID, SpuIDs: []uuid.UUID{spu.ID}},
 		)
@@ -164,7 +164,7 @@ func (b *CatalogHandler) GetProductDetail(
 
 	// Track view interaction for authenticated users
 	if params.Account != nil {
-		if err := b.analytic.Send().CreateInteraction(ctx, analyticbiz.CreateInteractionParams{
+		if err := b.analytic.Guaranteed().Send().CreateInteraction(ctx, analyticbiz.CreateInteractionParams{
 			Interactions: []analyticbiz.CreateInteraction{{
 				Account:   *params.Account,
 				EventType: analyticmodel.EventView,

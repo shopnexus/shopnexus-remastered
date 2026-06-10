@@ -35,9 +35,6 @@ type AnalyticBizFuture interface {
 
 // AnalyticBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
 type AnalyticBizClient interface {
-	AnalyticBiz
-	Send() AnalyticBizSender
-	Future() AnalyticBizFuture
 	Guaranteed() AnalyticBizGuaranteed
 	BestEffort() AnalyticBizBestEffort
 }

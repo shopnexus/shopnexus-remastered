@@ -62,13 +62,13 @@ func (b *CatalogHandler) ListComment(
 	accountIDs := lo.Map(res.Data, func(c catalogdb.CatalogComment, _ int) uuid.UUID { return c.AccountID })
 	commentIDs := lo.Map(res.Data, func(c catalogdb.CatalogComment, _ int) uuid.UUID { return c.ID })
 
-	listProfile, err := b.account.ListProfile(ctx, accountbiz.ListProfileParams{AccountIDs: accountIDs})
+	listProfile, err := b.account.Guaranteed().ListProfile(ctx, accountbiz.ListProfileParams{AccountIDs: accountIDs})
 	if err != nil {
 		return zero, fmt.Errorf("list comment profiles: %w", err)
 	}
 	profileMap := lo.KeyBy(listProfile.Data, func(a accountmodel.Profile) uuid.UUID { return a.ID })
 
-	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
+	resourcesMap, err := b.common.Guaranteed().GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeComment,
 		RefIDs:  commentIDs,
 	})
@@ -143,7 +143,7 @@ func (b *CatalogHandler) CreateComment(ctx context.Context, params CreateComment
 	}
 
 	// Attach resources
-	resources, err := b.common.UpdateResources(ctx, commonbiz.UpdateResourcesParams{
+	resources, err := b.common.Guaranteed().UpdateResources(ctx, commonbiz.UpdateResourcesParams{
 		Account:     params.Account,
 		RefType:     commondb.CommonResourceRefTypeComment,
 		RefID:       comment.ID,
@@ -153,7 +153,7 @@ func (b *CatalogHandler) CreateComment(ctx context.Context, params CreateComment
 		return zero, fmt.Errorf("create comment: %w", err)
 	}
 
-	profile, err := b.account.GetProfile(ctx, accountbiz.GetProfileParams{
+	profile, err := b.account.Guaranteed().GetProfile(ctx, accountbiz.GetProfileParams{
 		AccountID: comment.AccountID,
 	})
 	if err != nil {
@@ -203,7 +203,7 @@ func (b *CatalogHandler) CreateComment(ctx context.Context, params CreateComment
 				},
 			)
 		}
-		if err := b.analytic.Send().CreateInteraction(ctx, analyticbiz.CreateInteractionParams{
+		if err := b.analytic.Guaranteed().Send().CreateInteraction(ctx, analyticbiz.CreateInteractionParams{
 			Interactions: interactions,
 		}); err != nil {
 			return zero, fmt.Errorf("track review interactions: %w", err)
@@ -213,7 +213,7 @@ func (b *CatalogHandler) CreateComment(ctx context.Context, params CreateComment
 		if spu, err := b.storage.Querier().GetProductSpu(ctx, catalogdb.GetProductSpuParams{
 			ID: uuid.NullUUID{UUID: params.RefID, Valid: true},
 		}); err == nil {
-			if err = b.account.Send().CreateNotification(ctx, accountbiz.CreateNotificationParams{
+			if err = b.account.Guaranteed().Send().CreateNotification(ctx, accountbiz.CreateNotificationParams{
 				AccountID: spu.AccountID,
 				Type:      accountmodel.NotiNewReview,
 				Channel:   accountmodel.ChannelInApp,
@@ -275,7 +275,7 @@ func (b *CatalogHandler) UpdateComment(ctx context.Context, params UpdateComment
 	}
 
 	// Update resources
-	resources, err := b.common.UpdateResources(ctx, commonbiz.UpdateResourcesParams{
+	resources, err := b.common.Guaranteed().UpdateResources(ctx, commonbiz.UpdateResourcesParams{
 		Account:         params.Account,
 		RefType:         commondb.CommonResourceRefTypeComment,
 		RefID:           params.ID,
@@ -287,7 +287,7 @@ func (b *CatalogHandler) UpdateComment(ctx context.Context, params UpdateComment
 		return zero, fmt.Errorf("update comment: %w", err)
 	}
 
-	profile, err := b.account.GetProfile(ctx, accountbiz.GetProfileParams{
+	profile, err := b.account.Guaranteed().GetProfile(ctx, accountbiz.GetProfileParams{
 		AccountID: comment.AccountID,
 	})
 	if err != nil {
@@ -321,7 +321,7 @@ func (b *CatalogHandler) DeleteComment(ctx context.Context, params DeleteComment
 	}
 
 	// Remove associated resources
-	if err := b.common.DeleteResources(ctx, commonbiz.DeleteResourcesParams{
+	if err := b.common.Guaranteed().DeleteResources(ctx, commonbiz.DeleteResourcesParams{
 		RefType:         commondb.CommonResourceRefTypeComment,
 		RefID:           params.CommentIDs,
 		DeleteResources: true,

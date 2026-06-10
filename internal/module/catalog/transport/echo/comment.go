@@ -40,7 +40,7 @@ func (h *Handler) ListComment(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.ListComment(c.Request().Context(), catalogbiz.ListCommentParams{
+	result, err := h.biz.Guaranteed().ListComment(c.Request().Context(), catalogbiz.ListCommentParams{
 		Params:    req.Params.Constrain(),
 		Account:   claims.Account,
 		RefType:   req.RefType,
@@ -82,7 +82,7 @@ func (h *Handler) CreateComment(c echo.Context) error {
 	// Product reviews go through the order module, which owns purchase
 	// validation; replies and other comments hit catalog directly.
 	if req.RefType == catalogdb.CatalogCommentRefTypeProductSpu {
-		result, err := h.order.CreateProductReview(c.Request().Context(), orderbiz.CreateProductReviewParams{
+		result, err := h.order.Guaranteed().CreateProductReview(c.Request().Context(), orderbiz.CreateProductReviewParams{
 			Account:     claims.Account,
 			SpuID:       req.RefID,
 			OrderID:     req.OrderID,
@@ -96,7 +96,7 @@ func (h *Handler) CreateComment(c echo.Context) error {
 		return response.FromDTO(c.Response().Writer, http.StatusOK, result)
 	}
 
-	result, err := h.biz.CreateComment(c.Request().Context(), catalogbiz.CreateCommentParams{
+	result, err := h.biz.Guaranteed().CreateComment(c.Request().Context(), catalogbiz.CreateCommentParams{
 		Account:     claims.Account,
 		RefType:     req.RefType,
 		RefID:       req.RefID,
@@ -133,7 +133,7 @@ func (h *Handler) UpdateComment(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	comment, err := h.biz.UpdateComment(c.Request().Context(), catalogbiz.UpdateCommentParams{
+	comment, err := h.biz.Guaranteed().UpdateComment(c.Request().Context(), catalogbiz.UpdateCommentParams{
 		Account:     claims.Account,
 		ID:          req.ID,
 		Body:        req.Body,
@@ -175,7 +175,7 @@ func (h *Handler) VoteComment(c echo.Context) error {
 		params.DownvoteDelta = null.IntFrom(1)
 	}
 
-	comment, err := h.biz.UpdateComment(c.Request().Context(), params)
+	comment, err := h.biz.Guaranteed().UpdateComment(c.Request().Context(), params)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
@@ -200,7 +200,7 @@ func (h *Handler) DeleteComment(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if err := h.biz.DeleteComment(c.Request().Context(), catalogbiz.DeleteCommentParams{
+	if err := h.biz.Guaranteed().DeleteComment(c.Request().Context(), catalogbiz.DeleteCommentParams{
 		Account:    claims.Account,
 		CommentIDs: req.IDs,
 	}); err != nil {
@@ -228,7 +228,7 @@ func (h *Handler) ListReviewableOrders(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.order.ListReviewableOrdersBySpu(c.Request().Context(), orderbiz.ListReviewableOrdersBySpuParams{
+	result, err := h.order.Guaranteed().ListReviewableOrdersBySpu(c.Request().Context(), orderbiz.ListReviewableOrdersBySpuParams{
 		Account: claims.Account,
 		SpuID:   req.SpuID,
 	})

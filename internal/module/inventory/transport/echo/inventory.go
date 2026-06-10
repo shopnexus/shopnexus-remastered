@@ -49,7 +49,7 @@ func (h *Handler) GetStock(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.GetStock(c.Request().Context(), inventorybiz.GetStockParams{
+	result, err := h.biz.Guaranteed().GetStock(c.Request().Context(), inventorybiz.GetStockParams{
 		RefID:   req.RefID,
 		RefType: req.RefType,
 	})
@@ -76,7 +76,7 @@ func (h *Handler) ListStockHistory(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.ListStockHistory(c.Request().Context(), inventorybiz.ListStockHistoryParams{
+	result, err := h.biz.Guaranteed().ListStockHistory(c.Request().Context(), inventorybiz.ListStockHistoryParams{
 		Params:  req.Params.Constrain(),
 		RefID:   req.RefID,
 		RefType: req.RefType,
@@ -103,7 +103,7 @@ func (h *Handler) UpdateStockSettings(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.UpdateStockSettings(c.Request().Context(), inventorybiz.UpdateStockSettingsParams{
+	result, err := h.biz.Guaranteed().UpdateStockSettings(c.Request().Context(), inventorybiz.UpdateStockSettingsParams{
 		RefID:          req.RefID,
 		RefType:        req.RefType,
 		SerialRequired: req.SerialRequired,
@@ -131,7 +131,7 @@ func (h *Handler) ImportStock(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	if err := h.biz.ImportStock(c.Request().Context(), inventorybiz.ImportStockParams{
+	if err := h.biz.Guaranteed().ImportStock(c.Request().Context(), inventorybiz.ImportStockParams{
 		RefID:     req.RefID,
 		RefType:   req.RefType,
 		Change:    req.Change,
@@ -158,7 +158,7 @@ func (h *Handler) ListSerial(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.ListSerial(c.Request().Context(), inventorybiz.ListSerialParams{
+	result, err := h.biz.Guaranteed().ListSerial(c.Request().Context(), inventorybiz.ListSerialParams{
 		Params:  req.Params.Constrain(),
 		StockID: req.StockID,
 	})
@@ -183,7 +183,7 @@ func (h *Handler) UpdateSerial(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	if err := h.biz.UpdateSerial(c.Request().Context(), inventorybiz.UpdateSerialParams{
+	if err := h.biz.Guaranteed().UpdateSerial(c.Request().Context(), inventorybiz.UpdateSerialParams{
 		SerialIDs: req.SerialIDs,
 		Status:    req.Status,
 	}); err != nil {

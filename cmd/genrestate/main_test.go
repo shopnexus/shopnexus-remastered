@@ -72,7 +72,8 @@ func TestEmitsGuaranteedBestEffortClient(t *testing.T) {
 		"return besteffort.Call[string](ctx, b.call, serviceName, \"GetThing\", id)",
 		"func (b *svcBizBestEffortRemote) DoThing(ctx context.Context, id int64) error {",
 		"return besteffort.CallVoid(ctx, b.call, serviceName, \"DoThing\", id)",
-		// Unified client interface keeps embed + adds selectors
+		// Unified client interface exposes only the two transport selectors
+		"type SvcBizClient interface {",
 		"Guaranteed() SvcBizGuaranteed",
 		"BestEffort() SvcBizBestEffort",
 		// Unified client struct + constructors

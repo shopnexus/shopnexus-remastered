@@ -39,9 +39,6 @@ type PromotionBizFuture interface {
 
 // PromotionBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
 type PromotionBizClient interface {
-	PromotionBiz
-	Send() PromotionBizSender
-	Future() PromotionBizFuture
 	Guaranteed() PromotionBizGuaranteed
 	BestEffort() PromotionBizBestEffort
 }

@@ -90,14 +90,14 @@ func (h *CheckoutWorkflow) Run(
 	})
 
 	// Step 1.5: Load buyer profile and enforce address country match.
-	buyerProfile, err := h.account.GetProfile(ctx, accountbiz.GetProfileParams{
+	buyerProfile, err := h.account.Guaranteed().GetProfile(ctx, accountbiz.GetProfileParams{
 		AccountID: input.Account.ID,
 	})
 	if err != nil {
 		return out, fmt.Errorf("load buyer profile: %w", err)
 	}
 
-	resolvedCountry, err := h.common.ResolveCountry(ctx, input.Address)
+	resolvedCountry, err := h.common.Guaranteed().ResolveCountry(ctx, input.Address)
 	if err != nil {
 		return out, fmt.Errorf("resolve country: %w", err)
 	}
@@ -109,7 +109,7 @@ func (h *CheckoutWorkflow) Run(
 	checkoutItemMap := lo.KeyBy(input.Items, func(s CheckoutItem) uuid.UUID { return s.SkuID })
 
 	// Step 2: Fetch product data (SKUs + SPUs).
-	skus, err := h.catalog.ListProductSku(ctx, catalogbiz.ListProductSkuParams{
+	skus, err := h.catalog.Guaranteed().ListProductSku(ctx, catalogbiz.ListProductSkuParams{
 		ID: skuIDs,
 	})
 	if err != nil {
@@ -119,7 +119,7 @@ func (h *CheckoutWorkflow) Run(
 		return out, ordermodel.ErrOrderItemNotFound
 	}
 
-	listSpu, err := h.catalog.ListProductSpu(ctx, catalogbiz.ListProductSpuParams{
+	listSpu, err := h.catalog.Guaranteed().ListProductSpu(ctx, catalogbiz.ListProductSpuParams{
 		Account: input.Account,
 		ID:      lo.Map(skus, func(s catalogmodel.ProductSku, _ int) uuid.UUID { return s.SpuID }),
 	})
@@ -151,7 +151,7 @@ func (h *CheckoutWorkflow) Run(
 
 	var fxSnapshot commonmodel.ExchangeRateSnapshot
 	if needFX {
-		fxSnapshot, err = h.common.GetExchangeRates(ctx, commonbiz.GetExchangeRatesParams{})
+		fxSnapshot, err = h.common.Guaranteed().GetExchangeRates(ctx, commonbiz.GetExchangeRatesParams{})
 		if err != nil {
 			return out, fmt.Errorf("fx rate lookup: %w", err)
 		}
@@ -227,7 +227,7 @@ func (h *CheckoutWorkflow) Run(
 	// so a failure or partial commit unwinds without double-incrementing stock.
 	reserveKey := restate.UUID(ctx)
 	saga.Defer("release_inventory", func(ctx restate.Context) error {
-		return h.inventory.ReleaseInventory(ctx, inventorybiz.ReleaseInventoryParams{
+		return h.inventory.Guaranteed().ReleaseInventory(ctx, inventorybiz.ReleaseInventoryParams{
 			Keys: idempotency.Keys{ConsumeKey: reserveKey},
 			Items: lo.Map(input.Items, func(item CheckoutItem, _ int) inventorybiz.ReleaseInventoryItem {
 				return inventorybiz.ReleaseInventoryItem{
@@ -238,7 +238,7 @@ func (h *CheckoutWorkflow) Run(
 			}),
 		})
 	})
-	inventories, err := h.inventory.ReserveInventory(ctx, inventorybiz.ReserveInventoryParams{
+	inventories, err := h.inventory.Guaranteed().ReserveInventory(ctx, inventorybiz.ReserveInventoryParams{
 		Keys: idempotency.Keys{ClaimKey: reserveKey},
 		Items: lo.Map(input.Items, func(item CheckoutItem, _ int) inventorybiz.ReserveInventoryItem {
 			var displayName string
@@ -269,7 +269,7 @@ func (h *CheckoutWorkflow) Run(
 		return spuMap[s.SpuID].AccountID
 	}))
 
-	sellerContacts, err := h.account.GetDefaultContact(ctx, sellerIDs)
+	sellerContacts, err := h.account.Guaranteed().GetDefaultContact(ctx, sellerIDs)
 	if err != nil {
 		return out, fmt.Errorf("fetch seller contacts: %w", err)
 	}
@@ -332,7 +332,7 @@ func (h *CheckoutWorkflow) Run(
 	// Step 7: Wallet / gateway split.
 	var internalWalletAmount, gatewayAmount int64
 	if input.UseWallet && total > 0 {
-		balance, balErr := h.account.GetWalletBalance(ctx, input.Account.ID)
+		balance, balErr := h.account.Guaranteed().GetWalletBalance(ctx, input.Account.ID)
 		if balErr != nil {
 			return out, fmt.Errorf("get wallet balance: %w", balErr)
 		}
@@ -472,7 +472,7 @@ func (h *CheckoutWorkflow) Run(
 	// Step 9: Internal wallet payment. The wallet tx was created Pending in
 	// step 8; we mark it Success after the debit acknowledges.
 	if internalWalletAmount > 0 {
-		if _, dErr := h.account.WalletDebit(ctx, accountbiz.WalletDebitParams{
+		if _, dErr := h.account.Guaranteed().WalletDebit(ctx, accountbiz.WalletDebitParams{
 			AccountID: input.Account.ID,
 			Amount:    internalWalletAmount,
 			Reference: fmt.Sprintf("tx:%s", internalWalletTxID),
@@ -485,7 +485,7 @@ func (h *CheckoutWorkflow) Run(
 		// happened, so registering before would over-credit on saga fire.
 		// TODO: xem lại step này, vì đang ko đc hỗ trợ idempotency => có thể double credit/debit
 		saga.Defer("credit_internal_wallet", func(ctx restate.Context) error {
-			return h.account.WalletCredit(ctx, accountbiz.WalletCreditParams{
+			return h.account.Guaranteed().WalletCredit(ctx, accountbiz.WalletCreditParams{
 				AccountID: input.Account.ID,
 				Amount:    internalWalletAmount,
 				Type:      "Refund",

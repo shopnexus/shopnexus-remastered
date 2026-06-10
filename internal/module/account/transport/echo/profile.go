@@ -35,7 +35,7 @@ func (h *Handler) UpdateCountry(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if err := h.biz.UpdateCountry(c.Request().Context(), accountbiz.UpdateCountryParams{
+	if err := h.biz.Guaranteed().UpdateCountry(c.Request().Context(), accountbiz.UpdateCountryParams{
 		AccountID: claims.Account.ID,
 		Country:   req.Country,
 	}); err != nil {

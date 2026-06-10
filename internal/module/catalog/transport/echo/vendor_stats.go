@@ -23,7 +23,7 @@ func (h *Handler) GetVendorStats(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.GetVendorStats(c.Request().Context(), catalogbiz.GetVendorStatsParams{
+	result, err := h.biz.Guaranteed().GetVendorStats(c.Request().Context(), catalogbiz.GetVendorStatsParams{
 		AccountID: req.AccountID,
 	})
 	if err != nil {

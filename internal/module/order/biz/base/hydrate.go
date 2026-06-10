@@ -23,20 +23,20 @@ func (b *Base) EnrichItems(ctx context.Context, dbItems []orderdb.OrderItem) ([]
 	}
 
 	skuIDs := lo.Uniq(lo.Map(dbItems, func(it orderdb.OrderItem, _ int) uuid.UUID { return it.SkuID }))
-	skus, err := b.catalog.ListProductSku(ctx, catalogbiz.ListProductSkuParams{ID: skuIDs})
+	skus, err := b.catalog.Guaranteed().ListProductSku(ctx, catalogbiz.ListProductSkuParams{ID: skuIDs})
 	if err != nil {
 		return nil, fmt.Errorf("enrich items: list skus: %w", err)
 	}
 	skuMap := lo.KeyBy(skus, func(s catalogmodel.ProductSku) uuid.UUID { return s.ID })
 
 	spuIDs := lo.Uniq(lo.Map(skus, func(s catalogmodel.ProductSku, _ int) uuid.UUID { return s.SpuID }))
-	listSpu, err := b.catalog.ListProductSpu(ctx, catalogbiz.ListProductSpuParams{ID: spuIDs})
+	listSpu, err := b.catalog.Guaranteed().ListProductSpu(ctx, catalogbiz.ListProductSpuParams{ID: spuIDs})
 	if err != nil {
 		return nil, fmt.Errorf("enrich items: list spus: %w", err)
 	}
 	spuMap := lo.KeyBy(listSpu.Data, func(s catalogmodel.ProductSpu) uuid.UUID { return s.ID })
 
-	resources, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
+	resources, err := b.common.Guaranteed().GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeProductSpu,
 		RefIDs:  spuIDs,
 	})
@@ -136,7 +136,7 @@ func (b *Base) HydrateRefunds(ctx context.Context, rows ...orderdb.OrderRefund) 
 	}
 
 	// Map resources to refunds
-	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
+	resourcesMap, err := b.common.Guaranteed().GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeRefund,
 		RefIDs:  lo.Map(rows, func(r orderdb.OrderRefund, _ int) uuid.UUID { return r.ID }),
 	})
@@ -158,7 +158,7 @@ func (b *Base) HydrateRefundDisputes(ctx context.Context, rows ...orderdb.OrderR
 	}
 
 	// Map resources to disputes
-	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
+	resourcesMap, err := b.common.Guaranteed().GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeRefundDispute,
 		RefIDs:  lo.Map(rows, func(r orderdb.OrderRefundDispute, _ int) uuid.UUID { return r.ID }),
 	})

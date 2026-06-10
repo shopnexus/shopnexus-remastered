@@ -134,7 +134,7 @@ func (b *BuyerHandler) RefundPendingItem(
 		// deterministic key: retries must reuse it so the idempotency ledger dedupes
 		releaseKey := uuid.NewSHA1(uuid.NameSpaceOID, fmt.Appendf(nil, "cancel-release:item:%d", params.Item.ID))
 		sagaTx.Defer("reserve_inventory", func(ctx context.Context) error {
-			_, e := b.inventory.ReserveInventory(ctx, inventorybiz.ReserveInventoryParams{
+			_, e := b.inventory.Guaranteed().ReserveInventory(ctx, inventorybiz.ReserveInventoryParams{
 				Keys: idempotency.Keys{ConsumeKey: releaseKey},
 				Items: []inventorybiz.ReserveInventoryItem{{
 					RefType: inventorydb.InventoryStockRefTypeProductSku,
@@ -144,7 +144,7 @@ func (b *BuyerHandler) RefundPendingItem(
 			})
 			return e
 		})
-		if err = b.inventory.ReleaseInventory(ctx, inventorybiz.ReleaseInventoryParams{
+		if err = b.inventory.Guaranteed().ReleaseInventory(ctx, inventorybiz.ReleaseInventoryParams{
 			Keys: idempotency.Keys{ClaimKey: releaseKey},
 			Items: []inventorybiz.ReleaseInventoryItem{{
 				RefType: inventorydb.InventoryStockRefTypeProductSku,
@@ -159,7 +159,7 @@ func (b *BuyerHandler) RefundPendingItem(
 		// Compensator debits the same amount
 		creditRef := fmt.Sprintf("partial-refund:item:%d", params.Item.ID)
 		sagaTx.Defer("wallet_debit", func(ctx context.Context) error {
-			_, e := b.account.WalletDebit(ctx, accountbiz.WalletDebitParams{
+			_, e := b.account.Guaranteed().WalletDebit(ctx, accountbiz.WalletDebitParams{
 				AccountID: params.Item.AccountID,
 				Amount:    params.Item.TotalAmount,
 				Reference: "rollback:" + creditRef,
@@ -167,7 +167,7 @@ func (b *BuyerHandler) RefundPendingItem(
 			})
 			return e
 		})
-		if err = b.account.WalletCredit(ctx, accountbiz.WalletCreditParams{
+		if err = b.account.Guaranteed().WalletCredit(ctx, accountbiz.WalletCreditParams{
 			AccountID: params.Item.AccountID,
 			Amount:    params.Item.TotalAmount,
 			Type:      "Refund",
