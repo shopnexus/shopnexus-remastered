@@ -1,7 +1,6 @@
 package fullfilment
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -40,7 +39,7 @@ const (
 // Exported so fx binds *refund.RefundHandler to it via fx.As.
 type RefundCrediter interface {
 	ExecuteRefundCredit(
-		ctx context.Context,
+		ctx restate.Context,
 		refund orderdb.OrderRefund,
 		deciderID uuid.UUID,
 		reason ordermodel.RefundCreditReason,
