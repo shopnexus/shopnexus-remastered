@@ -159,7 +159,7 @@ func (b *BuyerHandler) RefundPendingItem(
 		// Compensator debits the same amount
 		creditRef := fmt.Sprintf("partial-refund:item:%d", params.Item.ID)
 		sagaTx.Defer("wallet_debit", func(ctx context.Context) error {
-			_, e := b.account.Guaranteed().WalletDebit(ctx, accountbiz.WalletDebitParams{
+			_, e := b.account.Call().WalletDebit(ctx, accountbiz.WalletDebitParams{
 				AccountID: params.Item.AccountID,
 				Amount:    params.Item.TotalAmount,
 				Reference: "rollback:" + creditRef,
@@ -167,7 +167,7 @@ func (b *BuyerHandler) RefundPendingItem(
 			})
 			return e
 		})
-		if err = b.account.Guaranteed().WalletCredit(ctx, accountbiz.WalletCreditParams{
+		if err = b.account.Call().WalletCredit(ctx, accountbiz.WalletCreditParams{
 			AccountID: params.Item.AccountID,
 			Amount:    params.Item.TotalAmount,
 			Type:      "Refund",

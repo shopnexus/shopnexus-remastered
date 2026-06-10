@@ -45,7 +45,7 @@ func (b *RefundHandler) CreditFromSession(
 		return 0, nil
 	}
 
-	if err = b.Account().Guaranteed().WalletCredit(ctx, accountbiz.WalletCreditParams{
+	if err = b.Account().Call().WalletCredit(ctx, accountbiz.WalletCreditParams{
 		AccountID: params.AccountID,
 		Amount:    settled,
 		Type:      params.CreditType,

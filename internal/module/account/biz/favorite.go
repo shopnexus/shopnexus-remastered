@@ -10,6 +10,7 @@ import (
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 )
 
 type AddFavoriteParams struct {
@@ -18,31 +19,33 @@ type AddFavoriteParams struct {
 }
 
 // AddFavorite adds a product SPU to the account's favorites list.
-func (b *AccountHandler) AddFavorite(ctx context.Context, params AddFavoriteParams) (accountdb.AccountFavorite, error) {
+func (b *AccountHandler) AddFavorite(ctx restate.Context, params AddFavoriteParams) (accountdb.AccountFavorite, error) {
 	var zero accountdb.AccountFavorite
 
 	if err := validator.Validate(params); err != nil {
 		return zero, fmt.Errorf("validate add favorite params: %w", err)
 	}
 
-	// Check if already favorited
-	existing, err := b.storage.Querier().GetFavorite(ctx, accountdb.GetFavoriteParams{
-		AccountID: uuid.NullUUID{UUID: params.Account.ID, Valid: true},
-		SpuID:     uuid.NullUUID{UUID: params.SpuID, Valid: true},
-	})
-	if err == nil {
-		return existing, nil // Already favorited
-	}
+	// decision: return the existing favorite if present, else create it.
+	return restate.Run(ctx, func(rctx restate.RunContext) (accountdb.AccountFavorite, error) {
+		existing, err := b.storage.Querier().GetFavorite(rctx, accountdb.GetFavoriteParams{
+			AccountID: uuid.NullUUID{UUID: params.Account.ID, Valid: true},
+			SpuID:     uuid.NullUUID{UUID: params.SpuID, Valid: true},
+		})
+		if err == nil {
+			return existing, nil // Already favorited
+		}
 
-	result, err := b.storage.Querier().CreateDefaultFavorite(ctx, accountdb.CreateDefaultFavoriteParams{
-		AccountID: params.Account.ID,
-		SpuID:     params.SpuID,
-	})
-	if err != nil {
-		return zero, fmt.Errorf("db create default favorite: %w", err)
-	}
+		result, err := b.storage.Querier().CreateDefaultFavorite(rctx, accountdb.CreateDefaultFavoriteParams{
+			AccountID: params.Account.ID,
+			SpuID:     params.SpuID,
+		})
+		if err != nil {
+			return zero, fmt.Errorf("db create default favorite: %w", err)
+		}
 
-	return result, nil
+		return result, nil
+	})
 }
 
 type RemoveFavoriteParams struct {
@@ -51,18 +54,20 @@ type RemoveFavoriteParams struct {
 }
 
 // RemoveFavorite removes a product SPU from the account's favorites list.
-func (b *AccountHandler) RemoveFavorite(ctx context.Context, params RemoveFavoriteParams) error {
+func (b *AccountHandler) RemoveFavorite(ctx restate.Context, params RemoveFavoriteParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate remove favorite params: %w", err)
 	}
-	if err := b.storage.Querier().DeleteFavorite(ctx, accountdb.DeleteFavoriteParams{
-		AccountID: []uuid.UUID{params.Account.ID},
-		SpuID:     []uuid.UUID{params.SpuID},
-	}); err != nil {
-		return fmt.Errorf("db delete favorite: %w", err)
-	}
-
-	return nil
+	// execution: remove the favorite.
+	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		if err := b.storage.Querier().DeleteFavorite(rctx, accountdb.DeleteFavoriteParams{
+			AccountID: []uuid.UUID{params.Account.ID},
+			SpuID:     []uuid.UUID{params.SpuID},
+		}); err != nil {
+			return fmt.Errorf("db delete favorite: %w", err)
+		}
+		return nil
+	})
 }
 
 type ListFavoriteParams struct {

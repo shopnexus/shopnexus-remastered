@@ -30,7 +30,7 @@ func (h *Handler) LoginBasic(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.Guaranteed().Login(c.Request().Context(), accountbiz.LoginParams{
+	result, err := h.biz.Call().Login(c.Request().Context(), accountbiz.LoginParams{
 		Username: null.NewString(req.ID, true),
 		Email:    null.NewString(req.ID, true),
 		Phone:    null.NewString(req.ID, true),
@@ -64,7 +64,7 @@ func (h *Handler) RegisterBasic(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.Guaranteed().Register(c.Request().Context(), accountbiz.RegisterParams{
+	result, err := h.biz.Call().Register(c.Request().Context(), accountbiz.RegisterParams{
 		Username: req.Username,
 		Email:    req.Email,
 		Phone:    req.Phone,
@@ -94,7 +94,7 @@ func (h *Handler) Refresh(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.Guaranteed().Refresh(c.Request().Context(), req.RefreshToken)
+	result, err := h.biz.Call().Refresh(c.Request().Context(), req.RefreshToken)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}

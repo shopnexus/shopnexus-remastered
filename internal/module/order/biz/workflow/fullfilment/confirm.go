@@ -128,7 +128,7 @@ func (h *FulfillmentWorkflow) confirm(
 	// Quote transport for the aggregate shipment. One quote covers all
 	// confirmed items because they share the same transport_option and
 	// destination address (asserted above).
-	contactMap, err := h.account.Guaranteed().GetDefaultContact(ctx, []uuid.UUID{sellerID})
+	contactMap, err := h.account.GetDefaultContact(ctx, []uuid.UUID{sellerID})
 	if err != nil {
 		return res, fmt.Errorf("get seller contact: %w", err)
 	}
@@ -164,7 +164,7 @@ func (h *FulfillmentWorkflow) confirm(
 	// Wallet / gateway split for confirmFeeTotal.
 	var confirmFeeWallet, confirmFeeGateway int64
 	if input.UseWallet && confirmFeeTotal > 0 {
-		balance, balErr := h.account.Guaranteed().GetWalletBalance(ctx, sellerID)
+		balance, balErr := h.account.GetWalletBalance(ctx, sellerID)
 		if balErr != nil {
 			return res, fmt.Errorf("get seller wallet balance: %w", balErr)
 		}
@@ -238,7 +238,7 @@ func (h *FulfillmentWorkflow) confirm(
 
 	// Wallet debit + mark wallet tx success.
 	if confirmFeeWallet > 0 {
-		if _, dErr := h.account.Guaranteed().WalletDebit(ctx, accountbiz.WalletDebitParams{
+		if _, dErr := h.account.Call().WalletDebit(ctx, accountbiz.WalletDebitParams{
 			AccountID: sellerID,
 			Amount:    confirmFeeWallet,
 			Reference: fmt.Sprintf("tx:%s", walletTxID),
@@ -250,7 +250,7 @@ func (h *FulfillmentWorkflow) confirm(
 		// (single CTE under FOR UPDATE) → terminal failure means no debit,
 		// so arming earlier would over-credit on saga fire.
 		sg.Defer("credit_wallet", func(ctx restate.Context) error {
-			return h.account.Guaranteed().WalletCredit(ctx, accountbiz.WalletCreditParams{
+			return h.account.Call().WalletCredit(ctx, accountbiz.WalletCreditParams{
 				AccountID: sellerID,
 				Amount:    confirmFeeWallet,
 				Type:      "Refund",

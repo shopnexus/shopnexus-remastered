@@ -1,7 +1,6 @@
 package accountbiz
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
@@ -15,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
 	"github.com/jackc/pgx/v5"
+	restate "github.com/restatedev/sdk-go"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -104,7 +104,7 @@ type LoginResult struct {
 }
 
 // Login authenticates a user and returns access and refresh tokens.
-func (a *AccountHandler) Login(ctx context.Context, params LoginParams) (LoginResult, error) {
+func (a *AccountHandler) Login(ctx restate.Context, params LoginParams) (LoginResult, error) {
 	var zero LoginResult
 
 	if err := validator.Validate(params); err != nil {
@@ -115,43 +115,47 @@ func (a *AccountHandler) Login(ctx context.Context, params LoginParams) (LoginRe
 		return zero, accountmodel.ErrMissingIdentifier
 	}
 
-	account, err := a.storage.Querier().GetAccount(ctx, accountdb.GetAccountParams{
-		Phone:    params.Phone,
-		Email:    params.Email,
-		Username: params.Username,
+	// decision: load account, verify credentials, mint tokens. Journaled so a
+	// replay reuses the same account snapshot and token timestamps.
+	return restate.Run(ctx, func(rctx restate.RunContext) (LoginResult, error) {
+		account, err := a.storage.Querier().GetAccount(rctx, accountdb.GetAccountParams{
+			Phone:    params.Phone,
+			Email:    params.Email,
+			Username: params.Username,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return zero, accountmodel.ErrAccountNotFound
+			}
+			return zero, fmt.Errorf("db get account: %w", err)
+		}
+
+		// If the account has a password, require it for login
+		if account.Password.Valid {
+			if !params.Password.Valid {
+				return zero, accountmodel.ErrInvalidCredentials
+			}
+			if !a.ComparePassword(account.Password.String, params.Password.String) {
+				return zero, accountmodel.ErrInvalidCredentials
+			}
+		}
+
+		accessToken, err := a.GenerateAccessToken(account)
+		if err != nil {
+			return zero, fmt.Errorf("generate access token: %w", err)
+		}
+
+		refreshToken, err := a.GenerateRefreshToken(account)
+		if err != nil {
+			return zero, fmt.Errorf("generate refresh token: %w", err)
+		}
+
+		return LoginResult{
+			Account:      account,
+			AccessToken:  accessToken,
+			RefreshToken: refreshToken,
+		}, nil
 	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return zero, accountmodel.ErrAccountNotFound
-		}
-		return zero, fmt.Errorf("db get account: %w", err)
-	}
-
-	// If the account has a password, require it for login
-	if account.Password.Valid {
-		if !params.Password.Valid {
-			return zero, accountmodel.ErrInvalidCredentials
-		}
-		if !a.ComparePassword(account.Password.String, params.Password.String) {
-			return zero, accountmodel.ErrInvalidCredentials
-		}
-	}
-
-	accessToken, err := a.GenerateAccessToken(account)
-	if err != nil {
-		return zero, fmt.Errorf("generate access token: %w", err)
-	}
-
-	refreshToken, err := a.GenerateRefreshToken(account)
-	if err != nil {
-		return zero, fmt.Errorf("generate refresh token: %w", err)
-	}
-
-	return LoginResult{
-		Account:      account,
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-	}, nil
 }
 
 type RegisterParams struct {
@@ -169,7 +173,7 @@ type RegisterResult struct {
 }
 
 // Register creates a new account with the given credentials and returns tokens.
-func (a *AccountHandler) Register(ctx context.Context, params RegisterParams) (RegisterResult, error) {
+func (a *AccountHandler) Register(ctx restate.Context, params RegisterParams) (RegisterResult, error) {
 	var zero RegisterResult
 
 	if err := validator.Validate(params); err != nil {
@@ -201,39 +205,51 @@ func (a *AccountHandler) Register(ctx context.Context, params RegisterParams) (R
 		hashedPassword.SetValid(hashed)
 	}
 
-	// Create account base
-	account, err := a.storage.Querier().CreateDefaultAccount(ctx, accountdb.CreateDefaultAccountParams{
-		Phone:    params.Phone,
-		Email:    params.Email,
-		Username: params.Username,
-		Password: hashedPassword,
+	// execution: create the account + profile and mint tokens in one journaled step.
+	result, err := restate.Run(ctx, func(rctx restate.RunContext) (RegisterResult, error) {
+		account, err := a.storage.Querier().CreateDefaultAccount(rctx, accountdb.CreateDefaultAccountParams{
+			Phone:    params.Phone,
+			Email:    params.Email,
+			Username: params.Username,
+			Password: hashedPassword,
+		})
+		if err != nil {
+			return zero, fmt.Errorf("db create account: %w", err)
+		}
+
+		// Create profile with the submitted country. Currency is inferred from
+		// country at read time in mapProfile, so nothing to persist here.
+		if _, err := a.storage.Querier().CreateSignupProfile(rctx, accountdb.CreateSignupProfileParams{
+			ID:      account.ID,
+			Country: params.Country,
+		}); err != nil {
+			return zero, fmt.Errorf("db create profile: %w", err)
+		}
+
+		accessToken, err := a.GenerateAccessToken(account)
+		if err != nil {
+			return zero, fmt.Errorf("generate access token: %w", err)
+		}
+
+		refreshToken, err := a.GenerateRefreshToken(account)
+		if err != nil {
+			return zero, fmt.Errorf("generate refresh token: %w", err)
+		}
+
+		return RegisterResult{
+			Account:      account,
+			AccessToken:  accessToken,
+			RefreshToken: refreshToken,
+		}, nil
 	})
 	if err != nil {
-		return zero, fmt.Errorf("db create account: %w", err)
+		return zero, err
 	}
 
-	// Create profile with the submitted country. Currency is inferred from
-	// country at read time in mapProfile, so nothing to persist here.
-	if _, err := a.storage.Querier().CreateSignupProfile(ctx, accountdb.CreateSignupProfileParams{
-		ID:      account.ID,
-		Country: params.Country,
-	}); err != nil {
-		return zero, fmt.Errorf("db create profile: %w", err)
-	}
-
-	accessToken, err := a.GenerateAccessToken(account)
-	if err != nil {
-		return zero, fmt.Errorf("generate access token: %w", err)
-	}
-
-	refreshToken, err := a.GenerateRefreshToken(account)
-	if err != nil {
-		return zero, fmt.Errorf("generate refresh token: %w", err)
-	}
-
-	// Welcome notification
-	if err = a.self.Guaranteed().Send().CreateNotification(ctx, CreateNotificationParams{
-		AccountID: account.ID,
+	// tail: welcome notification. The self Send is journaled by Restate on its
+	// own — no Run wrapper, so a retry never re-sends it.
+	if err = a.self.Send().CreateNotification(ctx, CreateNotificationParams{
+		AccountID: result.Account.ID,
 		Type:      accountmodel.NotiWelcome,
 		Channel:   accountmodel.ChannelInApp,
 		Title:     "Welcome to ShopNexus",
@@ -242,11 +258,7 @@ func (a *AccountHandler) Register(ctx context.Context, params RegisterParams) (R
 		return zero, fmt.Errorf("send welcome notification: %w", err)
 	}
 
-	return RegisterResult{
-		Account:      account,
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-	}, nil
+	return result, nil
 }
 
 type RefreshResult struct {
@@ -255,31 +267,35 @@ type RefreshResult struct {
 }
 
 // Refresh validates a refresh token and issues new access and refresh tokens.
-func (a *AccountHandler) Refresh(ctx context.Context, refreshToken string) (RefreshResult, error) {
+func (a *AccountHandler) Refresh(ctx restate.Context, refreshToken string) (RefreshResult, error) {
 	var zero RefreshResult
 	claims, err := authclaims.ValidateAccessToken(string(a.refreshSecret), refreshToken)
 	if err != nil {
 		return zero, fmt.Errorf("validate refresh token: %w", err)
 	}
 
-	account, err := a.storage.Querier().GetAccount(ctx, accountdb.GetAccountParams{
-		ID: uuid.NullUUID{UUID: claims.Account.ID, Valid: true},
+	// decision: load account and mint fresh tokens. Journaled so a replay reuses
+	// the same account snapshot and token timestamps.
+	return restate.Run(ctx, func(rctx restate.RunContext) (RefreshResult, error) {
+		account, err := a.storage.Querier().GetAccount(rctx, accountdb.GetAccountParams{
+			ID: uuid.NullUUID{UUID: claims.Account.ID, Valid: true},
+		})
+		if err != nil {
+			return zero, fmt.Errorf("db get account: %w", err)
+		}
+
+		access, err := a.GenerateAccessToken(account)
+		if err != nil {
+			return zero, fmt.Errorf("generate access token: %w", err)
+		}
+		nextRefresh, err := a.GenerateRefreshToken(account)
+		if err != nil {
+			return zero, fmt.Errorf("generate refresh token: %w", err)
+		}
+
+		return RefreshResult{
+			AccessToken:  access,
+			RefreshToken: nextRefresh,
+		}, nil
 	})
-	if err != nil {
-		return zero, fmt.Errorf("db get account: %w", err)
-	}
-
-	access, err := a.GenerateAccessToken(account)
-	if err != nil {
-		return zero, fmt.Errorf("generate access token: %w", err)
-	}
-	nextRefresh, err := a.GenerateRefreshToken(account)
-	if err != nil {
-		return zero, fmt.Errorf("generate refresh token: %w", err)
-	}
-
-	return RefreshResult{
-		AccessToken:  access,
-		RefreshToken: nextRefresh,
-	}, nil
 }

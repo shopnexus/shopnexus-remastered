@@ -12,6 +12,7 @@ import (
 	"shopnexus-server/internal/shared/pgsqlc"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 )
 
 // AccountBiz is the client interface for AccountBizHandler, which is used by other modules to call AccountBizHandler methods.
@@ -19,35 +20,35 @@ import (
 //go:generate go run shopnexus-server/cmd/genrestate -interface AccountBiz -service Account
 type AccountBiz interface {
 	// Auth
-	Login(ctx context.Context, params LoginParams) (LoginResult, error)
-	Register(ctx context.Context, params RegisterParams) (RegisterResult, error)
-	Refresh(ctx context.Context, refreshToken string) (RefreshResult, error)
+	Login(ctx restate.Context, params LoginParams) (LoginResult, error)
+	Register(ctx restate.Context, params RegisterParams) (RegisterResult, error)
+	Refresh(ctx restate.Context, refreshToken string) (RefreshResult, error)
 
 	// Profile
 	GetProfile(ctx context.Context, params GetProfileParams) (accountmodel.Profile, error)
 	ListProfile(ctx context.Context, params ListProfileParams) (paginate.PaginateResult[accountmodel.Profile], error)
-	UpdateProfile(ctx context.Context, params UpdateProfileParams) (accountmodel.Profile, error)
-	UpdateCountry(ctx context.Context, params UpdateCountryParams) error
+	UpdateProfile(ctx restate.Context, params UpdateProfileParams) (accountmodel.Profile, error)
+	UpdateCountry(ctx restate.Context, params UpdateCountryParams) error
 
 	// Internal wallet (profile.internal_balance)
 	GetWalletBalance(ctx context.Context, accountID uuid.UUID) (int64, error)
-	WalletDebit(ctx context.Context, params WalletDebitParams) (WalletDebitResult, error)
-	WalletCredit(ctx context.Context, params WalletCreditParams) error
+	WalletDebit(ctx restate.Context, params WalletDebitParams) (WalletDebitResult, error)
+	WalletCredit(ctx restate.Context, params WalletCreditParams) error
 
 	// Account
-	SuspendAccount(ctx context.Context, params SuspendAccountParams) error
+	SuspendAccount(ctx restate.Context, params SuspendAccountParams) error
 
 	// Contact
 	ListContact(ctx context.Context, params ListContactParams) ([]accountdb.AccountContact, error)
 	GetContact(ctx context.Context, params GetContactParams) (accountdb.AccountContact, error)
-	CreateContact(ctx context.Context, params CreateContactParams) (accountdb.AccountContact, error)
-	UpdateContact(ctx context.Context, params UpdateContactParams) (accountdb.AccountContact, error)
-	DeleteContact(ctx context.Context, params DeleteContactParams) error
+	CreateContact(ctx restate.Context, params CreateContactParams) (accountdb.AccountContact, error)
+	UpdateContact(ctx restate.Context, params UpdateContactParams) (accountdb.AccountContact, error)
+	DeleteContact(ctx restate.Context, params DeleteContactParams) error
 	GetDefaultContact(ctx context.Context, accountIDs []uuid.UUID) (map[uuid.UUID]accountdb.AccountContact, error)
 
 	// Favorite
-	AddFavorite(ctx context.Context, params AddFavoriteParams) (accountdb.AccountFavorite, error)
-	RemoveFavorite(ctx context.Context, params RemoveFavoriteParams) error
+	AddFavorite(ctx restate.Context, params AddFavoriteParams) (accountdb.AccountFavorite, error)
+	RemoveFavorite(ctx restate.Context, params RemoveFavoriteParams) error
 	ListFavorite(
 		ctx context.Context,
 		params ListFavoriteParams,
@@ -60,9 +61,9 @@ type AccountBiz interface {
 		params ListNotificationParams,
 	) (paginate.PaginateResult[accountdb.AccountNotification], error)
 	CountUnread(ctx context.Context, params CountUnreadParams) (int64, error)
-	MarkRead(ctx context.Context, params MarkReadParams) error
-	MarkAllRead(ctx context.Context, params MarkAllReadParams) error
-	CreateNotification(ctx context.Context, params CreateNotificationParams) (accountdb.AccountNotification, error)
+	MarkRead(ctx restate.Context, params MarkReadParams) error
+	MarkAllRead(ctx restate.Context, params MarkAllReadParams) error
+	CreateNotification(ctx restate.Context, params CreateNotificationParams) (accountdb.AccountNotification, error)
 }
 
 type AccountStorage = pgsqlc.Storage[*accountdb.Queries]

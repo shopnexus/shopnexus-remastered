@@ -16,195 +16,157 @@ import (
 
 const serviceName = "Account"
 
-// AccountBizSender mirrors AccountBiz as one-way (fire-and-forget) calls; outputs are dropped.
+// AccountBizCall mirrors the command methods of AccountBiz as request-response calls.
+type AccountBizCall interface {
+	Login(ctx context.Context, params LoginParams) (LoginResult, error)
+	Register(ctx context.Context, params RegisterParams) (RegisterResult, error)
+	Refresh(ctx context.Context, refreshToken string) (RefreshResult, error)
+	UpdateProfile(ctx context.Context, params UpdateProfileParams) (accountmodel.Profile, error)
+	UpdateCountry(ctx context.Context, params UpdateCountryParams) error
+	WalletDebit(ctx context.Context, params WalletDebitParams) (WalletDebitResult, error)
+	WalletCredit(ctx context.Context, params WalletCreditParams) error
+	SuspendAccount(ctx context.Context, params SuspendAccountParams) error
+	CreateContact(ctx context.Context, params CreateContactParams) (accountdb.AccountContact, error)
+	UpdateContact(ctx context.Context, params UpdateContactParams) (accountdb.AccountContact, error)
+	DeleteContact(ctx context.Context, params DeleteContactParams) error
+	AddFavorite(ctx context.Context, params AddFavoriteParams) (accountdb.AccountFavorite, error)
+	RemoveFavorite(ctx context.Context, params RemoveFavoriteParams) error
+	MarkRead(ctx context.Context, params MarkReadParams) error
+	MarkAllRead(ctx context.Context, params MarkAllReadParams) error
+	CreateNotification(ctx context.Context, params CreateNotificationParams) (accountdb.AccountNotification, error)
+}
+
+// AccountBizSender mirrors the command methods of AccountBiz as one-way (fire-and-forget) calls.
 type AccountBizSender interface {
 	Login(ctx context.Context, params LoginParams) error
 	Register(ctx context.Context, params RegisterParams) error
 	Refresh(ctx context.Context, refreshToken string) error
-	GetProfile(ctx context.Context, params GetProfileParams) error
-	ListProfile(ctx context.Context, params ListProfileParams) error
 	UpdateProfile(ctx context.Context, params UpdateProfileParams) error
 	UpdateCountry(ctx context.Context, params UpdateCountryParams) error
-	GetWalletBalance(ctx context.Context, accountID uuid.UUID) error
 	WalletDebit(ctx context.Context, params WalletDebitParams) error
 	WalletCredit(ctx context.Context, params WalletCreditParams) error
 	SuspendAccount(ctx context.Context, params SuspendAccountParams) error
-	ListContact(ctx context.Context, params ListContactParams) error
-	GetContact(ctx context.Context, params GetContactParams) error
 	CreateContact(ctx context.Context, params CreateContactParams) error
 	UpdateContact(ctx context.Context, params UpdateContactParams) error
 	DeleteContact(ctx context.Context, params DeleteContactParams) error
-	GetDefaultContact(ctx context.Context, accountIDs []uuid.UUID) error
 	AddFavorite(ctx context.Context, params AddFavoriteParams) error
 	RemoveFavorite(ctx context.Context, params RemoveFavoriteParams) error
-	ListFavorite(ctx context.Context, params ListFavoriteParams) error
-	CheckFavorites(ctx context.Context, params CheckFavoritesParams) error
-	ListNotification(ctx context.Context, params ListNotificationParams) error
-	CountUnread(ctx context.Context, params CountUnreadParams) error
 	MarkRead(ctx context.Context, params MarkReadParams) error
 	MarkAllRead(ctx context.Context, params MarkAllReadParams) error
 	CreateNotification(ctx context.Context, params CreateNotificationParams) error
 }
 
-// AccountBizFuture mirrors AccountBiz returning response futures for racing
-// or parallel calls. Only usable inside a Restate handler context.
+// AccountBizFuture mirrors the command methods of AccountBiz returning response futures for
+// racing or parallel calls. Only usable inside a Restate handler context.
 type AccountBizFuture interface {
 	Login(rctx restate.Context, params LoginParams) restate.ResponseFuture[LoginResult]
 	Register(rctx restate.Context, params RegisterParams) restate.ResponseFuture[RegisterResult]
 	Refresh(rctx restate.Context, refreshToken string) restate.ResponseFuture[RefreshResult]
-	GetProfile(rctx restate.Context, params GetProfileParams) restate.ResponseFuture[accountmodel.Profile]
-	ListProfile(rctx restate.Context, params ListProfileParams) restate.ResponseFuture[paginate.PaginateResult[accountmodel.Profile]]
 	UpdateProfile(rctx restate.Context, params UpdateProfileParams) restate.ResponseFuture[accountmodel.Profile]
 	UpdateCountry(rctx restate.Context, params UpdateCountryParams) restate.ResponseFuture[restate.Void]
-	GetWalletBalance(rctx restate.Context, accountID uuid.UUID) restate.ResponseFuture[int64]
 	WalletDebit(rctx restate.Context, params WalletDebitParams) restate.ResponseFuture[WalletDebitResult]
 	WalletCredit(rctx restate.Context, params WalletCreditParams) restate.ResponseFuture[restate.Void]
 	SuspendAccount(rctx restate.Context, params SuspendAccountParams) restate.ResponseFuture[restate.Void]
-	ListContact(rctx restate.Context, params ListContactParams) restate.ResponseFuture[[]accountdb.AccountContact]
-	GetContact(rctx restate.Context, params GetContactParams) restate.ResponseFuture[accountdb.AccountContact]
 	CreateContact(rctx restate.Context, params CreateContactParams) restate.ResponseFuture[accountdb.AccountContact]
 	UpdateContact(rctx restate.Context, params UpdateContactParams) restate.ResponseFuture[accountdb.AccountContact]
 	DeleteContact(rctx restate.Context, params DeleteContactParams) restate.ResponseFuture[restate.Void]
-	GetDefaultContact(rctx restate.Context, accountIDs []uuid.UUID) restate.ResponseFuture[map[uuid.UUID]accountdb.AccountContact]
 	AddFavorite(rctx restate.Context, params AddFavoriteParams) restate.ResponseFuture[accountdb.AccountFavorite]
 	RemoveFavorite(rctx restate.Context, params RemoveFavoriteParams) restate.ResponseFuture[restate.Void]
-	ListFavorite(rctx restate.Context, params ListFavoriteParams) restate.ResponseFuture[paginate.PaginateResult[accountdb.AccountFavorite]]
-	CheckFavorites(rctx restate.Context, params CheckFavoritesParams) restate.ResponseFuture[map[uuid.UUID]bool]
-	ListNotification(rctx restate.Context, params ListNotificationParams) restate.ResponseFuture[paginate.PaginateResult[accountdb.AccountNotification]]
-	CountUnread(rctx restate.Context, params CountUnreadParams) restate.ResponseFuture[int64]
 	MarkRead(rctx restate.Context, params MarkReadParams) restate.ResponseFuture[restate.Void]
 	MarkAllRead(rctx restate.Context, params MarkAllReadParams) restate.ResponseFuture[restate.Void]
 	CreateNotification(rctx restate.Context, params CreateNotificationParams) restate.ResponseFuture[accountdb.AccountNotification]
 }
 
-// AccountBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
+// AccountBizClient is the cross-module client: query methods are flat (non-durable),
+// Call()/Future()/Send() reach the durable command surfaces.
 type AccountBizClient interface {
-	Guaranteed() AccountBizGuaranteed
-	BestEffort() AccountBizBestEffort
+	GetProfile(ctx context.Context, params GetProfileParams) (accountmodel.Profile, error)
+	ListProfile(ctx context.Context, params ListProfileParams) (paginate.PaginateResult[accountmodel.Profile], error)
+	GetWalletBalance(ctx context.Context, accountID uuid.UUID) (int64, error)
+	ListContact(ctx context.Context, params ListContactParams) ([]accountdb.AccountContact, error)
+	GetContact(ctx context.Context, params GetContactParams) (accountdb.AccountContact, error)
+	GetDefaultContact(ctx context.Context, accountIDs []uuid.UUID) (map[uuid.UUID]accountdb.AccountContact, error)
+	ListFavorite(ctx context.Context, params ListFavoriteParams) (paginate.PaginateResult[accountdb.AccountFavorite], error)
+	CheckFavorites(ctx context.Context, params CheckFavoritesParams) (map[uuid.UUID]bool, error)
+	ListNotification(ctx context.Context, params ListNotificationParams) (paginate.PaginateResult[accountdb.AccountNotification], error)
+	CountUnread(ctx context.Context, params CountUnreadParams) (int64, error)
+	Call() AccountBizCall
+	Future() AccountBizFuture
+	Send() AccountBizSender
 }
 
-// AccountRestateClient implements AccountBizClient via Restate HTTP ingress.
-type AccountRestateClient struct {
-	call   *restatec.CallClient
-	send   *AccountRestateSender
-	future *AccountRestateFuture
+// AccountRestateCall implements AccountBizCall via Restate HTTP ingress.
+type AccountRestateCall struct {
+	call *restatec.CallClient
 }
 
-var _ AccountBizGuaranteed = (*AccountRestateClient)(nil)
+var _ AccountBizCall = (*AccountRestateCall)(nil)
 
-func NewAccountRestateClient(restateIngressURL string) *AccountRestateClient {
-	return &AccountRestateClient{
-		call:   restatec.NewCallClient(restateIngressURL),
-		send:   &AccountRestateSender{client: restatec.NewSendClient(restateIngressURL)},
-		future: &AccountRestateFuture{},
-	}
+func NewAccountRestateCall(restateIngressURL string) *AccountRestateCall {
+	return &AccountRestateCall{call: restatec.NewCallClient(restateIngressURL)}
 }
 
-func (p *AccountRestateClient) Send() AccountBizSender { return p.send }
-
-func (p *AccountRestateClient) Future() AccountBizFuture { return p.future }
-
-func (p *AccountRestateClient) Login(ctx context.Context, params LoginParams) (LoginResult, error) {
+func (p *AccountRestateCall) Login(ctx context.Context, params LoginParams) (LoginResult, error) {
 	return restatec.Call[LoginResult](ctx, p.call, serviceName, "Login", params)
 }
 
-func (p *AccountRestateClient) Register(ctx context.Context, params RegisterParams) (RegisterResult, error) {
+func (p *AccountRestateCall) Register(ctx context.Context, params RegisterParams) (RegisterResult, error) {
 	return restatec.Call[RegisterResult](ctx, p.call, serviceName, "Register", params)
 }
 
-func (p *AccountRestateClient) Refresh(ctx context.Context, refreshToken string) (RefreshResult, error) {
+func (p *AccountRestateCall) Refresh(ctx context.Context, refreshToken string) (RefreshResult, error) {
 	return restatec.Call[RefreshResult](ctx, p.call, serviceName, "Refresh", refreshToken)
 }
 
-func (p *AccountRestateClient) GetProfile(ctx context.Context, params GetProfileParams) (accountmodel.Profile, error) {
-	return restatec.Call[accountmodel.Profile](ctx, p.call, serviceName, "GetProfile", params)
-}
-
-func (p *AccountRestateClient) ListProfile(ctx context.Context, params ListProfileParams) (paginate.PaginateResult[accountmodel.Profile], error) {
-	return restatec.Call[paginate.PaginateResult[accountmodel.Profile]](ctx, p.call, serviceName, "ListProfile", params)
-}
-
-func (p *AccountRestateClient) UpdateProfile(ctx context.Context, params UpdateProfileParams) (accountmodel.Profile, error) {
+func (p *AccountRestateCall) UpdateProfile(ctx context.Context, params UpdateProfileParams) (accountmodel.Profile, error) {
 	return restatec.Call[accountmodel.Profile](ctx, p.call, serviceName, "UpdateProfile", params)
 }
 
-func (p *AccountRestateClient) UpdateCountry(ctx context.Context, params UpdateCountryParams) error {
+func (p *AccountRestateCall) UpdateCountry(ctx context.Context, params UpdateCountryParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "UpdateCountry", params)
 }
 
-func (p *AccountRestateClient) GetWalletBalance(ctx context.Context, accountID uuid.UUID) (int64, error) {
-	return restatec.Call[int64](ctx, p.call, serviceName, "GetWalletBalance", accountID)
-}
-
-func (p *AccountRestateClient) WalletDebit(ctx context.Context, params WalletDebitParams) (WalletDebitResult, error) {
+func (p *AccountRestateCall) WalletDebit(ctx context.Context, params WalletDebitParams) (WalletDebitResult, error) {
 	return restatec.Call[WalletDebitResult](ctx, p.call, serviceName, "WalletDebit", params)
 }
 
-func (p *AccountRestateClient) WalletCredit(ctx context.Context, params WalletCreditParams) error {
+func (p *AccountRestateCall) WalletCredit(ctx context.Context, params WalletCreditParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "WalletCredit", params)
 }
 
-func (p *AccountRestateClient) SuspendAccount(ctx context.Context, params SuspendAccountParams) error {
+func (p *AccountRestateCall) SuspendAccount(ctx context.Context, params SuspendAccountParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "SuspendAccount", params)
 }
 
-func (p *AccountRestateClient) ListContact(ctx context.Context, params ListContactParams) ([]accountdb.AccountContact, error) {
-	return restatec.Call[[]accountdb.AccountContact](ctx, p.call, serviceName, "ListContact", params)
-}
-
-func (p *AccountRestateClient) GetContact(ctx context.Context, params GetContactParams) (accountdb.AccountContact, error) {
-	return restatec.Call[accountdb.AccountContact](ctx, p.call, serviceName, "GetContact", params)
-}
-
-func (p *AccountRestateClient) CreateContact(ctx context.Context, params CreateContactParams) (accountdb.AccountContact, error) {
+func (p *AccountRestateCall) CreateContact(ctx context.Context, params CreateContactParams) (accountdb.AccountContact, error) {
 	return restatec.Call[accountdb.AccountContact](ctx, p.call, serviceName, "CreateContact", params)
 }
 
-func (p *AccountRestateClient) UpdateContact(ctx context.Context, params UpdateContactParams) (accountdb.AccountContact, error) {
+func (p *AccountRestateCall) UpdateContact(ctx context.Context, params UpdateContactParams) (accountdb.AccountContact, error) {
 	return restatec.Call[accountdb.AccountContact](ctx, p.call, serviceName, "UpdateContact", params)
 }
 
-func (p *AccountRestateClient) DeleteContact(ctx context.Context, params DeleteContactParams) error {
+func (p *AccountRestateCall) DeleteContact(ctx context.Context, params DeleteContactParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "DeleteContact", params)
 }
 
-func (p *AccountRestateClient) GetDefaultContact(ctx context.Context, accountIDs []uuid.UUID) (map[uuid.UUID]accountdb.AccountContact, error) {
-	return restatec.Call[map[uuid.UUID]accountdb.AccountContact](ctx, p.call, serviceName, "GetDefaultContact", accountIDs)
-}
-
-func (p *AccountRestateClient) AddFavorite(ctx context.Context, params AddFavoriteParams) (accountdb.AccountFavorite, error) {
+func (p *AccountRestateCall) AddFavorite(ctx context.Context, params AddFavoriteParams) (accountdb.AccountFavorite, error) {
 	return restatec.Call[accountdb.AccountFavorite](ctx, p.call, serviceName, "AddFavorite", params)
 }
 
-func (p *AccountRestateClient) RemoveFavorite(ctx context.Context, params RemoveFavoriteParams) error {
+func (p *AccountRestateCall) RemoveFavorite(ctx context.Context, params RemoveFavoriteParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "RemoveFavorite", params)
 }
 
-func (p *AccountRestateClient) ListFavorite(ctx context.Context, params ListFavoriteParams) (paginate.PaginateResult[accountdb.AccountFavorite], error) {
-	return restatec.Call[paginate.PaginateResult[accountdb.AccountFavorite]](ctx, p.call, serviceName, "ListFavorite", params)
-}
-
-func (p *AccountRestateClient) CheckFavorites(ctx context.Context, params CheckFavoritesParams) (map[uuid.UUID]bool, error) {
-	return restatec.Call[map[uuid.UUID]bool](ctx, p.call, serviceName, "CheckFavorites", params)
-}
-
-func (p *AccountRestateClient) ListNotification(ctx context.Context, params ListNotificationParams) (paginate.PaginateResult[accountdb.AccountNotification], error) {
-	return restatec.Call[paginate.PaginateResult[accountdb.AccountNotification]](ctx, p.call, serviceName, "ListNotification", params)
-}
-
-func (p *AccountRestateClient) CountUnread(ctx context.Context, params CountUnreadParams) (int64, error) {
-	return restatec.Call[int64](ctx, p.call, serviceName, "CountUnread", params)
-}
-
-func (p *AccountRestateClient) MarkRead(ctx context.Context, params MarkReadParams) error {
+func (p *AccountRestateCall) MarkRead(ctx context.Context, params MarkReadParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "MarkRead", params)
 }
 
-func (p *AccountRestateClient) MarkAllRead(ctx context.Context, params MarkAllReadParams) error {
+func (p *AccountRestateCall) MarkAllRead(ctx context.Context, params MarkAllReadParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "MarkAllRead", params)
 }
 
-func (p *AccountRestateClient) CreateNotification(ctx context.Context, params CreateNotificationParams) (accountdb.AccountNotification, error) {
+func (p *AccountRestateCall) CreateNotification(ctx context.Context, params CreateNotificationParams) (accountdb.AccountNotification, error) {
 	return restatec.Call[accountdb.AccountNotification](ctx, p.call, serviceName, "CreateNotification", params)
 }
 
@@ -227,24 +189,12 @@ func (s *AccountRestateSender) Refresh(ctx context.Context, refreshToken string)
 	return restatec.Send(ctx, s.client, serviceName, "Refresh", refreshToken)
 }
 
-func (s *AccountRestateSender) GetProfile(ctx context.Context, params GetProfileParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetProfile", params)
-}
-
-func (s *AccountRestateSender) ListProfile(ctx context.Context, params ListProfileParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListProfile", params)
-}
-
 func (s *AccountRestateSender) UpdateProfile(ctx context.Context, params UpdateProfileParams) error {
 	return restatec.Send(ctx, s.client, serviceName, "UpdateProfile", params)
 }
 
 func (s *AccountRestateSender) UpdateCountry(ctx context.Context, params UpdateCountryParams) error {
 	return restatec.Send(ctx, s.client, serviceName, "UpdateCountry", params)
-}
-
-func (s *AccountRestateSender) GetWalletBalance(ctx context.Context, accountID uuid.UUID) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetWalletBalance", accountID)
 }
 
 func (s *AccountRestateSender) WalletDebit(ctx context.Context, params WalletDebitParams) error {
@@ -259,14 +209,6 @@ func (s *AccountRestateSender) SuspendAccount(ctx context.Context, params Suspen
 	return restatec.Send(ctx, s.client, serviceName, "SuspendAccount", params)
 }
 
-func (s *AccountRestateSender) ListContact(ctx context.Context, params ListContactParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListContact", params)
-}
-
-func (s *AccountRestateSender) GetContact(ctx context.Context, params GetContactParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetContact", params)
-}
-
 func (s *AccountRestateSender) CreateContact(ctx context.Context, params CreateContactParams) error {
 	return restatec.Send(ctx, s.client, serviceName, "CreateContact", params)
 }
@@ -279,32 +221,12 @@ func (s *AccountRestateSender) DeleteContact(ctx context.Context, params DeleteC
 	return restatec.Send(ctx, s.client, serviceName, "DeleteContact", params)
 }
 
-func (s *AccountRestateSender) GetDefaultContact(ctx context.Context, accountIDs []uuid.UUID) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetDefaultContact", accountIDs)
-}
-
 func (s *AccountRestateSender) AddFavorite(ctx context.Context, params AddFavoriteParams) error {
 	return restatec.Send(ctx, s.client, serviceName, "AddFavorite", params)
 }
 
 func (s *AccountRestateSender) RemoveFavorite(ctx context.Context, params RemoveFavoriteParams) error {
 	return restatec.Send(ctx, s.client, serviceName, "RemoveFavorite", params)
-}
-
-func (s *AccountRestateSender) ListFavorite(ctx context.Context, params ListFavoriteParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListFavorite", params)
-}
-
-func (s *AccountRestateSender) CheckFavorites(ctx context.Context, params CheckFavoritesParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "CheckFavorites", params)
-}
-
-func (s *AccountRestateSender) ListNotification(ctx context.Context, params ListNotificationParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListNotification", params)
-}
-
-func (s *AccountRestateSender) CountUnread(ctx context.Context, params CountUnreadParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "CountUnread", params)
 }
 
 func (s *AccountRestateSender) MarkRead(ctx context.Context, params MarkReadParams) error {
@@ -336,24 +258,12 @@ func (f *AccountRestateFuture) Refresh(rctx restate.Context, refreshToken string
 	return restate.Service[RefreshResult](rctx, serviceName, "Refresh").RequestFuture(refreshToken)
 }
 
-func (f *AccountRestateFuture) GetProfile(rctx restate.Context, params GetProfileParams) restate.ResponseFuture[accountmodel.Profile] {
-	return restate.Service[accountmodel.Profile](rctx, serviceName, "GetProfile").RequestFuture(params)
-}
-
-func (f *AccountRestateFuture) ListProfile(rctx restate.Context, params ListProfileParams) restate.ResponseFuture[paginate.PaginateResult[accountmodel.Profile]] {
-	return restate.Service[paginate.PaginateResult[accountmodel.Profile]](rctx, serviceName, "ListProfile").RequestFuture(params)
-}
-
 func (f *AccountRestateFuture) UpdateProfile(rctx restate.Context, params UpdateProfileParams) restate.ResponseFuture[accountmodel.Profile] {
 	return restate.Service[accountmodel.Profile](rctx, serviceName, "UpdateProfile").RequestFuture(params)
 }
 
 func (f *AccountRestateFuture) UpdateCountry(rctx restate.Context, params UpdateCountryParams) restate.ResponseFuture[restate.Void] {
 	return restate.Service[restate.Void](rctx, serviceName, "UpdateCountry").RequestFuture(params)
-}
-
-func (f *AccountRestateFuture) GetWalletBalance(rctx restate.Context, accountID uuid.UUID) restate.ResponseFuture[int64] {
-	return restate.Service[int64](rctx, serviceName, "GetWalletBalance").RequestFuture(accountID)
 }
 
 func (f *AccountRestateFuture) WalletDebit(rctx restate.Context, params WalletDebitParams) restate.ResponseFuture[WalletDebitResult] {
@@ -368,14 +278,6 @@ func (f *AccountRestateFuture) SuspendAccount(rctx restate.Context, params Suspe
 	return restate.Service[restate.Void](rctx, serviceName, "SuspendAccount").RequestFuture(params)
 }
 
-func (f *AccountRestateFuture) ListContact(rctx restate.Context, params ListContactParams) restate.ResponseFuture[[]accountdb.AccountContact] {
-	return restate.Service[[]accountdb.AccountContact](rctx, serviceName, "ListContact").RequestFuture(params)
-}
-
-func (f *AccountRestateFuture) GetContact(rctx restate.Context, params GetContactParams) restate.ResponseFuture[accountdb.AccountContact] {
-	return restate.Service[accountdb.AccountContact](rctx, serviceName, "GetContact").RequestFuture(params)
-}
-
 func (f *AccountRestateFuture) CreateContact(rctx restate.Context, params CreateContactParams) restate.ResponseFuture[accountdb.AccountContact] {
 	return restate.Service[accountdb.AccountContact](rctx, serviceName, "CreateContact").RequestFuture(params)
 }
@@ -388,32 +290,12 @@ func (f *AccountRestateFuture) DeleteContact(rctx restate.Context, params Delete
 	return restate.Service[restate.Void](rctx, serviceName, "DeleteContact").RequestFuture(params)
 }
 
-func (f *AccountRestateFuture) GetDefaultContact(rctx restate.Context, accountIDs []uuid.UUID) restate.ResponseFuture[map[uuid.UUID]accountdb.AccountContact] {
-	return restate.Service[map[uuid.UUID]accountdb.AccountContact](rctx, serviceName, "GetDefaultContact").RequestFuture(accountIDs)
-}
-
 func (f *AccountRestateFuture) AddFavorite(rctx restate.Context, params AddFavoriteParams) restate.ResponseFuture[accountdb.AccountFavorite] {
 	return restate.Service[accountdb.AccountFavorite](rctx, serviceName, "AddFavorite").RequestFuture(params)
 }
 
 func (f *AccountRestateFuture) RemoveFavorite(rctx restate.Context, params RemoveFavoriteParams) restate.ResponseFuture[restate.Void] {
 	return restate.Service[restate.Void](rctx, serviceName, "RemoveFavorite").RequestFuture(params)
-}
-
-func (f *AccountRestateFuture) ListFavorite(rctx restate.Context, params ListFavoriteParams) restate.ResponseFuture[paginate.PaginateResult[accountdb.AccountFavorite]] {
-	return restate.Service[paginate.PaginateResult[accountdb.AccountFavorite]](rctx, serviceName, "ListFavorite").RequestFuture(params)
-}
-
-func (f *AccountRestateFuture) CheckFavorites(rctx restate.Context, params CheckFavoritesParams) restate.ResponseFuture[map[uuid.UUID]bool] {
-	return restate.Service[map[uuid.UUID]bool](rctx, serviceName, "CheckFavorites").RequestFuture(params)
-}
-
-func (f *AccountRestateFuture) ListNotification(rctx restate.Context, params ListNotificationParams) restate.ResponseFuture[paginate.PaginateResult[accountdb.AccountNotification]] {
-	return restate.Service[paginate.PaginateResult[accountdb.AccountNotification]](rctx, serviceName, "ListNotification").RequestFuture(params)
-}
-
-func (f *AccountRestateFuture) CountUnread(rctx restate.Context, params CountUnreadParams) restate.ResponseFuture[int64] {
-	return restate.Service[int64](rctx, serviceName, "CountUnread").RequestFuture(params)
 }
 
 func (f *AccountRestateFuture) MarkRead(rctx restate.Context, params MarkReadParams) restate.ResponseFuture[restate.Void] {
@@ -541,34 +423,24 @@ func (s *AccountService) CreateNotification(ctx restate.Context, params CreateNo
 	return s.biz.CreateNotification(ctx, params)
 }
 
-// AccountBizGuaranteed is the guaranteed (durable Restate) surface.
-type AccountBizGuaranteed interface {
-	AccountBiz
-	Send() AccountBizSender
-	Future() AccountBizFuture
+// AccountBizFlat is the flat (non-durable query) surface of AccountBiz.
+type AccountBizFlat interface {
+	GetProfile(ctx context.Context, params GetProfileParams) (accountmodel.Profile, error)
+	ListProfile(ctx context.Context, params ListProfileParams) (paginate.PaginateResult[accountmodel.Profile], error)
+	GetWalletBalance(ctx context.Context, accountID uuid.UUID) (int64, error)
+	ListContact(ctx context.Context, params ListContactParams) ([]accountdb.AccountContact, error)
+	GetContact(ctx context.Context, params GetContactParams) (accountdb.AccountContact, error)
+	GetDefaultContact(ctx context.Context, accountIDs []uuid.UUID) (map[uuid.UUID]accountdb.AccountContact, error)
+	ListFavorite(ctx context.Context, params ListFavoriteParams) (paginate.PaginateResult[accountdb.AccountFavorite], error)
+	CheckFavorites(ctx context.Context, params CheckFavoritesParams) (map[uuid.UUID]bool, error)
+	ListNotification(ctx context.Context, params ListNotificationParams) (paginate.PaginateResult[accountdb.AccountNotification], error)
+	CountUnread(ctx context.Context, params CountUnreadParams) (int64, error)
 }
 
-// AccountBizBestEffort is the best-effort (non-durable) surface: sync request-response only.
-type AccountBizBestEffort interface {
-	AccountBiz
-}
-
-// accountBizBestEffortLocal delegates BestEffort calls to the in-process biz.
+// accountBizBestEffortLocal delegates flat queries to the in-process biz.
 type accountBizBestEffortLocal struct{ biz AccountBiz }
 
-var _ AccountBizBestEffort = (*accountBizBestEffortLocal)(nil)
-
-func (b *accountBizBestEffortLocal) Login(ctx context.Context, params LoginParams) (LoginResult, error) {
-	return b.biz.Login(ctx, params)
-}
-
-func (b *accountBizBestEffortLocal) Register(ctx context.Context, params RegisterParams) (RegisterResult, error) {
-	return b.biz.Register(ctx, params)
-}
-
-func (b *accountBizBestEffortLocal) Refresh(ctx context.Context, refreshToken string) (RefreshResult, error) {
-	return b.biz.Refresh(ctx, refreshToken)
-}
+var _ AccountBizFlat = (*accountBizBestEffortLocal)(nil)
 
 func (b *accountBizBestEffortLocal) GetProfile(ctx context.Context, params GetProfileParams) (accountmodel.Profile, error) {
 	return b.biz.GetProfile(ctx, params)
@@ -578,28 +450,8 @@ func (b *accountBizBestEffortLocal) ListProfile(ctx context.Context, params List
 	return b.biz.ListProfile(ctx, params)
 }
 
-func (b *accountBizBestEffortLocal) UpdateProfile(ctx context.Context, params UpdateProfileParams) (accountmodel.Profile, error) {
-	return b.biz.UpdateProfile(ctx, params)
-}
-
-func (b *accountBizBestEffortLocal) UpdateCountry(ctx context.Context, params UpdateCountryParams) error {
-	return b.biz.UpdateCountry(ctx, params)
-}
-
 func (b *accountBizBestEffortLocal) GetWalletBalance(ctx context.Context, accountID uuid.UUID) (int64, error) {
 	return b.biz.GetWalletBalance(ctx, accountID)
-}
-
-func (b *accountBizBestEffortLocal) WalletDebit(ctx context.Context, params WalletDebitParams) (WalletDebitResult, error) {
-	return b.biz.WalletDebit(ctx, params)
-}
-
-func (b *accountBizBestEffortLocal) WalletCredit(ctx context.Context, params WalletCreditParams) error {
-	return b.biz.WalletCredit(ctx, params)
-}
-
-func (b *accountBizBestEffortLocal) SuspendAccount(ctx context.Context, params SuspendAccountParams) error {
-	return b.biz.SuspendAccount(ctx, params)
 }
 
 func (b *accountBizBestEffortLocal) ListContact(ctx context.Context, params ListContactParams) ([]accountdb.AccountContact, error) {
@@ -610,28 +462,8 @@ func (b *accountBizBestEffortLocal) GetContact(ctx context.Context, params GetCo
 	return b.biz.GetContact(ctx, params)
 }
 
-func (b *accountBizBestEffortLocal) CreateContact(ctx context.Context, params CreateContactParams) (accountdb.AccountContact, error) {
-	return b.biz.CreateContact(ctx, params)
-}
-
-func (b *accountBizBestEffortLocal) UpdateContact(ctx context.Context, params UpdateContactParams) (accountdb.AccountContact, error) {
-	return b.biz.UpdateContact(ctx, params)
-}
-
-func (b *accountBizBestEffortLocal) DeleteContact(ctx context.Context, params DeleteContactParams) error {
-	return b.biz.DeleteContact(ctx, params)
-}
-
 func (b *accountBizBestEffortLocal) GetDefaultContact(ctx context.Context, accountIDs []uuid.UUID) (map[uuid.UUID]accountdb.AccountContact, error) {
 	return b.biz.GetDefaultContact(ctx, accountIDs)
-}
-
-func (b *accountBizBestEffortLocal) AddFavorite(ctx context.Context, params AddFavoriteParams) (accountdb.AccountFavorite, error) {
-	return b.biz.AddFavorite(ctx, params)
-}
-
-func (b *accountBizBestEffortLocal) RemoveFavorite(ctx context.Context, params RemoveFavoriteParams) error {
-	return b.biz.RemoveFavorite(ctx, params)
 }
 
 func (b *accountBizBestEffortLocal) ListFavorite(ctx context.Context, params ListFavoriteParams) (paginate.PaginateResult[accountdb.AccountFavorite], error) {
@@ -650,34 +482,10 @@ func (b *accountBizBestEffortLocal) CountUnread(ctx context.Context, params Coun
 	return b.biz.CountUnread(ctx, params)
 }
 
-func (b *accountBizBestEffortLocal) MarkRead(ctx context.Context, params MarkReadParams) error {
-	return b.biz.MarkRead(ctx, params)
-}
-
-func (b *accountBizBestEffortLocal) MarkAllRead(ctx context.Context, params MarkAllReadParams) error {
-	return b.biz.MarkAllRead(ctx, params)
-}
-
-func (b *accountBizBestEffortLocal) CreateNotification(ctx context.Context, params CreateNotificationParams) (accountdb.AccountNotification, error) {
-	return b.biz.CreateNotification(ctx, params)
-}
-
-// accountBizBestEffortRemote routes BestEffort calls over HTTP/2.
+// accountBizBestEffortRemote routes flat queries over HTTP/2.
 type accountBizBestEffortRemote struct{ call *besteffort.CallClient }
 
-var _ AccountBizBestEffort = (*accountBizBestEffortRemote)(nil)
-
-func (b *accountBizBestEffortRemote) Login(ctx context.Context, params LoginParams) (LoginResult, error) {
-	return besteffort.Call[LoginResult](ctx, b.call, serviceName, "Login", params)
-}
-
-func (b *accountBizBestEffortRemote) Register(ctx context.Context, params RegisterParams) (RegisterResult, error) {
-	return besteffort.Call[RegisterResult](ctx, b.call, serviceName, "Register", params)
-}
-
-func (b *accountBizBestEffortRemote) Refresh(ctx context.Context, refreshToken string) (RefreshResult, error) {
-	return besteffort.Call[RefreshResult](ctx, b.call, serviceName, "Refresh", refreshToken)
-}
+var _ AccountBizFlat = (*accountBizBestEffortRemote)(nil)
 
 func (b *accountBizBestEffortRemote) GetProfile(ctx context.Context, params GetProfileParams) (accountmodel.Profile, error) {
 	return besteffort.Call[accountmodel.Profile](ctx, b.call, serviceName, "GetProfile", params)
@@ -687,28 +495,8 @@ func (b *accountBizBestEffortRemote) ListProfile(ctx context.Context, params Lis
 	return besteffort.Call[paginate.PaginateResult[accountmodel.Profile]](ctx, b.call, serviceName, "ListProfile", params)
 }
 
-func (b *accountBizBestEffortRemote) UpdateProfile(ctx context.Context, params UpdateProfileParams) (accountmodel.Profile, error) {
-	return besteffort.Call[accountmodel.Profile](ctx, b.call, serviceName, "UpdateProfile", params)
-}
-
-func (b *accountBizBestEffortRemote) UpdateCountry(ctx context.Context, params UpdateCountryParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "UpdateCountry", params)
-}
-
 func (b *accountBizBestEffortRemote) GetWalletBalance(ctx context.Context, accountID uuid.UUID) (int64, error) {
 	return besteffort.Call[int64](ctx, b.call, serviceName, "GetWalletBalance", accountID)
-}
-
-func (b *accountBizBestEffortRemote) WalletDebit(ctx context.Context, params WalletDebitParams) (WalletDebitResult, error) {
-	return besteffort.Call[WalletDebitResult](ctx, b.call, serviceName, "WalletDebit", params)
-}
-
-func (b *accountBizBestEffortRemote) WalletCredit(ctx context.Context, params WalletCreditParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "WalletCredit", params)
-}
-
-func (b *accountBizBestEffortRemote) SuspendAccount(ctx context.Context, params SuspendAccountParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "SuspendAccount", params)
 }
 
 func (b *accountBizBestEffortRemote) ListContact(ctx context.Context, params ListContactParams) ([]accountdb.AccountContact, error) {
@@ -719,28 +507,8 @@ func (b *accountBizBestEffortRemote) GetContact(ctx context.Context, params GetC
 	return besteffort.Call[accountdb.AccountContact](ctx, b.call, serviceName, "GetContact", params)
 }
 
-func (b *accountBizBestEffortRemote) CreateContact(ctx context.Context, params CreateContactParams) (accountdb.AccountContact, error) {
-	return besteffort.Call[accountdb.AccountContact](ctx, b.call, serviceName, "CreateContact", params)
-}
-
-func (b *accountBizBestEffortRemote) UpdateContact(ctx context.Context, params UpdateContactParams) (accountdb.AccountContact, error) {
-	return besteffort.Call[accountdb.AccountContact](ctx, b.call, serviceName, "UpdateContact", params)
-}
-
-func (b *accountBizBestEffortRemote) DeleteContact(ctx context.Context, params DeleteContactParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "DeleteContact", params)
-}
-
 func (b *accountBizBestEffortRemote) GetDefaultContact(ctx context.Context, accountIDs []uuid.UUID) (map[uuid.UUID]accountdb.AccountContact, error) {
 	return besteffort.Call[map[uuid.UUID]accountdb.AccountContact](ctx, b.call, serviceName, "GetDefaultContact", accountIDs)
-}
-
-func (b *accountBizBestEffortRemote) AddFavorite(ctx context.Context, params AddFavoriteParams) (accountdb.AccountFavorite, error) {
-	return besteffort.Call[accountdb.AccountFavorite](ctx, b.call, serviceName, "AddFavorite", params)
-}
-
-func (b *accountBizBestEffortRemote) RemoveFavorite(ctx context.Context, params RemoveFavoriteParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "RemoveFavorite", params)
 }
 
 func (b *accountBizBestEffortRemote) ListFavorite(ctx context.Context, params ListFavoriteParams) (paginate.PaginateResult[accountdb.AccountFavorite], error) {
@@ -759,69 +527,85 @@ func (b *accountBizBestEffortRemote) CountUnread(ctx context.Context, params Cou
 	return besteffort.Call[int64](ctx, b.call, serviceName, "CountUnread", params)
 }
 
-func (b *accountBizBestEffortRemote) MarkRead(ctx context.Context, params MarkReadParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "MarkRead", params)
-}
-
-func (b *accountBizBestEffortRemote) MarkAllRead(ctx context.Context, params MarkAllReadParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "MarkAllRead", params)
-}
-
-func (b *accountBizBestEffortRemote) CreateNotification(ctx context.Context, params CreateNotificationParams) (accountdb.AccountNotification, error) {
-	return besteffort.Call[accountdb.AccountNotification](ctx, b.call, serviceName, "CreateNotification", params)
-}
-
-// AccountBizClient selects the guaranteed (durable) or best-effort (non-durable) transport.
+// accountBizClient holds the flat query impl and the durable command proxies.
 type accountBizClient struct {
-	*AccountRestateClient
-	bestEffort AccountBizBestEffort
+	flat   AccountBizFlat
+	call   *AccountRestateCall
+	send   *AccountRestateSender
+	future *AccountRestateFuture
 }
 
 var _ AccountBizClient = (*accountBizClient)(nil)
 
-func (c *accountBizClient) Guaranteed() AccountBizGuaranteed { return c.AccountRestateClient }
+func (c *accountBizClient) GetProfile(ctx context.Context, params GetProfileParams) (accountmodel.Profile, error) {
+	return c.flat.GetProfile(ctx, params)
+}
 
-func (c *accountBizClient) BestEffort() AccountBizBestEffort { return c.bestEffort }
+func (c *accountBizClient) ListProfile(ctx context.Context, params ListProfileParams) (paginate.PaginateResult[accountmodel.Profile], error) {
+	return c.flat.ListProfile(ctx, params)
+}
 
-// NewAccountBizClientInProcess builds a client whose BestEffort calls the in-process biz.
+func (c *accountBizClient) GetWalletBalance(ctx context.Context, accountID uuid.UUID) (int64, error) {
+	return c.flat.GetWalletBalance(ctx, accountID)
+}
+
+func (c *accountBizClient) ListContact(ctx context.Context, params ListContactParams) ([]accountdb.AccountContact, error) {
+	return c.flat.ListContact(ctx, params)
+}
+
+func (c *accountBizClient) GetContact(ctx context.Context, params GetContactParams) (accountdb.AccountContact, error) {
+	return c.flat.GetContact(ctx, params)
+}
+
+func (c *accountBizClient) GetDefaultContact(ctx context.Context, accountIDs []uuid.UUID) (map[uuid.UUID]accountdb.AccountContact, error) {
+	return c.flat.GetDefaultContact(ctx, accountIDs)
+}
+
+func (c *accountBizClient) ListFavorite(ctx context.Context, params ListFavoriteParams) (paginate.PaginateResult[accountdb.AccountFavorite], error) {
+	return c.flat.ListFavorite(ctx, params)
+}
+
+func (c *accountBizClient) CheckFavorites(ctx context.Context, params CheckFavoritesParams) (map[uuid.UUID]bool, error) {
+	return c.flat.CheckFavorites(ctx, params)
+}
+
+func (c *accountBizClient) ListNotification(ctx context.Context, params ListNotificationParams) (paginate.PaginateResult[accountdb.AccountNotification], error) {
+	return c.flat.ListNotification(ctx, params)
+}
+
+func (c *accountBizClient) CountUnread(ctx context.Context, params CountUnreadParams) (int64, error) {
+	return c.flat.CountUnread(ctx, params)
+}
+
+func (c *accountBizClient) Call() AccountBizCall { return c.call }
+
+func (c *accountBizClient) Future() AccountBizFuture { return c.future }
+
+func (c *accountBizClient) Send() AccountBizSender { return c.send }
+
+// NewAccountBizClientInProcess builds a client whose flat queries call the in-process biz.
 func NewAccountBizClientInProcess(restateIngressURL string, biz AccountBiz) AccountBizClient {
 	return &accountBizClient{
-		AccountRestateClient: NewAccountRestateClient(restateIngressURL),
-		bestEffort:           &accountBizBestEffortLocal{biz: biz},
+		flat:   &accountBizBestEffortLocal{biz: biz},
+		call:   NewAccountRestateCall(restateIngressURL),
+		send:   &AccountRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &AccountRestateFuture{},
 	}
 }
 
-// NewAccountBizClientRemote builds a client whose BestEffort calls a remote BestEffort server.
+// NewAccountBizClientRemote builds a client whose flat queries call a remote besteffort server.
 func NewAccountBizClientRemote(restateIngressURL, bestEffortURL string) AccountBizClient {
 	return &accountBizClient{
-		AccountRestateClient: NewAccountRestateClient(restateIngressURL),
-		bestEffort:           &accountBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+		flat:   &accountBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+		call:   NewAccountRestateCall(restateIngressURL),
+		send:   &AccountRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &AccountRestateFuture{},
 	}
 }
 
-// RegisterAccountBestEffort wires biz methods onto a BestEffort HTTP/2 server.
+// RegisterAccountBestEffort wires the query methods onto a besteffort HTTP server.
+// Commands are served by Restate, not here.
 func RegisterAccountBestEffort(s *besteffort.Server, biz AccountBiz) {
-	s.Handle(serviceName, "Login", func(ctx context.Context, body []byte) (any, error) {
-		var p LoginParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.Login(ctx, p)
-	})
-	s.Handle(serviceName, "Register", func(ctx context.Context, body []byte) (any, error) {
-		var p RegisterParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.Register(ctx, p)
-	})
-	s.Handle(serviceName, "Refresh", func(ctx context.Context, body []byte) (any, error) {
-		var p string
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.Refresh(ctx, p)
-	})
 	s.Handle(serviceName, "GetProfile", func(ctx context.Context, body []byte) (any, error) {
 		var p GetProfileParams
 		if err := json.Unmarshal(body, &p); err != nil {
@@ -836,47 +620,12 @@ func RegisterAccountBestEffort(s *besteffort.Server, biz AccountBiz) {
 		}
 		return biz.ListProfile(ctx, p)
 	})
-	s.Handle(serviceName, "UpdateProfile", func(ctx context.Context, body []byte) (any, error) {
-		var p UpdateProfileParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.UpdateProfile(ctx, p)
-	})
-	s.Handle(serviceName, "UpdateCountry", func(ctx context.Context, body []byte) (any, error) {
-		var p UpdateCountryParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.UpdateCountry(ctx, p)
-	})
 	s.Handle(serviceName, "GetWalletBalance", func(ctx context.Context, body []byte) (any, error) {
 		var p uuid.UUID
 		if err := json.Unmarshal(body, &p); err != nil {
 			return nil, err
 		}
 		return biz.GetWalletBalance(ctx, p)
-	})
-	s.Handle(serviceName, "WalletDebit", func(ctx context.Context, body []byte) (any, error) {
-		var p WalletDebitParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.WalletDebit(ctx, p)
-	})
-	s.Handle(serviceName, "WalletCredit", func(ctx context.Context, body []byte) (any, error) {
-		var p WalletCreditParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.WalletCredit(ctx, p)
-	})
-	s.Handle(serviceName, "SuspendAccount", func(ctx context.Context, body []byte) (any, error) {
-		var p SuspendAccountParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.SuspendAccount(ctx, p)
 	})
 	s.Handle(serviceName, "ListContact", func(ctx context.Context, body []byte) (any, error) {
 		var p ListContactParams
@@ -892,47 +641,12 @@ func RegisterAccountBestEffort(s *besteffort.Server, biz AccountBiz) {
 		}
 		return biz.GetContact(ctx, p)
 	})
-	s.Handle(serviceName, "CreateContact", func(ctx context.Context, body []byte) (any, error) {
-		var p CreateContactParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.CreateContact(ctx, p)
-	})
-	s.Handle(serviceName, "UpdateContact", func(ctx context.Context, body []byte) (any, error) {
-		var p UpdateContactParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.UpdateContact(ctx, p)
-	})
-	s.Handle(serviceName, "DeleteContact", func(ctx context.Context, body []byte) (any, error) {
-		var p DeleteContactParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.DeleteContact(ctx, p)
-	})
 	s.Handle(serviceName, "GetDefaultContact", func(ctx context.Context, body []byte) (any, error) {
 		var p []uuid.UUID
 		if err := json.Unmarshal(body, &p); err != nil {
 			return nil, err
 		}
 		return biz.GetDefaultContact(ctx, p)
-	})
-	s.Handle(serviceName, "AddFavorite", func(ctx context.Context, body []byte) (any, error) {
-		var p AddFavoriteParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.AddFavorite(ctx, p)
-	})
-	s.Handle(serviceName, "RemoveFavorite", func(ctx context.Context, body []byte) (any, error) {
-		var p RemoveFavoriteParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.RemoveFavorite(ctx, p)
 	})
 	s.Handle(serviceName, "ListFavorite", func(ctx context.Context, body []byte) (any, error) {
 		var p ListFavoriteParams
@@ -961,26 +675,5 @@ func RegisterAccountBestEffort(s *besteffort.Server, biz AccountBiz) {
 			return nil, err
 		}
 		return biz.CountUnread(ctx, p)
-	})
-	s.Handle(serviceName, "MarkRead", func(ctx context.Context, body []byte) (any, error) {
-		var p MarkReadParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.MarkRead(ctx, p)
-	})
-	s.Handle(serviceName, "MarkAllRead", func(ctx context.Context, body []byte) (any, error) {
-		var p MarkAllReadParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.MarkAllRead(ctx, p)
-	})
-	s.Handle(serviceName, "CreateNotification", func(ctx context.Context, body []byte) (any, error) {
-		var p CreateNotificationParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.CreateNotification(ctx, p)
 	})
 }

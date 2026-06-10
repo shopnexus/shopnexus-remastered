@@ -65,7 +65,7 @@ func (b *Base) Inventory() inventorybiz.InventoryBizClient { return b.inventory 
 
 // Notify sends an in-app notification one-way via the Account module.
 func (b *Base) Notify(ctx context.Context, params accountbiz.CreateNotificationParams) error {
-	return b.account.Guaranteed().Send().CreateNotification(ctx, params)
+	return b.account.Send().CreateNotification(ctx, params)
 }
 
 // TrackInteractions records analytic interactions one-way.
@@ -100,7 +100,7 @@ func (b *Base) GetHydratedOrder(ctx context.Context, orderID uuid.UUID) (ordermo
 
 // InferCurrency fetches the profile for accountID and resolves its ISO 4217 currency code.
 func (b *Base) InferCurrency(ctx context.Context, accountID uuid.UUID) (string, error) {
-	prof, err := b.account.Guaranteed().GetProfile(ctx, accountbiz.GetProfileParams{AccountID: accountID})
+	prof, err := b.account.GetProfile(ctx, accountbiz.GetProfileParams{AccountID: accountID})
 	if err != nil {
 		return "", fmt.Errorf("get profile for currency: %w", err)
 	}

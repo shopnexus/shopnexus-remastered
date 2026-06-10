@@ -30,7 +30,7 @@ func (h *Handler) AddFavorite(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.Guaranteed().AddFavorite(c.Request().Context(), accountbiz.AddFavoriteParams{
+	result, err := h.biz.Call().AddFavorite(c.Request().Context(), accountbiz.AddFavoriteParams{
 		Account: claims.Account,
 		SpuID:   req.SpuID,
 	})
@@ -59,7 +59,7 @@ func (h *Handler) RemoveFavorite(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if err := h.biz.Guaranteed().RemoveFavorite(c.Request().Context(), accountbiz.RemoveFavoriteParams{
+	if err := h.biz.Call().RemoveFavorite(c.Request().Context(), accountbiz.RemoveFavoriteParams{
 		Account: claims.Account,
 		SpuID:   req.SpuID,
 	}); err != nil {
@@ -87,7 +87,7 @@ func (h *Handler) ListFavorite(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.Guaranteed().ListFavorite(c.Request().Context(), accountbiz.ListFavoriteParams{
+	result, err := h.biz.ListFavorite(c.Request().Context(), accountbiz.ListFavoriteParams{
 		Account: claims.Account,
 		Params:  req.Params,
 	})

@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
+	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
@@ -78,18 +79,20 @@ type MarkReadParams struct {
 }
 
 // MarkRead marks the specified notification IDs as read.
-func (b *AccountHandler) MarkRead(ctx context.Context, params MarkReadParams) error {
+func (b *AccountHandler) MarkRead(ctx restate.Context, params MarkReadParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate mark read params: %w", err)
 	}
-	if err := b.storage.Querier().MarkNotificationRead(ctx, accountdb.MarkNotificationReadParams{
-		ID:        params.IDs,
-		AccountID: params.Account.ID,
-	}); err != nil {
-		return fmt.Errorf("db mark notification read: %w", err)
-	}
-
-	return nil
+	// execution: mark the given notifications read.
+	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		if err := b.storage.Querier().MarkNotificationRead(rctx, accountdb.MarkNotificationReadParams{
+			ID:        params.IDs,
+			AccountID: params.Account.ID,
+		}); err != nil {
+			return fmt.Errorf("db mark notification read: %w", err)
+		}
+		return nil
+	})
 }
 
 type MarkAllReadParams struct {
@@ -97,15 +100,17 @@ type MarkAllReadParams struct {
 }
 
 // MarkAllRead marks all unread notifications as read for the given account.
-func (b *AccountHandler) MarkAllRead(ctx context.Context, params MarkAllReadParams) error {
+func (b *AccountHandler) MarkAllRead(ctx restate.Context, params MarkAllReadParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate mark all read params: %w", err)
 	}
-	if err := b.storage.Querier().MarkAllNotificationRead(ctx, params.AccountID); err != nil {
-		return fmt.Errorf("db mark all notification read: %w", err)
-	}
-
-	return nil
+	// execution: mark all the account's notifications read.
+	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		if err := b.storage.Querier().MarkAllNotificationRead(rctx, params.AccountID); err != nil {
+			return fmt.Errorf("db mark all notification read: %w", err)
+		}
+		return nil
+	})
 }
 
 type CreateNotificationParams struct {
@@ -119,25 +124,34 @@ type CreateNotificationParams struct {
 
 // CreateNotification creates a new notification for the given account.
 func (b *AccountHandler) CreateNotification(
-	ctx context.Context,
+	ctx restate.Context,
 	params CreateNotificationParams,
 ) (accountdb.AccountNotification, error) {
 	if err := validator.Validate(params); err != nil {
 		return accountdb.AccountNotification{}, fmt.Errorf("validate create notification params: %w", err)
 	}
-	noti, err := b.storage.Querier().CreateDefaultNotification(ctx, accountdb.CreateDefaultNotificationParams{
-		AccountID: params.AccountID,
-		Type:      string(params.Type),
-		Channel:   string(params.Channel),
-		Title:     params.Title,
-		Content:   params.Content,
-		Metadata:  params.Metadata,
+
+	// execution: persist the notification.
+	noti, err := restate.Run(ctx, func(rctx restate.RunContext) (accountdb.AccountNotification, error) {
+		noti, err := b.storage.Querier().CreateDefaultNotification(rctx, accountdb.CreateDefaultNotificationParams{
+			AccountID: params.AccountID,
+			Type:      string(params.Type),
+			Channel:   string(params.Channel),
+			Title:     params.Title,
+			Content:   params.Content,
+			Metadata:  params.Metadata,
+		})
+		if err != nil {
+			return accountdb.AccountNotification{}, fmt.Errorf("db create default notification: %w", err)
+		}
+		return noti, nil
 	})
 	if err != nil {
-		return accountdb.AccountNotification{}, fmt.Errorf("db create default notification: %w", err)
+		return accountdb.AccountNotification{}, err
 	}
 
-	// Push real-time notification to SSE clients
+	// tail: push real-time notification to SSE clients. The cross-module Send is
+	// journaled by Restate on its own — no Run wrapper, so a retry never re-pushes.
 	if err = b.common.Send().PushEvent(ctx, commonbiz.PushEventParams{
 		AccountID: params.AccountID,
 		Type:      commonbiz.SSENotification,

@@ -19,7 +19,7 @@ func (h *Handler) ListContact(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.Guaranteed().ListContact(c.Request().Context(), accountbiz.ListContactParams{
+	result, err := h.biz.ListContact(c.Request().Context(), accountbiz.ListContactParams{
 		AccountID: []uuid.UUID{claims.Account.ID},
 	})
 	if err != nil {
@@ -47,7 +47,7 @@ func (h *Handler) GetContact(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.Guaranteed().GetContact(c.Request().Context(), accountbiz.GetContactParams{
+	result, err := h.biz.GetContact(c.Request().Context(), accountbiz.GetContactParams{
 		Account:   claims.Account,
 		ContactID: req.ContactID,
 	})
@@ -79,7 +79,7 @@ func (h *Handler) CreateContact(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.Guaranteed().CreateContact(c.Request().Context(), accountbiz.CreateContactParams{
+	result, err := h.biz.Call().CreateContact(c.Request().Context(), accountbiz.CreateContactParams{
 		Account:     claims.Account,
 		FullName:    req.FullName,
 		Phone:       req.Phone,
@@ -116,7 +116,7 @@ func (h *Handler) UpdateContact(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.Guaranteed().UpdateContact(c.Request().Context(), accountbiz.UpdateContactParams{
+	result, err := h.biz.Call().UpdateContact(c.Request().Context(), accountbiz.UpdateContactParams{
 		Account:       claims.Account,
 		ContactID:     req.ContactID,
 		FullName:      req.FullName,
@@ -150,7 +150,7 @@ func (h *Handler) DeleteContact(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if err := h.biz.Guaranteed().DeleteContact(c.Request().Context(), accountbiz.DeleteContactParams{
+	if err := h.biz.Call().DeleteContact(c.Request().Context(), accountbiz.DeleteContactParams{
 		Account:   claims.Account,
 		ContactID: req.ContactID,
 	}); err != nil {

@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
 	"github.com/jackc/pgx/v5"
+	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 )
 
@@ -127,45 +128,56 @@ type UpdateProfileParams struct {
 }
 
 // UpdateProfile updates the account and profile fields for the given account.
-func (b *AccountHandler) UpdateProfile(ctx context.Context, params UpdateProfileParams) (accountmodel.Profile, error) {
+func (b *AccountHandler) UpdateProfile(ctx restate.Context, params UpdateProfileParams) (accountmodel.Profile, error) {
 	var zero accountmodel.Profile
 
 	if err := validator.Validate(params); err != nil {
 		return zero, fmt.Errorf("validate update profile params: %w", err)
 	}
 
-	account, err := b.storage.Querier().UpdateAccount(ctx, accountdb.UpdateAccountParams{
-		ID:       params.AccountID,
-		Status:   accountdb.NullAccountStatus{AccountStatus: accountdb.AccountStatus(params.Status), Valid: params.Status != ""},
-		Username: params.Username,
-		Phone:    params.Phone,
-		Email:    params.Email,
-	})
-	if err != nil {
-		return zero, fmt.Errorf("db update account: %w", err)
+	// execution: update account + profile (+ default contact) in one journaled step.
+	type writeResult struct {
+		account accountdb.AccountAccount
+		profile accountdb.AccountProfile
 	}
-
-	profile, err := b.storage.Querier().UpdateProfile(ctx, accountdb.UpdateProfileParams{
-		ID:          params.AccountID,
-		Gender:      accountdb.NullAccountGender{AccountGender: accountdb.AccountGender(params.Gender), Valid: params.Gender != ""},
-		Name:        params.Name,
-		DateOfBirth: params.DateOfBirth,
-		AvatarRsID:  params.AvatarRsID,
-	})
-	if err != nil {
-		return zero, fmt.Errorf("db update profile: %w", err)
-	}
-
-	if params.DefaultContactID.Valid {
-		if err := b.storage.Querier().SetAccountDefaultContact(ctx, accountdb.SetAccountDefaultContactParams{
-			ID:               params.AccountID,
-			DefaultContactID: params.DefaultContactID,
-		}); err != nil {
-			return zero, fmt.Errorf("db set account default contact: %w", err)
+	res, err := restate.Run(ctx, func(rctx restate.RunContext) (writeResult, error) {
+		account, err := b.storage.Querier().UpdateAccount(rctx, accountdb.UpdateAccountParams{
+			ID:       params.AccountID,
+			Status:   accountdb.NullAccountStatus{AccountStatus: accountdb.AccountStatus(params.Status), Valid: params.Status != ""},
+			Username: params.Username,
+			Phone:    params.Phone,
+			Email:    params.Email,
+		})
+		if err != nil {
+			return writeResult{}, fmt.Errorf("db update account: %w", err)
 		}
+
+		profile, err := b.storage.Querier().UpdateProfile(rctx, accountdb.UpdateProfileParams{
+			ID:          params.AccountID,
+			Gender:      accountdb.NullAccountGender{AccountGender: accountdb.AccountGender(params.Gender), Valid: params.Gender != ""},
+			Name:        params.Name,
+			DateOfBirth: params.DateOfBirth,
+			AvatarRsID:  params.AvatarRsID,
+		})
+		if err != nil {
+			return writeResult{}, fmt.Errorf("db update profile: %w", err)
+		}
+
+		if params.DefaultContactID.Valid {
+			if err := b.storage.Querier().SetAccountDefaultContact(rctx, accountdb.SetAccountDefaultContactParams{
+				ID:               params.AccountID,
+				DefaultContactID: params.DefaultContactID,
+			}); err != nil {
+				return writeResult{}, fmt.Errorf("db set account default contact: %w", err)
+			}
+		}
+		return writeResult{account: account, profile: profile}, nil
+	})
+	if err != nil {
+		return zero, err
 	}
 
-	m := b.mapProfile(ctx, account, profile)
+	m := b.mapProfile(ctx, res.account, res.profile)
 	return m, nil
 }
 
@@ -215,7 +227,7 @@ type UpdateCountryParams struct {
 // UpdateCountry sets the profile country. Fails with a conflict error if the
 // caller's wallet balance is non-zero, since changing country implies changing
 // wallet currency.
-func (b *AccountHandler) UpdateCountry(ctx context.Context, params UpdateCountryParams) error {
+func (b *AccountHandler) UpdateCountry(ctx restate.Context, params UpdateCountryParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate update country params: %w", err)
 	}
@@ -223,11 +235,14 @@ func (b *AccountHandler) UpdateCountry(ctx context.Context, params UpdateCountry
 		return fmt.Errorf("infer currency from country: %w", err)
 	}
 
-	if _, err := b.storage.Querier().UpdateProfileCountry(ctx, accountdb.UpdateProfileCountryParams{
-		ID:      params.AccountID,
-		Country: params.Country,
-	}); err != nil {
-		return fmt.Errorf("db update profile country: %w", err)
-	}
-	return nil
+	// execution: set the profile country.
+	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		if _, err := b.storage.Querier().UpdateProfileCountry(rctx, accountdb.UpdateProfileCountryParams{
+			ID:      params.AccountID,
+			Country: params.Country,
+		}); err != nil {
+			return fmt.Errorf("db update profile country: %w", err)
+		}
+		return nil
+	})
 }
