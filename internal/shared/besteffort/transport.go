@@ -3,21 +3,23 @@ package besteffort
 import (
 	"net"
 	"net/http"
-
-	"golang.org/x/net/http2"
 )
 
-// newTransport tunes the connection pool for BestEffort calls.
-// ForceAttemptHTTP2 negotiates h2 over TLS; ConfigureTransports also wires the
-// h2 framer for prior-knowledge h2c while keeping HTTP/1.1 fallback for plain hosts.
+// newTransport tunes the connection pool for BestEffort calls. Protocols enables
+// h2 over TLS, prior-knowledge h2c for plain hosts, and HTTP/1.1 fallback.
 func newTransport() *http.Transport {
-	t := &http.Transport{
+	var protocols http.Protocols
+	protocols.SetHTTP1(true)
+	protocols.SetHTTP2(true)
+	protocols.SetUnencryptedHTTP2(true)
+
+	return &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
 			Timeout:   defaultDialTimeout,
 			KeepAlive: defaultDialKeepAlive,
 		}).DialContext,
-		ForceAttemptHTTP2:     true,
+		Protocols:             &protocols,
 		MaxIdleConns:          defaultMaxIdleConns,
 		MaxIdleConnsPerHost:   defaultMaxIdleConnsPerHost,
 		MaxConnsPerHost:       defaultMaxConnsPerHost,
@@ -25,8 +27,6 @@ func newTransport() *http.Transport {
 		TLSHandshakeTimeout:   defaultTLSHandshakeTimeout,
 		ExpectContinueTimeout: defaultExpectContinueTimeout,
 	}
-	_, _ = http2.ConfigureTransports(t)
-	return t
 }
 
 func newHTTPClient() *http.Client {
