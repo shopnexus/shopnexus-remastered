@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -38,95 +37,56 @@ type ListProfileParams struct {
 	DefaultContactId    []uuid.UUID
 }
 
-func profileListConds(f ListProfileParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.Gender != nil {
-		*conds = append(*conds, `"gender" = ANY(@gender)`)
-		args["gender"] = f.Gender
-	}
-	if f.Name != nil {
-		*conds = append(*conds, `"name" = ANY(@name)`)
-		args["name"] = f.Name
-	}
-	if f.Description != nil {
-		*conds = append(*conds, `"description" = ANY(@description)`)
-		args["description"] = f.Description
-	}
-	if f.DateOfBirth != nil {
-		*conds = append(*conds, `"date_of_birth" = ANY(@date_of_birth)`)
-		args["date_of_birth"] = f.DateOfBirth
-	}
-	if f.DateOfBirthFrom.Valid {
-		*conds = append(*conds, `"date_of_birth" >= @date_of_birth_from`)
-		args["date_of_birth_from"] = f.DateOfBirthFrom.Time
-	}
-	if f.DateOfBirthTo.Valid {
-		*conds = append(*conds, `"date_of_birth" <= @date_of_birth_to`)
-		args["date_of_birth_to"] = f.DateOfBirthTo.Time
-	}
-	if f.AvatarRsId != nil {
-		*conds = append(*conds, `"avatar_rs_id" = ANY(@avatar_rs_id)`)
-		args["avatar_rs_id"] = f.AvatarRsId
-	}
-	if f.EmailVerified != nil {
-		*conds = append(*conds, `"email_verified" = ANY(@email_verified)`)
-		args["email_verified"] = f.EmailVerified
-	}
-	if f.PhoneVerified != nil {
-		*conds = append(*conds, `"phone_verified" = ANY(@phone_verified)`)
-		args["phone_verified"] = f.PhoneVerified
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
-	}
-	if f.Country != nil {
-		*conds = append(*conds, `"country" = ANY(@country)`)
-		args["country"] = f.Country
-	}
-	if f.InternalBalance != nil {
-		*conds = append(*conds, `"internal_balance" = ANY(@internal_balance)`)
-		args["internal_balance"] = f.InternalBalance
-	}
-	if f.InternalBalanceFrom.Valid {
-		*conds = append(*conds, `"internal_balance" >= @internal_balance_from`)
-		args["internal_balance_from"] = f.InternalBalanceFrom.Int64
-	}
-	if f.InternalBalanceTo.Valid {
-		*conds = append(*conds, `"internal_balance" <= @internal_balance_to`)
-		args["internal_balance_to"] = f.InternalBalanceTo.Int64
-	}
-	if f.DefaultContactId != nil {
-		*conds = append(*conds, `"default_contact_id" = ANY(@default_contact_id)`)
-		args["default_contact_id"] = f.DefaultContactId
+// ProfileQuery is the reusable base listing for "account"."profile".
+func ProfileQuery() repolist.Query[AccountProfile] {
+	return repolist.Query[AccountProfile]{
+		Table: `"account"."profile"`,
+		PK:    "id",
+		Sort:  []string{"id", "date_created", "internal_balance"},
+		Fields: func(m *AccountProfile) map[string]any {
+			return map[string]any{
+				"id":                 &m.ID,
+				"gender":             &m.Gender,
+				"name":               &m.Name,
+				"description":        &m.Description,
+				"date_of_birth":      &m.DateOfBirth,
+				"avatar_rs_id":       &m.AvatarRsID,
+				"email_verified":     &m.EmailVerified,
+				"phone_verified":     &m.PhoneVerified,
+				"date_created":       &m.DateCreated,
+				"country":            &m.Country,
+				"internal_balance":   &m.InternalBalance,
+				"default_contact_id": &m.DefaultContactID,
+			}
+		},
 	}
 }
 
-func profileListSpec(f ListProfileParams) repolist.Spec[AccountProfile] {
-	return repolist.Spec[AccountProfile]{
-		Table: `"account"."profile"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":               {Col: `"id"`, Cast: "uuid"},
-			"date_created":     {Col: `"date_created"`, Cast: "timestamptz"},
-			"internal_balance": {Col: `"internal_balance"`, Cast: "int8"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { profileListConds(f, conds, args) },
+// ProfileConds maps the filter params to predicates.
+func ProfileConds(f ListProfileParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"gender"`, f.Gender),
+		repolist.In(`"name"`, f.Name),
+		repolist.In(`"description"`, f.Description),
+		repolist.In(`"date_of_birth"`, f.DateOfBirth),
+		repolist.Gte(`"date_of_birth"`, f.DateOfBirthFrom),
+		repolist.Lte(`"date_of_birth"`, f.DateOfBirthTo),
+		repolist.In(`"avatar_rs_id"`, f.AvatarRsId),
+		repolist.In(`"email_verified"`, f.EmailVerified),
+		repolist.In(`"phone_verified"`, f.PhoneVerified),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+		repolist.In(`"country"`, f.Country),
+		repolist.In(`"internal_balance"`, f.InternalBalance),
+		repolist.Gte(`"internal_balance"`, f.InternalBalanceFrom),
+		repolist.Lte(`"internal_balance"`, f.InternalBalanceTo),
+		repolist.In(`"default_contact_id"`, f.DefaultContactId),
 	}
 }
 
 // ListProfile runs offset (?page) or cursor (?cursor/?sort) pagination over "account"."profile".
 func (q *Queries) ListProfile(ctx context.Context, f ListProfileParams) (paginate.PaginateResult[AccountProfile], error) {
-	return repolist.List(ctx, q.db, profileListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, ProfileQuery().Filter(ProfileConds(f)...))
 }

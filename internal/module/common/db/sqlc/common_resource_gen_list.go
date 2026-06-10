@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -32,71 +31,47 @@ type ListResourceParams struct {
 	CreatedAtTo   null.Time
 }
 
-func resourceListConds(f ListResourceParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.UploadedById != nil {
-		*conds = append(*conds, `"uploaded_by_id" = ANY(@uploaded_by_id)`)
-		args["uploaded_by_id"] = f.UploadedById
-	}
-	if f.Provider != nil {
-		*conds = append(*conds, `"provider" = ANY(@provider)`)
-		args["provider"] = f.Provider
-	}
-	if f.ObjectKey != nil {
-		*conds = append(*conds, `"object_key" = ANY(@object_key)`)
-		args["object_key"] = f.ObjectKey
-	}
-	if f.Mime != nil {
-		*conds = append(*conds, `"mime" = ANY(@mime)`)
-		args["mime"] = f.Mime
-	}
-	if f.Size != nil {
-		*conds = append(*conds, `"size" = ANY(@size)`)
-		args["size"] = f.Size
-	}
-	if f.SizeFrom.Valid {
-		*conds = append(*conds, `"size" >= @size_from`)
-		args["size_from"] = f.SizeFrom.Int64
-	}
-	if f.SizeTo.Valid {
-		*conds = append(*conds, `"size" <= @size_to`)
-		args["size_to"] = f.SizeTo.Int64
-	}
-	if f.Checksum != nil {
-		*conds = append(*conds, `"checksum" = ANY(@checksum)`)
-		args["checksum"] = f.Checksum
-	}
-	if f.CreatedAt != nil {
-		*conds = append(*conds, `"created_at" = ANY(@created_at)`)
-		args["created_at"] = f.CreatedAt
-	}
-	if f.CreatedAtFrom.Valid {
-		*conds = append(*conds, `"created_at" >= @created_at_from`)
-		args["created_at_from"] = f.CreatedAtFrom.Time
-	}
-	if f.CreatedAtTo.Valid {
-		*conds = append(*conds, `"created_at" <= @created_at_to`)
-		args["created_at_to"] = f.CreatedAtTo.Time
+// ResourceQuery is the reusable base listing for "common"."resource".
+func ResourceQuery() repolist.Query[CommonResource] {
+	return repolist.Query[CommonResource]{
+		Table: `"common"."resource"`,
+		PK:    "id",
+		Sort:  []string{"id", "size", "created_at"},
+		Fields: func(m *CommonResource) map[string]any {
+			return map[string]any{
+				"id":             &m.ID,
+				"uploaded_by_id": &m.UploadedByID,
+				"provider":       &m.Provider,
+				"object_key":     &m.ObjectKey,
+				"mime":           &m.Mime,
+				"size":           &m.Size,
+				"metadata":       &m.Metadata,
+				"checksum":       &m.Checksum,
+				"created_at":     &m.CreatedAt,
+			}
+		},
 	}
 }
 
-func resourceListSpec(f ListResourceParams) repolist.Spec[CommonResource] {
-	return repolist.Spec[CommonResource]{
-		Table: `"common"."resource"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":         {Col: `"id"`, Cast: "uuid"},
-			"size":       {Col: `"size"`, Cast: "int8"},
-			"created_at": {Col: `"created_at"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { resourceListConds(f, conds, args) },
+// ResourceConds maps the filter params to predicates.
+func ResourceConds(f ListResourceParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"uploaded_by_id"`, f.UploadedById),
+		repolist.In(`"provider"`, f.Provider),
+		repolist.In(`"object_key"`, f.ObjectKey),
+		repolist.In(`"mime"`, f.Mime),
+		repolist.In(`"size"`, f.Size),
+		repolist.Gte(`"size"`, f.SizeFrom),
+		repolist.Lte(`"size"`, f.SizeTo),
+		repolist.In(`"checksum"`, f.Checksum),
+		repolist.In(`"created_at"`, f.CreatedAt),
+		repolist.Gte(`"created_at"`, f.CreatedAtFrom),
+		repolist.Lte(`"created_at"`, f.CreatedAtTo),
 	}
 }
 
 // ListResource runs offset (?page) or cursor (?cursor/?sort) pagination over "common"."resource".
 func (q *Queries) ListResource(ctx context.Context, f ListResourceParams) (paginate.PaginateResult[CommonResource], error) {
-	return repolist.List(ctx, q.db, resourceListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, ResourceQuery().Filter(ResourceConds(f)...))
 }

@@ -95,22 +95,28 @@ WHERE (
     ("date_updated" <= sqlc.narg('date_updated_to') OR sqlc.narg('date_updated_to') IS NULL) AND
     ("date_deleted" = ANY(sqlc.slice('date_deleted')) OR sqlc.slice('date_deleted') IS NULL) AND
     ("date_deleted" >= sqlc.narg('date_deleted_from') OR sqlc.narg('date_deleted_from') IS NULL) AND
-    ("date_deleted" <= sqlc.narg('date_deleted_to') OR sqlc.narg('date_deleted_to') IS NULL)
+    ("date_deleted" <= sqlc.narg('date_deleted_to') OR sqlc.narg('date_deleted_to') IS NULL) AND
+    ("cached_price" = ANY(sqlc.slice('cached_price')) OR sqlc.slice('cached_price') IS NULL) AND
+    ("cached_price" >= sqlc.narg('cached_price_from') OR sqlc.narg('cached_price_from') IS NULL) AND
+    ("cached_price" <= sqlc.narg('cached_price_to') OR sqlc.narg('cached_price_to') IS NULL) AND
+    ("cached_rating" = ANY(sqlc.slice('cached_rating')) OR sqlc.slice('cached_rating') IS NULL) AND
+    ("cached_rating" >= sqlc.narg('cached_rating_from') OR sqlc.narg('cached_rating_from') IS NULL) AND
+    ("cached_rating" <= sqlc.narg('cached_rating_to') OR sqlc.narg('cached_rating_to') IS NULL)
 );
 
 -- name: CreateProductSpu :one
-INSERT INTO "catalog"."product_spu" ("id", "slug", "account_id", "category_id", "featured_sku_id", "name", "description", "is_enabled", "currency", "specifications", "date_created", "date_updated", "date_deleted")
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+INSERT INTO "catalog"."product_spu" ("id", "slug", "account_id", "category_id", "featured_sku_id", "name", "description", "is_enabled", "currency", "specifications", "date_created", "date_updated", "date_deleted", "cached_price", "cached_rating")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 RETURNING *;
 
 -- name: CreateBatchProductSpu :batchone
-INSERT INTO "catalog"."product_spu" ("id", "slug", "account_id", "category_id", "featured_sku_id", "name", "description", "is_enabled", "currency", "specifications", "date_created", "date_updated", "date_deleted")
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+INSERT INTO "catalog"."product_spu" ("id", "slug", "account_id", "category_id", "featured_sku_id", "name", "description", "is_enabled", "currency", "specifications", "date_created", "date_updated", "date_deleted", "cached_price", "cached_rating")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 RETURNING *;
 
 -- name: CreateCopyProductSpu :copyfrom
-INSERT INTO "catalog"."product_spu" ("id", "slug", "account_id", "category_id", "featured_sku_id", "name", "description", "is_enabled", "currency", "specifications", "date_created", "date_updated", "date_deleted")
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);
+INSERT INTO "catalog"."product_spu" ("id", "slug", "account_id", "category_id", "featured_sku_id", "name", "description", "is_enabled", "currency", "specifications", "date_created", "date_updated", "date_deleted", "cached_price", "cached_rating")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15);
 
 -- name: CreateDefaultProductSpu :one
 INSERT INTO "catalog"."product_spu" ("slug", "account_id", "category_id", "featured_sku_id", "name", "description", "is_enabled", "currency", "specifications", "date_deleted")
@@ -134,7 +140,9 @@ SET "slug" = COALESCE(sqlc.narg('slug'), "slug"),
     "specifications" = COALESCE(sqlc.narg('specifications'), "specifications"),
     "date_created" = COALESCE(sqlc.narg('date_created'), "date_created"),
     "date_updated" = COALESCE(sqlc.narg('date_updated'), "date_updated"),
-    "date_deleted" = CASE WHEN sqlc.arg('null_date_deleted')::bool = TRUE THEN NULL ELSE COALESCE(sqlc.narg('date_deleted'), "date_deleted") END
+    "date_deleted" = CASE WHEN sqlc.arg('null_date_deleted')::bool = TRUE THEN NULL ELSE COALESCE(sqlc.narg('date_deleted'), "date_deleted") END,
+    "cached_price" = COALESCE(sqlc.narg('cached_price'), "cached_price"),
+    "cached_rating" = COALESCE(sqlc.narg('cached_rating'), "cached_rating")
 WHERE "id" = sqlc.arg('id')
 RETURNING *;
 
@@ -162,7 +170,13 @@ WHERE (
     ("date_updated" <= sqlc.narg('date_updated_to') OR sqlc.narg('date_updated_to') IS NULL) AND
     ("date_deleted" = ANY(sqlc.slice('date_deleted')) OR sqlc.slice('date_deleted') IS NULL) AND
     ("date_deleted" >= sqlc.narg('date_deleted_from') OR sqlc.narg('date_deleted_from') IS NULL) AND
-    ("date_deleted" <= sqlc.narg('date_deleted_to') OR sqlc.narg('date_deleted_to') IS NULL)
+    ("date_deleted" <= sqlc.narg('date_deleted_to') OR sqlc.narg('date_deleted_to') IS NULL) AND
+    ("cached_price" = ANY(sqlc.slice('cached_price')) OR sqlc.slice('cached_price') IS NULL) AND
+    ("cached_price" >= sqlc.narg('cached_price_from') OR sqlc.narg('cached_price_from') IS NULL) AND
+    ("cached_price" <= sqlc.narg('cached_price_to') OR sqlc.narg('cached_price_to') IS NULL) AND
+    ("cached_rating" = ANY(sqlc.slice('cached_rating')) OR sqlc.slice('cached_rating') IS NULL) AND
+    ("cached_rating" >= sqlc.narg('cached_rating_from') OR sqlc.narg('cached_rating_from') IS NULL) AND
+    ("cached_rating" <= sqlc.narg('cached_rating_to') OR sqlc.narg('cached_rating_to') IS NULL)
 );
 
 -- ========================================

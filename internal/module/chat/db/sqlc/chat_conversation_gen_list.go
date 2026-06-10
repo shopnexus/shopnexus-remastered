@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -29,58 +28,40 @@ type ListConversationParams struct {
 	DateCreatedTo     null.Time
 }
 
-func conversationListConds(f ListConversationParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.BuyerId != nil {
-		*conds = append(*conds, `"buyer_id" = ANY(@buyer_id)`)
-		args["buyer_id"] = f.BuyerId
-	}
-	if f.SellerId != nil {
-		*conds = append(*conds, `"seller_id" = ANY(@seller_id)`)
-		args["seller_id"] = f.SellerId
-	}
-	if f.LastMessageAt != nil {
-		*conds = append(*conds, `"last_message_at" = ANY(@last_message_at)`)
-		args["last_message_at"] = f.LastMessageAt
-	}
-	if f.LastMessageAtFrom.Valid {
-		*conds = append(*conds, `"last_message_at" >= @last_message_at_from`)
-		args["last_message_at_from"] = f.LastMessageAtFrom.Time
-	}
-	if f.LastMessageAtTo.Valid {
-		*conds = append(*conds, `"last_message_at" <= @last_message_at_to`)
-		args["last_message_at_to"] = f.LastMessageAtTo.Time
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
+// ConversationQuery is the reusable base listing for "chat"."conversation".
+func ConversationQuery() repolist.Query[ChatConversation] {
+	return repolist.Query[ChatConversation]{
+		Table: `"chat"."conversation"`,
+		PK:    "id",
+		Sort:  []string{"id", "date_created"},
+		Fields: func(m *ChatConversation) map[string]any {
+			return map[string]any{
+				"id":              &m.ID,
+				"buyer_id":        &m.BuyerID,
+				"seller_id":       &m.SellerID,
+				"last_message_at": &m.LastMessageAt,
+				"date_created":    &m.DateCreated,
+			}
+		},
 	}
 }
 
-func conversationListSpec(f ListConversationParams) repolist.Spec[ChatConversation] {
-	return repolist.Spec[ChatConversation]{
-		Table: `"chat"."conversation"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "uuid"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { conversationListConds(f, conds, args) },
+// ConversationConds maps the filter params to predicates.
+func ConversationConds(f ListConversationParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"buyer_id"`, f.BuyerId),
+		repolist.In(`"seller_id"`, f.SellerId),
+		repolist.In(`"last_message_at"`, f.LastMessageAt),
+		repolist.Gte(`"last_message_at"`, f.LastMessageAtFrom),
+		repolist.Lte(`"last_message_at"`, f.LastMessageAtTo),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
 	}
 }
 
 // ListConversation runs offset (?page) or cursor (?cursor/?sort) pagination over "chat"."conversation".
 func (q *Queries) ListConversation(ctx context.Context, f ListConversationParams) (paginate.PaginateResult[ChatConversation], error) {
-	return repolist.List(ctx, q.db, conversationListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, ConversationQuery().Filter(ConversationConds(f)...))
 }

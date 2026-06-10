@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -26,50 +25,38 @@ type ListResourceReferenceParams struct {
 	OrderTo   null.Int
 }
 
-func resourceReferenceListConds(f ListResourceReferenceParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.RsId != nil {
-		*conds = append(*conds, `"rs_id" = ANY(@rs_id)`)
-		args["rs_id"] = f.RsId
-	}
-	if f.RefType != nil {
-		*conds = append(*conds, `"ref_type" = ANY(@ref_type)`)
-		args["ref_type"] = f.RefType
-	}
-	if f.RefId != nil {
-		*conds = append(*conds, `"ref_id" = ANY(@ref_id)`)
-		args["ref_id"] = f.RefId
-	}
-	if f.Order != nil {
-		*conds = append(*conds, `"order" = ANY(@order)`)
-		args["order"] = f.Order
-	}
-	if f.OrderFrom.Valid {
-		*conds = append(*conds, `"order" >= @order_from`)
-		args["order_from"] = f.OrderFrom.Int64
-	}
-	if f.OrderTo.Valid {
-		*conds = append(*conds, `"order" <= @order_to`)
-		args["order_to"] = f.OrderTo.Int64
+// ResourceReferenceQuery is the reusable base listing for "common"."resource_reference".
+func ResourceReferenceQuery() repolist.Query[CommonResourceReference] {
+	return repolist.Query[CommonResourceReference]{
+		Table: `"common"."resource_reference"`,
+		PK:    "id",
+		Sort:  []string{"id", "order"},
+		Fields: func(m *CommonResourceReference) map[string]any {
+			return map[string]any{
+				"id":       &m.ID,
+				"rs_id":    &m.RsID,
+				"ref_type": &m.RefType,
+				"ref_id":   &m.RefID,
+				"order":    &m.Order,
+			}
+		},
 	}
 }
 
-func resourceReferenceListSpec(f ListResourceReferenceParams) repolist.Spec[CommonResourceReference] {
-	return repolist.Spec[CommonResourceReference]{
-		Table: `"common"."resource_reference"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":    {Col: `"id"`, Cast: "int8"},
-			"order": {Col: `"order"`, Cast: "int4"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { resourceReferenceListConds(f, conds, args) },
+// ResourceReferenceConds maps the filter params to predicates.
+func ResourceReferenceConds(f ListResourceReferenceParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"rs_id"`, f.RsId),
+		repolist.In(`"ref_type"`, f.RefType),
+		repolist.In(`"ref_id"`, f.RefId),
+		repolist.In(`"order"`, f.Order),
+		repolist.Gte(`"order"`, f.OrderFrom),
+		repolist.Lte(`"order"`, f.OrderTo),
 	}
 }
 
 // ListResourceReference runs offset (?page) or cursor (?cursor/?sort) pagination over "common"."resource_reference".
 func (q *Queries) ListResourceReference(ctx context.Context, f ListResourceReferenceParams) (paginate.PaginateResult[CommonResourceReference], error) {
-	return repolist.List(ctx, q.db, resourceReferenceListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, ResourceReferenceQuery().Filter(ResourceReferenceConds(f)...))
 }

@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -30,66 +29,47 @@ type ListOptionParams struct {
 	Provider     []string
 }
 
-func optionListConds(f ListOptionParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.OwnerId != nil {
-		*conds = append(*conds, `"owner_id" = ANY(@owner_id)`)
-		args["owner_id"] = f.OwnerId
-	}
-	if f.IsEnabled != nil {
-		*conds = append(*conds, `"is_enabled" = ANY(@is_enabled)`)
-		args["is_enabled"] = f.IsEnabled
-	}
-	if f.Name != nil {
-		*conds = append(*conds, `"name" = ANY(@name)`)
-		args["name"] = f.Name
-	}
-	if f.Description != nil {
-		*conds = append(*conds, `"description" = ANY(@description)`)
-		args["description"] = f.Description
-	}
-	if f.Priority != nil {
-		*conds = append(*conds, `"priority" = ANY(@priority)`)
-		args["priority"] = f.Priority
-	}
-	if f.PriorityFrom.Valid {
-		*conds = append(*conds, `"priority" >= @priority_from`)
-		args["priority_from"] = f.PriorityFrom.Int64
-	}
-	if f.PriorityTo.Valid {
-		*conds = append(*conds, `"priority" <= @priority_to`)
-		args["priority_to"] = f.PriorityTo.Int64
-	}
-	if f.LogoRsId != nil {
-		*conds = append(*conds, `"logo_rs_id" = ANY(@logo_rs_id)`)
-		args["logo_rs_id"] = f.LogoRsId
-	}
-	if f.Type != nil {
-		*conds = append(*conds, `"type" = ANY(@type)`)
-		args["type"] = f.Type
-	}
-	if f.Provider != nil {
-		*conds = append(*conds, `"provider" = ANY(@provider)`)
-		args["provider"] = f.Provider
+// OptionQuery is the reusable base listing for "common"."option".
+func OptionQuery() repolist.Query[CommonOption] {
+	return repolist.Query[CommonOption]{
+		Table: `"common"."option"`,
+		PK:    "id",
+		Sort:  []string{"id", "priority"},
+		Fields: func(m *CommonOption) map[string]any {
+			return map[string]any{
+				"id":          &m.ID,
+				"owner_id":    &m.OwnerID,
+				"is_enabled":  &m.IsEnabled,
+				"name":        &m.Name,
+				"description": &m.Description,
+				"priority":    &m.Priority,
+				"logo_rs_id":  &m.LogoRsID,
+				"data":        &m.Data,
+				"type":        &m.Type,
+				"provider":    &m.Provider,
+			}
+		},
 	}
 }
 
-func optionListSpec(f ListOptionParams) repolist.Spec[CommonOption] {
-	return repolist.Spec[CommonOption]{
-		Table: `"common"."option"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":       {Col: `"id"`, Cast: "text"},
-			"priority": {Col: `"priority"`, Cast: "int4"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { optionListConds(f, conds, args) },
+// OptionConds maps the filter params to predicates.
+func OptionConds(f ListOptionParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"owner_id"`, f.OwnerId),
+		repolist.In(`"is_enabled"`, f.IsEnabled),
+		repolist.In(`"name"`, f.Name),
+		repolist.In(`"description"`, f.Description),
+		repolist.In(`"priority"`, f.Priority),
+		repolist.Gte(`"priority"`, f.PriorityFrom),
+		repolist.Lte(`"priority"`, f.PriorityTo),
+		repolist.In(`"logo_rs_id"`, f.LogoRsId),
+		repolist.In(`"type"`, f.Type),
+		repolist.In(`"provider"`, f.Provider),
 	}
 }
 
 // ListOption runs offset (?page) or cursor (?cursor/?sort) pagination over "common"."option".
 func (q *Queries) ListOption(ctx context.Context, f ListOptionParams) (paginate.PaginateResult[CommonOption], error) {
-	return repolist.List(ctx, q.db, optionListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, OptionQuery().Filter(OptionConds(f)...))
 }

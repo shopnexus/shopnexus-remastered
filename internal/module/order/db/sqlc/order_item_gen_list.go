@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -48,137 +47,73 @@ type ListItemParams struct {
 	DateCreatedTo      null.Time
 }
 
-func itemListConds(f ListItemParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.OrderId != nil {
-		*conds = append(*conds, `"order_id" = ANY(@order_id)`)
-		args["order_id"] = f.OrderId
-	}
-	if f.AccountId != nil {
-		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
-		args["account_id"] = f.AccountId
-	}
-	if f.SellerId != nil {
-		*conds = append(*conds, `"seller_id" = ANY(@seller_id)`)
-		args["seller_id"] = f.SellerId
-	}
-	if f.SkuId != nil {
-		*conds = append(*conds, `"sku_id" = ANY(@sku_id)`)
-		args["sku_id"] = f.SkuId
-	}
-	if f.SpuId != nil {
-		*conds = append(*conds, `"spu_id" = ANY(@spu_id)`)
-		args["spu_id"] = f.SpuId
-	}
-	if f.SkuName != nil {
-		*conds = append(*conds, `"sku_name" = ANY(@sku_name)`)
-		args["sku_name"] = f.SkuName
-	}
-	if f.Address != nil {
-		*conds = append(*conds, `"address" = ANY(@address)`)
-		args["address"] = f.Address
-	}
-	if f.Note != nil {
-		*conds = append(*conds, `"note" = ANY(@note)`)
-		args["note"] = f.Note
-	}
-	if f.Quantity != nil {
-		*conds = append(*conds, `"quantity" = ANY(@quantity)`)
-		args["quantity"] = f.Quantity
-	}
-	if f.QuantityFrom.Valid {
-		*conds = append(*conds, `"quantity" >= @quantity_from`)
-		args["quantity_from"] = f.QuantityFrom.Int64
-	}
-	if f.QuantityTo.Valid {
-		*conds = append(*conds, `"quantity" <= @quantity_to`)
-		args["quantity_to"] = f.QuantityTo.Int64
-	}
-	if f.TransportOption != nil {
-		*conds = append(*conds, `"transport_option" = ANY(@transport_option)`)
-		args["transport_option"] = f.TransportOption
-	}
-	if f.SubtotalAmount != nil {
-		*conds = append(*conds, `"subtotal_amount" = ANY(@subtotal_amount)`)
-		args["subtotal_amount"] = f.SubtotalAmount
-	}
-	if f.SubtotalAmountFrom.Valid {
-		*conds = append(*conds, `"subtotal_amount" >= @subtotal_amount_from`)
-		args["subtotal_amount_from"] = f.SubtotalAmountFrom.Int64
-	}
-	if f.SubtotalAmountTo.Valid {
-		*conds = append(*conds, `"subtotal_amount" <= @subtotal_amount_to`)
-		args["subtotal_amount_to"] = f.SubtotalAmountTo.Int64
-	}
-	if f.TotalAmount != nil {
-		*conds = append(*conds, `"total_amount" = ANY(@total_amount)`)
-		args["total_amount"] = f.TotalAmount
-	}
-	if f.TotalAmountFrom.Valid {
-		*conds = append(*conds, `"total_amount" >= @total_amount_from`)
-		args["total_amount_from"] = f.TotalAmountFrom.Int64
-	}
-	if f.TotalAmountTo.Valid {
-		*conds = append(*conds, `"total_amount" <= @total_amount_to`)
-		args["total_amount_to"] = f.TotalAmountTo.Int64
-	}
-	if f.SourceCurrency != nil {
-		*conds = append(*conds, `"source_currency" = ANY(@source_currency)`)
-		args["source_currency"] = f.SourceCurrency
-	}
-	if f.PaymentSessionId != nil {
-		*conds = append(*conds, `"payment_session_id" = ANY(@payment_session_id)`)
-		args["payment_session_id"] = f.PaymentSessionId
-	}
-	if f.DateCancelled != nil {
-		*conds = append(*conds, `"date_cancelled" = ANY(@date_cancelled)`)
-		args["date_cancelled"] = f.DateCancelled
-	}
-	if f.DateCancelledFrom.Valid {
-		*conds = append(*conds, `"date_cancelled" >= @date_cancelled_from`)
-		args["date_cancelled_from"] = f.DateCancelledFrom.Time
-	}
-	if f.DateCancelledTo.Valid {
-		*conds = append(*conds, `"date_cancelled" <= @date_cancelled_to`)
-		args["date_cancelled_to"] = f.DateCancelledTo.Time
-	}
-	if f.CancelledById != nil {
-		*conds = append(*conds, `"cancelled_by_id" = ANY(@cancelled_by_id)`)
-		args["cancelled_by_id"] = f.CancelledById
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
+// ItemQuery is the reusable base listing for "order"."item".
+func ItemQuery() repolist.Query[OrderItem] {
+	return repolist.Query[OrderItem]{
+		Table: `"order"."item"`,
+		PK:    "id",
+		Sort:  []string{"id", "quantity", "subtotal_amount", "total_amount", "date_created"},
+		Fields: func(m *OrderItem) map[string]any {
+			return map[string]any{
+				"id":                 &m.ID,
+				"order_id":           &m.OrderID,
+				"account_id":         &m.AccountID,
+				"seller_id":          &m.SellerID,
+				"sku_id":             &m.SkuID,
+				"spu_id":             &m.SpuID,
+				"sku_name":           &m.SkuName,
+				"address":            &m.Address,
+				"note":               &m.Note,
+				"serial_ids":         &m.SerialIds,
+				"quantity":           &m.Quantity,
+				"transport_option":   &m.TransportOption,
+				"subtotal_amount":    &m.SubtotalAmount,
+				"total_amount":       &m.TotalAmount,
+				"source_currency":    &m.SourceCurrency,
+				"payment_session_id": &m.PaymentSessionID,
+				"date_cancelled":     &m.DateCancelled,
+				"cancelled_by_id":    &m.CancelledByID,
+				"date_created":       &m.DateCreated,
+			}
+		},
 	}
 }
 
-func itemListSpec(f ListItemParams) repolist.Spec[OrderItem] {
-	return repolist.Spec[OrderItem]{
-		Table: `"order"."item"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":              {Col: `"id"`, Cast: "int8"},
-			"quantity":        {Col: `"quantity"`, Cast: "int8"},
-			"subtotal_amount": {Col: `"subtotal_amount"`, Cast: "int8"},
-			"total_amount":    {Col: `"total_amount"`, Cast: "int8"},
-			"date_created":    {Col: `"date_created"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { itemListConds(f, conds, args) },
+// ItemConds maps the filter params to predicates.
+func ItemConds(f ListItemParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"order_id"`, f.OrderId),
+		repolist.In(`"account_id"`, f.AccountId),
+		repolist.In(`"seller_id"`, f.SellerId),
+		repolist.In(`"sku_id"`, f.SkuId),
+		repolist.In(`"spu_id"`, f.SpuId),
+		repolist.In(`"sku_name"`, f.SkuName),
+		repolist.In(`"address"`, f.Address),
+		repolist.In(`"note"`, f.Note),
+		repolist.In(`"quantity"`, f.Quantity),
+		repolist.Gte(`"quantity"`, f.QuantityFrom),
+		repolist.Lte(`"quantity"`, f.QuantityTo),
+		repolist.In(`"transport_option"`, f.TransportOption),
+		repolist.In(`"subtotal_amount"`, f.SubtotalAmount),
+		repolist.Gte(`"subtotal_amount"`, f.SubtotalAmountFrom),
+		repolist.Lte(`"subtotal_amount"`, f.SubtotalAmountTo),
+		repolist.In(`"total_amount"`, f.TotalAmount),
+		repolist.Gte(`"total_amount"`, f.TotalAmountFrom),
+		repolist.Lte(`"total_amount"`, f.TotalAmountTo),
+		repolist.In(`"source_currency"`, f.SourceCurrency),
+		repolist.In(`"payment_session_id"`, f.PaymentSessionId),
+		repolist.In(`"date_cancelled"`, f.DateCancelled),
+		repolist.Gte(`"date_cancelled"`, f.DateCancelledFrom),
+		repolist.Lte(`"date_cancelled"`, f.DateCancelledTo),
+		repolist.In(`"cancelled_by_id"`, f.CancelledById),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
 	}
 }
 
 // ListItem runs offset (?page) or cursor (?cursor/?sort) pagination over "order"."item".
 func (q *Queries) ListItem(ctx context.Context, f ListItemParams) (paginate.PaginateResult[OrderItem], error) {
-	return repolist.List(ctx, q.db, itemListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, ItemQuery().Filter(ItemConds(f)...))
 }

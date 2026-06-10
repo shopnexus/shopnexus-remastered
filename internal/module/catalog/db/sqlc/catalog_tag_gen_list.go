@@ -4,8 +4,6 @@ package catalogdb
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5"
-
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
 )
@@ -20,33 +18,32 @@ type ListTagParams struct {
 	Description []string
 }
 
-func tagListConds(f ListTagParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.Name != nil {
-		*conds = append(*conds, `"name" = ANY(@name)`)
-		args["name"] = f.Name
-	}
-	if f.Description != nil {
-		*conds = append(*conds, `"description" = ANY(@description)`)
-		args["description"] = f.Description
+// TagQuery is the reusable base listing for "catalog"."tag".
+func TagQuery() repolist.Query[CatalogTag] {
+	return repolist.Query[CatalogTag]{
+		Table: `"catalog"."tag"`,
+		PK:    "id",
+		Sort:  []string{"id"},
+		Fields: func(m *CatalogTag) map[string]any {
+			return map[string]any{
+				"id":          &m.ID,
+				"name":        &m.Name,
+				"description": &m.Description,
+			}
+		},
 	}
 }
 
-func tagListSpec(f ListTagParams) repolist.Spec[CatalogTag] {
-	return repolist.Spec[CatalogTag]{
-		Table: `"catalog"."tag"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id": {Col: `"id"`, Cast: "text"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { tagListConds(f, conds, args) },
+// TagConds maps the filter params to predicates.
+func TagConds(f ListTagParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"name"`, f.Name),
+		repolist.In(`"description"`, f.Description),
 	}
 }
 
 // ListTag runs offset (?page) or cursor (?cursor/?sort) pagination over "catalog"."tag".
 func (q *Queries) ListTag(ctx context.Context, f ListTagParams) (paginate.PaginateResult[CatalogTag], error) {
-	return repolist.List(ctx, q.db, tagListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, TagQuery().Filter(TagConds(f)...))
 }

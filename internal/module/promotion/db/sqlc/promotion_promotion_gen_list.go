@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -44,121 +43,65 @@ type ListPromotionParams struct {
 	DateUpdatedTo   null.Time
 }
 
-func promotionListConds(f ListPromotionParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.Code != nil {
-		*conds = append(*conds, `"code" = ANY(@code)`)
-		args["code"] = f.Code
-	}
-	if f.OwnerId != nil {
-		*conds = append(*conds, `"owner_id" = ANY(@owner_id)`)
-		args["owner_id"] = f.OwnerId
-	}
-	if f.Type != nil {
-		*conds = append(*conds, `"type" = ANY(@type)`)
-		args["type"] = f.Type
-	}
-	if f.Title != nil {
-		*conds = append(*conds, `"title" = ANY(@title)`)
-		args["title"] = f.Title
-	}
-	if f.Description != nil {
-		*conds = append(*conds, `"description" = ANY(@description)`)
-		args["description"] = f.Description
-	}
-	if f.IsEnabled != nil {
-		*conds = append(*conds, `"is_enabled" = ANY(@is_enabled)`)
-		args["is_enabled"] = f.IsEnabled
-	}
-	if f.Budget != nil {
-		*conds = append(*conds, `"budget" = ANY(@budget)`)
-		args["budget"] = f.Budget
-	}
-	if f.BudgetFrom.Valid {
-		*conds = append(*conds, `"budget" >= @budget_from`)
-		args["budget_from"] = f.BudgetFrom.Int64
-	}
-	if f.BudgetTo.Valid {
-		*conds = append(*conds, `"budget" <= @budget_to`)
-		args["budget_to"] = f.BudgetTo.Int64
-	}
-	if f.AutoApply != nil {
-		*conds = append(*conds, `"auto_apply" = ANY(@auto_apply)`)
-		args["auto_apply"] = f.AutoApply
-	}
-	if f.Group != nil {
-		*conds = append(*conds, `"group" = ANY(@group)`)
-		args["group"] = f.Group
-	}
-	if f.DateStarted != nil {
-		*conds = append(*conds, `"date_started" = ANY(@date_started)`)
-		args["date_started"] = f.DateStarted
-	}
-	if f.DateStartedFrom.Valid {
-		*conds = append(*conds, `"date_started" >= @date_started_from`)
-		args["date_started_from"] = f.DateStartedFrom.Time
-	}
-	if f.DateStartedTo.Valid {
-		*conds = append(*conds, `"date_started" <= @date_started_to`)
-		args["date_started_to"] = f.DateStartedTo.Time
-	}
-	if f.DateEnded != nil {
-		*conds = append(*conds, `"date_ended" = ANY(@date_ended)`)
-		args["date_ended"] = f.DateEnded
-	}
-	if f.DateEndedFrom.Valid {
-		*conds = append(*conds, `"date_ended" >= @date_ended_from`)
-		args["date_ended_from"] = f.DateEndedFrom.Time
-	}
-	if f.DateEndedTo.Valid {
-		*conds = append(*conds, `"date_ended" <= @date_ended_to`)
-		args["date_ended_to"] = f.DateEndedTo.Time
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
-	}
-	if f.DateUpdated != nil {
-		*conds = append(*conds, `"date_updated" = ANY(@date_updated)`)
-		args["date_updated"] = f.DateUpdated
-	}
-	if f.DateUpdatedFrom.Valid {
-		*conds = append(*conds, `"date_updated" >= @date_updated_from`)
-		args["date_updated_from"] = f.DateUpdatedFrom.Time
-	}
-	if f.DateUpdatedTo.Valid {
-		*conds = append(*conds, `"date_updated" <= @date_updated_to`)
-		args["date_updated_to"] = f.DateUpdatedTo.Time
+// PromotionQuery is the reusable base listing for "promotion"."promotion".
+func PromotionQuery() repolist.Query[PromotionPromotion] {
+	return repolist.Query[PromotionPromotion]{
+		Table: `"promotion"."promotion"`,
+		PK:    "id",
+		Sort:  []string{"id", "budget", "date_started", "date_created", "date_updated"},
+		Fields: func(m *PromotionPromotion) map[string]any {
+			return map[string]any{
+				"id":           &m.ID,
+				"code":         &m.Code,
+				"owner_id":     &m.OwnerID,
+				"type":         &m.Type,
+				"title":        &m.Title,
+				"description":  &m.Description,
+				"is_enabled":   &m.IsEnabled,
+				"budget":       &m.Budget,
+				"auto_apply":   &m.AutoApply,
+				"group":        &m.Group,
+				"data":         &m.Data,
+				"date_started": &m.DateStarted,
+				"date_ended":   &m.DateEnded,
+				"date_created": &m.DateCreated,
+				"date_updated": &m.DateUpdated,
+			}
+		},
 	}
 }
 
-func promotionListSpec(f ListPromotionParams) repolist.Spec[PromotionPromotion] {
-	return repolist.Spec[PromotionPromotion]{
-		Table: `"promotion"."promotion"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "uuid"},
-			"budget":       {Col: `"budget"`, Cast: "int8"},
-			"date_started": {Col: `"date_started"`, Cast: "timestamptz"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-			"date_updated": {Col: `"date_updated"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { promotionListConds(f, conds, args) },
+// PromotionConds maps the filter params to predicates.
+func PromotionConds(f ListPromotionParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"code"`, f.Code),
+		repolist.In(`"owner_id"`, f.OwnerId),
+		repolist.In(`"type"`, f.Type),
+		repolist.In(`"title"`, f.Title),
+		repolist.In(`"description"`, f.Description),
+		repolist.In(`"is_enabled"`, f.IsEnabled),
+		repolist.In(`"budget"`, f.Budget),
+		repolist.Gte(`"budget"`, f.BudgetFrom),
+		repolist.Lte(`"budget"`, f.BudgetTo),
+		repolist.In(`"auto_apply"`, f.AutoApply),
+		repolist.In(`"group"`, f.Group),
+		repolist.In(`"date_started"`, f.DateStarted),
+		repolist.Gte(`"date_started"`, f.DateStartedFrom),
+		repolist.Lte(`"date_started"`, f.DateStartedTo),
+		repolist.In(`"date_ended"`, f.DateEnded),
+		repolist.Gte(`"date_ended"`, f.DateEndedFrom),
+		repolist.Lte(`"date_ended"`, f.DateEndedTo),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+		repolist.In(`"date_updated"`, f.DateUpdated),
+		repolist.Gte(`"date_updated"`, f.DateUpdatedFrom),
+		repolist.Lte(`"date_updated"`, f.DateUpdatedTo),
 	}
 }
 
 // ListPromotion runs offset (?page) or cursor (?cursor/?sort) pagination over "promotion"."promotion".
 func (q *Queries) ListPromotion(ctx context.Context, f ListPromotionParams) (paginate.PaginateResult[PromotionPromotion], error) {
-	return repolist.List(ctx, q.db, promotionListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, PromotionQuery().Filter(PromotionConds(f)...))
 }

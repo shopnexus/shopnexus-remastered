@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -27,55 +26,38 @@ type ListStockHistoryParams struct {
 	DateCreatedTo   null.Time
 }
 
-func stockHistoryListConds(f ListStockHistoryParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.StockId != nil {
-		*conds = append(*conds, `"stock_id" = ANY(@stock_id)`)
-		args["stock_id"] = f.StockId
-	}
-	if f.Change != nil {
-		*conds = append(*conds, `"change" = ANY(@change)`)
-		args["change"] = f.Change
-	}
-	if f.ChangeFrom.Valid {
-		*conds = append(*conds, `"change" >= @change_from`)
-		args["change_from"] = f.ChangeFrom.Int64
-	}
-	if f.ChangeTo.Valid {
-		*conds = append(*conds, `"change" <= @change_to`)
-		args["change_to"] = f.ChangeTo.Int64
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
+// StockHistoryQuery is the reusable base listing for "inventory"."stock_history".
+func StockHistoryQuery() repolist.Query[InventoryStockHistory] {
+	return repolist.Query[InventoryStockHistory]{
+		Table: `"inventory"."stock_history"`,
+		PK:    "id",
+		Sort:  []string{"id", "change", "date_created"},
+		Fields: func(m *InventoryStockHistory) map[string]any {
+			return map[string]any{
+				"id":           &m.ID,
+				"stock_id":     &m.StockID,
+				"change":       &m.Change,
+				"date_created": &m.DateCreated,
+			}
+		},
 	}
 }
 
-func stockHistoryListSpec(f ListStockHistoryParams) repolist.Spec[InventoryStockHistory] {
-	return repolist.Spec[InventoryStockHistory]{
-		Table: `"inventory"."stock_history"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "int8"},
-			"change":       {Col: `"change"`, Cast: "int8"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { stockHistoryListConds(f, conds, args) },
+// StockHistoryConds maps the filter params to predicates.
+func StockHistoryConds(f ListStockHistoryParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"stock_id"`, f.StockId),
+		repolist.In(`"change"`, f.Change),
+		repolist.Gte(`"change"`, f.ChangeFrom),
+		repolist.Lte(`"change"`, f.ChangeTo),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
 	}
 }
 
 // ListStockHistory runs offset (?page) or cursor (?cursor/?sort) pagination over "inventory"."stock_history".
 func (q *Queries) ListStockHistory(ctx context.Context, f ListStockHistoryParams) (paginate.PaginateResult[InventoryStockHistory], error) {
-	return repolist.List(ctx, q.db, stockHistoryListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, StockHistoryQuery().Filter(StockHistoryConds(f)...))
 }

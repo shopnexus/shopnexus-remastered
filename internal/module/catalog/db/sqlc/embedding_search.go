@@ -3,6 +3,7 @@ package catalogdb
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
@@ -10,6 +11,7 @@ import (
 	"github.com/pgvector/pgvector-go"
 
 	"shopnexus-server/internal/shared/paginate"
+	"shopnexus-server/internal/shared/repolist"
 )
 
 // HybridSearchProductParams is the hand-written hybrid-search filter. It embeds
@@ -75,6 +77,45 @@ lexical AS (
 // curve across ranks; 60 is the canonical default.
 const rrfK = 60
 
+// hybridSortExprs whitelists user-sortable fields to columns on the ranked `spu`
+// alias. Compile-time only: user input selects a key, never reaches a column
+// name — no injection. price/rating read the denormalized cached_* columns.
+var hybridSortExprs = map[string]string{
+	"id":           "spu.id",
+	"date_created": "spu.date_created",
+	"price":        "spu.cached_price",
+	"rating":       "spu.cached_rating",
+}
+
+// hybridOrderBy turns the request sort into the ORDER BY clause (no keyword).
+// Empty sort => relevance (score DESC). spu.id is the stable tiebreaker.
+func hybridOrderBy(raw string) (string, error) {
+	sort := paginate.ParseSort(raw)
+	if len(sort) == 0 {
+		return "score DESC", nil
+	}
+	parts := make([]string, 0, len(sort)+1)
+	for _, s := range sort {
+		expr, ok := hybridSortExprs[s.Field]
+		if !ok {
+			return "", fmt.Errorf("sort field not allowed: %q", s.Field)
+		}
+		dir := "ASC"
+		if s.Dir == paginate.Desc {
+			dir = "DESC"
+		}
+		parts = append(parts, expr+" "+dir+" NULLS LAST")
+	}
+	parts = append(parts, "spu.id ASC")
+	return strings.Join(parts, ", "), nil
+}
+
+// rrfScore is the Reciprocal Rank Fusion score projection over the three pool
+// ranks. Selected as a real column so the listing can order/paginate by it.
+const rrfScore = `(@dense_weight::float4   * COALESCE(1.0 / (@rrf_k + d.rnk), 0)
+	+ @sparse_weight::float4  * COALESCE(1.0 / (@rrf_k + s.rnk), 0)
+	+ @lexical_weight::float4 * COALESCE(1.0 / (@rrf_k + l.rnk), 0))::float4 AS score`
+
 // hybridSearchFromWhere joins the ANN pools to live product tables and applies
 // scalar filters. Shared by page + count.
 const hybridSearchFromWhere = `FROM catalog.product_spu spu
@@ -92,20 +133,26 @@ WHERE (d.spu_id IS NOT NULL OR s.spu_id IS NOT NULL OR l.spu_id IS NOT NULL)
   AND (EXISTS (SELECT 1 FROM catalog.product_sku sku WHERE sku.spu_id = spu.id AND sku.date_deleted IS NULL AND sku.price <= @price_max) OR @price_max IS NULL)
   AND (EXISTS (SELECT 1 FROM catalog.product_spu_tag pt WHERE pt.spu_id = spu.id AND pt.tag = ANY(@tags)) OR @tags IS NULL)`
 
-// HybridSearchProduct runs dense+sparse ANN with weighted score fusion + scalar
-// filters, paginated (offset) with a matching count. Returns the page of ranked
-// spu ids plus the total matching count.
+// HybridSearchProduct runs dense+sparse+lexical ANN with RRF score fusion +
+// scalar filters, paginated (offset) with a matching count. The ranked rows are
+// materialized as a subquery aliased `spu` so the shared list runtime layers
+// SELECT/ORDER BY/LIMIT/count on top — the CTE pools stay visible to the
+// subquery, and the sort clause (`spu.<col>`) resolves against the alias.
 func (q *Queries) HybridSearchProduct(
 	ctx context.Context,
 	arg HybridSearchProductParams,
 ) (paginate.PaginateResult[HybridSearchProductRow], error) {
-	var zero paginate.PaginateResult[HybridSearchProductRow]
+	order, err := hybridOrderBy(arg.Sort)
+	if err != nil {
+		return paginate.PaginateResult[HybridSearchProductRow]{}, err
+	}
 
 	args := pgx.NamedArgs{
 		"query_dense":       arg.QueryDense,
 		"query_sparse":      arg.QuerySparse,
 		"query_text":        arg.QueryText,
 		"pool":              arg.Pool,
+		"rrf_k":             rrfK,
 		"dense_weight":      arg.DenseWeight,
 		"sparse_weight":     arg.SparseWeight,
 		"lexical_weight":    arg.LexicalWeight,
@@ -119,40 +166,24 @@ func (q *Queries) HybridSearchProduct(
 		"tags":              arg.Tags,
 	}
 
-	args["rrf_k"] = rrfK
+	ranked := `(SELECT spu.*, ` + rrfScore + `
+` + hybridSearchFromWhere + `) spu`
 
-	page := hybridSearchCTE + `
-SELECT spu.id,
-	(@dense_weight::float4   * COALESCE(1.0 / (@rrf_k + d.rnk), 0)
-	+ @sparse_weight::float4  * COALESCE(1.0 / (@rrf_k + s.rnk), 0)
-	+ @lexical_weight::float4 * COALESCE(1.0 / (@rrf_k + l.rnk), 0))::float4 AS score
-` + hybridSearchFromWhere + `
-ORDER BY score DESC`
-	if arg.Limit.Int32 > 0 {
-		page += ` LIMIT @limit OFFSET @offset`
-		args["limit"] = arg.Limit.Int32
-		args["offset"] = arg.Offset().Int32
-	}
+	// Search is offset + relevance/whitelist order, never keyset (relevance/score
+	// is not a stable cursor key). Clear both Sort and Cursor so the runtime stays
+	// in offset mode and honors Order; a stray ?cursor is ignored, as before.
+	params := arg.Params
+	params.Sort = ""
+	params.Cursor = null.String{}
 
-	rows, err := q.db.Query(ctx, page, args)
-	if err != nil {
-		return zero, fmt.Errorf("hybrid search: %w", err)
-	}
-	data, err := pgx.CollectRows(rows, pgx.RowToStructByName[HybridSearchProductRow])
-	if err != nil {
-		return zero, fmt.Errorf("scan hybrid search: %w", err)
-	}
-
-	// Count: same CTE pools + filters, no order/limit/offset. NOT a window fn.
-	var total int64
-	countQuery := hybridSearchCTE + ` SELECT COUNT(*) ` + hybridSearchFromWhere
-	if err = q.db.QueryRow(ctx, countQuery, args).Scan(&total); err != nil {
-		return zero, fmt.Errorf("count hybrid search: %w", err)
-	}
-
-	return paginate.PaginateResult[HybridSearchProductRow]{
-		PageParams: arg.Params,
-		Data:       data,
-		Total:      null.IntFrom(total),
-	}, nil
+	return repolist.List(ctx, q.db, params, repolist.Query[HybridSearchProductRow]{
+		Table: ranked,
+		With:  hybridSearchCTE,
+		PK:    "id",
+		Order: order,
+		Fields: func(m *HybridSearchProductRow) map[string]any {
+			return map[string]any{"id": &m.ID, "score": &m.Score}
+		},
+		Args: args,
+	})
 }

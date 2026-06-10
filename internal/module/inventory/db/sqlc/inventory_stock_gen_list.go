@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -33,76 +32,46 @@ type ListStockParams struct {
 	DateCreatedTo   null.Time
 }
 
-func stockListConds(f ListStockParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.RefType != nil {
-		*conds = append(*conds, `"ref_type" = ANY(@ref_type)`)
-		args["ref_type"] = f.RefType
-	}
-	if f.RefId != nil {
-		*conds = append(*conds, `"ref_id" = ANY(@ref_id)`)
-		args["ref_id"] = f.RefId
-	}
-	if f.Stock != nil {
-		*conds = append(*conds, `"stock" = ANY(@stock)`)
-		args["stock"] = f.Stock
-	}
-	if f.StockFrom.Valid {
-		*conds = append(*conds, `"stock" >= @stock_from`)
-		args["stock_from"] = f.StockFrom.Int64
-	}
-	if f.StockTo.Valid {
-		*conds = append(*conds, `"stock" <= @stock_to`)
-		args["stock_to"] = f.StockTo.Int64
-	}
-	if f.Taken != nil {
-		*conds = append(*conds, `"taken" = ANY(@taken)`)
-		args["taken"] = f.Taken
-	}
-	if f.TakenFrom.Valid {
-		*conds = append(*conds, `"taken" >= @taken_from`)
-		args["taken_from"] = f.TakenFrom.Int64
-	}
-	if f.TakenTo.Valid {
-		*conds = append(*conds, `"taken" <= @taken_to`)
-		args["taken_to"] = f.TakenTo.Int64
-	}
-	if f.SerialRequired != nil {
-		*conds = append(*conds, `"serial_required" = ANY(@serial_required)`)
-		args["serial_required"] = f.SerialRequired
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
+// StockQuery is the reusable base listing for "inventory"."stock".
+func StockQuery() repolist.Query[InventoryStock] {
+	return repolist.Query[InventoryStock]{
+		Table: `"inventory"."stock"`,
+		PK:    "id",
+		Sort:  []string{"id", "stock", "taken", "date_created"},
+		Fields: func(m *InventoryStock) map[string]any {
+			return map[string]any{
+				"id":              &m.ID,
+				"ref_type":        &m.RefType,
+				"ref_id":          &m.RefID,
+				"stock":           &m.Stock,
+				"taken":           &m.Taken,
+				"serial_required": &m.SerialRequired,
+				"date_created":    &m.DateCreated,
+			}
+		},
 	}
 }
 
-func stockListSpec(f ListStockParams) repolist.Spec[InventoryStock] {
-	return repolist.Spec[InventoryStock]{
-		Table: `"inventory"."stock"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "int8"},
-			"stock":        {Col: `"stock"`, Cast: "int8"},
-			"taken":        {Col: `"taken"`, Cast: "int8"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { stockListConds(f, conds, args) },
+// StockConds maps the filter params to predicates.
+func StockConds(f ListStockParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"ref_type"`, f.RefType),
+		repolist.In(`"ref_id"`, f.RefId),
+		repolist.In(`"stock"`, f.Stock),
+		repolist.Gte(`"stock"`, f.StockFrom),
+		repolist.Lte(`"stock"`, f.StockTo),
+		repolist.In(`"taken"`, f.Taken),
+		repolist.Gte(`"taken"`, f.TakenFrom),
+		repolist.Lte(`"taken"`, f.TakenTo),
+		repolist.In(`"serial_required"`, f.SerialRequired),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
 	}
 }
 
 // ListStock runs offset (?page) or cursor (?cursor/?sort) pagination over "inventory"."stock".
 func (q *Queries) ListStock(ctx context.Context, f ListStockParams) (paginate.PaginateResult[InventoryStock], error) {
-	return repolist.List(ctx, q.db, stockListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, StockQuery().Filter(StockConds(f)...))
 }

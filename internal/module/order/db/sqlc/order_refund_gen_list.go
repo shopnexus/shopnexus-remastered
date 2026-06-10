@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -41,106 +40,60 @@ type ListRefundParams struct {
 	RefundTxId               []uuid.UUID
 }
 
-func refundListConds(f ListRefundParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.AccountId != nil {
-		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
-		args["account_id"] = f.AccountId
-	}
-	if f.OrderId != nil {
-		*conds = append(*conds, `"order_id" = ANY(@order_id)`)
-		args["order_id"] = f.OrderId
-	}
-	if f.Reason != nil {
-		*conds = append(*conds, `"reason" = ANY(@reason)`)
-		args["reason"] = f.Reason
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
-	}
-	if f.Status != nil {
-		*conds = append(*conds, `"status" = ANY(@status)`)
-		args["status"] = f.Status
-	}
-	if f.ReturnTransportId != nil {
-		*conds = append(*conds, `"return_transport_id" = ANY(@return_transport_id)`)
-		args["return_transport_id"] = f.ReturnTransportId
-	}
-	if f.DateReceivedBySeller != nil {
-		*conds = append(*conds, `"date_received_by_seller" = ANY(@date_received_by_seller)`)
-		args["date_received_by_seller"] = f.DateReceivedBySeller
-	}
-	if f.DateReceivedBySellerFrom.Valid {
-		*conds = append(*conds, `"date_received_by_seller" >= @date_received_by_seller_from`)
-		args["date_received_by_seller_from"] = f.DateReceivedBySellerFrom.Time
-	}
-	if f.DateReceivedBySellerTo.Valid {
-		*conds = append(*conds, `"date_received_by_seller" <= @date_received_by_seller_to`)
-		args["date_received_by_seller_to"] = f.DateReceivedBySellerTo.Time
-	}
-	if f.ReviewDeadline != nil {
-		*conds = append(*conds, `"review_deadline" = ANY(@review_deadline)`)
-		args["review_deadline"] = f.ReviewDeadline
-	}
-	if f.ReviewDeadlineFrom.Valid {
-		*conds = append(*conds, `"review_deadline" >= @review_deadline_from`)
-		args["review_deadline_from"] = f.ReviewDeadlineFrom.Time
-	}
-	if f.ReviewDeadlineTo.Valid {
-		*conds = append(*conds, `"review_deadline" <= @review_deadline_to`)
-		args["review_deadline_to"] = f.ReviewDeadlineTo.Time
-	}
-	if f.SellerDecisionAt != nil {
-		*conds = append(*conds, `"seller_decision_at" = ANY(@seller_decision_at)`)
-		args["seller_decision_at"] = f.SellerDecisionAt
-	}
-	if f.SellerDecisionAtFrom.Valid {
-		*conds = append(*conds, `"seller_decision_at" >= @seller_decision_at_from`)
-		args["seller_decision_at_from"] = f.SellerDecisionAtFrom.Time
-	}
-	if f.SellerDecisionAtTo.Valid {
-		*conds = append(*conds, `"seller_decision_at" <= @seller_decision_at_to`)
-		args["seller_decision_at_to"] = f.SellerDecisionAtTo.Time
-	}
-	if f.ReturnToBuyerTransportId != nil {
-		*conds = append(*conds, `"return_to_buyer_transport_id" = ANY(@return_to_buyer_transport_id)`)
-		args["return_to_buyer_transport_id"] = f.ReturnToBuyerTransportId
-	}
-	if f.RejectionReason != nil {
-		*conds = append(*conds, `"rejection_reason" = ANY(@rejection_reason)`)
-		args["rejection_reason"] = f.RejectionReason
-	}
-	if f.RefundTxId != nil {
-		*conds = append(*conds, `"refund_tx_id" = ANY(@refund_tx_id)`)
-		args["refund_tx_id"] = f.RefundTxId
+// RefundQuery is the reusable base listing for "order"."refund".
+func RefundQuery() repolist.Query[OrderRefund] {
+	return repolist.Query[OrderRefund]{
+		Table: `"order"."refund"`,
+		PK:    "id",
+		Sort:  []string{"id", "date_created"},
+		Fields: func(m *OrderRefund) map[string]any {
+			return map[string]any{
+				"id":                           &m.ID,
+				"account_id":                   &m.AccountID,
+				"order_id":                     &m.OrderID,
+				"reason":                       &m.Reason,
+				"date_created":                 &m.DateCreated,
+				"status":                       &m.Status,
+				"return_transport_id":          &m.ReturnTransportID,
+				"date_received_by_seller":      &m.DateReceivedBySeller,
+				"review_deadline":              &m.ReviewDeadline,
+				"seller_decision_at":           &m.SellerDecisionAt,
+				"return_to_buyer_transport_id": &m.ReturnToBuyerTransportID,
+				"rejection_reason":             &m.RejectionReason,
+				"refund_tx_id":                 &m.RefundTxID,
+			}
+		},
 	}
 }
 
-func refundListSpec(f ListRefundParams) repolist.Spec[OrderRefund] {
-	return repolist.Spec[OrderRefund]{
-		Table: `"order"."refund"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "uuid"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { refundListConds(f, conds, args) },
+// RefundConds maps the filter params to predicates.
+func RefundConds(f ListRefundParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"account_id"`, f.AccountId),
+		repolist.In(`"order_id"`, f.OrderId),
+		repolist.In(`"reason"`, f.Reason),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+		repolist.In(`"status"`, f.Status),
+		repolist.In(`"return_transport_id"`, f.ReturnTransportId),
+		repolist.In(`"date_received_by_seller"`, f.DateReceivedBySeller),
+		repolist.Gte(`"date_received_by_seller"`, f.DateReceivedBySellerFrom),
+		repolist.Lte(`"date_received_by_seller"`, f.DateReceivedBySellerTo),
+		repolist.In(`"review_deadline"`, f.ReviewDeadline),
+		repolist.Gte(`"review_deadline"`, f.ReviewDeadlineFrom),
+		repolist.Lte(`"review_deadline"`, f.ReviewDeadlineTo),
+		repolist.In(`"seller_decision_at"`, f.SellerDecisionAt),
+		repolist.Gte(`"seller_decision_at"`, f.SellerDecisionAtFrom),
+		repolist.Lte(`"seller_decision_at"`, f.SellerDecisionAtTo),
+		repolist.In(`"return_to_buyer_transport_id"`, f.ReturnToBuyerTransportId),
+		repolist.In(`"rejection_reason"`, f.RejectionReason),
+		repolist.In(`"refund_tx_id"`, f.RefundTxId),
 	}
 }
 
 // ListRefund runs offset (?page) or cursor (?cursor/?sort) pagination over "order"."refund".
 func (q *Queries) ListRefund(ctx context.Context, f ListRefundParams) (paginate.PaginateResult[OrderRefund], error) {
-	return repolist.List(ctx, q.db, refundListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, RefundQuery().Filter(RefundConds(f)...))
 }

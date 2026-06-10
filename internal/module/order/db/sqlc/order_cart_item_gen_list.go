@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -25,46 +24,36 @@ type ListCartItemParams struct {
 	QuantityTo   null.Int
 }
 
-func cartItemListConds(f ListCartItemParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.AccountId != nil {
-		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
-		args["account_id"] = f.AccountId
-	}
-	if f.SkuId != nil {
-		*conds = append(*conds, `"sku_id" = ANY(@sku_id)`)
-		args["sku_id"] = f.SkuId
-	}
-	if f.Quantity != nil {
-		*conds = append(*conds, `"quantity" = ANY(@quantity)`)
-		args["quantity"] = f.Quantity
-	}
-	if f.QuantityFrom.Valid {
-		*conds = append(*conds, `"quantity" >= @quantity_from`)
-		args["quantity_from"] = f.QuantityFrom.Int64
-	}
-	if f.QuantityTo.Valid {
-		*conds = append(*conds, `"quantity" <= @quantity_to`)
-		args["quantity_to"] = f.QuantityTo.Int64
+// CartItemQuery is the reusable base listing for "order"."cart_item".
+func CartItemQuery() repolist.Query[OrderCartItem] {
+	return repolist.Query[OrderCartItem]{
+		Table: `"order"."cart_item"`,
+		PK:    "id",
+		Sort:  []string{"id", "quantity"},
+		Fields: func(m *OrderCartItem) map[string]any {
+			return map[string]any{
+				"id":         &m.ID,
+				"account_id": &m.AccountID,
+				"sku_id":     &m.SkuID,
+				"quantity":   &m.Quantity,
+			}
+		},
 	}
 }
 
-func cartItemListSpec(f ListCartItemParams) repolist.Spec[OrderCartItem] {
-	return repolist.Spec[OrderCartItem]{
-		Table: `"order"."cart_item"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":       {Col: `"id"`, Cast: "int8"},
-			"quantity": {Col: `"quantity"`, Cast: "int8"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { cartItemListConds(f, conds, args) },
+// CartItemConds maps the filter params to predicates.
+func CartItemConds(f ListCartItemParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"account_id"`, f.AccountId),
+		repolist.In(`"sku_id"`, f.SkuId),
+		repolist.In(`"quantity"`, f.Quantity),
+		repolist.Gte(`"quantity"`, f.QuantityFrom),
+		repolist.Lte(`"quantity"`, f.QuantityTo),
 	}
 }
 
 // ListCartItem runs offset (?page) or cursor (?cursor/?sort) pagination over "order"."cart_item".
 func (q *Queries) ListCartItem(ctx context.Context, f ListCartItemParams) (paginate.PaginateResult[OrderCartItem], error) {
-	return repolist.List(ctx, q.db, cartItemListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, CartItemQuery().Filter(CartItemConds(f)...))
 }

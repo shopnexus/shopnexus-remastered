@@ -204,6 +204,8 @@ type CatalogProductSpu struct {
 	DateCreated    time.Time       `db:"date_created" json:"date_created"`
 	DateUpdated    time.Time       `db:"date_updated" json:"date_updated"`
 	DateDeleted    null.Time       `db:"date_deleted" json:"date_deleted"`
+	CachedPrice    int64           `db:"cached_price" json:"cached_price"`
+	CachedRating   float64         `db:"cached_rating" json:"cached_rating"`
 }
 
 type CatalogProductSpuTag struct {
@@ -232,4 +234,33 @@ type CatalogTagEmbedding struct {
 	Embedding   pgvector.Vector           `db:"embedding" json:"embedding"`
 	Sparse      *pgvector_go.SparseVector `db:"sparse" json:"sparse"`
 	DateUpdated time.Time                 `db:"date_updated" json:"date_updated"`
+}
+
+func (n NullCatalogCommentRefType) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.CatalogCommentRefType)
+}
+func (n *NullCatalogCommentRefType) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.CatalogCommentRefType)
+}
+func (n NullCatalogSearchSyncRefType) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.CatalogSearchSyncRefType)
+}
+func (n *NullCatalogSearchSyncRefType) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.CatalogSearchSyncRefType)
 }

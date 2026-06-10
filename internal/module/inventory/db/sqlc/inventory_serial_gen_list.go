@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -25,46 +24,36 @@ type ListSerialParams struct {
 	DateCreatedTo   null.Time
 }
 
-func serialListConds(f ListSerialParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.StockId != nil {
-		*conds = append(*conds, `"stock_id" = ANY(@stock_id)`)
-		args["stock_id"] = f.StockId
-	}
-	if f.Status != nil {
-		*conds = append(*conds, `"status" = ANY(@status)`)
-		args["status"] = f.Status
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
+// SerialQuery is the reusable base listing for "inventory"."serial".
+func SerialQuery() repolist.Query[InventorySerial] {
+	return repolist.Query[InventorySerial]{
+		Table: `"inventory"."serial"`,
+		PK:    "id",
+		Sort:  []string{"id", "date_created"},
+		Fields: func(m *InventorySerial) map[string]any {
+			return map[string]any{
+				"id":           &m.ID,
+				"stock_id":     &m.StockID,
+				"status":       &m.Status,
+				"date_created": &m.DateCreated,
+			}
+		},
 	}
 }
 
-func serialListSpec(f ListSerialParams) repolist.Spec[InventorySerial] {
-	return repolist.Spec[InventorySerial]{
-		Table: `"inventory"."serial"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "text"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { serialListConds(f, conds, args) },
+// SerialConds maps the filter params to predicates.
+func SerialConds(f ListSerialParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"stock_id"`, f.StockId),
+		repolist.In(`"status"`, f.Status),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
 	}
 }
 
 // ListSerial runs offset (?page) or cursor (?cursor/?sort) pagination over "inventory"."serial".
 func (q *Queries) ListSerial(ctx context.Context, f ListSerialParams) (paginate.PaginateResult[InventorySerial], error) {
-	return repolist.List(ctx, q.db, serialListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, SerialQuery().Filter(SerialConds(f)...))
 }

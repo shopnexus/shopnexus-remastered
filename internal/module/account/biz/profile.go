@@ -21,7 +21,7 @@ import (
 type ListProfileParams struct {
 	paginate.Params
 
-	Issuer     accountmodel.AuthenticatedAccount // Who is requesting the profiles
+	Issuer     accountmodel.AuthenticatedAccount `validate:"omitempty"` // Who is requesting the profiles
 	AccountIDs []uuid.UUID                       `validate:"dive,required"`
 }
 

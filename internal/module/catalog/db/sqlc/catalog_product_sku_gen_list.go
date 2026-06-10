@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -32,71 +31,46 @@ type ListProductSkuParams struct {
 	DateDeletedTo   null.Time
 }
 
-func productSkuListConds(f ListProductSkuParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.SpuId != nil {
-		*conds = append(*conds, `"spu_id" = ANY(@spu_id)`)
-		args["spu_id"] = f.SpuId
-	}
-	if f.Price != nil {
-		*conds = append(*conds, `"price" = ANY(@price)`)
-		args["price"] = f.Price
-	}
-	if f.PriceFrom.Valid {
-		*conds = append(*conds, `"price" >= @price_from`)
-		args["price_from"] = f.PriceFrom.Int64
-	}
-	if f.PriceTo.Valid {
-		*conds = append(*conds, `"price" <= @price_to`)
-		args["price_to"] = f.PriceTo.Int64
-	}
-	if f.SharedPackaging != nil {
-		*conds = append(*conds, `"shared_packaging" = ANY(@shared_packaging)`)
-		args["shared_packaging"] = f.SharedPackaging
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
-	}
-	if f.DateDeleted != nil {
-		*conds = append(*conds, `"date_deleted" = ANY(@date_deleted)`)
-		args["date_deleted"] = f.DateDeleted
-	}
-	if f.DateDeletedFrom.Valid {
-		*conds = append(*conds, `"date_deleted" >= @date_deleted_from`)
-		args["date_deleted_from"] = f.DateDeletedFrom.Time
-	}
-	if f.DateDeletedTo.Valid {
-		*conds = append(*conds, `"date_deleted" <= @date_deleted_to`)
-		args["date_deleted_to"] = f.DateDeletedTo.Time
+// ProductSkuQuery is the reusable base listing for "catalog"."product_sku".
+func ProductSkuQuery() repolist.Query[CatalogProductSku] {
+	return repolist.Query[CatalogProductSku]{
+		Table: `"catalog"."product_sku"`,
+		PK:    "id",
+		Sort:  []string{"id", "price", "date_created"},
+		Fields: func(m *CatalogProductSku) map[string]any {
+			return map[string]any{
+				"id":               &m.ID,
+				"spu_id":           &m.SpuID,
+				"price":            &m.Price,
+				"shared_packaging": &m.SharedPackaging,
+				"attributes":       &m.Attributes,
+				"package_details":  &m.PackageDetails,
+				"date_created":     &m.DateCreated,
+				"date_deleted":     &m.DateDeleted,
+			}
+		},
 	}
 }
 
-func productSkuListSpec(f ListProductSkuParams) repolist.Spec[CatalogProductSku] {
-	return repolist.Spec[CatalogProductSku]{
-		Table: `"catalog"."product_sku"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "uuid"},
-			"price":        {Col: `"price"`, Cast: "int8"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { productSkuListConds(f, conds, args) },
+// ProductSkuConds maps the filter params to predicates.
+func ProductSkuConds(f ListProductSkuParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"spu_id"`, f.SpuId),
+		repolist.In(`"price"`, f.Price),
+		repolist.Gte(`"price"`, f.PriceFrom),
+		repolist.Lte(`"price"`, f.PriceTo),
+		repolist.In(`"shared_packaging"`, f.SharedPackaging),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+		repolist.In(`"date_deleted"`, f.DateDeleted),
+		repolist.Gte(`"date_deleted"`, f.DateDeletedFrom),
+		repolist.Lte(`"date_deleted"`, f.DateDeletedTo),
 	}
 }
 
 // ListProductSku runs offset (?page) or cursor (?cursor/?sort) pagination over "catalog"."product_sku".
 func (q *Queries) ListProductSku(ctx context.Context, f ListProductSkuParams) (paginate.PaginateResult[CatalogProductSku], error) {
-	return repolist.List(ctx, q.db, productSkuListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, ProductSkuQuery().Filter(ProductSkuConds(f)...))
 }

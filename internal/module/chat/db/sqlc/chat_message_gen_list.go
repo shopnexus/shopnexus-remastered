@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -29,58 +28,43 @@ type ListMessageParams struct {
 	DateCreatedTo   null.Time
 }
 
-func messageListConds(f ListMessageParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.ConversationId != nil {
-		*conds = append(*conds, `"conversation_id" = ANY(@conversation_id)`)
-		args["conversation_id"] = f.ConversationId
-	}
-	if f.SenderId != nil {
-		*conds = append(*conds, `"sender_id" = ANY(@sender_id)`)
-		args["sender_id"] = f.SenderId
-	}
-	if f.Type != nil {
-		*conds = append(*conds, `"type" = ANY(@type)`)
-		args["type"] = f.Type
-	}
-	if f.Content != nil {
-		*conds = append(*conds, `"content" = ANY(@content)`)
-		args["content"] = f.Content
-	}
-	if f.Status != nil {
-		*conds = append(*conds, `"status" = ANY(@status)`)
-		args["status"] = f.Status
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
+// MessageQuery is the reusable base listing for "chat"."message".
+func MessageQuery() repolist.Query[ChatMessage] {
+	return repolist.Query[ChatMessage]{
+		Table: `"chat"."message"`,
+		PK:    "id",
+		Sort:  []string{"id", "date_created"},
+		Fields: func(m *ChatMessage) map[string]any {
+			return map[string]any{
+				"id":              &m.ID,
+				"conversation_id": &m.ConversationID,
+				"sender_id":       &m.SenderID,
+				"type":            &m.Type,
+				"content":         &m.Content,
+				"status":          &m.Status,
+				"data":            &m.Data,
+				"date_created":    &m.DateCreated,
+			}
+		},
 	}
 }
 
-func messageListSpec(f ListMessageParams) repolist.Spec[ChatMessage] {
-	return repolist.Spec[ChatMessage]{
-		Table: `"chat"."message"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "int8"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { messageListConds(f, conds, args) },
+// MessageConds maps the filter params to predicates.
+func MessageConds(f ListMessageParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"conversation_id"`, f.ConversationId),
+		repolist.In(`"sender_id"`, f.SenderId),
+		repolist.In(`"type"`, f.Type),
+		repolist.In(`"content"`, f.Content),
+		repolist.In(`"status"`, f.Status),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
 	}
 }
 
 // ListMessage runs offset (?page) or cursor (?cursor/?sort) pagination over "chat"."message".
 func (q *Queries) ListMessage(ctx context.Context, f ListMessageParams) (paginate.PaginateResult[ChatMessage], error) {
-	return repolist.List(ctx, q.db, messageListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, MessageQuery().Filter(MessageConds(f)...))
 }

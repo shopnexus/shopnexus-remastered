@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -26,46 +25,36 @@ type ListFavoriteParams struct {
 	DateCreatedTo   null.Time
 }
 
-func favoriteListConds(f ListFavoriteParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.AccountId != nil {
-		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
-		args["account_id"] = f.AccountId
-	}
-	if f.SpuId != nil {
-		*conds = append(*conds, `"spu_id" = ANY(@spu_id)`)
-		args["spu_id"] = f.SpuId
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
+// FavoriteQuery is the reusable base listing for "account"."favorite".
+func FavoriteQuery() repolist.Query[AccountFavorite] {
+	return repolist.Query[AccountFavorite]{
+		Table: `"account"."favorite"`,
+		PK:    "id",
+		Sort:  []string{"id", "date_created"},
+		Fields: func(m *AccountFavorite) map[string]any {
+			return map[string]any{
+				"id":           &m.ID,
+				"account_id":   &m.AccountID,
+				"spu_id":       &m.SpuID,
+				"date_created": &m.DateCreated,
+			}
+		},
 	}
 }
 
-func favoriteListSpec(f ListFavoriteParams) repolist.Spec[AccountFavorite] {
-	return repolist.Spec[AccountFavorite]{
-		Table: `"account"."favorite"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "int8"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { favoriteListConds(f, conds, args) },
+// FavoriteConds maps the filter params to predicates.
+func FavoriteConds(f ListFavoriteParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"account_id"`, f.AccountId),
+		repolist.In(`"spu_id"`, f.SpuId),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
 	}
 }
 
 // ListFavorite runs offset (?page) or cursor (?cursor/?sort) pagination over "account"."favorite".
 func (q *Queries) ListFavorite(ctx context.Context, f ListFavoriteParams) (paginate.PaginateResult[AccountFavorite], error) {
-	return repolist.List(ctx, q.db, favoriteListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, FavoriteQuery().Filter(FavoriteConds(f)...))
 }

@@ -336,3 +336,46 @@ type OrderTransport struct {
 	Data        json.RawMessage `db:"data" json:"data"`
 	DateCreated time.Time       `db:"date_created" json:"date_created"`
 }
+
+func (n NullOrderDisputeStatus) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.OrderDisputeStatus)
+}
+func (n *NullOrderDisputeStatus) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.OrderDisputeStatus)
+}
+func (n NullOrderRefundStatus) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.OrderRefundStatus)
+}
+func (n *NullOrderRefundStatus) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.OrderRefundStatus)
+}
+func (n NullOrderStatus) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.OrderStatus)
+}
+func (n *NullOrderStatus) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.OrderStatus)
+}

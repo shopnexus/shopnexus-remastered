@@ -290,71 +290,53 @@ func (b *CatalogHandler) ListProductCard(
 	}, nil
 }
 
-// listProductCardFromDB is the Postgres-only path for browsing (no search query) or as fallback.
+// listProductCardFromDB is the Postgres-only path for browsing (no search query)
+// or the vector-search fallback. Pagination + sort (offset or keyset cursor) run
+// through the shared list runtime via ListProductCardBrowse; this layer only
+// resolves the tag pre-filter and enriches the page into cards.
 func (b *CatalogHandler) listProductCardFromDB(
 	ctx restate.Context,
 	params ListProductCardParams,
 ) (paginate.PaginateResult[catalogmodel.ProductCard], error) {
 	var zero paginate.PaginateResult[catalogmodel.ProductCard]
 
-	searchArg := catalogdb.SearchCountProductSpuParams{
-		Limit:  params.Limit,
-		Offset: params.Offset(),
+	browseArg := catalogdb.ListProductCardBrowseParams{
+		Params: params.Params,
+		Search: params.Search, // ILIKE fallback; unset on a normal browse
 	}
 	if params.SellerID.Valid {
-		searchArg.AccountID = []uuid.UUID{params.SellerID.UUID}
+		browseArg.AccountID = []uuid.UUID{params.SellerID.UUID}
 	}
 	if len(params.CategoryID) > 0 {
-		searchArg.CategoryID = params.CategoryID
+		browseArg.CategoryID = params.CategoryID
 	}
 
-	// Tag pre-filter via join table
+	// Tag pre-filter via join table. Fetch ALL tag-matched ids (no limit) so the
+	// browse query sorts + paginates over the whole matched set, not a slice.
 	if len(params.Tags) > 0 {
 		tagRows, err := b.storage.Querier().
 			SearchCountProductSpuByTags(ctx, catalogdb.SearchCountProductSpuByTagsParams{
 				Tags:     params.Tags,
 				TagCount: int32(len(params.Tags)),
-				Limit:    params.Limit,
-				Offset:   params.Offset(),
 			})
 		if err != nil {
 			return zero, fmt.Errorf("db search by tags: %w", err)
 		}
 		if len(tagRows) == 0 {
-			return paginate.PaginateResult[catalogmodel.ProductCard]{
-				PageParams: params.Params,
-				Data:       []catalogmodel.ProductCard{},
-				Total:      null.IntFrom(0),
-			}, nil
+			return zero, nil
 		}
-		searchArg.ID = lo.Map(
+		browseArg.ID = lo.Map(
 			tagRows,
 			func(r catalogdb.SearchCountProductSpuByTagsRow, _ int) uuid.UUID { return r.ID },
 		)
 	}
 
-	// ILIKE fallback when search is set but vector search failed
-	if params.Search.Valid {
-		searchArg.Name = params.Search
-		searchArg.Description = params.Search
-		searchArg.Slug = params.Search
-	}
-
-	var total null.Int64
-
-	rows, err := b.storage.Querier().SearchCountProductSpu(ctx, searchArg)
+	res, err := b.storage.Querier().ListProductCardBrowse(ctx, browseArg)
 	if err != nil {
-		return zero, fmt.Errorf("db search product spu: %w", err)
-	}
-	if len(rows) > 0 {
-		total.SetValid(rows[0].TotalCount)
+		return zero, fmt.Errorf("db list product card browse: %w", err)
 	}
 
-	spuIDs := lo.Map(
-		rows,
-		func(r catalogdb.SearchCountProductSpuRow, _ int) uuid.UUID { return r.CatalogProductSpu.ID },
-	)
-
+	spuIDs := lo.Map(res.Data, func(s catalogdb.CatalogProductSpu, _ int) uuid.UUID { return s.ID })
 	productCardMap, err := b.buildProductCards(ctx, spuIDs, params.AccountID)
 	if err != nil {
 		return zero, fmt.Errorf("build product cards: %w", err)
@@ -368,9 +350,10 @@ func (b *CatalogHandler) listProductCardFromDB(
 	}
 
 	return paginate.PaginateResult[catalogmodel.ProductCard]{
-		PageParams: params.Params,
+		PageParams: res.PageParams,
 		Data:       products,
-		Total:      total,
+		Total:      res.Total,
+		NextCursor: res.NextCursor,
 	}, nil
 }
 

@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -36,88 +35,52 @@ type ListContactParams struct {
 	LongitudeTo     null.Float
 }
 
-func contactListConds(f ListContactParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.AccountId != nil {
-		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
-		args["account_id"] = f.AccountId
-	}
-	if f.FullName != nil {
-		*conds = append(*conds, `"full_name" = ANY(@full_name)`)
-		args["full_name"] = f.FullName
-	}
-	if f.Phone != nil {
-		*conds = append(*conds, `"phone" = ANY(@phone)`)
-		args["phone"] = f.Phone
-	}
-	if f.PhoneVerified != nil {
-		*conds = append(*conds, `"phone_verified" = ANY(@phone_verified)`)
-		args["phone_verified"] = f.PhoneVerified
-	}
-	if f.AddressType != nil {
-		*conds = append(*conds, `"address_type" = ANY(@address_type)`)
-		args["address_type"] = f.AddressType
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
-	}
-	if f.Address != nil {
-		*conds = append(*conds, `"address" = ANY(@address)`)
-		args["address"] = f.Address
-	}
-	if f.Latitude != nil {
-		*conds = append(*conds, `"latitude" = ANY(@latitude)`)
-		args["latitude"] = f.Latitude
-	}
-	if f.LatitudeFrom.Valid {
-		*conds = append(*conds, `"latitude" >= @latitude_from`)
-		args["latitude_from"] = f.LatitudeFrom.Float64
-	}
-	if f.LatitudeTo.Valid {
-		*conds = append(*conds, `"latitude" <= @latitude_to`)
-		args["latitude_to"] = f.LatitudeTo.Float64
-	}
-	if f.Longitude != nil {
-		*conds = append(*conds, `"longitude" = ANY(@longitude)`)
-		args["longitude"] = f.Longitude
-	}
-	if f.LongitudeFrom.Valid {
-		*conds = append(*conds, `"longitude" >= @longitude_from`)
-		args["longitude_from"] = f.LongitudeFrom.Float64
-	}
-	if f.LongitudeTo.Valid {
-		*conds = append(*conds, `"longitude" <= @longitude_to`)
-		args["longitude_to"] = f.LongitudeTo.Float64
+// ContactQuery is the reusable base listing for "account"."contact".
+func ContactQuery() repolist.Query[AccountContact] {
+	return repolist.Query[AccountContact]{
+		Table: `"account"."contact"`,
+		PK:    "id",
+		Sort:  []string{"id", "date_created", "latitude", "longitude"},
+		Fields: func(m *AccountContact) map[string]any {
+			return map[string]any{
+				"id":             &m.ID,
+				"account_id":     &m.AccountID,
+				"full_name":      &m.FullName,
+				"phone":          &m.Phone,
+				"phone_verified": &m.PhoneVerified,
+				"address_type":   &m.AddressType,
+				"date_created":   &m.DateCreated,
+				"address":        &m.Address,
+				"latitude":       &m.Latitude,
+				"longitude":      &m.Longitude,
+			}
+		},
 	}
 }
 
-func contactListSpec(f ListContactParams) repolist.Spec[AccountContact] {
-	return repolist.Spec[AccountContact]{
-		Table: `"account"."contact"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "uuid"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-			"latitude":     {Col: `"latitude"`, Cast: "float8"},
-			"longitude":    {Col: `"longitude"`, Cast: "float8"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { contactListConds(f, conds, args) },
+// ContactConds maps the filter params to predicates.
+func ContactConds(f ListContactParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"account_id"`, f.AccountId),
+		repolist.In(`"full_name"`, f.FullName),
+		repolist.In(`"phone"`, f.Phone),
+		repolist.In(`"phone_verified"`, f.PhoneVerified),
+		repolist.In(`"address_type"`, f.AddressType),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+		repolist.In(`"address"`, f.Address),
+		repolist.In(`"latitude"`, f.Latitude),
+		repolist.Gte(`"latitude"`, f.LatitudeFrom),
+		repolist.Lte(`"latitude"`, f.LatitudeTo),
+		repolist.In(`"longitude"`, f.Longitude),
+		repolist.Gte(`"longitude"`, f.LongitudeFrom),
+		repolist.Lte(`"longitude"`, f.LongitudeTo),
 	}
 }
 
 // ListContact runs offset (?page) or cursor (?cursor/?sort) pagination over "account"."contact".
 func (q *Queries) ListContact(ctx context.Context, f ListContactParams) (paginate.PaginateResult[AccountContact], error) {
-	return repolist.List(ctx, q.db, contactListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, ContactQuery().Filter(ContactConds(f)...))
 }

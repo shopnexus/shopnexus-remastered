@@ -5,7 +5,6 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -22,37 +21,34 @@ type ListCategoryParams struct {
 	ParentId    []uuid.UUID
 }
 
-func categoryListConds(f ListCategoryParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.Name != nil {
-		*conds = append(*conds, `"name" = ANY(@name)`)
-		args["name"] = f.Name
-	}
-	if f.Description != nil {
-		*conds = append(*conds, `"description" = ANY(@description)`)
-		args["description"] = f.Description
-	}
-	if f.ParentId != nil {
-		*conds = append(*conds, `"parent_id" = ANY(@parent_id)`)
-		args["parent_id"] = f.ParentId
+// CategoryQuery is the reusable base listing for "catalog"."category".
+func CategoryQuery() repolist.Query[CatalogCategory] {
+	return repolist.Query[CatalogCategory]{
+		Table: `"catalog"."category"`,
+		PK:    "id",
+		Sort:  []string{"id"},
+		Fields: func(m *CatalogCategory) map[string]any {
+			return map[string]any{
+				"id":          &m.ID,
+				"name":        &m.Name,
+				"description": &m.Description,
+				"parent_id":   &m.ParentID,
+			}
+		},
 	}
 }
 
-func categoryListSpec(f ListCategoryParams) repolist.Spec[CatalogCategory] {
-	return repolist.Spec[CatalogCategory]{
-		Table: `"catalog"."category"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id": {Col: `"id"`, Cast: "uuid"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { categoryListConds(f, conds, args) },
+// CategoryConds maps the filter params to predicates.
+func CategoryConds(f ListCategoryParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"name"`, f.Name),
+		repolist.In(`"description"`, f.Description),
+		repolist.In(`"parent_id"`, f.ParentId),
 	}
 }
 
 // ListCategory runs offset (?page) or cursor (?cursor/?sort) pagination over "catalog"."category".
 func (q *Queries) ListCategory(ctx context.Context, f ListCategoryParams) (paginate.PaginateResult[CatalogCategory], error) {
-	return repolist.List(ctx, q.db, categoryListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, CategoryQuery().Filter(CategoryConds(f)...))
 }

@@ -210,33 +210,45 @@ WHERE (
     ("date_updated" <= $19 OR $19 IS NULL) AND
     ("date_deleted" = ANY($20) OR $20 IS NULL) AND
     ("date_deleted" >= $21 OR $21 IS NULL) AND
-    ("date_deleted" <= $22 OR $22 IS NULL)
+    ("date_deleted" <= $22 OR $22 IS NULL) AND
+    ("cached_price" = ANY($23) OR $23 IS NULL) AND
+    ("cached_price" >= $24 OR $24 IS NULL) AND
+    ("cached_price" <= $25 OR $25 IS NULL) AND
+    ("cached_rating" = ANY($26) OR $26 IS NULL) AND
+    ("cached_rating" >= $27 OR $27 IS NULL) AND
+    ("cached_rating" <= $28 OR $28 IS NULL)
 )
 `
 
 type CountProductSpuParams struct {
-	ID              []uuid.UUID       `db:"id" json:"id"`
-	Number          []int64           `db:"number" json:"number"`
-	NumberFrom      null.Int          `db:"number_from" json:"number_from"`
-	NumberTo        null.Int          `db:"number_to" json:"number_to"`
-	Slug            []string          `db:"slug" json:"slug"`
-	AccountID       []uuid.UUID       `db:"account_id" json:"account_id"`
-	CategoryID      []uuid.UUID       `db:"category_id" json:"category_id"`
-	FeaturedSkuID   []uuid.NullUUID   `db:"featured_sku_id" json:"featured_sku_id"`
-	Name            []string          `db:"name" json:"name"`
-	Description     []string          `db:"description" json:"description"`
-	IsEnabled       []bool            `db:"is_enabled" json:"is_enabled"`
-	Currency        []string          `db:"currency" json:"currency"`
-	Specifications  []json.RawMessage `db:"specifications" json:"specifications"`
-	DateCreated     []time.Time       `db:"date_created" json:"date_created"`
-	DateCreatedFrom null.Time         `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo   null.Time         `db:"date_created_to" json:"date_created_to"`
-	DateUpdated     []time.Time       `db:"date_updated" json:"date_updated"`
-	DateUpdatedFrom null.Time         `db:"date_updated_from" json:"date_updated_from"`
-	DateUpdatedTo   null.Time         `db:"date_updated_to" json:"date_updated_to"`
-	DateDeleted     []null.Time       `db:"date_deleted" json:"date_deleted"`
-	DateDeletedFrom null.Time         `db:"date_deleted_from" json:"date_deleted_from"`
-	DateDeletedTo   null.Time         `db:"date_deleted_to" json:"date_deleted_to"`
+	ID               []uuid.UUID       `db:"id" json:"id"`
+	Number           []int64           `db:"number" json:"number"`
+	NumberFrom       null.Int          `db:"number_from" json:"number_from"`
+	NumberTo         null.Int          `db:"number_to" json:"number_to"`
+	Slug             []string          `db:"slug" json:"slug"`
+	AccountID        []uuid.UUID       `db:"account_id" json:"account_id"`
+	CategoryID       []uuid.UUID       `db:"category_id" json:"category_id"`
+	FeaturedSkuID    []uuid.NullUUID   `db:"featured_sku_id" json:"featured_sku_id"`
+	Name             []string          `db:"name" json:"name"`
+	Description      []string          `db:"description" json:"description"`
+	IsEnabled        []bool            `db:"is_enabled" json:"is_enabled"`
+	Currency         []string          `db:"currency" json:"currency"`
+	Specifications   []json.RawMessage `db:"specifications" json:"specifications"`
+	DateCreated      []time.Time       `db:"date_created" json:"date_created"`
+	DateCreatedFrom  null.Time         `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo    null.Time         `db:"date_created_to" json:"date_created_to"`
+	DateUpdated      []time.Time       `db:"date_updated" json:"date_updated"`
+	DateUpdatedFrom  null.Time         `db:"date_updated_from" json:"date_updated_from"`
+	DateUpdatedTo    null.Time         `db:"date_updated_to" json:"date_updated_to"`
+	DateDeleted      []null.Time       `db:"date_deleted" json:"date_deleted"`
+	DateDeletedFrom  null.Time         `db:"date_deleted_from" json:"date_deleted_from"`
+	DateDeletedTo    null.Time         `db:"date_deleted_to" json:"date_deleted_to"`
+	CachedPrice      []int64           `db:"cached_price" json:"cached_price"`
+	CachedPriceFrom  null.Int          `db:"cached_price_from" json:"cached_price_from"`
+	CachedPriceTo    null.Int          `db:"cached_price_to" json:"cached_price_to"`
+	CachedRating     []float64         `db:"cached_rating" json:"cached_rating"`
+	CachedRatingFrom null.Float        `db:"cached_rating_from" json:"cached_rating_from"`
+	CachedRatingTo   null.Float        `db:"cached_rating_to" json:"cached_rating_to"`
 }
 
 func (q *Queries) CountProductSpu(ctx context.Context, arg CountProductSpuParams) (int64, error) {
@@ -263,6 +275,12 @@ func (q *Queries) CountProductSpu(ctx context.Context, arg CountProductSpuParams
 		arg.DateDeleted,
 		arg.DateDeletedFrom,
 		arg.DateDeletedTo,
+		arg.CachedPrice,
+		arg.CachedPriceFrom,
+		arg.CachedPriceTo,
+		arg.CachedRating,
+		arg.CachedRatingFrom,
+		arg.CachedRatingTo,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -543,6 +561,8 @@ type CreateCopyProductSpuParams struct {
 	DateCreated    time.Time       `db:"date_created" json:"date_created"`
 	DateUpdated    time.Time       `db:"date_updated" json:"date_updated"`
 	DateDeleted    null.Time       `db:"date_deleted" json:"date_deleted"`
+	CachedPrice    int64           `db:"cached_price" json:"cached_price"`
+	CachedRating   float64         `db:"cached_rating" json:"cached_rating"`
 }
 
 type CreateCopyProductSpuTagParams struct {
@@ -670,7 +690,7 @@ func (q *Queries) CreateDefaultProductSku(ctx context.Context, arg CreateDefault
 const createDefaultProductSpu = `-- name: CreateDefaultProductSpu :one
 INSERT INTO "catalog"."product_spu" ("slug", "account_id", "category_id", "featured_sku_id", "name", "description", "is_enabled", "currency", "specifications", "date_deleted")
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, number, slug, account_id, category_id, featured_sku_id, name, description, is_enabled, currency, specifications, date_created, date_updated, date_deleted
+RETURNING id, number, slug, account_id, category_id, featured_sku_id, name, description, is_enabled, currency, specifications, date_created, date_updated, date_deleted, cached_price, cached_rating
 `
 
 type CreateDefaultProductSpuParams struct {
@@ -715,6 +735,8 @@ func (q *Queries) CreateDefaultProductSpu(ctx context.Context, arg CreateDefault
 		&i.DateCreated,
 		&i.DateUpdated,
 		&i.DateDeleted,
+		&i.CachedPrice,
+		&i.CachedRating,
 	)
 	return i, err
 }
@@ -824,9 +846,9 @@ func (q *Queries) CreateProductSku(ctx context.Context, arg CreateProductSkuPara
 }
 
 const createProductSpu = `-- name: CreateProductSpu :one
-INSERT INTO "catalog"."product_spu" ("id", "slug", "account_id", "category_id", "featured_sku_id", "name", "description", "is_enabled", "currency", "specifications", "date_created", "date_updated", "date_deleted")
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-RETURNING id, number, slug, account_id, category_id, featured_sku_id, name, description, is_enabled, currency, specifications, date_created, date_updated, date_deleted
+INSERT INTO "catalog"."product_spu" ("id", "slug", "account_id", "category_id", "featured_sku_id", "name", "description", "is_enabled", "currency", "specifications", "date_created", "date_updated", "date_deleted", "cached_price", "cached_rating")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+RETURNING id, number, slug, account_id, category_id, featured_sku_id, name, description, is_enabled, currency, specifications, date_created, date_updated, date_deleted, cached_price, cached_rating
 `
 
 type CreateProductSpuParams struct {
@@ -843,6 +865,8 @@ type CreateProductSpuParams struct {
 	DateCreated    time.Time       `db:"date_created" json:"date_created"`
 	DateUpdated    time.Time       `db:"date_updated" json:"date_updated"`
 	DateDeleted    null.Time       `db:"date_deleted" json:"date_deleted"`
+	CachedPrice    int64           `db:"cached_price" json:"cached_price"`
+	CachedRating   float64         `db:"cached_rating" json:"cached_rating"`
 }
 
 func (q *Queries) CreateProductSpu(ctx context.Context, arg CreateProductSpuParams) (CatalogProductSpu, error) {
@@ -860,6 +884,8 @@ func (q *Queries) CreateProductSpu(ctx context.Context, arg CreateProductSpuPara
 		arg.DateCreated,
 		arg.DateUpdated,
 		arg.DateDeleted,
+		arg.CachedPrice,
+		arg.CachedRating,
 	)
 	var i CatalogProductSpu
 	err := row.Scan(
@@ -877,6 +903,8 @@ func (q *Queries) CreateProductSpu(ctx context.Context, arg CreateProductSpuPara
 		&i.DateCreated,
 		&i.DateUpdated,
 		&i.DateDeleted,
+		&i.CachedPrice,
+		&i.CachedRating,
 	)
 	return i, err
 }
@@ -1138,33 +1166,45 @@ WHERE (
     ("date_updated" <= $19 OR $19 IS NULL) AND
     ("date_deleted" = ANY($20) OR $20 IS NULL) AND
     ("date_deleted" >= $21 OR $21 IS NULL) AND
-    ("date_deleted" <= $22 OR $22 IS NULL)
+    ("date_deleted" <= $22 OR $22 IS NULL) AND
+    ("cached_price" = ANY($23) OR $23 IS NULL) AND
+    ("cached_price" >= $24 OR $24 IS NULL) AND
+    ("cached_price" <= $25 OR $25 IS NULL) AND
+    ("cached_rating" = ANY($26) OR $26 IS NULL) AND
+    ("cached_rating" >= $27 OR $27 IS NULL) AND
+    ("cached_rating" <= $28 OR $28 IS NULL)
 )
 `
 
 type DeleteProductSpuParams struct {
-	ID              []uuid.UUID       `db:"id" json:"id"`
-	Number          []int64           `db:"number" json:"number"`
-	NumberFrom      null.Int          `db:"number_from" json:"number_from"`
-	NumberTo        null.Int          `db:"number_to" json:"number_to"`
-	Slug            []string          `db:"slug" json:"slug"`
-	AccountID       []uuid.UUID       `db:"account_id" json:"account_id"`
-	CategoryID      []uuid.UUID       `db:"category_id" json:"category_id"`
-	FeaturedSkuID   []uuid.NullUUID   `db:"featured_sku_id" json:"featured_sku_id"`
-	Name            []string          `db:"name" json:"name"`
-	Description     []string          `db:"description" json:"description"`
-	IsEnabled       []bool            `db:"is_enabled" json:"is_enabled"`
-	Currency        []string          `db:"currency" json:"currency"`
-	Specifications  []json.RawMessage `db:"specifications" json:"specifications"`
-	DateCreated     []time.Time       `db:"date_created" json:"date_created"`
-	DateCreatedFrom null.Time         `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo   null.Time         `db:"date_created_to" json:"date_created_to"`
-	DateUpdated     []time.Time       `db:"date_updated" json:"date_updated"`
-	DateUpdatedFrom null.Time         `db:"date_updated_from" json:"date_updated_from"`
-	DateUpdatedTo   null.Time         `db:"date_updated_to" json:"date_updated_to"`
-	DateDeleted     []null.Time       `db:"date_deleted" json:"date_deleted"`
-	DateDeletedFrom null.Time         `db:"date_deleted_from" json:"date_deleted_from"`
-	DateDeletedTo   null.Time         `db:"date_deleted_to" json:"date_deleted_to"`
+	ID               []uuid.UUID       `db:"id" json:"id"`
+	Number           []int64           `db:"number" json:"number"`
+	NumberFrom       null.Int          `db:"number_from" json:"number_from"`
+	NumberTo         null.Int          `db:"number_to" json:"number_to"`
+	Slug             []string          `db:"slug" json:"slug"`
+	AccountID        []uuid.UUID       `db:"account_id" json:"account_id"`
+	CategoryID       []uuid.UUID       `db:"category_id" json:"category_id"`
+	FeaturedSkuID    []uuid.NullUUID   `db:"featured_sku_id" json:"featured_sku_id"`
+	Name             []string          `db:"name" json:"name"`
+	Description      []string          `db:"description" json:"description"`
+	IsEnabled        []bool            `db:"is_enabled" json:"is_enabled"`
+	Currency         []string          `db:"currency" json:"currency"`
+	Specifications   []json.RawMessage `db:"specifications" json:"specifications"`
+	DateCreated      []time.Time       `db:"date_created" json:"date_created"`
+	DateCreatedFrom  null.Time         `db:"date_created_from" json:"date_created_from"`
+	DateCreatedTo    null.Time         `db:"date_created_to" json:"date_created_to"`
+	DateUpdated      []time.Time       `db:"date_updated" json:"date_updated"`
+	DateUpdatedFrom  null.Time         `db:"date_updated_from" json:"date_updated_from"`
+	DateUpdatedTo    null.Time         `db:"date_updated_to" json:"date_updated_to"`
+	DateDeleted      []null.Time       `db:"date_deleted" json:"date_deleted"`
+	DateDeletedFrom  null.Time         `db:"date_deleted_from" json:"date_deleted_from"`
+	DateDeletedTo    null.Time         `db:"date_deleted_to" json:"date_deleted_to"`
+	CachedPrice      []int64           `db:"cached_price" json:"cached_price"`
+	CachedPriceFrom  null.Int          `db:"cached_price_from" json:"cached_price_from"`
+	CachedPriceTo    null.Int          `db:"cached_price_to" json:"cached_price_to"`
+	CachedRating     []float64         `db:"cached_rating" json:"cached_rating"`
+	CachedRatingFrom null.Float        `db:"cached_rating_from" json:"cached_rating_from"`
+	CachedRatingTo   null.Float        `db:"cached_rating_to" json:"cached_rating_to"`
 }
 
 func (q *Queries) DeleteProductSpu(ctx context.Context, arg DeleteProductSpuParams) error {
@@ -1191,6 +1231,12 @@ func (q *Queries) DeleteProductSpu(ctx context.Context, arg DeleteProductSpuPara
 		arg.DateDeleted,
 		arg.DateDeletedFrom,
 		arg.DateDeletedTo,
+		arg.CachedPrice,
+		arg.CachedPriceFrom,
+		arg.CachedPriceTo,
+		arg.CachedRating,
+		arg.CachedRatingFrom,
+		arg.CachedRatingTo,
 	)
 	return err
 }
@@ -1368,7 +1414,7 @@ func (q *Queries) GetProductSku(ctx context.Context, id uuid.NullUUID) (CatalogP
 
 const getProductSpu = `-- name: GetProductSpu :one
 
-SELECT id, number, slug, account_id, category_id, featured_sku_id, name, description, is_enabled, currency, specifications, date_created, date_updated, date_deleted
+SELECT id, number, slug, account_id, category_id, featured_sku_id, name, description, is_enabled, currency, specifications, date_created, date_updated, date_deleted, cached_price, cached_rating
 FROM "catalog"."product_spu"
 WHERE ("id" = $1) OR ("slug" = $2) OR ("featured_sku_id" = $3)
 `
@@ -1400,6 +1446,8 @@ func (q *Queries) GetProductSpu(ctx context.Context, arg GetProductSpuParams) (C
 		&i.DateCreated,
 		&i.DateUpdated,
 		&i.DateDeleted,
+		&i.CachedPrice,
+		&i.CachedRating,
 	)
 	return i, err
 }
@@ -1636,9 +1684,11 @@ SET "slug" = COALESCE($1, "slug"),
     "specifications" = COALESCE($10, "specifications"),
     "date_created" = COALESCE($11, "date_created"),
     "date_updated" = COALESCE($12, "date_updated"),
-    "date_deleted" = CASE WHEN $13::bool = TRUE THEN NULL ELSE COALESCE($14, "date_deleted") END
-WHERE "id" = $15
-RETURNING id, number, slug, account_id, category_id, featured_sku_id, name, description, is_enabled, currency, specifications, date_created, date_updated, date_deleted
+    "date_deleted" = CASE WHEN $13::bool = TRUE THEN NULL ELSE COALESCE($14, "date_deleted") END,
+    "cached_price" = COALESCE($15, "cached_price"),
+    "cached_rating" = COALESCE($16, "cached_rating")
+WHERE "id" = $17
+RETURNING id, number, slug, account_id, category_id, featured_sku_id, name, description, is_enabled, currency, specifications, date_created, date_updated, date_deleted, cached_price, cached_rating
 `
 
 type UpdateProductSpuParams struct {
@@ -1656,6 +1706,8 @@ type UpdateProductSpuParams struct {
 	DateUpdated       null.Time       `db:"date_updated" json:"date_updated"`
 	NullDateDeleted   bool            `db:"null_date_deleted" json:"null_date_deleted"`
 	DateDeleted       null.Time       `db:"date_deleted" json:"date_deleted"`
+	CachedPrice       null.Int        `db:"cached_price" json:"cached_price"`
+	CachedRating      null.Float      `db:"cached_rating" json:"cached_rating"`
 	ID                uuid.UUID       `db:"id" json:"id"`
 }
 
@@ -1675,6 +1727,8 @@ func (q *Queries) UpdateProductSpu(ctx context.Context, arg UpdateProductSpuPara
 		arg.DateUpdated,
 		arg.NullDateDeleted,
 		arg.DateDeleted,
+		arg.CachedPrice,
+		arg.CachedRating,
 		arg.ID,
 	)
 	var i CatalogProductSpu
@@ -1693,6 +1747,8 @@ func (q *Queries) UpdateProductSpu(ctx context.Context, arg UpdateProductSpuPara
 		&i.DateCreated,
 		&i.DateUpdated,
 		&i.DateDeleted,
+		&i.CachedPrice,
+		&i.CachedRating,
 	)
 	return i, err
 }

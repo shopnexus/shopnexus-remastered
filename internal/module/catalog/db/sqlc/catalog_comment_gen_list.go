@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -41,110 +40,58 @@ type ListCommentParams struct {
 	DateUpdatedTo   null.Time
 }
 
-func commentListConds(f ListCommentParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.AccountId != nil {
-		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
-		args["account_id"] = f.AccountId
-	}
-	if f.OrderId != nil {
-		*conds = append(*conds, `"order_id" = ANY(@order_id)`)
-		args["order_id"] = f.OrderId
-	}
-	if f.RefType != nil {
-		*conds = append(*conds, `"ref_type" = ANY(@ref_type)`)
-		args["ref_type"] = f.RefType
-	}
-	if f.RefId != nil {
-		*conds = append(*conds, `"ref_id" = ANY(@ref_id)`)
-		args["ref_id"] = f.RefId
-	}
-	if f.Body != nil {
-		*conds = append(*conds, `"body" = ANY(@body)`)
-		args["body"] = f.Body
-	}
-	if f.Upvote != nil {
-		*conds = append(*conds, `"upvote" = ANY(@upvote)`)
-		args["upvote"] = f.Upvote
-	}
-	if f.UpvoteFrom.Valid {
-		*conds = append(*conds, `"upvote" >= @upvote_from`)
-		args["upvote_from"] = f.UpvoteFrom.Int64
-	}
-	if f.UpvoteTo.Valid {
-		*conds = append(*conds, `"upvote" <= @upvote_to`)
-		args["upvote_to"] = f.UpvoteTo.Int64
-	}
-	if f.Downvote != nil {
-		*conds = append(*conds, `"downvote" = ANY(@downvote)`)
-		args["downvote"] = f.Downvote
-	}
-	if f.DownvoteFrom.Valid {
-		*conds = append(*conds, `"downvote" >= @downvote_from`)
-		args["downvote_from"] = f.DownvoteFrom.Int64
-	}
-	if f.DownvoteTo.Valid {
-		*conds = append(*conds, `"downvote" <= @downvote_to`)
-		args["downvote_to"] = f.DownvoteTo.Int64
-	}
-	if f.Score != nil {
-		*conds = append(*conds, `"score" = ANY(@score)`)
-		args["score"] = f.Score
-	}
-	if f.ScoreFrom.Valid {
-		*conds = append(*conds, `"score" >= @score_from`)
-		args["score_from"] = f.ScoreFrom.Float64
-	}
-	if f.ScoreTo.Valid {
-		*conds = append(*conds, `"score" <= @score_to`)
-		args["score_to"] = f.ScoreTo.Float64
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
-	}
-	if f.DateUpdated != nil {
-		*conds = append(*conds, `"date_updated" = ANY(@date_updated)`)
-		args["date_updated"] = f.DateUpdated
-	}
-	if f.DateUpdatedFrom.Valid {
-		*conds = append(*conds, `"date_updated" >= @date_updated_from`)
-		args["date_updated_from"] = f.DateUpdatedFrom.Time
-	}
-	if f.DateUpdatedTo.Valid {
-		*conds = append(*conds, `"date_updated" <= @date_updated_to`)
-		args["date_updated_to"] = f.DateUpdatedTo.Time
+// CommentQuery is the reusable base listing for "catalog"."comment".
+func CommentQuery() repolist.Query[CatalogComment] {
+	return repolist.Query[CatalogComment]{
+		Table: `"catalog"."comment"`,
+		PK:    "id",
+		Sort:  []string{"id", "upvote", "downvote", "score", "date_created", "date_updated"},
+		Fields: func(m *CatalogComment) map[string]any {
+			return map[string]any{
+				"id":           &m.ID,
+				"account_id":   &m.AccountID,
+				"order_id":     &m.OrderID,
+				"ref_type":     &m.RefType,
+				"ref_id":       &m.RefID,
+				"body":         &m.Body,
+				"upvote":       &m.Upvote,
+				"downvote":     &m.Downvote,
+				"score":        &m.Score,
+				"date_created": &m.DateCreated,
+				"date_updated": &m.DateUpdated,
+			}
+		},
 	}
 }
 
-func commentListSpec(f ListCommentParams) repolist.Spec[CatalogComment] {
-	return repolist.Spec[CatalogComment]{
-		Table: `"catalog"."comment"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "uuid"},
-			"upvote":       {Col: `"upvote"`, Cast: "int8"},
-			"downvote":     {Col: `"downvote"`, Cast: "int8"},
-			"score":        {Col: `"score"`, Cast: "float8"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-			"date_updated": {Col: `"date_updated"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { commentListConds(f, conds, args) },
+// CommentConds maps the filter params to predicates.
+func CommentConds(f ListCommentParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"account_id"`, f.AccountId),
+		repolist.In(`"order_id"`, f.OrderId),
+		repolist.In(`"ref_type"`, f.RefType),
+		repolist.In(`"ref_id"`, f.RefId),
+		repolist.In(`"body"`, f.Body),
+		repolist.In(`"upvote"`, f.Upvote),
+		repolist.Gte(`"upvote"`, f.UpvoteFrom),
+		repolist.Lte(`"upvote"`, f.UpvoteTo),
+		repolist.In(`"downvote"`, f.Downvote),
+		repolist.Gte(`"downvote"`, f.DownvoteFrom),
+		repolist.Lte(`"downvote"`, f.DownvoteTo),
+		repolist.In(`"score"`, f.Score),
+		repolist.Gte(`"score"`, f.ScoreFrom),
+		repolist.Lte(`"score"`, f.ScoreTo),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+		repolist.In(`"date_updated"`, f.DateUpdated),
+		repolist.Gte(`"date_updated"`, f.DateUpdatedFrom),
+		repolist.Lte(`"date_updated"`, f.DateUpdatedTo),
 	}
 }
 
 // ListComment runs offset (?page) or cursor (?cursor/?sort) pagination over "catalog"."comment".
 func (q *Queries) ListComment(ctx context.Context, f ListCommentParams) (paginate.PaginateResult[CatalogComment], error) {
-	return repolist.List(ctx, q.db, commentListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, CommentQuery().Filter(CommentConds(f)...))
 }

@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -33,74 +32,48 @@ type ListRefundDisputeParams struct {
 	ResolutionNote   []string
 }
 
-func refundDisputeListConds(f ListRefundDisputeParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.RefundId != nil {
-		*conds = append(*conds, `"refund_id" = ANY(@refund_id)`)
-		args["refund_id"] = f.RefundId
-	}
-	if f.AccountId != nil {
-		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
-		args["account_id"] = f.AccountId
-	}
-	if f.Reason != nil {
-		*conds = append(*conds, `"reason" = ANY(@reason)`)
-		args["reason"] = f.Reason
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
-	}
-	if f.Status != nil {
-		*conds = append(*conds, `"status" = ANY(@status)`)
-		args["status"] = f.Status
-	}
-	if f.ResolvedById != nil {
-		*conds = append(*conds, `"resolved_by_id" = ANY(@resolved_by_id)`)
-		args["resolved_by_id"] = f.ResolvedById
-	}
-	if f.DateResolved != nil {
-		*conds = append(*conds, `"date_resolved" = ANY(@date_resolved)`)
-		args["date_resolved"] = f.DateResolved
-	}
-	if f.DateResolvedFrom.Valid {
-		*conds = append(*conds, `"date_resolved" >= @date_resolved_from`)
-		args["date_resolved_from"] = f.DateResolvedFrom.Time
-	}
-	if f.DateResolvedTo.Valid {
-		*conds = append(*conds, `"date_resolved" <= @date_resolved_to`)
-		args["date_resolved_to"] = f.DateResolvedTo.Time
-	}
-	if f.ResolutionNote != nil {
-		*conds = append(*conds, `"resolution_note" = ANY(@resolution_note)`)
-		args["resolution_note"] = f.ResolutionNote
+// RefundDisputeQuery is the reusable base listing for "order"."refund_dispute".
+func RefundDisputeQuery() repolist.Query[OrderRefundDispute] {
+	return repolist.Query[OrderRefundDispute]{
+		Table: `"order"."refund_dispute"`,
+		PK:    "id",
+		Sort:  []string{"id", "date_created"},
+		Fields: func(m *OrderRefundDispute) map[string]any {
+			return map[string]any{
+				"id":              &m.ID,
+				"refund_id":       &m.RefundID,
+				"account_id":      &m.AccountID,
+				"reason":          &m.Reason,
+				"date_created":    &m.DateCreated,
+				"status":          &m.Status,
+				"resolved_by_id":  &m.ResolvedByID,
+				"date_resolved":   &m.DateResolved,
+				"resolution_note": &m.ResolutionNote,
+			}
+		},
 	}
 }
 
-func refundDisputeListSpec(f ListRefundDisputeParams) repolist.Spec[OrderRefundDispute] {
-	return repolist.Spec[OrderRefundDispute]{
-		Table: `"order"."refund_dispute"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "uuid"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { refundDisputeListConds(f, conds, args) },
+// RefundDisputeConds maps the filter params to predicates.
+func RefundDisputeConds(f ListRefundDisputeParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"refund_id"`, f.RefundId),
+		repolist.In(`"account_id"`, f.AccountId),
+		repolist.In(`"reason"`, f.Reason),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+		repolist.In(`"status"`, f.Status),
+		repolist.In(`"resolved_by_id"`, f.ResolvedById),
+		repolist.In(`"date_resolved"`, f.DateResolved),
+		repolist.Gte(`"date_resolved"`, f.DateResolvedFrom),
+		repolist.Lte(`"date_resolved"`, f.DateResolvedTo),
+		repolist.In(`"resolution_note"`, f.ResolutionNote),
 	}
 }
 
 // ListRefundDispute runs offset (?page) or cursor (?cursor/?sort) pagination over "order"."refund_dispute".
 func (q *Queries) ListRefundDispute(ctx context.Context, f ListRefundDisputeParams) (paginate.PaginateResult[OrderRefundDispute], error) {
-	return repolist.List(ctx, q.db, refundDisputeListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, RefundDisputeQuery().Filter(RefundDisputeConds(f)...))
 }

@@ -5,7 +5,6 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -22,37 +21,34 @@ type ListRefParams struct {
 	RefId       []uuid.UUID
 }
 
-func refListConds(f ListRefParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.PromotionId != nil {
-		*conds = append(*conds, `"promotion_id" = ANY(@promotion_id)`)
-		args["promotion_id"] = f.PromotionId
-	}
-	if f.RefType != nil {
-		*conds = append(*conds, `"ref_type" = ANY(@ref_type)`)
-		args["ref_type"] = f.RefType
-	}
-	if f.RefId != nil {
-		*conds = append(*conds, `"ref_id" = ANY(@ref_id)`)
-		args["ref_id"] = f.RefId
+// RefQuery is the reusable base listing for "promotion"."ref".
+func RefQuery() repolist.Query[PromotionRef] {
+	return repolist.Query[PromotionRef]{
+		Table: `"promotion"."ref"`,
+		PK:    "id",
+		Sort:  []string{"id"},
+		Fields: func(m *PromotionRef) map[string]any {
+			return map[string]any{
+				"id":           &m.ID,
+				"promotion_id": &m.PromotionID,
+				"ref_type":     &m.RefType,
+				"ref_id":       &m.RefID,
+			}
+		},
 	}
 }
 
-func refListSpec(f ListRefParams) repolist.Spec[PromotionRef] {
-	return repolist.Spec[PromotionRef]{
-		Table: `"promotion"."ref"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id": {Col: `"id"`, Cast: "int8"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { refListConds(f, conds, args) },
+// RefConds maps the filter params to predicates.
+func RefConds(f ListRefParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"promotion_id"`, f.PromotionId),
+		repolist.In(`"ref_type"`, f.RefType),
+		repolist.In(`"ref_id"`, f.RefId),
 	}
 }
 
 // ListRef runs offset (?page) or cursor (?cursor/?sort) pagination over "promotion"."ref".
 func (q *Queries) ListRef(ctx context.Context, f ListRefParams) (paginate.PaginateResult[PromotionRef], error) {
-	return repolist.List(ctx, q.db, refListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, RefQuery().Filter(RefConds(f)...))
 }

@@ -1,133 +1,163 @@
 package repolist
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
-
-	"github.com/jackc/pgx/v5"
-
-	"shopnexus-server/internal/shared/paginate"
+	"time"
 )
 
-func testSpec() Spec[struct{}] {
-	return Spec[struct{}]{
+type testRow struct {
+	ID          string    `json:"id"`
+	DateCreated time.Time `json:"date_created"`
+	A           int64     `json:"a"`
+}
+
+func testQuery() Query[testRow] {
+	return Query[testRow]{
 		Table: `"x"."y"`,
 		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "uuid"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
+		Sort:  []string{"id", "date_created"},
+		Fields: func(m *testRow) map[string]any {
+			return map[string]any{"id": &m.ID, "date_created": &m.DateCreated, "a": &m.A}
 		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) {
-			*conds = append(*conds, `"a" = ANY(@a)`)
-			args["a"] = []int64{1, 2}
-		},
+		Where: []Cond{In(`"a"`, []int64{1, 2})},
 	}
 }
 
-func bind(spec Spec[struct{}]) ([]string, pgx.NamedArgs) {
-	conds := []string{}
-	args := pgx.NamedArgs{}
-	spec.BindConds(&conds, args)
-	return conds, args
+// conds mirrors what List derives from Where, for builder tests.
+func conds(q Query[testRow]) []string {
+	var out []string
+	for _, c := range q.Where {
+		if !c.skip() {
+			out = append(out, c.expr)
+		}
+	}
+	return out
 }
 
-func TestBuildOffset(t *testing.T) {
-	spec := testSpec()
-	conds, args := bind(spec)
-
-	sql, listArgs := buildOffset(spec, conds, args, 10, 20)
-
-	want := `SELECT * FROM "x"."y" WHERE "a" = ANY(@a) ORDER BY "id" LIMIT @limit OFFSET @offset`
-	if sql != want {
-		t.Fatalf("offset sql\n got: %s\nwant: %s", sql, want)
-	}
-	if listArgs["limit"] != int32(10) || listArgs["offset"] != int32(20) {
-		t.Fatalf("offset args limit/offset = %v/%v", listArgs["limit"], listArgs["offset"])
-	}
-	if _, ok := listArgs["a"]; !ok {
-		t.Fatalf("offset args missing filter arg a: %v", listArgs)
+func TestOffsetSQL(t *testing.T) {
+	q := testQuery()
+	want := `SELECT "a", "date_created", "id" FROM "x"."y" WHERE "a" = ANY(@a) ORDER BY "id" LIMIT @limit OFFSET @offset`
+	if got := q.offsetSQL(conds(q)); got != want {
+		t.Fatalf("offset sql\n got: %s\nwant: %s", got, want)
 	}
 }
 
-func TestBuildCount(t *testing.T) {
-	spec := testSpec()
-	conds, _ := bind(spec)
-
+func TestCountSQL(t *testing.T) {
+	q := testQuery()
 	want := `SELECT COUNT(*) FROM "x"."y" WHERE "a" = ANY(@a)`
-	if got := countSQL(spec.Table, conds); got != want {
+	if got := q.countSQL(conds(q)); got != want {
 		t.Fatalf("count sql\n got: %s\nwant: %s", got, want)
 	}
 }
 
-func TestBuildKeysetFirstPage(t *testing.T) {
-	spec := testSpec()
-	conds, args := bind(spec)
-	ks := paginate.Keyset{Limit: 10, Sort: []paginate.SortField{{Field: "date_created", Dir: paginate.Desc}}}
-
-	sql, err := buildKeyset(spec, ks, conds, args, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// First page: no keyset predicate, just the filter; pk appended to ORDER BY.
-	want := `SELECT * FROM "x"."y" WHERE "a" = ANY(@a) ORDER BY "date_created" DESC, "id" ASC LIMIT @limit`
-	if sql != want {
-		t.Fatalf("keyset first-page sql\n got: %s\nwant: %s", sql, want)
-	}
-	if args["limit"] != int32(11) { // peek
-		t.Fatalf("keyset peek limit = %v, want 11", args["limit"])
+func TestAllSQL(t *testing.T) {
+	q := testQuery()
+	want := `SELECT "a", "date_created", "id" FROM "x"."y" WHERE "a" = ANY(@a) ORDER BY "id"`
+	if got := q.allSQL(conds(q)); got != want {
+		t.Fatalf("all sql\n got: %s\nwant: %s", got, want)
 	}
 }
 
-func TestBuildKeysetWithCursor(t *testing.T) {
-	spec := testSpec()
-	conds, args := bind(spec)
-
-	// Cursor encodes the tuple (date_created, id) of the last row.
-	cursor := paginate.EncodeKeyset([]string{"2024-01-02T03:04:05Z", "abc"})
-	ks := paginate.Keyset{
-		Limit:  10,
-		Cursor: cursor,
-		Sort:   []paginate.SortField{{Field: "date_created", Dir: paginate.Desc}},
+func TestKeysetFirstPage(t *testing.T) {
+	q := testQuery()
+	sort, err := q.sortTuple("-date_created")
+	if err != nil {
+		t.Fatal(err)
 	}
+	// pk tiebreaker appended ASC; no keyset predicate on the first page.
+	want := `SELECT "a", "date_created", "id" FROM "x"."y" WHERE "a" = ANY(@a) ORDER BY "date_created" DESC, "id" ASC LIMIT @limit`
+	if got := q.keysetSQL(conds(q), sort); got != want {
+		t.Fatalf("keyset first-page sql\n got: %s\nwant: %s", got, want)
+	}
+}
 
-	sql, err := buildKeyset(spec, ks, conds, args, 10)
+func TestKeysetWhereNoCast(t *testing.T) {
+	q := testQuery()
+	sort, err := q.sortTuple("-date_created")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Typed-JSON cursor: a quoted RFC3339 time and a quoted string id.
+	ts, _ := time.Parse(time.RFC3339, "2024-01-02T03:04:05Z")
+	keys, err := q.encodeCursorKeys(sort, testRow{ID: "abc", DateCreated: ts})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// OR-chain: comparator on date_created (DESC => "<"), then equality + pk tiebreaker (ASC => ">").
+	args := map[string]any{}
+	where, err := q.keysetWhere(sort, keys, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// OR-chain, comparators only — no ::cast anywhere.
 	for _, frag := range []string{
-		`"a" = ANY(@a)`,
-		`"date_created" < @k0::timestamptz`,
-		`"date_created" = @k0::timestamptz AND "id" > @k1::uuid`,
-		`ORDER BY "date_created" DESC, "id" ASC`,
+		`"date_created" < @k0`,
+		`"date_created" = @k0 AND "id" > @k1`,
 	} {
-		if !strings.Contains(sql, frag) {
-			t.Fatalf("keyset sql missing %q\nfull: %s", frag, sql)
+		if !strings.Contains(where, frag) {
+			t.Fatalf("keyset where missing %q\nfull: %s", frag, where)
 		}
 	}
-	if args["k0"] != "2024-01-02T03:04:05Z" || args["k1"] != "abc" {
-		t.Fatalf("keyset cursor args k0/k1 = %v/%v", args["k0"], args["k1"])
+	if strings.Contains(where, "::") {
+		t.Fatalf("keyset where should carry no cast: %s", where)
 	}
 }
 
-func TestBuildKeysetRejectsUnknownSort(t *testing.T) {
-	spec := testSpec()
-	conds, args := bind(spec)
-	ks := paginate.Keyset{Limit: 10, Sort: []paginate.SortField{{Field: "evil", Dir: paginate.Asc}}}
+func TestCursorTypeFidelity(t *testing.T) {
+	q := testQuery()
+	sort, err := q.sortTuple("-date_created")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
+	keys, err := q.encodeCursorKeys(sort, testRow{ID: "abc", DateCreated: ts})
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	if _, err := buildKeyset(spec, ks, conds, args, 10); err == nil {
+	// Decode back into a typed probe and assert exact round-trip.
+	probe := new(testRow)
+	fm := q.Fields(probe)
+	for i, s := range sort {
+		if err := json.Unmarshal(keys[i], fm[s.Field]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !probe.DateCreated.Equal(ts) {
+		t.Fatalf("time round-trip: got %v want %v", probe.DateCreated, ts)
+	}
+	if probe.ID != "abc" {
+		t.Fatalf("id round-trip: got %q want %q", probe.ID, "abc")
+	}
+}
+
+func TestSortRejectsUnknown(t *testing.T) {
+	q := testQuery()
+	if _, err := q.sortTuple("evil"); err == nil {
 		t.Fatal("expected error for non-whitelisted sort field")
 	}
 }
 
-func TestBuildAll(t *testing.T) {
-	spec := testSpec()
-	conds, _ := bind(spec)
-
-	want := `SELECT * FROM "x"."y" WHERE "a" = ANY(@a) ORDER BY "id"`
-	if got := buildAll(spec, conds); got != want {
-		t.Fatalf("all sql\n got: %s\nwant: %s", got, want)
+// TestComposedCTEOrder mirrors the hybrid-search shape: a CTE prefix, a ranked
+// subquery as the FROM source, and a relevance Order override.
+func TestComposedCTEOrder(t *testing.T) {
+	q := Query[testRow]{
+		With:  `WITH ranked AS (SELECT 1)`,
+		Table: `(SELECT t.*, 1 AS score FROM "x"."y" t) t`,
+		PK:    "id",
+		Order: "score DESC",
+		Fields: func(m *testRow) map[string]any {
+			return map[string]any{"id": &m.ID, "a": &m.A}
+		},
+	}
+	wantPage := `WITH ranked AS (SELECT 1) SELECT "a", "id" FROM (SELECT t.*, 1 AS score FROM "x"."y" t) t ORDER BY score DESC LIMIT @limit OFFSET @offset`
+	if got := q.offsetSQL(nil); got != wantPage {
+		t.Fatalf("composed page sql\n got: %s\nwant: %s", got, wantPage)
+	}
+	wantCount := `WITH ranked AS (SELECT 1) SELECT COUNT(*) FROM (SELECT t.*, 1 AS score FROM "x"."y" t) t`
+	if got := q.countSQL(nil); got != wantCount {
+		t.Fatalf("composed count sql\n got: %s\nwant: %s", got, wantCount)
 	}
 }

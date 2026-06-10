@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -33,74 +32,46 @@ type ListScheduleParams struct {
 	LastRunAtTo   null.Time
 }
 
-func scheduleListConds(f ListScheduleParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.PromotionId != nil {
-		*conds = append(*conds, `"promotion_id" = ANY(@promotion_id)`)
-		args["promotion_id"] = f.PromotionId
-	}
-	if f.Timezone != nil {
-		*conds = append(*conds, `"timezone" = ANY(@timezone)`)
-		args["timezone"] = f.Timezone
-	}
-	if f.CronRule != nil {
-		*conds = append(*conds, `"cron_rule" = ANY(@cron_rule)`)
-		args["cron_rule"] = f.CronRule
-	}
-	if f.Duration != nil {
-		*conds = append(*conds, `"duration" = ANY(@duration)`)
-		args["duration"] = f.Duration
-	}
-	if f.DurationFrom.Valid {
-		*conds = append(*conds, `"duration" >= @duration_from`)
-		args["duration_from"] = f.DurationFrom.Int64
-	}
-	if f.DurationTo.Valid {
-		*conds = append(*conds, `"duration" <= @duration_to`)
-		args["duration_to"] = f.DurationTo.Int64
-	}
-	if f.NextRunAt != nil {
-		*conds = append(*conds, `"next_run_at" = ANY(@next_run_at)`)
-		args["next_run_at"] = f.NextRunAt
-	}
-	if f.NextRunAtFrom.Valid {
-		*conds = append(*conds, `"next_run_at" >= @next_run_at_from`)
-		args["next_run_at_from"] = f.NextRunAtFrom.Time
-	}
-	if f.NextRunAtTo.Valid {
-		*conds = append(*conds, `"next_run_at" <= @next_run_at_to`)
-		args["next_run_at_to"] = f.NextRunAtTo.Time
-	}
-	if f.LastRunAt != nil {
-		*conds = append(*conds, `"last_run_at" = ANY(@last_run_at)`)
-		args["last_run_at"] = f.LastRunAt
-	}
-	if f.LastRunAtFrom.Valid {
-		*conds = append(*conds, `"last_run_at" >= @last_run_at_from`)
-		args["last_run_at_from"] = f.LastRunAtFrom.Time
-	}
-	if f.LastRunAtTo.Valid {
-		*conds = append(*conds, `"last_run_at" <= @last_run_at_to`)
-		args["last_run_at_to"] = f.LastRunAtTo.Time
+// ScheduleQuery is the reusable base listing for "promotion"."schedule".
+func ScheduleQuery() repolist.Query[PromotionSchedule] {
+	return repolist.Query[PromotionSchedule]{
+		Table: `"promotion"."schedule"`,
+		PK:    "id",
+		Sort:  []string{"id", "duration"},
+		Fields: func(m *PromotionSchedule) map[string]any {
+			return map[string]any{
+				"id":           &m.ID,
+				"promotion_id": &m.PromotionID,
+				"timezone":     &m.Timezone,
+				"cron_rule":    &m.CronRule,
+				"duration":     &m.Duration,
+				"next_run_at":  &m.NextRunAt,
+				"last_run_at":  &m.LastRunAt,
+			}
+		},
 	}
 }
 
-func scheduleListSpec(f ListScheduleParams) repolist.Spec[PromotionSchedule] {
-	return repolist.Spec[PromotionSchedule]{
-		Table: `"promotion"."schedule"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":       {Col: `"id"`, Cast: "int8"},
-			"duration": {Col: `"duration"`, Cast: "int4"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { scheduleListConds(f, conds, args) },
+// ScheduleConds maps the filter params to predicates.
+func ScheduleConds(f ListScheduleParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"promotion_id"`, f.PromotionId),
+		repolist.In(`"timezone"`, f.Timezone),
+		repolist.In(`"cron_rule"`, f.CronRule),
+		repolist.In(`"duration"`, f.Duration),
+		repolist.Gte(`"duration"`, f.DurationFrom),
+		repolist.Lte(`"duration"`, f.DurationTo),
+		repolist.In(`"next_run_at"`, f.NextRunAt),
+		repolist.Gte(`"next_run_at"`, f.NextRunAtFrom),
+		repolist.Lte(`"next_run_at"`, f.NextRunAtTo),
+		repolist.In(`"last_run_at"`, f.LastRunAt),
+		repolist.Gte(`"last_run_at"`, f.LastRunAtFrom),
+		repolist.Lte(`"last_run_at"`, f.LastRunAtTo),
 	}
 }
 
 // ListSchedule runs offset (?page) or cursor (?cursor/?sort) pagination over "promotion"."schedule".
 func (q *Queries) ListSchedule(ctx context.Context, f ListScheduleParams) (paginate.PaginateResult[PromotionSchedule], error) {
-	return repolist.List(ctx, q.db, scheduleListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, ScheduleQuery().Filter(ScheduleConds(f)...))
 }

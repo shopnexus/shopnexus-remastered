@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -42,116 +41,56 @@ type ListProductPopularityParams struct {
 	DateUpdatedTo     null.Time
 }
 
-func productPopularityListConds(f ListProductPopularityParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.Score != nil {
-		*conds = append(*conds, `"score" = ANY(@score)`)
-		args["score"] = f.Score
-	}
-	if f.ScoreFrom.Valid {
-		*conds = append(*conds, `"score" >= @score_from`)
-		args["score_from"] = f.ScoreFrom.Float64
-	}
-	if f.ScoreTo.Valid {
-		*conds = append(*conds, `"score" <= @score_to`)
-		args["score_to"] = f.ScoreTo.Float64
-	}
-	if f.ViewCount != nil {
-		*conds = append(*conds, `"view_count" = ANY(@view_count)`)
-		args["view_count"] = f.ViewCount
-	}
-	if f.ViewCountFrom.Valid {
-		*conds = append(*conds, `"view_count" >= @view_count_from`)
-		args["view_count_from"] = f.ViewCountFrom.Int64
-	}
-	if f.ViewCountTo.Valid {
-		*conds = append(*conds, `"view_count" <= @view_count_to`)
-		args["view_count_to"] = f.ViewCountTo.Int64
-	}
-	if f.PurchaseCount != nil {
-		*conds = append(*conds, `"purchase_count" = ANY(@purchase_count)`)
-		args["purchase_count"] = f.PurchaseCount
-	}
-	if f.PurchaseCountFrom.Valid {
-		*conds = append(*conds, `"purchase_count" >= @purchase_count_from`)
-		args["purchase_count_from"] = f.PurchaseCountFrom.Int64
-	}
-	if f.PurchaseCountTo.Valid {
-		*conds = append(*conds, `"purchase_count" <= @purchase_count_to`)
-		args["purchase_count_to"] = f.PurchaseCountTo.Int64
-	}
-	if f.FavoriteCount != nil {
-		*conds = append(*conds, `"favorite_count" = ANY(@favorite_count)`)
-		args["favorite_count"] = f.FavoriteCount
-	}
-	if f.FavoriteCountFrom.Valid {
-		*conds = append(*conds, `"favorite_count" >= @favorite_count_from`)
-		args["favorite_count_from"] = f.FavoriteCountFrom.Int64
-	}
-	if f.FavoriteCountTo.Valid {
-		*conds = append(*conds, `"favorite_count" <= @favorite_count_to`)
-		args["favorite_count_to"] = f.FavoriteCountTo.Int64
-	}
-	if f.CartCount != nil {
-		*conds = append(*conds, `"cart_count" = ANY(@cart_count)`)
-		args["cart_count"] = f.CartCount
-	}
-	if f.CartCountFrom.Valid {
-		*conds = append(*conds, `"cart_count" >= @cart_count_from`)
-		args["cart_count_from"] = f.CartCountFrom.Int64
-	}
-	if f.CartCountTo.Valid {
-		*conds = append(*conds, `"cart_count" <= @cart_count_to`)
-		args["cart_count_to"] = f.CartCountTo.Int64
-	}
-	if f.ReviewCount != nil {
-		*conds = append(*conds, `"review_count" = ANY(@review_count)`)
-		args["review_count"] = f.ReviewCount
-	}
-	if f.ReviewCountFrom.Valid {
-		*conds = append(*conds, `"review_count" >= @review_count_from`)
-		args["review_count_from"] = f.ReviewCountFrom.Int64
-	}
-	if f.ReviewCountTo.Valid {
-		*conds = append(*conds, `"review_count" <= @review_count_to`)
-		args["review_count_to"] = f.ReviewCountTo.Int64
-	}
-	if f.DateUpdated != nil {
-		*conds = append(*conds, `"date_updated" = ANY(@date_updated)`)
-		args["date_updated"] = f.DateUpdated
-	}
-	if f.DateUpdatedFrom.Valid {
-		*conds = append(*conds, `"date_updated" >= @date_updated_from`)
-		args["date_updated_from"] = f.DateUpdatedFrom.Time
-	}
-	if f.DateUpdatedTo.Valid {
-		*conds = append(*conds, `"date_updated" <= @date_updated_to`)
-		args["date_updated_to"] = f.DateUpdatedTo.Time
+// ProductPopularityQuery is the reusable base listing for "analytic"."product_popularity".
+func ProductPopularityQuery() repolist.Query[AnalyticProductPopularity] {
+	return repolist.Query[AnalyticProductPopularity]{
+		Table: `"analytic"."product_popularity"`,
+		PK:    "id",
+		Sort:  []string{"id", "score", "view_count", "purchase_count", "favorite_count", "cart_count", "review_count", "date_updated"},
+		Fields: func(m *AnalyticProductPopularity) map[string]any {
+			return map[string]any{
+				"id":             &m.ID,
+				"score":          &m.Score,
+				"view_count":     &m.ViewCount,
+				"purchase_count": &m.PurchaseCount,
+				"favorite_count": &m.FavoriteCount,
+				"cart_count":     &m.CartCount,
+				"review_count":   &m.ReviewCount,
+				"date_updated":   &m.DateUpdated,
+			}
+		},
 	}
 }
 
-func productPopularityListSpec(f ListProductPopularityParams) repolist.Spec[AnalyticProductPopularity] {
-	return repolist.Spec[AnalyticProductPopularity]{
-		Table: `"analytic"."product_popularity"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":             {Col: `"id"`, Cast: "uuid"},
-			"score":          {Col: `"score"`, Cast: "float8"},
-			"view_count":     {Col: `"view_count"`, Cast: "int8"},
-			"purchase_count": {Col: `"purchase_count"`, Cast: "int8"},
-			"favorite_count": {Col: `"favorite_count"`, Cast: "int8"},
-			"cart_count":     {Col: `"cart_count"`, Cast: "int8"},
-			"review_count":   {Col: `"review_count"`, Cast: "int8"},
-			"date_updated":   {Col: `"date_updated"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { productPopularityListConds(f, conds, args) },
+// ProductPopularityConds maps the filter params to predicates.
+func ProductPopularityConds(f ListProductPopularityParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"score"`, f.Score),
+		repolist.Gte(`"score"`, f.ScoreFrom),
+		repolist.Lte(`"score"`, f.ScoreTo),
+		repolist.In(`"view_count"`, f.ViewCount),
+		repolist.Gte(`"view_count"`, f.ViewCountFrom),
+		repolist.Lte(`"view_count"`, f.ViewCountTo),
+		repolist.In(`"purchase_count"`, f.PurchaseCount),
+		repolist.Gte(`"purchase_count"`, f.PurchaseCountFrom),
+		repolist.Lte(`"purchase_count"`, f.PurchaseCountTo),
+		repolist.In(`"favorite_count"`, f.FavoriteCount),
+		repolist.Gte(`"favorite_count"`, f.FavoriteCountFrom),
+		repolist.Lte(`"favorite_count"`, f.FavoriteCountTo),
+		repolist.In(`"cart_count"`, f.CartCount),
+		repolist.Gte(`"cart_count"`, f.CartCountFrom),
+		repolist.Lte(`"cart_count"`, f.CartCountTo),
+		repolist.In(`"review_count"`, f.ReviewCount),
+		repolist.Gte(`"review_count"`, f.ReviewCountFrom),
+		repolist.Lte(`"review_count"`, f.ReviewCountTo),
+		repolist.In(`"date_updated"`, f.DateUpdated),
+		repolist.Gte(`"date_updated"`, f.DateUpdatedFrom),
+		repolist.Lte(`"date_updated"`, f.DateUpdatedTo),
 	}
 }
 
 // ListProductPopularity runs offset (?page) or cursor (?cursor/?sort) pagination over "analytic"."product_popularity".
 func (q *Queries) ListProductPopularity(ctx context.Context, f ListProductPopularityParams) (paginate.PaginateResult[AnalyticProductPopularity], error) {
-	return repolist.List(ctx, q.db, productPopularityListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, ProductPopularityQuery().Filter(ProductPopularityConds(f)...))
 }

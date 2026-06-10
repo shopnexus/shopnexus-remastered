@@ -309,3 +309,60 @@ type AccountProfile struct {
 	InternalBalance  int64             `db:"internal_balance" json:"internal_balance"`
 	DefaultContactID uuid.NullUUID     `db:"default_contact_id" json:"default_contact_id"`
 }
+
+func (n NullAccountAddressType) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.AccountAddressType)
+}
+func (n *NullAccountAddressType) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.AccountAddressType)
+}
+func (n NullAccountGender) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.AccountGender)
+}
+func (n *NullAccountGender) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.AccountGender)
+}
+func (n NullAccountRole) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.AccountRole)
+}
+func (n *NullAccountRole) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.AccountRole)
+}
+func (n NullAccountStatus) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.AccountStatus)
+}
+func (n *NullAccountStatus) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return json.Unmarshal(b, &n.AccountStatus)
+}

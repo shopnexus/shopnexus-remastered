@@ -293,9 +293,9 @@ func (b *CreateBatchProductSkuBatchResults) Close() error {
 }
 
 const createBatchProductSpu = `-- name: CreateBatchProductSpu :batchone
-INSERT INTO "catalog"."product_spu" ("id", "slug", "account_id", "category_id", "featured_sku_id", "name", "description", "is_enabled", "currency", "specifications", "date_created", "date_updated", "date_deleted")
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-RETURNING id, number, slug, account_id, category_id, featured_sku_id, name, description, is_enabled, currency, specifications, date_created, date_updated, date_deleted
+INSERT INTO "catalog"."product_spu" ("id", "slug", "account_id", "category_id", "featured_sku_id", "name", "description", "is_enabled", "currency", "specifications", "date_created", "date_updated", "date_deleted", "cached_price", "cached_rating")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+RETURNING id, number, slug, account_id, category_id, featured_sku_id, name, description, is_enabled, currency, specifications, date_created, date_updated, date_deleted, cached_price, cached_rating
 `
 
 type CreateBatchProductSpuBatchResults struct {
@@ -318,6 +318,8 @@ type CreateBatchProductSpuParams struct {
 	DateCreated    time.Time       `db:"date_created" json:"date_created"`
 	DateUpdated    time.Time       `db:"date_updated" json:"date_updated"`
 	DateDeleted    null.Time       `db:"date_deleted" json:"date_deleted"`
+	CachedPrice    int64           `db:"cached_price" json:"cached_price"`
+	CachedRating   float64         `db:"cached_rating" json:"cached_rating"`
 }
 
 func (q *Queries) CreateBatchProductSpu(ctx context.Context, arg []CreateBatchProductSpuParams) *CreateBatchProductSpuBatchResults {
@@ -337,6 +339,8 @@ func (q *Queries) CreateBatchProductSpu(ctx context.Context, arg []CreateBatchPr
 			a.DateCreated,
 			a.DateUpdated,
 			a.DateDeleted,
+			a.CachedPrice,
+			a.CachedRating,
 		}
 		batch.Queue(createBatchProductSpu, vals...)
 	}
@@ -370,6 +374,8 @@ func (b *CreateBatchProductSpuBatchResults) QueryRow(f func(int, CatalogProductS
 			&i.DateCreated,
 			&i.DateUpdated,
 			&i.DateDeleted,
+			&i.CachedPrice,
+			&i.CachedRating,
 		)
 		if f != nil {
 			f(t, i, err)

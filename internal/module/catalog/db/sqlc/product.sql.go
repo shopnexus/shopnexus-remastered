@@ -61,7 +61,7 @@ func (q *Queries) DetailRating(ctx context.Context, arg DetailRatingParams) (Det
 }
 
 const listCountProductSpuRecent = `-- name: ListCountProductSpuRecent :many
-SELECT embed_product_spu.id, embed_product_spu.number, embed_product_spu.slug, embed_product_spu.account_id, embed_product_spu.category_id, embed_product_spu.featured_sku_id, embed_product_spu.name, embed_product_spu.description, embed_product_spu.is_enabled, embed_product_spu.currency, embed_product_spu.specifications, embed_product_spu.date_created, embed_product_spu.date_updated, embed_product_spu.date_deleted, COUNT(*) OVER() as total_count
+SELECT embed_product_spu.id, embed_product_spu.number, embed_product_spu.slug, embed_product_spu.account_id, embed_product_spu.category_id, embed_product_spu.featured_sku_id, embed_product_spu.name, embed_product_spu.description, embed_product_spu.is_enabled, embed_product_spu.currency, embed_product_spu.specifications, embed_product_spu.date_created, embed_product_spu.date_updated, embed_product_spu.date_deleted, embed_product_spu.cached_price, embed_product_spu.cached_rating, COUNT(*) OVER() as total_count
 FROM "catalog"."product_spu" embed_product_spu
 WHERE (
     ("id" = ANY($1) OR $1 IS NULL) AND
@@ -124,6 +124,8 @@ func (q *Queries) ListCountProductSpuRecent(ctx context.Context, arg ListCountPr
 			&i.CatalogProductSpu.DateCreated,
 			&i.CatalogProductSpu.DateUpdated,
 			&i.CatalogProductSpu.DateDeleted,
+			&i.CatalogProductSpu.CachedPrice,
+			&i.CatalogProductSpu.CachedRating,
 			&i.TotalCount,
 		); err != nil {
 			return nil, err
@@ -178,7 +180,7 @@ func (q *Queries) ListRating(ctx context.Context, arg ListRatingParams) ([]ListR
 }
 
 const searchCountProductSpu = `-- name: SearchCountProductSpu :many
-SELECT embed_product_spu.id, embed_product_spu.number, embed_product_spu.slug, embed_product_spu.account_id, embed_product_spu.category_id, embed_product_spu.featured_sku_id, embed_product_spu.name, embed_product_spu.description, embed_product_spu.is_enabled, embed_product_spu.currency, embed_product_spu.specifications, embed_product_spu.date_created, embed_product_spu.date_updated, embed_product_spu.date_deleted, COUNT(*) OVER() as total_count
+SELECT embed_product_spu.id, embed_product_spu.number, embed_product_spu.slug, embed_product_spu.account_id, embed_product_spu.category_id, embed_product_spu.featured_sku_id, embed_product_spu.name, embed_product_spu.description, embed_product_spu.is_enabled, embed_product_spu.currency, embed_product_spu.specifications, embed_product_spu.date_created, embed_product_spu.date_updated, embed_product_spu.date_deleted, embed_product_spu.cached_price, embed_product_spu.cached_rating, COUNT(*) OVER() as total_count
 FROM "catalog"."product_spu" embed_product_spu
 WHERE (
     ("id" = ANY($1) OR $1 IS NULL) AND
@@ -270,6 +272,8 @@ func (q *Queries) SearchCountProductSpu(ctx context.Context, arg SearchCountProd
 			&i.CatalogProductSpu.DateCreated,
 			&i.CatalogProductSpu.DateUpdated,
 			&i.CatalogProductSpu.DateDeleted,
+			&i.CatalogProductSpu.CachedPrice,
+			&i.CatalogProductSpu.CachedRating,
 			&i.TotalCount,
 		); err != nil {
 			return nil, err

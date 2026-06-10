@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -37,92 +36,56 @@ type ListPaymentSessionParams struct {
 	DateExpiredTo   null.Time
 }
 
-func paymentSessionListConds(f ListPaymentSessionParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.Kind != nil {
-		*conds = append(*conds, `"kind" = ANY(@kind)`)
-		args["kind"] = f.Kind
-	}
-	if f.Status != nil {
-		*conds = append(*conds, `"status" = ANY(@status)`)
-		args["status"] = f.Status
-	}
-	if f.FromId != nil {
-		*conds = append(*conds, `"from_id" = ANY(@from_id)`)
-		args["from_id"] = f.FromId
-	}
-	if f.ToId != nil {
-		*conds = append(*conds, `"to_id" = ANY(@to_id)`)
-		args["to_id"] = f.ToId
-	}
-	if f.Note != nil {
-		*conds = append(*conds, `"note" = ANY(@note)`)
-		args["note"] = f.Note
-	}
-	if f.Currency != nil {
-		*conds = append(*conds, `"currency" = ANY(@currency)`)
-		args["currency"] = f.Currency
-	}
-	if f.TotalAmount != nil {
-		*conds = append(*conds, `"total_amount" = ANY(@total_amount)`)
-		args["total_amount"] = f.TotalAmount
-	}
-	if f.TotalAmountFrom.Valid {
-		*conds = append(*conds, `"total_amount" >= @total_amount_from`)
-		args["total_amount_from"] = f.TotalAmountFrom.Int64
-	}
-	if f.TotalAmountTo.Valid {
-		*conds = append(*conds, `"total_amount" <= @total_amount_to`)
-		args["total_amount_to"] = f.TotalAmountTo.Int64
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
-	}
-	if f.DatePaid != nil {
-		*conds = append(*conds, `"date_paid" = ANY(@date_paid)`)
-		args["date_paid"] = f.DatePaid
-	}
-	if f.DateExpired != nil {
-		*conds = append(*conds, `"date_expired" = ANY(@date_expired)`)
-		args["date_expired"] = f.DateExpired
-	}
-	if f.DateExpiredFrom.Valid {
-		*conds = append(*conds, `"date_expired" >= @date_expired_from`)
-		args["date_expired_from"] = f.DateExpiredFrom.Time
-	}
-	if f.DateExpiredTo.Valid {
-		*conds = append(*conds, `"date_expired" <= @date_expired_to`)
-		args["date_expired_to"] = f.DateExpiredTo.Time
+// PaymentSessionQuery is the reusable base listing for "order"."payment_session".
+func PaymentSessionQuery() repolist.Query[OrderPaymentSession] {
+	return repolist.Query[OrderPaymentSession]{
+		Table: `"order"."payment_session"`,
+		PK:    "id",
+		Sort:  []string{"id", "total_amount", "date_created", "date_expired"},
+		Fields: func(m *OrderPaymentSession) map[string]any {
+			return map[string]any{
+				"id":           &m.ID,
+				"kind":         &m.Kind,
+				"status":       &m.Status,
+				"from_id":      &m.FromID,
+				"to_id":        &m.ToID,
+				"note":         &m.Note,
+				"currency":     &m.Currency,
+				"total_amount": &m.TotalAmount,
+				"fx_snapshot":  &m.FxSnapshot,
+				"data":         &m.Data,
+				"date_created": &m.DateCreated,
+				"date_paid":    &m.DatePaid,
+				"date_expired": &m.DateExpired,
+			}
+		},
 	}
 }
 
-func paymentSessionListSpec(f ListPaymentSessionParams) repolist.Spec[OrderPaymentSession] {
-	return repolist.Spec[OrderPaymentSession]{
-		Table: `"order"."payment_session"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "uuid"},
-			"total_amount": {Col: `"total_amount"`, Cast: "int8"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-			"date_expired": {Col: `"date_expired"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { paymentSessionListConds(f, conds, args) },
+// PaymentSessionConds maps the filter params to predicates.
+func PaymentSessionConds(f ListPaymentSessionParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"kind"`, f.Kind),
+		repolist.In(`"status"`, f.Status),
+		repolist.In(`"from_id"`, f.FromId),
+		repolist.In(`"to_id"`, f.ToId),
+		repolist.In(`"note"`, f.Note),
+		repolist.In(`"currency"`, f.Currency),
+		repolist.In(`"total_amount"`, f.TotalAmount),
+		repolist.Gte(`"total_amount"`, f.TotalAmountFrom),
+		repolist.Lte(`"total_amount"`, f.TotalAmountTo),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+		repolist.In(`"date_paid"`, f.DatePaid),
+		repolist.In(`"date_expired"`, f.DateExpired),
+		repolist.Gte(`"date_expired"`, f.DateExpiredFrom),
+		repolist.Lte(`"date_expired"`, f.DateExpiredTo),
 	}
 }
 
 // ListPaymentSession runs offset (?page) or cursor (?cursor/?sort) pagination over "order"."payment_session".
 func (q *Queries) ListPaymentSession(ctx context.Context, f ListPaymentSessionParams) (paginate.PaginateResult[OrderPaymentSession], error) {
-	return repolist.List(ctx, q.db, paymentSessionListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, PaymentSessionQuery().Filter(PaymentSessionConds(f)...))
 }

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -25,46 +24,37 @@ type ListTransportParams struct {
 	DateCreatedTo   null.Time
 }
 
-func transportListConds(f ListTransportParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.Option != nil {
-		*conds = append(*conds, `"option" = ANY(@option)`)
-		args["option"] = f.Option
-	}
-	if f.Status != nil {
-		*conds = append(*conds, `"status" = ANY(@status)`)
-		args["status"] = f.Status
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
+// TransportQuery is the reusable base listing for "order"."transport".
+func TransportQuery() repolist.Query[OrderTransport] {
+	return repolist.Query[OrderTransport]{
+		Table: `"order"."transport"`,
+		PK:    "id",
+		Sort:  []string{"id", "date_created"},
+		Fields: func(m *OrderTransport) map[string]any {
+			return map[string]any{
+				"id":           &m.ID,
+				"option":       &m.Option,
+				"status":       &m.Status,
+				"data":         &m.Data,
+				"date_created": &m.DateCreated,
+			}
+		},
 	}
 }
 
-func transportListSpec(f ListTransportParams) repolist.Spec[OrderTransport] {
-	return repolist.Spec[OrderTransport]{
-		Table: `"order"."transport"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "int8"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { transportListConds(f, conds, args) },
+// TransportConds maps the filter params to predicates.
+func TransportConds(f ListTransportParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"option"`, f.Option),
+		repolist.In(`"status"`, f.Status),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
 	}
 }
 
 // ListTransport runs offset (?page) or cursor (?cursor/?sort) pagination over "order"."transport".
 func (q *Queries) ListTransport(ctx context.Context, f ListTransportParams) (paginate.PaginateResult[OrderTransport], error) {
-	return repolist.List(ctx, q.db, transportListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, TransportQuery().Filter(TransportConds(f)...))
 }

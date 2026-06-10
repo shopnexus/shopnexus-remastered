@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -30,63 +29,42 @@ type ListSearchSyncParams struct {
 	DateUpdatedTo    null.Time
 }
 
-func searchSyncListConds(f ListSearchSyncParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.RefType != nil {
-		*conds = append(*conds, `"ref_type" = ANY(@ref_type)`)
-		args["ref_type"] = f.RefType
-	}
-	if f.RefId != nil {
-		*conds = append(*conds, `"ref_id" = ANY(@ref_id)`)
-		args["ref_id"] = f.RefId
-	}
-	if f.IsStaleEmbedding != nil {
-		*conds = append(*conds, `"is_stale_embedding" = ANY(@is_stale_embedding)`)
-		args["is_stale_embedding"] = f.IsStaleEmbedding
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
-	}
-	if f.DateUpdated != nil {
-		*conds = append(*conds, `"date_updated" = ANY(@date_updated)`)
-		args["date_updated"] = f.DateUpdated
-	}
-	if f.DateUpdatedFrom.Valid {
-		*conds = append(*conds, `"date_updated" >= @date_updated_from`)
-		args["date_updated_from"] = f.DateUpdatedFrom.Time
-	}
-	if f.DateUpdatedTo.Valid {
-		*conds = append(*conds, `"date_updated" <= @date_updated_to`)
-		args["date_updated_to"] = f.DateUpdatedTo.Time
+// SearchSyncQuery is the reusable base listing for "catalog"."search_sync".
+func SearchSyncQuery() repolist.Query[CatalogSearchSync] {
+	return repolist.Query[CatalogSearchSync]{
+		Table: `"catalog"."search_sync"`,
+		PK:    "id",
+		Sort:  []string{"id", "date_created", "date_updated"},
+		Fields: func(m *CatalogSearchSync) map[string]any {
+			return map[string]any{
+				"id":                 &m.ID,
+				"ref_type":           &m.RefType,
+				"ref_id":             &m.RefID,
+				"is_stale_embedding": &m.IsStaleEmbedding,
+				"date_created":       &m.DateCreated,
+				"date_updated":       &m.DateUpdated,
+			}
+		},
 	}
 }
 
-func searchSyncListSpec(f ListSearchSyncParams) repolist.Spec[CatalogSearchSync] {
-	return repolist.Spec[CatalogSearchSync]{
-		Table: `"catalog"."search_sync"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "int8"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-			"date_updated": {Col: `"date_updated"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { searchSyncListConds(f, conds, args) },
+// SearchSyncConds maps the filter params to predicates.
+func SearchSyncConds(f ListSearchSyncParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"ref_type"`, f.RefType),
+		repolist.In(`"ref_id"`, f.RefId),
+		repolist.In(`"is_stale_embedding"`, f.IsStaleEmbedding),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+		repolist.In(`"date_updated"`, f.DateUpdated),
+		repolist.Gte(`"date_updated"`, f.DateUpdatedFrom),
+		repolist.Lte(`"date_updated"`, f.DateUpdatedTo),
 	}
 }
 
 // ListSearchSync runs offset (?page) or cursor (?cursor/?sort) pagination over "catalog"."search_sync".
 func (q *Queries) ListSearchSync(ctx context.Context, f ListSearchSyncParams) (paginate.PaginateResult[CatalogSearchSync], error) {
-	return repolist.List(ctx, q.db, searchSyncListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, SearchSyncQuery().Filter(SearchSyncConds(f)...))
 }

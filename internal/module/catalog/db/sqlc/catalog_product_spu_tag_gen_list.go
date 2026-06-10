@@ -5,7 +5,6 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -21,33 +20,32 @@ type ListProductSpuTagParams struct {
 	Tag   []string
 }
 
-func productSpuTagListConds(f ListProductSpuTagParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.SpuId != nil {
-		*conds = append(*conds, `"spu_id" = ANY(@spu_id)`)
-		args["spu_id"] = f.SpuId
-	}
-	if f.Tag != nil {
-		*conds = append(*conds, `"tag" = ANY(@tag)`)
-		args["tag"] = f.Tag
+// ProductSpuTagQuery is the reusable base listing for "catalog"."product_spu_tag".
+func ProductSpuTagQuery() repolist.Query[CatalogProductSpuTag] {
+	return repolist.Query[CatalogProductSpuTag]{
+		Table: `"catalog"."product_spu_tag"`,
+		PK:    "id",
+		Sort:  []string{"id"},
+		Fields: func(m *CatalogProductSpuTag) map[string]any {
+			return map[string]any{
+				"id":     &m.ID,
+				"spu_id": &m.SpuID,
+				"tag":    &m.Tag,
+			}
+		},
 	}
 }
 
-func productSpuTagListSpec(f ListProductSpuTagParams) repolist.Spec[CatalogProductSpuTag] {
-	return repolist.Spec[CatalogProductSpuTag]{
-		Table: `"catalog"."product_spu_tag"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id": {Col: `"id"`, Cast: "int8"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { productSpuTagListConds(f, conds, args) },
+// ProductSpuTagConds maps the filter params to predicates.
+func ProductSpuTagConds(f ListProductSpuTagParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"spu_id"`, f.SpuId),
+		repolist.In(`"tag"`, f.Tag),
 	}
 }
 
 // ListProductSpuTag runs offset (?page) or cursor (?cursor/?sort) pagination over "catalog"."product_spu_tag".
 func (q *Queries) ListProductSpuTag(ctx context.Context, f ListProductSpuTagParams) (paginate.PaginateResult[CatalogProductSpuTag], error) {
-	return repolist.List(ctx, q.db, productSpuTagListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, ProductSpuTagQuery().Filter(ProductSpuTagConds(f)...))
 }

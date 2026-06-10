@@ -73,12 +73,6 @@ func createAccounts(ctx context.Context, store *accountdb.Queries, fake *gofakei
 		if err != nil {
 			return nil, fmt.Errorf("create contact for %s: %w", sa.Username, err)
 		}
-		if err := store.SetAccountDefaultContact(ctx, accountdb.SetAccountDefaultContactParams{
-			ID:               account.ID,
-			DefaultContactID: uuid.NullUUID{UUID: contact.ID, Valid: true},
-		}); err != nil {
-			return nil, fmt.Errorf("set default contact for %s: %w", sa.Username, err)
-		}
 
 		// Create profile
 		gender := []accountdb.AccountGender{
@@ -101,6 +95,13 @@ func createAccounts(ctx context.Context, store *accountdb.Queries, fake *gofakei
 		})
 		if err != nil {
 			return nil, fmt.Errorf("create profile for %s: %w", sa.Username, err)
+		}
+
+		if err = store.SetAccountDefaultContact(ctx, accountdb.SetAccountDefaultContactParams{
+			ID:               account.ID,
+			DefaultContactID: uuid.NullUUID{UUID: contact.ID, Valid: true},
+		}); err != nil {
+			return nil, fmt.Errorf("set default contact for %s: %w", sa.Username, err)
 		}
 	}
 

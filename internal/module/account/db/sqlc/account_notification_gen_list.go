@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -36,86 +35,53 @@ type ListNotificationParams struct {
 	DateScheduledTo   null.Time
 }
 
-func notificationListConds(f ListNotificationParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.AccountId != nil {
-		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
-		args["account_id"] = f.AccountId
-	}
-	if f.Type != nil {
-		*conds = append(*conds, `"type" = ANY(@type)`)
-		args["type"] = f.Type
-	}
-	if f.Channel != nil {
-		*conds = append(*conds, `"channel" = ANY(@channel)`)
-		args["channel"] = f.Channel
-	}
-	if f.Title != nil {
-		*conds = append(*conds, `"title" = ANY(@title)`)
-		args["title"] = f.Title
-	}
-	if f.IsRead != nil {
-		*conds = append(*conds, `"is_read" = ANY(@is_read)`)
-		args["is_read"] = f.IsRead
-	}
-	if f.Content != nil {
-		*conds = append(*conds, `"content" = ANY(@content)`)
-		args["content"] = f.Content
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
-	}
-	if f.DateSent != nil {
-		*conds = append(*conds, `"date_sent" = ANY(@date_sent)`)
-		args["date_sent"] = f.DateSent
-	}
-	if f.DateSentFrom.Valid {
-		*conds = append(*conds, `"date_sent" >= @date_sent_from`)
-		args["date_sent_from"] = f.DateSentFrom.Time
-	}
-	if f.DateSentTo.Valid {
-		*conds = append(*conds, `"date_sent" <= @date_sent_to`)
-		args["date_sent_to"] = f.DateSentTo.Time
-	}
-	if f.DateScheduled != nil {
-		*conds = append(*conds, `"date_scheduled" = ANY(@date_scheduled)`)
-		args["date_scheduled"] = f.DateScheduled
-	}
-	if f.DateScheduledFrom.Valid {
-		*conds = append(*conds, `"date_scheduled" >= @date_scheduled_from`)
-		args["date_scheduled_from"] = f.DateScheduledFrom.Time
-	}
-	if f.DateScheduledTo.Valid {
-		*conds = append(*conds, `"date_scheduled" <= @date_scheduled_to`)
-		args["date_scheduled_to"] = f.DateScheduledTo.Time
+// NotificationQuery is the reusable base listing for "account"."notification".
+func NotificationQuery() repolist.Query[AccountNotification] {
+	return repolist.Query[AccountNotification]{
+		Table: `"account"."notification"`,
+		PK:    "id",
+		Sort:  []string{"id", "date_created"},
+		Fields: func(m *AccountNotification) map[string]any {
+			return map[string]any{
+				"id":             &m.ID,
+				"account_id":     &m.AccountID,
+				"type":           &m.Type,
+				"channel":        &m.Channel,
+				"title":          &m.Title,
+				"is_read":        &m.IsRead,
+				"content":        &m.Content,
+				"metadata":       &m.Metadata,
+				"date_created":   &m.DateCreated,
+				"date_sent":      &m.DateSent,
+				"date_scheduled": &m.DateScheduled,
+			}
+		},
 	}
 }
 
-func notificationListSpec(f ListNotificationParams) repolist.Spec[AccountNotification] {
-	return repolist.Spec[AccountNotification]{
-		Table: `"account"."notification"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "int8"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { notificationListConds(f, conds, args) },
+// NotificationConds maps the filter params to predicates.
+func NotificationConds(f ListNotificationParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"account_id"`, f.AccountId),
+		repolist.In(`"type"`, f.Type),
+		repolist.In(`"channel"`, f.Channel),
+		repolist.In(`"title"`, f.Title),
+		repolist.In(`"is_read"`, f.IsRead),
+		repolist.In(`"content"`, f.Content),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+		repolist.In(`"date_sent"`, f.DateSent),
+		repolist.Gte(`"date_sent"`, f.DateSentFrom),
+		repolist.Lte(`"date_sent"`, f.DateSentTo),
+		repolist.In(`"date_scheduled"`, f.DateScheduled),
+		repolist.Gte(`"date_scheduled"`, f.DateScheduledFrom),
+		repolist.Lte(`"date_scheduled"`, f.DateScheduledTo),
 	}
 }
 
 // ListNotification runs offset (?page) or cursor (?cursor/?sort) pagination over "account"."notification".
 func (q *Queries) ListNotification(ctx context.Context, f ListNotificationParams) (paginate.PaginateResult[AccountNotification], error) {
-	return repolist.List(ctx, q.db, notificationListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, NotificationQuery().Filter(NotificationConds(f)...))
 }

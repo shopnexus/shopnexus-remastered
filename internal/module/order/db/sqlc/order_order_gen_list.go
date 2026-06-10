@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -31,66 +30,46 @@ type ListOrderParams struct {
 	Note             []string
 }
 
-func orderListConds(f ListOrderParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.BuyerId != nil {
-		*conds = append(*conds, `"buyer_id" = ANY(@buyer_id)`)
-		args["buyer_id"] = f.BuyerId
-	}
-	if f.SellerId != nil {
-		*conds = append(*conds, `"seller_id" = ANY(@seller_id)`)
-		args["seller_id"] = f.SellerId
-	}
-	if f.TransportId != nil {
-		*conds = append(*conds, `"transport_id" = ANY(@transport_id)`)
-		args["transport_id"] = f.TransportId
-	}
-	if f.Address != nil {
-		*conds = append(*conds, `"address" = ANY(@address)`)
-		args["address"] = f.Address
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
-	}
-	if f.ConfirmedById != nil {
-		*conds = append(*conds, `"confirmed_by_id" = ANY(@confirmed_by_id)`)
-		args["confirmed_by_id"] = f.ConfirmedById
-	}
-	if f.ConfirmSessionId != nil {
-		*conds = append(*conds, `"confirm_session_id" = ANY(@confirm_session_id)`)
-		args["confirm_session_id"] = f.ConfirmSessionId
-	}
-	if f.Note != nil {
-		*conds = append(*conds, `"note" = ANY(@note)`)
-		args["note"] = f.Note
+// OrderQuery is the reusable base listing for "order"."order".
+func OrderQuery() repolist.Query[OrderOrder] {
+	return repolist.Query[OrderOrder]{
+		Table: `"order"."order"`,
+		PK:    "id",
+		Sort:  []string{"id", "date_created"},
+		Fields: func(m *OrderOrder) map[string]any {
+			return map[string]any{
+				"id":                 &m.ID,
+				"buyer_id":           &m.BuyerID,
+				"seller_id":          &m.SellerID,
+				"transport_id":       &m.TransportID,
+				"address":            &m.Address,
+				"date_created":       &m.DateCreated,
+				"confirmed_by_id":    &m.ConfirmedByID,
+				"confirm_session_id": &m.ConfirmSessionID,
+				"note":               &m.Note,
+			}
+		},
 	}
 }
 
-func orderListSpec(f ListOrderParams) repolist.Spec[OrderOrder] {
-	return repolist.Spec[OrderOrder]{
-		Table: `"order"."order"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "uuid"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { orderListConds(f, conds, args) },
+// OrderConds maps the filter params to predicates.
+func OrderConds(f ListOrderParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"buyer_id"`, f.BuyerId),
+		repolist.In(`"seller_id"`, f.SellerId),
+		repolist.In(`"transport_id"`, f.TransportId),
+		repolist.In(`"address"`, f.Address),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+		repolist.In(`"confirmed_by_id"`, f.ConfirmedById),
+		repolist.In(`"confirm_session_id"`, f.ConfirmSessionId),
+		repolist.In(`"note"`, f.Note),
 	}
 }
 
 // ListOrder runs offset (?page) or cursor (?cursor/?sort) pagination over "order"."order".
 func (q *Queries) ListOrder(ctx context.Context, f ListOrderParams) (paginate.PaginateResult[OrderOrder], error) {
-	return repolist.List(ctx, q.db, orderListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, OrderQuery().Filter(OrderConds(f)...))
 }

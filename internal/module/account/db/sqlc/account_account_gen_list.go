@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -33,75 +32,48 @@ type ListAccountParams struct {
 	DateCreatedTo   null.Time
 }
 
-func accountListConds(f ListAccountParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.Number != nil {
-		*conds = append(*conds, `"number" = ANY(@number)`)
-		args["number"] = f.Number
-	}
-	if f.NumberFrom.Valid {
-		*conds = append(*conds, `"number" >= @number_from`)
-		args["number_from"] = f.NumberFrom.Int64
-	}
-	if f.NumberTo.Valid {
-		*conds = append(*conds, `"number" <= @number_to`)
-		args["number_to"] = f.NumberTo.Int64
-	}
-	if f.Status != nil {
-		*conds = append(*conds, `"status" = ANY(@status)`)
-		args["status"] = f.Status
-	}
-	if f.Role != nil {
-		*conds = append(*conds, `"role" = ANY(@role)`)
-		args["role"] = f.Role
-	}
-	if f.Phone != nil {
-		*conds = append(*conds, `"phone" = ANY(@phone)`)
-		args["phone"] = f.Phone
-	}
-	if f.Email != nil {
-		*conds = append(*conds, `"email" = ANY(@email)`)
-		args["email"] = f.Email
-	}
-	if f.Username != nil {
-		*conds = append(*conds, `"username" = ANY(@username)`)
-		args["username"] = f.Username
-	}
-	if f.Password != nil {
-		*conds = append(*conds, `"password" = ANY(@password)`)
-		args["password"] = f.Password
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
+// AccountQuery is the reusable base listing for "account"."account".
+func AccountQuery() repolist.Query[AccountAccount] {
+	return repolist.Query[AccountAccount]{
+		Table: `"account"."account"`,
+		PK:    "id",
+		Sort:  []string{"id", "number", "date_created"},
+		Fields: func(m *AccountAccount) map[string]any {
+			return map[string]any{
+				"id":           &m.ID,
+				"number":       &m.Number,
+				"status":       &m.Status,
+				"role":         &m.Role,
+				"phone":        &m.Phone,
+				"email":        &m.Email,
+				"username":     &m.Username,
+				"password":     &m.Password,
+				"date_created": &m.DateCreated,
+			}
+		},
 	}
 }
 
-func accountListSpec(f ListAccountParams) repolist.Spec[AccountAccount] {
-	return repolist.Spec[AccountAccount]{
-		Table: `"account"."account"`,
-		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "uuid"},
-			"number":       {Col: `"number"`, Cast: "int8"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { accountListConds(f, conds, args) },
+// AccountConds maps the filter params to predicates.
+func AccountConds(f ListAccountParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"number"`, f.Number),
+		repolist.Gte(`"number"`, f.NumberFrom),
+		repolist.Lte(`"number"`, f.NumberTo),
+		repolist.In(`"status"`, f.Status),
+		repolist.In(`"role"`, f.Role),
+		repolist.In(`"phone"`, f.Phone),
+		repolist.In(`"email"`, f.Email),
+		repolist.In(`"username"`, f.Username),
+		repolist.In(`"password"`, f.Password),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
 	}
 }
 
 // ListAccount runs offset (?page) or cursor (?cursor/?sort) pagination over "account"."account".
 func (q *Queries) ListAccount(ctx context.Context, f ListAccountParams) (paginate.PaginateResult[AccountAccount], error) {
-	return repolist.List(ctx, q.db, accountListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, AccountQuery().Filter(AccountConds(f)...))
 }

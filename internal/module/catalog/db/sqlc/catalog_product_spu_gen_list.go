@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	"github.com/jackc/pgx/v5"
 
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/repolist"
@@ -18,131 +17,98 @@ import (
 type ListProductSpuParams struct {
 	paginate.Params
 
-	Id              []uuid.UUID
-	Number          []int64
-	NumberFrom      null.Int
-	NumberTo        null.Int
-	Slug            []string
-	AccountId       []uuid.UUID
-	CategoryId      []uuid.UUID
-	FeaturedSkuId   []uuid.UUID
-	Name            []string
-	Description     []string
-	IsEnabled       []bool
-	Currency        []string
-	DateCreated     []time.Time
-	DateCreatedFrom null.Time
-	DateCreatedTo   null.Time
-	DateUpdated     []time.Time
-	DateUpdatedFrom null.Time
-	DateUpdatedTo   null.Time
-	DateDeleted     []time.Time
-	DateDeletedFrom null.Time
-	DateDeletedTo   null.Time
+	Id               []uuid.UUID
+	Number           []int64
+	NumberFrom       null.Int
+	NumberTo         null.Int
+	Slug             []string
+	AccountId        []uuid.UUID
+	CategoryId       []uuid.UUID
+	FeaturedSkuId    []uuid.UUID
+	Name             []string
+	Description      []string
+	IsEnabled        []bool
+	Currency         []string
+	DateCreated      []time.Time
+	DateCreatedFrom  null.Time
+	DateCreatedTo    null.Time
+	DateUpdated      []time.Time
+	DateUpdatedFrom  null.Time
+	DateUpdatedTo    null.Time
+	DateDeleted      []time.Time
+	DateDeletedFrom  null.Time
+	DateDeletedTo    null.Time
+	CachedPrice      []int64
+	CachedPriceFrom  null.Int
+	CachedPriceTo    null.Int
+	CachedRating     []float64
+	CachedRatingFrom null.Float
+	CachedRatingTo   null.Float
 }
 
-func productSpuListConds(f ListProductSpuParams, conds *[]string, args pgx.NamedArgs) {
-	if f.Id != nil {
-		*conds = append(*conds, `"id" = ANY(@id)`)
-		args["id"] = f.Id
-	}
-	if f.Number != nil {
-		*conds = append(*conds, `"number" = ANY(@number)`)
-		args["number"] = f.Number
-	}
-	if f.NumberFrom.Valid {
-		*conds = append(*conds, `"number" >= @number_from`)
-		args["number_from"] = f.NumberFrom.Int64
-	}
-	if f.NumberTo.Valid {
-		*conds = append(*conds, `"number" <= @number_to`)
-		args["number_to"] = f.NumberTo.Int64
-	}
-	if f.Slug != nil {
-		*conds = append(*conds, `"slug" = ANY(@slug)`)
-		args["slug"] = f.Slug
-	}
-	if f.AccountId != nil {
-		*conds = append(*conds, `"account_id" = ANY(@account_id)`)
-		args["account_id"] = f.AccountId
-	}
-	if f.CategoryId != nil {
-		*conds = append(*conds, `"category_id" = ANY(@category_id)`)
-		args["category_id"] = f.CategoryId
-	}
-	if f.FeaturedSkuId != nil {
-		*conds = append(*conds, `"featured_sku_id" = ANY(@featured_sku_id)`)
-		args["featured_sku_id"] = f.FeaturedSkuId
-	}
-	if f.Name != nil {
-		*conds = append(*conds, `"name" = ANY(@name)`)
-		args["name"] = f.Name
-	}
-	if f.Description != nil {
-		*conds = append(*conds, `"description" = ANY(@description)`)
-		args["description"] = f.Description
-	}
-	if f.IsEnabled != nil {
-		*conds = append(*conds, `"is_enabled" = ANY(@is_enabled)`)
-		args["is_enabled"] = f.IsEnabled
-	}
-	if f.Currency != nil {
-		*conds = append(*conds, `"currency" = ANY(@currency)`)
-		args["currency"] = f.Currency
-	}
-	if f.DateCreated != nil {
-		*conds = append(*conds, `"date_created" = ANY(@date_created)`)
-		args["date_created"] = f.DateCreated
-	}
-	if f.DateCreatedFrom.Valid {
-		*conds = append(*conds, `"date_created" >= @date_created_from`)
-		args["date_created_from"] = f.DateCreatedFrom.Time
-	}
-	if f.DateCreatedTo.Valid {
-		*conds = append(*conds, `"date_created" <= @date_created_to`)
-		args["date_created_to"] = f.DateCreatedTo.Time
-	}
-	if f.DateUpdated != nil {
-		*conds = append(*conds, `"date_updated" = ANY(@date_updated)`)
-		args["date_updated"] = f.DateUpdated
-	}
-	if f.DateUpdatedFrom.Valid {
-		*conds = append(*conds, `"date_updated" >= @date_updated_from`)
-		args["date_updated_from"] = f.DateUpdatedFrom.Time
-	}
-	if f.DateUpdatedTo.Valid {
-		*conds = append(*conds, `"date_updated" <= @date_updated_to`)
-		args["date_updated_to"] = f.DateUpdatedTo.Time
-	}
-	if f.DateDeleted != nil {
-		*conds = append(*conds, `"date_deleted" = ANY(@date_deleted)`)
-		args["date_deleted"] = f.DateDeleted
-	}
-	if f.DateDeletedFrom.Valid {
-		*conds = append(*conds, `"date_deleted" >= @date_deleted_from`)
-		args["date_deleted_from"] = f.DateDeletedFrom.Time
-	}
-	if f.DateDeletedTo.Valid {
-		*conds = append(*conds, `"date_deleted" <= @date_deleted_to`)
-		args["date_deleted_to"] = f.DateDeletedTo.Time
-	}
-}
-
-func productSpuListSpec(f ListProductSpuParams) repolist.Spec[CatalogProductSpu] {
-	return repolist.Spec[CatalogProductSpu]{
+// ProductSpuQuery is the reusable base listing for "catalog"."product_spu".
+func ProductSpuQuery() repolist.Query[CatalogProductSpu] {
+	return repolist.Query[CatalogProductSpu]{
 		Table: `"catalog"."product_spu"`,
 		PK:    "id",
-		Whitelist: paginate.Whitelist{
-			"id":           {Col: `"id"`, Cast: "uuid"},
-			"number":       {Col: `"number"`, Cast: "int8"},
-			"date_created": {Col: `"date_created"`, Cast: "timestamptz"},
-			"date_updated": {Col: `"date_updated"`, Cast: "timestamptz"},
+		Sort:  []string{"id", "number", "date_created", "date_updated", "cached_price", "cached_rating"},
+		Fields: func(m *CatalogProductSpu) map[string]any {
+			return map[string]any{
+				"id":              &m.ID,
+				"number":          &m.Number,
+				"slug":            &m.Slug,
+				"account_id":      &m.AccountID,
+				"category_id":     &m.CategoryID,
+				"featured_sku_id": &m.FeaturedSkuID,
+				"name":            &m.Name,
+				"description":     &m.Description,
+				"is_enabled":      &m.IsEnabled,
+				"currency":        &m.Currency,
+				"specifications":  &m.Specifications,
+				"date_created":    &m.DateCreated,
+				"date_updated":    &m.DateUpdated,
+				"date_deleted":    &m.DateDeleted,
+				"cached_price":    &m.CachedPrice,
+				"cached_rating":   &m.CachedRating,
+			}
 		},
-		BindConds: func(conds *[]string, args pgx.NamedArgs) { productSpuListConds(f, conds, args) },
+	}
+}
+
+// ProductSpuConds maps the filter params to predicates.
+func ProductSpuConds(f ListProductSpuParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"number"`, f.Number),
+		repolist.Gte(`"number"`, f.NumberFrom),
+		repolist.Lte(`"number"`, f.NumberTo),
+		repolist.In(`"slug"`, f.Slug),
+		repolist.In(`"account_id"`, f.AccountId),
+		repolist.In(`"category_id"`, f.CategoryId),
+		repolist.In(`"featured_sku_id"`, f.FeaturedSkuId),
+		repolist.In(`"name"`, f.Name),
+		repolist.In(`"description"`, f.Description),
+		repolist.In(`"is_enabled"`, f.IsEnabled),
+		repolist.In(`"currency"`, f.Currency),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+		repolist.In(`"date_updated"`, f.DateUpdated),
+		repolist.Gte(`"date_updated"`, f.DateUpdatedFrom),
+		repolist.Lte(`"date_updated"`, f.DateUpdatedTo),
+		repolist.In(`"date_deleted"`, f.DateDeleted),
+		repolist.Gte(`"date_deleted"`, f.DateDeletedFrom),
+		repolist.Lte(`"date_deleted"`, f.DateDeletedTo),
+		repolist.In(`"cached_price"`, f.CachedPrice),
+		repolist.Gte(`"cached_price"`, f.CachedPriceFrom),
+		repolist.Lte(`"cached_price"`, f.CachedPriceTo),
+		repolist.In(`"cached_rating"`, f.CachedRating),
+		repolist.Gte(`"cached_rating"`, f.CachedRatingFrom),
+		repolist.Lte(`"cached_rating"`, f.CachedRatingTo),
 	}
 }
 
 // ListProductSpu runs offset (?page) or cursor (?cursor/?sort) pagination over "catalog"."product_spu".
 func (q *Queries) ListProductSpu(ctx context.Context, f ListProductSpuParams) (paginate.PaginateResult[CatalogProductSpu], error) {
-	return repolist.List(ctx, q.db, productSpuListSpec(f), f.Params)
+	return repolist.List(ctx, q.db, f.Params, ProductSpuQuery().Filter(ProductSpuConds(f)...))
 }

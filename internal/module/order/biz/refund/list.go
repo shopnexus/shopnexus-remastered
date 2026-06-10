@@ -32,7 +32,8 @@ func (b *RefundHandler) ListBuyerRefunds(
 		return zero, fmt.Errorf("validate list buyer refunds: %w", err)
 	}
 
-	res, err := b.Storage.Querier().ListRefund(ctx, orderdb.ListRefundParams{Params: params.Params,
+	res, err := b.Storage.Querier().ListRefund(ctx, orderdb.ListRefundParams{
+		Params:    params.Params,
 		AccountId: []uuid.UUID{params.BuyerID},
 	})
 	if err != nil {
