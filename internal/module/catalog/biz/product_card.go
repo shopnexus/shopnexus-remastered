@@ -76,7 +76,7 @@ func (b *CatalogHandler) buildProductCards(
 		})
 	}
 
-	priceMap, err := b.promotion.Guaranteed().CalculatePromotedPrices(
+	priceMap, err := b.promotion.CalculatePromotedPrices(
 		ctx,
 		promotionbiz.CalculatePromotedPricesParams{Prices: requestPrices, SpuMap: spuMap},
 	)

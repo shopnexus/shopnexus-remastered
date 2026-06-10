@@ -67,7 +67,7 @@ func (h *Handler) GetPromotion(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.Guaranteed().GetPromotion(c.Request().Context(), promotionbiz.GetPromotionParams{
+	result, err := h.biz.GetPromotion(c.Request().Context(), promotionbiz.GetPromotionParams{
 		ID: req.ID,
 	})
 	if err != nil {
@@ -92,7 +92,7 @@ func (h *Handler) ListPromotion(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.Guaranteed().ListPromotion(c.Request().Context(), promotionbiz.ListPromotionParams{
+	result, err := h.biz.ListPromotion(c.Request().Context(), promotionbiz.ListPromotionParams{
 		Params: req.Params.Constrain(),
 	})
 	if err != nil {
@@ -133,7 +133,7 @@ func (h *Handler) CreatePromotion(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.Guaranteed().CreatePromotion(c.Request().Context(), promotionbiz.CreatePromotionParams{
+	result, err := h.biz.Call().CreatePromotion(c.Request().Context(), promotionbiz.CreatePromotionParams{
 		Account:     claims.Account,
 		Code:        req.Code,
 		Type:        req.Type,
@@ -214,7 +214,7 @@ func (h *Handler) UpdatePromotion(c echo.Context) error {
 		params.Refs = &refs
 	}
 
-	result, err := h.biz.Guaranteed().UpdatePromotion(c.Request().Context(), params)
+	result, err := h.biz.Call().UpdatePromotion(c.Request().Context(), params)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
@@ -242,7 +242,7 @@ func (h *Handler) DeletePromotion(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if err = h.biz.Guaranteed().DeletePromotion(c.Request().Context(), promotionbiz.DeletePromotionParams{
+	if err = h.biz.Call().DeletePromotion(c.Request().Context(), promotionbiz.DeletePromotionParams{
 		Account: claims.Account,
 		ID:      req.ID,
 	}); err != nil {

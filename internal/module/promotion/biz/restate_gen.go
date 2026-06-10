@@ -16,76 +16,60 @@ import (
 
 const serviceName = "Promotion"
 
-// PromotionBizSender mirrors PromotionBiz as one-way (fire-and-forget) calls; outputs are dropped.
+// PromotionBizCall mirrors the command methods of PromotionBiz as request-response calls.
+type PromotionBizCall interface {
+	CreatePromotion(ctx context.Context, params CreatePromotionParams) (promotionmodel.Promotion, error)
+	UpdatePromotion(ctx context.Context, params UpdatePromotionParams) (promotionmodel.Promotion, error)
+	DeletePromotion(ctx context.Context, params DeletePromotionParams) error
+}
+
+// PromotionBizSender mirrors the command methods of PromotionBiz as one-way (fire-and-forget) calls.
 type PromotionBizSender interface {
-	GetPromotion(ctx context.Context, params GetPromotionParams) error
-	ListPromotion(ctx context.Context, params ListPromotionParams) error
 	CreatePromotion(ctx context.Context, params CreatePromotionParams) error
 	UpdatePromotion(ctx context.Context, params UpdatePromotionParams) error
 	DeletePromotion(ctx context.Context, params DeletePromotionParams) error
-	CalculatePromotedPrices(ctx context.Context, params CalculatePromotedPricesParams) error
 }
 
-// PromotionBizFuture mirrors PromotionBiz returning response futures for racing
-// or parallel calls. Only usable inside a Restate handler context.
+// PromotionBizFuture mirrors the command methods of PromotionBiz returning response futures for
+// racing or parallel calls. Only usable inside a Restate handler context.
 type PromotionBizFuture interface {
-	GetPromotion(rctx restate.Context, params GetPromotionParams) restate.ResponseFuture[promotionmodel.Promotion]
-	ListPromotion(rctx restate.Context, params ListPromotionParams) restate.ResponseFuture[paginate.PaginateResult[promotionmodel.Promotion]]
 	CreatePromotion(rctx restate.Context, params CreatePromotionParams) restate.ResponseFuture[promotionmodel.Promotion]
 	UpdatePromotion(rctx restate.Context, params UpdatePromotionParams) restate.ResponseFuture[promotionmodel.Promotion]
 	DeletePromotion(rctx restate.Context, params DeletePromotionParams) restate.ResponseFuture[restate.Void]
-	CalculatePromotedPrices(rctx restate.Context, params CalculatePromotedPricesParams) restate.ResponseFuture[map[uuid.UUID]*catalogmodel.OrderPrice]
 }
 
-// PromotionBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
+// PromotionBizClient is the cross-module client: query methods are flat (non-durable),
+// Call()/Future()/Send() reach the durable command surfaces.
 type PromotionBizClient interface {
-	Guaranteed() PromotionBizGuaranteed
-	BestEffort() PromotionBizBestEffort
+	GetPromotion(ctx context.Context, params GetPromotionParams) (promotionmodel.Promotion, error)
+	ListPromotion(ctx context.Context, params ListPromotionParams) (paginate.PaginateResult[promotionmodel.Promotion], error)
+	CalculatePromotedPrices(ctx context.Context, params CalculatePromotedPricesParams) (map[uuid.UUID]*catalogmodel.OrderPrice, error)
+	Call() PromotionBizCall
+	Future() PromotionBizFuture
+	Send() PromotionBizSender
 }
 
-// PromotionRestateClient implements PromotionBizClient via Restate HTTP ingress.
-type PromotionRestateClient struct {
-	call   *restatec.CallClient
-	send   *PromotionRestateSender
-	future *PromotionRestateFuture
+// PromotionRestateCall implements PromotionBizCall via Restate HTTP ingress.
+type PromotionRestateCall struct {
+	call *restatec.CallClient
 }
 
-var _ PromotionBizGuaranteed = (*PromotionRestateClient)(nil)
+var _ PromotionBizCall = (*PromotionRestateCall)(nil)
 
-func NewPromotionRestateClient(restateIngressURL string) *PromotionRestateClient {
-	return &PromotionRestateClient{
-		call:   restatec.NewCallClient(restateIngressURL),
-		send:   &PromotionRestateSender{client: restatec.NewSendClient(restateIngressURL)},
-		future: &PromotionRestateFuture{},
-	}
+func NewPromotionRestateCall(restateIngressURL string) *PromotionRestateCall {
+	return &PromotionRestateCall{call: restatec.NewCallClient(restateIngressURL)}
 }
 
-func (p *PromotionRestateClient) Send() PromotionBizSender { return p.send }
-
-func (p *PromotionRestateClient) Future() PromotionBizFuture { return p.future }
-
-func (p *PromotionRestateClient) GetPromotion(ctx context.Context, params GetPromotionParams) (promotionmodel.Promotion, error) {
-	return restatec.Call[promotionmodel.Promotion](ctx, p.call, serviceName, "GetPromotion", params)
-}
-
-func (p *PromotionRestateClient) ListPromotion(ctx context.Context, params ListPromotionParams) (paginate.PaginateResult[promotionmodel.Promotion], error) {
-	return restatec.Call[paginate.PaginateResult[promotionmodel.Promotion]](ctx, p.call, serviceName, "ListPromotion", params)
-}
-
-func (p *PromotionRestateClient) CreatePromotion(ctx context.Context, params CreatePromotionParams) (promotionmodel.Promotion, error) {
+func (p *PromotionRestateCall) CreatePromotion(ctx context.Context, params CreatePromotionParams) (promotionmodel.Promotion, error) {
 	return restatec.Call[promotionmodel.Promotion](ctx, p.call, serviceName, "CreatePromotion", params)
 }
 
-func (p *PromotionRestateClient) UpdatePromotion(ctx context.Context, params UpdatePromotionParams) (promotionmodel.Promotion, error) {
+func (p *PromotionRestateCall) UpdatePromotion(ctx context.Context, params UpdatePromotionParams) (promotionmodel.Promotion, error) {
 	return restatec.Call[promotionmodel.Promotion](ctx, p.call, serviceName, "UpdatePromotion", params)
 }
 
-func (p *PromotionRestateClient) DeletePromotion(ctx context.Context, params DeletePromotionParams) error {
+func (p *PromotionRestateCall) DeletePromotion(ctx context.Context, params DeletePromotionParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "DeletePromotion", params)
-}
-
-func (p *PromotionRestateClient) CalculatePromotedPrices(ctx context.Context, params CalculatePromotedPricesParams) (map[uuid.UUID]*catalogmodel.OrderPrice, error) {
-	return restatec.Call[map[uuid.UUID]*catalogmodel.OrderPrice](ctx, p.call, serviceName, "CalculatePromotedPrices", params)
 }
 
 // PromotionRestateSender implements PromotionBizSender.
@@ -94,14 +78,6 @@ type PromotionRestateSender struct {
 }
 
 var _ PromotionBizSender = (*PromotionRestateSender)(nil)
-
-func (s *PromotionRestateSender) GetPromotion(ctx context.Context, params GetPromotionParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetPromotion", params)
-}
-
-func (s *PromotionRestateSender) ListPromotion(ctx context.Context, params ListPromotionParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListPromotion", params)
-}
 
 func (s *PromotionRestateSender) CreatePromotion(ctx context.Context, params CreatePromotionParams) error {
 	return restatec.Send(ctx, s.client, serviceName, "CreatePromotion", params)
@@ -115,22 +91,10 @@ func (s *PromotionRestateSender) DeletePromotion(ctx context.Context, params Del
 	return restatec.Send(ctx, s.client, serviceName, "DeletePromotion", params)
 }
 
-func (s *PromotionRestateSender) CalculatePromotedPrices(ctx context.Context, params CalculatePromotedPricesParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "CalculatePromotedPrices", params)
-}
-
 // PromotionRestateFuture implements PromotionBizFuture via the Restate SDK.
 type PromotionRestateFuture struct{}
 
 var _ PromotionBizFuture = (*PromotionRestateFuture)(nil)
-
-func (f *PromotionRestateFuture) GetPromotion(rctx restate.Context, params GetPromotionParams) restate.ResponseFuture[promotionmodel.Promotion] {
-	return restate.Service[promotionmodel.Promotion](rctx, serviceName, "GetPromotion").RequestFuture(params)
-}
-
-func (f *PromotionRestateFuture) ListPromotion(rctx restate.Context, params ListPromotionParams) restate.ResponseFuture[paginate.PaginateResult[promotionmodel.Promotion]] {
-	return restate.Service[paginate.PaginateResult[promotionmodel.Promotion]](rctx, serviceName, "ListPromotion").RequestFuture(params)
-}
 
 func (f *PromotionRestateFuture) CreatePromotion(rctx restate.Context, params CreatePromotionParams) restate.ResponseFuture[promotionmodel.Promotion] {
 	return restate.Service[promotionmodel.Promotion](rctx, serviceName, "CreatePromotion").RequestFuture(params)
@@ -142,10 +106,6 @@ func (f *PromotionRestateFuture) UpdatePromotion(rctx restate.Context, params Up
 
 func (f *PromotionRestateFuture) DeletePromotion(rctx restate.Context, params DeletePromotionParams) restate.ResponseFuture[restate.Void] {
 	return restate.Service[restate.Void](rctx, serviceName, "DeletePromotion").RequestFuture(params)
-}
-
-func (f *PromotionRestateFuture) CalculatePromotedPrices(rctx restate.Context, params CalculatePromotedPricesParams) restate.ResponseFuture[map[uuid.UUID]*catalogmodel.OrderPrice] {
-	return restate.Service[map[uuid.UUID]*catalogmodel.OrderPrice](rctx, serviceName, "CalculatePromotedPrices").RequestFuture(params)
 }
 
 // PromotionService adapts PromotionBiz into restate.Context handlers for restate.Reflect.
@@ -181,22 +141,17 @@ func (s *PromotionService) CalculatePromotedPrices(ctx restate.Context, params C
 	return s.biz.CalculatePromotedPrices(ctx, params)
 }
 
-// PromotionBizGuaranteed is the guaranteed (durable Restate) surface.
-type PromotionBizGuaranteed interface {
-	PromotionBiz
-	Send() PromotionBizSender
-	Future() PromotionBizFuture
+// PromotionBizFlat is the flat (non-durable query) surface of PromotionBiz.
+type PromotionBizFlat interface {
+	GetPromotion(ctx context.Context, params GetPromotionParams) (promotionmodel.Promotion, error)
+	ListPromotion(ctx context.Context, params ListPromotionParams) (paginate.PaginateResult[promotionmodel.Promotion], error)
+	CalculatePromotedPrices(ctx context.Context, params CalculatePromotedPricesParams) (map[uuid.UUID]*catalogmodel.OrderPrice, error)
 }
 
-// PromotionBizBestEffort is the best-effort (non-durable) surface: sync request-response only.
-type PromotionBizBestEffort interface {
-	PromotionBiz
-}
-
-// promotionBizBestEffortLocal delegates BestEffort calls to the in-process biz.
+// promotionBizBestEffortLocal delegates flat queries to the in-process biz.
 type promotionBizBestEffortLocal struct{ biz PromotionBiz }
 
-var _ PromotionBizBestEffort = (*promotionBizBestEffortLocal)(nil)
+var _ PromotionBizFlat = (*promotionBizBestEffortLocal)(nil)
 
 func (b *promotionBizBestEffortLocal) GetPromotion(ctx context.Context, params GetPromotionParams) (promotionmodel.Promotion, error) {
 	return b.biz.GetPromotion(ctx, params)
@@ -206,26 +161,14 @@ func (b *promotionBizBestEffortLocal) ListPromotion(ctx context.Context, params 
 	return b.biz.ListPromotion(ctx, params)
 }
 
-func (b *promotionBizBestEffortLocal) CreatePromotion(ctx context.Context, params CreatePromotionParams) (promotionmodel.Promotion, error) {
-	return b.biz.CreatePromotion(ctx, params)
-}
-
-func (b *promotionBizBestEffortLocal) UpdatePromotion(ctx context.Context, params UpdatePromotionParams) (promotionmodel.Promotion, error) {
-	return b.biz.UpdatePromotion(ctx, params)
-}
-
-func (b *promotionBizBestEffortLocal) DeletePromotion(ctx context.Context, params DeletePromotionParams) error {
-	return b.biz.DeletePromotion(ctx, params)
-}
-
 func (b *promotionBizBestEffortLocal) CalculatePromotedPrices(ctx context.Context, params CalculatePromotedPricesParams) (map[uuid.UUID]*catalogmodel.OrderPrice, error) {
 	return b.biz.CalculatePromotedPrices(ctx, params)
 }
 
-// promotionBizBestEffortRemote routes BestEffort calls over HTTP/2.
+// promotionBizBestEffortRemote routes flat queries over HTTP/2.
 type promotionBizBestEffortRemote struct{ call *besteffort.CallClient }
 
-var _ PromotionBizBestEffort = (*promotionBizBestEffortRemote)(nil)
+var _ PromotionBizFlat = (*promotionBizBestEffortRemote)(nil)
 
 func (b *promotionBizBestEffortRemote) GetPromotion(ctx context.Context, params GetPromotionParams) (promotionmodel.Promotion, error) {
 	return besteffort.Call[promotionmodel.Promotion](ctx, b.call, serviceName, "GetPromotion", params)
@@ -235,51 +178,60 @@ func (b *promotionBizBestEffortRemote) ListPromotion(ctx context.Context, params
 	return besteffort.Call[paginate.PaginateResult[promotionmodel.Promotion]](ctx, b.call, serviceName, "ListPromotion", params)
 }
 
-func (b *promotionBizBestEffortRemote) CreatePromotion(ctx context.Context, params CreatePromotionParams) (promotionmodel.Promotion, error) {
-	return besteffort.Call[promotionmodel.Promotion](ctx, b.call, serviceName, "CreatePromotion", params)
-}
-
-func (b *promotionBizBestEffortRemote) UpdatePromotion(ctx context.Context, params UpdatePromotionParams) (promotionmodel.Promotion, error) {
-	return besteffort.Call[promotionmodel.Promotion](ctx, b.call, serviceName, "UpdatePromotion", params)
-}
-
-func (b *promotionBizBestEffortRemote) DeletePromotion(ctx context.Context, params DeletePromotionParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "DeletePromotion", params)
-}
-
 func (b *promotionBizBestEffortRemote) CalculatePromotedPrices(ctx context.Context, params CalculatePromotedPricesParams) (map[uuid.UUID]*catalogmodel.OrderPrice, error) {
 	return besteffort.Call[map[uuid.UUID]*catalogmodel.OrderPrice](ctx, b.call, serviceName, "CalculatePromotedPrices", params)
 }
 
-// PromotionBizClient selects the guaranteed (durable) or best-effort (non-durable) transport.
+// promotionBizClient holds the flat query impl and the durable command proxies.
 type promotionBizClient struct {
-	*PromotionRestateClient
-	bestEffort PromotionBizBestEffort
+	flat   PromotionBizFlat
+	call   *PromotionRestateCall
+	send   *PromotionRestateSender
+	future *PromotionRestateFuture
 }
 
 var _ PromotionBizClient = (*promotionBizClient)(nil)
 
-func (c *promotionBizClient) Guaranteed() PromotionBizGuaranteed { return c.PromotionRestateClient }
+func (c *promotionBizClient) GetPromotion(ctx context.Context, params GetPromotionParams) (promotionmodel.Promotion, error) {
+	return c.flat.GetPromotion(ctx, params)
+}
 
-func (c *promotionBizClient) BestEffort() PromotionBizBestEffort { return c.bestEffort }
+func (c *promotionBizClient) ListPromotion(ctx context.Context, params ListPromotionParams) (paginate.PaginateResult[promotionmodel.Promotion], error) {
+	return c.flat.ListPromotion(ctx, params)
+}
 
-// NewPromotionBizClientInProcess builds a client whose BestEffort calls the in-process biz.
+func (c *promotionBizClient) CalculatePromotedPrices(ctx context.Context, params CalculatePromotedPricesParams) (map[uuid.UUID]*catalogmodel.OrderPrice, error) {
+	return c.flat.CalculatePromotedPrices(ctx, params)
+}
+
+func (c *promotionBizClient) Call() PromotionBizCall { return c.call }
+
+func (c *promotionBizClient) Future() PromotionBizFuture { return c.future }
+
+func (c *promotionBizClient) Send() PromotionBizSender { return c.send }
+
+// NewPromotionBizClientInProcess builds a client whose flat queries call the in-process biz.
 func NewPromotionBizClientInProcess(restateIngressURL string, biz PromotionBiz) PromotionBizClient {
 	return &promotionBizClient{
-		PromotionRestateClient: NewPromotionRestateClient(restateIngressURL),
-		bestEffort:             &promotionBizBestEffortLocal{biz: biz},
+		flat:   &promotionBizBestEffortLocal{biz: biz},
+		call:   NewPromotionRestateCall(restateIngressURL),
+		send:   &PromotionRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &PromotionRestateFuture{},
 	}
 }
 
-// NewPromotionBizClientRemote builds a client whose BestEffort calls a remote BestEffort server.
+// NewPromotionBizClientRemote builds a client whose flat queries call a remote besteffort server.
 func NewPromotionBizClientRemote(restateIngressURL, bestEffortURL string) PromotionBizClient {
 	return &promotionBizClient{
-		PromotionRestateClient: NewPromotionRestateClient(restateIngressURL),
-		bestEffort:             &promotionBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+		flat:   &promotionBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+		call:   NewPromotionRestateCall(restateIngressURL),
+		send:   &PromotionRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &PromotionRestateFuture{},
 	}
 }
 
-// RegisterPromotionBestEffort wires biz methods onto a BestEffort HTTP/2 server.
+// RegisterPromotionBestEffort wires the query methods onto a besteffort HTTP server.
+// Commands are served by Restate, not here.
 func RegisterPromotionBestEffort(s *besteffort.Server, biz PromotionBiz) {
 	s.Handle(serviceName, "GetPromotion", func(ctx context.Context, body []byte) (any, error) {
 		var p GetPromotionParams
@@ -294,27 +246,6 @@ func RegisterPromotionBestEffort(s *besteffort.Server, biz PromotionBiz) {
 			return nil, err
 		}
 		return biz.ListPromotion(ctx, p)
-	})
-	s.Handle(serviceName, "CreatePromotion", func(ctx context.Context, body []byte) (any, error) {
-		var p CreatePromotionParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.CreatePromotion(ctx, p)
-	})
-	s.Handle(serviceName, "UpdatePromotion", func(ctx context.Context, body []byte) (any, error) {
-		var p UpdatePromotionParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.UpdatePromotion(ctx, p)
-	})
-	s.Handle(serviceName, "DeletePromotion", func(ctx context.Context, body []byte) (any, error) {
-		var p DeletePromotionParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.DeletePromotion(ctx, p)
 	})
 	s.Handle(serviceName, "CalculatePromotedPrices", func(ctx context.Context, body []byte) (any, error) {
 		var p CalculatePromotedPricesParams

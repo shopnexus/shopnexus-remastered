@@ -79,7 +79,7 @@ func (b *CatalogHandler) GetProductDetail(
 		})
 	}
 
-	priceMap, err := b.promotion.Guaranteed().CalculatePromotedPrices(
+	priceMap, err := b.promotion.CalculatePromotedPrices(
 		ctx,
 		promotionbiz.CalculatePromotedPricesParams{Prices: requestPrices, SpuMap: map[uuid.UUID]promotionmodel.PromoSpu{
 			spu.ID: {ID: spu.ID, CategoryID: spu.Category.ID},

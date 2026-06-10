@@ -11,6 +11,7 @@ import (
 	"shopnexus-server/internal/shared/pgsqlc"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 )
 
 // PromotionBiz is the client interface for PromotionHandler, which is used by other modules to call PromotionHandler methods.
@@ -23,9 +24,9 @@ type PromotionBiz interface {
 		ctx context.Context,
 		params ListPromotionParams,
 	) (paginate.PaginateResult[promotionmodel.Promotion], error)
-	CreatePromotion(ctx context.Context, params CreatePromotionParams) (promotionmodel.Promotion, error)
-	UpdatePromotion(ctx context.Context, params UpdatePromotionParams) (promotionmodel.Promotion, error)
-	DeletePromotion(ctx context.Context, params DeletePromotionParams) error
+	CreatePromotion(ctx restate.Context, params CreatePromotionParams) (promotionmodel.Promotion, error)
+	UpdatePromotion(ctx restate.Context, params UpdatePromotionParams) (promotionmodel.Promotion, error)
+	DeletePromotion(ctx restate.Context, params DeletePromotionParams) error
 	CalculatePromotedPrices(
 		ctx context.Context,
 		params CalculatePromotedPricesParams,

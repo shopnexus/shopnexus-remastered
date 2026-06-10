@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
+	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 
 	accountmodel "shopnexus-server/internal/module/account/model"
@@ -112,7 +113,7 @@ type CreatePromotionParams struct {
 
 // CreatePromotion creates a new promotion with the given parameters and refs.
 func (b *PromotionHandler) CreatePromotion(
-	ctx context.Context,
+	ctx restate.Context,
 	params CreatePromotionParams,
 ) (promotionmodel.Promotion, error) {
 	var zero promotionmodel.Promotion
@@ -121,28 +122,31 @@ func (b *PromotionHandler) CreatePromotion(
 		return zero, fmt.Errorf("validate create promotion: %w", err)
 	}
 
-	dbPromo, err := b.storage.Querier().CreateDefaultPromotion(ctx, promotiondb.CreateDefaultPromotionParams{
-		Code:        params.Code,
-		OwnerID:     uuid.NullUUID{UUID: params.Account.ID, Valid: true},
-		Type:        promotiondb.PromotionType(params.Type),
-		Title:       params.Title,
-		Description: params.Description,
-		IsEnabled:   params.IsEnabled,
-		AutoApply:   params.AutoApply,
-		Group:       params.Group,
-		Data:        params.Data,
-		DateStarted: params.DateStarted,
-		DateEnded:   params.DateEnded,
+	// execution: insert the promotion and its refs.
+	return restate.Run(ctx, func(rctx restate.RunContext) (promotionmodel.Promotion, error) {
+		dbPromo, err := b.storage.Querier().CreateDefaultPromotion(rctx, promotiondb.CreateDefaultPromotionParams{
+			Code:        params.Code,
+			OwnerID:     uuid.NullUUID{UUID: params.Account.ID, Valid: true},
+			Type:        promotiondb.PromotionType(params.Type),
+			Title:       params.Title,
+			Description: params.Description,
+			IsEnabled:   params.IsEnabled,
+			AutoApply:   params.AutoApply,
+			Group:       params.Group,
+			Data:        params.Data,
+			DateStarted: params.DateStarted,
+			DateEnded:   params.DateEnded,
+		})
+		if err != nil {
+			return zero, fmt.Errorf("db create promotion: %w", err)
+		}
+
+		if err := createRefs(rctx, b.storage, dbPromo.ID, params.Refs); err != nil {
+			return zero, fmt.Errorf("db create promotion: %w", err)
+		}
+
+		return mapPromotion(dbPromo, nil), nil
 	})
-	if err != nil {
-		return zero, fmt.Errorf("db create promotion: %w", err)
-	}
-
-	if err := createRefs(ctx, b.storage, dbPromo.ID, params.Refs); err != nil {
-		return zero, fmt.Errorf("db create promotion: %w", err)
-	}
-
-	return mapPromotion(dbPromo, nil), nil
 }
 
 // --- Update ---
@@ -171,7 +175,7 @@ type UpdatePromotionParams struct {
 
 // UpdatePromotion updates the specified promotion fields and optionally replaces its refs.
 func (s *PromotionHandler) UpdatePromotion(
-	ctx context.Context,
+	ctx restate.Context,
 	params UpdatePromotionParams,
 ) (promotionmodel.Promotion, error) {
 	var zero promotionmodel.Promotion
@@ -180,39 +184,42 @@ func (s *PromotionHandler) UpdatePromotion(
 		return zero, fmt.Errorf("validate update promotion: %w", err)
 	}
 
-	dbPromo, err := s.storage.Querier().UpdatePromotion(ctx, promotiondb.UpdatePromotionParams{
-		ID:              params.ID,
-		Code:            params.Code,
-		OwnerID:         params.OwnerID,
-		NullOwnerID:     params.NullOwnerID,
-		Title:           params.Title,
-		Description:     params.Description,
-		NullDescription: params.NullDescription,
-		IsEnabled:       params.IsEnabled,
-		AutoApply:       params.AutoApply,
-		Group:           params.Group,
-		Data:            params.Data,
-		NullData:        params.NullData,
-		DateStarted:     params.DateStarted,
-		DateEnded:       params.DateEnded,
-		NullDateEnded:   params.NullDateEnded,
+	// execution: update the promotion and optionally replace its refs.
+	return restate.Run(ctx, func(rctx restate.RunContext) (promotionmodel.Promotion, error) {
+		dbPromo, err := s.storage.Querier().UpdatePromotion(rctx, promotiondb.UpdatePromotionParams{
+			ID:              params.ID,
+			Code:            params.Code,
+			OwnerID:         params.OwnerID,
+			NullOwnerID:     params.NullOwnerID,
+			Title:           params.Title,
+			Description:     params.Description,
+			NullDescription: params.NullDescription,
+			IsEnabled:       params.IsEnabled,
+			AutoApply:       params.AutoApply,
+			Group:           params.Group,
+			Data:            params.Data,
+			NullData:        params.NullData,
+			DateStarted:     params.DateStarted,
+			DateEnded:       params.DateEnded,
+			NullDateEnded:   params.NullDateEnded,
+		})
+		if err != nil {
+			return zero, fmt.Errorf("db update promotion: %w", err)
+		}
+
+		if params.Refs != nil {
+			if err := s.storage.Querier().DeleteRef(rctx, promotiondb.DeleteRefParams{
+				PromotionID: []uuid.UUID{params.ID},
+			}); err != nil {
+				return zero, fmt.Errorf("db update promotion: %w", err)
+			}
+			if err := createRefs(rctx, s.storage, dbPromo.ID, *params.Refs); err != nil {
+				return zero, fmt.Errorf("db update promotion: %w", err)
+			}
+		}
+
+		return mapPromotion(dbPromo, nil), nil
 	})
-	if err != nil {
-		return zero, fmt.Errorf("db update promotion: %w", err)
-	}
-
-	if params.Refs != nil {
-		if err := s.storage.Querier().DeleteRef(ctx, promotiondb.DeleteRefParams{
-			PromotionID: []uuid.UUID{params.ID},
-		}); err != nil {
-			return zero, fmt.Errorf("db update promotion: %w", err)
-		}
-		if err := createRefs(ctx, s.storage, dbPromo.ID, *params.Refs); err != nil {
-			return zero, fmt.Errorf("db update promotion: %w", err)
-		}
-	}
-
-	return mapPromotion(dbPromo, nil), nil
 }
 
 // --- Delete ---
@@ -223,9 +230,12 @@ type DeletePromotionParams struct {
 }
 
 // DeletePromotion deletes the promotion with the given ID.
-func (s *PromotionHandler) DeletePromotion(ctx context.Context, params DeletePromotionParams) error {
-	return s.storage.Querier().DeletePromotion(ctx, promotiondb.DeletePromotionParams{
-		ID: []uuid.UUID{params.ID},
+func (s *PromotionHandler) DeletePromotion(ctx restate.Context, params DeletePromotionParams) error {
+	// execution: delete the promotion.
+	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		return s.storage.Querier().DeletePromotion(rctx, promotiondb.DeletePromotionParams{
+			ID: []uuid.UUID{params.ID},
+		})
 	})
 }
 
