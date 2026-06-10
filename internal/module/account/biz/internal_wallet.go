@@ -1,12 +1,12 @@
 package accountbiz
 
 import (
+	"context"
 	"fmt"
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
-	restate "github.com/restatedev/sdk-go"
 )
 
 type WalletDebitParams struct {
@@ -30,10 +30,8 @@ type WalletCreditParams struct {
 }
 
 // GetWalletBalance returns the account's internal money balance.
-func (b *AccountHandler) GetWalletBalance(ctx restate.Context, accountID uuid.UUID) (int64, error) {
-	balance, err := restate.Run(ctx, func(rctx restate.RunContext) (int64, error) {
-		return b.storage.Querier().GetInternalBalance(rctx, accountID)
-	})
+func (b *AccountHandler) GetWalletBalance(ctx context.Context, accountID uuid.UUID) (int64, error) {
+	balance, err := b.storage.Querier().GetInternalBalance(ctx, accountID)
 	if err != nil {
 		return 0, fmt.Errorf("get internal balance: %w", err)
 	}
@@ -42,12 +40,12 @@ func (b *AccountHandler) GetWalletBalance(ctx restate.Context, accountID uuid.UU
 
 // WalletDebit deducts min(balance, amount) atomically and returns (deducted, new balance).
 // The underlying CTE row-locks the profile so concurrent debits serialize correctly.
-func (b *AccountHandler) WalletDebit(ctx restate.Context, params WalletDebitParams) (WalletDebitResult, error) {
+func (b *AccountHandler) WalletDebit(ctx context.Context, params WalletDebitParams) (WalletDebitResult, error) {
 	if err := validator.Validate(params); err != nil {
 		return WalletDebitResult{}, fmt.Errorf("debit internal balance: %w", err)
 	}
-	res, err := restate.Run(ctx, func(rctx restate.RunContext) (WalletDebitResult, error) {
-		row, err := b.storage.Querier().DebitInternalBalance(rctx, accountdb.DebitInternalBalanceParams{
+	res, err := func() (WalletDebitResult, error) {
+		row, err := b.storage.Querier().DebitInternalBalance(ctx, accountdb.DebitInternalBalanceParams{
 			AccountID: params.AccountID,
 			Amount:    params.Amount,
 		})
@@ -55,7 +53,7 @@ func (b *AccountHandler) WalletDebit(ctx restate.Context, params WalletDebitPara
 			return WalletDebitResult{}, err
 		}
 		return WalletDebitResult{Deducted: row.OldBalance - row.NewBalance, Balance: row.NewBalance}, nil
-	})
+	}()
 	if err != nil {
 		return WalletDebitResult{}, fmt.Errorf("debit internal balance: %w", err)
 	}
@@ -63,16 +61,13 @@ func (b *AccountHandler) WalletDebit(ctx restate.Context, params WalletDebitPara
 }
 
 // WalletCredit adds the given amount to the account's internal balance.
-func (b *AccountHandler) WalletCredit(ctx restate.Context, params WalletCreditParams) error {
+func (b *AccountHandler) WalletCredit(ctx context.Context, params WalletCreditParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("credit internal balance: %w", err)
 	}
-	if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-		_, err := b.storage.Querier().CreditInternalBalance(rctx, accountdb.CreditInternalBalanceParams{
-			AccountID: params.AccountID,
-			Amount:    params.Amount,
-		})
-		return err
+	if _, err := b.storage.Querier().CreditInternalBalance(ctx, accountdb.CreditInternalBalanceParams{
+		AccountID: params.AccountID,
+		Amount:    params.Amount,
 	}); err != nil {
 		return fmt.Errorf("credit internal balance: %w", err)
 	}

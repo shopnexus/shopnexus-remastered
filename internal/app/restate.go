@@ -50,7 +50,7 @@ func SetupRestate(
 		restate.PauseOnMaxAttempts())
 
 	srv := server.NewRestate().
-		Bind(restate.Reflect(accountBiz, retryPolicy)).
+		Bind(restate.Reflect(accountbiz.NewAccountService(accountBiz), retryPolicy)).
 		Bind(restate.Reflect(analyticbiz.NewAnalyticService(analyticBiz), retryPolicy)).
 		Bind(restate.Reflect(catalogbiz.NewCatalogService(catalogBiz), retryPolicy)).
 		Bind(restate.Reflect(chatbiz.NewChatService(chatBiz), retryPolicy)).

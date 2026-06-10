@@ -1,10 +1,9 @@
 package accountbiz
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-
-	restate "github.com/restatedev/sdk-go"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
@@ -25,7 +24,7 @@ type ListNotificationParams struct {
 
 // ListNotification returns paginated notifications for the authenticated account.
 func (b *AccountHandler) ListNotification(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListNotificationParams,
 ) (paginate.PaginateResult[accountdb.AccountNotification], error) {
 	var zero paginate.PaginateResult[accountdb.AccountNotification]
@@ -62,7 +61,7 @@ type CountUnreadParams struct {
 }
 
 // CountUnread returns the number of unread notifications for the given account.
-func (b *AccountHandler) CountUnread(ctx restate.Context, params CountUnreadParams) (int64, error) {
+func (b *AccountHandler) CountUnread(ctx context.Context, params CountUnreadParams) (int64, error) {
 	if err := validator.Validate(params); err != nil {
 		return 0, fmt.Errorf("validate count unread params: %w", err)
 	}
@@ -79,7 +78,7 @@ type MarkReadParams struct {
 }
 
 // MarkRead marks the specified notification IDs as read.
-func (b *AccountHandler) MarkRead(ctx restate.Context, params MarkReadParams) error {
+func (b *AccountHandler) MarkRead(ctx context.Context, params MarkReadParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate mark read params: %w", err)
 	}
@@ -98,7 +97,7 @@ type MarkAllReadParams struct {
 }
 
 // MarkAllRead marks all unread notifications as read for the given account.
-func (b *AccountHandler) MarkAllRead(ctx restate.Context, params MarkAllReadParams) error {
+func (b *AccountHandler) MarkAllRead(ctx context.Context, params MarkAllReadParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate mark all read params: %w", err)
 	}
@@ -120,7 +119,7 @@ type CreateNotificationParams struct {
 
 // CreateNotification creates a new notification for the given account.
 func (b *AccountHandler) CreateNotification(
-	ctx restate.Context,
+	ctx context.Context,
 	params CreateNotificationParams,
 ) (accountdb.AccountNotification, error) {
 	if err := validator.Validate(params); err != nil {

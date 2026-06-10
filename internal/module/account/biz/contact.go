@@ -1,9 +1,8 @@
 package accountbiz
 
 import (
+	"context"
 	"fmt"
-
-	restate "github.com/restatedev/sdk-go"
 
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	accountmodel "shopnexus-server/internal/module/account/model"
@@ -19,7 +18,7 @@ import (
 // match the owner's profile country. Used by CreateContact/UpdateContact so
 // a user can only register addresses that resolve to their own country.
 func (b *AccountHandler) validateAddressCountry(
-	ctx restate.Context,
+	ctx context.Context,
 	accountID uuid.UUID,
 	address string,
 ) error {
@@ -48,7 +47,7 @@ type ListContactParams struct {
 
 // ListContact returns contacts matching the given account and contact IDs.
 func (b *AccountHandler) ListContact(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListContactParams,
 ) ([]accountdb.AccountContact, error) {
 	if err := validator.Validate(params); err != nil {
@@ -72,7 +71,7 @@ type GetContactParams struct {
 }
 
 // GetContact returns a single contact by ID for the authenticated account.
-func (b *AccountHandler) GetContact(ctx restate.Context, params GetContactParams) (accountdb.AccountContact, error) {
+func (b *AccountHandler) GetContact(ctx context.Context, params GetContactParams) (accountdb.AccountContact, error) {
 	var zero accountdb.AccountContact
 
 	if err := validator.Validate(params); err != nil {
@@ -106,7 +105,7 @@ type CreateContactParams struct {
 
 // CreateContact creates a new contact for the authenticated account.
 func (b *AccountHandler) CreateContact(
-	ctx restate.Context,
+	ctx context.Context,
 	params CreateContactParams,
 ) (accountdb.AccountContact, error) {
 	var zero accountdb.AccountContact
@@ -177,7 +176,7 @@ type UpdateContactParams struct {
 
 // UpdateContact updates the specified contact fields.
 func (b *AccountHandler) UpdateContact(
-	ctx restate.Context,
+	ctx context.Context,
 	params UpdateContactParams,
 ) (accountdb.AccountContact, error) {
 	var zero accountdb.AccountContact
@@ -225,7 +224,7 @@ type DeleteContactParams struct {
 // DeleteContact removes a contact belonging to the authenticated account.
 // Cannot delete the last remaining contact. If the default contact is deleted,
 // the most recently created remaining contact becomes the new default.
-func (b *AccountHandler) DeleteContact(ctx restate.Context, params DeleteContactParams) error {
+func (b *AccountHandler) DeleteContact(ctx context.Context, params DeleteContactParams) error {
 	txStorage, err := b.storage.BeginTx(ctx)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
@@ -284,7 +283,7 @@ func (b *AccountHandler) DeleteContact(ctx restate.Context, params DeleteContact
 
 // GetDefaultContact returns the default contact for each of the given account IDs.
 func (b *AccountHandler) GetDefaultContact(
-	ctx restate.Context,
+	ctx context.Context,
 	accountIDs []uuid.UUID,
 ) (map[uuid.UUID]accountdb.AccountContact, error) {
 	contacts, err := b.storage.Querier().ListDefaultContact(ctx, accountIDs)

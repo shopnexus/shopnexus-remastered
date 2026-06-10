@@ -1,10 +1,9 @@
 package accountbiz
 
 import (
+	"context"
 	stderrors "errors"
 	"fmt"
-
-	restate "github.com/restatedev/sdk-go"
 
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	accountmodel "shopnexus-server/internal/module/account/model"
@@ -27,7 +26,7 @@ type ListProfileParams struct {
 
 // ListProfile returns a paginated list of profiles for the given account IDs.
 func (b *AccountHandler) ListProfile(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListProfileParams,
 ) (paginate.PaginateResult[accountmodel.Profile], error) {
 	var result paginate.PaginateResult[accountmodel.Profile]
@@ -78,7 +77,7 @@ type GetProfileParams struct {
 // row is missing (e.g. an account inserted directly via SQL such as an admin
 // seed), the account row is still returned with empty profile defaults so
 // /me continues to work for non-storefront users.
-func (b *AccountHandler) GetProfile(ctx restate.Context, params GetProfileParams) (accountmodel.Profile, error) {
+func (b *AccountHandler) GetProfile(ctx context.Context, params GetProfileParams) (accountmodel.Profile, error) {
 	var zero accountmodel.Profile
 
 	if err := validator.Validate(params); err != nil {
@@ -128,7 +127,7 @@ type UpdateProfileParams struct {
 }
 
 // UpdateProfile updates the account and profile fields for the given account.
-func (b *AccountHandler) UpdateProfile(ctx restate.Context, params UpdateProfileParams) (accountmodel.Profile, error) {
+func (b *AccountHandler) UpdateProfile(ctx context.Context, params UpdateProfileParams) (accountmodel.Profile, error) {
 	var zero accountmodel.Profile
 
 	if err := validator.Validate(params); err != nil {
@@ -172,7 +171,7 @@ func (b *AccountHandler) UpdateProfile(ctx restate.Context, params UpdateProfile
 
 // mapProfile maps DB account + profile rows to the model type.
 func (b *AccountHandler) mapProfile(
-	ctx restate.Context,
+	ctx context.Context,
 	account accountdb.AccountAccount,
 	profile accountdb.AccountProfile,
 ) accountmodel.Profile {
@@ -216,7 +215,7 @@ type UpdateCountryParams struct {
 // UpdateCountry sets the profile country. Fails with a conflict error if the
 // caller's wallet balance is non-zero, since changing country implies changing
 // wallet currency.
-func (b *AccountHandler) UpdateCountry(ctx restate.Context, params UpdateCountryParams) error {
+func (b *AccountHandler) UpdateCountry(ctx context.Context, params UpdateCountryParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate update country params: %w", err)
 	}
@@ -224,12 +223,9 @@ func (b *AccountHandler) UpdateCountry(ctx restate.Context, params UpdateCountry
 		return fmt.Errorf("infer currency from country: %w", err)
 	}
 
-	if err := restate.RunVoid(ctx, func(ctx restate.RunContext) error {
-		_, err := b.storage.Querier().UpdateProfileCountry(ctx, accountdb.UpdateProfileCountryParams{
-			ID:      params.AccountID,
-			Country: params.Country,
-		})
-		return err
+	if _, err := b.storage.Querier().UpdateProfileCountry(ctx, accountdb.UpdateProfileCountryParams{
+		ID:      params.AccountID,
+		Country: params.Country,
 	}); err != nil {
 		return fmt.Errorf("db update profile country: %w", err)
 	}

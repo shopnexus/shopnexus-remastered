@@ -1,6 +1,7 @@
 package accountbiz
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
@@ -9,8 +10,6 @@ import (
 	sharedcurrency "shopnexus-server/internal/shared/currency"
 	"shopnexus-server/internal/shared/validator"
 	"time"
-
-	restate "github.com/restatedev/sdk-go"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -105,7 +104,7 @@ type LoginResult struct {
 }
 
 // Login authenticates a user and returns access and refresh tokens.
-func (a *AccountHandler) Login(ctx restate.Context, params LoginParams) (LoginResult, error) {
+func (a *AccountHandler) Login(ctx context.Context, params LoginParams) (LoginResult, error) {
 	var zero LoginResult
 
 	if err := validator.Validate(params); err != nil {
@@ -170,7 +169,7 @@ type RegisterResult struct {
 }
 
 // Register creates a new account with the given credentials and returns tokens.
-func (a *AccountHandler) Register(ctx restate.Context, params RegisterParams) (RegisterResult, error) {
+func (a *AccountHandler) Register(ctx context.Context, params RegisterParams) (RegisterResult, error) {
 	var zero RegisterResult
 
 	if err := validator.Validate(params); err != nil {
@@ -256,7 +255,7 @@ type RefreshResult struct {
 }
 
 // Refresh validates a refresh token and issues new access and refresh tokens.
-func (a *AccountHandler) Refresh(ctx restate.Context, refreshToken string) (RefreshResult, error) {
+func (a *AccountHandler) Refresh(ctx context.Context, refreshToken string) (RefreshResult, error) {
 	var zero RefreshResult
 	claims, err := authclaims.ValidateAccessToken(string(a.refreshSecret), refreshToken)
 	if err != nil {

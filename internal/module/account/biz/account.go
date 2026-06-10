@@ -1,9 +1,8 @@
 package accountbiz
 
 import (
+	"context"
 	"fmt"
-
-	restate "github.com/restatedev/sdk-go"
 
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	"shopnexus-server/internal/shared/validator"
@@ -17,7 +16,7 @@ type SuspendAccountParams struct {
 }
 
 // SuspendAccount suspends the account with the given ID.
-func (b *AccountHandler) SuspendAccount(ctx restate.Context, params SuspendAccountParams) error {
+func (b *AccountHandler) SuspendAccount(ctx context.Context, params SuspendAccountParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate suspend account params: %w", err)
 	}

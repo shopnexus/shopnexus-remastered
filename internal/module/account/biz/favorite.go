@@ -1,9 +1,8 @@
 package accountbiz
 
 import (
+	"context"
 	"fmt"
-
-	restate "github.com/restatedev/sdk-go"
 
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	accountmodel "shopnexus-server/internal/module/account/model"
@@ -19,7 +18,7 @@ type AddFavoriteParams struct {
 }
 
 // AddFavorite adds a product SPU to the account's favorites list.
-func (b *AccountHandler) AddFavorite(ctx restate.Context, params AddFavoriteParams) (accountdb.AccountFavorite, error) {
+func (b *AccountHandler) AddFavorite(ctx context.Context, params AddFavoriteParams) (accountdb.AccountFavorite, error) {
 	var zero accountdb.AccountFavorite
 
 	if err := validator.Validate(params); err != nil {
@@ -52,7 +51,7 @@ type RemoveFavoriteParams struct {
 }
 
 // RemoveFavorite removes a product SPU from the account's favorites list.
-func (b *AccountHandler) RemoveFavorite(ctx restate.Context, params RemoveFavoriteParams) error {
+func (b *AccountHandler) RemoveFavorite(ctx context.Context, params RemoveFavoriteParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate remove favorite params: %w", err)
 	}
@@ -74,7 +73,7 @@ type ListFavoriteParams struct {
 
 // ListFavorite returns a paginated list of the account's favorited products.
 func (b *AccountHandler) ListFavorite(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListFavoriteParams,
 ) (paginate.PaginateResult[accountdb.AccountFavorite], error) {
 	var zero paginate.PaginateResult[accountdb.AccountFavorite]
@@ -100,7 +99,7 @@ type CheckFavoritesParams struct {
 }
 
 // CheckFavorites checks which SPU IDs are favorited by the given account.
-func (b *AccountHandler) CheckFavorites(ctx restate.Context, params CheckFavoritesParams) (map[uuid.UUID]bool, error) {
+func (b *AccountHandler) CheckFavorites(ctx context.Context, params CheckFavoritesParams) (map[uuid.UUID]bool, error) {
 	if err := validator.Validate(params); err != nil {
 		return nil, fmt.Errorf("validate check favorites params: %w", err)
 	}

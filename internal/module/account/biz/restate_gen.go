@@ -426,3 +426,116 @@ func (f *AccountRestateFuture) MarkAllRead(rctx restate.Context, params MarkAllR
 func (f *AccountRestateFuture) CreateNotification(rctx restate.Context, params CreateNotificationParams) restate.ResponseFuture[accountdb.AccountNotification] {
 	return restate.Service[accountdb.AccountNotification](rctx, serviceName, "CreateNotification").RequestFuture(params)
 }
+
+// AccountService adapts AccountBiz into restate.Context handlers for restate.Reflect.
+type AccountService struct {
+	biz AccountBiz
+}
+
+func NewAccountService(biz AccountBiz) *AccountService { return &AccountService{biz: biz} }
+
+func (s *AccountService) ServiceName() string { return serviceName }
+
+func (s *AccountService) Login(ctx restate.Context, params LoginParams) (LoginResult, error) {
+	return s.biz.Login(ctx, params)
+}
+
+func (s *AccountService) Register(ctx restate.Context, params RegisterParams) (RegisterResult, error) {
+	return s.biz.Register(ctx, params)
+}
+
+func (s *AccountService) Refresh(ctx restate.Context, refreshToken string) (RefreshResult, error) {
+	return s.biz.Refresh(ctx, refreshToken)
+}
+
+func (s *AccountService) GetProfile(ctx restate.Context, params GetProfileParams) (accountmodel.Profile, error) {
+	return s.biz.GetProfile(ctx, params)
+}
+
+func (s *AccountService) ListProfile(ctx restate.Context, params ListProfileParams) (paginate.PaginateResult[accountmodel.Profile], error) {
+	return s.biz.ListProfile(ctx, params)
+}
+
+func (s *AccountService) UpdateProfile(ctx restate.Context, params UpdateProfileParams) (accountmodel.Profile, error) {
+	return s.biz.UpdateProfile(ctx, params)
+}
+
+func (s *AccountService) UpdateCountry(ctx restate.Context, params UpdateCountryParams) error {
+	return s.biz.UpdateCountry(ctx, params)
+}
+
+func (s *AccountService) GetWalletBalance(ctx restate.Context, accountID uuid.UUID) (int64, error) {
+	return s.biz.GetWalletBalance(ctx, accountID)
+}
+
+func (s *AccountService) WalletDebit(ctx restate.Context, params WalletDebitParams) (WalletDebitResult, error) {
+	return s.biz.WalletDebit(ctx, params)
+}
+
+func (s *AccountService) WalletCredit(ctx restate.Context, params WalletCreditParams) error {
+	return s.biz.WalletCredit(ctx, params)
+}
+
+func (s *AccountService) SuspendAccount(ctx restate.Context, params SuspendAccountParams) error {
+	return s.biz.SuspendAccount(ctx, params)
+}
+
+func (s *AccountService) ListContact(ctx restate.Context, params ListContactParams) ([]accountdb.AccountContact, error) {
+	return s.biz.ListContact(ctx, params)
+}
+
+func (s *AccountService) GetContact(ctx restate.Context, params GetContactParams) (accountdb.AccountContact, error) {
+	return s.biz.GetContact(ctx, params)
+}
+
+func (s *AccountService) CreateContact(ctx restate.Context, params CreateContactParams) (accountdb.AccountContact, error) {
+	return s.biz.CreateContact(ctx, params)
+}
+
+func (s *AccountService) UpdateContact(ctx restate.Context, params UpdateContactParams) (accountdb.AccountContact, error) {
+	return s.biz.UpdateContact(ctx, params)
+}
+
+func (s *AccountService) DeleteContact(ctx restate.Context, params DeleteContactParams) error {
+	return s.biz.DeleteContact(ctx, params)
+}
+
+func (s *AccountService) GetDefaultContact(ctx restate.Context, accountIDs []uuid.UUID) (map[uuid.UUID]accountdb.AccountContact, error) {
+	return s.biz.GetDefaultContact(ctx, accountIDs)
+}
+
+func (s *AccountService) AddFavorite(ctx restate.Context, params AddFavoriteParams) (accountdb.AccountFavorite, error) {
+	return s.biz.AddFavorite(ctx, params)
+}
+
+func (s *AccountService) RemoveFavorite(ctx restate.Context, params RemoveFavoriteParams) error {
+	return s.biz.RemoveFavorite(ctx, params)
+}
+
+func (s *AccountService) ListFavorite(ctx restate.Context, params ListFavoriteParams) (paginate.PaginateResult[accountdb.AccountFavorite], error) {
+	return s.biz.ListFavorite(ctx, params)
+}
+
+func (s *AccountService) CheckFavorites(ctx restate.Context, params CheckFavoritesParams) (map[uuid.UUID]bool, error) {
+	return s.biz.CheckFavorites(ctx, params)
+}
+
+func (s *AccountService) ListNotification(ctx restate.Context, params ListNotificationParams) (paginate.PaginateResult[accountdb.AccountNotification], error) {
+	return s.biz.ListNotification(ctx, params)
+}
+
+func (s *AccountService) CountUnread(ctx restate.Context, params CountUnreadParams) (int64, error) {
+	return s.biz.CountUnread(ctx, params)
+}
+
+func (s *AccountService) MarkRead(ctx restate.Context, params MarkReadParams) error {
+	return s.biz.MarkRead(ctx, params)
+}
+
+func (s *AccountService) MarkAllRead(ctx restate.Context, params MarkAllReadParams) error {
+	return s.biz.MarkAllRead(ctx, params)
+}
+
+func (s *AccountService) CreateNotification(ctx restate.Context, params CreateNotificationParams) (accountdb.AccountNotification, error) {
+	return s.biz.CreateNotification(ctx, params)
+}
