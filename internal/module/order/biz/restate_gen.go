@@ -661,3 +661,180 @@ func (f *OrderRestateFuture) InferCurrency(rctx restate.Context, accountID uuid.
 func (f *OrderRestateFuture) GetOptions(rctx restate.Context, params GetOptionsParams) restate.ResponseFuture[[]sharedmodel.Option] {
 	return restate.Service[[]sharedmodel.Option](rctx, serviceName, "GetOptions").RequestFuture(params)
 }
+
+// OrderService adapts OrderBiz into restate.Context handlers for restate.Reflect.
+type OrderService struct {
+	biz OrderBiz
+}
+
+func NewOrderService(biz OrderBiz) *OrderService { return &OrderService{biz: biz} }
+
+func (s *OrderService) ServiceName() string { return serviceName }
+
+func (s *OrderService) ListBuyerPendingItems(ctx restate.Context, params buyerorder.ListBuyerPendingItemsParams) (paginate.PaginateResult[ordermodel.OrderItem], error) {
+	return s.biz.ListBuyerPendingItems(ctx, params)
+}
+
+func (s *OrderService) CancelBuyerPending(ctx restate.Context, params buyerorder.CancelBuyerPendingParams) error {
+	return s.biz.CancelBuyerPending(ctx, params)
+}
+
+func (s *OrderService) RefundPendingItem(ctx restate.Context, params buyerorder.RefundPendingItemParams) error {
+	return s.biz.RefundPendingItem(ctx, params)
+}
+
+func (s *OrderService) ListBuyerPendingOrders(ctx restate.Context, params buyerorder.ListBuyerPendingOrdersParams) (paginate.PaginateResult[ordermodel.Order], error) {
+	return s.biz.ListBuyerPendingOrders(ctx, params)
+}
+
+func (s *OrderService) ListBuyerCompletedOrders(ctx restate.Context, params buyerorder.ListBuyerCompletedOrdersParams) (paginate.PaginateResult[ordermodel.Order], error) {
+	return s.biz.ListBuyerCompletedOrders(ctx, params)
+}
+
+func (s *OrderService) ListBuyerCancelledOrders(ctx restate.Context, params buyerorder.ListBuyerCancelledOrdersParams) (paginate.PaginateResult[ordermodel.Order], error) {
+	return s.biz.ListBuyerCancelledOrders(ctx, params)
+}
+
+func (s *OrderService) ListBuyerCancelledItems(ctx restate.Context, params buyerorder.ListBuyerCancelledItemsParams) (paginate.PaginateResult[ordermodel.OrderItem], error) {
+	return s.biz.ListBuyerCancelledItems(ctx, params)
+}
+
+func (s *OrderService) GetBuyerOrder(ctx restate.Context, orderID uuid.UUID) (ordermodel.Order, error) {
+	return s.biz.GetBuyerOrder(ctx, orderID)
+}
+
+func (s *OrderService) GetCheckoutSummary(ctx restate.Context, params buyerorder.GetCheckoutSummaryParams) (ordermodel.CheckoutSummary, error) {
+	return s.biz.GetCheckoutSummary(ctx, params)
+}
+
+func (s *OrderService) ListSellerPendingItems(ctx restate.Context, params sellerorder.ListSellerPendingItemsParams) (paginate.PaginateResult[ordermodel.OrderItem], error) {
+	return s.biz.ListSellerPendingItems(ctx, params)
+}
+
+func (s *OrderService) RejectSellerPending(ctx restate.Context, params sellerorder.RejectSellerPendingParams) error {
+	return s.biz.RejectSellerPending(ctx, params)
+}
+
+func (s *OrderService) GetSellerOrder(ctx restate.Context, orderID uuid.UUID) (ordermodel.Order, error) {
+	return s.biz.GetSellerOrder(ctx, orderID)
+}
+
+func (s *OrderService) ListSellerConfirmed(ctx restate.Context, params sellerorder.ListSellerConfirmedParams) (paginate.PaginateResult[ordermodel.Order], error) {
+	return s.biz.ListSellerConfirmed(ctx, params)
+}
+
+func (s *OrderService) GetCart(ctx restate.Context, params cart.GetCartParams) ([]ordermodel.CartItem, error) {
+	return s.biz.GetCart(ctx, params)
+}
+
+func (s *OrderService) UpdateCart(ctx restate.Context, params cart.UpdateCartParams) error {
+	return s.biz.UpdateCart(ctx, params)
+}
+
+func (s *OrderService) ClearCart(ctx restate.Context, params cart.ClearCartParams) error {
+	return s.biz.ClearCart(ctx, params)
+}
+
+func (s *OrderService) OnPaymentResult(ctx restate.Context, params payment.Notification) error {
+	return s.biz.OnPaymentResult(ctx, params)
+}
+
+func (s *OrderService) GetReusableGatewayURL(ctx restate.Context, sessionID uuid.UUID) (orderpayment.ReusableGatewayURLState, error) {
+	return s.biz.GetReusableGatewayURL(ctx, sessionID)
+}
+
+func (s *OrderService) ListBuyerRefunds(ctx restate.Context, params refund.ListBuyerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error) {
+	return s.biz.ListBuyerRefunds(ctx, params)
+}
+
+func (s *OrderService) ListSellerRefunds(ctx restate.Context, params refund.ListSellerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error) {
+	return s.biz.ListSellerRefunds(ctx, params)
+}
+
+func (s *OrderService) CreateBuyerRefund(ctx restate.Context, params refund.CreateBuyerRefundParams) (ordermodel.Refund, error) {
+	return s.biz.CreateBuyerRefund(ctx, params)
+}
+
+func (s *OrderService) WithdrawBuyerRefund(ctx restate.Context, params refund.WithdrawBuyerRefundParams) (ordermodel.Refund, error) {
+	return s.biz.WithdrawBuyerRefund(ctx, params)
+}
+
+func (s *OrderService) SellerApproveRefund(ctx restate.Context, params refund.SellerActionParams) (ordermodel.Refund, error) {
+	return s.biz.SellerApproveRefund(ctx, params)
+}
+
+func (s *OrderService) SellerDisputeRefund(ctx restate.Context, params refund.SellerDisputeParams) (ordermodel.RefundDispute, error) {
+	return s.biz.SellerDisputeRefund(ctx, params)
+}
+
+func (s *OrderService) ListRefundDisputes(ctx restate.Context, params dispute.ListRefundDisputesParams) (paginate.PaginateResult[ordermodel.RefundDispute], error) {
+	return s.biz.ListRefundDisputes(ctx, params)
+}
+
+func (s *OrderService) GetRefundDispute(ctx restate.Context, params dispute.GetRefundDisputeParams) (ordermodel.RefundDispute, error) {
+	return s.biz.GetRefundDispute(ctx, params)
+}
+
+func (s *OrderService) AdminUpholdDispute(ctx restate.Context, params dispute.AdminDisputeDecisionParams) (ordermodel.RefundDispute, error) {
+	return s.biz.AdminUpholdDispute(ctx, params)
+}
+
+func (s *OrderService) AdminDismissDispute(ctx restate.Context, params dispute.AdminDisputeDecisionParams) (ordermodel.RefundDispute, error) {
+	return s.biz.AdminDismissDispute(ctx, params)
+}
+
+func (s *OrderService) OnTransportResult(ctx restate.Context, params ordertransport.OnTransportResultParams) error {
+	return s.biz.OnTransportResult(ctx, params)
+}
+
+func (s *OrderService) QuoteTransport(ctx restate.Context, params ordertransport.QuoteTransportParams) (ordertransport.QuoteTransportResult, error) {
+	return s.biz.QuoteTransport(ctx, params)
+}
+
+func (s *OrderService) HasPurchasedProduct(ctx restate.Context, params review.HasPurchasedProductParams) (bool, error) {
+	return s.biz.HasPurchasedProduct(ctx, params)
+}
+
+func (s *OrderService) ListReviewableOrders(ctx restate.Context, params review.ListReviewableOrdersParams) ([]review.ReviewableOrder, error) {
+	return s.biz.ListReviewableOrders(ctx, params)
+}
+
+func (s *OrderService) ListReviewableOrdersBySpu(ctx restate.Context, params review.ListReviewableOrdersBySpuParams) ([]review.ReviewableOrder, error) {
+	return s.biz.ListReviewableOrdersBySpu(ctx, params)
+}
+
+func (s *OrderService) ValidateOrderForReview(ctx restate.Context, params review.ValidateOrderForReviewParams) (bool, error) {
+	return s.biz.ValidateOrderForReview(ctx, params)
+}
+
+func (s *OrderService) CreateProductReview(ctx restate.Context, params review.CreateProductReviewParams) (catalogmodel.Comment, error) {
+	return s.biz.CreateProductReview(ctx, params)
+}
+
+func (s *OrderService) GetSellerOrderStats(ctx restate.Context, params dashboard.GetSellerOrderStatsParams) (dashboard.SellerOrderStats, error) {
+	return s.biz.GetSellerOrderStats(ctx, params)
+}
+
+func (s *OrderService) GetSellerOrderTimeSeries(ctx restate.Context, params dashboard.GetSellerOrderTimeSeriesParams) ([]dashboard.SellerOrderTimeSeriesPoint, error) {
+	return s.biz.GetSellerOrderTimeSeries(ctx, params)
+}
+
+func (s *OrderService) GetSellerPendingActions(ctx restate.Context, params dashboard.GetSellerPendingActionsParams) (dashboard.SellerPendingActions, error) {
+	return s.biz.GetSellerPendingActions(ctx, params)
+}
+
+func (s *OrderService) GetSellerTopProducts(ctx restate.Context, params dashboard.GetSellerTopProductsParams) ([]dashboard.SellerTopProduct, error) {
+	return s.biz.GetSellerTopProducts(ctx, params)
+}
+
+func (s *OrderService) GetSellerDashboard(ctx restate.Context, params dashboard.GetSellerDashboardParams) (dashboard.SellerDashboard, error) {
+	return s.biz.GetSellerDashboard(ctx, params)
+}
+
+func (s *OrderService) InferCurrency(ctx restate.Context, accountID uuid.UUID) (string, error) {
+	return s.biz.InferCurrency(ctx, accountID)
+}
+
+func (s *OrderService) GetOptions(ctx restate.Context, params GetOptionsParams) ([]sharedmodel.Option, error) {
+	return s.biz.GetOptions(ctx, params)
+}

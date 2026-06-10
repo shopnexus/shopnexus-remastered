@@ -18,16 +18,6 @@ import (
 	restate "github.com/restatedev/sdk-go"
 )
 
-// Context and WorkflowContext mirror their restate counterparts under
-// package-local names. restate.Reflect matches context parameter types
-// exactly, so methods declared with these are skipped when *Base is embedded
-// in a workflow / handler struct — embedding stays safe while the methods
-// remain callable with any real restate context.
-type (
-	Context         interface{ restate.Context }
-	WorkflowContext interface{ restate.WorkflowContext }
-)
-
 const (
 	// paymentExpiry bounds a single gateway payment attempt — i.e. how long the
 	// user has to complete one VNPay/Momo redirect before that URL is considered
@@ -52,7 +42,7 @@ func New(c *orderbase.Base) *Base {
 // initGatewayPayment charges the gateway for one attempt and persists the
 // redirect URL on the attempt's tx.
 func (b *Base) initGatewayPayment(
-	ctx Context,
+	ctx restate.Context,
 	txID uuid.UUID,
 	amount int64,
 	paymentOption, description string,
@@ -131,7 +121,7 @@ type GatewayPaymentLoopParams struct {
 // pre-loop session/wallet-tx creation, and the post-success tail. This
 // helper only owns the gateway leg.
 func (b *Base) RunGatewayPaymentLoop(
-	ctx WorkflowContext,
+	ctx restate.WorkflowContext,
 	p GatewayPaymentLoopParams,
 ) error {
 	cancelPromise := restate.Promise[struct{}](ctx, "user_cancel")
