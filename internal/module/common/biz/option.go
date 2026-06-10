@@ -10,6 +10,8 @@ import (
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	sharedmodel "shopnexus-server/internal/shared/model"
 	"shopnexus-server/internal/shared/validator"
+
+	restate "github.com/restatedev/sdk-go"
 )
 
 type ListOptionParams struct {
@@ -45,8 +47,11 @@ type DeleteOptionParams struct {
 }
 
 // UpsertOptions persists a batch of service options (insert or update by ID).
-func (b *CommonHandler) UpsertOptions(ctx context.Context, params UpsertOptionsParams) error {
-	return b.upsertOptions(ctx, params)
+func (b *CommonHandler) UpsertOptions(ctx restate.Context, params UpsertOptionsParams) error {
+	// execution: persist the batch of options.
+	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		return b.upsertOptions(rctx, params)
+	})
 }
 
 // upsertOptions is the context-agnostic implementation, used at init time
@@ -82,16 +87,20 @@ func (b *CommonHandler) upsertOptions(ctx context.Context, params UpsertOptionsP
 
 // DeleteOptions deletes options by ID. Idempotent — missing IDs are silently
 // ignored at the SQL layer (DELETE … WHERE id = ANY(...)).
-func (b *CommonHandler) DeleteOptions(ctx context.Context, params DeleteOptionParams) error {
+func (b *CommonHandler) DeleteOptions(ctx restate.Context, params DeleteOptionParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate delete options: %w", err)
 	}
-	if err := b.storage.Querier().DeleteOption(ctx, commondb.DeleteOptionParams{
-		ID: params.IDs,
-	}); err != nil {
-		return fmt.Errorf("db delete option: %w", err)
-	}
-	return nil
+
+	// execution: delete the options by ID.
+	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		if err := b.storage.Querier().DeleteOption(rctx, commondb.DeleteOptionParams{
+			ID: params.IDs,
+		}); err != nil {
+			return fmt.Errorf("db delete option: %w", err)
+		}
+		return nil
+	})
 }
 
 // ListOption returns active service options filtered by category.

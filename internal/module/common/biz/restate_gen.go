@@ -15,142 +15,83 @@ import (
 
 const serviceName = "Common"
 
-// CommonBizSender mirrors CommonBiz as one-way (fire-and-forget) calls; outputs are dropped.
+// CommonBizCall mirrors the command methods of CommonBiz as request-response calls.
+type CommonBizCall interface {
+	UpsertOptions(ctx context.Context, params UpsertOptionsParams) error
+	DeleteOptions(ctx context.Context, params DeleteOptionParams) error
+	UpdateResources(ctx context.Context, params UpdateResourcesParams) ([]commonmodel.Resource, error)
+	DeleteResources(ctx context.Context, params DeleteResourcesParams) error
+	PushEvent(ctx context.Context, params PushEventParams) error
+}
+
+// CommonBizSender mirrors the command methods of CommonBiz as one-way (fire-and-forget) calls.
 type CommonBizSender interface {
-	GetFileURL(ctx context.Context, params GetFileURLParams) error
-	ListOption(ctx context.Context, params ListOptionParams) error
 	UpsertOptions(ctx context.Context, params UpsertOptionsParams) error
 	DeleteOptions(ctx context.Context, params DeleteOptionParams) error
 	UpdateResources(ctx context.Context, params UpdateResourcesParams) error
 	DeleteResources(ctx context.Context, params DeleteResourcesParams) error
-	GetResources(ctx context.Context, params GetResourcesParams) error
-	GetResourcesByIDs(ctx context.Context, resourceIDs []uuid.UUID) error
-	GetResourceByID(ctx context.Context, resourceID uuid.UUID) error
-	ReverseGeocode(ctx context.Context, params ReverseGeocodeParams) error
-	ForwardGeocode(ctx context.Context, params ForwardGeocodeParams) error
-	SearchGeocode(ctx context.Context, params SearchGeocodeParams) error
-	ResolveCountry(ctx context.Context, address string) error
 	PushEvent(ctx context.Context, params PushEventParams) error
-	GetExchangeRates(ctx context.Context, params GetExchangeRatesParams) error
-	ConvertAmount(ctx context.Context, params ConvertAmountParams) error
-	IsSupportedCurrency(ctx context.Context, currency string) error
 }
 
-// CommonBizFuture mirrors CommonBiz returning response futures for racing
-// or parallel calls. Only usable inside a Restate handler context.
+// CommonBizFuture mirrors the command methods of CommonBiz returning response futures for
+// racing or parallel calls. Only usable inside a Restate handler context.
 type CommonBizFuture interface {
-	GetFileURL(rctx restate.Context, params GetFileURLParams) restate.ResponseFuture[string]
-	ListOption(rctx restate.Context, params ListOptionParams) restate.ResponseFuture[[]OptionListItem]
 	UpsertOptions(rctx restate.Context, params UpsertOptionsParams) restate.ResponseFuture[restate.Void]
 	DeleteOptions(rctx restate.Context, params DeleteOptionParams) restate.ResponseFuture[restate.Void]
 	UpdateResources(rctx restate.Context, params UpdateResourcesParams) restate.ResponseFuture[[]commonmodel.Resource]
 	DeleteResources(rctx restate.Context, params DeleteResourcesParams) restate.ResponseFuture[restate.Void]
-	GetResources(rctx restate.Context, params GetResourcesParams) restate.ResponseFuture[map[uuid.UUID][]commonmodel.Resource]
-	GetResourcesByIDs(rctx restate.Context, resourceIDs []uuid.UUID) restate.ResponseFuture[map[uuid.UUID]commonmodel.Resource]
-	GetResourceByID(rctx restate.Context, resourceID uuid.UUID) restate.ResponseFuture[*commonmodel.Resource]
-	ReverseGeocode(rctx restate.Context, params ReverseGeocodeParams) restate.ResponseFuture[geocoding.Result]
-	ForwardGeocode(rctx restate.Context, params ForwardGeocodeParams) restate.ResponseFuture[geocoding.Result]
-	SearchGeocode(rctx restate.Context, params SearchGeocodeParams) restate.ResponseFuture[[]geocoding.Result]
-	ResolveCountry(rctx restate.Context, address string) restate.ResponseFuture[string]
 	PushEvent(rctx restate.Context, params PushEventParams) restate.ResponseFuture[restate.Void]
-	GetExchangeRates(rctx restate.Context, params GetExchangeRatesParams) restate.ResponseFuture[commonmodel.ExchangeRateSnapshot]
-	ConvertAmount(rctx restate.Context, params ConvertAmountParams) restate.ResponseFuture[int64]
-	IsSupportedCurrency(rctx restate.Context, currency string) restate.ResponseFuture[bool]
 }
 
-// CommonBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
+// CommonBizClient is the cross-module client: query methods are flat (non-durable),
+// Call()/Future()/Send() reach the durable command surfaces.
 type CommonBizClient interface {
-	Guaranteed() CommonBizGuaranteed
-	BestEffort() CommonBizBestEffort
+	GetFileURL(ctx context.Context, params GetFileURLParams) (string, error)
+	ListOption(ctx context.Context, params ListOptionParams) ([]OptionListItem, error)
+	GetResources(ctx context.Context, params GetResourcesParams) (map[uuid.UUID][]commonmodel.Resource, error)
+	GetResourcesByIDs(ctx context.Context, resourceIDs []uuid.UUID) (map[uuid.UUID]commonmodel.Resource, error)
+	GetResourceByID(ctx context.Context, resourceID uuid.UUID) (*commonmodel.Resource, error)
+	ReverseGeocode(ctx context.Context, params ReverseGeocodeParams) (geocoding.Result, error)
+	ForwardGeocode(ctx context.Context, params ForwardGeocodeParams) (geocoding.Result, error)
+	SearchGeocode(ctx context.Context, params SearchGeocodeParams) ([]geocoding.Result, error)
+	ResolveCountry(ctx context.Context, address string) (string, error)
+	GetExchangeRates(ctx context.Context, params GetExchangeRatesParams) (commonmodel.ExchangeRateSnapshot, error)
+	ConvertAmount(ctx context.Context, params ConvertAmountParams) (int64, error)
+	IsSupportedCurrency(ctx context.Context, currency string) (bool, error)
+	Call() CommonBizCall
+	Future() CommonBizFuture
+	Send() CommonBizSender
 }
 
-// CommonRestateClient implements CommonBizClient via Restate HTTP ingress.
-type CommonRestateClient struct {
-	call   *restatec.CallClient
-	send   *CommonRestateSender
-	future *CommonRestateFuture
+// CommonRestateCall implements CommonBizCall via Restate HTTP ingress.
+type CommonRestateCall struct {
+	call *restatec.CallClient
 }
 
-var _ CommonBizGuaranteed = (*CommonRestateClient)(nil)
+var _ CommonBizCall = (*CommonRestateCall)(nil)
 
-func NewCommonRestateClient(restateIngressURL string) *CommonRestateClient {
-	return &CommonRestateClient{
-		call:   restatec.NewCallClient(restateIngressURL),
-		send:   &CommonRestateSender{client: restatec.NewSendClient(restateIngressURL)},
-		future: &CommonRestateFuture{},
-	}
+func NewCommonRestateCall(restateIngressURL string) *CommonRestateCall {
+	return &CommonRestateCall{call: restatec.NewCallClient(restateIngressURL)}
 }
 
-func (p *CommonRestateClient) Send() CommonBizSender { return p.send }
-
-func (p *CommonRestateClient) Future() CommonBizFuture { return p.future }
-
-func (p *CommonRestateClient) GetFileURL(ctx context.Context, params GetFileURLParams) (string, error) {
-	return restatec.Call[string](ctx, p.call, serviceName, "GetFileURL", params)
-}
-
-func (p *CommonRestateClient) ListOption(ctx context.Context, params ListOptionParams) ([]OptionListItem, error) {
-	return restatec.Call[[]OptionListItem](ctx, p.call, serviceName, "ListOption", params)
-}
-
-func (p *CommonRestateClient) UpsertOptions(ctx context.Context, params UpsertOptionsParams) error {
+func (p *CommonRestateCall) UpsertOptions(ctx context.Context, params UpsertOptionsParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "UpsertOptions", params)
 }
 
-func (p *CommonRestateClient) DeleteOptions(ctx context.Context, params DeleteOptionParams) error {
+func (p *CommonRestateCall) DeleteOptions(ctx context.Context, params DeleteOptionParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "DeleteOptions", params)
 }
 
-func (p *CommonRestateClient) UpdateResources(ctx context.Context, params UpdateResourcesParams) ([]commonmodel.Resource, error) {
+func (p *CommonRestateCall) UpdateResources(ctx context.Context, params UpdateResourcesParams) ([]commonmodel.Resource, error) {
 	return restatec.Call[[]commonmodel.Resource](ctx, p.call, serviceName, "UpdateResources", params)
 }
 
-func (p *CommonRestateClient) DeleteResources(ctx context.Context, params DeleteResourcesParams) error {
+func (p *CommonRestateCall) DeleteResources(ctx context.Context, params DeleteResourcesParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "DeleteResources", params)
 }
 
-func (p *CommonRestateClient) GetResources(ctx context.Context, params GetResourcesParams) (map[uuid.UUID][]commonmodel.Resource, error) {
-	return restatec.Call[map[uuid.UUID][]commonmodel.Resource](ctx, p.call, serviceName, "GetResources", params)
-}
-
-func (p *CommonRestateClient) GetResourcesByIDs(ctx context.Context, resourceIDs []uuid.UUID) (map[uuid.UUID]commonmodel.Resource, error) {
-	return restatec.Call[map[uuid.UUID]commonmodel.Resource](ctx, p.call, serviceName, "GetResourcesByIDs", resourceIDs)
-}
-
-func (p *CommonRestateClient) GetResourceByID(ctx context.Context, resourceID uuid.UUID) (*commonmodel.Resource, error) {
-	return restatec.Call[*commonmodel.Resource](ctx, p.call, serviceName, "GetResourceByID", resourceID)
-}
-
-func (p *CommonRestateClient) ReverseGeocode(ctx context.Context, params ReverseGeocodeParams) (geocoding.Result, error) {
-	return restatec.Call[geocoding.Result](ctx, p.call, serviceName, "ReverseGeocode", params)
-}
-
-func (p *CommonRestateClient) ForwardGeocode(ctx context.Context, params ForwardGeocodeParams) (geocoding.Result, error) {
-	return restatec.Call[geocoding.Result](ctx, p.call, serviceName, "ForwardGeocode", params)
-}
-
-func (p *CommonRestateClient) SearchGeocode(ctx context.Context, params SearchGeocodeParams) ([]geocoding.Result, error) {
-	return restatec.Call[[]geocoding.Result](ctx, p.call, serviceName, "SearchGeocode", params)
-}
-
-func (p *CommonRestateClient) ResolveCountry(ctx context.Context, address string) (string, error) {
-	return restatec.Call[string](ctx, p.call, serviceName, "ResolveCountry", address)
-}
-
-func (p *CommonRestateClient) PushEvent(ctx context.Context, params PushEventParams) error {
+func (p *CommonRestateCall) PushEvent(ctx context.Context, params PushEventParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "PushEvent", params)
-}
-
-func (p *CommonRestateClient) GetExchangeRates(ctx context.Context, params GetExchangeRatesParams) (commonmodel.ExchangeRateSnapshot, error) {
-	return restatec.Call[commonmodel.ExchangeRateSnapshot](ctx, p.call, serviceName, "GetExchangeRates", params)
-}
-
-func (p *CommonRestateClient) ConvertAmount(ctx context.Context, params ConvertAmountParams) (int64, error) {
-	return restatec.Call[int64](ctx, p.call, serviceName, "ConvertAmount", params)
-}
-
-func (p *CommonRestateClient) IsSupportedCurrency(ctx context.Context, currency string) (bool, error) {
-	return restatec.Call[bool](ctx, p.call, serviceName, "IsSupportedCurrency", currency)
 }
 
 // CommonRestateSender implements CommonBizSender.
@@ -159,14 +100,6 @@ type CommonRestateSender struct {
 }
 
 var _ CommonBizSender = (*CommonRestateSender)(nil)
-
-func (s *CommonRestateSender) GetFileURL(ctx context.Context, params GetFileURLParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetFileURL", params)
-}
-
-func (s *CommonRestateSender) ListOption(ctx context.Context, params ListOptionParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListOption", params)
-}
 
 func (s *CommonRestateSender) UpsertOptions(ctx context.Context, params UpsertOptionsParams) error {
 	return restatec.Send(ctx, s.client, serviceName, "UpsertOptions", params)
@@ -184,62 +117,14 @@ func (s *CommonRestateSender) DeleteResources(ctx context.Context, params Delete
 	return restatec.Send(ctx, s.client, serviceName, "DeleteResources", params)
 }
 
-func (s *CommonRestateSender) GetResources(ctx context.Context, params GetResourcesParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetResources", params)
-}
-
-func (s *CommonRestateSender) GetResourcesByIDs(ctx context.Context, resourceIDs []uuid.UUID) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetResourcesByIDs", resourceIDs)
-}
-
-func (s *CommonRestateSender) GetResourceByID(ctx context.Context, resourceID uuid.UUID) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetResourceByID", resourceID)
-}
-
-func (s *CommonRestateSender) ReverseGeocode(ctx context.Context, params ReverseGeocodeParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ReverseGeocode", params)
-}
-
-func (s *CommonRestateSender) ForwardGeocode(ctx context.Context, params ForwardGeocodeParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ForwardGeocode", params)
-}
-
-func (s *CommonRestateSender) SearchGeocode(ctx context.Context, params SearchGeocodeParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "SearchGeocode", params)
-}
-
-func (s *CommonRestateSender) ResolveCountry(ctx context.Context, address string) error {
-	return restatec.Send(ctx, s.client, serviceName, "ResolveCountry", address)
-}
-
 func (s *CommonRestateSender) PushEvent(ctx context.Context, params PushEventParams) error {
 	return restatec.Send(ctx, s.client, serviceName, "PushEvent", params)
-}
-
-func (s *CommonRestateSender) GetExchangeRates(ctx context.Context, params GetExchangeRatesParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetExchangeRates", params)
-}
-
-func (s *CommonRestateSender) ConvertAmount(ctx context.Context, params ConvertAmountParams) error {
-	return restatec.Send(ctx, s.client, serviceName, "ConvertAmount", params)
-}
-
-func (s *CommonRestateSender) IsSupportedCurrency(ctx context.Context, currency string) error {
-	return restatec.Send(ctx, s.client, serviceName, "IsSupportedCurrency", currency)
 }
 
 // CommonRestateFuture implements CommonBizFuture via the Restate SDK.
 type CommonRestateFuture struct{}
 
 var _ CommonBizFuture = (*CommonRestateFuture)(nil)
-
-func (f *CommonRestateFuture) GetFileURL(rctx restate.Context, params GetFileURLParams) restate.ResponseFuture[string] {
-	return restate.Service[string](rctx, serviceName, "GetFileURL").RequestFuture(params)
-}
-
-func (f *CommonRestateFuture) ListOption(rctx restate.Context, params ListOptionParams) restate.ResponseFuture[[]OptionListItem] {
-	return restate.Service[[]OptionListItem](rctx, serviceName, "ListOption").RequestFuture(params)
-}
 
 func (f *CommonRestateFuture) UpsertOptions(rctx restate.Context, params UpsertOptionsParams) restate.ResponseFuture[restate.Void] {
 	return restate.Service[restate.Void](rctx, serviceName, "UpsertOptions").RequestFuture(params)
@@ -257,48 +142,8 @@ func (f *CommonRestateFuture) DeleteResources(rctx restate.Context, params Delet
 	return restate.Service[restate.Void](rctx, serviceName, "DeleteResources").RequestFuture(params)
 }
 
-func (f *CommonRestateFuture) GetResources(rctx restate.Context, params GetResourcesParams) restate.ResponseFuture[map[uuid.UUID][]commonmodel.Resource] {
-	return restate.Service[map[uuid.UUID][]commonmodel.Resource](rctx, serviceName, "GetResources").RequestFuture(params)
-}
-
-func (f *CommonRestateFuture) GetResourcesByIDs(rctx restate.Context, resourceIDs []uuid.UUID) restate.ResponseFuture[map[uuid.UUID]commonmodel.Resource] {
-	return restate.Service[map[uuid.UUID]commonmodel.Resource](rctx, serviceName, "GetResourcesByIDs").RequestFuture(resourceIDs)
-}
-
-func (f *CommonRestateFuture) GetResourceByID(rctx restate.Context, resourceID uuid.UUID) restate.ResponseFuture[*commonmodel.Resource] {
-	return restate.Service[*commonmodel.Resource](rctx, serviceName, "GetResourceByID").RequestFuture(resourceID)
-}
-
-func (f *CommonRestateFuture) ReverseGeocode(rctx restate.Context, params ReverseGeocodeParams) restate.ResponseFuture[geocoding.Result] {
-	return restate.Service[geocoding.Result](rctx, serviceName, "ReverseGeocode").RequestFuture(params)
-}
-
-func (f *CommonRestateFuture) ForwardGeocode(rctx restate.Context, params ForwardGeocodeParams) restate.ResponseFuture[geocoding.Result] {
-	return restate.Service[geocoding.Result](rctx, serviceName, "ForwardGeocode").RequestFuture(params)
-}
-
-func (f *CommonRestateFuture) SearchGeocode(rctx restate.Context, params SearchGeocodeParams) restate.ResponseFuture[[]geocoding.Result] {
-	return restate.Service[[]geocoding.Result](rctx, serviceName, "SearchGeocode").RequestFuture(params)
-}
-
-func (f *CommonRestateFuture) ResolveCountry(rctx restate.Context, address string) restate.ResponseFuture[string] {
-	return restate.Service[string](rctx, serviceName, "ResolveCountry").RequestFuture(address)
-}
-
 func (f *CommonRestateFuture) PushEvent(rctx restate.Context, params PushEventParams) restate.ResponseFuture[restate.Void] {
 	return restate.Service[restate.Void](rctx, serviceName, "PushEvent").RequestFuture(params)
-}
-
-func (f *CommonRestateFuture) GetExchangeRates(rctx restate.Context, params GetExchangeRatesParams) restate.ResponseFuture[commonmodel.ExchangeRateSnapshot] {
-	return restate.Service[commonmodel.ExchangeRateSnapshot](rctx, serviceName, "GetExchangeRates").RequestFuture(params)
-}
-
-func (f *CommonRestateFuture) ConvertAmount(rctx restate.Context, params ConvertAmountParams) restate.ResponseFuture[int64] {
-	return restate.Service[int64](rctx, serviceName, "ConvertAmount").RequestFuture(params)
-}
-
-func (f *CommonRestateFuture) IsSupportedCurrency(rctx restate.Context, currency string) restate.ResponseFuture[bool] {
-	return restate.Service[bool](rctx, serviceName, "IsSupportedCurrency").RequestFuture(currency)
 }
 
 // CommonService adapts CommonBiz into restate.Context handlers for restate.Reflect.
@@ -378,22 +223,26 @@ func (s *CommonService) IsSupportedCurrency(ctx restate.Context, currency string
 	return s.biz.IsSupportedCurrency(ctx, currency)
 }
 
-// CommonBizGuaranteed is the guaranteed (durable Restate) surface.
-type CommonBizGuaranteed interface {
-	CommonBiz
-	Send() CommonBizSender
-	Future() CommonBizFuture
+// CommonBizFlat is the flat (non-durable query) surface of CommonBiz.
+type CommonBizFlat interface {
+	GetFileURL(ctx context.Context, params GetFileURLParams) (string, error)
+	ListOption(ctx context.Context, params ListOptionParams) ([]OptionListItem, error)
+	GetResources(ctx context.Context, params GetResourcesParams) (map[uuid.UUID][]commonmodel.Resource, error)
+	GetResourcesByIDs(ctx context.Context, resourceIDs []uuid.UUID) (map[uuid.UUID]commonmodel.Resource, error)
+	GetResourceByID(ctx context.Context, resourceID uuid.UUID) (*commonmodel.Resource, error)
+	ReverseGeocode(ctx context.Context, params ReverseGeocodeParams) (geocoding.Result, error)
+	ForwardGeocode(ctx context.Context, params ForwardGeocodeParams) (geocoding.Result, error)
+	SearchGeocode(ctx context.Context, params SearchGeocodeParams) ([]geocoding.Result, error)
+	ResolveCountry(ctx context.Context, address string) (string, error)
+	GetExchangeRates(ctx context.Context, params GetExchangeRatesParams) (commonmodel.ExchangeRateSnapshot, error)
+	ConvertAmount(ctx context.Context, params ConvertAmountParams) (int64, error)
+	IsSupportedCurrency(ctx context.Context, currency string) (bool, error)
 }
 
-// CommonBizBestEffort is the best-effort (non-durable) surface: sync request-response only.
-type CommonBizBestEffort interface {
-	CommonBiz
-}
-
-// commonBizBestEffortLocal delegates BestEffort calls to the in-process biz.
+// commonBizBestEffortLocal delegates flat queries to the in-process biz.
 type commonBizBestEffortLocal struct{ biz CommonBiz }
 
-var _ CommonBizBestEffort = (*commonBizBestEffortLocal)(nil)
+var _ CommonBizFlat = (*commonBizBestEffortLocal)(nil)
 
 func (b *commonBizBestEffortLocal) GetFileURL(ctx context.Context, params GetFileURLParams) (string, error) {
 	return b.biz.GetFileURL(ctx, params)
@@ -401,22 +250,6 @@ func (b *commonBizBestEffortLocal) GetFileURL(ctx context.Context, params GetFil
 
 func (b *commonBizBestEffortLocal) ListOption(ctx context.Context, params ListOptionParams) ([]OptionListItem, error) {
 	return b.biz.ListOption(ctx, params)
-}
-
-func (b *commonBizBestEffortLocal) UpsertOptions(ctx context.Context, params UpsertOptionsParams) error {
-	return b.biz.UpsertOptions(ctx, params)
-}
-
-func (b *commonBizBestEffortLocal) DeleteOptions(ctx context.Context, params DeleteOptionParams) error {
-	return b.biz.DeleteOptions(ctx, params)
-}
-
-func (b *commonBizBestEffortLocal) UpdateResources(ctx context.Context, params UpdateResourcesParams) ([]commonmodel.Resource, error) {
-	return b.biz.UpdateResources(ctx, params)
-}
-
-func (b *commonBizBestEffortLocal) DeleteResources(ctx context.Context, params DeleteResourcesParams) error {
-	return b.biz.DeleteResources(ctx, params)
 }
 
 func (b *commonBizBestEffortLocal) GetResources(ctx context.Context, params GetResourcesParams) (map[uuid.UUID][]commonmodel.Resource, error) {
@@ -447,10 +280,6 @@ func (b *commonBizBestEffortLocal) ResolveCountry(ctx context.Context, address s
 	return b.biz.ResolveCountry(ctx, address)
 }
 
-func (b *commonBizBestEffortLocal) PushEvent(ctx context.Context, params PushEventParams) error {
-	return b.biz.PushEvent(ctx, params)
-}
-
 func (b *commonBizBestEffortLocal) GetExchangeRates(ctx context.Context, params GetExchangeRatesParams) (commonmodel.ExchangeRateSnapshot, error) {
 	return b.biz.GetExchangeRates(ctx, params)
 }
@@ -463,10 +292,10 @@ func (b *commonBizBestEffortLocal) IsSupportedCurrency(ctx context.Context, curr
 	return b.biz.IsSupportedCurrency(ctx, currency)
 }
 
-// commonBizBestEffortRemote routes BestEffort calls over HTTP/2.
+// commonBizBestEffortRemote routes flat queries over HTTP/2.
 type commonBizBestEffortRemote struct{ call *besteffort.CallClient }
 
-var _ CommonBizBestEffort = (*commonBizBestEffortRemote)(nil)
+var _ CommonBizFlat = (*commonBizBestEffortRemote)(nil)
 
 func (b *commonBizBestEffortRemote) GetFileURL(ctx context.Context, params GetFileURLParams) (string, error) {
 	return besteffort.Call[string](ctx, b.call, serviceName, "GetFileURL", params)
@@ -474,22 +303,6 @@ func (b *commonBizBestEffortRemote) GetFileURL(ctx context.Context, params GetFi
 
 func (b *commonBizBestEffortRemote) ListOption(ctx context.Context, params ListOptionParams) ([]OptionListItem, error) {
 	return besteffort.Call[[]OptionListItem](ctx, b.call, serviceName, "ListOption", params)
-}
-
-func (b *commonBizBestEffortRemote) UpsertOptions(ctx context.Context, params UpsertOptionsParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "UpsertOptions", params)
-}
-
-func (b *commonBizBestEffortRemote) DeleteOptions(ctx context.Context, params DeleteOptionParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "DeleteOptions", params)
-}
-
-func (b *commonBizBestEffortRemote) UpdateResources(ctx context.Context, params UpdateResourcesParams) ([]commonmodel.Resource, error) {
-	return besteffort.Call[[]commonmodel.Resource](ctx, b.call, serviceName, "UpdateResources", params)
-}
-
-func (b *commonBizBestEffortRemote) DeleteResources(ctx context.Context, params DeleteResourcesParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "DeleteResources", params)
 }
 
 func (b *commonBizBestEffortRemote) GetResources(ctx context.Context, params GetResourcesParams) (map[uuid.UUID][]commonmodel.Resource, error) {
@@ -520,10 +333,6 @@ func (b *commonBizBestEffortRemote) ResolveCountry(ctx context.Context, address 
 	return besteffort.Call[string](ctx, b.call, serviceName, "ResolveCountry", address)
 }
 
-func (b *commonBizBestEffortRemote) PushEvent(ctx context.Context, params PushEventParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "PushEvent", params)
-}
-
 func (b *commonBizBestEffortRemote) GetExchangeRates(ctx context.Context, params GetExchangeRatesParams) (commonmodel.ExchangeRateSnapshot, error) {
 	return besteffort.Call[commonmodel.ExchangeRateSnapshot](ctx, b.call, serviceName, "GetExchangeRates", params)
 }
@@ -536,35 +345,92 @@ func (b *commonBizBestEffortRemote) IsSupportedCurrency(ctx context.Context, cur
 	return besteffort.Call[bool](ctx, b.call, serviceName, "IsSupportedCurrency", currency)
 }
 
-// CommonBizClient selects the guaranteed (durable) or best-effort (non-durable) transport.
+// commonBizClient holds the flat query impl and the durable command proxies.
 type commonBizClient struct {
-	*CommonRestateClient
-	bestEffort CommonBizBestEffort
+	flat   CommonBizFlat
+	call   *CommonRestateCall
+	send   *CommonRestateSender
+	future *CommonRestateFuture
 }
 
 var _ CommonBizClient = (*commonBizClient)(nil)
 
-func (c *commonBizClient) Guaranteed() CommonBizGuaranteed { return c.CommonRestateClient }
+func (c *commonBizClient) GetFileURL(ctx context.Context, params GetFileURLParams) (string, error) {
+	return c.flat.GetFileURL(ctx, params)
+}
 
-func (c *commonBizClient) BestEffort() CommonBizBestEffort { return c.bestEffort }
+func (c *commonBizClient) ListOption(ctx context.Context, params ListOptionParams) ([]OptionListItem, error) {
+	return c.flat.ListOption(ctx, params)
+}
 
-// NewCommonBizClientInProcess builds a client whose BestEffort calls the in-process biz.
+func (c *commonBizClient) GetResources(ctx context.Context, params GetResourcesParams) (map[uuid.UUID][]commonmodel.Resource, error) {
+	return c.flat.GetResources(ctx, params)
+}
+
+func (c *commonBizClient) GetResourcesByIDs(ctx context.Context, resourceIDs []uuid.UUID) (map[uuid.UUID]commonmodel.Resource, error) {
+	return c.flat.GetResourcesByIDs(ctx, resourceIDs)
+}
+
+func (c *commonBizClient) GetResourceByID(ctx context.Context, resourceID uuid.UUID) (*commonmodel.Resource, error) {
+	return c.flat.GetResourceByID(ctx, resourceID)
+}
+
+func (c *commonBizClient) ReverseGeocode(ctx context.Context, params ReverseGeocodeParams) (geocoding.Result, error) {
+	return c.flat.ReverseGeocode(ctx, params)
+}
+
+func (c *commonBizClient) ForwardGeocode(ctx context.Context, params ForwardGeocodeParams) (geocoding.Result, error) {
+	return c.flat.ForwardGeocode(ctx, params)
+}
+
+func (c *commonBizClient) SearchGeocode(ctx context.Context, params SearchGeocodeParams) ([]geocoding.Result, error) {
+	return c.flat.SearchGeocode(ctx, params)
+}
+
+func (c *commonBizClient) ResolveCountry(ctx context.Context, address string) (string, error) {
+	return c.flat.ResolveCountry(ctx, address)
+}
+
+func (c *commonBizClient) GetExchangeRates(ctx context.Context, params GetExchangeRatesParams) (commonmodel.ExchangeRateSnapshot, error) {
+	return c.flat.GetExchangeRates(ctx, params)
+}
+
+func (c *commonBizClient) ConvertAmount(ctx context.Context, params ConvertAmountParams) (int64, error) {
+	return c.flat.ConvertAmount(ctx, params)
+}
+
+func (c *commonBizClient) IsSupportedCurrency(ctx context.Context, currency string) (bool, error) {
+	return c.flat.IsSupportedCurrency(ctx, currency)
+}
+
+func (c *commonBizClient) Call() CommonBizCall { return c.call }
+
+func (c *commonBizClient) Future() CommonBizFuture { return c.future }
+
+func (c *commonBizClient) Send() CommonBizSender { return c.send }
+
+// NewCommonBizClientInProcess builds a client whose flat queries call the in-process biz.
 func NewCommonBizClientInProcess(restateIngressURL string, biz CommonBiz) CommonBizClient {
 	return &commonBizClient{
-		CommonRestateClient: NewCommonRestateClient(restateIngressURL),
-		bestEffort:          &commonBizBestEffortLocal{biz: biz},
+		flat:   &commonBizBestEffortLocal{biz: biz},
+		call:   NewCommonRestateCall(restateIngressURL),
+		send:   &CommonRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &CommonRestateFuture{},
 	}
 }
 
-// NewCommonBizClientRemote builds a client whose BestEffort calls a remote BestEffort server.
+// NewCommonBizClientRemote builds a client whose flat queries call a remote besteffort server.
 func NewCommonBizClientRemote(restateIngressURL, bestEffortURL string) CommonBizClient {
 	return &commonBizClient{
-		CommonRestateClient: NewCommonRestateClient(restateIngressURL),
-		bestEffort:          &commonBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+		flat:   &commonBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+		call:   NewCommonRestateCall(restateIngressURL),
+		send:   &CommonRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &CommonRestateFuture{},
 	}
 }
 
-// RegisterCommonBestEffort wires biz methods onto a BestEffort HTTP/2 server.
+// RegisterCommonBestEffort wires the query methods onto a besteffort HTTP server.
+// Commands are served by Restate, not here.
 func RegisterCommonBestEffort(s *besteffort.Server, biz CommonBiz) {
 	s.Handle(serviceName, "GetFileURL", func(ctx context.Context, body []byte) (any, error) {
 		var p GetFileURLParams
@@ -579,34 +445,6 @@ func RegisterCommonBestEffort(s *besteffort.Server, biz CommonBiz) {
 			return nil, err
 		}
 		return biz.ListOption(ctx, p)
-	})
-	s.Handle(serviceName, "UpsertOptions", func(ctx context.Context, body []byte) (any, error) {
-		var p UpsertOptionsParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.UpsertOptions(ctx, p)
-	})
-	s.Handle(serviceName, "DeleteOptions", func(ctx context.Context, body []byte) (any, error) {
-		var p DeleteOptionParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.DeleteOptions(ctx, p)
-	})
-	s.Handle(serviceName, "UpdateResources", func(ctx context.Context, body []byte) (any, error) {
-		var p UpdateResourcesParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.UpdateResources(ctx, p)
-	})
-	s.Handle(serviceName, "DeleteResources", func(ctx context.Context, body []byte) (any, error) {
-		var p DeleteResourcesParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.DeleteResources(ctx, p)
 	})
 	s.Handle(serviceName, "GetResources", func(ctx context.Context, body []byte) (any, error) {
 		var p GetResourcesParams
@@ -656,13 +494,6 @@ func RegisterCommonBestEffort(s *besteffort.Server, biz CommonBiz) {
 			return nil, err
 		}
 		return biz.ResolveCountry(ctx, p)
-	})
-	s.Handle(serviceName, "PushEvent", func(ctx context.Context, body []byte) (any, error) {
-		var p PushEventParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.PushEvent(ctx, p)
 	})
 	s.Handle(serviceName, "GetExchangeRates", func(ctx context.Context, body []byte) (any, error) {
 		var p GetExchangeRatesParams

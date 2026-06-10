@@ -1,11 +1,11 @@
 package commonbiz
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 )
 
 // SSEEventType identifies the kind of SSE event.
@@ -29,9 +29,12 @@ type PushEventParams struct {
 
 // PushEvent pushes an SSE event to all connected clients of the given account.
 // Called via Restate fire-and-forget by other modules.
-func (b *CommonHandler) PushEvent(ctx context.Context, params PushEventParams) error {
-	b.pushSSE(params.AccountID, params.Type, params.Data)
-	return nil
+func (b *CommonHandler) PushEvent(ctx restate.Context, params PushEventParams) error {
+	// tail: fan the event out to this node's connected SSE clients.
+	return restate.RunVoid(ctx, func(restate.RunContext) error {
+		b.pushSSE(params.AccountID, params.Type, params.Data)
+		return nil
+	})
 }
 
 // SubscribeSSE registers a new SSE client for the given account.

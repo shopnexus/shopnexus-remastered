@@ -14,7 +14,7 @@ func (b *TransportHandler) SetupTransportMap() error {
 	configs := b.TransportOptions()
 
 	go func() {
-		if err := b.common.Guaranteed().Send().UpsertOptions(context.Background(), commonbiz.UpsertOptionsParams{
+		if err := b.common.Send().UpsertOptions(context.Background(), commonbiz.UpsertOptionsParams{
 			Type:    string(sharedmodel.OptionTypeTransport),
 			Configs: configs,
 		}); err != nil {

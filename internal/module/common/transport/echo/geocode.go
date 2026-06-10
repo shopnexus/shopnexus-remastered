@@ -24,7 +24,7 @@ func (h *Handler) ReverseGeocode(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.Guaranteed().ReverseGeocode(c.Request().Context(), commonbiz.ReverseGeocodeParams{
+	result, err := h.biz.ReverseGeocode(c.Request().Context(), commonbiz.ReverseGeocodeParams{
 		Latitude:  req.Latitude,
 		Longitude: req.Longitude,
 	})
@@ -49,7 +49,7 @@ func (h *Handler) ForwardGeocode(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	result, err := h.biz.Guaranteed().ForwardGeocode(c.Request().Context(), commonbiz.ForwardGeocodeParams{
+	result, err := h.biz.ForwardGeocode(c.Request().Context(), commonbiz.ForwardGeocodeParams{
 		Address: req.Address,
 	})
 	if err != nil {
@@ -74,7 +74,7 @@ func (h *Handler) SearchGeocode(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusBadRequest, err)
 	}
 
-	results, err := h.biz.Guaranteed().SearchGeocode(c.Request().Context(), commonbiz.SearchGeocodeParams{
+	results, err := h.biz.SearchGeocode(c.Request().Context(), commonbiz.SearchGeocodeParams{
 		Query: req.Query,
 		Limit: req.Limit,
 	})

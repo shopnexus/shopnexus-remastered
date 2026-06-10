@@ -77,7 +77,7 @@ func (b *CartHandler) GetCart(ctx context.Context, params GetCartParams) ([]orde
 
 	// Batch-fetch all SPU resources in a single call.
 	spuIDs := lo.Uniq(lo.Map(skus, func(s catalogmodel.ProductSku, _ int) uuid.UUID { return s.SpuID }))
-	resourcesMap, err := b.common.Guaranteed().GetResources(ctx, commonbiz.GetResourcesParams{
+	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeProductSpu,
 		RefIDs:  spuIDs,
 	})

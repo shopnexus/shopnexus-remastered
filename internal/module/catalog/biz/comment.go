@@ -68,7 +68,7 @@ func (b *CatalogHandler) ListComment(
 	}
 	profileMap := lo.KeyBy(listProfile.Data, func(a accountmodel.Profile) uuid.UUID { return a.ID })
 
-	resourcesMap, err := b.common.Guaranteed().GetResources(ctx, commonbiz.GetResourcesParams{
+	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeComment,
 		RefIDs:  commentIDs,
 	})
@@ -143,7 +143,7 @@ func (b *CatalogHandler) CreateComment(ctx context.Context, params CreateComment
 	}
 
 	// Attach resources
-	resources, err := b.common.Guaranteed().UpdateResources(ctx, commonbiz.UpdateResourcesParams{
+	resources, err := b.common.Call().UpdateResources(ctx, commonbiz.UpdateResourcesParams{
 		Account:     params.Account,
 		RefType:     commondb.CommonResourceRefTypeComment,
 		RefID:       comment.ID,
@@ -275,7 +275,7 @@ func (b *CatalogHandler) UpdateComment(ctx context.Context, params UpdateComment
 	}
 
 	// Update resources
-	resources, err := b.common.Guaranteed().UpdateResources(ctx, commonbiz.UpdateResourcesParams{
+	resources, err := b.common.Call().UpdateResources(ctx, commonbiz.UpdateResourcesParams{
 		Account:         params.Account,
 		RefType:         commondb.CommonResourceRefTypeComment,
 		RefID:           params.ID,
@@ -321,7 +321,7 @@ func (b *CatalogHandler) DeleteComment(ctx context.Context, params DeleteComment
 	}
 
 	// Remove associated resources
-	if err := b.common.Guaranteed().DeleteResources(ctx, commonbiz.DeleteResourcesParams{
+	if err := b.common.Call().DeleteResources(ctx, commonbiz.DeleteResourcesParams{
 		RefType:         commondb.CommonResourceRefTypeComment,
 		RefID:           params.CommentIDs,
 		DeleteResources: true,

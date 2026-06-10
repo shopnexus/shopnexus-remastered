@@ -83,7 +83,7 @@ func (b *RefundHandler) ListSellerRefunds(
 	}
 
 	// Map resources to refunds
-	resourcesMap, err := b.common.Guaranteed().GetResources(ctx, commonbiz.GetResourcesParams{
+	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeRefund,
 		RefIDs:  lo.Map(rows, func(r orderdb.ListSellerRefundsRow, _ int) uuid.UUID { return r.OrderRefund.ID }),
 	})

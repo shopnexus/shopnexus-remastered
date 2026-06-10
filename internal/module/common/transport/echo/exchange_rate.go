@@ -12,7 +12,7 @@ import (
 // GetExchangeRates returns the latest exchange rate snapshot.
 // Public endpoint; no auth required.
 func (h *Handler) GetExchangeRates(c echo.Context) error {
-	snap, err := h.biz.Guaranteed().GetExchangeRates(c.Request().Context(), commonbiz.GetExchangeRatesParams{})
+	snap, err := h.biz.GetExchangeRates(c.Request().Context(), commonbiz.GetExchangeRatesParams{})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}

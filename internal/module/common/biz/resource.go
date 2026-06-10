@@ -11,6 +11,7 @@ import (
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 )
 
@@ -25,54 +26,60 @@ type UpdateResourcesParams struct {
 
 // UpdateResources replaces all resource references for a given entity and returns the updated list.
 func (b *CommonHandler) UpdateResources(
-	ctx context.Context,
+	ctx restate.Context,
 	params UpdateResourcesParams,
 ) ([]commonmodel.Resource, error) {
 	if err := validator.Validate(params); err != nil {
 		return nil, fmt.Errorf("validate update resources: %w", err)
 	}
 
-	// Update resources (delete all and re-attach)
+	// execution: replace references (delete all + re-attach) in one durable step.
 	if len(params.ResourceIDs) > 0 || params.EmptyResources {
-		// First step: Delete all attached resources
-		if err := b.DeleteResources(ctx, DeleteResourcesParams{
-			RefType:             params.RefType,
-			RefID:               []uuid.UUID{params.RefID},
-			DeleteResources:     params.DeleteResources,
-			SkipDeleteResources: params.ResourceIDs,
-		}); err != nil {
-			return nil, fmt.Errorf("update resources: %w", err)
-		}
+		if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+			// First step: Delete all attached resources
+			if err := b.deleteResources(rctx, DeleteResourcesParams{
+				RefType:             params.RefType,
+				RefID:               []uuid.UUID{params.RefID},
+				DeleteResources:     params.DeleteResources,
+				SkipDeleteResources: params.ResourceIDs,
+			}); err != nil {
+				return fmt.Errorf("update resources: %w", err)
+			}
 
-		// Next step: Attach resources
-		var createResourceArgs []commondb.CreateCopyDefaultResourceReferenceParams
+			// Next step: Attach resources
+			var createResourceArgs []commondb.CreateCopyDefaultResourceReferenceParams
 
-		res, err := b.storage.Querier().ListResource(ctx, commondb.ListResourceParams{
-			Id: params.ResourceIDs,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("db update resources: %w", err)
-		}
-		resources := res.Data
-		if len(resources) != len(params.ResourceIDs) {
-			// Some resources not found or not belong to the user
-			return nil, commonmodel.ErrResourceNotFound
-		}
-
-		for order, rsID := range params.ResourceIDs {
-			createResourceArgs = append(createResourceArgs, commondb.CreateCopyDefaultResourceReferenceParams{
-				RsID:    rsID,
-				RefType: params.RefType,
-				RefID:   params.RefID,
-				Order:   int32(order),
+			res, err := b.storage.Querier().ListResource(rctx, commondb.ListResourceParams{
+				Id: params.ResourceIDs,
 			})
-		}
+			if err != nil {
+				return fmt.Errorf("db update resources: %w", err)
+			}
+			resources := res.Data
+			if len(resources) != len(params.ResourceIDs) {
+				// Some resources not found or not belong to the user
+				return commonmodel.ErrResourceNotFound
+			}
 
-		if _, err = b.storage.Querier().CreateCopyDefaultResourceReference(ctx, createResourceArgs); err != nil {
-			return nil, fmt.Errorf("db update resources: %w", err)
+			for order, rsID := range params.ResourceIDs {
+				createResourceArgs = append(createResourceArgs, commondb.CreateCopyDefaultResourceReferenceParams{
+					RsID:    rsID,
+					RefType: params.RefType,
+					RefID:   params.RefID,
+					Order:   int32(order),
+				})
+			}
+
+			if _, err = b.storage.Querier().CreateCopyDefaultResourceReference(rctx, createResourceArgs); err != nil {
+				return fmt.Errorf("db update resources: %w", err)
+			}
+			return nil
+		}); err != nil {
+			return nil, err
 		}
 	}
 
+	// tail: read back the updated resource list.
 	resourcesMap, err := b.GetResources(ctx, GetResourcesParams{
 		RefType: params.RefType,
 		RefIDs:  []uuid.UUID{params.RefID},
@@ -92,11 +99,20 @@ type DeleteResourcesParams struct {
 }
 
 // DeleteResources removes resource references and optionally deletes the underlying resource records.
-func (b *CommonHandler) DeleteResources(ctx context.Context, params DeleteResourcesParams) error {
+func (b *CommonHandler) DeleteResources(ctx restate.Context, params DeleteResourcesParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate delete resources: %w", err)
 	}
 
+	// execution: remove references (and optionally entities) in one durable step.
+	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		return b.deleteResources(rctx, params)
+	})
+}
+
+// deleteResources is the context-agnostic impl, callable inside a restate.Run
+// (e.g. from UpdateResources) without nesting Run calls.
+func (b *CommonHandler) deleteResources(ctx context.Context, params DeleteResourcesParams) error {
 	res, err := b.storage.Querier().ListResourceReference(ctx, commondb.ListResourceReferenceParams{
 		RefType: []commondb.CommonResourceRefType{params.RefType},
 		RefId:   params.RefID,

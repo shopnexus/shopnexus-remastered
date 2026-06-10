@@ -97,7 +97,7 @@ func (h *CheckoutWorkflow) Run(
 		return out, fmt.Errorf("load buyer profile: %w", err)
 	}
 
-	resolvedCountry, err := h.common.Guaranteed().ResolveCountry(ctx, input.Address)
+	resolvedCountry, err := h.common.ResolveCountry(ctx, input.Address)
 	if err != nil {
 		return out, fmt.Errorf("resolve country: %w", err)
 	}
@@ -151,7 +151,7 @@ func (h *CheckoutWorkflow) Run(
 
 	var fxSnapshot commonmodel.ExchangeRateSnapshot
 	if needFX {
-		fxSnapshot, err = h.common.Guaranteed().GetExchangeRates(ctx, commonbiz.GetExchangeRatesParams{})
+		fxSnapshot, err = h.common.GetExchangeRates(ctx, commonbiz.GetExchangeRatesParams{})
 		if err != nil {
 			return out, fmt.Errorf("fx rate lookup: %w", err)
 		}

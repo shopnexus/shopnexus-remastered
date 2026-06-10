@@ -74,7 +74,7 @@ func (b *DisputeHandler) ListRefundDisputes(
 	}
 
 	// Map resources to disputes
-	resourcesMap, err := b.common.Guaranteed().GetResources(ctx, commonbiz.GetResourcesParams{
+	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeRefundDispute,
 		RefIDs:  lo.Map(rows, func(r orderdb.ListRefundDisputesRow, _ int) uuid.UUID { return r.OrderRefundDispute.ID }),
 	})

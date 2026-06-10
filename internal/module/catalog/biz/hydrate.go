@@ -42,7 +42,7 @@ func (b *CatalogHandler) HydrateProductSpus(
 
 	tagsMap := b.getTagsMap(ctx, spuIDs)
 
-	resourcesMap, err := b.common.Guaranteed().GetResources(ctx, commonbiz.GetResourcesParams{
+	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeProductSpu,
 		RefIDs:  spuIDs,
 	})
@@ -141,7 +141,7 @@ func (b *CatalogHandler) HydrateCategories(
 		return row.SpuID
 	})
 
-	resourcesMap, err := b.common.Guaranteed().GetResources(ctx, commonbiz.GetResourcesParams{
+	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeProductSpu,
 		RefIDs:  spuIDs,
 	})

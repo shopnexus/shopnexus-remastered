@@ -14,6 +14,7 @@ import (
 	"shopnexus-server/internal/shared/pgsqlc"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 )
 
 // CommonBiz is the interface for common module, used by other modules.
@@ -25,12 +26,12 @@ type CommonBiz interface {
 
 	// Option
 	ListOption(ctx context.Context, params ListOptionParams) ([]OptionListItem, error)
-	UpsertOptions(ctx context.Context, params UpsertOptionsParams) error
-	DeleteOptions(ctx context.Context, params DeleteOptionParams) error
+	UpsertOptions(ctx restate.Context, params UpsertOptionsParams) error
+	DeleteOptions(ctx restate.Context, params DeleteOptionParams) error
 
 	// Resource
-	UpdateResources(ctx context.Context, params UpdateResourcesParams) ([]commonmodel.Resource, error)
-	DeleteResources(ctx context.Context, params DeleteResourcesParams) error
+	UpdateResources(ctx restate.Context, params UpdateResourcesParams) ([]commonmodel.Resource, error)
+	DeleteResources(ctx restate.Context, params DeleteResourcesParams) error
 	GetResources(ctx context.Context, params GetResourcesParams) (map[uuid.UUID][]commonmodel.Resource, error)
 	GetResourcesByIDs(ctx context.Context, resourceIDs []uuid.UUID) (map[uuid.UUID]commonmodel.Resource, error)
 	GetResourceByID(ctx context.Context, resourceID uuid.UUID) (*commonmodel.Resource, error)
@@ -42,7 +43,7 @@ type CommonBiz interface {
 	ResolveCountry(ctx context.Context, address string) (string, error)
 
 	// SSE
-	PushEvent(ctx context.Context, params PushEventParams) error
+	PushEvent(ctx restate.Context, params PushEventParams) error
 
 	// Exchange rates
 	GetExchangeRates(ctx context.Context, params GetExchangeRatesParams) (commonmodel.ExchangeRateSnapshot, error)

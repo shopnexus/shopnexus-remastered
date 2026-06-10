@@ -172,7 +172,7 @@ func (b *ChatHandler) SendMessage(ctx restate.Context, params SendMessageParams)
 	}
 	err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
 		for _, id := range []uuid.UUID{params.Account.ID, recipientID} {
-			if err := b.common.Guaranteed().Send().PushEvent(rctx, commonbiz.PushEventParams{
+			if err := b.common.Send().PushEvent(rctx, commonbiz.PushEventParams{
 				AccountID: id,
 				Type:      commonbiz.SSENewMessage,
 				Data:      msg,
@@ -270,7 +270,7 @@ func (b *ChatHandler) MarkRead(ctx restate.Context, params MarkReadParams) error
 		if recipientID == params.Account.ID {
 			recipientID = conv.SellerID
 		}
-		if err := b.common.Guaranteed().Send().PushEvent(rctx, commonbiz.PushEventParams{
+		if err := b.common.Send().PushEvent(rctx, commonbiz.PushEventParams{
 			AccountID: recipientID,
 			Type:      commonbiz.SSEReadReceipt,
 			Data: map[string]any{

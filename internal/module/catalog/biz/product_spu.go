@@ -200,7 +200,7 @@ func (b *CatalogHandler) CreateProductSpu(
 	}
 
 	// Create resources
-	if _, err := b.common.Guaranteed().UpdateResources(ctx, commonbiz.UpdateResourcesParams{
+	if _, err := b.common.Call().UpdateResources(ctx, commonbiz.UpdateResourcesParams{
 		Account:     params.Account,
 		RefType:     commondb.CommonResourceRefTypeProductSpu,
 		RefID:       spu.ID,
@@ -313,7 +313,7 @@ func (b *CatalogHandler) UpdateProductSpu(
 	}
 
 	// LAST STEP: Update resources
-	if _, err := b.common.Guaranteed().UpdateResources(ctx, commonbiz.UpdateResourcesParams{
+	if _, err := b.common.Call().UpdateResources(ctx, commonbiz.UpdateResourcesParams{
 		Account:     params.Account,
 		RefType:     commondb.CommonResourceRefTypeProductSpu,
 		RefID:       spu.ID,

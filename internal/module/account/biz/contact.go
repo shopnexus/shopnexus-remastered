@@ -29,7 +29,7 @@ func (b *AccountHandler) validateAddressCountry(
 		return fmt.Errorf("load profile for address check: %w", err)
 	}
 
-	resolvedCountry, err := b.common.Guaranteed().ResolveCountry(ctx, address)
+	resolvedCountry, err := b.common.ResolveCountry(ctx, address)
 	if err != nil {
 		return fmt.Errorf("resolve country for address: %w", err)
 	}

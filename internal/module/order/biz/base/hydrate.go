@@ -36,7 +36,7 @@ func (b *Base) EnrichItems(ctx context.Context, dbItems []orderdb.OrderItem) ([]
 	}
 	spuMap := lo.KeyBy(listSpu.Data, func(s catalogmodel.ProductSpu) uuid.UUID { return s.ID })
 
-	resources, err := b.common.Guaranteed().GetResources(ctx, commonbiz.GetResourcesParams{
+	resources, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeProductSpu,
 		RefIDs:  spuIDs,
 	})
@@ -136,7 +136,7 @@ func (b *Base) HydrateRefunds(ctx context.Context, rows ...orderdb.OrderRefund) 
 	}
 
 	// Map resources to refunds
-	resourcesMap, err := b.common.Guaranteed().GetResources(ctx, commonbiz.GetResourcesParams{
+	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeRefund,
 		RefIDs:  lo.Map(rows, func(r orderdb.OrderRefund, _ int) uuid.UUID { return r.ID }),
 	})
@@ -158,7 +158,7 @@ func (b *Base) HydrateRefundDisputes(ctx context.Context, rows ...orderdb.OrderR
 	}
 
 	// Map resources to disputes
-	resourcesMap, err := b.common.Guaranteed().GetResources(ctx, commonbiz.GetResourcesParams{
+	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeRefundDispute,
 		RefIDs:  lo.Map(rows, func(r orderdb.OrderRefundDispute, _ int) uuid.UUID { return r.ID }),
 	})

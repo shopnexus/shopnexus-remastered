@@ -112,7 +112,7 @@ func (b *RefundHandler) SellerDisputeRefund(
 	}
 
 	// Update the seller's evidence photos via the common resource system.
-	resources, err := b.common.Guaranteed().UpdateResources(ctx, commonbiz.UpdateResourcesParams{
+	resources, err := b.common.Call().UpdateResources(ctx, commonbiz.UpdateResourcesParams{
 		Account:     params.Account,
 		RefType:     commondb.CommonResourceRefTypeRefundDispute,
 		RefID:       dispute.ID,

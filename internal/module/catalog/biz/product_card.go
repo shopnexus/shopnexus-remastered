@@ -90,7 +90,7 @@ func (b *CatalogHandler) buildProductCards(
 	}
 
 	// Get first image of the product
-	resourcesMap, err := b.common.Guaranteed().GetResources(ctx, commonbiz.GetResourcesParams{
+	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeProductSpu,
 		RefIDs:  spuIDs,
 	})

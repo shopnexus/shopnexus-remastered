@@ -138,7 +138,7 @@ func (b *AccountHandler) CreateNotification(
 	}
 
 	// Push real-time notification to SSE clients
-	if err = b.common.Guaranteed().Send().PushEvent(ctx, commonbiz.PushEventParams{
+	if err = b.common.Send().PushEvent(ctx, commonbiz.PushEventParams{
 		AccountID: params.AccountID,
 		Type:      commonbiz.SSENotification,
 		Data:      noti,
