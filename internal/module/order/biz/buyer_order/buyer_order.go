@@ -11,7 +11,6 @@ import (
 	"shopnexus-server/internal/shared/paginate"
 
 	"github.com/google/uuid"
-	restate "github.com/restatedev/sdk-go"
 )
 
 // BuyerHandler implements BuyerOrderBiz over the shared core and signals the
@@ -63,6 +62,6 @@ type BuyerOrderBiz interface {
 
 // GetBuyerOrder returns a single order by ID with all items and payment details.
 // TODO: add casbin authorization — verify caller owns this order
-func (b *BuyerHandler) GetBuyerOrder(ctx restate.Context, orderID uuid.UUID) (ordermodel.Order, error) {
+func (b *BuyerHandler) GetBuyerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error) {
 	return b.GetHydratedOrder(ctx, orderID)
 }

@@ -1,6 +1,7 @@
 package buyerorder
 
 import (
+	"context"
 	"fmt"
 
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 )
 
@@ -24,7 +24,7 @@ type ListBuyerCancelledItemsParams struct {
 // orders: failed/cancelled checkout sessions, or individually-refunded items
 // from a Success session (date_cancelled set).
 func (b *BuyerHandler) ListBuyerCancelledItems(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListBuyerCancelledItemsParams,
 ) (paginate.PaginateResult[ordermodel.OrderItem], error) {
 	var zero paginate.PaginateResult[ordermodel.OrderItem]
@@ -32,7 +32,7 @@ func (b *BuyerHandler) ListBuyerCancelledItems(
 		return zero, fmt.Errorf("validate list cancelled items: %w", err)
 	}
 	return b.listBuyerItems(ctx, params.Params, params.AccountID,
-		func(rctx restate.Context, accountID uuid.UUID) ([]orderdb.OrderItem, int64, error) {
+		func(rctx context.Context, accountID uuid.UUID) ([]orderdb.OrderItem, int64, error) {
 			items, err := b.Storage.Querier().ListBuyerCancelledItems(rctx, accountID)
 			if err != nil {
 				return nil, 0, err
@@ -48,10 +48,10 @@ func (b *BuyerHandler) ListBuyerCancelledItems(
 // listBuyerItems is the shared backbone for buyer item-list endpoints.
 // Mirrors the existing ListBuyerPendingItems shape including session attach.
 func (b *BuyerHandler) listBuyerItems(
-	ctx restate.Context,
+	ctx context.Context,
 	pagination paginate.Params,
 	accountID uuid.UUID,
-	fetch func(restate.Context, uuid.UUID) ([]orderdb.OrderItem, int64, error),
+	fetch func(context.Context, uuid.UUID) ([]orderdb.OrderItem, int64, error),
 ) (paginate.PaginateResult[ordermodel.OrderItem], error) {
 	var zero paginate.PaginateResult[ordermodel.OrderItem]
 
@@ -100,14 +100,14 @@ type ListBuyerPendingItemsParams struct {
 
 // ListBuyerPendingItems returns paginated paid pending items for the buyer.
 func (b *BuyerHandler) ListBuyerPendingItems(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListBuyerPendingItemsParams,
 ) (paginate.PaginateResult[ordermodel.OrderItem], error) {
 	if err := validator.Validate(params); err != nil {
 		return paginate.PaginateResult[ordermodel.OrderItem]{}, fmt.Errorf("validate list pending items: %w", err)
 	}
 	return b.listBuyerItems(ctx, params.Params, params.AccountID,
-		func(rctx restate.Context, accountID uuid.UUID) ([]orderdb.OrderItem, int64, error) {
+		func(rctx context.Context, accountID uuid.UUID) ([]orderdb.OrderItem, int64, error) {
 			items, err := b.Storage.Querier().ListBuyerPendingItems(rctx, accountID)
 			if err != nil {
 				return nil, 0, err

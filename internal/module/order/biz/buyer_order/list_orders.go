@@ -1,6 +1,7 @@
 package buyerorder
 
 import (
+	"context"
 	"fmt"
 
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 )
 
@@ -24,7 +24,7 @@ type ListBuyerPendingOrdersParams struct {
 // completed (payout released) nor cancelled. Includes orders awaiting
 // shipment, in transit, delivered-but-not-paid-out.
 func (b *BuyerHandler) ListBuyerPendingOrders(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListBuyerPendingOrdersParams,
 ) (paginate.PaginateResult[ordermodel.Order], error) {
 	if err := validator.Validate(params); err != nil {
@@ -37,7 +37,7 @@ func (b *BuyerHandler) ListBuyerPendingOrders(
 		ctx,
 		params.Params,
 		params.BuyerID,
-		func(rctx restate.Context, p orderListPage) ([]orderdb.OrderOrder, int64, error) {
+		func(rctx context.Context, p orderListPage) ([]orderdb.OrderOrder, int64, error) {
 			rows, err := b.Storage.Querier().ListBuyerPendingOrders(rctx, orderdb.ListBuyerPendingOrdersParams{
 				BuyerID: p.BuyerID,
 				Limit:   p.Limit,
@@ -68,7 +68,7 @@ type ListBuyerCompletedOrdersParams struct {
 // ListBuyerCompletedOrders returns orders whose seller payout has been
 // released (escrow done). Delivered-but-not-paid-out orders stay Pending.
 func (b *BuyerHandler) ListBuyerCompletedOrders(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListBuyerCompletedOrdersParams,
 ) (paginate.PaginateResult[ordermodel.Order], error) {
 	if err := validator.Validate(params); err != nil {
@@ -81,7 +81,7 @@ func (b *BuyerHandler) ListBuyerCompletedOrders(
 		ctx,
 		params.Params,
 		params.BuyerID,
-		func(rctx restate.Context, p orderListPage) ([]orderdb.OrderOrder, int64, error) {
+		func(rctx context.Context, p orderListPage) ([]orderdb.OrderOrder, int64, error) {
 			rows, err := b.Storage.Querier().ListBuyerCompletedOrders(rctx, orderdb.ListBuyerCompletedOrdersParams{
 				BuyerID: p.BuyerID,
 				Limit:   p.Limit,
@@ -112,7 +112,7 @@ type ListBuyerCancelledOrdersParams struct {
 // ListBuyerCancelledOrders returns orders where any of confirm/transport/payout
 // is in a Failed or Cancelled state.
 func (b *BuyerHandler) ListBuyerCancelledOrders(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListBuyerCancelledOrdersParams,
 ) (paginate.PaginateResult[ordermodel.Order], error) {
 	if err := validator.Validate(params); err != nil {
@@ -125,7 +125,7 @@ func (b *BuyerHandler) ListBuyerCancelledOrders(
 		ctx,
 		params.Params,
 		params.BuyerID,
-		func(rctx restate.Context, p orderListPage) ([]orderdb.OrderOrder, int64, error) {
+		func(rctx context.Context, p orderListPage) ([]orderdb.OrderOrder, int64, error) {
 			rows, err := b.Storage.Querier().ListBuyerCancelledOrders(rctx, orderdb.ListBuyerCancelledOrdersParams{
 				BuyerID: p.BuyerID,
 				Limit:   p.Limit,
@@ -155,10 +155,10 @@ type orderListPage struct {
 }
 
 func (b *BuyerHandler) listBuyerOrders(
-	ctx restate.Context,
+	ctx context.Context,
 	pagination paginate.Params,
 	buyerID uuid.UUID,
-	fetch func(restate.Context, orderListPage) ([]orderdb.OrderOrder, int64, error),
+	fetch func(context.Context, orderListPage) ([]orderdb.OrderOrder, int64, error),
 ) (paginate.PaginateResult[ordermodel.Order], error) {
 	var zero paginate.PaginateResult[ordermodel.Order]
 	if err := validator.Validate(struct {

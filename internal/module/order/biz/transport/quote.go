@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"fmt"
 
 	accountmodel "shopnexus-server/internal/module/account/model"
@@ -12,7 +13,6 @@ import (
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
-	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 )
 
@@ -43,7 +43,7 @@ type QuoteTransportResult struct {
 // CheckoutWorkflow.Run step 5 — kept in lockstep so the preview matches what
 // the workflow will actually charge.
 func (b *TransportHandler) QuoteTransport(
-	ctx restate.Context,
+	ctx context.Context,
 	params QuoteTransportParams,
 ) (QuoteTransportResult, error) {
 	var zero QuoteTransportResult

@@ -1,11 +1,11 @@
 package refund
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
-	restate "github.com/restatedev/sdk-go"
 
 	"shopnexus-server/internal/infras/metrics"
 	accountmodel "shopnexus-server/internal/module/account/model"
@@ -29,7 +29,7 @@ type CreateBuyerRefundParams struct {
 // shipping the goods back: a return transport row is created on the spot and
 // the refund starts in Shipping. Required: reason + photos + return option.
 func (b *RefundHandler) CreateBuyerRefund(
-	ctx restate.Context,
+	ctx context.Context,
 	params CreateBuyerRefundParams,
 ) (ordermodel.Refund, error) {
 	var zero ordermodel.Refund

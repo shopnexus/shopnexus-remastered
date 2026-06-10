@@ -1,6 +1,7 @@
 package sellerorder
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -15,7 +16,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 )
 
@@ -25,7 +25,7 @@ type RejectSellerPendingParams struct {
 }
 
 // RejectSellerPending rejects pending items owned by the seller, releases inventory, and refunds buyers.
-func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSellerPendingParams) error {
+func (b *SellerHandler) RejectSellerPending(ctx context.Context, params RejectSellerPendingParams) error {
 	// Lock: exclusive — same key as ConfirmSellerPending.
 	unlock := b.locker.Lock(ctx, fmt.Sprintf("order:seller-pending:%s", params.Account.ID))
 	defer unlock()
@@ -37,7 +37,7 @@ func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSe
 	sellerID := params.Account.ID
 
 	// Fetch and validate items.
-	items, err := restate.Run(ctx, func(ctx restate.RunContext) ([]orderdb.OrderItem, error) {
+	items, err := func() ([]orderdb.OrderItem, error) {
 		dbItemsRes, err := b.Storage.Querier().ListItem(ctx, orderdb.ListItemParams{
 			Id: params.ItemIDs,
 		})
@@ -61,7 +61,7 @@ func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSe
 			}
 		}
 		return dbItems, nil
-	})
+	}()
 	if err != nil {
 		return fmt.Errorf("fetch items: %w", err)
 	}
@@ -95,13 +95,13 @@ func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSe
 		sessionIDs := lo.Uniq(
 			lo.Map(buyerItemList, func(it orderdb.OrderItem, _ int) uuid.UUID { return it.PaymentSessionID }),
 		)
-		sessions, err := restate.Run(ctx, func(ctx restate.RunContext) ([]orderdb.OrderPaymentSession, error) {
+		sessions, err := func() ([]orderdb.OrderPaymentSession, error) {
 			res, e := b.Storage.Querier().ListPaymentSession(ctx, orderdb.ListPaymentSessionParams{Id: sessionIDs})
 			if e != nil {
 				return nil, e
 			}
 			return res.Data, nil
-		})
+		}()
 		if err != nil {
 			return fmt.Errorf("db fetch payment sessions: %w", err)
 		}
@@ -114,9 +114,7 @@ func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSe
 			if s.Status != orderdb.OrderStatusSuccess {
 				continue
 			}
-			sessionTxs, err := restate.Run(ctx, func(ctx restate.RunContext) ([]orderdb.OrderTransaction, error) {
-				return b.Storage.Querier().ListTransactionsBySession(ctx, sid)
-			})
+			sessionTxs, err := b.Storage.Querier().ListTransactionsBySession(ctx, sid)
 			if err != nil {
 				return fmt.Errorf("db list session txs: %w", err)
 			}
@@ -161,7 +159,7 @@ func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSe
 		for i := range refundPlans {
 			preMintedRefundTxIDs[i] = uuid.NewSHA1(uuid.NameSpaceOID, fmt.Appendf(nil, "seller-reject-refund:item:%d", refundPlans[i].Item.ID))
 		}
-		refundTxIDs, err := restate.Run(ctx, func(ctx restate.RunContext) ([]uuid.UUID, error) {
+		refundTxIDs, err := func() ([]uuid.UUID, error) {
 			var txIDs []uuid.UUID
 			// One refund leg per item, in its own session, reversing the original tx.
 			for i, plan := range refundPlans {
@@ -206,7 +204,7 @@ func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSe
 			}
 
 			return txIDs, nil
-		})
+		}()
 		if err != nil {
 			return fmt.Errorf("reject items for buyer: %w", err)
 		}

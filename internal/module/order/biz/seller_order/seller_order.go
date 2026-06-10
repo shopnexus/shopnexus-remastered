@@ -11,7 +11,6 @@ import (
 	"shopnexus-server/internal/shared/paginate"
 
 	"github.com/google/uuid"
-	restate "github.com/restatedev/sdk-go"
 )
 
 // SellerHandler implements SellerOrderBiz over the module core
@@ -49,6 +48,6 @@ type SellerOrderBiz interface {
 
 // GetSellerOrder returns a single order by ID (seller perspective).
 // TODO: add casbin authorization — verify caller is this order's seller
-func (b *SellerHandler) GetSellerOrder(ctx restate.Context, orderID uuid.UUID) (ordermodel.Order, error) {
+func (b *SellerHandler) GetSellerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error) {
 	return b.GetHydratedOrder(ctx, orderID)
 }

@@ -1,11 +1,11 @@
 package dispute
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 
 	accountmodel "shopnexus-server/internal/module/account/model"
@@ -30,7 +30,7 @@ type ListRefundDisputesParams struct {
 //   - Non-admin caller: only disputes attached to refunds the caller owns
 //     (buyer of the refund, or seller of the order).
 func (b *DisputeHandler) ListRefundDisputes(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListRefundDisputesParams,
 ) (paginate.PaginateResult[ordermodel.RefundDispute], error) {
 	var zero paginate.PaginateResult[ordermodel.RefundDispute]
@@ -103,7 +103,7 @@ type GetRefundDisputeParams struct {
 // GetRefundDispute returns a single dispute. Caller must be admin OR the
 // buyer/seller attached to the underlying refund.
 func (b *DisputeHandler) GetRefundDispute(
-	ctx restate.Context,
+	ctx context.Context,
 	params GetRefundDisputeParams,
 ) (ordermodel.RefundDispute, error) {
 	var zero ordermodel.RefundDispute

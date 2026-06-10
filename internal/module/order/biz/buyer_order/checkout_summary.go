@@ -1,13 +1,13 @@
 package buyerorder
 
 import (
+	"context"
 	"fmt"
 
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
-	restate "github.com/restatedev/sdk-go"
 )
 
 type GetCheckoutSummaryParams struct {
@@ -16,7 +16,7 @@ type GetCheckoutSummaryParams struct {
 }
 
 func (b *BuyerHandler) GetCheckoutSummary(
-	ctx restate.Context,
+	ctx context.Context,
 	params GetCheckoutSummaryParams,
 ) (ordermodel.CheckoutSummary, error) {
 	var zero ordermodel.CheckoutSummary

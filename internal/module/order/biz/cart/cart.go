@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/guregu/null/v6"
-	restate "github.com/restatedev/sdk-go"
 
 	accountmodel "shopnexus-server/internal/module/account/model"
 	analyticbiz "shopnexus-server/internal/module/analytic/biz"
@@ -54,7 +53,7 @@ type GetCartParams struct {
 }
 
 // GetCart returns all cart items for the given account with SKU details and product images.
-func (b *CartHandler) GetCart(ctx restate.Context, params GetCartParams) ([]ordermodel.CartItem, error) {
+func (b *CartHandler) GetCart(ctx context.Context, params GetCartParams) ([]ordermodel.CartItem, error) {
 	if err := validator.Validate(params); err != nil {
 		return nil, fmt.Errorf("validate get cart params: %w", err)
 	}
@@ -126,13 +125,13 @@ type UpdateCartParams struct {
 }
 
 // UpdateCart adds, updates, or removes a cart item and tracks the interaction.
-func (b *CartHandler) UpdateCart(ctx restate.Context, params UpdateCartParams) error {
+func (b *CartHandler) UpdateCart(ctx context.Context, params UpdateCartParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate update cart: %w", err)
 	}
 
 	// Track which event type to send after the durable step
-	eventType, err := restate.Run(ctx, func(ctx restate.RunContext) (analyticmodel.Event, error) {
+	eventType, err := func() (analyticmodel.Event, error) {
 		var newQuantity int64
 
 		if params.DeltaQuantity.Valid {
@@ -169,7 +168,7 @@ func (b *CartHandler) UpdateCart(ctx restate.Context, params UpdateCartParams) e
 			return "", err
 		}
 		return analyticmodel.EventAddToCart, nil
-	})
+	}()
 	if err != nil {
 		return fmt.Errorf("db update cart: %w", err)
 	}
@@ -190,10 +189,8 @@ type ClearCartParams struct {
 }
 
 // ClearCart removes all items from the account's cart.
-func (b *CartHandler) ClearCart(ctx restate.Context, params ClearCartParams) error {
-	return restate.RunVoid(ctx, func(ctx restate.RunContext) error {
-		return b.Storage.Querier().DeleteCartItem(ctx, orderdb.DeleteCartItemParams{
-			AccountID: []uuid.UUID{params.Account.ID},
-		})
+func (b *CartHandler) ClearCart(ctx context.Context, params ClearCartParams) error {
+	return b.Storage.Querier().DeleteCartItem(ctx, orderdb.DeleteCartItemParams{
+		AccountID: []uuid.UUID{params.Account.ID},
 	})
 }

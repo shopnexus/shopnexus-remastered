@@ -1,10 +1,10 @@
 package refund
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/google/uuid"
-	restate "github.com/restatedev/sdk-go"
 
 	"shopnexus-server/internal/infras/metrics"
 	accountmodel "shopnexus-server/internal/module/account/model"
@@ -27,7 +27,7 @@ type WithdrawBuyerRefundParams struct {
 // payout watcher resumes the seller's escrow, and the workflow exits via the
 // "withdrawn" promise.
 func (b *RefundHandler) WithdrawBuyerRefund(
-	ctx restate.Context,
+	ctx context.Context,
 	params WithdrawBuyerRefundParams,
 ) (ordermodel.Refund, error) {
 	var zero ordermodel.Refund
@@ -42,11 +42,9 @@ func (b *RefundHandler) WithdrawBuyerRefund(
 	// zero means the refund is in a non-withdrawable state OR the caller is not
 	// the buyer. We translate that to ErrRefundNotWithdrawable rather than
 	// leaking ErrNoRows.
-	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
-		return b.Storage.Querier().WithdrawBuyerRefund(rctx, orderdb.WithdrawBuyerRefundParams{
-			ID:        params.RefundID,
-			AccountID: params.Account.ID,
-		})
+	refund, err := b.Storage.Querier().WithdrawBuyerRefund(ctx, orderdb.WithdrawBuyerRefundParams{
+		ID:        params.RefundID,
+		AccountID: params.Account.ID,
 	})
 	if err != nil {
 		return zero, ordermodel.ErrRefundNotWithdrawable
@@ -61,10 +59,8 @@ func (b *RefundHandler) WithdrawBuyerRefund(
 	}
 
 	// Notify seller (was waiting on the inbound return) so their UI clears.
-	order, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderOrder, error) {
-		return b.Storage.Querier().GetOrder(rctx, orderdb.GetOrderParams{
-			ID: uuid.NullUUID{UUID: refund.OrderID, Valid: true},
-		})
+	order, err := b.Storage.Querier().GetOrder(ctx, orderdb.GetOrderParams{
+		ID: uuid.NullUUID{UUID: refund.OrderID, Valid: true},
 	})
 	if err == nil {
 		if err = b.NotifyRefund(ctx, order.SellerID, accountmodel.NotiRefundRequested,

@@ -1,6 +1,7 @@
 package payment
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	restate "github.com/restatedev/sdk-go"
 )
 
 // GetReusableGatewayURL reports whether a checkout/confirm session has a
@@ -18,7 +18,7 @@ import (
 // "ensure payment URL" handler uses this to skip a workflow round-trip on
 // the happy path; on the retry path it falls back to RequestNewPaymentURL.
 func (b *PaymentHandler) GetReusableGatewayURL(
-	ctx restate.Context,
+	ctx context.Context,
 	sessionID uuid.UUID,
 ) (ReusableGatewayURLState, error) {
 	var state ReusableGatewayURLState

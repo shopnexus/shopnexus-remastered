@@ -1,6 +1,7 @@
 package sellerorder
 
 import (
+	"context"
 	"fmt"
 
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 )
 
@@ -22,7 +22,7 @@ type ListSellerPendingItemsParams struct {
 
 // ListSellerPendingItems returns paginated pending items for the seller.
 func (b *SellerHandler) ListSellerPendingItems(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListSellerPendingItemsParams,
 ) (paginate.PaginateResult[ordermodel.OrderItem], error) {
 	var zero paginate.PaginateResult[ordermodel.OrderItem]
@@ -64,7 +64,7 @@ type ListSellerConfirmedParams struct {
 
 // ListSellerConfirmed returns paginated orders for the seller with optional payment/order status filters.
 func (b *SellerHandler) ListSellerConfirmed(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListSellerConfirmedParams,
 ) (paginate.PaginateResult[ordermodel.Order], error) {
 	var zero paginate.PaginateResult[ordermodel.Order]

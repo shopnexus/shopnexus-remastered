@@ -1,11 +1,11 @@
 package refund
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
-	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 
 	commonbiz "shopnexus-server/internal/module/common/biz"
@@ -24,7 +24,7 @@ type ListBuyerRefundsParams struct {
 
 // ListBuyerRefunds returns paginated refunds owned by the requesting buyer.
 func (b *RefundHandler) ListBuyerRefunds(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListBuyerRefundsParams,
 ) (paginate.PaginateResult[ordermodel.Refund], error) {
 	var zero paginate.PaginateResult[ordermodel.Refund]
@@ -63,7 +63,7 @@ type ListSellerRefundsParams struct {
 
 // ListSellerRefunds returns refunds raised against orders the requesting seller fulfilled.
 func (b *RefundHandler) ListSellerRefunds(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListSellerRefundsParams,
 ) (paginate.PaginateResult[ordermodel.Refund], error) {
 	var zero paginate.PaginateResult[ordermodel.Refund]

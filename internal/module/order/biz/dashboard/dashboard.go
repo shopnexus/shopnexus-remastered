@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	restate "github.com/restatedev/sdk-go"
-
 	"github.com/google/uuid"
 
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
@@ -53,7 +51,7 @@ type SellerOrderStats struct {
 }
 
 func (b *DashboardHandler) GetSellerOrderStats(
-	ctx restate.Context,
+	ctx context.Context,
 	params GetSellerOrderStatsParams,
 ) (SellerOrderStats, error) {
 	if err := validator.Validate(params); err != nil {
@@ -88,7 +86,7 @@ type SellerOrderTimeSeriesPoint struct {
 }
 
 func (b *DashboardHandler) GetSellerOrderTimeSeries(
-	ctx restate.Context,
+	ctx context.Context,
 	params GetSellerOrderTimeSeriesParams,
 ) ([]SellerOrderTimeSeriesPoint, error) {
 	if err := validator.Validate(params); err != nil {
@@ -125,7 +123,7 @@ type SellerPendingActions struct {
 }
 
 func (b *DashboardHandler) GetSellerPendingActions(
-	ctx restate.Context,
+	ctx context.Context,
 	params GetSellerPendingActionsParams,
 ) (SellerPendingActions, error) {
 	if err := validator.Validate(params); err != nil {
@@ -156,7 +154,7 @@ type SellerTopProduct struct {
 }
 
 func (b *DashboardHandler) GetSellerTopProducts(
-	ctx restate.Context,
+	ctx context.Context,
 	params GetSellerTopProductsParams,
 ) ([]SellerTopProduct, error) {
 	if err := validator.Validate(params); err != nil {

@@ -1,11 +1,11 @@
 package dashboard
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	restate "github.com/restatedev/sdk-go"
 
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 )
@@ -68,7 +68,7 @@ func percentChange(current, previous int64) *float64 {
 // pending actions, and top products are read locally; vendor rating comes
 // from the catalog module.
 func (b *DashboardHandler) GetSellerDashboard(
-	ctx restate.Context,
+	ctx context.Context,
 	params GetSellerDashboardParams,
 ) (SellerDashboard, error) {
 	var zero SellerDashboard

@@ -1,10 +1,10 @@
 package refund
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/google/uuid"
-	restate "github.com/restatedev/sdk-go"
 
 	"shopnexus-server/internal/infras/metrics"
 	accountmodel "shopnexus-server/internal/module/account/model"
@@ -24,7 +24,7 @@ type SellerActionParams struct {
 // SellerApproveRefund is the happy path: seller agrees with the refund after
 // receiving the returned goods. Triggers the auto-credit flow.
 func (b *RefundHandler) SellerApproveRefund(
-	ctx restate.Context,
+	ctx context.Context,
 	params SellerActionParams,
 ) (ordermodel.Refund, error) {
 	var zero ordermodel.Refund
@@ -78,7 +78,7 @@ type SellerDisputeParams struct {
 // reason and evidence photos; the refund row flips to Disputed and a dispute
 // row is opened.
 func (b *RefundHandler) SellerDisputeRefund(
-	ctx restate.Context,
+	ctx context.Context,
 	params SellerDisputeParams,
 ) (ordermodel.RefundDispute, error) {
 	var zero ordermodel.RefundDispute
@@ -97,16 +97,16 @@ func (b *RefundHandler) SellerDisputeRefund(
 		return zero, ordermodel.ErrRefundWrongStage
 	}
 
-	dispute, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefundDispute, error) {
-		if _, e := b.Storage.Querier().SellerDisputeRefund(rctx, refund.ID); e != nil {
+	dispute, err := func() (orderdb.OrderRefundDispute, error) {
+		if _, e := b.Storage.Querier().SellerDisputeRefund(ctx, refund.ID); e != nil {
 			return orderdb.OrderRefundDispute{}, fmt.Errorf("dispute refund: %w", e)
 		}
-		return b.Storage.Querier().OpenRefundDispute(rctx, orderdb.OpenRefundDisputeParams{
+		return b.Storage.Querier().OpenRefundDispute(ctx, orderdb.OpenRefundDisputeParams{
 			RefundID:  refund.ID,
 			AccountID: params.Account.ID,
 			Reason:    params.Reason,
 		})
-	})
+	}()
 	if err != nil {
 		return zero, fmt.Errorf("open dispute: %w", err)
 	}
@@ -137,22 +137,18 @@ func (b *RefundHandler) SellerDisputeRefund(
 // loadAndAuthSeller fetches the refund and verifies the caller is the order's
 // seller. Shared between SellerApproveRefund + SellerDisputeRefund.
 func (b *RefundHandler) loadAndAuthSeller(
-	ctx restate.Context,
+	ctx context.Context,
 	refundID uuid.UUID,
 	callerID uuid.UUID,
 ) (orderdb.OrderRefund, error) {
-	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
-		return b.Storage.Querier().GetRefund(rctx, orderdb.GetRefundParams{
-			ID: uuid.NullUUID{UUID: refundID, Valid: true},
-		})
+	refund, err := b.Storage.Querier().GetRefund(ctx, orderdb.GetRefundParams{
+		ID: uuid.NullUUID{UUID: refundID, Valid: true},
 	})
 	if err != nil {
 		return orderdb.OrderRefund{}, fmt.Errorf("get refund: %w", err)
 	}
-	order, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderOrder, error) {
-		return b.Storage.Querier().GetOrder(rctx, orderdb.GetOrderParams{
-			ID: uuid.NullUUID{UUID: refund.OrderID, Valid: true},
-		})
+	order, err := b.Storage.Querier().GetOrder(ctx, orderdb.GetOrderParams{
+		ID: uuid.NullUUID{UUID: refund.OrderID, Valid: true},
 	})
 	if err != nil {
 		return orderdb.OrderRefund{}, fmt.Errorf("get order: %w", err)

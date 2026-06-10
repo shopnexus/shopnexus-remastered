@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 
 	accountmodel "shopnexus-server/internal/module/account/model"
@@ -46,7 +45,7 @@ type HasPurchasedProductParams struct {
 }
 
 // HasPurchasedProduct checks if an account has a successful order containing any of the given SKU IDs.
-func (b *ReviewHandler) HasPurchasedProduct(ctx restate.Context, params HasPurchasedProductParams) (bool, error) {
+func (b *ReviewHandler) HasPurchasedProduct(ctx context.Context, params HasPurchasedProductParams) (bool, error) {
 	if err := validator.Validate(params); err != nil {
 		return false, fmt.Errorf("validate has purchased product: %w", err)
 	}
@@ -69,7 +68,7 @@ type ReviewableOrder struct {
 
 // ListReviewableOrders returns successful orders that contain items matching the given SKU IDs.
 func (b *ReviewHandler) ListReviewableOrders(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListReviewableOrdersParams,
 ) ([]ReviewableOrder, error) {
 	if err := validator.Validate(params); err != nil {
@@ -101,7 +100,7 @@ type ValidateOrderForReviewParams struct {
 }
 
 // ValidateOrderForReview checks if a specific order is eligible for review.
-func (b *ReviewHandler) ValidateOrderForReview(ctx restate.Context, params ValidateOrderForReviewParams) (bool, error) {
+func (b *ReviewHandler) ValidateOrderForReview(ctx context.Context, params ValidateOrderForReviewParams) (bool, error) {
 	if err := validator.Validate(params); err != nil {
 		return false, fmt.Errorf("validate order for review: %w", err)
 	}
@@ -114,7 +113,7 @@ func (b *ReviewHandler) ValidateOrderForReview(ctx restate.Context, params Valid
 }
 
 // spuSkuIDs resolves all SKU IDs of an SPU via the catalog module.
-func (b *ReviewHandler) spuSkuIDs(ctx restate.Context, spuID uuid.UUID) ([]uuid.UUID, error) {
+func (b *ReviewHandler) spuSkuIDs(ctx context.Context, spuID uuid.UUID) ([]uuid.UUID, error) {
 	skus, err := b.catalog.ListProductSku(ctx, catalogbiz.ListProductSkuParams{
 		SpuID: []uuid.UUID{spuID},
 	})
@@ -135,7 +134,7 @@ type ListReviewableOrdersBySpuParams struct {
 // ListReviewableOrdersBySpu returns completed orders for a product that the
 // user can review.
 func (b *ReviewHandler) ListReviewableOrdersBySpu(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListReviewableOrdersBySpuParams,
 ) ([]ReviewableOrder, error) {
 	if err := validator.Validate(params); err != nil {
@@ -167,7 +166,7 @@ type CreateProductReviewParams struct {
 // then forwards the review to the catalog store with denormalized order facts
 // (item name + order date) so catalog never calls back into order.
 func (b *ReviewHandler) CreateProductReview(
-	ctx restate.Context,
+	ctx context.Context,
 	params CreateProductReviewParams,
 ) (catalogmodel.Comment, error) {
 	var zero catalogmodel.Comment

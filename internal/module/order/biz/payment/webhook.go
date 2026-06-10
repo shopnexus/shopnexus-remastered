@@ -1,6 +1,7 @@
 package payment
 
 import (
+	"context"
 	"fmt"
 
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
@@ -9,11 +10,10 @@ import (
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
-	restate "github.com/restatedev/sdk-go"
 )
 
 // OnPaymentResult is the unified entry point for gateway IPN webhooks.
-func (b *PaymentHandler) OnPaymentResult(ctx restate.Context, params payment.Notification) error {
+func (b *PaymentHandler) OnPaymentResult(ctx context.Context, params payment.Notification) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate on payment result: %w", err)
 	}
@@ -23,17 +23,13 @@ func (b *PaymentHandler) OnPaymentResult(ctx restate.Context, params payment.Not
 		return fmt.Errorf("parse tx id: %w", err)
 	}
 
-	tx, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderTransaction, error) {
-		return b.Storage.Querier().GetTransaction(rctx, uuid.NullUUID{UUID: txID, Valid: true})
-	})
+	tx, err := b.Storage.Querier().GetTransaction(ctx, uuid.NullUUID{UUID: txID, Valid: true})
 	if err != nil {
 		return fmt.Errorf("get transaction: %w", err)
 	}
 
 	// load session + resolve TxID if the webhook didn't supply one.
-	session, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderPaymentSession, error) {
-		return b.Storage.Querier().GetPaymentSession(rctx, uuid.NullUUID{UUID: tx.SessionID, Valid: true})
-	})
+	session, err := b.Storage.Querier().GetPaymentSession(ctx, uuid.NullUUID{UUID: tx.SessionID, Valid: true})
 	if err != nil {
 		return fmt.Errorf("get session: %w", err)
 	}
