@@ -165,25 +165,21 @@ func (b *ChatHandler) SendMessage(ctx restate.Context, params SendMessageParams)
 		return zero, err
 	}
 
-	// tail: push new_message to both participants via SSE.
+	// tail: push new_message to both participants. Each Send is journaled
+	// individually by Restate — no Run wrapper, so a retry never re-pushes a
+	// send that already completed.
 	recipientID := conv.BuyerID
 	if recipientID == params.Account.ID {
 		recipientID = conv.SellerID
 	}
-	err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-		for _, id := range []uuid.UUID{params.Account.ID, recipientID} {
-			if err := b.common.Send().PushEvent(rctx, commonbiz.PushEventParams{
-				AccountID: id,
-				Type:      commonbiz.SSENewMessage,
-				Data:      msg,
-			}); err != nil {
-				return fmt.Errorf("push new message event: %w", err)
-			}
+	for _, id := range []uuid.UUID{params.Account.ID, recipientID} {
+		if err = b.common.Send().PushEvent(ctx, commonbiz.PushEventParams{
+			AccountID: id,
+			Type:      commonbiz.SSENewMessage,
+			Data:      msg,
+		}); err != nil {
+			return zero, fmt.Errorf("push new message event: %w", err)
 		}
-		return nil
-	})
-	if err != nil {
-		return zero, err
 	}
 
 	return msg, nil
@@ -260,26 +256,27 @@ func (b *ChatHandler) MarkRead(ctx restate.Context, params MarkReadParams) error
 		return err
 	}
 
-	// tail: push read_receipt to the other participant via SSE (best-effort on conv load).
-	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-		conv, err := b.storage.Querier().GetConversationByID(rctx, params.ConversationID)
-		if err != nil {
-			return nil
-		}
-		recipientID := conv.BuyerID
-		if recipientID == params.Account.ID {
-			recipientID = conv.SellerID
-		}
-		if err := b.common.Send().PushEvent(rctx, commonbiz.PushEventParams{
-			AccountID: recipientID,
-			Type:      commonbiz.SSEReadReceipt,
-			Data: map[string]any{
-				"conversation_id": params.ConversationID,
-				"reader_id":       params.Account.ID,
-			},
-		}); err != nil {
-			return fmt.Errorf("push read receipt event: %w", err)
-		}
-		return nil
+	// tail: push read_receipt to the other participant (best-effort on conv load).
+	conv, err := restate.Run(ctx, func(rctx restate.RunContext) (chatdb.ChatConversation, error) {
+		return b.storage.Querier().GetConversationByID(rctx, params.ConversationID)
 	})
+	if err != nil {
+		return nil //nolint:nilerr // best-effort: skip receipt if conv load fails
+	}
+	recipientID := conv.BuyerID
+	if recipientID == params.Account.ID {
+		recipientID = conv.SellerID
+	}
+	// Cross-module Send is journaled by Restate on its own — no Run wrapper.
+	if err = b.common.Send().PushEvent(ctx, commonbiz.PushEventParams{
+		AccountID: recipientID,
+		Type:      commonbiz.SSEReadReceipt,
+		Data: map[string]any{
+			"conversation_id": params.ConversationID,
+			"reader_id":       params.Account.ID,
+		},
+	}); err != nil {
+		return fmt.Errorf("push read receipt event: %w", err)
+	}
+	return nil
 }
