@@ -7,9 +7,15 @@ import "shopnexus-server/config"
 // remains is process-level: the HTTP server port, slog.Default setup, and
 // Restate admin/service registration.
 type Config struct {
-	Port    string         `mapstructure:"port"    validate:"required"`
-	Log     config.Log     `mapstructure:"log"`
-	Restate config.Restate `mapstructure:"restate"`
+	Port       string         `mapstructure:"port"    validate:"required"`
+	Log        config.Log     `mapstructure:"log"`
+	Restate    config.Restate `mapstructure:"restate"`
+	BestEffort BestEffort     `mapstructure:"bestEffort"`
+}
+
+// BestEffort configures the in-process BestEffort HTTP/2 endpoint.
+type BestEffort struct {
+	Port string `mapstructure:"port" validate:"required"`
 }
 
 func NewConfig() (*Config, error) {

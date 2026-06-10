@@ -47,9 +47,9 @@ func NewCommonStorage(pool pgsqlc.TxBeginner) commonbiz.CommonStorage {
 	return pgsqlc.NewStorage(pool, commondb.New(pool))
 }
 
-// NewCommonBiz creates a Restate-backed client for the common module.
-func NewCommonBiz(cfg *commonconfig.Config) commonbiz.CommonBizClient {
-	return commonbiz.NewCommonBizClientRemote(cfg.Restate.IngressAddress, cfg.Restate.IngressAddress)
+// NewCommonBiz creates the common client. BestEffort calls run in-process.
+func NewCommonBiz(cfg *commonconfig.Config, biz *commonbiz.CommonHandler) commonbiz.CommonBizClient {
+	return commonbiz.NewCommonBizClientInProcess(cfg.Restate.IngressAddress, biz)
 }
 
 // NewExchangeClient provides a CurrencyAPI-backed exchange.Client wrapped in a

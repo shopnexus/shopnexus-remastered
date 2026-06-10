@@ -35,7 +35,7 @@ func NewPromotionStorage(pool pgsqlc.TxBeginner) promotionbiz.PromotionStorage {
 	return pgsqlc.NewStorage(pool, promotiondb.New(pool))
 }
 
-// NewPromotionBiz creates a Restate-backed client for the promotion module.
-func NewPromotionBiz(cfg *promotionconfig.Config) promotionbiz.PromotionBizClient {
-	return promotionbiz.NewPromotionBizClientRemote(cfg.Restate.IngressAddress, cfg.Restate.IngressAddress)
+// NewPromotionBiz creates the promotion client. BestEffort calls run in-process.
+func NewPromotionBiz(cfg *promotionconfig.Config, biz *promotionbiz.PromotionHandler) promotionbiz.PromotionBizClient {
+	return promotionbiz.NewPromotionBizClientInProcess(cfg.Restate.IngressAddress, biz)
 }

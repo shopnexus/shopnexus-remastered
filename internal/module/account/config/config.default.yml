@@ -9,6 +9,7 @@ restate:
   adminAddress: "http://localhost:9470"
   serviceHost: "http://host.docker.internal"
   servicePort: "8082"
+  bestEffortAddress: "http://localhost:8083"
 
 postgres:
   host: localhost

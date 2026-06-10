@@ -34,7 +34,7 @@ func NewInventoryStorage(pool pgsqlc.TxBeginner) inventorybiz.InventoryStorage {
 	return pgsqlc.NewStorage(pool, inventorydb.New(pool))
 }
 
-// NewInventoryBiz creates a Restate-backed client for the inventory module.
-func NewInventoryBiz(cfg *inventoryconfig.Config) inventorybiz.InventoryBizClient {
-	return inventorybiz.NewInventoryBizClientRemote(cfg.Restate.IngressAddress, cfg.Restate.IngressAddress)
+// NewInventoryBiz creates the inventory client. BestEffort calls run in-process.
+func NewInventoryBiz(cfg *inventoryconfig.Config, biz *inventorybiz.InventoryHandler) inventorybiz.InventoryBizClient {
+	return inventorybiz.NewInventoryBizClientInProcess(cfg.Restate.IngressAddress, biz)
 }

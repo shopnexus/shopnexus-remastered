@@ -78,7 +78,7 @@ func NewCatalogStorage(pool pgsqlc.TxBeginner) catalogbiz.CatalogStorage {
 	return pgsqlc.NewStorage(pool, catalogdb.New(pool))
 }
 
-// NewCatalogBiz creates a Restate-backed client for the catalog module.
-func NewCatalogBiz(cfg *catalogconfig.Config) catalogbiz.CatalogBizClient {
-	return catalogbiz.NewCatalogBizClientRemote(cfg.Restate.IngressAddress, cfg.Restate.IngressAddress)
+// NewCatalogBiz creates the catalog client. BestEffort calls run in-process.
+func NewCatalogBiz(cfg *catalogconfig.Config, biz *catalogbiz.CatalogHandler) catalogbiz.CatalogBizClient {
+	return catalogbiz.NewCatalogBizClientInProcess(cfg.Restate.IngressAddress, biz)
 }

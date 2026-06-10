@@ -78,4 +78,8 @@ type Restate struct {
 	AdminAddress   string `yaml:"adminAddress"   mapstructure:"adminAddress"   validate:"required,url"`
 	ServiceHost    string `yaml:"serviceHost"    mapstructure:"serviceHost"    validate:"required"`
 	ServicePort    string `yaml:"servicePort"    mapstructure:"servicePort"    validate:"required"`
+
+	// BestEffortAddress is the in-process BestEffort HTTP/2 endpoint. Used only
+	// by modules that fall back to the Remote client to avoid an fx cycle.
+	BestEffortAddress string `yaml:"bestEffortAddress" mapstructure:"bestEffortAddress"`
 }

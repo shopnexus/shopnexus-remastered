@@ -45,7 +45,9 @@ func NewAccountStorage(pool pgsqlc.TxBeginner) accountbiz.AccountStorage {
 	return pgsqlc.NewStorage(pool, accountdb.New(pool))
 }
 
-// NewAccountBiz creates a Restate-backed client for the account module.
+// NewAccountBiz creates the account client. The AccountHandler injects its own
+// AccountBizClient, so InProcess (client wraps handler) would form an fx cycle.
+// Account therefore uses the Remote client pointing at the BestEffort server.
 func NewAccountBiz(cfg *accountconfig.Config) accountbiz.AccountBizClient {
-	return accountbiz.NewAccountBizClientRemote(cfg.Restate.IngressAddress, cfg.Restate.IngressAddress)
+	return accountbiz.NewAccountBizClientRemote(cfg.Restate.IngressAddress, cfg.Restate.BestEffortAddress)
 }

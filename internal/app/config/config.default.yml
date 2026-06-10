@@ -11,3 +11,6 @@ restate:
   adminAddress: "http://localhost:9470"
   serviceHost: "http://host.docker.internal"
   servicePort: "8082"
+
+bestEffort:
+  port: "8083"

@@ -99,9 +99,9 @@ func NewOrderStorage(pool pgsqlc.TxBeginner) orderbiz.OrderStorage {
 	return pgsqlc.NewStorage(pool, orderdb.New(pool))
 }
 
-// NewOrderBiz creates a Restate-backed client for the order module.
-func NewOrderBiz(cfg *orderconfig.Config) orderbiz.OrderBizClient {
-	return orderbiz.NewOrderBizClientRemote(cfg.Restate.IngressAddress, cfg.Restate.IngressAddress)
+// NewOrderBiz creates the order client. BestEffort calls run in-process.
+func NewOrderBiz(cfg *orderconfig.Config, biz *orderbiz.OrderHandler) orderbiz.OrderBizClient {
+	return orderbiz.NewOrderBizClientInProcess(cfg.Restate.IngressAddress, biz)
 }
 
 // NewCheckoutWf creates a Restate-backed client for the checkout workflow.

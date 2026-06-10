@@ -40,7 +40,7 @@ func NewChatStorage(pool pgsqlc.TxBeginner) chatbiz.ChatStorage {
 	return pgsqlc.NewStorage(pool, chatdb.New(pool))
 }
 
-// NewChatBiz creates a Restate-backed client for the chat module.
-func NewChatBiz(cfg *chatconfig.Config) chatbiz.ChatBizClient {
-	return chatbiz.NewChatBizClientRemote(cfg.Restate.IngressAddress, cfg.Restate.IngressAddress)
+// NewChatBiz creates the chat client. BestEffort calls run in-process.
+func NewChatBiz(cfg *chatconfig.Config, biz *chatbiz.ChatHandler) chatbiz.ChatBizClient {
+	return chatbiz.NewChatBizClientInProcess(cfg.Restate.IngressAddress, biz)
 }

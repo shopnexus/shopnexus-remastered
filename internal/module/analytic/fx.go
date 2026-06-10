@@ -38,7 +38,7 @@ func NewAnalyticStorage(pool pgsqlc.TxBeginner) analyticbiz.AnalyticStorage {
 	return pgsqlc.NewStorage(pool, analyticdb.New(pool))
 }
 
-// NewAnalyticBiz creates a Restate-backed client for the analytic module.
-func NewAnalyticBiz(cfg *analyticconfig.Config) analyticbiz.AnalyticBizClient {
-	return analyticbiz.NewAnalyticBizClientRemote(cfg.Restate.IngressAddress, cfg.Restate.IngressAddress)
+// NewAnalyticBiz creates the analytic client. BestEffort calls run in-process.
+func NewAnalyticBiz(cfg *analyticconfig.Config, biz *analyticbiz.AnalyticHandler) analyticbiz.AnalyticBizClient {
+	return analyticbiz.NewAnalyticBizClientInProcess(cfg.Restate.IngressAddress, biz)
 }

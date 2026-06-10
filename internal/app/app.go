@@ -37,6 +37,7 @@ var Module = fx.Module("main",
 	fx.Invoke(
 		SetupLogger,
 		SetupRestate,
+		SetupBestEffort,
 		SetupEcho,
 		SetupHTTPServer,
 	),
