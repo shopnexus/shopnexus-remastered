@@ -1,9 +1,8 @@
 package analyticbiz
 
 import (
+	"context"
 	"fmt"
-
-	restate "github.com/restatedev/sdk-go"
 
 	analyticdb "shopnexus-server/internal/module/analytic/db/sqlc"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
@@ -13,7 +12,7 @@ import (
 )
 
 // HandlePopularityEvent updates product popularity scores based on an interaction event.
-func (b *AnalyticHandler) HandlePopularityEvent(ctx restate.Context, event analyticmodel.Interaction) error {
+func (b *AnalyticHandler) HandlePopularityEvent(ctx context.Context, event analyticmodel.Interaction) error {
 	if event.RefType != analyticmodel.InteractionRefTypeProduct {
 		return nil
 	}
@@ -55,7 +54,7 @@ func (b *AnalyticHandler) HandlePopularityEvent(ctx restate.Context, event analy
 
 // GetProductPopularity returns the popularity metrics for the given product SPU.
 func (b *AnalyticHandler) GetProductPopularity(
-	ctx restate.Context,
+	ctx context.Context,
 	spuID uuid.UUID,
 ) (analyticdb.AnalyticProductPopularity, error) {
 	return b.storage.Querier().GetProductPopularityByID(ctx, spuID)
@@ -63,7 +62,7 @@ func (b *AnalyticHandler) GetProductPopularity(
 
 // ListTopProductPopularity returns the top products ranked by popularity score.
 func (b *AnalyticHandler) ListTopProductPopularity(
-	ctx restate.Context,
+	ctx context.Context,
 	params paginate.Params,
 ) ([]analyticdb.AnalyticProductPopularity, error) {
 	return b.storage.Querier().ListTopProductPopularity(ctx, analyticdb.ListTopProductPopularityParams{

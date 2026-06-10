@@ -51,7 +51,7 @@ func SetupRestate(
 
 	srv := server.NewRestate().
 		Bind(restate.Reflect(accountBiz, retryPolicy)).
-		Bind(restate.Reflect(analyticBiz, retryPolicy)).
+		Bind(restate.Reflect(analyticbiz.NewAnalyticService(analyticBiz), retryPolicy)).
 		Bind(restate.Reflect(catalogbiz.NewCatalogService(catalogBiz), retryPolicy)).
 		Bind(restate.Reflect(chatBiz, retryPolicy)).
 		Bind(restate.Reflect(commonBiz, retryPolicy)).

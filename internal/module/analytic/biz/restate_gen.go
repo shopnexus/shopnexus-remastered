@@ -118,3 +118,28 @@ func (f *AnalyticRestateFuture) GetProductPopularity(rctx restate.Context, spuID
 func (f *AnalyticRestateFuture) ListTopProductPopularity(rctx restate.Context, params paginate.Params) restate.ResponseFuture[[]analyticdb.AnalyticProductPopularity] {
 	return restate.Service[[]analyticdb.AnalyticProductPopularity](rctx, serviceName, "ListTopProductPopularity").RequestFuture(params)
 }
+
+// AnalyticService adapts AnalyticBiz into restate.Context handlers for restate.Reflect.
+type AnalyticService struct {
+	biz AnalyticBiz
+}
+
+func NewAnalyticService(biz AnalyticBiz) *AnalyticService { return &AnalyticService{biz: biz} }
+
+func (s *AnalyticService) ServiceName() string { return serviceName }
+
+func (s *AnalyticService) CreateInteraction(ctx restate.Context, params CreateInteractionParams) error {
+	return s.biz.CreateInteraction(ctx, params)
+}
+
+func (s *AnalyticService) HandlePopularityEvent(ctx restate.Context, event analyticmodel.Interaction) error {
+	return s.biz.HandlePopularityEvent(ctx, event)
+}
+
+func (s *AnalyticService) GetProductPopularity(ctx restate.Context, spuID uuid.UUID) (analyticdb.AnalyticProductPopularity, error) {
+	return s.biz.GetProductPopularity(ctx, spuID)
+}
+
+func (s *AnalyticService) ListTopProductPopularity(ctx restate.Context, params paginate.Params) ([]analyticdb.AnalyticProductPopularity, error) {
+	return s.biz.ListTopProductPopularity(ctx, params)
+}

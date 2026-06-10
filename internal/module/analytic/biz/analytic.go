@@ -1,9 +1,8 @@
 package analyticbiz
 
 import (
+	"context"
 	"time"
-
-	restate "github.com/restatedev/sdk-go"
 
 	"shopnexus-server/internal/infras/bus"
 	accountmodel "shopnexus-server/internal/module/account/model"
@@ -26,7 +25,7 @@ type CreateInteractionParams struct {
 }
 
 // CreateInteraction records a batch of user interactions and fans out popularity events.
-func (b *AnalyticHandler) CreateInteraction(ctx restate.Context, params CreateInteractionParams) error {
+func (b *AnalyticHandler) CreateInteraction(ctx context.Context, params CreateInteractionParams) error {
 	args := lo.Map(
 		params.Interactions,
 		func(interaction CreateInteraction, _ int) analyticdb.CreateBatchInteractionParams {
