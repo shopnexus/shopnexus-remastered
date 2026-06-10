@@ -11,6 +11,7 @@ import (
 	"shopnexus-server/internal/infras/metrics"
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountmodel "shopnexus-server/internal/module/account/model"
+	orderbase "shopnexus-server/internal/module/order/biz/base"
 	"shopnexus-server/internal/module/order/biz/workflow/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
@@ -52,20 +53,22 @@ type RefundCrediter interface {
 // minted at HTTP submission time — the payment webhook, the FE retry/cancel
 // endpoints and every refund/dispute signal all route by it.
 type FulfillmentWorkflow struct {
-	*base.Base
+	*orderbase.Base
 
+	wf      *base.Base
 	account accountbiz.AccountBizClient
 	locker  locker.Client
 	refund  RefundCrediter
 }
 
 func NewFulfillmentWorkflow(
-	c *base.Base,
+	core *orderbase.Base,
+	wf *base.Base,
 	account accountbiz.AccountBizClient,
 	locker locker.Client,
 	refund RefundCrediter,
 ) *FulfillmentWorkflow {
-	return &FulfillmentWorkflow{c, account, locker, refund}
+	return &FulfillmentWorkflow{core, wf, account, locker, refund}
 }
 
 func (h *FulfillmentWorkflow) ServiceName() string { return "FulfillmentWorkflow" }

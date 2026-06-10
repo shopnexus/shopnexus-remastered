@@ -9,6 +9,7 @@ import (
 	analyticbiz "shopnexus-server/internal/module/analytic/biz"
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 	commonbiz "shopnexus-server/internal/module/common/biz"
+	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	orderconfig "shopnexus-server/internal/module/order/config"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
@@ -26,10 +27,11 @@ type Base struct {
 	Logger  *slog.Logger
 	Storage OrderStorage
 
-	account  accountbiz.AccountBizClient
-	analytic analyticbiz.AnalyticBizClient
-	catalog  catalogbiz.CatalogBizClient
-	common   commonbiz.CommonBizClient
+	account   accountbiz.AccountBizClient
+	analytic  analyticbiz.AnalyticBizClient
+	catalog   catalogbiz.CatalogBizClient
+	common    commonbiz.CommonBizClient
+	inventory inventorybiz.InventoryBizClient
 }
 
 // New wires the shared dependency set consumed by every domain sub-handler.
@@ -41,17 +43,25 @@ func New(
 	analytic analyticbiz.AnalyticBizClient,
 	catalog catalogbiz.CatalogBizClient,
 	common commonbiz.CommonBizClient,
+	inventory inventorybiz.InventoryBizClient,
 ) *Base {
 	return &Base{
-		Cfg:      cfg,
-		Logger:   logger,
-		Storage:  storage,
-		account:  account,
-		analytic: analytic,
-		catalog:  catalog,
-		common:   common,
+		Cfg:       cfg,
+		Logger:    logger,
+		Storage:   storage,
+		account:   account,
+		analytic:  analytic,
+		catalog:   catalog,
+		common:    common,
+		inventory: inventory,
 	}
 }
+
+// Account and Inventory expose the cross-module clients to sub-handlers that
+// embed *Base (e.g. the refund credit flow). No restate.Context param, so
+// restate.Reflect never binds them.
+func (b *Base) Account() accountbiz.AccountBizClient       { return b.account }
+func (b *Base) Inventory() inventorybiz.InventoryBizClient { return b.inventory }
 
 // Notify sends an in-app notification one-way via the Account module.
 func (b *Base) Notify(ctx context.Context, params accountbiz.CreateNotificationParams) error {

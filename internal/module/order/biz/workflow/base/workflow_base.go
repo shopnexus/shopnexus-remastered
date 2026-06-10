@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	accountbiz "shopnexus-server/internal/module/account/biz"
-	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	orderbase "shopnexus-server/internal/module/order/biz/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
@@ -41,26 +39,15 @@ const (
 	SessionExpiry = 24 * time.Hour
 )
 
-// Base carries the workflow-shared dependency set on top of the module core.
+// Base carries the workflow-shared payment loop on top of the module core,
+// which it holds as a named field so its API doesn't leak as wfbase's own.
 type Base struct {
-	*orderbase.Base
-
-	account   accountbiz.AccountBizClient
-	inventory inventorybiz.InventoryBizClient
+	core *orderbase.Base
 }
 
-func New(
-	c *orderbase.Base,
-	account accountbiz.AccountBizClient,
-	inventory inventorybiz.InventoryBizClient,
-) *Base {
-	return &Base{c, account, inventory}
+func New(c *orderbase.Base) *Base {
+	return &Base{c}
 }
-
-// Account and Inventory expose the workflow-shared cross-module clients to
-// handlers that embed *Base from another package (e.g. the refund credit flow).
-func (b *Base) Account() accountbiz.AccountBizClient       { return b.account }
-func (b *Base) Inventory() inventorybiz.InventoryBizClient { return b.inventory }
 
 // initGatewayPayment charges the gateway for one attempt and persists the
 // redirect URL on the attempt's tx.
@@ -74,7 +61,7 @@ func (b *Base) initGatewayPayment(
 		return "", nil
 	}
 
-	paymentClient, err := b.GetPaymentClient(paymentOption)
+	paymentClient, err := b.core.GetPaymentClient(paymentOption)
 	if err != nil {
 		return "", fmt.Errorf("get payment client: %w", err)
 	}
@@ -97,7 +84,7 @@ func (b *Base) initGatewayPayment(
 	if url != "" {
 		if pErr := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
 			data, _ := json.Marshal(map[string]string{"gateway_url": url})
-			return b.Storage.Querier().SetTransactionData(rctx, orderdb.SetTransactionDataParams{
+			return b.core.Storage.Querier().SetTransactionData(rctx, orderdb.SetTransactionDataParams{
 				ID:   txID,
 				Data: data,
 			})
@@ -157,7 +144,7 @@ paymentLoop:
 		attemptTxID := restate.UUID(ctx)
 
 		if cErr := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-			_, e := b.Storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
+			_, e := b.core.Storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
 				ID:            attemptTxID,
 				SessionID:     p.SessionID,
 				Status:        orderdb.OrderStatusPending,
@@ -215,13 +202,13 @@ paymentLoop:
 				// on workflow replay.
 				if mErr := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
 					now := time.Now()
-					if _, e := b.Storage.Querier().MarkTransactionSuccess(rctx, orderdb.MarkTransactionSuccessParams{
+					if _, e := b.core.Storage.Querier().MarkTransactionSuccess(rctx, orderdb.MarkTransactionSuccessParams{
 						ID:          attemptTxID,
 						DateSettled: now,
 					}); e != nil {
 						return fmt.Errorf("mark gateway tx success: %w", e)
 					}
-					if _, e := b.Storage.Querier().MarkPaymentSessionSuccess(rctx, orderdb.MarkPaymentSessionSuccessParams{
+					if _, e := b.core.Storage.Querier().MarkPaymentSessionSuccess(rctx, orderdb.MarkPaymentSessionSuccessParams{
 						ID:       p.SessionID,
 						DatePaid: now,
 					}); e != nil {
@@ -247,7 +234,7 @@ paymentLoop:
 			// retry_<attempt>). Lazy retry: we don't burn gateway quota until
 			// the user actually comes back.
 			if mErr := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-				return b.Storage.Querier().MarkTransactionsFailed(rctx, orderdb.MarkTransactionsFailedParams{
+				return b.core.Storage.Querier().MarkTransactionsFailed(rctx, orderdb.MarkTransactionsFailedParams{
 					ID:    []uuid.UUID{attemptTxID},
 					Error: null.StringFrom("gateway attempt expired"),
 				})

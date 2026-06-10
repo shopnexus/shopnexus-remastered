@@ -4,23 +4,22 @@ import (
 	"context"
 
 	commonbiz "shopnexus-server/internal/module/common/biz"
+	orderbase "shopnexus-server/internal/module/order/biz/base"
 	"shopnexus-server/internal/module/order/biz/workflow/fullfilment"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/paginate"
-
-	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 )
 
-// RefundHandler implements RefundBiz over the workflow-shared core (it drives
-// the refund credit flow) and signals the order's FulfillmentWorkflow directly.
+// RefundHandler implements RefundBiz over the module core (it drives the
+// refund credit flow) and signals the order's FulfillmentWorkflow directly.
 type RefundHandler struct {
-	*wfbase.Base
+	*orderbase.Base
 
 	common      commonbiz.CommonBizClient
 	fulfillment fullfilment.FulfillmentWfClient
 }
 
-func New(c *wfbase.Base, common commonbiz.CommonBizClient, fulfillment fullfilment.FulfillmentWfClient) *RefundHandler {
+func New(c *orderbase.Base, common commonbiz.CommonBizClient, fulfillment fullfilment.FulfillmentWfClient) *RefundHandler {
 	return &RefundHandler{c, common, fulfillment}
 }
 

@@ -5,8 +5,8 @@ import (
 
 	"shopnexus-server/internal/infras/locker"
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
+	orderbase "shopnexus-server/internal/module/order/biz/base"
 	"shopnexus-server/internal/module/order/biz/refund"
-	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/paginate"
 
@@ -14,10 +14,10 @@ import (
 	restate "github.com/restatedev/sdk-go"
 )
 
-// SellerHandler implements SellerOrderBiz over the workflow-shared core
+// SellerHandler implements SellerOrderBiz over the module core
 // (reject refunds buyers via CreditFromSession).
 type SellerHandler struct {
-	*wfbase.Base
+	*orderbase.Base
 
 	inventory inventorybiz.InventoryBizClient
 	locker    locker.Client
@@ -25,7 +25,7 @@ type SellerHandler struct {
 }
 
 func New(
-	c *wfbase.Base,
+	c *orderbase.Base,
 	inventory inventorybiz.InventoryBizClient,
 	locker locker.Client,
 	refund *refund.RefundHandler,

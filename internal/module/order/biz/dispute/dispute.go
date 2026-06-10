@@ -4,18 +4,18 @@ import (
 	"context"
 
 	commonbiz "shopnexus-server/internal/module/common/biz"
+	orderbase "shopnexus-server/internal/module/order/biz/base"
 	"shopnexus-server/internal/module/order/biz/refund"
-	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	"shopnexus-server/internal/module/order/biz/workflow/fullfilment"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/paginate"
 )
 
-// DisputeHandler implements DisputeBiz over the workflow-shared core (admin
-// dismiss drives the refund credit flow) and signals the order's
-// FulfillmentWorkflow directly.
+// DisputeHandler implements DisputeBiz over the module core (admin dismiss
+// drives the refund credit flow) and signals the order's FulfillmentWorkflow
+// directly.
 type DisputeHandler struct {
-	*wfbase.Base
+	*orderbase.Base
 
 	common      commonbiz.CommonBizClient
 	fulfillment fullfilment.FulfillmentWfClient
@@ -23,7 +23,7 @@ type DisputeHandler struct {
 }
 
 func New(
-	c *wfbase.Base,
+	c *orderbase.Base,
 	common commonbiz.CommonBizClient,
 	fulfillment fullfilment.FulfillmentWfClient,
 	refund *refund.RefundHandler,

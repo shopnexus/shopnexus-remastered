@@ -272,7 +272,7 @@ func (h *FulfillmentWorkflow) confirm(
 	// Gateway payment loop (skipped for wallet-only). Shared with
 	// CheckoutWorkflow via runGatewayPaymentLoop in payment_gateway.go.
 	if confirmFeeGateway > 0 {
-		if err = h.RunGatewayPaymentLoop(ctx, base.GatewayPaymentLoopParams{
+		if err = h.wf.RunGatewayPaymentLoop(ctx, base.GatewayPaymentLoopParams{
 			SessionID:       sessionID,
 			WorkflowID:      orderID,
 			SessionDeadline: time.Now().Add(base.SessionExpiry),

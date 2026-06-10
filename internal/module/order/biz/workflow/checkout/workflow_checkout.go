@@ -19,6 +19,7 @@ import (
 	commonmodel "shopnexus-server/internal/module/common/model"
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
+	orderbase "shopnexus-server/internal/module/order/biz/base"
 	"shopnexus-server/internal/module/order/biz/workflow/base"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
@@ -33,12 +34,13 @@ import (
 	"github.com/samber/lo"
 )
 
-// CheckoutWorkflow drives the buyer checkout saga. It embeds the workflow
-// core (*base.Base), which carries the gateway payment loop and the module
-// core underneath.
+// CheckoutWorkflow drives the buyer checkout saga. It embeds the module core
+// (*orderbase.Base) for the shared storage/notify/hydrate helpers and holds the
+// workflow core (the gateway payment loop) as a named field.
 type CheckoutWorkflow struct {
-	*base.Base
+	*orderbase.Base
 
+	wf        *base.Base
 	account   accountbiz.AccountBizClient
 	catalog   catalogbiz.CatalogBizClient
 	common    commonbiz.CommonBizClient
@@ -46,13 +48,14 @@ type CheckoutWorkflow struct {
 }
 
 func New(
-	c *base.Base,
+	core *orderbase.Base,
+	wf *base.Base,
 	account accountbiz.AccountBizClient,
 	catalog catalogbiz.CatalogBizClient,
 	common commonbiz.CommonBizClient,
 	inventory inventorybiz.InventoryBizClient,
 ) *CheckoutWorkflow {
-	return &CheckoutWorkflow{c, account, catalog, common, inventory}
+	return &CheckoutWorkflow{core, wf, account, catalog, common, inventory}
 }
 
 func (h *CheckoutWorkflow) ServiceName() string { return "CheckoutWorkflow" }
@@ -506,7 +509,7 @@ func (h *CheckoutWorkflow) Run(
 	// retries on attempt expiry. Shared with FulfillmentWorkflow via the
 	// workflow base.
 	if gatewayAmount > 0 {
-		if err = h.RunGatewayPaymentLoop(ctx, base.GatewayPaymentLoopParams{
+		if err = h.wf.RunGatewayPaymentLoop(ctx, base.GatewayPaymentLoopParams{
 			SessionID:       sessionID,
 			WorkflowID:      workflowID,
 			SessionDeadline: time.Now().Add(base.SessionExpiry),
