@@ -59,6 +59,18 @@ type methodInfo struct {
 	HasInput   bool
 	OutputType string
 	HasOutput  bool
+	// IsCommand is true when the first param is restate.Context (durable,
+	// journaled command); false for context.Context (non-durable query).
+	IsCommand bool
+}
+
+// ctxType renders the method's first-param ctx type as a parameter
+// declaration, e.g. "ctx context.Context" or "ctx restate.Context".
+func (m methodInfo) ctxType(name string) string {
+	if m.IsCommand {
+		return name + " restate.Context"
+	}
+	return name + " context.Context"
 }
 
 // keyExpr renders the workflow-key argument as a string expression.
@@ -173,9 +185,12 @@ func main() {
 
 	samePackage := *pkgName == *srcPkg
 
-	senderType := strings.TrimSuffix(*proxyType, "Client") + "Sender"
+	proxyBase := strings.TrimSuffix(*proxyType, "Client")
+	callType := proxyBase + "Call"     // restate command request-response proxy
+	callIface := *ifaceName + "Call"   // command request-response surface
+	senderType := proxyBase + "Sender" // restate command one-way proxy
 	senderIface := *ifaceName + "Sender"
-	futureType := strings.TrimSuffix(*proxyType, "Client") + "Future"
+	futureType := proxyBase + "Future" // restate command future proxy
 	futureIface := *ifaceName + "Future"
 	clientIface := *ifaceName + "Client"
 
@@ -317,6 +332,14 @@ func main() {
 
 			m := methodInfo{Name: name}
 
+			// First param decides query vs command: context.Context → query
+			// (non-durable, flat/besteffort); restate.Context → command
+			// (durable, dispatched via the Restate proxy).
+			if ft.Params.NumFields() > 0 {
+				ctxStr := renderType(fset, ft.Params.List[0].Type, *srcPkg, samePackage, usedImports, d)
+				m.IsCommand = ctxStr == "restate.Context"
+			}
+
 			// Workflow kind: second param is the workflow key, input shifts to third.
 			inputIdx := 1
 			if isWorkflow {
@@ -359,6 +382,18 @@ func main() {
 	}
 	collect(iface)
 
+	// Partition by ctx type: queries (context.Context) → flat besteffort
+	// surface; commands (restate.Context) → Call/Future/Sender Restate proxy.
+	// Workflows are all-command (durable) by nature.
+	var queries, commands []methodInfo
+	for _, m := range methods {
+		if isWorkflow || m.IsCommand {
+			commands = append(commands, m)
+		} else {
+			queries = append(queries, m)
+		}
+	}
+
 	// Always needed imports
 	usedImports["context"] = "context"
 	if !samePackage {
@@ -400,123 +435,109 @@ func main() {
 	}
 	fmt.Fprintf(&buf, "const serviceName = %q\n\n", *serviceName)
 
-	// Sender interface: every method as a one-way call, outputs dropped.
-	fmt.Fprintf(
-		&buf,
-		"// %s mirrors %s as one-way (fire-and-forget) calls; outputs are dropped.\n",
-		senderIface,
-		ifaceRef,
-	)
-	fmt.Fprintf(&buf, "type %s interface {\n", senderIface)
-	for _, m := range methods {
-		fmt.Fprintf(&buf, "\t%s(%s) error\n", m.Name, m.params("ctx context.Context"))
+	if isWorkflow {
+		writeWorkflowProxy(&buf, *ifaceName, ifaceRef, *proxyType, senderType, senderIface, futureType, futureIface, clientIface, methods)
+
+		formatted, err := format.Source(buf.Bytes())
+		if err != nil {
+			log.Fatalf("gofmt: %v\nraw output:\n%s", err, buf.String())
+		}
+		if err := os.WriteFile(*outFile, formatted, 0644); err != nil {
+			log.Fatalf("write %s: %v", *outFile, err)
+		}
+		fmt.Printf("genrestate: wrote %s (%d methods)\n", *outFile, len(methods))
+		return
+	}
+
+	// Command surfaces (Call/Sender/Future) mirror the durable restate.Context
+	// methods.
+
+	// Call interface: command request-response, restate.Context.
+	fmt.Fprintf(&buf, "// %s mirrors the durable (command) methods of %s as request-response calls.\n", callIface, ifaceRef)
+	fmt.Fprintf(&buf, "type %s interface {\n", callIface)
+	for _, m := range commands {
+		if m.HasOutput {
+			fmt.Fprintf(&buf, "\t%s(%s) (%s, error)\n", m.Name, m.params(m.ctxType("ctx")), m.OutputType)
+		} else {
+			fmt.Fprintf(&buf, "\t%s(%s) error\n", m.Name, m.params(m.ctxType("ctx")))
+		}
 	}
 	buf.WriteString("}\n\n")
 
-	// Future interface: every method returns a ResponseFuture for racing/parallel calls.
-	fmt.Fprintf(
-		&buf,
-		"// %s mirrors %s returning response futures for racing\n// or parallel calls. Only usable inside a Restate handler context.\n",
-		futureIface,
-		ifaceRef,
-	)
+	// Sender interface: command one-way calls, outputs dropped.
+	fmt.Fprintf(&buf, "// %s mirrors the command methods of %s as one-way (fire-and-forget) calls.\n", senderIface, ifaceRef)
+	fmt.Fprintf(&buf, "type %s interface {\n", senderIface)
+	for _, m := range commands {
+		fmt.Fprintf(&buf, "\t%s(%s) error\n", m.Name, m.params(m.ctxType("ctx")))
+	}
+	buf.WriteString("}\n\n")
+
+	// Future interface: command methods returning response futures.
+	fmt.Fprintf(&buf, "// %s mirrors the command methods of %s returning response futures for\n// racing or parallel calls. Only usable inside a Restate handler context.\n", futureIface, ifaceRef)
 	fmt.Fprintf(&buf, "type %s interface {\n", futureIface)
-	for _, m := range methods {
+	for _, m := range commands {
 		outType := "restate.Void"
 		if m.HasOutput {
 			outType = m.OutputType
 		}
-		fmt.Fprintf(
-			&buf,
-			"\t%s(%s) restate.ResponseFuture[%s]\n",
-			m.Name,
-			m.params("rctx restate.Context"),
-			outType,
-		)
+		fmt.Fprintf(&buf, "\t%s(%s) restate.ResponseFuture[%s]\n", m.Name, m.params("rctx restate.Context"), outType)
 	}
 	buf.WriteString("}\n\n")
 
-	// Client interface: the cross-module DI type. For services it also exposes
-	// Guaranteed()/BestEffort() transport selectors (still embeds the biz +
-	// Send/Future for now so existing call sites keep compiling).
-	fmt.Fprintf(
-		&buf,
-		"// %s is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.\n",
-		clientIface,
-	)
-	if isWorkflow {
-		fmt.Fprintf(
-			&buf,
-			"type %s interface {\n\t%s\n\tSend() %s\n\tFuture() %s\n}\n\n",
-			clientIface,
-			ifaceRef,
-			senderIface,
-			futureIface,
-		)
-	} else {
-		guaranteedIface := *ifaceName + "Guaranteed"
-		bestEffortIface := *ifaceName + "BestEffort"
-		fmt.Fprintf(
-			&buf,
-			"type %s interface {\n\tGuaranteed() %s\n\tBestEffort() %s\n}\n\n",
-			clientIface,
-			guaranteedIface,
-			bestEffortIface,
-		)
+	// Client interface: the cross-module DI type. Queries are flat inline
+	// methods (non-durable besteffort transport); Call()/Future()/Send() expose
+	// the durable command surfaces. Workflows have no queries.
+	fmt.Fprintf(&buf, "// %s is the cross-module client: query methods are flat (non-durable),\n// Call()/Future()/Send() reach the durable command surfaces.\n", clientIface)
+	fmt.Fprintf(&buf, "type %s interface {\n", clientIface)
+	for _, m := range queries {
+		if m.HasOutput {
+			fmt.Fprintf(&buf, "\t%s(%s) (%s, error)\n", m.Name, m.params(m.ctxType("ctx")), m.OutputType)
+		} else {
+			fmt.Fprintf(&buf, "\t%s(%s) error\n", m.Name, m.params(m.ctxType("ctx")))
+		}
+	}
+	fmt.Fprintf(&buf, "\tCall() %s\n\tFuture() %s\n\tSend() %s\n}\n\n", callIface, futureIface, senderIface)
+
+	// Restate command proxy: request-response over HTTP ingress.
+	fmt.Fprintf(&buf, "// %s implements %s via Restate HTTP ingress.\n", callType, callIface)
+	fmt.Fprintf(&buf, "type %s struct {\n\tcall *restatec.CallClient\n}\n\n", callType)
+	fmt.Fprintf(&buf, "var _ %s = (*%s)(nil)\n\n", callIface, callType)
+	fmt.Fprintf(&buf, "func New%s(restateIngressURL string) *%s {\n", callType, callType)
+	fmt.Fprintf(&buf, "\treturn &%s{call: restatec.NewCallClient(restateIngressURL)}\n}\n\n", callType)
+	for _, m := range commands {
+		writeCallMethod(&buf, callType, m, isWorkflow)
 	}
 
-	// Request-response proxy.
-	fmt.Fprintf(&buf, "// %s implements %s via Restate HTTP ingress.\n", *proxyType, clientIface)
-	fmt.Fprintf(
-		&buf,
-		"type %s struct {\n\tcall *restatec.CallClient\n\tsend *%s\n\tfuture *%s\n}\n\n",
-		*proxyType,
-		senderType,
-		futureType,
-	)
-	// The Restate proxy satisfies the guaranteed surface; for services that is
-	// <Iface>Guaranteed, for workflows the (unchanged) <Iface>Client.
-	proxyAssertIface := clientIface
-	if !isWorkflow {
-		proxyAssertIface = *ifaceName + "Guaranteed"
-	}
-	fmt.Fprintf(&buf, "var _ %s = (*%s)(nil)\n\n", proxyAssertIface, *proxyType)
-	fmt.Fprintf(&buf, "func New%s(restateIngressURL string) *%s {\n", *proxyType, *proxyType)
-	fmt.Fprintf(
-		&buf,
-		"\treturn &%s{\n\t\tcall: restatec.NewCallClient(restateIngressURL),\n\t\tsend: &%s{client: restatec.NewSendClient(restateIngressURL)},\n\t\tfuture: &%s{},\n\t}\n}\n\n",
-		*proxyType,
-		senderType,
-		futureType,
-	)
-	fmt.Fprintf(&buf, "func (p *%s) Send() %s { return p.send }\n\n", *proxyType, senderIface)
-	fmt.Fprintf(&buf, "func (p *%s) Future() %s { return p.future }\n\n", *proxyType, futureIface)
-
-	// Request-response methods.
-	for _, m := range methods {
-		writeCallMethod(&buf, *proxyType, m, isWorkflow)
-	}
-
-	// One-way proxy.
+	// One-way command proxy.
 	fmt.Fprintf(&buf, "// %s implements %s.\n", senderType, senderIface)
 	fmt.Fprintf(&buf, "type %s struct {\n\tclient *restatec.SendClient\n}\n\n", senderType)
 	fmt.Fprintf(&buf, "var _ %s = (*%s)(nil)\n\n", senderIface, senderType)
-	for _, m := range methods {
+	for _, m := range commands {
 		writeSendMethod(&buf, senderType, m, isWorkflow)
 	}
 
-	// Future proxy.
+	// Future command proxy.
 	fmt.Fprintf(&buf, "// %s implements %s via the Restate SDK.\n", futureType, futureIface)
 	fmt.Fprintf(&buf, "type %s struct{}\n\n", futureType)
 	fmt.Fprintf(&buf, "var _ %s = (*%s)(nil)\n\n", futureIface, futureType)
-	for _, m := range methods {
+	for _, m := range commands {
 		writeFutureMethod(&buf, futureType, m, isWorkflow)
 	}
 
-	if !isWorkflow {
-		writeServiceAdapter(&buf, *serviceName, ifaceRef, methods)
-		writeBestEffortClient(&buf, *ifaceName, ifaceRef, *proxyType, *serviceName, clientIface, senderIface, futureIface, methods)
-	}
+	writeServiceAdapter(&buf, *serviceName, ifaceRef, methods)
+	writeClient(&buf, clientArgs{
+		ifaceName:   *ifaceName,
+		ifaceRef:    ifaceRef,
+		serviceName: *serviceName,
+		clientIface: clientIface,
+		callType:    callType,
+		callIface:   callIface,
+		senderType:  senderType,
+		senderIface: senderIface,
+		futureType:  futureType,
+		futureIface: futureIface,
+		queries:     queries,
+	})
 
 	formatted, err := format.Source(buf.Bytes())
 	if err != nil {
@@ -605,7 +626,7 @@ func renderType(
 // both await completion. Workflow methods route through the CallWorkflow
 // variants keyed by the workflow-key parameter.
 func writeCallMethod(buf *bytes.Buffer, proxyType string, m methodInfo, isWorkflow bool) {
-	fmt.Fprintf(buf, "func (p *%s) %s(%s) ", proxyType, m.Name, m.params("ctx context.Context"))
+	fmt.Fprintf(buf, "func (p *%s) %s(%s) ", proxyType, m.Name, m.params(m.ctxType("ctx")))
 
 	if m.HasOutput {
 		fmt.Fprintf(buf, "(%s, error)", m.OutputType)
@@ -674,44 +695,44 @@ func lowerFirst(s string) string {
 	return string(r)
 }
 
-// writeBestEffortClient emits the Guaranteed/BestEffort transport split:
-// the two surface interfaces, in-process + HTTP/2 BestEffort impls, the unified
-// client (which for now still embeds the biz surface so call sites keep
-// compiling), its InProcess/Remote constructors, and the BestEffort HTTP/2
-// server registration.
-func writeBestEffortClient(
-	buf *bytes.Buffer,
-	ifaceName, ifaceRef, proxyType, serviceName, clientIface, senderIface, futureIface string,
-	methods []methodInfo,
-) {
-	guaranteedIface := ifaceName + "Guaranteed"
-	bestEffortIface := ifaceName + "BestEffort"
-	lower := lowerFirst(ifaceName)
+// clientArgs bundles the names writeClient needs.
+type clientArgs struct {
+	ifaceName, ifaceRef, serviceName string
+	clientIface                      string
+	callType, callIface              string
+	senderType, senderIface          string
+	futureType, futureIface          string
+	queries                          []methodInfo
+}
+
+// writeClient emits the flat-query client: a flat-impl interface over the query
+// methods, in-process + HTTP/2 besteffort impls, the unified client struct
+// (flat queries delegate to the flat impl; Call()/Future()/Send() return the
+// command proxies), InProcess/Remote constructors, and the besteffort HTTP
+// server registration (query methods only — commands are served by Restate).
+// With zero queries every query loop is empty: empty flat interface, empty
+// Register body, no flat methods — all valid Go.
+func writeClient(buf *bytes.Buffer, a clientArgs) {
+	lower := lowerFirst(a.ifaceName)
+	flatIface := a.ifaceName + "Flat"
 	localType := lower + "BestEffortLocal"
 	remoteType := lower + "BestEffortRemote"
 	clientType := lower + "Client"
 
-	// Guaranteed surface = current Restate proxy behavior.
-	fmt.Fprintf(buf, "// %s is the guaranteed (durable Restate) surface.\n", guaranteedIface)
-	fmt.Fprintf(buf, "type %s interface {\n\t%s\n\tSend() %s\n\tFuture() %s\n}\n\n",
-		guaranteedIface, ifaceRef, senderIface, futureIface)
+	// Flat surface = the query methods, request-response, context.Context.
+	fmt.Fprintf(buf, "// %s is the flat (non-durable query) surface of %s.\n", flatIface, a.ifaceRef)
+	fmt.Fprintf(buf, "type %s interface {\n", flatIface)
+	for _, m := range a.queries {
+		fmt.Fprintf(buf, "\t%s\n", querySig(m))
+	}
+	buf.WriteString("}\n\n")
 
-	// BestEffort surface = sync request-response only.
-	fmt.Fprintf(buf, "// %s is the best-effort (non-durable) surface: sync request-response only.\n", bestEffortIface)
-	fmt.Fprintf(buf, "type %s interface {\n\t%s\n}\n\n", bestEffortIface, ifaceRef)
-
-	// In-process BestEffort: delegates to the biz directly.
-	fmt.Fprintf(buf, "// %s delegates BestEffort calls to the in-process biz.\n", localType)
-	fmt.Fprintf(buf, "type %s struct{ biz %s }\n\n", localType, ifaceRef)
-	fmt.Fprintf(buf, "var _ %s = (*%s)(nil)\n\n", bestEffortIface, localType)
-	for _, m := range methods {
-		fmt.Fprintf(buf, "func (b *%s) %s(%s) ", localType, m.Name, m.params("ctx context.Context"))
-		if m.HasOutput {
-			fmt.Fprintf(buf, "(%s, error)", m.OutputType)
-		} else {
-			buf.WriteString("error")
-		}
-		buf.WriteString(" {\n")
+	// In-process flat: delegates queries to the biz directly.
+	fmt.Fprintf(buf, "// %s delegates flat queries to the in-process biz.\n", localType)
+	fmt.Fprintf(buf, "type %s struct{ biz %s }\n\n", localType, a.ifaceRef)
+	fmt.Fprintf(buf, "var _ %s = (*%s)(nil)\n\n", flatIface, localType)
+	for _, m := range a.queries {
+		fmt.Fprintf(buf, "func (b *%s) %s {\n", localType, querySig(m))
 		args := "ctx"
 		if m.HasInput {
 			args += ", " + m.InputName
@@ -719,51 +740,64 @@ func writeBestEffortClient(
 		fmt.Fprintf(buf, "\treturn b.biz.%s(%s)\n}\n\n", m.Name, args)
 	}
 
-	// HTTP/2 BestEffort: posts JSON to the BestEffort server.
-	fmt.Fprintf(buf, "// %s routes BestEffort calls over HTTP/2.\n", remoteType)
+	// HTTP/2 flat: posts JSON to the besteffort server.
+	fmt.Fprintf(buf, "// %s routes flat queries over HTTP/2.\n", remoteType)
 	fmt.Fprintf(buf, "type %s struct{ call *besteffort.CallClient }\n\n", remoteType)
-	fmt.Fprintf(buf, "var _ %s = (*%s)(nil)\n\n", bestEffortIface, remoteType)
-	for _, m := range methods {
-		fmt.Fprintf(buf, "func (b *%s) %s(%s) ", remoteType, m.Name, m.params("ctx context.Context"))
+	fmt.Fprintf(buf, "var _ %s = (*%s)(nil)\n\n", flatIface, remoteType)
+	for _, m := range a.queries {
+		fmt.Fprintf(buf, "func (b *%s) %s {\n", remoteType, querySig(m))
 		inputArg := "nil"
 		if m.HasInput {
 			inputArg = m.InputName
 		}
 		if m.HasOutput {
-			fmt.Fprintf(buf, "(%s, error) {\n", m.OutputType)
 			fmt.Fprintf(buf, "\treturn besteffort.Call[%s](ctx, b.call, serviceName, %q, %s)\n}\n\n",
 				m.OutputType, m.Name, inputArg)
 		} else {
-			buf.WriteString("error {\n")
 			fmt.Fprintf(buf, "\treturn besteffort.CallVoid(ctx, b.call, serviceName, %q, %s)\n}\n\n",
 				m.Name, inputArg)
 		}
 	}
 
-	// Unified client. Still embeds the biz surface + Send/Future for now so
-	// existing call sites keep compiling; a later task removes those.
-	fmt.Fprintf(buf, "// %s selects the guaranteed (durable) or best-effort (non-durable) transport.\n", clientIface)
-	fmt.Fprintf(buf, "type %s struct {\n\t*%s\n\tbestEffort %s\n}\n\n", clientType, proxyType, bestEffortIface)
-	fmt.Fprintf(buf, "var _ %s = (*%s)(nil)\n\n", clientIface, clientType)
-	fmt.Fprintf(buf, "func (c *%s) Guaranteed() %s { return c.%s }\n\n", clientType, guaranteedIface, proxyType)
-	fmt.Fprintf(buf, "func (c *%s) BestEffort() %s { return c.bestEffort }\n\n", clientType, bestEffortIface)
+	// Unified client: flat impl for queries + command proxies for Call/Future/Send.
+	fmt.Fprintf(buf, "// %s holds the flat query impl and the durable command proxies.\n", clientType)
+	fmt.Fprintf(buf, "type %s struct {\n\tflat %s\n\tcall *%s\n\tsend *%s\n\tfuture *%s\n}\n\n",
+		clientType, flatIface, a.callType, a.senderType, a.futureType)
+	fmt.Fprintf(buf, "var _ %s = (*%s)(nil)\n\n", a.clientIface, clientType)
 
-	// In-process variant (monolith): BestEffort calls the biz directly.
-	fmt.Fprintf(buf, "// New%sInProcess builds a client whose BestEffort calls the in-process biz.\n", clientIface)
-	fmt.Fprintf(buf, "func New%sInProcess(restateIngressURL string, biz %s) %s {\n", clientIface, ifaceRef, clientIface)
-	fmt.Fprintf(buf, "\treturn &%s{\n\t\t%s: New%s(restateIngressURL),\n\t\tbestEffort: &%s{biz: biz},\n\t}\n}\n\n",
-		clientType, proxyType, proxyType, localType)
+	// Flat query methods delegate to the flat impl.
+	for _, m := range a.queries {
+		fmt.Fprintf(buf, "func (c *%s) %s {\n", clientType, querySig(m))
+		args := "ctx"
+		if m.HasInput {
+			args += ", " + m.InputName
+		}
+		fmt.Fprintf(buf, "\treturn c.flat.%s(%s)\n}\n\n", m.Name, args)
+	}
 
-	// Remote variant (split): BestEffort over HTTP/2.
-	fmt.Fprintf(buf, "// New%sRemote builds a client whose BestEffort calls a remote BestEffort server.\n", clientIface)
-	fmt.Fprintf(buf, "func New%sRemote(restateIngressURL, bestEffortURL string) %s {\n", clientIface, clientIface)
-	fmt.Fprintf(buf, "\treturn &%s{\n\t\t%s: New%s(restateIngressURL),\n\t\tbestEffort: &%s{call: besteffort.NewCallClient(bestEffortURL)},\n\t}\n}\n\n",
-		clientType, proxyType, proxyType, remoteType)
+	fmt.Fprintf(buf, "func (c *%s) Call() %s { return c.call }\n\n", clientType, a.callIface)
+	fmt.Fprintf(buf, "func (c *%s) Future() %s { return c.future }\n\n", clientType, a.futureIface)
+	fmt.Fprintf(buf, "func (c *%s) Send() %s { return c.send }\n\n", clientType, a.senderIface)
 
-	// BestEffort HTTP/2 server registration (server side).
-	fmt.Fprintf(buf, "// Register%sBestEffort wires biz methods onto a BestEffort HTTP/2 server.\n", serviceName)
-	fmt.Fprintf(buf, "func Register%sBestEffort(s *besteffort.Server, biz %s) {\n", serviceName, ifaceRef)
-	for _, m := range methods {
+	// commandProxies renders the shared call/send/future field initializers.
+	commandProxies := fmt.Sprintf(
+		"call:   New%s(restateIngressURL),\n\t\tsend:   &%s{client: restatec.NewSendClient(restateIngressURL)},\n\t\tfuture: &%s{},",
+		a.callType, a.senderType, a.futureType)
+
+	// In-process variant (monolith): flat queries hit the biz directly.
+	fmt.Fprintf(buf, "// New%sInProcess builds a client whose flat queries call the in-process biz.\n", a.clientIface)
+	fmt.Fprintf(buf, "func New%sInProcess(restateIngressURL string, biz %s) %s {\n", a.clientIface, a.ifaceRef, a.clientIface)
+	fmt.Fprintf(buf, "\treturn &%s{\n\t\tflat: &%s{biz: biz},\n\t\t%s\n\t}\n}\n\n", clientType, localType, commandProxies)
+
+	// Remote variant (split): flat queries over HTTP/2.
+	fmt.Fprintf(buf, "// New%sRemote builds a client whose flat queries call a remote besteffort server.\n", a.clientIface)
+	fmt.Fprintf(buf, "func New%sRemote(restateIngressURL, bestEffortURL string) %s {\n", a.clientIface, a.clientIface)
+	fmt.Fprintf(buf, "\treturn &%s{\n\t\tflat: &%s{call: besteffort.NewCallClient(bestEffortURL)},\n\t\t%s\n\t}\n}\n\n", clientType, remoteType, commandProxies)
+
+	// BestEffort HTTP server registration: query methods only.
+	fmt.Fprintf(buf, "// Register%sBestEffort wires the query methods onto a besteffort HTTP server.\n// Commands are served by Restate, not here.\n", a.serviceName)
+	fmt.Fprintf(buf, "func Register%sBestEffort(s *besteffort.Server, biz %s) {\n", a.serviceName, a.ifaceRef)
+	for _, m := range a.queries {
 		fmt.Fprintf(buf, "\ts.Handle(serviceName, %q, func(ctx context.Context, body []byte) (any, error) {\n", m.Name)
 		callArgs := "ctx"
 		if m.HasInput {
@@ -781,9 +815,81 @@ func writeBestEffortClient(
 	buf.WriteString("}\n\n")
 }
 
+// writeWorkflowProxy emits the legacy workflow client: a Restate proxy over
+// all methods (request-response, one-way Send, response Future) keyed by the
+// workflow-key param. Workflows are wholly durable, so there is no flat/
+// besteffort surface — this preserves the pre-split workflow output.
+func writeWorkflowProxy(
+	buf *bytes.Buffer,
+	ifaceName, ifaceRef, proxyType, senderType, senderIface, futureType, futureIface, clientIface string,
+	methods []methodInfo,
+) {
+	// Sender interface: every method as a one-way call, outputs dropped.
+	fmt.Fprintf(buf, "// %s mirrors %s as one-way (fire-and-forget) calls; outputs are dropped.\n", senderIface, ifaceRef)
+	fmt.Fprintf(buf, "type %s interface {\n", senderIface)
+	for _, m := range methods {
+		fmt.Fprintf(buf, "\t%s(%s) error\n", m.Name, m.params("ctx context.Context"))
+	}
+	buf.WriteString("}\n\n")
+
+	// Future interface: every method returns a ResponseFuture for racing/parallel calls.
+	fmt.Fprintf(buf, "// %s mirrors %s returning response futures for racing\n// or parallel calls. Only usable inside a Restate handler context.\n", futureIface, ifaceRef)
+	fmt.Fprintf(buf, "type %s interface {\n", futureIface)
+	for _, m := range methods {
+		outType := "restate.Void"
+		if m.HasOutput {
+			outType = m.OutputType
+		}
+		fmt.Fprintf(buf, "\t%s(%s) restate.ResponseFuture[%s]\n", m.Name, m.params("rctx restate.Context"), outType)
+	}
+	buf.WriteString("}\n\n")
+
+	// Client interface: embeds the biz surface + Send/Future.
+	fmt.Fprintf(buf, "// %s is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.\n", clientIface)
+	fmt.Fprintf(buf, "type %s interface {\n\t%s\n\tSend() %s\n\tFuture() %s\n}\n\n", clientIface, ifaceRef, senderIface, futureIface)
+
+	// Request-response proxy.
+	fmt.Fprintf(buf, "// %s implements %s via Restate HTTP ingress.\n", proxyType, clientIface)
+	fmt.Fprintf(buf, "type %s struct {\n\tcall *restatec.CallClient\n\tsend *%s\n\tfuture *%s\n}\n\n", proxyType, senderType, futureType)
+	fmt.Fprintf(buf, "var _ %s = (*%s)(nil)\n\n", clientIface, proxyType)
+	fmt.Fprintf(buf, "func New%s(restateIngressURL string) *%s {\n", proxyType, proxyType)
+	fmt.Fprintf(buf, "\treturn &%s{\n\t\tcall: restatec.NewCallClient(restateIngressURL),\n\t\tsend: &%s{client: restatec.NewSendClient(restateIngressURL)},\n\t\tfuture: &%s{},\n\t}\n}\n\n", proxyType, senderType, futureType)
+	fmt.Fprintf(buf, "func (p *%s) Send() %s { return p.send }\n\n", proxyType, senderIface)
+	fmt.Fprintf(buf, "func (p *%s) Future() %s { return p.future }\n\n", proxyType, futureIface)
+	for _, m := range methods {
+		writeCallMethod(buf, proxyType, m, true)
+	}
+
+	// One-way proxy.
+	fmt.Fprintf(buf, "// %s implements %s.\n", senderType, senderIface)
+	fmt.Fprintf(buf, "type %s struct {\n\tclient *restatec.SendClient\n}\n\n", senderType)
+	fmt.Fprintf(buf, "var _ %s = (*%s)(nil)\n\n", senderIface, senderType)
+	for _, m := range methods {
+		writeSendMethod(buf, senderType, m, true)
+	}
+
+	// Future proxy.
+	fmt.Fprintf(buf, "// %s implements %s via the Restate SDK.\n", futureType, futureIface)
+	fmt.Fprintf(buf, "type %s struct{}\n\n", futureType)
+	fmt.Fprintf(buf, "var _ %s = (*%s)(nil)\n\n", futureIface, futureType)
+	for _, m := range methods {
+		writeFutureMethod(buf, futureType, m, true)
+	}
+}
+
+// querySig renders a query method's full signature (name + params + results),
+// always with context.Context as the first param.
+func querySig(m methodInfo) string {
+	sig := m.Name + "(" + m.params("ctx context.Context") + ") "
+	if m.HasOutput {
+		return sig + "(" + m.OutputType + ", error)"
+	}
+	return sig + "error"
+}
+
 // writeSendMethod emits a one-way method on the sender proxy; outputs are dropped.
 func writeSendMethod(buf *bytes.Buffer, senderType string, m methodInfo, isWorkflow bool) {
-	fmt.Fprintf(buf, "func (s *%s) %s(%s) error {\n", senderType, m.Name, m.params("ctx context.Context"))
+	fmt.Fprintf(buf, "func (s *%s) %s(%s) error {\n", senderType, m.Name, m.params(m.ctxType("ctx")))
 
 	inputArg := "nil"
 	if m.HasInput {

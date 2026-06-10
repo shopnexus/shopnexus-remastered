@@ -33,7 +33,10 @@ func generate(t *testing.T) string {
 	return string(b)
 }
 
-func TestEmitsGuaranteedAdapter(t *testing.T) {
+// The Restate service adapter delegates every interface method, each with its
+// real ctx type: GetThing (query) and DoThing (command) are both restate.Context
+// handlers for restate.Reflect binding.
+func TestEmitsServiceAdapter(t *testing.T) {
 	got := generate(t)
 	for _, want := range []string{
 		"type SvcService struct {",
@@ -51,47 +54,72 @@ func TestEmitsGuaranteedAdapter(t *testing.T) {
 	}
 }
 
-func TestEmitsGuaranteedBestEffortClient(t *testing.T) {
+// Command surfaces: DoThing (restate.Context) lands on Call/Future/Sender.
+func TestEmitsCommandSurfaces(t *testing.T) {
 	got := generate(t)
 	for _, want := range []string{
-		// Guaranteed surface
-		"type SvcBizGuaranteed interface {",
-		"Send() SvcBizSender",
-		"Future() SvcBizFuture",
-		// BestEffort surface
-		"type SvcBizBestEffort interface {",
-		// In-process local impl
-		"type svcBizBestEffortLocal struct{ biz SvcBiz }",
-		"func (b *svcBizBestEffortLocal) GetThing(ctx context.Context, id int64) (string, error) {",
-		"return b.biz.GetThing(ctx, id)",
-		"func (b *svcBizBestEffortLocal) DoThing(ctx context.Context, id int64) error {",
-		"return b.biz.DoThing(ctx, id)",
-		// HTTP/2 remote impl
-		"type svcBizBestEffortRemote struct{ call *besteffort.CallClient }",
-		"func (b *svcBizBestEffortRemote) GetThing(ctx context.Context, id int64) (string, error) {",
-		"return besteffort.Call[string](ctx, b.call, serviceName, \"GetThing\", id)",
-		"func (b *svcBizBestEffortRemote) DoThing(ctx context.Context, id int64) error {",
-		"return besteffort.CallVoid(ctx, b.call, serviceName, \"DoThing\", id)",
-		// Unified client interface exposes only the two transport selectors
-		"type SvcBizClient interface {",
-		"Guaranteed() SvcBizGuaranteed",
-		"BestEffort() SvcBizBestEffort",
-		// Unified client struct + constructors
-		"type svcBizClient struct {",
-		"*SvcRestateClient",
-		"bestEffort SvcBizBestEffort",
-		"func (c *svcBizClient) Guaranteed() SvcBizGuaranteed { return c.SvcRestateClient }",
-		"func (c *svcBizClient) BestEffort() SvcBizBestEffort { return c.bestEffort }",
-		"func NewSvcBizClientInProcess(restateIngressURL string, biz SvcBiz) SvcBizClient {",
-		"func NewSvcBizClientRemote(restateIngressURL, bestEffortURL string) SvcBizClient {",
-		// BestEffort server registration
-		"func RegisterSvcBestEffort(s *besteffort.Server, biz SvcBiz) {",
-		"s.Handle(serviceName, \"GetThing\", func(ctx context.Context, body []byte) (any, error) {",
-		"return biz.GetThing(ctx, p)",
-		"return nil, biz.DoThing(ctx, p)",
+		// Call interface = command request-response, restate.Context.
+		"type SvcBizCall interface {",
+		"DoThing(ctx restate.Context, id int64) error",
+		// Sender / Future over commands, restate.Context.
+		"type SvcBizSender interface {",
+		"type SvcBizFuture interface {",
+		"DoThing(rctx restate.Context, id int64) restate.ResponseFuture[restate.Void]",
+		// Restate proxy carries the command call methods.
+		"func (p *SvcRestateCall) DoThing(ctx restate.Context, id int64) error {",
+		"restatec.CallVoid(ctx, p.call, serviceName, \"DoThing\", id)",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("generated output missing %q\n---\n%s", want, got)
 		}
+	}
+	// Commands must NOT appear as flat query methods.
+	if strings.Contains(got, "func (c *svcBizClient) DoThing(") {
+		t.Errorf("command DoThing leaked onto flat client surface\n---\n%s", got)
+	}
+}
+
+// Flat query surface: GetThing (context.Context) inline on the client, with
+// in-process + remote besteffort impls; commands are excluded from besteffort.
+func TestEmitsFlatQueryClient(t *testing.T) {
+	got := generate(t)
+	for _, want := range []string{
+		// Unified client interface: flat query inline + Call/Future/Send selectors.
+		"type SvcBizClient interface {",
+		"GetThing(ctx context.Context, id int64) (string, error)",
+		"Call() SvcBizCall",
+		"Future() SvcBizFuture",
+		"Send() SvcBizSender",
+		// Flat impl interface + in-process local.
+		"type svcBizBestEffortLocal struct{ biz SvcBiz }",
+		"func (b *svcBizBestEffortLocal) GetThing(ctx context.Context, id int64) (string, error) {",
+		"return b.biz.GetThing(ctx, id)",
+		// HTTP/2 remote impl.
+		"type svcBizBestEffortRemote struct{ call *besteffort.CallClient }",
+		"func (b *svcBizBestEffortRemote) GetThing(ctx context.Context, id int64) (string, error) {",
+		"return besteffort.Call[string](ctx, b.call, serviceName, \"GetThing\", id)",
+		// Unified client struct + flat delegation + selectors.
+		"type svcBizClient struct {",
+		"func (c *svcBizClient) GetThing(ctx context.Context, id int64) (string, error) {",
+		"func (c *svcBizClient) Call() SvcBizCall {",
+		"func (c *svcBizClient) Future() SvcBizFuture {",
+		"func (c *svcBizClient) Send() SvcBizSender {",
+		"func NewSvcBizClientInProcess(restateIngressURL string, biz SvcBiz) SvcBizClient {",
+		"func NewSvcBizClientRemote(restateIngressURL, bestEffortURL string) SvcBizClient {",
+		// BestEffort server registration: GetThing only, never DoThing.
+		"func RegisterSvcBestEffort(s *besteffort.Server, biz SvcBiz) {",
+		"s.Handle(serviceName, \"GetThing\", func(ctx context.Context, body []byte) (any, error) {",
+		"return biz.GetThing(ctx, p)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("generated output missing %q\n---\n%s", want, got)
+		}
+	}
+	// DoThing is a command — never served by the besteffort HTTP server.
+	if strings.Contains(got, `s.Handle(serviceName, "DoThing"`) {
+		t.Errorf("command DoThing registered on besteffort server\n---\n%s", got)
+	}
+	if strings.Contains(got, "func (b *svcBizBestEffortLocal) DoThing(") {
+		t.Errorf("command DoThing leaked onto besteffort local impl\n---\n%s", got)
 	}
 }
