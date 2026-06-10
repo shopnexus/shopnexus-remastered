@@ -9,6 +9,7 @@ import (
 	"shopnexus-server/internal/shared/pgsqlc"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 )
 
 // ChatBiz is the client interface for ChatHandler, which is used by other modules to call ChatHandler methods.
@@ -16,7 +17,7 @@ import (
 //go:generate go run shopnexus-server/cmd/genrestate -interface ChatBiz -service Chat
 type ChatBiz interface {
 	// Conversation
-	CreateConversation(ctx context.Context, params CreateConversationParams) (chatdb.ChatConversation, error)
+	CreateConversation(ctx restate.Context, params CreateConversationParams) (chatdb.ChatConversation, error)
 	GetConversation(ctx context.Context, id uuid.UUID) (chatdb.ChatConversation, error)
 	ListConversation(
 		ctx context.Context,
@@ -24,9 +25,9 @@ type ChatBiz interface {
 	) (paginate.PaginateResult[chatdb.ChatConversation], error)
 
 	// Message
-	SendMessage(ctx context.Context, params SendMessageParams) (chatdb.ChatMessage, error)
+	SendMessage(ctx restate.Context, params SendMessageParams) (chatdb.ChatMessage, error)
 	ListMessage(ctx context.Context, params ListMessageParams) (paginate.PaginateResult[chatdb.ChatMessage], error)
-	MarkRead(ctx context.Context, params MarkReadParams) error
+	MarkRead(ctx restate.Context, params MarkReadParams) error
 }
 
 type ChatStorage = pgsqlc.Storage[*chatdb.Queries]

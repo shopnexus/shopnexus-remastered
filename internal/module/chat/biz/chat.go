@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
+	restate "github.com/restatedev/sdk-go"
 )
 
 type CreateConversationParams struct {
@@ -23,7 +24,7 @@ type CreateConversationParams struct {
 
 // CreateConversation creates a new conversation between a customer and vendor, or returns the existing one.
 func (b *ChatHandler) CreateConversation(
-	ctx context.Context,
+	ctx restate.Context,
 	params CreateConversationParams,
 ) (chatdb.ChatConversation, error) {
 	var zero chatdb.ChatConversation
@@ -31,21 +32,37 @@ func (b *ChatHandler) CreateConversation(
 		return zero, fmt.Errorf("validate create conversation params: %w", err)
 	}
 
-	existing, err := b.storage.Querier().GetConversationByParticipants(ctx, chatdb.GetConversationByParticipantsParams{
-		BuyerID:  params.Account.ID,
-		SellerID: params.SellerID,
+	// decision: return the existing conversation if the pair already chats.
+	existing, err := restate.Run(ctx, func(rctx restate.RunContext) (chatdb.ChatConversation, error) {
+		conv, err := b.storage.Querier().GetConversationByParticipants(rctx, chatdb.GetConversationByParticipantsParams{
+			BuyerID:  params.Account.ID,
+			SellerID: params.SellerID,
+		})
+		if err != nil {
+			return zero, nil // not found → empty conversation signals create
+		}
+		return conv, nil
 	})
-
-	if err == nil {
+	if err != nil {
+		return zero, err
+	}
+	if existing.ID != uuid.Nil {
 		return existing, nil
 	}
 
-	result, err := b.storage.Querier().CreateDefaultConversation(ctx, chatdb.CreateDefaultConversationParams{
-		BuyerID:  params.Account.ID,
-		SellerID: params.SellerID,
+	// execution: create the default conversation.
+	result, err := restate.Run(ctx, func(rctx restate.RunContext) (chatdb.ChatConversation, error) {
+		conv, err := b.storage.Querier().CreateDefaultConversation(rctx, chatdb.CreateDefaultConversationParams{
+			BuyerID:  params.Account.ID,
+			SellerID: params.SellerID,
+		})
+		if err != nil {
+			return zero, fmt.Errorf("db create default conversation: %w", err)
+		}
+		return conv, nil
 	})
 	if err != nil {
-		return zero, fmt.Errorf("db create default conversation: %w", err)
+		return zero, err
 	}
 
 	return result, nil
@@ -106,49 +123,67 @@ type SendMessageParams struct {
 }
 
 // SendMessage sends a message in a conversation the account participates in.
-func (b *ChatHandler) SendMessage(ctx context.Context, params SendMessageParams) (chatdb.ChatMessage, error) {
+func (b *ChatHandler) SendMessage(ctx restate.Context, params SendMessageParams) (chatdb.ChatMessage, error) {
 	var zero chatdb.ChatMessage
 	if err := validator.Validate(params); err != nil {
 		return zero, fmt.Errorf("validate send message params: %w", err)
 	}
 
-	conv, err := b.storage.Querier().GetConversationByID(ctx, params.ConversationID)
-	if err != nil {
-		return zero, chatmodel.ErrConversationNotFound
-	}
-
-	if conv.BuyerID != params.Account.ID && conv.SellerID != params.Account.ID {
-		return zero, chatmodel.ErrNotParticipant
-	}
-
-	msg, err := b.storage.Querier().CreateChatMessage(ctx, chatdb.CreateChatMessageParams{
-		ConversationID: params.ConversationID,
-		SenderID:       params.Account.ID,
-		Type:           params.Type,
-		Content:        params.Content,
-		Data:           params.Metadata,
+	// decision: load the conversation and check the account participates.
+	conv, err := restate.Run(ctx, func(rctx restate.RunContext) (chatdb.ChatConversation, error) {
+		conv, err := b.storage.Querier().GetConversationByID(rctx, params.ConversationID)
+		if err != nil {
+			return chatdb.ChatConversation{}, chatmodel.ErrConversationNotFound
+		}
+		if conv.BuyerID != params.Account.ID && conv.SellerID != params.Account.ID {
+			return chatdb.ChatConversation{}, chatmodel.ErrNotParticipant
+		}
+		return conv, nil
 	})
 	if err != nil {
-		return zero, fmt.Errorf("db create chat message: %w", err)
+		return zero, err
 	}
 
-	if err := b.storage.Querier().UpdateConversationLastMessage(ctx, params.ConversationID); err != nil {
-		return zero, fmt.Errorf("db update conversation last message: %w", err)
+	// execution: persist the message and bump the conversation's last message.
+	msg, err := restate.Run(ctx, func(rctx restate.RunContext) (chatdb.ChatMessage, error) {
+		msg, err := b.storage.Querier().CreateChatMessage(rctx, chatdb.CreateChatMessageParams{
+			ConversationID: params.ConversationID,
+			SenderID:       params.Account.ID,
+			Type:           params.Type,
+			Content:        params.Content,
+			Data:           params.Metadata,
+		})
+		if err != nil {
+			return zero, fmt.Errorf("db create chat message: %w", err)
+		}
+		if err := b.storage.Querier().UpdateConversationLastMessage(rctx, params.ConversationID); err != nil {
+			return zero, fmt.Errorf("db update conversation last message: %w", err)
+		}
+		return msg, nil
+	})
+	if err != nil {
+		return zero, err
 	}
 
-	// Push new_message to both participants via SSE
+	// tail: push new_message to both participants via SSE.
 	recipientID := conv.BuyerID
 	if recipientID == params.Account.ID {
 		recipientID = conv.SellerID
 	}
-	for _, id := range []uuid.UUID{params.Account.ID, recipientID} {
-		if err = b.common.Guaranteed().Send().PushEvent(ctx, commonbiz.PushEventParams{
-			AccountID: id,
-			Type:      commonbiz.SSENewMessage,
-			Data:      msg,
-		}); err != nil {
-			return zero, fmt.Errorf("push new message event: %w", err)
+	err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		for _, id := range []uuid.UUID{params.Account.ID, recipientID} {
+			if err := b.common.Guaranteed().Send().PushEvent(rctx, commonbiz.PushEventParams{
+				AccountID: id,
+				Type:      commonbiz.SSENewMessage,
+				Data:      msg,
+			}); err != nil {
+				return fmt.Errorf("push new message event: %w", err)
+			}
 		}
+		return nil
+	})
+	if err != nil {
+		return zero, err
 	}
 
 	return msg, nil
@@ -207,25 +242,35 @@ type MarkReadParams struct {
 }
 
 // MarkRead marks all messages in a conversation as read for the authenticated account.
-func (b *ChatHandler) MarkRead(ctx context.Context, params MarkReadParams) error {
+func (b *ChatHandler) MarkRead(ctx restate.Context, params MarkReadParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate mark read params: %w", err)
 	}
-	if err := b.storage.Querier().MarkMessagesRead(ctx, chatdb.MarkMessagesReadParams{
-		ConversationID: params.ConversationID,
-		ReaderID:       params.Account.ID,
+
+	// execution: mark all messages read for this reader.
+	if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		if err := b.storage.Querier().MarkMessagesRead(rctx, chatdb.MarkMessagesReadParams{
+			ConversationID: params.ConversationID,
+			ReaderID:       params.Account.ID,
+		}); err != nil {
+			return fmt.Errorf("db mark messages read: %w", err)
+		}
+		return nil
 	}); err != nil {
-		return fmt.Errorf("db mark messages read: %w", err)
+		return err
 	}
 
-	// Push read_receipt to the other participant via SSE
-	conv, err := b.storage.Querier().GetConversationByID(ctx, params.ConversationID)
-	if err == nil {
+	// tail: push read_receipt to the other participant via SSE (best-effort on conv load).
+	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		conv, err := b.storage.Querier().GetConversationByID(rctx, params.ConversationID)
+		if err != nil {
+			return nil
+		}
 		recipientID := conv.BuyerID
 		if recipientID == params.Account.ID {
 			recipientID = conv.SellerID
 		}
-		if err = b.common.Guaranteed().Send().PushEvent(ctx, commonbiz.PushEventParams{
+		if err := b.common.Guaranteed().Send().PushEvent(rctx, commonbiz.PushEventParams{
 			AccountID: recipientID,
 			Type:      commonbiz.SSEReadReceipt,
 			Data: map[string]any{
@@ -235,7 +280,6 @@ func (b *ChatHandler) MarkRead(ctx context.Context, params MarkReadParams) error
 		}); err != nil {
 			return fmt.Errorf("push read receipt event: %w", err)
 		}
-	}
-
-	return nil
+		return nil
+	})
 }

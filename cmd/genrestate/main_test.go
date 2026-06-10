@@ -58,15 +58,16 @@ func TestEmitsServiceAdapter(t *testing.T) {
 func TestEmitsCommandSurfaces(t *testing.T) {
 	got := generate(t)
 	for _, want := range []string{
-		// Call interface = command request-response, restate.Context.
+		// Call interface = command request-response. Plain ctx so transport
+		// handlers can reach it; restate.Context upgrades to durable in-handler.
 		"type SvcBizCall interface {",
-		"DoThing(ctx restate.Context, id int64) error",
-		// Sender / Future over commands, restate.Context.
+		"DoThing(ctx context.Context, id int64) error",
+		// Sender (plain ctx) / Future (restate.Context, in-handler only).
 		"type SvcBizSender interface {",
 		"type SvcBizFuture interface {",
 		"DoThing(rctx restate.Context, id int64) restate.ResponseFuture[restate.Void]",
 		// Restate proxy carries the command call methods.
-		"func (p *SvcRestateCall) DoThing(ctx restate.Context, id int64) error {",
+		"func (p *SvcRestateCall) DoThing(ctx context.Context, id int64) error {",
 		"restatec.CallVoid(ctx, p.call, serviceName, \"DoThing\", id)",
 	} {
 		if !strings.Contains(got, want) {

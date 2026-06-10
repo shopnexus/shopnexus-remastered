@@ -452,23 +452,27 @@ func main() {
 	// Command surfaces (Call/Sender/Future) mirror the durable restate.Context
 	// methods.
 
-	// Call interface: command request-response, restate.Context.
-	fmt.Fprintf(&buf, "// %s mirrors the durable (command) methods of %s as request-response calls.\n", callIface, ifaceRef)
+	// Call interface: command request-response. Takes context.Context so it is
+	// reachable both from transport handlers (plain ctx → HTTP ingress) and from
+	// inside a Restate handler (restate.Context upgrades to a durable journaled
+	// call — see restatec.Call).
+	fmt.Fprintf(&buf, "// %s mirrors the command methods of %s as request-response calls.\n", callIface, ifaceRef)
 	fmt.Fprintf(&buf, "type %s interface {\n", callIface)
 	for _, m := range commands {
 		if m.HasOutput {
-			fmt.Fprintf(&buf, "\t%s(%s) (%s, error)\n", m.Name, m.params(m.ctxType("ctx")), m.OutputType)
+			fmt.Fprintf(&buf, "\t%s(%s) (%s, error)\n", m.Name, m.params("ctx context.Context"), m.OutputType)
 		} else {
-			fmt.Fprintf(&buf, "\t%s(%s) error\n", m.Name, m.params(m.ctxType("ctx")))
+			fmt.Fprintf(&buf, "\t%s(%s) error\n", m.Name, m.params("ctx context.Context"))
 		}
 	}
 	buf.WriteString("}\n\n")
 
-	// Sender interface: command one-way calls, outputs dropped.
+	// Sender interface: command one-way calls, outputs dropped. Plain ctx for the
+	// same reason as the Call surface.
 	fmt.Fprintf(&buf, "// %s mirrors the command methods of %s as one-way (fire-and-forget) calls.\n", senderIface, ifaceRef)
 	fmt.Fprintf(&buf, "type %s interface {\n", senderIface)
 	for _, m := range commands {
-		fmt.Fprintf(&buf, "\t%s(%s) error\n", m.Name, m.params(m.ctxType("ctx")))
+		fmt.Fprintf(&buf, "\t%s(%s) error\n", m.Name, m.params("ctx context.Context"))
 	}
 	buf.WriteString("}\n\n")
 
@@ -626,7 +630,7 @@ func renderType(
 // both await completion. Workflow methods route through the CallWorkflow
 // variants keyed by the workflow-key parameter.
 func writeCallMethod(buf *bytes.Buffer, proxyType string, m methodInfo, isWorkflow bool) {
-	fmt.Fprintf(buf, "func (p *%s) %s(%s) ", proxyType, m.Name, m.params(m.ctxType("ctx")))
+	fmt.Fprintf(buf, "func (p *%s) %s(%s) ", proxyType, m.Name, m.params("ctx context.Context"))
 
 	if m.HasOutput {
 		fmt.Fprintf(buf, "(%s, error)", m.OutputType)
@@ -889,7 +893,7 @@ func querySig(m methodInfo) string {
 
 // writeSendMethod emits a one-way method on the sender proxy; outputs are dropped.
 func writeSendMethod(buf *bytes.Buffer, senderType string, m methodInfo, isWorkflow bool) {
-	fmt.Fprintf(buf, "func (s *%s) %s(%s) error {\n", senderType, m.Name, m.params(m.ctxType("ctx")))
+	fmt.Fprintf(buf, "func (s *%s) %s(%s) error {\n", senderType, m.Name, m.params("ctx context.Context"))
 
 	inputArg := "nil"
 	if m.HasInput {

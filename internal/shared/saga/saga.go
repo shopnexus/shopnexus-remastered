@@ -46,6 +46,8 @@ func (s *Saga) Compensate() error {
 	for len(s.compensators) > 0 {
 		i := len(s.compensators) - 1
 		c := s.compensators[i]
+		// TODO: wrap in restate.RunVoid so each compensator is a journaled step —
+		// already-run compensators replay from the journal instead of re-executing.
 		if err := c.fn(s.ctx); err != nil {
 			return fmt.Errorf("saga compensate %s: %w", c.name, err)
 		}

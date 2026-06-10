@@ -37,7 +37,7 @@ func (b *CatalogHandler) HydrateProductSpus(
 
 	ratingMap, err := b.getRatingsMap(ctx, spuIDs)
 	if err != nil {
-		return nil, fmt.Errorf("hydrate spus: list rating: %w", err)
+		return nil, fmt.Errorf("list rating: %w", err)
 	}
 
 	tagsMap := b.getTagsMap(ctx, spuIDs)
@@ -47,7 +47,7 @@ func (b *CatalogHandler) HydrateProductSpus(
 		RefIDs:  spuIDs,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("hydrate spus: get resources: %w", err)
+		return nil, fmt.Errorf("get resources: %w", err)
 	}
 
 	syncStatuses, _ := b.storage.Querier().ListSearchSync(ctx, catalogdb.ListSearchSyncParams{
@@ -59,7 +59,7 @@ func (b *CatalogHandler) HydrateProductSpus(
 	for _, dbSpu := range dbSpus {
 		specs := []catalogmodel.ProductSpecification{}
 		if err := json.Unmarshal(dbSpu.Specifications, &specs); err != nil {
-			return nil, fmt.Errorf("hydrate spus: unmarshal specifications: %w", err)
+			return nil, fmt.Errorf("unmarshal specifications: %w", err)
 		}
 
 		spus = append(spus, catalogmodel.ProductSpu{
@@ -94,7 +94,7 @@ func (b *CatalogHandler) HydrateProductSkus(
 		RefID:   lo.Map(dbSkus, func(s catalogdb.CatalogProductSku, _ int) uuid.UUID { return s.ID }),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("hydrate skus: list stock: %w", err)
+		return nil, fmt.Errorf("list stock: %w", err)
 	}
 	stockMap := lo.KeyBy(stocks.Data, func(s inventorydb.InventoryStock) uuid.UUID { return s.RefID })
 
@@ -102,7 +102,7 @@ func (b *CatalogHandler) HydrateProductSkus(
 	for _, dbSku := range dbSkus {
 		var attributes []catalogmodel.ProductAttribute
 		if err := json.Unmarshal(dbSku.Attributes, &attributes); err != nil {
-			return nil, fmt.Errorf("hydrate skus: unmarshal attributes: %w", err)
+			return nil, fmt.Errorf("unmarshal attributes: %w", err)
 		}
 
 		skus = append(skus, catalogmodel.ProductSku{

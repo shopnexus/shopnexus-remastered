@@ -34,8 +34,9 @@ func (f *fakeChatBiz) GetConversation(_ context.Context, id uuid.UUID) (chatdb.C
 }
 
 // remaining ChatBiz methods are unused; zero values satisfy the interface.
+// Commands take restate.Context (durable); queries take context.Context.
 func (f *fakeChatBiz) CreateConversation(
-	context.Context, chatbiz.CreateConversationParams,
+	restate.Context, chatbiz.CreateConversationParams,
 ) (chatdb.ChatConversation, error) {
 	return chatdb.ChatConversation{}, nil
 }
@@ -46,7 +47,7 @@ func (f *fakeChatBiz) ListConversation(
 	return paginate.PaginateResult[chatdb.ChatConversation]{}, nil
 }
 
-func (f *fakeChatBiz) SendMessage(context.Context, chatbiz.SendMessageParams) (chatdb.ChatMessage, error) {
+func (f *fakeChatBiz) SendMessage(restate.Context, chatbiz.SendMessageParams) (chatdb.ChatMessage, error) {
 	return chatdb.ChatMessage{}, nil
 }
 
@@ -56,7 +57,7 @@ func (f *fakeChatBiz) ListMessage(
 	return paginate.PaginateResult[chatdb.ChatMessage]{}, nil
 }
 
-func (f *fakeChatBiz) MarkRead(context.Context, chatbiz.MarkReadParams) error { return nil }
+func (f *fakeChatBiz) MarkRead(restate.Context, chatbiz.MarkReadParams) error { return nil }
 
 func newFake() *fakeChatBiz {
 	return &fakeChatBiz{
@@ -64,13 +65,13 @@ func newFake() *fakeChatBiz {
 	}
 }
 
-// In-process BestEffort delegates straight to the biz, no network.
-func TestSmokeBestEffortInProcess(t *testing.T) {
+// In-process flat query delegates straight to the biz, no network.
+func TestSmokeFlatQueryInProcess(t *testing.T) {
 	t.Parallel()
 	fake := newFake()
 	c := chatbiz.NewChatBizClientInProcess("http://unused", fake)
 
-	out, err := c.BestEffort().GetConversation(context.Background(), fake.canned.ID)
+	out, err := c.GetConversation(context.Background(), fake.canned.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,8 +83,8 @@ func TestSmokeBestEffortInProcess(t *testing.T) {
 	}
 }
 
-// Remote BestEffort round-trips result and error over HTTP/JSON.
-func TestSmokeBestEffortRemote(t *testing.T) {
+// Remote flat query round-trips result and error over HTTP/JSON.
+func TestSmokeFlatQueryRemote(t *testing.T) {
 	t.Parallel()
 	fake := newFake()
 	srv := besteffort.NewServer()
@@ -93,7 +94,7 @@ func TestSmokeBestEffortRemote(t *testing.T) {
 
 	c := chatbiz.NewChatBizClientRemote("http://unused", ts.URL)
 
-	out, err := c.BestEffort().GetConversation(context.Background(), fake.canned.ID)
+	out, err := c.GetConversation(context.Background(), fake.canned.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +102,7 @@ func TestSmokeBestEffortRemote(t *testing.T) {
 		t.Errorf("round-trip result = %v, want %v", out.ID, fake.canned.ID)
 	}
 
-	_, err = c.BestEffort().GetConversation(context.Background(), sentinelID)
+	_, err = c.GetConversation(context.Background(), sentinelID)
 	if err == nil {
 		t.Fatal("expected error from sentinel")
 	}

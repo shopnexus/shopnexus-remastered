@@ -51,7 +51,7 @@ func (h *Handler) CreateConversation(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.Guaranteed().CreateConversation(c.Request().Context(), chatbiz.CreateConversationParams{
+	result, err := h.biz.Call().CreateConversation(c.Request().Context(), chatbiz.CreateConversationParams{
 		Account:  claims.Account,
 		SellerID: req.SellerID,
 	})
@@ -80,7 +80,7 @@ func (h *Handler) ListConversation(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.Guaranteed().ListConversation(c.Request().Context(), chatbiz.ListConversationParams{
+	result, err := h.biz.ListConversation(c.Request().Context(), chatbiz.ListConversationParams{
 		Account: claims.Account,
 		Params:  req.Params,
 	})
@@ -110,7 +110,7 @@ func (h *Handler) ListMessage(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	result, err := h.biz.Guaranteed().ListMessage(c.Request().Context(), chatbiz.ListMessageParams{
+	result, err := h.biz.ListMessage(c.Request().Context(), chatbiz.ListMessageParams{
 		Account:        claims.Account,
 		ConversationID: req.ConversationID,
 		Params:         req.Params.Constrain(),
@@ -143,7 +143,7 @@ func (h *Handler) SendMessage(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	msg, err := h.biz.Guaranteed().SendMessage(c.Request().Context(), chatbiz.SendMessageParams{
+	msg, err := h.biz.Call().SendMessage(c.Request().Context(), chatbiz.SendMessageParams{
 		Account:        claims.Account,
 		ConversationID: req.ConversationID,
 		Type:           req.Type,
@@ -175,7 +175,7 @@ func (h *Handler) MarkRead(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	if err = h.biz.Guaranteed().MarkRead(c.Request().Context(), chatbiz.MarkReadParams{
+	if err = h.biz.Call().MarkRead(c.Request().Context(), chatbiz.MarkReadParams{
 		Account:        claims.Account,
 		ConversationID: req.ConversationID,
 	}); err != nil {
