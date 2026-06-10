@@ -16,64 +16,52 @@ import (
 
 const serviceName = "Analytic"
 
-// AnalyticBizSender mirrors AnalyticBiz as one-way (fire-and-forget) calls; outputs are dropped.
+// AnalyticBizCall mirrors the command methods of AnalyticBiz as request-response calls.
+type AnalyticBizCall interface {
+	CreateInteraction(ctx context.Context, params CreateInteractionParams) error
+	HandlePopularityEvent(ctx context.Context, event analyticmodel.Interaction) error
+}
+
+// AnalyticBizSender mirrors the command methods of AnalyticBiz as one-way (fire-and-forget) calls.
 type AnalyticBizSender interface {
 	CreateInteraction(ctx context.Context, params CreateInteractionParams) error
 	HandlePopularityEvent(ctx context.Context, event analyticmodel.Interaction) error
-	GetProductPopularity(ctx context.Context, spuID uuid.UUID) error
-	ListTopProductPopularity(ctx context.Context, params paginate.Params) error
 }
 
-// AnalyticBizFuture mirrors AnalyticBiz returning response futures for racing
-// or parallel calls. Only usable inside a Restate handler context.
+// AnalyticBizFuture mirrors the command methods of AnalyticBiz returning response futures for
+// racing or parallel calls. Only usable inside a Restate handler context.
 type AnalyticBizFuture interface {
 	CreateInteraction(rctx restate.Context, params CreateInteractionParams) restate.ResponseFuture[restate.Void]
 	HandlePopularityEvent(rctx restate.Context, event analyticmodel.Interaction) restate.ResponseFuture[restate.Void]
-	GetProductPopularity(rctx restate.Context, spuID uuid.UUID) restate.ResponseFuture[analyticdb.AnalyticProductPopularity]
-	ListTopProductPopularity(rctx restate.Context, params paginate.Params) restate.ResponseFuture[[]analyticdb.AnalyticProductPopularity]
 }
 
-// AnalyticBizClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
+// AnalyticBizClient is the cross-module client: query methods are flat (non-durable),
+// Call()/Future()/Send() reach the durable command surfaces.
 type AnalyticBizClient interface {
-	Guaranteed() AnalyticBizGuaranteed
-	BestEffort() AnalyticBizBestEffort
+	GetProductPopularity(ctx context.Context, spuID uuid.UUID) (analyticdb.AnalyticProductPopularity, error)
+	ListTopProductPopularity(ctx context.Context, params paginate.Params) ([]analyticdb.AnalyticProductPopularity, error)
+	Call() AnalyticBizCall
+	Future() AnalyticBizFuture
+	Send() AnalyticBizSender
 }
 
-// AnalyticRestateClient implements AnalyticBizClient via Restate HTTP ingress.
-type AnalyticRestateClient struct {
-	call   *restatec.CallClient
-	send   *AnalyticRestateSender
-	future *AnalyticRestateFuture
+// AnalyticRestateCall implements AnalyticBizCall via Restate HTTP ingress.
+type AnalyticRestateCall struct {
+	call *restatec.CallClient
 }
 
-var _ AnalyticBizGuaranteed = (*AnalyticRestateClient)(nil)
+var _ AnalyticBizCall = (*AnalyticRestateCall)(nil)
 
-func NewAnalyticRestateClient(restateIngressURL string) *AnalyticRestateClient {
-	return &AnalyticRestateClient{
-		call:   restatec.NewCallClient(restateIngressURL),
-		send:   &AnalyticRestateSender{client: restatec.NewSendClient(restateIngressURL)},
-		future: &AnalyticRestateFuture{},
-	}
+func NewAnalyticRestateCall(restateIngressURL string) *AnalyticRestateCall {
+	return &AnalyticRestateCall{call: restatec.NewCallClient(restateIngressURL)}
 }
 
-func (p *AnalyticRestateClient) Send() AnalyticBizSender { return p.send }
-
-func (p *AnalyticRestateClient) Future() AnalyticBizFuture { return p.future }
-
-func (p *AnalyticRestateClient) CreateInteraction(ctx context.Context, params CreateInteractionParams) error {
+func (p *AnalyticRestateCall) CreateInteraction(ctx context.Context, params CreateInteractionParams) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "CreateInteraction", params)
 }
 
-func (p *AnalyticRestateClient) HandlePopularityEvent(ctx context.Context, event analyticmodel.Interaction) error {
+func (p *AnalyticRestateCall) HandlePopularityEvent(ctx context.Context, event analyticmodel.Interaction) error {
 	return restatec.CallVoid(ctx, p.call, serviceName, "HandlePopularityEvent", event)
-}
-
-func (p *AnalyticRestateClient) GetProductPopularity(ctx context.Context, spuID uuid.UUID) (analyticdb.AnalyticProductPopularity, error) {
-	return restatec.Call[analyticdb.AnalyticProductPopularity](ctx, p.call, serviceName, "GetProductPopularity", spuID)
-}
-
-func (p *AnalyticRestateClient) ListTopProductPopularity(ctx context.Context, params paginate.Params) ([]analyticdb.AnalyticProductPopularity, error) {
-	return restatec.Call[[]analyticdb.AnalyticProductPopularity](ctx, p.call, serviceName, "ListTopProductPopularity", params)
 }
 
 // AnalyticRestateSender implements AnalyticBizSender.
@@ -91,14 +79,6 @@ func (s *AnalyticRestateSender) HandlePopularityEvent(ctx context.Context, event
 	return restatec.Send(ctx, s.client, serviceName, "HandlePopularityEvent", event)
 }
 
-func (s *AnalyticRestateSender) GetProductPopularity(ctx context.Context, spuID uuid.UUID) error {
-	return restatec.Send(ctx, s.client, serviceName, "GetProductPopularity", spuID)
-}
-
-func (s *AnalyticRestateSender) ListTopProductPopularity(ctx context.Context, params paginate.Params) error {
-	return restatec.Send(ctx, s.client, serviceName, "ListTopProductPopularity", params)
-}
-
 // AnalyticRestateFuture implements AnalyticBizFuture via the Restate SDK.
 type AnalyticRestateFuture struct{}
 
@@ -110,14 +90,6 @@ func (f *AnalyticRestateFuture) CreateInteraction(rctx restate.Context, params C
 
 func (f *AnalyticRestateFuture) HandlePopularityEvent(rctx restate.Context, event analyticmodel.Interaction) restate.ResponseFuture[restate.Void] {
 	return restate.Service[restate.Void](rctx, serviceName, "HandlePopularityEvent").RequestFuture(event)
-}
-
-func (f *AnalyticRestateFuture) GetProductPopularity(rctx restate.Context, spuID uuid.UUID) restate.ResponseFuture[analyticdb.AnalyticProductPopularity] {
-	return restate.Service[analyticdb.AnalyticProductPopularity](rctx, serviceName, "GetProductPopularity").RequestFuture(spuID)
-}
-
-func (f *AnalyticRestateFuture) ListTopProductPopularity(rctx restate.Context, params paginate.Params) restate.ResponseFuture[[]analyticdb.AnalyticProductPopularity] {
-	return restate.Service[[]analyticdb.AnalyticProductPopularity](rctx, serviceName, "ListTopProductPopularity").RequestFuture(params)
 }
 
 // AnalyticService adapts AnalyticBiz into restate.Context handlers for restate.Reflect.
@@ -145,30 +117,16 @@ func (s *AnalyticService) ListTopProductPopularity(ctx restate.Context, params p
 	return s.biz.ListTopProductPopularity(ctx, params)
 }
 
-// AnalyticBizGuaranteed is the guaranteed (durable Restate) surface.
-type AnalyticBizGuaranteed interface {
-	AnalyticBiz
-	Send() AnalyticBizSender
-	Future() AnalyticBizFuture
+// AnalyticBizFlat is the flat (non-durable query) surface of AnalyticBiz.
+type AnalyticBizFlat interface {
+	GetProductPopularity(ctx context.Context, spuID uuid.UUID) (analyticdb.AnalyticProductPopularity, error)
+	ListTopProductPopularity(ctx context.Context, params paginate.Params) ([]analyticdb.AnalyticProductPopularity, error)
 }
 
-// AnalyticBizBestEffort is the best-effort (non-durable) surface: sync request-response only.
-type AnalyticBizBestEffort interface {
-	AnalyticBiz
-}
-
-// analyticBizBestEffortLocal delegates BestEffort calls to the in-process biz.
+// analyticBizBestEffortLocal delegates flat queries to the in-process biz.
 type analyticBizBestEffortLocal struct{ biz AnalyticBiz }
 
-var _ AnalyticBizBestEffort = (*analyticBizBestEffortLocal)(nil)
-
-func (b *analyticBizBestEffortLocal) CreateInteraction(ctx context.Context, params CreateInteractionParams) error {
-	return b.biz.CreateInteraction(ctx, params)
-}
-
-func (b *analyticBizBestEffortLocal) HandlePopularityEvent(ctx context.Context, event analyticmodel.Interaction) error {
-	return b.biz.HandlePopularityEvent(ctx, event)
-}
+var _ AnalyticBizFlat = (*analyticBizBestEffortLocal)(nil)
 
 func (b *analyticBizBestEffortLocal) GetProductPopularity(ctx context.Context, spuID uuid.UUID) (analyticdb.AnalyticProductPopularity, error) {
 	return b.biz.GetProductPopularity(ctx, spuID)
@@ -178,18 +136,10 @@ func (b *analyticBizBestEffortLocal) ListTopProductPopularity(ctx context.Contex
 	return b.biz.ListTopProductPopularity(ctx, params)
 }
 
-// analyticBizBestEffortRemote routes BestEffort calls over HTTP/2.
+// analyticBizBestEffortRemote routes flat queries over HTTP/2.
 type analyticBizBestEffortRemote struct{ call *besteffort.CallClient }
 
-var _ AnalyticBizBestEffort = (*analyticBizBestEffortRemote)(nil)
-
-func (b *analyticBizBestEffortRemote) CreateInteraction(ctx context.Context, params CreateInteractionParams) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "CreateInteraction", params)
-}
-
-func (b *analyticBizBestEffortRemote) HandlePopularityEvent(ctx context.Context, event analyticmodel.Interaction) error {
-	return besteffort.CallVoid(ctx, b.call, serviceName, "HandlePopularityEvent", event)
-}
+var _ AnalyticBizFlat = (*analyticBizBestEffortRemote)(nil)
 
 func (b *analyticBizBestEffortRemote) GetProductPopularity(ctx context.Context, spuID uuid.UUID) (analyticdb.AnalyticProductPopularity, error) {
 	return besteffort.Call[analyticdb.AnalyticProductPopularity](ctx, b.call, serviceName, "GetProductPopularity", spuID)
@@ -199,50 +149,53 @@ func (b *analyticBizBestEffortRemote) ListTopProductPopularity(ctx context.Conte
 	return besteffort.Call[[]analyticdb.AnalyticProductPopularity](ctx, b.call, serviceName, "ListTopProductPopularity", params)
 }
 
-// AnalyticBizClient selects the guaranteed (durable) or best-effort (non-durable) transport.
+// analyticBizClient holds the flat query impl and the durable command proxies.
 type analyticBizClient struct {
-	*AnalyticRestateClient
-	bestEffort AnalyticBizBestEffort
+	flat   AnalyticBizFlat
+	call   *AnalyticRestateCall
+	send   *AnalyticRestateSender
+	future *AnalyticRestateFuture
 }
 
 var _ AnalyticBizClient = (*analyticBizClient)(nil)
 
-func (c *analyticBizClient) Guaranteed() AnalyticBizGuaranteed { return c.AnalyticRestateClient }
+func (c *analyticBizClient) GetProductPopularity(ctx context.Context, spuID uuid.UUID) (analyticdb.AnalyticProductPopularity, error) {
+	return c.flat.GetProductPopularity(ctx, spuID)
+}
 
-func (c *analyticBizClient) BestEffort() AnalyticBizBestEffort { return c.bestEffort }
+func (c *analyticBizClient) ListTopProductPopularity(ctx context.Context, params paginate.Params) ([]analyticdb.AnalyticProductPopularity, error) {
+	return c.flat.ListTopProductPopularity(ctx, params)
+}
 
-// NewAnalyticBizClientInProcess builds a client whose BestEffort calls the in-process biz.
+func (c *analyticBizClient) Call() AnalyticBizCall { return c.call }
+
+func (c *analyticBizClient) Future() AnalyticBizFuture { return c.future }
+
+func (c *analyticBizClient) Send() AnalyticBizSender { return c.send }
+
+// NewAnalyticBizClientInProcess builds a client whose flat queries call the in-process biz.
 func NewAnalyticBizClientInProcess(restateIngressURL string, biz AnalyticBiz) AnalyticBizClient {
 	return &analyticBizClient{
-		AnalyticRestateClient: NewAnalyticRestateClient(restateIngressURL),
-		bestEffort:            &analyticBizBestEffortLocal{biz: biz},
+		flat:   &analyticBizBestEffortLocal{biz: biz},
+		call:   NewAnalyticRestateCall(restateIngressURL),
+		send:   &AnalyticRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &AnalyticRestateFuture{},
 	}
 }
 
-// NewAnalyticBizClientRemote builds a client whose BestEffort calls a remote BestEffort server.
+// NewAnalyticBizClientRemote builds a client whose flat queries call a remote besteffort server.
 func NewAnalyticBizClientRemote(restateIngressURL, bestEffortURL string) AnalyticBizClient {
 	return &analyticBizClient{
-		AnalyticRestateClient: NewAnalyticRestateClient(restateIngressURL),
-		bestEffort:            &analyticBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+		flat:   &analyticBizBestEffortRemote{call: besteffort.NewCallClient(bestEffortURL)},
+		call:   NewAnalyticRestateCall(restateIngressURL),
+		send:   &AnalyticRestateSender{client: restatec.NewSendClient(restateIngressURL)},
+		future: &AnalyticRestateFuture{},
 	}
 }
 
-// RegisterAnalyticBestEffort wires biz methods onto a BestEffort HTTP/2 server.
+// RegisterAnalyticBestEffort wires the query methods onto a besteffort HTTP server.
+// Commands are served by Restate, not here.
 func RegisterAnalyticBestEffort(s *besteffort.Server, biz AnalyticBiz) {
-	s.Handle(serviceName, "CreateInteraction", func(ctx context.Context, body []byte) (any, error) {
-		var p CreateInteractionParams
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.CreateInteraction(ctx, p)
-	})
-	s.Handle(serviceName, "HandlePopularityEvent", func(ctx context.Context, body []byte) (any, error) {
-		var p analyticmodel.Interaction
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return nil, biz.HandlePopularityEvent(ctx, p)
-	})
 	s.Handle(serviceName, "GetProductPopularity", func(ctx context.Context, body []byte) (any, error) {
 		var p uuid.UUID
 		if err := json.Unmarshal(body, &p); err != nil {

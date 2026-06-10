@@ -203,7 +203,7 @@ func (b *CatalogHandler) CreateComment(ctx context.Context, params CreateComment
 				},
 			)
 		}
-		if err := b.analytic.Guaranteed().Send().CreateInteraction(ctx, analyticbiz.CreateInteractionParams{
+		if err := b.analytic.Send().CreateInteraction(ctx, analyticbiz.CreateInteractionParams{
 			Interactions: interactions,
 		}); err != nil {
 			return zero, fmt.Errorf("track review interactions: %w", err)

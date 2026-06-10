@@ -70,7 +70,7 @@ func (b *Base) Notify(ctx context.Context, params accountbiz.CreateNotificationP
 
 // TrackInteractions records analytic interactions one-way.
 func (b *Base) TrackInteractions(ctx context.Context, interactions ...analyticbiz.CreateInteraction) error {
-	return b.analytic.Guaranteed().Send().CreateInteraction(ctx, analyticbiz.CreateInteractionParams{
+	return b.analytic.Send().CreateInteraction(ctx, analyticbiz.CreateInteractionParams{
 		Interactions: interactions,
 	})
 }

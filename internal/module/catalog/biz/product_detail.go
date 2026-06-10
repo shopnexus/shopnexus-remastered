@@ -164,7 +164,7 @@ func (b *CatalogHandler) GetProductDetail(
 
 	// Track view interaction for authenticated users
 	if params.Account != nil {
-		if err := b.analytic.Guaranteed().Send().CreateInteraction(ctx, analyticbiz.CreateInteractionParams{
+		if err := b.analytic.Send().CreateInteraction(ctx, analyticbiz.CreateInteractionParams{
 			Interactions: []analyticbiz.CreateInteraction{{
 				Account:   *params.Account,
 				EventType: analyticmodel.EventView,

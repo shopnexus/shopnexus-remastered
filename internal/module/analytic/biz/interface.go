@@ -13,6 +13,7 @@ import (
 	"shopnexus-server/internal/shared/pgsqlc"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 )
 
 // AnalyticBiz is the client interface for AnalyticBizHandler, which is used by other modules to call AnalyticBizHandler methods.
@@ -20,10 +21,10 @@ import (
 //go:generate go run shopnexus-server/cmd/genrestate -interface AnalyticBiz -service Analytic
 type AnalyticBiz interface {
 	// Interaction
-	CreateInteraction(ctx context.Context, params CreateInteractionParams) error
+	CreateInteraction(ctx restate.Context, params CreateInteractionParams) error
 
 	// Popularity
-	HandlePopularityEvent(ctx context.Context, event analyticmodel.Interaction) error
+	HandlePopularityEvent(ctx restate.Context, event analyticmodel.Interaction) error
 	GetProductPopularity(ctx context.Context, spuID uuid.UUID) (analyticdb.AnalyticProductPopularity, error)
 	ListTopProductPopularity(
 		ctx context.Context,

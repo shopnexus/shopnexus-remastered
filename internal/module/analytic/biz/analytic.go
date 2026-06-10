@@ -1,7 +1,6 @@
 package analyticbiz
 
 import (
-	"context"
 	"time"
 
 	"shopnexus-server/internal/infras/bus"
@@ -10,6 +9,7 @@ import (
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 	"github.com/samber/lo"
 )
 
@@ -25,7 +25,7 @@ type CreateInteractionParams struct {
 }
 
 // CreateInteraction records a batch of user interactions and fans out popularity events.
-func (b *AnalyticHandler) CreateInteraction(ctx context.Context, params CreateInteractionParams) error {
+func (b *AnalyticHandler) CreateInteraction(ctx restate.Context, params CreateInteractionParams) error {
 	args := lo.Map(
 		params.Interactions,
 		func(interaction CreateInteraction, _ int) analyticdb.CreateBatchInteractionParams {
@@ -40,30 +40,32 @@ func (b *AnalyticHandler) CreateInteraction(ctx context.Context, params CreateIn
 		},
 	)
 
-	b.storage.Querier().
-		CreateBatchInteraction(ctx, args).
-		QueryRow(func(_ int, ai analyticdb.AnalyticInteraction, err error) {
-			if err == nil {
-				refID, _ := uuid.Parse(ai.RefID)
+	// execution: persist the batch and fan out popularity events to the bus.
+	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		b.storage.Querier().
+			CreateBatchInteraction(rctx, args).
+			QueryRow(func(_ int, ai analyticdb.AnalyticInteraction, err error) {
+				if err == nil {
+					refID, _ := uuid.Parse(ai.RefID)
 
-				// Publish to the event bus; subscribers (popularity scoring,
-				// catalog search) consume via their module workers.
-				event := analyticmodel.Interaction{
-					ID:          ai.ID,
-					AccountID:   ai.AccountID,
-					EventType:   analyticmodel.Event(ai.EventType),
-					RefType:     analyticmodel.InteractionRefType(ai.RefType),
-					RefID:       refID,
-					Metadata:    ai.Metadata,
-					DateCreated: ai.DateCreated,
+					// Publish to the event bus; subscribers (popularity scoring,
+					// catalog search) consume via their module workers.
+					event := analyticmodel.Interaction{
+						ID:          ai.ID,
+						AccountID:   ai.AccountID,
+						EventType:   analyticmodel.Event(ai.EventType),
+						RefType:     analyticmodel.InteractionRefType(ai.RefType),
+						RefID:       refID,
+						Metadata:    ai.Metadata,
+						DateCreated: ai.DateCreated,
+					}
+					if pubErr := bus.Publish(rctx, b.bus, analyticmodel.TopicInteractionCreated, event); pubErr != nil {
+						b.logger.Error("publish interaction event", "error", pubErr)
+					}
+				} else {
+					b.logger.Error("create analytic interaction: %w", "error", err)
 				}
-				if pubErr := bus.Publish(ctx, b.bus, analyticmodel.TopicInteractionCreated, event); pubErr != nil {
-					b.logger.Error("publish interaction event", "error", pubErr)
-				}
-			} else {
-				b.logger.Error("create analytic interaction: %w", "error", err)
-			}
-		})
-
-	return nil
+			})
+		return nil
+	})
 }

@@ -9,10 +9,11 @@ import (
 	"shopnexus-server/internal/shared/paginate"
 
 	"github.com/google/uuid"
+	restate "github.com/restatedev/sdk-go"
 )
 
 // HandlePopularityEvent updates product popularity scores based on an interaction event.
-func (b *AnalyticHandler) HandlePopularityEvent(ctx context.Context, event analyticmodel.Interaction) error {
+func (b *AnalyticHandler) HandlePopularityEvent(ctx restate.Context, event analyticmodel.Interaction) error {
 	if event.RefType != analyticmodel.InteractionRefTypeProduct {
 		return nil
 	}
@@ -37,19 +38,21 @@ func (b *AnalyticHandler) HandlePopularityEvent(ctx context.Context, event analy
 		reviewCount = 1
 	}
 
-	if _, err := b.storage.Querier().UpsertProductPopularity(ctx, analyticdb.UpsertProductPopularityParams{
-		ID:            event.RefID,
-		Score:         weight,
-		ViewCount:     viewCount,
-		PurchaseCount: purchaseCount,
-		FavoriteCount: favoriteCount,
-		CartCount:     cartCount,
-		ReviewCount:   reviewCount,
-	}); err != nil {
-		return fmt.Errorf("upsert product popularity: %w", err)
-	}
-
-	return nil
+	// execution: upsert the product popularity counters.
+	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		if _, err := b.storage.Querier().UpsertProductPopularity(rctx, analyticdb.UpsertProductPopularityParams{
+			ID:            event.RefID,
+			Score:         weight,
+			ViewCount:     viewCount,
+			PurchaseCount: purchaseCount,
+			FavoriteCount: favoriteCount,
+			CartCount:     cartCount,
+			ReviewCount:   reviewCount,
+		}); err != nil {
+			return fmt.Errorf("upsert product popularity: %w", err)
+		}
+		return nil
+	})
 }
 
 // GetProductPopularity returns the popularity metrics for the given product SPU.

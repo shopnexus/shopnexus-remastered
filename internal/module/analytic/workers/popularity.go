@@ -15,6 +15,6 @@ import (
 func Register(bc bus.Client, analytic analyticbiz.AnalyticBizClient) {
 	bus.Subscribe(bc, analyticmodel.TopicInteractionCreated, "analytic.popularity",
 		func(ctx context.Context, event analyticmodel.Interaction) error {
-			return analytic.Guaranteed().Send().HandlePopularityEvent(ctx, event)
+			return analytic.Send().HandlePopularityEvent(ctx, event)
 		})
 }
