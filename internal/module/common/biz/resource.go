@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"slices"
 
-	restate "github.com/restatedev/sdk-go"
-
 	accountmodel "shopnexus-server/internal/module/account/model"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	commonmodel "shopnexus-server/internal/module/common/model"
@@ -27,7 +25,7 @@ type UpdateResourcesParams struct {
 
 // UpdateResources replaces all resource references for a given entity and returns the updated list.
 func (b *CommonHandler) UpdateResources(
-	ctx restate.Context,
+	ctx context.Context,
 	params UpdateResourcesParams,
 ) ([]commonmodel.Resource, error) {
 	if err := validator.Validate(params); err != nil {
@@ -94,7 +92,7 @@ type DeleteResourcesParams struct {
 }
 
 // DeleteResources removes resource references and optionally deletes the underlying resource records.
-func (b *CommonHandler) DeleteResources(ctx restate.Context, params DeleteResourcesParams) error {
+func (b *CommonHandler) DeleteResources(ctx context.Context, params DeleteResourcesParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate delete resources: %w", err)
 	}
@@ -144,7 +142,7 @@ type GetResourcesParams struct {
 
 // GetResources returns resources grouped by reference ID for the given ref type and IDs.
 func (b *CommonHandler) GetResources(
-	ctx restate.Context,
+	ctx context.Context,
 	params GetResourcesParams,
 ) (map[uuid.UUID][]commonmodel.Resource, error) {
 	var err error
@@ -170,7 +168,7 @@ func (b *CommonHandler) GetResources(
 
 // GetResourcesByIDs returns a map of resources keyed by their IDs, falling back to placeholder URLs on error.
 func (b *CommonHandler) GetResourcesByIDs(
-	ctx restate.Context,
+	ctx context.Context,
 	resourceIDs []uuid.UUID,
 ) (map[uuid.UUID]commonmodel.Resource, error) {
 	result := make(map[uuid.UUID]commonmodel.Resource)
@@ -201,7 +199,7 @@ func (b *CommonHandler) GetResourcesByIDs(
 	return result, nil
 }
 
-func (b *CommonHandler) GetResourceByID(ctx restate.Context, resourceID uuid.UUID) (*commonmodel.Resource, error) {
+func (b *CommonHandler) GetResourceByID(ctx context.Context, resourceID uuid.UUID) (*commonmodel.Resource, error) {
 	resource, err := b.storage.Querier().GetResource(ctx, commondb.GetResourceParams{
 		ID: uuid.NullUUID{UUID: resourceID, Valid: true},
 	})

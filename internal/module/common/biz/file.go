@@ -6,8 +6,6 @@ import (
 	"io"
 	"log/slog"
 
-	restate "github.com/restatedev/sdk-go"
-
 	"shopnexus-server/internal/infras/objectstore"
 	objlocal "shopnexus-server/internal/infras/objectstore/local"
 	objremote "shopnexus-server/internal/infras/objectstore/remote"
@@ -148,7 +146,7 @@ type GetFileURLParams struct {
 	ObjectKey string
 }
 
-func (b *CommonHandler) GetFileURL(ctx restate.Context, params GetFileURLParams) (string, error) {
+func (b *CommonHandler) GetFileURL(ctx context.Context, params GetFileURLParams) (string, error) {
 	url, err := b.mustGetObjectStore(params.Provider).GetURL(ctx, params.ObjectKey)
 	if err != nil {
 		return "", fmt.Errorf("get file url: %w", err)

@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	restate "github.com/restatedev/sdk-go"
 
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	sharedmodel "shopnexus-server/internal/shared/model"
@@ -46,7 +45,7 @@ type DeleteOptionParams struct {
 }
 
 // UpsertOptions persists a batch of service options (insert or update by ID).
-func (b *CommonHandler) UpsertOptions(ctx restate.Context, params UpsertOptionsParams) error {
+func (b *CommonHandler) UpsertOptions(ctx context.Context, params UpsertOptionsParams) error {
 	return b.upsertOptions(ctx, params)
 }
 
@@ -83,7 +82,7 @@ func (b *CommonHandler) upsertOptions(ctx context.Context, params UpsertOptionsP
 
 // DeleteOptions deletes options by ID. Idempotent — missing IDs are silently
 // ignored at the SQL layer (DELETE … WHERE id = ANY(...)).
-func (b *CommonHandler) DeleteOptions(ctx restate.Context, params DeleteOptionParams) error {
+func (b *CommonHandler) DeleteOptions(ctx context.Context, params DeleteOptionParams) error {
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate delete options: %w", err)
 	}
@@ -98,7 +97,7 @@ func (b *CommonHandler) DeleteOptions(ctx restate.Context, params DeleteOptionPa
 // ListOption returns active service options filtered by category.
 // Each item is tagged Owned=true when its OwnerID matches params.AccountID.
 func (b *CommonHandler) ListOption(
-	ctx restate.Context,
+	ctx context.Context,
 	params ListOptionParams,
 ) ([]OptionListItem, error) {
 	if err := validator.Validate(params); err != nil {

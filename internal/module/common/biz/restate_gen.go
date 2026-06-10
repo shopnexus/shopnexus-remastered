@@ -299,3 +299,80 @@ func (f *CommonRestateFuture) ConvertAmount(rctx restate.Context, params Convert
 func (f *CommonRestateFuture) IsSupportedCurrency(rctx restate.Context, currency string) restate.ResponseFuture[bool] {
 	return restate.Service[bool](rctx, serviceName, "IsSupportedCurrency").RequestFuture(currency)
 }
+
+// CommonService adapts CommonBiz into restate.Context handlers for restate.Reflect.
+type CommonService struct {
+	biz CommonBiz
+}
+
+func NewCommonService(biz CommonBiz) *CommonService { return &CommonService{biz: biz} }
+
+func (s *CommonService) ServiceName() string { return serviceName }
+
+func (s *CommonService) GetFileURL(ctx restate.Context, params GetFileURLParams) (string, error) {
+	return s.biz.GetFileURL(ctx, params)
+}
+
+func (s *CommonService) ListOption(ctx restate.Context, params ListOptionParams) ([]OptionListItem, error) {
+	return s.biz.ListOption(ctx, params)
+}
+
+func (s *CommonService) UpsertOptions(ctx restate.Context, params UpsertOptionsParams) error {
+	return s.biz.UpsertOptions(ctx, params)
+}
+
+func (s *CommonService) DeleteOptions(ctx restate.Context, params DeleteOptionParams) error {
+	return s.biz.DeleteOptions(ctx, params)
+}
+
+func (s *CommonService) UpdateResources(ctx restate.Context, params UpdateResourcesParams) ([]commonmodel.Resource, error) {
+	return s.biz.UpdateResources(ctx, params)
+}
+
+func (s *CommonService) DeleteResources(ctx restate.Context, params DeleteResourcesParams) error {
+	return s.biz.DeleteResources(ctx, params)
+}
+
+func (s *CommonService) GetResources(ctx restate.Context, params GetResourcesParams) (map[uuid.UUID][]commonmodel.Resource, error) {
+	return s.biz.GetResources(ctx, params)
+}
+
+func (s *CommonService) GetResourcesByIDs(ctx restate.Context, resourceIDs []uuid.UUID) (map[uuid.UUID]commonmodel.Resource, error) {
+	return s.biz.GetResourcesByIDs(ctx, resourceIDs)
+}
+
+func (s *CommonService) GetResourceByID(ctx restate.Context, resourceID uuid.UUID) (*commonmodel.Resource, error) {
+	return s.biz.GetResourceByID(ctx, resourceID)
+}
+
+func (s *CommonService) ReverseGeocode(ctx restate.Context, params ReverseGeocodeParams) (geocoding.Result, error) {
+	return s.biz.ReverseGeocode(ctx, params)
+}
+
+func (s *CommonService) ForwardGeocode(ctx restate.Context, params ForwardGeocodeParams) (geocoding.Result, error) {
+	return s.biz.ForwardGeocode(ctx, params)
+}
+
+func (s *CommonService) SearchGeocode(ctx restate.Context, params SearchGeocodeParams) ([]geocoding.Result, error) {
+	return s.biz.SearchGeocode(ctx, params)
+}
+
+func (s *CommonService) ResolveCountry(ctx restate.Context, address string) (string, error) {
+	return s.biz.ResolveCountry(ctx, address)
+}
+
+func (s *CommonService) PushEvent(ctx restate.Context, params PushEventParams) error {
+	return s.biz.PushEvent(ctx, params)
+}
+
+func (s *CommonService) GetExchangeRates(ctx restate.Context, params GetExchangeRatesParams) (commonmodel.ExchangeRateSnapshot, error) {
+	return s.biz.GetExchangeRates(ctx, params)
+}
+
+func (s *CommonService) ConvertAmount(ctx restate.Context, params ConvertAmountParams) (int64, error) {
+	return s.biz.ConvertAmount(ctx, params)
+}
+
+func (s *CommonService) IsSupportedCurrency(ctx restate.Context, currency string) (bool, error) {
+	return s.biz.IsSupportedCurrency(ctx, currency)
+}

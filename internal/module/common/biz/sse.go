@@ -1,10 +1,9 @@
 package commonbiz
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-
-	restate "github.com/restatedev/sdk-go"
 
 	"github.com/google/uuid"
 )
@@ -30,7 +29,7 @@ type PushEventParams struct {
 
 // PushEvent pushes an SSE event to all connected clients of the given account.
 // Called via Restate fire-and-forget by other modules.
-func (b *CommonHandler) PushEvent(ctx restate.Context, params PushEventParams) error {
+func (b *CommonHandler) PushEvent(ctx context.Context, params PushEventParams) error {
 	b.pushSSE(params.AccountID, params.Type, params.Data)
 	return nil
 }

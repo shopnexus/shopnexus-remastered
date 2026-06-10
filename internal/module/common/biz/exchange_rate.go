@@ -1,9 +1,9 @@
 package commonbiz
 
 import (
+	"context"
 	"slices"
 
-	restate "github.com/restatedev/sdk-go"
 	"github.com/shopspring/decimal"
 
 	commonmodel "shopnexus-server/internal/module/common/model"
@@ -63,7 +63,7 @@ func ConvertAmountPure(amount int64, from, to string, ratesFromUSD map[string]de
 // read-through cache, so this hits the upstream provider only on the first
 // lookup after the TTL expires. On any error (no provider, upstream down)
 // it returns an empty Rates map with correct metadata — callers fail-open.
-func (b *CommonHandler) GetExchangeRates(ctx restate.Context, _ GetExchangeRatesParams) (commonmodel.ExchangeRateSnapshot, error) {
+func (b *CommonHandler) GetExchangeRates(ctx context.Context, _ GetExchangeRatesParams) (commonmodel.ExchangeRateSnapshot, error) {
 	base := b.cfg.Exchange.Base
 	snap := commonmodel.ExchangeRateSnapshot{
 		Base:      base,
@@ -101,7 +101,7 @@ func (b *CommonHandler) GetExchangeRates(ctx restate.Context, _ GetExchangeRates
 }
 
 // ConvertAmount: BE helper for cross-currency math (filter, analytics).
-func (b *CommonHandler) ConvertAmount(ctx restate.Context, p ConvertAmountParams) (int64, error) {
+func (b *CommonHandler) ConvertAmount(ctx context.Context, p ConvertAmountParams) (int64, error) {
 	snap, err := b.GetExchangeRates(ctx, GetExchangeRatesParams{})
 	if err != nil {
 		return 0, err
@@ -112,6 +112,6 @@ func (b *CommonHandler) ConvertAmount(ctx restate.Context, p ConvertAmountParams
 // IsSupportedCurrency checks against the config whitelist.
 // Returns an error tuple to conform to the Restate proxy calling convention
 // for interface methods; lookup itself never fails.
-func (b *CommonHandler) IsSupportedCurrency(_ restate.Context, currency string) (bool, error) {
+func (b *CommonHandler) IsSupportedCurrency(_ context.Context, currency string) (bool, error) {
 	return slices.Contains(b.cfg.Exchange.Supported, currency), nil
 }

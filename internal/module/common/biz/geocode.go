@@ -1,14 +1,13 @@
 package commonbiz
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 
 	commonmodel "shopnexus-server/internal/module/common/model"
 	"shopnexus-server/internal/provider/geocoding"
-
-	restate "github.com/restatedev/sdk-go"
 )
 
 type ReverseGeocodeParams struct {
@@ -16,17 +15,15 @@ type ReverseGeocodeParams struct {
 	Longitude float64 `validate:"required"`
 }
 
-func (b *CommonHandler) ReverseGeocode(ctx restate.Context, params ReverseGeocodeParams) (geocoding.Result, error) {
-	return restate.Run(ctx, func(ctx restate.RunContext) (geocoding.Result, error) {
-		result, err := b.geocoder.ReverseGeocode(ctx, params.Latitude, params.Longitude)
-		if err != nil {
-			if errors.Is(err, geocoding.ErrNoResults) {
-				return geocoding.Result{}, commonmodel.ErrAddressNotFound
-			}
-			return geocoding.Result{}, fmt.Errorf("reverse geocode: %w", err)
+func (b *CommonHandler) ReverseGeocode(ctx context.Context, params ReverseGeocodeParams) (geocoding.Result, error) {
+	result, err := b.geocoder.ReverseGeocode(ctx, params.Latitude, params.Longitude)
+	if err != nil {
+		if errors.Is(err, geocoding.ErrNoResults) {
+			return geocoding.Result{}, commonmodel.ErrAddressNotFound
 		}
-		return result, nil
-	})
+		return geocoding.Result{}, fmt.Errorf("reverse geocode: %w", err)
+	}
+	return result, nil
 }
 
 type ForwardGeocodeParams struct {
@@ -35,23 +32,21 @@ type ForwardGeocodeParams struct {
 
 // ForwardGeocode resolves a free-form address to coordinates and country.
 // The geocoder is wrapped in a read-through cache (see geocoding.CachingClient).
-func (b *CommonHandler) ForwardGeocode(ctx restate.Context, params ForwardGeocodeParams) (geocoding.Result, error) {
-	return restate.Run(ctx, func(ctx restate.RunContext) (geocoding.Result, error) {
-		result, err := b.geocoder.ForwardGeocode(ctx, params.Address)
-		if err != nil {
-			if errors.Is(err, geocoding.ErrNoResults) {
-				return geocoding.Result{}, commonmodel.ErrAddressNotFound
-			}
-			return geocoding.Result{}, fmt.Errorf("forward geocode: %w", err)
+func (b *CommonHandler) ForwardGeocode(ctx context.Context, params ForwardGeocodeParams) (geocoding.Result, error) {
+	result, err := b.geocoder.ForwardGeocode(ctx, params.Address)
+	if err != nil {
+		if errors.Is(err, geocoding.ErrNoResults) {
+			return geocoding.Result{}, commonmodel.ErrAddressNotFound
 		}
-		return result, nil
-	})
+		return geocoding.Result{}, fmt.Errorf("forward geocode: %w", err)
+	}
+	return result, nil
 }
 
 // ResolveCountry geocodes the address and returns the ISO 3166-1 alpha-2
 // country code (uppercase). Returns a terminal 400 error if the address is
 // blank, geocoding fails, or no country was resolved.
-func (b *CommonHandler) ResolveCountry(ctx restate.Context, address string) (string, error) {
+func (b *CommonHandler) ResolveCountry(ctx context.Context, address string) (string, error) {
 	if strings.TrimSpace(address) == "" {
 		return "", commonmodel.ErrEmptyAddress
 	}
@@ -70,12 +65,10 @@ type SearchGeocodeParams struct {
 	Limit int
 }
 
-func (b *CommonHandler) SearchGeocode(ctx restate.Context, params SearchGeocodeParams) ([]geocoding.Result, error) {
-	return restate.Run(ctx, func(ctx restate.RunContext) ([]geocoding.Result, error) {
-		results, err := b.geocoder.Search(ctx, params.Query, params.Limit)
-		if err != nil {
-			return nil, fmt.Errorf("search geocode: %w", err)
-		}
-		return results, nil
-	})
+func (b *CommonHandler) SearchGeocode(ctx context.Context, params SearchGeocodeParams) ([]geocoding.Result, error) {
+	results, err := b.geocoder.Search(ctx, params.Query, params.Limit)
+	if err != nil {
+		return nil, fmt.Errorf("search geocode: %w", err)
+	}
+	return results, nil
 }
