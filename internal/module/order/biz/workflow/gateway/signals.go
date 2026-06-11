@@ -8,31 +8,40 @@ import (
 	restate "github.com/restatedev/sdk-go"
 )
 
-// WaitFirstURL blocks until the loop resolves the first attempt's URL. Bridges
-// the async workflow submit into a synchronous redirect for the HTTP caller.
-func (g *Gateway) WaitFirstURL(ctx restate.WorkflowSharedContext) (string, error) {
-	return restate.Promise[string](ctx, paymentURLKey(1)).Result()
-}
-
-// RequestNewURL is the multi-attempt entry point. The caller has verified the
-// latest gateway tx is Failed/expired. Resolving the current attempt's retry
-// promise (idempotent) advances the loop to attempt+1; we then block on its
-// URL. expired is the workflow-specific terminal error for a dead session.
-func (g *Gateway) RequestNewURL(ctx restate.WorkflowSharedContext, expired error) (string, error) {
-	attempt, err := restate.Get[int](ctx, paymentAttemptKey)
+// GetPaymentURL returns a usable gateway redirect URL, deciding from the
+// journaled gate state (not the DB): reuse the live attempt's URL, advance to a
+// fresh attempt when the current one expired, or report the terminal outcome.
+// expired/cancelled are the workflow-specific terminal errors.
+func (g *Gateway) GetPaymentURL(ctx restate.WorkflowSharedContext, expired, cancelled error) (string, error) {
+	st, err := restate.Get[*gateState](ctx, gateStateKey)
 	if err != nil {
-		return "", fmt.Errorf("read payment_attempt: %w", err)
+		return "", fmt.Errorf("read gate state: %w", err)
 	}
-	if attempt < 1 {
+	if st == nil {
+		// Loop hasn't recorded an attempt yet — await the first URL.
+		return restate.Promise[string](ctx, paymentURLKey(1)).Result()
+	}
+	switch st.Status {
+	case gateActive:
+		return st.URL, nil
+	case gateCharging:
+		return restate.Promise[string](ctx, paymentURLKey(st.Attempt)).Result()
+	case gateRetry:
+		// Current attempt is dead — advance the loop (resolve is idempotent) and
+		// block on the next attempt's URL.
+		_ = restate.Promise[struct{}](ctx, retryKey(st.Attempt)).Resolve(struct{}{})
+		return restate.Promise[string](ctx, paymentURLKey(st.Attempt+1)).Result()
+	case gatePaid:
+		return st.URL, nil
+	case gateCancelled:
+		return "", cancelled
+	default: // gateExpired or any terminal
 		return "", expired
 	}
-	_ = restate.Promise[struct{}](ctx, retryKey(attempt)).Resolve(struct{}{})
-	return restate.Promise[string](ctx, paymentURLKey(attempt+1)).Result()
 }
 
-// ResolvePaymentEvent is called from the payment webhook. The notification's
-// RefID is the gateway tx UUID, so late webhooks for already-Failed prior
-// attempts resolve a key no one awaits — silent no-ops.
+// ResolvePaymentEvent is called from the payment webhook. Late webhooks for prior
+// failed attempts resolve a key no one awaits — silent no-ops.
 func (g *Gateway) ResolvePaymentEvent(ctx restate.WorkflowSharedContext, noti payment.Notification) error {
 	return restate.Promise[payment.Notification](ctx, paymentEventKey(noti.RefID)).Resolve(noti)
 }

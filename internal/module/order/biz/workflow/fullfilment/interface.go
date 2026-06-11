@@ -11,13 +11,11 @@ import (
 
 //go:generate go run shopnexus-server/cmd/genrestate -interface FulfillmentWf -service FulfillmentWorkflow -kind workflow
 
-// FulfillmentWf is the typed client contract for FulfillmentWorkflow, keyed
-// by order ID (= confirm session ID). Run awaits the whole workflow;
-// submit-and-detach via Send().Run, then attach to WaitPaymentURL.
+// FulfillmentWf is the typed client contract, keyed by order ID (= confirm session ID).
+// Submit via Send().Run, then attach with GetPaymentURL.
 type FulfillmentWf interface {
 	Run(ctx context.Context, orderID uuid.UUID, input FulfillmentInput) (FulfillmentOutput, error)
-	WaitPaymentURL(ctx context.Context, orderID uuid.UUID) (string, error)
-	RequestNewPaymentURL(ctx context.Context, orderID uuid.UUID) (string, error)
+	GetPaymentURL(ctx context.Context, orderID uuid.UUID) (string, error)
 	PaymentNotification(ctx context.Context, orderID uuid.UUID, noti payment.Notification) error
 	CancelConfirm(ctx context.Context, orderID uuid.UUID) error
 	OnRefundChanged(ctx context.Context, orderID uuid.UUID) error

@@ -13,29 +13,28 @@ import (
 	ordermodel "shopnexus-server/internal/module/order/model"
 )
 
-// autoAcceptRefund fires when a refund timer expires with no seller decision
-// (review window or shipping timeout). Same credit flow as SellerApproveRefund.
-func (h *FulfillmentWorkflow) autoAcceptRefund(ctx restate.WorkflowContext, refundID uuid.UUID) error {
+// autoAcceptRefund fires on review-window or shipping-timeout expiry with no seller decision.
+func (r *fulfillmentRun) autoAcceptRefund(refundID uuid.UUID) error {
+	ctx := r.ctx
 	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
-		return h.Storage.Querier().GetRefund(rctx, orderdb.GetRefundParams{
+		return r.Storage.Querier().GetRefund(rctx, orderdb.GetRefundParams{
 			ID: uuid.NullUUID{UUID: refundID, Valid: true},
 		})
 	})
 	if err != nil {
 		return fmt.Errorf("get refund: %w", err)
 	}
-	// Idempotent: a manual seller decision may have already closed the refund.
+	// A manual decision may have already closed the refund.
 	if !(ordermodel.Refund{OrderRefund: refund}).CanSellerDecide() {
 		return nil
 	}
 
-	// ExecuteRefundCredit self-journals its phases (decision/execution Runs +
-	// cross-module Calls), so call it directly at the workflow's restate.Context.
-	updated, err := h.refund.ExecuteRefundCredit(ctx, refund, refund.AccountID, ordermodel.RefundCreditReasonAutoAccepted)
+	// ExecuteRefundCredit self-journals its phases, so call it at the workflow's restate.Context directly.
+	updated, err := r.refund.ExecuteRefundCredit(ctx, refund, refund.AccountID, ordermodel.RefundCreditReasonAutoAccepted)
 	if err != nil {
 		return fmt.Errorf("execute refund credit: %w", err)
 	}
-	if err = h.NotifyRefund(
+	if err = r.NotifyRefund(
 		ctx,
 		refund.AccountID,
 		accountmodel.NotiRefundApproved,
@@ -48,12 +47,12 @@ func (h *FulfillmentWorkflow) autoAcceptRefund(ctx restate.WorkflowContext, refu
 	return nil
 }
 
-// markRefundDelivered flips a Shipping refund to AwaitingSellerReview when the
-// return transport reports delivery, and arms the seller review window.
-func (h *FulfillmentWorkflow) markRefundDelivered(ctx restate.WorkflowContext, refundID uuid.UUID) error {
+// markRefundDelivered flips a Shipping refund to AwaitingSellerReview on return delivery.
+func (r *fulfillmentRun) markRefundDelivered(refundID uuid.UUID) error {
+	ctx := r.ctx
 	deadline := time.Now().Add(sellerReviewWindow)
 	updated, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
-		return h.Storage.Querier().MarkRefundDelivered(rctx, orderdb.MarkRefundDeliveredParams{
+		return r.Storage.Querier().MarkRefundDelivered(rctx, orderdb.MarkRefundDeliveredParams{
 			ID:             refundID,
 			ReviewDeadline: null.TimeFrom(deadline),
 		})
@@ -63,11 +62,11 @@ func (h *FulfillmentWorkflow) markRefundDelivered(ctx restate.WorkflowContext, r
 	}
 
 	order, _ := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderOrder, error) {
-		return h.Storage.Querier().GetOrder(rctx, orderdb.GetOrderParams{
+		return r.Storage.Querier().GetOrder(rctx, orderdb.GetOrderParams{
 			ID: uuid.NullUUID{UUID: updated.OrderID, Valid: true},
 		})
 	})
-	if err = h.NotifyRefund(ctx, order.SellerID, accountmodel.NotiRefundRequested,
+	if err = r.NotifyRefund(ctx, order.SellerID, accountmodel.NotiRefundRequested,
 		"Return delivered", "The buyer's return shipment has arrived. Please review within 3 days.", updated); err != nil {
 		return fmt.Errorf("notify refund: %w", err)
 	}

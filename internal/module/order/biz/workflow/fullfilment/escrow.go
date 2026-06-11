@@ -12,33 +12,22 @@ import (
 	"shopnexus-server/internal/module/order/biz/workflow/gateway"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
-	"shopnexus-server/internal/shared/saga"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
 )
 
-// returnDeliveredKey is the promise the real transport webhook resolves when a
-// buyer's return shipment is physically delivered. Keyed by refund ID because
-// one workflow instance sees every refund the order accumulates.
+// returnDeliveredKey keys by refundID because one workflow instance sees every refund the order accumulates.
 func returnDeliveredKey(refundID uuid.UUID) string { return "return_delivered_" + refundID.String() }
 
-// escrow opens the seller-payout session and watches the order until the
-// escrow window elapses (release) or a refund is accepted (refunded). Active
-// refunds are resolved inline before the next decision.
-func (h *FulfillmentWorkflow) escrow(
-	ctx restate.WorkflowContext,
-	sg *saga.Saga,
-	orderID uuid.UUID,
-	conf confirmResult,
-) (outcome string, err error) {
-	// IDs pre-allocated via restate.UUID: stable across replays, INSERTs
-	// idempotent on PK conflict. The payout session gets its own UUID — the
-	// confirm session already owns the order-ID value in payment_session.
+// escrow watches the order until the escrow window elapses (release) or a refund is accepted (refunded).
+func (r *fulfillmentRun) escrow() (outcome string, err error) {
+	ctx := r.ctx
+	// restate.UUID is journaled — stable across replays, INSERTs idempotent on PK conflict.
 	sessionID := restate.UUID(ctx)
 	payoutTxID := restate.UUID(ctx)
 
-	// Journal the deadline so replays keep the original window.
+	// Journaled so replays keep the original deadline.
 	deadline, err := restate.Run(ctx, func(restate.RunContext) (time.Time, error) {
 		return time.Now().Add(escrowWindow), nil
 	})
@@ -46,38 +35,37 @@ func (h *FulfillmentWorkflow) escrow(
 		return "", fmt.Errorf("journal escrow deadline: %w", err)
 	}
 
-	// Compensator: mark the payout session + still-Pending txs Failed if
-	// anything later terminally fails. Pending-guarded → no-ops on rows that
-	// reached a final state, so it stays armed for the rest of the workflow.
-	sg.Defer("mark_payout_failed", func(ctx restate.Context) error {
+	// open payout session: create the Pending payout session + tx (+ fail compensator)
+	// Pending-guarded → no-ops on already-final rows; stays armed for the whole workflow.
+	r.sg.Defer("mark_payout_failed", func(ctx restate.Context) error {
 		return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-			return gateway.MarkSessionFailed(rctx, h.Storage.Querier(), sessionID, "payout saga compensation")
+			return gateway.MarkSessionFailed(rctx, r.Storage.Querier(), sessionID, "payout saga compensation")
 		})
 	})
 	if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-		if _, sErr := h.Storage.Querier().CreateDefaultPaymentSession(rctx, orderdb.CreateDefaultPaymentSessionParams{
+		if _, sErr := r.Storage.Querier().CreateDefaultPaymentSession(rctx, orderdb.CreateDefaultPaymentSessionParams{
 			ID:          sessionID,
 			Kind:        ordermodel.SessionKindSellerPayout,
 			Status:      orderdb.OrderStatusPending,
 			FromID:      uuid.NullUUID{},
-			ToID:        uuid.NullUUID{UUID: conf.SellerID, Valid: true},
+			ToID:        uuid.NullUUID{UUID: r.conf.SellerID, Valid: true},
 			Note:        "seller payout (escrow)",
-			Currency:    conf.Currency,
-			TotalAmount: conf.PaidTotal,
+			Currency:    r.conf.Currency,
+			TotalAmount: r.conf.PaidTotal,
 			Data:        json.RawMessage("{}"),
 			DatePaid:    null.Time{},
 			DateExpired: deadline,
 		}); sErr != nil {
 			return fmt.Errorf("db create payout session: %w", sErr)
 		}
-		if _, txErr := h.Storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
+		if _, txErr := r.Storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
 			ID:        payoutTxID,
 			SessionID: sessionID,
 			Status:    orderdb.OrderStatusPending,
 			Note:      "seller payout (escrow)",
 			Data:      json.RawMessage("{}"),
-			Amount:    conf.PaidTotal,
-			Currency:  conf.Currency,
+			Amount:    r.conf.PaidTotal,
+			Currency:  r.conf.Currency,
 		}); txErr != nil {
 			return fmt.Errorf("db create payout tx: %w", txErr)
 		}
@@ -86,12 +74,11 @@ func (h *FulfillmentWorkflow) escrow(
 		return "", fmt.Errorf("init payout session: %w", err)
 	}
 
+	// watch loop: reload refund snapshot, branch, else wait for a signal or the deadline
 	iter := 0
 	for {
-		// Journaled refund snapshot — the decision below branches off a
-		// deterministic value.
 		snap, snapErr := restate.Run(ctx, func(rctx restate.RunContext) (refundSnapshot, error) {
-			row, e := h.Storage.Querier().GetRefundSnapshotByOrder(rctx, orderID)
+			row, e := r.Storage.Querier().GetRefundSnapshotByOrder(rctx, r.orderID)
 			if e != nil {
 				return refundSnapshot{}, e
 			}
@@ -106,41 +93,38 @@ func (h *FulfillmentWorkflow) escrow(
 		}
 
 		switch {
+		// refunded: an approved refund cancels the payout
 		case snap.LastRefundApproved:
-			// A refund settled — cancel the pending payout. No wallet credit.
-			// The armed compensator marks the row Failed if this terminally
-			// fails (better than stuck Pending forever).
 			if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-				_, e := h.Storage.Querier().MarkPaymentSessionCancelled(rctx, sessionID)
+				_, e := r.Storage.Querier().MarkPaymentSessionCancelled(rctx, sessionID)
 				return e
 			}); err != nil {
 				return "", fmt.Errorf("mark payout session cancelled: %w", err)
 			}
-			if err = h.NotifyOrder(ctx, conf.SellerID, orderID, accountmodel.NotiPayoutCancelled,
+			if err = r.NotifyOrder(ctx, r.conf.SellerID, r.orderID, accountmodel.NotiPayoutCancelled,
 				"Payout cancelled", "An approved refund has cancelled the escrow payout for this order."); err != nil {
 				return "", fmt.Errorf("notify payout cancelled: %w", err)
 			}
 			return "refunded", nil
 
+		// resolve active refund: drive it to terminal, then re-evaluate
 		case snap.HasActiveRefund && snap.ActiveRefundID != uuid.Nil:
-			// Drive the active refund to a terminal state, then re-snapshot.
-			if err = h.resolveRefund(ctx, snap.ActiveRefundID); err != nil {
+			if err = r.resolveRefund(snap.ActiveRefundID); err != nil {
 				return "", fmt.Errorf("resolve refund: %w", err)
 			}
 			continue
 
+		// release: deadline passed → mark success, credit seller, notify
 		case !time.Now().Before(deadline):
-			// Window elapsed, no refund in flight — release. Wrapped in RunVoid
-			// so replays use the journaled result instead of re-executing the
-			// Pending-guarded UPDATEs (which would fail with ErrNoRows on rows
-			// already marked Success).
+			// Wrapped in RunVoid so replays use the journaled result; re-executing the
+			// Pending-guarded UPDATEs would fail with ErrNoRows on already-Success rows.
 			if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-				if _, e := h.Storage.Querier().MarkPaymentSessionSuccess(rctx, orderdb.MarkPaymentSessionSuccessParams{
+				if _, e := r.Storage.Querier().MarkPaymentSessionSuccess(rctx, orderdb.MarkPaymentSessionSuccessParams{
 					ID: sessionID,
 				}); e != nil {
 					return fmt.Errorf("mark payout session success: %w", e)
 				}
-				if _, e := h.Storage.Querier().MarkTransactionSuccess(rctx, orderdb.MarkTransactionSuccessParams{
+				if _, e := r.Storage.Querier().MarkTransactionSuccess(rctx, orderdb.MarkTransactionSuccessParams{
 					ID: payoutTxID,
 				}); e != nil {
 					return fmt.Errorf("mark payout tx success: %w", e)
@@ -149,30 +133,25 @@ func (h *FulfillmentWorkflow) escrow(
 			}); err != nil {
 				return "", fmt.Errorf("mark payout success: %w", err)
 			}
-			// Saga stays armed (no Clear). The Pending-guarded compensator
-			// no-ops on the now-Success rows, so a terminal failure of the
-			// wallet credit below does NOT auto-revert the marks — operator
-			// intervention is required for that gap.
-			if err = h.account.Call().WalletCredit(ctx, accountbiz.WalletCreditParams{
-				AccountID: conf.SellerID,
-				Amount:    conf.PaidTotal,
+			// Saga stays armed; compensator no-ops on Success rows, so a terminal credit failure
+			// leaves marks in place and requires operator intervention.
+			if err = r.account.Call().WalletCredit(ctx, accountbiz.WalletCreditParams{
+				AccountID: r.conf.SellerID,
+				Amount:    r.conf.PaidTotal,
 				Type:      "Payout",
 				Reference: fmt.Sprintf("payout-session:%s", sessionID),
 				Note:      "escrow released",
 			}); err != nil {
 				return "", fmt.Errorf("seller wallet credit: %w", err)
 			}
-			if err = h.NotifyOrder(ctx, conf.SellerID, orderID, accountmodel.NotiPayoutReleased,
+			if err = r.NotifyOrder(ctx, r.conf.SellerID, r.orderID, accountmodel.NotiPayoutReleased,
 				"Payout released", "Your escrow payout has been released to your wallet."); err != nil {
 				return "", fmt.Errorf("notify payout released: %w", err)
 			}
 			return "released", nil
 		}
 
-		// Idle: wait for a refund-state change (signalled by OnRefundChanged
-		// against the iter-suffixed promise key) or the escrow deadline. Only
-		// reachable while the deadline is in the future — a passed deadline with
-		// no active refund hits the release case above.
+		// idle wait: block on a refund-state change or the escrow deadline.
 		iter++
 		restate.Set(ctx, "refund_iter", iter)
 		signal := restate.Promise[any](ctx, fmt.Sprintf("refund_changed_%d", iter))
@@ -182,16 +161,13 @@ func (h *FulfillmentWorkflow) escrow(
 	}
 }
 
-// resolveRefund drives one refund to a terminal state (withdrawn, accepted or
-// rejected — all recorded on the refund row by the biz handlers it calls).
-// Promises are suffixed with the refund ID because one workflow instance sees
-// every refund the order accumulates.
-func (h *FulfillmentWorkflow) resolveRefund(ctx restate.WorkflowContext, refundID uuid.UUID) error {
+// resolveRefund drives one refund to terminal state. Promise keys are suffixed with refundID
+// because one workflow instance sees every refund the order accumulates.
+func (r *fulfillmentRun) resolveRefund(refundID uuid.UUID) error {
+	ctx := r.ctx
 	var err error
 
-	// Phase 1: race {buyer withdraw | return delivered | shipping timeout}.
-	// returnDelivered is resolved by the real transport webhook (OnTransportDelivered);
-	// the webhook also marks the return-transport row Success, so no DB flip here.
+	// Phase 1: race {buyer withdraw | return delivered | shipping timeout}
 	withdrawn := restate.Promise[any](ctx, "withdrawn_"+refundID.String())
 	returnDelivered := restate.Promise[any](ctx, returnDeliveredKey(refundID))
 	shippingDeadline := restate.After(ctx, forwardTransportTimeout)
@@ -202,22 +178,20 @@ func (h *FulfillmentWorkflow) resolveRefund(ctx restate.WorkflowContext, refundI
 	}
 	switch winner {
 	case withdrawn:
-		// Row already flipped to Cancelled by WithdrawBuyerRefund.
 		return nil
 	case shippingDeadline:
-		// Carrier lost the package — platform eats the loss, buyer gets credit.
-		if err = h.autoAcceptRefund(ctx, refundID); err != nil {
+		// Carrier lost the package — platform eats the loss, auto-accept for the buyer.
+		if err = r.autoAcceptRefund(refundID); err != nil {
 			return fmt.Errorf("auto-accept on shipping timeout: %w", err)
 		}
 		return nil
 	}
 
-	// returnDelivered → flip refund row + arm the seller review window.
-	if err = h.markRefundDelivered(ctx, refundID); err != nil {
+	if err = r.markRefundDelivered(refundID); err != nil {
 		return fmt.Errorf("mark delivered: %w", err)
 	}
 
-	// Phase 2: race {seller decision | auto-accept after review window}.
+	// Phase 2: race {seller decision | review window expiry}
 	decision := restate.Promise[ordermodel.SellerDecisionSignal](ctx, "seller_decision_"+refundID.String())
 	reviewDeadline := restate.After(ctx, sellerReviewWindow)
 	winner, err = restate.WaitFirst(ctx, decision, reviewDeadline)
@@ -225,7 +199,7 @@ func (h *FulfillmentWorkflow) resolveRefund(ctx restate.WorkflowContext, refundI
 		return fmt.Errorf("wait seller decision: %w", err)
 	}
 	if winner == reviewDeadline {
-		if err = h.autoAcceptRefund(ctx, refundID); err != nil {
+		if err = r.autoAcceptRefund(refundID); err != nil {
 			return fmt.Errorf("auto-accept on review timeout: %w", err)
 		}
 		return nil
@@ -235,12 +209,10 @@ func (h *FulfillmentWorkflow) resolveRefund(ctx restate.WorkflowContext, refundI
 		return fmt.Errorf("read seller decision: %w", err)
 	}
 	if sellerDecision.Approved {
-		// Credit already executed by SellerApproveRefund.
 		return nil
 	}
 
-	// Phase 3: disputed → admin verdict (no SLA timer; manual resolution). The
-	// dispute handlers update the refund row; the snapshot decides next.
+	// Phase 3: disputed → admin verdict (manual resolution, no SLA timer).
 	if _, err = restate.Promise[ordermodel.AdminDecisionSignal](
 		ctx,
 		"admin_decision_"+refundID.String(),

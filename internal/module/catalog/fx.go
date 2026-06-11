@@ -63,6 +63,13 @@ func NewLLMClient(cfg *catalogconfig.Config, cache cache.Client) (llm.Client, er
 			EmbedModelID: cfg.LLM.Bedrock.EmbedModelID,
 			ChatModelID:  cfg.LLM.Bedrock.ChatModelID,
 		})
+	case "openrouter":
+		client = llm.NewOpenRouterClient(llm.OpenRouterConfig{
+			APIKey:     cfg.LLM.OpenRouter.APIKey,
+			BaseURL:    cfg.LLM.OpenRouter.BaseURL,
+			EmbedModel: cfg.LLM.OpenRouter.EmbedModel,
+			ChatModel:  cfg.LLM.OpenRouter.ChatModel,
+		})
 	default:
 		return nil, fmt.Errorf("unknown LLM provider: %s", cfg.LLM.Provider)
 	}

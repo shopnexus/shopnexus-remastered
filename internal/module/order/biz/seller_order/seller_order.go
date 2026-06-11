@@ -7,6 +7,7 @@ import (
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	orderbase "shopnexus-server/internal/module/order/biz/base"
 	"shopnexus-server/internal/module/order/biz/refund"
+	"shopnexus-server/internal/module/order/biz/workflow/fullfilment"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/paginate"
 
@@ -19,9 +20,10 @@ import (
 type SellerHandler struct {
 	*orderbase.Base
 
-	inventory inventorybiz.InventoryBizClient
-	locker    locker.Client
-	refund    *refund.RefundHandler
+	inventory   inventorybiz.InventoryBizClient
+	locker      locker.Client
+	refund      *refund.RefundHandler
+	fulfillment fullfilment.FulfillmentWfClient
 }
 
 func New(
@@ -29,8 +31,9 @@ func New(
 	inventory inventorybiz.InventoryBizClient,
 	locker locker.Client,
 	refund *refund.RefundHandler,
+	fulfillment fullfilment.FulfillmentWfClient,
 ) *SellerHandler {
-	return &SellerHandler{c, inventory, locker, refund}
+	return &SellerHandler{c, inventory, locker, refund, fulfillment}
 }
 
 // SellerOrderBiz covers the seller's incoming pending items and confirmed orders.
@@ -39,6 +42,7 @@ type SellerOrderBiz interface {
 		ctx context.Context,
 		params ListSellerPendingItemsParams,
 	) (paginate.PaginateResult[ordermodel.OrderItem], error)
+	ConfirmSellerPending(ctx context.Context, params ConfirmSellerPendingParams) (ConfirmSellerPendingResult, error)
 	RejectSellerPending(ctx restate.Context, params RejectSellerPendingParams) error
 	GetSellerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error)
 	ListSellerConfirmed(

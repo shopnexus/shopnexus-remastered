@@ -15,8 +15,7 @@ const serviceName = "CheckoutWorkflow"
 // CheckoutWfSender mirrors CheckoutWf as one-way (fire-and-forget) calls; outputs are dropped.
 type CheckoutWfSender interface {
 	Run(ctx context.Context, sessionID uuid.UUID, input CheckoutWorkflowInput) error
-	WaitPaymentURL(ctx context.Context, sessionID uuid.UUID) error
-	RequestNewPaymentURL(ctx context.Context, sessionID uuid.UUID) error
+	GetPaymentURL(ctx context.Context, sessionID uuid.UUID) error
 	PaymentNotification(ctx context.Context, sessionID uuid.UUID, noti payment.Notification) error
 	CancelCheckout(ctx context.Context, sessionID uuid.UUID) error
 }
@@ -25,8 +24,7 @@ type CheckoutWfSender interface {
 // or parallel calls. Only usable inside a Restate handler context.
 type CheckoutWfFuture interface {
 	Run(rctx restate.Context, sessionID uuid.UUID, input CheckoutWorkflowInput) restate.ResponseFuture[CheckoutWorkflowOutput]
-	WaitPaymentURL(rctx restate.Context, sessionID uuid.UUID) restate.ResponseFuture[string]
-	RequestNewPaymentURL(rctx restate.Context, sessionID uuid.UUID) restate.ResponseFuture[string]
+	GetPaymentURL(rctx restate.Context, sessionID uuid.UUID) restate.ResponseFuture[string]
 	PaymentNotification(rctx restate.Context, sessionID uuid.UUID, noti payment.Notification) restate.ResponseFuture[restate.Void]
 	CancelCheckout(rctx restate.Context, sessionID uuid.UUID) restate.ResponseFuture[restate.Void]
 }
@@ -63,12 +61,8 @@ func (p *CheckoutWorkflowRestateClient) Run(ctx context.Context, sessionID uuid.
 	return restatec.CallWorkflow[CheckoutWorkflowOutput](ctx, p.call, serviceName, sessionID.String(), "Run", input)
 }
 
-func (p *CheckoutWorkflowRestateClient) WaitPaymentURL(ctx context.Context, sessionID uuid.UUID) (string, error) {
-	return restatec.CallWorkflow[string](ctx, p.call, serviceName, sessionID.String(), "WaitPaymentURL", nil)
-}
-
-func (p *CheckoutWorkflowRestateClient) RequestNewPaymentURL(ctx context.Context, sessionID uuid.UUID) (string, error) {
-	return restatec.CallWorkflow[string](ctx, p.call, serviceName, sessionID.String(), "RequestNewPaymentURL", nil)
+func (p *CheckoutWorkflowRestateClient) GetPaymentURL(ctx context.Context, sessionID uuid.UUID) (string, error) {
+	return restatec.CallWorkflow[string](ctx, p.call, serviceName, sessionID.String(), "GetPaymentURL", nil)
 }
 
 func (p *CheckoutWorkflowRestateClient) PaymentNotification(ctx context.Context, sessionID uuid.UUID, noti payment.Notification) error {
@@ -90,12 +84,8 @@ func (s *CheckoutWorkflowRestateSender) Run(ctx context.Context, sessionID uuid.
 	return restatec.SendWorkflow(ctx, s.client, serviceName, sessionID.String(), "Run", input)
 }
 
-func (s *CheckoutWorkflowRestateSender) WaitPaymentURL(ctx context.Context, sessionID uuid.UUID) error {
-	return restatec.SendWorkflow(ctx, s.client, serviceName, sessionID.String(), "WaitPaymentURL", nil)
-}
-
-func (s *CheckoutWorkflowRestateSender) RequestNewPaymentURL(ctx context.Context, sessionID uuid.UUID) error {
-	return restatec.SendWorkflow(ctx, s.client, serviceName, sessionID.String(), "RequestNewPaymentURL", nil)
+func (s *CheckoutWorkflowRestateSender) GetPaymentURL(ctx context.Context, sessionID uuid.UUID) error {
+	return restatec.SendWorkflow(ctx, s.client, serviceName, sessionID.String(), "GetPaymentURL", nil)
 }
 
 func (s *CheckoutWorkflowRestateSender) PaymentNotification(ctx context.Context, sessionID uuid.UUID, noti payment.Notification) error {
@@ -115,12 +105,8 @@ func (f *CheckoutWorkflowRestateFuture) Run(rctx restate.Context, sessionID uuid
 	return restate.Workflow[CheckoutWorkflowOutput](rctx, serviceName, sessionID.String(), "Run").RequestFuture(input)
 }
 
-func (f *CheckoutWorkflowRestateFuture) WaitPaymentURL(rctx restate.Context, sessionID uuid.UUID) restate.ResponseFuture[string] {
-	return restate.Workflow[string](rctx, serviceName, sessionID.String(), "WaitPaymentURL").RequestFuture(nil)
-}
-
-func (f *CheckoutWorkflowRestateFuture) RequestNewPaymentURL(rctx restate.Context, sessionID uuid.UUID) restate.ResponseFuture[string] {
-	return restate.Workflow[string](rctx, serviceName, sessionID.String(), "RequestNewPaymentURL").RequestFuture(nil)
+func (f *CheckoutWorkflowRestateFuture) GetPaymentURL(rctx restate.Context, sessionID uuid.UUID) restate.ResponseFuture[string] {
+	return restate.Workflow[string](rctx, serviceName, sessionID.String(), "GetPaymentURL").RequestFuture(nil)
 }
 
 func (f *CheckoutWorkflowRestateFuture) PaymentNotification(rctx restate.Context, sessionID uuid.UUID, noti payment.Notification) restate.ResponseFuture[restate.Void] {

@@ -12,7 +12,6 @@ import (
 	"shopnexus-server/internal/module/order/biz/cart"
 	"shopnexus-server/internal/module/order/biz/dashboard"
 	"shopnexus-server/internal/module/order/biz/dispute"
-	orderpayment "shopnexus-server/internal/module/order/biz/payment"
 	"shopnexus-server/internal/module/order/biz/refund"
 	"shopnexus-server/internal/module/order/biz/review"
 	sellerorder "shopnexus-server/internal/module/order/biz/seller_order"
@@ -93,10 +92,10 @@ type OrderBizClient interface {
 	GetBuyerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error)
 	GetCheckoutSummary(ctx context.Context, params buyerorder.GetCheckoutSummaryParams) (ordermodel.CheckoutSummary, error)
 	ListSellerPendingItems(ctx context.Context, params sellerorder.ListSellerPendingItemsParams) (paginate.PaginateResult[ordermodel.OrderItem], error)
+	ConfirmSellerPending(ctx context.Context, params sellerorder.ConfirmSellerPendingParams) (sellerorder.ConfirmSellerPendingResult, error)
 	GetSellerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error)
 	ListSellerConfirmed(ctx context.Context, params sellerorder.ListSellerConfirmedParams) (paginate.PaginateResult[ordermodel.Order], error)
 	GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItem, error)
-	GetReusableGatewayURL(ctx context.Context, sessionID uuid.UUID) (orderpayment.ReusableGatewayURLState, error)
 	ListBuyerRefunds(ctx context.Context, params refund.ListBuyerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error)
 	ListSellerRefunds(ctx context.Context, params refund.ListSellerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error)
 	ListRefundDisputes(ctx context.Context, params dispute.ListRefundDisputesParams) (paginate.PaginateResult[ordermodel.RefundDispute], error)
@@ -358,6 +357,10 @@ func (s *OrderService) ListSellerPendingItems(ctx restate.Context, params seller
 	return s.biz.ListSellerPendingItems(ctx, params)
 }
 
+func (s *OrderService) ConfirmSellerPending(ctx restate.Context, params sellerorder.ConfirmSellerPendingParams) (sellerorder.ConfirmSellerPendingResult, error) {
+	return s.biz.ConfirmSellerPending(ctx, params)
+}
+
 func (s *OrderService) RejectSellerPending(ctx restate.Context, params sellerorder.RejectSellerPendingParams) error {
 	return s.biz.RejectSellerPending(ctx, params)
 }
@@ -384,10 +387,6 @@ func (s *OrderService) ClearCart(ctx restate.Context, params cart.ClearCartParam
 
 func (s *OrderService) OnPaymentResult(ctx restate.Context, params payment.Notification) error {
 	return s.biz.OnPaymentResult(ctx, params)
-}
-
-func (s *OrderService) GetReusableGatewayURL(ctx restate.Context, sessionID uuid.UUID) (orderpayment.ReusableGatewayURLState, error) {
-	return s.biz.GetReusableGatewayURL(ctx, sessionID)
 }
 
 func (s *OrderService) ListBuyerRefunds(ctx restate.Context, params refund.ListBuyerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error) {
@@ -496,10 +495,10 @@ type OrderBizFlat interface {
 	GetBuyerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error)
 	GetCheckoutSummary(ctx context.Context, params buyerorder.GetCheckoutSummaryParams) (ordermodel.CheckoutSummary, error)
 	ListSellerPendingItems(ctx context.Context, params sellerorder.ListSellerPendingItemsParams) (paginate.PaginateResult[ordermodel.OrderItem], error)
+	ConfirmSellerPending(ctx context.Context, params sellerorder.ConfirmSellerPendingParams) (sellerorder.ConfirmSellerPendingResult, error)
 	GetSellerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error)
 	ListSellerConfirmed(ctx context.Context, params sellerorder.ListSellerConfirmedParams) (paginate.PaginateResult[ordermodel.Order], error)
 	GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItem, error)
-	GetReusableGatewayURL(ctx context.Context, sessionID uuid.UUID) (orderpayment.ReusableGatewayURLState, error)
 	ListBuyerRefunds(ctx context.Context, params refund.ListBuyerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error)
 	ListSellerRefunds(ctx context.Context, params refund.ListSellerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error)
 	ListRefundDisputes(ctx context.Context, params dispute.ListRefundDisputesParams) (paginate.PaginateResult[ordermodel.RefundDispute], error)
@@ -555,6 +554,10 @@ func (b *orderBizBestEffortLocal) ListSellerPendingItems(ctx context.Context, pa
 	return b.biz.ListSellerPendingItems(ctx, params)
 }
 
+func (b *orderBizBestEffortLocal) ConfirmSellerPending(ctx context.Context, params sellerorder.ConfirmSellerPendingParams) (sellerorder.ConfirmSellerPendingResult, error) {
+	return b.biz.ConfirmSellerPending(ctx, params)
+}
+
 func (b *orderBizBestEffortLocal) GetSellerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error) {
 	return b.biz.GetSellerOrder(ctx, orderID)
 }
@@ -565,10 +568,6 @@ func (b *orderBizBestEffortLocal) ListSellerConfirmed(ctx context.Context, param
 
 func (b *orderBizBestEffortLocal) GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItem, error) {
 	return b.biz.GetCart(ctx, params)
-}
-
-func (b *orderBizBestEffortLocal) GetReusableGatewayURL(ctx context.Context, sessionID uuid.UUID) (orderpayment.ReusableGatewayURLState, error) {
-	return b.biz.GetReusableGatewayURL(ctx, sessionID)
 }
 
 func (b *orderBizBestEffortLocal) ListBuyerRefunds(ctx context.Context, params refund.ListBuyerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error) {
@@ -672,6 +671,10 @@ func (b *orderBizBestEffortRemote) ListSellerPendingItems(ctx context.Context, p
 	return besteffort.Call[paginate.PaginateResult[ordermodel.OrderItem]](ctx, b.call, serviceName, "ListSellerPendingItems", params)
 }
 
+func (b *orderBizBestEffortRemote) ConfirmSellerPending(ctx context.Context, params sellerorder.ConfirmSellerPendingParams) (sellerorder.ConfirmSellerPendingResult, error) {
+	return besteffort.Call[sellerorder.ConfirmSellerPendingResult](ctx, b.call, serviceName, "ConfirmSellerPending", params)
+}
+
 func (b *orderBizBestEffortRemote) GetSellerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error) {
 	return besteffort.Call[ordermodel.Order](ctx, b.call, serviceName, "GetSellerOrder", orderID)
 }
@@ -682,10 +685,6 @@ func (b *orderBizBestEffortRemote) ListSellerConfirmed(ctx context.Context, para
 
 func (b *orderBizBestEffortRemote) GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItem, error) {
 	return besteffort.Call[[]ordermodel.CartItem](ctx, b.call, serviceName, "GetCart", params)
-}
-
-func (b *orderBizBestEffortRemote) GetReusableGatewayURL(ctx context.Context, sessionID uuid.UUID) (orderpayment.ReusableGatewayURLState, error) {
-	return besteffort.Call[orderpayment.ReusableGatewayURLState](ctx, b.call, serviceName, "GetReusableGatewayURL", sessionID)
 }
 
 func (b *orderBizBestEffortRemote) ListBuyerRefunds(ctx context.Context, params refund.ListBuyerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error) {
@@ -794,6 +793,10 @@ func (c *orderBizClient) ListSellerPendingItems(ctx context.Context, params sell
 	return c.flat.ListSellerPendingItems(ctx, params)
 }
 
+func (c *orderBizClient) ConfirmSellerPending(ctx context.Context, params sellerorder.ConfirmSellerPendingParams) (sellerorder.ConfirmSellerPendingResult, error) {
+	return c.flat.ConfirmSellerPending(ctx, params)
+}
+
 func (c *orderBizClient) GetSellerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error) {
 	return c.flat.GetSellerOrder(ctx, orderID)
 }
@@ -804,10 +807,6 @@ func (c *orderBizClient) ListSellerConfirmed(ctx context.Context, params sellero
 
 func (c *orderBizClient) GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItem, error) {
 	return c.flat.GetCart(ctx, params)
-}
-
-func (c *orderBizClient) GetReusableGatewayURL(ctx context.Context, sessionID uuid.UUID) (orderpayment.ReusableGatewayURLState, error) {
-	return c.flat.GetReusableGatewayURL(ctx, sessionID)
 }
 
 func (c *orderBizClient) ListBuyerRefunds(ctx context.Context, params refund.ListBuyerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error) {
@@ -959,6 +958,13 @@ func RegisterOrderBestEffort(s *besteffort.Server, biz OrderBiz) {
 		}
 		return biz.ListSellerPendingItems(ctx, p)
 	})
+	s.Handle(serviceName, "ConfirmSellerPending", func(ctx context.Context, body []byte) (any, error) {
+		var p sellerorder.ConfirmSellerPendingParams
+		if err := json.Unmarshal(body, &p); err != nil {
+			return nil, err
+		}
+		return biz.ConfirmSellerPending(ctx, p)
+	})
 	s.Handle(serviceName, "GetSellerOrder", func(ctx context.Context, body []byte) (any, error) {
 		var p uuid.UUID
 		if err := json.Unmarshal(body, &p); err != nil {
@@ -979,13 +985,6 @@ func RegisterOrderBestEffort(s *besteffort.Server, biz OrderBiz) {
 			return nil, err
 		}
 		return biz.GetCart(ctx, p)
-	})
-	s.Handle(serviceName, "GetReusableGatewayURL", func(ctx context.Context, body []byte) (any, error) {
-		var p uuid.UUID
-		if err := json.Unmarshal(body, &p); err != nil {
-			return nil, err
-		}
-		return biz.GetReusableGatewayURL(ctx, p)
 	})
 	s.Handle(serviceName, "ListBuyerRefunds", func(ctx context.Context, body []byte) (any, error) {
 		var p refund.ListBuyerRefundsParams

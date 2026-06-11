@@ -58,14 +58,14 @@ type (
 	GetCheckoutSummaryParams       = buyerorder.GetCheckoutSummaryParams
 
 	ListSellerPendingItemsParams = sellerorder.ListSellerPendingItemsParams
+	ConfirmSellerPendingParams   = sellerorder.ConfirmSellerPendingParams
+	ConfirmSellerPendingResult   = sellerorder.ConfirmSellerPendingResult
 	RejectSellerPendingParams    = sellerorder.RejectSellerPendingParams
 	ListSellerConfirmedParams    = sellerorder.ListSellerConfirmedParams
 
 	GetCartParams    = cart.GetCartParams
 	UpdateCartParams = cart.UpdateCartParams
 	ClearCartParams  = cart.ClearCartParams
-
-	ReusableGatewayURLState = orderpayment.ReusableGatewayURLState
 
 	CreateBuyerRefundParams   = refund.CreateBuyerRefundParams
 	WithdrawBuyerRefundParams = refund.WithdrawBuyerRefundParams

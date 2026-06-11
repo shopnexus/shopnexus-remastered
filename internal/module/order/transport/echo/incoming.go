@@ -59,7 +59,7 @@ type ConfirmSellerPendingResponse struct {
 }
 
 // ConfirmSellerPending submits a FulfillmentWorkflow and synchronously attaches
-// to its shared WaitPaymentURL handler. Mirrors BuyerCheckout: the workflow
+// to its shared GetPaymentURL handler. Mirrors BuyerCheckout: the workflow
 // owns the saga lifecycle, we just bridge the async submit into a sync HTTP
 // response so the seller's UI can redirect to the gateway (or short-circuit
 // for wallet-only confirms).
@@ -77,37 +77,28 @@ func (h *Handler) ConfirmSellerPending(c echo.Context) error {
 		return response.FromError(c.Response().Writer, http.StatusUnauthorized, err)
 	}
 
-	workflowID := uuid.New()
-	input := orderbiz.FulfillmentInput{
+	result, err := h.biz.ConfirmSellerPending(c.Request().Context(), orderbiz.ConfirmSellerPendingParams{
 		Account:       claims.Account,
 		ItemIDs:       req.ItemIDs,
 		UseWallet:     req.UseWallet,
 		WalletID:      req.WalletID,
 		PaymentOption: req.PaymentOption,
 		Note:          req.Note,
-	}
-
-	ctx := c.Request().Context()
-
-	if err := h.fulfillment.Send().Run(ctx, workflowID, input); err != nil {
-		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
-	}
-
-	url, err := h.fulfillment.WaitPaymentURL(ctx, workflowID)
+	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
 
 	return response.FromDTO(c.Response().Writer, http.StatusOK, ConfirmSellerPendingResponse{
-		ConfirmSessionID: workflowID.String(),
-		PaymentURL:       url,
+		ConfirmSessionID: result.ConfirmSessionID.String(),
+		PaymentURL:       result.PaymentURL,
 	})
 }
 
 // EnsureConfirmPaymentURL is the multi-attempt entry point for seller confirms.
-// Mirrors EnsureBuyerCheckoutPaymentURL: returns the latest reusable URL when
-// alive, otherwise signals FulfillmentWorkflow.RequestNewPaymentURL to mint
-// the next attempt and waits for its URL.
+// Mirrors EnsureBuyerCheckoutPaymentURL: the workflow's shared GetPaymentURL
+// handler decides from journaled gate state (reuse / advance / terminal error;
+// expired/cancelled carry their own 409 status via response.FromError).
 func (h *Handler) EnsureConfirmPaymentURL(c echo.Context) error {
 	sessionID, err := uuid.Parse(c.Param("sessionID"))
 	if err != nil {
@@ -120,18 +111,7 @@ func (h *Handler) EnsureConfirmPaymentURL(c echo.Context) error {
 
 	ctx := c.Request().Context()
 
-	state, err := h.biz.GetReusableGatewayURL(ctx, sessionID)
-	if err != nil {
-		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
-	}
-	if state.SessionTerminated {
-		return response.FromError(c.Response().Writer, http.StatusGone, fmt.Errorf("confirm session is no longer active"))
-	}
-	if state.ReusableURL != "" {
-		return response.FromDTO(c.Response().Writer, http.StatusOK, EnsurePaymentURLResponse{PaymentURL: state.ReusableURL})
-	}
-
-	url, err := h.fulfillment.RequestNewPaymentURL(ctx, sessionID)
+	url, err := h.fulfillment.GetPaymentURL(ctx, sessionID)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}

@@ -26,9 +26,9 @@ type RejectSellerPendingParams struct {
 
 // RejectSellerPending rejects pending items owned by the seller, releases inventory, and refunds buyers.
 func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSellerPendingParams) error {
-	// Lock: exclusive — same key as ConfirmSellerPending.
-	unlock := b.locker.Lock(ctx, fmt.Sprintf("order:seller-pending:%s", params.Account.ID))
-	defer unlock()
+	// Before confirm (still orphaned order_item) -> Need Lock r.input.ItemIDs prevent concurrent confirms or reject
+	// Then after confirm (order_item linked to order) -> Only Lock r.orderID (no need to lock individual items) to prevent concurrent confirms or cancel/close by buyer/seller.
+	// TODO: add lock to prevent concurrent confirms or reject on same items.
 
 	if err := validator.Validate(params); err != nil {
 		return fmt.Errorf("validate reject items: %w", err)

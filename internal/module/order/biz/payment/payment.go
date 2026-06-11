@@ -1,15 +1,12 @@
 package payment
 
 import (
-	"context"
-
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	"shopnexus-server/internal/module/order/biz/base"
 	"shopnexus-server/internal/module/order/biz/workflow/checkout"
 	"shopnexus-server/internal/module/order/biz/workflow/fullfilment"
 	"shopnexus-server/internal/provider/payment"
 
-	"github.com/google/uuid"
 	restate "github.com/restatedev/sdk-go"
 )
 
@@ -34,8 +31,7 @@ func New(
 	return h, h.SetupPaymentMap()
 }
 
-// PaymentBiz covers payment-result intake and gateway-URL reuse.
+// PaymentBiz covers payment-result intake.
 type PaymentBiz interface {
 	OnPaymentResult(ctx restate.Context, params payment.Notification) error
-	GetReusableGatewayURL(ctx context.Context, sessionID uuid.UUID) (ReusableGatewayURLState, error)
 }

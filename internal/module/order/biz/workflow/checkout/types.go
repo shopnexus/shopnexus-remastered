@@ -25,26 +25,22 @@ type CheckoutWorkflowOutput struct {
 	SessionID uuid.UUID `json:"session_id"`
 }
 
-// CheckoutItem is one line in a buyer checkout. Defined in base (the
-// transport quote endpoint shares it); aliased here for the workflow input.
+// CheckoutItem is aliased from base so the transport quote endpoint shares the same type.
 type CheckoutItem = base.CheckoutItem
 
-// transportQuote is the resolved shipping option + cost for one cart line, in
-// the seller's source currency.
+// transportQuote is the resolved shipping cost for one cart line, in the seller's source currency.
 type transportQuote struct {
 	Option string `json:"option"`
 	Cost   int64  `json:"cost"`
 }
 
-// itemAmounts holds the per-line amounts, already converted to buyer currency.
+// itemAmounts holds per-line amounts converted to buyer currency.
 type itemAmounts struct {
 	subtotalAmount int64
 	totalAmount    int64
 }
 
-// pricing carries everything the later phases need from the price phase: the
-// product lookup maps, the buyer's settlement currency, the FX snapshot to
-// persist on the session, and the per-item amounts/quotes plus grand total.
+// pricing carries product maps, settlement currency, FX snapshot, and per-item amounts from the price phase.
 type pricing struct {
 	skuMap          map[uuid.UUID]catalogmodel.ProductSku
 	spuMap          map[uuid.UUID]catalogmodel.ProductSpu

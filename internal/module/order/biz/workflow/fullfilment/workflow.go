@@ -29,11 +29,8 @@ const (
 	forwardTransportTimeout = 14 * 24 * time.Hour
 )
 
-// FulfillmentWorkflow drives one order's full lifecycle: seller confirm-fee
-// saga → order creation → escrow watch → payout release or refund. The
-// workflow key, the confirm session ID and the order ID are the same UUID,
-// minted at HTTP submission time — the payment webhook, the FE retry/cancel
-// endpoints and every refund/dispute signal all route by it.
+// FulfillmentWorkflow drives one order's full lifecycle: confirm-fee saga → order creation → escrow.
+// Workflow key = confirm session ID = order ID — all signals route by it.
 type FulfillmentWorkflow struct {
 	*orderbase.Base
 
@@ -55,40 +52,51 @@ func NewFulfillmentWorkflow(
 
 func (h *FulfillmentWorkflow) ServiceName() string { return "FulfillmentWorkflow" }
 
+// fulfillmentRun is the per-invocation scope; phases share state via its fields.
+type fulfillmentRun struct {
+	*FulfillmentWorkflow
+	ctx     restate.WorkflowContext
+	sg      *saga.Saga
+	input   FulfillmentInput
+	orderID uuid.UUID
+
+	conf confirmResult // set by confirm()
+}
+
 func (h *FulfillmentWorkflow) Run(
 	ctx restate.WorkflowContext,
 	input FulfillmentInput,
 ) (out FulfillmentOutput, err error) {
 	defer metrics.TrackHandler("fulfillment_workflow", "Run", &err)()
 
-	orderID := uuid.MustParse(restate.Key(ctx))
-
 	if err = validator.Validate(input); err != nil {
 		return out, fmt.Errorf("validate fulfillment: %w", err)
 	}
 
-	sg := saga.New(ctx)
-	// Reject WaitPaymentURL on terminal failure so the synchronous HTTP caller
-	// doesn't hang when Run dies before the gateway loop ever resolves
-	// payment_url_1. No-op if already resolved.
-	sg.Defer("reject_payment_url", func(_ restate.Context) error {
-		return restate.Promise[string](ctx, "payment_url_1").Reject(err)
+	r := &fulfillmentRun{
+		FulfillmentWorkflow: h,
+		ctx:                 ctx,
+		sg:                  saga.New(ctx),
+		input:               input,
+		orderID:             uuid.MustParse(restate.Key(ctx)),
+	}
+	// Unblock any synchronous GetPaymentURL caller on terminal failure.
+	r.sg.Defer("reject_payment_url", func(_ restate.Context) error {
+		return r.gw.RejectPendingURLs(ctx, err)
 	})
 	defer func() {
 		if restate.IsTerminalError(err) {
-			sg.Compensate()
+			r.sg.Compensate()
 		}
 	}()
 
-	conf, err := h.confirm(ctx, sg, input, orderID)
-	if err != nil {
+	// confirm: seller confirm-fee saga → order creation
+	if err = r.confirm(); err != nil {
 		return out, err
 	}
 
-	outcome, err := h.escrow(ctx, sg, orderID, conf)
-	if err != nil {
-		return out, err
-	}
-
-	return FulfillmentOutput{OrderID: orderID, Outcome: outcome}, nil
+	// escrow: hold payout until release or refund
+	out.Outcome, err = r.escrow()
+	out.OrderID = r.orderID
+	return out, err
 }

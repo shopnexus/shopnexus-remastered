@@ -23,11 +23,19 @@ type Search struct {
 
 // LLM config — only catalog (search embeddings) needs it.
 type LLM struct {
-	Provider      string        `yaml:"provider"      mapstructure:"provider" validate:"required,oneof=python openai bedrock"`
-	EmbedCacheTTL time.Duration `yaml:"embedCacheTTL" mapstructure:"embedCacheTTL" validate:"gte=0"` // 0 = cache forever
-	Python        LLMPython     `yaml:"python"        mapstructure:"python"`
-	OpenAI        LLMOpenAI     `yaml:"openai"        mapstructure:"openai"`
-	Bedrock       LLMBedrock    `yaml:"bedrock"       mapstructure:"bedrock"`
+	Provider      string         `yaml:"provider"      mapstructure:"provider" validate:"required,oneof=python openai bedrock openrouter"`
+	EmbedCacheTTL time.Duration  `yaml:"embedCacheTTL" mapstructure:"embedCacheTTL" validate:"gte=0"` // 0 = cache forever
+	Python        LLMPython      `yaml:"python"        mapstructure:"python"`
+	OpenAI        LLMOpenAI      `yaml:"openai"        mapstructure:"openai"`
+	Bedrock       LLMBedrock     `yaml:"bedrock"       mapstructure:"bedrock"`
+	OpenRouter    LLMOpenRouter  `yaml:"openrouter"    mapstructure:"openrouter"`
+}
+
+type LLMOpenRouter struct {
+	APIKey     string `yaml:"apiKey"     mapstructure:"apiKey"`
+	BaseURL    string `yaml:"baseURL"    mapstructure:"baseURL"    validate:"omitempty,url"`
+	EmbedModel string `yaml:"embedModel" mapstructure:"embedModel"`
+	ChatModel  string `yaml:"chatModel"  mapstructure:"chatModel"`
 }
 
 type LLMPython struct {

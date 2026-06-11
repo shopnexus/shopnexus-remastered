@@ -51,6 +51,11 @@ llm:
     region: "us-east-1"
     embedModelId: "amazon.titan-embed-text-v2:0"
     chatModelId: "anthropic.claude-3-haiku-20240307-v1:0"
+  openrouter:
+    apiKey: ""
+    baseURL: ""
+    embedModel: "baai/bge-m3"
+    chatModel: "openai/gpt-4o"
 
 bus:
   transport: redis

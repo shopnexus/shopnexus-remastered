@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
+	restate "github.com/restatedev/sdk-go"
 )
 
 const (
@@ -29,15 +30,37 @@ type Gateway struct {
 
 func New(core *orderbase.Base) *Gateway { return &Gateway{core} }
 
-// Promise / state keys shared between the loop and the signal handlers.
-func paymentURLKey(attempt int) string   { return fmt.Sprintf("payment_url_%d", attempt) }
-func retryKey(attempt int) string        { return fmt.Sprintf("retry_%d", attempt) }
+func paymentURLKey(attempt int) string    { return fmt.Sprintf("payment_url_%d", attempt) }
+func retryKey(attempt int) string         { return fmt.Sprintf("retry_%d", attempt) }
 func paymentEventKey(refID string) string { return "payment_event_" + refID }
 
 const (
-	cancelKey         = "user_cancel"
-	paymentAttemptKey = "payment_attempt"
+	cancelKey    = "user_cancel"
+	gateStateKey = "gate"
 )
+
+// gate phases, the authoritative payment state GetPaymentURL reads (DB rows are
+// a downstream projection, not the source of truth).
+const (
+	gateCharging  = "charging"  // attempt minted, URL not resolved yet
+	gateActive    = "active"    // current attempt's URL is live
+	gateRetry     = "retry"     // current attempt expired, awaiting a new-URL request
+	gatePaid      = "paid"      // session settled
+	gateCancelled = "cancelled" // user cancelled
+	gateExpired   = "expired"   // session deadline elapsed
+)
+
+// gateState is journaled per transition by RunPaymentLoop; GetPaymentURL
+// branches on it. Attempt is the current (1-based) attempt; URL its redirect.
+type gateState struct {
+	Attempt int    `json:"attempt"`
+	URL     string `json:"url"`
+	Status  string `json:"status"`
+}
+
+func (g *Gateway) setGate(ctx restate.WorkflowContext, s gateState) {
+	restate.Set(ctx, gateStateKey, s)
+}
 
 // MarkSessionFailed marks the session and every still-Pending child tx Failed.
 // Idempotent on already-final rows; used as a saga compensator body.

@@ -16,8 +16,7 @@ const serviceName = "FulfillmentWorkflow"
 // FulfillmentWfSender mirrors FulfillmentWf as one-way (fire-and-forget) calls; outputs are dropped.
 type FulfillmentWfSender interface {
 	Run(ctx context.Context, orderID uuid.UUID, input FulfillmentInput) error
-	WaitPaymentURL(ctx context.Context, orderID uuid.UUID) error
-	RequestNewPaymentURL(ctx context.Context, orderID uuid.UUID) error
+	GetPaymentURL(ctx context.Context, orderID uuid.UUID) error
 	PaymentNotification(ctx context.Context, orderID uuid.UUID, noti payment.Notification) error
 	CancelConfirm(ctx context.Context, orderID uuid.UUID) error
 	OnRefundChanged(ctx context.Context, orderID uuid.UUID) error
@@ -31,8 +30,7 @@ type FulfillmentWfSender interface {
 // or parallel calls. Only usable inside a Restate handler context.
 type FulfillmentWfFuture interface {
 	Run(rctx restate.Context, orderID uuid.UUID, input FulfillmentInput) restate.ResponseFuture[FulfillmentOutput]
-	WaitPaymentURL(rctx restate.Context, orderID uuid.UUID) restate.ResponseFuture[string]
-	RequestNewPaymentURL(rctx restate.Context, orderID uuid.UUID) restate.ResponseFuture[string]
+	GetPaymentURL(rctx restate.Context, orderID uuid.UUID) restate.ResponseFuture[string]
 	PaymentNotification(rctx restate.Context, orderID uuid.UUID, noti payment.Notification) restate.ResponseFuture[restate.Void]
 	CancelConfirm(rctx restate.Context, orderID uuid.UUID) restate.ResponseFuture[restate.Void]
 	OnRefundChanged(rctx restate.Context, orderID uuid.UUID) restate.ResponseFuture[restate.Void]
@@ -74,12 +72,8 @@ func (p *FulfillmentWorkflowRestateClient) Run(ctx context.Context, orderID uuid
 	return restatec.CallWorkflow[FulfillmentOutput](ctx, p.call, serviceName, orderID.String(), "Run", input)
 }
 
-func (p *FulfillmentWorkflowRestateClient) WaitPaymentURL(ctx context.Context, orderID uuid.UUID) (string, error) {
-	return restatec.CallWorkflow[string](ctx, p.call, serviceName, orderID.String(), "WaitPaymentURL", nil)
-}
-
-func (p *FulfillmentWorkflowRestateClient) RequestNewPaymentURL(ctx context.Context, orderID uuid.UUID) (string, error) {
-	return restatec.CallWorkflow[string](ctx, p.call, serviceName, orderID.String(), "RequestNewPaymentURL", nil)
+func (p *FulfillmentWorkflowRestateClient) GetPaymentURL(ctx context.Context, orderID uuid.UUID) (string, error) {
+	return restatec.CallWorkflow[string](ctx, p.call, serviceName, orderID.String(), "GetPaymentURL", nil)
 }
 
 func (p *FulfillmentWorkflowRestateClient) PaymentNotification(ctx context.Context, orderID uuid.UUID, noti payment.Notification) error {
@@ -121,12 +115,8 @@ func (s *FulfillmentWorkflowRestateSender) Run(ctx context.Context, orderID uuid
 	return restatec.SendWorkflow(ctx, s.client, serviceName, orderID.String(), "Run", input)
 }
 
-func (s *FulfillmentWorkflowRestateSender) WaitPaymentURL(ctx context.Context, orderID uuid.UUID) error {
-	return restatec.SendWorkflow(ctx, s.client, serviceName, orderID.String(), "WaitPaymentURL", nil)
-}
-
-func (s *FulfillmentWorkflowRestateSender) RequestNewPaymentURL(ctx context.Context, orderID uuid.UUID) error {
-	return restatec.SendWorkflow(ctx, s.client, serviceName, orderID.String(), "RequestNewPaymentURL", nil)
+func (s *FulfillmentWorkflowRestateSender) GetPaymentURL(ctx context.Context, orderID uuid.UUID) error {
+	return restatec.SendWorkflow(ctx, s.client, serviceName, orderID.String(), "GetPaymentURL", nil)
 }
 
 func (s *FulfillmentWorkflowRestateSender) PaymentNotification(ctx context.Context, orderID uuid.UUID, noti payment.Notification) error {
@@ -166,12 +156,8 @@ func (f *FulfillmentWorkflowRestateFuture) Run(rctx restate.Context, orderID uui
 	return restate.Workflow[FulfillmentOutput](rctx, serviceName, orderID.String(), "Run").RequestFuture(input)
 }
 
-func (f *FulfillmentWorkflowRestateFuture) WaitPaymentURL(rctx restate.Context, orderID uuid.UUID) restate.ResponseFuture[string] {
-	return restate.Workflow[string](rctx, serviceName, orderID.String(), "WaitPaymentURL").RequestFuture(nil)
-}
-
-func (f *FulfillmentWorkflowRestateFuture) RequestNewPaymentURL(rctx restate.Context, orderID uuid.UUID) restate.ResponseFuture[string] {
-	return restate.Workflow[string](rctx, serviceName, orderID.String(), "RequestNewPaymentURL").RequestFuture(nil)
+func (f *FulfillmentWorkflowRestateFuture) GetPaymentURL(rctx restate.Context, orderID uuid.UUID) restate.ResponseFuture[string] {
+	return restate.Workflow[string](rctx, serviceName, orderID.String(), "GetPaymentURL").RequestFuture(nil)
 }
 
 func (f *FulfillmentWorkflowRestateFuture) PaymentNotification(rctx restate.Context, orderID uuid.UUID, noti payment.Notification) restate.ResponseFuture[restate.Void] {

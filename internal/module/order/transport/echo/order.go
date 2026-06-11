@@ -340,7 +340,7 @@ type BuyerCheckoutResponse struct {
 }
 
 // BuyerCheckout submits a CheckoutWorkflow and synchronously attaches to its
-// shared WaitPaymentURL handler so the response carries the gateway redirect
+// shared GetPaymentURL handler so the response carries the gateway redirect
 // (or empty for wallet-only). The workflow continues running asynchronously
 // after this handler returns; the buyer can later cancel via
 // /buyer/checkout/:sessionID/cancel which signals CancelCheckout.
@@ -383,12 +383,12 @@ func (h *Handler) BuyerCheckout(c echo.Context) error {
 
 	// Submit Run as fire-and-forget — Restate journal owns the lifecycle from
 	// here. We don't wait for Run() to return; instead we attach to the shared
-	// WaitPaymentURL promise which Run() resolves once the gateway URL is known.
+	// GetPaymentURL handler which resolves once the gateway URL is known.
 	if err := h.checkout.Send().Run(ctx, workflowID, input); err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
 
-	url, err := h.checkout.WaitPaymentURL(ctx, workflowID)
+	url, err := h.checkout.GetPaymentURL(ctx, workflowID)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}
@@ -405,10 +405,10 @@ type EnsurePaymentURLResponse struct {
 	PaymentURL string `json:"payment_url"`
 }
 
-// EnsureBuyerCheckoutPaymentURL is the multi-attempt entry point. Returns
-// the latest reusable gateway URL when the current attempt is still alive,
-// otherwise signals CheckoutWorkflow.RequestNewPaymentURL to mint the next
-// attempt and waits for its URL. 410 if the session is already terminal.
+// EnsureBuyerCheckoutPaymentURL is the multi-attempt entry point. The workflow's
+// shared GetPaymentURL handler decides from journaled gate state: reuse the live
+// attempt, advance to a fresh one, or return the terminal error (expired/cancelled
+// carry their own 409 status, surfaced by response.FromError).
 func (h *Handler) EnsureBuyerCheckoutPaymentURL(c echo.Context) error {
 	sessionID, err := uuid.Parse(c.Param("sessionID"))
 	if err != nil {
@@ -421,18 +421,7 @@ func (h *Handler) EnsureBuyerCheckoutPaymentURL(c echo.Context) error {
 
 	ctx := c.Request().Context()
 
-	state, err := h.biz.GetReusableGatewayURL(ctx, sessionID)
-	if err != nil {
-		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
-	}
-	if state.SessionTerminated {
-		return response.FromError(c.Response().Writer, http.StatusGone, fmt.Errorf("checkout session is no longer active"))
-	}
-	if state.ReusableURL != "" {
-		return response.FromDTO(c.Response().Writer, http.StatusOK, EnsurePaymentURLResponse{PaymentURL: state.ReusableURL})
-	}
-
-	url, err := h.checkout.RequestNewPaymentURL(ctx, sessionID)
+	url, err := h.checkout.GetPaymentURL(ctx, sessionID)
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
 	}

@@ -12,11 +12,10 @@ import (
 
 // CheckoutWf is the typed client contract for CheckoutWorkflow, keyed by
 // checkout session ID. Run awaits the whole workflow; submit-and-detach via
-// Send().Run, then attach to WaitPaymentURL for the gateway redirect.
+// Send().Run, then attach to GetPaymentURL for the gateway redirect.
 type CheckoutWf interface {
 	Run(ctx context.Context, sessionID uuid.UUID, input CheckoutWorkflowInput) (CheckoutWorkflowOutput, error)
-	WaitPaymentURL(ctx context.Context, sessionID uuid.UUID) (string, error)
-	RequestNewPaymentURL(ctx context.Context, sessionID uuid.UUID) (string, error)
+	GetPaymentURL(ctx context.Context, sessionID uuid.UUID) (string, error)
 	PaymentNotification(ctx context.Context, sessionID uuid.UUID, noti payment.Notification) error
 	CancelCheckout(ctx context.Context, sessionID uuid.UUID) error
 }

@@ -14,8 +14,7 @@ import (
 	restate "github.com/restatedev/sdk-go"
 )
 
-// LoopParams configures RunPaymentLoop for a specific workflow. Differences are
-// pure data: amounts, currency, error mapping, log strings.
+// LoopParams configures RunPaymentLoop per workflow (amounts, currency, error mapping).
 type LoopParams struct {
 	SessionID       uuid.UUID
 	SessionDeadline time.Time
@@ -28,16 +27,32 @@ type LoopParams struct {
 	ErrExpired      error
 }
 
-// RunPaymentLoop drives the multi-attempt gateway payment leg. Each iteration
-// mints a fresh Pending gateway tx, charges the gateway, resolves the
-// attempt's payment-URL promise, then waits on {payment event | cancel |
-// attempt expiry | session expiry}. On attempt expiry it lazily waits for the
-// caller to request a new URL (RequestNewURL) before charging again.
+// RejectPendingURLs rejects every payment-URL promise a caller could still be
+// awaiting — the initial submit waits on url_1, a RequestNewURL caller waits on
+// url_<attempt+1> — so neither hangs when Run fails terminally mid-attempt.
+// payment_attempt is 0 if the loop never started (covers url_1 only).
+func (g *Gateway) RejectPendingURLs(ctx restate.WorkflowContext, cause error) error {
+	st, err := restate.Get[*gateState](ctx, gateStateKey)
+	if err != nil {
+		return fmt.Errorf("read gate state: %w", err)
+	}
+	attempt := 0
+	if st != nil {
+		attempt = st.Attempt
+	}
+	for i := 1; i <= attempt+1; i++ {
+		_ = restate.Promise[string](ctx, paymentURLKey(i)).Reject(cause)
+	}
+	return nil
+}
+
+// RunPaymentLoop drives the multi-attempt gateway payment leg. On attempt expiry it lazily
+// waits for the caller to call RequestNewURL before charging again.
 func (g *Gateway) RunPaymentLoop(ctx restate.WorkflowContext, p LoopParams) error {
 	cancel := restate.Promise[struct{}](ctx, cancelKey)
 
 	for attempt := 1; ; attempt++ {
-		restate.Set(ctx, paymentAttemptKey, attempt)
+		g.setGate(ctx, gateState{Attempt: attempt, Status: gateCharging})
 		txID := restate.UUID(ctx)
 
 		if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
@@ -64,6 +79,7 @@ func (g *Gateway) RunPaymentLoop(ctx restate.WorkflowContext, p LoopParams) erro
 		if err = restate.Promise[string](ctx, paymentURLKey(attempt)).Resolve(url); err != nil {
 			return fmt.Errorf("resolve payment url: %w", err)
 		}
+		g.setGate(ctx, gateState{Attempt: attempt, URL: url, Status: gateActive})
 
 		paid := restate.Promise[payment.Notification](ctx, paymentEventKey(txID.String()))
 		sessionExp, err := g.sessionExpiry(ctx, p.SessionDeadline, p.ErrExpired)
@@ -77,8 +93,10 @@ func (g *Gateway) RunPaymentLoop(ctx restate.WorkflowContext, p LoopParams) erro
 		}
 		switch done {
 		case cancel:
+			g.setGate(ctx, gateState{Attempt: attempt, Status: gateCancelled})
 			return p.ErrCancelled
 		case sessionExp:
+			g.setGate(ctx, gateState{Attempt: attempt, Status: gateExpired})
 			return p.ErrExpired
 		case paid:
 			ev, evErr := paid.Result()
@@ -101,6 +119,7 @@ func (g *Gateway) RunPaymentLoop(ctx restate.WorkflowContext, p LoopParams) erro
 			}); err != nil {
 				return err
 			}
+			g.setGate(ctx, gateState{Attempt: attempt, Status: gatePaid})
 			return nil
 		default: // attempt expired — lazy retry: don't burn gateway quota until the user returns.
 			if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
@@ -111,6 +130,7 @@ func (g *Gateway) RunPaymentLoop(ctx restate.WorkflowContext, p LoopParams) erro
 			}); err != nil {
 				return fmt.Errorf("mark attempt failed: %w", err)
 			}
+			g.setGate(ctx, gateState{Attempt: attempt, Status: gateRetry})
 			retry := restate.Promise[struct{}](ctx, retryKey(attempt))
 			sessionExp2, err := g.sessionExpiry(ctx, p.SessionDeadline, p.ErrExpired)
 			if err != nil {
@@ -122,16 +142,17 @@ func (g *Gateway) RunPaymentLoop(ctx restate.WorkflowContext, p LoopParams) erro
 			}
 			switch done2 {
 			case cancel:
+				g.setGate(ctx, gateState{Attempt: attempt, Status: gateCancelled})
 				return p.ErrCancelled
 			case sessionExp2:
+				g.setGate(ctx, gateState{Attempt: attempt, Status: gateExpired})
 				return p.ErrExpired
 			}
 		}
 	}
 }
 
-// charge calls the payment gateway for one attempt and persists the redirect
-// URL on the tx. Returns "" for a zero-amount attempt.
+// charge calls the payment gateway and persists the redirect URL on the tx. Returns "" for zero amount.
 func (g *Gateway) charge(ctx restate.WorkflowContext, txID uuid.UUID, amount int64, option, description string) (string, error) {
 	if amount <= 0 {
 		return "", nil
@@ -161,8 +182,7 @@ func (g *Gateway) charge(ctx restate.WorkflowContext, txID uuid.UUID, amount int
 	return url, nil
 }
 
-// sessionExpiry returns a future that fires at the session deadline, or the
-// terminal expired error if the deadline already passed.
+// sessionExpiry returns a future firing at the deadline, or the expired error if it already passed.
 func (g *Gateway) sessionExpiry(ctx restate.WorkflowContext, deadline time.Time, expired error) (restate.Future, error) {
 	rem := time.Until(deadline)
 	if rem <= 0 {

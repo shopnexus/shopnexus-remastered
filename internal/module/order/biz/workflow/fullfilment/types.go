@@ -31,19 +31,16 @@ type confirmResult struct {
 	Currency  string    `json:"currency"`
 }
 
-// refundSnapshot is the journaled per-iteration projection of the order's
-// refund state the escrow loop branches on. ActiveRefundID is uuid.Nil when
-// no refund is active (COALESCEd in SQL).
+// refundSnapshot is the journaled per-iteration state the escrow loop branches on.
+// ActiveRefundID is uuid.Nil when no refund is active (COALESCEd in SQL).
 type refundSnapshot struct {
 	HasActiveRefund    bool      `json:"has_active_refund"`
 	LastRefundApproved bool      `json:"last_refund_approved"`
 	ActiveRefundID     uuid.UUID `json:"active_refund_id"`
 }
 
-// RefundCrediter is the slice of the refund handler the escrow loop drives on
-// auto-accept. Declared here (not imported from the refund package) so the
-// dependency points one way: fulfillment → refund handler, never the reverse.
-// Exported so fx binds *refund.RefundHandler to it via fx.As.
+// RefundCrediter is declared here (not in refund pkg) to keep the dependency one-way.
+// Exported so fx can bind *refund.RefundHandler via fx.As.
 type RefundCrediter interface {
 	ExecuteRefundCredit(
 		ctx restate.Context,

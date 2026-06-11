@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	restate "github.com/restatedev/sdk-go"
-
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
@@ -19,60 +17,58 @@ import (
 	"github.com/samber/lo"
 )
 
-// price loads the buyer profile, resolves and matches the address country,
-// fetches the SKUs/SPUs, snapshots FX rates (validating availability up front),
-// quotes transport per item, and computes the per-item and grand totals — all
-// settled into the buyer's currency.
-func (h *CheckoutWorkflow) price(ctx restate.WorkflowContext, input CheckoutWorkflowInput) (pricing, error) {
-	var p pricing
+func (r *checkoutRun) price() error {
+	ctx, input := r.ctx, r.input
 
-	buyerProfile, err := h.account.GetProfile(ctx, accountbiz.GetProfileParams{AccountID: input.Account.ID})
+	// Step 1: load buyer profile + resolve/verify shipping country
+	buyerProfile, err := r.account.GetProfile(ctx, accountbiz.GetProfileParams{AccountID: input.Account.ID})
 	if err != nil {
-		return p, fmt.Errorf("load buyer profile: %w", err)
+		return fmt.Errorf("load buyer profile: %w", err)
 	}
 
-	resolvedCountry, err := h.common.ResolveCountry(ctx, input.Address)
+	resolvedCountry, err := r.common.ResolveCountry(ctx, input.Address)
 	if err != nil {
-		return p, fmt.Errorf("resolve country: %w", err)
+		return fmt.Errorf("resolve country: %w", err)
 	}
 	if resolvedCountry != buyerProfile.Country {
-		return p, ordermodel.ErrCheckoutAddressCountryMismatch.Fmt(resolvedCountry, buyerProfile.Country)
+		return ordermodel.ErrCheckoutAddressCountryMismatch.Fmt(resolvedCountry, buyerProfile.Country)
 	}
 
+	// Step 2: load products (skus + spus) for the cart
 	skuIDs := lo.Map(input.Items, func(s CheckoutItem, _ int) uuid.UUID { return s.SkuID })
 
-	skus, err := h.catalog.ListProductSku(ctx, catalogbiz.ListProductSkuParams{ID: skuIDs})
+	skus, err := r.catalog.ListProductSku(ctx, catalogbiz.ListProductSkuParams{ID: skuIDs})
 	if err != nil {
-		return p, fmt.Errorf("fetch product skus: %w", err)
+		return fmt.Errorf("fetch product skus: %w", err)
 	}
 	if len(skus) != len(skuIDs) {
-		return p, ordermodel.ErrOrderItemNotFound
+		return ordermodel.ErrOrderItemNotFound
 	}
 
-	listSpu, err := h.catalog.ListProductSpu(ctx, catalogbiz.ListProductSpuParams{
+	listSpu, err := r.catalog.ListProductSpu(ctx, catalogbiz.ListProductSpuParams{
 		Account: input.Account,
 		ID:      lo.Map(skus, func(s catalogmodel.ProductSku, _ int) uuid.UUID { return s.SpuID }),
 	})
 	if err != nil {
-		return p, fmt.Errorf("fetch product spus: %w", err)
+		return fmt.Errorf("fetch product spus: %w", err)
 	}
 	if len(listSpu.Data) == 0 {
-		return p, ordermodel.ErrOrderItemNotFound
+		return ordermodel.ErrOrderItemNotFound
 	}
 
-	p.skuMap = lo.KeyBy(skus, func(s catalogmodel.ProductSku) uuid.UUID { return s.ID })
-	p.spuMap = lo.KeyBy(listSpu.Data, func(s catalogmodel.ProductSpu) uuid.UUID { return s.ID })
+	r.skuMap = lo.KeyBy(skus, func(s catalogmodel.ProductSku) uuid.UUID { return s.ID })
+	r.spuMap = lo.KeyBy(listSpu.Data, func(s catalogmodel.ProductSpu) uuid.UUID { return s.ID })
 
-	// FX snapshot. Mixed-currency carts are supported — each item converts from
-	// its spu's own currency into the buyer's currency.
-	p.buyerCurrency, err = sharedcurrency.Infer(buyerProfile.Country)
+	// Step 3: resolve buyer currency + validate FX snapshot up front
+	// Each item converts from its spu's currency into the buyer's currency.
+	r.buyerCurrency, err = sharedcurrency.Infer(buyerProfile.Country)
 	if err != nil {
-		return p, fmt.Errorf("infer buyer currency: %w", err)
+		return fmt.Errorf("infer buyer currency: %w", err)
 	}
 
 	needFX := false
 	for _, spu := range listSpu.Data {
-		if spu.Currency != p.buyerCurrency {
+		if spu.Currency != r.buyerCurrency {
 			needFX = true
 			break
 		}
@@ -80,14 +76,12 @@ func (h *CheckoutWorkflow) price(ctx restate.WorkflowContext, input CheckoutWork
 
 	var fxSnapshot commonmodel.ExchangeRateSnapshot
 	if needFX {
-		fxSnapshot, err = h.common.GetExchangeRates(ctx, commonbiz.GetExchangeRatesParams{})
+		fxSnapshot, err = r.common.GetExchangeRates(ctx, commonbiz.GetExchangeRatesParams{})
 		if err != nil {
-			return p, fmt.Errorf("fx rate lookup: %w", err)
+			return fmt.Errorf("fx rate lookup: %w", err)
 		}
-		// Validate rate availability up front for every currency we'll touch
-		// (buyer + each unique non-buyer seller currency). Fails loud before
-		// inventory reservation, since ConvertAmountPure is fail-open.
-		needed := map[string]struct{}{p.buyerCurrency: {}}
+		// ConvertAmountPure is fail-open; validate all rates up front before reservation.
+		needed := map[string]struct{}{r.buyerCurrency: {}}
 		for _, spu := range listSpu.Data {
 			needed[spu.Currency] = struct{}{}
 		}
@@ -95,48 +89,45 @@ func (h *CheckoutWorkflow) price(ctx restate.WorkflowContext, input CheckoutWork
 			if c == fxSnapshot.Base {
 				continue
 			}
-			if r, ok := fxSnapshot.Rates[c]; !ok || r.Sign() <= 0 {
-				return p, ordermodel.ErrFXRateUnavailable.Fmt(c)
+			if rate, ok := fxSnapshot.Rates[c]; !ok || rate.Sign() <= 0 {
+				return ordermodel.ErrFXRateUnavailable.Fmt(c)
 			}
 		}
-
-		// The snapshot lives on the session (one source of truth across all
-		// child txs) so audit can replay any per-item conversion via
-		// (item.source_currency, session.fx_snapshot).
+		// Persisted on the session so audit can replay per-item conversions via (source_currency, fx_snapshot).
 		raw, mErr := json.Marshal(fxSnapshot)
 		if mErr != nil {
-			return p, fmt.Errorf("marshal fx snapshot: %w", mErr)
+			return fmt.Errorf("marshal fx snapshot: %w", mErr)
 		}
-		p.fxSnapshotJSON = raw
+		r.fxSnapshotJSON = raw
 	}
 
 	convertToBuyer := func(amount int64, fromCurrency string) int64 {
-		if fromCurrency == p.buyerCurrency {
+		if fromCurrency == r.buyerCurrency {
 			return amount
 		}
-		return commonbiz.ConvertAmountPure(amount, fromCurrency, p.buyerCurrency, fxSnapshot.Rates)
+		return commonbiz.ConvertAmountPure(amount, fromCurrency, r.buyerCurrency, fxSnapshot.Rates)
 	}
 
-	// Transport quotes per item.
+	// Step 4: quote transport per item from each seller's contact address
 	sellerIDs := lo.Uniq(lo.Map(skus, func(s catalogmodel.ProductSku, _ int) uuid.UUID {
-		return p.spuMap[s.SpuID].AccountID
+		return r.spuMap[s.SpuID].AccountID
 	}))
-	sellerContacts, err := h.account.GetDefaultContact(ctx, sellerIDs)
+	sellerContacts, err := r.account.GetDefaultContact(ctx, sellerIDs)
 	if err != nil {
-		return p, fmt.Errorf("fetch seller contacts: %w", err)
+		return fmt.Errorf("fetch seller contacts: %w", err)
 	}
 
-	p.transportQuotes = make(map[uuid.UUID]transportQuote, len(input.Items))
+	r.transportQuotes = make(map[uuid.UUID]transportQuote, len(input.Items))
 	for _, item := range input.Items {
-		spu := p.spuMap[p.skuMap[item.SkuID].SpuID]
+		spu := r.spuMap[r.skuMap[item.SkuID].SpuID]
 
-		transportClient, tcErr := h.GetTransportClient(item.TransportOption)
+		transportClient, tcErr := r.GetTransportClient(item.TransportOption)
 		if tcErr != nil {
-			return p, fmt.Errorf("get transport client: %w", tcErr)
+			return fmt.Errorf("get transport client: %w", tcErr)
 		}
 		sellerContact, ok := sellerContacts[spu.AccountID]
 		if !ok {
-			return p, fmt.Errorf("seller contact not found: %w", ordermodel.ErrOrderItemNotFound)
+			return fmt.Errorf("seller contact not found: %w", ordermodel.ErrOrderItemNotFound)
 		}
 
 		quote, qErr := transportClient.Quote(ctx, transport.QuoteParams{
@@ -145,22 +136,22 @@ func (h *CheckoutWorkflow) price(ctx restate.WorkflowContext, input CheckoutWork
 			ToAddress:   input.Address,
 		})
 		if qErr != nil {
-			return p, fmt.Errorf("quote transport for sku %s: %w", item.SkuID, qErr)
+			return fmt.Errorf("quote transport for sku %s: %w", item.SkuID, qErr)
 		}
-		p.transportQuotes[item.SkuID] = transportQuote{Option: item.TransportOption, Cost: quote.Cost}
+		r.transportQuotes[item.SkuID] = transportQuote{Option: item.TransportOption, Cost: quote.Cost}
 	}
 
-	// Per-item subtotal/total (converted to buyer currency) and grand total.
-	p.itemAmounts = make(map[uuid.UUID]itemAmounts, len(input.Items))
+	// Step 5: convert per-item subtotal + transport into buyer currency and sum the total
+	r.itemAmounts = make(map[uuid.UUID]itemAmounts, len(input.Items))
 	for _, item := range input.Items {
-		sku := p.skuMap[item.SkuID]
-		spu := p.spuMap[sku.SpuID]
-		tq := p.transportQuotes[item.SkuID]
+		sku := r.skuMap[item.SkuID]
+		spu := r.spuMap[sku.SpuID]
+		tq := r.transportQuotes[item.SkuID]
 		subtotal := convertToBuyer(sku.Price*item.Quantity, spu.Currency)
 		paid := subtotal + convertToBuyer(tq.Cost, spu.Currency)
-		p.itemAmounts[item.SkuID] = itemAmounts{subtotalAmount: subtotal, totalAmount: paid}
-		p.total += paid
+		r.itemAmounts[item.SkuID] = itemAmounts{subtotalAmount: subtotal, totalAmount: paid}
+		r.total += paid
 	}
 
-	return p, nil
+	return nil
 }

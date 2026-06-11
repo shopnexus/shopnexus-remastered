@@ -7,15 +7,11 @@ import (
 	"shopnexus-server/internal/provider/payment"
 )
 
-// WaitPaymentURL blocks until Run resolves the first attempt's URL — the bridge
-// for the sync /buyer/checkout HTTP handler.
-func (h *CheckoutWorkflow) WaitPaymentURL(ctx restate.WorkflowSharedContext, _ struct{}) (string, error) {
-	return h.gw.WaitFirstURL(ctx)
-}
-
-// RequestNewPaymentURL is the multi-attempt retry entry point.
-func (h *CheckoutWorkflow) RequestNewPaymentURL(ctx restate.WorkflowSharedContext, _ struct{}) (string, error) {
-	return h.gw.RequestNewURL(ctx, ordermodel.ErrCheckoutExpired)
+// GetPaymentURL resolves a usable gateway redirect URL from the journaled gate
+// state: reuse the live attempt, advance to a fresh one, or return the terminal
+// outcome. Serves both the initial /buyer/checkout submit and its retry endpoint.
+func (h *CheckoutWorkflow) GetPaymentURL(ctx restate.WorkflowSharedContext, _ struct{}) (string, error) {
+	return h.gw.GetPaymentURL(ctx, ordermodel.ErrCheckoutExpired, ordermodel.ErrCheckoutCancelled)
 }
 
 // PaymentNotification is called by the payment provider via OrderHandler.

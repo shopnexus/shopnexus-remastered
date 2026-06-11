@@ -23,9 +23,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// CheckoutWorkflow drives the buyer checkout saga. It embeds the module core
-// (*orderbase.Base) for the shared storage/notify/hydrate helpers and holds the
-// shared payment gateway as a named field.
+// CheckoutWorkflow holds shared, immutable dependencies; per-invocation state lives on checkoutRun.
 type CheckoutWorkflow struct {
 	*orderbase.Base
 
@@ -49,16 +47,25 @@ func New(
 
 func (h *CheckoutWorkflow) ServiceName() string { return "CheckoutWorkflow" }
 
-// Run orchestrates the checkout phases — price, reserve inventory, persist
-// records, settle wallet + gateway — and owns the saga that unwinds them on a
-// terminal failure.
+// checkoutRun is the per-invocation scope; phases share state via its fields.
+type checkoutRun struct {
+	*CheckoutWorkflow
+	ctx       restate.WorkflowContext
+	saga      *saga.Saga
+	input     CheckoutWorkflowInput
+	sessionID uuid.UUID
+
+	pricing                                     // set by price()
+	serialIDs            map[uuid.UUID][]string // set by reserve()
+	internalWalletAmount int64                  // set by persist()
+}
+
+// Run orchestrates the checkout phases and owns the saga that unwinds on terminal failure.
 func (h *CheckoutWorkflow) Run(
 	ctx restate.WorkflowContext,
 	input CheckoutWorkflowInput,
 ) (out CheckoutWorkflowOutput, err error) {
 	defer metrics.TrackHandler("checkout_workflow", "Run", &err)()
-
-	sessionID := uuid.MustParse(restate.Key(ctx))
 
 	if err = validator.Validate(input); err != nil {
 		return out, fmt.Errorf("validate checkout: %w", err)
@@ -67,93 +74,102 @@ func (h *CheckoutWorkflow) Run(
 		return out, ordermodel.ErrBuyNowSingleSkuOnly
 	}
 
-	saga := saga.New(ctx)
+	r := &checkoutRun{
+		CheckoutWorkflow: h,
+		ctx:              ctx,
+		saga:             saga.New(ctx),
+		input:            input,
+		sessionID:        uuid.MustParse(restate.Key(ctx)),
+	}
 	defer func() {
 		if restate.IsTerminalError(err) {
-			saga.Compensate()
+			r.saga.Compensate()
 		}
 	}()
 
-	// Reject the synchronous WaitPaymentURL caller on a terminal failure.
-	saga.Defer("reject_payment_url", func(_ restate.Context) error {
-		return restate.Promise[string](ctx, "payment_url_1").Reject(err)
+	// Unblock any synchronous GetPaymentURL caller on terminal failure.
+	r.saga.Defer("reject_payment_url", func(_ restate.Context) error {
+		return r.gw.RejectPendingURLs(ctx, err)
 	})
 
-	priced, err := h.price(ctx, input)
-	if err != nil {
+	// decision: price the cart
+	if err = r.price(); err != nil {
+		return out, err
+	}
+	// execution: reserve, persist, settle payment
+	if err = r.reserve(); err != nil {
+		return out, err
+	}
+	if err = r.persist(); err != nil {
+		return out, err
+	}
+	if err = r.pay(); err != nil {
 		return out, err
 	}
 
-	serialIDs, err := h.reserveInventory(ctx, saga, input, priced)
-	if err != nil {
+	// tail: fan-out side effects
+	r.saga.Clear()
+	if err = r.trackPurchase(); err != nil {
+		return out, err
+	}
+	if err = r.notifySellers(); err != nil {
 		return out, err
 	}
 
-	internalWalletAmount, err := h.persist(ctx, saga, input, priced, serialIDs, sessionID)
-	if err != nil {
-		return out, err
-	}
-
-	// The gateway leg is skipped for wallet-only carts.
-	if gatewayAmount := priced.total - internalWalletAmount; gatewayAmount > 0 {
-		if err = h.gw.RunPaymentLoop(ctx, gateway.LoopParams{
-			SessionID:       sessionID,
-			SessionDeadline: time.Now().Add(gateway.SessionExpiry),
-			NotePrefix:      "checkout gateway payment",
-			Description:     fmt.Sprintf("Checkout session %s", sessionID),
-			PaymentOption:   input.PaymentOption,
-			Amount:          gatewayAmount,
-			Currency:        priced.buyerCurrency,
-			ErrCancelled:    ordermodel.ErrCheckoutCancelled,
-			ErrExpired:      ordermodel.ErrCheckoutExpired,
-		}); err != nil {
-			return out, fmt.Errorf("gateway payment loop: %w", err)
-		}
-	}
-
-	// Success tail — clear the saga, then fan out side effects.
-	saga.Clear()
-
-	if err = h.trackPurchase(ctx, input); err != nil {
-		return out, err
-	}
-	if err = h.notifySellers(ctx, input, priced); err != nil {
-		return out, err
-	}
-
-	return CheckoutWorkflowOutput{Status: "paid", SessionID: sessionID}, nil
+	return CheckoutWorkflowOutput{Status: "paid", SessionID: r.sessionID}, nil
 }
 
-func (h *CheckoutWorkflow) trackPurchase(ctx restate.WorkflowContext, input CheckoutWorkflowInput) error {
-	interactions := make([]analyticbiz.CreateInteraction, 0, len(input.Items))
-	for _, item := range input.Items {
+// pay runs the gateway leg; skipped for wallet-only carts.
+func (r *checkoutRun) pay() error {
+	gatewayAmount := r.total - r.internalWalletAmount
+	if gatewayAmount <= 0 {
+		return nil
+	}
+	if err := r.gw.RunPaymentLoop(r.ctx, gateway.LoopParams{
+		SessionID:       r.sessionID,
+		SessionDeadline: time.Now().Add(gateway.SessionExpiry),
+		NotePrefix:      "checkout gateway payment",
+		Description:     fmt.Sprintf("Checkout session %s", r.sessionID),
+		PaymentOption:   r.input.PaymentOption,
+		Amount:          gatewayAmount,
+		Currency:        r.buyerCurrency,
+		ErrCancelled:    ordermodel.ErrCheckoutCancelled,
+		ErrExpired:      ordermodel.ErrCheckoutExpired,
+	}); err != nil {
+		return fmt.Errorf("gateway payment loop: %w", err)
+	}
+	return nil
+}
+
+func (r *checkoutRun) trackPurchase() error {
+	interactions := make([]analyticbiz.CreateInteraction, 0, len(r.input.Items))
+	for _, item := range r.input.Items {
 		interactions = append(interactions, analyticbiz.CreateInteraction{
-			Account:   input.Account,
+			Account:   r.input.Account,
 			EventType: analyticmodel.EventPurchase,
 			RefType:   analyticmodel.InteractionRefTypeProduct,
 			RefID:     item.SkuID.String(),
 		})
 	}
-	if err := h.TrackInteractions(ctx, interactions...); err != nil {
+	if err := r.TrackInteractions(r.ctx, interactions...); err != nil {
 		return fmt.Errorf("track purchase interactions: %w", err)
 	}
 	return nil
 }
 
-func (h *CheckoutWorkflow) notifySellers(ctx restate.WorkflowContext, input CheckoutWorkflowInput, priced pricing) error {
+func (r *checkoutRun) notifySellers() error {
 	sellerItems := make(map[uuid.UUID][]string)
-	for _, item := range input.Items {
-		spu := priced.spuMap[priced.skuMap[item.SkuID].SpuID]
+	for _, item := range r.input.Items {
+		spu := r.spuMap[r.skuMap[item.SkuID].SpuID]
 		sellerItems[spu.AccountID] = append(sellerItems[spu.AccountID], spu.Name)
 	}
 	for sellerID, names := range sellerItems {
-		summary := ordermodel.SummarizeNames(names)
-		if err := h.Notify(ctx, accountbiz.CreateNotificationParams{
+		if err := r.Notify(r.ctx, accountbiz.CreateNotificationParams{
 			AccountID: sellerID,
 			Type:      accountmodel.NotiNewPendingItems,
 			Channel:   accountmodel.ChannelInApp,
 			Title:     "New pending items",
-			Content:   fmt.Sprintf("New order for %s is waiting for your review.", summary),
+			Content:   fmt.Sprintf("New order for %s is waiting for your review.", ordermodel.SummarizeNames(names)),
 		}); err != nil {
 			return fmt.Errorf("notify seller: %w", err)
 		}

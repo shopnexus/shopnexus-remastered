@@ -13,106 +13,76 @@ import (
 	"shopnexus-server/internal/module/order/biz/workflow/gateway"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
-	"shopnexus-server/internal/shared/saga"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
 )
 
-// persist resolves the wallet/gateway split, atomically creates the
-// payment_session, the (optional) Pending wallet tx and the order items, then
-// settles the internal wallet leg. It returns the amount charged to the wallet
-// so the caller can derive the gateway amount. Gateway txs are NOT created here
-// — they're minted per-attempt inside the payment loop.
-func (h *CheckoutWorkflow) persist(
-	ctx restate.WorkflowContext,
-	saga *saga.Saga,
-	input CheckoutWorkflowInput,
-	priced pricing,
-	serialIDsMap map[uuid.UUID][]string,
-	sessionID uuid.UUID,
-) (int64, error) {
-	var internalWalletAmount int64
-	if input.UseWallet && priced.total > 0 {
-		balance, err := h.account.GetWalletBalance(ctx, input.Account.ID)
+// persist creates the payment session, optional wallet tx, and order items, then settles the wallet leg.
+// Sets r.internalWalletAmount so pay() can derive the gateway amount.
+func (r *checkoutRun) persist() error {
+	ctx, input := r.ctx, r.input
+
+	// Step 1: split total into wallet leg (up to balance) and gateway remainder
+	if input.UseWallet && r.total > 0 {
+		balance, err := r.account.GetWalletBalance(ctx, input.Account.ID)
 		if err != nil {
-			return 0, fmt.Errorf("get wallet balance: %w", err)
+			return fmt.Errorf("get wallet balance: %w", err)
 		}
-		internalWalletAmount = min(balance, priced.total)
+		r.internalWalletAmount = min(balance, r.total)
 	}
-	if priced.total-internalWalletAmount > 0 && input.PaymentOption == "" {
-		return 0, ordermodel.ErrInsufficientWalletBalance
+	if r.total-r.internalWalletAmount > 0 && input.PaymentOption == "" {
+		return ordermodel.ErrInsufficientWalletBalance
 	}
 
-	internalWalletTxID := restate.UUID(ctx)
+	walletTxID := restate.UUID(ctx)
 
-	// Compensator: mark the session + every still-Pending child tx Failed by
-	// session_id. Multi-attempt sessions spawn N gateway txs across the loop,
-	// so the compensator can't track IDs explicitly — session-wide marking
-	// catches them all idempotently.
-	saga.Defer("mark_session_and_txs_failed", func(ctx restate.Context) error {
+	// Step 2: atomically create session + wallet tx + order items in one journaled tx
+	// session_id marking catches all gateway txs idempotently across retry attempts.
+	r.saga.Defer("mark_session_and_txs_failed", func(ctx restate.Context) error {
 		return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-			return gateway.MarkSessionFailed(rctx, h.Storage.Querier(), sessionID, "checkout saga compensation")
+			return gateway.MarkSessionFailed(rctx, r.Storage.Querier(), r.sessionID, "checkout saga compensation")
 		})
 	})
 
-	// Result fields aren't needed downstream, but journaling them gives a clean
-	// replay trace for debugging.
-	type checkoutRunResult struct {
-		Session orderdb.OrderPaymentSession `json:"session"`
-		Items   []orderdb.OrderItem         `json:"items"`
-	}
-	if _, err := restate.Run(ctx, func(rctx restate.RunContext) (checkoutRunResult, error) {
-		var res checkoutRunResult
-
-		session, sErr := h.Storage.Querier().
-			CreateDefaultPaymentSession(rctx, orderdb.CreateDefaultPaymentSessionParams{
-				ID:          sessionID,
-				Kind:        ordermodel.SessionKindBuyerCheckout,
-				Status:      orderdb.OrderStatusPending,
-				FromID:      uuid.NullUUID{UUID: input.Account.ID, Valid: true},
-				ToID:        uuid.NullUUID{},
-				Note:        "buyer checkout",
-				Currency:    priced.buyerCurrency,
-				TotalAmount: priced.total,
-				FxSnapshot:  priced.fxSnapshotJSON,
-				Data:        json.RawMessage("{}"),
-				DatePaid:    null.Time{},
-				DateExpired: time.Now().Add(gateway.SessionExpiry),
-			})
-		if sErr != nil {
-			return res, fmt.Errorf("db create payment session: %w", sErr)
+	if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		if _, sErr := r.Storage.Querier().CreateDefaultPaymentSession(rctx, orderdb.CreateDefaultPaymentSessionParams{
+			ID:          r.sessionID,
+			Kind:        ordermodel.SessionKindBuyerCheckout,
+			Status:      orderdb.OrderStatusPending,
+			FromID:      uuid.NullUUID{UUID: input.Account.ID, Valid: true},
+			Note:        "buyer checkout",
+			Currency:    r.buyerCurrency,
+			TotalAmount: r.total,
+			FxSnapshot:  r.fxSnapshotJSON,
+			Data:        json.RawMessage("{}"),
+			DateExpired: time.Now().Add(gateway.SessionExpiry),
+		}); sErr != nil {
+			return fmt.Errorf("db create payment session: %w", sErr)
 		}
-		res.Session = session
 
-		if internalWalletAmount > 0 {
-			if _, txErr := h.Storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
-				ID:            internalWalletTxID,
-				SessionID:     sessionID,
-				Status:        orderdb.OrderStatusPending,
-				Note:          "checkout wallet payment",
-				Error:         null.String{},
-				PaymentOption: null.String{},
-				Data:          json.RawMessage("{}"),
-				Amount:        internalWalletAmount,
-				Currency:      priced.buyerCurrency,
-				ReversesID:    uuid.NullUUID{},
-				DateSettled:   null.Time{},
-				DateExpired:   null.Time{},
+		if r.internalWalletAmount > 0 {
+			if _, txErr := r.Storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
+				ID:        walletTxID,
+				SessionID: r.sessionID,
+				Status:    orderdb.OrderStatusPending,
+				Note:      "checkout wallet payment",
+				Data:      json.RawMessage("{}"),
+				Amount:    r.internalWalletAmount,
+				Currency:  r.buyerCurrency,
 			}); txErr != nil {
-				return res, fmt.Errorf("db create wallet tx: %w", txErr)
+				return fmt.Errorf("db create wallet tx: %w", txErr)
 			}
 		}
 
-		for _, checkoutItem := range input.Items {
-			sku := priced.skuMap[checkoutItem.SkuID]
-			spu := priced.spuMap[sku.SpuID]
-			amounts := priced.itemAmounts[checkoutItem.SkuID]
-			tq := priced.transportQuotes[checkoutItem.SkuID]
+		for _, item := range input.Items {
+			sku := r.skuMap[item.SkuID]
+			spu := r.spuMap[sku.SpuID]
+			amounts := r.itemAmounts[item.SkuID]
 
-			jsonSerialIDs, mErr := json.Marshal(serialIDsMap[checkoutItem.SkuID])
+			jsonSerialIDs, mErr := json.Marshal(r.serialIDs[item.SkuID])
 			if mErr != nil {
-				return res, fmt.Errorf("marshal serial ids: %w", mErr)
+				return fmt.Errorf("marshal serial ids: %w", mErr)
 			}
 
 			skuName := spu.Name
@@ -124,71 +94,62 @@ func (h *CheckoutWorkflow) persist(
 				skuName += " - " + strings.Join(vals, " / ")
 			}
 
-			dbItem, iErr := h.Storage.Querier().CreateDefaultItem(rctx, orderdb.CreateDefaultItemParams{
-				OrderID:          uuid.NullUUID{},
+			if _, iErr := r.Storage.Querier().CreateDefaultItem(rctx, orderdb.CreateDefaultItemParams{
 				AccountID:        input.Account.ID,
 				SellerID:         spu.AccountID,
 				SkuID:            sku.ID,
 				SpuID:            sku.SpuID,
 				SkuName:          skuName,
 				Address:          input.Address,
-				Note:             null.NewString(checkoutItem.Note, checkoutItem.Note != ""),
+				Note:             null.NewString(item.Note, item.Note != ""),
 				SerialIds:        jsonSerialIDs,
-				Quantity:         checkoutItem.Quantity,
-				TransportOption:  tq.Option,
+				Quantity:         item.Quantity,
+				TransportOption:  r.transportQuotes[item.SkuID].Option,
 				SubtotalAmount:   amounts.subtotalAmount,
 				TotalAmount:      amounts.totalAmount,
 				SourceCurrency:   spu.Currency,
-				PaymentSessionID: sessionID,
-				DateCancelled:    null.Time{},
-				CancelledByID:    uuid.NullUUID{},
-			})
-			if iErr != nil {
-				return res, fmt.Errorf("db create item: %w", iErr)
+				PaymentSessionID: r.sessionID,
+			}); iErr != nil {
+				return fmt.Errorf("db create item: %w", iErr)
 			}
-			res.Items = append(res.Items, dbItem)
 		}
-
-		return res, nil
+		return nil
 	}); err != nil {
 		metrics.CheckoutItemsCreatedTotal.WithLabelValues("failure").Inc()
-		return 0, fmt.Errorf("create checkout records: %w", err)
+		return fmt.Errorf("create checkout records: %w", err)
 	}
 
-	// Internal wallet payment. The wallet tx was created Pending above; mark it
-	// Success after the debit acknowledges.
-	if internalWalletAmount > 0 {
-		if _, err := h.account.Call().WalletDebit(ctx, accountbiz.WalletDebitParams{
+	// Step 3: settle the wallet leg — debit, arm credit compensator, mark tx success
+	if r.internalWalletAmount > 0 {
+		if _, err := r.account.Call().WalletDebit(ctx, accountbiz.WalletDebitParams{
 			AccountID: input.Account.ID,
-			Amount:    internalWalletAmount,
-			Reference: fmt.Sprintf("tx:%s", internalWalletTxID),
+			Amount:    r.internalWalletAmount,
+			Reference: fmt.Sprintf("tx:%s", walletTxID),
 			Note:      "checkout internal wallet",
 		}); err != nil {
-			return 0, fmt.Errorf("debit internal wallet: %w", err)
+			return fmt.Errorf("debit internal wallet: %w", err)
 		}
-		// Arm the credit compensator AFTER the debit confirms. WalletDebit is
-		// atomic (single CTE under FOR UPDATE) → terminal failure means no debit
-		// happened, so registering before would over-credit on saga fire.
+		// Arm AFTER debit confirms — arming earlier would over-credit on saga fire if debit never committed.
 		// TODO: xem lại step này, vì đang ko đc hỗ trợ idempotency => có thể double credit/debit
-		saga.Defer("credit_internal_wallet", func(ctx restate.Context) error {
-			return h.account.Call().WalletCredit(ctx, accountbiz.WalletCreditParams{
+		r.saga.Defer("credit_internal_wallet", func(ctx restate.Context) error {
+			return r.account.Call().WalletCredit(ctx, accountbiz.WalletCreditParams{
 				AccountID: input.Account.ID,
-				Amount:    internalWalletAmount,
+				Amount:    r.internalWalletAmount,
 				Type:      "Refund",
-				Reference: fmt.Sprintf("tx:%s", internalWalletTxID),
+				Reference: fmt.Sprintf("tx:%s", walletTxID),
 				Note:      "saga compensate: checkout wallet debit",
 			})
 		})
 		if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-			_, e := h.Storage.Querier().MarkTransactionSuccess(rctx, orderdb.MarkTransactionSuccessParams{
-				ID:          internalWalletTxID,
+			_, e := r.Storage.Querier().MarkTransactionSuccess(rctx, orderdb.MarkTransactionSuccessParams{
+				ID:          walletTxID,
 				DateSettled: time.Now(),
 			})
 			return e
 		}); err != nil {
-			return 0, fmt.Errorf("mark wallet tx success: %w", err)
+			return fmt.Errorf("mark wallet tx success: %w", err)
 		}
 	}
 
-	return internalWalletAmount, nil
+	return nil
 }
