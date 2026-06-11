@@ -33,9 +33,9 @@ type CreateBatchCartItemBatchResults struct {
 }
 
 type CreateBatchCartItemParams struct {
-	AccountID uuid.UUID `db:"account_id" json:"account_id"`
-	SkuID     uuid.UUID `db:"sku_id" json:"sku_id"`
-	Quantity  int64     `db:"quantity" json:"quantity"`
+	AccountID uuid.UUID `json:"account_id"`
+	SkuID     uuid.UUID `json:"sku_id"`
+	Quantity  int64     `json:"quantity"`
 }
 
 func (q *Queries) CreateBatchCartItem(ctx context.Context, arg []CreateBatchCartItemParams) *CreateBatchCartItemBatchResults {
@@ -93,24 +93,24 @@ type CreateBatchItemBatchResults struct {
 }
 
 type CreateBatchItemParams struct {
-	OrderID          uuid.NullUUID   `db:"order_id" json:"order_id"`
-	AccountID        uuid.UUID       `db:"account_id" json:"account_id"`
-	SellerID         uuid.UUID       `db:"seller_id" json:"seller_id"`
-	SkuID            uuid.UUID       `db:"sku_id" json:"sku_id"`
-	SpuID            uuid.UUID       `db:"spu_id" json:"spu_id"`
-	SkuName          string          `db:"sku_name" json:"sku_name"`
-	Address          string          `db:"address" json:"address"`
-	Note             null.String     `db:"note" json:"note"`
-	SerialIds        json.RawMessage `db:"serial_ids" json:"serial_ids"`
-	Quantity         int64           `db:"quantity" json:"quantity"`
-	TransportOption  string          `db:"transport_option" json:"transport_option"`
-	SubtotalAmount   int64           `db:"subtotal_amount" json:"subtotal_amount"`
-	TotalAmount      int64           `db:"total_amount" json:"total_amount"`
-	SourceCurrency   string          `db:"source_currency" json:"source_currency"`
-	PaymentSessionID uuid.UUID       `db:"payment_session_id" json:"payment_session_id"`
-	DateCancelled    null.Time       `db:"date_cancelled" json:"date_cancelled"`
-	CancelledByID    uuid.NullUUID   `db:"cancelled_by_id" json:"cancelled_by_id"`
-	DateCreated      time.Time       `db:"date_created" json:"date_created"`
+	OrderID          uuid.NullUUID   `json:"order_id"`
+	AccountID        uuid.UUID       `json:"account_id"`
+	SellerID         uuid.UUID       `json:"seller_id"`
+	SkuID            uuid.UUID       `json:"sku_id"`
+	SpuID            uuid.UUID       `json:"spu_id"`
+	SkuName          string          `json:"sku_name"`
+	Address          string          `json:"address"`
+	Note             null.String     `json:"note"`
+	SerialIds        json.RawMessage `json:"serial_ids"`
+	Quantity         int64           `json:"quantity"`
+	TransportOption  string          `json:"transport_option"`
+	SubtotalAmount   int64           `json:"subtotal_amount"`
+	TotalAmount      int64           `json:"total_amount"`
+	SourceCurrency   string          `json:"source_currency"`
+	PaymentSessionID uuid.UUID       `json:"payment_session_id"`
+	DateCancelled    null.Time       `json:"date_cancelled"`
+	CancelledByID    uuid.NullUUID   `json:"cancelled_by_id"`
+	DateCreated      time.Time       `json:"date_created"`
 }
 
 func (q *Queries) CreateBatchItem(ctx context.Context, arg []CreateBatchItemParams) *CreateBatchItemBatchResults {
@@ -198,15 +198,15 @@ type CreateBatchOrderBatchResults struct {
 }
 
 type CreateBatchOrderParams struct {
-	ID               uuid.UUID   `db:"id" json:"id"`
-	BuyerID          uuid.UUID   `db:"buyer_id" json:"buyer_id"`
-	SellerID         uuid.UUID   `db:"seller_id" json:"seller_id"`
-	TransportID      int64       `db:"transport_id" json:"transport_id"`
-	Address          string      `db:"address" json:"address"`
-	DateCreated      time.Time   `db:"date_created" json:"date_created"`
-	ConfirmedByID    uuid.UUID   `db:"confirmed_by_id" json:"confirmed_by_id"`
-	ConfirmSessionID uuid.UUID   `db:"confirm_session_id" json:"confirm_session_id"`
-	Note             null.String `db:"note" json:"note"`
+	ID               uuid.UUID   `json:"id"`
+	BuyerID          uuid.UUID   `json:"buyer_id"`
+	SellerID         uuid.UUID   `json:"seller_id"`
+	TransportID      int64       `json:"transport_id"`
+	Address          string      `json:"address"`
+	DateCreated      time.Time   `json:"date_created"`
+	ConfirmedByID    uuid.UUID   `json:"confirmed_by_id"`
+	ConfirmSessionID uuid.UUID   `json:"confirm_session_id"`
+	Note             null.String `json:"note"`
 }
 
 func (q *Queries) CreateBatchOrder(ctx context.Context, arg []CreateBatchOrderParams) *CreateBatchOrderBatchResults {
@@ -275,19 +275,19 @@ type CreateBatchPaymentSessionBatchResults struct {
 }
 
 type CreateBatchPaymentSessionParams struct {
-	ID          uuid.UUID       `db:"id" json:"id"`
-	Kind        string          `db:"kind" json:"kind"`
-	Status      OrderStatus     `db:"status" json:"status"`
-	FromID      uuid.NullUUID   `db:"from_id" json:"from_id"`
-	ToID        uuid.NullUUID   `db:"to_id" json:"to_id"`
-	Note        string          `db:"note" json:"note"`
-	Currency    string          `db:"currency" json:"currency"`
-	TotalAmount int64           `db:"total_amount" json:"total_amount"`
-	FxSnapshot  json.RawMessage `db:"fx_snapshot" json:"fx_snapshot"`
-	Data        json.RawMessage `db:"data" json:"data"`
-	DateCreated time.Time       `db:"date_created" json:"date_created"`
-	DatePaid    null.Time       `db:"date_paid" json:"date_paid"`
-	DateExpired time.Time       `db:"date_expired" json:"date_expired"`
+	ID          uuid.UUID       `json:"id"`
+	Kind        string          `json:"kind"`
+	Status      OrderStatus     `json:"status"`
+	FromID      uuid.NullUUID   `json:"from_id"`
+	ToID        uuid.NullUUID   `json:"to_id"`
+	Note        string          `json:"note"`
+	Currency    string          `json:"currency"`
+	TotalAmount int64           `json:"total_amount"`
+	FxSnapshot  json.RawMessage `json:"fx_snapshot"`
+	Data        json.RawMessage `json:"data"`
+	DateCreated time.Time       `json:"date_created"`
+	DatePaid    null.Time       `json:"date_paid"`
+	DateExpired time.Time       `json:"date_expired"`
 }
 
 func (q *Queries) CreateBatchPaymentSession(ctx context.Context, arg []CreateBatchPaymentSessionParams) *CreateBatchPaymentSessionBatchResults {
@@ -364,19 +364,19 @@ type CreateBatchRefundBatchResults struct {
 }
 
 type CreateBatchRefundParams struct {
-	ID                       uuid.UUID         `db:"id" json:"id"`
-	AccountID                uuid.UUID         `db:"account_id" json:"account_id"`
-	OrderID                  uuid.UUID         `db:"order_id" json:"order_id"`
-	Reason                   string            `db:"reason" json:"reason"`
-	DateCreated              time.Time         `db:"date_created" json:"date_created"`
-	Status                   OrderRefundStatus `db:"status" json:"status"`
-	ReturnTransportID        int64             `db:"return_transport_id" json:"return_transport_id"`
-	DateReceivedBySeller     null.Time         `db:"date_received_by_seller" json:"date_received_by_seller"`
-	ReviewDeadline           null.Time         `db:"review_deadline" json:"review_deadline"`
-	SellerDecisionAt         null.Time         `db:"seller_decision_at" json:"seller_decision_at"`
-	ReturnToBuyerTransportID null.Int          `db:"return_to_buyer_transport_id" json:"return_to_buyer_transport_id"`
-	RejectionReason          null.String       `db:"rejection_reason" json:"rejection_reason"`
-	RefundTxID               uuid.NullUUID     `db:"refund_tx_id" json:"refund_tx_id"`
+	ID                       uuid.UUID         `json:"id"`
+	AccountID                uuid.UUID         `json:"account_id"`
+	OrderID                  uuid.UUID         `json:"order_id"`
+	Reason                   string            `json:"reason"`
+	DateCreated              time.Time         `json:"date_created"`
+	Status                   OrderRefundStatus `json:"status"`
+	ReturnTransportID        int64             `json:"return_transport_id"`
+	DateReceivedBySeller     null.Time         `json:"date_received_by_seller"`
+	ReviewDeadline           null.Time         `json:"review_deadline"`
+	SellerDecisionAt         null.Time         `json:"seller_decision_at"`
+	ReturnToBuyerTransportID null.Int          `json:"return_to_buyer_transport_id"`
+	RejectionReason          null.String       `json:"rejection_reason"`
+	RefundTxID               uuid.NullUUID     `json:"refund_tx_id"`
 }
 
 func (q *Queries) CreateBatchRefund(ctx context.Context, arg []CreateBatchRefundParams) *CreateBatchRefundBatchResults {
@@ -453,15 +453,15 @@ type CreateBatchRefundDisputeBatchResults struct {
 }
 
 type CreateBatchRefundDisputeParams struct {
-	ID             uuid.UUID          `db:"id" json:"id"`
-	RefundID       uuid.UUID          `db:"refund_id" json:"refund_id"`
-	AccountID      uuid.UUID          `db:"account_id" json:"account_id"`
-	Reason         string             `db:"reason" json:"reason"`
-	DateCreated    time.Time          `db:"date_created" json:"date_created"`
-	Status         OrderDisputeStatus `db:"status" json:"status"`
-	ResolvedByID   uuid.NullUUID      `db:"resolved_by_id" json:"resolved_by_id"`
-	DateResolved   null.Time          `db:"date_resolved" json:"date_resolved"`
-	ResolutionNote null.String        `db:"resolution_note" json:"resolution_note"`
+	ID             uuid.UUID          `json:"id"`
+	RefundID       uuid.UUID          `json:"refund_id"`
+	AccountID      uuid.UUID          `json:"account_id"`
+	Reason         string             `json:"reason"`
+	DateCreated    time.Time          `json:"date_created"`
+	Status         OrderDisputeStatus `json:"status"`
+	ResolvedByID   uuid.NullUUID      `json:"resolved_by_id"`
+	DateResolved   null.Time          `json:"date_resolved"`
+	ResolutionNote null.String        `json:"resolution_note"`
 }
 
 func (q *Queries) CreateBatchRefundDispute(ctx context.Context, arg []CreateBatchRefundDisputeParams) *CreateBatchRefundDisputeBatchResults {
@@ -530,19 +530,19 @@ type CreateBatchTransactionBatchResults struct {
 }
 
 type CreateBatchTransactionParams struct {
-	ID            uuid.UUID       `db:"id" json:"id"`
-	SessionID     uuid.UUID       `db:"session_id" json:"session_id"`
-	Status        OrderStatus     `db:"status" json:"status"`
-	Note          string          `db:"note" json:"note"`
-	Error         null.String     `db:"error" json:"error"`
-	PaymentOption null.String     `db:"payment_option" json:"payment_option"`
-	Data          json.RawMessage `db:"data" json:"data"`
-	Amount        int64           `db:"amount" json:"amount"`
-	Currency      string          `db:"currency" json:"currency"`
-	ReversesID    uuid.NullUUID   `db:"reverses_id" json:"reverses_id"`
-	DateCreated   time.Time       `db:"date_created" json:"date_created"`
-	DateSettled   null.Time       `db:"date_settled" json:"date_settled"`
-	DateExpired   null.Time       `db:"date_expired" json:"date_expired"`
+	ID            uuid.UUID       `json:"id"`
+	SessionID     uuid.UUID       `json:"session_id"`
+	Status        OrderStatus     `json:"status"`
+	Note          string          `json:"note"`
+	Error         null.String     `json:"error"`
+	PaymentOption null.String     `json:"payment_option"`
+	Data          json.RawMessage `json:"data"`
+	Amount        int64           `json:"amount"`
+	Currency      string          `json:"currency"`
+	ReversesID    uuid.NullUUID   `json:"reverses_id"`
+	DateCreated   time.Time       `json:"date_created"`
+	DateSettled   null.Time       `json:"date_settled"`
+	DateExpired   null.Time       `json:"date_expired"`
 }
 
 func (q *Queries) CreateBatchTransaction(ctx context.Context, arg []CreateBatchTransactionParams) *CreateBatchTransactionBatchResults {
@@ -619,10 +619,10 @@ type CreateBatchTransportBatchResults struct {
 }
 
 type CreateBatchTransportParams struct {
-	Option      string          `db:"option" json:"option"`
-	Status      NullOrderStatus `db:"status" json:"status"`
-	Data        json.RawMessage `db:"data" json:"data"`
-	DateCreated time.Time       `db:"date_created" json:"date_created"`
+	Option      string          `json:"option"`
+	Status      NullOrderStatus `json:"status"`
+	Data        json.RawMessage `json:"data"`
+	DateCreated time.Time       `json:"date_created"`
 }
 
 func (q *Queries) CreateBatchTransport(ctx context.Context, arg []CreateBatchTransportParams) *CreateBatchTransportBatchResults {

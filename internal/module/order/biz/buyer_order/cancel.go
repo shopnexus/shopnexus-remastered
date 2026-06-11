@@ -12,6 +12,7 @@ import (
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/idempotency"
+	"shopnexus-server/internal/shared/pgsqlc"
 	"shopnexus-server/internal/shared/saga"
 	"shopnexus-server/internal/shared/validator"
 
@@ -193,35 +194,28 @@ func (b *BuyerHandler) RefundPendingItem(
 		// deterministic key: retries must reuse it so the idempotency ledger dedupes
 		refundTxID := uuid.NewSHA1(uuid.NameSpaceOID, fmt.Appendf(nil, "cancel-refund:item:%d", params.Item.ID))
 		if e := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-			txStorage, te := b.Storage.BeginTx(rctx)
-			if te != nil {
-				return fmt.Errorf("begin tx: %w", te)
-			}
-			defer txStorage.Rollback(rctx)
-
-			if _, te = txStorage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
-				ID:          refundTxID,
-				SessionID:   params.PaymentSessionID,
-				Status:      orderdb.OrderStatusSuccess,
-				Note:        "buyer cancel pre-confirm",
-				Data:        json.RawMessage("{}"),
-				Amount:      -params.Item.TotalAmount,
-				Currency:    dec.Currency,
-				ReversesID:  dec.OriginalTx,
-				DateSettled: null.TimeFrom(time.Now()),
-			}); te != nil {
-				return fmt.Errorf("db create refund tx: %w", te)
-			}
-			if _, te = txStorage.Querier().CancelItem(rctx, orderdb.CancelItemParams{
-				CancelledByID: uuid.NullUUID{UUID: params.Item.AccountID, Valid: true},
-				ID:            params.Item.ID,
-			}); te != nil {
-				return fmt.Errorf("db cancel item: %w", te)
-			}
-			if te = txStorage.Commit(rctx); te != nil {
-				return fmt.Errorf("refund tx + cancel item: %w", te)
-			}
-			return nil
+			return b.Storage.Transact(rctx, func(s pgsqlc.Storage[*orderdb.Queries]) error {
+				if _, te := s.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
+					ID:          refundTxID,
+					SessionID:   params.PaymentSessionID,
+					Status:      orderdb.OrderStatusSuccess,
+					Note:        "buyer cancel pre-confirm",
+					Data:        json.RawMessage("{}"),
+					Amount:      -params.Item.TotalAmount,
+					Currency:    dec.Currency,
+					ReversesID:  dec.OriginalTx,
+					DateSettled: null.TimeFrom(time.Now()),
+				}); te != nil {
+					return fmt.Errorf("db create refund tx: %w", te)
+				}
+				if _, te := s.Querier().CancelItem(rctx, orderdb.CancelItemParams{
+					CancelledByID: uuid.NullUUID{UUID: params.Item.AccountID, Valid: true},
+					ID:            params.Item.ID,
+				}); te != nil {
+					return fmt.Errorf("db cancel item: %w", te)
+				}
+				return nil
+			})
 		}); e != nil {
 			return e
 		}

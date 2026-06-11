@@ -20,8 +20,8 @@ RETURNING id, order_id, account_id, seller_id, sku_id, spu_id, sku_name, address
 `
 
 type CancelItemParams struct {
-	CancelledByID uuid.NullUUID `db:"cancelled_by_id" json:"cancelled_by_id"`
-	ID            int64         `db:"id" json:"id"`
+	CancelledByID uuid.NullUUID `json:"cancelled_by_id"`
+	ID            int64         `json:"id"`
 }
 
 // Marks item cancelled. The compensating refund transaction (negative amount,
@@ -63,8 +63,8 @@ WHERE "id" = ANY($2::BIGINT[])
 `
 
 type CancelItemsByIDsParams struct {
-	CancelledByID uuid.NullUUID `db:"cancelled_by_id" json:"cancelled_by_id"`
-	ItemIds       []int64       `db:"item_ids" json:"item_ids"`
+	CancelledByID uuid.NullUUID `json:"cancelled_by_id"`
+	ItemIds       []int64       `json:"item_ids"`
 }
 
 func (q *Queries) CancelItemsByIDs(ctx context.Context, arg CancelItemsByIDsParams) (int64, error) {
@@ -380,8 +380,8 @@ WHERE "id" = ANY($2::BIGINT[]) AND "order_id" IS NULL
 `
 
 type SetItemsOrderIDParams struct {
-	OrderID uuid.NullUUID `db:"order_id" json:"order_id"`
-	ItemIds []int64       `db:"item_ids" json:"item_ids"`
+	OrderID uuid.NullUUID `json:"order_id"`
+	ItemIds []int64       `json:"item_ids"`
 }
 
 func (q *Queries) SetItemsOrderID(ctx context.Context, arg SetItemsOrderIDParams) error {

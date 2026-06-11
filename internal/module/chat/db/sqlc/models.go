@@ -137,49 +137,20 @@ func AllChatMessageTypeValues() []ChatMessageType {
 }
 
 type ChatConversation struct {
-	ID            uuid.UUID `db:"id" json:"id"`
-	BuyerID       uuid.UUID `db:"buyer_id" json:"buyer_id"`
-	SellerID      uuid.UUID `db:"seller_id" json:"seller_id"`
-	LastMessageAt null.Time `db:"last_message_at" json:"last_message_at"`
-	DateCreated   time.Time `db:"date_created" json:"date_created"`
+	ID            uuid.UUID `json:"id"`
+	BuyerID       uuid.UUID `json:"buyer_id"`
+	SellerID      uuid.UUID `json:"seller_id"`
+	LastMessageAt null.Time `json:"last_message_at"`
+	DateCreated   time.Time `json:"date_created"`
 }
 
 type ChatMessage struct {
-	ID             int64             `db:"id" json:"id"`
-	ConversationID uuid.UUID         `db:"conversation_id" json:"conversation_id"`
-	SenderID       uuid.UUID         `db:"sender_id" json:"sender_id"`
-	Type           ChatMessageType   `db:"type" json:"type"`
-	Content        string            `db:"content" json:"content"`
-	Status         ChatMessageStatus `db:"status" json:"status"`
-	Data           json.RawMessage   `db:"data" json:"data"`
-	DateCreated    time.Time         `db:"date_created" json:"date_created"`
-}
-
-func (n NullChatMessageStatus) MarshalJSON() ([]byte, error) {
-	if !n.Valid {
-		return []byte("null"), nil
-	}
-	return json.Marshal(n.ChatMessageStatus)
-}
-func (n *NullChatMessageStatus) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		n.Valid = false
-		return nil
-	}
-	n.Valid = true
-	return json.Unmarshal(b, &n.ChatMessageStatus)
-}
-func (n NullChatMessageType) MarshalJSON() ([]byte, error) {
-	if !n.Valid {
-		return []byte("null"), nil
-	}
-	return json.Marshal(n.ChatMessageType)
-}
-func (n *NullChatMessageType) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		n.Valid = false
-		return nil
-	}
-	n.Valid = true
-	return json.Unmarshal(b, &n.ChatMessageType)
+	ID             int64             `json:"id"`
+	ConversationID uuid.UUID         `json:"conversation_id"`
+	SenderID       uuid.UUID         `json:"sender_id"`
+	Type           ChatMessageType   `json:"type"`
+	Content        string            `json:"content"`
+	Status         ChatMessageStatus `json:"status"`
+	Data           json.RawMessage   `json:"data"`
+	DateCreated    time.Time         `json:"date_created"`
 }

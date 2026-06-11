@@ -21,8 +21,8 @@ RETURNING id, account_id, order_id, reason, date_created, status, return_transpo
 `
 
 type AdminDismissDisputeParams struct {
-	RefundTxID uuid.NullUUID `db:"refund_tx_id" json:"refund_tx_id"`
-	ID         uuid.UUID     `db:"id" json:"id"`
+	RefundTxID uuid.NullUUID `json:"refund_tx_id"`
+	ID         uuid.UUID     `json:"id"`
 }
 
 // AdminDismissDispute: admin sides with the buyer → refund flips
@@ -58,9 +58,9 @@ RETURNING id, account_id, order_id, reason, date_created, status, return_transpo
 `
 
 type AdminUpholdDisputeParams struct {
-	ReturnToBuyerTransportID null.Int    `db:"return_to_buyer_transport_id" json:"return_to_buyer_transport_id"`
-	RejectionReason          null.String `db:"rejection_reason" json:"rejection_reason"`
-	ID                       uuid.UUID   `db:"id" json:"id"`
+	ReturnToBuyerTransportID null.Int    `json:"return_to_buyer_transport_id"`
+	RejectionReason          null.String `json:"rejection_reason"`
+	ID                       uuid.UUID   `json:"id"`
 }
 
 // AdminUpholdDispute: admin sides with the seller → refund flips
@@ -98,10 +98,10 @@ RETURNING id, account_id, order_id, reason, date_created, status, return_transpo
 `
 
 type CreateBuyerRefundParams struct {
-	AccountID         uuid.UUID `db:"account_id" json:"account_id"`
-	OrderID           uuid.UUID `db:"order_id" json:"order_id"`
-	Reason            string    `db:"reason" json:"reason"`
-	ReturnTransportID int64     `db:"return_transport_id" json:"return_transport_id"`
+	AccountID         uuid.UUID `json:"account_id"`
+	OrderID           uuid.UUID `json:"order_id"`
+	Reason            string    `json:"reason"`
+	ReturnTransportID int64     `json:"return_transport_id"`
 }
 
 // =============================================
@@ -169,9 +169,9 @@ SELECT
 `
 
 type GetRefundSnapshotByOrderRow struct {
-	HasActiveRefund    bool      `db:"has_active_refund" json:"has_active_refund"`
-	LastRefundApproved bool      `db:"last_refund_approved" json:"last_refund_approved"`
-	ActiveRefundID     uuid.UUID `db:"active_refund_id" json:"active_refund_id"`
+	HasActiveRefund    bool      `json:"has_active_refund"`
+	LastRefundApproved bool      `json:"last_refund_approved"`
+	ActiveRefundID     uuid.UUID `json:"active_refund_id"`
 }
 
 // GetRefundSnapshotByOrder is the per-iteration projection the fulfillment
@@ -214,14 +214,14 @@ LIMIT $3::INTEGER OFFSET $2::INTEGER
 `
 
 type ListSellerRefundsParams struct {
-	SellerID uuid.UUID  `db:"seller_id" json:"seller_id"`
-	Offset   null.Int32 `db:"offset" json:"offset"`
-	Limit    null.Int32 `db:"limit" json:"limit"`
+	SellerID uuid.UUID  `json:"seller_id"`
+	Offset   null.Int32 `json:"offset"`
+	Limit    null.Int32 `json:"limit"`
 }
 
 type ListSellerRefundsRow struct {
-	OrderRefund OrderRefund `db:"order_refund" json:"order_refund"`
-	TotalCount  int64       `db:"total_count" json:"total_count"`
+	OrderRefund OrderRefund `json:"order_refund"`
+	TotalCount  int64       `json:"total_count"`
 }
 
 // ListSellerRefunds returns refunds raised against orders the seller fulfilled,
@@ -272,8 +272,8 @@ RETURNING id, account_id, order_id, reason, date_created, status, return_transpo
 `
 
 type MarkRefundDeliveredParams struct {
-	ReviewDeadline null.Time `db:"review_deadline" json:"review_deadline"`
-	ID             uuid.UUID `db:"id" json:"id"`
+	ReviewDeadline null.Time `json:"review_deadline"`
+	ID             uuid.UUID `json:"id"`
 }
 
 // MarkRefundDelivered fires when the forward (return) transport reaches its
@@ -310,8 +310,8 @@ RETURNING id, account_id, order_id, reason, date_created, status, return_transpo
 `
 
 type SellerApproveRefundParams struct {
-	RefundTxID uuid.NullUUID `db:"refund_tx_id" json:"refund_tx_id"`
-	ID         uuid.UUID     `db:"id" json:"id"`
+	RefundTxID uuid.NullUUID `json:"refund_tx_id"`
+	ID         uuid.UUID     `json:"id"`
 }
 
 // SellerApproveRefund transitions AwaitingSellerReview → Accepted and stamps
@@ -381,8 +381,8 @@ RETURNING id, account_id, order_id, reason, date_created, status, return_transpo
 `
 
 type WithdrawBuyerRefundParams struct {
-	ID        uuid.UUID `db:"id" json:"id"`
-	AccountID uuid.UUID `db:"account_id" json:"account_id"`
+	ID        uuid.UUID `json:"id"`
+	AccountID uuid.UUID `json:"account_id"`
 }
 
 // WithdrawBuyerRefund cancels a refund while it is still in Shipping.

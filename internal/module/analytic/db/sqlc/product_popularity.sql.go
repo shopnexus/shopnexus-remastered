@@ -41,8 +41,8 @@ OFFSET $1::int
 `
 
 type ListTopProductPopularityParams struct {
-	Offset null.Int32 `db:"offset" json:"offset"`
-	Limit  null.Int32 `db:"limit" json:"limit"`
+	Offset null.Int32 `json:"offset"`
+	Limit  null.Int32 `json:"limit"`
 }
 
 func (q *Queries) ListTopProductPopularity(ctx context.Context, arg ListTopProductPopularityParams) ([]AnalyticProductPopularity, error) {
@@ -89,13 +89,13 @@ RETURNING id, score, view_count, purchase_count, favorite_count, cart_count, rev
 `
 
 type UpsertProductPopularityParams struct {
-	ID            uuid.UUID `db:"id" json:"id"`
-	Score         float64   `db:"score" json:"score"`
-	ViewCount     int64     `db:"view_count" json:"view_count"`
-	PurchaseCount int64     `db:"purchase_count" json:"purchase_count"`
-	FavoriteCount int64     `db:"favorite_count" json:"favorite_count"`
-	CartCount     int64     `db:"cart_count" json:"cart_count"`
-	ReviewCount   int64     `db:"review_count" json:"review_count"`
+	ID            uuid.UUID `json:"id"`
+	Score         float64   `json:"score"`
+	ViewCount     int64     `json:"view_count"`
+	PurchaseCount int64     `json:"purchase_count"`
+	FavoriteCount int64     `json:"favorite_count"`
+	CartCount     int64     `json:"cart_count"`
+	ReviewCount   int64     `json:"review_count"`
 }
 
 func (q *Queries) UpsertProductPopularity(ctx context.Context, arg UpsertProductPopularityParams) (AnalyticProductPopularity, error) {

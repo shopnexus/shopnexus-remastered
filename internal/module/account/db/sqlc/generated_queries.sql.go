@@ -35,19 +35,19 @@ WHERE (
 `
 
 type CountAccountParams struct {
-	ID              []uuid.UUID     `db:"id" json:"id"`
-	Number          []int64         `db:"number" json:"number"`
-	NumberFrom      null.Int        `db:"number_from" json:"number_from"`
-	NumberTo        null.Int        `db:"number_to" json:"number_to"`
-	Status          []AccountStatus `db:"status" json:"status"`
-	Role            []AccountRole   `db:"role" json:"role"`
-	Phone           []null.String   `db:"phone" json:"phone"`
-	Email           []null.String   `db:"email" json:"email"`
-	Username        []null.String   `db:"username" json:"username"`
-	Password        []null.String   `db:"password" json:"password"`
-	DateCreated     []time.Time     `db:"date_created" json:"date_created"`
-	DateCreatedFrom null.Time       `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo   null.Time       `db:"date_created_to" json:"date_created_to"`
+	ID              []uuid.UUID     `json:"id"`
+	Number          []int64         `json:"number"`
+	NumberFrom      null.Int        `json:"number_from"`
+	NumberTo        null.Int        `json:"number_to"`
+	Status          []AccountStatus `json:"status"`
+	Role            []AccountRole   `json:"role"`
+	Phone           []null.String   `json:"phone"`
+	Email           []null.String   `json:"email"`
+	Username        []null.String   `json:"username"`
+	Password        []null.String   `json:"password"`
+	DateCreated     []time.Time     `json:"date_created"`
+	DateCreatedFrom null.Time       `json:"date_created_from"`
+	DateCreatedTo   null.Time       `json:"date_created_to"`
 }
 
 func (q *Queries) CountAccount(ctx context.Context, arg CountAccountParams) (int64, error) {
@@ -95,22 +95,22 @@ WHERE (
 `
 
 type CountContactParams struct {
-	ID              []uuid.UUID          `db:"id" json:"id"`
-	AccountID       []uuid.UUID          `db:"account_id" json:"account_id"`
-	FullName        []string             `db:"full_name" json:"full_name"`
-	Phone           []string             `db:"phone" json:"phone"`
-	PhoneVerified   []bool               `db:"phone_verified" json:"phone_verified"`
-	AddressType     []AccountAddressType `db:"address_type" json:"address_type"`
-	DateCreated     []time.Time          `db:"date_created" json:"date_created"`
-	DateCreatedFrom null.Time            `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo   null.Time            `db:"date_created_to" json:"date_created_to"`
-	Address         []string             `db:"address" json:"address"`
-	Latitude        []float64            `db:"latitude" json:"latitude"`
-	LatitudeFrom    null.Float           `db:"latitude_from" json:"latitude_from"`
-	LatitudeTo      null.Float           `db:"latitude_to" json:"latitude_to"`
-	Longitude       []float64            `db:"longitude" json:"longitude"`
-	LongitudeFrom   null.Float           `db:"longitude_from" json:"longitude_from"`
-	LongitudeTo     null.Float           `db:"longitude_to" json:"longitude_to"`
+	ID              []uuid.UUID          `json:"id"`
+	AccountID       []uuid.UUID          `json:"account_id"`
+	FullName        []string             `json:"full_name"`
+	Phone           []string             `json:"phone"`
+	PhoneVerified   []bool               `json:"phone_verified"`
+	AddressType     []AccountAddressType `json:"address_type"`
+	DateCreated     []time.Time          `json:"date_created"`
+	DateCreatedFrom null.Time            `json:"date_created_from"`
+	DateCreatedTo   null.Time            `json:"date_created_to"`
+	Address         []string             `json:"address"`
+	Latitude        []float64            `json:"latitude"`
+	LatitudeFrom    null.Float           `json:"latitude_from"`
+	LatitudeTo      null.Float           `json:"latitude_to"`
+	Longitude       []float64            `json:"longitude"`
+	LongitudeFrom   null.Float           `json:"longitude_from"`
+	LongitudeTo     null.Float           `json:"longitude_to"`
 }
 
 func (q *Queries) CountContact(ctx context.Context, arg CountContactParams) (int64, error) {
@@ -151,12 +151,12 @@ WHERE (
 `
 
 type CountFavoriteParams struct {
-	ID              []int64     `db:"id" json:"id"`
-	AccountID       []uuid.UUID `db:"account_id" json:"account_id"`
-	SpuID           []uuid.UUID `db:"spu_id" json:"spu_id"`
-	DateCreated     []time.Time `db:"date_created" json:"date_created"`
-	DateCreatedFrom null.Time   `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo   null.Time   `db:"date_created_to" json:"date_created_to"`
+	ID              []int64     `json:"id"`
+	AccountID       []uuid.UUID `json:"account_id"`
+	SpuID           []uuid.UUID `json:"spu_id"`
+	DateCreated     []time.Time `json:"date_created"`
+	DateCreatedFrom null.Time   `json:"date_created_from"`
+	DateCreatedTo   null.Time   `json:"date_created_to"`
 }
 
 func (q *Queries) CountFavorite(ctx context.Context, arg CountFavoriteParams) (int64, error) {
@@ -198,23 +198,23 @@ WHERE (
 `
 
 type CountNotificationParams struct {
-	ID                []int64           `db:"id" json:"id"`
-	AccountID         []uuid.UUID       `db:"account_id" json:"account_id"`
-	Type              []string          `db:"type" json:"type"`
-	Channel           []string          `db:"channel" json:"channel"`
-	Title             []string          `db:"title" json:"title"`
-	IsRead            []bool            `db:"is_read" json:"is_read"`
-	Content           []string          `db:"content" json:"content"`
-	Metadata          []json.RawMessage `db:"metadata" json:"metadata"`
-	DateCreated       []time.Time       `db:"date_created" json:"date_created"`
-	DateCreatedFrom   null.Time         `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo     null.Time         `db:"date_created_to" json:"date_created_to"`
-	DateSent          []null.Time       `db:"date_sent" json:"date_sent"`
-	DateSentFrom      null.Time         `db:"date_sent_from" json:"date_sent_from"`
-	DateSentTo        null.Time         `db:"date_sent_to" json:"date_sent_to"`
-	DateScheduled     []null.Time       `db:"date_scheduled" json:"date_scheduled"`
-	DateScheduledFrom null.Time         `db:"date_scheduled_from" json:"date_scheduled_from"`
-	DateScheduledTo   null.Time         `db:"date_scheduled_to" json:"date_scheduled_to"`
+	ID                []int64           `json:"id"`
+	AccountID         []uuid.UUID       `json:"account_id"`
+	Type              []string          `json:"type"`
+	Channel           []string          `json:"channel"`
+	Title             []string          `json:"title"`
+	IsRead            []bool            `json:"is_read"`
+	Content           []string          `json:"content"`
+	Metadata          []json.RawMessage `json:"metadata"`
+	DateCreated       []time.Time       `json:"date_created"`
+	DateCreatedFrom   null.Time         `json:"date_created_from"`
+	DateCreatedTo     null.Time         `json:"date_created_to"`
+	DateSent          []null.Time       `json:"date_sent"`
+	DateSentFrom      null.Time         `json:"date_sent_from"`
+	DateSentTo        null.Time         `json:"date_sent_to"`
+	DateScheduled     []null.Time       `json:"date_scheduled"`
+	DateScheduledFrom null.Time         `json:"date_scheduled_from"`
+	DateScheduledTo   null.Time         `json:"date_scheduled_to"`
 }
 
 func (q *Queries) CountNotification(ctx context.Context, arg CountNotificationParams) (int64, error) {
@@ -268,24 +268,24 @@ WHERE (
 `
 
 type CountProfileParams struct {
-	ID                  []uuid.UUID         `db:"id" json:"id"`
-	Gender              []NullAccountGender `db:"gender" json:"gender"`
-	Name                []string            `db:"name" json:"name"`
-	Description         []string            `db:"description" json:"description"`
-	DateOfBirth         []null.Time         `db:"date_of_birth" json:"date_of_birth"`
-	DateOfBirthFrom     null.Time           `db:"date_of_birth_from" json:"date_of_birth_from"`
-	DateOfBirthTo       null.Time           `db:"date_of_birth_to" json:"date_of_birth_to"`
-	AvatarRsID          []uuid.NullUUID     `db:"avatar_rs_id" json:"avatar_rs_id"`
-	EmailVerified       []bool              `db:"email_verified" json:"email_verified"`
-	PhoneVerified       []bool              `db:"phone_verified" json:"phone_verified"`
-	DateCreated         []time.Time         `db:"date_created" json:"date_created"`
-	DateCreatedFrom     null.Time           `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo       null.Time           `db:"date_created_to" json:"date_created_to"`
-	Country             []string            `db:"country" json:"country"`
-	InternalBalance     []int64             `db:"internal_balance" json:"internal_balance"`
-	InternalBalanceFrom null.Int            `db:"internal_balance_from" json:"internal_balance_from"`
-	InternalBalanceTo   null.Int            `db:"internal_balance_to" json:"internal_balance_to"`
-	DefaultContactID    []uuid.NullUUID     `db:"default_contact_id" json:"default_contact_id"`
+	ID                  []uuid.UUID         `json:"id"`
+	Gender              []NullAccountGender `json:"gender"`
+	Name                []string            `json:"name"`
+	Description         []string            `json:"description"`
+	DateOfBirth         []null.Time         `json:"date_of_birth"`
+	DateOfBirthFrom     null.Time           `json:"date_of_birth_from"`
+	DateOfBirthTo       null.Time           `json:"date_of_birth_to"`
+	AvatarRsID          []uuid.NullUUID     `json:"avatar_rs_id"`
+	EmailVerified       []bool              `json:"email_verified"`
+	PhoneVerified       []bool              `json:"phone_verified"`
+	DateCreated         []time.Time         `json:"date_created"`
+	DateCreatedFrom     null.Time           `json:"date_created_from"`
+	DateCreatedTo       null.Time           `json:"date_created_to"`
+	Country             []string            `json:"country"`
+	InternalBalance     []int64             `json:"internal_balance"`
+	InternalBalanceFrom null.Int            `json:"internal_balance_from"`
+	InternalBalanceTo   null.Int            `json:"internal_balance_to"`
+	DefaultContactID    []uuid.NullUUID     `json:"default_contact_id"`
 }
 
 func (q *Queries) CountProfile(ctx context.Context, arg CountProfileParams) (int64, error) {
@@ -321,14 +321,14 @@ RETURNING id, number, status, role, phone, email, username, password, date_creat
 `
 
 type CreateAccountParams struct {
-	ID          uuid.UUID     `db:"id" json:"id"`
-	Status      AccountStatus `db:"status" json:"status"`
-	Role        AccountRole   `db:"role" json:"role"`
-	Phone       null.String   `db:"phone" json:"phone"`
-	Email       null.String   `db:"email" json:"email"`
-	Username    null.String   `db:"username" json:"username"`
-	Password    null.String   `db:"password" json:"password"`
-	DateCreated time.Time     `db:"date_created" json:"date_created"`
+	ID          uuid.UUID     `json:"id"`
+	Status      AccountStatus `json:"status"`
+	Role        AccountRole   `json:"role"`
+	Phone       null.String   `json:"phone"`
+	Email       null.String   `json:"email"`
+	Username    null.String   `json:"username"`
+	Password    null.String   `json:"password"`
+	DateCreated time.Time     `json:"date_created"`
 }
 
 func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (AccountAccount, error) {
@@ -364,16 +364,16 @@ RETURNING id, account_id, full_name, phone, phone_verified, address_type, date_c
 `
 
 type CreateContactParams struct {
-	ID            uuid.UUID          `db:"id" json:"id"`
-	AccountID     uuid.UUID          `db:"account_id" json:"account_id"`
-	FullName      string             `db:"full_name" json:"full_name"`
-	Phone         string             `db:"phone" json:"phone"`
-	PhoneVerified bool               `db:"phone_verified" json:"phone_verified"`
-	AddressType   AccountAddressType `db:"address_type" json:"address_type"`
-	DateCreated   time.Time          `db:"date_created" json:"date_created"`
-	Address       string             `db:"address" json:"address"`
-	Latitude      float64            `db:"latitude" json:"latitude"`
-	Longitude     float64            `db:"longitude" json:"longitude"`
+	ID            uuid.UUID          `json:"id"`
+	AccountID     uuid.UUID          `json:"account_id"`
+	FullName      string             `json:"full_name"`
+	Phone         string             `json:"phone"`
+	PhoneVerified bool               `json:"phone_verified"`
+	AddressType   AccountAddressType `json:"address_type"`
+	DateCreated   time.Time          `json:"date_created"`
+	Address       string             `json:"address"`
+	Latitude      float64            `json:"latitude"`
+	Longitude     float64            `json:"longitude"`
 }
 
 func (q *Queries) CreateContact(ctx context.Context, arg CreateContactParams) (AccountContact, error) {
@@ -406,104 +406,104 @@ func (q *Queries) CreateContact(ctx context.Context, arg CreateContactParams) (A
 }
 
 type CreateCopyAccountParams struct {
-	ID          uuid.UUID     `db:"id" json:"id"`
-	Status      AccountStatus `db:"status" json:"status"`
-	Role        AccountRole   `db:"role" json:"role"`
-	Phone       null.String   `db:"phone" json:"phone"`
-	Email       null.String   `db:"email" json:"email"`
-	Username    null.String   `db:"username" json:"username"`
-	Password    null.String   `db:"password" json:"password"`
-	DateCreated time.Time     `db:"date_created" json:"date_created"`
+	ID          uuid.UUID     `json:"id"`
+	Status      AccountStatus `json:"status"`
+	Role        AccountRole   `json:"role"`
+	Phone       null.String   `json:"phone"`
+	Email       null.String   `json:"email"`
+	Username    null.String   `json:"username"`
+	Password    null.String   `json:"password"`
+	DateCreated time.Time     `json:"date_created"`
 }
 
 type CreateCopyContactParams struct {
-	ID            uuid.UUID          `db:"id" json:"id"`
-	AccountID     uuid.UUID          `db:"account_id" json:"account_id"`
-	FullName      string             `db:"full_name" json:"full_name"`
-	Phone         string             `db:"phone" json:"phone"`
-	PhoneVerified bool               `db:"phone_verified" json:"phone_verified"`
-	AddressType   AccountAddressType `db:"address_type" json:"address_type"`
-	DateCreated   time.Time          `db:"date_created" json:"date_created"`
-	Address       string             `db:"address" json:"address"`
-	Latitude      float64            `db:"latitude" json:"latitude"`
-	Longitude     float64            `db:"longitude" json:"longitude"`
+	ID            uuid.UUID          `json:"id"`
+	AccountID     uuid.UUID          `json:"account_id"`
+	FullName      string             `json:"full_name"`
+	Phone         string             `json:"phone"`
+	PhoneVerified bool               `json:"phone_verified"`
+	AddressType   AccountAddressType `json:"address_type"`
+	DateCreated   time.Time          `json:"date_created"`
+	Address       string             `json:"address"`
+	Latitude      float64            `json:"latitude"`
+	Longitude     float64            `json:"longitude"`
 }
 
 type CreateCopyDefaultAccountParams struct {
-	Phone    null.String `db:"phone" json:"phone"`
-	Email    null.String `db:"email" json:"email"`
-	Username null.String `db:"username" json:"username"`
-	Password null.String `db:"password" json:"password"`
+	Phone    null.String `json:"phone"`
+	Email    null.String `json:"email"`
+	Username null.String `json:"username"`
+	Password null.String `json:"password"`
 }
 
 type CreateCopyDefaultContactParams struct {
-	AccountID   uuid.UUID          `db:"account_id" json:"account_id"`
-	FullName    string             `db:"full_name" json:"full_name"`
-	Phone       string             `db:"phone" json:"phone"`
-	AddressType AccountAddressType `db:"address_type" json:"address_type"`
-	Address     string             `db:"address" json:"address"`
-	Latitude    float64            `db:"latitude" json:"latitude"`
-	Longitude   float64            `db:"longitude" json:"longitude"`
+	AccountID   uuid.UUID          `json:"account_id"`
+	FullName    string             `json:"full_name"`
+	Phone       string             `json:"phone"`
+	AddressType AccountAddressType `json:"address_type"`
+	Address     string             `json:"address"`
+	Latitude    float64            `json:"latitude"`
+	Longitude   float64            `json:"longitude"`
 }
 
 type CreateCopyDefaultFavoriteParams struct {
-	AccountID uuid.UUID `db:"account_id" json:"account_id"`
-	SpuID     uuid.UUID `db:"spu_id" json:"spu_id"`
+	AccountID uuid.UUID `json:"account_id"`
+	SpuID     uuid.UUID `json:"spu_id"`
 }
 
 type CreateCopyDefaultNotificationParams struct {
-	AccountID     uuid.UUID       `db:"account_id" json:"account_id"`
-	Type          string          `db:"type" json:"type"`
-	Channel       string          `db:"channel" json:"channel"`
-	Title         string          `db:"title" json:"title"`
-	Content       string          `db:"content" json:"content"`
-	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
-	DateSent      null.Time       `db:"date_sent" json:"date_sent"`
-	DateScheduled null.Time       `db:"date_scheduled" json:"date_scheduled"`
+	AccountID     uuid.UUID       `json:"account_id"`
+	Type          string          `json:"type"`
+	Channel       string          `json:"channel"`
+	Title         string          `json:"title"`
+	Content       string          `json:"content"`
+	Metadata      json.RawMessage `json:"metadata"`
+	DateSent      null.Time       `json:"date_sent"`
+	DateScheduled null.Time       `json:"date_scheduled"`
 }
 
 type CreateCopyDefaultProfileParams struct {
-	ID               uuid.UUID         `db:"id" json:"id"`
-	Gender           NullAccountGender `db:"gender" json:"gender"`
-	Name             string            `db:"name" json:"name"`
-	DateOfBirth      null.Time         `db:"date_of_birth" json:"date_of_birth"`
-	AvatarRsID       uuid.NullUUID     `db:"avatar_rs_id" json:"avatar_rs_id"`
-	Country          string            `db:"country" json:"country"`
-	DefaultContactID uuid.NullUUID     `db:"default_contact_id" json:"default_contact_id"`
+	ID               uuid.UUID         `json:"id"`
+	Gender           NullAccountGender `json:"gender"`
+	Name             string            `json:"name"`
+	DateOfBirth      null.Time         `json:"date_of_birth"`
+	AvatarRsID       uuid.NullUUID     `json:"avatar_rs_id"`
+	Country          string            `json:"country"`
+	DefaultContactID uuid.NullUUID     `json:"default_contact_id"`
 }
 
 type CreateCopyFavoriteParams struct {
-	AccountID   uuid.UUID `db:"account_id" json:"account_id"`
-	SpuID       uuid.UUID `db:"spu_id" json:"spu_id"`
-	DateCreated time.Time `db:"date_created" json:"date_created"`
+	AccountID   uuid.UUID `json:"account_id"`
+	SpuID       uuid.UUID `json:"spu_id"`
+	DateCreated time.Time `json:"date_created"`
 }
 
 type CreateCopyNotificationParams struct {
-	AccountID     uuid.UUID       `db:"account_id" json:"account_id"`
-	Type          string          `db:"type" json:"type"`
-	Channel       string          `db:"channel" json:"channel"`
-	Title         string          `db:"title" json:"title"`
-	IsRead        bool            `db:"is_read" json:"is_read"`
-	Content       string          `db:"content" json:"content"`
-	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
-	DateCreated   time.Time       `db:"date_created" json:"date_created"`
-	DateSent      null.Time       `db:"date_sent" json:"date_sent"`
-	DateScheduled null.Time       `db:"date_scheduled" json:"date_scheduled"`
+	AccountID     uuid.UUID       `json:"account_id"`
+	Type          string          `json:"type"`
+	Channel       string          `json:"channel"`
+	Title         string          `json:"title"`
+	IsRead        bool            `json:"is_read"`
+	Content       string          `json:"content"`
+	Metadata      json.RawMessage `json:"metadata"`
+	DateCreated   time.Time       `json:"date_created"`
+	DateSent      null.Time       `json:"date_sent"`
+	DateScheduled null.Time       `json:"date_scheduled"`
 }
 
 type CreateCopyProfileParams struct {
-	ID               uuid.UUID         `db:"id" json:"id"`
-	Gender           NullAccountGender `db:"gender" json:"gender"`
-	Name             string            `db:"name" json:"name"`
-	Description      string            `db:"description" json:"description"`
-	DateOfBirth      null.Time         `db:"date_of_birth" json:"date_of_birth"`
-	AvatarRsID       uuid.NullUUID     `db:"avatar_rs_id" json:"avatar_rs_id"`
-	EmailVerified    bool              `db:"email_verified" json:"email_verified"`
-	PhoneVerified    bool              `db:"phone_verified" json:"phone_verified"`
-	DateCreated      time.Time         `db:"date_created" json:"date_created"`
-	Country          string            `db:"country" json:"country"`
-	InternalBalance  int64             `db:"internal_balance" json:"internal_balance"`
-	DefaultContactID uuid.NullUUID     `db:"default_contact_id" json:"default_contact_id"`
+	ID               uuid.UUID         `json:"id"`
+	Gender           NullAccountGender `json:"gender"`
+	Name             string            `json:"name"`
+	Description      string            `json:"description"`
+	DateOfBirth      null.Time         `json:"date_of_birth"`
+	AvatarRsID       uuid.NullUUID     `json:"avatar_rs_id"`
+	EmailVerified    bool              `json:"email_verified"`
+	PhoneVerified    bool              `json:"phone_verified"`
+	DateCreated      time.Time         `json:"date_created"`
+	Country          string            `json:"country"`
+	InternalBalance  int64             `json:"internal_balance"`
+	DefaultContactID uuid.NullUUID     `json:"default_contact_id"`
 }
 
 const createDefaultAccount = `-- name: CreateDefaultAccount :one
@@ -513,10 +513,10 @@ RETURNING id, number, status, role, phone, email, username, password, date_creat
 `
 
 type CreateDefaultAccountParams struct {
-	Phone    null.String `db:"phone" json:"phone"`
-	Email    null.String `db:"email" json:"email"`
-	Username null.String `db:"username" json:"username"`
-	Password null.String `db:"password" json:"password"`
+	Phone    null.String `json:"phone"`
+	Email    null.String `json:"email"`
+	Username null.String `json:"username"`
+	Password null.String `json:"password"`
 }
 
 func (q *Queries) CreateDefaultAccount(ctx context.Context, arg CreateDefaultAccountParams) (AccountAccount, error) {
@@ -548,13 +548,13 @@ RETURNING id, account_id, full_name, phone, phone_verified, address_type, date_c
 `
 
 type CreateDefaultContactParams struct {
-	AccountID   uuid.UUID          `db:"account_id" json:"account_id"`
-	FullName    string             `db:"full_name" json:"full_name"`
-	Phone       string             `db:"phone" json:"phone"`
-	AddressType AccountAddressType `db:"address_type" json:"address_type"`
-	Address     string             `db:"address" json:"address"`
-	Latitude    float64            `db:"latitude" json:"latitude"`
-	Longitude   float64            `db:"longitude" json:"longitude"`
+	AccountID   uuid.UUID          `json:"account_id"`
+	FullName    string             `json:"full_name"`
+	Phone       string             `json:"phone"`
+	AddressType AccountAddressType `json:"address_type"`
+	Address     string             `json:"address"`
+	Latitude    float64            `json:"latitude"`
+	Longitude   float64            `json:"longitude"`
 }
 
 func (q *Queries) CreateDefaultContact(ctx context.Context, arg CreateDefaultContactParams) (AccountContact, error) {
@@ -590,8 +590,8 @@ RETURNING id, account_id, spu_id, date_created
 `
 
 type CreateDefaultFavoriteParams struct {
-	AccountID uuid.UUID `db:"account_id" json:"account_id"`
-	SpuID     uuid.UUID `db:"spu_id" json:"spu_id"`
+	AccountID uuid.UUID `json:"account_id"`
+	SpuID     uuid.UUID `json:"spu_id"`
 }
 
 func (q *Queries) CreateDefaultFavorite(ctx context.Context, arg CreateDefaultFavoriteParams) (AccountFavorite, error) {
@@ -613,14 +613,14 @@ RETURNING id, account_id, type, channel, title, is_read, content, metadata, date
 `
 
 type CreateDefaultNotificationParams struct {
-	AccountID     uuid.UUID       `db:"account_id" json:"account_id"`
-	Type          string          `db:"type" json:"type"`
-	Channel       string          `db:"channel" json:"channel"`
-	Title         string          `db:"title" json:"title"`
-	Content       string          `db:"content" json:"content"`
-	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
-	DateSent      null.Time       `db:"date_sent" json:"date_sent"`
-	DateScheduled null.Time       `db:"date_scheduled" json:"date_scheduled"`
+	AccountID     uuid.UUID       `json:"account_id"`
+	Type          string          `json:"type"`
+	Channel       string          `json:"channel"`
+	Title         string          `json:"title"`
+	Content       string          `json:"content"`
+	Metadata      json.RawMessage `json:"metadata"`
+	DateSent      null.Time       `json:"date_sent"`
+	DateScheduled null.Time       `json:"date_scheduled"`
 }
 
 func (q *Queries) CreateDefaultNotification(ctx context.Context, arg CreateDefaultNotificationParams) (AccountNotification, error) {
@@ -658,13 +658,13 @@ RETURNING id, gender, name, description, date_of_birth, avatar_rs_id, email_veri
 `
 
 type CreateDefaultProfileParams struct {
-	ID               uuid.UUID         `db:"id" json:"id"`
-	Gender           NullAccountGender `db:"gender" json:"gender"`
-	Name             string            `db:"name" json:"name"`
-	DateOfBirth      null.Time         `db:"date_of_birth" json:"date_of_birth"`
-	AvatarRsID       uuid.NullUUID     `db:"avatar_rs_id" json:"avatar_rs_id"`
-	Country          string            `db:"country" json:"country"`
-	DefaultContactID uuid.NullUUID     `db:"default_contact_id" json:"default_contact_id"`
+	ID               uuid.UUID         `json:"id"`
+	Gender           NullAccountGender `json:"gender"`
+	Name             string            `json:"name"`
+	DateOfBirth      null.Time         `json:"date_of_birth"`
+	AvatarRsID       uuid.NullUUID     `json:"avatar_rs_id"`
+	Country          string            `json:"country"`
+	DefaultContactID uuid.NullUUID     `json:"default_contact_id"`
 }
 
 func (q *Queries) CreateDefaultProfile(ctx context.Context, arg CreateDefaultProfileParams) (AccountProfile, error) {
@@ -702,9 +702,9 @@ RETURNING id, account_id, spu_id, date_created
 `
 
 type CreateFavoriteParams struct {
-	AccountID   uuid.UUID `db:"account_id" json:"account_id"`
-	SpuID       uuid.UUID `db:"spu_id" json:"spu_id"`
-	DateCreated time.Time `db:"date_created" json:"date_created"`
+	AccountID   uuid.UUID `json:"account_id"`
+	SpuID       uuid.UUID `json:"spu_id"`
+	DateCreated time.Time `json:"date_created"`
 }
 
 func (q *Queries) CreateFavorite(ctx context.Context, arg CreateFavoriteParams) (AccountFavorite, error) {
@@ -726,16 +726,16 @@ RETURNING id, account_id, type, channel, title, is_read, content, metadata, date
 `
 
 type CreateNotificationParams struct {
-	AccountID     uuid.UUID       `db:"account_id" json:"account_id"`
-	Type          string          `db:"type" json:"type"`
-	Channel       string          `db:"channel" json:"channel"`
-	Title         string          `db:"title" json:"title"`
-	IsRead        bool            `db:"is_read" json:"is_read"`
-	Content       string          `db:"content" json:"content"`
-	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
-	DateCreated   time.Time       `db:"date_created" json:"date_created"`
-	DateSent      null.Time       `db:"date_sent" json:"date_sent"`
-	DateScheduled null.Time       `db:"date_scheduled" json:"date_scheduled"`
+	AccountID     uuid.UUID       `json:"account_id"`
+	Type          string          `json:"type"`
+	Channel       string          `json:"channel"`
+	Title         string          `json:"title"`
+	IsRead        bool            `json:"is_read"`
+	Content       string          `json:"content"`
+	Metadata      json.RawMessage `json:"metadata"`
+	DateCreated   time.Time       `json:"date_created"`
+	DateSent      null.Time       `json:"date_sent"`
+	DateScheduled null.Time       `json:"date_scheduled"`
 }
 
 func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotificationParams) (AccountNotification, error) {
@@ -775,18 +775,18 @@ RETURNING id, gender, name, description, date_of_birth, avatar_rs_id, email_veri
 `
 
 type CreateProfileParams struct {
-	ID               uuid.UUID         `db:"id" json:"id"`
-	Gender           NullAccountGender `db:"gender" json:"gender"`
-	Name             string            `db:"name" json:"name"`
-	Description      string            `db:"description" json:"description"`
-	DateOfBirth      null.Time         `db:"date_of_birth" json:"date_of_birth"`
-	AvatarRsID       uuid.NullUUID     `db:"avatar_rs_id" json:"avatar_rs_id"`
-	EmailVerified    bool              `db:"email_verified" json:"email_verified"`
-	PhoneVerified    bool              `db:"phone_verified" json:"phone_verified"`
-	DateCreated      time.Time         `db:"date_created" json:"date_created"`
-	Country          string            `db:"country" json:"country"`
-	InternalBalance  int64             `db:"internal_balance" json:"internal_balance"`
-	DefaultContactID uuid.NullUUID     `db:"default_contact_id" json:"default_contact_id"`
+	ID               uuid.UUID         `json:"id"`
+	Gender           NullAccountGender `json:"gender"`
+	Name             string            `json:"name"`
+	Description      string            `json:"description"`
+	DateOfBirth      null.Time         `json:"date_of_birth"`
+	AvatarRsID       uuid.NullUUID     `json:"avatar_rs_id"`
+	EmailVerified    bool              `json:"email_verified"`
+	PhoneVerified    bool              `json:"phone_verified"`
+	DateCreated      time.Time         `json:"date_created"`
+	Country          string            `json:"country"`
+	InternalBalance  int64             `json:"internal_balance"`
+	DefaultContactID uuid.NullUUID     `json:"default_contact_id"`
 }
 
 func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (AccountProfile, error) {
@@ -842,19 +842,19 @@ WHERE (
 `
 
 type DeleteAccountParams struct {
-	ID              []uuid.UUID     `db:"id" json:"id"`
-	Number          []int64         `db:"number" json:"number"`
-	NumberFrom      null.Int        `db:"number_from" json:"number_from"`
-	NumberTo        null.Int        `db:"number_to" json:"number_to"`
-	Status          []AccountStatus `db:"status" json:"status"`
-	Role            []AccountRole   `db:"role" json:"role"`
-	Phone           []null.String   `db:"phone" json:"phone"`
-	Email           []null.String   `db:"email" json:"email"`
-	Username        []null.String   `db:"username" json:"username"`
-	Password        []null.String   `db:"password" json:"password"`
-	DateCreated     []time.Time     `db:"date_created" json:"date_created"`
-	DateCreatedFrom null.Time       `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo   null.Time       `db:"date_created_to" json:"date_created_to"`
+	ID              []uuid.UUID     `json:"id"`
+	Number          []int64         `json:"number"`
+	NumberFrom      null.Int        `json:"number_from"`
+	NumberTo        null.Int        `json:"number_to"`
+	Status          []AccountStatus `json:"status"`
+	Role            []AccountRole   `json:"role"`
+	Phone           []null.String   `json:"phone"`
+	Email           []null.String   `json:"email"`
+	Username        []null.String   `json:"username"`
+	Password        []null.String   `json:"password"`
+	DateCreated     []time.Time     `json:"date_created"`
+	DateCreatedFrom null.Time       `json:"date_created_from"`
+	DateCreatedTo   null.Time       `json:"date_created_to"`
 }
 
 func (q *Queries) DeleteAccount(ctx context.Context, arg DeleteAccountParams) error {
@@ -899,22 +899,22 @@ WHERE (
 `
 
 type DeleteContactParams struct {
-	ID              []uuid.UUID          `db:"id" json:"id"`
-	AccountID       []uuid.UUID          `db:"account_id" json:"account_id"`
-	FullName        []string             `db:"full_name" json:"full_name"`
-	Phone           []string             `db:"phone" json:"phone"`
-	PhoneVerified   []bool               `db:"phone_verified" json:"phone_verified"`
-	AddressType     []AccountAddressType `db:"address_type" json:"address_type"`
-	DateCreated     []time.Time          `db:"date_created" json:"date_created"`
-	DateCreatedFrom null.Time            `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo   null.Time            `db:"date_created_to" json:"date_created_to"`
-	Address         []string             `db:"address" json:"address"`
-	Latitude        []float64            `db:"latitude" json:"latitude"`
-	LatitudeFrom    null.Float           `db:"latitude_from" json:"latitude_from"`
-	LatitudeTo      null.Float           `db:"latitude_to" json:"latitude_to"`
-	Longitude       []float64            `db:"longitude" json:"longitude"`
-	LongitudeFrom   null.Float           `db:"longitude_from" json:"longitude_from"`
-	LongitudeTo     null.Float           `db:"longitude_to" json:"longitude_to"`
+	ID              []uuid.UUID          `json:"id"`
+	AccountID       []uuid.UUID          `json:"account_id"`
+	FullName        []string             `json:"full_name"`
+	Phone           []string             `json:"phone"`
+	PhoneVerified   []bool               `json:"phone_verified"`
+	AddressType     []AccountAddressType `json:"address_type"`
+	DateCreated     []time.Time          `json:"date_created"`
+	DateCreatedFrom null.Time            `json:"date_created_from"`
+	DateCreatedTo   null.Time            `json:"date_created_to"`
+	Address         []string             `json:"address"`
+	Latitude        []float64            `json:"latitude"`
+	LatitudeFrom    null.Float           `json:"latitude_from"`
+	LatitudeTo      null.Float           `json:"latitude_to"`
+	Longitude       []float64            `json:"longitude"`
+	LongitudeFrom   null.Float           `json:"longitude_from"`
+	LongitudeTo     null.Float           `json:"longitude_to"`
 }
 
 func (q *Queries) DeleteContact(ctx context.Context, arg DeleteContactParams) error {
@@ -952,12 +952,12 @@ WHERE (
 `
 
 type DeleteFavoriteParams struct {
-	ID              []int64     `db:"id" json:"id"`
-	AccountID       []uuid.UUID `db:"account_id" json:"account_id"`
-	SpuID           []uuid.UUID `db:"spu_id" json:"spu_id"`
-	DateCreated     []time.Time `db:"date_created" json:"date_created"`
-	DateCreatedFrom null.Time   `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo   null.Time   `db:"date_created_to" json:"date_created_to"`
+	ID              []int64     `json:"id"`
+	AccountID       []uuid.UUID `json:"account_id"`
+	SpuID           []uuid.UUID `json:"spu_id"`
+	DateCreated     []time.Time `json:"date_created"`
+	DateCreatedFrom null.Time   `json:"date_created_from"`
+	DateCreatedTo   null.Time   `json:"date_created_to"`
 }
 
 func (q *Queries) DeleteFavorite(ctx context.Context, arg DeleteFavoriteParams) error {
@@ -996,23 +996,23 @@ WHERE (
 `
 
 type DeleteNotificationParams struct {
-	ID                []int64           `db:"id" json:"id"`
-	AccountID         []uuid.UUID       `db:"account_id" json:"account_id"`
-	Type              []string          `db:"type" json:"type"`
-	Channel           []string          `db:"channel" json:"channel"`
-	Title             []string          `db:"title" json:"title"`
-	IsRead            []bool            `db:"is_read" json:"is_read"`
-	Content           []string          `db:"content" json:"content"`
-	Metadata          []json.RawMessage `db:"metadata" json:"metadata"`
-	DateCreated       []time.Time       `db:"date_created" json:"date_created"`
-	DateCreatedFrom   null.Time         `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo     null.Time         `db:"date_created_to" json:"date_created_to"`
-	DateSent          []null.Time       `db:"date_sent" json:"date_sent"`
-	DateSentFrom      null.Time         `db:"date_sent_from" json:"date_sent_from"`
-	DateSentTo        null.Time         `db:"date_sent_to" json:"date_sent_to"`
-	DateScheduled     []null.Time       `db:"date_scheduled" json:"date_scheduled"`
-	DateScheduledFrom null.Time         `db:"date_scheduled_from" json:"date_scheduled_from"`
-	DateScheduledTo   null.Time         `db:"date_scheduled_to" json:"date_scheduled_to"`
+	ID                []int64           `json:"id"`
+	AccountID         []uuid.UUID       `json:"account_id"`
+	Type              []string          `json:"type"`
+	Channel           []string          `json:"channel"`
+	Title             []string          `json:"title"`
+	IsRead            []bool            `json:"is_read"`
+	Content           []string          `json:"content"`
+	Metadata          []json.RawMessage `json:"metadata"`
+	DateCreated       []time.Time       `json:"date_created"`
+	DateCreatedFrom   null.Time         `json:"date_created_from"`
+	DateCreatedTo     null.Time         `json:"date_created_to"`
+	DateSent          []null.Time       `json:"date_sent"`
+	DateSentFrom      null.Time         `json:"date_sent_from"`
+	DateSentTo        null.Time         `json:"date_sent_to"`
+	DateScheduled     []null.Time       `json:"date_scheduled"`
+	DateScheduledFrom null.Time         `json:"date_scheduled_from"`
+	DateScheduledTo   null.Time         `json:"date_scheduled_to"`
 }
 
 func (q *Queries) DeleteNotification(ctx context.Context, arg DeleteNotificationParams) error {
@@ -1063,24 +1063,24 @@ WHERE (
 `
 
 type DeleteProfileParams struct {
-	ID                  []uuid.UUID         `db:"id" json:"id"`
-	Gender              []NullAccountGender `db:"gender" json:"gender"`
-	Name                []string            `db:"name" json:"name"`
-	Description         []string            `db:"description" json:"description"`
-	DateOfBirth         []null.Time         `db:"date_of_birth" json:"date_of_birth"`
-	DateOfBirthFrom     null.Time           `db:"date_of_birth_from" json:"date_of_birth_from"`
-	DateOfBirthTo       null.Time           `db:"date_of_birth_to" json:"date_of_birth_to"`
-	AvatarRsID          []uuid.NullUUID     `db:"avatar_rs_id" json:"avatar_rs_id"`
-	EmailVerified       []bool              `db:"email_verified" json:"email_verified"`
-	PhoneVerified       []bool              `db:"phone_verified" json:"phone_verified"`
-	DateCreated         []time.Time         `db:"date_created" json:"date_created"`
-	DateCreatedFrom     null.Time           `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo       null.Time           `db:"date_created_to" json:"date_created_to"`
-	Country             []string            `db:"country" json:"country"`
-	InternalBalance     []int64             `db:"internal_balance" json:"internal_balance"`
-	InternalBalanceFrom null.Int            `db:"internal_balance_from" json:"internal_balance_from"`
-	InternalBalanceTo   null.Int            `db:"internal_balance_to" json:"internal_balance_to"`
-	DefaultContactID    []uuid.NullUUID     `db:"default_contact_id" json:"default_contact_id"`
+	ID                  []uuid.UUID         `json:"id"`
+	Gender              []NullAccountGender `json:"gender"`
+	Name                []string            `json:"name"`
+	Description         []string            `json:"description"`
+	DateOfBirth         []null.Time         `json:"date_of_birth"`
+	DateOfBirthFrom     null.Time           `json:"date_of_birth_from"`
+	DateOfBirthTo       null.Time           `json:"date_of_birth_to"`
+	AvatarRsID          []uuid.NullUUID     `json:"avatar_rs_id"`
+	EmailVerified       []bool              `json:"email_verified"`
+	PhoneVerified       []bool              `json:"phone_verified"`
+	DateCreated         []time.Time         `json:"date_created"`
+	DateCreatedFrom     null.Time           `json:"date_created_from"`
+	DateCreatedTo       null.Time           `json:"date_created_to"`
+	Country             []string            `json:"country"`
+	InternalBalance     []int64             `json:"internal_balance"`
+	InternalBalanceFrom null.Int            `json:"internal_balance_from"`
+	InternalBalanceTo   null.Int            `json:"internal_balance_to"`
+	DefaultContactID    []uuid.NullUUID     `json:"default_contact_id"`
 }
 
 func (q *Queries) DeleteProfile(ctx context.Context, arg DeleteProfileParams) error {
@@ -1117,10 +1117,10 @@ WHERE ("id" = $1) OR ("phone" = $2) OR ("email" = $3) OR ("username" = $4)
 `
 
 type GetAccountParams struct {
-	ID       uuid.NullUUID `db:"id" json:"id"`
-	Phone    null.String   `db:"phone" json:"phone"`
-	Email    null.String   `db:"email" json:"email"`
-	Username null.String   `db:"username" json:"username"`
+	ID       uuid.NullUUID `json:"id"`
+	Phone    null.String   `json:"phone"`
+	Email    null.String   `json:"email"`
+	Username null.String   `json:"username"`
 }
 
 // Code generated by pgtempl. DO NOT EDIT.
@@ -1186,9 +1186,9 @@ WHERE ("id" = $1) OR ("account_id" = $2 AND "spu_id" = $3)
 `
 
 type GetFavoriteParams struct {
-	ID        null.Int      `db:"id" json:"id"`
-	AccountID uuid.NullUUID `db:"account_id" json:"account_id"`
-	SpuID     uuid.NullUUID `db:"spu_id" json:"spu_id"`
+	ID        null.Int      `json:"id"`
+	AccountID uuid.NullUUID `json:"account_id"`
+	SpuID     uuid.NullUUID `json:"spu_id"`
 }
 
 // ========================================
@@ -1243,8 +1243,8 @@ WHERE ("id" = $1) OR ("avatar_rs_id" = $2)
 `
 
 type GetProfileParams struct {
-	ID         uuid.NullUUID `db:"id" json:"id"`
-	AvatarRsID uuid.NullUUID `db:"avatar_rs_id" json:"avatar_rs_id"`
+	ID         uuid.NullUUID `json:"id"`
+	AvatarRsID uuid.NullUUID `json:"avatar_rs_id"`
 }
 
 // ========================================
@@ -1284,18 +1284,18 @@ RETURNING id, number, status, role, phone, email, username, password, date_creat
 `
 
 type UpdateAccountParams struct {
-	Status       NullAccountStatus `db:"status" json:"status"`
-	Role         NullAccountRole   `db:"role" json:"role"`
-	NullPhone    bool              `db:"null_phone" json:"null_phone"`
-	Phone        null.String       `db:"phone" json:"phone"`
-	NullEmail    bool              `db:"null_email" json:"null_email"`
-	Email        null.String       `db:"email" json:"email"`
-	NullUsername bool              `db:"null_username" json:"null_username"`
-	Username     null.String       `db:"username" json:"username"`
-	NullPassword bool              `db:"null_password" json:"null_password"`
-	Password     null.String       `db:"password" json:"password"`
-	DateCreated  null.Time         `db:"date_created" json:"date_created"`
-	ID           uuid.UUID         `db:"id" json:"id"`
+	Status       NullAccountStatus `json:"status"`
+	Role         NullAccountRole   `json:"role"`
+	NullPhone    bool              `json:"null_phone"`
+	Phone        null.String       `json:"phone"`
+	NullEmail    bool              `json:"null_email"`
+	Email        null.String       `json:"email"`
+	NullUsername bool              `json:"null_username"`
+	Username     null.String       `json:"username"`
+	NullPassword bool              `json:"null_password"`
+	Password     null.String       `json:"password"`
+	DateCreated  null.Time         `json:"date_created"`
+	ID           uuid.UUID         `json:"id"`
 }
 
 func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (AccountAccount, error) {
@@ -1344,16 +1344,16 @@ RETURNING id, account_id, full_name, phone, phone_verified, address_type, date_c
 `
 
 type UpdateContactParams struct {
-	AccountID     uuid.NullUUID          `db:"account_id" json:"account_id"`
-	FullName      null.String            `db:"full_name" json:"full_name"`
-	Phone         null.String            `db:"phone" json:"phone"`
-	PhoneVerified null.Bool              `db:"phone_verified" json:"phone_verified"`
-	AddressType   NullAccountAddressType `db:"address_type" json:"address_type"`
-	DateCreated   null.Time              `db:"date_created" json:"date_created"`
-	Address       null.String            `db:"address" json:"address"`
-	Latitude      null.Float             `db:"latitude" json:"latitude"`
-	Longitude     null.Float             `db:"longitude" json:"longitude"`
-	ID            uuid.UUID              `db:"id" json:"id"`
+	AccountID     uuid.NullUUID          `json:"account_id"`
+	FullName      null.String            `json:"full_name"`
+	Phone         null.String            `json:"phone"`
+	PhoneVerified null.Bool              `json:"phone_verified"`
+	AddressType   NullAccountAddressType `json:"address_type"`
+	DateCreated   null.Time              `json:"date_created"`
+	Address       null.String            `json:"address"`
+	Latitude      null.Float             `json:"latitude"`
+	Longitude     null.Float             `json:"longitude"`
+	ID            uuid.UUID              `json:"id"`
 }
 
 func (q *Queries) UpdateContact(ctx context.Context, arg UpdateContactParams) (AccountContact, error) {
@@ -1395,10 +1395,10 @@ RETURNING id, account_id, spu_id, date_created
 `
 
 type UpdateFavoriteParams struct {
-	AccountID   uuid.NullUUID `db:"account_id" json:"account_id"`
-	SpuID       uuid.NullUUID `db:"spu_id" json:"spu_id"`
-	DateCreated null.Time     `db:"date_created" json:"date_created"`
-	ID          int64         `db:"id" json:"id"`
+	AccountID   uuid.NullUUID `json:"account_id"`
+	SpuID       uuid.NullUUID `json:"spu_id"`
+	DateCreated null.Time     `json:"date_created"`
+	ID          int64         `json:"id"`
 }
 
 func (q *Queries) UpdateFavorite(ctx context.Context, arg UpdateFavoriteParams) (AccountFavorite, error) {
@@ -1435,20 +1435,20 @@ RETURNING id, account_id, type, channel, title, is_read, content, metadata, date
 `
 
 type UpdateNotificationParams struct {
-	AccountID         uuid.NullUUID   `db:"account_id" json:"account_id"`
-	Type              null.String     `db:"type" json:"type"`
-	Channel           null.String     `db:"channel" json:"channel"`
-	Title             null.String     `db:"title" json:"title"`
-	IsRead            null.Bool       `db:"is_read" json:"is_read"`
-	Content           null.String     `db:"content" json:"content"`
-	NullMetadata      bool            `db:"null_metadata" json:"null_metadata"`
-	Metadata          json.RawMessage `db:"metadata" json:"metadata"`
-	DateCreated       null.Time       `db:"date_created" json:"date_created"`
-	NullDateSent      bool            `db:"null_date_sent" json:"null_date_sent"`
-	DateSent          null.Time       `db:"date_sent" json:"date_sent"`
-	NullDateScheduled bool            `db:"null_date_scheduled" json:"null_date_scheduled"`
-	DateScheduled     null.Time       `db:"date_scheduled" json:"date_scheduled"`
-	ID                int64           `db:"id" json:"id"`
+	AccountID         uuid.NullUUID   `json:"account_id"`
+	Type              null.String     `json:"type"`
+	Channel           null.String     `json:"channel"`
+	Title             null.String     `json:"title"`
+	IsRead            null.Bool       `json:"is_read"`
+	Content           null.String     `json:"content"`
+	NullMetadata      bool            `json:"null_metadata"`
+	Metadata          json.RawMessage `json:"metadata"`
+	DateCreated       null.Time       `json:"date_created"`
+	NullDateSent      bool            `json:"null_date_sent"`
+	DateSent          null.Time       `json:"date_sent"`
+	NullDateScheduled bool            `json:"null_date_scheduled"`
+	DateScheduled     null.Time       `json:"date_scheduled"`
+	ID                int64           `json:"id"`
 }
 
 func (q *Queries) UpdateNotification(ctx context.Context, arg UpdateNotificationParams) (AccountNotification, error) {
@@ -1503,22 +1503,22 @@ RETURNING id, gender, name, description, date_of_birth, avatar_rs_id, email_veri
 `
 
 type UpdateProfileParams struct {
-	NullGender           bool              `db:"null_gender" json:"null_gender"`
-	Gender               NullAccountGender `db:"gender" json:"gender"`
-	Name                 null.String       `db:"name" json:"name"`
-	Description          null.String       `db:"description" json:"description"`
-	NullDateOfBirth      bool              `db:"null_date_of_birth" json:"null_date_of_birth"`
-	DateOfBirth          null.Time         `db:"date_of_birth" json:"date_of_birth"`
-	NullAvatarRsID       bool              `db:"null_avatar_rs_id" json:"null_avatar_rs_id"`
-	AvatarRsID           uuid.NullUUID     `db:"avatar_rs_id" json:"avatar_rs_id"`
-	EmailVerified        null.Bool         `db:"email_verified" json:"email_verified"`
-	PhoneVerified        null.Bool         `db:"phone_verified" json:"phone_verified"`
-	DateCreated          null.Time         `db:"date_created" json:"date_created"`
-	Country              null.String       `db:"country" json:"country"`
-	InternalBalance      null.Int          `db:"internal_balance" json:"internal_balance"`
-	NullDefaultContactID bool              `db:"null_default_contact_id" json:"null_default_contact_id"`
-	DefaultContactID     uuid.NullUUID     `db:"default_contact_id" json:"default_contact_id"`
-	ID                   uuid.UUID         `db:"id" json:"id"`
+	NullGender           bool              `json:"null_gender"`
+	Gender               NullAccountGender `json:"gender"`
+	Name                 null.String       `json:"name"`
+	Description          null.String       `json:"description"`
+	NullDateOfBirth      bool              `json:"null_date_of_birth"`
+	DateOfBirth          null.Time         `json:"date_of_birth"`
+	NullAvatarRsID       bool              `json:"null_avatar_rs_id"`
+	AvatarRsID           uuid.NullUUID     `json:"avatar_rs_id"`
+	EmailVerified        null.Bool         `json:"email_verified"`
+	PhoneVerified        null.Bool         `json:"phone_verified"`
+	DateCreated          null.Time         `json:"date_created"`
+	Country              null.String       `json:"country"`
+	InternalBalance      null.Int          `json:"internal_balance"`
+	NullDefaultContactID bool              `json:"null_default_contact_id"`
+	DefaultContactID     uuid.NullUUID     `json:"default_contact_id"`
+	ID                   uuid.UUID         `json:"id"`
 }
 
 func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (AccountProfile, error) {

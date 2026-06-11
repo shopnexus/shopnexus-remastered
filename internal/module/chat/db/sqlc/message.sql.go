@@ -32,8 +32,8 @@ WHERE "conversation_id" = $1
 `
 
 type CountUnreadMessagesParams struct {
-	ConversationID uuid.UUID `db:"conversation_id" json:"conversation_id"`
-	ReaderID       uuid.UUID `db:"reader_id" json:"reader_id"`
+	ConversationID uuid.UUID `json:"conversation_id"`
+	ReaderID       uuid.UUID `json:"reader_id"`
 }
 
 func (q *Queries) CountUnreadMessages(ctx context.Context, arg CountUnreadMessagesParams) (int64, error) {
@@ -50,11 +50,11 @@ RETURNING id, conversation_id, sender_id, type, content, status, data, date_crea
 `
 
 type CreateChatMessageParams struct {
-	ConversationID uuid.UUID       `db:"conversation_id" json:"conversation_id"`
-	SenderID       uuid.UUID       `db:"sender_id" json:"sender_id"`
-	Type           ChatMessageType `db:"type" json:"type"`
-	Content        string          `db:"content" json:"content"`
-	Data           json.RawMessage `db:"data" json:"data"`
+	ConversationID uuid.UUID       `json:"conversation_id"`
+	SenderID       uuid.UUID       `json:"sender_id"`
+	Type           ChatMessageType `json:"type"`
+	Content        string          `json:"content"`
+	Data           json.RawMessage `json:"data"`
 }
 
 func (q *Queries) CreateChatMessage(ctx context.Context, arg CreateChatMessageParams) (ChatMessage, error) {
@@ -88,9 +88,9 @@ OFFSET $2::int
 `
 
 type ListMessageByConversationParams struct {
-	ConversationID uuid.UUID `db:"conversation_id" json:"conversation_id"`
-	Offset         int32     `db:"offset" json:"offset"`
-	Limit          int32     `db:"limit" json:"limit"`
+	ConversationID uuid.UUID `json:"conversation_id"`
+	Offset         int32     `json:"offset"`
+	Limit          int32     `json:"limit"`
 }
 
 func (q *Queries) ListMessageByConversation(ctx context.Context, arg ListMessageByConversationParams) ([]ChatMessage, error) {
@@ -131,8 +131,8 @@ WHERE "conversation_id" = $1
 `
 
 type MarkMessagesReadParams struct {
-	ConversationID uuid.UUID `db:"conversation_id" json:"conversation_id"`
-	ReaderID       uuid.UUID `db:"reader_id" json:"reader_id"`
+	ConversationID uuid.UUID `json:"conversation_id"`
+	ReaderID       uuid.UUID `json:"reader_id"`
 }
 
 func (q *Queries) MarkMessagesRead(ctx context.Context, arg MarkMessagesReadParams) error {

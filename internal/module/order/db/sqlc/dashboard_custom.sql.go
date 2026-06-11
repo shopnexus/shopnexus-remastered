@@ -26,15 +26,15 @@ WHERE o."seller_id" = $1
 `
 
 type GetSellerOrderStatsParams struct {
-	SellerID uuid.UUID `db:"seller_id" json:"seller_id"`
-	StartAt  time.Time `db:"start_at" json:"start_at"`
-	EndAt    time.Time `db:"end_at" json:"end_at"`
+	SellerID uuid.UUID `json:"seller_id"`
+	StartAt  time.Time `json:"start_at"`
+	EndAt    time.Time `json:"end_at"`
 }
 
 type GetSellerOrderStatsRow struct {
-	TotalRevenue int64 `db:"total_revenue" json:"total_revenue"`
-	TotalOrders  int64 `db:"total_orders" json:"total_orders"`
-	ItemsSold    int64 `db:"items_sold" json:"items_sold"`
+	TotalRevenue int64 `json:"total_revenue"`
+	TotalOrders  int64 `json:"total_orders"`
+	ItemsSold    int64 `json:"items_sold"`
 }
 
 // Custom dashboard aggregation queries for seller analytics
@@ -61,16 +61,16 @@ ORDER BY bucket ASC
 `
 
 type GetSellerOrderTimeSeriesParams struct {
-	Granularity string    `db:"granularity" json:"granularity"`
-	SellerID    uuid.UUID `db:"seller_id" json:"seller_id"`
-	StartAt     time.Time `db:"start_at" json:"start_at"`
-	EndAt       time.Time `db:"end_at" json:"end_at"`
+	Granularity string    `json:"granularity"`
+	SellerID    uuid.UUID `json:"seller_id"`
+	StartAt     time.Time `json:"start_at"`
+	EndAt       time.Time `json:"end_at"`
 }
 
 type GetSellerOrderTimeSeriesRow struct {
-	Bucket     time.Time `db:"bucket" json:"bucket"`
-	Revenue    int64     `db:"revenue" json:"revenue"`
-	OrderCount int64     `db:"order_count" json:"order_count"`
+	Bucket     time.Time `json:"bucket"`
+	Revenue    int64     `json:"revenue"`
+	OrderCount int64     `json:"order_count"`
 }
 
 // Returns time-bucketed revenue and order counts for chart data.
@@ -113,8 +113,8 @@ SELECT
 `
 
 type GetSellerPendingActionsRow struct {
-	PendingItems   int64 `db:"pending_items" json:"pending_items"`
-	PendingRefunds int64 `db:"pending_refunds" json:"pending_refunds"`
+	PendingItems   int64 `json:"pending_items"`
+	PendingRefunds int64 `json:"pending_refunds"`
 }
 
 // Counts unconfirmed incoming items and pending refunds for a seller.
@@ -142,17 +142,17 @@ LIMIT $4::INTEGER
 `
 
 type GetSellerTopProductsParams struct {
-	SellerID uuid.UUID `db:"seller_id" json:"seller_id"`
-	StartAt  time.Time `db:"start_at" json:"start_at"`
-	EndAt    time.Time `db:"end_at" json:"end_at"`
-	TopLimit int32     `db:"top_limit" json:"top_limit"`
+	SellerID uuid.UUID `json:"seller_id"`
+	StartAt  time.Time `json:"start_at"`
+	EndAt    time.Time `json:"end_at"`
+	TopLimit int32     `json:"top_limit"`
 }
 
 type GetSellerTopProductsRow struct {
-	SkuID     uuid.UUID `db:"sku_id" json:"sku_id"`
-	SkuName   string    `db:"sku_name" json:"sku_name"`
-	SoldCount int64     `db:"sold_count" json:"sold_count"`
-	Revenue   int64     `db:"revenue" json:"revenue"`
+	SkuID     uuid.UUID `json:"sku_id"`
+	SkuName   string    `json:"sku_name"`
+	SoldCount int64     `json:"sold_count"`
+	Revenue   int64     `json:"revenue"`
 }
 
 // Returns top products by sold quantity within a date range, with revenue.

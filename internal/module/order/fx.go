@@ -22,9 +22,9 @@ import (
 	"shopnexus-server/internal/module/order/biz/review"
 	sellerorder "shopnexus-server/internal/module/order/biz/seller_order"
 	ordertransport "shopnexus-server/internal/module/order/biz/transport"
-	wfbase "shopnexus-server/internal/module/order/biz/workflow/base"
 	"shopnexus-server/internal/module/order/biz/workflow/checkout"
 	"shopnexus-server/internal/module/order/biz/workflow/fullfilment"
+	"shopnexus-server/internal/module/order/biz/workflow/gateway"
 	orderconfig "shopnexus-server/internal/module/order/config"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	orderecho "shopnexus-server/internal/module/order/transport/echo"
@@ -51,7 +51,7 @@ var Module = fx.Module("order",
 		NewOrderStorage,
 		// shared cores + one constructor per domain sub-handler
 		base.New,
-		wfbase.New,
+		gateway.New,
 		buyerorder.New,
 		sellerorder.New,
 		cart.New,

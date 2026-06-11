@@ -34,18 +34,18 @@ WHERE (
 `
 
 type CountOptionParams struct {
-	ID           []string          `db:"id" json:"id"`
-	OwnerID      []uuid.NullUUID   `db:"owner_id" json:"owner_id"`
-	IsEnabled    []bool            `db:"is_enabled" json:"is_enabled"`
-	Name         []string          `db:"name" json:"name"`
-	Description  []string          `db:"description" json:"description"`
-	Priority     []int32           `db:"priority" json:"priority"`
-	PriorityFrom null.Int32        `db:"priority_from" json:"priority_from"`
-	PriorityTo   null.Int32        `db:"priority_to" json:"priority_to"`
-	LogoRsID     []uuid.NullUUID   `db:"logo_rs_id" json:"logo_rs_id"`
-	Data         []json.RawMessage `db:"data" json:"data"`
-	Type         []string          `db:"type" json:"type"`
-	Provider     []string          `db:"provider" json:"provider"`
+	ID           []string          `json:"id"`
+	OwnerID      []uuid.NullUUID   `json:"owner_id"`
+	IsEnabled    []bool            `json:"is_enabled"`
+	Name         []string          `json:"name"`
+	Description  []string          `json:"description"`
+	Priority     []int32           `json:"priority"`
+	PriorityFrom null.Int32        `json:"priority_from"`
+	PriorityTo   null.Int32        `json:"priority_to"`
+	LogoRsID     []uuid.NullUUID   `json:"logo_rs_id"`
+	Data         []json.RawMessage `json:"data"`
+	Type         []string          `json:"type"`
+	Provider     []string          `json:"provider"`
 }
 
 func (q *Queries) CountOption(ctx context.Context, arg CountOptionParams) (int64, error) {
@@ -89,19 +89,19 @@ WHERE (
 `
 
 type CountResourceParams struct {
-	ID            []uuid.UUID       `db:"id" json:"id"`
-	UploadedByID  []uuid.NullUUID   `db:"uploaded_by_id" json:"uploaded_by_id"`
-	Provider      []string          `db:"provider" json:"provider"`
-	ObjectKey     []string          `db:"object_key" json:"object_key"`
-	Mime          []string          `db:"mime" json:"mime"`
-	Size          []int64           `db:"size" json:"size"`
-	SizeFrom      null.Int          `db:"size_from" json:"size_from"`
-	SizeTo        null.Int          `db:"size_to" json:"size_to"`
-	Metadata      []json.RawMessage `db:"metadata" json:"metadata"`
-	Checksum      []null.String     `db:"checksum" json:"checksum"`
-	CreatedAt     []time.Time       `db:"created_at" json:"created_at"`
-	CreatedAtFrom null.Time         `db:"created_at_from" json:"created_at_from"`
-	CreatedAtTo   null.Time         `db:"created_at_to" json:"created_at_to"`
+	ID            []uuid.UUID       `json:"id"`
+	UploadedByID  []uuid.NullUUID   `json:"uploaded_by_id"`
+	Provider      []string          `json:"provider"`
+	ObjectKey     []string          `json:"object_key"`
+	Mime          []string          `json:"mime"`
+	Size          []int64           `json:"size"`
+	SizeFrom      null.Int          `json:"size_from"`
+	SizeTo        null.Int          `json:"size_to"`
+	Metadata      []json.RawMessage `json:"metadata"`
+	Checksum      []null.String     `json:"checksum"`
+	CreatedAt     []time.Time       `json:"created_at"`
+	CreatedAtFrom null.Time         `json:"created_at_from"`
+	CreatedAtTo   null.Time         `json:"created_at_to"`
 }
 
 func (q *Queries) CountResource(ctx context.Context, arg CountResourceParams) (int64, error) {
@@ -140,13 +140,13 @@ WHERE (
 `
 
 type CountResourceReferenceParams struct {
-	ID        []int64                 `db:"id" json:"id"`
-	RsID      []uuid.UUID             `db:"rs_id" json:"rs_id"`
-	RefType   []CommonResourceRefType `db:"ref_type" json:"ref_type"`
-	RefID     []uuid.UUID             `db:"ref_id" json:"ref_id"`
-	Order     []int32                 `db:"order" json:"order"`
-	OrderFrom null.Int32              `db:"order_from" json:"order_from"`
-	OrderTo   null.Int32              `db:"order_to" json:"order_to"`
+	ID        []int64                 `json:"id"`
+	RsID      []uuid.UUID             `json:"rs_id"`
+	RefType   []CommonResourceRefType `json:"ref_type"`
+	RefID     []uuid.UUID             `json:"ref_id"`
+	Order     []int32                 `json:"order"`
+	OrderFrom null.Int32              `json:"order_from"`
+	OrderTo   null.Int32              `json:"order_to"`
 }
 
 func (q *Queries) CountResourceReference(ctx context.Context, arg CountResourceReferenceParams) (int64, error) {
@@ -165,65 +165,65 @@ func (q *Queries) CountResourceReference(ctx context.Context, arg CountResourceR
 }
 
 type CreateCopyDefaultOptionParams struct {
-	ID          string          `db:"id" json:"id"`
-	OwnerID     uuid.NullUUID   `db:"owner_id" json:"owner_id"`
-	IsEnabled   bool            `db:"is_enabled" json:"is_enabled"`
-	Name        string          `db:"name" json:"name"`
-	Description string          `db:"description" json:"description"`
-	Priority    int32           `db:"priority" json:"priority"`
-	LogoRsID    uuid.NullUUID   `db:"logo_rs_id" json:"logo_rs_id"`
-	Data        json.RawMessage `db:"data" json:"data"`
-	Type        string          `db:"type" json:"type"`
-	Provider    string          `db:"provider" json:"provider"`
+	ID          string          `json:"id"`
+	OwnerID     uuid.NullUUID   `json:"owner_id"`
+	IsEnabled   bool            `json:"is_enabled"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Priority    int32           `json:"priority"`
+	LogoRsID    uuid.NullUUID   `json:"logo_rs_id"`
+	Data        json.RawMessage `json:"data"`
+	Type        string          `json:"type"`
+	Provider    string          `json:"provider"`
 }
 
 type CreateCopyDefaultResourceParams struct {
-	UploadedByID uuid.NullUUID   `db:"uploaded_by_id" json:"uploaded_by_id"`
-	Provider     string          `db:"provider" json:"provider"`
-	ObjectKey    string          `db:"object_key" json:"object_key"`
-	Mime         string          `db:"mime" json:"mime"`
-	Size         int64           `db:"size" json:"size"`
-	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
-	Checksum     null.String     `db:"checksum" json:"checksum"`
+	UploadedByID uuid.NullUUID   `json:"uploaded_by_id"`
+	Provider     string          `json:"provider"`
+	ObjectKey    string          `json:"object_key"`
+	Mime         string          `json:"mime"`
+	Size         int64           `json:"size"`
+	Metadata     json.RawMessage `json:"metadata"`
+	Checksum     null.String     `json:"checksum"`
 }
 
 type CreateCopyDefaultResourceReferenceParams struct {
-	RsID    uuid.UUID             `db:"rs_id" json:"rs_id"`
-	RefType CommonResourceRefType `db:"ref_type" json:"ref_type"`
-	RefID   uuid.UUID             `db:"ref_id" json:"ref_id"`
-	Order   int32                 `db:"order" json:"order"`
+	RsID    uuid.UUID             `json:"rs_id"`
+	RefType CommonResourceRefType `json:"ref_type"`
+	RefID   uuid.UUID             `json:"ref_id"`
+	Order   int32                 `json:"order"`
 }
 
 type CreateCopyOptionParams struct {
-	ID          string          `db:"id" json:"id"`
-	OwnerID     uuid.NullUUID   `db:"owner_id" json:"owner_id"`
-	IsEnabled   bool            `db:"is_enabled" json:"is_enabled"`
-	Name        string          `db:"name" json:"name"`
-	Description string          `db:"description" json:"description"`
-	Priority    int32           `db:"priority" json:"priority"`
-	LogoRsID    uuid.NullUUID   `db:"logo_rs_id" json:"logo_rs_id"`
-	Data        json.RawMessage `db:"data" json:"data"`
-	Type        string          `db:"type" json:"type"`
-	Provider    string          `db:"provider" json:"provider"`
+	ID          string          `json:"id"`
+	OwnerID     uuid.NullUUID   `json:"owner_id"`
+	IsEnabled   bool            `json:"is_enabled"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Priority    int32           `json:"priority"`
+	LogoRsID    uuid.NullUUID   `json:"logo_rs_id"`
+	Data        json.RawMessage `json:"data"`
+	Type        string          `json:"type"`
+	Provider    string          `json:"provider"`
 }
 
 type CreateCopyResourceParams struct {
-	ID           uuid.UUID       `db:"id" json:"id"`
-	UploadedByID uuid.NullUUID   `db:"uploaded_by_id" json:"uploaded_by_id"`
-	Provider     string          `db:"provider" json:"provider"`
-	ObjectKey    string          `db:"object_key" json:"object_key"`
-	Mime         string          `db:"mime" json:"mime"`
-	Size         int64           `db:"size" json:"size"`
-	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
-	Checksum     null.String     `db:"checksum" json:"checksum"`
-	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
+	ID           uuid.UUID       `json:"id"`
+	UploadedByID uuid.NullUUID   `json:"uploaded_by_id"`
+	Provider     string          `json:"provider"`
+	ObjectKey    string          `json:"object_key"`
+	Mime         string          `json:"mime"`
+	Size         int64           `json:"size"`
+	Metadata     json.RawMessage `json:"metadata"`
+	Checksum     null.String     `json:"checksum"`
+	CreatedAt    time.Time       `json:"created_at"`
 }
 
 type CreateCopyResourceReferenceParams struct {
-	RsID    uuid.UUID             `db:"rs_id" json:"rs_id"`
-	RefType CommonResourceRefType `db:"ref_type" json:"ref_type"`
-	RefID   uuid.UUID             `db:"ref_id" json:"ref_id"`
-	Order   int32                 `db:"order" json:"order"`
+	RsID    uuid.UUID             `json:"rs_id"`
+	RefType CommonResourceRefType `json:"ref_type"`
+	RefID   uuid.UUID             `json:"ref_id"`
+	Order   int32                 `json:"order"`
 }
 
 const createDefaultOption = `-- name: CreateDefaultOption :one
@@ -233,16 +233,16 @@ RETURNING id, owner_id, is_enabled, name, description, priority, logo_rs_id, dat
 `
 
 type CreateDefaultOptionParams struct {
-	ID          string          `db:"id" json:"id"`
-	OwnerID     uuid.NullUUID   `db:"owner_id" json:"owner_id"`
-	IsEnabled   bool            `db:"is_enabled" json:"is_enabled"`
-	Name        string          `db:"name" json:"name"`
-	Description string          `db:"description" json:"description"`
-	Priority    int32           `db:"priority" json:"priority"`
-	LogoRsID    uuid.NullUUID   `db:"logo_rs_id" json:"logo_rs_id"`
-	Data        json.RawMessage `db:"data" json:"data"`
-	Type        string          `db:"type" json:"type"`
-	Provider    string          `db:"provider" json:"provider"`
+	ID          string          `json:"id"`
+	OwnerID     uuid.NullUUID   `json:"owner_id"`
+	IsEnabled   bool            `json:"is_enabled"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Priority    int32           `json:"priority"`
+	LogoRsID    uuid.NullUUID   `json:"logo_rs_id"`
+	Data        json.RawMessage `json:"data"`
+	Type        string          `json:"type"`
+	Provider    string          `json:"provider"`
 }
 
 func (q *Queries) CreateDefaultOption(ctx context.Context, arg CreateDefaultOptionParams) (CommonOption, error) {
@@ -281,13 +281,13 @@ RETURNING id, uploaded_by_id, provider, object_key, mime, size, metadata, checks
 `
 
 type CreateDefaultResourceParams struct {
-	UploadedByID uuid.NullUUID   `db:"uploaded_by_id" json:"uploaded_by_id"`
-	Provider     string          `db:"provider" json:"provider"`
-	ObjectKey    string          `db:"object_key" json:"object_key"`
-	Mime         string          `db:"mime" json:"mime"`
-	Size         int64           `db:"size" json:"size"`
-	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
-	Checksum     null.String     `db:"checksum" json:"checksum"`
+	UploadedByID uuid.NullUUID   `json:"uploaded_by_id"`
+	Provider     string          `json:"provider"`
+	ObjectKey    string          `json:"object_key"`
+	Mime         string          `json:"mime"`
+	Size         int64           `json:"size"`
+	Metadata     json.RawMessage `json:"metadata"`
+	Checksum     null.String     `json:"checksum"`
 }
 
 func (q *Queries) CreateDefaultResource(ctx context.Context, arg CreateDefaultResourceParams) (CommonResource, error) {
@@ -322,10 +322,10 @@ RETURNING id, rs_id, ref_type, ref_id, "order"
 `
 
 type CreateDefaultResourceReferenceParams struct {
-	RsID    uuid.UUID             `db:"rs_id" json:"rs_id"`
-	RefType CommonResourceRefType `db:"ref_type" json:"ref_type"`
-	RefID   uuid.UUID             `db:"ref_id" json:"ref_id"`
-	Order   int32                 `db:"order" json:"order"`
+	RsID    uuid.UUID             `json:"rs_id"`
+	RefType CommonResourceRefType `json:"ref_type"`
+	RefID   uuid.UUID             `json:"ref_id"`
+	Order   int32                 `json:"order"`
 }
 
 func (q *Queries) CreateDefaultResourceReference(ctx context.Context, arg CreateDefaultResourceReferenceParams) (CommonResourceReference, error) {
@@ -353,16 +353,16 @@ RETURNING id, owner_id, is_enabled, name, description, priority, logo_rs_id, dat
 `
 
 type CreateOptionParams struct {
-	ID          string          `db:"id" json:"id"`
-	OwnerID     uuid.NullUUID   `db:"owner_id" json:"owner_id"`
-	IsEnabled   bool            `db:"is_enabled" json:"is_enabled"`
-	Name        string          `db:"name" json:"name"`
-	Description string          `db:"description" json:"description"`
-	Priority    int32           `db:"priority" json:"priority"`
-	LogoRsID    uuid.NullUUID   `db:"logo_rs_id" json:"logo_rs_id"`
-	Data        json.RawMessage `db:"data" json:"data"`
-	Type        string          `db:"type" json:"type"`
-	Provider    string          `db:"provider" json:"provider"`
+	ID          string          `json:"id"`
+	OwnerID     uuid.NullUUID   `json:"owner_id"`
+	IsEnabled   bool            `json:"is_enabled"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Priority    int32           `json:"priority"`
+	LogoRsID    uuid.NullUUID   `json:"logo_rs_id"`
+	Data        json.RawMessage `json:"data"`
+	Type        string          `json:"type"`
+	Provider    string          `json:"provider"`
 }
 
 func (q *Queries) CreateOption(ctx context.Context, arg CreateOptionParams) (CommonOption, error) {
@@ -401,15 +401,15 @@ RETURNING id, uploaded_by_id, provider, object_key, mime, size, metadata, checks
 `
 
 type CreateResourceParams struct {
-	ID           uuid.UUID       `db:"id" json:"id"`
-	UploadedByID uuid.NullUUID   `db:"uploaded_by_id" json:"uploaded_by_id"`
-	Provider     string          `db:"provider" json:"provider"`
-	ObjectKey    string          `db:"object_key" json:"object_key"`
-	Mime         string          `db:"mime" json:"mime"`
-	Size         int64           `db:"size" json:"size"`
-	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
-	Checksum     null.String     `db:"checksum" json:"checksum"`
-	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
+	ID           uuid.UUID       `json:"id"`
+	UploadedByID uuid.NullUUID   `json:"uploaded_by_id"`
+	Provider     string          `json:"provider"`
+	ObjectKey    string          `json:"object_key"`
+	Mime         string          `json:"mime"`
+	Size         int64           `json:"size"`
+	Metadata     json.RawMessage `json:"metadata"`
+	Checksum     null.String     `json:"checksum"`
+	CreatedAt    time.Time       `json:"created_at"`
 }
 
 func (q *Queries) CreateResource(ctx context.Context, arg CreateResourceParams) (CommonResource, error) {
@@ -446,10 +446,10 @@ RETURNING id, rs_id, ref_type, ref_id, "order"
 `
 
 type CreateResourceReferenceParams struct {
-	RsID    uuid.UUID             `db:"rs_id" json:"rs_id"`
-	RefType CommonResourceRefType `db:"ref_type" json:"ref_type"`
-	RefID   uuid.UUID             `db:"ref_id" json:"ref_id"`
-	Order   int32                 `db:"order" json:"order"`
+	RsID    uuid.UUID             `json:"rs_id"`
+	RefType CommonResourceRefType `json:"ref_type"`
+	RefID   uuid.UUID             `json:"ref_id"`
+	Order   int32                 `json:"order"`
 }
 
 func (q *Queries) CreateResourceReference(ctx context.Context, arg CreateResourceReferenceParams) (CommonResourceReference, error) {
@@ -489,18 +489,18 @@ WHERE (
 `
 
 type DeleteOptionParams struct {
-	ID           []string          `db:"id" json:"id"`
-	OwnerID      []uuid.NullUUID   `db:"owner_id" json:"owner_id"`
-	IsEnabled    []bool            `db:"is_enabled" json:"is_enabled"`
-	Name         []string          `db:"name" json:"name"`
-	Description  []string          `db:"description" json:"description"`
-	Priority     []int32           `db:"priority" json:"priority"`
-	PriorityFrom null.Int32        `db:"priority_from" json:"priority_from"`
-	PriorityTo   null.Int32        `db:"priority_to" json:"priority_to"`
-	LogoRsID     []uuid.NullUUID   `db:"logo_rs_id" json:"logo_rs_id"`
-	Data         []json.RawMessage `db:"data" json:"data"`
-	Type         []string          `db:"type" json:"type"`
-	Provider     []string          `db:"provider" json:"provider"`
+	ID           []string          `json:"id"`
+	OwnerID      []uuid.NullUUID   `json:"owner_id"`
+	IsEnabled    []bool            `json:"is_enabled"`
+	Name         []string          `json:"name"`
+	Description  []string          `json:"description"`
+	Priority     []int32           `json:"priority"`
+	PriorityFrom null.Int32        `json:"priority_from"`
+	PriorityTo   null.Int32        `json:"priority_to"`
+	LogoRsID     []uuid.NullUUID   `json:"logo_rs_id"`
+	Data         []json.RawMessage `json:"data"`
+	Type         []string          `json:"type"`
+	Provider     []string          `json:"provider"`
 }
 
 func (q *Queries) DeleteOption(ctx context.Context, arg DeleteOptionParams) error {
@@ -541,19 +541,19 @@ WHERE (
 `
 
 type DeleteResourceParams struct {
-	ID            []uuid.UUID       `db:"id" json:"id"`
-	UploadedByID  []uuid.NullUUID   `db:"uploaded_by_id" json:"uploaded_by_id"`
-	Provider      []string          `db:"provider" json:"provider"`
-	ObjectKey     []string          `db:"object_key" json:"object_key"`
-	Mime          []string          `db:"mime" json:"mime"`
-	Size          []int64           `db:"size" json:"size"`
-	SizeFrom      null.Int          `db:"size_from" json:"size_from"`
-	SizeTo        null.Int          `db:"size_to" json:"size_to"`
-	Metadata      []json.RawMessage `db:"metadata" json:"metadata"`
-	Checksum      []null.String     `db:"checksum" json:"checksum"`
-	CreatedAt     []time.Time       `db:"created_at" json:"created_at"`
-	CreatedAtFrom null.Time         `db:"created_at_from" json:"created_at_from"`
-	CreatedAtTo   null.Time         `db:"created_at_to" json:"created_at_to"`
+	ID            []uuid.UUID       `json:"id"`
+	UploadedByID  []uuid.NullUUID   `json:"uploaded_by_id"`
+	Provider      []string          `json:"provider"`
+	ObjectKey     []string          `json:"object_key"`
+	Mime          []string          `json:"mime"`
+	Size          []int64           `json:"size"`
+	SizeFrom      null.Int          `json:"size_from"`
+	SizeTo        null.Int          `json:"size_to"`
+	Metadata      []json.RawMessage `json:"metadata"`
+	Checksum      []null.String     `json:"checksum"`
+	CreatedAt     []time.Time       `json:"created_at"`
+	CreatedAtFrom null.Time         `json:"created_at_from"`
+	CreatedAtTo   null.Time         `json:"created_at_to"`
 }
 
 func (q *Queries) DeleteResource(ctx context.Context, arg DeleteResourceParams) error {
@@ -589,13 +589,13 @@ WHERE (
 `
 
 type DeleteResourceReferenceParams struct {
-	ID        []int64                 `db:"id" json:"id"`
-	RsID      []uuid.UUID             `db:"rs_id" json:"rs_id"`
-	RefType   []CommonResourceRefType `db:"ref_type" json:"ref_type"`
-	RefID     []uuid.UUID             `db:"ref_id" json:"ref_id"`
-	Order     []int32                 `db:"order" json:"order"`
-	OrderFrom null.Int32              `db:"order_from" json:"order_from"`
-	OrderTo   null.Int32              `db:"order_to" json:"order_to"`
+	ID        []int64                 `json:"id"`
+	RsID      []uuid.UUID             `json:"rs_id"`
+	RefType   []CommonResourceRefType `json:"ref_type"`
+	RefID     []uuid.UUID             `json:"ref_id"`
+	Order     []int32                 `json:"order"`
+	OrderFrom null.Int32              `json:"order_from"`
+	OrderTo   null.Int32              `json:"order_to"`
 }
 
 func (q *Queries) DeleteResourceReference(ctx context.Context, arg DeleteResourceReferenceParams) error {
@@ -649,9 +649,9 @@ WHERE ("id" = $1) OR ("provider" = $2 AND "object_key" = $3)
 `
 
 type GetResourceParams struct {
-	ID        uuid.NullUUID `db:"id" json:"id"`
-	Provider  null.String   `db:"provider" json:"provider"`
-	ObjectKey null.String   `db:"object_key" json:"object_key"`
+	ID        uuid.NullUUID `json:"id"`
+	Provider  null.String   `json:"provider"`
+	ObjectKey null.String   `json:"object_key"`
 }
 
 // Code generated by pgtempl. DO NOT EDIT.
@@ -715,18 +715,18 @@ RETURNING id, owner_id, is_enabled, name, description, priority, logo_rs_id, dat
 `
 
 type UpdateOptionParams struct {
-	NullOwnerID  bool            `db:"null_owner_id" json:"null_owner_id"`
-	OwnerID      uuid.NullUUID   `db:"owner_id" json:"owner_id"`
-	IsEnabled    null.Bool       `db:"is_enabled" json:"is_enabled"`
-	Name         null.String     `db:"name" json:"name"`
-	Description  null.String     `db:"description" json:"description"`
-	Priority     null.Int32      `db:"priority" json:"priority"`
-	NullLogoRsID bool            `db:"null_logo_rs_id" json:"null_logo_rs_id"`
-	LogoRsID     uuid.NullUUID   `db:"logo_rs_id" json:"logo_rs_id"`
-	Data         json.RawMessage `db:"data" json:"data"`
-	Type         null.String     `db:"type" json:"type"`
-	Provider     null.String     `db:"provider" json:"provider"`
-	ID           string          `db:"id" json:"id"`
+	NullOwnerID  bool            `json:"null_owner_id"`
+	OwnerID      uuid.NullUUID   `json:"owner_id"`
+	IsEnabled    null.Bool       `json:"is_enabled"`
+	Name         null.String     `json:"name"`
+	Description  null.String     `json:"description"`
+	Priority     null.Int32      `json:"priority"`
+	NullLogoRsID bool            `json:"null_logo_rs_id"`
+	LogoRsID     uuid.NullUUID   `json:"logo_rs_id"`
+	Data         json.RawMessage `json:"data"`
+	Type         null.String     `json:"type"`
+	Provider     null.String     `json:"provider"`
+	ID           string          `json:"id"`
 }
 
 func (q *Queries) UpdateOption(ctx context.Context, arg UpdateOptionParams) (CommonOption, error) {
@@ -775,17 +775,17 @@ RETURNING id, uploaded_by_id, provider, object_key, mime, size, metadata, checks
 `
 
 type UpdateResourceParams struct {
-	NullUploadedByID bool            `db:"null_uploaded_by_id" json:"null_uploaded_by_id"`
-	UploadedByID     uuid.NullUUID   `db:"uploaded_by_id" json:"uploaded_by_id"`
-	Provider         null.String     `db:"provider" json:"provider"`
-	ObjectKey        null.String     `db:"object_key" json:"object_key"`
-	Mime             null.String     `db:"mime" json:"mime"`
-	Size             null.Int        `db:"size" json:"size"`
-	Metadata         json.RawMessage `db:"metadata" json:"metadata"`
-	NullChecksum     bool            `db:"null_checksum" json:"null_checksum"`
-	Checksum         null.String     `db:"checksum" json:"checksum"`
-	CreatedAt        null.Time       `db:"created_at" json:"created_at"`
-	ID               uuid.UUID       `db:"id" json:"id"`
+	NullUploadedByID bool            `json:"null_uploaded_by_id"`
+	UploadedByID     uuid.NullUUID   `json:"uploaded_by_id"`
+	Provider         null.String     `json:"provider"`
+	ObjectKey        null.String     `json:"object_key"`
+	Mime             null.String     `json:"mime"`
+	Size             null.Int        `json:"size"`
+	Metadata         json.RawMessage `json:"metadata"`
+	NullChecksum     bool            `json:"null_checksum"`
+	Checksum         null.String     `json:"checksum"`
+	CreatedAt        null.Time       `json:"created_at"`
+	ID               uuid.UUID       `json:"id"`
 }
 
 func (q *Queries) UpdateResource(ctx context.Context, arg UpdateResourceParams) (CommonResource, error) {
@@ -828,11 +828,11 @@ RETURNING id, rs_id, ref_type, ref_id, "order"
 `
 
 type UpdateResourceReferenceParams struct {
-	RsID    uuid.NullUUID             `db:"rs_id" json:"rs_id"`
-	RefType NullCommonResourceRefType `db:"ref_type" json:"ref_type"`
-	RefID   uuid.NullUUID             `db:"ref_id" json:"ref_id"`
-	Order   null.Int32                `db:"order" json:"order"`
-	ID      int64                     `db:"id" json:"id"`
+	RsID    uuid.NullUUID             `json:"rs_id"`
+	RefType NullCommonResourceRefType `json:"ref_type"`
+	RefID   uuid.NullUUID             `json:"ref_id"`
+	Order   null.Int32                `json:"order"`
+	ID      int64                     `json:"id"`
 }
 
 func (q *Queries) UpdateResourceReference(ctx context.Context, arg UpdateResourceReferenceParams) (CommonResourceReference, error) {

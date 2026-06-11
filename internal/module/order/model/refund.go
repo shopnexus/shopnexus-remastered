@@ -37,6 +37,12 @@ type AdminDecisionSignal struct {
 	Upheld   bool      `json:"upheld"`
 }
 
+// TransportDeliveredSignal is sent by the real transport webhook when a
+// return shipment is physically delivered.
+type TransportDeliveredSignal struct {
+	RefundID uuid.UUID `json:"refund_id"`
+}
+
 type CreditFromSessionParams struct {
 	SessionID  uuid.UUID
 	AccountID  uuid.UUID

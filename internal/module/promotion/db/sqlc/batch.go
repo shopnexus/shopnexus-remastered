@@ -33,21 +33,21 @@ type CreateBatchPromotionBatchResults struct {
 }
 
 type CreateBatchPromotionParams struct {
-	ID          uuid.UUID       `db:"id" json:"id"`
-	Code        string          `db:"code" json:"code"`
-	OwnerID     uuid.NullUUID   `db:"owner_id" json:"owner_id"`
-	Type        PromotionType   `db:"type" json:"type"`
-	Title       string          `db:"title" json:"title"`
-	Description null.String     `db:"description" json:"description"`
-	IsEnabled   bool            `db:"is_enabled" json:"is_enabled"`
-	Budget      int64           `db:"budget" json:"budget"`
-	AutoApply   bool            `db:"auto_apply" json:"auto_apply"`
-	Group       string          `db:"group" json:"group"`
-	Data        json.RawMessage `db:"data" json:"data"`
-	DateStarted time.Time       `db:"date_started" json:"date_started"`
-	DateEnded   null.Time       `db:"date_ended" json:"date_ended"`
-	DateCreated time.Time       `db:"date_created" json:"date_created"`
-	DateUpdated time.Time       `db:"date_updated" json:"date_updated"`
+	ID          uuid.UUID       `json:"id"`
+	Code        string          `json:"code"`
+	OwnerID     uuid.NullUUID   `json:"owner_id"`
+	Type        PromotionType   `json:"type"`
+	Title       string          `json:"title"`
+	Description null.String     `json:"description"`
+	IsEnabled   bool            `json:"is_enabled"`
+	Budget      int64           `json:"budget"`
+	AutoApply   bool            `json:"auto_apply"`
+	Group       string          `json:"group"`
+	Data        json.RawMessage `json:"data"`
+	DateStarted time.Time       `json:"date_started"`
+	DateEnded   null.Time       `json:"date_ended"`
+	DateCreated time.Time       `json:"date_created"`
+	DateUpdated time.Time       `json:"date_updated"`
 }
 
 func (q *Queries) CreateBatchPromotion(ctx context.Context, arg []CreateBatchPromotionParams) *CreateBatchPromotionBatchResults {
@@ -128,9 +128,9 @@ type CreateBatchRefBatchResults struct {
 }
 
 type CreateBatchRefParams struct {
-	PromotionID uuid.UUID        `db:"promotion_id" json:"promotion_id"`
-	RefType     PromotionRefType `db:"ref_type" json:"ref_type"`
-	RefID       uuid.UUID        `db:"ref_id" json:"ref_id"`
+	PromotionID uuid.UUID        `json:"promotion_id"`
+	RefType     PromotionRefType `json:"ref_type"`
+	RefID       uuid.UUID        `json:"ref_id"`
 }
 
 func (q *Queries) CreateBatchRef(ctx context.Context, arg []CreateBatchRefParams) *CreateBatchRefBatchResults {
@@ -188,12 +188,12 @@ type CreateBatchScheduleBatchResults struct {
 }
 
 type CreateBatchScheduleParams struct {
-	PromotionID uuid.UUID `db:"promotion_id" json:"promotion_id"`
-	Timezone    string    `db:"timezone" json:"timezone"`
-	CronRule    string    `db:"cron_rule" json:"cron_rule"`
-	Duration    int32     `db:"duration" json:"duration"`
-	NextRunAt   null.Time `db:"next_run_at" json:"next_run_at"`
-	LastRunAt   null.Time `db:"last_run_at" json:"last_run_at"`
+	PromotionID uuid.UUID `json:"promotion_id"`
+	Timezone    string    `json:"timezone"`
+	CronRule    string    `json:"cron_rule"`
+	Duration    int32     `json:"duration"`
+	NextRunAt   null.Time `json:"next_run_at"`
+	LastRunAt   null.Time `json:"last_run_at"`
 }
 
 func (q *Queries) CreateBatchSchedule(ctx context.Context, arg []CreateBatchScheduleParams) *CreateBatchScheduleBatchResults {

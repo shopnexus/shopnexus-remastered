@@ -24,6 +24,7 @@ type FulfillmentWfSender interface {
 	OnBuyerWithdrew(ctx context.Context, orderID uuid.UUID, sig ordermodel.RefundSignal) error
 	OnSellerDecision(ctx context.Context, orderID uuid.UUID, sig ordermodel.SellerDecisionSignal) error
 	OnAdminDecision(ctx context.Context, orderID uuid.UUID, sig ordermodel.AdminDecisionSignal) error
+	OnTransportDelivered(ctx context.Context, orderID uuid.UUID, sig ordermodel.TransportDeliveredSignal) error
 }
 
 // FulfillmentWfFuture mirrors FulfillmentWf returning response futures for racing
@@ -38,6 +39,7 @@ type FulfillmentWfFuture interface {
 	OnBuyerWithdrew(rctx restate.Context, orderID uuid.UUID, sig ordermodel.RefundSignal) restate.ResponseFuture[restate.Void]
 	OnSellerDecision(rctx restate.Context, orderID uuid.UUID, sig ordermodel.SellerDecisionSignal) restate.ResponseFuture[restate.Void]
 	OnAdminDecision(rctx restate.Context, orderID uuid.UUID, sig ordermodel.AdminDecisionSignal) restate.ResponseFuture[restate.Void]
+	OnTransportDelivered(rctx restate.Context, orderID uuid.UUID, sig ordermodel.TransportDeliveredSignal) restate.ResponseFuture[restate.Void]
 }
 
 // FulfillmentWfClient is the cross-module client: direct methods are request-response, Send() is one-way, Future() returns response futures.
@@ -104,6 +106,10 @@ func (p *FulfillmentWorkflowRestateClient) OnAdminDecision(ctx context.Context, 
 	return restatec.CallWorkflowVoid(ctx, p.call, serviceName, orderID.String(), "OnAdminDecision", sig)
 }
 
+func (p *FulfillmentWorkflowRestateClient) OnTransportDelivered(ctx context.Context, orderID uuid.UUID, sig ordermodel.TransportDeliveredSignal) error {
+	return restatec.CallWorkflowVoid(ctx, p.call, serviceName, orderID.String(), "OnTransportDelivered", sig)
+}
+
 // FulfillmentWorkflowRestateSender implements FulfillmentWfSender.
 type FulfillmentWorkflowRestateSender struct {
 	client *restatec.SendClient
@@ -147,6 +153,10 @@ func (s *FulfillmentWorkflowRestateSender) OnAdminDecision(ctx context.Context, 
 	return restatec.SendWorkflow(ctx, s.client, serviceName, orderID.String(), "OnAdminDecision", sig)
 }
 
+func (s *FulfillmentWorkflowRestateSender) OnTransportDelivered(ctx context.Context, orderID uuid.UUID, sig ordermodel.TransportDeliveredSignal) error {
+	return restatec.SendWorkflow(ctx, s.client, serviceName, orderID.String(), "OnTransportDelivered", sig)
+}
+
 // FulfillmentWorkflowRestateFuture implements FulfillmentWfFuture via the Restate SDK.
 type FulfillmentWorkflowRestateFuture struct{}
 
@@ -186,4 +196,8 @@ func (f *FulfillmentWorkflowRestateFuture) OnSellerDecision(rctx restate.Context
 
 func (f *FulfillmentWorkflowRestateFuture) OnAdminDecision(rctx restate.Context, orderID uuid.UUID, sig ordermodel.AdminDecisionSignal) restate.ResponseFuture[restate.Void] {
 	return restate.Workflow[restate.Void](rctx, serviceName, orderID.String(), "OnAdminDecision").RequestFuture(sig)
+}
+
+func (f *FulfillmentWorkflowRestateFuture) OnTransportDelivered(rctx restate.Context, orderID uuid.UUID, sig ordermodel.TransportDeliveredSignal) restate.ResponseFuture[restate.Void] {
+	return restate.Workflow[restate.Void](rctx, serviceName, orderID.String(), "OnTransportDelivered").RequestFuture(sig)
 }

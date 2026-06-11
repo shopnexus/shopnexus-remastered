@@ -33,11 +33,11 @@ type CreateBatchConversationBatchResults struct {
 }
 
 type CreateBatchConversationParams struct {
-	ID            uuid.UUID `db:"id" json:"id"`
-	BuyerID       uuid.UUID `db:"buyer_id" json:"buyer_id"`
-	SellerID      uuid.UUID `db:"seller_id" json:"seller_id"`
-	LastMessageAt null.Time `db:"last_message_at" json:"last_message_at"`
-	DateCreated   time.Time `db:"date_created" json:"date_created"`
+	ID            uuid.UUID `json:"id"`
+	BuyerID       uuid.UUID `json:"buyer_id"`
+	SellerID      uuid.UUID `json:"seller_id"`
+	LastMessageAt null.Time `json:"last_message_at"`
+	DateCreated   time.Time `json:"date_created"`
 }
 
 func (q *Queries) CreateBatchConversation(ctx context.Context, arg []CreateBatchConversationParams) *CreateBatchConversationBatchResults {
@@ -98,13 +98,13 @@ type CreateBatchMessageBatchResults struct {
 }
 
 type CreateBatchMessageParams struct {
-	ConversationID uuid.UUID         `db:"conversation_id" json:"conversation_id"`
-	SenderID       uuid.UUID         `db:"sender_id" json:"sender_id"`
-	Type           ChatMessageType   `db:"type" json:"type"`
-	Content        string            `db:"content" json:"content"`
-	Status         ChatMessageStatus `db:"status" json:"status"`
-	Data           json.RawMessage   `db:"data" json:"data"`
-	DateCreated    time.Time         `db:"date_created" json:"date_created"`
+	ConversationID uuid.UUID         `json:"conversation_id"`
+	SenderID       uuid.UUID         `json:"sender_id"`
+	Type           ChatMessageType   `json:"type"`
+	Content        string            `json:"content"`
+	Status         ChatMessageStatus `json:"status"`
+	Data           json.RawMessage   `json:"data"`
+	DateCreated    time.Time         `json:"date_created"`
 }
 
 func (q *Queries) CreateBatchMessage(ctx context.Context, arg []CreateBatchMessageParams) *CreateBatchMessageBatchResults {

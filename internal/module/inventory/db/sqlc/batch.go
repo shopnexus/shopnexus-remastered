@@ -31,10 +31,10 @@ type CreateBatchSerialBatchResults struct {
 }
 
 type CreateBatchSerialParams struct {
-	ID          string          `db:"id" json:"id"`
-	StockID     int64           `db:"stock_id" json:"stock_id"`
-	Status      InventoryStatus `db:"status" json:"status"`
-	DateCreated time.Time       `db:"date_created" json:"date_created"`
+	ID          string          `json:"id"`
+	StockID     int64           `json:"stock_id"`
+	Status      InventoryStatus `json:"status"`
+	DateCreated time.Time       `json:"date_created"`
 }
 
 func (q *Queries) CreateBatchSerial(ctx context.Context, arg []CreateBatchSerialParams) *CreateBatchSerialBatchResults {
@@ -93,12 +93,12 @@ type CreateBatchStockBatchResults struct {
 }
 
 type CreateBatchStockParams struct {
-	RefType        InventoryStockRefType `db:"ref_type" json:"ref_type"`
-	RefID          uuid.UUID             `db:"ref_id" json:"ref_id"`
-	Stock          int64                 `db:"stock" json:"stock"`
-	Taken          int64                 `db:"taken" json:"taken"`
-	SerialRequired bool                  `db:"serial_required" json:"serial_required"`
-	DateCreated    time.Time             `db:"date_created" json:"date_created"`
+	RefType        InventoryStockRefType `json:"ref_type"`
+	RefID          uuid.UUID             `json:"ref_id"`
+	Stock          int64                 `json:"stock"`
+	Taken          int64                 `json:"taken"`
+	SerialRequired bool                  `json:"serial_required"`
+	DateCreated    time.Time             `json:"date_created"`
 }
 
 func (q *Queries) CreateBatchStock(ctx context.Context, arg []CreateBatchStockParams) *CreateBatchStockBatchResults {
@@ -162,9 +162,9 @@ type CreateBatchStockHistoryBatchResults struct {
 }
 
 type CreateBatchStockHistoryParams struct {
-	StockID     int64     `db:"stock_id" json:"stock_id"`
-	Change      int64     `db:"change" json:"change"`
-	DateCreated time.Time `db:"date_created" json:"date_created"`
+	StockID     int64     `json:"stock_id"`
+	Change      int64     `json:"change"`
+	DateCreated time.Time `json:"date_created"`
 }
 
 func (q *Queries) CreateBatchStockHistory(ctx context.Context, arg []CreateBatchStockHistoryParams) *CreateBatchStockHistoryBatchResults {

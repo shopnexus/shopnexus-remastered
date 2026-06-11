@@ -21,9 +21,9 @@ LIMIT $1
 `
 
 type ListStaleSearchSyncRow struct {
-	ID      int64                    `db:"id" json:"id"`
-	RefID   uuid.UUID                `db:"ref_id" json:"ref_id"`
-	RefType CatalogSearchSyncRefType `db:"ref_type" json:"ref_type"`
+	ID      int64                    `json:"id"`
+	RefID   uuid.UUID                `json:"ref_id"`
+	RefType CatalogSearchSyncRefType `json:"ref_type"`
 }
 
 func (q *Queries) ListStaleSearchSync(ctx context.Context, limit int32) ([]ListStaleSearchSyncRow, error) {
@@ -53,8 +53,8 @@ WHERE ref_type = $1 AND ref_id = $2
 `
 
 type MarkStaleSearchSyncParams struct {
-	RefType CatalogSearchSyncRefType `db:"ref_type" json:"ref_type"`
-	RefID   uuid.UUID                `db:"ref_id" json:"ref_id"`
+	RefType CatalogSearchSyncRefType `json:"ref_type"`
+	RefID   uuid.UUID                `json:"ref_id"`
 }
 
 func (q *Queries) MarkStaleSearchSync(ctx context.Context, arg MarkStaleSearchSyncParams) error {

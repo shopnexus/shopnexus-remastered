@@ -26,10 +26,10 @@ WHERE (
 `
 
 type CountCategoryParams struct {
-	ID          []uuid.UUID     `db:"id" json:"id"`
-	Name        []string        `db:"name" json:"name"`
-	Description []string        `db:"description" json:"description"`
-	ParentID    []uuid.NullUUID `db:"parent_id" json:"parent_id"`
+	ID          []uuid.UUID     `json:"id"`
+	Name        []string        `json:"name"`
+	Description []string        `json:"description"`
+	ParentID    []uuid.NullUUID `json:"parent_id"`
 }
 
 func (q *Queries) CountCategory(ctx context.Context, arg CountCategoryParams) (int64, error) {
@@ -73,27 +73,27 @@ WHERE (
 `
 
 type CountCommentParams struct {
-	ID              []uuid.UUID             `db:"id" json:"id"`
-	AccountID       []uuid.UUID             `db:"account_id" json:"account_id"`
-	OrderID         []uuid.NullUUID         `db:"order_id" json:"order_id"`
-	RefType         []CatalogCommentRefType `db:"ref_type" json:"ref_type"`
-	RefID           []uuid.UUID             `db:"ref_id" json:"ref_id"`
-	Body            []string                `db:"body" json:"body"`
-	Upvote          []int64                 `db:"upvote" json:"upvote"`
-	UpvoteFrom      null.Int                `db:"upvote_from" json:"upvote_from"`
-	UpvoteTo        null.Int                `db:"upvote_to" json:"upvote_to"`
-	Downvote        []int64                 `db:"downvote" json:"downvote"`
-	DownvoteFrom    null.Int                `db:"downvote_from" json:"downvote_from"`
-	DownvoteTo      null.Int                `db:"downvote_to" json:"downvote_to"`
-	Score           []float64               `db:"score" json:"score"`
-	ScoreFrom       null.Float              `db:"score_from" json:"score_from"`
-	ScoreTo         null.Float              `db:"score_to" json:"score_to"`
-	DateCreated     []time.Time             `db:"date_created" json:"date_created"`
-	DateCreatedFrom null.Time               `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo   null.Time               `db:"date_created_to" json:"date_created_to"`
-	DateUpdated     []time.Time             `db:"date_updated" json:"date_updated"`
-	DateUpdatedFrom null.Time               `db:"date_updated_from" json:"date_updated_from"`
-	DateUpdatedTo   null.Time               `db:"date_updated_to" json:"date_updated_to"`
+	ID              []uuid.UUID             `json:"id"`
+	AccountID       []uuid.UUID             `json:"account_id"`
+	OrderID         []uuid.NullUUID         `json:"order_id"`
+	RefType         []CatalogCommentRefType `json:"ref_type"`
+	RefID           []uuid.UUID             `json:"ref_id"`
+	Body            []string                `json:"body"`
+	Upvote          []int64                 `json:"upvote"`
+	UpvoteFrom      null.Int                `json:"upvote_from"`
+	UpvoteTo        null.Int                `json:"upvote_to"`
+	Downvote        []int64                 `json:"downvote"`
+	DownvoteFrom    null.Int                `json:"downvote_from"`
+	DownvoteTo      null.Int                `json:"downvote_to"`
+	Score           []float64               `json:"score"`
+	ScoreFrom       null.Float              `json:"score_from"`
+	ScoreTo         null.Float              `json:"score_to"`
+	DateCreated     []time.Time             `json:"date_created"`
+	DateCreatedFrom null.Time               `json:"date_created_from"`
+	DateCreatedTo   null.Time               `json:"date_created_to"`
+	DateUpdated     []time.Time             `json:"date_updated"`
+	DateUpdatedFrom null.Time               `json:"date_updated_from"`
+	DateUpdatedTo   null.Time               `json:"date_updated_to"`
 }
 
 func (q *Queries) CountComment(ctx context.Context, arg CountCommentParams) (int64, error) {
@@ -147,20 +147,20 @@ WHERE (
 `
 
 type CountProductSkuParams struct {
-	ID              []uuid.UUID       `db:"id" json:"id"`
-	SpuID           []uuid.UUID       `db:"spu_id" json:"spu_id"`
-	Price           []int64           `db:"price" json:"price"`
-	PriceFrom       null.Int          `db:"price_from" json:"price_from"`
-	PriceTo         null.Int          `db:"price_to" json:"price_to"`
-	SharedPackaging []bool            `db:"shared_packaging" json:"shared_packaging"`
-	Attributes      []json.RawMessage `db:"attributes" json:"attributes"`
-	PackageDetails  []json.RawMessage `db:"package_details" json:"package_details"`
-	DateCreated     []time.Time       `db:"date_created" json:"date_created"`
-	DateCreatedFrom null.Time         `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo   null.Time         `db:"date_created_to" json:"date_created_to"`
-	DateDeleted     []null.Time       `db:"date_deleted" json:"date_deleted"`
-	DateDeletedFrom null.Time         `db:"date_deleted_from" json:"date_deleted_from"`
-	DateDeletedTo   null.Time         `db:"date_deleted_to" json:"date_deleted_to"`
+	ID              []uuid.UUID       `json:"id"`
+	SpuID           []uuid.UUID       `json:"spu_id"`
+	Price           []int64           `json:"price"`
+	PriceFrom       null.Int          `json:"price_from"`
+	PriceTo         null.Int          `json:"price_to"`
+	SharedPackaging []bool            `json:"shared_packaging"`
+	Attributes      []json.RawMessage `json:"attributes"`
+	PackageDetails  []json.RawMessage `json:"package_details"`
+	DateCreated     []time.Time       `json:"date_created"`
+	DateCreatedFrom null.Time         `json:"date_created_from"`
+	DateCreatedTo   null.Time         `json:"date_created_to"`
+	DateDeleted     []null.Time       `json:"date_deleted"`
+	DateDeletedFrom null.Time         `json:"date_deleted_from"`
+	DateDeletedTo   null.Time         `json:"date_deleted_to"`
 }
 
 func (q *Queries) CountProductSku(ctx context.Context, arg CountProductSkuParams) (int64, error) {
@@ -221,34 +221,34 @@ WHERE (
 `
 
 type CountProductSpuParams struct {
-	ID               []uuid.UUID       `db:"id" json:"id"`
-	Number           []int64           `db:"number" json:"number"`
-	NumberFrom       null.Int          `db:"number_from" json:"number_from"`
-	NumberTo         null.Int          `db:"number_to" json:"number_to"`
-	Slug             []string          `db:"slug" json:"slug"`
-	AccountID        []uuid.UUID       `db:"account_id" json:"account_id"`
-	CategoryID       []uuid.UUID       `db:"category_id" json:"category_id"`
-	FeaturedSkuID    []uuid.NullUUID   `db:"featured_sku_id" json:"featured_sku_id"`
-	Name             []string          `db:"name" json:"name"`
-	Description      []string          `db:"description" json:"description"`
-	IsEnabled        []bool            `db:"is_enabled" json:"is_enabled"`
-	Currency         []string          `db:"currency" json:"currency"`
-	Specifications   []json.RawMessage `db:"specifications" json:"specifications"`
-	DateCreated      []time.Time       `db:"date_created" json:"date_created"`
-	DateCreatedFrom  null.Time         `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo    null.Time         `db:"date_created_to" json:"date_created_to"`
-	DateUpdated      []time.Time       `db:"date_updated" json:"date_updated"`
-	DateUpdatedFrom  null.Time         `db:"date_updated_from" json:"date_updated_from"`
-	DateUpdatedTo    null.Time         `db:"date_updated_to" json:"date_updated_to"`
-	DateDeleted      []null.Time       `db:"date_deleted" json:"date_deleted"`
-	DateDeletedFrom  null.Time         `db:"date_deleted_from" json:"date_deleted_from"`
-	DateDeletedTo    null.Time         `db:"date_deleted_to" json:"date_deleted_to"`
-	CachedPrice      []int64           `db:"cached_price" json:"cached_price"`
-	CachedPriceFrom  null.Int          `db:"cached_price_from" json:"cached_price_from"`
-	CachedPriceTo    null.Int          `db:"cached_price_to" json:"cached_price_to"`
-	CachedRating     []float64         `db:"cached_rating" json:"cached_rating"`
-	CachedRatingFrom null.Float        `db:"cached_rating_from" json:"cached_rating_from"`
-	CachedRatingTo   null.Float        `db:"cached_rating_to" json:"cached_rating_to"`
+	ID               []uuid.UUID       `json:"id"`
+	Number           []int64           `json:"number"`
+	NumberFrom       null.Int          `json:"number_from"`
+	NumberTo         null.Int          `json:"number_to"`
+	Slug             []string          `json:"slug"`
+	AccountID        []uuid.UUID       `json:"account_id"`
+	CategoryID       []uuid.UUID       `json:"category_id"`
+	FeaturedSkuID    []uuid.NullUUID   `json:"featured_sku_id"`
+	Name             []string          `json:"name"`
+	Description      []string          `json:"description"`
+	IsEnabled        []bool            `json:"is_enabled"`
+	Currency         []string          `json:"currency"`
+	Specifications   []json.RawMessage `json:"specifications"`
+	DateCreated      []time.Time       `json:"date_created"`
+	DateCreatedFrom  null.Time         `json:"date_created_from"`
+	DateCreatedTo    null.Time         `json:"date_created_to"`
+	DateUpdated      []time.Time       `json:"date_updated"`
+	DateUpdatedFrom  null.Time         `json:"date_updated_from"`
+	DateUpdatedTo    null.Time         `json:"date_updated_to"`
+	DateDeleted      []null.Time       `json:"date_deleted"`
+	DateDeletedFrom  null.Time         `json:"date_deleted_from"`
+	DateDeletedTo    null.Time         `json:"date_deleted_to"`
+	CachedPrice      []int64           `json:"cached_price"`
+	CachedPriceFrom  null.Int          `json:"cached_price_from"`
+	CachedPriceTo    null.Int          `json:"cached_price_to"`
+	CachedRating     []float64         `json:"cached_rating"`
+	CachedRatingFrom null.Float        `json:"cached_rating_from"`
+	CachedRatingTo   null.Float        `json:"cached_rating_to"`
 }
 
 func (q *Queries) CountProductSpu(ctx context.Context, arg CountProductSpuParams) (int64, error) {
@@ -298,9 +298,9 @@ WHERE (
 `
 
 type CountProductSpuTagParams struct {
-	ID    []int64     `db:"id" json:"id"`
-	SpuID []uuid.UUID `db:"spu_id" json:"spu_id"`
-	Tag   []string    `db:"tag" json:"tag"`
+	ID    []int64     `json:"id"`
+	SpuID []uuid.UUID `json:"spu_id"`
+	Tag   []string    `json:"tag"`
 }
 
 func (q *Queries) CountProductSpuTag(ctx context.Context, arg CountProductSpuTagParams) (int64, error) {
@@ -328,16 +328,16 @@ WHERE (
 `
 
 type CountSearchSyncParams struct {
-	ID               []int64                    `db:"id" json:"id"`
-	RefType          []CatalogSearchSyncRefType `db:"ref_type" json:"ref_type"`
-	RefID            []uuid.UUID                `db:"ref_id" json:"ref_id"`
-	IsStaleEmbedding []bool                     `db:"is_stale_embedding" json:"is_stale_embedding"`
-	DateCreated      []time.Time                `db:"date_created" json:"date_created"`
-	DateCreatedFrom  null.Time                  `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo    null.Time                  `db:"date_created_to" json:"date_created_to"`
-	DateUpdated      []time.Time                `db:"date_updated" json:"date_updated"`
-	DateUpdatedFrom  null.Time                  `db:"date_updated_from" json:"date_updated_from"`
-	DateUpdatedTo    null.Time                  `db:"date_updated_to" json:"date_updated_to"`
+	ID               []int64                    `json:"id"`
+	RefType          []CatalogSearchSyncRefType `json:"ref_type"`
+	RefID            []uuid.UUID                `json:"ref_id"`
+	IsStaleEmbedding []bool                     `json:"is_stale_embedding"`
+	DateCreated      []time.Time                `json:"date_created"`
+	DateCreatedFrom  null.Time                  `json:"date_created_from"`
+	DateCreatedTo    null.Time                  `json:"date_created_to"`
+	DateUpdated      []time.Time                `json:"date_updated"`
+	DateUpdatedFrom  null.Time                  `json:"date_updated_from"`
+	DateUpdatedTo    null.Time                  `json:"date_updated_to"`
 }
 
 func (q *Queries) CountSearchSync(ctx context.Context, arg CountSearchSyncParams) (int64, error) {
@@ -369,9 +369,9 @@ WHERE (
 `
 
 type CountTagParams struct {
-	ID          []string      `db:"id" json:"id"`
-	Name        []string      `db:"name" json:"name"`
-	Description []null.String `db:"description" json:"description"`
+	ID          []string      `json:"id"`
+	Name        []string      `json:"name"`
+	Description []null.String `json:"description"`
 }
 
 func (q *Queries) CountTag(ctx context.Context, arg CountTagParams) (int64, error) {
@@ -388,10 +388,10 @@ RETURNING id, name, description, parent_id
 `
 
 type CreateCategoryParams struct {
-	ID          uuid.UUID     `db:"id" json:"id"`
-	Name        string        `db:"name" json:"name"`
-	Description string        `db:"description" json:"description"`
-	ParentID    uuid.NullUUID `db:"parent_id" json:"parent_id"`
+	ID          uuid.UUID     `json:"id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	ParentID    uuid.NullUUID `json:"parent_id"`
 }
 
 func (q *Queries) CreateCategory(ctx context.Context, arg CreateCategoryParams) (CatalogCategory, error) {
@@ -418,17 +418,17 @@ RETURNING id, account_id, order_id, ref_type, ref_id, body, upvote, downvote, sc
 `
 
 type CreateCommentParams struct {
-	ID          uuid.UUID             `db:"id" json:"id"`
-	AccountID   uuid.UUID             `db:"account_id" json:"account_id"`
-	OrderID     uuid.NullUUID         `db:"order_id" json:"order_id"`
-	RefType     CatalogCommentRefType `db:"ref_type" json:"ref_type"`
-	RefID       uuid.UUID             `db:"ref_id" json:"ref_id"`
-	Body        string                `db:"body" json:"body"`
-	Upvote      int64                 `db:"upvote" json:"upvote"`
-	Downvote    int64                 `db:"downvote" json:"downvote"`
-	Score       float64               `db:"score" json:"score"`
-	DateCreated time.Time             `db:"date_created" json:"date_created"`
-	DateUpdated time.Time             `db:"date_updated" json:"date_updated"`
+	ID          uuid.UUID             `json:"id"`
+	AccountID   uuid.UUID             `json:"account_id"`
+	OrderID     uuid.NullUUID         `json:"order_id"`
+	RefType     CatalogCommentRefType `json:"ref_type"`
+	RefID       uuid.UUID             `json:"ref_id"`
+	Body        string                `json:"body"`
+	Upvote      int64                 `json:"upvote"`
+	Downvote    int64                 `json:"downvote"`
+	Score       float64               `json:"score"`
+	DateCreated time.Time             `json:"date_created"`
+	DateUpdated time.Time             `json:"date_updated"`
 }
 
 func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (CatalogComment, error) {
@@ -463,125 +463,125 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 }
 
 type CreateCopyCategoryParams struct {
-	ID          uuid.UUID     `db:"id" json:"id"`
-	Name        string        `db:"name" json:"name"`
-	Description string        `db:"description" json:"description"`
-	ParentID    uuid.NullUUID `db:"parent_id" json:"parent_id"`
+	ID          uuid.UUID     `json:"id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	ParentID    uuid.NullUUID `json:"parent_id"`
 }
 
 type CreateCopyCommentParams struct {
-	ID          uuid.UUID             `db:"id" json:"id"`
-	AccountID   uuid.UUID             `db:"account_id" json:"account_id"`
-	OrderID     uuid.NullUUID         `db:"order_id" json:"order_id"`
-	RefType     CatalogCommentRefType `db:"ref_type" json:"ref_type"`
-	RefID       uuid.UUID             `db:"ref_id" json:"ref_id"`
-	Body        string                `db:"body" json:"body"`
-	Upvote      int64                 `db:"upvote" json:"upvote"`
-	Downvote    int64                 `db:"downvote" json:"downvote"`
-	Score       float64               `db:"score" json:"score"`
-	DateCreated time.Time             `db:"date_created" json:"date_created"`
-	DateUpdated time.Time             `db:"date_updated" json:"date_updated"`
+	ID          uuid.UUID             `json:"id"`
+	AccountID   uuid.UUID             `json:"account_id"`
+	OrderID     uuid.NullUUID         `json:"order_id"`
+	RefType     CatalogCommentRefType `json:"ref_type"`
+	RefID       uuid.UUID             `json:"ref_id"`
+	Body        string                `json:"body"`
+	Upvote      int64                 `json:"upvote"`
+	Downvote    int64                 `json:"downvote"`
+	Score       float64               `json:"score"`
+	DateCreated time.Time             `json:"date_created"`
+	DateUpdated time.Time             `json:"date_updated"`
 }
 
 type CreateCopyDefaultCategoryParams struct {
-	Name        string        `db:"name" json:"name"`
-	Description string        `db:"description" json:"description"`
-	ParentID    uuid.NullUUID `db:"parent_id" json:"parent_id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	ParentID    uuid.NullUUID `json:"parent_id"`
 }
 
 type CreateCopyDefaultCommentParams struct {
-	AccountID uuid.UUID             `db:"account_id" json:"account_id"`
-	OrderID   uuid.NullUUID         `db:"order_id" json:"order_id"`
-	RefType   CatalogCommentRefType `db:"ref_type" json:"ref_type"`
-	RefID     uuid.UUID             `db:"ref_id" json:"ref_id"`
-	Body      string                `db:"body" json:"body"`
-	Score     float64               `db:"score" json:"score"`
+	AccountID uuid.UUID             `json:"account_id"`
+	OrderID   uuid.NullUUID         `json:"order_id"`
+	RefType   CatalogCommentRefType `json:"ref_type"`
+	RefID     uuid.UUID             `json:"ref_id"`
+	Body      string                `json:"body"`
+	Score     float64               `json:"score"`
 }
 
 type CreateCopyDefaultProductSkuParams struct {
-	SpuID           uuid.UUID       `db:"spu_id" json:"spu_id"`
-	Price           int64           `db:"price" json:"price"`
-	SharedPackaging bool            `db:"shared_packaging" json:"shared_packaging"`
-	Attributes      json.RawMessage `db:"attributes" json:"attributes"`
-	PackageDetails  json.RawMessage `db:"package_details" json:"package_details"`
-	DateDeleted     null.Time       `db:"date_deleted" json:"date_deleted"`
+	SpuID           uuid.UUID       `json:"spu_id"`
+	Price           int64           `json:"price"`
+	SharedPackaging bool            `json:"shared_packaging"`
+	Attributes      json.RawMessage `json:"attributes"`
+	PackageDetails  json.RawMessage `json:"package_details"`
+	DateDeleted     null.Time       `json:"date_deleted"`
 }
 
 type CreateCopyDefaultProductSpuParams struct {
-	Slug           string          `db:"slug" json:"slug"`
-	AccountID      uuid.UUID       `db:"account_id" json:"account_id"`
-	CategoryID     uuid.UUID       `db:"category_id" json:"category_id"`
-	FeaturedSkuID  uuid.NullUUID   `db:"featured_sku_id" json:"featured_sku_id"`
-	Name           string          `db:"name" json:"name"`
-	Description    string          `db:"description" json:"description"`
-	IsEnabled      bool            `db:"is_enabled" json:"is_enabled"`
-	Currency       string          `db:"currency" json:"currency"`
-	Specifications json.RawMessage `db:"specifications" json:"specifications"`
-	DateDeleted    null.Time       `db:"date_deleted" json:"date_deleted"`
+	Slug           string          `json:"slug"`
+	AccountID      uuid.UUID       `json:"account_id"`
+	CategoryID     uuid.UUID       `json:"category_id"`
+	FeaturedSkuID  uuid.NullUUID   `json:"featured_sku_id"`
+	Name           string          `json:"name"`
+	Description    string          `json:"description"`
+	IsEnabled      bool            `json:"is_enabled"`
+	Currency       string          `json:"currency"`
+	Specifications json.RawMessage `json:"specifications"`
+	DateDeleted    null.Time       `json:"date_deleted"`
 }
 
 type CreateCopyDefaultProductSpuTagParams struct {
-	SpuID uuid.UUID `db:"spu_id" json:"spu_id"`
-	Tag   string    `db:"tag" json:"tag"`
+	SpuID uuid.UUID `json:"spu_id"`
+	Tag   string    `json:"tag"`
 }
 
 type CreateCopyDefaultSearchSyncParams struct {
-	RefType CatalogSearchSyncRefType `db:"ref_type" json:"ref_type"`
-	RefID   uuid.UUID                `db:"ref_id" json:"ref_id"`
+	RefType CatalogSearchSyncRefType `json:"ref_type"`
+	RefID   uuid.UUID                `json:"ref_id"`
 }
 
 type CreateCopyDefaultTagParams struct {
-	ID          string      `db:"id" json:"id"`
-	Name        string      `db:"name" json:"name"`
-	Description null.String `db:"description" json:"description"`
+	ID          string      `json:"id"`
+	Name        string      `json:"name"`
+	Description null.String `json:"description"`
 }
 
 type CreateCopyProductSkuParams struct {
-	ID              uuid.UUID       `db:"id" json:"id"`
-	SpuID           uuid.UUID       `db:"spu_id" json:"spu_id"`
-	Price           int64           `db:"price" json:"price"`
-	SharedPackaging bool            `db:"shared_packaging" json:"shared_packaging"`
-	Attributes      json.RawMessage `db:"attributes" json:"attributes"`
-	PackageDetails  json.RawMessage `db:"package_details" json:"package_details"`
-	DateCreated     time.Time       `db:"date_created" json:"date_created"`
-	DateDeleted     null.Time       `db:"date_deleted" json:"date_deleted"`
+	ID              uuid.UUID       `json:"id"`
+	SpuID           uuid.UUID       `json:"spu_id"`
+	Price           int64           `json:"price"`
+	SharedPackaging bool            `json:"shared_packaging"`
+	Attributes      json.RawMessage `json:"attributes"`
+	PackageDetails  json.RawMessage `json:"package_details"`
+	DateCreated     time.Time       `json:"date_created"`
+	DateDeleted     null.Time       `json:"date_deleted"`
 }
 
 type CreateCopyProductSpuParams struct {
-	ID             uuid.UUID       `db:"id" json:"id"`
-	Slug           string          `db:"slug" json:"slug"`
-	AccountID      uuid.UUID       `db:"account_id" json:"account_id"`
-	CategoryID     uuid.UUID       `db:"category_id" json:"category_id"`
-	FeaturedSkuID  uuid.NullUUID   `db:"featured_sku_id" json:"featured_sku_id"`
-	Name           string          `db:"name" json:"name"`
-	Description    string          `db:"description" json:"description"`
-	IsEnabled      bool            `db:"is_enabled" json:"is_enabled"`
-	Currency       string          `db:"currency" json:"currency"`
-	Specifications json.RawMessage `db:"specifications" json:"specifications"`
-	DateCreated    time.Time       `db:"date_created" json:"date_created"`
-	DateUpdated    time.Time       `db:"date_updated" json:"date_updated"`
-	DateDeleted    null.Time       `db:"date_deleted" json:"date_deleted"`
-	CachedPrice    int64           `db:"cached_price" json:"cached_price"`
-	CachedRating   float64         `db:"cached_rating" json:"cached_rating"`
+	ID             uuid.UUID       `json:"id"`
+	Slug           string          `json:"slug"`
+	AccountID      uuid.UUID       `json:"account_id"`
+	CategoryID     uuid.UUID       `json:"category_id"`
+	FeaturedSkuID  uuid.NullUUID   `json:"featured_sku_id"`
+	Name           string          `json:"name"`
+	Description    string          `json:"description"`
+	IsEnabled      bool            `json:"is_enabled"`
+	Currency       string          `json:"currency"`
+	Specifications json.RawMessage `json:"specifications"`
+	DateCreated    time.Time       `json:"date_created"`
+	DateUpdated    time.Time       `json:"date_updated"`
+	DateDeleted    null.Time       `json:"date_deleted"`
+	CachedPrice    int64           `json:"cached_price"`
+	CachedRating   float64         `json:"cached_rating"`
 }
 
 type CreateCopyProductSpuTagParams struct {
-	SpuID uuid.UUID `db:"spu_id" json:"spu_id"`
-	Tag   string    `db:"tag" json:"tag"`
+	SpuID uuid.UUID `json:"spu_id"`
+	Tag   string    `json:"tag"`
 }
 
 type CreateCopySearchSyncParams struct {
-	RefType          CatalogSearchSyncRefType `db:"ref_type" json:"ref_type"`
-	RefID            uuid.UUID                `db:"ref_id" json:"ref_id"`
-	IsStaleEmbedding bool                     `db:"is_stale_embedding" json:"is_stale_embedding"`
-	DateCreated      time.Time                `db:"date_created" json:"date_created"`
-	DateUpdated      time.Time                `db:"date_updated" json:"date_updated"`
+	RefType          CatalogSearchSyncRefType `json:"ref_type"`
+	RefID            uuid.UUID                `json:"ref_id"`
+	IsStaleEmbedding bool                     `json:"is_stale_embedding"`
+	DateCreated      time.Time                `json:"date_created"`
+	DateUpdated      time.Time                `json:"date_updated"`
 }
 
 type CreateCopyTagParams struct {
-	ID          string      `db:"id" json:"id"`
-	Name        string      `db:"name" json:"name"`
-	Description null.String `db:"description" json:"description"`
+	ID          string      `json:"id"`
+	Name        string      `json:"name"`
+	Description null.String `json:"description"`
 }
 
 const createDefaultCategory = `-- name: CreateDefaultCategory :one
@@ -591,9 +591,9 @@ RETURNING id, name, description, parent_id
 `
 
 type CreateDefaultCategoryParams struct {
-	Name        string        `db:"name" json:"name"`
-	Description string        `db:"description" json:"description"`
-	ParentID    uuid.NullUUID `db:"parent_id" json:"parent_id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	ParentID    uuid.NullUUID `json:"parent_id"`
 }
 
 func (q *Queries) CreateDefaultCategory(ctx context.Context, arg CreateDefaultCategoryParams) (CatalogCategory, error) {
@@ -615,12 +615,12 @@ RETURNING id, account_id, order_id, ref_type, ref_id, body, upvote, downvote, sc
 `
 
 type CreateDefaultCommentParams struct {
-	AccountID uuid.UUID             `db:"account_id" json:"account_id"`
-	OrderID   uuid.NullUUID         `db:"order_id" json:"order_id"`
-	RefType   CatalogCommentRefType `db:"ref_type" json:"ref_type"`
-	RefID     uuid.UUID             `db:"ref_id" json:"ref_id"`
-	Body      string                `db:"body" json:"body"`
-	Score     float64               `db:"score" json:"score"`
+	AccountID uuid.UUID             `json:"account_id"`
+	OrderID   uuid.NullUUID         `json:"order_id"`
+	RefType   CatalogCommentRefType `json:"ref_type"`
+	RefID     uuid.UUID             `json:"ref_id"`
+	Body      string                `json:"body"`
+	Score     float64               `json:"score"`
 }
 
 func (q *Queries) CreateDefaultComment(ctx context.Context, arg CreateDefaultCommentParams) (CatalogComment, error) {
@@ -656,12 +656,12 @@ RETURNING id, spu_id, price, shared_packaging, attributes, package_details, date
 `
 
 type CreateDefaultProductSkuParams struct {
-	SpuID           uuid.UUID       `db:"spu_id" json:"spu_id"`
-	Price           int64           `db:"price" json:"price"`
-	SharedPackaging bool            `db:"shared_packaging" json:"shared_packaging"`
-	Attributes      json.RawMessage `db:"attributes" json:"attributes"`
-	PackageDetails  json.RawMessage `db:"package_details" json:"package_details"`
-	DateDeleted     null.Time       `db:"date_deleted" json:"date_deleted"`
+	SpuID           uuid.UUID       `json:"spu_id"`
+	Price           int64           `json:"price"`
+	SharedPackaging bool            `json:"shared_packaging"`
+	Attributes      json.RawMessage `json:"attributes"`
+	PackageDetails  json.RawMessage `json:"package_details"`
+	DateDeleted     null.Time       `json:"date_deleted"`
 }
 
 func (q *Queries) CreateDefaultProductSku(ctx context.Context, arg CreateDefaultProductSkuParams) (CatalogProductSku, error) {
@@ -694,16 +694,16 @@ RETURNING id, number, slug, account_id, category_id, featured_sku_id, name, desc
 `
 
 type CreateDefaultProductSpuParams struct {
-	Slug           string          `db:"slug" json:"slug"`
-	AccountID      uuid.UUID       `db:"account_id" json:"account_id"`
-	CategoryID     uuid.UUID       `db:"category_id" json:"category_id"`
-	FeaturedSkuID  uuid.NullUUID   `db:"featured_sku_id" json:"featured_sku_id"`
-	Name           string          `db:"name" json:"name"`
-	Description    string          `db:"description" json:"description"`
-	IsEnabled      bool            `db:"is_enabled" json:"is_enabled"`
-	Currency       string          `db:"currency" json:"currency"`
-	Specifications json.RawMessage `db:"specifications" json:"specifications"`
-	DateDeleted    null.Time       `db:"date_deleted" json:"date_deleted"`
+	Slug           string          `json:"slug"`
+	AccountID      uuid.UUID       `json:"account_id"`
+	CategoryID     uuid.UUID       `json:"category_id"`
+	FeaturedSkuID  uuid.NullUUID   `json:"featured_sku_id"`
+	Name           string          `json:"name"`
+	Description    string          `json:"description"`
+	IsEnabled      bool            `json:"is_enabled"`
+	Currency       string          `json:"currency"`
+	Specifications json.RawMessage `json:"specifications"`
+	DateDeleted    null.Time       `json:"date_deleted"`
 }
 
 func (q *Queries) CreateDefaultProductSpu(ctx context.Context, arg CreateDefaultProductSpuParams) (CatalogProductSpu, error) {
@@ -748,8 +748,8 @@ RETURNING id, spu_id, tag
 `
 
 type CreateDefaultProductSpuTagParams struct {
-	SpuID uuid.UUID `db:"spu_id" json:"spu_id"`
-	Tag   string    `db:"tag" json:"tag"`
+	SpuID uuid.UUID `json:"spu_id"`
+	Tag   string    `json:"tag"`
 }
 
 func (q *Queries) CreateDefaultProductSpuTag(ctx context.Context, arg CreateDefaultProductSpuTagParams) (CatalogProductSpuTag, error) {
@@ -766,8 +766,8 @@ RETURNING id, ref_type, ref_id, is_stale_embedding, date_created, date_updated
 `
 
 type CreateDefaultSearchSyncParams struct {
-	RefType CatalogSearchSyncRefType `db:"ref_type" json:"ref_type"`
-	RefID   uuid.UUID                `db:"ref_id" json:"ref_id"`
+	RefType CatalogSearchSyncRefType `json:"ref_type"`
+	RefID   uuid.UUID                `json:"ref_id"`
 }
 
 func (q *Queries) CreateDefaultSearchSync(ctx context.Context, arg CreateDefaultSearchSyncParams) (CatalogSearchSync, error) {
@@ -791,9 +791,9 @@ RETURNING id, name, description
 `
 
 type CreateDefaultTagParams struct {
-	ID          string      `db:"id" json:"id"`
-	Name        string      `db:"name" json:"name"`
-	Description null.String `db:"description" json:"description"`
+	ID          string      `json:"id"`
+	Name        string      `json:"name"`
+	Description null.String `json:"description"`
 }
 
 func (q *Queries) CreateDefaultTag(ctx context.Context, arg CreateDefaultTagParams) (CatalogTag, error) {
@@ -810,14 +810,14 @@ RETURNING id, spu_id, price, shared_packaging, attributes, package_details, date
 `
 
 type CreateProductSkuParams struct {
-	ID              uuid.UUID       `db:"id" json:"id"`
-	SpuID           uuid.UUID       `db:"spu_id" json:"spu_id"`
-	Price           int64           `db:"price" json:"price"`
-	SharedPackaging bool            `db:"shared_packaging" json:"shared_packaging"`
-	Attributes      json.RawMessage `db:"attributes" json:"attributes"`
-	PackageDetails  json.RawMessage `db:"package_details" json:"package_details"`
-	DateCreated     time.Time       `db:"date_created" json:"date_created"`
-	DateDeleted     null.Time       `db:"date_deleted" json:"date_deleted"`
+	ID              uuid.UUID       `json:"id"`
+	SpuID           uuid.UUID       `json:"spu_id"`
+	Price           int64           `json:"price"`
+	SharedPackaging bool            `json:"shared_packaging"`
+	Attributes      json.RawMessage `json:"attributes"`
+	PackageDetails  json.RawMessage `json:"package_details"`
+	DateCreated     time.Time       `json:"date_created"`
+	DateDeleted     null.Time       `json:"date_deleted"`
 }
 
 func (q *Queries) CreateProductSku(ctx context.Context, arg CreateProductSkuParams) (CatalogProductSku, error) {
@@ -852,21 +852,21 @@ RETURNING id, number, slug, account_id, category_id, featured_sku_id, name, desc
 `
 
 type CreateProductSpuParams struct {
-	ID             uuid.UUID       `db:"id" json:"id"`
-	Slug           string          `db:"slug" json:"slug"`
-	AccountID      uuid.UUID       `db:"account_id" json:"account_id"`
-	CategoryID     uuid.UUID       `db:"category_id" json:"category_id"`
-	FeaturedSkuID  uuid.NullUUID   `db:"featured_sku_id" json:"featured_sku_id"`
-	Name           string          `db:"name" json:"name"`
-	Description    string          `db:"description" json:"description"`
-	IsEnabled      bool            `db:"is_enabled" json:"is_enabled"`
-	Currency       string          `db:"currency" json:"currency"`
-	Specifications json.RawMessage `db:"specifications" json:"specifications"`
-	DateCreated    time.Time       `db:"date_created" json:"date_created"`
-	DateUpdated    time.Time       `db:"date_updated" json:"date_updated"`
-	DateDeleted    null.Time       `db:"date_deleted" json:"date_deleted"`
-	CachedPrice    int64           `db:"cached_price" json:"cached_price"`
-	CachedRating   float64         `db:"cached_rating" json:"cached_rating"`
+	ID             uuid.UUID       `json:"id"`
+	Slug           string          `json:"slug"`
+	AccountID      uuid.UUID       `json:"account_id"`
+	CategoryID     uuid.UUID       `json:"category_id"`
+	FeaturedSkuID  uuid.NullUUID   `json:"featured_sku_id"`
+	Name           string          `json:"name"`
+	Description    string          `json:"description"`
+	IsEnabled      bool            `json:"is_enabled"`
+	Currency       string          `json:"currency"`
+	Specifications json.RawMessage `json:"specifications"`
+	DateCreated    time.Time       `json:"date_created"`
+	DateUpdated    time.Time       `json:"date_updated"`
+	DateDeleted    null.Time       `json:"date_deleted"`
+	CachedPrice    int64           `json:"cached_price"`
+	CachedRating   float64         `json:"cached_rating"`
 }
 
 func (q *Queries) CreateProductSpu(ctx context.Context, arg CreateProductSpuParams) (CatalogProductSpu, error) {
@@ -916,8 +916,8 @@ RETURNING id, spu_id, tag
 `
 
 type CreateProductSpuTagParams struct {
-	SpuID uuid.UUID `db:"spu_id" json:"spu_id"`
-	Tag   string    `db:"tag" json:"tag"`
+	SpuID uuid.UUID `json:"spu_id"`
+	Tag   string    `json:"tag"`
 }
 
 func (q *Queries) CreateProductSpuTag(ctx context.Context, arg CreateProductSpuTagParams) (CatalogProductSpuTag, error) {
@@ -934,11 +934,11 @@ RETURNING id, ref_type, ref_id, is_stale_embedding, date_created, date_updated
 `
 
 type CreateSearchSyncParams struct {
-	RefType          CatalogSearchSyncRefType `db:"ref_type" json:"ref_type"`
-	RefID            uuid.UUID                `db:"ref_id" json:"ref_id"`
-	IsStaleEmbedding bool                     `db:"is_stale_embedding" json:"is_stale_embedding"`
-	DateCreated      time.Time                `db:"date_created" json:"date_created"`
-	DateUpdated      time.Time                `db:"date_updated" json:"date_updated"`
+	RefType          CatalogSearchSyncRefType `json:"ref_type"`
+	RefID            uuid.UUID                `json:"ref_id"`
+	IsStaleEmbedding bool                     `json:"is_stale_embedding"`
+	DateCreated      time.Time                `json:"date_created"`
+	DateUpdated      time.Time                `json:"date_updated"`
 }
 
 func (q *Queries) CreateSearchSync(ctx context.Context, arg CreateSearchSyncParams) (CatalogSearchSync, error) {
@@ -968,9 +968,9 @@ RETURNING id, name, description
 `
 
 type CreateTagParams struct {
-	ID          string      `db:"id" json:"id"`
-	Name        string      `db:"name" json:"name"`
-	Description null.String `db:"description" json:"description"`
+	ID          string      `json:"id"`
+	Name        string      `json:"name"`
+	Description null.String `json:"description"`
 }
 
 func (q *Queries) CreateTag(ctx context.Context, arg CreateTagParams) (CatalogTag, error) {
@@ -991,10 +991,10 @@ WHERE (
 `
 
 type DeleteCategoryParams struct {
-	ID          []uuid.UUID     `db:"id" json:"id"`
-	Name        []string        `db:"name" json:"name"`
-	Description []string        `db:"description" json:"description"`
-	ParentID    []uuid.NullUUID `db:"parent_id" json:"parent_id"`
+	ID          []uuid.UUID     `json:"id"`
+	Name        []string        `json:"name"`
+	Description []string        `json:"description"`
+	ParentID    []uuid.NullUUID `json:"parent_id"`
 }
 
 func (q *Queries) DeleteCategory(ctx context.Context, arg DeleteCategoryParams) error {
@@ -1035,27 +1035,27 @@ WHERE (
 `
 
 type DeleteCommentParams struct {
-	ID              []uuid.UUID             `db:"id" json:"id"`
-	AccountID       []uuid.UUID             `db:"account_id" json:"account_id"`
-	OrderID         []uuid.NullUUID         `db:"order_id" json:"order_id"`
-	RefType         []CatalogCommentRefType `db:"ref_type" json:"ref_type"`
-	RefID           []uuid.UUID             `db:"ref_id" json:"ref_id"`
-	Body            []string                `db:"body" json:"body"`
-	Upvote          []int64                 `db:"upvote" json:"upvote"`
-	UpvoteFrom      null.Int                `db:"upvote_from" json:"upvote_from"`
-	UpvoteTo        null.Int                `db:"upvote_to" json:"upvote_to"`
-	Downvote        []int64                 `db:"downvote" json:"downvote"`
-	DownvoteFrom    null.Int                `db:"downvote_from" json:"downvote_from"`
-	DownvoteTo      null.Int                `db:"downvote_to" json:"downvote_to"`
-	Score           []float64               `db:"score" json:"score"`
-	ScoreFrom       null.Float              `db:"score_from" json:"score_from"`
-	ScoreTo         null.Float              `db:"score_to" json:"score_to"`
-	DateCreated     []time.Time             `db:"date_created" json:"date_created"`
-	DateCreatedFrom null.Time               `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo   null.Time               `db:"date_created_to" json:"date_created_to"`
-	DateUpdated     []time.Time             `db:"date_updated" json:"date_updated"`
-	DateUpdatedFrom null.Time               `db:"date_updated_from" json:"date_updated_from"`
-	DateUpdatedTo   null.Time               `db:"date_updated_to" json:"date_updated_to"`
+	ID              []uuid.UUID             `json:"id"`
+	AccountID       []uuid.UUID             `json:"account_id"`
+	OrderID         []uuid.NullUUID         `json:"order_id"`
+	RefType         []CatalogCommentRefType `json:"ref_type"`
+	RefID           []uuid.UUID             `json:"ref_id"`
+	Body            []string                `json:"body"`
+	Upvote          []int64                 `json:"upvote"`
+	UpvoteFrom      null.Int                `json:"upvote_from"`
+	UpvoteTo        null.Int                `json:"upvote_to"`
+	Downvote        []int64                 `json:"downvote"`
+	DownvoteFrom    null.Int                `json:"downvote_from"`
+	DownvoteTo      null.Int                `json:"downvote_to"`
+	Score           []float64               `json:"score"`
+	ScoreFrom       null.Float              `json:"score_from"`
+	ScoreTo         null.Float              `json:"score_to"`
+	DateCreated     []time.Time             `json:"date_created"`
+	DateCreatedFrom null.Time               `json:"date_created_from"`
+	DateCreatedTo   null.Time               `json:"date_created_to"`
+	DateUpdated     []time.Time             `json:"date_updated"`
+	DateUpdatedFrom null.Time               `json:"date_updated_from"`
+	DateUpdatedTo   null.Time               `json:"date_updated_to"`
 }
 
 func (q *Queries) DeleteComment(ctx context.Context, arg DeleteCommentParams) error {
@@ -1106,20 +1106,20 @@ WHERE (
 `
 
 type DeleteProductSkuParams struct {
-	ID              []uuid.UUID       `db:"id" json:"id"`
-	SpuID           []uuid.UUID       `db:"spu_id" json:"spu_id"`
-	Price           []int64           `db:"price" json:"price"`
-	PriceFrom       null.Int          `db:"price_from" json:"price_from"`
-	PriceTo         null.Int          `db:"price_to" json:"price_to"`
-	SharedPackaging []bool            `db:"shared_packaging" json:"shared_packaging"`
-	Attributes      []json.RawMessage `db:"attributes" json:"attributes"`
-	PackageDetails  []json.RawMessage `db:"package_details" json:"package_details"`
-	DateCreated     []time.Time       `db:"date_created" json:"date_created"`
-	DateCreatedFrom null.Time         `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo   null.Time         `db:"date_created_to" json:"date_created_to"`
-	DateDeleted     []null.Time       `db:"date_deleted" json:"date_deleted"`
-	DateDeletedFrom null.Time         `db:"date_deleted_from" json:"date_deleted_from"`
-	DateDeletedTo   null.Time         `db:"date_deleted_to" json:"date_deleted_to"`
+	ID              []uuid.UUID       `json:"id"`
+	SpuID           []uuid.UUID       `json:"spu_id"`
+	Price           []int64           `json:"price"`
+	PriceFrom       null.Int          `json:"price_from"`
+	PriceTo         null.Int          `json:"price_to"`
+	SharedPackaging []bool            `json:"shared_packaging"`
+	Attributes      []json.RawMessage `json:"attributes"`
+	PackageDetails  []json.RawMessage `json:"package_details"`
+	DateCreated     []time.Time       `json:"date_created"`
+	DateCreatedFrom null.Time         `json:"date_created_from"`
+	DateCreatedTo   null.Time         `json:"date_created_to"`
+	DateDeleted     []null.Time       `json:"date_deleted"`
+	DateDeletedFrom null.Time         `json:"date_deleted_from"`
+	DateDeletedTo   null.Time         `json:"date_deleted_to"`
 }
 
 func (q *Queries) DeleteProductSku(ctx context.Context, arg DeleteProductSkuParams) error {
@@ -1177,34 +1177,34 @@ WHERE (
 `
 
 type DeleteProductSpuParams struct {
-	ID               []uuid.UUID       `db:"id" json:"id"`
-	Number           []int64           `db:"number" json:"number"`
-	NumberFrom       null.Int          `db:"number_from" json:"number_from"`
-	NumberTo         null.Int          `db:"number_to" json:"number_to"`
-	Slug             []string          `db:"slug" json:"slug"`
-	AccountID        []uuid.UUID       `db:"account_id" json:"account_id"`
-	CategoryID       []uuid.UUID       `db:"category_id" json:"category_id"`
-	FeaturedSkuID    []uuid.NullUUID   `db:"featured_sku_id" json:"featured_sku_id"`
-	Name             []string          `db:"name" json:"name"`
-	Description      []string          `db:"description" json:"description"`
-	IsEnabled        []bool            `db:"is_enabled" json:"is_enabled"`
-	Currency         []string          `db:"currency" json:"currency"`
-	Specifications   []json.RawMessage `db:"specifications" json:"specifications"`
-	DateCreated      []time.Time       `db:"date_created" json:"date_created"`
-	DateCreatedFrom  null.Time         `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo    null.Time         `db:"date_created_to" json:"date_created_to"`
-	DateUpdated      []time.Time       `db:"date_updated" json:"date_updated"`
-	DateUpdatedFrom  null.Time         `db:"date_updated_from" json:"date_updated_from"`
-	DateUpdatedTo    null.Time         `db:"date_updated_to" json:"date_updated_to"`
-	DateDeleted      []null.Time       `db:"date_deleted" json:"date_deleted"`
-	DateDeletedFrom  null.Time         `db:"date_deleted_from" json:"date_deleted_from"`
-	DateDeletedTo    null.Time         `db:"date_deleted_to" json:"date_deleted_to"`
-	CachedPrice      []int64           `db:"cached_price" json:"cached_price"`
-	CachedPriceFrom  null.Int          `db:"cached_price_from" json:"cached_price_from"`
-	CachedPriceTo    null.Int          `db:"cached_price_to" json:"cached_price_to"`
-	CachedRating     []float64         `db:"cached_rating" json:"cached_rating"`
-	CachedRatingFrom null.Float        `db:"cached_rating_from" json:"cached_rating_from"`
-	CachedRatingTo   null.Float        `db:"cached_rating_to" json:"cached_rating_to"`
+	ID               []uuid.UUID       `json:"id"`
+	Number           []int64           `json:"number"`
+	NumberFrom       null.Int          `json:"number_from"`
+	NumberTo         null.Int          `json:"number_to"`
+	Slug             []string          `json:"slug"`
+	AccountID        []uuid.UUID       `json:"account_id"`
+	CategoryID       []uuid.UUID       `json:"category_id"`
+	FeaturedSkuID    []uuid.NullUUID   `json:"featured_sku_id"`
+	Name             []string          `json:"name"`
+	Description      []string          `json:"description"`
+	IsEnabled        []bool            `json:"is_enabled"`
+	Currency         []string          `json:"currency"`
+	Specifications   []json.RawMessage `json:"specifications"`
+	DateCreated      []time.Time       `json:"date_created"`
+	DateCreatedFrom  null.Time         `json:"date_created_from"`
+	DateCreatedTo    null.Time         `json:"date_created_to"`
+	DateUpdated      []time.Time       `json:"date_updated"`
+	DateUpdatedFrom  null.Time         `json:"date_updated_from"`
+	DateUpdatedTo    null.Time         `json:"date_updated_to"`
+	DateDeleted      []null.Time       `json:"date_deleted"`
+	DateDeletedFrom  null.Time         `json:"date_deleted_from"`
+	DateDeletedTo    null.Time         `json:"date_deleted_to"`
+	CachedPrice      []int64           `json:"cached_price"`
+	CachedPriceFrom  null.Int          `json:"cached_price_from"`
+	CachedPriceTo    null.Int          `json:"cached_price_to"`
+	CachedRating     []float64         `json:"cached_rating"`
+	CachedRatingFrom null.Float        `json:"cached_rating_from"`
+	CachedRatingTo   null.Float        `json:"cached_rating_to"`
 }
 
 func (q *Queries) DeleteProductSpu(ctx context.Context, arg DeleteProductSpuParams) error {
@@ -1251,9 +1251,9 @@ WHERE (
 `
 
 type DeleteProductSpuTagParams struct {
-	ID    []int64     `db:"id" json:"id"`
-	SpuID []uuid.UUID `db:"spu_id" json:"spu_id"`
-	Tag   []string    `db:"tag" json:"tag"`
+	ID    []int64     `json:"id"`
+	SpuID []uuid.UUID `json:"spu_id"`
+	Tag   []string    `json:"tag"`
 }
 
 func (q *Queries) DeleteProductSpuTag(ctx context.Context, arg DeleteProductSpuTagParams) error {
@@ -1278,16 +1278,16 @@ WHERE (
 `
 
 type DeleteSearchSyncParams struct {
-	ID               []int64                    `db:"id" json:"id"`
-	RefType          []CatalogSearchSyncRefType `db:"ref_type" json:"ref_type"`
-	RefID            []uuid.UUID                `db:"ref_id" json:"ref_id"`
-	IsStaleEmbedding []bool                     `db:"is_stale_embedding" json:"is_stale_embedding"`
-	DateCreated      []time.Time                `db:"date_created" json:"date_created"`
-	DateCreatedFrom  null.Time                  `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo    null.Time                  `db:"date_created_to" json:"date_created_to"`
-	DateUpdated      []time.Time                `db:"date_updated" json:"date_updated"`
-	DateUpdatedFrom  null.Time                  `db:"date_updated_from" json:"date_updated_from"`
-	DateUpdatedTo    null.Time                  `db:"date_updated_to" json:"date_updated_to"`
+	ID               []int64                    `json:"id"`
+	RefType          []CatalogSearchSyncRefType `json:"ref_type"`
+	RefID            []uuid.UUID                `json:"ref_id"`
+	IsStaleEmbedding []bool                     `json:"is_stale_embedding"`
+	DateCreated      []time.Time                `json:"date_created"`
+	DateCreatedFrom  null.Time                  `json:"date_created_from"`
+	DateCreatedTo    null.Time                  `json:"date_created_to"`
+	DateUpdated      []time.Time                `json:"date_updated"`
+	DateUpdatedFrom  null.Time                  `json:"date_updated_from"`
+	DateUpdatedTo    null.Time                  `json:"date_updated_to"`
 }
 
 func (q *Queries) DeleteSearchSync(ctx context.Context, arg DeleteSearchSyncParams) error {
@@ -1316,9 +1316,9 @@ WHERE (
 `
 
 type DeleteTagParams struct {
-	ID          []string      `db:"id" json:"id"`
-	Name        []string      `db:"name" json:"name"`
-	Description []null.String `db:"description" json:"description"`
+	ID          []string      `json:"id"`
+	Name        []string      `json:"name"`
+	Description []null.String `json:"description"`
 }
 
 func (q *Queries) DeleteTag(ctx context.Context, arg DeleteTagParams) error {
@@ -1336,8 +1336,8 @@ WHERE ("id" = $1) OR ("name" = $2)
 `
 
 type GetCategoryParams struct {
-	ID   uuid.NullUUID `db:"id" json:"id"`
-	Name null.String   `db:"name" json:"name"`
+	ID   uuid.NullUUID `json:"id"`
+	Name null.String   `json:"name"`
 }
 
 // Code generated by pgtempl. DO NOT EDIT.
@@ -1420,9 +1420,9 @@ WHERE ("id" = $1) OR ("slug" = $2) OR ("featured_sku_id" = $3)
 `
 
 type GetProductSpuParams struct {
-	ID            uuid.NullUUID `db:"id" json:"id"`
-	Slug          null.String   `db:"slug" json:"slug"`
-	FeaturedSkuID uuid.NullUUID `db:"featured_sku_id" json:"featured_sku_id"`
+	ID            uuid.NullUUID `json:"id"`
+	Slug          null.String   `json:"slug"`
+	FeaturedSkuID uuid.NullUUID `json:"featured_sku_id"`
 }
 
 // ========================================
@@ -1460,9 +1460,9 @@ WHERE ("id" = $1) OR ("spu_id" = $2 AND "tag" = $3)
 `
 
 type GetProductSpuTagParams struct {
-	ID    null.Int      `db:"id" json:"id"`
-	SpuID uuid.NullUUID `db:"spu_id" json:"spu_id"`
-	Tag   null.String   `db:"tag" json:"tag"`
+	ID    null.Int      `json:"id"`
+	SpuID uuid.NullUUID `json:"spu_id"`
+	Tag   null.String   `json:"tag"`
 }
 
 // ========================================
@@ -1483,9 +1483,9 @@ WHERE ("id" = $1) OR ("ref_type" = $2 AND "ref_id" = $3)
 `
 
 type GetSearchSyncParams struct {
-	ID      null.Int                     `db:"id" json:"id"`
-	RefType NullCatalogSearchSyncRefType `db:"ref_type" json:"ref_type"`
-	RefID   uuid.NullUUID                `db:"ref_id" json:"ref_id"`
+	ID      null.Int                     `json:"id"`
+	RefType NullCatalogSearchSyncRefType `json:"ref_type"`
+	RefID   uuid.NullUUID                `json:"ref_id"`
 }
 
 // ========================================
@@ -1532,11 +1532,11 @@ RETURNING id, name, description, parent_id
 `
 
 type UpdateCategoryParams struct {
-	Name         null.String   `db:"name" json:"name"`
-	Description  null.String   `db:"description" json:"description"`
-	NullParentID bool          `db:"null_parent_id" json:"null_parent_id"`
-	ParentID     uuid.NullUUID `db:"parent_id" json:"parent_id"`
-	ID           uuid.UUID     `db:"id" json:"id"`
+	Name         null.String   `json:"name"`
+	Description  null.String   `json:"description"`
+	NullParentID bool          `json:"null_parent_id"`
+	ParentID     uuid.NullUUID `json:"parent_id"`
+	ID           uuid.UUID     `json:"id"`
 }
 
 func (q *Queries) UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (CatalogCategory, error) {
@@ -1574,18 +1574,18 @@ RETURNING id, account_id, order_id, ref_type, ref_id, body, upvote, downvote, sc
 `
 
 type UpdateCommentParams struct {
-	AccountID   uuid.NullUUID             `db:"account_id" json:"account_id"`
-	NullOrderID bool                      `db:"null_order_id" json:"null_order_id"`
-	OrderID     uuid.NullUUID             `db:"order_id" json:"order_id"`
-	RefType     NullCatalogCommentRefType `db:"ref_type" json:"ref_type"`
-	RefID       uuid.NullUUID             `db:"ref_id" json:"ref_id"`
-	Body        null.String               `db:"body" json:"body"`
-	Upvote      null.Int                  `db:"upvote" json:"upvote"`
-	Downvote    null.Int                  `db:"downvote" json:"downvote"`
-	Score       null.Float                `db:"score" json:"score"`
-	DateCreated null.Time                 `db:"date_created" json:"date_created"`
-	DateUpdated null.Time                 `db:"date_updated" json:"date_updated"`
-	ID          uuid.UUID                 `db:"id" json:"id"`
+	AccountID   uuid.NullUUID             `json:"account_id"`
+	NullOrderID bool                      `json:"null_order_id"`
+	OrderID     uuid.NullUUID             `json:"order_id"`
+	RefType     NullCatalogCommentRefType `json:"ref_type"`
+	RefID       uuid.NullUUID             `json:"ref_id"`
+	Body        null.String               `json:"body"`
+	Upvote      null.Int                  `json:"upvote"`
+	Downvote    null.Int                  `json:"downvote"`
+	Score       null.Float                `json:"score"`
+	DateCreated null.Time                 `json:"date_created"`
+	DateUpdated null.Time                 `json:"date_updated"`
+	ID          uuid.UUID                 `json:"id"`
 }
 
 func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (CatalogComment, error) {
@@ -1634,15 +1634,15 @@ RETURNING id, spu_id, price, shared_packaging, attributes, package_details, date
 `
 
 type UpdateProductSkuParams struct {
-	SpuID           uuid.NullUUID   `db:"spu_id" json:"spu_id"`
-	Price           null.Int        `db:"price" json:"price"`
-	SharedPackaging null.Bool       `db:"shared_packaging" json:"shared_packaging"`
-	Attributes      json.RawMessage `db:"attributes" json:"attributes"`
-	PackageDetails  json.RawMessage `db:"package_details" json:"package_details"`
-	DateCreated     null.Time       `db:"date_created" json:"date_created"`
-	NullDateDeleted bool            `db:"null_date_deleted" json:"null_date_deleted"`
-	DateDeleted     null.Time       `db:"date_deleted" json:"date_deleted"`
-	ID              uuid.UUID       `db:"id" json:"id"`
+	SpuID           uuid.NullUUID   `json:"spu_id"`
+	Price           null.Int        `json:"price"`
+	SharedPackaging null.Bool       `json:"shared_packaging"`
+	Attributes      json.RawMessage `json:"attributes"`
+	PackageDetails  json.RawMessage `json:"package_details"`
+	DateCreated     null.Time       `json:"date_created"`
+	NullDateDeleted bool            `json:"null_date_deleted"`
+	DateDeleted     null.Time       `json:"date_deleted"`
+	ID              uuid.UUID       `json:"id"`
 }
 
 func (q *Queries) UpdateProductSku(ctx context.Context, arg UpdateProductSkuParams) (CatalogProductSku, error) {
@@ -1692,23 +1692,23 @@ RETURNING id, number, slug, account_id, category_id, featured_sku_id, name, desc
 `
 
 type UpdateProductSpuParams struct {
-	Slug              null.String     `db:"slug" json:"slug"`
-	AccountID         uuid.NullUUID   `db:"account_id" json:"account_id"`
-	CategoryID        uuid.NullUUID   `db:"category_id" json:"category_id"`
-	NullFeaturedSkuID bool            `db:"null_featured_sku_id" json:"null_featured_sku_id"`
-	FeaturedSkuID     uuid.NullUUID   `db:"featured_sku_id" json:"featured_sku_id"`
-	Name              null.String     `db:"name" json:"name"`
-	Description       null.String     `db:"description" json:"description"`
-	IsEnabled         null.Bool       `db:"is_enabled" json:"is_enabled"`
-	Currency          null.String     `db:"currency" json:"currency"`
-	Specifications    json.RawMessage `db:"specifications" json:"specifications"`
-	DateCreated       null.Time       `db:"date_created" json:"date_created"`
-	DateUpdated       null.Time       `db:"date_updated" json:"date_updated"`
-	NullDateDeleted   bool            `db:"null_date_deleted" json:"null_date_deleted"`
-	DateDeleted       null.Time       `db:"date_deleted" json:"date_deleted"`
-	CachedPrice       null.Int        `db:"cached_price" json:"cached_price"`
-	CachedRating      null.Float      `db:"cached_rating" json:"cached_rating"`
-	ID                uuid.UUID       `db:"id" json:"id"`
+	Slug              null.String     `json:"slug"`
+	AccountID         uuid.NullUUID   `json:"account_id"`
+	CategoryID        uuid.NullUUID   `json:"category_id"`
+	NullFeaturedSkuID bool            `json:"null_featured_sku_id"`
+	FeaturedSkuID     uuid.NullUUID   `json:"featured_sku_id"`
+	Name              null.String     `json:"name"`
+	Description       null.String     `json:"description"`
+	IsEnabled         null.Bool       `json:"is_enabled"`
+	Currency          null.String     `json:"currency"`
+	Specifications    json.RawMessage `json:"specifications"`
+	DateCreated       null.Time       `json:"date_created"`
+	DateUpdated       null.Time       `json:"date_updated"`
+	NullDateDeleted   bool            `json:"null_date_deleted"`
+	DateDeleted       null.Time       `json:"date_deleted"`
+	CachedPrice       null.Int        `json:"cached_price"`
+	CachedRating      null.Float      `json:"cached_rating"`
+	ID                uuid.UUID       `json:"id"`
 }
 
 func (q *Queries) UpdateProductSpu(ctx context.Context, arg UpdateProductSpuParams) (CatalogProductSpu, error) {
@@ -1762,9 +1762,9 @@ RETURNING id, spu_id, tag
 `
 
 type UpdateProductSpuTagParams struct {
-	SpuID uuid.NullUUID `db:"spu_id" json:"spu_id"`
-	Tag   null.String   `db:"tag" json:"tag"`
-	ID    int64         `db:"id" json:"id"`
+	SpuID uuid.NullUUID `json:"spu_id"`
+	Tag   null.String   `json:"tag"`
+	ID    int64         `json:"id"`
 }
 
 func (q *Queries) UpdateProductSpuTag(ctx context.Context, arg UpdateProductSpuTagParams) (CatalogProductSpuTag, error) {
@@ -1786,12 +1786,12 @@ RETURNING id, ref_type, ref_id, is_stale_embedding, date_created, date_updated
 `
 
 type UpdateSearchSyncParams struct {
-	RefType          NullCatalogSearchSyncRefType `db:"ref_type" json:"ref_type"`
-	RefID            uuid.NullUUID                `db:"ref_id" json:"ref_id"`
-	IsStaleEmbedding null.Bool                    `db:"is_stale_embedding" json:"is_stale_embedding"`
-	DateCreated      null.Time                    `db:"date_created" json:"date_created"`
-	DateUpdated      null.Time                    `db:"date_updated" json:"date_updated"`
-	ID               int64                        `db:"id" json:"id"`
+	RefType          NullCatalogSearchSyncRefType `json:"ref_type"`
+	RefID            uuid.NullUUID                `json:"ref_id"`
+	IsStaleEmbedding null.Bool                    `json:"is_stale_embedding"`
+	DateCreated      null.Time                    `json:"date_created"`
+	DateUpdated      null.Time                    `json:"date_updated"`
+	ID               int64                        `json:"id"`
 }
 
 func (q *Queries) UpdateSearchSync(ctx context.Context, arg UpdateSearchSyncParams) (CatalogSearchSync, error) {
@@ -1824,10 +1824,10 @@ RETURNING id, name, description
 `
 
 type UpdateTagParams struct {
-	Name            null.String `db:"name" json:"name"`
-	NullDescription bool        `db:"null_description" json:"null_description"`
-	Description     null.String `db:"description" json:"description"`
-	ID              string      `db:"id" json:"id"`
+	Name            null.String `json:"name"`
+	NullDescription bool        `json:"null_description"`
+	Description     null.String `json:"description"`
+	ID              string      `json:"id"`
 }
 
 func (q *Queries) UpdateTag(ctx context.Context, arg UpdateTagParams) (CatalogTag, error) {

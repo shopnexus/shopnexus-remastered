@@ -38,9 +38,9 @@ WHERE (
     ("date_updated" < sqlc.narg('date_updated_to') OR sqlc.narg('date_updated_to') IS NULL) AND
     (
       ("date_deleted" IS NULL) AND (
-        (("slug" ILIKE '%' || sqlc.narg('slug') || '%') OR sqlc.narg('slug') IS NULL) AND
-        (("name" ILIKE '%' || sqlc.narg('name') || '%') OR sqlc.narg('name') IS NULL) AND
-        (("description" ILIKE '%' || sqlc.narg('description') || '%') OR sqlc.narg('description') IS NULL)
+        ((catalog.f_unaccent("slug") ILIKE '%' || catalog.f_unaccent(sqlc.narg('slug')) || '%') OR sqlc.narg('slug') IS NULL) AND
+        ((catalog.f_unaccent("name") ILIKE '%' || catalog.f_unaccent(sqlc.narg('name')) || '%') OR sqlc.narg('name') IS NULL) AND
+        ((catalog.f_unaccent("description") ILIKE '%' || catalog.f_unaccent(sqlc.narg('description')) || '%') OR sqlc.narg('description') IS NULL)
       )
     )
 )

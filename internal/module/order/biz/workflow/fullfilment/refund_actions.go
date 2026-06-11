@@ -13,17 +13,6 @@ import (
 	ordermodel "shopnexus-server/internal/module/order/model"
 )
 
-// Refund v2 timers, consumed only by the escrow loop + the actions below.
-const (
-	// sellerReviewWindow is how long the seller has from physical delivery to
-	// decide accept/dispute before the refund auto-accepts in the buyer's favor.
-	sellerReviewWindow = 3 * 24 * time.Hour
-	// forwardTransportTimeout caps how long we wait for the return-transport
-	// webhook to fire. After this, the refund auto-accepts (defends against
-	// lost packages — the platform eats the loss rather than stranding the buyer).
-	forwardTransportTimeout = 14 * 24 * time.Hour
-)
-
 // autoAcceptRefund fires when a refund timer expires with no seller decision
 // (review window or shipping timeout). Same credit flow as SellerApproveRefund.
 func (h *FulfillmentWorkflow) autoAcceptRefund(ctx restate.WorkflowContext, refundID uuid.UUID) error {
@@ -36,12 +25,11 @@ func (h *FulfillmentWorkflow) autoAcceptRefund(ctx restate.WorkflowContext, refu
 		return fmt.Errorf("get refund: %w", err)
 	}
 	// Idempotent: a manual seller decision may have already closed the refund.
-	// Treat that as success.
 	if !(ordermodel.Refund{OrderRefund: refund}).CanSellerDecide() {
 		return nil
 	}
 
-	// ExecuteRefundCredit now self-journals its phases (decision/execution Runs +
+	// ExecuteRefundCredit self-journals its phases (decision/execution Runs +
 	// cross-module Calls), so call it directly at the workflow's restate.Context.
 	updated, err := h.refund.ExecuteRefundCredit(ctx, refund, refund.AccountID, ordermodel.RefundCreditReasonAutoAccepted)
 	if err != nil {
@@ -74,7 +62,6 @@ func (h *FulfillmentWorkflow) markRefundDelivered(ctx restate.WorkflowContext, r
 		return fmt.Errorf("mark delivered: %w", err)
 	}
 
-	// Get order to notify the seller their action is now expected.
 	order, _ := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderOrder, error) {
 		return h.Storage.Querier().GetOrder(rctx, orderdb.GetOrderParams{
 			ID: uuid.NullUUID{UUID: updated.OrderID, Valid: true},

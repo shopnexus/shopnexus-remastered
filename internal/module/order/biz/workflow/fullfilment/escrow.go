@@ -9,7 +9,7 @@ import (
 
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountmodel "shopnexus-server/internal/module/account/model"
-	"shopnexus-server/internal/module/order/biz/workflow/base"
+	"shopnexus-server/internal/module/order/biz/workflow/gateway"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/saga"
@@ -17,6 +17,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
 )
+
+// returnDeliveredKey is the promise the real transport webhook resolves when a
+// buyer's return shipment is physically delivered. Keyed by refund ID because
+// one workflow instance sees every refund the order accumulates.
+func returnDeliveredKey(refundID uuid.UUID) string { return "return_delivered_" + refundID.String() }
 
 // escrow opens the seller-payout session and watches the order until the
 // escrow window elapses (release) or a refund is accepted (refunded). Active
@@ -46,12 +51,7 @@ func (h *FulfillmentWorkflow) escrow(
 	// reached a final state, so it stays armed for the rest of the workflow.
 	sg.Defer("mark_payout_failed", func(ctx restate.Context) error {
 		return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-			return base.MarkSessionAndAllPendingFailed(
-				rctx,
-				h.Storage.Querier(),
-				sessionID,
-				"payout saga compensation",
-			)
+			return gateway.MarkSessionFailed(rctx, h.Storage.Querier(), sessionID, "payout saga compensation")
 		})
 	})
 	if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
@@ -130,10 +130,10 @@ func (h *FulfillmentWorkflow) escrow(
 			continue
 
 		case !time.Now().Before(deadline):
-			// Window elapsed, no refund in flight — release. Wrapped in
-			// RunVoid so replays use the journaled result instead of
-			// re-executing the Pending-guarded UPDATEs (which would fail
-			// with ErrNoRows on rows already marked Success).
+			// Window elapsed, no refund in flight — release. Wrapped in RunVoid
+			// so replays use the journaled result instead of re-executing the
+			// Pending-guarded UPDATEs (which would fail with ErrNoRows on rows
+			// already marked Success).
 			if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
 				if _, e := h.Storage.Querier().MarkPaymentSessionSuccess(rctx, orderdb.MarkPaymentSessionSuccessParams{
 					ID: sessionID,
@@ -170,9 +170,9 @@ func (h *FulfillmentWorkflow) escrow(
 		}
 
 		// Idle: wait for a refund-state change (signalled by OnRefundChanged
-		// against the iter-suffixed promise key) or the escrow deadline.
-		// Only reachable while the deadline is in the future — a passed
-		// deadline with no active refund hits the release case above.
+		// against the iter-suffixed promise key) or the escrow deadline. Only
+		// reachable while the deadline is in the future — a passed deadline with
+		// no active refund hits the release case above.
 		iter++
 		restate.Set(ctx, "refund_iter", iter)
 		signal := restate.Promise[any](ctx, fmt.Sprintf("refund_changed_%d", iter))
@@ -189,14 +189,14 @@ func (h *FulfillmentWorkflow) escrow(
 func (h *FulfillmentWorkflow) resolveRefund(ctx restate.WorkflowContext, refundID uuid.UUID) error {
 	var err error
 
-	// Phase 1: race {buyer withdraw | mock-deliver timer | shipping timeout}.
-	// TODO: when a real transport provider lands, its webhook resolves a
-	// delivered promise raced here and the mock timer goes away.
+	// Phase 1: race {buyer withdraw | return delivered | shipping timeout}.
+	// returnDelivered is resolved by the real transport webhook (OnTransportDelivered);
+	// the webhook also marks the return-transport row Success, so no DB flip here.
 	withdrawn := restate.Promise[any](ctx, "withdrawn_"+refundID.String())
-	mockDeliver := restate.After(ctx, mockTransportDeliveryDelay)
+	returnDelivered := restate.Promise[any](ctx, returnDeliveredKey(refundID))
 	shippingDeadline := restate.After(ctx, forwardTransportTimeout)
 
-	winner, err := restate.WaitFirst(ctx, withdrawn, mockDeliver, shippingDeadline)
+	winner, err := restate.WaitFirst(ctx, withdrawn, returnDelivered, shippingDeadline)
 	if err != nil {
 		return fmt.Errorf("wait return transport: %w", err)
 	}
@@ -204,36 +204,15 @@ func (h *FulfillmentWorkflow) resolveRefund(ctx restate.WorkflowContext, refundI
 	case withdrawn:
 		// Row already flipped to Cancelled by WithdrawBuyerRefund.
 		return nil
-
 	case shippingDeadline:
 		// Carrier lost the package — platform eats the loss, buyer gets credit.
 		if err = h.autoAcceptRefund(ctx, refundID); err != nil {
 			return fmt.Errorf("auto-accept on shipping timeout: %w", err)
 		}
 		return nil
-
-	case mockDeliver:
-		// Mock-only: flip the return transport row to Success so the UI sees
-		// the delivery.
-		if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-			refund, e := h.Storage.Querier().GetRefund(rctx, orderdb.GetRefundParams{
-				ID: uuid.NullUUID{UUID: refundID, Valid: true},
-			})
-			if e != nil {
-				return fmt.Errorf("load refund: %w", e)
-			}
-			_, e = h.Storage.Querier().UpdateTransportStatusByID(rctx, orderdb.UpdateTransportStatusByIDParams{
-				ID:     refund.ReturnTransportID,
-				Status: orderdb.NullOrderStatus{OrderStatus: orderdb.OrderStatusSuccess, Valid: true},
-				Data:   json.RawMessage(`{"direction":"return","leg":"buyer-to-seller","mock":"auto-delivered"}`),
-			})
-			return e
-		}); err != nil {
-			return fmt.Errorf("mock mark transport delivered: %w", err)
-		}
 	}
 
-	// Goods delivered → flip refund row + arm the seller review window.
+	// returnDelivered → flip refund row + arm the seller review window.
 	if err = h.markRefundDelivered(ctx, refundID); err != nil {
 		return fmt.Errorf("mark delivered: %w", err)
 	}
@@ -260,8 +239,8 @@ func (h *FulfillmentWorkflow) resolveRefund(ctx restate.WorkflowContext, refundI
 		return nil
 	}
 
-	// Phase 3: disputed → admin verdict (no SLA timer; manual resolution).
-	// The dispute handlers update the refund row; the snapshot decides next.
+	// Phase 3: disputed → admin verdict (no SLA timer; manual resolution). The
+	// dispute handlers update the refund row; the snapshot decides next.
 	if _, err = restate.Promise[ordermodel.AdminDecisionSignal](
 		ctx,
 		"admin_decision_"+refundID.String(),

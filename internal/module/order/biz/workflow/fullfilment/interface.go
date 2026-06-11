@@ -24,4 +24,5 @@ type FulfillmentWf interface {
 	OnBuyerWithdrew(ctx context.Context, orderID uuid.UUID, sig ordermodel.RefundSignal) error
 	OnSellerDecision(ctx context.Context, orderID uuid.UUID, sig ordermodel.SellerDecisionSignal) error
 	OnAdminDecision(ctx context.Context, orderID uuid.UUID, sig ordermodel.AdminDecisionSignal) error
+	OnTransportDelivered(ctx context.Context, orderID uuid.UUID, sig ordermodel.TransportDeliveredSignal) error
 }

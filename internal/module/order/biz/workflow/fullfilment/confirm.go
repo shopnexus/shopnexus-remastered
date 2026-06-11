@@ -10,7 +10,7 @@ import (
 	"shopnexus-server/internal/infras/metrics"
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountmodel "shopnexus-server/internal/module/account/model"
-	"shopnexus-server/internal/module/order/biz/workflow/base"
+	"shopnexus-server/internal/module/order/biz/workflow/gateway"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/provider/transport"
@@ -24,15 +24,13 @@ import (
 // confirm drives the seller confirm-fee saga: validate + lock, charge the
 // confirm fee (wallet and/or gateway), then atomically create the transport,
 // order and item links. The order row is created with ID = workflow key.
-// Clears the saga on the paid path before creating order records.
 func (h *FulfillmentWorkflow) confirm(
 	ctx restate.WorkflowContext,
 	sg *saga.Saga,
 	input FulfillmentInput,
 	orderID uuid.UUID,
 ) (res confirmResult, err error) {
-	// Confirm session ID = order ID = workflow key.
-	sessionID := orderID
+	sessionID := orderID // confirm session ID = order ID = workflow key
 	sellerID := input.Account.ID
 
 	// Lock seller pending so two concurrent confirms over an overlapping
@@ -42,74 +40,18 @@ func (h *FulfillmentWorkflow) confirm(
 	unlock := h.locker.Lock(ctx, fmt.Sprintf("order:seller-pending:%s", sellerID))
 	defer unlock()
 
-	// Fetch and validate items inside a Run so list ordering and
-	// missing-row checks are journaled (replay returns the exact same slice).
-	orderItems, err := restate.Run(ctx, func(rctx restate.RunContext) ([]orderdb.OrderItem, error) {
-		res, e := h.Storage.Querier().ListItem(rctx, orderdb.ListItemParams{
-			Id: input.ItemIDs,
-		})
-		if e != nil {
-			return nil, fmt.Errorf("db list items: %w", e)
-		}
-		items := res.Data
-		if len(items) != len(input.ItemIDs) {
-			return nil, ordermodel.ErrOrderItemNotFound
-		}
-		return items, nil
-	})
+	orderItems, err := h.fetchItems(ctx, input.ItemIDs)
 	if err != nil {
-		return res, fmt.Errorf("fetch items: %w", err)
+		return res, err
 	}
 
-	// Validate items and aggregate shared fields. Every item must be owned
-	// by this seller, share buyer/address/transport, and not already be
-	// final. paidTotal is the sum the buyer already paid for these items —
-	// the eventual payout amount when escrow releases.
-	var (
-		buyerID                 uuid.UUID
-		address                 string
-		transportOption         string
-		paidTotal               int64
-		uniquePaymentSessionIDs = make(map[uuid.UUID]struct{})
-	)
-	// Validation outcome is deterministic over journaled orderItems, so any
-	// failure must be terminal — otherwise Restate would retry the same
-	// invariant violation forever. fmt.Errorf("%w") strips the
-	// marker on ordermodel errors, so we re-wrap with restate.TerminalError.
-	for i, item := range orderItems {
-		if item.OrderID.Valid {
-			return res, restate.TerminalError(fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemAlreadyConfirmed))
-		}
-		if item.DateCancelled.Valid {
-			return res, restate.TerminalError(fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemAlreadyCancelled))
-		}
-		if item.SellerID != sellerID {
-			return res, restate.TerminalError(fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemNotOwnedBySeller))
-		}
-		if i == 0 {
-			buyerID = item.AccountID
-			address = item.Address
-			transportOption = item.TransportOption
-		} else {
-			if item.AccountID != buyerID {
-				return res, restate.TerminalError(fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemsNotSameBuyer))
-			}
-			if item.Address != address {
-				return res, restate.TerminalError(fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemsNotSameAddress))
-			}
-			if item.TransportOption != transportOption {
-				return res, restate.TerminalError(
-					fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemsTransportMismatch),
-				)
-			}
-		}
-		paidTotal += item.TotalAmount
-		uniquePaymentSessionIDs[item.PaymentSessionID] = struct{}{}
+	buyerID, address, transportOption, paidTotal, paymentSessionIDs, err := aggregateItems(orderItems, sellerID)
+	if err != nil {
+		return res, err
 	}
 
-	// Verify every unique buyer payment session already settled. Confirming
-	// items the buyer never paid for would mint inventory for free.
-	for psID := range uniquePaymentSessionIDs {
+	// Confirming items the buyer never paid for would mint inventory for free.
+	for psID := range paymentSessionIDs {
 		status, sErr := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderStatus, error) {
 			session, e := h.Storage.Querier().GetPaymentSession(rctx, uuid.NullUUID{UUID: psID, Valid: true})
 			if e != nil {
@@ -125,26 +67,21 @@ func (h *FulfillmentWorkflow) confirm(
 		}
 	}
 
-	// Quote transport for the aggregate shipment. One quote covers all
-	// confirmed items because they share the same transport_option and
-	// destination address (asserted above).
+	// One quote covers all items — they share transport_option and address.
 	contactMap, err := h.account.GetDefaultContact(ctx, []uuid.UUID{sellerID})
 	if err != nil {
 		return res, fmt.Errorf("get seller contact: %w", err)
 	}
-	fromAddress := contactMap[sellerID].Address
-
 	transportClient, err := h.GetTransportClient(transportOption)
 	if err != nil {
 		return res, fmt.Errorf("get transport client: %w", err)
 	}
-
 	transportItems := lo.Map(orderItems, func(item orderdb.OrderItem, _ int) transport.ItemMetadata {
 		return transport.ItemMetadata{SkuID: item.SkuID, Quantity: item.Quantity}
 	})
 	quote, err := transportClient.Quote(ctx, transport.QuoteParams{
 		Items:       transportItems,
-		FromAddress: fromAddress,
+		FromAddress: contactMap[sellerID].Address,
 		ToAddress:   address,
 	})
 	if err != nil {
@@ -154,49 +91,31 @@ func (h *FulfillmentWorkflow) confirm(
 	platformFee := int64(0) // TODO: plug config
 	confirmFeeTotal := quote.Cost + platformFee
 
-	// Confirm-fee txs are denominated in the seller's currency (the seller
-	// is paying the platform). inferCurrency is cross-module → outside Run.
+	// Confirm-fee txs are denominated in the seller's currency (the seller is
+	// paying the platform). InferCurrency is cross-module → outside Run.
 	sellerCurrency, err := h.InferCurrency(ctx, sellerID)
 	if err != nil {
 		return res, fmt.Errorf("infer seller currency: %w", err)
 	}
 
-	// Wallet / gateway split for confirmFeeTotal.
-	var confirmFeeWallet, confirmFeeGateway int64
-	if input.UseWallet && confirmFeeTotal > 0 {
-		balance, balErr := h.account.GetWalletBalance(ctx, sellerID)
-		if balErr != nil {
-			return res, fmt.Errorf("get seller wallet balance: %w", balErr)
-		}
-		if balance >= confirmFeeTotal {
-			confirmFeeWallet = confirmFeeTotal
-		} else {
-			confirmFeeWallet = balance
-		}
+	confirmFeeWallet, confirmFeeGateway, err := h.splitConfirmFee(ctx, input, sellerID, confirmFeeTotal)
+	if err != nil {
+		return res, err
 	}
-	confirmFeeGateway = confirmFeeTotal - confirmFeeWallet
-
 	if confirmFeeGateway > 0 && input.PaymentOption == "" {
 		return res, ordermodel.ErrInsufficientWalletBalance
 	}
 
-	// Atomically create payment_session and the wallet tx (Pending) in one
-	// Run. Order / transport / item-link rows are deferred to the post-paid
-	// Run below, so we don't have to compensate them on rollback. The wallet
-	// tx UUID is pre-allocated via restate.UUID so retries reuse the same
-	// value and the INSERT is idempotent on PK conflict. Gateway txs are
-	// minted per attempt inside the retry loop, so the compensator marks
-	// every still-Pending child tx by session_id rather than tracking IDs.
+	// Pre-allocate the wallet tx UUID via restate.UUID so retries reuse the
+	// same value and the INSERT is idempotent on PK conflict. Order / transport
+	// / item-link rows are deferred to the post-paid Run below, so they need no
+	// compensation on rollback. Gateway txs are minted per attempt in the loop,
+	// so the compensator marks every still-Pending child tx by session_id.
 	walletTxID := restate.UUID(ctx)
 
 	sg.Defer("mark_session_and_txs_failed", func(ctx restate.Context) error {
 		return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-			return base.MarkSessionAndAllPendingFailed(
-				rctx,
-				h.Storage.Querier(),
-				sessionID,
-				"confirm saga compensation",
-			)
+			return gateway.MarkSessionFailed(rctx, h.Storage.Querier(), sessionID, "confirm saga compensation")
 		})
 	})
 
@@ -212,11 +131,10 @@ func (h *FulfillmentWorkflow) confirm(
 			TotalAmount: confirmFeeTotal,
 			Data:        json.RawMessage("{}"),
 			DatePaid:    null.Time{},
-			DateExpired: time.Now().Add(base.SessionExpiry),
+			DateExpired: time.Now().Add(gateway.SessionExpiry),
 		}); sErr != nil {
 			return fmt.Errorf("db create confirm session: %w", sErr)
 		}
-
 		if confirmFeeWallet > 0 {
 			if _, txErr := h.Storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
 				ID:        walletTxID,
@@ -230,13 +148,11 @@ func (h *FulfillmentWorkflow) confirm(
 				return fmt.Errorf("db create confirm_fee wallet tx: %w", txErr)
 			}
 		}
-
 		return nil
 	}); err != nil {
 		return res, fmt.Errorf("create confirm fee session and txs: %w", err)
 	}
 
-	// Wallet debit + mark wallet tx success.
 	if confirmFeeWallet > 0 {
 		if _, dErr := h.account.Call().WalletDebit(ctx, accountbiz.WalletDebitParams{
 			AccountID: sellerID,
@@ -247,8 +163,8 @@ func (h *FulfillmentWorkflow) confirm(
 			return res, fmt.Errorf("seller wallet debit: %w", dErr)
 		}
 		// Arm credit compensator AFTER debit confirmed. WalletDebit is atomic
-		// (single CTE under FOR UPDATE) → terminal failure means no debit,
-		// so arming earlier would over-credit on saga fire.
+		// (single CTE under FOR UPDATE) → terminal failure means no debit, so
+		// arming earlier would over-credit on saga fire.
 		sg.Defer("credit_wallet", func(ctx restate.Context) error {
 			return h.account.Call().WalletCredit(ctx, accountbiz.WalletCreditParams{
 				AccountID: sellerID,
@@ -258,24 +174,21 @@ func (h *FulfillmentWorkflow) confirm(
 				Note:      "saga compensate: confirm fee wallet debit",
 			})
 		})
-		if mErr := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
 			_, e := h.Storage.Querier().MarkTransactionSuccess(rctx, orderdb.MarkTransactionSuccessParams{
 				ID:          walletTxID,
 				DateSettled: time.Now(),
 			})
 			return e
-		}); mErr != nil {
-			return res, fmt.Errorf("mark confirm-fee wallet tx success: %w", mErr)
+		}); err != nil {
+			return res, fmt.Errorf("mark confirm-fee wallet tx success: %w", err)
 		}
 	}
 
-	// Gateway payment loop (skipped for wallet-only). Shared with
-	// CheckoutWorkflow via runGatewayPaymentLoop in payment_gateway.go.
 	if confirmFeeGateway > 0 {
-		if err = h.wf.RunGatewayPaymentLoop(ctx, base.GatewayPaymentLoopParams{
+		if err = h.gw.RunPaymentLoop(ctx, gateway.LoopParams{
 			SessionID:       sessionID,
-			WorkflowID:      orderID,
-			SessionDeadline: time.Now().Add(base.SessionExpiry),
+			SessionDeadline: time.Now().Add(gateway.SessionExpiry),
 			NotePrefix:      "confirm fee gateway payment",
 			Description:     fmt.Sprintf("Confirm fee session %s", sessionID),
 			PaymentOption:   input.PaymentOption,
@@ -289,8 +202,9 @@ func (h *FulfillmentWorkflow) confirm(
 	}
 
 	// Paid path — clear the saga and atomically create transport, order
-	// (ID = workflow key) and item links in one Run. Failure here is a
-	// programmer bug (the seller already paid us); it bubbles as terminal.
+	// (ID = workflow key) and item links. The forward (seller→buyer) leg is
+	// created Pending; the real OnTransportResult webhook flips it Success.
+	// Failure here is a programmer bug (the seller already paid us) → terminal.
 	sg.Clear()
 
 	if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
@@ -302,22 +216,6 @@ func (h *FulfillmentWorkflow) confirm(
 		if tErr != nil {
 			return fmt.Errorf("db create transport: %w", tErr)
 		}
-
-		// TODO: remove this mock when a real transport provider is wired up.
-		// Mark the seller→buyer forward leg Success immediately so the order
-		// flips to Completed in the FE without waiting for a real webhook.
-		mockData, _ := json.Marshal(map[string]any{
-			"quote": quote.Cost,
-			"mock":  "auto-delivered",
-		})
-		if trRow, tErr = h.Storage.Querier().UpdateTransportStatusByID(rctx, orderdb.UpdateTransportStatusByIDParams{
-			ID:     trRow.ID,
-			Status: orderdb.NullOrderStatus{OrderStatus: orderdb.OrderStatusSuccess, Valid: true},
-			Data:   json.RawMessage(mockData),
-		}); tErr != nil {
-			return fmt.Errorf("mock transport success: %w", tErr)
-		}
-
 		if oErr := h.Storage.Querier().CreateOrderIdempotent(rctx, orderdb.CreateOrderIdempotentParams{
 			ID:               orderID,
 			BuyerID:          buyerID,
@@ -331,14 +229,12 @@ func (h *FulfillmentWorkflow) confirm(
 		}); oErr != nil {
 			return fmt.Errorf("db create order: %w", oErr)
 		}
-
 		if lErr := h.Storage.Querier().SetItemsOrderID(rctx, orderdb.SetItemsOrderIDParams{
 			OrderID: uuid.NullUUID{UUID: orderID, Valid: true},
 			ItemIds: input.ItemIDs,
 		}); lErr != nil {
 			return fmt.Errorf("db set items order id: %w", lErr)
 		}
-
 		return nil
 	}); err != nil {
 		return res, fmt.Errorf("create order records: %w", err)
@@ -356,8 +252,94 @@ func (h *FulfillmentWorkflow) confirm(
 	itemNames := lo.Map(orderItems, func(it orderdb.OrderItem, _ int) string { return it.SkuName })
 	if err = h.NotifyOrder(ctx, buyerID, orderID, accountmodel.NotiItemsConfirmed, "Items confirmed",
 		fmt.Sprintf("%s has been confirmed by the seller.", ordermodel.SummarizeNames(itemNames))); err != nil {
-		return confirmResult{}, fmt.Errorf("notify items confirmed: %w", err)
+		return res, fmt.Errorf("notify items confirmed: %w", err)
 	}
 
 	return confirmResult{SellerID: sellerID, PaidTotal: paidTotal, Currency: sellerCurrency}, nil
+}
+
+// fetchItems loads the items inside a Run so list ordering and missing-row
+// checks are journaled (replay returns the exact same slice).
+func (h *FulfillmentWorkflow) fetchItems(ctx restate.WorkflowContext, itemIDs []int64) ([]orderdb.OrderItem, error) {
+	items, err := restate.Run(ctx, func(rctx restate.RunContext) ([]orderdb.OrderItem, error) {
+		res, e := h.Storage.Querier().ListItem(rctx, orderdb.ListItemParams{Id: itemIDs})
+		if e != nil {
+			return nil, fmt.Errorf("db list items: %w", e)
+		}
+		if len(res.Data) != len(itemIDs) {
+			return nil, ordermodel.ErrOrderItemNotFound
+		}
+		return res.Data, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("fetch items: %w", err)
+	}
+	return items, nil
+}
+
+// aggregateItems validates cross-item invariants and sums the shared fields.
+// Every item must be owned by this seller, share buyer/address/transport, and
+// not already be final. Validation is deterministic over the journaled slice,
+// so any failure is terminal — otherwise Restate retries the same invariant
+// violation forever. fmt.Errorf("%w") strips the marker on ordermodel errors,
+// so failures re-wrap with restate.TerminalError. paidTotal is the eventual
+// escrow payout amount.
+func aggregateItems(items []orderdb.OrderItem, sellerID uuid.UUID) (
+	buyerID uuid.UUID,
+	address, transportOption string,
+	paidTotal int64,
+	paymentSessionIDs map[uuid.UUID]struct{},
+	err error,
+) {
+	paymentSessionIDs = make(map[uuid.UUID]struct{})
+	for i, item := range items {
+		switch {
+		case item.OrderID.Valid:
+			return buyerID, address, transportOption, 0, nil,
+				restate.TerminalError(fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemAlreadyConfirmed))
+		case item.DateCancelled.Valid:
+			return buyerID, address, transportOption, 0, nil,
+				restate.TerminalError(fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemAlreadyCancelled))
+		case item.SellerID != sellerID:
+			return buyerID, address, transportOption, 0, nil,
+				restate.TerminalError(fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemNotOwnedBySeller))
+		}
+		if i == 0 {
+			buyerID, address, transportOption = item.AccountID, item.Address, item.TransportOption
+		} else {
+			switch {
+			case item.AccountID != buyerID:
+				return buyerID, address, transportOption, 0, nil,
+					restate.TerminalError(fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemsNotSameBuyer))
+			case item.Address != address:
+				return buyerID, address, transportOption, 0, nil,
+					restate.TerminalError(fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemsNotSameAddress))
+			case item.TransportOption != transportOption:
+				return buyerID, address, transportOption, 0, nil,
+					restate.TerminalError(fmt.Errorf("item %d: %w", item.ID, ordermodel.ErrItemsTransportMismatch))
+			}
+		}
+		paidTotal += item.TotalAmount
+		paymentSessionIDs[item.PaymentSessionID] = struct{}{}
+	}
+	return buyerID, address, transportOption, paidTotal, paymentSessionIDs, nil
+}
+
+// splitConfirmFee decides how much of the confirm fee is paid from the seller's
+// wallet versus the gateway. Wallet covers as much as its balance allows; the
+// remainder goes to the gateway.
+func (h *FulfillmentWorkflow) splitConfirmFee(
+	ctx restate.WorkflowContext,
+	input FulfillmentInput,
+	sellerID uuid.UUID,
+	total int64,
+) (fromWallet, fromGateway int64, err error) {
+	if input.UseWallet && total > 0 {
+		balance, balErr := h.account.GetWalletBalance(ctx, sellerID)
+		if balErr != nil {
+			return 0, 0, fmt.Errorf("get seller wallet balance: %w", balErr)
+		}
+		fromWallet = min(balance, total)
+	}
+	return fromWallet, total - fromWallet, nil
 }

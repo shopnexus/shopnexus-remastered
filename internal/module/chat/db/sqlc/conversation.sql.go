@@ -47,8 +47,8 @@ WHERE "buyer_id" = $1 AND "seller_id" = $2
 `
 
 type GetConversationByParticipantsParams struct {
-	BuyerID  uuid.UUID `db:"buyer_id" json:"buyer_id"`
-	SellerID uuid.UUID `db:"seller_id" json:"seller_id"`
+	BuyerID  uuid.UUID `json:"buyer_id"`
+	SellerID uuid.UUID `json:"seller_id"`
 }
 
 func (q *Queries) GetConversationByParticipants(ctx context.Context, arg GetConversationByParticipantsParams) (ChatConversation, error) {
@@ -73,9 +73,9 @@ OFFSET $2::int
 `
 
 type ListConversationByAccountParams struct {
-	AccountID uuid.UUID `db:"account_id" json:"account_id"`
-	Offset    int32     `db:"offset" json:"offset"`
-	Limit     int32     `db:"limit" json:"limit"`
+	AccountID uuid.UUID `json:"account_id"`
+	Offset    int32     `json:"offset"`
+	Limit     int32     `json:"limit"`
 }
 
 func (q *Queries) ListConversationByAccount(ctx context.Context, arg ListConversationByAccountParams) ([]ChatConversation, error) {

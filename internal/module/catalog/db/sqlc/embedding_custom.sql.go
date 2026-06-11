@@ -19,8 +19,8 @@ WHERE spu_id = ANY($1::uuid[]) AND embedding IS NOT NULL
 `
 
 type GetProductVectorsRow struct {
-	SpuID     uuid.UUID       `db:"spu_id" json:"spu_id"`
-	Embedding pgvector.Vector `db:"embedding" json:"embedding"`
+	SpuID     uuid.UUID       `json:"spu_id"`
+	Embedding pgvector.Vector `json:"embedding"`
 }
 
 func (q *Queries) GetProductVectors(ctx context.Context, spuIds []uuid.UUID) ([]GetProductVectorsRow, error) {
@@ -51,10 +51,10 @@ ORDER BY account_id, slot
 `
 
 type ListAccountInterestRow struct {
-	AccountID uuid.UUID       `db:"account_id" json:"account_id"`
-	Slot      int16           `db:"slot" json:"slot"`
-	Embedding pgvector.Vector `db:"embedding" json:"embedding"`
-	Strength  float32         `db:"strength" json:"strength"`
+	AccountID uuid.UUID       `json:"account_id"`
+	Slot      int16           `json:"slot"`
+	Embedding pgvector.Vector `json:"embedding"`
+	Strength  float32         `json:"strength"`
 }
 
 func (q *Queries) ListAccountInterest(ctx context.Context, accountIds []uuid.UUID) ([]ListAccountInterestRow, error) {
@@ -93,13 +93,13 @@ LIMIT $2::int
 `
 
 type SearchProductByVectorParams struct {
-	Query pgvector.Vector `db:"query" json:"query"`
-	Limit int32           `db:"limit" json:"limit"`
+	Query pgvector.Vector `json:"query"`
+	Limit int32           `json:"limit"`
 }
 
 type SearchProductByVectorRow struct {
-	SpuID uuid.UUID `db:"spu_id" json:"spu_id"`
-	Score float32   `db:"score" json:"score"`
+	SpuID uuid.UUID `json:"spu_id"`
+	Score float32   `json:"score"`
 }
 
 // HybridSearchProduct is hand-written (CTEs + score fusion + pagination/count);

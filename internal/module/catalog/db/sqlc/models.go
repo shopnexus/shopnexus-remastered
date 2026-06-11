@@ -136,131 +136,102 @@ func AllCatalogSearchSyncRefTypeValues() []CatalogSearchSyncRefType {
 }
 
 type CatalogAccountInterest struct {
-	AccountID   uuid.UUID       `db:"account_id" json:"account_id"`
-	Slot        int16           `db:"slot" json:"slot"`
-	Embedding   pgvector.Vector `db:"embedding" json:"embedding"`
-	Strength    float32         `db:"strength" json:"strength"`
-	DateUpdated time.Time       `db:"date_updated" json:"date_updated"`
+	AccountID   uuid.UUID       `json:"account_id"`
+	Slot        int16           `json:"slot"`
+	Embedding   pgvector.Vector `json:"embedding"`
+	Strength    float32         `json:"strength"`
+	DateUpdated time.Time       `json:"date_updated"`
 }
 
 type CatalogCategory struct {
-	ID          uuid.UUID     `db:"id" json:"id"`
-	Name        string        `db:"name" json:"name"`
-	Description string        `db:"description" json:"description"`
-	ParentID    uuid.NullUUID `db:"parent_id" json:"parent_id"`
+	ID          uuid.UUID     `json:"id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	ParentID    uuid.NullUUID `json:"parent_id"`
 }
 
 type CatalogCategoryEmbedding struct {
-	CategoryID  uuid.UUID                 `db:"category_id" json:"category_id"`
-	Embedding   pgvector.Vector           `db:"embedding" json:"embedding"`
-	Sparse      *pgvector_go.SparseVector `db:"sparse" json:"sparse"`
-	DateUpdated time.Time                 `db:"date_updated" json:"date_updated"`
+	CategoryID  uuid.UUID                 `json:"category_id"`
+	Embedding   pgvector.Vector           `json:"embedding"`
+	Sparse      *pgvector_go.SparseVector `json:"sparse"`
+	DateUpdated time.Time                 `json:"date_updated"`
 }
 
 type CatalogComment struct {
-	ID          uuid.UUID             `db:"id" json:"id"`
-	AccountID   uuid.UUID             `db:"account_id" json:"account_id"`
-	OrderID     uuid.NullUUID         `db:"order_id" json:"order_id"`
-	RefType     CatalogCommentRefType `db:"ref_type" json:"ref_type"`
-	RefID       uuid.UUID             `db:"ref_id" json:"ref_id"`
-	Body        string                `db:"body" json:"body"`
-	Upvote      int64                 `db:"upvote" json:"upvote"`
-	Downvote    int64                 `db:"downvote" json:"downvote"`
-	Score       float64               `db:"score" json:"score"`
-	DateCreated time.Time             `db:"date_created" json:"date_created"`
-	DateUpdated time.Time             `db:"date_updated" json:"date_updated"`
+	ID          uuid.UUID             `json:"id"`
+	AccountID   uuid.UUID             `json:"account_id"`
+	OrderID     uuid.NullUUID         `json:"order_id"`
+	RefType     CatalogCommentRefType `json:"ref_type"`
+	RefID       uuid.UUID             `json:"ref_id"`
+	Body        string                `json:"body"`
+	Upvote      int64                 `json:"upvote"`
+	Downvote    int64                 `json:"downvote"`
+	Score       float64               `json:"score"`
+	DateCreated time.Time             `json:"date_created"`
+	DateUpdated time.Time             `json:"date_updated"`
 }
 
 type CatalogProductEmbedding struct {
-	SpuID       uuid.UUID                 `db:"spu_id" json:"spu_id"`
-	Embedding   pgvector.Vector           `db:"embedding" json:"embedding"`
-	Sparse      *pgvector_go.SparseVector `db:"sparse" json:"sparse"`
-	DateUpdated time.Time                 `db:"date_updated" json:"date_updated"`
+	SpuID       uuid.UUID                 `json:"spu_id"`
+	Embedding   pgvector.Vector           `json:"embedding"`
+	Sparse      *pgvector_go.SparseVector `json:"sparse"`
+	DateUpdated time.Time                 `json:"date_updated"`
 }
 
 type CatalogProductSku struct {
-	ID              uuid.UUID       `db:"id" json:"id"`
-	SpuID           uuid.UUID       `db:"spu_id" json:"spu_id"`
-	Price           int64           `db:"price" json:"price"`
-	SharedPackaging bool            `db:"shared_packaging" json:"shared_packaging"`
-	Attributes      json.RawMessage `db:"attributes" json:"attributes"`
-	PackageDetails  json.RawMessage `db:"package_details" json:"package_details"`
-	DateCreated     time.Time       `db:"date_created" json:"date_created"`
-	DateDeleted     null.Time       `db:"date_deleted" json:"date_deleted"`
+	ID              uuid.UUID       `json:"id"`
+	SpuID           uuid.UUID       `json:"spu_id"`
+	Price           int64           `json:"price"`
+	SharedPackaging bool            `json:"shared_packaging"`
+	Attributes      json.RawMessage `json:"attributes"`
+	PackageDetails  json.RawMessage `json:"package_details"`
+	DateCreated     time.Time       `json:"date_created"`
+	DateDeleted     null.Time       `json:"date_deleted"`
 }
 
 type CatalogProductSpu struct {
-	ID             uuid.UUID       `db:"id" json:"id"`
-	Number         int64           `db:"number" json:"number"`
-	Slug           string          `db:"slug" json:"slug"`
-	AccountID      uuid.UUID       `db:"account_id" json:"account_id"`
-	CategoryID     uuid.UUID       `db:"category_id" json:"category_id"`
-	FeaturedSkuID  uuid.NullUUID   `db:"featured_sku_id" json:"featured_sku_id"`
-	Name           string          `db:"name" json:"name"`
-	Description    string          `db:"description" json:"description"`
-	IsEnabled      bool            `db:"is_enabled" json:"is_enabled"`
-	Currency       string          `db:"currency" json:"currency"`
-	Specifications json.RawMessage `db:"specifications" json:"specifications"`
-	DateCreated    time.Time       `db:"date_created" json:"date_created"`
-	DateUpdated    time.Time       `db:"date_updated" json:"date_updated"`
-	DateDeleted    null.Time       `db:"date_deleted" json:"date_deleted"`
-	CachedPrice    int64           `db:"cached_price" json:"cached_price"`
-	CachedRating   float64         `db:"cached_rating" json:"cached_rating"`
+	ID             uuid.UUID       `json:"id"`
+	Number         int64           `json:"number"`
+	Slug           string          `json:"slug"`
+	AccountID      uuid.UUID       `json:"account_id"`
+	CategoryID     uuid.UUID       `json:"category_id"`
+	FeaturedSkuID  uuid.NullUUID   `json:"featured_sku_id"`
+	Name           string          `json:"name"`
+	Description    string          `json:"description"`
+	IsEnabled      bool            `json:"is_enabled"`
+	Currency       string          `json:"currency"`
+	Specifications json.RawMessage `json:"specifications"`
+	DateCreated    time.Time       `json:"date_created"`
+	DateUpdated    time.Time       `json:"date_updated"`
+	DateDeleted    null.Time       `json:"date_deleted"`
+	CachedPrice    int64           `json:"cached_price"`
+	CachedRating   float64         `json:"cached_rating"`
 }
 
 type CatalogProductSpuTag struct {
-	ID    int64     `db:"id" json:"id"`
-	SpuID uuid.UUID `db:"spu_id" json:"spu_id"`
-	Tag   string    `db:"tag" json:"tag"`
+	ID    int64     `json:"id"`
+	SpuID uuid.UUID `json:"spu_id"`
+	Tag   string    `json:"tag"`
 }
 
 type CatalogSearchSync struct {
-	ID               int64                    `db:"id" json:"id"`
-	RefType          CatalogSearchSyncRefType `db:"ref_type" json:"ref_type"`
-	RefID            uuid.UUID                `db:"ref_id" json:"ref_id"`
-	IsStaleEmbedding bool                     `db:"is_stale_embedding" json:"is_stale_embedding"`
-	DateCreated      time.Time                `db:"date_created" json:"date_created"`
-	DateUpdated      time.Time                `db:"date_updated" json:"date_updated"`
+	ID               int64                    `json:"id"`
+	RefType          CatalogSearchSyncRefType `json:"ref_type"`
+	RefID            uuid.UUID                `json:"ref_id"`
+	IsStaleEmbedding bool                     `json:"is_stale_embedding"`
+	DateCreated      time.Time                `json:"date_created"`
+	DateUpdated      time.Time                `json:"date_updated"`
 }
 
 type CatalogTag struct {
-	ID          string      `db:"id" json:"id"`
-	Name        string      `db:"name" json:"name"`
-	Description null.String `db:"description" json:"description"`
+	ID          string      `json:"id"`
+	Name        string      `json:"name"`
+	Description null.String `json:"description"`
 }
 
 type CatalogTagEmbedding struct {
-	TagID       string                    `db:"tag_id" json:"tag_id"`
-	Embedding   pgvector.Vector           `db:"embedding" json:"embedding"`
-	Sparse      *pgvector_go.SparseVector `db:"sparse" json:"sparse"`
-	DateUpdated time.Time                 `db:"date_updated" json:"date_updated"`
-}
-
-func (n NullCatalogCommentRefType) MarshalJSON() ([]byte, error) {
-	if !n.Valid {
-		return []byte("null"), nil
-	}
-	return json.Marshal(n.CatalogCommentRefType)
-}
-func (n *NullCatalogCommentRefType) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		n.Valid = false
-		return nil
-	}
-	n.Valid = true
-	return json.Unmarshal(b, &n.CatalogCommentRefType)
-}
-func (n NullCatalogSearchSyncRefType) MarshalJSON() ([]byte, error) {
-	if !n.Valid {
-		return []byte("null"), nil
-	}
-	return json.Marshal(n.CatalogSearchSyncRefType)
-}
-func (n *NullCatalogSearchSyncRefType) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		n.Valid = false
-		return nil
-	}
-	n.Valid = true
-	return json.Unmarshal(b, &n.CatalogSearchSyncRefType)
+	TagID       string                    `json:"tag_id"`
+	Embedding   pgvector.Vector           `json:"embedding"`
+	Sparse      *pgvector_go.SparseVector `json:"sparse"`
+	DateUpdated time.Time                 `json:"date_updated"`
 }

@@ -36,20 +36,20 @@ WHERE (
 `
 
 type CountInteractionParams struct {
-	ID              []int64                        `db:"id" json:"id"`
-	AccountID       []uuid.NullUUID                `db:"account_id" json:"account_id"`
-	SessionID       []null.String                  `db:"session_id" json:"session_id"`
-	EventType       []string                       `db:"event_type" json:"event_type"`
-	RefType         []AnalyticInteractionRefType   `db:"ref_type" json:"ref_type"`
-	RefTypeFrom     NullAnalyticInteractionRefType `db:"ref_type_from" json:"ref_type_from"`
-	RefTypeTo       NullAnalyticInteractionRefType `db:"ref_type_to" json:"ref_type_to"`
-	RefID           []string                       `db:"ref_id" json:"ref_id"`
-	Metadata        []json.RawMessage              `db:"metadata" json:"metadata"`
-	UserAgent       []null.String                  `db:"user_agent" json:"user_agent"`
-	IpAddress       []null.String                  `db:"ip_address" json:"ip_address"`
-	DateCreated     []time.Time                    `db:"date_created" json:"date_created"`
-	DateCreatedFrom null.Time                      `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo   null.Time                      `db:"date_created_to" json:"date_created_to"`
+	ID              []int64                        `json:"id"`
+	AccountID       []uuid.NullUUID                `json:"account_id"`
+	SessionID       []null.String                  `json:"session_id"`
+	EventType       []string                       `json:"event_type"`
+	RefType         []AnalyticInteractionRefType   `json:"ref_type"`
+	RefTypeFrom     NullAnalyticInteractionRefType `json:"ref_type_from"`
+	RefTypeTo       NullAnalyticInteractionRefType `json:"ref_type_to"`
+	RefID           []string                       `json:"ref_id"`
+	Metadata        []json.RawMessage              `json:"metadata"`
+	UserAgent       []null.String                  `json:"user_agent"`
+	IpAddress       []null.String                  `json:"ip_address"`
+	DateCreated     []time.Time                    `json:"date_created"`
+	DateCreatedFrom null.Time                      `json:"date_created_from"`
+	DateCreatedTo   null.Time                      `json:"date_created_to"`
 }
 
 func (q *Queries) CountInteraction(ctx context.Context, arg CountInteractionParams) (int64, error) {
@@ -104,28 +104,28 @@ WHERE (
 `
 
 type CountProductPopularityParams struct {
-	ID                []uuid.UUID `db:"id" json:"id"`
-	Score             []float64   `db:"score" json:"score"`
-	ScoreFrom         null.Float  `db:"score_from" json:"score_from"`
-	ScoreTo           null.Float  `db:"score_to" json:"score_to"`
-	ViewCount         []int64     `db:"view_count" json:"view_count"`
-	ViewCountFrom     null.Int    `db:"view_count_from" json:"view_count_from"`
-	ViewCountTo       null.Int    `db:"view_count_to" json:"view_count_to"`
-	PurchaseCount     []int64     `db:"purchase_count" json:"purchase_count"`
-	PurchaseCountFrom null.Int    `db:"purchase_count_from" json:"purchase_count_from"`
-	PurchaseCountTo   null.Int    `db:"purchase_count_to" json:"purchase_count_to"`
-	FavoriteCount     []int64     `db:"favorite_count" json:"favorite_count"`
-	FavoriteCountFrom null.Int    `db:"favorite_count_from" json:"favorite_count_from"`
-	FavoriteCountTo   null.Int    `db:"favorite_count_to" json:"favorite_count_to"`
-	CartCount         []int64     `db:"cart_count" json:"cart_count"`
-	CartCountFrom     null.Int    `db:"cart_count_from" json:"cart_count_from"`
-	CartCountTo       null.Int    `db:"cart_count_to" json:"cart_count_to"`
-	ReviewCount       []int64     `db:"review_count" json:"review_count"`
-	ReviewCountFrom   null.Int    `db:"review_count_from" json:"review_count_from"`
-	ReviewCountTo     null.Int    `db:"review_count_to" json:"review_count_to"`
-	DateUpdated       []time.Time `db:"date_updated" json:"date_updated"`
-	DateUpdatedFrom   null.Time   `db:"date_updated_from" json:"date_updated_from"`
-	DateUpdatedTo     null.Time   `db:"date_updated_to" json:"date_updated_to"`
+	ID                []uuid.UUID `json:"id"`
+	Score             []float64   `json:"score"`
+	ScoreFrom         null.Float  `json:"score_from"`
+	ScoreTo           null.Float  `json:"score_to"`
+	ViewCount         []int64     `json:"view_count"`
+	ViewCountFrom     null.Int    `json:"view_count_from"`
+	ViewCountTo       null.Int    `json:"view_count_to"`
+	PurchaseCount     []int64     `json:"purchase_count"`
+	PurchaseCountFrom null.Int    `json:"purchase_count_from"`
+	PurchaseCountTo   null.Int    `json:"purchase_count_to"`
+	FavoriteCount     []int64     `json:"favorite_count"`
+	FavoriteCountFrom null.Int    `json:"favorite_count_from"`
+	FavoriteCountTo   null.Int    `json:"favorite_count_to"`
+	CartCount         []int64     `json:"cart_count"`
+	CartCountFrom     null.Int    `json:"cart_count_from"`
+	CartCountTo       null.Int    `json:"cart_count_to"`
+	ReviewCount       []int64     `json:"review_count"`
+	ReviewCountFrom   null.Int    `json:"review_count_from"`
+	ReviewCountTo     null.Int    `json:"review_count_to"`
+	DateUpdated       []time.Time `json:"date_updated"`
+	DateUpdatedFrom   null.Time   `json:"date_updated_from"`
+	DateUpdatedTo     null.Time   `json:"date_updated_to"`
 }
 
 func (q *Queries) CountProductPopularity(ctx context.Context, arg CountProductPopularityParams) (int64, error) {
@@ -159,37 +159,37 @@ func (q *Queries) CountProductPopularity(ctx context.Context, arg CountProductPo
 }
 
 type CreateCopyDefaultInteractionParams struct {
-	AccountID uuid.NullUUID              `db:"account_id" json:"account_id"`
-	SessionID null.String                `db:"session_id" json:"session_id"`
-	EventType string                     `db:"event_type" json:"event_type"`
-	RefType   AnalyticInteractionRefType `db:"ref_type" json:"ref_type"`
-	RefID     string                     `db:"ref_id" json:"ref_id"`
-	Metadata  json.RawMessage            `db:"metadata" json:"metadata"`
-	UserAgent null.String                `db:"user_agent" json:"user_agent"`
-	IpAddress null.String                `db:"ip_address" json:"ip_address"`
+	AccountID uuid.NullUUID              `json:"account_id"`
+	SessionID null.String                `json:"session_id"`
+	EventType string                     `json:"event_type"`
+	RefType   AnalyticInteractionRefType `json:"ref_type"`
+	RefID     string                     `json:"ref_id"`
+	Metadata  json.RawMessage            `json:"metadata"`
+	UserAgent null.String                `json:"user_agent"`
+	IpAddress null.String                `json:"ip_address"`
 }
 
 type CreateCopyInteractionParams struct {
-	AccountID   uuid.NullUUID              `db:"account_id" json:"account_id"`
-	SessionID   null.String                `db:"session_id" json:"session_id"`
-	EventType   string                     `db:"event_type" json:"event_type"`
-	RefType     AnalyticInteractionRefType `db:"ref_type" json:"ref_type"`
-	RefID       string                     `db:"ref_id" json:"ref_id"`
-	Metadata    json.RawMessage            `db:"metadata" json:"metadata"`
-	UserAgent   null.String                `db:"user_agent" json:"user_agent"`
-	IpAddress   null.String                `db:"ip_address" json:"ip_address"`
-	DateCreated time.Time                  `db:"date_created" json:"date_created"`
+	AccountID   uuid.NullUUID              `json:"account_id"`
+	SessionID   null.String                `json:"session_id"`
+	EventType   string                     `json:"event_type"`
+	RefType     AnalyticInteractionRefType `json:"ref_type"`
+	RefID       string                     `json:"ref_id"`
+	Metadata    json.RawMessage            `json:"metadata"`
+	UserAgent   null.String                `json:"user_agent"`
+	IpAddress   null.String                `json:"ip_address"`
+	DateCreated time.Time                  `json:"date_created"`
 }
 
 type CreateCopyProductPopularityParams struct {
-	ID            uuid.UUID `db:"id" json:"id"`
-	Score         float64   `db:"score" json:"score"`
-	ViewCount     int64     `db:"view_count" json:"view_count"`
-	PurchaseCount int64     `db:"purchase_count" json:"purchase_count"`
-	FavoriteCount int64     `db:"favorite_count" json:"favorite_count"`
-	CartCount     int64     `db:"cart_count" json:"cart_count"`
-	ReviewCount   int64     `db:"review_count" json:"review_count"`
-	DateUpdated   time.Time `db:"date_updated" json:"date_updated"`
+	ID            uuid.UUID `json:"id"`
+	Score         float64   `json:"score"`
+	ViewCount     int64     `json:"view_count"`
+	PurchaseCount int64     `json:"purchase_count"`
+	FavoriteCount int64     `json:"favorite_count"`
+	CartCount     int64     `json:"cart_count"`
+	ReviewCount   int64     `json:"review_count"`
+	DateUpdated   time.Time `json:"date_updated"`
 }
 
 const createDefaultInteraction = `-- name: CreateDefaultInteraction :one
@@ -199,14 +199,14 @@ RETURNING id, account_id, session_id, event_type, ref_type, ref_id, metadata, us
 `
 
 type CreateDefaultInteractionParams struct {
-	AccountID uuid.NullUUID              `db:"account_id" json:"account_id"`
-	SessionID null.String                `db:"session_id" json:"session_id"`
-	EventType string                     `db:"event_type" json:"event_type"`
-	RefType   AnalyticInteractionRefType `db:"ref_type" json:"ref_type"`
-	RefID     string                     `db:"ref_id" json:"ref_id"`
-	Metadata  json.RawMessage            `db:"metadata" json:"metadata"`
-	UserAgent null.String                `db:"user_agent" json:"user_agent"`
-	IpAddress null.String                `db:"ip_address" json:"ip_address"`
+	AccountID uuid.NullUUID              `json:"account_id"`
+	SessionID null.String                `json:"session_id"`
+	EventType string                     `json:"event_type"`
+	RefType   AnalyticInteractionRefType `json:"ref_type"`
+	RefID     string                     `json:"ref_id"`
+	Metadata  json.RawMessage            `json:"metadata"`
+	UserAgent null.String                `json:"user_agent"`
+	IpAddress null.String                `json:"ip_address"`
 }
 
 func (q *Queries) CreateDefaultInteraction(ctx context.Context, arg CreateDefaultInteractionParams) (AnalyticInteraction, error) {
@@ -265,15 +265,15 @@ RETURNING id, account_id, session_id, event_type, ref_type, ref_id, metadata, us
 `
 
 type CreateInteractionParams struct {
-	AccountID   uuid.NullUUID              `db:"account_id" json:"account_id"`
-	SessionID   null.String                `db:"session_id" json:"session_id"`
-	EventType   string                     `db:"event_type" json:"event_type"`
-	RefType     AnalyticInteractionRefType `db:"ref_type" json:"ref_type"`
-	RefID       string                     `db:"ref_id" json:"ref_id"`
-	Metadata    json.RawMessage            `db:"metadata" json:"metadata"`
-	UserAgent   null.String                `db:"user_agent" json:"user_agent"`
-	IpAddress   null.String                `db:"ip_address" json:"ip_address"`
-	DateCreated time.Time                  `db:"date_created" json:"date_created"`
+	AccountID   uuid.NullUUID              `json:"account_id"`
+	SessionID   null.String                `json:"session_id"`
+	EventType   string                     `json:"event_type"`
+	RefType     AnalyticInteractionRefType `json:"ref_type"`
+	RefID       string                     `json:"ref_id"`
+	Metadata    json.RawMessage            `json:"metadata"`
+	UserAgent   null.String                `json:"user_agent"`
+	IpAddress   null.String                `json:"ip_address"`
+	DateCreated time.Time                  `json:"date_created"`
 }
 
 func (q *Queries) CreateInteraction(ctx context.Context, arg CreateInteractionParams) (AnalyticInteraction, error) {
@@ -311,14 +311,14 @@ RETURNING id, score, view_count, purchase_count, favorite_count, cart_count, rev
 `
 
 type CreateProductPopularityParams struct {
-	ID            uuid.UUID `db:"id" json:"id"`
-	Score         float64   `db:"score" json:"score"`
-	ViewCount     int64     `db:"view_count" json:"view_count"`
-	PurchaseCount int64     `db:"purchase_count" json:"purchase_count"`
-	FavoriteCount int64     `db:"favorite_count" json:"favorite_count"`
-	CartCount     int64     `db:"cart_count" json:"cart_count"`
-	ReviewCount   int64     `db:"review_count" json:"review_count"`
-	DateUpdated   time.Time `db:"date_updated" json:"date_updated"`
+	ID            uuid.UUID `json:"id"`
+	Score         float64   `json:"score"`
+	ViewCount     int64     `json:"view_count"`
+	PurchaseCount int64     `json:"purchase_count"`
+	FavoriteCount int64     `json:"favorite_count"`
+	CartCount     int64     `json:"cart_count"`
+	ReviewCount   int64     `json:"review_count"`
+	DateUpdated   time.Time `json:"date_updated"`
 }
 
 func (q *Queries) CreateProductPopularity(ctx context.Context, arg CreateProductPopularityParams) (AnalyticProductPopularity, error) {
@@ -367,20 +367,20 @@ WHERE (
 `
 
 type DeleteInteractionParams struct {
-	ID              []int64                        `db:"id" json:"id"`
-	AccountID       []uuid.NullUUID                `db:"account_id" json:"account_id"`
-	SessionID       []null.String                  `db:"session_id" json:"session_id"`
-	EventType       []string                       `db:"event_type" json:"event_type"`
-	RefType         []AnalyticInteractionRefType   `db:"ref_type" json:"ref_type"`
-	RefTypeFrom     NullAnalyticInteractionRefType `db:"ref_type_from" json:"ref_type_from"`
-	RefTypeTo       NullAnalyticInteractionRefType `db:"ref_type_to" json:"ref_type_to"`
-	RefID           []string                       `db:"ref_id" json:"ref_id"`
-	Metadata        []json.RawMessage              `db:"metadata" json:"metadata"`
-	UserAgent       []null.String                  `db:"user_agent" json:"user_agent"`
-	IpAddress       []null.String                  `db:"ip_address" json:"ip_address"`
-	DateCreated     []time.Time                    `db:"date_created" json:"date_created"`
-	DateCreatedFrom null.Time                      `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo   null.Time                      `db:"date_created_to" json:"date_created_to"`
+	ID              []int64                        `json:"id"`
+	AccountID       []uuid.NullUUID                `json:"account_id"`
+	SessionID       []null.String                  `json:"session_id"`
+	EventType       []string                       `json:"event_type"`
+	RefType         []AnalyticInteractionRefType   `json:"ref_type"`
+	RefTypeFrom     NullAnalyticInteractionRefType `json:"ref_type_from"`
+	RefTypeTo       NullAnalyticInteractionRefType `json:"ref_type_to"`
+	RefID           []string                       `json:"ref_id"`
+	Metadata        []json.RawMessage              `json:"metadata"`
+	UserAgent       []null.String                  `json:"user_agent"`
+	IpAddress       []null.String                  `json:"ip_address"`
+	DateCreated     []time.Time                    `json:"date_created"`
+	DateCreatedFrom null.Time                      `json:"date_created_from"`
+	DateCreatedTo   null.Time                      `json:"date_created_to"`
 }
 
 func (q *Queries) DeleteInteraction(ctx context.Context, arg DeleteInteractionParams) error {
@@ -432,28 +432,28 @@ WHERE (
 `
 
 type DeleteProductPopularityParams struct {
-	ID                []uuid.UUID `db:"id" json:"id"`
-	Score             []float64   `db:"score" json:"score"`
-	ScoreFrom         null.Float  `db:"score_from" json:"score_from"`
-	ScoreTo           null.Float  `db:"score_to" json:"score_to"`
-	ViewCount         []int64     `db:"view_count" json:"view_count"`
-	ViewCountFrom     null.Int    `db:"view_count_from" json:"view_count_from"`
-	ViewCountTo       null.Int    `db:"view_count_to" json:"view_count_to"`
-	PurchaseCount     []int64     `db:"purchase_count" json:"purchase_count"`
-	PurchaseCountFrom null.Int    `db:"purchase_count_from" json:"purchase_count_from"`
-	PurchaseCountTo   null.Int    `db:"purchase_count_to" json:"purchase_count_to"`
-	FavoriteCount     []int64     `db:"favorite_count" json:"favorite_count"`
-	FavoriteCountFrom null.Int    `db:"favorite_count_from" json:"favorite_count_from"`
-	FavoriteCountTo   null.Int    `db:"favorite_count_to" json:"favorite_count_to"`
-	CartCount         []int64     `db:"cart_count" json:"cart_count"`
-	CartCountFrom     null.Int    `db:"cart_count_from" json:"cart_count_from"`
-	CartCountTo       null.Int    `db:"cart_count_to" json:"cart_count_to"`
-	ReviewCount       []int64     `db:"review_count" json:"review_count"`
-	ReviewCountFrom   null.Int    `db:"review_count_from" json:"review_count_from"`
-	ReviewCountTo     null.Int    `db:"review_count_to" json:"review_count_to"`
-	DateUpdated       []time.Time `db:"date_updated" json:"date_updated"`
-	DateUpdatedFrom   null.Time   `db:"date_updated_from" json:"date_updated_from"`
-	DateUpdatedTo     null.Time   `db:"date_updated_to" json:"date_updated_to"`
+	ID                []uuid.UUID `json:"id"`
+	Score             []float64   `json:"score"`
+	ScoreFrom         null.Float  `json:"score_from"`
+	ScoreTo           null.Float  `json:"score_to"`
+	ViewCount         []int64     `json:"view_count"`
+	ViewCountFrom     null.Int    `json:"view_count_from"`
+	ViewCountTo       null.Int    `json:"view_count_to"`
+	PurchaseCount     []int64     `json:"purchase_count"`
+	PurchaseCountFrom null.Int    `json:"purchase_count_from"`
+	PurchaseCountTo   null.Int    `json:"purchase_count_to"`
+	FavoriteCount     []int64     `json:"favorite_count"`
+	FavoriteCountFrom null.Int    `json:"favorite_count_from"`
+	FavoriteCountTo   null.Int    `json:"favorite_count_to"`
+	CartCount         []int64     `json:"cart_count"`
+	CartCountFrom     null.Int    `json:"cart_count_from"`
+	CartCountTo       null.Int    `json:"cart_count_to"`
+	ReviewCount       []int64     `json:"review_count"`
+	ReviewCountFrom   null.Int    `json:"review_count_from"`
+	ReviewCountTo     null.Int    `json:"review_count_to"`
+	DateUpdated       []time.Time `json:"date_updated"`
+	DateUpdatedFrom   null.Time   `json:"date_updated_from"`
+	DateUpdatedTo     null.Time   `json:"date_updated_to"`
 }
 
 func (q *Queries) DeleteProductPopularity(ctx context.Context, arg DeleteProductPopularityParams) error {
@@ -558,21 +558,21 @@ RETURNING id, account_id, session_id, event_type, ref_type, ref_id, metadata, us
 `
 
 type UpdateInteractionParams struct {
-	NullAccountID bool                           `db:"null_account_id" json:"null_account_id"`
-	AccountID     uuid.NullUUID                  `db:"account_id" json:"account_id"`
-	NullSessionID bool                           `db:"null_session_id" json:"null_session_id"`
-	SessionID     null.String                    `db:"session_id" json:"session_id"`
-	EventType     null.String                    `db:"event_type" json:"event_type"`
-	RefType       NullAnalyticInteractionRefType `db:"ref_type" json:"ref_type"`
-	RefID         null.String                    `db:"ref_id" json:"ref_id"`
-	NullMetadata  bool                           `db:"null_metadata" json:"null_metadata"`
-	Metadata      json.RawMessage                `db:"metadata" json:"metadata"`
-	NullUserAgent bool                           `db:"null_user_agent" json:"null_user_agent"`
-	UserAgent     null.String                    `db:"user_agent" json:"user_agent"`
-	NullIpAddress bool                           `db:"null_ip_address" json:"null_ip_address"`
-	IpAddress     null.String                    `db:"ip_address" json:"ip_address"`
-	DateCreated   null.Time                      `db:"date_created" json:"date_created"`
-	ID            int64                          `db:"id" json:"id"`
+	NullAccountID bool                           `json:"null_account_id"`
+	AccountID     uuid.NullUUID                  `json:"account_id"`
+	NullSessionID bool                           `json:"null_session_id"`
+	SessionID     null.String                    `json:"session_id"`
+	EventType     null.String                    `json:"event_type"`
+	RefType       NullAnalyticInteractionRefType `json:"ref_type"`
+	RefID         null.String                    `json:"ref_id"`
+	NullMetadata  bool                           `json:"null_metadata"`
+	Metadata      json.RawMessage                `json:"metadata"`
+	NullUserAgent bool                           `json:"null_user_agent"`
+	UserAgent     null.String                    `json:"user_agent"`
+	NullIpAddress bool                           `json:"null_ip_address"`
+	IpAddress     null.String                    `json:"ip_address"`
+	DateCreated   null.Time                      `json:"date_created"`
+	ID            int64                          `json:"id"`
 }
 
 func (q *Queries) UpdateInteraction(ctx context.Context, arg UpdateInteractionParams) (AnalyticInteraction, error) {
@@ -623,14 +623,14 @@ RETURNING id, score, view_count, purchase_count, favorite_count, cart_count, rev
 `
 
 type UpdateProductPopularityParams struct {
-	Score         null.Float `db:"score" json:"score"`
-	ViewCount     null.Int   `db:"view_count" json:"view_count"`
-	PurchaseCount null.Int   `db:"purchase_count" json:"purchase_count"`
-	FavoriteCount null.Int   `db:"favorite_count" json:"favorite_count"`
-	CartCount     null.Int   `db:"cart_count" json:"cart_count"`
-	ReviewCount   null.Int   `db:"review_count" json:"review_count"`
-	DateUpdated   null.Time  `db:"date_updated" json:"date_updated"`
-	ID            uuid.UUID  `db:"id" json:"id"`
+	Score         null.Float `json:"score"`
+	ViewCount     null.Int   `json:"view_count"`
+	PurchaseCount null.Int   `json:"purchase_count"`
+	FavoriteCount null.Int   `json:"favorite_count"`
+	CartCount     null.Int   `json:"cart_count"`
+	ReviewCount   null.Int   `json:"review_count"`
+	DateUpdated   null.Time  `json:"date_updated"`
+	ID            uuid.UUID  `json:"id"`
 }
 
 func (q *Queries) UpdateProductPopularity(ctx context.Context, arg UpdateProductPopularityParams) (AnalyticProductPopularity, error) {

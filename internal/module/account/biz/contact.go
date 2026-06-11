@@ -123,43 +123,40 @@ func (b *AccountHandler) CreateContact(
 
 	// execution: create the contact, promoting it to default if it is the first.
 	return restate.Run(ctx, func(rctx restate.RunContext) (accountdb.AccountContact, error) {
-		txStorage, err := b.storage.BeginTx(rctx)
-		if err != nil {
-			return zero, fmt.Errorf("begin transaction: %w", err)
-		}
-		defer txStorage.Rollback(rctx)
-
-		total, err := txStorage.Querier().CountContact(rctx, accountdb.CountContactParams{
-			AccountID: []uuid.UUID{params.Account.ID},
-		})
-		if err != nil {
-			return zero, fmt.Errorf("db create contact: %w", err)
-		}
-
-		dbContact, err := txStorage.Querier().CreateDefaultContact(rctx, accountdb.CreateDefaultContactParams{
-			AccountID:   params.Account.ID,
-			FullName:    params.FullName,
-			Phone:       params.Phone,
-			Address:     params.Address,
-			AddressType: accountdb.AccountAddressType(params.AddressType),
-			Latitude:    params.Latitude.Float64,
-			Longitude:   params.Longitude.Float64,
-		})
-		if err != nil {
-			return zero, fmt.Errorf("db create contact: %w", err)
-		}
-
-		if total == 0 {
-			if err = txStorage.Querier().SetAccountDefaultContact(rctx, accountdb.SetAccountDefaultContactParams{
-				ID:               params.Account.ID,
-				DefaultContactID: uuid.NullUUID{UUID: dbContact.ID, Valid: true},
-			}); err != nil {
-				return zero, fmt.Errorf("set default contact: %w", err)
+		var dbContact accountdb.AccountContact
+		if err := b.storage.Transact(rctx, func(s AccountStorage) error {
+			total, err := s.Querier().CountContact(rctx, accountdb.CountContactParams{
+				AccountID: []uuid.UUID{params.Account.ID},
+			})
+			if err != nil {
+				return fmt.Errorf("db create contact: %w", err)
 			}
-		}
 
-		if err = txStorage.Commit(rctx); err != nil {
-			return zero, fmt.Errorf("commit transaction: %w", err)
+			dbContact, err = s.Querier().CreateDefaultContact(rctx, accountdb.CreateDefaultContactParams{
+				AccountID:   params.Account.ID,
+				FullName:    params.FullName,
+				Phone:       params.Phone,
+				Address:     params.Address,
+				AddressType: accountdb.AccountAddressType(params.AddressType),
+				Latitude:    params.Latitude.Float64,
+				Longitude:   params.Longitude.Float64,
+			})
+			if err != nil {
+				return fmt.Errorf("db create contact: %w", err)
+			}
+
+			if total == 0 {
+				if err := s.Querier().SetAccountDefaultContact(rctx, accountdb.SetAccountDefaultContactParams{
+					ID:               params.Account.ID,
+					DefaultContactID: uuid.NullUUID{UUID: dbContact.ID, Valid: true},
+				}); err != nil {
+					return fmt.Errorf("set default contact: %w", err)
+				}
+			}
+
+			return nil
+		}); err != nil {
+			return zero, err
 		}
 
 		return dbContact, nil
@@ -235,60 +232,52 @@ type DeleteContactParams struct {
 func (b *AccountHandler) DeleteContact(ctx restate.Context, params DeleteContactParams) error {
 	// execution: delete the contact, reassigning the default if needed.
 	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-		txStorage, err := b.storage.BeginTx(rctx)
-		if err != nil {
-			return fmt.Errorf("begin transaction: %w", err)
-		}
-		defer txStorage.Rollback(rctx)
-
-		total, err := txStorage.Querier().CountContact(rctx, accountdb.CountContactParams{
-			AccountID: []uuid.UUID{params.Account.ID},
-		})
-		if err != nil {
-			return fmt.Errorf("db count contact: %w", err)
-		}
-		if total <= 1 {
-			return accountmodel.ErrCannotDeleteLastContact
-		}
-
-		// Check if we're deleting the default contact
-		defaultContactID, err := txStorage.Querier().GetAccountDefaults(rctx, params.Account.ID)
-		if err != nil {
-			return fmt.Errorf("db get account defaults: %w", err)
-		}
-		isDefault := defaultContactID.Valid && defaultContactID.UUID == params.ContactID
-
-		// Delete the contact
-		if err = txStorage.Querier().DeleteContact(rctx, accountdb.DeleteContactParams{
-			ID:        []uuid.UUID{params.ContactID},
-			AccountID: []uuid.UUID{params.Account.ID},
-		}); err != nil {
-			return fmt.Errorf("db delete contact: %w", err)
-		}
-
-		// If we deleted the default, reassign to the most recent remaining contact
-		if isDefault {
-			remaining, err := txStorage.Querier().ListContact(rctx, accountdb.ListContactParams{
-				AccountId: []uuid.UUID{params.Account.ID},
+		return b.storage.Transact(rctx, func(s AccountStorage) error {
+			total, err := s.Querier().CountContact(rctx, accountdb.CountContactParams{
+				AccountID: []uuid.UUID{params.Account.ID},
 			})
 			if err != nil {
-				return fmt.Errorf("db list contact: %w", err)
+				return fmt.Errorf("db count contact: %w", err)
 			}
-			if len(remaining.Data) > 0 {
-				if err = txStorage.Querier().SetAccountDefaultContact(rctx, accountdb.SetAccountDefaultContactParams{
-					ID:               params.Account.ID,
-					DefaultContactID: uuid.NullUUID{UUID: remaining.Data[0].ID, Valid: true},
-				}); err != nil {
-					return fmt.Errorf("db set account default contact: %w", err)
+			if total <= 1 {
+				return accountmodel.ErrCannotDeleteLastContact
+			}
+
+			// Check if we're deleting the default contact
+			defaultContactID, err := s.Querier().GetAccountDefaults(rctx, params.Account.ID)
+			if err != nil {
+				return fmt.Errorf("db get account defaults: %w", err)
+			}
+			isDefault := defaultContactID.Valid && defaultContactID.UUID == params.ContactID
+
+			// Delete the contact
+			if err := s.Querier().DeleteContact(rctx, accountdb.DeleteContactParams{
+				ID:        []uuid.UUID{params.ContactID},
+				AccountID: []uuid.UUID{params.Account.ID},
+			}); err != nil {
+				return fmt.Errorf("db delete contact: %w", err)
+			}
+
+			// If we deleted the default, reassign to the most recent remaining contact
+			if isDefault {
+				remaining, err := s.Querier().ListContact(rctx, accountdb.ListContactParams{
+					AccountId: []uuid.UUID{params.Account.ID},
+				})
+				if err != nil {
+					return fmt.Errorf("db list contact: %w", err)
+				}
+				if len(remaining.Data) > 0 {
+					if err := s.Querier().SetAccountDefaultContact(rctx, accountdb.SetAccountDefaultContactParams{
+						ID:               params.Account.ID,
+						DefaultContactID: uuid.NullUUID{UUID: remaining.Data[0].ID, Valid: true},
+					}); err != nil {
+						return fmt.Errorf("db set account default contact: %w", err)
+					}
 				}
 			}
-		}
 
-		if err = txStorage.Commit(rctx); err != nil {
-			return fmt.Errorf("commit transaction: %w", err)
-		}
-
-		return nil
+			return nil
+		})
 	})
 }
 

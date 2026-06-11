@@ -19,8 +19,8 @@ RETURNING "internal_balance" AS new_balance
 `
 
 type CreditInternalBalanceParams struct {
-	Amount    int64     `db:"amount" json:"amount"`
-	AccountID uuid.UUID `db:"account_id" json:"account_id"`
+	Amount    int64     `json:"amount"`
+	AccountID uuid.UUID `json:"account_id"`
 }
 
 func (q *Queries) CreditInternalBalance(ctx context.Context, arg CreditInternalBalanceParams) (int64, error) {
@@ -49,13 +49,13 @@ FROM locked, updated
 `
 
 type DebitInternalBalanceParams struct {
-	AccountID uuid.UUID `db:"account_id" json:"account_id"`
-	Amount    int64     `db:"amount" json:"amount"`
+	AccountID uuid.UUID `json:"account_id"`
+	Amount    int64     `json:"amount"`
 }
 
 type DebitInternalBalanceRow struct {
-	OldBalance int64 `db:"old_balance" json:"old_balance"`
-	NewBalance int64 `db:"new_balance" json:"new_balance"`
+	OldBalance int64 `json:"old_balance"`
+	NewBalance int64 `json:"new_balance"`
 }
 
 // Atomic debit. Locks the row, deducts min(balance, amount), returns

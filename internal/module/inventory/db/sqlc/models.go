@@ -6,7 +6,6 @@ package inventorydb
 
 import (
 	"database/sql/driver"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -136,58 +135,29 @@ func AllInventoryStockRefTypeValues() []InventoryStockRefType {
 }
 
 type InventoryIdempotency struct {
-	Key uuid.UUID `db:"key" json:"key"`
+	Key uuid.UUID `json:"key"`
 }
 
 type InventorySerial struct {
-	ID          string          `db:"id" json:"id"`
-	StockID     int64           `db:"stock_id" json:"stock_id"`
-	Status      InventoryStatus `db:"status" json:"status"`
-	DateCreated time.Time       `db:"date_created" json:"date_created"`
+	ID          string          `json:"id"`
+	StockID     int64           `json:"stock_id"`
+	Status      InventoryStatus `json:"status"`
+	DateCreated time.Time       `json:"date_created"`
 }
 
 type InventoryStock struct {
-	ID             int64                 `db:"id" json:"id"`
-	RefType        InventoryStockRefType `db:"ref_type" json:"ref_type"`
-	RefID          uuid.UUID             `db:"ref_id" json:"ref_id"`
-	Stock          int64                 `db:"stock" json:"stock"`
-	Taken          int64                 `db:"taken" json:"taken"`
-	SerialRequired bool                  `db:"serial_required" json:"serial_required"`
-	DateCreated    time.Time             `db:"date_created" json:"date_created"`
+	ID             int64                 `json:"id"`
+	RefType        InventoryStockRefType `json:"ref_type"`
+	RefID          uuid.UUID             `json:"ref_id"`
+	Stock          int64                 `json:"stock"`
+	Taken          int64                 `json:"taken"`
+	SerialRequired bool                  `json:"serial_required"`
+	DateCreated    time.Time             `json:"date_created"`
 }
 
 type InventoryStockHistory struct {
-	ID          int64     `db:"id" json:"id"`
-	StockID     int64     `db:"stock_id" json:"stock_id"`
-	Change      int64     `db:"change" json:"change"`
-	DateCreated time.Time `db:"date_created" json:"date_created"`
-}
-
-func (n NullInventoryStatus) MarshalJSON() ([]byte, error) {
-	if !n.Valid {
-		return []byte("null"), nil
-	}
-	return json.Marshal(n.InventoryStatus)
-}
-func (n *NullInventoryStatus) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		n.Valid = false
-		return nil
-	}
-	n.Valid = true
-	return json.Unmarshal(b, &n.InventoryStatus)
-}
-func (n NullInventoryStockRefType) MarshalJSON() ([]byte, error) {
-	if !n.Valid {
-		return []byte("null"), nil
-	}
-	return json.Marshal(n.InventoryStockRefType)
-}
-func (n *NullInventoryStockRefType) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		n.Valid = false
-		return nil
-	}
-	n.Valid = true
-	return json.Unmarshal(b, &n.InventoryStockRefType)
+	ID          int64     `json:"id"`
+	StockID     int64     `json:"stock_id"`
+	Change      int64     `json:"change"`
+	DateCreated time.Time `json:"date_created"`
 }

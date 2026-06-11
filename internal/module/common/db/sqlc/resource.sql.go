@@ -25,21 +25,21 @@ ORDER BY rr."order", rr.id ASC
 `
 
 type ListSortedResourcesParams struct {
-	RefType CommonResourceRefType `db:"ref_type" json:"ref_type"`
-	RefID   []uuid.UUID           `db:"ref_id" json:"ref_id"`
+	RefType CommonResourceRefType `json:"ref_type"`
+	RefID   []uuid.UUID           `json:"ref_id"`
 }
 
 type ListSortedResourcesRow struct {
-	ID           uuid.UUID       `db:"id" json:"id"`
-	UploadedByID uuid.NullUUID   `db:"uploaded_by_id" json:"uploaded_by_id"`
-	Provider     string          `db:"provider" json:"provider"`
-	ObjectKey    string          `db:"object_key" json:"object_key"`
-	Mime         string          `db:"mime" json:"mime"`
-	Size         int64           `db:"size" json:"size"`
-	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
-	Checksum     null.String     `db:"checksum" json:"checksum"`
-	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
-	RefID        uuid.UUID       `db:"ref_id" json:"ref_id"`
+	ID           uuid.UUID       `json:"id"`
+	UploadedByID uuid.NullUUID   `json:"uploaded_by_id"`
+	Provider     string          `json:"provider"`
+	ObjectKey    string          `json:"object_key"`
+	Mime         string          `json:"mime"`
+	Size         int64           `json:"size"`
+	Metadata     json.RawMessage `json:"metadata"`
+	Checksum     null.String     `json:"checksum"`
+	CreatedAt    time.Time       `json:"created_at"`
+	RefID        uuid.UUID       `json:"ref_id"`
 }
 
 func (q *Queries) ListSortedResources(ctx context.Context, arg ListSortedResourcesParams) ([]ListSortedResourcesRow, error) {

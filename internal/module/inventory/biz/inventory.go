@@ -306,83 +306,76 @@ func (b *InventoryHandler) ReserveInventory(
 	// execution: single-module atomic reserve. Idempotency keys + stock adjust + serial
 	// assignment all commit together; nothing crosses module boundaries, so no saga.
 	results, err = restate.Run(ctx, func(rctx restate.RunContext) ([]ReserveInventoryResult, error) {
-		txStorage, err := b.storage.BeginTx(rctx)
-		if err != nil {
-			return nil, fmt.Errorf("begin transaction: %w", err)
-		}
-		defer txStorage.Rollback(rctx)
-
-		if err = params.Keys.Apply(rctx, txStorage.Querier()); err != nil {
-			return nil, fmt.Errorf("check idempotency keys: %w", err)
-		}
-
 		var out []ReserveInventoryResult
-		for _, item := range params.Items {
-			var stock inventorydb.InventoryStock
-			stock, err = b.getStockByRef(rctx, txStorage, item.RefType, item.RefID)
-			if err != nil {
-				return nil, fmt.Errorf("db get stock: %w", err)
+		if err := b.storage.Transact(rctx, func(s InventoryStorage) error {
+			if err := params.Keys.Apply(rctx, s.Querier()); err != nil {
+				return fmt.Errorf("check idempotency keys: %w", err)
 			}
 
-			label := item.DisplayName
-			if label == "" {
-				label = refTypeLabel(item.RefType)
-			}
+			for _, item := range params.Items {
+				stock, err := b.getStockByRef(rctx, s, item.RefType, item.RefID)
+				if err != nil {
+					return fmt.Errorf("db get stock: %w", err)
+				}
 
-			if stock.Stock < item.Amount {
-				return nil, inventorymodel.ErrOutOfStock.Fmt(label, item.Amount, stock.Stock)
-			}
+				label := item.DisplayName
+				if label == "" {
+					label = refTypeLabel(item.RefType)
+				}
 
-			var rowsAffected int64
-			rowsAffected, err = txStorage.Querier().AdjustInventory(rctx, inventorydb.AdjustInventoryParams{
-				StockID: stock.ID,
-				Amount:  item.Amount,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("db adjust inventory: %w", err)
-			}
-			if rowsAffected == 0 {
-				return nil, inventorymodel.ErrOutOfStockRace.Fmt(label)
-			}
+				if stock.Stock < item.Amount {
+					return inventorymodel.ErrOutOfStock.Fmt(label, item.Amount, stock.Stock)
+				}
 
-			result := ReserveInventoryResult{
-				RefType: item.RefType,
-				RefID:   item.RefID,
-			}
-
-			if stock.SerialRequired {
-				var serials []inventorydb.GetAvailableSerialsRow
-				serials, err = txStorage.Querier().GetAvailableSerials(rctx, inventorydb.GetAvailableSerialsParams{
+				rowsAffected, err := s.Querier().AdjustInventory(rctx, inventorydb.AdjustInventoryParams{
 					StockID: stock.ID,
-					Amount:  int32(item.Amount),
+					Amount:  item.Amount,
 				})
 				if err != nil {
-					return nil, fmt.Errorf("db get available serials: %w", err)
+					return fmt.Errorf("db adjust inventory: %w", err)
+				}
+				if rowsAffected == 0 {
+					return inventorymodel.ErrOutOfStockRace.Fmt(label)
 				}
 
-				if len(serials) != int(item.Amount) {
-					return nil, inventorymodel.ErrSerialShortage.Fmt(len(serials), label, item.Amount)
+				result := ReserveInventoryResult{
+					RefType: item.RefType,
+					RefID:   item.RefID,
 				}
 
-				serialIDs := lo.Map(serials, func(row inventorydb.GetAvailableSerialsRow, _ int) string {
-					return row.ID
-				})
+				if stock.SerialRequired {
+					serials, err := s.Querier().GetAvailableSerials(rctx, inventorydb.GetAvailableSerialsParams{
+						StockID: stock.ID,
+						Amount:  int32(item.Amount),
+					})
+					if err != nil {
+						return fmt.Errorf("db get available serials: %w", err)
+					}
 
-				if err = txStorage.Querier().UpdateSerialStatus(rctx, inventorydb.UpdateSerialStatusParams{
-					ID:     serialIDs,
-					Status: inventorydb.InventoryStatusTaken,
-				}); err != nil {
-					return nil, fmt.Errorf("db update serial status: %w", err)
+					if len(serials) != int(item.Amount) {
+						return inventorymodel.ErrSerialShortage.Fmt(len(serials), label, item.Amount)
+					}
+
+					serialIDs := lo.Map(serials, func(row inventorydb.GetAvailableSerialsRow, _ int) string {
+						return row.ID
+					})
+
+					if err := s.Querier().UpdateSerialStatus(rctx, inventorydb.UpdateSerialStatusParams{
+						ID:     serialIDs,
+						Status: inventorydb.InventoryStatusTaken,
+					}); err != nil {
+						return fmt.Errorf("db update serial status: %w", err)
+					}
+
+					result.SerialIDs = serialIDs
 				}
 
-				result.SerialIDs = serialIDs
+				out = append(out, result)
 			}
 
-			out = append(out, result)
-		}
-
-		if err = txStorage.Commit(rctx); err != nil {
-			return nil, fmt.Errorf("commit transaction: %w", err)
+			return nil
+		}); err != nil {
+			return nil, err
 		}
 
 		return out, nil

@@ -2,6 +2,7 @@ package transport
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -12,6 +13,8 @@ import (
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
+	"github.com/guregu/null/v6"
+	"github.com/jackc/pgx/v5"
 	restate "github.com/restatedev/sdk-go"
 )
 
@@ -94,6 +97,30 @@ func (b *TransportHandler) OnTransportResult(ctx restate.Context, params OnTrans
 	// tail: If Delivered (Success), fetch the order on this transport and notify
 	// the buyer. The notify Send self-journals.
 	if orderdb.OrderStatus(params.Status) == orderdb.OrderStatusSuccess {
+		// First check whether this transport is the RETURN leg of a refund
+		// (keyed by return_transport_id). If so, signal the fulfillment
+		// workflow that the return was delivered and stop — no buyer notify.
+		refund, rErr := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
+			return b.Storage.Querier().GetRefund(rctx, orderdb.GetRefundParams{
+				ReturnTransportID: null.IntFrom(fetched.TransportID),
+			})
+		})
+		switch {
+		case rErr == nil:
+			if err = b.fulfillment.Send().OnTransportDelivered(
+				ctx,
+				refund.OrderID,
+				ordermodel.TransportDeliveredSignal{RefundID: refund.ID},
+			); err != nil {
+				return fmt.Errorf("signal return delivered: %w", err)
+			}
+			return nil
+		case errors.Is(rErr, pgx.ErrNoRows):
+			// Not a return leg — fall through to the forward-leg path below.
+		default:
+			return fmt.Errorf("lookup refund by return transport: %w", rErr)
+		}
+
 		order, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderOrder, error) {
 			return b.Storage.Querier().GetOrderByTransportID(rctx, fetched.TransportID)
 		})

@@ -20,15 +20,15 @@ ON CONFLICT ("id") DO NOTHING
 `
 
 type CreateOrderIdempotentParams struct {
-	ID               uuid.UUID   `db:"id" json:"id"`
-	BuyerID          uuid.UUID   `db:"buyer_id" json:"buyer_id"`
-	SellerID         uuid.UUID   `db:"seller_id" json:"seller_id"`
-	TransportID      int64       `db:"transport_id" json:"transport_id"`
-	Address          string      `db:"address" json:"address"`
-	DateCreated      time.Time   `db:"date_created" json:"date_created"`
-	ConfirmedByID    uuid.UUID   `db:"confirmed_by_id" json:"confirmed_by_id"`
-	ConfirmSessionID uuid.UUID   `db:"confirm_session_id" json:"confirm_session_id"`
-	Note             null.String `db:"note" json:"note"`
+	ID               uuid.UUID   `json:"id"`
+	BuyerID          uuid.UUID   `json:"buyer_id"`
+	SellerID         uuid.UUID   `json:"seller_id"`
+	TransportID      int64       `json:"transport_id"`
+	Address          string      `json:"address"`
+	DateCreated      time.Time   `json:"date_created"`
+	ConfirmedByID    uuid.UUID   `json:"confirmed_by_id"`
+	ConfirmSessionID uuid.UUID   `json:"confirm_session_id"`
+	Note             null.String `json:"note"`
 }
 
 // CreateOrderIdempotent inserts the order row with a caller-chosen ID (the
@@ -82,8 +82,8 @@ SELECT EXISTS(
 `
 
 type HasPurchasedSkuParams struct {
-	AccountID uuid.UUID   `db:"account_id" json:"account_id"`
-	SkuIds    []uuid.UUID `db:"sku_ids" json:"sku_ids"`
+	AccountID uuid.UUID   `json:"account_id"`
+	SkuIds    []uuid.UUID `json:"sku_ids"`
 }
 
 func (q *Queries) HasPurchasedSku(ctx context.Context, arg HasPurchasedSkuParams) (bool, error) {
@@ -104,15 +104,15 @@ OFFSET $3::int
 `
 
 type ListCountSellerOrderParams struct {
-	SellerID uuid.UUID   `db:"seller_id" json:"seller_id"`
-	Search   null.String `db:"search" json:"search"`
-	Offset   null.Int32  `db:"offset" json:"offset"`
-	Limit    null.Int32  `db:"limit" json:"limit"`
+	SellerID uuid.UUID   `json:"seller_id"`
+	Search   null.String `json:"search"`
+	Offset   null.Int32  `json:"offset"`
+	Limit    null.Int32  `json:"limit"`
 }
 
 type ListCountSellerOrderRow struct {
-	OrderOrder OrderOrder `db:"order_order" json:"order_order"`
-	TotalCount int64      `db:"total_count" json:"total_count"`
+	OrderOrder OrderOrder `json:"order_order"`
+	TotalCount int64      `json:"total_count"`
 }
 
 func (q *Queries) ListCountSellerOrder(ctx context.Context, arg ListCountSellerOrderParams) ([]ListCountSellerOrderRow, error) {
@@ -160,9 +160,9 @@ LIMIT $3::INTEGER OFFSET $2::INTEGER
 `
 
 type ListSellerOrdersParams struct {
-	SellerID    uuid.UUID `db:"seller_id" json:"seller_id"`
-	OffsetCount int32     `db:"offset_count" json:"offset_count"`
-	LimitCount  int32     `db:"limit_count" json:"limit_count"`
+	SellerID    uuid.UUID `json:"seller_id"`
+	OffsetCount int32     `json:"offset_count"`
+	LimitCount  int32     `json:"limit_count"`
 }
 
 // Custom order queries
@@ -207,8 +207,8 @@ ORDER BY o.date_created DESC
 `
 
 type ListSuccessOrdersBySkusParams struct {
-	BuyerID uuid.UUID   `db:"buyer_id" json:"buyer_id"`
-	SkuIds  []uuid.UUID `db:"sku_ids" json:"sku_ids"`
+	BuyerID uuid.UUID   `json:"buyer_id"`
+	SkuIds  []uuid.UUID `json:"sku_ids"`
 }
 
 func (q *Queries) ListSuccessOrdersBySkus(ctx context.Context, arg ListSuccessOrdersBySkusParams) ([]OrderOrder, error) {
@@ -253,9 +253,9 @@ SELECT EXISTS(
 `
 
 type ValidateOrderForReviewParams struct {
-	OrderID uuid.UUID   `db:"order_id" json:"order_id"`
-	BuyerID uuid.UUID   `db:"buyer_id" json:"buyer_id"`
-	SkuIds  []uuid.UUID `db:"sku_ids" json:"sku_ids"`
+	OrderID uuid.UUID   `json:"order_id"`
+	BuyerID uuid.UUID   `json:"buyer_id"`
+	SkuIds  []uuid.UUID `json:"sku_ids"`
 }
 
 func (q *Queries) ValidateOrderForReview(ctx context.Context, arg ValidateOrderForReviewParams) (bool, error) {

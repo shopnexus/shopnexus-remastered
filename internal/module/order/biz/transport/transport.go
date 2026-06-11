@@ -7,6 +7,7 @@ import (
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	"shopnexus-server/internal/module/order/biz/base"
+	fullfilment "shopnexus-server/internal/module/order/biz/workflow/fullfilment"
 
 	restate "github.com/restatedev/sdk-go"
 )
@@ -15,9 +16,10 @@ import (
 type TransportHandler struct {
 	*base.Base
 
-	account accountbiz.AccountBizClient
-	catalog catalogbiz.CatalogBizClient
-	common  commonbiz.CommonBizClient
+	account     accountbiz.AccountBizClient
+	catalog     catalogbiz.CatalogBizClient
+	common      commonbiz.CommonBizClient
+	fulfillment fullfilment.FulfillmentWfClient
 }
 
 // New builds the transport handler and registers its transport options in the
@@ -27,8 +29,9 @@ func New(
 	account accountbiz.AccountBizClient,
 	catalog catalogbiz.CatalogBizClient,
 	common commonbiz.CommonBizClient,
+	fulfillment fullfilment.FulfillmentWfClient,
 ) (*TransportHandler, error) {
-	h := &TransportHandler{c, account, catalog, common}
+	h := &TransportHandler{c, account, catalog, common, fulfillment}
 	return h, h.SetupTransportMap()
 }
 

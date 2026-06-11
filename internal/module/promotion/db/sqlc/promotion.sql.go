@@ -30,10 +30,10 @@ ORDER BY "group" DESC
 `
 
 type ListActivePromotionParams struct {
-	Type      []PromotionType `db:"type" json:"type"`
-	AutoApply null.Bool       `db:"auto_apply" json:"auto_apply"`
-	ID        []uuid.UUID     `db:"id" json:"id"`
-	Code      []string        `db:"code" json:"code"`
+	Type      []PromotionType `json:"type"`
+	AutoApply null.Bool       `json:"auto_apply"`
+	ID        []uuid.UUID     `json:"id"`
+	Code      []string        `json:"code"`
 }
 
 func (q *Queries) ListActivePromotion(ctx context.Context, arg ListActivePromotionParams) ([]PromotionPromotion, error) {

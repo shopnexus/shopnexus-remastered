@@ -28,14 +28,14 @@ OFFSET $2::int
 `
 
 type ListBuyerCancelledOrdersParams struct {
-	BuyerID uuid.UUID  `db:"buyer_id" json:"buyer_id"`
-	Offset  null.Int32 `db:"offset" json:"offset"`
-	Limit   null.Int32 `db:"limit" json:"limit"`
+	BuyerID uuid.UUID  `json:"buyer_id"`
+	Offset  null.Int32 `json:"offset"`
+	Limit   null.Int32 `json:"limit"`
 }
 
 type ListBuyerCancelledOrdersRow struct {
-	OrderOrder OrderOrder `db:"order_order" json:"order_order"`
-	TotalCount int64      `db:"total_count" json:"total_count"`
+	OrderOrder OrderOrder `json:"order_order"`
+	TotalCount int64      `json:"total_count"`
 }
 
 func (q *Queries) ListBuyerCancelledOrders(ctx context.Context, arg ListBuyerCancelledOrdersParams) ([]ListBuyerCancelledOrdersRow, error) {
@@ -85,14 +85,14 @@ OFFSET $2::int
 `
 
 type ListBuyerCompletedOrdersParams struct {
-	BuyerID uuid.UUID  `db:"buyer_id" json:"buyer_id"`
-	Offset  null.Int32 `db:"offset" json:"offset"`
-	Limit   null.Int32 `db:"limit" json:"limit"`
+	BuyerID uuid.UUID  `json:"buyer_id"`
+	Offset  null.Int32 `json:"offset"`
+	Limit   null.Int32 `json:"limit"`
 }
 
 type ListBuyerCompletedOrdersRow struct {
-	OrderOrder OrderOrder `db:"order_order" json:"order_order"`
-	TotalCount int64      `db:"total_count" json:"total_count"`
+	OrderOrder OrderOrder `json:"order_order"`
+	TotalCount int64      `json:"total_count"`
 }
 
 func (q *Queries) ListBuyerCompletedOrders(ctx context.Context, arg ListBuyerCompletedOrdersParams) ([]ListBuyerCompletedOrdersRow, error) {
@@ -145,14 +145,14 @@ OFFSET $2::int
 `
 
 type ListBuyerPendingOrdersParams struct {
-	BuyerID uuid.UUID  `db:"buyer_id" json:"buyer_id"`
-	Offset  null.Int32 `db:"offset" json:"offset"`
-	Limit   null.Int32 `db:"limit" json:"limit"`
+	BuyerID uuid.UUID  `json:"buyer_id"`
+	Offset  null.Int32 `json:"offset"`
+	Limit   null.Int32 `json:"limit"`
 }
 
 type ListBuyerPendingOrdersRow struct {
-	OrderOrder OrderOrder `db:"order_order" json:"order_order"`
-	TotalCount int64      `db:"total_count" json:"total_count"`
+	OrderOrder OrderOrder `json:"order_order"`
+	TotalCount int64      `json:"total_count"`
 }
 
 // Buyer-side order list queries. Each returns paginated rows with embedded

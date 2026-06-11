@@ -43,11 +43,11 @@ func (h *Handler) ListSellerPendingItems(c echo.Context) error {
 }
 
 type ConfirmSellerPendingRequest struct {
-	ItemIDs       []int64    `json:"item_ids"       validate:"required,min=1"`
-	UseWallet     bool       `json:"use_wallet"`
-	PaymentOption string     `json:"payment_option" validate:"max=100"`
-	WalletID      *uuid.UUID `json:"wallet_id,omitempty"`
-	Note          string     `json:"note"           validate:"max=500"`
+	ItemIDs       []int64       `json:"item_ids"       validate:"required,min=1"`
+	UseWallet     bool          `json:"use_wallet"`
+	PaymentOption string        `json:"payment_option" validate:"max=100"`
+	WalletID      uuid.NullUUID `json:"wallet_id"`
+	Note          string        `json:"note"           validate:"max=500"`
 }
 
 // ConfirmSellerPendingResponse is the sync envelope returned by

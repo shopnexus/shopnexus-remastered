@@ -33,14 +33,14 @@ type CreateBatchAccountBatchResults struct {
 }
 
 type CreateBatchAccountParams struct {
-	ID          uuid.UUID     `db:"id" json:"id"`
-	Status      AccountStatus `db:"status" json:"status"`
-	Role        AccountRole   `db:"role" json:"role"`
-	Phone       null.String   `db:"phone" json:"phone"`
-	Email       null.String   `db:"email" json:"email"`
-	Username    null.String   `db:"username" json:"username"`
-	Password    null.String   `db:"password" json:"password"`
-	DateCreated time.Time     `db:"date_created" json:"date_created"`
+	ID          uuid.UUID     `json:"id"`
+	Status      AccountStatus `json:"status"`
+	Role        AccountRole   `json:"role"`
+	Phone       null.String   `json:"phone"`
+	Email       null.String   `json:"email"`
+	Username    null.String   `json:"username"`
+	Password    null.String   `json:"password"`
+	DateCreated time.Time     `json:"date_created"`
 }
 
 func (q *Queries) CreateBatchAccount(ctx context.Context, arg []CreateBatchAccountParams) *CreateBatchAccountBatchResults {
@@ -108,16 +108,16 @@ type CreateBatchContactBatchResults struct {
 }
 
 type CreateBatchContactParams struct {
-	ID            uuid.UUID          `db:"id" json:"id"`
-	AccountID     uuid.UUID          `db:"account_id" json:"account_id"`
-	FullName      string             `db:"full_name" json:"full_name"`
-	Phone         string             `db:"phone" json:"phone"`
-	PhoneVerified bool               `db:"phone_verified" json:"phone_verified"`
-	AddressType   AccountAddressType `db:"address_type" json:"address_type"`
-	DateCreated   time.Time          `db:"date_created" json:"date_created"`
-	Address       string             `db:"address" json:"address"`
-	Latitude      float64            `db:"latitude" json:"latitude"`
-	Longitude     float64            `db:"longitude" json:"longitude"`
+	ID            uuid.UUID          `json:"id"`
+	AccountID     uuid.UUID          `json:"account_id"`
+	FullName      string             `json:"full_name"`
+	Phone         string             `json:"phone"`
+	PhoneVerified bool               `json:"phone_verified"`
+	AddressType   AccountAddressType `json:"address_type"`
+	DateCreated   time.Time          `json:"date_created"`
+	Address       string             `json:"address"`
+	Latitude      float64            `json:"latitude"`
+	Longitude     float64            `json:"longitude"`
 }
 
 func (q *Queries) CreateBatchContact(ctx context.Context, arg []CreateBatchContactParams) *CreateBatchContactBatchResults {
@@ -188,9 +188,9 @@ type CreateBatchFavoriteBatchResults struct {
 }
 
 type CreateBatchFavoriteParams struct {
-	AccountID   uuid.UUID `db:"account_id" json:"account_id"`
-	SpuID       uuid.UUID `db:"spu_id" json:"spu_id"`
-	DateCreated time.Time `db:"date_created" json:"date_created"`
+	AccountID   uuid.UUID `json:"account_id"`
+	SpuID       uuid.UUID `json:"spu_id"`
+	DateCreated time.Time `json:"date_created"`
 }
 
 func (q *Queries) CreateBatchFavorite(ctx context.Context, arg []CreateBatchFavoriteParams) *CreateBatchFavoriteBatchResults {
@@ -248,16 +248,16 @@ type CreateBatchNotificationBatchResults struct {
 }
 
 type CreateBatchNotificationParams struct {
-	AccountID     uuid.UUID       `db:"account_id" json:"account_id"`
-	Type          string          `db:"type" json:"type"`
-	Channel       string          `db:"channel" json:"channel"`
-	Title         string          `db:"title" json:"title"`
-	IsRead        bool            `db:"is_read" json:"is_read"`
-	Content       string          `db:"content" json:"content"`
-	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
-	DateCreated   time.Time       `db:"date_created" json:"date_created"`
-	DateSent      null.Time       `db:"date_sent" json:"date_sent"`
-	DateScheduled null.Time       `db:"date_scheduled" json:"date_scheduled"`
+	AccountID     uuid.UUID       `json:"account_id"`
+	Type          string          `json:"type"`
+	Channel       string          `json:"channel"`
+	Title         string          `json:"title"`
+	IsRead        bool            `json:"is_read"`
+	Content       string          `json:"content"`
+	Metadata      json.RawMessage `json:"metadata"`
+	DateCreated   time.Time       `json:"date_created"`
+	DateSent      null.Time       `json:"date_sent"`
+	DateScheduled null.Time       `json:"date_scheduled"`
 }
 
 func (q *Queries) CreateBatchNotification(ctx context.Context, arg []CreateBatchNotificationParams) *CreateBatchNotificationBatchResults {
@@ -329,18 +329,18 @@ type CreateBatchProfileBatchResults struct {
 }
 
 type CreateBatchProfileParams struct {
-	ID               uuid.UUID         `db:"id" json:"id"`
-	Gender           NullAccountGender `db:"gender" json:"gender"`
-	Name             string            `db:"name" json:"name"`
-	Description      string            `db:"description" json:"description"`
-	DateOfBirth      null.Time         `db:"date_of_birth" json:"date_of_birth"`
-	AvatarRsID       uuid.NullUUID     `db:"avatar_rs_id" json:"avatar_rs_id"`
-	EmailVerified    bool              `db:"email_verified" json:"email_verified"`
-	PhoneVerified    bool              `db:"phone_verified" json:"phone_verified"`
-	DateCreated      time.Time         `db:"date_created" json:"date_created"`
-	Country          string            `db:"country" json:"country"`
-	InternalBalance  int64             `db:"internal_balance" json:"internal_balance"`
-	DefaultContactID uuid.NullUUID     `db:"default_contact_id" json:"default_contact_id"`
+	ID               uuid.UUID         `json:"id"`
+	Gender           NullAccountGender `json:"gender"`
+	Name             string            `json:"name"`
+	Description      string            `json:"description"`
+	DateOfBirth      null.Time         `json:"date_of_birth"`
+	AvatarRsID       uuid.NullUUID     `json:"avatar_rs_id"`
+	EmailVerified    bool              `json:"email_verified"`
+	PhoneVerified    bool              `json:"phone_verified"`
+	DateCreated      time.Time         `json:"date_created"`
+	Country          string            `json:"country"`
+	InternalBalance  int64             `json:"internal_balance"`
+	DefaultContactID uuid.NullUUID     `json:"default_contact_id"`
 }
 
 func (q *Queries) CreateBatchProfile(ctx context.Context, arg []CreateBatchProfileParams) *CreateBatchProfileBatchResults {

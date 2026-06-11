@@ -47,31 +47,31 @@ WHERE (
 `
 
 type CountPromotionParams struct {
-	ID              []uuid.UUID       `db:"id" json:"id"`
-	Code            []string          `db:"code" json:"code"`
-	OwnerID         []uuid.NullUUID   `db:"owner_id" json:"owner_id"`
-	Type            []PromotionType   `db:"type" json:"type"`
-	Title           []string          `db:"title" json:"title"`
-	Description     []null.String     `db:"description" json:"description"`
-	IsEnabled       []bool            `db:"is_enabled" json:"is_enabled"`
-	Budget          []int64           `db:"budget" json:"budget"`
-	BudgetFrom      null.Int          `db:"budget_from" json:"budget_from"`
-	BudgetTo        null.Int          `db:"budget_to" json:"budget_to"`
-	AutoApply       []bool            `db:"auto_apply" json:"auto_apply"`
-	Group           []string          `db:"group" json:"group"`
-	Data            []json.RawMessage `db:"data" json:"data"`
-	DateStarted     []time.Time       `db:"date_started" json:"date_started"`
-	DateStartedFrom null.Time         `db:"date_started_from" json:"date_started_from"`
-	DateStartedTo   null.Time         `db:"date_started_to" json:"date_started_to"`
-	DateEnded       []null.Time       `db:"date_ended" json:"date_ended"`
-	DateEndedFrom   null.Time         `db:"date_ended_from" json:"date_ended_from"`
-	DateEndedTo     null.Time         `db:"date_ended_to" json:"date_ended_to"`
-	DateCreated     []time.Time       `db:"date_created" json:"date_created"`
-	DateCreatedFrom null.Time         `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo   null.Time         `db:"date_created_to" json:"date_created_to"`
-	DateUpdated     []time.Time       `db:"date_updated" json:"date_updated"`
-	DateUpdatedFrom null.Time         `db:"date_updated_from" json:"date_updated_from"`
-	DateUpdatedTo   null.Time         `db:"date_updated_to" json:"date_updated_to"`
+	ID              []uuid.UUID       `json:"id"`
+	Code            []string          `json:"code"`
+	OwnerID         []uuid.NullUUID   `json:"owner_id"`
+	Type            []PromotionType   `json:"type"`
+	Title           []string          `json:"title"`
+	Description     []null.String     `json:"description"`
+	IsEnabled       []bool            `json:"is_enabled"`
+	Budget          []int64           `json:"budget"`
+	BudgetFrom      null.Int          `json:"budget_from"`
+	BudgetTo        null.Int          `json:"budget_to"`
+	AutoApply       []bool            `json:"auto_apply"`
+	Group           []string          `json:"group"`
+	Data            []json.RawMessage `json:"data"`
+	DateStarted     []time.Time       `json:"date_started"`
+	DateStartedFrom null.Time         `json:"date_started_from"`
+	DateStartedTo   null.Time         `json:"date_started_to"`
+	DateEnded       []null.Time       `json:"date_ended"`
+	DateEndedFrom   null.Time         `json:"date_ended_from"`
+	DateEndedTo     null.Time         `json:"date_ended_to"`
+	DateCreated     []time.Time       `json:"date_created"`
+	DateCreatedFrom null.Time         `json:"date_created_from"`
+	DateCreatedTo   null.Time         `json:"date_created_to"`
+	DateUpdated     []time.Time       `json:"date_updated"`
+	DateUpdatedFrom null.Time         `json:"date_updated_from"`
+	DateUpdatedTo   null.Time         `json:"date_updated_to"`
 }
 
 func (q *Queries) CountPromotion(ctx context.Context, arg CountPromotionParams) (int64, error) {
@@ -119,10 +119,10 @@ WHERE (
 `
 
 type CountRefParams struct {
-	ID          []int64            `db:"id" json:"id"`
-	PromotionID []uuid.UUID        `db:"promotion_id" json:"promotion_id"`
-	RefType     []PromotionRefType `db:"ref_type" json:"ref_type"`
-	RefID       []uuid.UUID        `db:"ref_id" json:"ref_id"`
+	ID          []int64            `json:"id"`
+	PromotionID []uuid.UUID        `json:"promotion_id"`
+	RefType     []PromotionRefType `json:"ref_type"`
+	RefID       []uuid.UUID        `json:"ref_id"`
 }
 
 func (q *Queries) CountRef(ctx context.Context, arg CountRefParams) (int64, error) {
@@ -158,19 +158,19 @@ WHERE (
 `
 
 type CountScheduleParams struct {
-	ID            []int64     `db:"id" json:"id"`
-	PromotionID   []uuid.UUID `db:"promotion_id" json:"promotion_id"`
-	Timezone      []string    `db:"timezone" json:"timezone"`
-	CronRule      []string    `db:"cron_rule" json:"cron_rule"`
-	Duration      []int32     `db:"duration" json:"duration"`
-	DurationFrom  null.Int32  `db:"duration_from" json:"duration_from"`
-	DurationTo    null.Int32  `db:"duration_to" json:"duration_to"`
-	NextRunAt     []null.Time `db:"next_run_at" json:"next_run_at"`
-	NextRunAtFrom null.Time   `db:"next_run_at_from" json:"next_run_at_from"`
-	NextRunAtTo   null.Time   `db:"next_run_at_to" json:"next_run_at_to"`
-	LastRunAt     []null.Time `db:"last_run_at" json:"last_run_at"`
-	LastRunAtFrom null.Time   `db:"last_run_at_from" json:"last_run_at_from"`
-	LastRunAtTo   null.Time   `db:"last_run_at_to" json:"last_run_at_to"`
+	ID            []int64     `json:"id"`
+	PromotionID   []uuid.UUID `json:"promotion_id"`
+	Timezone      []string    `json:"timezone"`
+	CronRule      []string    `json:"cron_rule"`
+	Duration      []int32     `json:"duration"`
+	DurationFrom  null.Int32  `json:"duration_from"`
+	DurationTo    null.Int32  `json:"duration_to"`
+	NextRunAt     []null.Time `json:"next_run_at"`
+	NextRunAtFrom null.Time   `json:"next_run_at_from"`
+	NextRunAtTo   null.Time   `json:"next_run_at_to"`
+	LastRunAt     []null.Time `json:"last_run_at"`
+	LastRunAtFrom null.Time   `json:"last_run_at_from"`
+	LastRunAtTo   null.Time   `json:"last_run_at_to"`
 }
 
 func (q *Queries) CountSchedule(ctx context.Context, arg CountScheduleParams) (int64, error) {
@@ -195,66 +195,66 @@ func (q *Queries) CountSchedule(ctx context.Context, arg CountScheduleParams) (i
 }
 
 type CreateCopyDefaultPromotionParams struct {
-	Code        string          `db:"code" json:"code"`
-	OwnerID     uuid.NullUUID   `db:"owner_id" json:"owner_id"`
-	Type        PromotionType   `db:"type" json:"type"`
-	Title       string          `db:"title" json:"title"`
-	Description null.String     `db:"description" json:"description"`
-	IsEnabled   bool            `db:"is_enabled" json:"is_enabled"`
-	Budget      int64           `db:"budget" json:"budget"`
-	AutoApply   bool            `db:"auto_apply" json:"auto_apply"`
-	Group       string          `db:"group" json:"group"`
-	Data        json.RawMessage `db:"data" json:"data"`
-	DateStarted time.Time       `db:"date_started" json:"date_started"`
-	DateEnded   null.Time       `db:"date_ended" json:"date_ended"`
+	Code        string          `json:"code"`
+	OwnerID     uuid.NullUUID   `json:"owner_id"`
+	Type        PromotionType   `json:"type"`
+	Title       string          `json:"title"`
+	Description null.String     `json:"description"`
+	IsEnabled   bool            `json:"is_enabled"`
+	Budget      int64           `json:"budget"`
+	AutoApply   bool            `json:"auto_apply"`
+	Group       string          `json:"group"`
+	Data        json.RawMessage `json:"data"`
+	DateStarted time.Time       `json:"date_started"`
+	DateEnded   null.Time       `json:"date_ended"`
 }
 
 type CreateCopyDefaultRefParams struct {
-	PromotionID uuid.UUID        `db:"promotion_id" json:"promotion_id"`
-	RefType     PromotionRefType `db:"ref_type" json:"ref_type"`
-	RefID       uuid.UUID        `db:"ref_id" json:"ref_id"`
+	PromotionID uuid.UUID        `json:"promotion_id"`
+	RefType     PromotionRefType `json:"ref_type"`
+	RefID       uuid.UUID        `json:"ref_id"`
 }
 
 type CreateCopyDefaultScheduleParams struct {
-	PromotionID uuid.UUID `db:"promotion_id" json:"promotion_id"`
-	Timezone    string    `db:"timezone" json:"timezone"`
-	CronRule    string    `db:"cron_rule" json:"cron_rule"`
-	Duration    int32     `db:"duration" json:"duration"`
-	NextRunAt   null.Time `db:"next_run_at" json:"next_run_at"`
-	LastRunAt   null.Time `db:"last_run_at" json:"last_run_at"`
+	PromotionID uuid.UUID `json:"promotion_id"`
+	Timezone    string    `json:"timezone"`
+	CronRule    string    `json:"cron_rule"`
+	Duration    int32     `json:"duration"`
+	NextRunAt   null.Time `json:"next_run_at"`
+	LastRunAt   null.Time `json:"last_run_at"`
 }
 
 type CreateCopyPromotionParams struct {
-	ID          uuid.UUID       `db:"id" json:"id"`
-	Code        string          `db:"code" json:"code"`
-	OwnerID     uuid.NullUUID   `db:"owner_id" json:"owner_id"`
-	Type        PromotionType   `db:"type" json:"type"`
-	Title       string          `db:"title" json:"title"`
-	Description null.String     `db:"description" json:"description"`
-	IsEnabled   bool            `db:"is_enabled" json:"is_enabled"`
-	Budget      int64           `db:"budget" json:"budget"`
-	AutoApply   bool            `db:"auto_apply" json:"auto_apply"`
-	Group       string          `db:"group" json:"group"`
-	Data        json.RawMessage `db:"data" json:"data"`
-	DateStarted time.Time       `db:"date_started" json:"date_started"`
-	DateEnded   null.Time       `db:"date_ended" json:"date_ended"`
-	DateCreated time.Time       `db:"date_created" json:"date_created"`
-	DateUpdated time.Time       `db:"date_updated" json:"date_updated"`
+	ID          uuid.UUID       `json:"id"`
+	Code        string          `json:"code"`
+	OwnerID     uuid.NullUUID   `json:"owner_id"`
+	Type        PromotionType   `json:"type"`
+	Title       string          `json:"title"`
+	Description null.String     `json:"description"`
+	IsEnabled   bool            `json:"is_enabled"`
+	Budget      int64           `json:"budget"`
+	AutoApply   bool            `json:"auto_apply"`
+	Group       string          `json:"group"`
+	Data        json.RawMessage `json:"data"`
+	DateStarted time.Time       `json:"date_started"`
+	DateEnded   null.Time       `json:"date_ended"`
+	DateCreated time.Time       `json:"date_created"`
+	DateUpdated time.Time       `json:"date_updated"`
 }
 
 type CreateCopyRefParams struct {
-	PromotionID uuid.UUID        `db:"promotion_id" json:"promotion_id"`
-	RefType     PromotionRefType `db:"ref_type" json:"ref_type"`
-	RefID       uuid.UUID        `db:"ref_id" json:"ref_id"`
+	PromotionID uuid.UUID        `json:"promotion_id"`
+	RefType     PromotionRefType `json:"ref_type"`
+	RefID       uuid.UUID        `json:"ref_id"`
 }
 
 type CreateCopyScheduleParams struct {
-	PromotionID uuid.UUID `db:"promotion_id" json:"promotion_id"`
-	Timezone    string    `db:"timezone" json:"timezone"`
-	CronRule    string    `db:"cron_rule" json:"cron_rule"`
-	Duration    int32     `db:"duration" json:"duration"`
-	NextRunAt   null.Time `db:"next_run_at" json:"next_run_at"`
-	LastRunAt   null.Time `db:"last_run_at" json:"last_run_at"`
+	PromotionID uuid.UUID `json:"promotion_id"`
+	Timezone    string    `json:"timezone"`
+	CronRule    string    `json:"cron_rule"`
+	Duration    int32     `json:"duration"`
+	NextRunAt   null.Time `json:"next_run_at"`
+	LastRunAt   null.Time `json:"last_run_at"`
 }
 
 const createDefaultPromotion = `-- name: CreateDefaultPromotion :one
@@ -264,18 +264,18 @@ RETURNING id, code, owner_id, type, title, description, is_enabled, budget, auto
 `
 
 type CreateDefaultPromotionParams struct {
-	Code        string          `db:"code" json:"code"`
-	OwnerID     uuid.NullUUID   `db:"owner_id" json:"owner_id"`
-	Type        PromotionType   `db:"type" json:"type"`
-	Title       string          `db:"title" json:"title"`
-	Description null.String     `db:"description" json:"description"`
-	IsEnabled   bool            `db:"is_enabled" json:"is_enabled"`
-	Budget      int64           `db:"budget" json:"budget"`
-	AutoApply   bool            `db:"auto_apply" json:"auto_apply"`
-	Group       string          `db:"group" json:"group"`
-	Data        json.RawMessage `db:"data" json:"data"`
-	DateStarted time.Time       `db:"date_started" json:"date_started"`
-	DateEnded   null.Time       `db:"date_ended" json:"date_ended"`
+	Code        string          `json:"code"`
+	OwnerID     uuid.NullUUID   `json:"owner_id"`
+	Type        PromotionType   `json:"type"`
+	Title       string          `json:"title"`
+	Description null.String     `json:"description"`
+	IsEnabled   bool            `json:"is_enabled"`
+	Budget      int64           `json:"budget"`
+	AutoApply   bool            `json:"auto_apply"`
+	Group       string          `json:"group"`
+	Data        json.RawMessage `json:"data"`
+	DateStarted time.Time       `json:"date_started"`
+	DateEnded   null.Time       `json:"date_ended"`
 }
 
 func (q *Queries) CreateDefaultPromotion(ctx context.Context, arg CreateDefaultPromotionParams) (PromotionPromotion, error) {
@@ -321,9 +321,9 @@ RETURNING id, promotion_id, ref_type, ref_id
 `
 
 type CreateDefaultRefParams struct {
-	PromotionID uuid.UUID        `db:"promotion_id" json:"promotion_id"`
-	RefType     PromotionRefType `db:"ref_type" json:"ref_type"`
-	RefID       uuid.UUID        `db:"ref_id" json:"ref_id"`
+	PromotionID uuid.UUID        `json:"promotion_id"`
+	RefType     PromotionRefType `json:"ref_type"`
+	RefID       uuid.UUID        `json:"ref_id"`
 }
 
 func (q *Queries) CreateDefaultRef(ctx context.Context, arg CreateDefaultRefParams) (PromotionRef, error) {
@@ -345,12 +345,12 @@ RETURNING id, promotion_id, timezone, cron_rule, duration, next_run_at, last_run
 `
 
 type CreateDefaultScheduleParams struct {
-	PromotionID uuid.UUID `db:"promotion_id" json:"promotion_id"`
-	Timezone    string    `db:"timezone" json:"timezone"`
-	CronRule    string    `db:"cron_rule" json:"cron_rule"`
-	Duration    int32     `db:"duration" json:"duration"`
-	NextRunAt   null.Time `db:"next_run_at" json:"next_run_at"`
-	LastRunAt   null.Time `db:"last_run_at" json:"last_run_at"`
+	PromotionID uuid.UUID `json:"promotion_id"`
+	Timezone    string    `json:"timezone"`
+	CronRule    string    `json:"cron_rule"`
+	Duration    int32     `json:"duration"`
+	NextRunAt   null.Time `json:"next_run_at"`
+	LastRunAt   null.Time `json:"last_run_at"`
 }
 
 func (q *Queries) CreateDefaultSchedule(ctx context.Context, arg CreateDefaultScheduleParams) (PromotionSchedule, error) {
@@ -382,21 +382,21 @@ RETURNING id, code, owner_id, type, title, description, is_enabled, budget, auto
 `
 
 type CreatePromotionParams struct {
-	ID          uuid.UUID       `db:"id" json:"id"`
-	Code        string          `db:"code" json:"code"`
-	OwnerID     uuid.NullUUID   `db:"owner_id" json:"owner_id"`
-	Type        PromotionType   `db:"type" json:"type"`
-	Title       string          `db:"title" json:"title"`
-	Description null.String     `db:"description" json:"description"`
-	IsEnabled   bool            `db:"is_enabled" json:"is_enabled"`
-	Budget      int64           `db:"budget" json:"budget"`
-	AutoApply   bool            `db:"auto_apply" json:"auto_apply"`
-	Group       string          `db:"group" json:"group"`
-	Data        json.RawMessage `db:"data" json:"data"`
-	DateStarted time.Time       `db:"date_started" json:"date_started"`
-	DateEnded   null.Time       `db:"date_ended" json:"date_ended"`
-	DateCreated time.Time       `db:"date_created" json:"date_created"`
-	DateUpdated time.Time       `db:"date_updated" json:"date_updated"`
+	ID          uuid.UUID       `json:"id"`
+	Code        string          `json:"code"`
+	OwnerID     uuid.NullUUID   `json:"owner_id"`
+	Type        PromotionType   `json:"type"`
+	Title       string          `json:"title"`
+	Description null.String     `json:"description"`
+	IsEnabled   bool            `json:"is_enabled"`
+	Budget      int64           `json:"budget"`
+	AutoApply   bool            `json:"auto_apply"`
+	Group       string          `json:"group"`
+	Data        json.RawMessage `json:"data"`
+	DateStarted time.Time       `json:"date_started"`
+	DateEnded   null.Time       `json:"date_ended"`
+	DateCreated time.Time       `json:"date_created"`
+	DateUpdated time.Time       `json:"date_updated"`
 }
 
 func (q *Queries) CreatePromotion(ctx context.Context, arg CreatePromotionParams) (PromotionPromotion, error) {
@@ -445,9 +445,9 @@ RETURNING id, promotion_id, ref_type, ref_id
 `
 
 type CreateRefParams struct {
-	PromotionID uuid.UUID        `db:"promotion_id" json:"promotion_id"`
-	RefType     PromotionRefType `db:"ref_type" json:"ref_type"`
-	RefID       uuid.UUID        `db:"ref_id" json:"ref_id"`
+	PromotionID uuid.UUID        `json:"promotion_id"`
+	RefType     PromotionRefType `json:"ref_type"`
+	RefID       uuid.UUID        `json:"ref_id"`
 }
 
 func (q *Queries) CreateRef(ctx context.Context, arg CreateRefParams) (PromotionRef, error) {
@@ -469,12 +469,12 @@ RETURNING id, promotion_id, timezone, cron_rule, duration, next_run_at, last_run
 `
 
 type CreateScheduleParams struct {
-	PromotionID uuid.UUID `db:"promotion_id" json:"promotion_id"`
-	Timezone    string    `db:"timezone" json:"timezone"`
-	CronRule    string    `db:"cron_rule" json:"cron_rule"`
-	Duration    int32     `db:"duration" json:"duration"`
-	NextRunAt   null.Time `db:"next_run_at" json:"next_run_at"`
-	LastRunAt   null.Time `db:"last_run_at" json:"last_run_at"`
+	PromotionID uuid.UUID `json:"promotion_id"`
+	Timezone    string    `json:"timezone"`
+	CronRule    string    `json:"cron_rule"`
+	Duration    int32     `json:"duration"`
+	NextRunAt   null.Time `json:"next_run_at"`
+	LastRunAt   null.Time `json:"last_run_at"`
 }
 
 func (q *Queries) CreateSchedule(ctx context.Context, arg CreateScheduleParams) (PromotionSchedule, error) {
@@ -531,31 +531,31 @@ WHERE (
 `
 
 type DeletePromotionParams struct {
-	ID              []uuid.UUID       `db:"id" json:"id"`
-	Code            []string          `db:"code" json:"code"`
-	OwnerID         []uuid.NullUUID   `db:"owner_id" json:"owner_id"`
-	Type            []PromotionType   `db:"type" json:"type"`
-	Title           []string          `db:"title" json:"title"`
-	Description     []null.String     `db:"description" json:"description"`
-	IsEnabled       []bool            `db:"is_enabled" json:"is_enabled"`
-	Budget          []int64           `db:"budget" json:"budget"`
-	BudgetFrom      null.Int          `db:"budget_from" json:"budget_from"`
-	BudgetTo        null.Int          `db:"budget_to" json:"budget_to"`
-	AutoApply       []bool            `db:"auto_apply" json:"auto_apply"`
-	Group           []string          `db:"group" json:"group"`
-	Data            []json.RawMessage `db:"data" json:"data"`
-	DateStarted     []time.Time       `db:"date_started" json:"date_started"`
-	DateStartedFrom null.Time         `db:"date_started_from" json:"date_started_from"`
-	DateStartedTo   null.Time         `db:"date_started_to" json:"date_started_to"`
-	DateEnded       []null.Time       `db:"date_ended" json:"date_ended"`
-	DateEndedFrom   null.Time         `db:"date_ended_from" json:"date_ended_from"`
-	DateEndedTo     null.Time         `db:"date_ended_to" json:"date_ended_to"`
-	DateCreated     []time.Time       `db:"date_created" json:"date_created"`
-	DateCreatedFrom null.Time         `db:"date_created_from" json:"date_created_from"`
-	DateCreatedTo   null.Time         `db:"date_created_to" json:"date_created_to"`
-	DateUpdated     []time.Time       `db:"date_updated" json:"date_updated"`
-	DateUpdatedFrom null.Time         `db:"date_updated_from" json:"date_updated_from"`
-	DateUpdatedTo   null.Time         `db:"date_updated_to" json:"date_updated_to"`
+	ID              []uuid.UUID       `json:"id"`
+	Code            []string          `json:"code"`
+	OwnerID         []uuid.NullUUID   `json:"owner_id"`
+	Type            []PromotionType   `json:"type"`
+	Title           []string          `json:"title"`
+	Description     []null.String     `json:"description"`
+	IsEnabled       []bool            `json:"is_enabled"`
+	Budget          []int64           `json:"budget"`
+	BudgetFrom      null.Int          `json:"budget_from"`
+	BudgetTo        null.Int          `json:"budget_to"`
+	AutoApply       []bool            `json:"auto_apply"`
+	Group           []string          `json:"group"`
+	Data            []json.RawMessage `json:"data"`
+	DateStarted     []time.Time       `json:"date_started"`
+	DateStartedFrom null.Time         `json:"date_started_from"`
+	DateStartedTo   null.Time         `json:"date_started_to"`
+	DateEnded       []null.Time       `json:"date_ended"`
+	DateEndedFrom   null.Time         `json:"date_ended_from"`
+	DateEndedTo     null.Time         `json:"date_ended_to"`
+	DateCreated     []time.Time       `json:"date_created"`
+	DateCreatedFrom null.Time         `json:"date_created_from"`
+	DateCreatedTo   null.Time         `json:"date_created_to"`
+	DateUpdated     []time.Time       `json:"date_updated"`
+	DateUpdatedFrom null.Time         `json:"date_updated_from"`
+	DateUpdatedTo   null.Time         `json:"date_updated_to"`
 }
 
 func (q *Queries) DeletePromotion(ctx context.Context, arg DeletePromotionParams) error {
@@ -600,10 +600,10 @@ WHERE (
 `
 
 type DeleteRefParams struct {
-	ID          []int64            `db:"id" json:"id"`
-	PromotionID []uuid.UUID        `db:"promotion_id" json:"promotion_id"`
-	RefType     []PromotionRefType `db:"ref_type" json:"ref_type"`
-	RefID       []uuid.UUID        `db:"ref_id" json:"ref_id"`
+	ID          []int64            `json:"id"`
+	PromotionID []uuid.UUID        `json:"promotion_id"`
+	RefType     []PromotionRefType `json:"ref_type"`
+	RefID       []uuid.UUID        `json:"ref_id"`
 }
 
 func (q *Queries) DeleteRef(ctx context.Context, arg DeleteRefParams) error {
@@ -636,19 +636,19 @@ WHERE (
 `
 
 type DeleteScheduleParams struct {
-	ID            []int64     `db:"id" json:"id"`
-	PromotionID   []uuid.UUID `db:"promotion_id" json:"promotion_id"`
-	Timezone      []string    `db:"timezone" json:"timezone"`
-	CronRule      []string    `db:"cron_rule" json:"cron_rule"`
-	Duration      []int32     `db:"duration" json:"duration"`
-	DurationFrom  null.Int32  `db:"duration_from" json:"duration_from"`
-	DurationTo    null.Int32  `db:"duration_to" json:"duration_to"`
-	NextRunAt     []null.Time `db:"next_run_at" json:"next_run_at"`
-	NextRunAtFrom null.Time   `db:"next_run_at_from" json:"next_run_at_from"`
-	NextRunAtTo   null.Time   `db:"next_run_at_to" json:"next_run_at_to"`
-	LastRunAt     []null.Time `db:"last_run_at" json:"last_run_at"`
-	LastRunAtFrom null.Time   `db:"last_run_at_from" json:"last_run_at_from"`
-	LastRunAtTo   null.Time   `db:"last_run_at_to" json:"last_run_at_to"`
+	ID            []int64     `json:"id"`
+	PromotionID   []uuid.UUID `json:"promotion_id"`
+	Timezone      []string    `json:"timezone"`
+	CronRule      []string    `json:"cron_rule"`
+	Duration      []int32     `json:"duration"`
+	DurationFrom  null.Int32  `json:"duration_from"`
+	DurationTo    null.Int32  `json:"duration_to"`
+	NextRunAt     []null.Time `json:"next_run_at"`
+	NextRunAtFrom null.Time   `json:"next_run_at_from"`
+	NextRunAtTo   null.Time   `json:"next_run_at_to"`
+	LastRunAt     []null.Time `json:"last_run_at"`
+	LastRunAtFrom null.Time   `json:"last_run_at_from"`
+	LastRunAtTo   null.Time   `json:"last_run_at_to"`
 }
 
 func (q *Queries) DeleteSchedule(ctx context.Context, arg DeleteScheduleParams) error {
@@ -680,8 +680,8 @@ WHERE ("id" = $1) OR ("code" = $2)
 `
 
 type GetPromotionParams struct {
-	ID   uuid.NullUUID `db:"id" json:"id"`
-	Code null.String   `db:"code" json:"code"`
+	ID   uuid.NullUUID `json:"id"`
+	Code null.String   `json:"code"`
 }
 
 // Code generated by pgtempl. DO NOT EDIT.
@@ -720,10 +720,10 @@ WHERE ("id" = $1) OR ("promotion_id" = $2 AND "ref_type" = $3 AND "ref_id" = $4)
 `
 
 type GetRefParams struct {
-	ID          null.Int             `db:"id" json:"id"`
-	PromotionID uuid.NullUUID        `db:"promotion_id" json:"promotion_id"`
-	RefType     NullPromotionRefType `db:"ref_type" json:"ref_type"`
-	RefID       uuid.NullUUID        `db:"ref_id" json:"ref_id"`
+	ID          null.Int             `json:"id"`
+	PromotionID uuid.NullUUID        `json:"promotion_id"`
+	RefType     NullPromotionRefType `json:"ref_type"`
+	RefID       uuid.NullUUID        `json:"ref_id"`
 }
 
 // ========================================
@@ -792,25 +792,25 @@ RETURNING id, code, owner_id, type, title, description, is_enabled, budget, auto
 `
 
 type UpdatePromotionParams struct {
-	Code            null.String       `db:"code" json:"code"`
-	NullOwnerID     bool              `db:"null_owner_id" json:"null_owner_id"`
-	OwnerID         uuid.NullUUID     `db:"owner_id" json:"owner_id"`
-	Type            NullPromotionType `db:"type" json:"type"`
-	Title           null.String       `db:"title" json:"title"`
-	NullDescription bool              `db:"null_description" json:"null_description"`
-	Description     null.String       `db:"description" json:"description"`
-	IsEnabled       null.Bool         `db:"is_enabled" json:"is_enabled"`
-	Budget          null.Int          `db:"budget" json:"budget"`
-	AutoApply       null.Bool         `db:"auto_apply" json:"auto_apply"`
-	Group           null.String       `db:"group" json:"group"`
-	NullData        bool              `db:"null_data" json:"null_data"`
-	Data            json.RawMessage   `db:"data" json:"data"`
-	DateStarted     null.Time         `db:"date_started" json:"date_started"`
-	NullDateEnded   bool              `db:"null_date_ended" json:"null_date_ended"`
-	DateEnded       null.Time         `db:"date_ended" json:"date_ended"`
-	DateCreated     null.Time         `db:"date_created" json:"date_created"`
-	DateUpdated     null.Time         `db:"date_updated" json:"date_updated"`
-	ID              uuid.UUID         `db:"id" json:"id"`
+	Code            null.String       `json:"code"`
+	NullOwnerID     bool              `json:"null_owner_id"`
+	OwnerID         uuid.NullUUID     `json:"owner_id"`
+	Type            NullPromotionType `json:"type"`
+	Title           null.String       `json:"title"`
+	NullDescription bool              `json:"null_description"`
+	Description     null.String       `json:"description"`
+	IsEnabled       null.Bool         `json:"is_enabled"`
+	Budget          null.Int          `json:"budget"`
+	AutoApply       null.Bool         `json:"auto_apply"`
+	Group           null.String       `json:"group"`
+	NullData        bool              `json:"null_data"`
+	Data            json.RawMessage   `json:"data"`
+	DateStarted     null.Time         `json:"date_started"`
+	NullDateEnded   bool              `json:"null_date_ended"`
+	DateEnded       null.Time         `json:"date_ended"`
+	DateCreated     null.Time         `json:"date_created"`
+	DateUpdated     null.Time         `json:"date_updated"`
+	ID              uuid.UUID         `json:"id"`
 }
 
 func (q *Queries) UpdatePromotion(ctx context.Context, arg UpdatePromotionParams) (PromotionPromotion, error) {
@@ -866,10 +866,10 @@ RETURNING id, promotion_id, ref_type, ref_id
 `
 
 type UpdateRefParams struct {
-	PromotionID uuid.NullUUID        `db:"promotion_id" json:"promotion_id"`
-	RefType     NullPromotionRefType `db:"ref_type" json:"ref_type"`
-	RefID       uuid.NullUUID        `db:"ref_id" json:"ref_id"`
-	ID          int64                `db:"id" json:"id"`
+	PromotionID uuid.NullUUID        `json:"promotion_id"`
+	RefType     NullPromotionRefType `json:"ref_type"`
+	RefID       uuid.NullUUID        `json:"ref_id"`
+	ID          int64                `json:"id"`
 }
 
 func (q *Queries) UpdateRef(ctx context.Context, arg UpdateRefParams) (PromotionRef, error) {
@@ -902,15 +902,15 @@ RETURNING id, promotion_id, timezone, cron_rule, duration, next_run_at, last_run
 `
 
 type UpdateScheduleParams struct {
-	PromotionID   uuid.NullUUID `db:"promotion_id" json:"promotion_id"`
-	Timezone      null.String   `db:"timezone" json:"timezone"`
-	CronRule      null.String   `db:"cron_rule" json:"cron_rule"`
-	Duration      null.Int32    `db:"duration" json:"duration"`
-	NullNextRunAt bool          `db:"null_next_run_at" json:"null_next_run_at"`
-	NextRunAt     null.Time     `db:"next_run_at" json:"next_run_at"`
-	NullLastRunAt bool          `db:"null_last_run_at" json:"null_last_run_at"`
-	LastRunAt     null.Time     `db:"last_run_at" json:"last_run_at"`
-	ID            int64         `db:"id" json:"id"`
+	PromotionID   uuid.NullUUID `json:"promotion_id"`
+	Timezone      null.String   `json:"timezone"`
+	CronRule      null.String   `json:"cron_rule"`
+	Duration      null.Int32    `json:"duration"`
+	NullNextRunAt bool          `json:"null_next_run_at"`
+	NextRunAt     null.Time     `json:"next_run_at"`
+	NullLastRunAt bool          `json:"null_last_run_at"`
+	LastRunAt     null.Time     `json:"last_run_at"`
+	ID            int64         `json:"id"`
 }
 
 func (q *Queries) UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) (PromotionSchedule, error) {

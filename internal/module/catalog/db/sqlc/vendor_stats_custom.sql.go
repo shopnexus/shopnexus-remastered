@@ -20,8 +20,8 @@ SELECT
 `
 
 type GetVendorProductStatsRow struct {
-	ProductCount  int64   `db:"product_count" json:"product_count"`
-	AverageRating float64 `db:"average_rating" json:"average_rating"`
+	ProductCount  int64   `json:"product_count"`
+	AverageRating float64 `json:"average_rating"`
 }
 
 func (q *Queries) GetVendorProductStats(ctx context.Context, accountID uuid.UUID) (GetVendorProductStatsRow, error) {
