@@ -48,3 +48,5 @@ latex
 typst
 docs
 example
+# mobile app is a separate git repo
+mobile/
