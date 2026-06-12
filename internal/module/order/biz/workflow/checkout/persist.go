@@ -45,6 +45,11 @@ func (r *checkoutRun) persist() error {
 		})
 	})
 
+	sessionData, sdErr := buildSessionData(r.appliedPromoCodes, r.preDiscountTotal, r.total)
+	if sdErr != nil {
+		return fmt.Errorf("build session data: %w", sdErr)
+	}
+
 	if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
 		if _, sErr := r.Storage.Querier().CreateDefaultPaymentSession(rctx, orderdb.CreateDefaultPaymentSessionParams{
 			ID:          r.sessionID,
@@ -55,7 +60,7 @@ func (r *checkoutRun) persist() error {
 			Currency:    r.buyerCurrency,
 			TotalAmount: r.total,
 			FxSnapshot:  r.fxSnapshotJSON,
-			Data:        json.RawMessage("{}"),
+			Data:        sessionData,
 			DateExpired: time.Now().Add(gateway.SessionExpiry),
 		}); sErr != nil {
 			return fmt.Errorf("db create payment session: %w", sErr)
@@ -152,4 +157,23 @@ func (r *checkoutRun) persist() error {
 	}
 
 	return nil
+}
+
+// checkoutSessionData is the JSONB payload stored on the payment session.
+type checkoutSessionData struct {
+	PromotionCodes []string `json:"promotion_codes,omitempty"`
+	DiscountAmount int64    `json:"discount_amount,omitempty"` // preDiscountTotal - total
+}
+
+// buildSessionData marshals applied promotion codes and the discount amount into a JSON blob.
+func buildSessionData(codes []string, preDiscountTotal, total int64) (json.RawMessage, error) {
+	d := checkoutSessionData{
+		PromotionCodes: codes,
+		DiscountAmount: preDiscountTotal - total,
+	}
+	b, err := json.Marshal(d)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
 }

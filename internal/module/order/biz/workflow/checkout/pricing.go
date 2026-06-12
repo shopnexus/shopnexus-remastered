@@ -4,12 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 
+	restate "github.com/restatedev/sdk-go"
+
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	commonmodel "shopnexus-server/internal/module/common/model"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	promotionbiz "shopnexus-server/internal/module/promotion/biz"
+	promotionmodel "shopnexus-server/internal/module/promotion/model"
 	"shopnexus-server/internal/provider/transport"
 	sharedcurrency "shopnexus-server/internal/shared/currency"
 
@@ -141,16 +145,70 @@ func (r *checkoutRun) price() error {
 		r.transportQuotes[item.SkuID] = transportQuote{Option: item.TransportOption, Cost: quote.Cost}
 	}
 
-	// Step 5: convert per-item subtotal + transport into buyer currency and sum the total
+	// Step 5: apply promotions — one journaled batch call for all items
+	requestPrices := make([]catalogmodel.RequestOrderPrice, 0, len(input.Items))
+	spuPromoMap := make(map[uuid.UUID]promotionmodel.PromoSpu, len(r.spuMap))
+	for _, item := range input.Items {
+		sku := r.skuMap[item.SkuID]
+		tq := r.transportQuotes[item.SkuID]
+		requestPrices = append(requestPrices, catalogmodel.RequestOrderPrice{
+			SkuID:          item.SkuID,
+			SpuID:          sku.SpuID,
+			UnitPrice:      sku.Price,
+			Quantity:       item.Quantity,
+			ShipCost:       tq.Cost,
+			PromotionCodes: input.PromotionCodes,
+		})
+		// accumulate pre-discount total for audit
+		spu := r.spuMap[sku.SpuID]
+		r.preDiscountTotal += convertToBuyer(sku.Price*item.Quantity, spu.Currency) +
+			convertToBuyer(tq.Cost, spu.Currency)
+	}
+	for spuID, spu := range r.spuMap {
+		spuPromoMap[spuID] = promotionmodel.PromoSpu{ID: spu.ID, CategoryID: spu.CategoryID}
+	}
+
+	priceMap, err := restate.Run(ctx, func(rctx restate.RunContext) (map[uuid.UUID]*catalogmodel.OrderPrice, error) {
+		return r.promotion.CalculatePromotedPrices(rctx, promotionbiz.CalculatePromotedPricesParams{
+			Prices: requestPrices,
+			SpuMap: spuPromoMap,
+		})
+	})
+	if err != nil {
+		return fmt.Errorf("calculate promoted prices: %w", err)
+	}
+
+	// Step 6: convert per-item subtotal + transport into buyer currency and sum the total
 	r.itemAmounts = make(map[uuid.UUID]itemAmounts, len(input.Items))
+	promoCodeSet := make(map[string]struct{})
 	for _, item := range input.Items {
 		sku := r.skuMap[item.SkuID]
 		spu := r.spuMap[sku.SpuID]
 		tq := r.transportQuotes[item.SkuID]
-		subtotal := convertToBuyer(sku.Price*item.Quantity, spu.Currency)
-		paid := subtotal + convertToBuyer(tq.Cost, spu.Currency)
+
+		productCost := sku.Price * item.Quantity
+		shipCost := tq.Cost
+		if priceInfo, ok := priceMap[item.SkuID]; ok && priceInfo != nil {
+			if priceInfo.ProductCost != 0 {
+				productCost = priceInfo.ProductCost
+			}
+			if priceInfo.ShipCost != 0 {
+				shipCost = priceInfo.ShipCost
+			}
+			for _, code := range priceInfo.PromotionCodes {
+				promoCodeSet[code] = struct{}{}
+			}
+		}
+
+		subtotal := convertToBuyer(productCost, spu.Currency)
+		paid := subtotal + convertToBuyer(shipCost, spu.Currency)
 		r.itemAmounts[item.SkuID] = itemAmounts{subtotalAmount: subtotal, totalAmount: paid}
 		r.total += paid
+	}
+
+	// Collect applied promo codes (order stable for audit)
+	for code := range promoCodeSet {
+		r.appliedPromoCodes = append(r.appliedPromoCodes, code)
 	}
 
 	return nil

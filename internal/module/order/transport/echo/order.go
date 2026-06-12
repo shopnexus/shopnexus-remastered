@@ -315,12 +315,13 @@ func (h *Handler) QuoteBuyerTransport(c echo.Context) error {
 // --- Buyer Checkout ---
 
 type BuyerCheckoutRequest struct {
-	BuyNow        bool                  `json:"buy_now" validate:"omitempty"`
-	Address       string                `json:"address" validate:"required,min=1,max=500"`
-	PaymentOption string                `json:"payment_option" validate:"max=100"`
-	UseWallet     bool                  `json:"use_wallet"`
-	WalletID      *uuid.UUID            `json:"wallet_id,omitempty"`
-	Items         []CheckoutItemRequest `json:"items"   validate:"required,min=1,dive"`
+	BuyNow         bool                  `json:"buy_now" validate:"omitempty"`
+	Address        string                `json:"address" validate:"required,min=1,max=500"`
+	PaymentOption  string                `json:"payment_option" validate:"max=100"`
+	UseWallet      bool                  `json:"use_wallet"`
+	WalletID       *uuid.UUID            `json:"wallet_id,omitempty"`
+	Items          []CheckoutItemRequest `json:"items"   validate:"required,min=1,dive"`
+	PromotionCodes []string              `json:"promotion_codes,omitempty" validate:"omitempty,dive,max=100"`
 }
 
 type CheckoutItemRequest struct {
@@ -370,13 +371,14 @@ func (h *Handler) BuyerCheckout(c echo.Context) error {
 
 	workflowID := uuid.New()
 	input := orderbiz.CheckoutWorkflowInput{
-		Account:       claims.Account,
-		Items:         items,
-		Address:       req.Address,
-		BuyNow:        req.BuyNow,
-		UseWallet:     req.UseWallet,
-		WalletID:      req.WalletID,
-		PaymentOption: req.PaymentOption,
+		Account:        claims.Account,
+		Items:          items,
+		Address:        req.Address,
+		BuyNow:         req.BuyNow,
+		UseWallet:      req.UseWallet,
+		WalletID:       req.WalletID,
+		PaymentOption:  req.PaymentOption,
+		PromotionCodes: req.PromotionCodes,
 	}
 
 	ctx := c.Request().Context()

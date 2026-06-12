@@ -17,6 +17,7 @@ import (
 	orderbase "shopnexus-server/internal/module/order/biz/base"
 	"shopnexus-server/internal/module/order/biz/workflow/gateway"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	promotionbiz "shopnexus-server/internal/module/promotion/biz"
 	"shopnexus-server/internal/shared/saga"
 	"shopnexus-server/internal/shared/validator"
 
@@ -32,6 +33,7 @@ type CheckoutWorkflow struct {
 	catalog   catalogbiz.CatalogBizClient
 	common    commonbiz.CommonBizClient
 	inventory inventorybiz.InventoryBizClient
+	promotion promotionbiz.PromotionBizClient
 }
 
 func New(
@@ -41,8 +43,9 @@ func New(
 	catalog catalogbiz.CatalogBizClient,
 	common commonbiz.CommonBizClient,
 	inventory inventorybiz.InventoryBizClient,
+	promotion promotionbiz.PromotionBizClient,
 ) *CheckoutWorkflow {
-	return &CheckoutWorkflow{core, gw, account, catalog, common, inventory}
+	return &CheckoutWorkflow{core, gw, account, catalog, common, inventory, promotion}
 }
 
 func (h *CheckoutWorkflow) ServiceName() string { return "CheckoutWorkflow" }
@@ -123,7 +126,9 @@ func (h *CheckoutWorkflow) Run(
 func (r *checkoutRun) pay() error {
 	gatewayAmount := r.total - r.internalWalletAmount
 	if gatewayAmount <= 0 {
-		return nil
+		// Wallet covered everything — no gateway leg. Settle the session and
+		// unblock the sync GetPaymentURL caller (else it hangs on payment_url_1).
+		return r.gw.SettleWalletOnly(r.ctx, r.sessionID)
 	}
 	if err := r.gw.RunPaymentLoop(r.ctx, gateway.LoopParams{
 		SessionID:       r.sessionID,

@@ -11,13 +11,14 @@ import (
 )
 
 type CheckoutWorkflowInput struct {
-	Account       accountmodel.AuthenticatedAccount `json:"account"`
-	Items         []CheckoutItem                    `json:"items"               validate:"required,min=1,dive"`
-	Address       string                            `json:"address"             validate:"required,min=1,max=500"`
-	BuyNow        bool                              `json:"buy_now"`
-	UseWallet     bool                              `json:"use_wallet"`
-	WalletID      *uuid.UUID                        `json:"wallet_id,omitempty"`
-	PaymentOption string                            `json:"payment_option"      validate:"max=100"`
+	Account        accountmodel.AuthenticatedAccount `json:"account"`
+	Items          []CheckoutItem                    `json:"items"               validate:"required,min=1,dive"`
+	Address        string                            `json:"address"             validate:"required,min=1,max=500"`
+	BuyNow         bool                              `json:"buy_now"`
+	UseWallet      bool                              `json:"use_wallet"`
+	WalletID       *uuid.UUID                        `json:"wallet_id,omitempty"`
+	PaymentOption  string                            `json:"payment_option"      validate:"max=100"`
+	PromotionCodes []string                          `json:"promotion_codes,omitempty" validate:"omitempty,dive,max=100"`
 }
 
 type CheckoutWorkflowOutput struct {
@@ -42,11 +43,13 @@ type itemAmounts struct {
 
 // pricing carries product maps, settlement currency, FX snapshot, and per-item amounts from the price phase.
 type pricing struct {
-	skuMap          map[uuid.UUID]catalogmodel.ProductSku
-	spuMap          map[uuid.UUID]catalogmodel.ProductSpu
-	buyerCurrency   string
-	fxSnapshotJSON  json.RawMessage
-	transportQuotes map[uuid.UUID]transportQuote
-	itemAmounts     map[uuid.UUID]itemAmounts
-	total           int64
+	skuMap               map[uuid.UUID]catalogmodel.ProductSku
+	spuMap               map[uuid.UUID]catalogmodel.ProductSpu
+	buyerCurrency        string
+	fxSnapshotJSON       json.RawMessage
+	transportQuotes      map[uuid.UUID]transportQuote
+	itemAmounts          map[uuid.UUID]itemAmounts
+	total                int64
+	appliedPromoCodes    []string // union of PromotionCodes applied across all items
+	preDiscountTotal     int64    // total before promotions, for audit
 }
