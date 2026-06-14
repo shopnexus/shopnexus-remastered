@@ -35,6 +35,16 @@ func replaceNilSlicesRecursive(val reflect.Value) reflect.Value {
 		val = val.Elem()
 	}
 
+	// Types with a custom JSON representation (json.RawMessage, time.Time, …)
+	// own their wire form and must be returned untouched. Walking them
+	// corrupts the value — e.g. json.RawMessage is a named []byte, so the
+	// slice branch would rewrite a nil RawMessage into an empty []byte,
+	// which marshals to "" → "unexpected end of JSON input".
+	if val.Type().Implements(jsonMarshalerType) ||
+		reflect.PointerTo(val.Type()).Implements(jsonMarshalerType) {
+		return val
+	}
+
 	switch val.Kind() {
 	case reflect.Slice:
 		if val.IsNil() {
@@ -76,13 +86,6 @@ func replaceNilSlicesRecursive(val reflect.Value) reflect.Value {
 		return result
 
 	case reflect.Struct:
-		// Types with a custom JSON representation (e.g. time.Time) must not
-		// be walked field-by-field — their fields are unexported and get
-		// silently zeroed by the field-copy loop below.
-		if val.Type().Implements(jsonMarshalerType) ||
-			reflect.PointerTo(val.Type()).Implements(jsonMarshalerType) {
-			return val
-		}
 		result := reflect.New(val.Type()).Elem()
 		for i := 0; i < val.NumField(); i++ {
 			fieldValue := val.Field(i)
