@@ -32,7 +32,12 @@ var (
 	ErrContactAddressCountryMismatch = errors.NewErrorf(
 		http.StatusBadRequest,
 		"address_country_mismatch",
-		"address resolves to %s, profile country is %s",
+		"location resolves to %s, profile country is %s",
+	)
+	ErrContactCoordsPair = errors.NewError(
+		http.StatusBadRequest,
+		"contact_coords_pair",
+		"latitude and longitude must be provided together",
 	)
 	ErrWalletNotEmpty = errors.NewErrorf(
 		http.StatusConflict,

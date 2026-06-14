@@ -90,7 +90,8 @@ WHERE (
     ("latitude" <= $13 OR $13 IS NULL) AND
     ("longitude" = ANY($14) OR $14 IS NULL) AND
     ("longitude" >= $15 OR $15 IS NULL) AND
-    ("longitude" <= $16 OR $16 IS NULL)
+    ("longitude" <= $16 OR $16 IS NULL) AND
+    ("address_detail" = ANY($17) OR $17 IS NULL)
 )
 `
 
@@ -111,6 +112,7 @@ type CountContactParams struct {
 	Longitude       []float64            `json:"longitude"`
 	LongitudeFrom   null.Float           `json:"longitude_from"`
 	LongitudeTo     null.Float           `json:"longitude_to"`
+	AddressDetail   []null.String        `json:"address_detail"`
 }
 
 func (q *Queries) CountContact(ctx context.Context, arg CountContactParams) (int64, error) {
@@ -131,6 +133,7 @@ func (q *Queries) CountContact(ctx context.Context, arg CountContactParams) (int
 		arg.Longitude,
 		arg.LongitudeFrom,
 		arg.LongitudeTo,
+		arg.AddressDetail,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -358,9 +361,9 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 }
 
 const createContact = `-- name: CreateContact :one
-INSERT INTO "account"."contact" ("id", "account_id", "full_name", "phone", "phone_verified", "address_type", "date_created", "address", "latitude", "longitude")
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, account_id, full_name, phone, phone_verified, address_type, date_created, address, latitude, longitude
+INSERT INTO "account"."contact" ("id", "account_id", "full_name", "phone", "phone_verified", "address_type", "date_created", "address", "latitude", "longitude", "address_detail")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING id, account_id, full_name, phone, phone_verified, address_type, date_created, address, latitude, longitude, address_detail
 `
 
 type CreateContactParams struct {
@@ -374,6 +377,7 @@ type CreateContactParams struct {
 	Address       string             `json:"address"`
 	Latitude      float64            `json:"latitude"`
 	Longitude     float64            `json:"longitude"`
+	AddressDetail null.String        `json:"address_detail"`
 }
 
 func (q *Queries) CreateContact(ctx context.Context, arg CreateContactParams) (AccountContact, error) {
@@ -388,6 +392,7 @@ func (q *Queries) CreateContact(ctx context.Context, arg CreateContactParams) (A
 		arg.Address,
 		arg.Latitude,
 		arg.Longitude,
+		arg.AddressDetail,
 	)
 	var i AccountContact
 	err := row.Scan(
@@ -401,6 +406,7 @@ func (q *Queries) CreateContact(ctx context.Context, arg CreateContactParams) (A
 		&i.Address,
 		&i.Latitude,
 		&i.Longitude,
+		&i.AddressDetail,
 	)
 	return i, err
 }
@@ -427,6 +433,7 @@ type CreateCopyContactParams struct {
 	Address       string             `json:"address"`
 	Latitude      float64            `json:"latitude"`
 	Longitude     float64            `json:"longitude"`
+	AddressDetail null.String        `json:"address_detail"`
 }
 
 type CreateCopyDefaultAccountParams struct {
@@ -437,13 +444,14 @@ type CreateCopyDefaultAccountParams struct {
 }
 
 type CreateCopyDefaultContactParams struct {
-	AccountID   uuid.UUID          `json:"account_id"`
-	FullName    string             `json:"full_name"`
-	Phone       string             `json:"phone"`
-	AddressType AccountAddressType `json:"address_type"`
-	Address     string             `json:"address"`
-	Latitude    float64            `json:"latitude"`
-	Longitude   float64            `json:"longitude"`
+	AccountID     uuid.UUID          `json:"account_id"`
+	FullName      string             `json:"full_name"`
+	Phone         string             `json:"phone"`
+	AddressType   AccountAddressType `json:"address_type"`
+	Address       string             `json:"address"`
+	Latitude      float64            `json:"latitude"`
+	Longitude     float64            `json:"longitude"`
+	AddressDetail null.String        `json:"address_detail"`
 }
 
 type CreateCopyDefaultFavoriteParams struct {
@@ -542,19 +550,20 @@ func (q *Queries) CreateDefaultAccount(ctx context.Context, arg CreateDefaultAcc
 }
 
 const createDefaultContact = `-- name: CreateDefaultContact :one
-INSERT INTO "account"."contact" ("account_id", "full_name", "phone", "address_type", "address", "latitude", "longitude")
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, account_id, full_name, phone, phone_verified, address_type, date_created, address, latitude, longitude
+INSERT INTO "account"."contact" ("account_id", "full_name", "phone", "address_type", "address", "latitude", "longitude", "address_detail")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, account_id, full_name, phone, phone_verified, address_type, date_created, address, latitude, longitude, address_detail
 `
 
 type CreateDefaultContactParams struct {
-	AccountID   uuid.UUID          `json:"account_id"`
-	FullName    string             `json:"full_name"`
-	Phone       string             `json:"phone"`
-	AddressType AccountAddressType `json:"address_type"`
-	Address     string             `json:"address"`
-	Latitude    float64            `json:"latitude"`
-	Longitude   float64            `json:"longitude"`
+	AccountID     uuid.UUID          `json:"account_id"`
+	FullName      string             `json:"full_name"`
+	Phone         string             `json:"phone"`
+	AddressType   AccountAddressType `json:"address_type"`
+	Address       string             `json:"address"`
+	Latitude      float64            `json:"latitude"`
+	Longitude     float64            `json:"longitude"`
+	AddressDetail null.String        `json:"address_detail"`
 }
 
 func (q *Queries) CreateDefaultContact(ctx context.Context, arg CreateDefaultContactParams) (AccountContact, error) {
@@ -566,6 +575,7 @@ func (q *Queries) CreateDefaultContact(ctx context.Context, arg CreateDefaultCon
 		arg.Address,
 		arg.Latitude,
 		arg.Longitude,
+		arg.AddressDetail,
 	)
 	var i AccountContact
 	err := row.Scan(
@@ -579,6 +589,7 @@ func (q *Queries) CreateDefaultContact(ctx context.Context, arg CreateDefaultCon
 		&i.Address,
 		&i.Latitude,
 		&i.Longitude,
+		&i.AddressDetail,
 	)
 	return i, err
 }
@@ -894,7 +905,8 @@ WHERE (
     ("latitude" <= $13 OR $13 IS NULL) AND
     ("longitude" = ANY($14) OR $14 IS NULL) AND
     ("longitude" >= $15 OR $15 IS NULL) AND
-    ("longitude" <= $16 OR $16 IS NULL)
+    ("longitude" <= $16 OR $16 IS NULL) AND
+    ("address_detail" = ANY($17) OR $17 IS NULL)
 )
 `
 
@@ -915,6 +927,7 @@ type DeleteContactParams struct {
 	Longitude       []float64            `json:"longitude"`
 	LongitudeFrom   null.Float           `json:"longitude_from"`
 	LongitudeTo     null.Float           `json:"longitude_to"`
+	AddressDetail   []null.String        `json:"address_detail"`
 }
 
 func (q *Queries) DeleteContact(ctx context.Context, arg DeleteContactParams) error {
@@ -935,6 +948,7 @@ func (q *Queries) DeleteContact(ctx context.Context, arg DeleteContactParams) er
 		arg.Longitude,
 		arg.LongitudeFrom,
 		arg.LongitudeTo,
+		arg.AddressDetail,
 	)
 	return err
 }
@@ -1152,7 +1166,7 @@ func (q *Queries) GetAccount(ctx context.Context, arg GetAccountParams) (Account
 
 const getContact = `-- name: GetContact :one
 
-SELECT id, account_id, full_name, phone, phone_verified, address_type, date_created, address, latitude, longitude
+SELECT id, account_id, full_name, phone, phone_verified, address_type, date_created, address, latitude, longitude, address_detail
 FROM "account"."contact"
 WHERE ("id" = $1)
 `
@@ -1174,6 +1188,7 @@ func (q *Queries) GetContact(ctx context.Context, id uuid.NullUUID) (AccountCont
 		&i.Address,
 		&i.Latitude,
 		&i.Longitude,
+		&i.AddressDetail,
 	)
 	return i, err
 }
@@ -1338,22 +1353,25 @@ SET "account_id" = COALESCE($1, "account_id"),
     "date_created" = COALESCE($6, "date_created"),
     "address" = COALESCE($7, "address"),
     "latitude" = COALESCE($8, "latitude"),
-    "longitude" = COALESCE($9, "longitude")
-WHERE "id" = $10
-RETURNING id, account_id, full_name, phone, phone_verified, address_type, date_created, address, latitude, longitude
+    "longitude" = COALESCE($9, "longitude"),
+    "address_detail" = CASE WHEN $10::bool = TRUE THEN NULL ELSE COALESCE($11, "address_detail") END
+WHERE "id" = $12
+RETURNING id, account_id, full_name, phone, phone_verified, address_type, date_created, address, latitude, longitude, address_detail
 `
 
 type UpdateContactParams struct {
-	AccountID     uuid.NullUUID          `json:"account_id"`
-	FullName      null.String            `json:"full_name"`
-	Phone         null.String            `json:"phone"`
-	PhoneVerified null.Bool              `json:"phone_verified"`
-	AddressType   NullAccountAddressType `json:"address_type"`
-	DateCreated   null.Time              `json:"date_created"`
-	Address       null.String            `json:"address"`
-	Latitude      null.Float             `json:"latitude"`
-	Longitude     null.Float             `json:"longitude"`
-	ID            uuid.UUID              `json:"id"`
+	AccountID         uuid.NullUUID          `json:"account_id"`
+	FullName          null.String            `json:"full_name"`
+	Phone             null.String            `json:"phone"`
+	PhoneVerified     null.Bool              `json:"phone_verified"`
+	AddressType       NullAccountAddressType `json:"address_type"`
+	DateCreated       null.Time              `json:"date_created"`
+	Address           null.String            `json:"address"`
+	Latitude          null.Float             `json:"latitude"`
+	Longitude         null.Float             `json:"longitude"`
+	NullAddressDetail bool                   `json:"null_address_detail"`
+	AddressDetail     null.String            `json:"address_detail"`
+	ID                uuid.UUID              `json:"id"`
 }
 
 func (q *Queries) UpdateContact(ctx context.Context, arg UpdateContactParams) (AccountContact, error) {
@@ -1367,6 +1385,8 @@ func (q *Queries) UpdateContact(ctx context.Context, arg UpdateContactParams) (A
 		arg.Address,
 		arg.Latitude,
 		arg.Longitude,
+		arg.NullAddressDetail,
+		arg.AddressDetail,
 		arg.ID,
 	)
 	var i AccountContact
@@ -1381,6 +1401,7 @@ func (q *Queries) UpdateContact(ctx context.Context, arg UpdateContactParams) (A
 		&i.Address,
 		&i.Latitude,
 		&i.Longitude,
+		&i.AddressDetail,
 	)
 	return i, err
 }

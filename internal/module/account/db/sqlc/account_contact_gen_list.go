@@ -33,6 +33,7 @@ type ListContactParams struct {
 	Longitude       []float64
 	LongitudeFrom   null.Float
 	LongitudeTo     null.Float
+	AddressDetail   []string
 }
 
 // ContactQuery is the reusable base listing for "account"."contact".
@@ -53,6 +54,7 @@ func ContactQuery() repolist.Query[AccountContact] {
 				"address":        &m.Address,
 				"latitude":       &m.Latitude,
 				"longitude":      &m.Longitude,
+				"address_detail": &m.AddressDetail,
 			}
 		},
 	}
@@ -77,6 +79,7 @@ func ContactConds(f ListContactParams) []repolist.Cond {
 		repolist.In(`"longitude"`, f.Longitude),
 		repolist.Gte(`"longitude"`, f.LongitudeFrom),
 		repolist.Lte(`"longitude"`, f.LongitudeTo),
+		repolist.In(`"address_detail"`, f.AddressDetail),
 	}
 }
 

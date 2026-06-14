@@ -206,31 +206,32 @@ WHERE (
     ("latitude" <= sqlc.narg('latitude_to') OR sqlc.narg('latitude_to') IS NULL) AND
     ("longitude" = ANY(sqlc.slice('longitude')) OR sqlc.slice('longitude') IS NULL) AND
     ("longitude" >= sqlc.narg('longitude_from') OR sqlc.narg('longitude_from') IS NULL) AND
-    ("longitude" <= sqlc.narg('longitude_to') OR sqlc.narg('longitude_to') IS NULL)
+    ("longitude" <= sqlc.narg('longitude_to') OR sqlc.narg('longitude_to') IS NULL) AND
+    ("address_detail" = ANY(sqlc.slice('address_detail')) OR sqlc.slice('address_detail') IS NULL)
 );
 
 -- name: CreateContact :one
-INSERT INTO "account"."contact" ("id", "account_id", "full_name", "phone", "phone_verified", "address_type", "date_created", "address", "latitude", "longitude")
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO "account"."contact" ("id", "account_id", "full_name", "phone", "phone_verified", "address_type", "date_created", "address", "latitude", "longitude", "address_detail")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING *;
 
 -- name: CreateBatchContact :batchone
-INSERT INTO "account"."contact" ("id", "account_id", "full_name", "phone", "phone_verified", "address_type", "date_created", "address", "latitude", "longitude")
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO "account"."contact" ("id", "account_id", "full_name", "phone", "phone_verified", "address_type", "date_created", "address", "latitude", "longitude", "address_detail")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING *;
 
 -- name: CreateCopyContact :copyfrom
-INSERT INTO "account"."contact" ("id", "account_id", "full_name", "phone", "phone_verified", "address_type", "date_created", "address", "latitude", "longitude")
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
+INSERT INTO "account"."contact" ("id", "account_id", "full_name", "phone", "phone_verified", "address_type", "date_created", "address", "latitude", "longitude", "address_detail")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
 
 -- name: CreateDefaultContact :one
-INSERT INTO "account"."contact" ("account_id", "full_name", "phone", "address_type", "address", "latitude", "longitude")
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO "account"."contact" ("account_id", "full_name", "phone", "address_type", "address", "latitude", "longitude", "address_detail")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: CreateCopyDefaultContact :copyfrom
-INSERT INTO "account"."contact" ("account_id", "full_name", "phone", "address_type", "address", "latitude", "longitude")
-VALUES ($1, $2, $3, $4, $5, $6, $7);
+INSERT INTO "account"."contact" ("account_id", "full_name", "phone", "address_type", "address", "latitude", "longitude", "address_detail")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
 
 -- name: UpdateContact :one
 UPDATE "account"."contact"
@@ -242,7 +243,8 @@ SET "account_id" = COALESCE(sqlc.narg('account_id'), "account_id"),
     "date_created" = COALESCE(sqlc.narg('date_created'), "date_created"),
     "address" = COALESCE(sqlc.narg('address'), "address"),
     "latitude" = COALESCE(sqlc.narg('latitude'), "latitude"),
-    "longitude" = COALESCE(sqlc.narg('longitude'), "longitude")
+    "longitude" = COALESCE(sqlc.narg('longitude'), "longitude"),
+    "address_detail" = CASE WHEN sqlc.arg('null_address_detail')::bool = TRUE THEN NULL ELSE COALESCE(sqlc.narg('address_detail'), "address_detail") END
 WHERE "id" = sqlc.arg('id')
 RETURNING *;
 
@@ -264,7 +266,8 @@ WHERE (
     ("latitude" <= sqlc.narg('latitude_to') OR sqlc.narg('latitude_to') IS NULL) AND
     ("longitude" = ANY(sqlc.slice('longitude')) OR sqlc.slice('longitude') IS NULL) AND
     ("longitude" >= sqlc.narg('longitude_from') OR sqlc.narg('longitude_from') IS NULL) AND
-    ("longitude" <= sqlc.narg('longitude_to') OR sqlc.narg('longitude_to') IS NULL)
+    ("longitude" <= sqlc.narg('longitude_to') OR sqlc.narg('longitude_to') IS NULL) AND
+    ("address_detail" = ANY(sqlc.slice('address_detail')) OR sqlc.slice('address_detail') IS NULL)
 );
 
 -- ========================================

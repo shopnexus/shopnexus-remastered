@@ -59,10 +59,13 @@ func (h *Handler) GetContact(c echo.Context) error {
 }
 
 type CreateContactRequest struct {
-	FullName    string                   `json:"full_name"    validate:"required"`
-	Phone       string                   `json:"phone"        validate:"required"`
-	Address     string                   `json:"address"      validate:"required"`
-	AddressType accountmodel.AddressType `json:"address_type" validate:"required,validateFn=Valid"`
+	FullName      string                   `json:"full_name"      validate:"required"`
+	Phone         string                   `json:"phone"          validate:"required"`
+	Address       string                   `json:"address"        validate:"required"`
+	AddressDetail null.String              `json:"address_detail" validate:"omitnil"`
+	AddressType   accountmodel.AddressType `json:"address_type"   validate:"required,validateFn=Valid"`
+	Latitude      float64                  `json:"latitude"       validate:"latitude"`
+	Longitude     float64                  `json:"longitude"      validate:"longitude"`
 }
 
 func (h *Handler) CreateContact(c echo.Context) error {
@@ -80,11 +83,14 @@ func (h *Handler) CreateContact(c echo.Context) error {
 	}
 
 	result, err := h.biz.Call().CreateContact(c.Request().Context(), accountbiz.CreateContactParams{
-		Account:     claims.Account,
-		FullName:    req.FullName,
-		Phone:       req.Phone,
-		Address:     req.Address,
-		AddressType: req.AddressType,
+		Account:       claims.Account,
+		FullName:      req.FullName,
+		Phone:         req.Phone,
+		Address:       req.Address,
+		AddressDetail: req.AddressDetail,
+		AddressType:   req.AddressType,
+		Latitude:      req.Latitude,
+		Longitude:     req.Longitude,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)
@@ -98,8 +104,11 @@ type UpdateContactRequest struct {
 	FullName      null.String                  `json:"full_name"      validate:"omitnil"`
 	Phone         null.String                  `json:"phone"          validate:"omitnil"`
 	Address       null.String                  `json:"address"        validate:"omitnil"`
+	AddressDetail null.String                  `json:"address_detail" validate:"omitnil"`
 	AddressType   accountmodel.NullAddressType `json:"address_type"   validate:"omitnil,validateFn=Valid"`
 	PhoneVerified null.Bool                    `json:"phone_verified" validate:"omitnil"`
+	Latitude      null.Float                   `json:"latitude"       validate:"omitnil,latitude"`
+	Longitude     null.Float                   `json:"longitude"      validate:"omitnil,longitude"`
 }
 
 func (h *Handler) UpdateContact(c echo.Context) error {
@@ -122,8 +131,11 @@ func (h *Handler) UpdateContact(c echo.Context) error {
 		FullName:      req.FullName,
 		Phone:         req.Phone,
 		Address:       req.Address,
+		AddressDetail: req.AddressDetail,
 		AddressType:   req.AddressType,
 		PhoneVerified: req.PhoneVerified,
+		Latitude:      req.Latitude,
+		Longitude:     req.Longitude,
 	})
 	if err != nil {
 		return response.FromError(c.Response().Writer, http.StatusInternalServerError, err)

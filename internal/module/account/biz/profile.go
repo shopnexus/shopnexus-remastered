@@ -214,6 +214,7 @@ func (b *AccountHandler) mapProfile(
 		PhoneVerified:    profile.PhoneVerified,
 		Country:          profile.Country,
 		Currency:         currency,
+		InternalBalance:  profile.InternalBalance,
 		DefaultContactID: defaultContactID,
 		AvatarURL:        url,
 	}

@@ -272,6 +272,7 @@ type AccountContact struct {
 	Address       string             `json:"address"`
 	Latitude      float64            `json:"latitude"`
 	Longitude     float64            `json:"longitude"`
+	AddressDetail null.String        `json:"address_detail"`
 }
 
 type AccountFavorite struct {

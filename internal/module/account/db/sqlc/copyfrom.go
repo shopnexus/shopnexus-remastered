@@ -78,6 +78,7 @@ func (r iteratorForCreateCopyContact) Values() ([]interface{}, error) {
 		r.rows[0].Address,
 		r.rows[0].Latitude,
 		r.rows[0].Longitude,
+		r.rows[0].AddressDetail,
 	}, nil
 }
 
@@ -86,7 +87,7 @@ func (r iteratorForCreateCopyContact) Err() error {
 }
 
 func (q *Queries) CreateCopyContact(ctx context.Context, arg []CreateCopyContactParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"account", "contact"}, []string{"id", "account_id", "full_name", "phone", "phone_verified", "address_type", "date_created", "address", "latitude", "longitude"}, &iteratorForCreateCopyContact{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"account", "contact"}, []string{"id", "account_id", "full_name", "phone", "phone_verified", "address_type", "date_created", "address", "latitude", "longitude", "address_detail"}, &iteratorForCreateCopyContact{rows: arg})
 }
 
 // iteratorForCreateCopyDefaultAccount implements pgx.CopyFromSource.
@@ -151,6 +152,7 @@ func (r iteratorForCreateCopyDefaultContact) Values() ([]interface{}, error) {
 		r.rows[0].Address,
 		r.rows[0].Latitude,
 		r.rows[0].Longitude,
+		r.rows[0].AddressDetail,
 	}, nil
 }
 
@@ -159,7 +161,7 @@ func (r iteratorForCreateCopyDefaultContact) Err() error {
 }
 
 func (q *Queries) CreateCopyDefaultContact(ctx context.Context, arg []CreateCopyDefaultContactParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"account", "contact"}, []string{"account_id", "full_name", "phone", "address_type", "address", "latitude", "longitude"}, &iteratorForCreateCopyDefaultContact{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"account", "contact"}, []string{"account_id", "full_name", "phone", "address_type", "address", "latitude", "longitude", "address_detail"}, &iteratorForCreateCopyDefaultContact{rows: arg})
 }
 
 // iteratorForCreateCopyDefaultFavorite implements pgx.CopyFromSource.

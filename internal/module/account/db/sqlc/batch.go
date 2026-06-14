@@ -96,9 +96,9 @@ func (b *CreateBatchAccountBatchResults) Close() error {
 }
 
 const createBatchContact = `-- name: CreateBatchContact :batchone
-INSERT INTO "account"."contact" ("id", "account_id", "full_name", "phone", "phone_verified", "address_type", "date_created", "address", "latitude", "longitude")
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, account_id, full_name, phone, phone_verified, address_type, date_created, address, latitude, longitude
+INSERT INTO "account"."contact" ("id", "account_id", "full_name", "phone", "phone_verified", "address_type", "date_created", "address", "latitude", "longitude", "address_detail")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING id, account_id, full_name, phone, phone_verified, address_type, date_created, address, latitude, longitude, address_detail
 `
 
 type CreateBatchContactBatchResults struct {
@@ -118,6 +118,7 @@ type CreateBatchContactParams struct {
 	Address       string             `json:"address"`
 	Latitude      float64            `json:"latitude"`
 	Longitude     float64            `json:"longitude"`
+	AddressDetail null.String        `json:"address_detail"`
 }
 
 func (q *Queries) CreateBatchContact(ctx context.Context, arg []CreateBatchContactParams) *CreateBatchContactBatchResults {
@@ -134,6 +135,7 @@ func (q *Queries) CreateBatchContact(ctx context.Context, arg []CreateBatchConta
 			a.Address,
 			a.Latitude,
 			a.Longitude,
+			a.AddressDetail,
 		}
 		batch.Queue(createBatchContact, vals...)
 	}
@@ -163,6 +165,7 @@ func (b *CreateBatchContactBatchResults) QueryRow(f func(int, AccountContact, er
 			&i.Address,
 			&i.Latitude,
 			&i.Longitude,
+			&i.AddressDetail,
 		)
 		if f != nil {
 			f(t, i, err)

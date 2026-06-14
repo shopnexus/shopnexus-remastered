@@ -6,6 +6,7 @@ import (
 
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	accountmodel "shopnexus-server/internal/module/account/model"
+	commonbiz "shopnexus-server/internal/module/common/biz"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -14,29 +15,32 @@ import (
 	"github.com/samber/lo"
 )
 
-// validateAddressCountry geocodes the given address via the
-// common module and rejects the request if the resolved country does not
-// match the owner's profile country. Used by CreateContact/UpdateContact so
-// a user can only register addresses that resolve to their own country.
-func (b *AccountHandler) validateAddressCountry(
+// validateCoordsCountry reverse-geocodes the pin (the source of truth for a
+// contact's location) and rejects the request if the resolved country does not
+// match the owner's profile country. Unresolvable coords (e.g. mid-ocean) bubble
+// up as a terminal error from the geocoder.
+func (b *AccountHandler) validateCoordsCountry(
 	ctx context.Context,
 	accountID uuid.UUID,
-	address string,
+	lat, lng float64,
 ) error {
 	profile, err := b.storage.Querier().GetProfile(ctx, accountdb.GetProfileParams{
 		ID: uuid.NullUUID{UUID: accountID, Valid: true},
 	})
 	if err != nil {
-		return fmt.Errorf("load profile for address check: %w", err)
+		return fmt.Errorf("load profile for coords check: %w", err)
 	}
 
-	resolvedCountry, err := b.common.ResolveCountry(ctx, address)
+	result, err := b.common.ReverseGeocode(ctx, commonbiz.ReverseGeocodeParams{
+		Latitude:  lat,
+		Longitude: lng,
+	})
 	if err != nil {
-		return fmt.Errorf("resolve country for address: %w", err)
+		return fmt.Errorf("reverse geocode coords: %w", err)
 	}
 
-	if resolvedCountry != profile.Country {
-		return accountmodel.ErrContactAddressCountryMismatch.Fmt(resolvedCountry, profile.Country)
+	if result.CountryCode != profile.Country {
+		return accountmodel.ErrContactAddressCountryMismatch.Fmt(result.CountryCode, profile.Country)
 	}
 	return nil
 }
@@ -95,13 +99,14 @@ func (b *AccountHandler) GetContact(ctx context.Context, params GetContactParams
 }
 
 type CreateContactParams struct {
-	Account     accountmodel.AuthenticatedAccount
-	FullName    string                   `validate:"required"`
-	Phone       string                   `validate:"required"`
-	Address     string                   `validate:"required"`
-	AddressType accountmodel.AddressType `validate:"required,validateFn=Valid"`
-	Latitude    null.Float               `validate:"omitnil"`
-	Longitude   null.Float               `validate:"omitnil"`
+	Account       accountmodel.AuthenticatedAccount
+	FullName      string                   `validate:"required"`
+	Phone         string                   `validate:"required"`
+	Address       string                   `validate:"required"` // geocodable base address (drives the pin)
+	AddressDetail null.String              `validate:"omitnil"`  // unit/floor/notes; never geocoded
+	AddressType   accountmodel.AddressType `validate:"required,validateFn=Valid"`
+	Latitude      float64                  `validate:"latitude"` // pin = source of truth for location + country
+	Longitude     float64                  `validate:"longitude"`
 }
 
 // CreateContact creates a new contact for the authenticated account.
@@ -116,9 +121,9 @@ func (b *AccountHandler) CreateContact(
 		return zero, fmt.Errorf("validate create contact: %w", err)
 	}
 
-	// decision: geocode + validate the address country (cross-module read).
-	if err = b.validateAddressCountry(ctx, params.Account.ID, params.Address); err != nil {
-		return zero, fmt.Errorf("validate address: %w", err)
+	// decision: reverse-geocode the pin + validate its country (cross-module read).
+	if err = b.validateCoordsCountry(ctx, params.Account.ID, params.Latitude, params.Longitude); err != nil {
+		return zero, fmt.Errorf("validate coords: %w", err)
 	}
 
 	// execution: create the contact, promoting it to default if it is the first.
@@ -133,13 +138,14 @@ func (b *AccountHandler) CreateContact(
 			}
 
 			dbContact, err = s.Querier().CreateDefaultContact(rctx, accountdb.CreateDefaultContactParams{
-				AccountID:   params.Account.ID,
-				FullName:    params.FullName,
-				Phone:       params.Phone,
-				Address:     params.Address,
-				AddressType: accountdb.AccountAddressType(params.AddressType),
-				Latitude:    params.Latitude.Float64,
-				Longitude:   params.Longitude.Float64,
+				AccountID:     params.Account.ID,
+				FullName:      params.FullName,
+				Phone:         params.Phone,
+				Address:       params.Address,
+				AddressDetail: params.AddressDetail,
+				AddressType:   accountdb.AccountAddressType(params.AddressType),
+				Latitude:      params.Latitude,
+				Longitude:     params.Longitude,
 			})
 			if err != nil {
 				return fmt.Errorf("db create contact: %w", err)
@@ -164,14 +170,15 @@ func (b *AccountHandler) CreateContact(
 }
 
 type UpdateContactParams struct {
-	Account     accountmodel.AuthenticatedAccount
-	ContactID   uuid.UUID                    `validate:"required"`
-	FullName    null.String                  `validate:"omitnil"`
-	Phone       null.String                  `validate:"omitnil"`
-	Address     null.String                  `validate:"omitnil"`
-	AddressType accountmodel.NullAddressType `validate:"omitnil,validateFn=Valid"`
-	Latitude    null.Float                   `validate:"omitnil"`
-	Longitude   null.Float                   `validate:"omitnil"`
+	Account       accountmodel.AuthenticatedAccount
+	ContactID     uuid.UUID                    `validate:"required"`
+	FullName      null.String                  `validate:"omitnil"`
+	Phone         null.String                  `validate:"omitnil"`
+	Address       null.String                  `validate:"omitnil"` // base label only; never re-geocoded
+	AddressDetail null.String                  `validate:"omitnil"` // unit/floor/notes; never geocoded
+	AddressType   accountmodel.NullAddressType `validate:"omitnil,validateFn=Valid"`
+	Latitude      null.Float                   `validate:"omitnil,latitude"` // moves the pin; paired with Longitude
+	Longitude     null.Float                   `validate:"omitnil,longitude"`
 
 	PhoneVerified null.Bool `validate:"omitnil"`
 }
@@ -187,10 +194,13 @@ func (b *AccountHandler) UpdateContact(
 		return zero, fmt.Errorf("validate update contact: %w", err)
 	}
 
-	// decision: geocode + validate the address country (cross-module read).
-	if params.Address.Valid && params.Address.String != "" {
-		if err := b.validateAddressCountry(ctx, params.Account.ID, params.Address.String); err != nil {
-			return zero, fmt.Errorf("validate address: %w", err)
+	// decision: coords move as a pair; if the pin changes, re-validate its country.
+	if params.Latitude.Valid != params.Longitude.Valid {
+		return zero, accountmodel.ErrContactCoordsPair
+	}
+	if params.Latitude.Valid {
+		if err := b.validateCoordsCountry(ctx, params.Account.ID, params.Latitude.Float64, params.Longitude.Float64); err != nil {
+			return zero, fmt.Errorf("validate coords: %w", err)
 		}
 	}
 
@@ -209,6 +219,7 @@ func (b *AccountHandler) UpdateContact(
 			FullName:      params.FullName,
 			Phone:         params.Phone,
 			Address:       params.Address,
+			AddressDetail: params.AddressDetail,
 			AddressType:   addressType,
 			Latitude:      params.Latitude,
 			Longitude:     params.Longitude,

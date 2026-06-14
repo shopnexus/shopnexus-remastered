@@ -27,6 +27,7 @@ type Profile struct {
 	PhoneVerified    bool          `json:"phone_verified"`
 	Country          string        `json:"country"`
 	Currency         string        `json:"currency"`
+	InternalBalance  int64         `json:"internal_balance"` // store credit in Currency's minor units
 	DefaultContactID uuid.NullUUID `json:"default_contact_id"`
 	AvatarURL        null.String   `json:"avatar_url"`
 
