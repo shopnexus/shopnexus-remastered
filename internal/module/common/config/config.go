@@ -13,13 +13,12 @@ type Config struct {
 }
 
 type Exchange struct {
-	Base                string        `yaml:"base"                mapstructure:"base"                validate:"required"`
-	Supported           []string      `yaml:"supported"           mapstructure:"supported"           validate:"required,min=1"`
-	RefreshInterval     time.Duration `yaml:"refreshInterval"     mapstructure:"refreshInterval"     validate:"gte=0"`
-	HTTPTimeout         time.Duration `yaml:"httpTimeout"         mapstructure:"httpTimeout"         validate:"gte=0"`
-	DefaultUserCurrency string        `yaml:"defaultUserCurrency" mapstructure:"defaultUserCurrency" validate:"required"`
-	UpstreamURL         string        `yaml:"upstreamURL"         mapstructure:"upstreamURL"         validate:"required,url"`
-	APIKey              string        `yaml:"apiKey"              mapstructure:"apiKey"              validate:"required"`
+	Base            string        `yaml:"base"                mapstructure:"base"                validate:"required"`
+	Supported       []string      `yaml:"supported"           mapstructure:"supported"           validate:"required,min=1"`
+	RefreshInterval time.Duration `yaml:"refreshInterval"     mapstructure:"refreshInterval"     validate:"gte=0"`
+	HTTPTimeout     time.Duration `yaml:"httpTimeout"         mapstructure:"httpTimeout"         validate:"gte=0"`
+	UpstreamURL     string        `yaml:"upstreamURL"         mapstructure:"upstreamURL"         validate:"required,url"`
+	APIKey          string        `yaml:"apiKey"              mapstructure:"apiKey"              validate:"required"`
 }
 
 // Filestore + S3Filestore: only common needs them (object-store options, S3 uploads).

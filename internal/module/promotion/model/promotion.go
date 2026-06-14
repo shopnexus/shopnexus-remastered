@@ -32,8 +32,8 @@ type Promotion struct {
 }
 
 type PromotionRef struct {
-	RefType RefType   `validate:"required,validateFn=Valid"`
-	RefID   uuid.UUID `validate:"required"`
+	RefType RefType   `json:"ref_type" validate:"required,validateFn=Valid"`
+	RefID   uuid.UUID `json:"ref_id"   validate:"required"`
 }
 
 // PromoSpu is the minimal SPU shape promotion matching needs: SPU id + its

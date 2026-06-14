@@ -189,7 +189,7 @@ All under `/api/v1/catalog`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/product-sku` | List by `spu_id` with price/combinable filters |
+| GET | `/product-sku` | List by `spu_id` with price filters |
 | POST | `/product-sku` | Create (also provisions inventory stock) |
 | PATCH | `/product-sku` | Update price, attributes, package details |
 | DELETE | `/product-sku` | Delete |

@@ -34,7 +34,6 @@ exchange:
     [USD, VND, JPY, KRW, EUR, GBP, CNY, SGD, THB, AUD, IDR, MXN, COP, CLP]
   refreshInterval: 6h
   httpTimeout: 5s
-  defaultUserCurrency: VND
   upstreamURL: https://api.currencyapi.com/v3
   apiKey: ""
 

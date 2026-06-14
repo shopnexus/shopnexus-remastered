@@ -9,6 +9,7 @@ Each module (`internal/module/<name>/`) has its own README with ER diagram + flo
 ## Commands
 
 See `Makefile`. Common:
+
 - `make dev` — air hot-reload
 - `make pgtempl` — regen SQLC query templates
 - `make generate` — regen Restate proxies (`*/biz/restate_gen.go`)
@@ -20,9 +21,9 @@ See `Makefile`. Common:
 
 `internal/module/*/db/queries/generated_queries.sql`, `internal/module/*/db/sqlc/*.sql.go`, `*/biz/restate_gen.go`. Fix the generator (`cmd/pgtempl/`, `sqlc.yaml`, `cmd/genrestate/`) instead.
 
-## Dev DB — no destructive resets
+## Dev DB
 
-Do not `DROP SCHEMA ... CASCADE` or `migrate -down` without explicit approval. `make seed` is slow. Prefer additive migrations.
+Do not `DROP SCHEMA ... CASCADE` or `migrate -down` without explicit approval. `make seed` is slow.
 
 ## Migration format (`internal/module/*/db/migrations/*.up.sql`)
 
@@ -42,3 +43,18 @@ Do not `DROP SCHEMA ... CASCADE` or `migrate -down` without explicit approval. `
 - Ledger row and side effect in the **same tx, same schema**. No global / cross-module idempotency table.
 - Forward path: `INSERT ... ON CONFLICT DO NOTHING` — duplicate key → return terminal error (fail loud).
 - Compensator: `DELETE ... RETURNING` — missing key → no-op success.
+
+## Biz handlers (query vs command)
+
+- **Query** = pure read → `ctx context.Context`, flat args. No journaling.
+- **Command** = side effect → `ctx restate.Context`, journaled. Structure in 3 phases, marked with comments:
+  - `// decision:` read + validate inside `restate.Run` (no commit). Fail-fast UX only — NOT a correctness guard.
+  - `// execution:` the durable commit(s). Cross-module `Call` self-journals; raw DB writes wrap in `restate.Run`/`RunVoid`.
+  - `// tail:` post-commit fan-out (notify, analytics, workflow signals).
+- One 3-phase set per scope. A loop with per-item side effects → extract the body to a helper carrying its own decision/execution/tail (e.g. `rejectForBuyer`); never nest a 2nd decision in the outer scope. Multiple steps in one phase → number them `1.`/`2.`/`3.`, don't repeat the phase header.
+
+## State transitions (TOCTOU)
+
+- Never validate-then-act across a journal boundary. The check in `decision` is stale by `execution` (separate tx, gap may span a payment-wait suspend; no row lock survives suspend).
+- Guard at the **write**: conditional `UPDATE ... WHERE <expected state>`, use `:execrows`, check rows-affected == expected, else abort + compensate.
+- Enforce invariants in the DB (partial unique index, e.g. `refund_one_active_per_order`), not app-level read-check.

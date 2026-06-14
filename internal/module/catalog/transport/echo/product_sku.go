@@ -18,7 +18,7 @@ type ListProductSkuRequest struct {
 	SpuID           uuid.UUID  `query:"spu_id"     validate:"omitempty"`
 	PriceFrom       null.Int64 `query:"price_from" validate:"omitnil,gt=0"`
 	PriceTo         null.Int64 `query:"price_to"   validate:"omitnil,gt=0,gtefield=PriceFrom"`
-	SharedPackaging null.Bool  `query:"combinable" validate:"omitnil"`
+	SharedPackaging null.Bool  `query:"shared_packaging" validate:"omitnil"`
 }
 
 func (h *Handler) ListProductSku(c echo.Context) error {
@@ -45,7 +45,7 @@ func (h *Handler) ListProductSku(c echo.Context) error {
 type CreateProductSkuRequest struct {
 	SpuID           uuid.UUID                       `json:"spu_id"          validate:"required"`
 	Price           int64                           `json:"price"           validate:"required,gt=0"`
-	SharedPackaging bool                            `json:"combinable"      validate:"omitempty"`
+	SharedPackaging bool                            `json:"shared_packaging"      validate:"omitempty"`
 	Attributes      []catalogmodel.ProductAttribute `json:"attributes"      validate:"omitempty,dive"`
 	PackageDetails  json.RawMessage                 `json:"package_details" validate:"required"`
 }
@@ -79,11 +79,11 @@ func (h *Handler) CreateProductSku(c echo.Context) error {
 }
 
 type UpdateProductSkuRequest struct {
-	ID              uuid.UUID                       `json:"id"              validate:"required"`
-	Price           null.Int                        `json:"price"           validate:"omitnil,gt=0"`
-	SharedPackaging null.Bool                       `json:"combinable"      validate:"omitnil"`
-	Attributes      []catalogmodel.ProductAttribute `json:"attributes"      validate:"omitempty,dive"`
-	PackageDetails  json.RawMessage                 `json:"package_details" validate:"omitempty"`
+	ID              uuid.UUID                       `json:"id"               validate:"required"`
+	Price           null.Int                        `json:"price"            validate:"omitnil,gt=0"`
+	SharedPackaging null.Bool                       `json:"shared_packaging" validate:"omitnil"`
+	Attributes      []catalogmodel.ProductAttribute `json:"attributes"       validate:"omitempty,dive"`
+	PackageDetails  json.RawMessage                 `json:"package_details"  validate:"omitempty"`
 }
 
 func (h *Handler) UpdateProductSku(c echo.Context) error {

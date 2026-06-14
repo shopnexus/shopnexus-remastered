@@ -126,7 +126,7 @@ type SendMessageRequest struct {
 	ConversationID uuid.UUID              `json:"conversation_id"    validate:"required"`
 	Type           chatdb.ChatMessageType `json:"type"               validate:"required"`
 	Content        string                 `json:"content"            validate:"required"`
-	Metadata       json.RawMessage        `json:"metadata,omitempty"`
+	Metadata       json.RawMessage        `json:"data,omitempty"`
 }
 
 func (h *Handler) SendMessage(c echo.Context) error {

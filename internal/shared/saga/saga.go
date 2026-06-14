@@ -21,6 +21,7 @@ import (
 //     defer/WrapError path; successful compensators replay from journal,
 //     failed ones run again.
 type Saga struct {
+	// TODO: sửa lại dùng context.Context thôi, hoặc chỗ runVoid dùng restate.RunVoid
 	ctx          restate.Context
 	compensators []step
 }
