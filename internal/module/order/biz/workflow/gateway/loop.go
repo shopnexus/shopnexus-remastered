@@ -46,6 +46,24 @@ func (g *Gateway) RejectPendingURLs(ctx restate.WorkflowContext, cause error) er
 	return nil
 }
 
+// SettleWalletOnly finalizes a session that has no gateway leg (wallet covered
+// the full amount, or zero total): marks the session paid and resolves
+// payment_url_1 with "" so a synchronous GetPaymentURL caller returns at once
+// instead of blocking on a redirect URL that will never be minted.
+func (g *Gateway) SettleWalletOnly(ctx restate.WorkflowContext, sessionID uuid.UUID) error {
+	if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+		_, e := g.core.Storage.Querier().MarkPaymentSessionSuccess(rctx, orderdb.MarkPaymentSessionSuccessParams{
+			ID:       sessionID,
+			DatePaid: time.Now(),
+		})
+		return e
+	}); err != nil {
+		return fmt.Errorf("mark session success (wallet-only): %w", err)
+	}
+	_ = restate.Promise[string](ctx, paymentURLKey(1)).Resolve("")
+	return nil
+}
+
 // RunPaymentLoop drives the multi-attempt gateway payment leg. On attempt expiry it lazily
 // waits for the caller to call RequestNewURL before charging again.
 func (g *Gateway) RunPaymentLoop(ctx restate.WorkflowContext, p LoopParams) error {

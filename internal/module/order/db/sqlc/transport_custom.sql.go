@@ -15,11 +15,12 @@ import (
 
 const getTransportByTrackingID = `-- name: GetTransportByTrackingID :one
 SELECT id, option, status, data, date_created FROM "order"."transport"
-WHERE "data"->>'tracking_id' = $1
+WHERE "data"->>'tracking_id' = $1::text
 LIMIT 1
 `
 
-func (q *Queries) GetTransportByTrackingID(ctx context.Context, trackingID json.RawMessage) (OrderTransport, error) {
+// data->>'tracking_id' is text; cast the param so sqlc types it as string (not json.RawMessage).
+func (q *Queries) GetTransportByTrackingID(ctx context.Context, trackingID string) (OrderTransport, error) {
 	row := q.db.QueryRow(ctx, getTransportByTrackingID, trackingID)
 	var i OrderTransport
 	err := row.Scan(

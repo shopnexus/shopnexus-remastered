@@ -9,6 +9,7 @@ type Config struct {
 	Sepay         Sepay       `mapstructure:"sepay"`
 	CardPayment   CardPayment `mapstructure:"cardPayment"`
 	GHTK          GHTK        `mapstructure:"ghtk"`
+	Mock          Mock        `mapstructure:"mock"`
 }
 
 type Order struct {
@@ -40,6 +41,13 @@ type GHTK struct {
 	APIKey   string `yaml:"apiKey"   mapstructure:"apiKey"`
 	ClientID string `yaml:"clientID" mapstructure:"clientID"`
 	Secret   string `yaml:"secret"   mapstructure:"secret"`
+}
+
+// Mock is a dev-only transport provider that auto-delivers shipments after a
+// fixed delay. Leave Enabled=false outside dev.
+type Mock struct {
+	Enabled      bool `yaml:"enabled"      mapstructure:"enabled"`
+	DelaySeconds int  `yaml:"delaySeconds" mapstructure:"delaySeconds"`
 }
 
 func NewConfig() (*Config, error) {

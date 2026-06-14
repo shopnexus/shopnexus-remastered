@@ -66,11 +66,13 @@ type fulfillmentRun struct {
 func (h *FulfillmentWorkflow) Run(
 	ctx restate.WorkflowContext,
 	input FulfillmentInput,
-) (out FulfillmentOutput, err error) {
+) (FulfillmentOutput, error) {
+	var err error
+	var zero FulfillmentOutput
 	defer metrics.TrackHandler("fulfillment_workflow", "Run", &err)()
 
 	if err = validator.Validate(input); err != nil {
-		return out, fmt.Errorf("validate fulfillment: %w", err)
+		return zero, fmt.Errorf("validate fulfillment: %w", err)
 	}
 
 	r := &fulfillmentRun{
@@ -92,11 +94,17 @@ func (h *FulfillmentWorkflow) Run(
 
 	// confirm: seller confirm-fee saga → order creation
 	if err = r.confirm(); err != nil {
-		return out, err
+		return zero, fmt.Errorf("confirm fulfillment: %w", err)
 	}
 
 	// escrow: hold payout until release or refund
-	out.Outcome, err = r.escrow()
-	out.OrderID = r.orderID
-	return out, err
+	outcome, err := r.escrow()
+	if err != nil {
+		return zero, fmt.Errorf("escrow fulfillment: %w", err)
+	}
+
+	return FulfillmentOutput{
+		Outcome: outcome,
+		OrderID: r.orderID,
+	}, err
 }

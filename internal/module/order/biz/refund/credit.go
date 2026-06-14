@@ -148,7 +148,9 @@ func (b *RefundHandler) ExecuteRefundCredit(
 	// deterministic key: retries must reuse it so the idempotency ledger dedupes
 	refundTxID := uuid.NewSHA1(uuid.NameSpaceOID, fmt.Appendf(nil, "refund-credit:refund:%s", refund.ID))
 
-	// execution: mint the refund tx, flip the refund status and cancel each item.
+	// execution: commit the refund across three journaled steps — the wallet
+	// credit and restock are cross-module Calls, so they can't share the DB Run.
+	// 1. mint the reversing tx, flip the refund status, cancel each item (one DB tx).
 	updated, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
 		refundTx, e := b.Storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
 			ID:            refundTxID,
@@ -205,7 +207,7 @@ func (b *RefundHandler) ExecuteRefundCredit(
 		return zero, fmt.Errorf("execute refund ops: %w", err)
 	}
 
-	// execution: credit the buyer wallet for the settled session amount.
+	// 2. credit the buyer wallet for the settled session amount.
 	if _, err := b.CreditFromSession(ctx, ordermodel.CreditFromSessionParams{
 		SessionID:  dec.AnyItem.PaymentSessionID,
 		AccountID:  dec.Order.BuyerID,
@@ -216,7 +218,7 @@ func (b *RefundHandler) ExecuteRefundCredit(
 		return zero, fmt.Errorf("wallet credit: %w", err)
 	}
 
-	// execution: restock inventory for every item we just cancelled. Mirrors the
+	// 3. restock inventory for every item we just cancelled. Mirrors the
 	// release path in CancelBuyerPending / RejectSellerPending so the SKU quantity
 	// goes back up when the refund settles. The inventory module owns its own
 	// idempotency; the cross-module Call self-journals.

@@ -54,6 +54,10 @@ ghtk:
   clientID: ""
   secret: ""
 
+mock:
+  enabled: false # dev-only transport provider; auto-delivers shipments
+  delaySeconds: 30
+
 bus:
   transport: redis
 

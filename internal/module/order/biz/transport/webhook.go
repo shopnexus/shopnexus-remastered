@@ -57,7 +57,7 @@ func (b *TransportHandler) OnTransportResult(ctx restate.Context, params OnTrans
 	fetched, err := restate.Run(ctx, func(rctx restate.RunContext) (transportInfo, error) {
 		var zero transportInfo
 
-		tr, err := b.Storage.Querier().GetTransportByTrackingID(rctx, json.RawMessage(`"`+params.TrackingID+`"`))
+		tr, err := b.Storage.Querier().GetTransportByTrackingID(rctx, params.TrackingID)
 		if err != nil {
 			return zero, ordermodel.ErrOrderNotFound
 		}

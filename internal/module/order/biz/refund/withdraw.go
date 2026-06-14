@@ -57,8 +57,9 @@ func (b *RefundHandler) WithdrawBuyerRefund(
 		return zero, err
 	}
 
-	// tail: tell the workflow to exit the refund phase early (escrow resumes).
-	// Each cross-workflow Send self-journals.
+	// tail: signal the workflow + notify the seller. Each cross-workflow Send
+	// self-journals.
+	// 1. tell the workflow to exit the refund phase early (escrow resumes).
 	if err = b.fulfillment.Send().OnBuyerWithdrew(ctx, refund.OrderID, ordermodel.RefundSignal{RefundID: refund.ID}); err != nil {
 		return zero, fmt.Errorf("signal buyer withdrew: %w", err)
 	}
@@ -66,7 +67,7 @@ func (b *RefundHandler) WithdrawBuyerRefund(
 		return zero, fmt.Errorf("signal refund changed: %w", err)
 	}
 
-	// tail: notify seller (was waiting on the inbound return) so their UI clears.
+	// 2. notify seller (was waiting on the inbound return) so their UI clears.
 	order, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderOrder, error) {
 		return b.Storage.Querier().GetOrder(rctx, orderdb.GetOrderParams{
 			ID: uuid.NullUUID{UUID: refund.OrderID, Valid: true},

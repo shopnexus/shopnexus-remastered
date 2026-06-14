@@ -12,6 +12,7 @@ import (
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	"shopnexus-server/internal/provider/transport"
 	"shopnexus-server/internal/shared/pgsqlc"
 	"shopnexus-server/internal/shared/validator"
 
@@ -104,13 +105,31 @@ func (b *RefundHandler) CreateBuyerRefund(
 	}
 	order := dec.Order
 
-	// execution: create the return transport + refund row in one tx.
+	transportClient, err := b.GetTransportClient(params.ReturnOption)
+	if err != nil {
+		return zero, fmt.Errorf("get transport client: %w", err)
+	}
+
+	// execution: book the return shipment, then create the return transport +
+	// refund row in one tx. The shipment's tracking_id (in Data) is what the
+	// delivery webhook matches to fire OnTransportDelivered → escrow refund phase.
 	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
+		shipment, bErr := transportClient.Create(rctx, transport.CreateParams{
+			Option:      params.ReturnOption,
+			FromAddress: order.Address,
+		})
+		if bErr != nil {
+			return orderdb.OrderRefund{}, fmt.Errorf("book return transport: %w", bErr)
+		}
+		transportData := map[string]any{"direction": "return", "leg": "buyer-to-seller"}
+		_ = json.Unmarshal(shipment.Data, &transportData)
+		trData, _ := json.Marshal(transportData)
+
 		var refund orderdb.OrderRefund
 		if err := b.Storage.Transact(rctx, func(s pgsqlc.Storage[*orderdb.Queries]) error {
 			returnTransport, err := s.Querier().CreateDefaultTransport(rctx, orderdb.CreateDefaultTransportParams{
 				Option: params.ReturnOption,
-				Data:   json.RawMessage(`{"direction":"return","leg":"buyer-to-seller"}`),
+				Data:   json.RawMessage(trData),
 			})
 			if err != nil {
 				return fmt.Errorf("create return transport: %w", err)

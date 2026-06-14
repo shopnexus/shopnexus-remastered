@@ -5,8 +5,9 @@ WHERE "id" = @id
 RETURNING *;
 
 -- name: GetTransportByTrackingID :one
+-- data->>'tracking_id' is text; cast the param so sqlc types it as string (not json.RawMessage).
 SELECT * FROM "order"."transport"
-WHERE "data"->>'tracking_id' = @tracking_id
+WHERE "data"->>'tracking_id' = @tracking_id::text
 LIMIT 1;
 
 -- name: GetTransportWithOrder :one

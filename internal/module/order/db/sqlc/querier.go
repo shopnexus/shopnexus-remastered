@@ -6,7 +6,6 @@ package orderdb
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/google/uuid"
 	null "github.com/guregu/null/v6"
@@ -159,7 +158,8 @@ type Querier interface {
 	// Queries for table: order.transport
 	// ========================================
 	GetTransport(ctx context.Context, id null.Int) (OrderTransport, error)
-	GetTransportByTrackingID(ctx context.Context, trackingID json.RawMessage) (OrderTransport, error)
+	// data->>'tracking_id' is text; cast the param so sqlc types it as string (not json.RawMessage).
+	GetTransportByTrackingID(ctx context.Context, trackingID string) (OrderTransport, error)
 	GetTransportWithOrder(ctx context.Context, id int64) (GetTransportWithOrderRow, error)
 	// HasActiveRefundForOrder reports whether any refund row for this order is
 	// still in negotiation (not yet Accepted or Rejected). Used by the fulfillment

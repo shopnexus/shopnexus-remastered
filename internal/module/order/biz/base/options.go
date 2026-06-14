@@ -10,6 +10,7 @@ import (
 	"shopnexus-server/internal/provider/payment/vnpay"
 	"shopnexus-server/internal/provider/transport"
 	"shopnexus-server/internal/provider/transport/ghtk"
+	"shopnexus-server/internal/provider/transport/mock"
 	sharedmodel "shopnexus-server/internal/shared/model"
 )
 
@@ -105,6 +106,8 @@ func (b *Base) transportFactory(cfg sharedmodel.Option) transport.Client {
 	switch cfg.Provider {
 	case "ghtk":
 		return ghtk.NewClient(cfg)
+	case "mock":
+		return mock.NewClient(cfg)
 	default:
 		b.Logger.Warn("unknown transport provider", "provider", cfg.Provider, "id", cfg.ID)
 		return nil
@@ -129,6 +132,19 @@ func (b *Base) TransportOptions() []sharedmodel.Option {
 			Provider:    "ghtk",
 			Name:        "Giao hàng tiết kiệm - " + method,
 			Description: "Dịch vụ giao hàng nhanh của Giao hàng tiết kiệm",
+			Data:        data,
+		})
+	}
+
+	// Dev-only auto-delivering provider; off unless explicitly enabled.
+	if b.Cfg.Mock.Enabled {
+		data, _ := json.Marshal(mock.Data{DelaySeconds: b.Cfg.Mock.DelaySeconds})
+		configs = append(configs, sharedmodel.Option{
+			ID:          "mock",
+			Type:        sharedmodel.OptionTypeTransport,
+			Provider:    "mock",
+			Name:        "Mock Transport (dev)",
+			Description: "Tự động giao thành công sau một khoảng thời gian cố định; chỉ dùng cho dev/test",
 			Data:        data,
 		})
 	}

@@ -77,7 +77,6 @@ func (r *fulfillmentRun) confirm() (err error) {
 	platformFee := int64(0) // TODO: plug config
 	confirmFeeTotal := quote.Cost + platformFee
 
-	// InferCurrency is cross-module → must run outside restate.Run.
 	sellerCurrency, err := r.InferCurrency(ctx, sellerID)
 	if err != nil {
 		return fmt.Errorf("infer seller currency: %w", err)
@@ -182,15 +181,33 @@ func (r *fulfillmentRun) confirm() (err error) {
 		}
 	}
 
-	// Step 6: create order records — transport + order + item links in one journaled tx
+	// Step 6: book the shipment, then create order records — transport + order +
+	// item links in one journaled tx.
 	// Paid — clear saga; failure here is a programmer bug (seller already paid) → terminal.
 	r.sg.Clear()
 
+	// Book the shipment with the provider (journaled — the tracking id must be
+	// stable across replay). Its Data carries tracking_id, which the delivery
+	// webhook matches on; we merge the quote cost in for the record.
+	shipment, err := restate.Run(ctx, func(rctx restate.RunContext) (transport.Transport, error) {
+		return transportClient.Create(rctx, transport.CreateParams{
+			Items:       transportItems,
+			FromAddress: contactMap[sellerID].Address,
+			ToAddress:   address,
+			Option:      transportOption,
+		})
+	})
+	if err != nil {
+		return fmt.Errorf("book transport: %w", err)
+	}
+	transportData := map[string]any{"quote": quote.Cost}
+	_ = json.Unmarshal(shipment.Data, &transportData)
+
 	if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-		quoteData, _ := json.Marshal(map[string]int64{"quote": quote.Cost})
+		trData, _ := json.Marshal(transportData)
 		trRow, tErr := r.Storage.Querier().CreateDefaultTransport(rctx, orderdb.CreateDefaultTransportParams{
 			Option: transportOption,
-			Data:   json.RawMessage(quoteData),
+			Data:   json.RawMessage(trData),
 		})
 		if tErr != nil {
 			return fmt.Errorf("db create transport: %w", tErr)
@@ -221,9 +238,12 @@ func (r *fulfillmentRun) confirm() (err error) {
 
 	metrics.OrdersCreatedTotal.Inc()
 
-	// Wallet-only: resolve payment_url_1 with "" so the sync HTTP caller doesn't hang.
+	// Wallet-only: mark the confirm-fee session paid and unblock the sync caller
+	// (else GetPaymentURL hangs on payment_url_1, which is never minted).
 	if confirmFeeGateway == 0 {
-		_ = restate.Promise[string](ctx, "payment_url_1").Resolve("")
+		if err = r.gw.SettleWalletOnly(ctx, sessionID); err != nil {
+			return fmt.Errorf("settle wallet-only confirm fee: %w", err)
+		}
 	}
 
 	// Step 7: notify the buyer their items are confirmed
