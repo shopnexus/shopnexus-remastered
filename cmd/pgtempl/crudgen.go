@@ -9,8 +9,10 @@ import (
 // CrudGenerator emits Create/Get/Update/Delete for one table into Package, on a
 // *Receiver. Types come from the matched model's db-tagged fields.
 type CrudGenerator struct {
-	Package  string // e.g. "orderrepo"
-	Receiver string // e.g. "Repository"
+	Package   string // e.g. "orderrepo"
+	Receiver  string // e.g. "Repository"
+	ModelPkg  string // e.g. "ordermodel"; if set, entity type is qualified
+	ModelPath string // import path for ModelPkg, e.g. "shopnexus-server/internal/module/order/model"
 }
 
 // crudItem pairs a table with its matched entity model.
@@ -76,6 +78,10 @@ func (g *CrudGenerator) crudBody(table *Table, model *ModelStruct, imp *importSe
 	}
 
 	entity := model.Name
+	if g.ModelPkg != "" {
+		entity = g.ModelPkg + "." + model.Name
+		imp.ext[g.ModelPkg] = g.ModelPath
+	}
 	suffix := toPascalCase(table.Name)
 	pk := table.PrimaryKeys[0]
 	pkField, err := field(pk)

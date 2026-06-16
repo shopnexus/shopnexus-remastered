@@ -74,3 +74,18 @@ func TestGenerateCRUDFailsOnMissingModelField(t *testing.T) {
 		t.Fatal("expected error when a table column has no db-tagged model field")
 	}
 }
+
+func TestGenerateCRUDQualifiedEntity(t *testing.T) {
+	g := &CrudGenerator{Package: "orderrepo", Receiver: "Repository",
+		ModelPkg: "ordermodel", ModelPath: "shopnexus-server/internal/module/order/model"}
+	body, err := g.GenerateCRUD(categoryTableFixture(), categoryModelFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body, "(ordermodel.Category, error)") {
+		t.Fatal("Get must return ordermodel.Category")
+	}
+	if !strings.Contains(body, `"shopnexus-server/internal/module/order/model"`) {
+		t.Fatal("must import model pkg")
+	}
+}
