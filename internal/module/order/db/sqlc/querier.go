@@ -283,9 +283,11 @@ type Querier interface {
 	UpdateTransport(ctx context.Context, arg UpdateTransportParams) (OrderTransport, error)
 	UpdateTransportStatusByID(ctx context.Context, arg UpdateTransportStatusByIDParams) (OrderTransport, error)
 	ValidateOrderForReview(ctx context.Context, arg ValidateOrderForReviewParams) (bool, error)
-	// WithdrawBuyerRefund cancels a refund while it is still in Shipping.
-	// Once the goods reach the seller (AwaitingSellerReview), withdraw is no
-	// longer possible — biz layer rejects the call before reaching this SQL.
+	// WithdrawBuyerRefund cancels a refund only while the return transport is still
+	// Pending (not yet picked up by the carrier). Once the carrier starts moving it
+	// (Processing onward), withdraw is blocked — the goods have left the buyer. The
+	// join on return_transport_id is the authoritative gate; refund.status='Shipping'
+	// alone spans Pending+Processing, so it is not sufficient on its own.
 	WithdrawBuyerRefund(ctx context.Context, arg WithdrawBuyerRefundParams) (OrderRefund, error)
 }
 

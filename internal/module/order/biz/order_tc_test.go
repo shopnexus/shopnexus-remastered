@@ -29,7 +29,6 @@ import (
 
 	accountmodel "shopnexus-server/internal/module/account/model"
 	orderbiz "shopnexus-server/internal/module/order/biz"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/provider/payment"
 	"shopnexus-server/internal/shared/validator"
@@ -77,11 +76,11 @@ const (
 	cancelReject
 )
 
-func cancelPendingDecision(s orderdb.OrderStatus) (cancelAction, error) {
+func cancelPendingDecision(s ordermodel.Status) (cancelAction, error) {
 	switch s {
-	case orderdb.OrderStatusPending:
+	case ordermodel.StatusPending:
 		return cancelSignalWorkflow, nil
-	case orderdb.OrderStatusSuccess:
+	case ordermodel.StatusSuccess:
 		return cancelPartialRefund, nil
 	default:
 		return cancelReject, ordermodel.ErrItemAlreadyCancelled
@@ -273,19 +272,19 @@ func TestTC06_CancelPendingDecision(t *testing.T) {
 
 	cases := []struct {
 		name    string
-		status  orderdb.OrderStatus
+		status  ordermodel.Status
 		want    cancelAction
 		wantErr error
 	}{
-		{"pending → signal workflow", orderdb.OrderStatusPending, cancelSignalWorkflow, nil},
-		{"success → partial refund", orderdb.OrderStatusSuccess, cancelPartialRefund, nil},
+		{"pending → signal workflow", ordermodel.StatusPending, cancelSignalWorkflow, nil},
+		{"success → partial refund", ordermodel.StatusSuccess, cancelPartialRefund, nil},
 		{
 			"failed → reject (already cancelled)",
-			orderdb.OrderStatusFailed,
+			ordermodel.StatusFailed,
 			cancelReject,
 			ordermodel.ErrItemAlreadyCancelled,
 		},
-		{"cancelled → reject", orderdb.OrderStatusCancelled, cancelReject, ordermodel.ErrItemAlreadyCancelled},
+		{"cancelled → reject", ordermodel.StatusCancelled, cancelReject, ordermodel.ErrItemAlreadyCancelled},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -383,7 +382,7 @@ func TestTC09_PaymentSuccessRoutes(t *testing.T) {
 		t.Fatalf("valid notification rejected: %v", err)
 	}
 
-	checkoutSession := orderdb.OrderPaymentSession{
+	checkoutSession := ordermodel.PaymentSession{
 		ID:   uuid.New(),
 		Kind: ordermodel.SessionKindBuyerCheckout,
 	}
@@ -395,7 +394,7 @@ func TestTC09_PaymentSuccessRoutes(t *testing.T) {
 		t.Errorf("workflow id must equal session id; got %q want %q", id, checkoutSession.ID)
 	}
 
-	confirmSession := orderdb.OrderPaymentSession{
+	confirmSession := ordermodel.PaymentSession{
 		ID:   uuid.New(),
 		Kind: ordermodel.SessionKindSellerConfirmationFee,
 	}
@@ -409,7 +408,7 @@ func TestTC09_PaymentSuccessRoutes(t *testing.T) {
 func TestTC09_UnknownSessionKindDropsWebhook(t *testing.T) {
 	t.Parallel()
 
-	s := orderdb.OrderPaymentSession{ID: uuid.New(), Kind: ordermodel.SessionKindSellerPayout}
+	s := ordermodel.PaymentSession{ID: uuid.New(), Kind: ordermodel.SessionKindSellerPayout}
 	name, id := orderbiz.WorkflowForSession(s)
 	if name != "" || id != "" {
 		t.Errorf("payout session has no waiting workflow; got (%q, %q)", name, id)
@@ -431,7 +430,7 @@ func TestTC10_PaymentFailedRoutes(t *testing.T) {
 		t.Fatalf("valid failure notification rejected: %v", err)
 	}
 
-	s := orderdb.OrderPaymentSession{ID: uuid.New(), Kind: ordermodel.SessionKindBuyerCheckout}
+	s := ordermodel.PaymentSession{ID: uuid.New(), Kind: ordermodel.SessionKindBuyerCheckout}
 	if name, _ := orderbiz.WorkflowForSession(s); name != "CheckoutWorkflow" {
 		t.Errorf("failure webhook must reach CheckoutWorkflow; got %q", name)
 	}

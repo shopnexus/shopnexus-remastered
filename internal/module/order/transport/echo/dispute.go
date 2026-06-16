@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	orderbiz "shopnexus-server/internal/module/order/biz"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
+	ordermodel "shopnexus-server/internal/module/order/model"
 	authclaims "shopnexus-server/internal/shared/claims"
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/response"
@@ -34,7 +34,7 @@ func (h *Handler) ListRefundDisputes(c echo.Context) error {
 	}
 	result, err := h.biz.ListRefundDisputes(c.Request().Context(), orderbiz.ListRefundDisputesParams{
 		Account: claims.Account,
-		Status:  orderdb.OrderDisputeStatus(req.Status),
+		Status:  ordermodel.DisputeStatus(req.Status),
 		Params:  req.Params.Constrain(),
 	})
 	if err != nil {
@@ -62,7 +62,7 @@ func (h *Handler) ListRefundDisputesByRefund(c echo.Context) error {
 	result, err := h.biz.ListRefundDisputes(c.Request().Context(), orderbiz.ListRefundDisputesParams{
 		Account:  claims.Account,
 		RefundID: uuid.NullUUID{UUID: refundID, Valid: true},
-		Status:   orderdb.OrderDisputeStatus(req.Status),
+		Status:   ordermodel.DisputeStatus(req.Status),
 		Params:   req.Params.Constrain(),
 	})
 	if err != nil {

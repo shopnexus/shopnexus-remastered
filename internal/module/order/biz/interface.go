@@ -15,7 +15,6 @@ import (
 	ordertransport "shopnexus-server/internal/module/order/biz/transport"
 	"shopnexus-server/internal/module/order/biz/workflow/checkout"
 	"shopnexus-server/internal/module/order/biz/workflow/fullfilment"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	sharedmodel "shopnexus-server/internal/shared/model"
 
@@ -113,6 +112,6 @@ type (
 )
 
 // WorkflowForSession maps payment_session.kind to (workflowName, workflowID).
-func WorkflowForSession(s orderdb.OrderPaymentSession) (string, string) {
+func WorkflowForSession(s ordermodel.PaymentSession) (string, string) {
 	return orderpayment.WorkflowForSession(s)
 }

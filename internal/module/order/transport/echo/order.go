@@ -10,7 +10,7 @@ import (
 
 	"shopnexus-server/internal/infras/ratelimit"
 	orderbiz "shopnexus-server/internal/module/order/biz"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
+	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/provider/transport"
 	authclaims "shopnexus-server/internal/shared/claims"
 	sharedmodel "shopnexus-server/internal/shared/model"
@@ -135,7 +135,7 @@ func NewHandler(
 		}
 		return biz.Call().OnTransportResult(ctx, orderbiz.OnTransportResultParams{
 			TrackingID: result.TransportID,
-			Status:     orderdb.OrderStatus(result.Status),
+			Status:     ordermodel.Status(result.Status),
 			Data:       data,
 		})
 	}

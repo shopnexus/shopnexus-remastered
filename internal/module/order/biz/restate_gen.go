@@ -95,7 +95,7 @@ type OrderBizClient interface {
 	ConfirmSellerPending(ctx context.Context, params sellerorder.ConfirmSellerPendingParams) (sellerorder.ConfirmSellerPendingResult, error)
 	GetSellerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error)
 	ListSellerConfirmed(ctx context.Context, params sellerorder.ListSellerConfirmedParams) (paginate.PaginateResult[ordermodel.Order], error)
-	GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItem, error)
+	GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItemView, error)
 	ListBuyerRefunds(ctx context.Context, params refund.ListBuyerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error)
 	ListSellerRefunds(ctx context.Context, params refund.ListSellerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error)
 	ListRefundDisputes(ctx context.Context, params dispute.ListRefundDisputesParams) (paginate.PaginateResult[ordermodel.RefundDispute], error)
@@ -373,7 +373,7 @@ func (s *OrderService) ListSellerConfirmed(ctx restate.Context, params sellerord
 	return s.biz.ListSellerConfirmed(ctx, params)
 }
 
-func (s *OrderService) GetCart(ctx restate.Context, params cart.GetCartParams) ([]ordermodel.CartItem, error) {
+func (s *OrderService) GetCart(ctx restate.Context, params cart.GetCartParams) ([]ordermodel.CartItemView, error) {
 	return s.biz.GetCart(ctx, params)
 }
 
@@ -498,7 +498,7 @@ type OrderBizFlat interface {
 	ConfirmSellerPending(ctx context.Context, params sellerorder.ConfirmSellerPendingParams) (sellerorder.ConfirmSellerPendingResult, error)
 	GetSellerOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error)
 	ListSellerConfirmed(ctx context.Context, params sellerorder.ListSellerConfirmedParams) (paginate.PaginateResult[ordermodel.Order], error)
-	GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItem, error)
+	GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItemView, error)
 	ListBuyerRefunds(ctx context.Context, params refund.ListBuyerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error)
 	ListSellerRefunds(ctx context.Context, params refund.ListSellerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error)
 	ListRefundDisputes(ctx context.Context, params dispute.ListRefundDisputesParams) (paginate.PaginateResult[ordermodel.RefundDispute], error)
@@ -566,7 +566,7 @@ func (b *orderBizBestEffortLocal) ListSellerConfirmed(ctx context.Context, param
 	return b.biz.ListSellerConfirmed(ctx, params)
 }
 
-func (b *orderBizBestEffortLocal) GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItem, error) {
+func (b *orderBizBestEffortLocal) GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItemView, error) {
 	return b.biz.GetCart(ctx, params)
 }
 
@@ -683,8 +683,8 @@ func (b *orderBizBestEffortRemote) ListSellerConfirmed(ctx context.Context, para
 	return besteffort.Call[paginate.PaginateResult[ordermodel.Order]](ctx, b.call, serviceName, "ListSellerConfirmed", params)
 }
 
-func (b *orderBizBestEffortRemote) GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItem, error) {
-	return besteffort.Call[[]ordermodel.CartItem](ctx, b.call, serviceName, "GetCart", params)
+func (b *orderBizBestEffortRemote) GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItemView, error) {
+	return besteffort.Call[[]ordermodel.CartItemView](ctx, b.call, serviceName, "GetCart", params)
 }
 
 func (b *orderBizBestEffortRemote) ListBuyerRefunds(ctx context.Context, params refund.ListBuyerRefundsParams) (paginate.PaginateResult[ordermodel.Refund], error) {
@@ -805,7 +805,7 @@ func (c *orderBizClient) ListSellerConfirmed(ctx context.Context, params sellero
 	return c.flat.ListSellerConfirmed(ctx, params)
 }
 
-func (c *orderBizClient) GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItem, error) {
+func (c *orderBizClient) GetCart(ctx context.Context, params cart.GetCartParams) ([]ordermodel.CartItemView, error) {
 	return c.flat.GetCart(ctx, params)
 }
 

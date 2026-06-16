@@ -15,7 +15,7 @@ CREATE TYPE "order"."status" AS ENUM ('Pending', 'Processing', 'Success', 'Cance
 
 -- Refund lifecycle (refund v2): buyer ships goods back at creation; seller
 -- reviews within the deadline; disputes escalate to admin. 'Cancelled' is a
--- buyer-withdraw terminal state (only legal from 'Shipping').
+-- buyer-withdraw terminal state
 CREATE TYPE "order"."refund_status" AS ENUM (
     'Shipping',
     'AwaitingSellerReview',

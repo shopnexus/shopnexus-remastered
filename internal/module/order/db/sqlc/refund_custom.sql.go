@@ -372,12 +372,15 @@ func (q *Queries) SellerDisputeRefund(ctx context.Context, id uuid.UUID) (OrderR
 }
 
 const withdrawBuyerRefund = `-- name: WithdrawBuyerRefund :one
-UPDATE "order"."refund"
+UPDATE "order"."refund" AS r
 SET "status" = 'Cancelled'
-WHERE "id" = $1
-  AND "account_id" = $2
-  AND "status" = 'Shipping'
-RETURNING id, account_id, order_id, reason, date_created, status, return_transport_id, date_received_by_seller, review_deadline, seller_decision_at, return_to_buyer_transport_id, rejection_reason, refund_tx_id
+FROM "order"."transport" AS t
+WHERE r."id" = $1
+  AND r."account_id" = $2
+  AND r."status" = 'Shipping'
+  AND t."id" = r."return_transport_id"
+  AND t."status" = 'Pending'
+RETURNING r.id, r.account_id, r.order_id, r.reason, r.date_created, r.status, r.return_transport_id, r.date_received_by_seller, r.review_deadline, r.seller_decision_at, r.return_to_buyer_transport_id, r.rejection_reason, r.refund_tx_id
 `
 
 type WithdrawBuyerRefundParams struct {
@@ -385,9 +388,11 @@ type WithdrawBuyerRefundParams struct {
 	AccountID uuid.UUID `json:"account_id"`
 }
 
-// WithdrawBuyerRefund cancels a refund while it is still in Shipping.
-// Once the goods reach the seller (AwaitingSellerReview), withdraw is no
-// longer possible — biz layer rejects the call before reaching this SQL.
+// WithdrawBuyerRefund cancels a refund only while the return transport is still
+// Pending (not yet picked up by the carrier). Once the carrier starts moving it
+// (Processing onward), withdraw is blocked — the goods have left the buyer. The
+// join on return_transport_id is the authoritative gate; refund.status='Shipping'
+// alone spans Pending+Processing, so it is not sufficient on its own.
 func (q *Queries) WithdrawBuyerRefund(ctx context.Context, arg WithdrawBuyerRefundParams) (OrderRefund, error) {
 	row := q.db.QueryRow(ctx, withdrawBuyerRefund, arg.ID, arg.AccountID)
 	var i OrderRefund

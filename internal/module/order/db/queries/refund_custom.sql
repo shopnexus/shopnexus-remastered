@@ -18,16 +18,21 @@ INSERT INTO "order"."refund" (
 )
 RETURNING *;
 
--- WithdrawBuyerRefund cancels a refund while it is still in Shipping.
--- Once the goods reach the seller (AwaitingSellerReview), withdraw is no
--- longer possible — biz layer rejects the call before reaching this SQL.
+-- WithdrawBuyerRefund cancels a refund only while the return transport is still
+-- Pending (not yet picked up by the carrier). Once the carrier starts moving it
+-- (Processing onward), withdraw is blocked — the goods have left the buyer. The
+-- join on return_transport_id is the authoritative gate; refund.status='Shipping'
+-- alone spans Pending+Processing, so it is not sufficient on its own.
 -- name: WithdrawBuyerRefund :one
-UPDATE "order"."refund"
+UPDATE "order"."refund" AS r
 SET "status" = 'Cancelled'
-WHERE "id" = @id
-  AND "account_id" = @account_id
-  AND "status" = 'Shipping'
-RETURNING *;
+FROM "order"."transport" AS t
+WHERE r."id" = @id
+  AND r."account_id" = @account_id
+  AND r."status" = 'Shipping'
+  AND t."id" = r."return_transport_id"
+  AND t."status" = 'Pending'
+RETURNING r.*;
 
 -- MarkRefundDelivered fires when the forward (return) transport reaches its
 -- final delivered state, flipping the refund into AwaitingSellerReview and
