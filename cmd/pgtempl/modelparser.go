@@ -20,6 +20,7 @@ type ModelField struct {
 // types reference (localName -> import path).
 type ModelStruct struct {
 	Name    string
+	Table   string // from //pgtempl:table "schema"."table" marker; empty if absent
 	Fields  []ModelField
 	ByDB    map[string]ModelField
 	Imports map[string]string
@@ -29,20 +30,28 @@ type ModelStruct struct {
 // keyed by struct name. Generated *_gen.go files declare no db-tagged structs,
 // so re-parsing the output dir is harmless.
 func ParseModelDir(dir string) (map[string]*ModelStruct, error) {
+	m, _, err := ParseModelDirWithPkg(dir)
+	return m, err
+}
+
+// ParseModelDirWithPkg is like ParseModelDir but also returns the package name.
+func ParseModelDirWithPkg(dir string) (map[string]*ModelStruct, string, error) {
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, dir, nil, 0)
+	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	out := make(map[string]*ModelStruct)
-	for _, pkg := range pkgs {
+	pkgName := ""
+	for name, pkg := range pkgs {
+		pkgName = name
 		for _, file := range pkg.Files {
-			for name, ms := range collectStructs(fset, file) {
-				out[name] = ms
+			for n, ms := range collectStructs(fset, file) {
+				out[n] = ms
 			}
 		}
 	}
-	return out, nil
+	return out, pkgName, nil
 }
 
 // fileImports maps each import's local name to its path. A named import uses the
@@ -61,6 +70,23 @@ func fileImports(file *ast.File) map[string]string {
 		imports[local] = path
 	}
 	return imports
+}
+
+// tableMarker extracts the //pgtempl:table "schema"."table" value from a
+// TypeSpec or GenDecl doc comment, returning "" if absent.
+func tableMarker(specDoc, declDoc *ast.CommentGroup) string {
+	for _, cg := range []*ast.CommentGroup{specDoc, declDoc} {
+		if cg == nil {
+			continue
+		}
+		for _, c := range cg.List {
+			line := strings.TrimSpace(strings.TrimPrefix(c.Text, "//"))
+			if v, ok := strings.CutPrefix(line, "pgtempl:table "); ok {
+				return strings.TrimSpace(v)
+			}
+		}
+	}
+	return ""
 }
 
 func collectStructs(fset *token.FileSet, file *ast.File) map[string]*ModelStruct {
@@ -83,6 +109,7 @@ func collectStructs(fset *token.FileSet, file *ast.File) map[string]*ModelStruct
 			}
 			ms := &ModelStruct{
 				Name:    ts.Name.Name,
+				Table:   tableMarker(ts.Doc, gd.Doc),
 				ByDB:    map[string]ModelField{},
 				Imports: map[string]string{},
 			}

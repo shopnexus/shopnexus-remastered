@@ -49,3 +49,25 @@ func TestCollectStructsReadsDBTagsAndTypes(t *testing.T) {
 		t.Fatalf("orderdb import not captured: %v", rf.Imports)
 	}
 }
+
+func TestCollectStructsReadsTableMarkerAndPkg(t *testing.T) {
+	const src = "package ordermodel\n" +
+		"import \"github.com/google/uuid\"\n" +
+		"//pgtempl:table \"order\".\"refund\"\n" +
+		"type Refund struct {\n" +
+		"\tID uuid.UUID `db:\"id\"`\n" +
+		"}\n" +
+		"type NotAnEntity struct{ X int }\n"
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "x.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := collectStructs(fset, f)
+	if got["Refund"].Table != `"order"."refund"` {
+		t.Fatalf("Refund.Table = %q", got["Refund"].Table)
+	}
+	if got["NotAnEntity"].Table != "" {
+		t.Fatal("NotAnEntity must have empty Table")
+	}
+}
