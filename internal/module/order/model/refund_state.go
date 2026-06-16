@@ -1,47 +1,42 @@
 package ordermodel
 
-import (
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
-
-	"github.com/samber/lo"
-)
+import "github.com/samber/lo"
 
 // refundTransitions is the refund FSM: the single source of truth for legal
-// status moves, keyed by the DB enum so we compare against the embedded
-// OrderRefund.Status directly. Terminal states (Accepted/Rejected/Cancelled)
-// are intentionally absent — IsTerminal keys off that absence.
+// status moves. Terminal states (Accepted/Rejected/Cancelled) are intentionally
+// absent — IsTerminal keys off that absence.
 //
 //nolint:exhaustive // terminal states have no outgoing edges by design
-var refundTransitions = map[orderdb.OrderRefundStatus][]orderdb.OrderRefundStatus{
-	orderdb.OrderRefundStatusShipping: {
-		orderdb.OrderRefundStatusAwaitingSellerReview,
-		orderdb.OrderRefundStatusCancelled,
+var refundTransitions = map[RefundStatus][]RefundStatus{
+	RefundStatusShipping: {
+		RefundStatusAwaitingSellerReview,
+		RefundStatusCancelled,
 	},
-	orderdb.OrderRefundStatusAwaitingSellerReview: {
-		orderdb.OrderRefundStatusAccepted,
-		orderdb.OrderRefundStatusDisputed,
+	RefundStatusAwaitingSellerReview: {
+		RefundStatusAccepted,
+		RefundStatusDisputed,
 	},
-	orderdb.OrderRefundStatusDisputed: {
-		orderdb.OrderRefundStatusAccepted,
-		orderdb.OrderRefundStatusRejected,
+	RefundStatusDisputed: {
+		RefundStatusAccepted,
+		RefundStatusRejected,
 	},
 }
 
 // CanTransitionTo reports whether next is a legal successor of the current state.
-func (r Refund) CanTransitionTo(next orderdb.OrderRefundStatus) bool {
+func (r Refund) CanTransitionTo(next RefundStatus) bool {
 	return lo.Contains(refundTransitions[r.Status], next)
 }
 
 // CanSellerDecide reports whether the seller may approve or dispute now: only
 // after the return is delivered and before any decision is recorded.
 func (r Refund) CanSellerDecide() bool {
-	return r.Status == orderdb.OrderRefundStatusAwaitingSellerReview
+	return r.Status == RefundStatusAwaitingSellerReview
 }
 
 // CanWithdraw reports whether the buyer may still withdraw: only while the
 // return is in transit, before the seller takes possession.
 func (r Refund) CanWithdraw() bool {
-	return r.Status == orderdb.OrderRefundStatusShipping
+	return r.Status == RefundStatusShipping
 }
 
 // IsTerminal reports whether the refund has reached a final state.

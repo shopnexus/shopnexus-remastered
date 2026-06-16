@@ -7,7 +7,9 @@ import (
 	"github.com/google/uuid"
 )
 
-type CartItem struct {
+// CartItemView is the hydrated cart item returned to the FE — enriched with
+// catalog data (SKU details, primary image, currency) for rendering the cart.
+type CartItemView struct {
 	SpuID    uuid.UUID               `json:"spu_id"`
 	Sku      catalogmodel.ProductSku `json:"sku"`
 	Quantity int64                   `json:"quantity"`

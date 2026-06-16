@@ -1,10 +1,13 @@
 package ordermodel
 
 import (
+	"encoding/json"
+	"time"
+
 	commonmodel "shopnexus-server/internal/module/common/model"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 
 	"github.com/google/uuid"
+	null "github.com/guregu/null/v6"
 )
 
 // CheckoutSummaryItem is the projection of an OrderItem with the catalog data
@@ -25,50 +28,91 @@ type CheckoutSummaryItem struct {
 // CheckoutSummary is the bundle returned to the payment-result page so it can
 // show what the user just paid for without the FE making N hop calls.
 type CheckoutSummary struct {
-	Session orderdb.OrderPaymentSession `json:"session"`
-	Items   []CheckoutSummaryItem       `json:"items"`
+	Session PaymentSession        `json:"session"`
+	Items   []CheckoutSummaryItem `json:"items"`
 }
 
-// OrderItem is the domain-layer item (pre- and post-confirmation).
-// Refund status is derived from negative-amount transactions in the item's payment session.
-type OrderItem struct {
-	orderdb.OrderItem
-
-	// Hydrated from catalog so the FE can render product cards without
-	// fanning out: slug for the product link, image for the thumbnail.
-	Slug     string `json:"slug"`
-	ImageURL string `json:"image_url"`
-
-	// Derived (optional loaded):
-	PaymentSession *orderdb.OrderPaymentSession `json:"payment_session,omitempty"`
-}
-
-// Order is the domain-layer confirmed order (exists only after seller confirm).
+//pgtempl:table "order"."order"
 type Order struct {
-	orderdb.OrderOrder
+	ID               uuid.UUID   `db:"id"`
+	BuyerID          uuid.UUID   `db:"buyer_id"`
+	SellerID         uuid.UUID   `db:"seller_id"`
+	TransportID      int64       `db:"transport_id"`
+	Address          string      `db:"address"`
+	DateCreated      time.Time   `db:"date_created"`
+	ConfirmedByID    uuid.UUID   `db:"confirmed_by_id"`
+	ConfirmSessionID uuid.UUID   `db:"confirm_session_id"`
+	Note             null.String `db:"note"`
 
-	// Derived (optional loaded):
-	TotalAmount    int64                        `json:"total_amount"`
-	Items          []OrderItem                  `json:"items"`
-	Transport      *orderdb.OrderTransport      `json:"transport"`
-	ConfirmSession *orderdb.OrderPaymentSession `json:"confirm_session"`
-	PayoutSession  *orderdb.OrderPaymentSession `json:"payout_session"`
+	// derived (no db tag):
+	TotalAmount    int64           `json:"total_amount"`
+	Items          []OrderItem     `json:"items"`
+	Transport      *Transport      `json:"transport"`
+	ConfirmSession *PaymentSession `json:"confirm_session"`
+	PayoutSession  *PaymentSession `json:"payout_session"`
 }
 
-// Refund is the v2 refund request. Buyer ships physical return at create
-// time; seller decides within 3 days of delivery or auto-accept fires.
-// Resources carries the buyer's evidence photos (common resource system).
-type Refund struct {
-	orderdb.OrderRefund
+//pgtempl:table "order"."item"
+type OrderItem struct {
+	ID               int64           `db:"id"`
+	OrderID          uuid.NullUUID   `db:"order_id"`
+	AccountID        uuid.UUID       `db:"account_id"`
+	SellerID         uuid.UUID       `db:"seller_id"`
+	SkuID            uuid.UUID       `db:"sku_id"`
+	SpuID            uuid.UUID       `db:"spu_id"`
+	SkuName          string          `db:"sku_name"`
+	Address          string          `db:"address"`
+	Note             null.String     `db:"note"`
+	SerialIds        json.RawMessage `db:"serial_ids"`
+	Quantity         int64           `db:"quantity"`
+	TransportOption  string          `db:"transport_option"`
+	SubtotalAmount   int64           `db:"subtotal_amount"`
+	TotalAmount      int64           `db:"total_amount"`
+	SourceCurrency   string          `db:"source_currency"`
+	PaymentSessionID uuid.UUID       `db:"payment_session_id"`
+	DateCancelled    null.Time       `db:"date_cancelled"`
+	CancelledByID    uuid.NullUUID   `db:"cancelled_by_id"`
+	DateCreated      time.Time       `db:"date_created"`
 
+	// derived (no db tag):
+	Slug           string          `json:"slug"`
+	ImageURL       string          `json:"image_url"`
+	PaymentSession *PaymentSession `json:"payment_session,omitempty"`
+}
+
+//pgtempl:table "order"."refund"
+type Refund struct {
+	ID                       uuid.UUID     `db:"id"`
+	AccountID                uuid.UUID     `db:"account_id"`
+	OrderID                  uuid.UUID     `db:"order_id"`
+	Reason                   string        `db:"reason"`
+	DateCreated              time.Time     `db:"date_created"`
+	Status                   RefundStatus  `db:"status"`
+	ReturnTransportID        int64         `db:"return_transport_id"`
+	DateReceivedBySeller     null.Time     `db:"date_received_by_seller"`
+	ReviewDeadline           null.Time     `db:"review_deadline"`
+	SellerDecisionAt         null.Time     `db:"seller_decision_at"`
+	ReturnToBuyerTransportID null.Int      `db:"return_to_buyer_transport_id"`
+	RejectionReason          null.String   `db:"rejection_reason"`
+	RefundTxID               uuid.NullUUID `db:"refund_tx_id"`
+
+	// derived (no db tag):
 	Resources []commonmodel.Resource `json:"resources"`
 }
 
-// RefundDispute is the seller-initiated escalation against a refund.
-// Resources carries the seller's evidence photos (common resource system).
+//pgtempl:table "order"."refund_dispute"
 type RefundDispute struct {
-	orderdb.OrderRefundDispute
+	ID             uuid.UUID     `db:"id"`
+	RefundID       uuid.UUID     `db:"refund_id"`
+	AccountID      uuid.UUID     `db:"account_id"`
+	Reason         string        `db:"reason"`
+	DateCreated    time.Time     `db:"date_created"`
+	Status         DisputeStatus `db:"status"`
+	ResolvedByID   uuid.NullUUID `db:"resolved_by_id"`
+	DateResolved   null.Time     `db:"date_resolved"`
+	ResolutionNote null.String   `db:"resolution_note"`
 
+	// derived (no db tag):
 	Resources []commonmodel.Resource `json:"resources"`
 }
 
