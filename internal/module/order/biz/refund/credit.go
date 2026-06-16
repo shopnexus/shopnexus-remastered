@@ -8,8 +8,8 @@ import (
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
@@ -33,7 +33,7 @@ func (b *RefundHandler) CreditFromSession(
 		}
 		var total int64
 		for _, tx := range txs {
-			if tx.Status == orderdb.OrderStatusSuccess && tx.Amount > 0 {
+			if tx.Status == ordermodel.StatusSuccess && tx.Amount > 0 {
 				total += tx.Amount
 			}
 		}
@@ -72,32 +72,32 @@ func (b *RefundHandler) CreditFromSession(
 // but a fresh retry after journal trim would re-run the DB writes.
 func (b *RefundHandler) ExecuteRefundCredit(
 	ctx restate.Context,
-	refund orderdb.OrderRefund,
+	refund ordermodel.Refund,
 	deciderID uuid.UUID,
 	reason ordermodel.RefundCreditReason,
-) (orderdb.OrderRefund, error) {
-	var zero orderdb.OrderRefund
+) (ordermodel.Refund, error) {
+	var zero ordermodel.Refund
 
 	// decision: gather the order, non-cancelled items, currency and original
 	// charge needed to mint the reversing refund leg.
 	type plan struct {
-		Order        orderdb.OrderOrder
-		Items        []orderdb.OrderItem
-		AnyItem      orderdb.OrderItem
+		Order        ordermodel.Order
+		Items        []ordermodel.OrderItem
+		AnyItem      ordermodel.OrderItem
 		RefundAmount int64
 		Currency     string
 		OriginalTxID uuid.NullUUID
 	}
 	dec, err := restate.Run(ctx, func(rctx restate.RunContext) (plan, error) {
 		var zero plan
-		res, err := b.Storage.Querier().ListItem(rctx, orderdb.ListItemParams{
+		res, err := b.Storage.Querier().ListItem(rctx, orderrepo.ListItemParams{
 			OrderId: []uuid.UUID{refund.OrderID},
 		})
 		if err != nil {
 			return zero, fmt.Errorf("list items: %w", err)
 		}
 		items := res.Data
-		var anyItem orderdb.OrderItem
+		var anyItem ordermodel.OrderItem
 		var refundAmount int64
 		for _, it := range items {
 			if !it.DateCancelled.Valid {
@@ -111,9 +111,7 @@ func (b *RefundHandler) ExecuteRefundCredit(
 			return zero, fmt.Errorf("no non-cancelled items: %w", ordermodel.ErrOrderItemNotFound)
 		}
 
-		order, err := b.Storage.Querier().GetOrder(rctx, orderdb.GetOrderParams{
-			ID: uuid.NullUUID{UUID: refund.OrderID, Valid: true},
-		})
+		order, err := b.Storage.Querier().GetOrder(rctx, refund.OrderID)
 		if err != nil {
 			return zero, fmt.Errorf("get order: %w", err)
 		}
@@ -151,11 +149,11 @@ func (b *RefundHandler) ExecuteRefundCredit(
 	// execution: commit the refund across three journaled steps — the wallet
 	// credit and restock are cross-module Calls, so they can't share the DB Run.
 	// 1. mint the reversing tx, flip the refund status, cancel each item (one DB tx).
-	updated, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
-		refundTx, e := b.Storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
+	updated, err := restate.Run(ctx, func(rctx restate.RunContext) (ordermodel.Refund, error) {
+		_, e := b.Storage.Querier().CreateTransaction(rctx, orderrepo.CreateTransactionParams{
 			ID:            refundTxID,
 			SessionID:     dec.AnyItem.PaymentSessionID,
-			Status:        orderdb.OrderStatusSuccess,
+			Status:        ordermodel.StatusSuccess,
 			Note:          fmt.Sprintf("refund %s: %s", refund.ID, reason),
 			Error:         null.String{},
 			PaymentOption: null.String{},
@@ -167,38 +165,38 @@ func (b *RefundHandler) ExecuteRefundCredit(
 			DateExpired:   null.Time{},
 		})
 		if e != nil {
-			return orderdb.OrderRefund{}, fmt.Errorf("create refund tx: %w", e)
+			return ordermodel.Refund{}, fmt.Errorf("create refund tx: %w", e)
 		}
 
 		// Pick the right SQL based on the source state.
-		var u orderdb.OrderRefund
+		var u ordermodel.Refund
 		switch refund.Status {
-		case orderdb.OrderRefundStatusAwaitingSellerReview:
-			u, e = b.Storage.Querier().SellerApproveRefund(rctx, orderdb.SellerApproveRefundParams{
+		case ordermodel.RefundStatusAwaitingSellerReview:
+			u, e = b.Storage.Querier().SellerApproveRefund(rctx, orderrepo.SellerApproveRefundParams{
 				ID:         refund.ID,
-				RefundTxID: uuid.NullUUID{UUID: refundTx.ID, Valid: true},
+				RefundTxID: uuid.NullUUID{UUID: refundTxID, Valid: true},
 			})
-		case orderdb.OrderRefundStatusDisputed:
-			u, e = b.Storage.Querier().AdminDismissDispute(rctx, orderdb.AdminDismissDisputeParams{
+		case ordermodel.RefundStatusDisputed:
+			u, e = b.Storage.Querier().AdminDismissDispute(rctx, orderrepo.AdminDismissDisputeParams{
 				ID:         refund.ID,
-				RefundTxID: uuid.NullUUID{UUID: refundTx.ID, Valid: true},
+				RefundTxID: uuid.NullUUID{UUID: refundTxID, Valid: true},
 			})
 		default:
-			return orderdb.OrderRefund{}, ordermodel.ErrRefundWrongStage
+			return ordermodel.Refund{}, ordermodel.ErrRefundWrongStage
 		}
 		if e != nil {
-			return orderdb.OrderRefund{}, fmt.Errorf("approve refund: %w", e)
+			return ordermodel.Refund{}, fmt.Errorf("approve refund: %w", e)
 		}
 
 		for _, it := range dec.Items {
 			if it.DateCancelled.Valid {
 				continue
 			}
-			if _, ce := b.Storage.Querier().CancelItem(rctx, orderdb.CancelItemParams{
+			if _, ce := b.Storage.Querier().CancelItem(rctx, orderrepo.CancelItemParams{
 				ID:            it.ID,
 				CancelledByID: uuid.NullUUID{UUID: deciderID, Valid: true},
 			}); ce != nil {
-				return orderdb.OrderRefund{}, fmt.Errorf("cancel item: %w", ce)
+				return ordermodel.Refund{}, fmt.Errorf("cancel item: %w", ce)
 			}
 		}
 		return u, nil
@@ -222,7 +220,7 @@ func (b *RefundHandler) ExecuteRefundCredit(
 	// release path in CancelBuyerPending / RejectSellerPending so the SKU quantity
 	// goes back up when the refund settles. The inventory module owns its own
 	// idempotency; the cross-module Call self-journals.
-	releaseItems := lo.FilterMap(dec.Items, func(it orderdb.OrderItem, _ int) (inventorybiz.ReleaseInventoryItem, bool) {
+	releaseItems := lo.FilterMap(dec.Items, func(it ordermodel.OrderItem, _ int) (inventorybiz.ReleaseInventoryItem, bool) {
 		if it.DateCancelled.Valid {
 			return inventorybiz.ReleaseInventoryItem{}, false
 		}

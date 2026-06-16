@@ -10,7 +10,6 @@ import (
 	accountmodel "shopnexus-server/internal/module/account/model"
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/provider/transport"
@@ -48,14 +47,12 @@ func (b *RefundHandler) CreateBuyerRefund(
 	// decision: the order exists, belongs to the buyer, has a non-cancelled paid
 	// item, and has no active refund.
 	type decision struct {
-		Order orderdb.OrderOrder
+		Order ordermodel.Order
 	}
 	dec, err := restate.Run(ctx, func(rctx restate.RunContext) (decision, error) {
 		var zero decision
 
-		order, err := b.Storage.Querier().GetOrder(rctx, orderdb.GetOrderParams{
-			ID: uuid.NullUUID{UUID: params.OrderID, Valid: true},
-		})
+		order, err := b.Storage.Querier().GetOrder(rctx, params.OrderID)
 		if err != nil {
 			return zero, fmt.Errorf("get order: %w", err)
 		}
@@ -64,13 +61,13 @@ func (b *RefundHandler) CreateBuyerRefund(
 		}
 
 		// Ensure the order has at least one non-cancelled item
-		listItems, err := b.Storage.Querier().ListItem(rctx, orderdb.ListItemParams{
+		listItems, err := b.Storage.Querier().ListItem(rctx, orderrepo.ListItemParams{
 			OrderId: []uuid.UUID{params.OrderID},
 		})
 		if err != nil {
 			return zero, fmt.Errorf("list items: %w", err)
 		}
-		var anyItem orderdb.OrderItem
+		var anyItem ordermodel.OrderItem
 		for _, it := range listItems.Data {
 			if !it.DateCancelled.Valid {
 				anyItem = it
@@ -114,21 +111,21 @@ func (b *RefundHandler) CreateBuyerRefund(
 	// execution: book the return shipment, then create the return transport +
 	// refund row in one tx. The shipment's tracking_id (in Data) is what the
 	// delivery webhook matches to fire OnTransportDelivered → escrow refund phase.
-	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
+	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (ordermodel.Refund, error) {
 		shipment, bErr := transportClient.Create(rctx, transport.CreateParams{
 			Option:      params.ReturnOption,
 			FromAddress: order.Address,
 		})
 		if bErr != nil {
-			return orderdb.OrderRefund{}, fmt.Errorf("book return transport: %w", bErr)
+			return ordermodel.Refund{}, fmt.Errorf("book return transport: %w", bErr)
 		}
 		transportData := map[string]any{"direction": "return", "leg": "buyer-to-seller"}
 		_ = json.Unmarshal(shipment.Data, &transportData)
 		trData, _ := json.Marshal(transportData)
 
-		var refund orderdb.OrderRefund
+		var r ordermodel.Refund
 		if err := b.Storage.Transact(rctx, func(s pgsqlc.Storage[*orderrepo.Repository]) error {
-			returnTransport, err := s.Querier().CreateDefaultTransport(rctx, orderdb.CreateDefaultTransportParams{
+			returnTransportID, err := s.Querier().CreateTransport(rctx, orderrepo.CreateTransportParams{
 				Option: params.ReturnOption,
 				Data:   json.RawMessage(trData),
 			})
@@ -136,11 +133,11 @@ func (b *RefundHandler) CreateBuyerRefund(
 				return fmt.Errorf("create return transport: %w", err)
 			}
 
-			refund, err = s.Querier().CreateBuyerRefund(rctx, orderdb.CreateBuyerRefundParams{
+			r, err = s.Querier().CreateBuyerRefund(rctx, orderrepo.CreateBuyerRefundParams{
 				AccountID:         params.Account.ID,
 				OrderID:           params.OrderID,
 				Reason:            params.Reason,
-				ReturnTransportID: returnTransport.ID,
+				ReturnTransportID: returnTransportID,
 			})
 			if err != nil {
 				return fmt.Errorf("create refund: %w", err)
@@ -148,9 +145,9 @@ func (b *RefundHandler) CreateBuyerRefund(
 
 			return nil
 		}); err != nil {
-			return orderdb.OrderRefund{}, fmt.Errorf("create refund transaction: %w", err)
+			return ordermodel.Refund{}, fmt.Errorf("create refund transaction: %w", err)
 		}
-		return refund, nil
+		return r, nil
 	})
 	if err != nil {
 		return zero, err
@@ -180,5 +177,6 @@ func (b *RefundHandler) CreateBuyerRefund(
 		return zero, fmt.Errorf("notify refund: %w", err)
 	}
 
-	return ordermodel.Refund{OrderRefund: refund, Resources: resources}, nil
+	refund.Resources = resources
+	return refund, nil
 }

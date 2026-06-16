@@ -11,8 +11,8 @@ import (
 
 	"shopnexus-server/internal/infras/metrics"
 	accountmodel "shopnexus-server/internal/module/account/model"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/shared/validator"
 )
 
@@ -44,34 +44,34 @@ func (b *DisputeHandler) AdminUpholdDispute(
 
 	// execution: spawn the return-to-buyer transport (mock-Success same as the
 	// forward leg), uphold the refund and resolve the dispute as seller-wins.
-	updatedDispute, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefundDispute, error) {
-		t, e := b.Storage.Querier().CreateDefaultTransport(rctx, orderdb.CreateDefaultTransportParams{
+	updatedDispute, err := restate.Run(ctx, func(rctx restate.RunContext) (ordermodel.RefundDispute, error) {
+		tID, e := b.Storage.Querier().CreateTransport(rctx, orderrepo.CreateTransportParams{
 			Option: "default",
 			Data:   json.RawMessage(`{"direction":"return","leg":"seller-to-buyer"}`),
 		})
 		if e != nil {
-			return orderdb.OrderRefundDispute{}, fmt.Errorf("create return-to-buyer transport: %w", e)
+			return ordermodel.RefundDispute{}, fmt.Errorf("create return-to-buyer transport: %w", e)
 		}
 		// TODO: remove mock when real transport provider is wired up.
-		returnTransport, e := b.Storage.Querier().UpdateTransportStatusByID(rctx, orderdb.UpdateTransportStatusByIDParams{
-			ID:     t.ID,
-			Status: orderdb.NullOrderStatus{OrderStatus: orderdb.OrderStatusSuccess, Valid: true},
+		returnTransport, e := b.Storage.Querier().UpdateTransportStatusByID(rctx, orderrepo.UpdateTransportStatusByIDParams{
+			ID:     tID,
+			Status: null.StringFrom(string(ordermodel.StatusSuccess)),
 			Data:   json.RawMessage(`{"direction":"return","leg":"seller-to-buyer","mock":"auto-delivered"}`),
 		})
 		if e != nil {
-			return orderdb.OrderRefundDispute{}, fmt.Errorf("create return-to-buyer transport: %w", e)
+			return ordermodel.RefundDispute{}, fmt.Errorf("create return-to-buyer transport: %w", e)
 		}
 
-		if _, e := b.Storage.Querier().AdminUpholdDispute(rctx, orderdb.AdminUpholdDisputeParams{
+		if _, e := b.Storage.Querier().AdminUpholdDispute(rctx, orderrepo.AdminUpholdDisputeParams{
 			ID:                       pre.Refund.ID,
 			ReturnToBuyerTransportID: null.IntFrom(returnTransport.ID),
 			RejectionReason:          null.StringFrom(params.Note),
 		}); e != nil {
-			return orderdb.OrderRefundDispute{}, fmt.Errorf("uphold refund: %w", e)
+			return ordermodel.RefundDispute{}, fmt.Errorf("uphold refund: %w", e)
 		}
-		return b.Storage.Querier().ResolveRefundDispute(rctx, orderdb.ResolveRefundDisputeParams{
+		return b.Storage.Querier().ResolveRefundDispute(rctx, orderrepo.ResolveRefundDisputeParams{
 			ID:             pre.Dispute.ID,
-			Status:         orderdb.OrderDisputeStatusSellerWins,
+			Status:         ordermodel.DisputeStatusSellerWins,
 			ResolvedByID:   uuid.NullUUID{UUID: params.Account.ID, Valid: true},
 			ResolutionNote: null.StringFrom(params.Note),
 		})
@@ -137,10 +137,10 @@ func (b *DisputeHandler) AdminDismissDispute(
 		return zero, fmt.Errorf("execute refund credit: %w", err)
 	}
 
-	updatedDispute, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefundDispute, error) {
-		return b.Storage.Querier().ResolveRefundDispute(rctx, orderdb.ResolveRefundDisputeParams{
+	updatedDispute, err := restate.Run(ctx, func(rctx restate.RunContext) (ordermodel.RefundDispute, error) {
+		return b.Storage.Querier().ResolveRefundDispute(rctx, orderrepo.ResolveRefundDisputeParams{
 			ID:             pre.Dispute.ID,
-			Status:         orderdb.OrderDisputeStatusBuyerWins,
+			Status:         ordermodel.DisputeStatusBuyerWins,
 			ResolvedByID:   uuid.NullUUID{UUID: params.Account.ID, Valid: true},
 			ResolutionNote: null.StringFrom(params.Note),
 		})
@@ -170,8 +170,8 @@ func (b *DisputeHandler) AdminDismissDispute(
 }
 
 type disputeContext struct {
-	Dispute  orderdb.OrderRefundDispute
-	Refund   orderdb.OrderRefund
+	Dispute  ordermodel.RefundDispute
+	Refund   ordermodel.Refund
 	BuyerID  uuid.UUID
 	SellerID uuid.UUID
 }
@@ -180,22 +180,18 @@ func (b *DisputeHandler) loadDisputeForResolution(
 	ctx context.Context,
 	disputeID uuid.UUID,
 ) (disputeContext, error) {
-	dispute, e := b.Storage.Querier().GetRefundDispute(ctx, uuid.NullUUID{UUID: disputeID, Valid: true})
+	dispute, e := b.Storage.Querier().GetRefundDispute(ctx, disputeID)
 	if e != nil {
 		return disputeContext{}, ordermodel.ErrDisputeNotFound
 	}
-	if dispute.Status != orderdb.OrderDisputeStatusOpen {
+	if dispute.Status != ordermodel.DisputeStatusOpen {
 		return disputeContext{}, ordermodel.ErrDisputeRefundResolved
 	}
-	refund, e := b.Storage.Querier().GetRefund(ctx, orderdb.GetRefundParams{
-		ID: uuid.NullUUID{UUID: dispute.RefundID, Valid: true},
-	})
+	refund, e := b.Storage.Querier().GetRefund(ctx, dispute.RefundID)
 	if e != nil {
 		return disputeContext{}, fmt.Errorf("get refund: %w", e)
 	}
-	order, e := b.Storage.Querier().GetOrder(ctx, orderdb.GetOrderParams{
-		ID: uuid.NullUUID{UUID: refund.OrderID, Valid: true},
-	})
+	order, e := b.Storage.Querier().GetOrder(ctx, refund.OrderID)
 	if e != nil {
 		return disputeContext{}, fmt.Errorf("get order: %w", e)
 	}

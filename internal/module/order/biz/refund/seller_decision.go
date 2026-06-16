@@ -10,8 +10,8 @@ import (
 	accountmodel "shopnexus-server/internal/module/account/model"
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/shared/validator"
 
 	restate "github.com/restatedev/sdk-go"
@@ -38,13 +38,13 @@ func (b *RefundHandler) SellerApproveRefund(
 	}
 
 	// decision: load + authorize the refund and confirm the seller can still decide.
-	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
+	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (ordermodel.Refund, error) {
 		r, e := b.loadAndAuthSeller(rctx, params.RefundID, params.Account.ID)
 		if e != nil {
-			return orderdb.OrderRefund{}, fmt.Errorf("load seller refund: %w", e)
+			return ordermodel.Refund{}, fmt.Errorf("load seller refund: %w", e)
 		}
-		if !(ordermodel.Refund{OrderRefund: r}).CanSellerDecide() {
-			return orderdb.OrderRefund{}, ordermodel.ErrRefundWrongStage
+		if !r.CanSellerDecide() {
+			return ordermodel.Refund{}, ordermodel.ErrRefundWrongStage
 		}
 		return r, nil
 	})
@@ -101,13 +101,13 @@ func (b *RefundHandler) SellerDisputeRefund(
 	}
 
 	// decision: load + authorize the refund and confirm the seller can still decide.
-	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
+	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (ordermodel.Refund, error) {
 		r, e := b.loadAndAuthSeller(rctx, params.RefundID, params.Account.ID)
 		if e != nil {
-			return orderdb.OrderRefund{}, fmt.Errorf("load seller refund: %w", e)
+			return ordermodel.Refund{}, fmt.Errorf("load seller refund: %w", e)
 		}
-		if !(ordermodel.Refund{OrderRefund: r}).CanSellerDecide() {
-			return orderdb.OrderRefund{}, ordermodel.ErrRefundWrongStage
+		if !r.CanSellerDecide() {
+			return ordermodel.Refund{}, ordermodel.ErrRefundWrongStage
 		}
 		return r, nil
 	})
@@ -116,11 +116,11 @@ func (b *RefundHandler) SellerDisputeRefund(
 	}
 
 	// execution: flip the refund to Disputed and open the dispute row.
-	dispute, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefundDispute, error) {
+	dispute, err := restate.Run(ctx, func(rctx restate.RunContext) (ordermodel.RefundDispute, error) {
 		if _, e := b.Storage.Querier().SellerDisputeRefund(rctx, refund.ID); e != nil {
-			return orderdb.OrderRefundDispute{}, fmt.Errorf("dispute refund: %w", e)
+			return ordermodel.RefundDispute{}, fmt.Errorf("dispute refund: %w", e)
 		}
-		return b.Storage.Querier().OpenRefundDispute(rctx, orderdb.OpenRefundDisputeParams{
+		return b.Storage.Querier().OpenRefundDispute(rctx, orderrepo.OpenRefundDisputeParams{
 			RefundID:  refund.ID,
 			AccountID: params.Account.ID,
 			Reason:    params.Reason,
@@ -150,7 +150,8 @@ func (b *RefundHandler) SellerDisputeRefund(
 		return zero, fmt.Errorf("notify refund: %w", err)
 	}
 
-	return ordermodel.RefundDispute{OrderRefundDispute: dispute, Resources: resources}, nil
+	dispute.Resources = resources
+	return dispute, nil
 }
 
 // loadAndAuthSeller fetches the refund and verifies the caller is the order's
@@ -159,21 +160,17 @@ func (b *RefundHandler) loadAndAuthSeller(
 	ctx context.Context,
 	refundID uuid.UUID,
 	callerID uuid.UUID,
-) (orderdb.OrderRefund, error) {
-	refund, err := b.Storage.Querier().GetRefund(ctx, orderdb.GetRefundParams{
-		ID: uuid.NullUUID{UUID: refundID, Valid: true},
-	})
+) (ordermodel.Refund, error) {
+	refund, err := b.Storage.Querier().GetRefund(ctx, refundID)
 	if err != nil {
-		return orderdb.OrderRefund{}, fmt.Errorf("get refund: %w", err)
+		return ordermodel.Refund{}, fmt.Errorf("get refund: %w", err)
 	}
-	order, err := b.Storage.Querier().GetOrder(ctx, orderdb.GetOrderParams{
-		ID: uuid.NullUUID{UUID: refund.OrderID, Valid: true},
-	})
+	order, err := b.Storage.Querier().GetOrder(ctx, refund.OrderID)
 	if err != nil {
-		return orderdb.OrderRefund{}, fmt.Errorf("get order: %w", err)
+		return ordermodel.Refund{}, fmt.Errorf("get order: %w", err)
 	}
 	if order.SellerID != callerID {
-		return orderdb.OrderRefund{}, ordermodel.ErrItemNotOwnedBySeller
+		return ordermodel.Refund{}, ordermodel.ErrItemNotOwnedBySeller
 	}
 	return refund, nil
 }

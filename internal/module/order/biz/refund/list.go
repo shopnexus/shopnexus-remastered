@@ -10,8 +10,8 @@ import (
 
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/validator"
 )
@@ -32,7 +32,7 @@ func (b *RefundHandler) ListBuyerRefunds(
 		return zero, fmt.Errorf("validate list buyer refunds: %w", err)
 	}
 
-	res, err := b.Storage.Querier().ListRefund(ctx, orderdb.ListRefundParams{
+	res, err := b.Storage.Querier().ListRefund(ctx, orderrepo.ListRefundParams{
 		Params:    params.Params,
 		AccountId: []uuid.UUID{params.BuyerID},
 	})
@@ -70,7 +70,7 @@ func (b *RefundHandler) ListSellerRefunds(
 	if err := validator.Validate(params); err != nil {
 		return zero, fmt.Errorf("validate list seller refunds: %w", err)
 	}
-	rows, err := b.Storage.Querier().ListSellerRefunds(ctx, orderdb.ListSellerRefundsParams{
+	rows, err := b.Storage.Querier().ListSellerRefunds(ctx, orderrepo.ListSellerRefundsParams{
 		SellerID: params.SellerID,
 		Offset:   params.Offset(),
 		Limit:    params.Limit,
@@ -85,17 +85,15 @@ func (b *RefundHandler) ListSellerRefunds(
 	// Map resources to refunds
 	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeRefund,
-		RefIDs:  lo.Map(rows, func(r orderdb.ListSellerRefundsRow, _ int) uuid.UUID { return r.OrderRefund.ID }),
+		RefIDs:  lo.Map(rows, func(r ordermodel.WithTotal[ordermodel.Refund], _ int) uuid.UUID { return r.Row.ID }),
 	})
 	if err != nil {
 		return zero, fmt.Errorf("list refund resources: %w", err)
 	}
 
-	refunds := lo.Map(rows, func(r orderdb.ListSellerRefundsRow, _ int) ordermodel.Refund {
-		return ordermodel.Refund{
-			OrderRefund: r.OrderRefund,
-			Resources:   resourcesMap[r.OrderRefund.ID],
-		}
+	refunds := lo.Map(rows, func(r ordermodel.WithTotal[ordermodel.Refund], _ int) ordermodel.Refund {
+		r.Row.Resources = resourcesMap[r.Row.ID]
+		return r.Row
 	})
 	return paginate.PaginateResult[ordermodel.Refund]{
 		PageParams: params.Params,

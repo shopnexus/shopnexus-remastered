@@ -7,8 +7,8 @@ import (
 
 	"shopnexus-server/internal/infras/metrics"
 	accountmodel "shopnexus-server/internal/module/account/model"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/shared/validator"
 
 	restate "github.com/restatedev/sdk-go"
@@ -21,12 +21,14 @@ type WithdrawBuyerRefundParams struct {
 	RefundID uuid.UUID `validate:"required"`
 }
 
-// WithdrawBuyerRefund cancels a Shipping refund at the buyer's request. Only
-// the buyer who created the refund can withdraw, and only while the goods are
-// still in transit — once the seller has the items (AwaitingSellerReview),
-// withdraw is blocked. The refund row flips to Cancelled (terminal), the
-// payout watcher resumes the seller's escrow, and the workflow exits via the
-// "withdrawn" promise.
+// WithdrawBuyerRefund cancels a refund at the buyer's request. Only the buyer
+// who created the refund can withdraw, and only while the return transport is
+// still Pending (not yet picked up by the carrier) — once it starts moving
+// (Processing onward) the goods have left the buyer and withdraw is blocked.
+// The SQL joins return_transport_id and guards on transport status, so a
+// zero-row update means the refund is non-withdrawable OR the caller is not the
+// buyer. The refund row flips to Cancelled (terminal), the payout watcher
+// resumes the seller's escrow, and the workflow exits via the "withdrawn" promise.
 func (b *RefundHandler) WithdrawBuyerRefund(
 	ctx restate.Context,
 	params WithdrawBuyerRefundParams,
@@ -43,13 +45,13 @@ func (b *RefundHandler) WithdrawBuyerRefund(
 	// AND account_id=caller, so a row update of zero means the refund is in a
 	// non-withdrawable state OR the caller is not the buyer. We translate that
 	// to ErrRefundNotWithdrawable rather than leaking ErrNoRows.
-	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
-		r, e := b.Storage.Querier().WithdrawBuyerRefund(rctx, orderdb.WithdrawBuyerRefundParams{
+	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (ordermodel.Refund, error) {
+		r, e := b.Storage.Querier().WithdrawBuyerRefund(rctx, orderrepo.WithdrawBuyerRefundParams{
 			ID:        params.RefundID,
 			AccountID: params.Account.ID,
 		})
 		if e != nil {
-			return orderdb.OrderRefund{}, ordermodel.ErrRefundNotWithdrawable
+			return ordermodel.Refund{}, ordermodel.ErrRefundNotWithdrawable
 		}
 		return r, nil
 	})
@@ -68,10 +70,8 @@ func (b *RefundHandler) WithdrawBuyerRefund(
 	}
 
 	// 2. notify seller (was waiting on the inbound return) so their UI clears.
-	order, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderOrder, error) {
-		return b.Storage.Querier().GetOrder(rctx, orderdb.GetOrderParams{
-			ID: uuid.NullUUID{UUID: refund.OrderID, Valid: true},
-		})
+	order, err := restate.Run(ctx, func(rctx restate.RunContext) (ordermodel.Order, error) {
+		return b.Storage.Querier().GetOrder(rctx, refund.OrderID)
 	})
 	if err == nil {
 		if err = b.NotifyRefund(ctx, order.SellerID, accountmodel.NotiRefundRequested,

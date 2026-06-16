@@ -11,8 +11,8 @@ import (
 	accountmodel "shopnexus-server/internal/module/account/model"
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/validator"
 )
@@ -21,8 +21,8 @@ type ListRefundDisputesParams struct {
 	paginate.Params
 
 	Account  accountmodel.AuthenticatedAccount
-	RefundID uuid.NullUUID              `validate:"omitnil"`
-	Status   orderdb.OrderDisputeStatus `validate:"omitempty,validateFn=Valid"`
+	RefundID uuid.NullUUID         `validate:"omitnil"`
+	Status   ordermodel.DisputeStatus `validate:"omitempty,validateFn=Valid"`
 }
 
 // ListRefundDisputes powers the admin queue and buyer/seller visibility.
@@ -39,16 +39,13 @@ func (b *DisputeHandler) ListRefundDisputes(
 	}
 
 	var (
-		statusFilter orderdb.NullOrderDisputeStatus
+		statusFilter null.String
 		refundFilter uuid.NullUUID
 		buyerFilter  uuid.NullUUID
 		sellerFilter uuid.NullUUID
 	)
 	if params.Status != "" {
-		statusFilter = orderdb.NullOrderDisputeStatus{
-			OrderDisputeStatus: orderdb.OrderDisputeStatus(params.Status),
-			Valid:              true,
-		}
+		statusFilter = null.StringFrom(string(params.Status))
 	}
 	if params.RefundID.Valid {
 		refundFilter = params.RefundID
@@ -58,7 +55,7 @@ func (b *DisputeHandler) ListRefundDisputes(
 		sellerFilter = uuid.NullUUID{UUID: params.Account.ID, Valid: true}
 	}
 
-	rows, err := b.Storage.Querier().ListRefundDisputes(ctx, orderdb.ListRefundDisputesParams{
+	rows, err := b.Storage.Querier().ListRefundDisputes(ctx, orderrepo.ListRefundDisputesParams{
 		Status:         statusFilter,
 		RefundID:       refundFilter,
 		CallerBuyerID:  buyerFilter,
@@ -76,17 +73,15 @@ func (b *DisputeHandler) ListRefundDisputes(
 	// Map resources to disputes
 	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeRefundDispute,
-		RefIDs:  lo.Map(rows, func(r orderdb.ListRefundDisputesRow, _ int) uuid.UUID { return r.OrderRefundDispute.ID }),
+		RefIDs:  lo.Map(rows, func(r ordermodel.WithTotal[ordermodel.RefundDispute], _ int) uuid.UUID { return r.Row.ID }),
 	})
 	if err != nil {
 		return zero, fmt.Errorf("list dispute resources: %w", err)
 	}
 
-	disputes := lo.Map(rows, func(r orderdb.ListRefundDisputesRow, _ int) ordermodel.RefundDispute {
-		return ordermodel.RefundDispute{
-			OrderRefundDispute: r.OrderRefundDispute,
-			Resources:          resourcesMap[r.OrderRefundDispute.ID],
-		}
+	disputes := lo.Map(rows, func(r ordermodel.WithTotal[ordermodel.RefundDispute], _ int) ordermodel.RefundDispute {
+		r.Row.Resources = resourcesMap[r.Row.ID]
+		return r.Row
 	})
 	return paginate.PaginateResult[ordermodel.RefundDispute]{
 		PageParams: params.Params,
@@ -111,19 +106,15 @@ func (b *DisputeHandler) GetRefundDispute(
 		return zero, fmt.Errorf("validate get dispute: %w", err)
 	}
 
-	dbDispute, err := b.Storage.Querier().GetRefundDispute(ctx, uuid.NullUUID{UUID: params.DisputeID, Valid: true})
+	dbDispute, err := b.Storage.Querier().GetRefundDispute(ctx, params.DisputeID)
 	if err != nil {
 		return zero, ordermodel.ErrDisputeNotFound
 	}
-	refund, err := b.Storage.Querier().GetRefund(ctx, orderdb.GetRefundParams{
-		ID: uuid.NullUUID{UUID: dbDispute.RefundID, Valid: true},
-	})
+	refund, err := b.Storage.Querier().GetRefund(ctx, dbDispute.RefundID)
 	if err != nil {
 		return zero, fmt.Errorf("get refund: %w", err)
 	}
-	order, err := b.Storage.Querier().GetOrder(ctx, orderdb.GetOrderParams{
-		ID: uuid.NullUUID{UUID: refund.OrderID, Valid: true},
-	})
+	order, err := b.Storage.Querier().GetOrder(ctx, refund.OrderID)
 	if err != nil {
 		return zero, fmt.Errorf("get order: %w", err)
 	}
