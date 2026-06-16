@@ -30,18 +30,20 @@ type ModelStruct struct {
 // keyed by struct name. Generated *_gen.go files declare no db-tagged structs,
 // so re-parsing the output dir is harmless.
 func ParseModelDir(dir string) (map[string]*ModelStruct, error) {
-	m, _, err := ParseModelDirWithPkg(dir)
+	m, _, _, err := ParseModelDirWithPkg(dir)
 	return m, err
 }
 
-// ParseModelDirWithPkg is like ParseModelDir but also returns the package name.
-func ParseModelDirWithPkg(dir string) (map[string]*ModelStruct, string, error) {
+// ParseModelDirWithPkg is like ParseModelDir but also returns the package name
+// and the set of all type names declared in the package (structs, enums, etc.).
+func ParseModelDirWithPkg(dir string) (map[string]*ModelStruct, string, map[string]bool, error) {
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 	out := make(map[string]*ModelStruct)
+	localTypes := make(map[string]bool)
 	pkgName := ""
 	for name, pkg := range pkgs {
 		pkgName = name
@@ -49,9 +51,23 @@ func ParseModelDirWithPkg(dir string) (map[string]*ModelStruct, string, error) {
 			for n, ms := range collectStructs(fset, file) {
 				out[n] = ms
 			}
+			// Collect all type names declared in this file.
+			for _, decl := range file.Decls {
+				gd, ok := decl.(*ast.GenDecl)
+				if !ok {
+					continue
+				}
+				for _, spec := range gd.Specs {
+					ts, ok := spec.(*ast.TypeSpec)
+					if !ok {
+						continue
+					}
+					localTypes[ts.Name.Name] = true
+				}
+			}
 		}
 	}
-	return out, pkgName, nil
+	return out, pkgName, localTypes, nil
 }
 
 // fileImports maps each import's local name to its path. A named import uses the

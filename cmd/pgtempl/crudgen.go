@@ -9,10 +9,36 @@ import (
 // CrudGenerator emits Create/Get/Update/Delete for one table into Package, on a
 // *Receiver. Types come from the matched model's db-tagged fields.
 type CrudGenerator struct {
-	Package   string // e.g. "orderrepo"
-	Receiver  string // e.g. "Repository"
-	ModelPkg  string // e.g. "ordermodel"; if set, entity type is qualified
-	ModelPath string // import path for ModelPkg, e.g. "shopnexus-server/internal/module/order/model"
+	Package    string          // e.g. "orderrepo"
+	Receiver   string          // e.g. "Repository"
+	ModelPkg   string          // e.g. "ordermodel"; if set, entity type is qualified
+	ModelPath  string          // import path for ModelPkg, e.g. "shopnexus-server/internal/module/order/model"
+	LocalTypes map[string]bool // type names declared in the model package (structs, enums, …)
+}
+
+// qual qualifies a bare model-package-local type with ModelPkg (e.g. "Status" ->
+// "ordermodel.Status"). Handles []T and *T prefixes. Leaves builtins and already-
+// qualified types (with a ".") untouched.
+func (g *CrudGenerator) qual(t string) string {
+	if g.ModelPkg == "" {
+		return t
+	}
+	prefix := ""
+	for {
+		if strings.HasPrefix(t, "[]") {
+			prefix += "[]"
+			t = t[2:]
+		} else if strings.HasPrefix(t, "*") {
+			prefix += "*"
+			t = t[1:]
+		} else {
+			break
+		}
+	}
+	if g.LocalTypes[t] && !strings.Contains(t, ".") {
+		return prefix + g.ModelPkg + "." + t
+	}
+	return prefix + t
 }
 
 // crudItem pairs a table with its matched entity model.
@@ -109,7 +135,7 @@ func (g *CrudGenerator) crudBody(table *Table, model *ModelStruct, imp *importSe
 			return "", false, err
 		}
 		imp.useType(mf, model)
-		fmt.Fprintf(&b, "\t%s %s\n", mf.GoName, mf.GoType)
+		fmt.Fprintf(&b, "\t%s %s\n", mf.GoName, g.qual(mf.GoType))
 	}
 	b.WriteString("}\n\n")
 
@@ -148,7 +174,7 @@ func (g *CrudGenerator) crudBody(table *Table, model *ModelStruct, imp *importSe
 				return "", false, err
 			}
 			imp.useType(mf, model)
-			fmt.Fprintf(&b, "\t%s patch.Optional[%s]\n", mf.GoName, mf.GoType)
+			fmt.Fprintf(&b, "\t%s patch.Optional[%s]\n", mf.GoName, g.qual(mf.GoType))
 		}
 		b.WriteString("}\n\n")
 
@@ -205,6 +231,27 @@ func (g *CrudGenerator) listBody(table *Table, model *ModelStruct, imp *importSe
 	var ri repoImports
 	var structLines, condLines []string
 	for _, col := range table.FilterableColumns() {
+		// Skip enum columns: their IN-filter element type is either a model-
+		// package-local type (e.g. Status) or an enumGoName that is undefined in
+		// the repo package. Detect via: (a) the DB column is a schema-qualified
+		// user type (isEnum), or (b) the matched model field's base Go type is in
+		// LocalTypes.
+		if isEnum(col) {
+			continue
+		}
+		if mf, ok := model.ByDB[col.Name]; ok {
+			base := mf.GoType
+			for strings.HasPrefix(base, "[]") || strings.HasPrefix(base, "*") {
+				if strings.HasPrefix(base, "[]") {
+					base = base[2:]
+				} else {
+					base = base[1:]
+				}
+			}
+			if g.LocalTypes[base] {
+				continue
+			}
+		}
 		ff, ok := buildFilterField(col, &ri)
 		if !ok {
 			continue
@@ -330,49 +377,85 @@ func usedQualifiers2(goType string) map[string]bool {
 	return found
 }
 
+// isStdlibPath reports whether an import path belongs to the Go standard
+// library. Stdlib root segments never contain a dot (no domain) and never
+// contain a hyphen (no module names). E.g. "time", "encoding/json" → true;
+// "shopnexus-server/…", "github.com/…" → false.
+func isStdlibPath(path string) bool {
+	seg := path
+	if i := strings.IndexByte(path, '/'); i >= 0 {
+		seg = path[:i]
+	}
+	return !strings.Contains(seg, ".") && !strings.Contains(seg, "-")
+}
+
 func (s *importSet) block() string {
-	std := []string{`"context"`}
+	// Stdlib group: always context; optionally strings, time.
+	stdSet := map[string]bool{`"context"`: true}
 	if s.strings {
-		std = append(std, `"strings"`)
+		stdSet[`"strings"`] = true
 	}
 	if s.stdTime {
-		std = append(std, `"time"`)
+		stdSet[`"time"`] = true
 	}
-	third := []string{`"github.com/jackc/pgx/v5"`}
+
+	// Fixed third-party / internal entries (keyed by quoted path for dedup).
+	thirdSet := map[string]bool{`"github.com/jackc/pgx/v5"`: true}
 	if s.patch {
-		third = append(third, `"shopnexus-server/internal/shared/patch"`)
+		thirdSet[`"shopnexus-server/internal/shared/patch"`] = true
 	}
 	if s.paginate {
-		third = append(third, `"shopnexus-server/internal/shared/paginate"`)
+		thirdSet[`"shopnexus-server/internal/shared/paginate"`] = true
 	}
 	if s.repolist {
-		third = append(third, `"shopnexus-server/internal/shared/repolist"`)
+		thirdSet[`"shopnexus-server/internal/shared/repolist"`] = true
 	}
-	var modelImps []string
+
+	// ext entries: classify and deduplicate. Stdlib paths (first segment has no
+	// dot) go into stdSet; everything else into third-party unless already present.
+	var extThird []string
 	for local, path := range s.ext {
-		// Emit an explicit alias whenever the qualifier used in the generated
-		// code (local) differs from the path's last segment — covers versioned
-		// paths (null/v6 used as `null`) and renamed packages (db/sqlc as
-		// `orderdb`). Without it the import resolves to the package's declared
-		// name, which may not match the qualifier and won't compile.
+		quoted := fmt.Sprintf("%q", path)
+		var line string
+		// Emit an explicit alias whenever the qualifier differs from the last
+		// path segment — covers versioned paths (null/v6 → null) and renamed
+		// packages (order/model → ordermodel).
 		if seg := path[strings.LastIndexByte(path, '/')+1:]; seg != local {
-			modelImps = append(modelImps, fmt.Sprintf("%s %q", local, path))
+			line = fmt.Sprintf("%s %q", local, path)
 		} else {
-			modelImps = append(modelImps, fmt.Sprintf("%q", path))
+			line = quoted
 		}
+		if isStdlibPath(path) {
+			// Promote to stdlib group; skip adding to ext list.
+			stdSet[quoted] = true
+			continue
+		}
+		if thirdSet[quoted] {
+			// Already covered by a fixed entry.
+			continue
+		}
+		extThird = append(extThird, line)
 	}
+
+	var std []string
+	for entry := range stdSet {
+		std = append(std, entry)
+	}
+	var third []string
+	for entry := range thirdSet {
+		third = append(third, entry)
+	}
+	third = append(third, extThird...)
+
 	sort.Strings(std)
 	sort.Strings(third)
-	sort.Strings(modelImps)
 
 	var b strings.Builder
 	b.WriteString("import (\n\t")
 	b.WriteString(strings.Join(std, "\n\t"))
-	b.WriteString("\n\n\t")
-	b.WriteString(strings.Join(third, "\n\t"))
-	if len(modelImps) > 0 {
+	if len(third) > 0 {
 		b.WriteString("\n\n\t")
-		b.WriteString(strings.Join(modelImps, "\n\t"))
+		b.WriteString(strings.Join(third, "\n\t"))
 	}
 	b.WriteString("\n)")
 	return b.String()

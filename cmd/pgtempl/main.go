@@ -96,7 +96,7 @@ func generateForModule(module, outputDir, tableName string, singleFile string, s
 
 	if emit == "crud" {
 		modelDir := filepath.Join("internal", "module", module, "model")
-		models, pkgName, err := ParseModelDirWithPkg(modelDir)
+		models, pkgName, localTypes, err := ParseModelDirWithPkg(modelDir)
 		if err != nil {
 			return fmt.Errorf("parse models: %w", err)
 		}
@@ -108,10 +108,11 @@ func generateForModule(module, outputDir, tableName string, singleFile string, s
 			return fmt.Errorf("create output dir: %w", err)
 		}
 		gen := &CrudGenerator{
-			Package:   module + "repo",
-			Receiver:  "Repository",
-			ModelPkg:  pkgName,
-			ModelPath: "shopnexus-server/internal/module/" + module + "/model",
+			Package:    module + "repo",
+			Receiver:   "Repository",
+			ModelPkg:   pkgName,
+			ModelPath:  "shopnexus-server/internal/module/" + module + "/model",
+			LocalTypes: localTypes,
 		}
 		writeCrudFile(tables, models, gen, out)
 		fmt.Printf("[%s] Generated crud+list repo in %s\n", module, out)

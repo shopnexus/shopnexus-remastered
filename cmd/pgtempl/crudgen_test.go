@@ -104,3 +104,44 @@ func TestGenerateFileEmitsList(t *testing.T) {
 		t.Fatalf("not gofmt-valid: %v\n%s", err, body)
 	}
 }
+
+func TestGenerateCRUDQualifiesLocalEnumAndDedupsImports(t *testing.T) {
+	tbl := &Table{
+		Schema: "order", Name: "transaction",
+		Columns: []*Column{
+			{Name: "id", Type: "uuid", PrimaryKey: true},
+			{Name: "status", Type: "order.order_status"},
+			{Name: "date_created", Type: "timestamptz"},
+		},
+		PrimaryKeys: []*Column{{Name: "id", Type: "uuid", PrimaryKey: true}},
+	}
+	f := func(n, gt, db string) ModelField { return ModelField{GoName: n, GoType: gt, DBTag: db} }
+	m := &ModelStruct{Name: "Transaction", ByDB: map[string]ModelField{},
+		Imports: map[string]string{"uuid": "github.com/google/uuid", "time": "time"}}
+	for _, mf := range []ModelField{f("ID", "uuid.UUID", "id"), f("Status", "Status", "status"), f("DateCreated", "time.Time", "date_created")} {
+		m.Fields = append(m.Fields, mf)
+		m.ByDB[mf.DBTag] = mf
+	}
+	g := &CrudGenerator{Package: "orderrepo", Receiver: "Repository",
+		ModelPkg: "ordermodel", ModelPath: "shopnexus-server/internal/module/order/model",
+		LocalTypes: map[string]bool{"Transaction": true, "Status": true}}
+	body, err := g.GenerateFile([]crudItem{{tbl, m}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := format.Source([]byte(body)); err != nil {
+		t.Fatalf("not gofmt-valid: %v\n%s", err, body)
+	}
+	if !strings.Contains(body, "Status ordermodel.Status") {
+		t.Error("Create param must use ordermodel.Status")
+	}
+	if !strings.Contains(body, "patch.Optional[ordermodel.Status]") {
+		t.Error("Update param must use ordermodel.Status")
+	}
+	if strings.Contains(body, "[]Status") || strings.Contains(body, "[]OrderStatus") {
+		t.Error("List must NOT emit an enum IN-filter")
+	}
+	if strings.Count(body, `"time"`) != 1 {
+		t.Errorf("time must be imported exactly once, got %d", strings.Count(body, `"time"`))
+	}
+}
