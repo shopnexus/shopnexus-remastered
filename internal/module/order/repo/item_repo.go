@@ -126,7 +126,7 @@ func (r *Repository) ListBuyerCancelledItems(ctx context.Context, accountID uuid
 	var items []ordermodel.OrderItem
 	for rows.Next() {
 		var i ordermodel.OrderItem
-		if err := rows.Scan(
+		if err = rows.Scan(
 			&i.ID,
 			&i.OrderID,
 			&i.AccountID,
@@ -151,7 +151,7 @@ func (r *Repository) ListBuyerCancelledItems(ctx context.Context, accountID uuid
 		}
 		items = append(items, i)
 	}
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		return nil, err
 	}
 	return items, nil
@@ -176,7 +176,7 @@ func (r *Repository) ListBuyerPendingItems(ctx context.Context, accountID uuid.U
 	var items []ordermodel.OrderItem
 	for rows.Next() {
 		var i ordermodel.OrderItem
-		if err := rows.Scan(
+		if err = rows.Scan(
 			&i.ID,
 			&i.OrderID,
 			&i.AccountID,
@@ -201,7 +201,7 @@ func (r *Repository) ListBuyerPendingItems(ctx context.Context, accountID uuid.U
 		}
 		items = append(items, i)
 	}
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		return nil, err
 	}
 	return items, nil
@@ -218,7 +218,7 @@ func (r *Repository) ListItemsByPaymentSession(ctx context.Context, paymentSessi
 	var items []ordermodel.OrderItem
 	for rows.Next() {
 		var i ordermodel.OrderItem
-		if err := rows.Scan(
+		if err = rows.Scan(
 			&i.ID,
 			&i.OrderID,
 			&i.AccountID,
@@ -243,7 +243,7 @@ func (r *Repository) ListItemsByPaymentSession(ctx context.Context, paymentSessi
 		}
 		items = append(items, i)
 	}
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		return nil, err
 	}
 	return items, nil
@@ -263,7 +263,7 @@ func (r *Repository) ListPendingPaymentItemsByPaymentSession(ctx context.Context
 	var items []ordermodel.OrderItem
 	for rows.Next() {
 		var i ordermodel.OrderItem
-		if err := rows.Scan(
+		if err = rows.Scan(
 			&i.ID,
 			&i.OrderID,
 			&i.AccountID,
@@ -288,7 +288,7 @@ func (r *Repository) ListPendingPaymentItemsByPaymentSession(ctx context.Context
 		}
 		items = append(items, i)
 	}
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		return nil, err
 	}
 	return items, nil
@@ -313,7 +313,7 @@ func (r *Repository) ListSellerPendingItems(ctx context.Context, sellerID uuid.U
 	var items []ordermodel.OrderItem
 	for rows.Next() {
 		var i ordermodel.OrderItem
-		if err := rows.Scan(
+		if err = rows.Scan(
 			&i.ID,
 			&i.OrderID,
 			&i.AccountID,
@@ -338,7 +338,7 @@ func (r *Repository) ListSellerPendingItems(ctx context.Context, sellerID uuid.U
 		}
 		items = append(items, i)
 	}
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		return nil, err
 	}
 	return items, nil

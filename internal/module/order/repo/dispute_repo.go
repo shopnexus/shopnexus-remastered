@@ -130,7 +130,7 @@ func (r *Repository) ListRefundDisputes(ctx context.Context, arg ListRefundDispu
 	var items []ordermodel.WithTotal[ordermodel.RefundDispute]
 	for rows.Next() {
 		var w ordermodel.WithTotal[ordermodel.RefundDispute]
-		if err := rows.Scan(
+		if err = rows.Scan(
 			&w.Row.ID,
 			&w.Row.RefundID,
 			&w.Row.AccountID,
@@ -146,7 +146,7 @@ func (r *Repository) ListRefundDisputes(ctx context.Context, arg ListRefundDispu
 		}
 		items = append(items, w)
 	}
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		return nil, err
 	}
 	return items, nil
