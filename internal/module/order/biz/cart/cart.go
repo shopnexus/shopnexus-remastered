@@ -2,11 +2,12 @@ package cart
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
+	restate "github.com/restatedev/sdk-go"
+	"github.com/samber/lo"
 
 	accountmodel "shopnexus-server/internal/module/account/model"
 	analyticbiz "shopnexus-server/internal/module/analytic/biz"
@@ -17,13 +18,9 @@ import (
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	commonmodel "shopnexus-server/internal/module/common/model"
 	"shopnexus-server/internal/module/order/biz/base"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/shared/validator"
-
-	"github.com/google/uuid"
-	restate "github.com/restatedev/sdk-go"
-	"github.com/samber/lo"
 )
 
 // CartHandler implements CartBiz over the shared core.
@@ -44,7 +41,7 @@ func New(
 
 // CartBiz covers the buyer's shopping cart.
 type CartBiz interface {
-	GetCart(ctx context.Context, params GetCartParams) ([]ordermodel.CartItem, error)
+	GetCart(ctx context.Context, params GetCartParams) ([]ordermodel.CartItemView, error)
 	UpdateCart(ctx restate.Context, params UpdateCartParams) error
 	ClearCart(ctx restate.Context, params ClearCartParams) error
 }
@@ -54,11 +51,11 @@ type GetCartParams struct {
 }
 
 // GetCart returns all cart items for the given account with SKU details and product images.
-func (b *CartHandler) GetCart(ctx context.Context, params GetCartParams) ([]ordermodel.CartItem, error) {
+func (b *CartHandler) GetCart(ctx context.Context, params GetCartParams) ([]ordermodel.CartItemView, error) {
 	if err := validator.Validate(params); err != nil {
 		return nil, fmt.Errorf("validate get cart params: %w", err)
 	}
-	cartItemsRes, err := b.Storage.Querier().ListCartItem(ctx, orderdb.ListCartItemParams{
+	cartItemsRes, err := b.Storage.Querier().ListCartItem(ctx, orderrepo.ListCartItemParams{
 		AccountId: []uuid.UUID{params.AccountID},
 	})
 	if err != nil {
@@ -67,7 +64,7 @@ func (b *CartHandler) GetCart(ctx context.Context, params GetCartParams) ([]orde
 	cartItems := cartItemsRes.Data
 
 	skus, err := b.catalog.ListProductSku(ctx, catalogbiz.ListProductSkuParams{
-		ID: lo.Map(cartItems, func(c orderdb.OrderCartItem, _ int) uuid.UUID { return c.SkuID }),
+		ID: lo.Map(cartItems, func(c ordermodel.CartItem, _ int) uuid.UUID { return c.SkuID }),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list cart skus: %w", err)
@@ -96,7 +93,7 @@ func (b *CartHandler) GetCart(ctx context.Context, params GetCartParams) ([]orde
 		return s.ID, s.Currency
 	})
 
-	items := make([]ordermodel.CartItem, 0, len(cartItems))
+	items := make([]ordermodel.CartItemView, 0, len(cartItems))
 	for _, cartItem := range cartItems {
 		sku := skuMap[cartItem.SkuID]
 
@@ -105,7 +102,7 @@ func (b *CartHandler) GetCart(ctx context.Context, params GetCartParams) ([]orde
 			resource = &res[0]
 		}
 
-		items = append(items, ordermodel.CartItem{
+		items = append(items, ordermodel.CartItemView{
 			SpuID:    sku.SpuID,
 			Sku:      sku,
 			Quantity: cartItem.Quantity,
@@ -137,24 +134,28 @@ func (b *CartHandler) UpdateCart(ctx restate.Context, params UpdateCartParams) e
 		var newQuantity int64
 
 		if params.DeltaQuantity.Valid {
-			cartItem, err := b.Storage.Querier().GetCartItem(rctx, orderdb.GetCartItemParams{
-				AccountID: uuid.NullUUID{UUID: params.Account.ID, Valid: true},
-				SkuID:     uuid.NullUUID{UUID: params.SkuID, Valid: true},
+			cartItemsRes, err := b.Storage.Querier().ListCartItem(rctx, orderrepo.ListCartItemParams{
+				AccountId: []uuid.UUID{params.Account.ID},
+				SkuId:     []uuid.UUID{params.SkuID},
 			})
-			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			if err != nil {
 				return "", err
 			}
-			newQuantity = cartItem.Quantity + params.DeltaQuantity.Int64
+			var existing int64
+			if len(cartItemsRes.Data) > 0 {
+				existing = cartItemsRes.Data[0].Quantity
+			}
+			newQuantity = existing + params.DeltaQuantity.Int64
 		} else if params.Quantity.Valid {
 			newQuantity = params.Quantity.Int64
 		} else {
 			return "", ordermodel.ErrQuantityParamRequired
 		}
 
-		// If quantity = 0, remove cart item and return early
+		// If quantity = 0, remove cart item and return early.
 		if params.Quantity.Valid && params.Quantity.Int64 <= 0 {
-			if err := b.Storage.Querier().DeleteCartItem(rctx, orderdb.DeleteCartItemParams{
-				AccountID: []uuid.UUID{params.Account.ID},
+			if _, err := b.Storage.Querier().RemoveCheckoutItem(rctx, orderrepo.RemoveCheckoutItemParams{
+				AccountID: params.Account.ID,
 				SkuID:     []uuid.UUID{params.SkuID},
 			}); err != nil {
 				return "", err
@@ -162,7 +163,7 @@ func (b *CartHandler) UpdateCart(ctx restate.Context, params UpdateCartParams) e
 			return analyticmodel.EventRemoveFromCart, nil
 		}
 
-		if err := b.Storage.Querier().UpdateCart(rctx, orderdb.UpdateCartParams{
+		if err := b.Storage.Querier().UpdateCart(rctx, orderrepo.UpdateCartParams{
 			AccountID: params.Account.ID,
 			SkuID:     params.SkuID,
 			Quantity:  newQuantity,
@@ -193,10 +194,22 @@ type ClearCartParams struct {
 
 // ClearCart removes all items from the account's cart.
 func (b *CartHandler) ClearCart(ctx restate.Context, params ClearCartParams) error {
-	// execution: drop every cart row for the account.
+	// execution: list then remove all cart rows for the account.
 	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-		return b.Storage.Querier().DeleteCartItem(rctx, orderdb.DeleteCartItemParams{
-			AccountID: []uuid.UUID{params.Account.ID},
+		cartItemsRes, err := b.Storage.Querier().ListCartItem(rctx, orderrepo.ListCartItemParams{
+			AccountId: []uuid.UUID{params.Account.ID},
 		})
+		if err != nil {
+			return err
+		}
+		if len(cartItemsRes.Data) == 0 {
+			return nil
+		}
+		skuIDs := lo.Map(cartItemsRes.Data, func(c ordermodel.CartItem, _ int) uuid.UUID { return c.SkuID })
+		_, err = b.Storage.Querier().RemoveCheckoutItem(rctx, orderrepo.RemoveCheckoutItemParams{
+			AccountID: params.Account.ID,
+			SkuID:     skuIDs,
+		})
+		return err
 	})
 }

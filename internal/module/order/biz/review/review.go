@@ -14,7 +14,7 @@ import (
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	"shopnexus-server/internal/module/order/biz/base"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/shared/validator"
 )
 
@@ -51,7 +51,7 @@ func (b *ReviewHandler) HasPurchasedProduct(ctx context.Context, params HasPurch
 		return false, fmt.Errorf("validate has purchased product: %w", err)
 	}
 
-	return b.Storage.Querier().HasPurchasedSku(ctx, orderdb.HasPurchasedSkuParams{
+	return b.Storage.Querier().HasPurchasedSku(ctx, orderrepo.HasPurchasedSkuParams{
 		AccountID: params.AccountID,
 		SkuIds:    params.SkuIDs,
 	})
@@ -76,7 +76,7 @@ func (b *ReviewHandler) ListReviewableOrders(
 		return nil, fmt.Errorf("validate list reviewable orders: %w", err)
 	}
 
-	orders, err := b.Storage.Querier().ListSuccessOrdersBySkus(ctx, orderdb.ListSuccessOrdersBySkusParams{
+	orders, err := b.Storage.Querier().ListSuccessOrdersBySkus(ctx, orderrepo.ListSuccessOrdersBySkusParams{
 		BuyerID: params.AccountID,
 		SkuIds:  params.SkuIDs,
 	})
@@ -106,7 +106,7 @@ func (b *ReviewHandler) ValidateOrderForReview(ctx context.Context, params Valid
 		return false, fmt.Errorf("validate order for review: %w", err)
 	}
 
-	return b.Storage.Querier().ValidateOrderForReview(ctx, orderdb.ValidateOrderForReviewParams{
+	return b.Storage.Querier().ValidateOrderForReview(ctx, orderrepo.ValidateOrderForReviewParams{
 		OrderID: params.OrderID,
 		BuyerID: params.AccountID,
 		SkuIds:  params.SkuIDs,
@@ -183,7 +183,7 @@ func (b *ReviewHandler) CreateProductReview(
 
 	// decision: verify the order is reviewable by this buyer.
 	valid, err := restate.Run(ctx, func(rctx restate.RunContext) (bool, error) {
-		return b.Storage.Querier().ValidateOrderForReview(rctx, orderdb.ValidateOrderForReviewParams{
+		return b.Storage.Querier().ValidateOrderForReview(rctx, orderrepo.ValidateOrderForReviewParams{
 			OrderID: params.OrderID,
 			BuyerID: params.Account.ID,
 			SkuIds:  skuIDs,
@@ -208,3 +208,4 @@ func (b *ReviewHandler) CreateProductReview(
 		ResourceIDs: params.ResourceIDs,
 	})
 }
+

@@ -3,7 +3,6 @@ package payment
 import (
 	"fmt"
 
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/provider/payment"
 	"shopnexus-server/internal/shared/validator"
@@ -24,14 +23,14 @@ func (b *PaymentHandler) OnPaymentResult(ctx restate.Context, params payment.Not
 	}
 
 	// decision: load the tx and its owning session to route the signal.
-	session, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderPaymentSession, error) {
-		tx, err := b.Storage.Querier().GetTransaction(rctx, uuid.NullUUID{UUID: txID, Valid: true})
+	session, err := restate.Run(ctx, func(rctx restate.RunContext) (ordermodel.PaymentSession, error) {
+		tx, err := b.Storage.Querier().GetTransaction(rctx, txID)
 		if err != nil {
-			return orderdb.OrderPaymentSession{}, fmt.Errorf("get transaction: %w", err)
+			return ordermodel.PaymentSession{}, fmt.Errorf("get transaction: %w", err)
 		}
-		s, err := b.Storage.Querier().GetPaymentSession(rctx, uuid.NullUUID{UUID: tx.SessionID, Valid: true})
+		s, err := b.Storage.Querier().GetPaymentSession(rctx, tx.SessionID)
 		if err != nil {
-			return orderdb.OrderPaymentSession{}, fmt.Errorf("get session: %w", err)
+			return ordermodel.PaymentSession{}, fmt.Errorf("get session: %w", err)
 		}
 		return s, nil
 	})
@@ -54,7 +53,7 @@ func (b *PaymentHandler) OnPaymentResult(ctx restate.Context, params payment.Not
 }
 
 // WorkflowForSession maps payment_session.kind to (workflowName, workflowID).
-func WorkflowForSession(s orderdb.OrderPaymentSession) (workflowName, workflowID string) {
+func WorkflowForSession(s ordermodel.PaymentSession) (workflowName, workflowID string) {
 	switch s.Kind {
 	case ordermodel.SessionKindBuyerCheckout:
 		return "CheckoutWorkflow", s.ID.String()

@@ -9,7 +9,7 @@ import (
 
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 	"shopnexus-server/internal/module/order/biz/base"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/shared/validator"
 )
 
@@ -57,7 +57,7 @@ func (b *DashboardHandler) GetSellerOrderStats(
 	if err := validator.Validate(params); err != nil {
 		return SellerOrderStats{}, fmt.Errorf("validate get seller order stats params: %w", err)
 	}
-	row, err := b.Storage.Querier().GetSellerOrderStats(ctx, orderdb.GetSellerOrderStatsParams{
+	row, err := b.Storage.Querier().GetSellerOrderStats(ctx, orderrepo.GetSellerOrderStatsParams{
 		SellerID: params.SellerID,
 		StartAt:  params.StartDate,
 		EndAt:    params.EndDate,
@@ -92,7 +92,7 @@ func (b *DashboardHandler) GetSellerOrderTimeSeries(
 	if err := validator.Validate(params); err != nil {
 		return nil, fmt.Errorf("validate get seller order time series params: %w", err)
 	}
-	rows, err := b.Storage.Querier().GetSellerOrderTimeSeries(ctx, orderdb.GetSellerOrderTimeSeriesParams{
+	rows, err := b.Storage.Querier().GetSellerOrderTimeSeries(ctx, orderrepo.GetSellerOrderTimeSeriesParams{
 		Granularity: params.Granularity,
 		SellerID:    params.SellerID,
 		StartAt:     params.StartDate,
@@ -164,7 +164,7 @@ func (b *DashboardHandler) GetSellerTopProducts(
 	if limit <= 0 {
 		limit = 5
 	}
-	rows, err := b.Storage.Querier().GetSellerTopProducts(ctx, orderdb.GetSellerTopProductsParams{
+	rows, err := b.Storage.Querier().GetSellerTopProducts(ctx, orderrepo.GetSellerTopProductsParams{
 		SellerID: params.SellerID,
 		StartAt:  params.StartDate,
 		EndAt:    params.EndDate,
@@ -185,3 +185,4 @@ func (b *DashboardHandler) GetSellerTopProducts(
 	}
 	return products, nil
 }
+
