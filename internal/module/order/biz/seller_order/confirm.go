@@ -48,6 +48,7 @@ func (b *SellerHandler) ConfirmSellerPending(ctx context.Context, params Confirm
 		Note:          params.Note,
 	}
 
+	// TODO: fix this: nếu user gửi 2 lần -> workflow submit 2 lần -> 2 workflow chạy song song -> 2 workflow
 	if err := b.fulfillment.Send().Run(ctx, workflowID, input); err != nil {
 		return ConfirmSellerPendingResult{}, fmt.Errorf("submit fulfillment workflow: %w", err)
 	}

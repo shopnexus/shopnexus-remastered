@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/validator"
 
@@ -32,7 +32,7 @@ func (b *BuyerHandler) ListBuyerCancelledItems(
 		return zero, fmt.Errorf("validate list cancelled items: %w", err)
 	}
 	return b.listBuyerItems(ctx, params.Params, params.AccountID,
-		func(rctx context.Context, accountID uuid.UUID) ([]orderdb.OrderItem, int64, error) {
+		func(rctx context.Context, accountID uuid.UUID) ([]ordermodel.OrderItem, int64, error) {
 			items, err := b.Storage.Querier().ListBuyerCancelledItems(rctx, accountID)
 			if err != nil {
 				return nil, 0, err
@@ -51,7 +51,7 @@ func (b *BuyerHandler) listBuyerItems(
 	ctx context.Context,
 	pagination paginate.Params,
 	accountID uuid.UUID,
-	fetch func(context.Context, uuid.UUID) ([]orderdb.OrderItem, int64, error),
+	fetch func(context.Context, uuid.UUID) ([]ordermodel.OrderItem, int64, error),
 ) (paginate.PaginateResult[ordermodel.OrderItem], error) {
 	var zero paginate.PaginateResult[ordermodel.OrderItem]
 
@@ -69,13 +69,13 @@ func (b *BuyerHandler) listBuyerItems(
 		sessionIDs := lo.Uniq(
 			lo.Map(enriched, func(it ordermodel.OrderItem, _ int) uuid.UUID { return it.PaymentSessionID }),
 		)
-		var sessionsRes paginate.PaginateResult[orderdb.OrderPaymentSession]
-		sessionsRes, err = b.Storage.Querier().ListPaymentSession(ctx, orderdb.ListPaymentSessionParams{Id: sessionIDs})
+		var sessionsRes paginate.PaginateResult[ordermodel.PaymentSession]
+		sessionsRes, err = b.Storage.Querier().ListPaymentSession(ctx, orderrepo.ListPaymentSessionParams{Id: sessionIDs})
 		if err != nil {
 			return zero, fmt.Errorf("db fetch payment sessions: %w", err)
 		}
 		sessions := sessionsRes.Data
-		sessionMap := lo.KeyBy(sessions, func(s orderdb.OrderPaymentSession) uuid.UUID { return s.ID })
+		sessionMap := lo.KeyBy(sessions, func(s ordermodel.PaymentSession) uuid.UUID { return s.ID })
 		for i := range enriched {
 			if s, ok := sessionMap[enriched[i].PaymentSessionID]; ok {
 				enriched[i].PaymentSession = &s
@@ -107,7 +107,7 @@ func (b *BuyerHandler) ListBuyerPendingItems(
 		return paginate.PaginateResult[ordermodel.OrderItem]{}, fmt.Errorf("validate list pending items: %w", err)
 	}
 	return b.listBuyerItems(ctx, params.Params, params.AccountID,
-		func(rctx context.Context, accountID uuid.UUID) ([]orderdb.OrderItem, int64, error) {
+		func(rctx context.Context, accountID uuid.UUID) ([]ordermodel.OrderItem, int64, error) {
 			items, err := b.Storage.Querier().ListBuyerPendingItems(rctx, accountID)
 			if err != nil {
 				return nil, 0, err

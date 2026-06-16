@@ -9,7 +9,6 @@ import (
 	accountmodel "shopnexus-server/internal/module/account/model"
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/shared/idempotency"
@@ -35,12 +34,12 @@ func (b *BuyerHandler) CancelBuyerPending(ctx restate.Context, params CancelBuye
 
 	// decision: load + validate the item and its payment session.
 	type decision struct {
-		Item    orderdb.OrderItem
-		Session orderdb.OrderPaymentSession
+		Item    ordermodel.OrderItem
+		Session ordermodel.PaymentSession
 	}
 	dec, err := restate.Run(ctx, func(rctx restate.RunContext) (decision, error) {
 		var zero decision
-		dbItem, err := b.Storage.Querier().GetItem(rctx, null.IntFrom(params.ItemID))
+		dbItem, err := b.Storage.Querier().GetItem(rctx, params.ItemID)
 		if err != nil {
 			return zero, fmt.Errorf("db get item: %w", err)
 		}
@@ -53,7 +52,7 @@ func (b *BuyerHandler) CancelBuyerPending(ctx restate.Context, params CancelBuye
 		if dbItem.DateCancelled.Valid {
 			return zero, ordermodel.ErrItemAlreadyCancelled
 		}
-		session, err := b.Storage.Querier().GetPaymentSession(rctx, uuid.NullUUID{UUID: dbItem.PaymentSessionID, Valid: true})
+		session, err := b.Storage.Querier().GetPaymentSession(rctx, dbItem.PaymentSessionID)
 		if err != nil {
 			return zero, fmt.Errorf("db get payment session: %w", err)
 		}
@@ -67,14 +66,14 @@ func (b *BuyerHandler) CancelBuyerPending(ctx restate.Context, params CancelBuye
 	// execution: signal cancel (workflow still running) or refund the single
 	// settled item (workflow exited).
 	switch dec.Session.Status {
-	case orderdb.OrderStatusPending:
+	case ordermodel.StatusPending:
 		// Workflow is still in WaitFirst — signal cancel and let saga compensate.
 		// The cross-workflow Send self-journals.
 		if err = b.checkout.Send().CancelCheckout(ctx, item.PaymentSessionID); err != nil {
 			return fmt.Errorf("signal cancel checkout: %w", err)
 		}
 
-	case orderdb.OrderStatusSuccess:
+	case ordermodel.StatusSuccess:
 		// Workflow exited; partial refund this single item.
 		if err = b.RefundPendingItem(ctx, RefundPendingItemParams{
 			Item:             item,
@@ -102,7 +101,7 @@ func (b *BuyerHandler) CancelBuyerPending(ctx restate.Context, params CancelBuye
 }
 
 type RefundPendingItemParams struct {
-	Item             orderdb.OrderItem
+	Item             ordermodel.OrderItem
 	PaymentSessionID uuid.UUID
 }
 
@@ -196,10 +195,10 @@ func (b *BuyerHandler) RefundPendingItem(
 		refundTxID := uuid.NewSHA1(uuid.NameSpaceOID, fmt.Appendf(nil, "cancel-refund:item:%d", params.Item.ID))
 		if e := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
 			return b.Storage.Transact(rctx, func(s pgsqlc.Storage[*orderrepo.Repository]) error {
-				if _, te := s.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
+				if _, te := s.Querier().CreateTransaction(rctx, orderrepo.CreateTransactionParams{
 					ID:          refundTxID,
 					SessionID:   params.PaymentSessionID,
-					Status:      orderdb.OrderStatusSuccess,
+					Status:      ordermodel.StatusSuccess,
 					Note:        "buyer cancel pre-confirm",
 					Data:        json.RawMessage("{}"),
 					Amount:      -params.Item.TotalAmount,
@@ -209,7 +208,7 @@ func (b *BuyerHandler) RefundPendingItem(
 				}); te != nil {
 					return fmt.Errorf("db create refund tx: %w", te)
 				}
-				if _, te := s.Querier().CancelItem(rctx, orderdb.CancelItemParams{
+				if _, te := s.Querier().CancelItem(rctx, orderrepo.CancelItemParams{
 					CancelledByID: uuid.NullUUID{UUID: params.Item.AccountID, Valid: true},
 					ID:            params.Item.ID,
 				}); te != nil {

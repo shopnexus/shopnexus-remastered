@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/validator"
 
@@ -73,7 +73,7 @@ func (b *SellerHandler) ListSellerConfirmed(
 		return zero, fmt.Errorf("validate list seller orders: %w", err)
 	}
 
-	listCountOrder, err := b.Storage.Querier().ListCountSellerOrder(ctx, orderdb.ListCountSellerOrderParams{
+	listCountOrder, err := b.Storage.Querier().ListCountSellerOrder(ctx, orderrepo.ListCountSellerOrderParams{
 		SellerID: params.SellerID,
 		Search:   params.Search,
 		Offset:   params.Offset(),
@@ -90,8 +90,8 @@ func (b *SellerHandler) ListSellerConfirmed(
 
 	orders, err := b.HydrateOrders(
 		ctx,
-		lo.Map(listCountOrder, func(item orderdb.ListCountSellerOrderRow, _ int) orderdb.OrderOrder {
-			return item.OrderOrder
+		lo.Map(listCountOrder, func(item ordermodel.WithTotal[ordermodel.Order], _ int) ordermodel.Order {
+			return item.Row
 		}),
 	)
 	if err != nil {

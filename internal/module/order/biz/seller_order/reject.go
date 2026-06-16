@@ -9,8 +9,8 @@ import (
 	accountmodel "shopnexus-server/internal/module/account/model"
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -37,8 +37,8 @@ func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSe
 	sellerID := params.Account.ID
 
 	// decision: fetch and validate items.
-	items, err := restate.Run(ctx, func(rctx restate.RunContext) ([]orderdb.OrderItem, error) {
-		dbItemsRes, err := b.Storage.Querier().ListItem(rctx, orderdb.ListItemParams{
+	items, err := restate.Run(ctx, func(rctx restate.RunContext) ([]ordermodel.OrderItem, error) {
+		dbItemsRes, err := b.Storage.Querier().ListItem(rctx, orderrepo.ListItemParams{
 			Id: params.ItemIDs,
 		})
 		if err != nil {
@@ -67,7 +67,7 @@ func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSe
 	}
 
 	// execution: release inventory for each item. Cross-module Call self-journals.
-	releaseItems := lo.Map(items, func(item orderdb.OrderItem, _ int) inventorybiz.ReleaseInventoryItem {
+	releaseItems := lo.Map(items, func(item ordermodel.OrderItem, _ int) inventorybiz.ReleaseInventoryItem {
 		return inventorybiz.ReleaseInventoryItem{
 			RefType: inventorydb.InventoryStockRefTypeProductSku,
 			RefID:   item.SkuID,
@@ -82,7 +82,7 @@ func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSe
 
 	// tail: refund + cancel + notify per buyer. Each buyer settles atomically in
 	// its own decision/execution/tail (see rejectForBuyer).
-	buyerItems := make(map[uuid.UUID][]orderdb.OrderItem)
+	buyerItems := make(map[uuid.UUID][]ordermodel.OrderItem)
 	for _, item := range items {
 		buyerItems[item.AccountID] = append(buyerItems[item.AccountID], item)
 	}
@@ -101,32 +101,32 @@ func (b *SellerHandler) RejectSellerPending(ctx restate.Context, params RejectSe
 func (b *SellerHandler) rejectForBuyer(
 	ctx restate.Context,
 	sellerID, buyerID uuid.UUID,
-	buyerItemList []orderdb.OrderItem,
+	buyerItemList []ordermodel.OrderItem,
 ) error {
-	itemIDs := lo.Map(buyerItemList, func(it orderdb.OrderItem, _ int) int64 { return it.ID })
+	itemIDs := lo.Map(buyerItemList, func(it ordermodel.OrderItem, _ int) int64 { return it.ID })
 
 	// Look up the payment session for every distinct item. We refund only
 	// items whose session actually settled to Success — Pending/Failed
 	// items had no money flow through the platform.
 	sessionIDs := lo.Uniq(
-		lo.Map(buyerItemList, func(it orderdb.OrderItem, _ int) uuid.UUID { return it.PaymentSessionID }),
+		lo.Map(buyerItemList, func(it ordermodel.OrderItem, _ int) uuid.UUID { return it.PaymentSessionID }),
 	)
 
 	// decision: load sessions and resolve each Success session's original
 	// charge (positive Success, no reverses_id) for the refund leg's reverses_id.
 	type sessionPlan struct {
-		SessionByID         map[uuid.UUID]orderdb.OrderPaymentSession
+		SessionByID         map[uuid.UUID]ordermodel.PaymentSession
 		OriginalTxBySession map[uuid.UUID]uuid.UUID
 	}
 	sp, err := restate.Run(ctx, func(rctx restate.RunContext) (sessionPlan, error) {
-		res, e := b.Storage.Querier().ListPaymentSession(rctx, orderdb.ListPaymentSessionParams{Id: sessionIDs})
+		res, e := b.Storage.Querier().ListPaymentSession(rctx, orderrepo.ListPaymentSessionParams{Id: sessionIDs})
 		if e != nil {
 			return sessionPlan{}, fmt.Errorf("db fetch payment sessions: %w", e)
 		}
-		byID := lo.KeyBy(res.Data, func(s orderdb.OrderPaymentSession) uuid.UUID { return s.ID })
+		byID := lo.KeyBy(res.Data, func(s ordermodel.PaymentSession) uuid.UUID { return s.ID })
 		origByID := make(map[uuid.UUID]uuid.UUID)
 		for sid, s := range byID {
-			if s.Status != orderdb.OrderStatusSuccess {
+			if s.Status != ordermodel.StatusSuccess {
 				continue
 			}
 			sessionTxs, te := b.Storage.Querier().ListTransactionsBySession(rctx, sid)
@@ -146,7 +146,7 @@ func (b *SellerHandler) rejectForBuyer(
 	originalTxBySession := sp.OriginalTxBySession
 
 	type itemRefundPlan struct {
-		Item       orderdb.OrderItem
+		Item       ordermodel.OrderItem
 		OriginalID uuid.UUID
 	}
 	var refundPlans []itemRefundPlan
@@ -158,12 +158,12 @@ func (b *SellerHandler) rejectForBuyer(
 			continue
 		}
 		switch s.Status {
-		case orderdb.OrderStatusSuccess:
+		case ordermodel.StatusSuccess:
 			if origID, hasOrig := originalTxBySession[s.ID]; hasOrig {
 				refundPlans = append(refundPlans, itemRefundPlan{Item: item, OriginalID: origID})
 				totalRefund += item.TotalAmount
 			}
-		case orderdb.OrderStatusPending:
+		case ordermodel.StatusPending:
 			pendingSessionIDs = append(pendingSessionIDs, s.ID)
 		}
 	}
@@ -190,24 +190,21 @@ func (b *SellerHandler) rejectForBuyer(
 			if plan.Item.TotalAmount <= 0 {
 				continue
 			}
-			tx, txErr := b.Storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
-				ID:            preMintedRefundTxIDs[i],
-				SessionID:     plan.Item.PaymentSessionID,
-				Status:        orderdb.OrderStatusSuccess,
-				Note:          "seller reject pre-confirm",
-				Error:         null.String{},
-				PaymentOption: null.String{},
-				Data:          json.RawMessage("{}"),
-				Amount:        -plan.Item.TotalAmount,
-				Currency:      buyerCurrency,
-				ReversesID:    uuid.NullUUID{UUID: plan.OriginalID, Valid: true},
-				DateSettled:   null.TimeFrom(time.Now()),
-				DateExpired:   null.Time{},
+			txID, txErr := b.Storage.Querier().CreateTransaction(rctx, orderrepo.CreateTransactionParams{
+				ID:          preMintedRefundTxIDs[i],
+				SessionID:   plan.Item.PaymentSessionID,
+				Status:      ordermodel.StatusSuccess,
+				Note:        "seller reject pre-confirm",
+				Data:        json.RawMessage("{}"),
+				Amount:      -plan.Item.TotalAmount,
+				Currency:    buyerCurrency,
+				ReversesID:  uuid.NullUUID{UUID: plan.OriginalID, Valid: true},
+				DateSettled: null.TimeFrom(time.Now()),
 			})
 			if txErr != nil {
 				return nil, fmt.Errorf("db create refund tx: %w", txErr)
 			}
-			txIDs = append(txIDs, tx.ID)
+			txIDs = append(txIDs, txID)
 		}
 
 		// Mark any Pending sessions as Cancelled so their timeout / webhook no-ops.
@@ -219,7 +216,7 @@ func (b *SellerHandler) rejectForBuyer(
 
 		// Cancel each item with seller as cancelled_by_id.
 		for _, id := range itemIDs {
-			if _, err := b.Storage.Querier().CancelItem(rctx, orderdb.CancelItemParams{
+			if _, err := b.Storage.Querier().CancelItem(rctx, orderrepo.CancelItemParams{
 				CancelledByID: uuid.NullUUID{UUID: sellerID, Valid: true},
 				ID:            id,
 			}); err != nil {
@@ -251,7 +248,7 @@ func (b *SellerHandler) rejectForBuyer(
 	}
 
 	// Notify buyer (fire-and-forget).
-	rejectedNames := lo.Map(buyerItemList, func(it orderdb.OrderItem, _ int) string { return it.SkuName })
+	rejectedNames := lo.Map(buyerItemList, func(it ordermodel.OrderItem, _ int) string { return it.SkuName })
 	rejectSummary := ordermodel.SummarizeNames(rejectedNames)
 	if err = b.Notify(ctx, accountbiz.CreateNotificationParams{
 		AccountID: buyerID,

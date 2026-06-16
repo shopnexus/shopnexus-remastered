@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/validator"
 
@@ -37,8 +37,8 @@ func (b *BuyerHandler) ListBuyerPendingOrders(
 		ctx,
 		params.Params,
 		params.BuyerID,
-		func(rctx context.Context, p orderListPage) ([]orderdb.OrderOrder, int64, error) {
-			rows, err := b.Storage.Querier().ListBuyerPendingOrders(rctx, orderdb.ListBuyerPendingOrdersParams{
+		func(rctx context.Context, p orderListPage) ([]ordermodel.Order, int64, error) {
+			rows, err := b.Storage.Querier().ListBuyerPendingOrders(rctx, orderrepo.ListBuyerPendingOrdersParams{
 				BuyerID: p.BuyerID,
 				Limit:   p.Limit,
 				Offset:  p.Offset,
@@ -46,10 +46,7 @@ func (b *BuyerHandler) ListBuyerPendingOrders(
 			if err != nil {
 				return nil, 0, err
 			}
-			orders := lo.Map(
-				rows,
-				func(r orderdb.ListBuyerPendingOrdersRow, _ int) orderdb.OrderOrder { return r.OrderOrder },
-			)
+			orders := lo.Map(rows, func(r ordermodel.WithTotal[ordermodel.Order], _ int) ordermodel.Order { return r.Row })
 			var total int64
 			if len(rows) > 0 {
 				total = rows[0].TotalCount
@@ -81,8 +78,8 @@ func (b *BuyerHandler) ListBuyerCompletedOrders(
 		ctx,
 		params.Params,
 		params.BuyerID,
-		func(rctx context.Context, p orderListPage) ([]orderdb.OrderOrder, int64, error) {
-			rows, err := b.Storage.Querier().ListBuyerCompletedOrders(rctx, orderdb.ListBuyerCompletedOrdersParams{
+		func(rctx context.Context, p orderListPage) ([]ordermodel.Order, int64, error) {
+			rows, err := b.Storage.Querier().ListBuyerCompletedOrders(rctx, orderrepo.ListBuyerCompletedOrdersParams{
 				BuyerID: p.BuyerID,
 				Limit:   p.Limit,
 				Offset:  p.Offset,
@@ -90,10 +87,7 @@ func (b *BuyerHandler) ListBuyerCompletedOrders(
 			if err != nil {
 				return nil, 0, err
 			}
-			orders := lo.Map(
-				rows,
-				func(r orderdb.ListBuyerCompletedOrdersRow, _ int) orderdb.OrderOrder { return r.OrderOrder },
-			)
+			orders := lo.Map(rows, func(r ordermodel.WithTotal[ordermodel.Order], _ int) ordermodel.Order { return r.Row })
 			var total int64
 			if len(rows) > 0 {
 				total = rows[0].TotalCount
@@ -125,8 +119,8 @@ func (b *BuyerHandler) ListBuyerCancelledOrders(
 		ctx,
 		params.Params,
 		params.BuyerID,
-		func(rctx context.Context, p orderListPage) ([]orderdb.OrderOrder, int64, error) {
-			rows, err := b.Storage.Querier().ListBuyerCancelledOrders(rctx, orderdb.ListBuyerCancelledOrdersParams{
+		func(rctx context.Context, p orderListPage) ([]ordermodel.Order, int64, error) {
+			rows, err := b.Storage.Querier().ListBuyerCancelledOrders(rctx, orderrepo.ListBuyerCancelledOrdersParams{
 				BuyerID: p.BuyerID,
 				Limit:   p.Limit,
 				Offset:  p.Offset,
@@ -134,10 +128,7 @@ func (b *BuyerHandler) ListBuyerCancelledOrders(
 			if err != nil {
 				return nil, 0, err
 			}
-			orders := lo.Map(
-				rows,
-				func(r orderdb.ListBuyerCancelledOrdersRow, _ int) orderdb.OrderOrder { return r.OrderOrder },
-			)
+			orders := lo.Map(rows, func(r ordermodel.WithTotal[ordermodel.Order], _ int) ordermodel.Order { return r.Row })
 			var total int64
 			if len(rows) > 0 {
 				total = rows[0].TotalCount
@@ -158,7 +149,7 @@ func (b *BuyerHandler) listBuyerOrders(
 	ctx context.Context,
 	pagination paginate.Params,
 	buyerID uuid.UUID,
-	fetch func(context.Context, orderListPage) ([]orderdb.OrderOrder, int64, error),
+	fetch func(context.Context, orderListPage) ([]ordermodel.Order, int64, error),
 ) (paginate.PaginateResult[ordermodel.Order], error) {
 	var zero paginate.PaginateResult[ordermodel.Order]
 	if err := validator.Validate(struct {

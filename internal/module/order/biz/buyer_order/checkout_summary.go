@@ -25,12 +25,12 @@ func (b *BuyerHandler) GetCheckoutSummary(
 		return zero, fmt.Errorf("validate checkout summary: %w", err)
 	}
 
-	tx, err := b.Storage.Querier().GetTransaction(ctx, uuid.NullUUID{UUID: params.TxID, Valid: true})
+	tx, err := b.Storage.Querier().GetTransaction(ctx, params.TxID)
 	if err != nil {
 		return zero, fmt.Errorf("get transaction: %w", err)
 	}
 
-	session, err := b.Storage.Querier().GetPaymentSession(ctx, uuid.NullUUID{UUID: tx.SessionID, Valid: true})
+	session, err := b.Storage.Querier().GetPaymentSession(ctx, tx.SessionID)
 	if err != nil {
 		return zero, fmt.Errorf("get payment session: %w", err)
 	}
