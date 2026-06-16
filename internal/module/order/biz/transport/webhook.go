@@ -8,8 +8,8 @@ import (
 
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountmodel "shopnexus-server/internal/module/account/model"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/shared/validator"
 
 	"github.com/google/uuid"
@@ -18,28 +18,28 @@ import (
 	restate "github.com/restatedev/sdk-go"
 )
 
-// validTransitions defines which OrderStatus transitions are allowed on the transport table.
-var validTransitions = map[orderdb.OrderStatus]map[orderdb.OrderStatus]bool{
-	orderdb.OrderStatusPending: {
-		orderdb.OrderStatusProcessing: true, // LabelCreated / InTransit / OutForDelivery
-		orderdb.OrderStatusFailed:     true,
-		orderdb.OrderStatusCancelled:  true,
+// validTransitions defines which Status transitions are allowed on the transport table.
+var validTransitions = map[ordermodel.Status]map[ordermodel.Status]bool{
+	ordermodel.StatusPending: {
+		ordermodel.StatusProcessing: true, // LabelCreated / InTransit / OutForDelivery
+		ordermodel.StatusFailed:     true,
+		ordermodel.StatusCancelled:  true,
 	},
-	orderdb.OrderStatusProcessing: {
-		orderdb.OrderStatusSuccess:   true, // Delivered
-		orderdb.OrderStatusFailed:    true,
-		orderdb.OrderStatusCancelled: true,
+	ordermodel.StatusProcessing: {
+		ordermodel.StatusSuccess:   true, // Delivered
+		ordermodel.StatusFailed:    true,
+		ordermodel.StatusCancelled: true,
 	},
 	// Terminal states: Success (Delivered), Failed, Cancelled
-	orderdb.OrderStatusSuccess:   {},
-	orderdb.OrderStatusFailed:    {orderdb.OrderStatusProcessing: true}, // redelivery
-	orderdb.OrderStatusCancelled: {},
+	ordermodel.StatusSuccess:   {},
+	ordermodel.StatusFailed:    {},
+	ordermodel.StatusCancelled: {},
 }
 
 type OnTransportResultParams struct {
-	TrackingID string              `validate:"omitempty"`
-	Status     orderdb.OrderStatus `validate:"required,validateFn=Valid"`
-	Data       json.RawMessage     `validate:"omitempty"`
+	TrackingID string            `validate:"omitempty"`
+	Status     ordermodel.Status `validate:"required,validateFn=Valid"`
+	Data       json.RawMessage   `validate:"omitempty"`
 }
 
 // OnTransportResult updates a transport record's status and data field.
@@ -62,13 +62,13 @@ func (b *TransportHandler) OnTransportResult(ctx restate.Context, params OnTrans
 			return zero, ordermodel.ErrOrderNotFound
 		}
 
-		currentStatus := orderdb.OrderStatusPending
+		currentStatus := ordermodel.StatusPending
 		if tr.Status.Valid {
-			currentStatus = tr.Status.OrderStatus
+			currentStatus = ordermodel.Status(tr.Status.String)
 		}
 
 		allowed, ok := validTransitions[currentStatus]
-		if !ok || !allowed[orderdb.OrderStatus(params.Status)] {
+		if !ok || !allowed[params.Status] {
 			return zero, ordermodel.ErrTransportStatusInvalid.Fmt(currentStatus, params.Status)
 		}
 
@@ -77,9 +77,9 @@ func (b *TransportHandler) OnTransportResult(ctx restate.Context, params OnTrans
 			dataJSON = json.RawMessage("{}")
 		}
 
-		if _, err = b.Storage.Querier().UpdateTransportStatusByID(rctx, orderdb.UpdateTransportStatusByIDParams{
+		if _, err = b.Storage.Querier().UpdateTransportStatusByID(rctx, orderrepo.UpdateTransportStatusByIDParams{
 			ID:     tr.ID,
-			Status: orderdb.NullOrderStatus{OrderStatus: orderdb.OrderStatus(params.Status), Valid: true},
+			Status: null.StringFrom(string(params.Status)),
 			Data:   dataJSON,
 		}); err != nil {
 			return zero, fmt.Errorf("db update transport status: %w", err)
@@ -96,14 +96,12 @@ func (b *TransportHandler) OnTransportResult(ctx restate.Context, params OnTrans
 
 	// tail: If Delivered (Success), fetch the order on this transport and notify
 	// the buyer. The notify Send self-journals.
-	if orderdb.OrderStatus(params.Status) == orderdb.OrderStatusSuccess {
+	if params.Status == ordermodel.StatusSuccess {
 		// First check whether this transport is the RETURN leg of a refund
 		// (keyed by return_transport_id). If so, signal the fulfillment
 		// workflow that the return was delivered and stop — no buyer notify.
-		refund, rErr := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
-			return b.Storage.Querier().GetRefund(rctx, orderdb.GetRefundParams{
-				ReturnTransportID: null.IntFrom(fetched.TransportID),
-			})
+		refund, rErr := restate.Run(ctx, func(rctx restate.RunContext) (ordermodel.Refund, error) {
+			return b.Storage.Querier().GetRefundByReturnTransportID(rctx, fetched.TransportID)
 		})
 		switch {
 		case rErr == nil:
@@ -121,7 +119,7 @@ func (b *TransportHandler) OnTransportResult(ctx restate.Context, params OnTrans
 			return fmt.Errorf("lookup refund by return transport: %w", rErr)
 		}
 
-		order, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderOrder, error) {
+		order, err := restate.Run(ctx, func(rctx restate.RunContext) (ordermodel.Order, error) {
 			return b.Storage.Querier().GetOrderByTransportID(rctx, fetched.TransportID)
 		})
 		if err != nil {
@@ -181,8 +179,8 @@ func (b *TransportHandler) OnTransportResult(ctx restate.Context, params OnTrans
 		"order_id":    info.OrderID.String(),
 	})
 
-	switch orderdb.OrderStatus(params.Status) {
-	case orderdb.OrderStatusFailed:
+	switch params.Status {
+	case ordermodel.StatusFailed:
 		if err = b.Notify(ctx, accountbiz.CreateNotificationParams{
 			AccountID: info.BuyerID,
 			Type:      accountmodel.NotiTransportFailed,
@@ -204,7 +202,7 @@ func (b *TransportHandler) OnTransportResult(ctx restate.Context, params OnTrans
 			return fmt.Errorf("notify seller: %w", err)
 		}
 
-	case orderdb.OrderStatusCancelled:
+	case ordermodel.StatusCancelled:
 		if err = b.Notify(ctx, accountbiz.CreateNotificationParams{
 			AccountID: info.BuyerID,
 			Type:      accountmodel.NotiTransportCancelled,

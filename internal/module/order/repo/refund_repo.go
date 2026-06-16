@@ -281,6 +281,32 @@ func (r *Repository) AdminUpholdDispute(ctx context.Context, arg AdminUpholdDisp
 	return i, err
 }
 
+const getRefundByReturnTransportID = `SELECT id, account_id, order_id, reason, date_created, status, return_transport_id, date_received_by_seller, review_deadline, seller_decision_at, return_to_buyer_transport_id, rejection_reason, refund_tx_id
+FROM "order"."refund"
+WHERE "return_transport_id" = $1
+LIMIT 1`
+
+func (r *Repository) GetRefundByReturnTransportID(ctx context.Context, returnTransportID int64) (ordermodel.Refund, error) {
+	row := r.db.QueryRow(ctx, getRefundByReturnTransportID, returnTransportID)
+	var i ordermodel.Refund
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.OrderID,
+		&i.Reason,
+		&i.DateCreated,
+		&i.Status,
+		&i.ReturnTransportID,
+		&i.DateReceivedBySeller,
+		&i.ReviewDeadline,
+		&i.SellerDecisionAt,
+		&i.ReturnToBuyerTransportID,
+		&i.RejectionReason,
+		&i.RefundTxID,
+	)
+	return i, err
+}
+
 const hasActiveRefundForOrder = `-- name: HasActiveRefundForOrder :one
 SELECT EXISTS (
     SELECT 1 FROM "order"."refund"
