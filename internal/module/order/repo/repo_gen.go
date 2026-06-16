@@ -3,19 +3,17 @@ package orderrepo
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	null "github.com/guregu/null/v6"
 	"github.com/jackc/pgx/v5"
+	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/patch"
 	"shopnexus-server/internal/shared/repolist"
-
-	"encoding/json"
-	"github.com/google/uuid"
-	null "github.com/guregu/null/v6"
-	ordermodel "shopnexus-server/internal/module/order/model"
-	"time"
 )
 
 type CreateCartItemParams struct {
@@ -120,7 +118,7 @@ func (r *Repository) ListCartItem(ctx context.Context, f ListCartItemParams) (pa
 type CreatePaymentSessionParams struct {
 	ID          uuid.UUID
 	Kind        string
-	Status      Status
+	Status      ordermodel.Status
 	FromID      uuid.NullUUID
 	ToID        uuid.NullUUID
 	Note        string
@@ -150,7 +148,7 @@ func (r *Repository) GetPaymentSession(ctx context.Context, id uuid.UUID) (order
 
 type UpdatePaymentSessionParams struct {
 	Kind        patch.Optional[string]
-	Status      patch.Optional[Status]
+	Status      patch.Optional[ordermodel.Status]
 	FromID      patch.Optional[uuid.NullUUID]
 	ToID        patch.Optional[uuid.NullUUID]
 	Note        patch.Optional[string]
@@ -233,7 +231,6 @@ type ListPaymentSessionParams struct {
 
 	Id              []uuid.UUID
 	Kind            []string
-	Status          []OrderStatus
 	FromId          []uuid.UUID
 	ToId            []uuid.UUID
 	Note            []string
@@ -279,7 +276,6 @@ func PaymentSessionConds(f ListPaymentSessionParams) []repolist.Cond {
 	return []repolist.Cond{
 		repolist.In(`"id"`, f.Id),
 		repolist.In(`"kind"`, f.Kind),
-		repolist.In(`"status"`, f.Status),
 		repolist.In(`"from_id"`, f.FromId),
 		repolist.In(`"to_id"`, f.ToId),
 		repolist.In(`"note"`, f.Note),
@@ -304,7 +300,7 @@ func (r *Repository) ListPaymentSession(ctx context.Context, f ListPaymentSessio
 type CreateTransactionParams struct {
 	ID            uuid.UUID
 	SessionID     uuid.UUID
-	Status        Status
+	Status        ordermodel.Status
 	Note          string
 	Error         null.String
 	PaymentOption null.String
@@ -334,7 +330,7 @@ func (r *Repository) GetTransaction(ctx context.Context, id uuid.UUID) (ordermod
 
 type UpdateTransactionParams struct {
 	SessionID     patch.Optional[uuid.UUID]
-	Status        patch.Optional[Status]
+	Status        patch.Optional[ordermodel.Status]
 	Note          patch.Optional[string]
 	Error         patch.Optional[null.String]
 	PaymentOption patch.Optional[null.String]
@@ -417,7 +413,6 @@ type ListTransactionParams struct {
 
 	Id              []uuid.UUID
 	SessionId       []uuid.UUID
-	Status          []OrderStatus
 	Note            []string
 	Error           []string
 	PaymentOption   []string
@@ -466,7 +461,6 @@ func TransactionConds(f ListTransactionParams) []repolist.Cond {
 	return []repolist.Cond{
 		repolist.In(`"id"`, f.Id),
 		repolist.In(`"session_id"`, f.SessionId),
-		repolist.In(`"status"`, f.Status),
 		repolist.In(`"note"`, f.Note),
 		repolist.In(`"error"`, f.Error),
 		repolist.In(`"payment_option"`, f.PaymentOption),
@@ -557,7 +551,6 @@ type ListTransportParams struct {
 
 	Id              []int64
 	Option          []string
-	Status          []OrderStatus
 	DateCreated     []time.Time
 	DateCreatedFrom null.Time
 	DateCreatedTo   null.Time
@@ -584,7 +577,6 @@ func TransportConds(f ListTransportParams) []repolist.Cond {
 	return []repolist.Cond{
 		repolist.In(`"id"`, f.Id),
 		repolist.In(`"option"`, f.Option),
-		repolist.In(`"status"`, f.Status),
 		repolist.In(`"date_created"`, f.DateCreated),
 		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
 		repolist.Lte(`"date_created"`, f.DateCreatedTo),
@@ -1019,7 +1011,7 @@ type UpdateRefundParams struct {
 	OrderID                  patch.Optional[uuid.UUID]
 	Reason                   patch.Optional[string]
 	DateCreated              patch.Optional[time.Time]
-	Status                   patch.Optional[RefundStatus]
+	Status                   patch.Optional[ordermodel.RefundStatus]
 	ReturnTransportID        patch.Optional[int64]
 	DateReceivedBySeller     patch.Optional[null.Time]
 	ReviewDeadline           patch.Optional[null.Time]
@@ -1104,7 +1096,6 @@ type ListRefundParams struct {
 	DateCreated              []time.Time
 	DateCreatedFrom          null.Time
 	DateCreatedTo            null.Time
-	Status                   []OrderRefundStatus
 	ReturnTransportId        []int64
 	DateReceivedBySeller     []time.Time
 	DateReceivedBySellerFrom null.Time
@@ -1154,7 +1145,6 @@ func RefundConds(f ListRefundParams) []repolist.Cond {
 		repolist.In(`"date_created"`, f.DateCreated),
 		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
 		repolist.Lte(`"date_created"`, f.DateCreatedTo),
-		repolist.In(`"status"`, f.Status),
 		repolist.In(`"return_transport_id"`, f.ReturnTransportId),
 		repolist.In(`"date_received_by_seller"`, f.DateReceivedBySeller),
 		repolist.Gte(`"date_received_by_seller"`, f.DateReceivedBySellerFrom),
@@ -1205,7 +1195,7 @@ type UpdateRefundDisputeParams struct {
 	AccountID      patch.Optional[uuid.UUID]
 	Reason         patch.Optional[string]
 	DateCreated    patch.Optional[time.Time]
-	Status         patch.Optional[DisputeStatus]
+	Status         patch.Optional[ordermodel.DisputeStatus]
 	ResolvedByID   patch.Optional[uuid.NullUUID]
 	DateResolved   patch.Optional[null.Time]
 	ResolutionNote patch.Optional[null.String]
@@ -1270,7 +1260,6 @@ type ListRefundDisputeParams struct {
 	DateCreated      []time.Time
 	DateCreatedFrom  null.Time
 	DateCreatedTo    null.Time
-	Status           []OrderDisputeStatus
 	ResolvedById     []uuid.UUID
 	DateResolved     []time.Time
 	DateResolvedFrom null.Time
@@ -1308,7 +1297,6 @@ func RefundDisputeConds(f ListRefundDisputeParams) []repolist.Cond {
 		repolist.In(`"date_created"`, f.DateCreated),
 		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
 		repolist.Lte(`"date_created"`, f.DateCreatedTo),
-		repolist.In(`"status"`, f.Status),
 		repolist.In(`"resolved_by_id"`, f.ResolvedById),
 		repolist.In(`"date_resolved"`, f.DateResolved),
 		repolist.Gte(`"date_resolved"`, f.DateResolvedFrom),
