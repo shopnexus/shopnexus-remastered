@@ -4,14 +4,17 @@ package orderrepo
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"shopnexus-server/internal/shared/paginate"
 	"shopnexus-server/internal/shared/patch"
+	"shopnexus-server/internal/shared/repolist"
 
 	"encoding/json"
 	"github.com/google/uuid"
 	null "github.com/guregu/null/v6"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
+	ordermodel "shopnexus-server/internal/module/order/model"
 	"time"
 )
 
@@ -30,8 +33,8 @@ func (r *Repository) CreateCartItem(ctx context.Context, arg CreateCartItemParam
 	return pk, err
 }
 
-func (r *Repository) GetCartItem(ctx context.Context, id int64) (CartItem, error) {
-	var i CartItem
+func (r *Repository) GetCartItem(ctx context.Context, id int64) (ordermodel.CartItem, error) {
+	var i ordermodel.CartItem
 	err := r.db.QueryRow(ctx, `SELECT "id", "account_id", "sku_id", "quantity" FROM "order"."cart_item" WHERE "id" = @id`,
 		pgx.NamedArgs{"id": id}).Scan(&i.ID, &i.AccountID, &i.SkuID, &i.Quantity)
 	return i, err
@@ -72,10 +75,52 @@ func (r *Repository) DeleteCartItem(ctx context.Context, id int64) error {
 	return err
 }
 
+type ListCartItemParams struct {
+	paginate.Params
+
+	Id           []int64
+	AccountId    []uuid.UUID
+	SkuId        []uuid.UUID
+	Quantity     []int64
+	QuantityFrom null.Int
+	QuantityTo   null.Int
+}
+
+func CartItemQuery() repolist.Query[ordermodel.CartItem] {
+	return repolist.Query[ordermodel.CartItem]{
+		Table: `"order"."cart_item"`,
+		PK:    "id",
+		Sort:  []string{"id", "quantity"},
+		Fields: func(m *ordermodel.CartItem) map[string]any {
+			return map[string]any{
+				"id":         &m.ID,
+				"account_id": &m.AccountID,
+				"sku_id":     &m.SkuID,
+				"quantity":   &m.Quantity,
+			}
+		},
+	}
+}
+
+func CartItemConds(f ListCartItemParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"account_id"`, f.AccountId),
+		repolist.In(`"sku_id"`, f.SkuId),
+		repolist.In(`"quantity"`, f.Quantity),
+		repolist.Gte(`"quantity"`, f.QuantityFrom),
+		repolist.Lte(`"quantity"`, f.QuantityTo),
+	}
+}
+
+func (r *Repository) ListCartItem(ctx context.Context, f ListCartItemParams) (paginate.PaginateResult[ordermodel.CartItem], error) {
+	return repolist.List(ctx, r.db, f.Params, CartItemQuery().Filter(CartItemConds(f)...))
+}
+
 type CreatePaymentSessionParams struct {
 	ID          uuid.UUID
 	Kind        string
-	Status      orderdb.OrderStatus
+	Status      Status
 	FromID      uuid.NullUUID
 	ToID        uuid.NullUUID
 	Note        string
@@ -96,8 +141,8 @@ func (r *Repository) CreatePaymentSession(ctx context.Context, arg CreatePayment
 	return pk, err
 }
 
-func (r *Repository) GetPaymentSession(ctx context.Context, id uuid.UUID) (PaymentSession, error) {
-	var i PaymentSession
+func (r *Repository) GetPaymentSession(ctx context.Context, id uuid.UUID) (ordermodel.PaymentSession, error) {
+	var i ordermodel.PaymentSession
 	err := r.db.QueryRow(ctx, `SELECT "id", "kind", "status", "from_id", "to_id", "note", "currency", "total_amount", "fx_snapshot", "data", "date_created", "date_paid", "date_expired" FROM "order"."payment_session" WHERE "id" = @id`,
 		pgx.NamedArgs{"id": id}).Scan(&i.ID, &i.Kind, &i.Status, &i.FromID, &i.ToID, &i.Note, &i.Currency, &i.TotalAmount, &i.FxSnapshot, &i.Data, &i.DateCreated, &i.DatePaid, &i.DateExpired)
 	return i, err
@@ -105,7 +150,7 @@ func (r *Repository) GetPaymentSession(ctx context.Context, id uuid.UUID) (Payme
 
 type UpdatePaymentSessionParams struct {
 	Kind        patch.Optional[string]
-	Status      patch.Optional[orderdb.OrderStatus]
+	Status      patch.Optional[Status]
 	FromID      patch.Optional[uuid.NullUUID]
 	ToID        patch.Optional[uuid.NullUUID]
 	Note        patch.Optional[string]
@@ -183,10 +228,83 @@ func (r *Repository) DeletePaymentSession(ctx context.Context, id uuid.UUID) err
 	return err
 }
 
+type ListPaymentSessionParams struct {
+	paginate.Params
+
+	Id              []uuid.UUID
+	Kind            []string
+	Status          []OrderStatus
+	FromId          []uuid.UUID
+	ToId            []uuid.UUID
+	Note            []string
+	Currency        []string
+	TotalAmount     []int64
+	TotalAmountFrom null.Int
+	TotalAmountTo   null.Int
+	DateCreated     []time.Time
+	DateCreatedFrom null.Time
+	DateCreatedTo   null.Time
+	DatePaid        []time.Time
+	DateExpired     []time.Time
+	DateExpiredFrom null.Time
+	DateExpiredTo   null.Time
+}
+
+func PaymentSessionQuery() repolist.Query[ordermodel.PaymentSession] {
+	return repolist.Query[ordermodel.PaymentSession]{
+		Table: `"order"."payment_session"`,
+		PK:    "id",
+		Sort:  []string{"id", "total_amount", "date_created", "date_expired"},
+		Fields: func(m *ordermodel.PaymentSession) map[string]any {
+			return map[string]any{
+				"id":           &m.ID,
+				"kind":         &m.Kind,
+				"status":       &m.Status,
+				"from_id":      &m.FromID,
+				"to_id":        &m.ToID,
+				"note":         &m.Note,
+				"currency":     &m.Currency,
+				"total_amount": &m.TotalAmount,
+				"fx_snapshot":  &m.FxSnapshot,
+				"data":         &m.Data,
+				"date_created": &m.DateCreated,
+				"date_paid":    &m.DatePaid,
+				"date_expired": &m.DateExpired,
+			}
+		},
+	}
+}
+
+func PaymentSessionConds(f ListPaymentSessionParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"kind"`, f.Kind),
+		repolist.In(`"status"`, f.Status),
+		repolist.In(`"from_id"`, f.FromId),
+		repolist.In(`"to_id"`, f.ToId),
+		repolist.In(`"note"`, f.Note),
+		repolist.In(`"currency"`, f.Currency),
+		repolist.In(`"total_amount"`, f.TotalAmount),
+		repolist.Gte(`"total_amount"`, f.TotalAmountFrom),
+		repolist.Lte(`"total_amount"`, f.TotalAmountTo),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+		repolist.In(`"date_paid"`, f.DatePaid),
+		repolist.In(`"date_expired"`, f.DateExpired),
+		repolist.Gte(`"date_expired"`, f.DateExpiredFrom),
+		repolist.Lte(`"date_expired"`, f.DateExpiredTo),
+	}
+}
+
+func (r *Repository) ListPaymentSession(ctx context.Context, f ListPaymentSessionParams) (paginate.PaginateResult[ordermodel.PaymentSession], error) {
+	return repolist.List(ctx, r.db, f.Params, PaymentSessionQuery().Filter(PaymentSessionConds(f)...))
+}
+
 type CreateTransactionParams struct {
 	ID            uuid.UUID
 	SessionID     uuid.UUID
-	Status        orderdb.OrderStatus
+	Status        Status
 	Note          string
 	Error         null.String
 	PaymentOption null.String
@@ -207,8 +325,8 @@ func (r *Repository) CreateTransaction(ctx context.Context, arg CreateTransactio
 	return pk, err
 }
 
-func (r *Repository) GetTransaction(ctx context.Context, id uuid.UUID) (Transaction, error) {
-	var i Transaction
+func (r *Repository) GetTransaction(ctx context.Context, id uuid.UUID) (ordermodel.Transaction, error) {
+	var i ordermodel.Transaction
 	err := r.db.QueryRow(ctx, `SELECT "id", "session_id", "status", "note", "error", "payment_option", "data", "amount", "currency", "reverses_id", "date_created", "date_settled", "date_expired" FROM "order"."transaction" WHERE "id" = @id`,
 		pgx.NamedArgs{"id": id}).Scan(&i.ID, &i.SessionID, &i.Status, &i.Note, &i.Error, &i.PaymentOption, &i.Data, &i.Amount, &i.Currency, &i.ReversesID, &i.DateCreated, &i.DateSettled, &i.DateExpired)
 	return i, err
@@ -216,7 +334,7 @@ func (r *Repository) GetTransaction(ctx context.Context, id uuid.UUID) (Transact
 
 type UpdateTransactionParams struct {
 	SessionID     patch.Optional[uuid.UUID]
-	Status        patch.Optional[orderdb.OrderStatus]
+	Status        patch.Optional[Status]
 	Note          patch.Optional[string]
 	Error         patch.Optional[null.String]
 	PaymentOption patch.Optional[null.String]
@@ -294,6 +412,85 @@ func (r *Repository) DeleteTransaction(ctx context.Context, id uuid.UUID) error 
 	return err
 }
 
+type ListTransactionParams struct {
+	paginate.Params
+
+	Id              []uuid.UUID
+	SessionId       []uuid.UUID
+	Status          []OrderStatus
+	Note            []string
+	Error           []string
+	PaymentOption   []string
+	Amount          []int64
+	AmountFrom      null.Int
+	AmountTo        null.Int
+	Currency        []string
+	ReversesId      []uuid.UUID
+	DateCreated     []time.Time
+	DateCreatedFrom null.Time
+	DateCreatedTo   null.Time
+	DateSettled     []time.Time
+	DateSettledFrom null.Time
+	DateSettledTo   null.Time
+	DateExpired     []time.Time
+	DateExpiredFrom null.Time
+	DateExpiredTo   null.Time
+}
+
+func TransactionQuery() repolist.Query[ordermodel.Transaction] {
+	return repolist.Query[ordermodel.Transaction]{
+		Table: `"order"."transaction"`,
+		PK:    "id",
+		Sort:  []string{"id", "amount", "date_created"},
+		Fields: func(m *ordermodel.Transaction) map[string]any {
+			return map[string]any{
+				"id":             &m.ID,
+				"session_id":     &m.SessionID,
+				"status":         &m.Status,
+				"note":           &m.Note,
+				"error":          &m.Error,
+				"payment_option": &m.PaymentOption,
+				"data":           &m.Data,
+				"amount":         &m.Amount,
+				"currency":       &m.Currency,
+				"reverses_id":    &m.ReversesID,
+				"date_created":   &m.DateCreated,
+				"date_settled":   &m.DateSettled,
+				"date_expired":   &m.DateExpired,
+			}
+		},
+	}
+}
+
+func TransactionConds(f ListTransactionParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"session_id"`, f.SessionId),
+		repolist.In(`"status"`, f.Status),
+		repolist.In(`"note"`, f.Note),
+		repolist.In(`"error"`, f.Error),
+		repolist.In(`"payment_option"`, f.PaymentOption),
+		repolist.In(`"amount"`, f.Amount),
+		repolist.Gte(`"amount"`, f.AmountFrom),
+		repolist.Lte(`"amount"`, f.AmountTo),
+		repolist.In(`"currency"`, f.Currency),
+		repolist.In(`"reverses_id"`, f.ReversesId),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+		repolist.In(`"date_settled"`, f.DateSettled),
+		repolist.Gte(`"date_settled"`, f.DateSettledFrom),
+		repolist.Lte(`"date_settled"`, f.DateSettledTo),
+		repolist.In(`"date_expired"`, f.DateExpired),
+		repolist.Gte(`"date_expired"`, f.DateExpiredFrom),
+		repolist.Lte(`"date_expired"`, f.DateExpiredTo),
+	}
+}
+
+func (r *Repository) ListTransaction(ctx context.Context, f ListTransactionParams) (paginate.PaginateResult[ordermodel.Transaction], error) {
+	return repolist.List(ctx, r.db, f.Params, TransactionQuery().Filter(TransactionConds(f)...))
+}
+
 type CreateTransportParams struct {
 	Option string
 	Data   json.RawMessage
@@ -308,8 +505,8 @@ func (r *Repository) CreateTransport(ctx context.Context, arg CreateTransportPar
 	return pk, err
 }
 
-func (r *Repository) GetTransport(ctx context.Context, id int64) (Transport, error) {
-	var i Transport
+func (r *Repository) GetTransport(ctx context.Context, id int64) (ordermodel.Transport, error) {
+	var i ordermodel.Transport
 	err := r.db.QueryRow(ctx, `SELECT "id", "option", "status", "data", "date_created" FROM "order"."transport" WHERE "id" = @id`,
 		pgx.NamedArgs{"id": id}).Scan(&i.ID, &i.Option, &i.Status, &i.Data, &i.DateCreated)
 	return i, err
@@ -317,7 +514,7 @@ func (r *Repository) GetTransport(ctx context.Context, id int64) (Transport, err
 
 type UpdateTransportParams struct {
 	Option      patch.Optional[string]
-	Status      patch.Optional[orderdb.NullOrderStatus]
+	Status      patch.Optional[null.String]
 	Data        patch.Optional[json.RawMessage]
 	DateCreated patch.Optional[time.Time]
 }
@@ -355,6 +552,49 @@ func (r *Repository) DeleteTransport(ctx context.Context, id int64) error {
 	return err
 }
 
+type ListTransportParams struct {
+	paginate.Params
+
+	Id              []int64
+	Option          []string
+	Status          []OrderStatus
+	DateCreated     []time.Time
+	DateCreatedFrom null.Time
+	DateCreatedTo   null.Time
+}
+
+func TransportQuery() repolist.Query[ordermodel.Transport] {
+	return repolist.Query[ordermodel.Transport]{
+		Table: `"order"."transport"`,
+		PK:    "id",
+		Sort:  []string{"id", "date_created"},
+		Fields: func(m *ordermodel.Transport) map[string]any {
+			return map[string]any{
+				"id":           &m.ID,
+				"option":       &m.Option,
+				"status":       &m.Status,
+				"data":         &m.Data,
+				"date_created": &m.DateCreated,
+			}
+		},
+	}
+}
+
+func TransportConds(f ListTransportParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"option"`, f.Option),
+		repolist.In(`"status"`, f.Status),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+	}
+}
+
+func (r *Repository) ListTransport(ctx context.Context, f ListTransportParams) (paginate.PaginateResult[ordermodel.Transport], error) {
+	return repolist.List(ctx, r.db, f.Params, TransportQuery().Filter(TransportConds(f)...))
+}
+
 type CreateOrderParams struct {
 	BuyerID          uuid.UUID
 	SellerID         uuid.UUID
@@ -374,8 +614,8 @@ func (r *Repository) CreateOrder(ctx context.Context, arg CreateOrderParams) (uu
 	return pk, err
 }
 
-func (r *Repository) GetOrder(ctx context.Context, id uuid.UUID) (Order, error) {
-	var i Order
+func (r *Repository) GetOrder(ctx context.Context, id uuid.UUID) (ordermodel.Order, error) {
+	var i ordermodel.Order
 	err := r.db.QueryRow(ctx, `SELECT "id", "buyer_id", "seller_id", "transport_id", "address", "date_created", "confirmed_by_id", "confirm_session_id", "note" FROM "order"."order" WHERE "id" = @id`,
 		pgx.NamedArgs{"id": id}).Scan(&i.ID, &i.BuyerID, &i.SellerID, &i.TransportID, &i.Address, &i.DateCreated, &i.ConfirmedByID, &i.ConfirmSessionID, &i.Note)
 	return i, err
@@ -441,6 +681,63 @@ func (r *Repository) DeleteOrder(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+type ListOrderParams struct {
+	paginate.Params
+
+	Id               []uuid.UUID
+	BuyerId          []uuid.UUID
+	SellerId         []uuid.UUID
+	TransportId      []int64
+	Address          []string
+	DateCreated      []time.Time
+	DateCreatedFrom  null.Time
+	DateCreatedTo    null.Time
+	ConfirmedById    []uuid.UUID
+	ConfirmSessionId []uuid.UUID
+	Note             []string
+}
+
+func OrderQuery() repolist.Query[ordermodel.Order] {
+	return repolist.Query[ordermodel.Order]{
+		Table: `"order"."order"`,
+		PK:    "id",
+		Sort:  []string{"id", "date_created"},
+		Fields: func(m *ordermodel.Order) map[string]any {
+			return map[string]any{
+				"id":                 &m.ID,
+				"buyer_id":           &m.BuyerID,
+				"seller_id":          &m.SellerID,
+				"transport_id":       &m.TransportID,
+				"address":            &m.Address,
+				"date_created":       &m.DateCreated,
+				"confirmed_by_id":    &m.ConfirmedByID,
+				"confirm_session_id": &m.ConfirmSessionID,
+				"note":               &m.Note,
+			}
+		},
+	}
+}
+
+func OrderConds(f ListOrderParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"buyer_id"`, f.BuyerId),
+		repolist.In(`"seller_id"`, f.SellerId),
+		repolist.In(`"transport_id"`, f.TransportId),
+		repolist.In(`"address"`, f.Address),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+		repolist.In(`"confirmed_by_id"`, f.ConfirmedById),
+		repolist.In(`"confirm_session_id"`, f.ConfirmSessionId),
+		repolist.In(`"note"`, f.Note),
+	}
+}
+
+func (r *Repository) ListOrder(ctx context.Context, f ListOrderParams) (paginate.PaginateResult[ordermodel.Order], error) {
+	return repolist.List(ctx, r.db, f.Params, OrderQuery().Filter(OrderConds(f)...))
+}
+
 type CreateItemParams struct {
 	OrderID          uuid.NullUUID
 	AccountID        uuid.UUID
@@ -470,8 +767,8 @@ func (r *Repository) CreateItem(ctx context.Context, arg CreateItemParams) (int6
 	return pk, err
 }
 
-func (r *Repository) GetItem(ctx context.Context, id int64) (Item, error) {
-	var i Item
+func (r *Repository) GetItem(ctx context.Context, id int64) (ordermodel.OrderItem, error) {
+	var i ordermodel.OrderItem
 	err := r.db.QueryRow(ctx, `SELECT "id", "order_id", "account_id", "seller_id", "sku_id", "spu_id", "sku_name", "address", "note", "serial_ids", "quantity", "transport_option", "subtotal_amount", "total_amount", "source_currency", "payment_session_id", "date_cancelled", "cancelled_by_id", "date_created" FROM "order"."item" WHERE "id" = @id`,
 		pgx.NamedArgs{"id": id}).Scan(&i.ID, &i.OrderID, &i.AccountID, &i.SellerID, &i.SkuID, &i.SpuID, &i.SkuName, &i.Address, &i.Note, &i.SerialIds, &i.Quantity, &i.TransportOption, &i.SubtotalAmount, &i.TotalAmount, &i.SourceCurrency, &i.PaymentSessionID, &i.DateCancelled, &i.CancelledByID, &i.DateCreated)
 	return i, err
@@ -587,6 +884,107 @@ func (r *Repository) DeleteItem(ctx context.Context, id int64) error {
 	return err
 }
 
+type ListItemParams struct {
+	paginate.Params
+
+	Id                 []int64
+	OrderId            []uuid.UUID
+	AccountId          []uuid.UUID
+	SellerId           []uuid.UUID
+	SkuId              []uuid.UUID
+	SpuId              []uuid.UUID
+	SkuName            []string
+	Address            []string
+	Note               []string
+	Quantity           []int64
+	QuantityFrom       null.Int
+	QuantityTo         null.Int
+	TransportOption    []string
+	SubtotalAmount     []int64
+	SubtotalAmountFrom null.Int
+	SubtotalAmountTo   null.Int
+	TotalAmount        []int64
+	TotalAmountFrom    null.Int
+	TotalAmountTo      null.Int
+	SourceCurrency     []string
+	PaymentSessionId   []uuid.UUID
+	DateCancelled      []time.Time
+	DateCancelledFrom  null.Time
+	DateCancelledTo    null.Time
+	CancelledById      []uuid.UUID
+	DateCreated        []time.Time
+	DateCreatedFrom    null.Time
+	DateCreatedTo      null.Time
+}
+
+func ItemQuery() repolist.Query[ordermodel.OrderItem] {
+	return repolist.Query[ordermodel.OrderItem]{
+		Table: `"order"."item"`,
+		PK:    "id",
+		Sort:  []string{"id", "quantity", "subtotal_amount", "total_amount", "date_created"},
+		Fields: func(m *ordermodel.OrderItem) map[string]any {
+			return map[string]any{
+				"id":                 &m.ID,
+				"order_id":           &m.OrderID,
+				"account_id":         &m.AccountID,
+				"seller_id":          &m.SellerID,
+				"sku_id":             &m.SkuID,
+				"spu_id":             &m.SpuID,
+				"sku_name":           &m.SkuName,
+				"address":            &m.Address,
+				"note":               &m.Note,
+				"serial_ids":         &m.SerialIds,
+				"quantity":           &m.Quantity,
+				"transport_option":   &m.TransportOption,
+				"subtotal_amount":    &m.SubtotalAmount,
+				"total_amount":       &m.TotalAmount,
+				"source_currency":    &m.SourceCurrency,
+				"payment_session_id": &m.PaymentSessionID,
+				"date_cancelled":     &m.DateCancelled,
+				"cancelled_by_id":    &m.CancelledByID,
+				"date_created":       &m.DateCreated,
+			}
+		},
+	}
+}
+
+func ItemConds(f ListItemParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"order_id"`, f.OrderId),
+		repolist.In(`"account_id"`, f.AccountId),
+		repolist.In(`"seller_id"`, f.SellerId),
+		repolist.In(`"sku_id"`, f.SkuId),
+		repolist.In(`"spu_id"`, f.SpuId),
+		repolist.In(`"sku_name"`, f.SkuName),
+		repolist.In(`"address"`, f.Address),
+		repolist.In(`"note"`, f.Note),
+		repolist.In(`"quantity"`, f.Quantity),
+		repolist.Gte(`"quantity"`, f.QuantityFrom),
+		repolist.Lte(`"quantity"`, f.QuantityTo),
+		repolist.In(`"transport_option"`, f.TransportOption),
+		repolist.In(`"subtotal_amount"`, f.SubtotalAmount),
+		repolist.Gte(`"subtotal_amount"`, f.SubtotalAmountFrom),
+		repolist.Lte(`"subtotal_amount"`, f.SubtotalAmountTo),
+		repolist.In(`"total_amount"`, f.TotalAmount),
+		repolist.Gte(`"total_amount"`, f.TotalAmountFrom),
+		repolist.Lte(`"total_amount"`, f.TotalAmountTo),
+		repolist.In(`"source_currency"`, f.SourceCurrency),
+		repolist.In(`"payment_session_id"`, f.PaymentSessionId),
+		repolist.In(`"date_cancelled"`, f.DateCancelled),
+		repolist.Gte(`"date_cancelled"`, f.DateCancelledFrom),
+		repolist.Lte(`"date_cancelled"`, f.DateCancelledTo),
+		repolist.In(`"cancelled_by_id"`, f.CancelledById),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+	}
+}
+
+func (r *Repository) ListItem(ctx context.Context, f ListItemParams) (paginate.PaginateResult[ordermodel.OrderItem], error) {
+	return repolist.List(ctx, r.db, f.Params, ItemQuery().Filter(ItemConds(f)...))
+}
+
 type CreateRefundParams struct {
 	AccountID                uuid.UUID
 	OrderID                  uuid.UUID
@@ -609,8 +1007,8 @@ func (r *Repository) CreateRefund(ctx context.Context, arg CreateRefundParams) (
 	return pk, err
 }
 
-func (r *Repository) GetRefund(ctx context.Context, id uuid.UUID) (Refund, error) {
-	var i Refund
+func (r *Repository) GetRefund(ctx context.Context, id uuid.UUID) (ordermodel.Refund, error) {
+	var i ordermodel.Refund
 	err := r.db.QueryRow(ctx, `SELECT "id", "account_id", "order_id", "reason", "date_created", "status", "return_transport_id", "date_received_by_seller", "review_deadline", "seller_decision_at", "return_to_buyer_transport_id", "rejection_reason", "refund_tx_id" FROM "order"."refund" WHERE "id" = @id`,
 		pgx.NamedArgs{"id": id}).Scan(&i.ID, &i.AccountID, &i.OrderID, &i.Reason, &i.DateCreated, &i.Status, &i.ReturnTransportID, &i.DateReceivedBySeller, &i.ReviewDeadline, &i.SellerDecisionAt, &i.ReturnToBuyerTransportID, &i.RejectionReason, &i.RefundTxID)
 	return i, err
@@ -621,7 +1019,7 @@ type UpdateRefundParams struct {
 	OrderID                  patch.Optional[uuid.UUID]
 	Reason                   patch.Optional[string]
 	DateCreated              patch.Optional[time.Time]
-	Status                   patch.Optional[orderdb.OrderRefundStatus]
+	Status                   patch.Optional[RefundStatus]
 	ReturnTransportID        patch.Optional[int64]
 	DateReceivedBySeller     patch.Optional[null.Time]
 	ReviewDeadline           patch.Optional[null.Time]
@@ -696,6 +1094,87 @@ func (r *Repository) DeleteRefund(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+type ListRefundParams struct {
+	paginate.Params
+
+	Id                       []uuid.UUID
+	AccountId                []uuid.UUID
+	OrderId                  []uuid.UUID
+	Reason                   []string
+	DateCreated              []time.Time
+	DateCreatedFrom          null.Time
+	DateCreatedTo            null.Time
+	Status                   []OrderRefundStatus
+	ReturnTransportId        []int64
+	DateReceivedBySeller     []time.Time
+	DateReceivedBySellerFrom null.Time
+	DateReceivedBySellerTo   null.Time
+	ReviewDeadline           []time.Time
+	ReviewDeadlineFrom       null.Time
+	ReviewDeadlineTo         null.Time
+	SellerDecisionAt         []time.Time
+	SellerDecisionAtFrom     null.Time
+	SellerDecisionAtTo       null.Time
+	ReturnToBuyerTransportId []int64
+	RejectionReason          []string
+	RefundTxId               []uuid.UUID
+}
+
+func RefundQuery() repolist.Query[ordermodel.Refund] {
+	return repolist.Query[ordermodel.Refund]{
+		Table: `"order"."refund"`,
+		PK:    "id",
+		Sort:  []string{"id", "date_created"},
+		Fields: func(m *ordermodel.Refund) map[string]any {
+			return map[string]any{
+				"id":                           &m.ID,
+				"account_id":                   &m.AccountID,
+				"order_id":                     &m.OrderID,
+				"reason":                       &m.Reason,
+				"date_created":                 &m.DateCreated,
+				"status":                       &m.Status,
+				"return_transport_id":          &m.ReturnTransportID,
+				"date_received_by_seller":      &m.DateReceivedBySeller,
+				"review_deadline":              &m.ReviewDeadline,
+				"seller_decision_at":           &m.SellerDecisionAt,
+				"return_to_buyer_transport_id": &m.ReturnToBuyerTransportID,
+				"rejection_reason":             &m.RejectionReason,
+				"refund_tx_id":                 &m.RefundTxID,
+			}
+		},
+	}
+}
+
+func RefundConds(f ListRefundParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"account_id"`, f.AccountId),
+		repolist.In(`"order_id"`, f.OrderId),
+		repolist.In(`"reason"`, f.Reason),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+		repolist.In(`"status"`, f.Status),
+		repolist.In(`"return_transport_id"`, f.ReturnTransportId),
+		repolist.In(`"date_received_by_seller"`, f.DateReceivedBySeller),
+		repolist.Gte(`"date_received_by_seller"`, f.DateReceivedBySellerFrom),
+		repolist.Lte(`"date_received_by_seller"`, f.DateReceivedBySellerTo),
+		repolist.In(`"review_deadline"`, f.ReviewDeadline),
+		repolist.Gte(`"review_deadline"`, f.ReviewDeadlineFrom),
+		repolist.Lte(`"review_deadline"`, f.ReviewDeadlineTo),
+		repolist.In(`"seller_decision_at"`, f.SellerDecisionAt),
+		repolist.Gte(`"seller_decision_at"`, f.SellerDecisionAtFrom),
+		repolist.Lte(`"seller_decision_at"`, f.SellerDecisionAtTo),
+		repolist.In(`"return_to_buyer_transport_id"`, f.ReturnToBuyerTransportId),
+		repolist.In(`"rejection_reason"`, f.RejectionReason),
+		repolist.In(`"refund_tx_id"`, f.RefundTxId),
+	}
+}
+
+func (r *Repository) ListRefund(ctx context.Context, f ListRefundParams) (paginate.PaginateResult[ordermodel.Refund], error) {
+	return repolist.List(ctx, r.db, f.Params, RefundQuery().Filter(RefundConds(f)...))
+}
+
 type CreateRefundDisputeParams struct {
 	RefundID       uuid.UUID
 	AccountID      uuid.UUID
@@ -714,8 +1193,8 @@ func (r *Repository) CreateRefundDispute(ctx context.Context, arg CreateRefundDi
 	return pk, err
 }
 
-func (r *Repository) GetRefundDispute(ctx context.Context, id uuid.UUID) (RefundDispute, error) {
-	var i RefundDispute
+func (r *Repository) GetRefundDispute(ctx context.Context, id uuid.UUID) (ordermodel.RefundDispute, error) {
+	var i ordermodel.RefundDispute
 	err := r.db.QueryRow(ctx, `SELECT "id", "refund_id", "account_id", "reason", "date_created", "status", "resolved_by_id", "date_resolved", "resolution_note" FROM "order"."refund_dispute" WHERE "id" = @id`,
 		pgx.NamedArgs{"id": id}).Scan(&i.ID, &i.RefundID, &i.AccountID, &i.Reason, &i.DateCreated, &i.Status, &i.ResolvedByID, &i.DateResolved, &i.ResolutionNote)
 	return i, err
@@ -726,7 +1205,7 @@ type UpdateRefundDisputeParams struct {
 	AccountID      patch.Optional[uuid.UUID]
 	Reason         patch.Optional[string]
 	DateCreated    patch.Optional[time.Time]
-	Status         patch.Optional[orderdb.OrderDisputeStatus]
+	Status         patch.Optional[DisputeStatus]
 	ResolvedByID   patch.Optional[uuid.NullUUID]
 	DateResolved   patch.Optional[null.Time]
 	ResolutionNote patch.Optional[null.String]
@@ -779,4 +1258,65 @@ func (r *Repository) UpdateRefundDispute(ctx context.Context, id uuid.UUID, arg 
 func (r *Repository) DeleteRefundDispute(ctx context.Context, id uuid.UUID) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM "order"."refund_dispute" WHERE "id" = @id`, pgx.NamedArgs{"id": id})
 	return err
+}
+
+type ListRefundDisputeParams struct {
+	paginate.Params
+
+	Id               []uuid.UUID
+	RefundId         []uuid.UUID
+	AccountId        []uuid.UUID
+	Reason           []string
+	DateCreated      []time.Time
+	DateCreatedFrom  null.Time
+	DateCreatedTo    null.Time
+	Status           []OrderDisputeStatus
+	ResolvedById     []uuid.UUID
+	DateResolved     []time.Time
+	DateResolvedFrom null.Time
+	DateResolvedTo   null.Time
+	ResolutionNote   []string
+}
+
+func RefundDisputeQuery() repolist.Query[ordermodel.RefundDispute] {
+	return repolist.Query[ordermodel.RefundDispute]{
+		Table: `"order"."refund_dispute"`,
+		PK:    "id",
+		Sort:  []string{"id", "date_created"},
+		Fields: func(m *ordermodel.RefundDispute) map[string]any {
+			return map[string]any{
+				"id":              &m.ID,
+				"refund_id":       &m.RefundID,
+				"account_id":      &m.AccountID,
+				"reason":          &m.Reason,
+				"date_created":    &m.DateCreated,
+				"status":          &m.Status,
+				"resolved_by_id":  &m.ResolvedByID,
+				"date_resolved":   &m.DateResolved,
+				"resolution_note": &m.ResolutionNote,
+			}
+		},
+	}
+}
+
+func RefundDisputeConds(f ListRefundDisputeParams) []repolist.Cond {
+	return []repolist.Cond{
+		repolist.In(`"id"`, f.Id),
+		repolist.In(`"refund_id"`, f.RefundId),
+		repolist.In(`"account_id"`, f.AccountId),
+		repolist.In(`"reason"`, f.Reason),
+		repolist.In(`"date_created"`, f.DateCreated),
+		repolist.Gte(`"date_created"`, f.DateCreatedFrom),
+		repolist.Lte(`"date_created"`, f.DateCreatedTo),
+		repolist.In(`"status"`, f.Status),
+		repolist.In(`"resolved_by_id"`, f.ResolvedById),
+		repolist.In(`"date_resolved"`, f.DateResolved),
+		repolist.Gte(`"date_resolved"`, f.DateResolvedFrom),
+		repolist.Lte(`"date_resolved"`, f.DateResolvedTo),
+		repolist.In(`"resolution_note"`, f.ResolutionNote),
+	}
+}
+
+func (r *Repository) ListRefundDispute(ctx context.Context, f ListRefundDisputeParams) (paginate.PaginateResult[ordermodel.RefundDispute], error) {
+	return repolist.List(ctx, r.db, f.Params, RefundDisputeQuery().Filter(RefundDisputeConds(f)...))
 }
