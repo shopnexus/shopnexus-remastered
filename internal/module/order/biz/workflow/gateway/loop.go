@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/provider/payment"
 
 	"github.com/google/uuid"
@@ -52,7 +52,7 @@ func (g *Gateway) RejectPendingURLs(ctx restate.WorkflowContext, cause error) er
 // instead of blocking on a redirect URL that will never be minted.
 func (g *Gateway) SettleWalletOnly(ctx restate.WorkflowContext, sessionID uuid.UUID) error {
 	if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-		_, e := g.core.Storage.Querier().MarkPaymentSessionSuccess(rctx, orderdb.MarkPaymentSessionSuccessParams{
+		_, e := g.core.Storage.Querier().MarkPaymentSessionSuccess(rctx, orderrepo.MarkPaymentSessionSuccessParams{
 			ID:       sessionID,
 			DatePaid: time.Now(),
 		})
@@ -74,10 +74,10 @@ func (g *Gateway) RunPaymentLoop(ctx restate.WorkflowContext, p LoopParams) erro
 		txID := restate.UUID(ctx)
 
 		if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-			_, e := g.core.Storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
+			_, e := g.core.Storage.Querier().CreateTransaction(rctx, orderrepo.CreateTransactionParams{
 				ID:            txID,
 				SessionID:     p.SessionID,
-				Status:        orderdb.OrderStatusPending,
+				Status:        ordermodel.StatusPending,
 				Note:          fmt.Sprintf("%s (attempt %d)", p.NotePrefix, attempt),
 				PaymentOption: null.StringFrom(p.PaymentOption),
 				Data:          json.RawMessage("{}"),
@@ -127,10 +127,10 @@ func (g *Gateway) RunPaymentLoop(ctx restate.WorkflowContext, p LoopParams) erro
 			// Pending-guarded UPDATEs → idempotent on replay.
 			if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
 				now := time.Now()
-				if _, e := g.core.Storage.Querier().MarkTransactionSuccess(rctx, orderdb.MarkTransactionSuccessParams{ID: txID, DateSettled: now}); e != nil {
+				if _, e := g.core.Storage.Querier().MarkTransactionSuccess(rctx, orderrepo.MarkTransactionSuccessParams{ID: txID, DateSettled: now}); e != nil {
 					return fmt.Errorf("mark gateway tx success: %w", e)
 				}
-				if _, e := g.core.Storage.Querier().MarkPaymentSessionSuccess(rctx, orderdb.MarkPaymentSessionSuccessParams{ID: p.SessionID, DatePaid: now}); e != nil {
+				if _, e := g.core.Storage.Querier().MarkPaymentSessionSuccess(rctx, orderrepo.MarkPaymentSessionSuccessParams{ID: p.SessionID, DatePaid: now}); e != nil {
 					return fmt.Errorf("mark session success: %w", e)
 				}
 				return nil
@@ -141,7 +141,7 @@ func (g *Gateway) RunPaymentLoop(ctx restate.WorkflowContext, p LoopParams) erro
 			return nil
 		default: // attempt expired — lazy retry: don't burn gateway quota until the user returns.
 			if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-				return g.core.Storage.Querier().MarkTransactionsFailed(rctx, orderdb.MarkTransactionsFailedParams{
+				return g.core.Storage.Querier().MarkTransactionsFailed(rctx, orderrepo.MarkTransactionsFailedParams{
 					ID:    []uuid.UUID{txID},
 					Error: null.StringFrom("gateway attempt expired"),
 				})
@@ -192,7 +192,7 @@ func (g *Gateway) charge(ctx restate.WorkflowContext, txID uuid.UUID, amount int
 	if url != "" {
 		if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
 			data, _ := json.Marshal(map[string]string{"gateway_url": url})
-			return g.core.Storage.Querier().SetTransactionData(rctx, orderdb.SetTransactionDataParams{ID: txID, Data: data})
+			return g.core.Storage.Querier().SetTransactionData(rctx, orderrepo.SetTransactionDataParams{ID: txID, Data: data})
 		}); err != nil {
 			return "", fmt.Errorf("persist gateway url: %w", err)
 		}

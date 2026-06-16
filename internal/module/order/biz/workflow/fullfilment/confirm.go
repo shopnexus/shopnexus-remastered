@@ -11,8 +11,8 @@ import (
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	"shopnexus-server/internal/module/order/biz/workflow/gateway"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/provider/transport"
 
 	"github.com/google/uuid"
@@ -38,8 +38,8 @@ func (r *fulfillmentRun) confirm() (err error) {
 
 	// Step 2: require every buyer payment session to be already paid
 	for psID := range paymentSessionIDs {
-		status, sErr := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderStatus, error) {
-			session, e := r.Storage.Querier().GetPaymentSession(rctx, uuid.NullUUID{UUID: psID, Valid: true})
+		status, sErr := restate.Run(ctx, func(rctx restate.RunContext) (ordermodel.Status, error) {
+			session, e := r.Storage.Querier().GetPaymentSession(rctx, psID)
 			if e != nil {
 				return "", fmt.Errorf("get payment session: %w", e)
 			}
@@ -48,7 +48,7 @@ func (r *fulfillmentRun) confirm() (err error) {
 		if sErr != nil {
 			return fmt.Errorf("check payment session status: %w", sErr)
 		}
-		if status != orderdb.OrderStatusSuccess {
+		if status != ordermodel.StatusSuccess {
 			return ordermodel.ErrPaymentNotSuccess
 		}
 	}
@@ -62,7 +62,7 @@ func (r *fulfillmentRun) confirm() (err error) {
 	if err != nil {
 		return fmt.Errorf("get transport client: %w", err)
 	}
-	transportItems := lo.Map(orderItems, func(item orderdb.OrderItem, _ int) transport.ItemMetadata {
+	transportItems := lo.Map(orderItems, func(item ordermodel.OrderItem, _ int) transport.ItemMetadata {
 		return transport.ItemMetadata{SkuID: item.SkuID, Quantity: item.Quantity}
 	})
 	quote, err := transportClient.Quote(ctx, transport.QuoteParams{
@@ -101,26 +101,24 @@ func (r *fulfillmentRun) confirm() (err error) {
 	})
 
 	if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-		if _, sErr := r.Storage.Querier().CreateDefaultPaymentSession(rctx, orderdb.CreateDefaultPaymentSessionParams{
+		if _, sErr := r.Storage.Querier().CreatePaymentSession(rctx, orderrepo.CreatePaymentSessionParams{
 			ID:          sessionID,
 			Kind:        ordermodel.SessionKindSellerConfirmationFee,
-			Status:      orderdb.OrderStatusPending,
+			Status:      ordermodel.StatusPending,
 			FromID:      uuid.NullUUID{UUID: sellerID, Valid: true},
-			ToID:        uuid.NullUUID{},
 			Note:        "seller confirmation fee",
 			Currency:    sellerCurrency,
 			TotalAmount: confirmFeeTotal,
 			Data:        json.RawMessage("{}"),
-			DatePaid:    null.Time{},
 			DateExpired: time.Now().Add(gateway.SessionExpiry),
 		}); sErr != nil {
 			return fmt.Errorf("db create confirm session: %w", sErr)
 		}
 		if confirmFeeWallet > 0 {
-			if _, txErr := r.Storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
+			if _, txErr := r.Storage.Querier().CreateTransaction(rctx, orderrepo.CreateTransactionParams{
 				ID:        walletTxID,
 				SessionID: sessionID,
-				Status:    orderdb.OrderStatusPending,
+				Status:    ordermodel.StatusPending,
 				Note:      "confirm fee wallet payment",
 				Data:      json.RawMessage("{}"),
 				Amount:    confirmFeeWallet,
@@ -155,7 +153,7 @@ func (r *fulfillmentRun) confirm() (err error) {
 			})
 		})
 		if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-			_, e := r.Storage.Querier().MarkTransactionSuccess(rctx, orderdb.MarkTransactionSuccessParams{
+			_, e := r.Storage.Querier().MarkTransactionSuccess(rctx, orderrepo.MarkTransactionSuccessParams{
 				ID:          walletTxID,
 				DateSettled: time.Now(),
 			})
@@ -205,18 +203,18 @@ func (r *fulfillmentRun) confirm() (err error) {
 
 	if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
 		trData, _ := json.Marshal(transportData)
-		trRow, tErr := r.Storage.Querier().CreateDefaultTransport(rctx, orderdb.CreateDefaultTransportParams{
+		transportID, tErr := r.Storage.Querier().CreateTransport(rctx, orderrepo.CreateTransportParams{
 			Option: transportOption,
 			Data:   json.RawMessage(trData),
 		})
 		if tErr != nil {
 			return fmt.Errorf("db create transport: %w", tErr)
 		}
-		if oErr := r.Storage.Querier().CreateOrderIdempotent(rctx, orderdb.CreateOrderIdempotentParams{
+		if oErr := r.Storage.Querier().CreateOrderIdempotent(rctx, orderrepo.CreateOrderIdempotentParams{
 			ID:               r.orderID,
 			BuyerID:          buyerID,
 			SellerID:         sellerID,
-			TransportID:      trRow.ID,
+			TransportID:      transportID,
 			Address:          address,
 			DateCreated:      time.Now(),
 			ConfirmedByID:    r.input.Account.ID,
@@ -225,7 +223,7 @@ func (r *fulfillmentRun) confirm() (err error) {
 		}); oErr != nil {
 			return fmt.Errorf("db create order: %w", oErr)
 		}
-		if lErr := r.Storage.Querier().SetItemsOrderID(rctx, orderdb.SetItemsOrderIDParams{
+		if lErr := r.Storage.Querier().SetItemsOrderID(rctx, orderrepo.SetItemsOrderIDParams{
 			OrderID: uuid.NullUUID{UUID: r.orderID, Valid: true},
 			ItemIds: r.input.ItemIDs,
 		}); lErr != nil {
@@ -247,7 +245,7 @@ func (r *fulfillmentRun) confirm() (err error) {
 	}
 
 	// Step 7: notify the buyer their items are confirmed
-	itemNames := lo.Map(orderItems, func(it orderdb.OrderItem, _ int) string { return it.SkuName })
+	itemNames := lo.Map(orderItems, func(it ordermodel.OrderItem, _ int) string { return it.SkuName })
 	if err = r.NotifyOrder(ctx, buyerID, r.orderID, accountmodel.NotiItemsConfirmed, "Items confirmed",
 		fmt.Sprintf("%s has been confirmed by the seller.", ordermodel.SummarizeNames(itemNames))); err != nil {
 		return fmt.Errorf("notify items confirmed: %w", err)
@@ -258,9 +256,9 @@ func (r *fulfillmentRun) confirm() (err error) {
 }
 
 // fetchItems wraps the DB list in restate.Run so ordering and missing-row checks are journaled.
-func (h *FulfillmentWorkflow) fetchItems(ctx restate.WorkflowContext, itemIDs []int64) ([]orderdb.OrderItem, error) {
-	items, err := restate.Run(ctx, func(rctx restate.RunContext) ([]orderdb.OrderItem, error) {
-		res, e := h.Storage.Querier().ListItem(rctx, orderdb.ListItemParams{Id: itemIDs})
+func (h *FulfillmentWorkflow) fetchItems(ctx restate.WorkflowContext, itemIDs []int64) ([]ordermodel.OrderItem, error) {
+	items, err := restate.Run(ctx, func(rctx restate.RunContext) ([]ordermodel.OrderItem, error) {
+		res, e := h.Storage.Querier().ListItem(rctx, orderrepo.ListItemParams{Id: itemIDs})
 		if e != nil {
 			return nil, fmt.Errorf("db list items: %w", e)
 		}
@@ -277,7 +275,7 @@ func (h *FulfillmentWorkflow) fetchItems(ctx restate.WorkflowContext, itemIDs []
 
 // aggregateItems validates cross-item invariants (ownership, buyer, address, transport) and sums paidTotal.
 // Failures are restate.TerminalError — deterministic violations must not retry forever.
-func aggregateItems(items []orderdb.OrderItem, sellerID uuid.UUID) (
+func aggregateItems(items []ordermodel.OrderItem, sellerID uuid.UUID) (
 	buyerID uuid.UUID,
 	address, transportOption string,
 	paidTotal int64,

@@ -4,7 +4,6 @@ import (
 	restate "github.com/restatedev/sdk-go"
 
 	accountmodel "shopnexus-server/internal/module/account/model"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 
 	"github.com/google/uuid"
@@ -44,8 +43,8 @@ type refundSnapshot struct {
 type RefundCrediter interface {
 	ExecuteRefundCredit(
 		ctx restate.Context,
-		refund orderdb.OrderRefund,
+		refund ordermodel.Refund,
 		deciderID uuid.UUID,
 		reason ordermodel.RefundCreditReason,
-	) (orderdb.OrderRefund, error)
+	) (ordermodel.Refund, error)
 }

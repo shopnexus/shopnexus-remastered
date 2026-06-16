@@ -8,7 +8,7 @@ import (
 	"shopnexus-server/internal/infras/metrics"
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/shared/idempotency"
 
 	"github.com/google/uuid"
@@ -32,7 +32,7 @@ func (r *checkoutRun) reserve() error {
 		}
 		r.saga.Defer("restore_cart", func(ctx restate.Context) error {
 			return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-				return r.Storage.Querier().RestoreCheckoutItems(rctx, orderdb.RestoreCheckoutItemsParams{
+				return r.Storage.Querier().RestoreCheckoutItems(rctx, orderrepo.RestoreCheckoutItemsParams{
 					AccountIds: accountIDs,
 					SkuIds:     restoreSkuIDs,
 					Quantities: quantities,
@@ -40,7 +40,7 @@ func (r *checkoutRun) reserve() error {
 			})
 		})
 		if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-			_, e := r.Storage.Querier().RemoveCheckoutItem(rctx, orderdb.RemoveCheckoutItemParams{
+			_, e := r.Storage.Querier().RemoveCheckoutItem(rctx, orderrepo.RemoveCheckoutItemParams{
 				AccountID: input.Account.ID,
 				SkuID:     skuIDs,
 			})

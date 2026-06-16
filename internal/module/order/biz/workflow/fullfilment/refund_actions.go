@@ -9,23 +9,21 @@ import (
 	restate "github.com/restatedev/sdk-go"
 
 	accountmodel "shopnexus-server/internal/module/account/model"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 )
 
 // autoAcceptRefund fires on review-window or shipping-timeout expiry with no seller decision.
 func (r *fulfillmentRun) autoAcceptRefund(refundID uuid.UUID) error {
 	ctx := r.ctx
-	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
-		return r.Storage.Querier().GetRefund(rctx, orderdb.GetRefundParams{
-			ID: uuid.NullUUID{UUID: refundID, Valid: true},
-		})
+	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (ordermodel.Refund, error) {
+		return r.Storage.Querier().GetRefund(rctx, refundID)
 	})
 	if err != nil {
 		return fmt.Errorf("get refund: %w", err)
 	}
 	// A manual decision may have already closed the refund.
-	if !(ordermodel.Refund{OrderRefund: refund}).CanSellerDecide() {
+	if !refund.CanSellerDecide() {
 		return nil
 	}
 
@@ -51,8 +49,8 @@ func (r *fulfillmentRun) autoAcceptRefund(refundID uuid.UUID) error {
 func (r *fulfillmentRun) markRefundDelivered(refundID uuid.UUID) error {
 	ctx := r.ctx
 	deadline := time.Now().Add(sellerReviewWindow)
-	updated, err := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderRefund, error) {
-		return r.Storage.Querier().MarkRefundDelivered(rctx, orderdb.MarkRefundDeliveredParams{
+	updated, err := restate.Run(ctx, func(rctx restate.RunContext) (ordermodel.Refund, error) {
+		return r.Storage.Querier().MarkRefundDelivered(rctx, orderrepo.MarkRefundDeliveredParams{
 			ID:             refundID,
 			ReviewDeadline: null.TimeFrom(deadline),
 		})
@@ -61,10 +59,8 @@ func (r *fulfillmentRun) markRefundDelivered(refundID uuid.UUID) error {
 		return fmt.Errorf("mark delivered: %w", err)
 	}
 
-	order, _ := restate.Run(ctx, func(rctx restate.RunContext) (orderdb.OrderOrder, error) {
-		return r.Storage.Querier().GetOrder(rctx, orderdb.GetOrderParams{
-			ID: uuid.NullUUID{UUID: updated.OrderID, Valid: true},
-		})
+	order, _ := restate.Run(ctx, func(rctx restate.RunContext) (ordermodel.Order, error) {
+		return r.Storage.Querier().GetOrder(rctx, updated.OrderID)
 	})
 	if err = r.NotifyRefund(ctx, order.SellerID, accountmodel.NotiRefundRequested,
 		"Return delivered", "The buyer's return shipment has arrived. Please review within 3 days.", updated); err != nil {

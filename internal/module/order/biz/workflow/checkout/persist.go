@@ -11,8 +11,8 @@ import (
 	"shopnexus-server/internal/infras/metrics"
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	"shopnexus-server/internal/module/order/biz/workflow/gateway"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
@@ -51,10 +51,10 @@ func (r *checkoutRun) persist() error {
 	}
 
 	if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-		if _, sErr := r.Storage.Querier().CreateDefaultPaymentSession(rctx, orderdb.CreateDefaultPaymentSessionParams{
+		if _, sErr := r.Storage.Querier().CreatePaymentSession(rctx, orderrepo.CreatePaymentSessionParams{
 			ID:          r.sessionID,
 			Kind:        ordermodel.SessionKindBuyerCheckout,
-			Status:      orderdb.OrderStatusPending,
+			Status:      ordermodel.StatusPending,
 			FromID:      uuid.NullUUID{UUID: input.Account.ID, Valid: true},
 			Note:        "buyer checkout",
 			Currency:    r.buyerCurrency,
@@ -67,10 +67,10 @@ func (r *checkoutRun) persist() error {
 		}
 
 		if r.internalWalletAmount > 0 {
-			if _, txErr := r.Storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
+			if _, txErr := r.Storage.Querier().CreateTransaction(rctx, orderrepo.CreateTransactionParams{
 				ID:        walletTxID,
 				SessionID: r.sessionID,
-				Status:    orderdb.OrderStatusPending,
+				Status:    ordermodel.StatusPending,
 				Note:      "checkout wallet payment",
 				Data:      json.RawMessage("{}"),
 				Amount:    r.internalWalletAmount,
@@ -99,7 +99,7 @@ func (r *checkoutRun) persist() error {
 				skuName += " - " + strings.Join(vals, " / ")
 			}
 
-			if _, iErr := r.Storage.Querier().CreateDefaultItem(rctx, orderdb.CreateDefaultItemParams{
+			if _, iErr := r.Storage.Querier().CreateItem(rctx, orderrepo.CreateItemParams{
 				AccountID:        input.Account.ID,
 				SellerID:         spu.AccountID,
 				SkuID:            sku.ID,
@@ -146,7 +146,7 @@ func (r *checkoutRun) persist() error {
 			})
 		})
 		if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-			_, e := r.Storage.Querier().MarkTransactionSuccess(rctx, orderdb.MarkTransactionSuccessParams{
+			_, e := r.Storage.Querier().MarkTransactionSuccess(rctx, orderrepo.MarkTransactionSuccessParams{
 				ID:          walletTxID,
 				DateSettled: time.Now(),
 			})

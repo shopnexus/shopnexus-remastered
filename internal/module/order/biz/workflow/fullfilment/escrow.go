@@ -10,11 +10,10 @@ import (
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	"shopnexus-server/internal/module/order/biz/workflow/gateway"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 
 	"github.com/google/uuid"
-	"github.com/guregu/null/v6"
 )
 
 // returnDeliveredKey keys by refundID because one workflow instance sees every refund the order accumulates.
@@ -43,25 +42,23 @@ func (r *fulfillmentRun) escrow() (outcome string, err error) {
 		})
 	})
 	if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-		if _, sErr := r.Storage.Querier().CreateDefaultPaymentSession(rctx, orderdb.CreateDefaultPaymentSessionParams{
+		if _, sErr := r.Storage.Querier().CreatePaymentSession(rctx, orderrepo.CreatePaymentSessionParams{
 			ID:          sessionID,
 			Kind:        ordermodel.SessionKindSellerPayout,
-			Status:      orderdb.OrderStatusPending,
-			FromID:      uuid.NullUUID{},
+			Status:      ordermodel.StatusPending,
 			ToID:        uuid.NullUUID{UUID: r.conf.SellerID, Valid: true},
 			Note:        "seller payout (escrow)",
 			Currency:    r.conf.Currency,
 			TotalAmount: r.conf.PaidTotal,
 			Data:        json.RawMessage("{}"),
-			DatePaid:    null.Time{},
 			DateExpired: deadline,
 		}); sErr != nil {
 			return fmt.Errorf("db create payout session: %w", sErr)
 		}
-		if _, txErr := r.Storage.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
+		if _, txErr := r.Storage.Querier().CreateTransaction(rctx, orderrepo.CreateTransactionParams{
 			ID:        payoutTxID,
 			SessionID: sessionID,
-			Status:    orderdb.OrderStatusPending,
+			Status:    ordermodel.StatusPending,
 			Note:      "seller payout (escrow)",
 			Data:      json.RawMessage("{}"),
 			Amount:    r.conf.PaidTotal,
@@ -119,13 +116,16 @@ func (r *fulfillmentRun) escrow() (outcome string, err error) {
 			// Wrapped in RunVoid so replays use the journaled result; re-executing the
 			// Pending-guarded UPDATEs would fail with ErrNoRows on already-Success rows.
 			if err = restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-				if _, e := r.Storage.Querier().MarkPaymentSessionSuccess(rctx, orderdb.MarkPaymentSessionSuccessParams{
-					ID: sessionID,
+				now := time.Now()
+				if _, e := r.Storage.Querier().MarkPaymentSessionSuccess(rctx, orderrepo.MarkPaymentSessionSuccessParams{
+					ID:       sessionID,
+					DatePaid: now,
 				}); e != nil {
 					return fmt.Errorf("mark payout session success: %w", e)
 				}
-				if _, e := r.Storage.Querier().MarkTransactionSuccess(rctx, orderdb.MarkTransactionSuccessParams{
-					ID: payoutTxID,
+				if _, e := r.Storage.Querier().MarkTransactionSuccess(rctx, orderrepo.MarkTransactionSuccessParams{
+					ID:          payoutTxID,
+					DateSettled: now,
 				}); e != nil {
 					return fmt.Errorf("mark payout tx success: %w", e)
 				}
