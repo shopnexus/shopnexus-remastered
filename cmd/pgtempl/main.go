@@ -107,7 +107,7 @@ func generateForModule(module, outputDir, tableName string, singleFile string, s
 			return fmt.Errorf("parse models in %s: %w", out, err)
 		}
 		gen := &CrudGenerator{Package: module + "repo", Receiver: "Repository"}
-		writeCrudFiles(tables, models, gen, out)
+		writeCrudFile(tables, models, gen, out)
 		fmt.Printf("[%s] Generated crud repo code in %s\n", module, out)
 		return nil
 	}
@@ -221,33 +221,37 @@ func writeRepoFiles(tables []*Table, gen *RepoGenerator, outputDir string) {
 	}
 }
 
-// writeCrudFiles emits one <schema>_<table>_gen.go per table that has a matching
-// entity struct (named toPascalCase(table.Name)) in the model package.
-func writeCrudFiles(tables []*Table, models map[string]*ModelStruct, gen *CrudGenerator, outputDir string) {
+// writeCrudFile emits all tables' CRUD into one repo_gen.go. Each table is
+// matched to its entity struct (named toPascalCase(table.Name)) in the model
+// package; tables without one are skipped.
+func writeCrudFile(tables []*Table, models map[string]*ModelStruct, gen *CrudGenerator, outputDir string) {
+	var items []crudItem
 	for _, t := range tables {
 		model, ok := models[toPascalCase(t.Name)]
 		if !ok {
 			fmt.Printf("Skipping crud (no entity struct %q): %s.%s\n", toPascalCase(t.Name), t.Schema, t.Name)
 			continue
 		}
-		body, err := gen.GenerateCRUD(t, model)
-		if err != nil {
-			log.Fatalf("crud %s.%s: %v", t.Schema, t.Name, err)
-		}
-		if body == "" {
-			fmt.Printf("Skipping crud (vector/no single-pk): %s.%s\n", t.Schema, t.Name)
-			continue
-		}
-		formatted, err := format.Source([]byte(body))
-		if err != nil {
-			log.Fatalf("gofmt %s.%s: %v\nraw:\n%s", t.Schema, t.Name, err, body)
-		}
-		path := filepath.Join(outputDir, t.SafeFileName()+"_gen.go")
-		if err := os.WriteFile(path, formatted, 0644); err != nil {
-			log.Fatalf("write %s: %v", path, err)
-		}
-		fmt.Printf("Generated crud for table: %s.%s\n", t.Schema, t.Name)
+		items = append(items, crudItem{t, model})
 	}
+
+	body, err := gen.GenerateFile(items)
+	if err != nil {
+		log.Fatalf("crud: %v", err)
+	}
+	if body == "" {
+		fmt.Println("No crud generated (no matching entities)")
+		return
+	}
+	formatted, err := format.Source([]byte(body))
+	if err != nil {
+		log.Fatalf("gofmt crud: %v\nraw:\n%s", err, body)
+	}
+	path := filepath.Join(outputDir, "repo_gen.go")
+	if err := os.WriteFile(path, formatted, 0644); err != nil {
+		log.Fatalf("write %s: %v", path, err)
+	}
+	fmt.Printf("Generated crud (%d tables) in %s\n", len(items), path)
 }
 
 func writeSingleFile(tables []*Table, gen *Generator, outputDir string, singleFile string) {
