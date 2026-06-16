@@ -8,21 +8,21 @@ import (
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 )
 
-// EnrichItems converts DB items to model items and hydrates each with its
-// product slug + primary image so the FE can render cards without N hops.
-func (b *Base) EnrichItems(ctx context.Context, dbItems []orderdb.OrderItem) ([]ordermodel.OrderItem, error) {
-	if len(dbItems) == 0 {
+// EnrichItems hydrates each item with its product slug + primary image so the
+// FE can render cards without N hops.
+func (b *Base) EnrichItems(ctx context.Context, items []ordermodel.OrderItem) ([]ordermodel.OrderItem, error) {
+	if len(items) == 0 {
 		return []ordermodel.OrderItem{}, nil
 	}
 
-	skuIDs := lo.Uniq(lo.Map(dbItems, func(it orderdb.OrderItem, _ int) uuid.UUID { return it.SkuID }))
+	skuIDs := lo.Uniq(lo.Map(items, func(it ordermodel.OrderItem, _ int) uuid.UUID { return it.SkuID }))
 	skus, err := b.catalog.ListProductSku(ctx, catalogbiz.ListProductSkuParams{ID: skuIDs})
 	if err != nil {
 		return nil, fmt.Errorf("enrich items: list skus: %w", err)
@@ -44,43 +44,40 @@ func (b *Base) EnrichItems(ctx context.Context, dbItems []orderdb.OrderItem) ([]
 		return nil, fmt.Errorf("enrich items: get resources: %w", err)
 	}
 
-	result := make([]ordermodel.OrderItem, 0, len(dbItems))
-	for _, it := range dbItems {
-		richit := ordermodel.OrderItem{
-			OrderItem: it,
-		}
+	result := make([]ordermodel.OrderItem, 0, len(items))
+	for _, it := range items {
 		spuID := it.SpuID
 		if sku, ok := skuMap[it.SkuID]; ok {
 			spuID = sku.SpuID
 		}
 		if spu, ok := spuMap[spuID]; ok {
-			richit.Slug = spu.Slug
+			it.Slug = spu.Slug
 		}
 		if res, ok := resources[spuID]; ok && len(res) > 0 {
-			richit.ImageURL = res[0].Url
+			it.ImageURL = res[0].Url
 		}
-		result = append(result, richit)
+		result = append(result, it)
 	}
 
 	return result, nil
 }
 
-func (b *Base) HydrateOrders(ctx context.Context, orders []orderdb.OrderOrder) ([]ordermodel.Order, error) {
+func (b *Base) HydrateOrders(ctx context.Context, orders []ordermodel.Order) ([]ordermodel.Order, error) {
 	if len(orders) == 0 {
 		return []ordermodel.Order{}, nil
 	}
 
-	orderIDs := lo.Map(orders, func(o orderdb.OrderOrder, _ int) uuid.UUID { return o.ID })
-	transportIDs := lo.Uniq(lo.Map(orders, func(o orderdb.OrderOrder, _ int) int64 { return o.TransportID }))
+	orderIDs := lo.Map(orders, func(o ordermodel.Order, _ int) uuid.UUID { return o.ID })
+	transportIDs := lo.Uniq(lo.Map(orders, func(o ordermodel.Order, _ int) int64 { return o.TransportID }))
 
-	orderItemsRes, err := b.Storage.Querier().ListItem(ctx, orderdb.ListItemParams{
+	orderItemsRes, err := b.Storage.Querier().ListItem(ctx, orderrepo.ListItemParams{
 		OrderId: orderIDs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("db fetch order items: %w", err)
 	}
 	orderItems := orderItemsRes.Data
-	transportsRes, err := b.Storage.Querier().ListTransport(ctx, orderdb.ListTransportParams{Id: transportIDs})
+	transportsRes, err := b.Storage.Querier().ListTransport(ctx, orderrepo.ListTransportParams{Id: transportIDs})
 	if err != nil {
 		return nil, fmt.Errorf("db fetch transports: %w", err)
 	}
@@ -98,18 +95,17 @@ func (b *Base) HydrateOrders(ctx context.Context, orders []orderdb.OrderOrder) (
 		}
 	}
 
-	transportMap := lo.KeyBy(transports, func(t orderdb.OrderTransport) int64 { return t.ID })
+	transportMap := lo.KeyBy(transports, func(t ordermodel.Transport) int64 { return t.ID })
 
 	result := make([]ordermodel.Order, 0, len(orders))
 	for _, o := range orders {
-		richOrder := ordermodel.Order{OrderOrder: o}
 		if t, ok := transportMap[o.TransportID]; ok {
-			richOrder.Transport = &t
+			t := t
+			o.Transport = &t
 		}
-		richOrder.Items = enrichedItemsMap[o.ID]
+		o.Items = enrichedItemsMap[o.ID]
 
-		confirmSession, err := b.Storage.Querier().
-			GetPaymentSession(ctx, uuid.NullUUID{UUID: o.ConfirmSessionID, Valid: true})
+		confirmSession, err := b.Storage.Querier().GetPaymentSession(ctx, o.ConfirmSessionID)
 		if err != nil {
 			return nil, fmt.Errorf("get confirm session: %w", err)
 		}
@@ -118,58 +114,53 @@ func (b *Base) HydrateOrders(ctx context.Context, orders []orderdb.OrderOrder) (
 			return nil, fmt.Errorf("sum paid amount by order: %w", err)
 		}
 
-		richOrder.TotalAmount = total
-		richOrder.ConfirmSession = &confirmSession
+		o.TotalAmount = total
+		o.ConfirmSession = &confirmSession
 		if payoutSession, perr := b.Storage.Querier().GetPayoutSessionForOrder(ctx, o.ID); perr == nil {
-			richOrder.PayoutSession = &payoutSession
+			payoutSession := payoutSession
+			o.PayoutSession = &payoutSession
 		}
 
-		result = append(result, richOrder)
+		result = append(result, o)
 	}
 
 	return result, nil
 }
 
-func (b *Base) HydrateRefunds(ctx context.Context, rows ...orderdb.OrderRefund) ([]ordermodel.Refund, error) {
+func (b *Base) HydrateRefunds(ctx context.Context, rows ...ordermodel.Refund) ([]ordermodel.Refund, error) {
 	if len(rows) == 0 {
 		return nil, nil
 	}
 
-	// Map resources to refunds
 	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeRefund,
-		RefIDs:  lo.Map(rows, func(r orderdb.OrderRefund, _ int) uuid.UUID { return r.ID }),
+		RefIDs:  lo.Map(rows, func(r ordermodel.Refund, _ int) uuid.UUID { return r.ID }),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list refund resources: %w", err)
 	}
 
-	return lo.Map(rows, func(r orderdb.OrderRefund, _ int) ordermodel.Refund {
-		return ordermodel.Refund{
-			OrderRefund: r,
-			Resources:   resourcesMap[r.ID],
-		}
+	return lo.Map(rows, func(r ordermodel.Refund, _ int) ordermodel.Refund {
+		r.Resources = resourcesMap[r.ID]
+		return r
 	}), nil
 }
 
-func (b *Base) HydrateRefundDisputes(ctx context.Context, rows ...orderdb.OrderRefundDispute) ([]ordermodel.RefundDispute, error) {
+func (b *Base) HydrateRefundDisputes(ctx context.Context, rows ...ordermodel.RefundDispute) ([]ordermodel.RefundDispute, error) {
 	if len(rows) == 0 {
 		return nil, nil
 	}
 
-	// Map resources to disputes
 	resourcesMap, err := b.common.GetResources(ctx, commonbiz.GetResourcesParams{
 		RefType: commondb.CommonResourceRefTypeRefundDispute,
-		RefIDs:  lo.Map(rows, func(r orderdb.OrderRefundDispute, _ int) uuid.UUID { return r.ID }),
+		RefIDs:  lo.Map(rows, func(r ordermodel.RefundDispute, _ int) uuid.UUID { return r.ID }),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list dispute resources: %w", err)
 	}
 
-	return lo.Map(rows, func(r orderdb.OrderRefundDispute, _ int) ordermodel.RefundDispute {
-		return ordermodel.RefundDispute{
-			OrderRefundDispute: r,
-			Resources:          resourcesMap[r.ID],
-		}
+	return lo.Map(rows, func(r ordermodel.RefundDispute, _ int) ordermodel.RefundDispute {
+		r.Resources = resourcesMap[r.ID]
+		return r
 	}), nil
 }

@@ -7,7 +7,7 @@ import (
 
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountmodel "shopnexus-server/internal/module/account/model"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
+	ordermodel "shopnexus-server/internal/module/order/model"
 
 	"github.com/google/uuid"
 )
@@ -34,7 +34,7 @@ func (b *Base) NotifyOrder(
 func (b *Base) NotifyDispute(
 	ctx context.Context,
 	buyerID, sellerID uuid.UUID,
-	dispute orderdb.OrderRefundDispute,
+	dispute ordermodel.RefundDispute,
 	title, content string,
 ) error {
 	meta, _ := json.Marshal(map[string]string{
@@ -64,7 +64,7 @@ func (b *Base) NotifyRefund(
 	accountID uuid.UUID,
 	notiType accountmodel.NotificationType,
 	title, content string,
-	refund orderdb.OrderRefund,
+	refund ordermodel.Refund,
 ) error {
 	meta, _ := json.Marshal(map[string]string{
 		"refund_id": refund.ID.String(),

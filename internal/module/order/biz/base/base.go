@@ -11,7 +11,6 @@ import (
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	orderconfig "shopnexus-server/internal/module/order/config"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	orderrepo "shopnexus-server/internal/module/order/repo"
 	sharedcurrency "shopnexus-server/internal/shared/currency"
@@ -81,14 +80,12 @@ func (b *Base) TrackInteractions(ctx context.Context, interactions ...analyticbi
 func (b *Base) GetHydratedOrder(ctx context.Context, orderID uuid.UUID) (ordermodel.Order, error) {
 	var zero ordermodel.Order
 
-	order, err := b.Storage.Querier().GetOrder(ctx, orderdb.GetOrderParams{
-		ID: uuid.NullUUID{UUID: orderID, Valid: true},
-	})
+	order, err := b.Storage.Querier().GetOrder(ctx, orderID)
 	if err != nil {
 		return zero, fmt.Errorf("get order: %w", err)
 	}
 
-	orders, err := b.HydrateOrders(ctx, []orderdb.OrderOrder{order})
+	orders, err := b.HydrateOrders(ctx, []ordermodel.Order{order})
 	if err != nil {
 		return zero, fmt.Errorf("hydrate order: %w", err)
 	}
