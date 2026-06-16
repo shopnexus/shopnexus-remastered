@@ -95,6 +95,11 @@ func generateForModule(module, outputDir, tableName string, singleFile string, s
 	}
 
 	if emit == "crud" {
+		modelDir := filepath.Join("internal", "module", module, "model")
+		models, pkgName, err := ParseModelDirWithPkg(modelDir)
+		if err != nil {
+			return fmt.Errorf("parse models: %w", err)
+		}
 		out := outputDir
 		if out == "" {
 			out = filepath.Join("internal", "module", module, "repo")
@@ -102,13 +107,14 @@ func generateForModule(module, outputDir, tableName string, singleFile string, s
 		if err := os.MkdirAll(out, 0755); err != nil {
 			return fmt.Errorf("create output dir: %w", err)
 		}
-		models, err := ParseModelDir(out)
-		if err != nil {
-			return fmt.Errorf("parse models in %s: %w", out, err)
+		gen := &CrudGenerator{
+			Package:   module + "repo",
+			Receiver:  "Repository",
+			ModelPkg:  pkgName,
+			ModelPath: "shopnexus-server/internal/module/" + module + "/model",
 		}
-		gen := &CrudGenerator{Package: module + "repo", Receiver: "Repository"}
 		writeCrudFile(tables, models, gen, out)
-		fmt.Printf("[%s] Generated crud repo code in %s\n", module, out)
+		fmt.Printf("[%s] Generated crud+list repo in %s\n", module, out)
 		return nil
 	}
 
@@ -221,18 +227,24 @@ func writeRepoFiles(tables []*Table, gen *RepoGenerator, outputDir string) {
 	}
 }
 
-// writeCrudFile emits all tables' CRUD into one repo_gen.go. Each table is
-// matched to its entity struct (named toPascalCase(table.Name)) in the model
-// package; tables without one are skipped.
+// writeCrudFile emits all tables' CRUD+List into one repo_gen.go. Each table is
+// matched to its entity struct via the //pgtempl:table marker; tables without
+// a marker match are skipped.
 func writeCrudFile(tables []*Table, models map[string]*ModelStruct, gen *CrudGenerator, outputDir string) {
+	byTable := map[string]*ModelStruct{}
+	for _, m := range models {
+		if m.Table != "" {
+			byTable[m.Table] = m
+		}
+	}
 	var items []crudItem
 	for _, t := range tables {
-		model, ok := models[toPascalCase(t.Name)]
+		m, ok := byTable[t.FullName()]
 		if !ok {
-			fmt.Printf("Skipping crud (no entity struct %q): %s.%s\n", toPascalCase(t.Name), t.Schema, t.Name)
+			fmt.Printf("Skipping crud (no //pgtempl:table marker): %s.%s\n", t.Schema, t.Name)
 			continue
 		}
-		items = append(items, crudItem{t, model})
+		items = append(items, crudItem{t, m})
 	}
 
 	body, err := gen.GenerateFile(items)

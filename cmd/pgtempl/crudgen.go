@@ -27,7 +27,7 @@ func (g *CrudGenerator) GenerateCRUD(table *Table, model *ModelStruct) (string, 
 	return g.GenerateFile([]crudItem{{table, model}})
 }
 
-// GenerateFile emits one Go source file containing the CRUD for every item,
+// GenerateFile emits one Go source file containing the CRUD+List for every item,
 // sharing a single package decl and a merged import block. Items that skip
 // (vector / no single-column PK) contribute nothing. Returns "" if all skip.
 func (g *CrudGenerator) GenerateFile(items []crudItem) (string, error) {
@@ -47,6 +47,13 @@ func (g *CrudGenerator) GenerateFile(items []crudItem) (string, error) {
 		}
 		bodies.WriteString(body)
 		n++
+
+		// Append list body for this table (only when ModelPkg is set and table qualifies).
+		lb := g.listBody(it.table, it.model, &imp)
+		if lb != "" {
+			bodies.WriteString("\n")
+			bodies.WriteString(lb)
+		}
 	}
 	if n == 0 {
 		return "", nil
@@ -171,6 +178,91 @@ func (g *CrudGenerator) crudBody(table *Table, model *ModelStruct, imp *importSe
 	return b.String(), false, nil
 }
 
+// listBody emits the List method and supporting types for one table onto the
+// *Receiver, reusing repogen helpers. Returns "" when skipped (vector table,
+// key-only table, or no ModelPkg configured).
+func (g *CrudGenerator) listBody(table *Table, model *ModelStruct, imp *importSet) string {
+	if g.ModelPkg == "" {
+		return ""
+	}
+	if len(table.UpdatableColumns()) == 0 || table.HasVectorColumn() {
+		return ""
+	}
+
+	entity := g.ModelPkg + "." + model.Name
+	suffix := toPascalCase(table.Name)
+	listFunc := "List" + suffix
+	filterType := listFunc + "Params"
+	queryFunc := suffix + "Query"
+	condsFunc := suffix + "Conds"
+
+	// Mark paginate + repolist imports needed.
+	imp.paginate = true
+	imp.repolist = true
+	// Ensure model package is imported.
+	imp.ext[g.ModelPkg] = g.ModelPath
+
+	var ri repoImports
+	var structLines, condLines []string
+	for _, col := range table.FilterableColumns() {
+		ff, ok := buildFilterField(col, &ri)
+		if !ok {
+			continue
+		}
+		structLines = append(structLines, ff.structLines...)
+		condLines = append(condLines, ff.condLines...)
+	}
+	// Propagate repoImports into importSet.
+	if ri.uuid {
+		imp.ext["uuid"] = "github.com/google/uuid"
+	}
+	if ri.null {
+		imp.ext["null"] = "github.com/guregu/null/v6"
+	}
+	if ri.time {
+		imp.stdTime = true
+	}
+
+	// fieldRef returns the field reference for a column using model's GoName when
+	// available, falling back to goFieldName.
+	fieldRef := func(colName string) string {
+		if mf, ok := model.ByDB[colName]; ok {
+			return mf.GoName
+		}
+		return goFieldName(colName)
+	}
+
+	var b strings.Builder
+
+	// Params struct.
+	fmt.Fprintf(&b, "type %s struct {\n\tpaginate.Params\n\n%s\n}\n\n", filterType, strings.Join(structLines, "\n"))
+
+	// Query: reusable static base.
+	fmt.Fprintf(&b, "func %s() repolist.Query[%s] {\n", queryFunc, entity)
+	fmt.Fprintf(&b, "\treturn repolist.Query[%s]{\n", entity)
+	fmt.Fprintf(&b, "\t\tTable: `%s`,\n", table.FullName())
+	fmt.Fprintf(&b, "\t\tPK: %q,\n", pkLogical(table))
+	fmt.Fprintf(&b, "\t\tSort: []string{%s},\n", buildSortList(table))
+	fmt.Fprintf(&b, "\t\tFields: func(m *%s) map[string]any {\n", entity)
+	var fieldLines []string
+	for _, col := range table.Columns {
+		fieldLines = append(fieldLines, fmt.Sprintf("\t\t\t\t%q: &m.%s,", col.Name, fieldRef(col.Name)))
+	}
+	fmt.Fprintf(&b, "\t\t\treturn map[string]any{\n%s\n\t\t\t}\n\t\t},\n", strings.Join(fieldLines, "\n"))
+	b.WriteString("\t}\n}\n\n")
+
+	// Conds.
+	fmt.Fprintf(&b, "func %s(f %s) []repolist.Cond {\n", condsFunc, filterType)
+	fmt.Fprintf(&b, "\treturn []repolist.Cond{\n%s\n\t}\n}\n\n", strings.Join(condLines, "\n"))
+
+	// List method on *Receiver.
+	fmt.Fprintf(&b, "func (r *%s) %s(ctx context.Context, f %s) (paginate.PaginateResult[%s], error) {\n",
+		g.Receiver, listFunc, filterType, entity)
+	fmt.Fprintf(&b, "\treturn repolist.List(ctx, r.db, f.Params, %s().Filter(%s(f)...))\n}\n", queryFunc, condsFunc)
+
+	return b.String()
+}
+
 // insertParts builds the column list, @placeholders, and NamedArgs entries.
 func insertParts(table *Table, cols []*Column, model *ModelStruct) (names, placeholders, args string) {
 	var ns, ps, as []string
@@ -201,10 +293,13 @@ func rowParts(table *Table, model *ModelStruct, imp *importSet) (selectCols, sca
 
 // importSet accumulates the import lines a generated file needs.
 type importSet struct {
-	selfPkg string
-	strings bool
-	patch   bool
-	ext     map[string]string // localName -> path (from model types)
+	selfPkg  string
+	strings  bool
+	stdTime  bool
+	patch    bool
+	paginate bool
+	repolist bool
+	ext      map[string]string // localName -> path (from model types)
 }
 
 func newImportSet(pkg string) importSet {
@@ -240,9 +335,18 @@ func (s *importSet) block() string {
 	if s.strings {
 		std = append(std, `"strings"`)
 	}
+	if s.stdTime {
+		std = append(std, `"time"`)
+	}
 	third := []string{`"github.com/jackc/pgx/v5"`}
 	if s.patch {
 		third = append(third, `"shopnexus-server/internal/shared/patch"`)
+	}
+	if s.paginate {
+		third = append(third, `"shopnexus-server/internal/shared/paginate"`)
+	}
+	if s.repolist {
+		third = append(third, `"shopnexus-server/internal/shared/repolist"`)
 	}
 	var modelImps []string
 	for local, path := range s.ext {

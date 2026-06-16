@@ -89,3 +89,18 @@ func TestGenerateCRUDQualifiedEntity(t *testing.T) {
 		t.Fatal("must import model pkg")
 	}
 }
+
+func TestGenerateFileEmitsList(t *testing.T) {
+	g := &CrudGenerator{Package: "orderrepo", Receiver: "Repository",
+		ModelPkg: "ordermodel", ModelPath: "shopnexus-server/internal/module/order/model"}
+	body, err := g.GenerateFile([]crudItem{{categoryTableFixture(), categoryModelFixture()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body, "func (r *Repository) ListCategory(ctx context.Context, f ListCategoryParams) (paginate.PaginateResult[ordermodel.Category], error)") {
+		t.Fatalf("missing qualified List signature.\n%s", body)
+	}
+	if _, err := format.Source([]byte(body)); err != nil {
+		t.Fatalf("not gofmt-valid: %v\n%s", err, body)
+	}
+}
