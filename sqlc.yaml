@@ -90,24 +90,6 @@ sql:
         emit_enum_valid_method: true
         emit_all_enum_values: true
 
-  - schema: "./internal/module/order/db/migrations"
-    queries:
-      - "./internal/module/order/db/queries/"
-    engine: "postgresql"
-    gen:
-      go:
-        package: "orderdb"
-        sql_package: pgx/v5
-        sql_driver: github.com/jackc/pgx/v5
-        out: "internal/module/order/db/sqlc"
-        emit_interface: true
-        emit_prepared_queries: true
-        emit_empty_slices: true # For api empty data response
-        emit_json_tags: true # Custom dto
-        emit_db_tags: false
-        emit_enum_valid_method: true
-        emit_all_enum_values: true
-
   - schema: "./internal/module/promotion/db/migrations"
     queries:
       - "./internal/module/promotion/db/queries/"
