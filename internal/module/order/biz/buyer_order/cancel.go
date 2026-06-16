@@ -11,6 +11,7 @@ import (
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/shared/idempotency"
 	"shopnexus-server/internal/shared/pgsqlc"
 	"shopnexus-server/internal/shared/saga"
@@ -194,7 +195,7 @@ func (b *BuyerHandler) RefundPendingItem(
 		// deterministic key: retries must reuse it so the idempotency ledger dedupes
 		refundTxID := uuid.NewSHA1(uuid.NameSpaceOID, fmt.Appendf(nil, "cancel-refund:item:%d", params.Item.ID))
 		if e := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
-			return b.Storage.Transact(rctx, func(s pgsqlc.Storage[*orderdb.Queries]) error {
+			return b.Storage.Transact(rctx, func(s pgsqlc.Storage[*orderrepo.Repository]) error {
 				if _, te := s.Querier().CreateDefaultTransaction(rctx, orderdb.CreateDefaultTransactionParams{
 					ID:          refundTxID,
 					SessionID:   params.PaymentSessionID,

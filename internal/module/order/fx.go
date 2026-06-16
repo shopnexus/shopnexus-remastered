@@ -26,7 +26,7 @@ import (
 	"shopnexus-server/internal/module/order/biz/workflow/fullfilment"
 	"shopnexus-server/internal/module/order/biz/workflow/gateway"
 	orderconfig "shopnexus-server/internal/module/order/config"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	orderecho "shopnexus-server/internal/module/order/transport/echo"
 	"shopnexus-server/internal/shared/pgsqlc"
 )
@@ -96,7 +96,7 @@ func NewLocker(rdb rueidis.Client) locker.Client {
 
 // NewOrderStorage creates a new order storage backed by PostgreSQL.
 func NewOrderStorage(pool pgsqlc.TxBeginner) orderbiz.OrderStorage {
-	return pgsqlc.NewStorage(pool, orderdb.New(pool))
+	return pgsqlc.NewStorage(pool, orderrepo.New(pool))
 }
 
 // NewOrderBiz creates the order client. BestEffort calls run in-process.

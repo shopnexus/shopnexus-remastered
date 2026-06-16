@@ -13,14 +13,15 @@ import (
 	orderconfig "shopnexus-server/internal/module/order/config"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	sharedcurrency "shopnexus-server/internal/shared/currency"
 	"shopnexus-server/internal/shared/pgsqlc"
 
 	"github.com/google/uuid"
 )
 
-// OrderStorage is the order module's SQLC-backed storage handle.
-type OrderStorage = pgsqlc.Storage[*orderdb.Queries]
+// OrderStorage is the order module's storage handle.
+type OrderStorage = pgsqlc.Storage[*orderrepo.Repository]
 
 type Base struct {
 	Cfg     *orderconfig.Config

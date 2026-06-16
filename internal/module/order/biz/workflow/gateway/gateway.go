@@ -10,7 +10,8 @@ import (
 	"time"
 
 	orderbase "shopnexus-server/internal/module/order/biz/base"
-	orderdb "shopnexus-server/internal/module/order/db/sqlc"
+	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 
 	"github.com/google/uuid"
 	"github.com/guregu/null/v6"
@@ -62,13 +63,18 @@ func (g *Gateway) setGate(ctx restate.WorkflowContext, s gateState) {
 	restate.Set(ctx, gateStateKey, s)
 }
 
+type sessionFailer interface {
+	MarkPaymentSessionFailed(ctx context.Context, id uuid.UUID) (ordermodel.PaymentSession, error)
+	MarkPendingTxsFailedBySession(ctx context.Context, arg orderrepo.MarkPendingTxsFailedBySessionParams) error
+}
+
 // MarkSessionFailed marks the session and every still-Pending child tx Failed.
 // Idempotent on already-final rows; used as a saga compensator body.
-func MarkSessionFailed(ctx context.Context, q orderdb.Querier, sessionID uuid.UUID, reason string) error {
+func MarkSessionFailed(ctx context.Context, q sessionFailer, sessionID uuid.UUID, reason string) error {
 	if _, err := q.MarkPaymentSessionFailed(ctx, sessionID); err != nil {
 		return fmt.Errorf("mark session failed: %w", err)
 	}
-	if err := q.MarkPendingTxsFailedBySession(ctx, orderdb.MarkPendingTxsFailedBySessionParams{
+	if err := q.MarkPendingTxsFailedBySession(ctx, orderrepo.MarkPendingTxsFailedBySessionParams{
 		SessionID: sessionID,
 		Error:     null.StringFrom(reason),
 	}); err != nil {

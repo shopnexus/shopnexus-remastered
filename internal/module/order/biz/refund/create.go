@@ -12,6 +12,7 @@ import (
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	ordermodel "shopnexus-server/internal/module/order/model"
+	orderrepo "shopnexus-server/internal/module/order/repo"
 	"shopnexus-server/internal/provider/transport"
 	"shopnexus-server/internal/shared/pgsqlc"
 	"shopnexus-server/internal/shared/validator"
@@ -126,7 +127,7 @@ func (b *RefundHandler) CreateBuyerRefund(
 		trData, _ := json.Marshal(transportData)
 
 		var refund orderdb.OrderRefund
-		if err := b.Storage.Transact(rctx, func(s pgsqlc.Storage[*orderdb.Queries]) error {
+		if err := b.Storage.Transact(rctx, func(s pgsqlc.Storage[*orderrepo.Repository]) error {
 			returnTransport, err := s.Querier().CreateDefaultTransport(rctx, orderdb.CreateDefaultTransportParams{
 				Option: params.ReturnOption,
 				Data:   json.RawMessage(trData),
