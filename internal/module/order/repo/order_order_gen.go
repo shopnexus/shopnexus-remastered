@@ -9,7 +9,7 @@ import (
 	"shopnexus-server/internal/shared/patch"
 
 	"github.com/google/uuid"
-	"github.com/guregu/null/v6"
+	null "github.com/guregu/null/v6"
 	"time"
 )
 

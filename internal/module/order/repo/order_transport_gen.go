@@ -9,7 +9,7 @@ import (
 	"shopnexus-server/internal/shared/patch"
 
 	"encoding/json"
-	"shopnexus-server/internal/module/order/db/sqlc"
+	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	"time"
 )
 

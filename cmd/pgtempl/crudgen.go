@@ -199,8 +199,17 @@ func (s *importSet) block() string {
 		third = append(third, `"shopnexus-server/internal/shared/patch"`)
 	}
 	var modelImps []string
-	for _, path := range s.ext {
-		modelImps = append(modelImps, fmt.Sprintf("%q", path))
+	for local, path := range s.ext {
+		// Emit an explicit alias whenever the qualifier used in the generated
+		// code (local) differs from the path's last segment — covers versioned
+		// paths (null/v6 used as `null`) and renamed packages (db/sqlc as
+		// `orderdb`). Without it the import resolves to the package's declared
+		// name, which may not match the qualifier and won't compile.
+		if seg := path[strings.LastIndexByte(path, '/')+1:]; seg != local {
+			modelImps = append(modelImps, fmt.Sprintf("%s %q", local, path))
+		} else {
+			modelImps = append(modelImps, fmt.Sprintf("%q", path))
+		}
 	}
 	sort.Strings(std)
 	sort.Strings(third)

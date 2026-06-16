@@ -9,8 +9,8 @@ import (
 	"shopnexus-server/internal/shared/patch"
 
 	"github.com/google/uuid"
-	"github.com/guregu/null/v6"
-	"shopnexus-server/internal/module/order/db/sqlc"
+	null "github.com/guregu/null/v6"
+	orderdb "shopnexus-server/internal/module/order/db/sqlc"
 	"time"
 )
 
