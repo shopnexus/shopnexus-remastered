@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"slices"
 	"strings"
 	"time"
@@ -38,11 +37,11 @@ func (b *CatalogHandler) SetupCron() error {
 
 // startSyncCron runs a ticker loop that syncs stale entities on each tick.
 func (b *CatalogHandler) startSyncCron(ctx context.Context, interval time.Duration) {
-	log.Printf("Starting embedding sync cron job...")
+	b.logger.Info("Starting embedding sync cron job")
 
 	// Run immediately on startup
 	if err := b.syncStaleEntities(ctx); err != nil {
-		log.Printf("Initial embedding sync failed: %v", err)
+		b.logger.Error("Initial embedding sync failed", "error", err)
 	}
 
 	ticker := time.NewTicker(interval)
@@ -52,13 +51,13 @@ func (b *CatalogHandler) startSyncCron(ctx context.Context, interval time.Durati
 		select {
 		case <-ticker.C:
 		case <-ctx.Done():
-			log.Printf("Stopping embedding sync cron job...")
+			b.logger.Info("Stopping embedding sync cron job")
 			return
 		}
 
 		b.syncLock.Lock()
 		if err := b.syncStaleEntities(ctx); err != nil {
-			log.Printf("embedding sync failed: %v", err)
+			b.logger.Error("embedding sync failed", "error", err)
 		}
 		b.syncLock.Unlock()
 	}
@@ -107,7 +106,7 @@ func (b *CatalogHandler) syncProducts(
 	ctx context.Context,
 	stales []catalogdb.ListStaleSearchSyncRow,
 ) error {
-	log.Printf("Syncing %d stale products...", len(stales))
+	b.logger.Info("Syncing stale products", "count", len(stales))
 
 	// Batch-fetch product details directly from DB (avoids N+1 HTTP via Restate ingress)
 	spuIDs := make([]uuid.UUID, len(stales))
@@ -153,7 +152,7 @@ func (b *CatalogHandler) syncProducts(
 		for _, sku := range skusBySpuID[spu.ID] {
 			var attrs []catalogmodel.ProductAttribute
 			if err = json.Unmarshal(sku.Attributes, &attrs); err != nil {
-				log.Printf("Failed to unmarshal attributes for SKU %s: %v", sku.ID, err)
+				b.logger.Error("Failed to unmarshal SKU attributes", "sku_id", sku.ID, "error", err)
 				continue
 			}
 			skuDetails = append(skuDetails, catalogmodel.ProductDetailSku{
@@ -206,7 +205,7 @@ func (b *CatalogHandler) syncCategories(
 	ctx context.Context,
 	stales []catalogdb.ListStaleSearchSyncRow,
 ) error {
-	log.Printf("Syncing %d stale categories...", len(stales))
+	b.logger.Info("Syncing stale categories", "count", len(stales))
 
 	// Collect category UUIDs from stale rows
 	categoryIDs := make([]uuid.UUID, len(stales))
@@ -256,7 +255,7 @@ func (b *CatalogHandler) syncTags(
 	ctx context.Context,
 	stales []catalogdb.ListStaleSearchSyncRow,
 ) error {
-	log.Printf("Syncing %d stale tags...", len(stales))
+	b.logger.Info("Syncing stale tags", "count", len(stales))
 
 	// Build a set of stale ref_ids for matching
 	staleRefIDs := make(map[uuid.UUID]struct{}, len(stales))

@@ -93,6 +93,7 @@ func (h *Handler) ListConversation(c echo.Context) error {
 
 type ListMessageRequest struct {
 	paginate.Params
+
 	ConversationID uuid.UUID `param:"id" validate:"required"`
 }
 

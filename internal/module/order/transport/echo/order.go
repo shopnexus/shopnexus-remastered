@@ -235,8 +235,9 @@ func (h *Handler) GetSellerOrder(c echo.Context) error {
 }
 
 type ListSellerConfirmedRequest struct {
-	Search null.String `query:"search"`
 	paginate.Params
+
+	Search null.String `query:"search"`
 }
 
 func (h *Handler) ListSellerConfirmed(c echo.Context) error {

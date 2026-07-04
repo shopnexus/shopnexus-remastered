@@ -181,7 +181,8 @@ func (b *RefundHandler) ExecuteRefundCredit(
 				ID:         refund.ID,
 				RefundTxID: uuid.NullUUID{UUID: refundTxID, Valid: true},
 			})
-		default:
+		case ordermodel.RefundStatusShipping, ordermodel.RefundStatusAccepted,
+			ordermodel.RefundStatusRejected, ordermodel.RefundStatusCancelled:
 			return ordermodel.Refund{}, ordermodel.ErrRefundWrongStage
 		}
 		if e != nil {

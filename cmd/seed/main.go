@@ -58,7 +58,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to begin transaction: %v", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	accountStore := accountdb.New(tx)
 	catalogStore := catalogdb.New(tx)

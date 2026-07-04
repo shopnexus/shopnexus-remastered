@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha512"
 	"encoding/hex"
+	"fmt"
 	"net/url"
 	"sort"
 	"strings"
@@ -34,7 +35,7 @@ func buildSortedQuery(inputData map[string]any) string {
 	hashData := ""
 	var hashDataSb35 strings.Builder
 	for i, k := range keys {
-		encoded := url.QueryEscape(k) + "=" + url.QueryEscape(inputData[k].(string))
+		encoded := url.QueryEscape(k) + "=" + url.QueryEscape(fmt.Sprintf("%v", inputData[k]))
 		if i == 0 {
 			hashDataSb35.WriteString(encoded)
 		} else {

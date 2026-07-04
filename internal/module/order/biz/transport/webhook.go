@@ -223,6 +223,7 @@ func (b *TransportHandler) OnTransportResult(ctx restate.Context, params OnTrans
 		}); err != nil {
 			return fmt.Errorf("notify seller: %w", err)
 		}
+	case ordermodel.StatusPending, ordermodel.StatusProcessing, ordermodel.StatusSuccess:
 	}
 
 	return nil

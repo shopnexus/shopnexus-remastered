@@ -50,7 +50,6 @@ func (cb *CustomBinder) getCommaSeparatedFieldMap(i any) map[string]bool {
 	}
 
 	for field := range rt.Fields() {
-		field := field
 		if field.Tag.Get("comma_separated") == "true" {
 			if queryTag := field.Tag.Get("query"); queryTag != "" {
 				commaSeparatedFields[queryTag] = true
@@ -271,7 +270,9 @@ func (cb *CustomBinder) setSingleValueFromString(field reflect.Value, value stri
 		}
 		field.SetFloat(val)
 
-	default:
+	case reflect.Invalid, reflect.Uintptr, reflect.Complex64, reflect.Complex128,
+		reflect.Array, reflect.Chan, reflect.Func, reflect.Interface, reflect.Map,
+		reflect.Pointer, reflect.Slice, reflect.Struct, reflect.UnsafePointer:
 		return fmt.Errorf("unsupported field type: %s", field.Kind())
 	}
 

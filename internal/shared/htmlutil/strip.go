@@ -62,6 +62,7 @@ func StripHTML(s string) string {
 			if skipDepth == 0 {
 				b.Write(tokenizer.Text())
 			}
+		case html.CommentToken, html.DoctypeToken:
 		}
 	}
 }

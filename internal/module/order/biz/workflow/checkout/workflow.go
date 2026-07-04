@@ -53,12 +53,13 @@ func (h *CheckoutWorkflow) ServiceName() string { return "CheckoutWorkflow" }
 // checkoutRun is the per-invocation scope; phases share state via its fields.
 type checkoutRun struct {
 	*CheckoutWorkflow
+	pricing // set by price()
+
 	ctx       restate.WorkflowContext
 	saga      *saga.Saga
 	input     CheckoutWorkflowInput
 	sessionID uuid.UUID
 
-	pricing                                     // set by price()
 	serialIDs            map[uuid.UUID][]string // set by reserve()
 	internalWalletAmount int64                  // set by persist()
 }
@@ -86,7 +87,7 @@ func (h *CheckoutWorkflow) Run(
 	}
 	defer func() {
 		if restate.IsTerminalError(err) {
-			r.saga.Compensate()
+			_ = r.saga.Compensate()
 		}
 	}()
 

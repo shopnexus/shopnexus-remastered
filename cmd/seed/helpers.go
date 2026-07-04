@@ -144,10 +144,12 @@ func seedCategories(ctx context.Context, store *catalogdb.Queries) (*categoryInd
 	}
 	idx.fallback = general.ID
 	idx.add("General", general.ID)
-	store.CreateDefaultSearchSync(ctx, catalogdb.CreateDefaultSearchSyncParams{
+	if _, err := store.CreateDefaultSearchSync(ctx, catalogdb.CreateDefaultSearchSyncParams{
 		RefType: catalogdb.CatalogSearchSyncRefTypeCategory,
 		RefID:   general.ID,
-	})
+	}); err != nil {
+		slog.Warn("create default search sync (General)", slog.Any("error", err))
+	}
 
 	slog.Info(fmt.Sprintf("Seeded %d categories (+1 General fallback)", len(categories)))
 	return idx, nil
@@ -200,10 +202,12 @@ func createTags(
 
 			// Create search_sync row for this tag (deterministic UUID from tag slug)
 			tagUUID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(tagID))
-			store.CreateDefaultSearchSync(ctx, catalogdb.CreateDefaultSearchSyncParams{
+			if _, err := store.CreateDefaultSearchSync(ctx, catalogdb.CreateDefaultSearchSyncParams{
 				RefType: catalogdb.CatalogSearchSyncRefTypeTag,
 				RefID:   tagUUID,
-			})
+			}); err != nil {
+				slog.Warn("create default search sync (tag)", slog.Any("error", err))
+			}
 		}
 
 		_, err = store.CreateProductSpuTag(ctx, catalogdb.CreateProductSpuTagParams{

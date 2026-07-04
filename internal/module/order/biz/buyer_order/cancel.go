@@ -82,7 +82,7 @@ func (b *BuyerHandler) CancelBuyerPending(ctx restate.Context, params CancelBuye
 			return fmt.Errorf("refund pending item: %w", err)
 		}
 
-	default:
+	case ordermodel.StatusProcessing, ordermodel.StatusCancelled, ordermodel.StatusFailed:
 		return ordermodel.ErrItemAlreadyCancelled
 	}
 

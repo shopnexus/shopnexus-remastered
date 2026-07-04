@@ -37,6 +37,7 @@ type SellerTopProduct struct {
 // TransportWithOrder embeds Transport and adds the three joined order fields.
 type TransportWithOrder struct {
 	Transport
+
 	OrderID       uuid.UUID `json:"order_id"`
 	OrderBuyerID  uuid.UUID `json:"order_buyer_id"`
 	OrderSellerID uuid.UUID `json:"order_seller_id"`

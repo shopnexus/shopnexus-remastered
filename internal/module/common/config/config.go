@@ -8,8 +8,9 @@ import (
 
 type Config struct {
 	config.Shared `mapstructure:",squash"`
-	Exchange      Exchange  `mapstructure:"exchange"`
-	Filestore     Filestore `mapstructure:"filestore"`
+
+	Exchange  Exchange  `mapstructure:"exchange"`
+	Filestore Filestore `mapstructure:"filestore"`
 }
 
 type Exchange struct {

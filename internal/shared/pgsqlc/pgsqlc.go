@@ -106,9 +106,10 @@ func (s *storage[T]) Transact(ctx context.Context, fn func(Storage[T]) error) er
 
 // TxStorage provides database queries within an active transaction.
 type TxStorage[T Querier] struct {
+	*storage[T]
+
 	tx        pgx.Tx
 	committed bool
-	*storage[T]
 }
 
 func (ts *TxStorage[T]) Commit(ctx context.Context) error {

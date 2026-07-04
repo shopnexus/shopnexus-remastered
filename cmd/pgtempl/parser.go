@@ -409,6 +409,13 @@ func parseColumnDef(cd *pgv6.ColumnDef, schema, table string, serialCols map[str
 				col.Serial = true
 				col.Nullable = false
 				col.HasDefault = true
+			case pgv6.ConstrType_CONSTR_TYPE_UNDEFINED, pgv6.ConstrType_CONSTR_NULL,
+				pgv6.ConstrType_CONSTR_GENERATED, pgv6.ConstrType_CONSTR_CHECK,
+				pgv6.ConstrType_CONSTR_UNIQUE, pgv6.ConstrType_CONSTR_EXCLUSION,
+				pgv6.ConstrType_CONSTR_FOREIGN, pgv6.ConstrType_CONSTR_ATTR_DEFERRABLE,
+				pgv6.ConstrType_CONSTR_ATTR_NOT_DEFERRABLE,
+				pgv6.ConstrType_CONSTR_ATTR_DEFERRED,
+				pgv6.ConstrType_CONSTR_ATTR_IMMEDIATE:
 			}
 		}
 	}
@@ -481,6 +488,15 @@ func parseTableConstraint(c *pgv6.Constraint, tbl *Table) {
 		if len(uc.Columns) > 0 {
 			tbl.UniqueConstraints = append(tbl.UniqueConstraints, uc)
 		}
+
+	case pgv6.ConstrType_CONSTR_TYPE_UNDEFINED, pgv6.ConstrType_CONSTR_NULL,
+		pgv6.ConstrType_CONSTR_NOTNULL, pgv6.ConstrType_CONSTR_DEFAULT,
+		pgv6.ConstrType_CONSTR_IDENTITY, pgv6.ConstrType_CONSTR_GENERATED,
+		pgv6.ConstrType_CONSTR_CHECK, pgv6.ConstrType_CONSTR_EXCLUSION,
+		pgv6.ConstrType_CONSTR_FOREIGN, pgv6.ConstrType_CONSTR_ATTR_DEFERRABLE,
+		pgv6.ConstrType_CONSTR_ATTR_NOT_DEFERRABLE,
+		pgv6.ConstrType_CONSTR_ATTR_DEFERRED,
+		pgv6.ConstrType_CONSTR_ATTR_IMMEDIATE:
 	}
 }
 

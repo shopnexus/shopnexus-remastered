@@ -120,8 +120,8 @@ func (p *NominatimClient) ForwardGeocode(ctx context.Context, address string) (R
 	}
 
 	var lat, lng float64
-	fmt.Sscanf(results[0].Lat, "%f", &lat)
-	fmt.Sscanf(results[0].Lon, "%f", &lng)
+	_, _ = fmt.Sscanf(results[0].Lat, "%f", &lat)
+	_, _ = fmt.Sscanf(results[0].Lon, "%f", &lng)
 
 	return Result{
 		Address:     results[0].DisplayName,
@@ -170,8 +170,8 @@ func (p *NominatimClient) Search(ctx context.Context, query string, limit int) (
 	out := make([]Result, 0, len(results))
 	for _, r := range results {
 		var lat, lng float64
-		fmt.Sscanf(r.Lat, "%f", &lat)
-		fmt.Sscanf(r.Lon, "%f", &lng)
+		_, _ = fmt.Sscanf(r.Lat, "%f", &lat)
+		_, _ = fmt.Sscanf(r.Lon, "%f", &lng)
 		out = append(out, Result{
 			Address:     r.DisplayName,
 			CountryCode: strings.ToUpper(r.Address.CountryCode),

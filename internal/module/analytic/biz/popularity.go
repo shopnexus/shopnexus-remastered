@@ -25,17 +25,24 @@ func (b *AnalyticHandler) HandlePopularityEvent(ctx restate.Context, event analy
 
 	var viewCount, purchaseCount, favoriteCount, cartCount, reviewCount int64
 	switch event.EventType {
-	case analyticmodel.EventView, analyticmodel.EventViewBounce:
+	case analyticmodel.EventView, analyticmodel.EventViewBounce,
+		analyticmodel.EventViewSimilarProducts, analyticmodel.EventProductImpression:
 		viewCount = 1
 	case analyticmodel.EventPurchase:
 		purchaseCount = 1
 	case analyticmodel.EventAddToFavorites:
 		favoriteCount = 1
-	case analyticmodel.EventAddToCart, analyticmodel.EventRemoveFromCart:
+	case analyticmodel.EventAddToCart, analyticmodel.EventRemoveFromCart,
+		analyticmodel.EventCheckoutStarted:
 		cartCount = 1
 	case analyticmodel.EventWriteReview, analyticmodel.EventRatingHigh, analyticmodel.EventRatingMedium,
-		analyticmodel.EventRatingLow:
+		analyticmodel.EventRatingLow, analyticmodel.EventAskQuestion:
 		reviewCount = 1
+	case analyticmodel.EventClickFromSearch, analyticmodel.EventClickFromRecommend,
+		analyticmodel.EventClickFromCategory, analyticmodel.EventCancelOrder,
+		analyticmodel.EventRefundRequested, analyticmodel.EventReturnProduct,
+		analyticmodel.EventReportProduct, analyticmodel.EventDislike,
+		analyticmodel.EventHideItem, analyticmodel.EventNotInterested:
 	}
 
 	// execution: upsert the product popularity counters.

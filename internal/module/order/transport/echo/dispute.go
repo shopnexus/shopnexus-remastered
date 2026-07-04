@@ -16,8 +16,9 @@ import (
 // --- List + Get disputes ---
 
 type ListRefundDisputesRequest struct {
-	Status string `query:"status" validate:"omitempty,oneof=Open SellerWins BuyerWins"`
 	paginate.Params
+
+	Status string `query:"status" validate:"omitempty,oneof=Open SellerWins BuyerWins"`
 }
 
 func (h *Handler) ListRefundDisputes(c echo.Context) error {

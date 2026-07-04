@@ -8,8 +8,9 @@ import (
 
 type Config struct {
 	config.Shared `mapstructure:",squash"`
-	Search        Search `mapstructure:"search"`
-	LLM           LLM    `mapstructure:"llm"`
+
+	Search Search `mapstructure:"search"`
+	LLM    LLM    `mapstructure:"llm"`
 }
 
 type Search struct {

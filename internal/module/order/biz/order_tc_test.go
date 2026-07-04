@@ -82,9 +82,10 @@ func cancelPendingDecision(s ordermodel.Status) (cancelAction, error) {
 		return cancelSignalWorkflow, nil
 	case ordermodel.StatusSuccess:
 		return cancelPartialRefund, nil
-	default:
+	case ordermodel.StatusProcessing, ordermodel.StatusCancelled, ordermodel.StatusFailed:
 		return cancelReject, ordermodel.ErrItemAlreadyCancelled
 	}
+	return cancelReject, ordermodel.ErrItemAlreadyCancelled
 }
 
 // validCheckoutItem returns one well-formed item for tests that need the

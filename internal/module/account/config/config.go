@@ -4,7 +4,8 @@ import "shopnexus-server/config"
 
 type Config struct {
 	config.Shared `mapstructure:",squash"`
-	JWT           JWT `mapstructure:"jwt"`
+
+	JWT JWT `mapstructure:"jwt"`
 }
 
 type JWT struct {

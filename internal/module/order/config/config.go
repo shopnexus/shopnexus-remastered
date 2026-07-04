@@ -4,12 +4,13 @@ import "shopnexus-server/config"
 
 type Config struct {
 	config.Shared `mapstructure:",squash"`
-	Order         Order       `mapstructure:"order"`
-	Vnpay         Vnpay       `mapstructure:"vnpay"`
-	Sepay         Sepay       `mapstructure:"sepay"`
-	CardPayment   CardPayment `mapstructure:"cardPayment"`
-	GHTK          GHTK        `mapstructure:"ghtk"`
-	Mock          Mock        `mapstructure:"mock"`
+
+	Order       Order       `mapstructure:"order"`
+	Vnpay       Vnpay       `mapstructure:"vnpay"`
+	Sepay       Sepay       `mapstructure:"sepay"`
+	CardPayment CardPayment `mapstructure:"cardPayment"`
+	GHTK        GHTK        `mapstructure:"ghtk"`
+	Mock        Mock        `mapstructure:"mock"`
 }
 
 type Order struct {

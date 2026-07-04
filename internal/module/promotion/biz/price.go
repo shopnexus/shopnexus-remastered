@@ -153,6 +153,7 @@ func pickBestInGroup(group []parsedPromotion, originalProduct, originalShip int6
 				productCost = applyDiscount(originalProduct, promo.discount)
 			case promotionmodel.TypeShipDiscount:
 				shipCost = applyDiscount(originalShip, promo.discount)
+			case promotionmodel.TypeBundle, promotionmodel.TypeBuyXGetY, promotionmodel.TypeCashback:
 			}
 		}
 
@@ -200,6 +201,7 @@ func applyWinners(
 			op.ProductCost = w.productCost
 		case promotionmodel.TypeShipDiscount:
 			op.ShipCost = w.shipCost
+		case promotionmodel.TypeBundle, promotionmodel.TypeBuyXGetY, promotionmodel.TypeCashback:
 		}
 	}
 }

@@ -244,7 +244,7 @@ func (g *GHTKClient) WireWebhooks(e *echo.Echo, deliver transport.ResultHandler,
 			}
 			ec.Request().Body = io.NopCloser(bytes.NewReader(body))
 
-			sig := ec.Request().Header.Get("X-GHTK-Signature")
+			sig := ec.Request().Header.Get("X-Ghtk-Signature")
 			mac := hmac.New(sha256.New, []byte(g.data.Secret))
 			mac.Write(body)
 			expected := hex.EncodeToString(mac.Sum(nil))

@@ -8,7 +8,8 @@ import (
 )
 
 type Config struct {
-	config.Shared     `mapstructure:",squash"`
+	config.Shared `mapstructure:",squash"`
+
 	PopularityWeights PopularityWeights `mapstructure:"popularityWeights"`
 }
 

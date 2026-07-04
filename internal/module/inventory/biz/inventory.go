@@ -286,6 +286,7 @@ type ReserveInventoryResult struct {
 
 type ReserveInventoryParams struct {
 	idempotency.Keys
+
 	Items []ReserveInventoryItem
 }
 

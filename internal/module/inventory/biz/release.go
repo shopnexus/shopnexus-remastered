@@ -14,6 +14,7 @@ import (
 
 type ReleaseInventoryParams struct {
 	idempotency.Keys
+
 	Items []ReleaseInventoryItem
 }
 

@@ -55,6 +55,7 @@ func (h *FulfillmentWorkflow) ServiceName() string { return "FulfillmentWorkflow
 // fulfillmentRun is the per-invocation scope; phases share state via its fields.
 type fulfillmentRun struct {
 	*FulfillmentWorkflow
+
 	ctx     restate.WorkflowContext
 	sg      *saga.Saga
 	input   FulfillmentInput
@@ -88,7 +89,7 @@ func (h *FulfillmentWorkflow) Run(
 	})
 	defer func() {
 		if restate.IsTerminalError(err) {
-			r.sg.Compensate()
+			_ = r.sg.Compensate()
 		}
 	}()
 

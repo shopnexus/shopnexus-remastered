@@ -165,6 +165,7 @@ func (b *SellerHandler) rejectForBuyer(
 			}
 		case ordermodel.StatusPending:
 			pendingSessionIDs = append(pendingSessionIDs, s.ID)
+		case ordermodel.StatusProcessing, ordermodel.StatusCancelled, ordermodel.StatusFailed:
 		}
 	}
 	pendingSessionIDs = lo.Uniq(pendingSessionIDs)
