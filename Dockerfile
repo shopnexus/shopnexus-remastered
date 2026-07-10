@@ -1,36 +1,36 @@
-# Stage 1: Build the application
+# Stage 1: build the binary + collect the runtime config tree.
 FROM golang:alpine AS builder
 
-# Install build dependencies
+# Build dependencies
 RUN apk add --no-cache ca-certificates git tzdata
 
 WORKDIR /app
 
-# Copy go.mod and go.sum first for better layer caching
+# Cache deps first (layer reused if go.mod/go.sum unchanged)
 COPY go.mod go.sum ./
-
-# Download dependencies (this layer will be cached if go.mod/go.sum don't change)
 RUN go mod download
 
-# Copy source code
 COPY . .
 
-# Build the application with optimizations
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOEXPERIMENT=greenteagc go build \
     -ldflags='-w -s -extldflags "-static"' \
     -a -installsuffix cgo \
-    -o server ./cmd/server
+    -o /out/server ./cmd/server
 
-# Stage 2: Create minimal runtime image using distroless
+# The app loads YAML config at runtime relative to its working dir
+# (internal/**/config/config.*.yml). Collect just those into /out so the
+# distroless image can find them — the binary alone is not enough.
+RUN cd /app && find internal -name 'config.*.yml' -exec cp --parents {} /out/ \;
+
+# Stage 2: minimal distroless runtime.
 FROM gcr.io/distroless/static:nonroot
 
-# Copy the binary
-COPY --from=builder /app/server /server
+WORKDIR /app
+COPY --from=builder /out/server /app/server
+COPY --from=builder /out/internal /app/internal
 
-EXPOSE 8080
+# 5005 HTTP/API · 8082 restate service endpoint · 8083 best-effort
+EXPOSE 5005 8082 8083
 
-# Run as non-root user (nonroot user is UID/GID 65532 in distroless)
 USER nonroot:nonroot
-
-# Run the server
-ENTRYPOINT ["/server"]
+ENTRYPOINT ["/app/server"]
