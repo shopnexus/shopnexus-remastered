@@ -14,6 +14,18 @@ import (
 )
 
 // UploadFile handles simple multipart/form-data upload.
+//
+//	@Summary	Upload file
+//	@Tags		common
+//	@Accept		multipart/form-data
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		file	formData	file	true	"File to upload"
+//	@Param		private	formData	string	false	"Set to \"true\" to store the file privately"
+//	@Success	200		{object}	response.CommonResponse{data=commonmodel.Resource}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/common/files [post]
 func (h *Handler) UploadFile(c echo.Context) error {
 	fileHeader, err := c.FormFile("file")
 	if err != nil {

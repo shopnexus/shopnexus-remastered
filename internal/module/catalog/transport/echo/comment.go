@@ -26,6 +26,26 @@ type ListCommentRequest struct {
 	ScoreTo   null.Float                      `query:"score_to"   validate:"omitnil"`
 }
 
+// ListComment returns a paginated list of comments/reviews for a resource.
+//
+//	@Summary	List comments
+//	@Tags		catalog
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		page		query		int			false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit		query		int			false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor		query		string		false	"Keyset cursor (cursor mode)"
+//	@Param		sort		query		string		false	"Sort, e.g. -date_created"
+//	@Param		ref_type	query		string		true	"Reference type"
+//	@Param		ref_id		query		string		true	"Reference ID (UUID)"
+//	@Param		id			query		[]string	false	"Filter by comment IDs (UUID)"
+//	@Param		account_id	query		[]string	false	"Filter by account IDs (UUID)"
+//	@Param		score_from	query		number		false	"Minimum score"
+//	@Param		score_to	query		number		false	"Maximum score"
+//	@Success	200			{object}	response.SwaggerPaginationResponse{data=[]catalogmodel.Comment}
+//	@Failure	400			{object}	response.CommonResponse
+//	@Failure	401			{object}	response.CommonResponse
+//	@Router		/catalog/comment [get]
 func (h *Handler) ListComment(c echo.Context) error {
 	var req ListCommentRequest
 	if err := c.Bind(&req); err != nil {
@@ -65,6 +85,18 @@ type CreateCommentRequest struct {
 	ResourceIDs []uuid.UUID                     `json:"resource_ids" validate:"required"`
 }
 
+// CreateComment posts a review or reply for a resource.
+//
+//	@Summary	Create comment
+//	@Tags		catalog
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		CreateCommentRequest	true	"Comment payload"
+//	@Success	200		{object}	response.CommonResponse{data=catalogmodel.Comment}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/catalog/comment [post]
 func (h *Handler) CreateComment(c echo.Context) error {
 	var req CreateCommentRequest
 	if err := c.Bind(&req); err != nil {
@@ -119,6 +151,18 @@ type UpdateCommentRequest struct {
 	EmptyResources bool        `json:"empty_resources" validate:"omitempty"`
 }
 
+// UpdateComment edits an existing comment owned by the caller.
+//
+//	@Summary	Update comment
+//	@Tags		catalog
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		UpdateCommentRequest	true	"Fields to update"
+//	@Success	200		{object}	response.CommonResponse{data=catalogmodel.Comment}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/catalog/comment [patch]
 func (h *Handler) UpdateComment(c echo.Context) error {
 	var req UpdateCommentRequest
 	if err := c.Bind(&req); err != nil {
@@ -151,6 +195,18 @@ type VoteCommentRequest struct {
 	Vote      string    `json:"vote"       validate:"required,oneof=upvote downvote"`
 }
 
+// VoteComment casts an upvote or downvote on a comment.
+//
+//	@Summary	Vote on comment
+//	@Tags		catalog
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		VoteCommentRequest	true	"Vote payload"
+//	@Success	200		{object}	response.CommonResponse{data=catalogmodel.Comment}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/catalog/comment/vote [post]
 func (h *Handler) VoteComment(c echo.Context) error {
 	var req VoteCommentRequest
 	if err := c.Bind(&req); err != nil {
@@ -186,6 +242,18 @@ type DeleteCommentRequest struct {
 	IDs []uuid.UUID `json:"ids" validate:"required"`
 }
 
+// DeleteComment removes one or more comments owned by the caller.
+//
+//	@Summary	Delete comments
+//	@Tags		catalog
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		DeleteCommentRequest	true	"Comment IDs"
+//	@Success	200		{object}	response.CommonResponse{data=string}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/catalog/comment [delete]
 func (h *Handler) DeleteComment(c echo.Context) error {
 	var req DeleteCommentRequest
 	if err := c.Bind(&req); err != nil {
@@ -214,6 +282,17 @@ type ListReviewableOrdersRequest struct {
 	SpuID uuid.UUID `query:"spu_id" validate:"required"`
 }
 
+// ListReviewableOrders returns the caller's completed orders eligible to review a SPU.
+//
+//	@Summary	List reviewable orders
+//	@Tags		catalog
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		spu_id	query		string	true	"SPU ID (UUID)"
+//	@Success	200		{object}	response.CommonResponse{data=[]review.ReviewableOrder}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/catalog/comment/reviewable-orders [get]
 func (h *Handler) ListReviewableOrders(c echo.Context) error {
 	var req ListReviewableOrdersRequest
 	if err := c.Bind(&req); err != nil {

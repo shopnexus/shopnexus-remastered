@@ -6,3 +6,6 @@
 
 - nên bỏ sqlc luôn, generate repo code dựa trên DDL & struct tab db tren domain model để giảm 
 - thêm 1 weighted criteria cho search:  popularity, sửa lại 
+
+
+- sửa flow thanh toán thành luôn sử dụng tiền ảo để thanh toán, flow thanh toán giờ sẽ yêu cầu user topup credit vô r sau đó mới dùng wallet credit để checkout, 2 bước tách rời ko cần atomic => vẫn đảm bảo ko bị drift tiền nếu có lỗi giữa chừng thì user vẫn có thể tự mua lại đc bằng tiền ảo; flow là như thế nhưng UI sẽ giấu nó

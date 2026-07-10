@@ -67,6 +67,16 @@ type GetAccountRequest struct {
 	AccountID uuid.UUID `query:"account_id" validate:"required"`
 }
 
+// GetAccount returns the profile of the account identified by account_id.
+//
+//	@Summary	Get account profile
+//	@Tags		account
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		account_id	query		string	true	"Account ID (UUID)"
+//	@Success	200			{object}	response.CommonResponse{data=accountmodel.Profile}
+//	@Failure	401			{object}	response.CommonResponse
+//	@Router		/account [get]
 func (h *Handler) GetAccount(c echo.Context) error {
 	var req GetAccountRequest
 	if err := c.Bind(&req); err != nil {

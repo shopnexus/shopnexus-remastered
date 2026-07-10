@@ -17,6 +17,16 @@ type GetProductDetailRequest struct {
 	Slug null.String   `query:"slug" validate:"omitnil"`
 }
 
+// GetProductDetail returns the full product detail by ID or slug.
+//
+//	@Summary	Get product detail
+//	@Tags		catalog
+//	@Produce	json
+//	@Param		id		query		string	false	"Product SPU ID (UUID)"
+//	@Param		slug	query		string	false	"Product slug"
+//	@Success	200		{object}	response.CommonResponse{data=catalogmodel.ProductDetail}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Router		/catalog/product-detail [get]
 func (h *Handler) GetProductDetail(c echo.Context) error {
 	var req GetProductDetailRequest
 	if err := c.Bind(&req); err != nil {

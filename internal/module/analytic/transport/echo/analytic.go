@@ -46,6 +46,18 @@ type CreateInteractionRequest struct {
 	Interactions []CreateInteraction `json:"interactions" validate:"required,dive,required"`
 }
 
+// CreateInteraction records a batch of user interaction events.
+//
+//	@Summary	Create interactions
+//	@Tags		analytic
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		CreateInteractionRequest	true	"Interactions to record"
+//	@Success	200		{object}	response.CommonResponse{data=string}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/analytic/interaction [post]
 func (h *Handler) CreateInteraction(c echo.Context) error {
 	var req CreateInteractionRequest
 	if err := c.Bind(&req); err != nil {
@@ -80,6 +92,15 @@ type GetProductPopularityRequest struct {
 	SpuID uuid.UUID `param:"spu_id" validate:"required"`
 }
 
+// GetProductPopularity returns the popularity record for a product (SPU).
+//
+//	@Summary	Get product popularity
+//	@Tags		analytic
+//	@Produce	json
+//	@Param		spu_id	path		string	true	"SPU ID (UUID)"
+//	@Success	200		{object}	response.CommonResponse{data=analyticdb.AnalyticProductPopularity}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Router		/analytic/popularity/{spu_id} [get]
 func (h *Handler) GetProductPopularity(c echo.Context) error {
 	var req GetProductPopularityRequest
 	if err := c.Bind(&req); err != nil {
@@ -101,6 +122,18 @@ type ListTopProductPopularityRequest struct {
 	paginate.Params
 }
 
+// ListTopProductPopularity returns the top products ranked by popularity.
+//
+//	@Summary	List top product popularity
+//	@Tags		analytic
+//	@Produce	json
+//	@Param		page	query		int		false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit	query		int		false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor	query		string	false	"Keyset cursor (cursor mode)"
+//	@Param		sort	query		string	false	"Sort, e.g. -date_created"
+//	@Success	200		{object}	response.CommonResponse{data=[]analyticdb.AnalyticProductPopularity}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Router		/analytic/popularity/top [get]
 func (h *Handler) ListTopProductPopularity(c echo.Context) error {
 	var req ListTopProductPopularityRequest
 	if err := c.Bind(&req); err != nil {
@@ -124,6 +157,19 @@ type GetSellerDashboardRequest struct {
 	Granularity string `query:"granularity"`
 }
 
+// GetSellerDashboard returns aggregated dashboard stats for the seller.
+//
+//	@Summary	Get seller dashboard
+//	@Tags		analytic
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		start		query		string	false	"Start date (RFC3339)"
+//	@Param		end			query		string	false	"End date (RFC3339)"
+//	@Param		granularity	query		string	false	"Aggregation granularity"
+//	@Success	200			{object}	response.CommonResponse{data=dashboard.SellerDashboard}
+//	@Failure	400			{object}	response.CommonResponse
+//	@Failure	401			{object}	response.CommonResponse
+//	@Router		/analytic/seller-dashboard [get]
 func (h *Handler) GetSellerDashboard(c echo.Context) error {
 	var req GetSellerDashboardRequest
 	if err := c.Bind(&req); err != nil {

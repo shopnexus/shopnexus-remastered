@@ -58,6 +58,15 @@ type GetPromotionRequest struct {
 	ID uuid.UUID `param:"id" validate:"required"`
 }
 
+// GetPromotion returns a single promotion by ID.
+//
+//	@Summary	Get promotion
+//	@Tags		promotion
+//	@Produce	json
+//	@Param		id	path		string	true	"Promotion ID (UUID)"
+//	@Success	200	{object}	response.CommonResponse{data=promotionmodel.Promotion}
+//	@Failure	400	{object}	response.CommonResponse
+//	@Router		/catalog/promotion/{id} [get]
 func (h *Handler) GetPromotion(c echo.Context) error {
 	var req GetPromotionRequest
 	if err := c.Bind(&req); err != nil {
@@ -83,6 +92,18 @@ type ListPromotionRequest struct {
 	paginate.Params
 }
 
+// ListPromotion returns paginated promotions.
+//
+//	@Summary	List promotions
+//	@Tags		promotion
+//	@Produce	json
+//	@Param		page	query		int		false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit	query		int		false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor	query		string	false	"Keyset cursor (cursor mode)"
+//	@Param		sort	query		string	false	"Sort, e.g. -date_created"
+//	@Success	200		{object}	response.SwaggerPaginationResponse{data=[]promotionmodel.Promotion}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Router		/catalog/promotion [get]
 func (h *Handler) ListPromotion(c echo.Context) error {
 	var req ListPromotionRequest
 	if err := c.Bind(&req); err != nil {
@@ -119,6 +140,18 @@ type CreatePromotionRequest struct {
 	Refs        []PromotionRefRequest `json:"refs"         validate:"dive"`
 }
 
+// CreatePromotion creates a new promotion.
+//
+//	@Summary	Create promotion
+//	@Tags		promotion
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		CreatePromotionRequest	true	"Promotion payload"
+//	@Success	200		{object}	response.CommonResponse{data=promotionmodel.Promotion}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/catalog/promotion [post]
 func (h *Handler) CreatePromotion(c echo.Context) error {
 	var req CreatePromotionRequest
 	if err := c.Bind(&req); err != nil {
@@ -176,6 +209,18 @@ type UpdatePromotionRequest struct {
 	Refs          *[]PromotionRefRequest `json:"refs"`
 }
 
+// UpdatePromotion patches an existing promotion.
+//
+//	@Summary	Update promotion
+//	@Tags		promotion
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		UpdatePromotionRequest	true	"Fields to update"
+//	@Success	200		{object}	response.CommonResponse{data=promotionmodel.Promotion}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/catalog/promotion [patch]
 func (h *Handler) UpdatePromotion(c echo.Context) error {
 	var req UpdatePromotionRequest
 	if err := c.Bind(&req); err != nil {
@@ -228,6 +273,17 @@ type DeletePromotionRequest struct {
 	ID uuid.UUID `param:"id" validate:"required"`
 }
 
+// DeletePromotion removes a promotion by ID.
+//
+//	@Summary	Delete promotion
+//	@Tags		promotion
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		id	path		string	true	"Promotion ID (UUID)"
+//	@Success	200	{object}	response.CommonResponse{data=string}
+//	@Failure	400	{object}	response.CommonResponse
+//	@Failure	401	{object}	response.CommonResponse
+//	@Router		/catalog/promotion/{id} [delete]
 func (h *Handler) DeletePromotion(c echo.Context) error {
 	var req DeletePromotionRequest
 	if err := c.Bind(&req); err != nil {

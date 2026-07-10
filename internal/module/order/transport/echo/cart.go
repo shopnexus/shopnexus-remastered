@@ -16,6 +16,15 @@ import (
 type GetCartRequest struct {
 }
 
+// GetCart returns the caller's cart items.
+//
+//	@Summary	Get cart
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Success	200	{object}	response.CommonResponse{data=[]ordermodel.CartItemView}
+//	@Failure	401	{object}	response.CommonResponse
+//	@Router		/order/cart [get]
 func (h *Handler) GetCart(c echo.Context) error {
 	var req GetCartRequest
 	if err := c.Bind(&req); err != nil {
@@ -46,6 +55,18 @@ type UpdateCartRequest struct {
 	DeltaQuantity null.Int64 `json:"delta_quantity" validate:"omitnil"`
 }
 
+// UpdateCart sets or adjusts the quantity of a SKU in the caller's cart.
+//
+//	@Summary	Update cart
+//	@Tags		order
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		UpdateCartRequest	true	"Cart update payload"
+//	@Success	200		{object}	response.CommonResponse{data=string}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/order/cart [post]
 func (h *Handler) UpdateCart(c echo.Context) error {
 	var req UpdateCartRequest
 	if err := c.Bind(&req); err != nil {
@@ -75,6 +96,15 @@ func (h *Handler) UpdateCart(c echo.Context) error {
 type ClearCartRequest struct {
 }
 
+// ClearCart removes all items from the caller's cart.
+//
+//	@Summary	Clear cart
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Success	200	{object}	response.CommonResponse{data=string}
+//	@Failure	401	{object}	response.CommonResponse
+//	@Router		/order/cart [delete]
 func (h *Handler) ClearCart(c echo.Context) error {
 	var req ClearCartRequest
 	if err := c.Bind(&req); err != nil {

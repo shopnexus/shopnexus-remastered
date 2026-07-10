@@ -1,0 +1,25 @@
+name: OpenAPI spec check
+
+# Regen OpenAPI spec từ annotation của handler rồi so với bản đã commit.
+# Nếu lệch -> fail, nhắc chạy `make openapi` và commit lại (chống drift code-first).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  openapi-check:
+    name: Verify generated spec is up to date
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Regenerate & diff
+        run: make openapi-check

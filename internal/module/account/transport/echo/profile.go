@@ -16,10 +16,21 @@ type updateCountryRequest struct {
 	Country string `json:"country" validate:"required,len=2,uppercase,alpha"`
 }
 
-// UpdateCountry handles PATCH /account/profile/country.
+// UpdateCountry changes the caller's country (and inferred currency).
 // Returns 409 when the caller's wallet balance is non-zero; the terminal
 // conflict error raised by the biz layer is translated to the HTTP status by
 // response.FromError via restate.IsTerminalError.
+//
+//	@Summary	Update country
+//	@Tags		account
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		updateCountryRequest	true	"ISO-3166 alpha-2 country code"
+//	@Success	200		{object}	response.CommonResponse
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	409		{object}	response.CommonResponse	"Wallet balance non-zero"
+//	@Router		/account/profile/country [patch]
 func (h *Handler) UpdateCountry(c echo.Context) error {
 	var req updateCountryRequest
 	if err := c.Bind(&req); err != nil {

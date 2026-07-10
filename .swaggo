@@ -1,0 +1,41 @@
+// swaggo type overrides — how non-stdlib field types serialize in the OpenAPI spec.
+// Keyed by the short (pkg.Type) form so swaggo matches them without --parseDependency
+// (parser.go checks Overrides[typeName] before resolving the dependency).
+// guregu/null wrappers marshal as their inner scalar (null when invalid); uuid
+// values marshal as strings. Regenerate after editing: `make openapi`.
+replace null.String string
+replace null.Bool bool
+replace null.Byte uint8
+replace null.Int int64
+replace null.Int16 int16
+replace null.Int32 int32
+replace null.Int64 int64
+replace null.Float float64
+replace null.Time string
+replace uuid.UUID string
+replace uuid.NullUUID string
+replace json.RawMessage object
+
+// Null<Enum> wrappers (genenum output) marshal to the enum string or null.
+// swaggo would otherwise render them as a {valid,value} object.
+replace accountdb.NullAccountAddressType string
+replace accountdb.NullAccountGender string
+replace accountdb.NullAccountRole string
+replace accountdb.NullAccountStatus string
+replace accountmodel.NullAddressType string
+replace accountmodel.NullGender string
+replace accountmodel.NullRole string
+replace accountmodel.NullStatus string
+replace analyticdb.NullAnalyticInteractionRefType string
+replace analyticmodel.NullInteractionRefType string
+replace catalogdb.NullCatalogCommentRefType string
+replace catalogdb.NullCatalogSearchSyncRefType string
+replace chatdb.NullChatMessageStatus string
+replace chatdb.NullChatMessageType string
+replace commondb.NullCommonResourceRefType string
+replace inventorydb.NullInventoryStatus string
+replace inventorydb.NullInventoryStockRefType string
+replace promotiondb.NullPromotionRefType string
+replace promotiondb.NullPromotionType string
+replace promotionmodel.NullRefType string
+replace promotionmodel.NullType string

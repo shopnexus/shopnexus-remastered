@@ -21,6 +21,20 @@ type ListRefundDisputesRequest struct {
 	Status string `query:"status" validate:"omitempty,oneof=Open SellerWins BuyerWins"`
 }
 
+// ListRefundDisputes returns refund disputes visible to the caller (paginated).
+//
+//	@Summary	List refund disputes
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		status	query		string	false	"Dispute status"			Enums(Open, SellerWins, BuyerWins)
+//	@Param		page	query		int		false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit	query		int		false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor	query		string	false	"Keyset cursor (cursor mode)"
+//	@Param		sort	query		string	false	"Sort, e.g. -date_created"
+//	@Success	200		{object}	response.SwaggerPaginationResponse{data=[]ordermodel.RefundDispute}
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/order/disputes [get]
 func (h *Handler) ListRefundDisputes(c echo.Context) error {
 	var req ListRefundDisputesRequest
 	if err := c.Bind(&req); err != nil {
@@ -44,6 +58,22 @@ func (h *Handler) ListRefundDisputes(c echo.Context) error {
 	return response.FromPaginate(c.Response().Writer, result)
 }
 
+// ListRefundDisputesByRefund returns disputes for a specific refund (paginated).
+//
+//	@Summary	List refund disputes by refund
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		refundID	path		string	true	"Refund ID (UUID)"
+//	@Param		status		query		string	false	"Dispute status"			Enums(Open, SellerWins, BuyerWins)
+//	@Param		page		query		int		false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit		query		int		false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor		query		string	false	"Keyset cursor (cursor mode)"
+//	@Param		sort		query		string	false	"Sort, e.g. -date_created"
+//	@Success	200			{object}	response.SwaggerPaginationResponse{data=[]ordermodel.RefundDispute}
+//	@Failure	400			{object}	response.CommonResponse
+//	@Failure	401			{object}	response.CommonResponse
+//	@Router		/order/refunds/{refundID}/disputes [get]
 func (h *Handler) ListRefundDisputesByRefund(c echo.Context) error {
 	refundID, err := uuid.Parse(c.Param("refundID"))
 	if err != nil {
@@ -72,6 +102,17 @@ func (h *Handler) ListRefundDisputesByRefund(c echo.Context) error {
 	return response.FromPaginate(c.Response().Writer, result)
 }
 
+// GetRefundDispute returns a single refund dispute by ID.
+//
+//	@Summary	Get refund dispute
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		disputeID	path		string	true	"Dispute ID (UUID)"
+//	@Success	200			{object}	response.CommonResponse{data=ordermodel.RefundDispute}
+//	@Failure	400			{object}	response.CommonResponse
+//	@Failure	401			{object}	response.CommonResponse
+//	@Router		/order/disputes/{disputeID} [get]
 func (h *Handler) GetRefundDispute(c echo.Context) error {
 	disputeID, err := uuid.Parse(c.Param("disputeID"))
 	if err != nil {
@@ -97,10 +138,36 @@ type AdminDisputeDecisionRequest struct {
 	Note string `json:"resolution_note" validate:"required,min=1,max=2000"`
 }
 
+// AdminUpholdDispute resolves a dispute in the seller's favour (admin only).
+//
+//	@Summary	Admin uphold dispute
+//	@Tags		order
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		disputeID	path		string						true	"Dispute ID (UUID)"
+//	@Param		body		body		AdminDisputeDecisionRequest	true	"Resolution payload"
+//	@Success	200			{object}	response.CommonResponse{data=ordermodel.RefundDispute}
+//	@Failure	400			{object}	response.CommonResponse
+//	@Failure	401			{object}	response.CommonResponse
+//	@Router		/order/disputes/{disputeID}/uphold [post]
 func (h *Handler) AdminUpholdDispute(c echo.Context) error {
 	return h.adminDecideDispute(c, true)
 }
 
+// AdminDismissDispute resolves a dispute in the buyer's favour (admin only).
+//
+//	@Summary	Admin dismiss dispute
+//	@Tags		order
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		disputeID	path		string						true	"Dispute ID (UUID)"
+//	@Param		body		body		AdminDisputeDecisionRequest	true	"Resolution payload"
+//	@Success	200			{object}	response.CommonResponse{data=ordermodel.RefundDispute}
+//	@Failure	400			{object}	response.CommonResponse
+//	@Failure	401			{object}	response.CommonResponse
+//	@Router		/order/disputes/{disputeID}/dismiss [post]
 func (h *Handler) AdminDismissDispute(c echo.Context) error {
 	return h.adminDecideDispute(c, false)
 }

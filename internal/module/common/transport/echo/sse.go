@@ -9,6 +9,15 @@ import (
 )
 
 // HandleSSE establishes an SSE connection for the authenticated account.
+//
+//	@Summary	Server-sent events stream
+//	@Tags		common
+//	@Produce	text/event-stream
+//	@Security	BearerAuth
+//	@Param		token	query		string	false	"Bearer token fallback for EventSource (which cannot set headers)"
+//	@Success	200		{string}	string	"SSE stream"
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/common/stream [get]
 func (h *Handler) HandleSSE(c echo.Context) error {
 	// Auth: header first, query param fallback (browser EventSource can't set headers)
 	claims, err := authclaims.GetClaims(c.Request())

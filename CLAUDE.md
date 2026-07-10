@@ -13,13 +13,21 @@ See `Makefile`. Common:
 - `make dev` — air hot-reload
 - `make pgtempl` — regen SQLC query templates
 - `make generate` — regen Restate proxies (`*/biz/restate_gen.go`)
+- `make openapi` — regen OpenAPI spec (`internal/openapi/`) from handler annotations
 - `make migrate` / `make seed` — apply / seed dev DB
 - `go test ./...` — tests
 - `golangci-lint run` — lint (config: `.golangci.yml`)
 
 ## Do not hand-edit generated files
 
-`internal/module/*/db/queries/generated_queries.sql`, `internal/module/*/db/sqlc/*.sql.go`, `*/biz/restate_gen.go`. Fix the generator (`cmd/pgtempl/`, `sqlc.yaml`, `cmd/genrestate/`) instead.
+`internal/module/*/db/queries/generated_queries.sql`, `internal/module/*/db/sqlc/*.sql.go`, `*/biz/restate_gen.go`, `internal/openapi/*`. Fix the generator (`cmd/pgtempl/`, `sqlc.yaml`, `cmd/genrestate/`) instead.
+
+## OpenAPI / Swagger (code-first)
+
+The HTTP gateway spec is generated from swaggo annotations on the `transport/echo` handlers — `make openapi` runs `swag init` (Swagger 2.0 → `internal/openapi/swagger.{json,yaml}`) then `cmd/openapiconv` (→ OpenAPI 3.0 `openapi.v3.json`, the artifact Mintlify consumes). Swagger UI is served at `/swagger/index.html`. CI (`make openapi-check`) fails on drift — rerun `make openapi` and commit after changing any handler signature/annotation.
+
+- Envelope: annotate as `response.CommonResponse{data=pkg.T}`; paginated endpoints use the non-generic `response.SwaggerPaginationResponse{data=[]pkg.T}` (swaggo can't resolve a generic type-arg whose package the transport file doesn't import).
+- Non-stdlib field types (guregu/null, uuid, `Null<Enum>`, `json.RawMessage`) are mapped to scalars in `.swaggo`; add new ones there.
 
 ## Dev DB
 

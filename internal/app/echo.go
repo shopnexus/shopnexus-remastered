@@ -13,6 +13,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	echoSwagger "github.com/swaggo/echo-swagger"
 	"go.uber.org/fx"
 )
 
@@ -54,6 +55,10 @@ func SetupEcho(params RouteParams) {
 	params.Echo.GET("/health", func(c echo.Context) error {
 		return c.JSON(200, map[string]string{"status": "ok"})
 	})
+
+	// Swagger UI + raw spec. Backed by the generated internal/openapi package
+	// (blank-imported in cmd/server/main.go). Browse at /swagger/index.html.
+	params.Echo.GET("/swagger/*", echoSwagger.WrapHandler)
 }
 
 // SetupHTTPServer starts the HTTP server with lifecycle management.

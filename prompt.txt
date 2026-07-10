@@ -1,0 +1,291 @@
+============================================================
+ShopNexus — Stitch Prompt Pack (C2C Marketplace, mobile-first)
+============================================================
+
+Concept: A general C2C (peer-to-peer) marketplace where anyone can buy AND sell
+anything — no separate "buyer" and "seller" apps. Selling is an ACTION, not a mode:
+a big "+" Sell button lives in the bottom tab bar, and selling management lives inside
+the "You" tab. Discovery has two engines: a personalized "For You" feed and a full-screen
+vertical VIDEO feed (TikTok-style shoppable clips, live-ready) — both backed by
+recommendations, plus strong search. Trust between strangers is a first-class feature
+(reputation, verified badges, transaction history). Chat-first: negotiating and asking
+questions over chat is a core behavior.
+
+Note: design for the BEST possible UI/UX — do not constrain to any existing backend; the
+system will be updated to match the interface.
+
+Design order:
+1. Dán MASTER PROMPT trước để Stitch chốt design system (vibe/màu/font/components).
+2. Sau đó dán từng SCREEN PROMPT một, review xong mới sang màn tiếp theo.
+3. Đây là MOBILE-FIRST. Thiết kế cho màn điện thoại trước; web/desktop responsive sau.
+
+Navigation xương sống (bottom tab bar, 5 mục):
+   Home (feed)  ·  Video (shoppable feed)  ·  ⊕ Sell  ·  Inbox (chat)  ·  You (profile)
+- Search is NOT a tab — it's a full-screen flow that opens when you tap the search bar on
+  Home (covers live search, trending searches, category browse, results & filters).
+- Saved / wishlist is NOT a tab — it lives inside the "You" tab.
+
+
+============================================================
+MASTER PROMPT  (dán đầu tiên)
+============================================================
+
+Design a modern, mobile-first C2C (peer-to-peer) marketplace app called "ShopNexus"
+where every user is both a buyer and a seller — people trade all kinds of goods with
+each other. The feeling is friendly, human, and trustworthy: easy for a first-timer to
+list an item, and reassuring enough for strangers to buy from each other with
+confidence.
+
+Layout: mobile-first with a bottom tab bar of 5 items — Home, Video, a prominent center
+"+" Sell button, Inbox, and You. Selling is an action, not a separate mode; there is NO
+buyer/seller toggle. Search is not a tab — it opens as a full-screen flow when the user taps
+the search bar on Home. Saved/wishlist lives inside the You tab.
+
+Theme: clean, airy, and human, with a trustworthy teal brand color. Support BOTH light and
+dark mode as first-class — do not just invert. Drive everything from SEMANTIC color tokens
+(not fixed hex values) that resolve per mode; the brand teal is a ramp, using a darker step in
+light mode and a lighter, slightly desaturated step in dark mode so it stays vivid and legible
+in both. All color pairings must meet WCAG AA contrast. Use these tokens:
+
+  Brand teal ramp: teal-300 #5FC4C4 · teal-400 #2FA6A8 · teal-500 #0E8388 · teal-600 #0B6E72 · teal-700 #0A585B
+
+                      LIGHT MODE                 DARK MODE
+  Background          #FAFAF7 (warm off-white)   #0F1413 (near-black, teal-tinted)
+  Surface / card      #FFFFFF                    #1A2120
+  Elevated            #F2F2EE                    #232C2B
+  Border / divider    #E7E7E2                    #2E3937
+  Text primary        #1A1A1A                    #F1F3F2
+  Text secondary      #5C5C5C                    #A6B0AE
+  Primary action fill teal-600 #0B6E72           teal-400 #26C6C2
+    text on fill      #FFFFFF                    #04211F (near-black)
+  Primary link/text   teal-700 #0A585B           teal-300 #6FD8D6
+  Success (verified)  #1E9E5A                    #34C77B
+  Warning             #E5A400                    #F0B93A
+  Danger              #DC4A3D                    #F0736A
+
+Rules: never use pure black (#000) for dark backgrounds — use the near-black above; raise
+elevation with lighter surfaces, not heavy shadows; in dark mode the brand teal must be
+LIGHTER and less saturated than in light mode. The Video tab uses dark chrome in both modes.
+
+Rounded corners (14-18px) on cards, buttons, and inputs. Generous spacing, large tap targets,
+soft shadows (light mode), and a modern geometric sans-serif (like Inter or Manrope). Trust
+cues everywhere: verified badges, star ratings, and simple reputation chips. Imagery is bright,
+real, and human — actual product photos taken by everyday sellers, and friendly user avatars.
+Avoid corporate stock art.
+
+Build a THOROUGH, reusable design system FIRST, as its own deliverable — this same system
+will be migrated to the web/desktop app, so it must be complete, consistent, and token-driven,
+not one-off styling per screen. Present it as a style-guide screen, then build every product
+screen strictly from it. The design system must define:
+
+- Color tokens: the full light + dark semantic set above, plus the teal ramp, neutrals, and
+  state colors. Everything references tokens — no raw hex on individual screens.
+- Typography scale: one type family (Inter/Manrope). Define display, h1, h2, h3, title, body,
+  body-small, caption, and label styles with sizes, weights, and line-heights. Include price
+  and numeric styling (tabular figures).
+- Spacing scale: a 4px base grid (4, 8, 12, 16, 24, 32, 48, 64) used for all padding/margins.
+- Radius scale: sm 8 / md 14 / lg 18 / pill (full). Elevation scale: 3-4 levels (raised via
+  lighter surfaces in dark mode, soft shadows in light mode).
+- Iconography: one consistent line-icon set, defined sizes (16/20/24), consistent stroke.
+- Motion: standard durations/easing for transitions, sheets, and the video-feed swipe.
+- Component library, each shown in ALL states (default, hover, pressed, focus-visible,
+  disabled, loading, error) and in BOTH light and dark mode:
+  buttons (primary/secondary/tertiary/icon), inputs & text areas, select/dropdown, chips &
+  filter chips, tags/hashtags, badges (status, "LIVE", discount, "Verified"), the product
+  card (photo AND video variants), the seller/user chip with rating, the shoppable product
+  pill, avatars, star-rating display, price block (with struck-through + discount + multi-
+  currency), quantity stepper, variant chips, tabs & segmented control, bottom sheet, modal,
+  toast/snackbar, skeleton loaders, empty states, the bottom tab bar, and the search bar.
+- Accessibility: AA contrast on every pairing, min 44px tap targets, visible focus states.
+
+Responsive / web migration: design mobile-first, but make the system responsive-ready. Define
+breakpoints (mobile / tablet / desktop) and state how the shell adapts on web: the bottom tab
+bar becomes a left sidebar or top nav; single-column feeds become multi-column grids; bottom
+sheets become centered modals or side panels; the video feed becomes a centered vertical player
+with side rail. Components and tokens stay identical across mobile and web — only layout reflows.
+
+
+============================================================
+SCREEN PROMPTS  (dán từng cái một, sau master prompt)
+============================================================
+
+------------------------------------------------------------
+0. Design system / style guide (GENERATE THIS FIRST)
+------------------------------------------------------------
+A style-guide screen documenting the whole design system as reusable foundations — this is the
+artifact that migrates to web. Lay out: the color tokens as swatches (light and dark side by
+side, each labeled with token name + hex + its role), the typography scale (every text style
+with its specs), the spacing and radius scales, elevation levels, and the icon set. Then a
+component gallery showing every component in all states and in both light and dark mode:
+buttons, inputs, chips, badges (incl. "LIVE", discount, "Verified"), product card (photo +
+video), seller chip, shoppable product pill, price block, quantity stepper, variant chips,
+tabs/segmented control, bottom sheet, modal, toast, skeletons, empty states, bottom tab bar,
+search bar. Include a light/dark toggle. This screen is the single source of truth every other
+screen is built from.
+
+------------------------------------------------------------
+1. Onboarding + Sign in (light)
+------------------------------------------------------------
+A short, welcoming onboarding for the ShopNexus marketplace app: 2-3 swipeable intro
+slides ("Buy anything," "Sell in minutes," "Trade safely with verified people") with
+friendly illustrations, then a sign-in / sign-up screen offering phone number, email,
+and social login, with a clean OTP verification step. Keep it minimal and reassuring.
+
+------------------------------------------------------------
+2. Home — personalized "For You" feed
+------------------------------------------------------------
+The Home tab is a lean-back, personalized "For You" feed — answering "what's good for me?"
+A search bar pinned at the top; tapping it opens the full-screen Search flow (screen 3).
+Home itself does not do search. Below the bar: a location chip ("near you")
+and a two-column masonry feed of item cards — each card shows a photo, price, short title,
+a small seller avatar with rating, and a heart favorite button. The feed is broken up by
+recommendation-driven section headers like "Trending near you," "Because you viewed X," and
+"From sellers you follow." Item cards may be photo OR video: video cards auto-play muted
+inline with a small play/duration glyph and a "▶ Video" tag, and mix naturally into the
+masonry. This is algorithmic discovery, NOT a category browser. Bottom tab bar visible with
+the center "+" Sell button standing out.
+
+------------------------------------------------------------
+3. Search — full-screen flow (opened from the Home search bar; NOT a tab)
+------------------------------------------------------------
+This is the full-screen Search flow that opens when the user taps the search bar on Home —
+it is not a bottom-tab destination. It has three states:
+(a) Landing/idle: a large active search field at the top, the user's recent searches, live
+    suggestions as they type, "Trending searches" as tappable keyword chips (e.g. #sneakers
+    #iphone #desk), and a full browsable category directory — a clean list/grid of top
+    categories that drill into subcategories covering the whole catalog.
+(b) Results: a two-column item grid with a result count, applied-filter chips, and a "Sort"
+    control (relevance, price, newest, nearest), plus a filter sheet that slides up from the
+    bottom with category, price range slider, item condition (new/used), seller rating, and
+    distance.
+(c) Empty: a friendly "no results" state with suggestions.
+Include a "Save this search" action on the results screen so the user can get alerts for new
+matches (these saved searches live in the Saved area inside the You tab).
+
+------------------------------------------------------------
+4. Video — shoppable vertical feed (bottom tab, TikTok-style)
+------------------------------------------------------------
+The Video tab: a full-screen, edge-to-edge vertical video feed of short shoppable clips that
+sellers post to show off items — swipe up for the next clip. Each clip auto-plays with sound,
+loops, and overlays a minimal UI: the seller's avatar + name + "Follow" on top; a right-side
+action rail (like, comment, share, save) with counts; and a bottom-left caption with hashtags.
+Docked above the caption is a shoppable product pill — a thumbnail + title + price with a "Buy"
+/ "Add to cart" button; tapping it opens a bottom sheet with the item (and its variants) so the
+user can purchase without leaving the video. If a clip has multiple tagged items, the pill shows
+a "🛍 3 items" badge that expands to a carousel. Include a "For You" / "Following" toggle at the
+top. Design it live-ready: a clip that is a LIVE stream shows a red "LIVE" badge with a viewer
+count, a real-time comment stream rising from the bottom, and pinned flash-deal products —
+reuse the same layout so live and recorded feel like one surface. Comments open in a bottom
+sheet. Keep the vibe immersive and fast, dark-friendly for video (the video chrome can go dark
+even though the rest of the app is light).
+
+------------------------------------------------------------
+5. Item detail
+------------------------------------------------------------
+An item detail screen. Full-width swipeable media gallery at the top — the first slide can be
+a video that auto-plays muted (tap to unmute, with a mute/scrub control), followed by photos.
+Below: title, price (with a struck-through original price when discounted), and a variant selector
+shown as simple chips (e.g. size or color) when the item has options, plus a quantity
+stepper and an in-stock indicator. A seller trust card: avatar, name, star rating,
+number of sales, a "Verified" badge, and buttons to "Chat" and "View shop." A
+description section and a reviews section with an overall rating, star breakdown, and
+individual review cards (avatar, stars, photos, helpful count). A "Similar items" row at
+the bottom. A sticky bottom bar with a prominent "Buy now" and a secondary "Add to cart"
+and a chat icon — chat is given equal weight because negotiation is common.
+
+------------------------------------------------------------
+6. Cart + Checkout (multi-seller)
+------------------------------------------------------------
+A cart screen where items are grouped by seller, each group with a subtotal and a
+voucher/promo code field, with quantity steppers. Then a smooth mobile checkout: choose
+a saved delivery address (with an add-address screen using a map pin), pick a delivery
+option per seller, choose a payment method, and see an order summary (subtotal, delivery,
+discounts, total) in a sticky bottom sheet with a single "Place order" button. Finish with
+a delightful order-placed success screen with a clear next-step ("Track your order").
+
+------------------------------------------------------------
+7. You — profile & unified identity
+------------------------------------------------------------
+The "You" tab: the user's identity hub. Header with avatar, display name, a reputation
+summary (star rating, number of reviews, "Verified" badge, member-since), and follower/
+following counts. Quick links to "My purchases," "My listings / Selling," "Favorites,"
+"Vouchers," and "Settings." Below, a grid of the user's own items for sale (their public
+shop view), and a tab to see reviews left by others. Everything about being a seller lives
+here — there is no separate seller mode.
+
+------------------------------------------------------------
+8. Sell — create a listing (the "+" flow)
+------------------------------------------------------------
+The listing-creation flow launched from the center "+" button. Step 1: add media — photos AND
+an optional short video (camera + gallery, drag to reorder, first is cover); a video becomes
+both the item's hero clip and a post in the Video feed. The "+" button can also offer a
+quick-choice sheet: "New listing," "Post a video," or "Go live." Step 2: title, description,
+pick a category,
+add tags. Step 3: set price, condition, quantity, and optional variants (e.g. sizes/colors
+each with its own price and stock). Step 4: delivery options and location. A live preview
+of how the item card will look, and a "Publish" button. Keep it fast and encouraging so a
+first-time seller can finish in minutes.
+
+------------------------------------------------------------
+9. Selling hub (inside "You") — manage listings & orders
+------------------------------------------------------------
+A seller management area reached from the "You" tab (progressive disclosure, not a separate
+app). A simple overview with a few friendly stat cards (this month's sales, active listings,
+views, saves) and a small sales sparkline. Tabs for: "My listings" (edit/pause/delete, with
+stock shown), "Orders to fulfill" (incoming orders to confirm or decline, then mark as
+shipped), and "Sold." Also a "Videos & Live" area where a seller manages their posted clips
+and can start a livestream (schedule, go live, pin products to the stream) — surfaced here as
+a power-seller capability. Keep it lightweight — this is casual selling, not an enterprise
+dashboard.
+
+------------------------------------------------------------
+10. Purchases — orders & tracking
+------------------------------------------------------------
+The buyer's "My purchases" screen with status tabs (To pay, To ship, Shipping, Completed,
+Refund). Each order card shows a thumbnail, a clear status badge, the seller, the total, and
+a contextual action (Pay, Track, Confirm received, Review, Request refund). A detailed order
+screen with a friendly vertical progress tracker (Ordered → Confirmed → Paid → Shipped →
+Delivered) written in human language, and a refund/return request flow with a reason picker,
+photo upload, and status — plus a simple dispute view if buyer and seller disagree.
+
+------------------------------------------------------------
+11. Inbox — chat & notifications
+------------------------------------------------------------
+The Inbox tab, with two segments: Chats and Notifications. Chats: a conversation list
+(avatar, name, last message preview, unread badge, timestamp) opening into a chat thread
+with message bubbles, image messages, read receipts, and a composer with attach-image.
+Inside a chat, show an inline item-context card (photo, title, price, "Make offer" and "Buy"
+buttons) when the conversation is about a listing — because price negotiation happens here.
+Notifications: grouped, filterable items (orders, offers, promotions, system) with read/
+unread states.
+
+------------------------------------------------------------
+12. Pricing & currency display (multi-region — apply across screens)
+------------------------------------------------------------
+This is a multi-region marketplace: sellers list in their own currency, but buyers must
+see prices in their OWN local currency. Rules to apply everywhere prices appear:
+
+- Show the price in the BUYER's currency as the primary, prominent number, formatted for
+  the buyer's locale (correct thousands/decimal separators and symbol position, e.g.
+  ₫625.000 vs $1,000.00).
+- When currency is ambiguous across regions, pair the symbol with its ISO code (US$25 /
+  25 USD, ₫250.000 / 250.000 VND) so $ is never confusing.
+- Discount display is SEPARATE from currency: show the current price bold with the
+  pre-discount price struck-through and a "-20%" badge — both in the SAME currency.
+- Progressive precision by screen:
+  · Feed / item cards: compact — only the converted buyer price + discount badge.
+  · Item detail: the buyer price large; below it, the seller's original price small and
+    muted with a "≈" and a "reference rate" note (e.g. "≈ US$25 · reference rate"); plus a
+    "Ships to [buyer region]" line.
+  · Checkout: the EXACT final amount, currency locked, with any currency-conversion fee
+    shown as its own line item (never hidden, never a "≈"). This is the only committed number.
+- Add a region / currency switcher in Settings (and offer it during onboarding) so users
+  can set their region and preferred display currency.
+
+------------------------------------------------------------
+13. Trust & safety touches (apply across screens)
+------------------------------------------------------------
+Weave trust cues throughout rather than as one page: a "Verified" badge on profiles and item
+cards, seller rating + number of completed sales near every price, a reviews-with-photos
+pattern, a report/block action in chat and on listings, and clear buyer-protection messaging
+on the checkout and refund screens ("Your payment is protected until you confirm delivery").

@@ -13,6 +13,15 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// GetMe returns the authenticated caller's own profile.
+//
+//	@Summary	Get my profile
+//	@Tags		account
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Success	200	{object}	response.CommonResponse{data=accountmodel.Profile}
+//	@Failure	401	{object}	response.CommonResponse
+//	@Router		/account/me [get]
 func (h *Handler) GetMe(c echo.Context) error {
 	claims, err := authclaims.GetClaims(c.Request())
 	if err != nil {
@@ -48,6 +57,18 @@ type UpdateMeRequest struct {
 	Description null.String `json:"description" validate:"omitnil,max=500"`
 }
 
+// UpdateMe patches the authenticated caller's account/profile/vendor fields.
+//
+//	@Summary	Update my profile
+//	@Tags		account
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		UpdateMeRequest	true	"Fields to update (all optional)"
+//	@Success	200		{object}	response.CommonResponse{data=accountmodel.Profile}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/account/me [patch]
 func (h *Handler) UpdateMe(c echo.Context) error {
 	var req UpdateMeRequest
 	if err := c.Bind(&req); err != nil {

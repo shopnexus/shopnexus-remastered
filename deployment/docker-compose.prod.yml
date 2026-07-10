@@ -159,9 +159,15 @@ services:
 
   server:
     container_name: shopnexus-server-prod
+    # Prod pulls a prebuilt image from GHCR (pushed by CI). Override the tag
+    # per-deploy with SERVER_IMAGE if you want to pin/rollback to a specific SHA.
+    image: ${SERVER_IMAGE:-ghcr.io/shopnexus/shopnexus-server:latest}
+    # `build` kept only as a local fallback (`docker compose build server`);
+    # CI never uses it — the image above is pulled instead.
     build:
       context: .. # Context from root of the project
       dockerfile: ./Dockerfile
+    pull_policy: always
     ports:
       - "8080:8080"
     depends_on:

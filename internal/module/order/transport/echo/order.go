@@ -162,6 +162,17 @@ type GetBuyerOrderRequest struct {
 	ID uuid.UUID `param:"id" validate:"required"`
 }
 
+// GetBuyerOrder returns a single buyer-facing order by ID.
+//
+//	@Summary	Get buyer order
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		id	path		string	true	"Order ID (UUID)"
+//	@Success	200	{object}	response.CommonResponse{data=ordermodel.Order}
+//	@Failure	400	{object}	response.CommonResponse
+//	@Failure	401	{object}	response.CommonResponse
+//	@Router		/order/buyer/orders/{id} [get]
 func (h *Handler) GetBuyerOrder(c echo.Context) error {
 	var req GetBuyerOrderRequest
 	if err := c.Bind(&req); err != nil {
@@ -187,6 +198,17 @@ type GetCheckoutSummaryRequest struct {
 	TxID uuid.UUID `param:"txID" validate:"required"`
 }
 
+// GetCheckoutSummary returns the checkout summary for a transaction.
+//
+//	@Summary	Get checkout summary
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		txID	path		string	true	"Transaction ID (UUID)"
+//	@Success	200		{object}	response.CommonResponse{data=ordermodel.CheckoutSummary}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/order/buyer/checkout-summary/{txID} [get]
 func (h *Handler) GetCheckoutSummary(c echo.Context) error {
 	var req GetCheckoutSummaryRequest
 	if err := c.Bind(&req); err != nil {
@@ -216,6 +238,17 @@ type GetSellerOrderRequest struct {
 	ID uuid.UUID `param:"id" validate:"required"`
 }
 
+// GetSellerOrder returns a single seller-facing order by ID.
+//
+//	@Summary	Get seller order
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		id	path		string	true	"Order ID (UUID)"
+//	@Success	200	{object}	response.CommonResponse{data=ordermodel.Order}
+//	@Failure	400	{object}	response.CommonResponse
+//	@Failure	401	{object}	response.CommonResponse
+//	@Router		/order/seller/confirmed/{id} [get]
 func (h *Handler) GetSellerOrder(c echo.Context) error {
 	var req GetSellerOrderRequest
 	if err := c.Bind(&req); err != nil {
@@ -240,6 +273,20 @@ type ListSellerConfirmedRequest struct {
 	Search null.String `query:"search"`
 }
 
+// ListSellerConfirmed returns the seller's confirmed orders (paginated).
+//
+//	@Summary	List seller confirmed orders
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		search	query		string	false	"Search term"
+//	@Param		page	query		int		false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit	query		int		false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor	query		string	false	"Keyset cursor (cursor mode)"
+//	@Param		sort	query		string	false	"Sort, e.g. -date_created"
+//	@Success	200		{object}	response.SwaggerPaginationResponse{data=[]ordermodel.Order}
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/order/seller/confirmed [get]
 func (h *Handler) ListSellerConfirmed(c echo.Context) error {
 	var req ListSellerConfirmedRequest
 	if err := c.Bind(&req); err != nil {
@@ -278,6 +325,18 @@ type QuoteBuyerTransportRequest struct {
 
 // QuoteBuyerTransport returns per-item shipping cost previews so the cart
 // summary can show a real shipping total before the buyer submits checkout.
+// QuoteBuyerTransport returns per-item shipping cost previews before checkout.
+//
+//	@Summary	Quote buyer transport
+//	@Tags		order
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		QuoteBuyerTransportRequest	true	"Quote payload"
+//	@Success	200		{object}	response.CommonResponse{data=transport.QuoteTransportResult}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/order/buyer/quote-transport [post]
 func (h *Handler) QuoteBuyerTransport(c echo.Context) error {
 	var req QuoteBuyerTransportRequest
 	if err := c.Bind(&req); err != nil {
@@ -346,6 +405,18 @@ type BuyerCheckoutResponse struct {
 // (or empty for wallet-only). The workflow continues running asynchronously
 // after this handler returns; the buyer can later cancel via
 // /buyer/checkout/:sessionID/cancel which signals CancelCheckout.
+// BuyerCheckout submits a checkout workflow and returns the gateway redirect URL.
+//
+//	@Summary	Buyer checkout
+//	@Tags		order
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		BuyerCheckoutRequest	true	"Checkout payload"
+//	@Success	200		{object}	response.CommonResponse{data=BuyerCheckoutResponse}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/order/buyer/checkout [post]
 func (h *Handler) BuyerCheckout(c echo.Context) error {
 	var req BuyerCheckoutRequest
 	if err := c.Bind(&req); err != nil {
@@ -412,6 +483,18 @@ type EnsurePaymentURLResponse struct {
 // shared GetPaymentURL handler decides from journaled gate state: reuse the live
 // attempt, advance to a fresh one, or return the terminal error (expired/cancelled
 // carry their own 409 status, surfaced by response.FromError).
+// EnsureBuyerCheckoutPaymentURL returns (or advances to) the checkout payment URL.
+//
+//	@Summary	Ensure buyer checkout payment URL
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		sessionID	path		string	true	"Checkout session ID (UUID)"
+//	@Success	200			{object}	response.CommonResponse{data=EnsurePaymentURLResponse}
+//	@Failure	400			{object}	response.CommonResponse
+//	@Failure	401			{object}	response.CommonResponse
+//	@Failure	409			{object}	response.CommonResponse
+//	@Router		/order/buyer/checkout/{sessionID}/payment-url [post]
 func (h *Handler) EnsureBuyerCheckoutPaymentURL(c echo.Context) error {
 	sessionID, err := uuid.Parse(c.Param("sessionID"))
 	if err != nil {
@@ -432,6 +515,17 @@ func (h *Handler) EnsureBuyerCheckoutPaymentURL(c echo.Context) error {
 }
 
 // CancelBuyerCheckout signals CheckoutWorkflow.CancelCheckout
+// CancelBuyerCheckout signals the checkout workflow to cancel.
+//
+//	@Summary	Cancel buyer checkout
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		sessionID	path		string	true	"Checkout session ID (UUID)"
+//	@Success	200			{object}	response.CommonResponse{data=string}
+//	@Failure	400			{object}	response.CommonResponse
+//	@Failure	401			{object}	response.CommonResponse
+//	@Router		/order/buyer/checkout/{sessionID}/cancel [post]
 func (h *Handler) CancelBuyerCheckout(c echo.Context) error {
 	sessionID, err := uuid.Parse(c.Param("sessionID"))
 	if err != nil {
@@ -455,6 +549,19 @@ type ListBuyerPendingItemsRequest struct {
 	paginate.Params
 }
 
+// ListBuyerPendingItems returns the buyer's pending order items (paginated).
+//
+//	@Summary	List buyer pending items
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		page	query		int		false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit	query		int		false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor	query		string	false	"Keyset cursor (cursor mode)"
+//	@Param		sort	query		string	false	"Sort, e.g. -date_created"
+//	@Success	200		{object}	response.SwaggerPaginationResponse{data=[]ordermodel.OrderItem}
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/order/buyer/pending-items [get]
 func (h *Handler) ListBuyerPendingItems(c echo.Context) error {
 	var req ListBuyerPendingItemsRequest
 	if err := c.Bind(&req); err != nil {
@@ -480,6 +587,17 @@ func (h *Handler) ListBuyerPendingItems(c echo.Context) error {
 	return response.FromPaginate(c.Response().Writer, result)
 }
 
+// CancelBuyerPending cancels a single pending order item.
+//
+//	@Summary	Cancel buyer pending item
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		id	path		int	true	"Order item ID"
+//	@Success	200	{object}	response.CommonResponse{data=string}
+//	@Failure	400	{object}	response.CommonResponse
+//	@Failure	401	{object}	response.CommonResponse
+//	@Router		/order/buyer/pending-items/{id} [delete]
 func (h *Handler) CancelBuyerPending(c echo.Context) error {
 	idStr := c.Param("id")
 	itemID, err := strconv.ParseInt(idStr, 10, 64)
@@ -508,6 +626,19 @@ type ListBuyerPendingOrdersRequest struct {
 	paginate.Params
 }
 
+// ListBuyerPendingOrders returns the buyer's pending orders (paginated).
+//
+//	@Summary	List buyer pending orders
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		page	query		int		false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit	query		int		false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor	query		string	false	"Keyset cursor (cursor mode)"
+//	@Param		sort	query		string	false	"Sort, e.g. -date_created"
+//	@Success	200		{object}	response.SwaggerPaginationResponse{data=[]ordermodel.Order}
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/order/buyer/pending-orders [get]
 func (h *Handler) ListBuyerPendingOrders(c echo.Context) error {
 	var req ListBuyerPendingOrdersRequest
 	if err := c.Bind(&req); err != nil {
@@ -536,6 +667,19 @@ type ListBuyerCompletedOrdersRequest struct {
 	paginate.Params
 }
 
+// ListBuyerCompletedOrders returns the buyer's completed orders (paginated).
+//
+//	@Summary	List buyer completed orders
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		page	query		int		false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit	query		int		false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor	query		string	false	"Keyset cursor (cursor mode)"
+//	@Param		sort	query		string	false	"Sort, e.g. -date_created"
+//	@Success	200		{object}	response.SwaggerPaginationResponse{data=[]ordermodel.Order}
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/order/buyer/completed-orders [get]
 func (h *Handler) ListBuyerCompletedOrders(c echo.Context) error {
 	var req ListBuyerCompletedOrdersRequest
 	if err := c.Bind(&req); err != nil {
@@ -564,6 +708,19 @@ type ListBuyerCancelledOrdersRequest struct {
 	paginate.Params
 }
 
+// ListBuyerCancelledOrders returns the buyer's cancelled orders (paginated).
+//
+//	@Summary	List buyer cancelled orders
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		page	query		int		false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit	query		int		false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor	query		string	false	"Keyset cursor (cursor mode)"
+//	@Param		sort	query		string	false	"Sort, e.g. -date_created"
+//	@Success	200		{object}	response.SwaggerPaginationResponse{data=[]ordermodel.Order}
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/order/buyer/cancelled-orders [get]
 func (h *Handler) ListBuyerCancelledOrders(c echo.Context) error {
 	var req ListBuyerCancelledOrdersRequest
 	if err := c.Bind(&req); err != nil {
@@ -592,6 +749,19 @@ type ListBuyerCancelledItemsRequest struct {
 	paginate.Params
 }
 
+// ListBuyerCancelledItems returns the buyer's cancelled order items (paginated).
+//
+//	@Summary	List buyer cancelled items
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		page	query		int		false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit	query		int		false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor	query		string	false	"Keyset cursor (cursor mode)"
+//	@Param		sort	query		string	false	"Sort, e.g. -date_created"
+//	@Success	200		{object}	response.SwaggerPaginationResponse{data=[]ordermodel.OrderItem}
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/order/buyer/cancelled-items [get]
 func (h *Handler) ListBuyerCancelledItems(c echo.Context) error {
 	var req ListBuyerCancelledItemsRequest
 	if err := c.Bind(&req); err != nil {

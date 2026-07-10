@@ -21,6 +21,17 @@ type AuthTokenResponse struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+// LoginBasic authenticates with an identifier (username/email/phone) + password.
+//
+//	@Summary	Basic login
+//	@Tags		account
+//	@Accept		json
+//	@Produce	json
+//	@Param		body	body		LoginBasicRequest	true	"Credentials"
+//	@Success	200		{object}	response.CommonResponse{data=AuthTokenResponse}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/account/auth/login/basic [post]
 func (h *Handler) LoginBasic(c echo.Context) error {
 	var req LoginBasicRequest
 	if err := c.Bind(&req); err != nil {
@@ -54,6 +65,16 @@ type RegisterBasicRequest struct {
 	Country  string      `json:"country"  validate:"required,len=2,uppercase,alpha"`
 }
 
+// RegisterBasic creates a new account from username/email/phone + password.
+//
+//	@Summary	Basic registration
+//	@Tags		account
+//	@Accept		json
+//	@Produce	json
+//	@Param		body	body		RegisterBasicRequest	true	"Registration payload"
+//	@Success	201		{object}	response.CommonResponse{data=AuthTokenResponse}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Router		/account/auth/register/basic [post]
 func (h *Handler) RegisterBasic(c echo.Context) error {
 	var req RegisterBasicRequest
 	if err := c.Bind(&req); err != nil {
@@ -85,6 +106,16 @@ type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token" validate:"required"`
 }
 
+// Refresh exchanges a refresh token for a new access/refresh token pair.
+//
+//	@Summary	Refresh tokens
+//	@Tags		account
+//	@Accept		json
+//	@Produce	json
+//	@Param		body	body		RefreshRequest	true	"Refresh token"
+//	@Success	200		{object}	response.CommonResponse{data=AuthTokenResponse}
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/account/auth/refresh [post]
 func (h *Handler) Refresh(c echo.Context) error {
 	var req RefreshRequest
 	if err := c.Bind(&req); err != nil {

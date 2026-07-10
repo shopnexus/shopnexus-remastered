@@ -17,6 +17,19 @@ type ListSellerPendingItemsRequest struct {
 	paginate.Params
 }
 
+// ListSellerPendingItems returns the seller's pending order items (paginated).
+//
+//	@Summary	List seller pending items
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		page	query		int		false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit	query		int		false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor	query		string	false	"Keyset cursor (cursor mode)"
+//	@Param		sort	query		string	false	"Sort, e.g. -date_created"
+//	@Success	200		{object}	response.SwaggerPaginationResponse{data=[]ordermodel.OrderItem}
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/order/seller/pending [get]
 func (h *Handler) ListSellerPendingItems(c echo.Context) error {
 	var req ListSellerPendingItemsRequest
 	if err := c.Bind(&req); err != nil {
@@ -63,6 +76,17 @@ type ConfirmSellerPendingResponse struct {
 // owns the saga lifecycle, we just bridge the async submit into a sync HTTP
 // response so the seller's UI can redirect to the gateway (or short-circuit
 // for wallet-only confirms).
+//
+//	@Summary	Confirm seller pending items
+//	@Tags		order
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		ConfirmSellerPendingRequest	true	"Confirm payload"
+//	@Success	200		{object}	response.CommonResponse{data=ConfirmSellerPendingResponse}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/order/seller/pending/confirm [post]
 func (h *Handler) ConfirmSellerPending(c echo.Context) error {
 	var req ConfirmSellerPendingRequest
 	if err := c.Bind(&req); err != nil {
@@ -99,6 +123,17 @@ func (h *Handler) ConfirmSellerPending(c echo.Context) error {
 // Mirrors EnsureBuyerCheckoutPaymentURL: the workflow's shared GetPaymentURL
 // handler decides from journaled gate state (reuse / advance / terminal error;
 // expired/cancelled carry their own 409 status via response.FromError).
+//
+//	@Summary	Ensure seller confirm payment URL
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		sessionID	path		string	true	"Confirm session ID (UUID)"
+//	@Success	200			{object}	response.CommonResponse{data=EnsurePaymentURLResponse}
+//	@Failure	400			{object}	response.CommonResponse
+//	@Failure	401			{object}	response.CommonResponse
+//	@Failure	409			{object}	response.CommonResponse
+//	@Router		/order/seller/pending/confirm/{sessionID}/payment-url [post]
 func (h *Handler) EnsureConfirmPaymentURL(c echo.Context) error {
 	sessionID, err := uuid.Parse(c.Param("sessionID"))
 	if err != nil {
@@ -121,6 +156,16 @@ func (h *Handler) EnsureConfirmPaymentURL(c echo.Context) error {
 // CancelConfirmSellerPending signals FulfillmentWorkflow.CancelConfirm so
 // Run() unwinds through its saga compensators (rolling back any wallet hold
 // and gateway-side intent).
+//
+//	@Summary	Cancel seller confirm
+//	@Tags		order
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		sessionID	path		string	true	"Confirm session ID (UUID)"
+//	@Success	200			{object}	response.CommonResponse{data=string}
+//	@Failure	400			{object}	response.CommonResponse
+//	@Failure	401			{object}	response.CommonResponse
+//	@Router		/order/seller/pending/confirm/{sessionID}/cancel [post]
 func (h *Handler) CancelConfirmSellerPending(c echo.Context) error {
 	sessionID, err := uuid.Parse(c.Param("sessionID"))
 	if err != nil {
@@ -142,6 +187,18 @@ type RejectSellerPendingRequest struct {
 	ItemIDs []int64 `json:"item_ids" validate:"required,min=1"`
 }
 
+// RejectSellerPending rejects the given pending order items.
+//
+//	@Summary	Reject seller pending items
+//	@Tags		order
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		RejectSellerPendingRequest	true	"Reject payload"
+//	@Success	200		{object}	response.CommonResponse{data=string}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/order/seller/pending/reject [post]
 func (h *Handler) RejectSellerPending(c echo.Context) error {
 	var req RejectSellerPendingRequest
 	if err := c.Bind(&req); err != nil {

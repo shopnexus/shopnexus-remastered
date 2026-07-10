@@ -1,0 +1,5785 @@
+basePath: /api/v1
+definitions:
+  accountdb.AccountAddressType:
+    enum:
+    - Home
+    - Work
+    type: string
+    x-enum-varnames:
+    - AccountAddressTypeHome
+    - AccountAddressTypeWork
+  accountdb.AccountContact:
+    properties:
+      account_id:
+        type: string
+      address:
+        type: string
+      address_detail:
+        type: string
+      address_type:
+        $ref: '#/definitions/accountdb.AccountAddressType'
+      date_created:
+        type: string
+      full_name:
+        type: string
+      id:
+        type: string
+      latitude:
+        type: number
+      longitude:
+        type: number
+      phone:
+        type: string
+      phone_verified:
+        type: boolean
+    type: object
+  accountdb.AccountFavorite:
+    properties:
+      account_id:
+        type: string
+      date_created:
+        type: string
+      id:
+        type: integer
+      spu_id:
+        type: string
+    type: object
+  accountdb.AccountNotification:
+    properties:
+      account_id:
+        type: string
+      channel:
+        type: string
+      content:
+        type: string
+      date_created:
+        type: string
+      date_scheduled:
+        type: string
+      date_sent:
+        type: string
+      id:
+        type: integer
+      is_read:
+        type: boolean
+      metadata:
+        type: object
+      title:
+        type: string
+      type:
+        type: string
+    type: object
+  accountecho.AuthTokenResponse:
+    properties:
+      access_token:
+        type: string
+      refresh_token:
+        type: string
+    type: object
+  accountecho.CreateContactRequest:
+    properties:
+      address:
+        type: string
+      address_detail:
+        type: string
+      address_type:
+        $ref: '#/definitions/accountmodel.AddressType'
+      full_name:
+        type: string
+      latitude:
+        type: number
+      longitude:
+        type: number
+      phone:
+        type: string
+    required:
+    - address
+    - address_type
+    - full_name
+    - phone
+    type: object
+  accountecho.CreateInteraction:
+    properties:
+      event_type:
+        minLength: 1
+        type: string
+      ref_id:
+        type: string
+      ref_type:
+        $ref: '#/definitions/analyticmodel.InteractionRefType'
+    required:
+    - event_type
+    - ref_id
+    - ref_type
+    type: object
+  accountecho.CreateInteractionRequest:
+    properties:
+      interactions:
+        items:
+          $ref: '#/definitions/accountecho.CreateInteraction'
+        type: array
+    required:
+    - interactions
+    type: object
+  accountecho.DeleteContactRequest:
+    properties:
+      contact_id:
+        type: string
+    required:
+    - contact_id
+    type: object
+  accountecho.LoginBasicRequest:
+    properties:
+      id:
+        type: string
+      password:
+        type: string
+    required:
+    - id
+    - password
+    type: object
+  accountecho.MarkReadRequest:
+    properties:
+      ids:
+        items:
+          type: integer
+        minItems: 1
+        type: array
+    required:
+    - ids
+    type: object
+  accountecho.RefreshRequest:
+    properties:
+      refresh_token:
+        type: string
+    required:
+    - refresh_token
+    type: object
+  accountecho.RegisterBasicRequest:
+    properties:
+      country:
+        type: string
+      email:
+        type: string
+      password:
+        type: string
+      phone:
+        type: string
+      username:
+        type: string
+    required:
+    - country
+    - password
+    type: object
+  accountecho.UpdateContactRequest:
+    properties:
+      address:
+        type: string
+      address_detail:
+        type: string
+      address_type:
+        type: string
+      contact_id:
+        type: string
+      full_name:
+        type: string
+      latitude:
+        type: number
+      longitude:
+        type: number
+      phone:
+        type: string
+      phone_verified:
+        type: boolean
+    required:
+    - contact_id
+    type: object
+  accountecho.UpdateMeRequest:
+    properties:
+      avatar_rs_id:
+        type: string
+      date_of_birth:
+        type: string
+      default_contact_id:
+        type: string
+      description:
+        description: Vendor fields
+        maxLength: 500
+        type: string
+      email:
+        type: string
+      gender:
+        allOf:
+        - $ref: '#/definitions/accountmodel.Gender'
+        description: Profile fields
+      name:
+        type: string
+      phone:
+        type: string
+      status:
+        allOf:
+        - $ref: '#/definitions/accountmodel.Status'
+        description: Account base fields
+      username:
+        maxLength: 30
+        minLength: 3
+        type: string
+    type: object
+  accountecho.updateCountryRequest:
+    properties:
+      country:
+        type: string
+    required:
+    - country
+    type: object
+  accountmodel.AddressType:
+    enum:
+    - Home
+    - Work
+    type: string
+    x-enum-varnames:
+    - AddressTypeHome
+    - AddressTypeWork
+  accountmodel.Gender:
+    enum:
+    - Male
+    - Female
+    - Other
+    type: string
+    x-enum-varnames:
+    - GenderMale
+    - GenderFemale
+    - GenderOther
+  accountmodel.NullGender:
+    properties:
+      valid:
+        type: boolean
+      value:
+        $ref: '#/definitions/accountmodel.Gender'
+    type: object
+  accountmodel.Profile:
+    properties:
+      avatar_url:
+        type: string
+      country:
+        type: string
+      currency:
+        type: string
+      date_created:
+        type: string
+      date_of_birth:
+        type: string
+      date_updated:
+        type: string
+      default_contact_id:
+        type: string
+      description:
+        description: Description
+        type: string
+      email:
+        type: string
+      email_verified:
+        type: boolean
+      gender:
+        allOf:
+        - $ref: '#/definitions/accountmodel.NullGender'
+        description: Profile fields
+      id:
+        type: string
+      internal_balance:
+        description: store credit in Currency's minor units
+        type: integer
+      name:
+        type: string
+      phone:
+        type: string
+      phone_verified:
+        type: boolean
+      role:
+        $ref: '#/definitions/accountmodel.Role'
+      status:
+        allOf:
+        - $ref: '#/definitions/accountmodel.Status'
+        description: Account base
+      username:
+        type: string
+    type: object
+  accountmodel.Role:
+    enum:
+    - Member
+    - Admin
+    type: string
+    x-enum-varnames:
+    - RoleMember
+    - RoleAdmin
+  accountmodel.Status:
+    enum:
+    - Active
+    - Suspended
+    type: string
+    x-enum-varnames:
+    - StatusActive
+    - StatusSuspended
+  analyticdb.AnalyticProductPopularity:
+    properties:
+      cart_count:
+        type: integer
+      date_updated:
+        type: string
+      favorite_count:
+        type: integer
+      id:
+        type: string
+      purchase_count:
+        type: integer
+      review_count:
+        type: integer
+      score:
+        type: number
+      view_count:
+        type: integer
+    type: object
+  analyticmodel.InteractionRefType:
+    enum:
+    - Product
+    - Category
+    type: string
+    x-enum-varnames:
+    - InteractionRefTypeProduct
+    - InteractionRefTypeCategory
+  catalogbiz.VendorStats:
+    properties:
+      average_rating:
+        type: number
+      product_count:
+        type: integer
+      response_rate:
+        type: number
+      total_sold:
+        type: integer
+    type: object
+  catalogdb.CatalogCommentRefType:
+    enum:
+    - ProductSpu
+    - Comment
+    type: string
+    x-enum-varnames:
+    - CatalogCommentRefTypeProductSpu
+    - CatalogCommentRefTypeComment
+  catalogdb.CatalogTag:
+    properties:
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+  catalogecho.CreateCommentRequest:
+    properties:
+      body:
+        type: string
+      order_id:
+        type: string
+      ref_id:
+        type: string
+      ref_type:
+        $ref: '#/definitions/catalogdb.CatalogCommentRefType'
+      resource_ids:
+        items:
+          type: string
+        type: array
+      score:
+        type: number
+    required:
+    - body
+    - order_id
+    - ref_id
+    - ref_type
+    - resource_ids
+    - score
+    type: object
+  catalogecho.CreateProductSkuRequest:
+    properties:
+      attributes:
+        items:
+          $ref: '#/definitions/catalogmodel.ProductAttribute'
+        type: array
+      package_details:
+        type: object
+      price:
+        type: integer
+      shared_packaging:
+        type: boolean
+      spu_id:
+        type: string
+    required:
+    - package_details
+    - price
+    - spu_id
+    type: object
+  catalogecho.CreateProductSpuRequest:
+    properties:
+      category_id:
+        type: string
+      currency:
+        type: string
+      description:
+        maxLength: 1000000
+        type: string
+      is_enabled:
+        type: boolean
+      name:
+        maxLength: 200
+        minLength: 1
+        type: string
+      resource_ids:
+        items:
+          type: string
+        type: array
+      specifications:
+        items:
+          $ref: '#/definitions/catalogmodel.ProductSpecification'
+        type: array
+      tags:
+        items:
+          type: string
+        type: array
+    required:
+    - category_id
+    - currency
+    - description
+    - name
+    - tags
+    type: object
+  catalogecho.CreatePromotionRequest:
+    properties:
+      auto_apply:
+        type: boolean
+      code:
+        type: string
+      data:
+        type: object
+      date_ended:
+        type: string
+      date_started:
+        type: string
+      description:
+        type: string
+      group:
+        type: string
+      is_enabled:
+        type: boolean
+      priority:
+        type: integer
+      refs:
+        items:
+          $ref: '#/definitions/catalogecho.PromotionRefRequest'
+        type: array
+      title:
+        type: string
+      type:
+        $ref: '#/definitions/promotionmodel.Type'
+    required:
+    - code
+    - date_started
+    - group
+    - title
+    - type
+    type: object
+  catalogecho.DeleteCommentRequest:
+    properties:
+      ids:
+        items:
+          type: string
+        type: array
+    required:
+    - ids
+    type: object
+  catalogecho.DeleteProductSkuRequest:
+    properties:
+      id:
+        type: string
+    required:
+    - id
+    type: object
+  catalogecho.PromotionRefRequest:
+    properties:
+      ref_id:
+        type: string
+      ref_type:
+        $ref: '#/definitions/promotionmodel.RefType'
+    required:
+    - ref_id
+    - ref_type
+    type: object
+  catalogecho.UpdateCommentRequest:
+    properties:
+      body:
+        type: string
+      empty_resources:
+        type: boolean
+      id:
+        type: string
+      resource_ids:
+        items:
+          type: string
+        type: array
+      score:
+        type: number
+    required:
+    - body
+    - id
+    - resource_ids
+    - score
+    type: object
+  catalogecho.UpdateProductSkuRequest:
+    properties:
+      attributes:
+        items:
+          $ref: '#/definitions/catalogmodel.ProductAttribute'
+        type: array
+      id:
+        type: string
+      package_details:
+        type: object
+      price:
+        type: integer
+      shared_packaging:
+        type: boolean
+    required:
+    - id
+    type: object
+  catalogecho.UpdateProductSpuRequest:
+    properties:
+      category_id:
+        type: string
+      currency:
+        type: string
+      description:
+        maxLength: 100000
+        type: string
+      featured_sku_id:
+        type: string
+      id:
+        type: string
+      is_enabled:
+        type: boolean
+      name:
+        maxLength: 200
+        minLength: 1
+        type: string
+      regenerate_slug:
+        type: boolean
+      resource_ids:
+        items:
+          type: string
+        type: array
+      specifications:
+        items:
+          $ref: '#/definitions/catalogmodel.ProductSpecification'
+        type: array
+      tags:
+        items:
+          type: string
+        type: array
+    required:
+    - id
+    type: object
+  catalogecho.UpdatePromotionRequest:
+    properties:
+      auto_apply:
+        type: boolean
+      code:
+        type: string
+      data:
+        type: object
+      date_ended:
+        type: string
+      date_started:
+        type: string
+      description:
+        type: string
+      group:
+        type: string
+      id:
+        type: string
+      is_enabled:
+        type: boolean
+      null_data:
+        type: boolean
+      null_date_ended:
+        type: boolean
+      null_owner_id:
+        type: boolean
+      owner_id:
+        type: string
+      priority:
+        type: integer
+      refs:
+        items:
+          $ref: '#/definitions/catalogecho.PromotionRefRequest'
+        type: array
+      title:
+        type: string
+    required:
+    - id
+    type: object
+  catalogecho.VoteCommentRequest:
+    properties:
+      comment_id:
+        type: string
+      vote:
+        enum:
+        - upvote
+        - downvote
+        type: string
+    required:
+    - comment_id
+    - vote
+    type: object
+  catalogmodel.Category:
+    properties:
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: string
+      resources:
+        items:
+          $ref: '#/definitions/commonmodel.Resource'
+        type: array
+    type: object
+  catalogmodel.Comment:
+    properties:
+      account_id:
+        type: string
+      body:
+        type: string
+      date_created:
+        type: string
+      date_updated:
+        type: string
+      downvote:
+        type: integer
+      id:
+        type: string
+      order_id:
+        type: string
+      profile:
+        $ref: '#/definitions/accountmodel.Profile'
+      ref_id:
+        type: string
+      ref_type:
+        $ref: '#/definitions/catalogdb.CatalogCommentRefType'
+      resources:
+        items:
+          $ref: '#/definitions/commonmodel.Resource'
+        type: array
+      score:
+        type: number
+      upvote:
+        type: integer
+    type: object
+  catalogmodel.ProductAttribute:
+    properties:
+      name:
+        type: string
+      value:
+        type: string
+    type: object
+  catalogmodel.ProductCard:
+    properties:
+      category_id:
+        type: string
+      currency:
+        type: string
+      date_created:
+        type: string
+      date_deleted:
+        type: string
+      date_updated:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      is_favorite:
+        type: boolean
+      name:
+        type: string
+      original_price:
+        type: integer
+      price:
+        type: integer
+      promotions:
+        items:
+          $ref: '#/definitions/catalogmodel.ProductCardPromo'
+        type: array
+      rating:
+        $ref: '#/definitions/catalogmodel.Rating'
+      resources:
+        items:
+          $ref: '#/definitions/commonmodel.Resource'
+        type: array
+      seller_id:
+        type: string
+      slug:
+        type: string
+      sold:
+        type: integer
+    type: object
+  catalogmodel.ProductCardPromo:
+    properties:
+      description:
+        type: string
+      id:
+        type: string
+      title:
+        type: string
+    type: object
+  catalogmodel.ProductDetail:
+    properties:
+      category:
+        $ref: '#/definitions/catalogmodel.Category'
+      currency:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      is_enabled:
+        type: boolean
+      is_favorite:
+        type: boolean
+      name:
+        type: string
+      promotions:
+        items:
+          $ref: '#/definitions/catalogmodel.ProductCardPromo'
+        type: array
+      rating:
+        $ref: '#/definitions/catalogmodel.ProductRating'
+      resources:
+        items:
+          $ref: '#/definitions/commonmodel.Resource'
+        type: array
+      seller_id:
+        type: string
+      skus:
+        items:
+          $ref: '#/definitions/catalogmodel.ProductDetailSku'
+        type: array
+      slug:
+        type: string
+      specifications:
+        items:
+          $ref: '#/definitions/catalogmodel.ProductSpecification'
+        type: array
+      tags:
+        items:
+          type: string
+        type: array
+    type: object
+  catalogmodel.ProductDetailSku:
+    properties:
+      attributes:
+        items:
+          $ref: '#/definitions/catalogmodel.ProductAttribute'
+        type: array
+      id:
+        type: string
+      original_price:
+        type: integer
+      price:
+        type: integer
+      stock:
+        type: integer
+      taken:
+        type: integer
+    type: object
+  catalogmodel.ProductRating:
+    properties:
+      breakdown:
+        additionalProperties:
+          type: integer
+        type: object
+      score:
+        type: number
+      total:
+        type: integer
+    type: object
+  catalogmodel.ProductSku:
+    properties:
+      attributes:
+        items:
+          $ref: '#/definitions/catalogmodel.ProductAttribute'
+        type: array
+      date_created:
+        type: string
+      date_deleted:
+        type: string
+      id:
+        type: string
+      package_details:
+        type: object
+      price:
+        type: integer
+      shared_packaging:
+        type: boolean
+      spu_id:
+        type: string
+      stock:
+        type: integer
+      taken:
+        description: reserved or sold count, from inventory stock
+        type: integer
+    type: object
+  catalogmodel.ProductSpecification:
+    properties:
+      name:
+        type: string
+      value:
+        type: string
+    type: object
+  catalogmodel.ProductSpu:
+    properties:
+      account_id:
+        type: string
+      cached_price:
+        type: integer
+      cached_rating:
+        type: number
+      category:
+        $ref: '#/definitions/catalogmodel.Category'
+      category_id:
+        type: string
+      currency:
+        type: string
+      date_created:
+        type: string
+      date_deleted:
+        type: string
+      date_updated:
+        type: string
+      description:
+        type: string
+      featured_sku_id:
+        type: string
+      id:
+        type: string
+      is_enabled:
+        type: boolean
+      is_stale_embedding:
+        type: boolean
+      name:
+        type: string
+      number:
+        type: integer
+      rating:
+        $ref: '#/definitions/catalogmodel.ProductRating'
+      resources:
+        items:
+          $ref: '#/definitions/commonmodel.Resource'
+        type: array
+      slug:
+        type: string
+      specifications:
+        items:
+          $ref: '#/definitions/catalogmodel.ProductSpecification'
+        type: array
+      tags:
+        items:
+          type: string
+        type: array
+    type: object
+  catalogmodel.Rating:
+    properties:
+      score:
+        type: number
+      total:
+        type: integer
+    type: object
+  chatdb.ChatConversation:
+    properties:
+      buyer_id:
+        type: string
+      date_created:
+        type: string
+      id:
+        type: string
+      last_message_at:
+        type: string
+      seller_id:
+        type: string
+    type: object
+  chatdb.ChatMessage:
+    properties:
+      content:
+        type: string
+      conversation_id:
+        type: string
+      data:
+        type: object
+      date_created:
+        type: string
+      id:
+        type: integer
+      sender_id:
+        type: string
+      status:
+        $ref: '#/definitions/chatdb.ChatMessageStatus'
+      type:
+        $ref: '#/definitions/chatdb.ChatMessageType'
+    type: object
+  chatdb.ChatMessageStatus:
+    enum:
+    - Sent
+    - Delivered
+    - Read
+    type: string
+    x-enum-varnames:
+    - ChatMessageStatusSent
+    - ChatMessageStatusDelivered
+    - ChatMessageStatusRead
+  chatdb.ChatMessageType:
+    enum:
+    - Text
+    - Image
+    - System
+    type: string
+    x-enum-varnames:
+    - ChatMessageTypeText
+    - ChatMessageTypeImage
+    - ChatMessageTypeSystem
+  chatecho.CreateConversationRequest:
+    properties:
+      seller_id:
+        type: string
+    required:
+    - seller_id
+    type: object
+  chatecho.MarkReadRequest:
+    properties:
+      conversation_id:
+        type: string
+    required:
+    - conversation_id
+    type: object
+  chatecho.SendMessageRequest:
+    properties:
+      content:
+        type: string
+      conversation_id:
+        type: string
+      data:
+        type: object
+      type:
+        $ref: '#/definitions/chatdb.ChatMessageType'
+    required:
+    - content
+    - conversation_id
+    - type
+    type: object
+  commonbiz.DeleteOptionParams:
+    properties:
+      ids:
+        items:
+          type: string
+        minItems: 1
+        type: array
+    required:
+    - ids
+    type: object
+  commonbiz.OptionListItem:
+    properties:
+      data:
+        type: object
+      description:
+        type: string
+      id:
+        type: string
+      is_enabled:
+        type: boolean
+      logo_rs_id:
+        type: string
+      name:
+        type: string
+      owned:
+        type: boolean
+      priority:
+        type: integer
+      provider:
+        type: string
+      type:
+        $ref: '#/definitions/sharedmodel.OptionType'
+    type: object
+  commonbiz.UpsertOptionsParams:
+    properties:
+      configs:
+        items:
+          $ref: '#/definitions/sharedmodel.Option'
+        type: array
+      type:
+        type: string
+    required:
+    - configs
+    - type
+    type: object
+  commonecho.ForwardGeocodeRequest:
+    properties:
+      address:
+        type: string
+    required:
+    - address
+    type: object
+  commonecho.ReverseGeocodeRequest:
+    properties:
+      latitude:
+        type: number
+      longitude:
+        type: number
+    required:
+    - latitude
+    - longitude
+    type: object
+  commonmodel.ExchangeRateSnapshot:
+    properties:
+      base:
+        type: string
+      fetched_at:
+        type: string
+      rates:
+        additionalProperties:
+          type: number
+        type: object
+      supported:
+        items:
+          type: string
+        type: array
+    type: object
+  commonmodel.Resource:
+    properties:
+      checksum:
+        description: |-
+          Width    null.Int32  `json:"width"`
+          Height   null.Int32  `json:"height"`
+          Duration null.Float  `json:"duration"`
+        type: string
+      id:
+        type: string
+      mime:
+        type: string
+      size:
+        type: integer
+      url:
+        type: string
+    type: object
+  dashboard.DashboardCharts:
+    properties:
+      orders:
+        items:
+          $ref: '#/definitions/dashboard.TimeSeriesPoint'
+        type: array
+      revenue:
+        items:
+          $ref: '#/definitions/dashboard.TimeSeriesPoint'
+        type: array
+    type: object
+  dashboard.DashboardComparison:
+    properties:
+      items_sold_change:
+        type: number
+      orders_change:
+        type: number
+      revenue_change:
+        type: number
+    type: object
+  dashboard.DashboardSummary:
+    properties:
+      average_rating:
+        type: number
+      comparison:
+        $ref: '#/definitions/dashboard.DashboardComparison'
+      items_sold:
+        type: integer
+      pending_items:
+        type: integer
+      pending_refunds:
+        type: integer
+      total_orders:
+        type: integer
+      total_revenue:
+        type: integer
+    type: object
+  dashboard.DashboardTopProduct:
+    properties:
+      revenue:
+        type: integer
+      sku_id:
+        type: string
+      sku_name:
+        type: string
+      sold_count:
+        type: integer
+    type: object
+  dashboard.SellerDashboard:
+    properties:
+      charts:
+        $ref: '#/definitions/dashboard.DashboardCharts'
+      summary:
+        $ref: '#/definitions/dashboard.DashboardSummary'
+      top_products:
+        items:
+          $ref: '#/definitions/dashboard.DashboardTopProduct'
+        type: array
+    type: object
+  dashboard.TimeSeriesPoint:
+    properties:
+      date:
+        type: string
+      value:
+        type: integer
+    type: object
+  errors.Errorf:
+    properties:
+      code:
+        type: string
+      http_status:
+        type: integer
+      message:
+        type: string
+    type: object
+  geocoding.Result:
+    properties:
+      address:
+        type: string
+      country_code:
+        description: ISO 3166-1 alpha-2 uppercase, empty if unresolved.
+        type: string
+      latitude:
+        type: number
+      longitude:
+        type: number
+    type: object
+  inventorydb.InventorySerial:
+    properties:
+      date_created:
+        type: string
+      id:
+        type: string
+      status:
+        $ref: '#/definitions/inventorydb.InventoryStatus'
+      stock_id:
+        type: integer
+    type: object
+  inventorydb.InventoryStatus:
+    enum:
+    - Active
+    - Inactive
+    - Taken
+    - Damaged
+    type: string
+    x-enum-varnames:
+    - InventoryStatusActive
+    - InventoryStatusInactive
+    - InventoryStatusTaken
+    - InventoryStatusDamaged
+  inventorydb.InventoryStock:
+    properties:
+      date_created:
+        type: string
+      id:
+        type: integer
+      ref_id:
+        type: string
+      ref_type:
+        $ref: '#/definitions/inventorydb.InventoryStockRefType'
+      serial_required:
+        type: boolean
+      stock:
+        type: integer
+      taken:
+        type: integer
+    type: object
+  inventorydb.InventoryStockHistory:
+    properties:
+      change:
+        type: integer
+      date_created:
+        type: string
+      id:
+        type: integer
+      stock_id:
+        type: integer
+    type: object
+  inventorydb.InventoryStockRefType:
+    enum:
+    - ProductSku
+    - Promotion
+    type: string
+    x-enum-varnames:
+    - InventoryStockRefTypeProductSku
+    - InventoryStockRefTypePromotion
+  inventoryecho.ImportStockRequest:
+    properties:
+      change:
+        type: integer
+      ref_id:
+        type: string
+      ref_type:
+        $ref: '#/definitions/inventorydb.InventoryStockRefType'
+      serial_ids:
+        items:
+          type: string
+        type: array
+    required:
+    - change
+    - ref_id
+    - ref_type
+    - serial_ids
+    type: object
+  inventoryecho.UpdateSerialRequest:
+    properties:
+      serial_ids:
+        items:
+          type: string
+        type: array
+      status:
+        $ref: '#/definitions/inventorydb.InventoryStatus'
+    required:
+    - serial_ids
+    - status
+    type: object
+  inventoryecho.UpdateStockSettingsRequest:
+    properties:
+      ref_id:
+        type: string
+      ref_type:
+        $ref: '#/definitions/inventorydb.InventoryStockRefType'
+      serial_required:
+        type: boolean
+    required:
+    - ref_id
+    - ref_type
+    type: object
+  orderecho.AdminDisputeDecisionRequest:
+    properties:
+      resolution_note:
+        maxLength: 2000
+        minLength: 1
+        type: string
+    required:
+    - resolution_note
+    type: object
+  orderecho.BuyerCheckoutRequest:
+    properties:
+      address:
+        maxLength: 500
+        minLength: 1
+        type: string
+      buy_now:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/orderecho.CheckoutItemRequest'
+        minItems: 1
+        type: array
+      payment_option:
+        maxLength: 100
+        type: string
+      promotion_codes:
+        items:
+          type: string
+        type: array
+      use_wallet:
+        type: boolean
+      wallet_id:
+        type: string
+    required:
+    - address
+    - items
+    type: object
+  orderecho.BuyerCheckoutResponse:
+    properties:
+      checkout_session_id:
+        type: string
+      payment_url:
+        type: string
+    type: object
+  orderecho.CheckoutItemRequest:
+    properties:
+      note:
+        maxLength: 500
+        type: string
+      quantity:
+        type: integer
+      sku_id:
+        type: string
+      transport_option:
+        maxLength: 100
+        minLength: 1
+        type: string
+    required:
+    - quantity
+    - sku_id
+    - transport_option
+    type: object
+  orderecho.ConfirmSellerPendingRequest:
+    properties:
+      item_ids:
+        items:
+          type: integer
+        minItems: 1
+        type: array
+      note:
+        maxLength: 500
+        type: string
+      payment_option:
+        maxLength: 100
+        type: string
+      use_wallet:
+        type: boolean
+      wallet_id:
+        type: string
+    required:
+    - item_ids
+    type: object
+  orderecho.ConfirmSellerPendingResponse:
+    properties:
+      confirm_session_id:
+        type: string
+      payment_url:
+        type: string
+    type: object
+  orderecho.CreateBuyerRefundRequest:
+    properties:
+      order_id:
+        type: string
+      reason:
+        maxLength: 1000
+        minLength: 1
+        type: string
+      resource_ids:
+        items:
+          type: string
+        maxItems: 20
+        minItems: 1
+        type: array
+      return_option:
+        maxLength: 100
+        minLength: 1
+        type: string
+    required:
+    - order_id
+    - reason
+    - resource_ids
+    - return_option
+    type: object
+  orderecho.EnsurePaymentURLResponse:
+    properties:
+      payment_url:
+        type: string
+    type: object
+  orderecho.QuoteBuyerTransportRequest:
+    properties:
+      address:
+        maxLength: 500
+        minLength: 1
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/orderecho.CheckoutItemRequest'
+        minItems: 1
+        type: array
+    required:
+    - address
+    - items
+    type: object
+  orderecho.RejectSellerPendingRequest:
+    properties:
+      item_ids:
+        items:
+          type: integer
+        minItems: 1
+        type: array
+    required:
+    - item_ids
+    type: object
+  orderecho.SellerDisputeRefundRequest:
+    properties:
+      reason:
+        maxLength: 1000
+        minLength: 1
+        type: string
+      resource_ids:
+        items:
+          type: string
+        maxItems: 20
+        minItems: 1
+        type: array
+    required:
+    - reason
+    - resource_ids
+    type: object
+  orderecho.UpdateCartRequest:
+    properties:
+      delta_quantity:
+        type: integer
+      quantity:
+        type: integer
+      sku_id:
+        type: string
+    required:
+    - sku_id
+    type: object
+  ordermodel.CartItemView:
+    properties:
+      currency:
+        description: ISO 4217 from SPU
+        type: string
+      quantity:
+        type: integer
+      resource:
+        $ref: '#/definitions/commonmodel.Resource'
+      sku:
+        $ref: '#/definitions/catalogmodel.ProductSku'
+      spu_id:
+        type: string
+    type: object
+  ordermodel.CheckoutSummary:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/ordermodel.CheckoutSummaryItem'
+        type: array
+      session:
+        $ref: '#/definitions/ordermodel.PaymentSession'
+    type: object
+  ordermodel.CheckoutSummaryItem:
+    properties:
+      currency:
+        type: string
+      id:
+        type: integer
+      image_url:
+        type: string
+      quantity:
+        type: integer
+      sku_id:
+        type: string
+      sku_name:
+        type: string
+      slug:
+        type: string
+      spu_id:
+        type: string
+      total_amount:
+        type: integer
+    type: object
+  ordermodel.DisputeStatus:
+    enum:
+    - Open
+    - SellerWins
+    - BuyerWins
+    type: string
+    x-enum-varnames:
+    - DisputeStatusOpen
+    - DisputeStatusSellerWins
+    - DisputeStatusBuyerWins
+  ordermodel.Order:
+    properties:
+      address:
+        type: string
+      buyerID:
+        type: string
+      confirm_session:
+        $ref: '#/definitions/ordermodel.PaymentSession'
+      confirmSessionID:
+        type: string
+      confirmedByID:
+        type: string
+      dateCreated:
+        type: string
+      id:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/ordermodel.OrderItem'
+        type: array
+      note:
+        type: string
+      payout_session:
+        $ref: '#/definitions/ordermodel.PaymentSession'
+      sellerID:
+        type: string
+      total_amount:
+        description: 'derived (no db tag):'
+        type: integer
+      transport:
+        $ref: '#/definitions/ordermodel.Transport'
+      transportID:
+        type: integer
+    type: object
+  ordermodel.OrderItem:
+    properties:
+      accountID:
+        type: string
+      address:
+        type: string
+      cancelledByID:
+        type: string
+      dateCancelled:
+        type: string
+      dateCreated:
+        type: string
+      id:
+        type: integer
+      image_url:
+        type: string
+      note:
+        type: string
+      orderID:
+        type: string
+      payment_session:
+        $ref: '#/definitions/ordermodel.PaymentSession'
+      paymentSessionID:
+        type: string
+      quantity:
+        type: integer
+      sellerID:
+        type: string
+      serialIds:
+        type: object
+      skuID:
+        type: string
+      skuName:
+        type: string
+      slug:
+        description: 'derived (no db tag):'
+        type: string
+      sourceCurrency:
+        type: string
+      spuID:
+        type: string
+      subtotalAmount:
+        type: integer
+      totalAmount:
+        type: integer
+      transportOption:
+        type: string
+    type: object
+  ordermodel.PaymentSession:
+    properties:
+      currency:
+        type: string
+      data:
+        type: object
+      dateCreated:
+        type: string
+      dateExpired:
+        type: string
+      datePaid:
+        type: string
+      fromID:
+        type: string
+      fxSnapshot:
+        type: object
+      id:
+        type: string
+      kind:
+        type: string
+      note:
+        type: string
+      status:
+        $ref: '#/definitions/ordermodel.Status'
+      toID:
+        type: string
+      totalAmount:
+        type: integer
+    type: object
+  ordermodel.Refund:
+    properties:
+      accountID:
+        type: string
+      dateCreated:
+        type: string
+      dateReceivedBySeller:
+        type: string
+      id:
+        type: string
+      orderID:
+        type: string
+      reason:
+        type: string
+      refundTxID:
+        type: string
+      rejectionReason:
+        type: string
+      resources:
+        description: 'derived (no db tag):'
+        items:
+          $ref: '#/definitions/commonmodel.Resource'
+        type: array
+      returnToBuyerTransportID:
+        type: integer
+      returnTransportID:
+        type: integer
+      reviewDeadline:
+        type: string
+      sellerDecisionAt:
+        type: string
+      status:
+        $ref: '#/definitions/ordermodel.RefundStatus'
+    type: object
+  ordermodel.RefundDispute:
+    properties:
+      accountID:
+        type: string
+      dateCreated:
+        type: string
+      dateResolved:
+        type: string
+      id:
+        type: string
+      reason:
+        type: string
+      refundID:
+        type: string
+      resolutionNote:
+        type: string
+      resolvedByID:
+        type: string
+      resources:
+        description: 'derived (no db tag):'
+        items:
+          $ref: '#/definitions/commonmodel.Resource'
+        type: array
+      status:
+        $ref: '#/definitions/ordermodel.DisputeStatus'
+    type: object
+  ordermodel.RefundStatus:
+    enum:
+    - Shipping
+    - AwaitingSellerReview
+    - Disputed
+    - Accepted
+    - Rejected
+    - Cancelled
+    type: string
+    x-enum-varnames:
+    - RefundStatusShipping
+    - RefundStatusAwaitingSellerReview
+    - RefundStatusDisputed
+    - RefundStatusAccepted
+    - RefundStatusRejected
+    - RefundStatusCancelled
+  ordermodel.Status:
+    enum:
+    - Pending
+    - Processing
+    - Success
+    - Cancelled
+    - Failed
+    type: string
+    x-enum-varnames:
+    - StatusPending
+    - StatusProcessing
+    - StatusSuccess
+    - StatusCancelled
+    - StatusFailed
+  ordermodel.Transport:
+    properties:
+      data:
+        type: object
+      dateCreated:
+        type: string
+      id:
+        type: integer
+      option:
+        type: string
+      status:
+        type: string
+    type: object
+  promotionmodel.Promotion:
+    properties:
+      auto_apply:
+        type: boolean
+      code:
+        type: string
+      data:
+        type: object
+      date_created:
+        type: string
+      date_ended:
+        type: string
+      date_started:
+        type: string
+      date_updated:
+        type: string
+      description:
+        type: string
+      group:
+        type: string
+      id:
+        type: string
+      is_enabled:
+        type: boolean
+      owner_id:
+        type: string
+      priority:
+        type: integer
+      refs:
+        items:
+          $ref: '#/definitions/promotionmodel.PromotionRef'
+        type: array
+      title:
+        type: string
+      type:
+        $ref: '#/definitions/promotionmodel.Type'
+    type: object
+  promotionmodel.PromotionRef:
+    properties:
+      ref_id:
+        type: string
+      ref_type:
+        $ref: '#/definitions/promotionmodel.RefType'
+    required:
+    - ref_id
+    - ref_type
+    type: object
+  promotionmodel.RefType:
+    enum:
+    - ProductSpu
+    - ProductSku
+    - Category
+    type: string
+    x-enum-varnames:
+    - RefTypeProductSpu
+    - RefTypeProductSku
+    - RefTypeCategory
+  promotionmodel.Type:
+    enum:
+    - Discount
+    - ShipDiscount
+    - Bundle
+    - BuyXGetY
+    - Cashback
+    type: string
+    x-enum-varnames:
+    - TypeDiscount
+    - TypeShipDiscount
+    - TypeBundle
+    - TypeBuyXGetY
+    - TypeCashback
+  response.CommonResponse:
+    properties:
+      data: {}
+      error:
+        $ref: '#/definitions/errors.Errorf'
+    type: object
+  response.PageMeta:
+    properties:
+      cursor:
+        type: string
+      limit:
+        type: integer
+      next_cursor:
+        type: string
+      next_page:
+        type: integer
+      page:
+        type: integer
+      total:
+        type: integer
+    type: object
+  response.SwaggerPaginationResponse:
+    properties:
+      data:
+        items: {}
+        type: array
+      pagination:
+        $ref: '#/definitions/response.PageMeta'
+    type: object
+  review.ReviewableOrder:
+    properties:
+      date_created:
+        type: string
+      id:
+        type: string
+    type: object
+  sharedmodel.Option:
+    properties:
+      data:
+        description: provider-specific config
+        type: object
+      description:
+        description: e.g. "VNPay QR payment method"
+        type: string
+      id:
+        description: e.g. "ghtk-express", "vnpay-qr", "sepay-bank-transfer"
+        type: string
+      is_enabled:
+        description: whether this option is currently enabled
+        type: boolean
+      logo_rs_id:
+        description: logo resource ID
+        type: string
+      name:
+        description: e.g. "VNPay - QR", "SePay - Bank Transfer"
+        type: string
+      owner_id:
+        description: if null, this option is provided by us; otherwise it's a user-provided
+          option
+        type: string
+      priority:
+        description: display order
+        type: integer
+      provider:
+        description: '"ghtk", "vnpay", "ghn", "stripe", ...'
+        type: string
+      type:
+        allOf:
+        - $ref: '#/definitions/sharedmodel.OptionType'
+        description: e.g. "payment", "transport"
+    type: object
+  sharedmodel.OptionType:
+    enum:
+    - payment
+    - transport
+    - object_store
+    type: string
+    x-enum-varnames:
+    - OptionTypePayment
+    - OptionTypeTransport
+    - OptionTypeObjectStore
+  transport.QuoteTransportItemResult:
+    properties:
+      cost:
+        type: integer
+      currency:
+        type: string
+      sku_id:
+        type: string
+      transport_option:
+        type: string
+    type: object
+  transport.QuoteTransportResult:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/transport.QuoteTransportItemResult'
+        type: array
+    type: object
+info:
+  contact: {}
+  description: |-
+    Client-facing REST API for ShopNexus, a service-oriented e-commerce platform.
+    Backend services coordinate internally over Restate; this spec covers only the HTTP gateway surface.
+  title: ShopNexus API
+  version: "1.0"
+paths:
+  /account:
+    get:
+      parameters:
+      - description: Account ID (UUID)
+        in: query
+        name: account_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/accountmodel.Profile'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Get account profile
+      tags:
+      - account
+  /account/auth/login/basic:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/accountecho.LoginBasicRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/accountecho.AuthTokenResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: Basic login
+      tags:
+      - account
+  /account/auth/refresh:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Refresh token
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/accountecho.RefreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/accountecho.AuthTokenResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: Refresh tokens
+      tags:
+      - account
+  /account/auth/register/basic:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Registration payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/accountecho.RegisterBasicRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/accountecho.AuthTokenResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: Basic registration
+      tags:
+      - account
+  /account/contact:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: Contact ID
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/accountecho.DeleteContactRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete contact
+      tags:
+      - account
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/accountdb.AccountContact'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List contacts
+      tags:
+      - account
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/accountecho.UpdateContactRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/accountdb.AccountContact'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Update contact
+      tags:
+      - account
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Contact payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/accountecho.CreateContactRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/accountdb.AccountContact'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Create contact
+      tags:
+      - account
+  /account/contact/{contact_id}:
+    get:
+      parameters:
+      - description: Contact ID (UUID)
+        in: path
+        name: contact_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/accountdb.AccountContact'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Get contact
+      tags:
+      - account
+  /account/favorite:
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/accountdb.AccountFavorite'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List favorites
+      tags:
+      - account
+  /account/favorite/{spu_id}:
+    delete:
+      parameters:
+      - description: SPU ID (UUID)
+        in: path
+        name: spu_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove favorite
+      tags:
+      - account
+    post:
+      parameters:
+      - description: SPU ID (UUID)
+        in: path
+        name: spu_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/accountdb.AccountFavorite'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Add favorite
+      tags:
+      - account
+  /account/me:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/accountmodel.Profile'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Get my profile
+      tags:
+      - account
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Fields to update (all optional)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/accountecho.UpdateMeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/accountmodel.Profile'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Update my profile
+      tags:
+      - account
+  /account/notification:
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/accountdb.AccountNotification'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List notifications
+      tags:
+      - account
+  /account/notification/read:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Notification IDs
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/accountecho.MarkReadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Mark notifications read
+      tags:
+      - account
+  /account/notification/read-all:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Mark all notifications read
+      tags:
+      - account
+  /account/notification/unread-count:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Count unread notifications
+      tags:
+      - account
+  /account/profile/country:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: ISO-3166 alpha-2 country code
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/accountecho.updateCountryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "409":
+          description: Wallet balance non-zero
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Update country
+      tags:
+      - account
+  /analytic/interaction:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Interactions to record
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/accountecho.CreateInteractionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Create interactions
+      tags:
+      - analytic
+  /analytic/popularity/{spu_id}:
+    get:
+      parameters:
+      - description: SPU ID (UUID)
+        in: path
+        name: spu_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/analyticdb.AnalyticProductPopularity'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: Get product popularity
+      tags:
+      - analytic
+  /analytic/popularity/top:
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/analyticdb.AnalyticProductPopularity'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: List top product popularity
+      tags:
+      - analytic
+  /analytic/seller-dashboard:
+    get:
+      parameters:
+      - description: Start date (RFC3339)
+        in: query
+        name: start
+        type: string
+      - description: End date (RFC3339)
+        in: query
+        name: end
+        type: string
+      - description: Aggregation granularity
+        in: query
+        name: granularity
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/dashboard.SellerDashboard'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Get seller dashboard
+      tags:
+      - analytic
+  /catalog/category:
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      - collectionFormat: csv
+        description: Filter by category IDs (UUID)
+        in: query
+        items:
+          type: string
+        name: id
+        type: array
+      - description: Search term
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/catalogmodel.Category'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: List categories
+      tags:
+      - catalog
+  /catalog/category/{id}:
+    get:
+      parameters:
+      - description: Category ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/catalogmodel.Category'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: Get category
+      tags:
+      - catalog
+  /catalog/comment:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: Comment IDs
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/catalogecho.DeleteCommentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete comments
+      tags:
+      - catalog
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      - description: Reference type
+        in: query
+        name: ref_type
+        required: true
+        type: string
+      - description: Reference ID (UUID)
+        in: query
+        name: ref_id
+        required: true
+        type: string
+      - collectionFormat: csv
+        description: Filter by comment IDs (UUID)
+        in: query
+        items:
+          type: string
+        name: id
+        type: array
+      - collectionFormat: csv
+        description: Filter by account IDs (UUID)
+        in: query
+        items:
+          type: string
+        name: account_id
+        type: array
+      - description: Minimum score
+        in: query
+        name: score_from
+        type: number
+      - description: Maximum score
+        in: query
+        name: score_to
+        type: number
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/catalogmodel.Comment'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List comments
+      tags:
+      - catalog
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/catalogecho.UpdateCommentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/catalogmodel.Comment'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Update comment
+      tags:
+      - catalog
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Comment payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/catalogecho.CreateCommentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/catalogmodel.Comment'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Create comment
+      tags:
+      - catalog
+  /catalog/comment/reviewable-orders:
+    get:
+      parameters:
+      - description: SPU ID (UUID)
+        in: query
+        name: spu_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/review.ReviewableOrder'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List reviewable orders
+      tags:
+      - catalog
+  /catalog/comment/vote:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Vote payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/catalogecho.VoteCommentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/catalogmodel.Comment'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Vote on comment
+      tags:
+      - catalog
+  /catalog/product-card:
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      - description: Filter by seller ID (UUID)
+        in: query
+        name: seller_id
+        type: string
+      - collectionFormat: csv
+        description: Filter by category IDs (UUID)
+        in: query
+        items:
+          type: string
+        name: category_id
+        type: array
+      - collectionFormat: csv
+        description: Filter by tags
+        in: query
+        items:
+          type: string
+        name: tag
+        type: array
+      - description: Search term
+        in: query
+        name: search
+        type: string
+      - description: Minimum price
+        in: query
+        name: price_min
+        type: number
+      - description: Maximum price
+        in: query
+        name: price_max
+        type: number
+      - description: Created after (unix)
+        in: query
+        name: date_created_from
+        type: integer
+      - description: Created before (unix)
+        in: query
+        name: date_created_to
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/catalogmodel.ProductCard'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: List product cards
+      tags:
+      - catalog
+  /catalog/product-card/{id}:
+    get:
+      parameters:
+      - description: Product SPU ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/catalogmodel.ProductCard'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: Get product card
+      tags:
+      - catalog
+  /catalog/product-card/recommended:
+    get:
+      parameters:
+      - description: Max items to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/catalogmodel.ProductCard'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: List recommended product cards
+      tags:
+      - catalog
+  /catalog/product-detail:
+    get:
+      parameters:
+      - description: Product SPU ID (UUID)
+        in: query
+        name: id
+        type: string
+      - description: Product slug
+        in: query
+        name: slug
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/catalogmodel.ProductDetail'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: Get product detail
+      tags:
+      - catalog
+  /catalog/product-sku:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: SKU ID
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/catalogecho.DeleteProductSkuRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete product SKU
+      tags:
+      - catalog
+    get:
+      parameters:
+      - description: Filter by SPU ID (UUID)
+        in: query
+        name: spu_id
+        type: string
+      - description: Minimum price
+        in: query
+        name: price_from
+        type: integer
+      - description: Maximum price
+        in: query
+        name: price_to
+        type: integer
+      - description: Filter by shared packaging
+        in: query
+        name: shared_packaging
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/catalogmodel.ProductSku'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: List product SKUs
+      tags:
+      - catalog
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/catalogecho.UpdateProductSkuRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/catalogmodel.ProductSku'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Update product SKU
+      tags:
+      - catalog
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: SKU payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/catalogecho.CreateProductSkuRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/catalogmodel.ProductSku'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Create product SKU
+      tags:
+      - catalog
+  /catalog/product-spu:
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      - description: Search term
+        in: query
+        name: search
+        type: string
+      - collectionFormat: csv
+        description: Filter by slugs
+        in: query
+        items:
+          type: string
+        name: slug
+        type: array
+      - description: Only the authenticated caller's products
+        in: query
+        name: my_products
+        type: boolean
+      - collectionFormat: csv
+        description: Filter by category IDs (UUID)
+        in: query
+        items:
+          type: string
+        name: category_id
+        type: array
+      - collectionFormat: csv
+        description: Filter by enabled state
+        in: query
+        items:
+          type: boolean
+        name: is_enabled
+        type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/catalogmodel.ProductSpu'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: List product SPUs
+      tags:
+      - catalog
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/catalogecho.UpdateProductSpuRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/catalogmodel.ProductSpu'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Update product SPU
+      tags:
+      - catalog
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: SPU payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/catalogecho.CreateProductSpuRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/catalogmodel.ProductSpu'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Create product SPU
+      tags:
+      - catalog
+  /catalog/product-spu/{id}:
+    delete:
+      parameters:
+      - description: Product SPU ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete product SPU
+      tags:
+      - catalog
+    get:
+      parameters:
+      - description: Product SPU ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/catalogmodel.ProductSpu'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: Get product SPU
+      tags:
+      - catalog
+  /catalog/promotion:
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/promotionmodel.Promotion'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: List promotions
+      tags:
+      - promotion
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/catalogecho.UpdatePromotionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/promotionmodel.Promotion'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Update promotion
+      tags:
+      - promotion
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Promotion payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/catalogecho.CreatePromotionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/promotionmodel.Promotion'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Create promotion
+      tags:
+      - promotion
+  /catalog/promotion/{id}:
+    delete:
+      parameters:
+      - description: Promotion ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete promotion
+      tags:
+      - promotion
+    get:
+      parameters:
+      - description: Promotion ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/promotionmodel.Promotion'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: Get promotion
+      tags:
+      - promotion
+  /catalog/tag:
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      - description: Search term
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/catalogdb.CatalogTag'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: List tags
+      tags:
+      - catalog
+  /catalog/tag/{tag}:
+    get:
+      parameters:
+      - description: Tag name
+        in: path
+        name: tag
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/catalogdb.CatalogTag'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Get tag
+      tags:
+      - catalog
+  /catalog/vendor-stats:
+    get:
+      parameters:
+      - description: Vendor account ID (UUID)
+        in: query
+        name: account_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/catalogbiz.VendorStats'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: Get vendor stats
+      tags:
+      - catalog
+  /chat/conversation:
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/chatdb.ChatConversation'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List conversations
+      tags:
+      - chat
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Seller to converse with
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/chatecho.CreateConversationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/chatdb.ChatConversation'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Create conversation
+      tags:
+      - chat
+  /chat/conversation/{id}/messages:
+    get:
+      parameters:
+      - description: Conversation ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/chatdb.ChatMessage'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List messages
+      tags:
+      - chat
+  /chat/mark-read:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Conversation to mark read
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/chatecho.MarkReadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Mark conversation read
+      tags:
+      - chat
+  /chat/send-message:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Message payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/chatecho.SendMessageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/chatdb.ChatMessage'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Send message
+      tags:
+      - chat
+  /common/currencies/rates:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/commonmodel.ExchangeRateSnapshot'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: Get exchange rates
+      tags:
+      - common
+  /common/files:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: File to upload
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Set to \
+        in: formData
+        name: private
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/commonmodel.Resource'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Upload file
+      tags:
+      - common
+  /common/geocode/forward:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Address
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/commonecho.ForwardGeocodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/geocoding.Result'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: Forward geocode
+      tags:
+      - common
+  /common/geocode/reverse:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Coordinates
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/commonecho.ReverseGeocodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/geocoding.Result'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: Reverse geocode
+      tags:
+      - common
+  /common/geocode/search:
+    get:
+      parameters:
+      - description: Search query (min 2 chars)
+        in: query
+        name: q
+        required: true
+        type: string
+      - description: Max results
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/geocoding.Result'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: Search geocode
+      tags:
+      - common
+  /common/option:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: Option IDs to delete
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/commonbiz.DeleteOptionParams'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete options
+      tags:
+      - common
+    get:
+      parameters:
+      - description: Option type
+        in: query
+        name: type
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/commonbiz.OptionListItem'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      summary: List options
+      tags:
+      - common
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Options to upsert
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/commonbiz.UpsertOptionsParams'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Upsert options
+      tags:
+      - common
+  /common/stream:
+    get:
+      parameters:
+      - description: Bearer token fallback for EventSource (which cannot set headers)
+        in: query
+        name: token
+        type: string
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Server-sent events stream
+      tags:
+      - common
+  /inventory/serial:
+    get:
+      parameters:
+      - description: Stock ID
+        in: query
+        name: stock_id
+        required: true
+        type: integer
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/inventorydb.InventorySerial'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List serials
+      tags:
+      - inventory
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Serials and target status
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inventoryecho.UpdateSerialRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Update serials
+      tags:
+      - inventory
+  /inventory/stock:
+    get:
+      parameters:
+      - description: Reference ID (UUID)
+        in: query
+        name: ref_id
+        required: true
+        type: string
+      - description: Reference type
+        in: query
+        name: ref_type
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/inventorydb.InventoryStock'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Get stock
+      tags:
+      - inventory
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Settings to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inventoryecho.UpdateStockSettingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/inventorydb.InventoryStock'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Update stock settings
+      tags:
+      - inventory
+  /inventory/stock/history:
+    get:
+      parameters:
+      - description: Reference ID (UUID)
+        in: query
+        name: ref_id
+        required: true
+        type: string
+      - description: Reference type
+        in: query
+        name: ref_type
+        required: true
+        type: string
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/inventorydb.InventoryStockHistory'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List stock history
+      tags:
+      - inventory
+  /inventory/stock/import:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Stock to import
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inventoryecho.ImportStockRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Import stock
+      tags:
+      - inventory
+  /order/buyer/cancelled-items:
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/ordermodel.OrderItem'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List buyer cancelled items
+      tags:
+      - order
+  /order/buyer/cancelled-orders:
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/ordermodel.Order'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List buyer cancelled orders
+      tags:
+      - order
+  /order/buyer/checkout:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Checkout payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/orderecho.BuyerCheckoutRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/orderecho.BuyerCheckoutResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Buyer checkout
+      tags:
+      - order
+  /order/buyer/checkout-summary/{txID}:
+    get:
+      parameters:
+      - description: Transaction ID (UUID)
+        in: path
+        name: txID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/ordermodel.CheckoutSummary'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Get checkout summary
+      tags:
+      - order
+  /order/buyer/checkout/{sessionID}/cancel:
+    post:
+      parameters:
+      - description: Checkout session ID (UUID)
+        in: path
+        name: sessionID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Cancel buyer checkout
+      tags:
+      - order
+  /order/buyer/checkout/{sessionID}/payment-url:
+    post:
+      parameters:
+      - description: Checkout session ID (UUID)
+        in: path
+        name: sessionID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/orderecho.EnsurePaymentURLResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Ensure buyer checkout payment URL
+      tags:
+      - order
+  /order/buyer/completed-orders:
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/ordermodel.Order'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List buyer completed orders
+      tags:
+      - order
+  /order/buyer/orders/{id}:
+    get:
+      parameters:
+      - description: Order ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/ordermodel.Order'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Get buyer order
+      tags:
+      - order
+  /order/buyer/pending-items:
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/ordermodel.OrderItem'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List buyer pending items
+      tags:
+      - order
+  /order/buyer/pending-items/{id}:
+    delete:
+      parameters:
+      - description: Order item ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Cancel buyer pending item
+      tags:
+      - order
+  /order/buyer/pending-orders:
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/ordermodel.Order'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List buyer pending orders
+      tags:
+      - order
+  /order/buyer/quote-transport:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Quote payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/orderecho.QuoteBuyerTransportRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/transport.QuoteTransportResult'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Quote buyer transport
+      tags:
+      - order
+  /order/buyer/refund:
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/ordermodel.Refund'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List buyer refunds
+      tags:
+      - order
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Refund payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/orderecho.CreateBuyerRefundRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/ordermodel.Refund'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Create buyer refund
+      tags:
+      - order
+  /order/cart:
+    delete:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Clear cart
+      tags:
+      - order
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/ordermodel.CartItemView'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Get cart
+      tags:
+      - order
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Cart update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/orderecho.UpdateCartRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Update cart
+      tags:
+      - order
+  /order/disputes:
+    get:
+      parameters:
+      - description: Dispute status
+        enum:
+        - Open
+        - SellerWins
+        - BuyerWins
+        in: query
+        name: status
+        type: string
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/ordermodel.RefundDispute'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List refund disputes
+      tags:
+      - order
+  /order/disputes/{disputeID}:
+    get:
+      parameters:
+      - description: Dispute ID (UUID)
+        in: path
+        name: disputeID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/ordermodel.RefundDispute'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Get refund dispute
+      tags:
+      - order
+  /order/disputes/{disputeID}/dismiss:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Dispute ID (UUID)
+        in: path
+        name: disputeID
+        required: true
+        type: string
+      - description: Resolution payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/orderecho.AdminDisputeDecisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/ordermodel.RefundDispute'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Admin dismiss dispute
+      tags:
+      - order
+  /order/disputes/{disputeID}/uphold:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Dispute ID (UUID)
+        in: path
+        name: disputeID
+        required: true
+        type: string
+      - description: Resolution payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/orderecho.AdminDisputeDecisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/ordermodel.RefundDispute'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Admin uphold dispute
+      tags:
+      - order
+  /order/refunds/{id}/approve:
+    post:
+      parameters:
+      - description: Refund ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/ordermodel.Refund'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Seller approve refund
+      tags:
+      - order
+  /order/refunds/{id}/dispute:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Refund ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Dispute payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/orderecho.SellerDisputeRefundRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/ordermodel.RefundDispute'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Seller dispute refund
+      tags:
+      - order
+  /order/refunds/{id}/withdraw:
+    post:
+      parameters:
+      - description: Refund ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/ordermodel.Refund'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Withdraw buyer refund
+      tags:
+      - order
+  /order/refunds/{refundID}/disputes:
+    get:
+      parameters:
+      - description: Refund ID (UUID)
+        in: path
+        name: refundID
+        required: true
+        type: string
+      - description: Dispute status
+        enum:
+        - Open
+        - SellerWins
+        - BuyerWins
+        in: query
+        name: status
+        type: string
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/ordermodel.RefundDispute'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List refund disputes by refund
+      tags:
+      - order
+  /order/seller/confirmed:
+    get:
+      parameters:
+      - description: Search term
+        in: query
+        name: search
+        type: string
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/ordermodel.Order'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List seller confirmed orders
+      tags:
+      - order
+  /order/seller/confirmed/{id}:
+    get:
+      parameters:
+      - description: Order ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/ordermodel.Order'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Get seller order
+      tags:
+      - order
+  /order/seller/pending:
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/ordermodel.OrderItem'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List seller pending items
+      tags:
+      - order
+  /order/seller/pending/confirm:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Confirm payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/orderecho.ConfirmSellerPendingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/orderecho.ConfirmSellerPendingResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Confirm seller pending items
+      tags:
+      - order
+  /order/seller/pending/confirm/{sessionID}/cancel:
+    post:
+      parameters:
+      - description: Confirm session ID (UUID)
+        in: path
+        name: sessionID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Cancel seller confirm
+      tags:
+      - order
+  /order/seller/pending/confirm/{sessionID}/payment-url:
+    post:
+      parameters:
+      - description: Confirm session ID (UUID)
+        in: path
+        name: sessionID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/orderecho.EnsurePaymentURLResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Ensure seller confirm payment URL
+      tags:
+      - order
+  /order/seller/pending/reject:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Reject payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/orderecho.RejectSellerPendingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.CommonResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: Reject seller pending items
+      tags:
+      - order
+  /order/seller/refund:
+    get:
+      parameters:
+      - description: Page number (offset mode)
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: Items per page (max 100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Keyset cursor (cursor mode)
+        in: query
+        name: cursor
+        type: string
+      - description: Sort, e.g. -date_created
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SwaggerPaginationResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/ordermodel.Refund'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.CommonResponse'
+      security:
+      - BearerAuth: []
+      summary: List seller refunds
+      tags:
+      - order
+securityDefinitions:
+  BearerAuth:
+    description: 'JWT access token. Format: "Bearer &lt;token&gt;".'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

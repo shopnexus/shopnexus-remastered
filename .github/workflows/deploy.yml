@@ -1,0 +1,93 @@
+name: Build & Deploy
+
+# Mỗi push lên main -> build image, push GHCR, rồi SSH vào VPS restart service `server`.
+# Có thể bấm tay trên tab Actions (workflow_dispatch) để redeploy lại cùng commit.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Chặn 2 lần deploy chồng lên nhau: lần mới hủy/đợi lần cũ.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }} # -> shopnexus/shopnexus-server
+
+jobs:
+  build:
+    name: Build & push image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # cần để push lên GHCR bằng GITHUB_TOKEN
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags/labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=long
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache layer qua GitHub Actions cache -> build lại nhanh (go mod download, v.v.)
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to VPS
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH & redeploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            set -euo pipefail
+
+            # 1) Đăng nhập GHCR trên VPS để pull được image (private package).
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
+
+            # 2) Vào thư mục chứa docker-compose.prod.yml trên server.
+            cd "${{ secrets.DEPLOY_PATH }}"
+
+            # 3) Deploy pin đúng commit vừa build (không dùng :latest cho chắc chắn).
+            export SERVER_IMAGE="ghcr.io/${{ github.repository }}:sha-${{ github.sha }}"
+            echo "Deploying image: $SERVER_IMAGE"
+
+            # 4) Chỉ pull + tái tạo service `server`; KHÔNG đụng postgres/redis/restate/minio.
+            docker compose -f docker-compose.prod.yml pull server
+            docker compose -f docker-compose.prod.yml up -d --no-deps server
+
+            # 5) Dọn image cũ để đỡ đầy đĩa.
+            docker image prune -f

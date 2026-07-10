@@ -14,6 +14,15 @@ type GetVendorStatsRequest struct {
 	AccountID uuid.UUID `query:"account_id" validate:"required"`
 }
 
+// GetVendorStats returns aggregate statistics for a vendor account.
+//
+//	@Summary	Get vendor stats
+//	@Tags		catalog
+//	@Produce	json
+//	@Param		account_id	query		string	true	"Vendor account ID (UUID)"
+//	@Success	200			{object}	response.CommonResponse{data=catalogbiz.VendorStats}
+//	@Failure	400			{object}	response.CommonResponse
+//	@Router		/catalog/vendor-stats [get]
 func (h *Handler) GetVendorStats(c echo.Context) error {
 	var req GetVendorStatsRequest
 	if err := c.Bind(&req); err != nil {

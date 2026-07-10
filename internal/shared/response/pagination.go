@@ -7,6 +7,16 @@ type PaginationResponse[T any] struct {
 	PageMeta PageMeta `json:"pagination"`
 }
 
+// SwaggerPaginationResponse is a non-generic mirror of PaginationResponse[T]
+// used ONLY in swaggo annotations: swaggo cannot resolve a generic type argument
+// whose package the transport file doesn't import, but it DOES resolve types in a
+// `{data=...}` field override globally. Annotate paginated endpoints as
+// `response.SwaggerPaginationResponse{data=[]pkg.Item}`. Not used at runtime.
+type SwaggerPaginationResponse struct {
+	Data     []any    `json:"data"`
+	PageMeta PageMeta `json:"pagination"`
+}
+
 type PageMeta struct {
 	Limit      null.Int32  `json:"limit"`
 	Total      null.Int64  `json:"total"`

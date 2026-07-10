@@ -13,6 +13,15 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// ListContact returns all contacts belonging to the authenticated caller.
+//
+//	@Summary	List contacts
+//	@Tags		account
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Success	200	{object}	response.CommonResponse{data=[]accountdb.AccountContact}
+//	@Failure	401	{object}	response.CommonResponse
+//	@Router		/account/contact [get]
 func (h *Handler) ListContact(c echo.Context) error {
 	claims, err := authclaims.GetClaims(c.Request())
 	if err != nil {
@@ -33,6 +42,16 @@ type GetContactRequest struct {
 	ContactID uuid.UUID `param:"contact_id" validate:"required"`
 }
 
+// GetContact returns a single contact by ID.
+//
+//	@Summary	Get contact
+//	@Tags		account
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		contact_id	path		string	true	"Contact ID (UUID)"
+//	@Success	200			{object}	response.CommonResponse{data=accountdb.AccountContact}
+//	@Failure	401			{object}	response.CommonResponse
+//	@Router		/account/contact/{contact_id} [get]
 func (h *Handler) GetContact(c echo.Context) error {
 	var req GetContactRequest
 	if err := c.Bind(&req); err != nil {
@@ -68,6 +87,18 @@ type CreateContactRequest struct {
 	Longitude     float64                  `json:"longitude"      validate:"longitude"`
 }
 
+// CreateContact adds a new contact/address for the caller.
+//
+//	@Summary	Create contact
+//	@Tags		account
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		CreateContactRequest	true	"Contact payload"
+//	@Success	200		{object}	response.CommonResponse{data=accountdb.AccountContact}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/account/contact [post]
 func (h *Handler) CreateContact(c echo.Context) error {
 	var req CreateContactRequest
 	if err := c.Bind(&req); err != nil {
@@ -111,6 +142,18 @@ type UpdateContactRequest struct {
 	Longitude     null.Float                   `json:"longitude"      validate:"omitnil,longitude"`
 }
 
+// UpdateContact patches an existing contact (all fields optional except ID).
+//
+//	@Summary	Update contact
+//	@Tags		account
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		UpdateContactRequest	true	"Fields to update"
+//	@Success	200		{object}	response.CommonResponse{data=accountdb.AccountContact}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/account/contact [patch]
 func (h *Handler) UpdateContact(c echo.Context) error {
 	var req UpdateContactRequest
 	if err := c.Bind(&req); err != nil {
@@ -148,6 +191,18 @@ type DeleteContactRequest struct {
 	ContactID uuid.UUID `json:"contact_id" validate:"required"`
 }
 
+// DeleteContact removes a contact by ID.
+//
+//	@Summary	Delete contact
+//	@Tags		account
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		DeleteContactRequest	true	"Contact ID"
+//	@Success	200		{object}	response.CommonResponse{data=string}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/account/contact [delete]
 func (h *Handler) DeleteContact(c echo.Context) error {
 	var req DeleteContactRequest
 	if err := c.Bind(&req); err != nil {

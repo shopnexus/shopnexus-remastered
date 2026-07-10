@@ -40,6 +40,18 @@ type GetStockRequest struct {
 	RefType inventorydb.InventoryStockRefType `query:"ref_type" validate:"required,validateFn=Valid"`
 }
 
+// GetStock returns the stock record for a given reference.
+//
+//	@Summary	Get stock
+//	@Tags		inventory
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		ref_id		query		string	true	"Reference ID (UUID)"
+//	@Param		ref_type	query		string	true	"Reference type"
+//	@Success	200			{object}	response.CommonResponse{data=inventorydb.InventoryStock}
+//	@Failure	400			{object}	response.CommonResponse
+//	@Failure	401			{object}	response.CommonResponse
+//	@Router		/inventory/stock [get]
 func (h *Handler) GetStock(c echo.Context) error {
 	var req GetStockRequest
 	if err := c.Bind(&req); err != nil {
@@ -67,6 +79,22 @@ type ListStockHistoryRequest struct {
 	RefType inventorydb.InventoryStockRefType `query:"ref_type" validate:"required,validateFn=Valid"`
 }
 
+// ListStockHistory returns the paginated stock change history for a reference.
+//
+//	@Summary	List stock history
+//	@Tags		inventory
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		ref_id		query		string	true	"Reference ID (UUID)"
+//	@Param		ref_type	query		string	true	"Reference type"
+//	@Param		page		query		int		false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit		query		int		false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor		query		string	false	"Keyset cursor (cursor mode)"
+//	@Param		sort		query		string	false	"Sort, e.g. -date_created"
+//	@Success	200			{object}	response.SwaggerPaginationResponse{data=[]inventorydb.InventoryStockHistory}
+//	@Failure	400			{object}	response.CommonResponse
+//	@Failure	401			{object}	response.CommonResponse
+//	@Router		/inventory/stock/history [get]
 func (h *Handler) ListStockHistory(c echo.Context) error {
 	var req ListStockHistoryRequest
 	if err := c.Bind(&req); err != nil {
@@ -94,6 +122,18 @@ type UpdateStockSettingsRequest struct {
 	SerialRequired null.Bool                         `json:"serial_required" validate:"omitnil"`
 }
 
+// UpdateStockSettings updates settings (e.g. serial requirement) for a stock.
+//
+//	@Summary	Update stock settings
+//	@Tags		inventory
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		UpdateStockSettingsRequest	true	"Settings to update"
+//	@Success	200		{object}	response.CommonResponse{data=inventorydb.InventoryStock}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/inventory/stock [patch]
 func (h *Handler) UpdateStockSettings(c echo.Context) error {
 	var req UpdateStockSettingsRequest
 	if err := c.Bind(&req); err != nil {
@@ -122,6 +162,18 @@ type ImportStockRequest struct {
 	SerialIDs []string                          `json:"serial_ids" validate:"dive,required"`
 }
 
+// ImportStock adds stock (and optional serials) for a reference.
+//
+//	@Summary	Import stock
+//	@Tags		inventory
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		ImportStockRequest	true	"Stock to import"
+//	@Success	200		{object}	response.CommonResponse{data=string}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/inventory/stock/import [post]
 func (h *Handler) ImportStock(c echo.Context) error {
 	var req ImportStockRequest
 	if err := c.Bind(&req); err != nil {
@@ -149,6 +201,21 @@ type ListProductSerialRequest struct {
 	StockID int64 `query:"stock_id" validate:"required,gt=0"`
 }
 
+// ListSerial returns the paginated serials for a stock.
+//
+//	@Summary	List serials
+//	@Tags		inventory
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		stock_id	query		int		true	"Stock ID"
+//	@Param		page		query		int		false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit		query		int		false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor		query		string	false	"Keyset cursor (cursor mode)"
+//	@Param		sort		query		string	false	"Sort, e.g. -date_created"
+//	@Success	200			{object}	response.SwaggerPaginationResponse{data=[]inventorydb.InventorySerial}
+//	@Failure	400			{object}	response.CommonResponse
+//	@Failure	401			{object}	response.CommonResponse
+//	@Router		/inventory/serial [get]
 func (h *Handler) ListSerial(c echo.Context) error {
 	var req ListProductSerialRequest
 	if err := c.Bind(&req); err != nil {
@@ -174,6 +241,18 @@ type UpdateSerialRequest struct {
 	Status    inventorydb.InventoryStatus `json:"status"     validate:"required,validateFn=Valid"`
 }
 
+// UpdateSerial updates the status of one or more serials.
+//
+//	@Summary	Update serials
+//	@Tags		inventory
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		UpdateSerialRequest	true	"Serials and target status"
+//	@Success	200		{object}	response.CommonResponse{data=string}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/inventory/serial [patch]
 func (h *Handler) UpdateSerial(c echo.Context) error {
 	var req UpdateSerialRequest
 	if err := c.Bind(&req); err != nil {

@@ -21,6 +21,18 @@ type ListProductSkuRequest struct {
 	SharedPackaging null.Bool  `query:"shared_packaging" validate:"omitnil"`
 }
 
+// ListProductSku returns the SKUs for a given SPU with optional price filters.
+//
+//	@Summary	List product SKUs
+//	@Tags		catalog
+//	@Produce	json
+//	@Param		spu_id				query		string	false	"Filter by SPU ID (UUID)"
+//	@Param		price_from			query		int		false	"Minimum price"
+//	@Param		price_to			query		int		false	"Maximum price"
+//	@Param		shared_packaging	query		bool	false	"Filter by shared packaging"
+//	@Success	200					{object}	response.CommonResponse{data=[]catalogmodel.ProductSku}
+//	@Failure	400					{object}	response.CommonResponse
+//	@Router		/catalog/product-sku [get]
 func (h *Handler) ListProductSku(c echo.Context) error {
 	var req ListProductSkuRequest
 	if err := c.Bind(&req); err != nil {
@@ -50,6 +62,18 @@ type CreateProductSkuRequest struct {
 	PackageDetails  json.RawMessage                 `json:"package_details" validate:"required"`
 }
 
+// CreateProductSku adds a new SKU to an existing SPU.
+//
+//	@Summary	Create product SKU
+//	@Tags		catalog
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		CreateProductSkuRequest	true	"SKU payload"
+//	@Success	200		{object}	response.CommonResponse{data=catalogmodel.ProductSku}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/catalog/product-sku [post]
 func (h *Handler) CreateProductSku(c echo.Context) error {
 	var req CreateProductSkuRequest
 	if err := c.Bind(&req); err != nil {
@@ -86,6 +110,18 @@ type UpdateProductSkuRequest struct {
 	PackageDetails  json.RawMessage                 `json:"package_details"  validate:"omitempty"`
 }
 
+// UpdateProductSku patches an existing SKU (all fields optional except ID).
+//
+//	@Summary	Update product SKU
+//	@Tags		catalog
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		UpdateProductSkuRequest	true	"Fields to update"
+//	@Success	200		{object}	response.CommonResponse{data=catalogmodel.ProductSku}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/catalog/product-sku [patch]
 func (h *Handler) UpdateProductSku(c echo.Context) error {
 	var req UpdateProductSkuRequest
 	if err := c.Bind(&req); err != nil {
@@ -118,6 +154,18 @@ type DeleteProductSkuRequest struct {
 	ID uuid.UUID `json:"id" validate:"required"`
 }
 
+// DeleteProductSku removes a SKU by ID.
+//
+//	@Summary	Delete product SKU
+//	@Tags		catalog
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		DeleteProductSkuRequest	true	"SKU ID"
+//	@Success	200		{object}	response.CommonResponse{data=string}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/catalog/product-sku [delete]
 func (h *Handler) DeleteProductSku(c echo.Context) error {
 	var req DeleteProductSkuRequest
 	if err := c.Bind(&req); err != nil {

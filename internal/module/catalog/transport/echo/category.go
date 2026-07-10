@@ -19,6 +19,20 @@ type ListCategoryRequest struct {
 	Search null.String `query:"search" validate:"omitnil"`
 }
 
+// ListCategory returns a paginated list of product categories.
+//
+//	@Summary	List categories
+//	@Tags		catalog
+//	@Produce	json
+//	@Param		page	query		int			false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit	query		int			false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor	query		string		false	"Keyset cursor (cursor mode)"
+//	@Param		sort	query		string		false	"Sort, e.g. -date_created"
+//	@Param		id		query		[]string	false	"Filter by category IDs (UUID)"
+//	@Param		search	query		string		false	"Search term"
+//	@Success	200		{object}	response.SwaggerPaginationResponse{data=[]catalogmodel.Category}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Router		/catalog/category [get]
 func (h *Handler) ListCategory(c echo.Context) error {
 	var req ListCategoryRequest
 	if err := c.Bind(&req); err != nil {
@@ -43,6 +57,15 @@ type GetCategoryRequest struct {
 	ID uuid.UUID `param:"id" validate:"required"`
 }
 
+// GetCategory returns a single category by ID.
+//
+//	@Summary	Get category
+//	@Tags		catalog
+//	@Produce	json
+//	@Param		id	path		string	true	"Category ID (UUID)"
+//	@Success	200	{object}	response.CommonResponse{data=catalogmodel.Category}
+//	@Failure	400	{object}	response.CommonResponse
+//	@Router		/catalog/category/{id} [get]
 func (h *Handler) GetCategory(c echo.Context) error {
 	var req GetCategoryRequest
 	if err := c.Bind(&req); err != nil {

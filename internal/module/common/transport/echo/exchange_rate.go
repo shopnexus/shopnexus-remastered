@@ -11,6 +11,13 @@ import (
 
 // GetExchangeRates returns the latest exchange rate snapshot.
 // Public endpoint; no auth required.
+//
+//	@Summary	Get exchange rates
+//	@Tags		common
+//	@Produce	json
+//	@Success	200	{object}	response.CommonResponse{data=commonmodel.ExchangeRateSnapshot}
+//	@Failure	500	{object}	response.CommonResponse
+//	@Router		/common/currencies/rates [get]
 func (h *Handler) GetExchangeRates(c echo.Context) error {
 	snap, err := h.biz.GetExchangeRates(c.Request().Context(), commonbiz.GetExchangeRatesParams{})
 	if err != nil {

@@ -16,6 +16,16 @@ type AddFavoriteRequest struct {
 	SpuID uuid.UUID `param:"spu_id" validate:"required"`
 }
 
+// AddFavorite marks an SPU as favorited by the caller.
+//
+//	@Summary	Add favorite
+//	@Tags		account
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		spu_id	path		string	true	"SPU ID (UUID)"
+//	@Success	200		{object}	response.CommonResponse{data=accountdb.AccountFavorite}
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/account/favorite/{spu_id} [post]
 func (h *Handler) AddFavorite(c echo.Context) error {
 	var req AddFavoriteRequest
 	if err := c.Bind(&req); err != nil {
@@ -45,6 +55,16 @@ type RemoveFavoriteRequest struct {
 	SpuID uuid.UUID `param:"spu_id" validate:"required"`
 }
 
+// RemoveFavorite unfavorites an SPU for the caller.
+//
+//	@Summary	Remove favorite
+//	@Tags		account
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		spu_id	path		string	true	"SPU ID (UUID)"
+//	@Success	200		{object}	response.CommonResponse{data=string}
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/account/favorite/{spu_id} [delete]
 func (h *Handler) RemoveFavorite(c echo.Context) error {
 	var req RemoveFavoriteRequest
 	if err := c.Bind(&req); err != nil {
@@ -73,6 +93,19 @@ type ListFavoriteRequest struct {
 	paginate.Params
 }
 
+// ListFavorite returns the caller's favorited SPUs (paginated).
+//
+//	@Summary	List favorites
+//	@Tags		account
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		page	query		int		false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit	query		int		false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor	query		string	false	"Keyset cursor (cursor mode)"
+//	@Param		sort	query		string	false	"Sort, e.g. -date_created"
+//	@Success	200		{object}	response.SwaggerPaginationResponse{data=[]accountdb.AccountFavorite}
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/account/favorite [get]
 func (h *Handler) ListFavorite(c echo.Context) error {
 	var req ListFavoriteRequest
 	if err := c.Bind(&req); err != nil {

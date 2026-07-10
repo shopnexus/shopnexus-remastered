@@ -24,6 +24,23 @@ type ListProductSpuRequest struct {
 	IsEnabled  []bool      `query:"is_enabled"   validate:"omitempty" comma_separated:"true"`
 }
 
+// ListProductSpu returns a paginated list of product SPUs with filters.
+//
+//	@Summary	List product SPUs
+//	@Tags		catalog
+//	@Produce	json
+//	@Param		page		query		int			false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit		query		int			false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor		query		string		false	"Keyset cursor (cursor mode)"
+//	@Param		sort		query		string		false	"Sort, e.g. -date_created"
+//	@Param		search		query		string		false	"Search term"
+//	@Param		slug		query		[]string	false	"Filter by slugs"
+//	@Param		my_products	query		bool		false	"Only the authenticated caller's products"
+//	@Param		category_id	query		[]string	false	"Filter by category IDs (UUID)"
+//	@Param		is_enabled	query		[]bool		false	"Filter by enabled state"
+//	@Success	200			{object}	response.SwaggerPaginationResponse{data=[]catalogmodel.ProductSpu}
+//	@Failure	400			{object}	response.CommonResponse
+//	@Router		/catalog/product-spu [get]
 func (h *Handler) ListProductSpu(c echo.Context) error {
 	var req ListProductSpuRequest
 	if err := c.Bind(&req); err != nil {
@@ -60,6 +77,15 @@ type GetProductSpuRequest struct {
 	ID uuid.UUID `param:"id" validate:"required"`
 }
 
+// GetProductSpu returns a single product SPU by ID.
+//
+//	@Summary	Get product SPU
+//	@Tags		catalog
+//	@Produce	json
+//	@Param		id	path		string	true	"Product SPU ID (UUID)"
+//	@Success	200	{object}	response.CommonResponse{data=catalogmodel.ProductSpu}
+//	@Failure	400	{object}	response.CommonResponse
+//	@Router		/catalog/product-spu/{id} [get]
 func (h *Handler) GetProductSpu(c echo.Context) error {
 	var req GetProductSpuRequest
 	if err := c.Bind(&req); err != nil {
@@ -90,6 +116,18 @@ type CreateProductSpuRequest struct {
 	Specifications []catalogmodel.ProductSpecification `json:"specifications" validate:"omitempty,dive"`
 }
 
+// CreateProductSpu creates a new product SPU.
+//
+//	@Summary	Create product SPU
+//	@Tags		catalog
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		CreateProductSpuRequest	true	"SPU payload"
+//	@Success	200		{object}	response.CommonResponse{data=catalogmodel.ProductSpu}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/catalog/product-spu [post]
 func (h *Handler) CreateProductSpu(c echo.Context) error {
 	var req CreateProductSpuRequest
 	if err := c.Bind(&req); err != nil {
@@ -135,6 +173,18 @@ type UpdateProductSpuRequest struct {
 	Specifications []catalogmodel.ProductSpecification `json:"specifications"  validate:"omitempty,dive"`
 }
 
+// UpdateProductSpu patches an existing product SPU (all fields optional except ID).
+//
+//	@Summary	Update product SPU
+//	@Tags		catalog
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		UpdateProductSpuRequest	true	"Fields to update"
+//	@Success	200		{object}	response.CommonResponse{data=catalogmodel.ProductSpu}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/catalog/product-spu [patch]
 func (h *Handler) UpdateProductSpu(c echo.Context) error {
 	var req UpdateProductSpuRequest
 	if err := c.Bind(&req); err != nil {
@@ -173,6 +223,17 @@ type DeleteProductSpuRequest struct {
 	ID uuid.UUID `param:"id" validate:"required"`
 }
 
+// DeleteProductSpu removes a product SPU by ID.
+//
+//	@Summary	Delete product SPU
+//	@Tags		catalog
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		id	path		string	true	"Product SPU ID (UUID)"
+//	@Success	200	{object}	response.CommonResponse{data=string}
+//	@Failure	400	{object}	response.CommonResponse
+//	@Failure	401	{object}	response.CommonResponse
+//	@Router		/catalog/product-spu/{id} [delete]
 func (h *Handler) DeleteProductSpu(c echo.Context) error {
 	var req DeleteProductSpuRequest
 	if err := c.Bind(&req); err != nil {

@@ -37,6 +37,18 @@ type CreateConversationRequest struct {
 	SellerID uuid.UUID `json:"seller_id" validate:"required"`
 }
 
+// CreateConversation starts a conversation between the caller and a seller.
+//
+//	@Summary	Create conversation
+//	@Tags		chat
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		CreateConversationRequest	true	"Seller to converse with"
+//	@Success	200		{object}	response.CommonResponse{data=chatdb.ChatConversation}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/chat/conversation [post]
 func (h *Handler) CreateConversation(c echo.Context) error {
 	var req CreateConversationRequest
 	if err := c.Bind(&req); err != nil {
@@ -66,6 +78,19 @@ type ListConversationRequest struct {
 	paginate.Params
 }
 
+// ListConversation returns the caller's paginated conversations.
+//
+//	@Summary	List conversations
+//	@Tags		chat
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		page	query		int		false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit	query		int		false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor	query		string	false	"Keyset cursor (cursor mode)"
+//	@Param		sort	query		string	false	"Sort, e.g. -date_created"
+//	@Success	200		{object}	response.SwaggerPaginationResponse{data=[]chatdb.ChatConversation}
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/chat/conversation [get]
 func (h *Handler) ListConversation(c echo.Context) error {
 	var req ListConversationRequest
 	if err := c.Bind(&req); err != nil {
@@ -97,6 +122,21 @@ type ListMessageRequest struct {
 	ConversationID uuid.UUID `param:"id" validate:"required"`
 }
 
+// ListMessage returns the paginated messages of a conversation.
+//
+//	@Summary	List messages
+//	@Tags		chat
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		id		path		string	true	"Conversation ID (UUID)"
+//	@Param		page	query		int		false	"Page number (offset mode)"	minimum(1)
+//	@Param		limit	query		int		false	"Items per page (max 100)"	minimum(1)	maximum(100)
+//	@Param		cursor	query		string	false	"Keyset cursor (cursor mode)"
+//	@Param		sort	query		string	false	"Sort, e.g. -date_created"
+//	@Success	200		{object}	response.SwaggerPaginationResponse{data=[]chatdb.ChatMessage}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/chat/conversation/{id}/messages [get]
 func (h *Handler) ListMessage(c echo.Context) error {
 	var req ListMessageRequest
 	if err := c.Bind(&req); err != nil {
@@ -130,6 +170,18 @@ type SendMessageRequest struct {
 	Metadata       json.RawMessage        `json:"data,omitempty"`
 }
 
+// SendMessage posts a message to a conversation.
+//
+//	@Summary	Send message
+//	@Tags		chat
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		SendMessageRequest	true	"Message payload"
+//	@Success	200		{object}	response.CommonResponse{data=chatdb.ChatMessage}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/chat/send-message [post]
 func (h *Handler) SendMessage(c echo.Context) error {
 	var req SendMessageRequest
 	if err := c.Bind(&req); err != nil {
@@ -162,6 +214,18 @@ type MarkReadRequest struct {
 	ConversationID uuid.UUID `json:"conversation_id" validate:"required"`
 }
 
+// MarkRead marks a conversation as read for the caller.
+//
+//	@Summary	Mark conversation read
+//	@Tags		chat
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Param		body	body		MarkReadRequest	true	"Conversation to mark read"
+//	@Success	200		{object}	response.CommonResponse{data=string}
+//	@Failure	400		{object}	response.CommonResponse
+//	@Failure	401		{object}	response.CommonResponse
+//	@Router		/chat/mark-read [post]
 func (h *Handler) MarkRead(c echo.Context) error {
 	var req MarkReadRequest
 	if err := c.Bind(&req); err != nil {
