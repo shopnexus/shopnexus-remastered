@@ -1,6 +1,7 @@
 package chat
 
 import (
+	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
 	"shopnexus-server/internal/infras/fxinfra"
@@ -9,7 +10,9 @@ import (
 	chatdb "shopnexus-server/internal/module/chat/db/sqlc"
 	chatecho "shopnexus-server/internal/module/chat/transport/echo"
 	commonbiz "shopnexus-server/internal/module/common/biz"
+	"shopnexus-server/internal/shared/besteffort"
 	"shopnexus-server/internal/shared/pgsqlc"
+	"shopnexus-server/internal/shared/restatesvc"
 )
 
 // Module provides the chat module dependencies. The pool/cache/logger
@@ -25,6 +28,20 @@ var Module = fx.Module("chat",
 		NewChatHandler,
 		NewChatBiz,
 		chatecho.NewHandler,
+	),
+	fx.Provide(
+		fx.Annotate(
+			func(b *chatbiz.ChatHandler) restate.ServiceDefinition {
+				return restatesvc.Reflect(chatbiz.NewChatService(b))
+			},
+			fx.ResultTags(`group:"restate"`),
+		),
+		fx.Annotate(
+			func(b *chatbiz.ChatHandler) besteffort.Registrar {
+				return func(s *besteffort.Server) { chatbiz.RegisterChatBestEffort(s, b) }
+			},
+			fx.ResultTags(`group:"besteffort"`),
+		),
 	),
 	fx.Invoke(
 		chatecho.NewHandler,

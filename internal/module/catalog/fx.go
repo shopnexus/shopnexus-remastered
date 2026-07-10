@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
 	"shopnexus-server/internal/infras/cache"
@@ -14,7 +15,9 @@ import (
 	catalogecho "shopnexus-server/internal/module/catalog/transport/echo"
 	catalogworkers "shopnexus-server/internal/module/catalog/workers"
 	"shopnexus-server/internal/provider/llm"
+	"shopnexus-server/internal/shared/besteffort"
 	"shopnexus-server/internal/shared/pgsqlc"
+	"shopnexus-server/internal/shared/restatesvc"
 )
 
 // Module provides the catalog module dependencies. Catalog OWNS llm
@@ -30,6 +33,20 @@ var Module = fx.Module("catalog",
 		catalogbiz.NewCatalogHandler,
 		NewCatalogBiz,
 		catalogecho.NewHandler,
+	),
+	fx.Provide(
+		fx.Annotate(
+			func(b *catalogbiz.CatalogHandler) restate.ServiceDefinition {
+				return restatesvc.Reflect(catalogbiz.NewCatalogService(b))
+			},
+			fx.ResultTags(`group:"restate"`),
+		),
+		fx.Annotate(
+			func(b *catalogbiz.CatalogHandler) besteffort.Registrar {
+				return func(s *besteffort.Server) { catalogbiz.RegisterCatalogBestEffort(s, b) }
+			},
+			fx.ResultTags(`group:"besteffort"`),
+		),
 	),
 	fx.Invoke(
 		catalogecho.NewHandler,

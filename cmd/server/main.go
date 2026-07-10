@@ -1,6 +1,10 @@
 package main
 
 import (
+	"flag"
+	"os"
+	"strings"
+
 	"shopnexus-server/internal/app"
 
 	// Blank import registers the generated OpenAPI spec (docs.SwaggerInfo) so the
@@ -23,5 +27,19 @@ import (
 //	@description				JWT access token. Format: "Bearer &lt;token&gt;".
 
 func main() {
-	fx.New(app.Module).Run()
+	moduleFlag := flag.String("module", "", "comma-separated modules to run; empty = all (monolith)")
+	flag.Parse()
+
+	sel := *moduleFlag
+	if sel == "" {
+		sel = os.Getenv("APP_MODULE")
+	}
+
+	var opt fx.Option
+	if sel == "" || sel == "all" {
+		opt = app.Module
+	} else {
+		opt = app.Build(strings.Split(sel, ",")...)
+	}
+	fx.New(opt).Run()
 }

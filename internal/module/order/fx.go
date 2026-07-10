@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/redis/rueidis"
+	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
 	"shopnexus-server/internal/infras/cache"
@@ -28,7 +29,9 @@ import (
 	orderconfig "shopnexus-server/internal/module/order/config"
 	orderrepo "shopnexus-server/internal/module/order/repo"
 	orderecho "shopnexus-server/internal/module/order/transport/echo"
+	"shopnexus-server/internal/shared/besteffort"
 	"shopnexus-server/internal/shared/pgsqlc"
+	"shopnexus-server/internal/shared/restatesvc"
 )
 
 // Module provides the order module dependencies. Pool/Redis/Cache/Logger are
@@ -73,6 +76,28 @@ var Module = fx.Module("order",
 		fullfilment.NewFulfillmentWorkflow,
 		NewCheckoutWf,
 		NewFulfillmentWf,
+	),
+	fx.Provide(
+		fx.Annotate(
+			func(b *orderbiz.OrderHandler) restate.ServiceDefinition {
+				return restatesvc.Reflect(orderbiz.NewOrderService(b))
+			},
+			fx.ResultTags(`group:"restate"`),
+		),
+		fx.Annotate(
+			func(b *orderbiz.OrderHandler) besteffort.Registrar {
+				return func(s *besteffort.Server) { orderbiz.RegisterOrderBestEffort(s, b) }
+			},
+			fx.ResultTags(`group:"besteffort"`),
+		),
+		fx.Annotate(
+			func(wf *orderbiz.CheckoutWorkflow) restate.ServiceDefinition { return restatesvc.Reflect(wf) },
+			fx.ResultTags(`group:"restate"`),
+		),
+		fx.Annotate(
+			func(wf *orderbiz.FulfillmentWorkflow) restate.ServiceDefinition { return restatesvc.Reflect(wf) },
+			fx.ResultTags(`group:"restate"`),
+		),
 	),
 	fx.Invoke(
 		orderecho.NewHandler,

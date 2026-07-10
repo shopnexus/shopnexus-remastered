@@ -11,55 +11,28 @@ import (
 	"os"
 	"time"
 
+	"go.uber.org/fx"
+
 	appconfig "shopnexus-server/internal/app/config"
-	accountbiz "shopnexus-server/internal/module/account/biz"
-	analyticbiz "shopnexus-server/internal/module/analytic/biz"
-	catalogbiz "shopnexus-server/internal/module/catalog/biz"
-	chatbiz "shopnexus-server/internal/module/chat/biz"
-	commonbiz "shopnexus-server/internal/module/common/biz"
-	inventorybiz "shopnexus-server/internal/module/inventory/biz"
-	orderbiz "shopnexus-server/internal/module/order/biz"
-	promotionbiz "shopnexus-server/internal/module/promotion/biz"
 
 	restate "github.com/restatedev/sdk-go"
 	"github.com/restatedev/sdk-go/server"
 )
 
-func SetupRestate(
-	cfg *appconfig.Config,
-	orderBiz *orderbiz.OrderHandler,
-	accountBiz *accountbiz.AccountHandler,
-	catalogBiz *catalogbiz.CatalogHandler,
-	commonBiz *commonbiz.CommonHandler,
-	inventoryBiz *inventorybiz.InventoryHandler,
-	promotionBiz *promotionbiz.PromotionHandler,
-	analyticBiz *analyticbiz.AnalyticHandler,
-	chatBiz *chatbiz.ChatHandler,
+type RestateParams struct {
+	fx.In
+	Cfg  *appconfig.Config
+	Defs []restate.ServiceDefinition `group:"restate"`
+}
 
-	// workflows
-	checkoutWf *orderbiz.CheckoutWorkflow,
-	fulfillmentWf *orderbiz.FulfillmentWorkflow,
-) {
+func SetupRestate(p RestateParams) {
+	cfg := p.Cfg
 	bindAddress := fmt.Sprintf(":%s", cfg.Restate.ServicePort)
 
-	// General retry policy for all service methods: exponential backoff starting at 1s, max 30s, up to 10 attempts, then pause.
-	retryPolicy := restate.WithInvocationRetryPolicy(
-		restate.WithInitialInterval(time.Second),
-		restate.WithMaxInterval(30*time.Second),
-		restate.WithMaxAttempts(10),
-		restate.PauseOnMaxAttempts())
-
-	srv := server.NewRestate().
-		Bind(restate.Reflect(accountbiz.NewAccountService(accountBiz), retryPolicy)).
-		Bind(restate.Reflect(analyticbiz.NewAnalyticService(analyticBiz), retryPolicy)).
-		Bind(restate.Reflect(catalogbiz.NewCatalogService(catalogBiz), retryPolicy)).
-		Bind(restate.Reflect(chatbiz.NewChatService(chatBiz), retryPolicy)).
-		Bind(restate.Reflect(commonbiz.NewCommonService(commonBiz), retryPolicy)).
-		Bind(restate.Reflect(inventorybiz.NewInventoryService(inventoryBiz), retryPolicy)).
-		Bind(restate.Reflect(orderbiz.NewOrderService(orderBiz), retryPolicy)).
-		Bind(restate.Reflect(promotionbiz.NewPromotionService(promotionBiz), retryPolicy)).
-		Bind(restate.Reflect(checkoutWf, retryPolicy)).
-		Bind(restate.Reflect(fulfillmentWf, retryPolicy))
+	srv := server.NewRestate()
+	for _, d := range p.Defs {
+		srv = srv.Bind(d)
+	}
 
 	go func() {
 		slog.Info("Starting Restate service endpoint", "address", bindAddress)

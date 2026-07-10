@@ -15,6 +15,11 @@ type Server struct {
 	mux *http.ServeMux
 }
 
+// Registrar registers one module's best-effort handlers onto the server.
+// Modules contribute these into an fx value group so app.SetupBestEffort can
+// register only the modules that are actually composed.
+type Registrar func(*Server)
+
 func NewServer() *Server {
 	return &Server{mux: http.NewServeMux()}
 }

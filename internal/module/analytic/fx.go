@@ -1,6 +1,7 @@
 package analytic
 
 import (
+	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
 	"shopnexus-server/internal/infras/fxinfra"
@@ -9,7 +10,9 @@ import (
 	analyticdb "shopnexus-server/internal/module/analytic/db/sqlc"
 	analyticecho "shopnexus-server/internal/module/analytic/transport/echo"
 	analyticworkers "shopnexus-server/internal/module/analytic/workers"
+	"shopnexus-server/internal/shared/besteffort"
 	"shopnexus-server/internal/shared/pgsqlc"
+	"shopnexus-server/internal/shared/restatesvc"
 )
 
 // Module provides the analytic module dependencies. The pool/cache/logger
@@ -26,6 +29,20 @@ var Module = fx.Module("analytic",
 		analyticbiz.NewAnalyticHandler,
 		NewAnalyticBiz,
 		analyticecho.NewHandler,
+	),
+	fx.Provide(
+		fx.Annotate(
+			func(b *analyticbiz.AnalyticHandler) restate.ServiceDefinition {
+				return restatesvc.Reflect(analyticbiz.NewAnalyticService(b))
+			},
+			fx.ResultTags(`group:"restate"`),
+		),
+		fx.Annotate(
+			func(b *analyticbiz.AnalyticHandler) besteffort.Registrar {
+				return func(s *besteffort.Server) { analyticbiz.RegisterAnalyticBestEffort(s, b) }
+			},
+			fx.ResultTags(`group:"besteffort"`),
+		),
 	),
 	fx.Invoke(
 		analyticecho.NewHandler,

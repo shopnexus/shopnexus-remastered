@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 
@@ -18,30 +19,44 @@ import (
 	"shopnexus-server/internal/module/promotion"
 )
 
-var Module = fx.Module("main",
-	fx.Provide(
-		appconfig.NewConfig,
-		NewEcho,
-		NewRateLimiter,
-	),
+// Modules maps a service name to its fx module so one binary can run the whole
+// monolith or a single module per pod (see cmd/server --module).
+var Modules = map[string]fx.Option{
+	"common":    common.Module,
+	"account":   account.Module,
+	"catalog":   catalog.Module,
+	"inventory": inventory.Module,
+	"order":     order.Module,
+	"promotion": promotion.Module,
+	"analytic":  analytic.Module,
+	"chat":      chat.Module,
+}
 
-	common.Module,
-	account.Module,
-	catalog.Module,
-	inventory.Module,
-	order.Module,
-	promotion.Module,
-	analytic.Module,
-	chat.Module,
+// ModuleNames is the canonical (dependency-friendly) order.
+var ModuleNames = []string{"common", "account", "catalog", "inventory", "order", "promotion", "analytic", "chat"}
 
-	fx.Invoke(
-		SetupLogger,
-		SetupRestate,
-		SetupBestEffort,
-		SetupEcho,
-		SetupHTTPServer,
-	),
-)
+// Build composes the app for the named modules. Empty selection = all modules
+// (monolith). Panics on an unknown name.
+func Build(selected ...string) fx.Option {
+	if len(selected) == 0 {
+		selected = ModuleNames
+	}
+	opts := []fx.Option{
+		fx.Provide(appconfig.NewConfig, NewEcho, NewRateLimiter),
+	}
+	for _, name := range selected {
+		m, ok := Modules[name]
+		if !ok {
+			panic(fmt.Sprintf("unknown module %q (known: %v)", name, ModuleNames))
+		}
+		opts = append(opts, m)
+	}
+	opts = append(opts, fx.Invoke(SetupLogger, SetupRestate, SetupBestEffort, SetupEcho, SetupHTTPServer))
+	return fx.Module("main", opts...)
+}
+
+// Module is the full monolith (all modules).
+var Module = Build()
 
 // SetupLogger sets the process-wide slog.Default.
 func SetupLogger(cfg *appconfig.Config) {

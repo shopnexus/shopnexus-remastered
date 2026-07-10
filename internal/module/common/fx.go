@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
 	"shopnexus-server/internal/infras/cache"
@@ -14,7 +15,9 @@ import (
 	commonecho "shopnexus-server/internal/module/common/transport/echo"
 	"shopnexus-server/internal/provider/exchange"
 	"shopnexus-server/internal/provider/geocoding"
+	"shopnexus-server/internal/shared/besteffort"
 	"shopnexus-server/internal/shared/pgsqlc"
+	"shopnexus-server/internal/shared/restatesvc"
 )
 
 // forwardGeocodeCacheTTL is long because address -> country mappings rarely
@@ -36,6 +39,20 @@ var Module = fx.Module("common",
 		commonbiz.NewcommonBiz,
 		NewCommonBiz,
 		commonecho.NewHandler,
+	),
+	fx.Provide(
+		fx.Annotate(
+			func(b *commonbiz.CommonHandler) restate.ServiceDefinition {
+				return restatesvc.Reflect(commonbiz.NewCommonService(b))
+			},
+			fx.ResultTags(`group:"restate"`),
+		),
+		fx.Annotate(
+			func(b *commonbiz.CommonHandler) besteffort.Registrar {
+				return func(s *besteffort.Server) { commonbiz.RegisterCommonBestEffort(s, b) }
+			},
+			fx.ResultTags(`group:"besteffort"`),
+		),
 	),
 	fx.Invoke(
 		commonecho.NewHandler,

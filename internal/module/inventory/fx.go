@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
 	"shopnexus-server/internal/infras/fxinfra"
@@ -8,7 +9,9 @@ import (
 	inventoryconfig "shopnexus-server/internal/module/inventory/config"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
 	inventoryecho "shopnexus-server/internal/module/inventory/transport/echo"
+	"shopnexus-server/internal/shared/besteffort"
 	"shopnexus-server/internal/shared/pgsqlc"
+	"shopnexus-server/internal/shared/restatesvc"
 )
 
 // Module provides the inventory module dependencies. The pool/cache/logger
@@ -23,6 +26,20 @@ var Module = fx.Module("inventory",
 		NewInventoryStorage,
 		inventorybiz.NewInventoryBiz,
 		NewInventoryBiz,
+	),
+	fx.Provide(
+		fx.Annotate(
+			func(b *inventorybiz.InventoryHandler) restate.ServiceDefinition {
+				return restatesvc.Reflect(inventorybiz.NewInventoryService(b))
+			},
+			fx.ResultTags(`group:"restate"`),
+		),
+		fx.Annotate(
+			func(b *inventorybiz.InventoryHandler) besteffort.Registrar {
+				return func(s *besteffort.Server) { inventorybiz.RegisterInventoryBestEffort(s, b) }
+			},
+			fx.ResultTags(`group:"besteffort"`),
+		),
 	),
 	fx.Invoke(
 		inventoryecho.NewHandler,

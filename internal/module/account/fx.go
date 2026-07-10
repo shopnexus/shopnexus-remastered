@@ -1,6 +1,7 @@
 package account
 
 import (
+	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
 	"shopnexus-server/internal/infras/fxinfra"
@@ -8,8 +9,10 @@ import (
 	accountconfig "shopnexus-server/internal/module/account/config"
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	accountecho "shopnexus-server/internal/module/account/transport/echo"
+	"shopnexus-server/internal/shared/besteffort"
 	authclaims "shopnexus-server/internal/shared/claims"
 	"shopnexus-server/internal/shared/pgsqlc"
+	"shopnexus-server/internal/shared/restatesvc"
 )
 
 // Module provides the account module dependencies. The pool/cache/logger
@@ -25,6 +28,20 @@ var Module = fx.Module("account",
 		accountbiz.NewAccountHandler,
 		NewAccountBiz,
 		accountecho.NewHandler,
+	),
+	fx.Provide(
+		fx.Annotate(
+			func(b *accountbiz.AccountHandler) restate.ServiceDefinition {
+				return restatesvc.Reflect(accountbiz.NewAccountService(b))
+			},
+			fx.ResultTags(`group:"restate"`),
+		),
+		fx.Annotate(
+			func(b *accountbiz.AccountHandler) besteffort.Registrar {
+				return func(s *besteffort.Server) { accountbiz.RegisterAccountBestEffort(s, b) }
+			},
+			fx.ResultTags(`group:"besteffort"`),
+		),
 	),
 	fx.Invoke(
 		accountecho.NewHandler,
