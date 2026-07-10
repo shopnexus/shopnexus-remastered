@@ -2,26 +2,10 @@ package config
 
 import "time"
 
-// Shared is the infra config block embedded (squashed) into every module's
-// Config. Values stay duplicated per module yaml — each module owns its infra
-// connections — but the struct and the fx providers over it (infras/fxinfra)
-// are written once.
-type Shared struct {
-	Postgres  Postgres  `mapstructure:"postgres"`
-	Redis     Redis     `mapstructure:"redis"`
-	Log       Log       `mapstructure:"log"`
-	Restate   Restate   `mapstructure:"restate"`
-	Bus       Bus       `mapstructure:"bus"`
-	RankedSet RankedSet `mapstructure:"rankedset"`
-}
-
-// SharedConfig returns itself. Embedding promotes it, so every module Config
-// satisfies HasShared with no extra code. (Named SharedConfig because the
-// embedded field is already named Shared.)
-func (s Shared) SharedConfig() Shared { return s }
-
-// HasShared is the constraint for generic infra providers (infras/fxinfra).
-type HasShared interface{ SharedConfig() Shared }
+// The leaf infra config types below are declared once here and referenced as
+// explicit fields by each module's own Config. Values stay duplicated per
+// module yaml — each module owns its infra connections. The plain provider
+// funcs over these leaves live in internal/infras/infra.
 
 // Postgres is duplicated into every module's Config. Each module then
 // constructs its own connection pool from its own values — no shared root pool.

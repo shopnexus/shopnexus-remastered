@@ -3,12 +3,15 @@ package catalog
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
+	"shopnexus-server/internal/infras/bus"
 	"shopnexus-server/internal/infras/cache"
-	"shopnexus-server/internal/infras/fxinfra"
+	"shopnexus-server/internal/infras/infra"
+	"shopnexus-server/internal/infras/rankedset"
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 	catalogconfig "shopnexus-server/internal/module/catalog/config"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
@@ -25,7 +28,22 @@ import (
 // each is constructed from THIS module's own Postgres/Redis/Log config and
 // invisible to other modules.
 var Module = fx.Module("catalog",
-	fxinfra.Providers[*catalogconfig.Config]("catalog"),
+	fx.Provide(
+		func(c *catalogconfig.Config) *slog.Logger { return infra.NewLogger(c.Log, "catalog") },
+		func(c *catalogconfig.Config, lc fx.Lifecycle) (pgsqlc.TxBeginner, error) {
+			return infra.NewPool(c.Postgres, lc)
+		},
+		func(c *catalogconfig.Config, lc fx.Lifecycle) (cache.Client, error) {
+			return infra.NewCache(c.Redis, lc)
+		},
+		func(c *catalogconfig.Config, logger *slog.Logger, lc fx.Lifecycle) (bus.Client, error) {
+			return infra.NewBus(c.Bus, c.Redis, logger, lc)
+		},
+		func(c *catalogconfig.Config, lc fx.Lifecycle) (rankedset.Client, error) {
+			return infra.NewRankedSet(c.RankedSet, c.Redis, lc)
+		},
+		fx.Private,
+	),
 	fx.Provide(
 		catalogconfig.NewConfig,
 		NewLLMClient,

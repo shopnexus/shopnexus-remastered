@@ -1,10 +1,15 @@
 package inventory
 
 import (
+	"log/slog"
+
 	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
-	"shopnexus-server/internal/infras/fxinfra"
+	"shopnexus-server/internal/infras/bus"
+	"shopnexus-server/internal/infras/cache"
+	"shopnexus-server/internal/infras/infra"
+	"shopnexus-server/internal/infras/rankedset"
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
 	inventoryconfig "shopnexus-server/internal/module/inventory/config"
 	inventorydb "shopnexus-server/internal/module/inventory/db/sqlc"
@@ -20,7 +25,22 @@ import (
 // so 8 modules can each `Provide(... pgsqlc.TxBeginner ...)` without
 // colliding.
 var Module = fx.Module("inventory",
-	fxinfra.Providers[*inventoryconfig.Config]("inventory"),
+	fx.Provide(
+		func(c *inventoryconfig.Config) *slog.Logger { return infra.NewLogger(c.Log, "inventory") },
+		func(c *inventoryconfig.Config, lc fx.Lifecycle) (pgsqlc.TxBeginner, error) {
+			return infra.NewPool(c.Postgres, lc)
+		},
+		func(c *inventoryconfig.Config, lc fx.Lifecycle) (cache.Client, error) {
+			return infra.NewCache(c.Redis, lc)
+		},
+		func(c *inventoryconfig.Config, logger *slog.Logger, lc fx.Lifecycle) (bus.Client, error) {
+			return infra.NewBus(c.Bus, c.Redis, logger, lc)
+		},
+		func(c *inventoryconfig.Config, lc fx.Lifecycle) (rankedset.Client, error) {
+			return infra.NewRankedSet(c.RankedSet, c.Redis, lc)
+		},
+		fx.Private,
+	),
 	fx.Provide(
 		inventoryconfig.NewConfig,
 		NewInventoryStorage,

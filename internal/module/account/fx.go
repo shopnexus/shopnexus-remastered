@@ -1,10 +1,15 @@
 package account
 
 import (
+	"log/slog"
+
 	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
-	"shopnexus-server/internal/infras/fxinfra"
+	"shopnexus-server/internal/infras/bus"
+	"shopnexus-server/internal/infras/cache"
+	"shopnexus-server/internal/infras/infra"
+	"shopnexus-server/internal/infras/rankedset"
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	accountconfig "shopnexus-server/internal/module/account/config"
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
@@ -21,7 +26,22 @@ import (
 // so 8 modules can each `Provide(... pgsqlc.TxBeginner ...)` without
 // colliding.
 var Module = fx.Module("account",
-	fxinfra.Providers[*accountconfig.Config]("account"),
+	fx.Provide(
+		func(c *accountconfig.Config) *slog.Logger { return infra.NewLogger(c.Log, "account") },
+		func(c *accountconfig.Config, lc fx.Lifecycle) (pgsqlc.TxBeginner, error) {
+			return infra.NewPool(c.Postgres, lc)
+		},
+		func(c *accountconfig.Config, lc fx.Lifecycle) (cache.Client, error) {
+			return infra.NewCache(c.Redis, lc)
+		},
+		func(c *accountconfig.Config, logger *slog.Logger, lc fx.Lifecycle) (bus.Client, error) {
+			return infra.NewBus(c.Bus, c.Redis, logger, lc)
+		},
+		func(c *accountconfig.Config, lc fx.Lifecycle) (rankedset.Client, error) {
+			return infra.NewRankedSet(c.RankedSet, c.Redis, lc)
+		},
+		fx.Private,
+	),
 	fx.Provide(
 		accountconfig.NewConfig,
 		NewAccountStorage,

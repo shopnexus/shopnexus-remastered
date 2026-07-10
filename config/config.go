@@ -12,59 +12,11 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Loader reads + validates a config tree from a single directory's YAML pair
-// (config.default.yml + config.<env>.yml). There is intentionally no
-// "root config" — every module (and internal/app) owns its own dir.
-type Loader struct {
-	v        *viper.Viper
-	validate *validator.Validate
-	env      string
-	dir      string
-}
-
-// NewDirLoader builds a Loader for any dir holding config.{default,<env>}.yml.
-// Module code uses LoadModule/LoadDir helpers below; this constructor is for
-// callers that want to keep a Loader handle (e.g. iterate Unmarshal calls).
-func NewDirLoader(dir string) (*Loader, error) {
-	v := viper.New()
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	v.AutomaticEnv()
-	v.SetEnvPrefix("APP")
-
-	if err := loadDefaultConfig(v, dir); err != nil {
-		slog.Warn("Could not load default config",
-			slog.String("dir", dir), slog.Any("error", err))
-	}
-	if err := loadEnvConfig(v, dir); err != nil {
-		slog.Warn("Could not load env config",
-			slog.String("dir", dir), slog.Any("error", err))
-	}
-
-	env := v.GetString("env")
-	if env == "" {
-		if e := os.Getenv("APP_ENV"); e != "" {
-			env = e
-		} else {
-			env = "development"
-		}
-	}
-
-	return &Loader{v: v, validate: validator.New(), env: env, dir: dir}, nil
-}
-
-// Unmarshal decodes the subtree at key into dst, then validates dst.
-// Use empty key to decode the root.
-func (l *Loader) Unmarshal(key string, dst any) error {
-	return unmarshalKey(l.v, l.validate, key, dst)
-}
-
-func (l *Loader) Env() string         { return l.env }
-func (l *Loader) IsDevelopment() bool { return l.env == "development" || l.env == "dev" }
-func (l *Loader) IsProduction() bool  { return l.env == "production" || l.env == "prod" }
-func (l *Loader) IsTest() bool        { return l.env == "test" }
-
-// LoadDir is the one-shot variant of NewDirLoader+Unmarshal: read dir's YAML
-// pair, decode root into dst, validate.
+// LoadDir reads a dir's YAML pair (config.default.yml + config.<env>.yml),
+// decodes the root into dst, and validates it. There is intentionally no
+// "root config" — every module (and internal/app) owns its own dir. Env vars
+// prefixed APP_ (viper AutomaticEnv, "." -> "_") override YAML values, so
+// e.g. APP_POSTGRES_HOST overrides postgres.host.
 func LoadDir(dir string, dst any) error {
 	v := viper.New()
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))

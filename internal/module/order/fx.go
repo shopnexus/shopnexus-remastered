@@ -2,6 +2,7 @@ package order
 
 import (
 	"encoding/json"
+	"log/slog"
 	"time"
 
 	"github.com/redis/rueidis"
@@ -9,7 +10,7 @@ import (
 	"go.uber.org/fx"
 
 	"shopnexus-server/internal/infras/cache"
-	"shopnexus-server/internal/infras/fxinfra"
+	"shopnexus-server/internal/infras/infra"
 	"shopnexus-server/internal/infras/locker"
 	redislocker "shopnexus-server/internal/infras/locker/redis"
 	orderbiz "shopnexus-server/internal/module/order/biz"
@@ -42,9 +43,12 @@ import (
 // consumes locker.Client.
 var Module = fx.Module("order",
 	fx.Provide(
-		fxinfra.Redis[*orderconfig.Config], // one client shared by NewCache and NewLocker
-		fxinfra.Pool[*orderconfig.Config],
-		fxinfra.Logger[*orderconfig.Config]("order"),
+		// one client shared by NewCache and NewLocker
+		func(c *orderconfig.Config) (rueidis.Client, error) { return infra.NewRedis(c.Redis) },
+		func(c *orderconfig.Config, lc fx.Lifecycle) (pgsqlc.TxBeginner, error) {
+			return infra.NewPool(c.Postgres, lc)
+		},
+		func(c *orderconfig.Config) *slog.Logger { return infra.NewLogger(c.Log, "order") },
 		NewCache,
 		fx.Private,
 	),

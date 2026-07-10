@@ -1,10 +1,15 @@
 package chat
 
 import (
+	"log/slog"
+
 	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
-	"shopnexus-server/internal/infras/fxinfra"
+	"shopnexus-server/internal/infras/bus"
+	"shopnexus-server/internal/infras/cache"
+	"shopnexus-server/internal/infras/infra"
+	"shopnexus-server/internal/infras/rankedset"
 	chatbiz "shopnexus-server/internal/module/chat/biz"
 	chatconfig "shopnexus-server/internal/module/chat/config"
 	chatdb "shopnexus-server/internal/module/chat/db/sqlc"
@@ -21,7 +26,22 @@ import (
 // so 8 modules can each `Provide(... pgsqlc.TxBeginner ...)` without
 // colliding.
 var Module = fx.Module("chat",
-	fxinfra.Providers[*chatconfig.Config]("chat"),
+	fx.Provide(
+		func(c *chatconfig.Config) *slog.Logger { return infra.NewLogger(c.Log, "chat") },
+		func(c *chatconfig.Config, lc fx.Lifecycle) (pgsqlc.TxBeginner, error) {
+			return infra.NewPool(c.Postgres, lc)
+		},
+		func(c *chatconfig.Config, lc fx.Lifecycle) (cache.Client, error) {
+			return infra.NewCache(c.Redis, lc)
+		},
+		func(c *chatconfig.Config, logger *slog.Logger, lc fx.Lifecycle) (bus.Client, error) {
+			return infra.NewBus(c.Bus, c.Redis, logger, lc)
+		},
+		func(c *chatconfig.Config, lc fx.Lifecycle) (rankedset.Client, error) {
+			return infra.NewRankedSet(c.RankedSet, c.Redis, lc)
+		},
+		fx.Private,
+	),
 	fx.Provide(
 		chatconfig.NewConfig,
 		NewChatStorage,

@@ -1,10 +1,15 @@
 package promotion
 
 import (
+	"log/slog"
+
 	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
-	"shopnexus-server/internal/infras/fxinfra"
+	"shopnexus-server/internal/infras/bus"
+	"shopnexus-server/internal/infras/cache"
+	"shopnexus-server/internal/infras/infra"
+	"shopnexus-server/internal/infras/rankedset"
 	promotionbiz "shopnexus-server/internal/module/promotion/biz"
 	promotionconfig "shopnexus-server/internal/module/promotion/config"
 	promotiondb "shopnexus-server/internal/module/promotion/db/sqlc"
@@ -20,7 +25,22 @@ import (
 // so 8 modules can each `Provide(... pgsqlc.TxBeginner ...)` without
 // colliding.
 var Module = fx.Module("promotion",
-	fxinfra.Providers[*promotionconfig.Config]("promotion"),
+	fx.Provide(
+		func(c *promotionconfig.Config) *slog.Logger { return infra.NewLogger(c.Log, "promotion") },
+		func(c *promotionconfig.Config, lc fx.Lifecycle) (pgsqlc.TxBeginner, error) {
+			return infra.NewPool(c.Postgres, lc)
+		},
+		func(c *promotionconfig.Config, lc fx.Lifecycle) (cache.Client, error) {
+			return infra.NewCache(c.Redis, lc)
+		},
+		func(c *promotionconfig.Config, logger *slog.Logger, lc fx.Lifecycle) (bus.Client, error) {
+			return infra.NewBus(c.Bus, c.Redis, logger, lc)
+		},
+		func(c *promotionconfig.Config, lc fx.Lifecycle) (rankedset.Client, error) {
+			return infra.NewRankedSet(c.RankedSet, c.Redis, lc)
+		},
+		fx.Private,
+	),
 	fx.Provide(
 		promotionconfig.NewConfig,
 		NewPromotionStorage,

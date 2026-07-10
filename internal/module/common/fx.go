@@ -1,14 +1,17 @@
 package common
 
 import (
+	"log/slog"
 	"net/http"
 	"time"
 
 	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
+	"shopnexus-server/internal/infras/bus"
 	"shopnexus-server/internal/infras/cache"
-	"shopnexus-server/internal/infras/fxinfra"
+	"shopnexus-server/internal/infras/infra"
+	"shopnexus-server/internal/infras/rankedset"
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	commonconfig "shopnexus-server/internal/module/common/config"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
@@ -30,7 +33,22 @@ const forwardGeocodeCacheTTL = 30 * 24 * time.Hour
 // so 8 modules can each `Provide(... pgsqlc.TxBeginner ...)` without
 // colliding.
 var Module = fx.Module("common",
-	fxinfra.Providers[*commonconfig.Config]("common"),
+	fx.Provide(
+		func(c *commonconfig.Config) *slog.Logger { return infra.NewLogger(c.Log, "common") },
+		func(c *commonconfig.Config, lc fx.Lifecycle) (pgsqlc.TxBeginner, error) {
+			return infra.NewPool(c.Postgres, lc)
+		},
+		func(c *commonconfig.Config, lc fx.Lifecycle) (cache.Client, error) {
+			return infra.NewCache(c.Redis, lc)
+		},
+		func(c *commonconfig.Config, logger *slog.Logger, lc fx.Lifecycle) (bus.Client, error) {
+			return infra.NewBus(c.Bus, c.Redis, logger, lc)
+		},
+		func(c *commonconfig.Config, lc fx.Lifecycle) (rankedset.Client, error) {
+			return infra.NewRankedSet(c.RankedSet, c.Redis, lc)
+		},
+		fx.Private,
+	),
 	fx.Provide(
 		commonconfig.NewConfig,
 		NewCommonStorage,
