@@ -6,11 +6,14 @@ import (
 	"flag"
 	"fmt"
 	"log"
+
+	pg "shopnexus-server/internal/infras/pg"
+	appmodule "shopnexus-server/internal/module"
 	accountconfig "shopnexus-server/internal/module/account/config"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "github.com/lib/pq"
 )
 
@@ -19,13 +22,23 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
-	dbURL := cfg.Postgres.Url
+	// Build the DSN the same way the app does: prefer Postgres.Url, else assemble
+	// from discrete host/port/... (which is how k8s injects it via APP_POSTGRES_*).
+	dbURL := pg.GetConnStr(pg.Options{
+		Url:      cfg.Postgres.Url,
+		Host:     cfg.Postgres.Host,
+		Port:     cfg.Postgres.Port,
+		Username: cfg.Postgres.Username,
+		Password: cfg.Postgres.Password,
+		Database: cfg.Postgres.Database,
+	})
 	moduleFlag := flag.String("module", "", "module to migrate (if empty, migrate all modules)")
 	downFlag := flag.Bool("down", false, "run down migrations (rollback) instead of up")
 	forceFlag := flag.Int("force", -1, "force set migration version (use to fix dirty state, e.g. -force 1)")
 	flag.Parse()
 
-	// Modules ordered by dependency: common first, modules with cross-schema FKs last
+	// Modules are DB-decoupled (no cross-module FKs; each owns its schema and a
+	// schema_migrations_<module> table), so the order here is not significant.
 	modules := []string{
 		"account",
 		"analytic",
@@ -77,13 +90,6 @@ func main() {
 	}
 }
 
-// migrationsSourceURL returns a file:// URL using a relative path.
-// golang-migrate's parseURL resolves "./..." via filepath.Abs, which works cross-platform
-// (avoids Windows issues with absolute file:// URLs like file:///D:/...).
-func migrationsSourceURL(module string) string {
-	return fmt.Sprintf("file://./internal/module/%s/db/migrations", module)
-}
-
 func newMigrate(dbURL, module string) (*migrate.Migrate, error) {
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -98,9 +104,15 @@ func newMigrate(dbURL, module string) (*migrate.Migrate, error) {
 		return nil, fmt.Errorf("create driver: %w", err)
 	}
 
-	sourceURL := migrationsSourceURL(module)
+	// Migrations are embedded (see internal/module/embed.go), so the binary is
+	// self-contained — no loose .sql files needed at runtime.
+	src, err := iofs.New(appmodule.Migrations, module+"/db/migrations")
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migration source: %w", err)
+	}
 
-	m, err := migrate.NewWithDatabaseInstance(sourceURL, "postgres", driver)
+	m, err := migrate.NewWithInstance("iofs", src, "postgres", driver)
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("new migrate: %w", err)

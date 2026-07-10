@@ -17,6 +17,12 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOEXPERIMENT=greenteagc go build \
     -a -installsuffix cgo \
     -o /out/server ./cmd/server
 
+# migrate is a self-contained binary (migrations are go:embed'd) run by the
+# k8s migration Job to bootstrap the DB before the server starts.
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOEXPERIMENT=greenteagc go build \
+    -ldflags='-w -s -extldflags "-static"' \
+    -o /out/migrate ./cmd/migrate
+
 # The app loads YAML config at runtime relative to its working dir
 # (internal/**/config/config.*.yml). Collect just those into /out so the
 # distroless image can find them — the binary alone is not enough.
@@ -27,6 +33,7 @@ FROM gcr.io/distroless/static:nonroot
 
 WORKDIR /app
 COPY --from=builder /out/server /app/server
+COPY --from=builder /out/migrate /app/migrate
 COPY --from=builder /out/internal /app/internal
 
 # 5005 HTTP/API · 8082 restate service endpoint · 8083 best-effort
