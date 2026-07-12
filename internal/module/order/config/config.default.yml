@@ -28,9 +28,12 @@ redis:
   password: "peaksehopnexuspassword"
   db: 0
 
+# Single public origin; payment return URL + SePay base are derived from it.
+public:
+  siteUrl: "http://localhost:3000"
+
 order:
   paymentExpiryDays: 30
-  returnUrl: ""
 
 vnpay:
   tmnCode: ""
@@ -40,7 +43,6 @@ sepay:
   merchantId: ""
   secretKey: ""
   ipnSecretKey: ""
-  publicBaseUrl: ""
   sandbox: true
 
 cardPayment:

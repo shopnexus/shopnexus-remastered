@@ -2,6 +2,7 @@ package base
 
 import (
 	"encoding/json"
+	"strings"
 
 	ordermodel "shopnexus-server/internal/module/order/model"
 	"shopnexus-server/internal/provider/payment"
@@ -29,10 +30,17 @@ func (b *Base) paymentFactory(cfg sharedmodel.Option) payment.Client {
 	}
 }
 
+// paymentReturnPath is where redirect-based payment providers send the buyer
+// back to after paying. Kept as a path so the origin comes from one source
+// (Public.SiteURL) and this composes onto it.
+const paymentReturnPath = "/payment/result"
+
 func (b *Base) PaymentConfigs() []sharedmodel.Option {
 	var configs []sharedmodel.Option
 
-	returnURL := b.Cfg.Order.ReturnURL
+	// Derive public URLs from the single site origin (no per-URL config keys).
+	siteURL := strings.TrimRight(b.Cfg.Public.SiteURL, "/")
+	returnURL := siteURL + paymentReturnPath
 
 	vnpayCfg := b.Cfg.Vnpay
 	for _, method := range []string{vnpay.MethodQR, vnpay.MethodBank, vnpay.MethodATM} {
@@ -56,7 +64,7 @@ func (b *Base) PaymentConfigs() []sharedmodel.Option {
 			MerchantID:    c.MerchantID,
 			SecretKey:     c.SecretKey,
 			IPNSecretKey:  c.IPNSecretKey,
-			PublicBaseURL: c.PublicBaseURL,
+			PublicBaseURL: siteURL,
 			ReturnURL:     returnURL,
 			Sandbox:       c.Sandbox,
 		})

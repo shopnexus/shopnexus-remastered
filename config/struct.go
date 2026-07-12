@@ -31,6 +31,14 @@ type Redis struct {
 	DB       int64  `yaml:"db"       mapstructure:"db"       validate:"gte=0"`
 }
 
+// Public is the app's single public-facing origin (the storefront URL as users
+// reach it). Downstream public URLs — payment return, SePay callback base — are
+// DERIVED from this in code, so a domain change is one value in one place.
+// Wired from the deploy ConfigMap's SITE_URL via APP_PUBLIC_SITEURL.
+type Public struct {
+	SiteURL string `yaml:"siteUrl" mapstructure:"siteUrl" validate:"required,url"`
+}
+
 // Bus is duplicated into every module's Config; transport picks the event bus
 // backing: "memory" shares the app-wide in-process transport, "redis" runs on
 // Redis Streams over the module's own Redis connection.

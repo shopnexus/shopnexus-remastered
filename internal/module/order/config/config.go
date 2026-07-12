@@ -9,6 +9,7 @@ type Config struct {
 	Restate   config.Restate   `mapstructure:"restate"`
 	Bus       config.Bus       `mapstructure:"bus"`
 	RankedSet config.RankedSet `mapstructure:"rankedset"`
+	Public    config.Public    `mapstructure:"public"`
 
 	Order       Order       `mapstructure:"order"`
 	Vnpay       Vnpay       `mapstructure:"vnpay"`
@@ -19,8 +20,9 @@ type Config struct {
 }
 
 type Order struct {
-	PaymentExpiryDays int64  `yaml:"paymentExpiryDays" mapstructure:"paymentExpiryDays" validate:"required,gte=1"`
-	ReturnURL         string `yaml:"returnUrl"         mapstructure:"returnUrl"         validate:"required,url"`
+	PaymentExpiryDays int64 `yaml:"paymentExpiryDays" mapstructure:"paymentExpiryDays" validate:"required,gte=1"`
+	// ReturnURL is derived from Public.SiteURL in biz/base/options.go — not a
+	// config key, so the public origin lives in exactly one place.
 }
 
 type Vnpay struct {
@@ -29,11 +31,11 @@ type Vnpay struct {
 }
 
 type Sepay struct {
-	MerchantID    string `yaml:"merchantId"    mapstructure:"merchantId"`
-	SecretKey     string `yaml:"secretKey"     mapstructure:"secretKey"`
-	IPNSecretKey  string `yaml:"ipnSecretKey"  mapstructure:"ipnSecretKey"`
-	PublicBaseURL string `yaml:"publicBaseUrl" mapstructure:"publicBaseUrl"`
-	Sandbox       bool   `yaml:"sandbox"       mapstructure:"sandbox"`
+	MerchantID   string `yaml:"merchantId"   mapstructure:"merchantId"`
+	SecretKey    string `yaml:"secretKey"    mapstructure:"secretKey"`
+	IPNSecretKey string `yaml:"ipnSecretKey" mapstructure:"ipnSecretKey"`
+	// PublicBaseURL is derived from Public.SiteURL in biz/base/options.go.
+	Sandbox bool `yaml:"sandbox" mapstructure:"sandbox"`
 }
 
 type CardPayment struct {
