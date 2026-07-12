@@ -9,6 +9,7 @@ import (
 	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
+	"shopnexus-server/config"
 	"shopnexus-server/internal/infras/cache"
 	"shopnexus-server/internal/infras/infra"
 	"shopnexus-server/internal/infras/locker"
@@ -27,7 +28,6 @@ import (
 	"shopnexus-server/internal/module/order/biz/workflow/checkout"
 	"shopnexus-server/internal/module/order/biz/workflow/fullfilment"
 	"shopnexus-server/internal/module/order/biz/workflow/gateway"
-	orderconfig "shopnexus-server/internal/module/order/config"
 	orderrepo "shopnexus-server/internal/module/order/repo"
 	orderecho "shopnexus-server/internal/module/order/transport/echo"
 	"shopnexus-server/internal/shared/besteffort"
@@ -36,24 +36,23 @@ import (
 )
 
 // Module provides the order module dependencies. Pool/Redis/Cache/Logger are
-// fx.Private — each is constructed from THIS module's own Postgres/Redis/Log
-// config and invisible to other modules. The internal rueidis.Client is also
-// private so NewCache and NewLocker can both consume it without leaking
-// rueidis to the rest of the graph. Locker is PUBLIC because order biz
-// consumes locker.Client.
+// fx.Private — each built from the shared config and invisible to other
+// modules. The internal rueidis.Client is also private so NewCache and NewLocker
+// can both consume it without leaking rueidis to the rest of the graph. Locker
+// is PUBLIC because order biz consumes locker.Client. (Order wires its own infra
+// instead of infra.StandardModule because it needs the shared rueidis client.)
 var Module = fx.Module("order",
 	fx.Provide(
 		// one client shared by NewCache and NewLocker
-		func(c *orderconfig.Config) (rueidis.Client, error) { return infra.NewRedis(c.Redis) },
-		func(c *orderconfig.Config, lc fx.Lifecycle) (pgsqlc.TxBeginner, error) {
+		func(c *config.Config) (rueidis.Client, error) { return infra.NewRedis(c.Redis) },
+		func(c *config.Config, lc fx.Lifecycle) (pgsqlc.TxBeginner, error) {
 			return infra.NewPool(c.Postgres, lc)
 		},
-		func(c *orderconfig.Config) *slog.Logger { return infra.NewLogger(c.Log, "order") },
+		func(c *config.Config) *slog.Logger { return infra.NewLogger(c.Log, "order") },
 		NewCache,
 		fx.Private,
 	),
 	fx.Provide(
-		orderconfig.NewConfig,
 		NewLocker,
 		NewOrderStorage,
 		// shared cores + one constructor per domain sub-handler
@@ -129,16 +128,16 @@ func NewOrderStorage(pool pgsqlc.TxBeginner) orderbiz.OrderStorage {
 }
 
 // NewOrderBiz creates the order client. BestEffort calls run in-process.
-func NewOrderBiz(cfg *orderconfig.Config, biz *orderbiz.OrderHandler) orderbiz.OrderBizClient {
+func NewOrderBiz(cfg *config.Config, biz *orderbiz.OrderHandler) orderbiz.OrderBizClient {
 	return orderbiz.NewOrderBizClientInProcess(cfg.Restate.IngressAddress, biz)
 }
 
 // NewCheckoutWf creates a Restate-backed client for the checkout workflow.
-func NewCheckoutWf(cfg *orderconfig.Config) checkout.CheckoutWfClient {
+func NewCheckoutWf(cfg *config.Config) checkout.CheckoutWfClient {
 	return checkout.NewCheckoutWorkflowRestateClient(cfg.Restate.IngressAddress)
 }
 
 // NewFulfillmentWf creates a Restate-backed client for the fulfillment workflow.
-func NewFulfillmentWf(cfg *orderconfig.Config) fullfilment.FulfillmentWfClient {
+func NewFulfillmentWf(cfg *config.Config) fullfilment.FulfillmentWfClient {
 	return fullfilment.NewFulfillmentWorkflowRestateClient(cfg.Restate.IngressAddress)
 }

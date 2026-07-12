@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"sync"
 
-	commonconfig "shopnexus-server/internal/module/common/config"
+	"shopnexus-server/config"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	commonmodel "shopnexus-server/internal/module/common/model"
 	"shopnexus-server/internal/provider/exchange"
@@ -60,7 +60,7 @@ type SSEClient struct {
 
 // CommonHandler implements shared business logic used across modules.
 type CommonHandler struct {
-	cfg      *commonconfig.Config
+	cfg      *config.Config
 	logger   *slog.Logger
 	storage  CommonStorage
 	geocoder geocoding.Client
@@ -77,7 +77,7 @@ func (b *CommonHandler) ServiceName() string {
 
 // NewcommonBiz creates a new CommonHandler with the given dependencies.
 func NewcommonBiz(
-	cfg *commonconfig.Config,
+	cfg *config.Config,
 	logger *slog.Logger,
 	storage CommonStorage,
 	geocoder geocoding.Client,

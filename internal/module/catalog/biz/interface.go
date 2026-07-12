@@ -7,11 +7,11 @@ import (
 
 	restate "github.com/restatedev/sdk-go"
 
+	"shopnexus-server/config"
 	"shopnexus-server/internal/infras/cache"
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	analyticbiz "shopnexus-server/internal/module/analytic/biz"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
-	catalogconfig "shopnexus-server/internal/module/catalog/config"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	catalogmodel "shopnexus-server/internal/module/catalog/model"
 	commonbiz "shopnexus-server/internal/module/common/biz"
@@ -85,7 +85,7 @@ type CatalogStorage = pgsqlc.Storage[*catalogdb.Queries]
 
 // CatalogHandler implements the core business logic for the catalog module.
 type CatalogHandler struct {
-	cfg       *catalogconfig.Config
+	cfg       *config.Config
 	logger    *slog.Logger
 	cache     cache.Client
 	storage   CatalogStorage
@@ -105,7 +105,7 @@ type CatalogHandler struct {
 
 // NewCatalogHandler creates a new CatalogHandler with the given dependencies.
 func NewCatalogHandler(
-	cfg *catalogconfig.Config,
+	cfg *config.Config,
 	logger *slog.Logger,
 	storage CatalogStorage,
 	cache cache.Client,

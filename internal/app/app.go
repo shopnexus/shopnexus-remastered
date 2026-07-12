@@ -7,7 +7,7 @@ import (
 
 	"go.uber.org/fx"
 
-	appconfig "shopnexus-server/internal/app/config"
+	"shopnexus-server/config"
 	"shopnexus-server/internal/infras/ratelimit"
 	"shopnexus-server/internal/module/account"
 	"shopnexus-server/internal/module/analytic"
@@ -42,7 +42,7 @@ func Build(selected ...string) fx.Option {
 		selected = ModuleNames
 	}
 	opts := []fx.Option{
-		fx.Provide(appconfig.NewConfig, NewEcho, NewRateLimiter),
+		fx.Provide(config.New, NewEcho, NewRateLimiter),
 	}
 	for _, name := range selected {
 		m, ok := Modules[name]
@@ -59,7 +59,7 @@ func Build(selected ...string) fx.Option {
 var Module = Build()
 
 // SetupLogger sets the process-wide slog.Default.
-func SetupLogger(cfg *appconfig.Config) {
+func SetupLogger(cfg *config.Config) {
 	var level slog.Level
 	switch cfg.Log.Level {
 	case "debug":

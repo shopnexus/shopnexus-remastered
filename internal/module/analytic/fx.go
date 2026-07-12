@@ -1,17 +1,12 @@
 package analytic
 
 import (
-	"log/slog"
-
 	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
-	"shopnexus-server/internal/infras/bus"
-	"shopnexus-server/internal/infras/cache"
+	"shopnexus-server/config"
 	"shopnexus-server/internal/infras/infra"
-	"shopnexus-server/internal/infras/rankedset"
 	analyticbiz "shopnexus-server/internal/module/analytic/biz"
-	analyticconfig "shopnexus-server/internal/module/analytic/config"
 	analyticdb "shopnexus-server/internal/module/analytic/db/sqlc"
 	analyticecho "shopnexus-server/internal/module/analytic/transport/echo"
 	analyticworkers "shopnexus-server/internal/module/analytic/workers"
@@ -20,31 +15,11 @@ import (
 	"shopnexus-server/internal/shared/restatesvc"
 )
 
-// Module provides the analytic module dependencies. The pool/cache/logger
-// providers are fx.Private — each is constructed from THIS module's own
-// Postgres/Redis/Log config and is invisible to other modules' fx graphs,
-// so 8 modules can each `Provide(... pgsqlc.TxBeginner ...)` without
-// colliding. Cache is provided for parity with the other modules even though
-// analytic biz currently doesn't consume it.
+// Module provides the analytic module. Infra is its own fx.Private set via
+// infra.StandardModule, built from the shared config.
 var Module = fx.Module("analytic",
+	infra.StandardModule("analytic"),
 	fx.Provide(
-		func(c *analyticconfig.Config) *slog.Logger { return infra.NewLogger(c.Log, "analytic") },
-		func(c *analyticconfig.Config, lc fx.Lifecycle) (pgsqlc.TxBeginner, error) {
-			return infra.NewPool(c.Postgres, lc)
-		},
-		func(c *analyticconfig.Config, lc fx.Lifecycle) (cache.Client, error) {
-			return infra.NewCache(c.Redis, lc)
-		},
-		func(c *analyticconfig.Config, logger *slog.Logger, lc fx.Lifecycle) (bus.Client, error) {
-			return infra.NewBus(c.Bus, c.Redis, logger, lc)
-		},
-		func(c *analyticconfig.Config, lc fx.Lifecycle) (rankedset.Client, error) {
-			return infra.NewRankedSet(c.RankedSet, c.Redis, lc)
-		},
-		fx.Private,
-	),
-	fx.Provide(
-		analyticconfig.NewConfig,
 		NewAnalyticStorage,
 		analyticbiz.NewAnalyticHandler,
 		NewAnalyticBiz,
@@ -76,6 +51,6 @@ func NewAnalyticStorage(pool pgsqlc.TxBeginner) analyticbiz.AnalyticStorage {
 }
 
 // NewAnalyticBiz creates the analytic client. BestEffort calls run in-process.
-func NewAnalyticBiz(cfg *analyticconfig.Config, biz *analyticbiz.AnalyticHandler) analyticbiz.AnalyticBizClient {
+func NewAnalyticBiz(cfg *config.Config, biz *analyticbiz.AnalyticHandler) analyticbiz.AnalyticBizClient {
 	return analyticbiz.NewAnalyticBizClientInProcess(cfg.Restate.IngressAddress, biz)
 }

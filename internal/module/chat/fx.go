@@ -1,17 +1,12 @@
 package chat
 
 import (
-	"log/slog"
-
 	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
-	"shopnexus-server/internal/infras/bus"
-	"shopnexus-server/internal/infras/cache"
+	"shopnexus-server/config"
 	"shopnexus-server/internal/infras/infra"
-	"shopnexus-server/internal/infras/rankedset"
 	chatbiz "shopnexus-server/internal/module/chat/biz"
-	chatconfig "shopnexus-server/internal/module/chat/config"
 	chatdb "shopnexus-server/internal/module/chat/db/sqlc"
 	chatecho "shopnexus-server/internal/module/chat/transport/echo"
 	commonbiz "shopnexus-server/internal/module/common/biz"
@@ -20,30 +15,11 @@ import (
 	"shopnexus-server/internal/shared/restatesvc"
 )
 
-// Module provides the chat module dependencies. The pool/cache/logger
-// providers are fx.Private — each is constructed from THIS module's own
-// Postgres/Redis/Log config and is invisible to other modules' fx graphs,
-// so 8 modules can each `Provide(... pgsqlc.TxBeginner ...)` without
-// colliding.
+// Module provides the chat module. Infra is its own fx.Private set via
+// infra.StandardModule, built from the shared config.
 var Module = fx.Module("chat",
+	infra.StandardModule("chat"),
 	fx.Provide(
-		func(c *chatconfig.Config) *slog.Logger { return infra.NewLogger(c.Log, "chat") },
-		func(c *chatconfig.Config, lc fx.Lifecycle) (pgsqlc.TxBeginner, error) {
-			return infra.NewPool(c.Postgres, lc)
-		},
-		func(c *chatconfig.Config, lc fx.Lifecycle) (cache.Client, error) {
-			return infra.NewCache(c.Redis, lc)
-		},
-		func(c *chatconfig.Config, logger *slog.Logger, lc fx.Lifecycle) (bus.Client, error) {
-			return infra.NewBus(c.Bus, c.Redis, logger, lc)
-		},
-		func(c *chatconfig.Config, lc fx.Lifecycle) (rankedset.Client, error) {
-			return infra.NewRankedSet(c.RankedSet, c.Redis, lc)
-		},
-		fx.Private,
-	),
-	fx.Provide(
-		chatconfig.NewConfig,
 		NewChatStorage,
 		NewChatHandler,
 		NewChatBiz,
@@ -78,6 +54,6 @@ func NewChatStorage(pool pgsqlc.TxBeginner) chatbiz.ChatStorage {
 }
 
 // NewChatBiz creates the chat client. BestEffort calls run in-process.
-func NewChatBiz(cfg *chatconfig.Config, biz *chatbiz.ChatHandler) chatbiz.ChatBizClient {
+func NewChatBiz(cfg *config.Config, biz *chatbiz.ChatHandler) chatbiz.ChatBizClient {
 	return chatbiz.NewChatBizClientInProcess(cfg.Restate.IngressAddress, biz)
 }

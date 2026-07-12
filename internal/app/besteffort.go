@@ -8,13 +8,13 @@ import (
 
 	"go.uber.org/fx"
 
-	appconfig "shopnexus-server/internal/app/config"
+	"shopnexus-server/config"
 	"shopnexus-server/internal/shared/besteffort"
 )
 
 type BestEffortParams struct {
 	fx.In
-	Cfg        *appconfig.Config
+	Cfg        *config.Config
 	Registrars []besteffort.Registrar `group:"besteffort"`
 }
 

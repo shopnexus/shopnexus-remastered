@@ -4,8 +4,8 @@ import (
 	"context"
 	"log/slog"
 
+	"shopnexus-server/config"
 	"shopnexus-server/internal/infras/bus"
-	analyticconfig "shopnexus-server/internal/module/analytic/config"
 	analyticdb "shopnexus-server/internal/module/analytic/db/sqlc"
 	analyticmodel "shopnexus-server/internal/module/analytic/model"
 	promotionbiz "shopnexus-server/internal/module/promotion/biz"
@@ -49,7 +49,7 @@ func (b *AnalyticHandler) ServiceName() string {
 
 // NewAnalyticHandler creates a new AnalyticHandler with the given dependencies.
 func NewAnalyticHandler(
-	cfg *analyticconfig.Config,
+	cfg *config.Config,
 	logger *slog.Logger,
 	storage AnalyticStorage,
 	promotionBiz promotionbiz.PromotionBizClient,
@@ -60,6 +60,6 @@ func NewAnalyticHandler(
 		storage:           storage,
 		promotion:         promotionBiz,
 		bus:               busClient,
-		popularityWeights: cfg.PopularityWeights.WeightMap(),
+		popularityWeights: weightMap(cfg.PopularityWeights),
 	}
 }

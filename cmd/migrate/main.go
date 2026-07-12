@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"log"
 
+	"shopnexus-server/config"
 	pg "shopnexus-server/internal/infras/pg"
 	appmodule "shopnexus-server/internal/module"
-	accountconfig "shopnexus-server/internal/module/account/config"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -18,7 +18,7 @@ import (
 )
 
 func main() {
-	cfg, err := accountconfig.NewConfig()
+	cfg, err := config.New()
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}

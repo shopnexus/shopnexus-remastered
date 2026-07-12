@@ -15,7 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	accountconfig "shopnexus-server/internal/module/account/config"
+	"shopnexus-server/config"
 	"sort"
 	"strings"
 )
@@ -105,7 +105,7 @@ func main() {
 }
 
 func loadSchema() Schema {
-	cfg, err := accountconfig.NewConfig()
+	cfg, err := config.New()
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}

@@ -24,9 +24,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOEXPERIMENT=greenteagc go build \
     -o /out/migrate ./cmd/migrate
 
 # The app loads YAML config at runtime relative to its working dir
-# (internal/**/config/config.*.yml). Collect just those into /out so the
-# distroless image can find them — the binary alone is not enough.
-RUN cd /app && find internal -name 'config.*.yml' -exec cp --parents {} /out/ \;
+# (config/config.default.yml). Collect only the default into /out — dev secrets
+# (config.dev.yml) stay out of the image; prod overrides come from APP_* env.
+RUN cd /app && cp --parents config/config.default.yml /out/
 
 # Stage 2: minimal distroless runtime.
 FROM gcr.io/distroless/static:nonroot
@@ -34,7 +34,7 @@ FROM gcr.io/distroless/static:nonroot
 WORKDIR /app
 COPY --from=builder /out/server /app/server
 COPY --from=builder /out/migrate /app/migrate
-COPY --from=builder /out/internal /app/internal
+COPY --from=builder /out/config /app/config
 
 # 5005 HTTP/API · 8082 restate service endpoint · 8083 best-effort
 EXPOSE 5005 8082 8083

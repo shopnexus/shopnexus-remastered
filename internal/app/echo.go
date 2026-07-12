@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	appconfig "shopnexus-server/internal/app/config"
+	"shopnexus-server/config"
 	"shopnexus-server/internal/infras/metrics"
 	"shopnexus-server/internal/shared/binder"
 
@@ -62,7 +62,7 @@ func SetupEcho(params RouteParams) {
 }
 
 // SetupHTTPServer starts the HTTP server with lifecycle management.
-func SetupHTTPServer(lc fx.Lifecycle, e *echo.Echo, cfg *appconfig.Config) {
+func SetupHTTPServer(lc fx.Lifecycle, e *echo.Echo, cfg *config.Config) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			go func() {

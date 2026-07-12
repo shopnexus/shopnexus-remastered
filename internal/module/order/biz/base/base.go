@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 
+	"shopnexus-server/config"
 	accountbiz "shopnexus-server/internal/module/account/biz"
 	analyticbiz "shopnexus-server/internal/module/analytic/biz"
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
 	commonbiz "shopnexus-server/internal/module/common/biz"
 	inventorybiz "shopnexus-server/internal/module/inventory/biz"
-	orderconfig "shopnexus-server/internal/module/order/config"
 	ordermodel "shopnexus-server/internal/module/order/model"
 	orderrepo "shopnexus-server/internal/module/order/repo"
 	sharedcurrency "shopnexus-server/internal/shared/currency"
@@ -23,7 +23,7 @@ import (
 type OrderStorage = pgsqlc.Storage[*orderrepo.Repository]
 
 type Base struct {
-	Cfg     *orderconfig.Config
+	Cfg     *config.Config
 	Logger  *slog.Logger
 	Storage OrderStorage
 
@@ -36,7 +36,7 @@ type Base struct {
 
 // New wires the shared dependency set consumed by every domain sub-handler.
 func New(
-	cfg *orderconfig.Config,
+	cfg *config.Config,
 	logger *slog.Logger,
 	storage OrderStorage,
 	account accountbiz.AccountBizClient,

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	accountconfig "shopnexus-server/internal/module/account/config"
+	"shopnexus-server/config"
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	accountmodel "shopnexus-server/internal/module/account/model"
 	commonbiz "shopnexus-server/internal/module/common/biz"
@@ -86,7 +86,7 @@ func (b *AccountHandler) ServiceName() string {
 
 // NewAccountHandler creates a new AccountHandler with the given dependencies.
 func NewAccountHandler(
-	cfg *accountconfig.Config,
+	cfg *config.Config,
 	storage AccountStorage,
 	common commonbiz.CommonBizClient,
 	self AccountBizClient,

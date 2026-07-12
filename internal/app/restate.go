@@ -13,7 +13,7 @@ import (
 
 	"go.uber.org/fx"
 
-	appconfig "shopnexus-server/internal/app/config"
+	"shopnexus-server/config"
 
 	restate "github.com/restatedev/sdk-go"
 	"github.com/restatedev/sdk-go/server"
@@ -21,7 +21,7 @@ import (
 
 type RestateParams struct {
 	fx.In
-	Cfg  *appconfig.Config
+	Cfg  *config.Config
 	Defs []restate.ServiceDefinition `group:"restate"`
 }
 

@@ -1,19 +1,16 @@
 package common
 
 import (
-	"log/slog"
 	"net/http"
 	"time"
 
 	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
-	"shopnexus-server/internal/infras/bus"
+	"shopnexus-server/config"
 	"shopnexus-server/internal/infras/cache"
 	"shopnexus-server/internal/infras/infra"
-	"shopnexus-server/internal/infras/rankedset"
 	commonbiz "shopnexus-server/internal/module/common/biz"
-	commonconfig "shopnexus-server/internal/module/common/config"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
 	commonecho "shopnexus-server/internal/module/common/transport/echo"
 	"shopnexus-server/internal/provider/exchange"
@@ -27,30 +24,11 @@ import (
 // change; the cache is the primary defence against Nominatim rate limits.
 const forwardGeocodeCacheTTL = 30 * 24 * time.Hour
 
-// Module provides the common module dependencies. The pool/cache/logger
-// providers are fx.Private — each is constructed from THIS module's own
-// Postgres/Redis/Log config and is invisible to other modules' fx graphs,
-// so 8 modules can each `Provide(... pgsqlc.TxBeginner ...)` without
-// colliding.
+// Module provides the common module. Infra is its own fx.Private set via
+// infra.StandardModule, built from the shared config.
 var Module = fx.Module("common",
+	infra.StandardModule("common"),
 	fx.Provide(
-		func(c *commonconfig.Config) *slog.Logger { return infra.NewLogger(c.Log, "common") },
-		func(c *commonconfig.Config, lc fx.Lifecycle) (pgsqlc.TxBeginner, error) {
-			return infra.NewPool(c.Postgres, lc)
-		},
-		func(c *commonconfig.Config, lc fx.Lifecycle) (cache.Client, error) {
-			return infra.NewCache(c.Redis, lc)
-		},
-		func(c *commonconfig.Config, logger *slog.Logger, lc fx.Lifecycle) (bus.Client, error) {
-			return infra.NewBus(c.Bus, c.Redis, logger, lc)
-		},
-		func(c *commonconfig.Config, lc fx.Lifecycle) (rankedset.Client, error) {
-			return infra.NewRankedSet(c.RankedSet, c.Redis, lc)
-		},
-		fx.Private,
-	),
-	fx.Provide(
-		commonconfig.NewConfig,
 		NewCommonStorage,
 		NewExchangeClient,
 		NewGeocodingClient,
@@ -83,7 +61,7 @@ func NewCommonStorage(pool pgsqlc.TxBeginner) commonbiz.CommonStorage {
 }
 
 // NewCommonBiz creates the common client. BestEffort calls run in-process.
-func NewCommonBiz(cfg *commonconfig.Config, biz *commonbiz.CommonHandler) commonbiz.CommonBizClient {
+func NewCommonBiz(cfg *config.Config, biz *commonbiz.CommonHandler) commonbiz.CommonBizClient {
 	return commonbiz.NewCommonBizClientInProcess(cfg.Restate.IngressAddress, biz)
 }
 
@@ -92,7 +70,7 @@ func NewCommonBiz(cfg *commonconfig.Config, biz *commonbiz.CommonHandler) common
 // coverage (VND, COP, CLP etc. that ECB-based providers don't ship). The cache
 // TTL is the refresh window; rates are re-fetched lazily on the first lookup
 // after expiry.
-func NewExchangeClient(cfg *commonconfig.Config, cache cache.Client) exchange.Client {
+func NewExchangeClient(cfg *config.Config, cache cache.Client) exchange.Client {
 	client := exchange.NewCurrencyAPI(
 		cfg.Exchange.UpstreamURL,
 		cfg.Exchange.APIKey,

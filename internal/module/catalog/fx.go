@@ -3,17 +3,14 @@ package catalog
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
-	"shopnexus-server/internal/infras/bus"
+	"shopnexus-server/config"
 	"shopnexus-server/internal/infras/cache"
 	"shopnexus-server/internal/infras/infra"
-	"shopnexus-server/internal/infras/rankedset"
 	catalogbiz "shopnexus-server/internal/module/catalog/biz"
-	catalogconfig "shopnexus-server/internal/module/catalog/config"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	catalogecho "shopnexus-server/internal/module/catalog/transport/echo"
 	catalogworkers "shopnexus-server/internal/module/catalog/workers"
@@ -23,29 +20,11 @@ import (
 	"shopnexus-server/internal/shared/restatesvc"
 )
 
-// Module provides the catalog module dependencies. Catalog OWNS llm
-// (it is the only module that uses it). Pool/Cache/Logger are fx.Private —
-// each is constructed from THIS module's own Postgres/Redis/Log config and
-// invisible to other modules.
+// Module provides the catalog module. Catalog OWNS llm (only module that uses
+// it). Infra is its own fx.Private set via infra.StandardModule.
 var Module = fx.Module("catalog",
+	infra.StandardModule("catalog"),
 	fx.Provide(
-		func(c *catalogconfig.Config) *slog.Logger { return infra.NewLogger(c.Log, "catalog") },
-		func(c *catalogconfig.Config, lc fx.Lifecycle) (pgsqlc.TxBeginner, error) {
-			return infra.NewPool(c.Postgres, lc)
-		},
-		func(c *catalogconfig.Config, lc fx.Lifecycle) (cache.Client, error) {
-			return infra.NewCache(c.Redis, lc)
-		},
-		func(c *catalogconfig.Config, logger *slog.Logger, lc fx.Lifecycle) (bus.Client, error) {
-			return infra.NewBus(c.Bus, c.Redis, logger, lc)
-		},
-		func(c *catalogconfig.Config, lc fx.Lifecycle) (rankedset.Client, error) {
-			return infra.NewRankedSet(c.RankedSet, c.Redis, lc)
-		},
-		fx.Private,
-	),
-	fx.Provide(
-		catalogconfig.NewConfig,
 		NewLLMClient,
 		NewCatalogStorage,
 		catalogbiz.NewCatalogHandler,
@@ -74,7 +53,7 @@ var Module = fx.Module("catalog",
 
 // NewLLMClient builds the configured provider and wraps it in a CachingClient
 // so repeated embedding queries (the common search case) skip the network hop.
-func NewLLMClient(cfg *catalogconfig.Config, cache cache.Client) (llm.Client, error) {
+func NewLLMClient(cfg *config.Config, cache cache.Client) (llm.Client, error) {
 	var (
 		client llm.Client
 		err    error
@@ -121,6 +100,6 @@ func NewCatalogStorage(pool pgsqlc.TxBeginner) catalogbiz.CatalogStorage {
 }
 
 // NewCatalogBiz creates the catalog client. BestEffort calls run in-process.
-func NewCatalogBiz(cfg *catalogconfig.Config, biz *catalogbiz.CatalogHandler) catalogbiz.CatalogBizClient {
+func NewCatalogBiz(cfg *config.Config, biz *catalogbiz.CatalogHandler) catalogbiz.CatalogBizClient {
 	return catalogbiz.NewCatalogBizClientInProcess(cfg.Restate.IngressAddress, biz)
 }

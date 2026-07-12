@@ -8,8 +8,8 @@ import (
 
 	"github.com/brianvoe/gofakeit/v7"
 
+	"shopnexus-server/config"
 	"shopnexus-server/internal/infras/pg"
-	accountconfig "shopnexus-server/internal/module/account/config"
 	accountdb "shopnexus-server/internal/module/account/db/sqlc"
 	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
 	commondb "shopnexus-server/internal/module/common/db/sqlc"
@@ -19,7 +19,7 @@ import (
 
 func main() {
 	ctx := context.Background()
-	cfg, err := accountconfig.NewConfig()
+	cfg, err := config.New()
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}

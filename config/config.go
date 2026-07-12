@@ -12,56 +12,77 @@ import (
 	"github.com/spf13/viper"
 )
 
-// LoadDir reads a dir's YAML pair (config.default.yml + config.<env>.yml),
-// decodes the root into dst, and validates it. There is intentionally no
-// "root config" — every module (and internal/app) owns its own dir. Env vars
-// prefixed APP_ (viper AutomaticEnv, "." -> "_") override YAML values, so
-// e.g. APP_POSTGRES_HOST overrides postgres.host.
-func LoadDir(dir string, dst any) error {
+// configDir holds the single YAML pair for the whole server, relative to the
+// process working dir (repo root in dev, /app in the image). There is one
+// Config and one file — no per-module config packages.
+const configDir = "config"
+
+// Config is the whole server's configuration. Process-level fields, the shared
+// infra leaves (each module builds its OWN pool/redis/etc. from these — runtime
+// ownership stays per-module, only the config source is shared), and every
+// module's own section. Loaded once and provided as *Config across fx.
+type Config struct {
+	// process-level
+	Port       string     `mapstructure:"port"       validate:"required"`
+	Log        Log        `mapstructure:"log"`
+	Restate    Restate    `mapstructure:"restate"`
+	BestEffort BestEffort `mapstructure:"bestEffort"`
+
+	// shared infra (single source; per-module pools built from these)
+	Postgres  Postgres  `mapstructure:"postgres"`
+	Redis     Redis     `mapstructure:"redis"`
+	Bus       Bus       `mapstructure:"bus"`
+	RankedSet RankedSet `mapstructure:"rankedset"`
+	Public    Public    `mapstructure:"public"`
+
+	// module sections
+	JWT               JWT               `mapstructure:"jwt"`
+	Exchange          Exchange          `mapstructure:"exchange"`
+	Filestore         Filestore         `mapstructure:"filestore"`
+	Search            Search            `mapstructure:"search"`
+	LLM               LLM               `mapstructure:"llm"`
+	PopularityWeights PopularityWeights `mapstructure:"popularityWeights"`
+	Order             Order             `mapstructure:"order"`
+	Vnpay             Vnpay             `mapstructure:"vnpay"`
+	Sepay             Sepay             `mapstructure:"sepay"`
+	CardPayment       CardPayment       `mapstructure:"cardPayment"`
+	GHTK              GHTK              `mapstructure:"ghtk"`
+	Mock              Mock              `mapstructure:"mock"`
+}
+
+// New reads config/config.default.yml + config.<env>.yml, applies APP_* env
+// overrides (viper AutomaticEnv, "." -> "_", so APP_POSTGRES_HOST overrides
+// postgres.host), decodes into Config, and validates it.
+func New() (*Config, error) {
 	v := viper.New()
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 	v.SetEnvPrefix("APP")
 
-	if err := loadDefaultConfig(v, dir); err != nil {
+	if err := loadDefaultConfig(v, configDir); err != nil {
 		slog.Warn("Could not load default config",
-			slog.String("dir", dir), slog.Any("error", err))
+			slog.String("dir", configDir), slog.Any("error", err))
 	}
-	if err := loadEnvConfig(v, dir); err != nil {
+	if err := loadEnvConfig(v, configDir); err != nil {
 		slog.Warn("Could not load env config",
-			slog.String("dir", dir), slog.Any("error", err))
+			slog.String("dir", configDir), slog.Any("error", err))
 	}
 
-	return unmarshalKey(v, validator.New(), "", dst)
-}
-
-// LoadModule is sugar over LoadDir for the module convention:
-// internal/module/<name>/config/.
-func LoadModule(moduleName string, dst any) error {
-	return LoadDir(filepath.Join("internal", "module", moduleName, "config"), dst)
-}
-
-func unmarshalKey(v *viper.Viper, validate *validator.Validate, key string, dst any) error {
-	if key == "" {
-		if err := v.Unmarshal(dst); err != nil {
-			return fmt.Errorf("unmarshal root: %w", err)
-		}
-	} else {
-		if err := v.UnmarshalKey(key, dst); err != nil {
-			return fmt.Errorf("unmarshal %q: %w", key, err)
-		}
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
-	if err := validate.Struct(dst); err != nil {
+	if err := validator.New().Struct(&cfg); err != nil {
 		if verr, ok := errors.AsType[validator.ValidationErrors](err); ok {
 			msgs := make([]string, 0, len(verr))
 			for _, e := range verr {
 				msgs = append(msgs, e.Error())
 			}
-			return fmt.Errorf("validate %q: %s", key, strings.Join(msgs, "; "))
+			return nil, fmt.Errorf("validate config: %s", strings.Join(msgs, "; "))
 		}
-		return fmt.Errorf("validate %q: %w", key, err)
+		return nil, fmt.Errorf("validate config: %w", err)
 	}
-	return nil
+	return &cfg, nil
 }
 
 func loadDefaultConfig(v *viper.Viper, dir string) error {
