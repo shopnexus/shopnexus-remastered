@@ -8,10 +8,11 @@
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 -- Enums
--- Delivery state of a message (server-side tracking)
-CREATE TYPE "message_status" AS ENUM ('sent', 'delivered', 'read');
 -- Who produced the message. 'system' rows come from the backend (an offer was
 -- accepted, an order shipped) and belong to no participant.
+--
+-- There is no per-message delivery status. Read state is two timestamps on
+-- "conversation" instead: see the comment there.
 CREATE TYPE "message_type" AS ENUM ('user', 'system');
 
 -- Tables
@@ -41,6 +42,22 @@ CREATE TABLE IF NOT EXISTS "conversation" (
     -- Denormalized for inbox ordering, maintained by the service. Starts at
     -- "created_at" so an empty thread still sorts predictably.
     "last_message_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- How far each side has read, rather than a status per message row.
+    --
+    -- "message" is a hypertable, and a per-message flag makes every unread question the
+    -- wrong shape against one: the badge for a thread becomes a count with no time
+    -- bound, so it cannot exclude a chunk, the inbox needs one such count per row on the
+    -- page, and marking a thread read UPDATEs every unread row in it — dirtying old
+    -- chunks to record something about now.
+    --
+    -- Two timestamps answer all three from this row alone. Unread in a thread is
+    -- "counterparty's messages after my mark", which is a bounded range on
+    -- message_conversation_id_created_at_idx; marking read is one UPDATE here; and the
+    -- inbox already has both marks in the row it is scanning. Read receipts fall out of
+    -- it too — a message is seen when the other side's mark is at or past its
+    -- "created_at" — which is the only delivery state a 1-1 thread needs.
+    "account_a_read_at" TIMESTAMPTZ,
+    "account_b_read_at" TIMESTAMPTZ,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "conversation_pkey" PRIMARY KEY ("id"),
@@ -62,7 +79,6 @@ CREATE TABLE IF NOT EXISTS "message" (
     "sender_id" BIGINT, -- the account that sent it; NULL on 'system' rows
     "type" "message_type" NOT NULL DEFAULT 'user',
     "body" TEXT NOT NULL,
-    "status" "message_status" NOT NULL DEFAULT 'sent',
     -- Resource ids owned by the common module, held inline rather than through
     -- common.resource_reference: a message and its references live in two schemas, and
     -- writing both atomically stops being possible once the modules are split apart.
@@ -89,12 +105,11 @@ SELECT create_hypertable('message', 'created_at', if_not_exists => TRUE);
 
 -- Message history in a thread, newest first. Paginate on a "created_at" cursor rather
 -- than an offset, so chunk exclusion can skip chunks instead of scanning all of them.
+-- Also the unread count: "conversation_id" plus a lower bound on "created_at" from the
+-- reader's mark on "conversation" is a range on this index, and the bound is what lets
+-- chunk exclusion skip everything older.
 CREATE INDEX IF NOT EXISTS "message_conversation_id_created_at_idx"
     ON "message" ("conversation_id", "created_at" DESC);
--- The unread badge: what the other party sent and this account has not read.
-CREATE INDEX IF NOT EXISTS "message_unread_idx"
-    ON "message" ("conversation_id", "sender_id")
-    WHERE "status" <> 'read';
 -- Moderation: everything one account has sent.
 CREATE INDEX IF NOT EXISTS "message_sender_id_idx"
     ON "message" ("sender_id", "created_at" DESC);
