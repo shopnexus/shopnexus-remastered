@@ -90,12 +90,12 @@ mirroring `order.placed`, …). Every row carries `instance` (env `INSTANCE_ID`,
 required, stamped once by the `Sink`) so replicas stay separable, and
 `http_requests_1m` keeps a `percentile_agg` sketch — read p95 with
 `approx_percentile(0.95, "latency")`, never by averaging p95s. Grafana reads the
-tables directly (Postgres datasource, provisioned from `deploy/grafana`). No Prometheus.
+tables directly (Postgres datasource, provisioned from `dev/grafana`). No Prometheus.
 Publishing is async/best-effort — never block or fail a request on telemetry; a
 sample that cannot reach the bus is counted (`reportDropped`) rather than
 retried. Once a sample *is* in JetStream it is durable: a failed insert nacks the
 batch and is redelivered, so a database blip no longer loses telemetry.
-**Logs** are separate: app logs JSON to stdout → Grafana Alloy (`deploy/alloy`)
+**Logs** are separate: app logs JSON to stdout → Grafana Alloy (`dev/alloy`)
 → **Loki** → same Grafana. **Product/web analytics is NOT in the backend** —
 it's collected client-side by Rybbit (self-hosted, ClickHouse-backed), a
 separate stack.

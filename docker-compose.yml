@@ -61,7 +61,7 @@ services:
   # --- Observability: metrics (Postgres/Timescale) + logs (Loki), one Grafana ---
   grafana:
     # Datasources (TimescaleDB + Loki) and dashboards are provisioned from files
-    # (deploy/grafana), so no manual setup.
+    # (dev/grafana), so no manual setup.
     image: grafana/grafana:11.3.0
     environment:
       GF_SECURITY_ADMIN_USER: admin
@@ -69,8 +69,8 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
     volumes:
-      - ./deploy/grafana/provisioning:/etc/grafana/provisioning
-      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./dev/grafana/provisioning:/etc/grafana/provisioning
+      - ./dev/grafana/dashboards:/var/lib/grafana/dashboards
       - grafana-data:/var/lib/grafana
     depends_on:
       - db
@@ -91,7 +91,7 @@ services:
       - "--storage.path=/var/lib/alloy/data"
       - "/etc/alloy/config.alloy"
     volumes:
-      - ./deploy/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ./dev/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - alloy-data:/var/lib/alloy/data
     depends_on:
