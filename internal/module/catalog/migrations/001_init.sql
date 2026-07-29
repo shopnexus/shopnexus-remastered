@@ -1,7 +1,7 @@
 -- Module: catalog — canonical schema
 -- Description: Product catalog including categories, SPUs (Standard
 --              Product Units), SKUs (Stock Keeping Units), tags, stock levels,
---              and search/vector sync state.
+--              wishlists, and search/vector sync state.
 -- public, not the module schema: an extension belongs to one schema per database,
 -- so leaving it here would hide the vector type from every other module.
 CREATE EXTENSION IF NOT EXISTS vector
@@ -61,7 +61,7 @@ CREATE TABLE
     "parent_id" BIGINT, -- NULL = root category; else FK to parent category
     "name" VARCHAR(100) NOT NULL,
     "description" TEXT NOT NULL,
-    "stale_at" TIMESTAMPTZ, -- NULL = fresh
+    "embedding_stale_at" TIMESTAMPTZ, -- NULL = fresh
 
     CONSTRAINT "category_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "category_name_key" UNIQUE ("name"),
@@ -108,7 +108,7 @@ CREATE TABLE
     -- history must stay resolvable. Distinct from status='hidden', which is a live
     -- listing the seller took down temporarily.
     "deleted_at" TIMESTAMPTZ,
-    "stale_at" TIMESTAMPTZ, -- NULL = fresh
+    "embedding_stale_at" TIMESTAMPTZ, -- NULL = fresh
 
     CONSTRAINT "product_spu_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "product_spu_slug_key" UNIQUE ("slug"),
@@ -174,9 +174,15 @@ CREATE TABLE
   IF NOT EXISTS "tag" (
     "id" VARCHAR(100) NOT NULL,
     "description" VARCHAR(255),
-    "stale_at" TIMESTAMPTZ, -- NULL = fresh
+    "embedding_stale_at" TIMESTAMPTZ, -- NULL = fresh
     CONSTRAINT "tag_pkey" PRIMARY KEY ("id")
   );
+
+-- The tag picker's prefix search. "tag_pkey" cannot serve LIKE 'x%': a btree under a
+-- non-C collation does not order by byte, so the planner will not turn a prefix into a
+-- range on it. text_pattern_ops does, and one operator-class index is the whole cost —
+-- a trigram index would buy substring matching the picker does not ask for.
+CREATE INDEX IF NOT EXISTS "tag_id_prefix_idx" ON "tag" ("id" text_pattern_ops);
 
 -- Many-to-many join between SPUs and tags.
 CREATE TABLE
@@ -255,6 +261,26 @@ CREATE TABLE
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- last recompute, not an audit field
     CONSTRAINT "account_interest_pkey" PRIMARY KEY ("account_id", "slot")
   );
+
+-- Wishlist / saved listings. account_id is a cross-module ref to account.account (no FK,
+-- same as account_interest above); spu_id is local, which is the point of the table
+-- living here — "is this saved", "how many saved it" and "my saved listings" are all
+-- joins against product_spu rather than calls into another module.
+-- The pair is the whole row, so it is the key.
+CREATE TABLE IF NOT EXISTS "favorite" (
+    "account_id" BIGINT NOT NULL,
+    "spu_id" BIGINT NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "favorite_pkey" PRIMARY KEY ("account_id", "spu_id"),
+    CONSTRAINT "favorite_spu_id_fkey" FOREIGN KEY ("spu_id")
+        REFERENCES "product_spu" ("id") ON DELETE CASCADE
+);
+-- "how many saved this listing" / "who saved it".
+CREATE INDEX IF NOT EXISTS "favorite_spu_id_idx" ON "favorite" ("spu_id");
+-- The wishlist page, newest first: the PK covers the lookup but not the ordering.
+CREATE INDEX IF NOT EXISTS "favorite_account_id_created_at_idx"
+    ON "favorite" ("account_id", "created_at" DESC);
 
 -- Stock level record for a product SKU.
 CREATE TABLE IF NOT EXISTS "stock" (

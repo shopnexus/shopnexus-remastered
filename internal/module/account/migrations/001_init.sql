@@ -1,8 +1,11 @@
 -- Module: account — canonical schema
 -- Description: User accounts, federated identities, profiles, contacts, push
---              devices, notifications (content + per-channel delivery) and their
---              preferences, payout identity verification, favorites, and the
---              seller follow graph. Any account can act as both buyer and seller.
+--              devices, notifications and their per-channel preferences, payout
+--              identity verification, and the seller follow graph. Any account can act
+--              as both buyer and seller.
+--              Wishlists live in catalog: every question asked of a saved listing is a
+--              catalog question, so keeping the row here would have made all three of
+--              them a cross-module call.
 
 -- Geographic point type for contact locations (distance-based shipping promos,
 -- nearest-seller lookups). geography validates coordinate ranges itself.
@@ -10,9 +13,16 @@ CREATE EXTENSION IF NOT EXISTS postgis
 WITH
   SCHEMA public;
 
--- "notification" and "notification_delivery" are hypertables; account migrates first,
--- so it cannot rely on chat or observability having added the extension.
+-- "notification" is a hypertable; account migrates first, so it cannot rely on chat or
+-- observability having added the extension.
 CREATE EXTENSION IF NOT EXISTS timescaledb;
+
+-- Trigram matching for the admin account search. Declared here as well as in catalog
+-- for the same reason as the two above: account migrates first, and once the modules
+-- sit on separate databases each one has to bring what it needs.
+CREATE EXTENSION IF NOT EXISTS pg_trgm
+WITH
+  SCHEMA public;
 
 -- Enums
 
@@ -32,9 +42,6 @@ CREATE TYPE "device_platform" AS ENUM ('ios', 'android', 'web');
 CREATE TYPE "identity_document_type" AS ENUM ('national-id', 'passport', 'driver-license');
 -- Outcome of one identity check
 CREATE TYPE "identity_status" AS ENUM ('pending', 'verified', 'rejected');
-
--- Per-channel delivery outcome of one notification
-CREATE TYPE "notification_delivery_status" AS ENUM ('pending', 'sent', 'failed');
 
 -- Delivery channel
 CREATE TYPE "notification_type" AS ENUM ('in-app', 'push', 'email', 'sms');
@@ -97,15 +104,27 @@ CREATE TABLE IF NOT EXISTS "account" (
         OR ("suspended_until" IS NULL AND "suspension_reason" IS NULL)
     )
 );
+-- The reinstatement job: temporary suspensions that have run out. Without it a
+-- suspension with a deadline never actually ends, because nothing else in the system
+-- looks at "suspended_until" — a permanent one leaves it NULL and is skipped here.
+CREATE INDEX IF NOT EXISTS "account_suspension_expiring_idx"
+    ON "account" ("suspended_until")
+    WHERE "status" = 'suspended' AND "suspended_until" IS NOT NULL;
 
 -- Federated login identities linked to an account. An account may have a NULL
 -- "account"."password" and log in through these alone.
+--
+-- Deliberately holds no email of its own. An email the provider asserts is matched
+-- against "account"."email" and login merges into that account, so the address
+-- lives there and nowhere else; only a provider-verified email may merge, or an
+-- unverified one takes over whichever account it collides with. A provider email
+-- that later drifts is not tracked — "account"."email" stays canonical, and the
+-- value asserted at link time is recoverable from "audit_log".
 CREATE TABLE IF NOT EXISTS "oauth_identity" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
     "account_id" BIGINT NOT NULL,
     "provider" VARCHAR(30) NOT NULL, -- kebab-case: 'google', 'facebook', 'apple', 'zalo'
     "provider_uid" VARCHAR(255) NOT NULL, -- the provider's stable subject id, never the email
-    "email" VARCHAR(255), -- as reported by the provider; may differ from account.email and is not authoritative
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "oauth_identity_pkey" PRIMARY KEY ("id"),
@@ -218,10 +237,15 @@ CREATE TABLE IF NOT EXISTS "profile" (
     CONSTRAINT "profile_id_fkey" FOREIGN KEY ("id")
         REFERENCES "account" ("id") ON DELETE CASCADE
 );
+-- The display-name half of the admin account search. The identifier half needs no index
+-- of its own: phone, email and username are each UNIQUE on "account", so an exact match
+-- is already a key lookup. A name is not unique and is searched by fragment, which only
+-- a trigram index can serve — the alternative is a scan of every account plus a join
+-- per moderator keystroke.
+CREATE INDEX IF NOT EXISTS "profile_name_trgm_idx" ON "profile" USING gin ("name" gin_trgm_ops);
 
--- In-app notifications delivered via various channels (push, email, SMS, etc.).
--- What the user is told, once. The channels it goes out on are rows in
--- "notification_delivery": four channels used to mean four copies of title+payload.
+-- In-app notifications: what the user is told, once, whatever channels it went out on.
+-- The fan-out itself is a Restate workflow and keeps no state here.
 CREATE TABLE IF NOT EXISTS "notification" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
     "account_id" BIGINT NOT NULL,
@@ -250,45 +274,17 @@ SELECT add_retention_policy('notification', INTERVAL '180 days', if_not_exists =
 -- The account's feed, newest first.
 CREATE INDEX IF NOT EXISTS "notification_account_id_created_at_idx"
     ON "notification" ("account_id", "created_at" DESC);
--- The unread badge count.
+-- The unread badge count, and the unread-only feed: "created_at" is in the key so that
+-- filtering to unread still comes out in feed order and a cursor can seek into it,
+-- rather than reading every unread row to sort them.
 CREATE INDEX IF NOT EXISTS "notification_account_id_unread_idx"
-    ON "notification" ("account_id")
+    ON "notification" ("account_id", "created_at" DESC)
     WHERE "read_at" IS NULL;
 
--- One row per channel a notification is pushed out on, with its own retry state.
--- No FK to "notification": retention drops whole chunks there, which an FK would
--- either block or leave dangling. The pair of retention windows keeps them in step.
-CREATE TABLE IF NOT EXISTS "notification_delivery" (
-    "id" BIGINT GENERATED ALWAYS AS IDENTITY,
-    "notification_id" BIGINT NOT NULL, -- same schema, but no FK (see above)
-    "account_id" BIGINT NOT NULL, -- denormalized so the dispatcher need not join
-    "channel" "notification_type" NOT NULL,
-    "status" "notification_delivery_status" NOT NULL DEFAULT 'pending',
-    "attempts" INT NOT NULL DEFAULT 0,
-    "last_error" TEXT, -- provider message from the most recent failed attempt
-    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "sent_at" TIMESTAMPTZ, -- set when the provider accepted it
-
-    CONSTRAINT "notification_delivery_pkey" PRIMARY KEY ("id", "created_at"),
-    CONSTRAINT "notification_delivery_attempts_non_negative" CHECK ("attempts" >= 0),
-    -- 'sent' and a send timestamp are the same fact; neither exists without the other.
-    CONSTRAINT "notification_delivery_sent_at_matches_status" CHECK (
-        ("status" = 'sent') = ("sent_at" IS NOT NULL)
-    ),
-
-    CONSTRAINT "notification_delivery_account_id_fkey" FOREIGN KEY ("account_id")
-        REFERENCES "account" ("id") ON DELETE CASCADE
-);
-SELECT create_hypertable('notification_delivery', 'created_at', chunk_time_interval => INTERVAL '7 days', if_not_exists => TRUE);
-SELECT add_retention_policy('notification_delivery', INTERVAL '180 days', if_not_exists => TRUE);
-
--- Every channel a given notification went out on.
-CREATE INDEX IF NOT EXISTS "notification_delivery_notification_id_idx"
-    ON "notification_delivery" ("notification_id");
--- The dispatcher's queue: what still has to go out.
-CREATE INDEX IF NOT EXISTS "notification_delivery_pending_idx"
-    ON "notification_delivery" ("created_at")
-    WHERE "status" = 'pending';
+-- There is no per-channel delivery table. Fanning one notification out to push, email
+-- and SMS is a durable workflow — attempt, retry with backoff, give up — and Restate
+-- already keeps that journal. A second copy in Postgres would be a queue nobody drains
+-- and a status nobody is the authority on.
 
 -- Per-account, per-channel opt-outs. Sparse: a row exists only where the account
 -- deviates from the default, so "no row" means default. Defaults live in the domain —
@@ -310,23 +306,11 @@ CREATE TABLE IF NOT EXISTS "notification_preference" (
         REFERENCES "account" ("id") ON DELETE CASCADE
 );
 
--- Wishlist / saved products. spu_id references catalog.product_spu (no FK enforced).
--- The pair is the whole row, so it is the key.
-CREATE TABLE IF NOT EXISTS "favorite" (
-    "account_id" BIGINT NOT NULL,
-    "spu_id" BIGINT NOT NULL,
-    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "favorite_pkey" PRIMARY KEY ("account_id", "spu_id"),
-
-    CONSTRAINT "favorite_account_id_fkey" FOREIGN KEY ("account_id")
-        REFERENCES "account" ("id") ON DELETE CASCADE
-);
--- "how many saved this product" / "who saved it".
-CREATE INDEX IF NOT EXISTS "favorite_spu_id_idx" ON "favorite" ("spu_id");
--- The wishlist page, newest first: the PK covers the lookup but not the ordering.
-CREATE INDEX IF NOT EXISTS "favorite_account_id_created_at_idx"
-    ON "favorite" ("account_id", "created_at" DESC);
+-- "favorite" lives in catalog, not here. All three questions asked of a wishlist — is
+-- this listing saved, how many saved it, show me my saved listings — are answered
+-- against product_spu, so the row belongs on that side of the line: as a catalog table
+-- it is a plain join, and here it would have made every one of them a cross-module call.
+-- "follow" stays: both of its sides are accounts.
 
 -- Seller follow graph. Both sides are accounts, since any account can sell.
 CREATE TABLE IF NOT EXISTS "follow" (
