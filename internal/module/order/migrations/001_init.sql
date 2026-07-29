@@ -17,18 +17,39 @@ CREATE TYPE "transport_status" AS ENUM (
     'cancelled'
 );
 
--- Refund lifecycle (refund v2): buyer ships goods back at creation; seller
--- reviews within the deadline; disputes escalate to admin. 'cancelled' is a
--- buyer-withdraw terminal state
+-- Refund lifecycle. A refund always covers the whole order, so there is no partial
+-- amount anywhere in this flow.
+--
+-- Every non-terminal value is named for the party whose move the refund is waiting
+-- on, and each of those carries a "deadline_at". That is what makes one job able to
+-- advance all of them, and what makes "who is holding this up" answerable without
+-- reading the service.
+--
+--   awaiting-seller-review  the seller accepts or rejects
+--   awaiting-buyer-action   the buyer escalates to a moderator, or lets it lapse.
+--                           Entered by a rejection, or by the seller letting the
+--                           review window pass; "rejection_reason" tells them apart.
+--   disputed                a moderator rules on the open round of "refund_dispute"
+--   returning               the carrier delivers the goods back to the seller. The
+--                           return leg exists only from here — a refund that never
+--                           gets granted never ships anything.
+--   returned                the seller inspects what arrived and may appeal, which is
+--                           round 2 of the same dispute; letting the window pass
+--                           settles the refund for the buyer.
 CREATE TYPE "refund_status" AS ENUM (
-    'shipping',
     'awaiting-seller-review',
+    'awaiting-buyer-action',
     'disputed',
-    'accepted',
-    'rejected',
-    'cancelled'
+    'returning',
+    'returned',
+    'accepted',  -- terminal: the money went back to the buyer
+    'rejected',  -- terminal: no refund, and the payout to the seller stands
+    'cancelled'  -- terminal: the buyer withdrew before the seller decided
 );
 
+-- The winner of one dispute round, whichever round it is: in round 1 'buyer-wins'
+-- grants the refund and starts the return, in round 2 it denies the seller's appeal
+-- and settles. 'seller-wins' ends the refund in both.
 CREATE TYPE "dispute_status" AS ENUM (
     'open',
     'seller-wins',
@@ -58,6 +79,10 @@ CREATE TABLE
 CREATE TABLE IF NOT EXISTS "cart_item" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
     "account_id" BIGINT NOT NULL,
+    -- Aggregate root of the SKU, denormalized on insert like "item"."seller_id" is.
+    -- Rendering a cart means reading listings, and the variant is not addressable on
+    -- its own in the catalog API, so without this a cart row cannot be resolved at all.
+    "spu_id" BIGINT NOT NULL,
     "sku_id" BIGINT NOT NULL,
     "quantity" BIGINT NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- sorts the cart, and ages out stale ones
@@ -123,6 +148,16 @@ CREATE TABLE IF NOT EXISTS "order" (
     "confirm_session_id" BIGINT, -- Seller confirmation shipping fee session (if seller pays the shipping)
     "note" TEXT, -- Seller note
 
+    -- Buyer's receipt confirmation. The unboxing evidence lives here rather than in a
+    -- side table because it is captured in the same request that sets "received_at" and
+    -- is never added to afterwards — a refund is judged on what the buyer showed at the
+    -- moment of unboxing, so a growable list would weaken the record it exists to be.
+    "received_at" TIMESTAMPTZ,
+    "receipt_attachments" BIGINT[] NOT NULL DEFAULT '{}', -- resource ids from common
+    -- The escrow release to the seller, 72h after receipt unless a refund intervenes.
+    -- Set by the payout job; its presence is what stops the job paying twice.
+    "payout_session_id" BIGINT,
+
     -- Denormalized
     "seller_id" BIGINT NOT NULL, -- Denormalized from order items for easier querying;
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -135,6 +170,14 @@ CREATE TABLE IF NOT EXISTS "order" (
     CONSTRAINT "order_transport_id_key" UNIQUE ("transport_id"),
     -- One order per purchase session, so confirming twice cannot mint a second order.
     CONSTRAINT "order_draft_id_key" UNIQUE ("draft_id"),
+    -- Confirming receipt and showing the goods are one act; neither half is a state.
+    CONSTRAINT "order_receipt_attachments_match_received" CHECK (
+        ("received_at" IS NOT NULL) = (cardinality("receipt_attachments") > 0)
+    ),
+    -- Money is only released against a confirmed delivery.
+    CONSTRAINT "order_payout_needs_receipt" CHECK (
+        "payout_session_id" IS NULL OR "received_at" IS NOT NULL
+    ),
 
     CONSTRAINT "order_transport_id_fkey" FOREIGN KEY ("transport_id")
         REFERENCES "transport" ("id") ON DELETE NO ACTION,
@@ -152,6 +195,13 @@ CREATE INDEX IF NOT EXISTS "order_seller_id_open_idx"
     WHERE "completed_at" IS NULL AND "cancelled_at" IS NULL;
 CREATE INDEX IF NOT EXISTS "order_buyer_id_idx" ON "order" ("buyer_id", "created_at" DESC);
 CREATE INDEX IF NOT EXISTS "order_seller_id_idx" ON "order" ("seller_id", "created_at" DESC);
+-- The payout job: receipts confirmed, nothing paid out yet, oldest first. The 72h
+-- offset is applied in the query rather than stored, so changing the window does not
+-- need a migration or a backfill. The job still has to skip an order with a live
+-- refund, which "refund_one_active_per_order" answers.
+CREATE INDEX IF NOT EXISTS "order_payout_due_idx"
+    ON "order" ("received_at")
+    WHERE "payout_session_id" IS NULL AND "received_at" IS NOT NULL AND "cancelled_at" IS NULL;
 
 -- Checkout item: starts unconfirmed (order_id IS NULL), linked to an order on seller confirmation.
 CREATE TABLE IF NOT EXISTS "item" (
@@ -160,6 +210,7 @@ CREATE TABLE IF NOT EXISTS "item" (
     "order_id" BIGINT, -- NULL until the seller confirms
     "buyer_id" BIGINT NOT NULL,
     "seller_id" BIGINT NOT NULL, -- Denormalized from sku->spu->seller
+    "spu_id" BIGINT NOT NULL, -- The same hop's midpoint, kept so order history can resolve the listing
     "sku_id" BIGINT NOT NULL,
     "address" JSONB NOT NULL, -- Delivery contact snapshot, same shape as "order"."address"
     "note" TEXT, -- Buyer note
@@ -197,94 +248,144 @@ CREATE INDEX IF NOT EXISTS "item_draft_id_idx" ON "item" ("draft_id");
 CREATE INDEX IF NOT EXISTS "item_payment_session_id_idx" ON "item" ("payment_session_id");
 -- "My purchases", newest first.
 CREATE INDEX IF NOT EXISTS "item_buyer_id_idx" ON "item" ("buyer_id", "created_at" DESC);
--- Seller's pending inbox: paid items awaiting confirmation
-CREATE INDEX IF NOT EXISTS "idx_item_seller_pending" ON "item" ("seller_id", "transport_option") WHERE "order_id" IS NULL AND "cancelled_at" IS NULL;
+-- Seller's confirmation inbox: paid items no order covers yet, newest first. Ordered on
+-- "created_at" because that is how the inbox is read and paged; grouping the same
+-- carrier together is the confirm step's business, and it works from a page this
+-- already returned rather than from the index.
+CREATE INDEX IF NOT EXISTS "item_seller_pending_idx"
+    ON "item" ("seller_id", "created_at" DESC)
+    WHERE "order_id" IS NULL AND "cancelled_at" IS NULL;
 
--- Refund request raised by the buyer. The buyer ships the goods back at
--- creation time (return_transport_id is required), so by the time the seller
--- sees AwaitingSellerReview they already have the physical items.
+-- Refund request raised by the buyer, always for the whole order. No amount column:
+-- the sum is the order's checkout session total, and storing a second copy of it
+-- would let the two disagree about how much is owed.
+--
+-- Nothing ships at creation. The buyer keeps the goods until the refund is actually
+-- granted — by the seller accepting or by a moderator ruling for the buyer — because
+-- most requests are settled or refused without a parcel ever moving, and a return
+-- posted up front would have to be un-posted every time.
 CREATE TABLE IF NOT EXISTS "refund" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
-    "buyer_id" BIGINT NOT NULL, -- buyer
+    "buyer_id" BIGINT NOT NULL,
     "order_id" BIGINT NOT NULL,
     "reason" TEXT NOT NULL,
-    -- Evidence the buyer attaches when opening the refund; resource ids from common.
-    -- A dispute is decided on these, so they must outlive the refund flow.
+    -- The buyer's evidence, added at creation and topped up until the case closes.
+    -- Resource ids from common. A dispute is decided on these, so they outlive the flow.
     "attachments" BIGINT[] NOT NULL DEFAULT '{}',
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    "status" "refund_status" NOT NULL DEFAULT 'shipping',
+    "status" "refund_status" NOT NULL DEFAULT 'awaiting-seller-review',
+    -- When the party named by "status" runs out of time. NULL in the states nobody is
+    -- on the clock for: 'disputed' waits on a moderator and 'returning' on a carrier,
+    -- neither of which a timer should decide, and the terminal states wait on nothing.
+    "deadline_at" TIMESTAMPTZ,
 
-    -- Forward leg: buyer → seller (mandatory, set at create)
-    "return_transport_id" BIGINT NOT NULL,
-    "received_by_seller_at" TIMESTAMPTZ, -- set when return transport hits success
-    "review_deadline_at" TIMESTAMPTZ, -- date_received + 3D, auto-accept timer
-
-    -- Seller decision (accepted / disputed)
+    -- Seller review round. "rejection_reason" is what separates a refusal from a
+    -- seller who simply let the window pass: both land on the buyer, only one has a
+    -- reason to show them.
     "seller_decided_at" TIMESTAMPTZ,
-
-    -- Rejection backflow: admin upheld seller → ship goods back
-    "return_to_buyer_transport_id" BIGINT,
     "rejection_reason" TEXT,
 
-    "refund_tx_id" BIGINT, -- set only when accepted (the negative-amount reversal leg)
+    -- Return leg: buyer → seller, created when the refund is granted, never before.
+    -- No leg back to the buyer: a seller who wins round 1 was never sent anything, and
+    -- one who wins round 2 is holding goods a moderator has just called not-as-sent.
+    "return_transport_id" BIGINT,
+    "returned_at" TIMESTAMPTZ, -- set when the return transport reaches delivered
+
+    "refund_tx_id" BIGINT, -- the negative-amount reversal leg; set only on 'accepted'
 
     CONSTRAINT "refund_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "refund_return_transport_id_key" UNIQUE ("return_transport_id"),
-    CONSTRAINT "refund_return_to_buyer_transport_id_key" UNIQUE ("return_to_buyer_transport_id"),
+    -- Each fact needs the one before it. Without these a refund can be delivered back
+    -- with no parcel, or paid out with no verdict.
+    CONSTRAINT "refund_returned_needs_transport" CHECK (
+        "returned_at" IS NULL OR "return_transport_id" IS NOT NULL
+    ),
+    CONSTRAINT "refund_rejection_needs_decision" CHECK (
+        "rejection_reason" IS NULL OR "seller_decided_at" IS NOT NULL
+    ),
+    CONSTRAINT "refund_tx_only_when_accepted" CHECK (
+        "refund_tx_id" IS NULL OR "status" = 'accepted'
+    ),
+    -- A live refund always has someone on the clock, and the two states that wait on a
+    -- carrier or a moderator never do.
+    CONSTRAINT "refund_deadline_matches_status" CHECK (
+        ("deadline_at" IS NOT NULL) =
+        ("status" IN ('awaiting-seller-review', 'awaiting-buyer-action', 'returned'))
+    ),
 
     CONSTRAINT "refund_order_id_fkey" FOREIGN KEY ("order_id")
         REFERENCES "order" ("id") ON DELETE NO ACTION,
     CONSTRAINT "refund_return_transport_id_fkey" FOREIGN KEY ("return_transport_id")
-        REFERENCES "transport" ("id") ON DELETE NO ACTION,
-    CONSTRAINT "refund_return_to_buyer_transport_id_fkey" FOREIGN KEY ("return_to_buyer_transport_id")
         REFERENCES "transport" ("id") ON DELETE NO ACTION
 );
-CREATE INDEX IF NOT EXISTS "refund_buyer_id_idx" ON "refund" ("buyer_id");
+CREATE INDEX IF NOT EXISTS "refund_buyer_id_idx" ON "refund" ("buyer_id", "created_at" DESC);
 CREATE INDEX IF NOT EXISTS "refund_order_id_idx" ON "refund" ("order_id");
-CREATE INDEX IF NOT EXISTS "refund_status_idx" ON "refund" ("status");
+-- One live refund per order, so a second request while the first is open is a conflict
+-- rather than a second claim on the same money.
 CREATE UNIQUE INDEX IF NOT EXISTS "refund_one_active_per_order"
     ON "refund" ("order_id")
-    WHERE "status" IN ('shipping', 'awaiting-seller-review', 'disputed');
--- The auto-accept job: refunds whose review window has run out.
-CREATE INDEX IF NOT EXISTS "refund_review_deadline_idx"
-    ON "refund" ("review_deadline_at")
-    WHERE "status" = 'awaiting-seller-review';
+    WHERE "status" IN ('awaiting-seller-review', 'awaiting-buyer-action', 'disputed', 'returning', 'returned');
+-- One job advances every overdue refund, and it reads one index to find them all:
+-- a missed seller review moves to the buyer, a buyer who never escalated lapses to
+-- 'rejected', and an uncontested return settles as 'accepted'. Which of the three it
+-- is follows from "status", so the timer does not need a column per state.
+CREATE INDEX IF NOT EXISTS "refund_overdue_idx"
+    ON "refund" ("deadline_at")
+    WHERE "deadline_at" IS NOT NULL;
 
--- Seller-initiated escalation when seller refuses the refund after physical
--- inspection. Admin resolves: seller-wins → refund rejected; buyer-wins → refund accepted.
+-- One round of moderation on a refund. Two are possible and both are kept:
+--   round 1  the buyer escalating, after a rejection or an ignored review
+--   round 2  the seller appealing what came back — a counterfeit, or the wrong item
+-- A second row rather than a second verdict on the first, so that ruling for the buyer
+-- and then for the seller stays legible as two decisions instead of one that changed
+-- its mind. "opened_by_id" says whose round it is, and the round's "attachments" hold
+-- that side's evidence, kept apart from the buyer's on "refund" so a moderator can
+-- always tell who submitted what.
 CREATE TABLE IF NOT EXISTS "refund_dispute" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
     "refund_id" BIGINT NOT NULL,
-    "account_id" BIGINT NOT NULL, -- seller (the disputer)
+    "round" SMALLINT NOT NULL,
+    "opened_by_id" BIGINT NOT NULL, -- the buyer in round 1, the seller in round 2
     "reason" TEXT NOT NULL,
-    -- The seller's side of the evidence, kept apart from "refund"."attachments" so
-    -- the admin can tell who submitted what.
     "attachments" BIGINT[] NOT NULL DEFAULT '{}',
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     "status" "dispute_status" NOT NULL DEFAULT 'open',
 
-    "resolved_by_id" BIGINT, -- admin
+    "resolved_by_id" BIGINT, -- the moderator
     "resolved_at" TIMESTAMPTZ,
     "resolution_note" TEXT,
 
     CONSTRAINT "refund_dispute_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "refund_dispute_refund_id_round_key" UNIQUE ("refund_id", "round"),
+    CONSTRAINT "refund_dispute_round_range" CHECK ("round" IN (1, 2)),
+    -- Being open and being unresolved are the same fact, and a verdict always has an
+    -- author.
+    CONSTRAINT "refund_dispute_resolution_together" CHECK (
+        (("status" = 'open') = ("resolved_at" IS NULL))
+        AND (("resolved_at" IS NULL) = ("resolved_by_id" IS NULL))
+    ),
 
     CONSTRAINT "refund_dispute_refund_id_fkey" FOREIGN KEY ("refund_id")
         REFERENCES "refund" ("id") ON DELETE NO ACTION
 );
-CREATE UNIQUE INDEX IF NOT EXISTS "refund_dispute_one_active_per_refund"
+-- At most one round open at a time: round 2 cannot be filed until round 1 is ruled.
+CREATE UNIQUE INDEX IF NOT EXISTS "refund_dispute_one_open_per_refund"
     ON "refund_dispute" ("refund_id")
     WHERE "status" = 'open';
-CREATE INDEX IF NOT EXISTS "refund_dispute_account_id_idx" ON "refund_dispute" ("account_id");
-CREATE INDEX IF NOT EXISTS "refund_dispute_status_idx" ON "refund_dispute" ("status");
+CREATE INDEX IF NOT EXISTS "refund_dispute_opened_by_id_idx" ON "refund_dispute" ("opened_by_id");
+-- The moderator queue: open rounds, oldest first, which is the order they are worked.
+CREATE INDEX IF NOT EXISTS "refund_dispute_queue_idx"
+    ON "refund_dispute" ("created_at")
+    WHERE "status" = 'open';
 
 -- Order cancellation is derived in the order service (was a DB function; moved to domain).
 
 -- One negotiation per (buyer, sku); current terms updated in place.
 CREATE TABLE IF NOT EXISTS "offer" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
+    "spu_id" BIGINT NOT NULL, -- cross-ref catalog.product_spu; the listing an offer card renders
     "sku_id" BIGINT NOT NULL, -- cross-ref catalog.product_sku; no FK
     "author_id" BIGINT NOT NULL, -- account that created the offer (buyer or seller)
     "buyer_id" BIGINT NOT NULL,

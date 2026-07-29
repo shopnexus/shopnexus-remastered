@@ -192,7 +192,7 @@ give it its own doc under `docs/` and link it from here.
   `kind` = `'buyer-checkout'`, resource `provider` = `'minio'`). SQL
   *identifiers* (schema/table/column/type/constraint names) stay `snake_case`;
   only the stored value strings are kebab. Multi-word: `product-spu`,
-  `ship-discount`, `buy-x-get-y`.
+  `awaiting-buyer-action`, `seller-confirmation-fee`.
 - **Migrations:** embedded per module, applied only by `cmd/migrate` (a
   CI/CD/init step) — never at app startup.
 - **Tests:** table/behavior tests with fakes for services (no DB); real DB only
