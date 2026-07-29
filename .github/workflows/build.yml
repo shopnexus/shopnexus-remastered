@@ -43,3 +43,27 @@ jobs:
             ${{ env.IMAGE }}:sha-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # The docs site fetches api/openapi.gen.yaml at build time, so it only follows
+  # this repo if something tells it to rebuild. Fired unconditionally: the docs
+  # image COPYs the spec, so an unchanged spec yields the same digest and no
+  # rollout. Needs a PAT — GITHUB_TOKEN cannot dispatch to another repo.
+  notify-docs:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger docs rebuild
+        env:
+          TOKEN: ${{ secrets.DOCS_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::DOCS_DISPATCH_TOKEN is not set — the docs site will keep serving the previous OpenAPI spec. See deploy/README.md in the umbrella repo."
+            exit 0
+          fi
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/shopnexus/docs/dispatches \
+            -d '{"event_type":"spec-updated"}'
+          echo "dispatched spec-updated to shopnexus/docs"
