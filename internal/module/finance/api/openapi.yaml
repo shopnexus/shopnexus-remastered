@@ -1,0 +1,770 @@
+# OpenAPI fragment owned by the finance module. Merged by cmd/specgen.
+#
+# Covers payment_session, transaction, wallet, wallet_transaction, bank_account
+# and tax_info.
+#
+# The shape that decides this surface: a client never opens a payment session.
+# Sessions are minted by whoever owes the money — order at checkout, at offer
+# acceptance and at seller confirmation, and the payout job — so what a payer does
+# here is add a *leg* to a session that already exists, one per rail, each with its
+# own gateway URL. That is also how split tender works: keep adding legs until the
+# session total is covered.
+#
+# The single exception is a withdrawal, which the wallet owner does open, and which
+# an admin resolves before real money leaves.
+#
+# Two ledgers, one boundary. "transaction" records movements on external rails;
+# money that only moves inside a wallet is recorded solely in
+# "wallet_transaction". No movement is ever written to both, so the two lists here
+# never show the same event twice.
+
+paths:
+  # ---------------------------------------------------- payment sessions -----
+  /payment-sessions:
+    get:
+      tags: [finance]
+      summary: List the caller's payment sessions
+      description: '`role=payer` is money owed or sent, `role=payee` is money received
+        — seller payouts and refunds land on that side.'
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: role, in: query, required: true, schema: { type: string, enum: [payer, payee] } }
+        - { name: kind, in: query, schema: { $ref: '#/components/schemas/PaymentSessionKind' } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/PaymentSessionStatus' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/PaymentSessionPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /payment-sessions/{id}:
+    get:
+      tags: [finance]
+      summary: Read a payment session
+      description: >
+        `amount_paid` is the sum of the settled legs, so a client can tell a
+        partly-tendered session from an unpaid one without fetching the legs.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/PaymentSessionID' } }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/PaymentSession' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /payment-sessions/{id}/transactions:
+    get:
+      tags: [finance]
+      summary: List the legs of a payment session
+      description: Append-only. A reversal is a new leg with a negative amount
+        pointing at the leg it reverses, never an edit of the original.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/PaymentSessionID' } }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/TransactionList' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /payment-sessions/{id}/payments:
+    post:
+      tags: [finance]
+      summary: Pay a session through one rail
+      description: >
+        Creates a ledger leg on the chosen rail and returns it with the gateway
+        redirect in `checkout_url`. Omit `amount` to tender the whole outstanding
+        balance; pass it to split the session across several rails, calling this
+        again per rail until the total is covered.
+
+
+        The leg starts `pending` and only the provider's webhook settles it — this
+        response is not a receipt. Poll the session or the leg for the outcome.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/PaymentSessionID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartPaymentRequest' }
+      responses:
+        '201': { description: 'Leg created', content: { application/json: { schema: { $ref: '#/components/schemas/Transaction' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Caller is not the payer of this session', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: 'Session or payment option not found', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Session is already settled, cancelled, or expired', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'Amount exceeds the session''s outstanding balance', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /payment-sessions/{id}/cancellation:
+    post:
+      tags: [finance]
+      summary: Abandon an unpaid payment session
+      description: Only while nothing has settled. A session with a settled leg is
+        closed by refunding, not by cancelling.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/PaymentSessionID' } }
+      responses:
+        '200': { description: 'Cancelled', content: { application/json: { schema: { $ref: '#/components/schemas/PaymentSession' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'A leg has already settled', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  # --------------------------------------------------------------- wallets ---
+  /wallets:
+    get:
+      tags: [finance]
+      summary: List the caller's wallet balances
+      description: >
+        One wallet per currency, so this is a list rather than a single object. It
+        is short and unpaginated: a balance is opened by receiving money in that
+        currency, not by browsing.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/WalletList' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /wallets/{currency}:
+    get:
+      tags: [finance]
+      summary: Read one currency balance
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: currency, in: path, required: true, schema: { $ref: '#/components/schemas/CurrencyCode' } }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Wallet' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'No balance has been opened in this currency', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /wallets/{currency}/transactions:
+    get:
+      tags: [finance]
+      summary: Read one wallet's ledger
+      description: >
+        Every balance change with its before/after snapshot, newest first. Ordered
+        by `seq`, not by time: two movements can share a timestamp, and a ledger
+        that cannot be totally ordered cannot be replayed or shown to be complete.
+        A gap in `seq` means a missing row.
+
+
+        Legs of one logical movement share a `group_id` — a checkout is a debit
+        plus an escrow hold plus a fee — which is what makes "does this add up"
+        answerable.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: currency, in: path, required: true, schema: { $ref: '#/components/schemas/CurrencyCode' } }
+        - { name: kind, in: query, schema: { $ref: '#/components/schemas/WalletTransactionKind' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/WalletTransactionPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'No balance has been opened in this currency', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  # ----------------------------------------------------------- withdrawals ---
+  /withdrawals:
+    post:
+      tags: [finance]
+      summary: Request a cash-out to a bank account
+      description: >
+        Debits the available balance and opens a withdrawal for review; an admin
+        resolves it before money leaves the platform. Only the available balance can
+        be drawn — money still held in escrow is not the caller's yet.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateWithdrawalRequest' }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Withdrawal' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'Bank account or currency balance not found', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'Insufficient available balance, or the payee identity is unverified', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    get:
+      tags: [finance]
+      summary: List the caller's withdrawals
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/PaymentSessionStatus' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawalPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /withdrawals/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/PaymentSessionID' } }
+    get:
+      tags: [finance]
+      summary: Read a withdrawal
+      description: A withdrawal is a payment session of kind `withdrawal`, so its id
+        carries the session prefix.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Withdrawal' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [finance]
+      summary: Withdraw the request and return the money to the balance
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Cancelled and the debit reversed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already resolved by an admin', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  # --------------------------------------------------------- bank accounts ---
+  /bank-accounts:
+    get:
+      tags: [finance]
+      summary: List the caller's payout destinations
+      description: Account numbers come back masked. The full number is only ever
+        used to move money, never to display it back.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/BankAccountList' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [finance]
+      summary: Register a payout destination
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateBankAccountRequest' }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/BankAccount' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /bank-accounts/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/BankAccountID' } }
+    patch:
+      tags: [finance]
+      summary: Make this the default payout destination
+      description: At most one default per account, so this clears the previous one.
+        Bank details themselves are not editable — register another destination and
+        remove this one, so a completed withdrawal never names a row whose details
+        have since changed.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateBankAccountRequest' }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/BankAccount' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [finance]
+      summary: Remove a payout destination
+      description: Soft delete. A completed withdrawal names this row as the place
+        real money went, so financial history cannot lose its payee.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Removed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'A withdrawal against it is still unresolved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  # -------------------------------------------------------------- tax info ---
+  /tax-info:
+    get:
+      tags: [finance]
+      summary: Read the caller's tax registration
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/TaxInfo' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'Nothing registered yet', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    put:
+      tags: [finance]
+      summary: Register or replace the caller's tax registration
+      description: >
+        One registration per account, so this is an upsert rather than a create.
+        Replacing it resets verification to `pending`: the previous verdict was
+        about the previous tax code. A code already verified under another account
+        is rejected.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpsertTaxInfoRequest' }
+      responses:
+        '200': { description: 'Registered', content: { application/json: { schema: { $ref: '#/components/schemas/TaxInfo' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { description: 'This tax code is already verified under another account', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  # ----------------------------------------------------------------- admin ---
+  /admin/withdrawals:
+    get:
+      tags: [admin]
+      summary: The withdrawal review queue
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/PaymentSessionStatus' }, description: Defaults to pending }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawalPage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/withdrawals/{id}/approval:
+    post:
+      tags: [admin]
+      summary: Approve a withdrawal and release the transfer
+      description: The wallet was already debited when the request was made, so
+        approving does not move the balance again — it settles the outbound leg.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/PaymentSessionID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WithdrawalApprovalRequest' }
+      responses:
+        '200': { description: 'Approved', content: { application/json: { schema: { $ref: '#/components/schemas/Withdrawal' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already resolved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/withdrawals/{id}/rejection:
+    post:
+      tags: [admin]
+      summary: Reject a withdrawal and return the money to the balance
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/PaymentSessionID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WithdrawalRejectionRequest' }
+      responses:
+        '200': { description: 'Rejected and the debit reversed', content: { application/json: { schema: { $ref: '#/components/schemas/Withdrawal' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already resolved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/payment-sessions:
+    get:
+      tags: [admin]
+      summary: Reconciliation view over all payment sessions
+      description: Filter by kind, status and a settlement window. Intended for
+        tying platform totals to what the rails report.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: kind, in: query, schema: { $ref: '#/components/schemas/PaymentSessionKind' } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/PaymentSessionStatus' } }
+        - { name: account_id, in: query, schema: { $ref: '#/components/schemas/AccountID' } }
+        - { name: from, in: query, schema: { type: string, format: date-time }, description: Inclusive lower bound on creation time }
+        - { name: to, in: query, schema: { type: string, format: date-time }, description: Exclusive upper bound on creation time }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/PaymentSessionPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/wallets/{accountID}:
+    get:
+      tags: [admin]
+      summary: Read another account's balances
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: accountID, in: path, required: true, schema: { $ref: '#/components/schemas/AccountID' } }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/WalletList' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/wallets/{accountID}/adjustments:
+    post:
+      tags: [admin]
+      summary: Correct a balance by hand
+      description: >
+        The one way a balance changes without a business event behind it, so it is
+        the most auditable: a reason is mandatory and an `idempotency_key` is
+        required, because a retried correction that posts twice is money invented.
+        Reusing a key returns the movement already recorded instead of making a
+        second one.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: accountID, in: path, required: true, schema: { $ref: '#/components/schemas/AccountID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WalletAdjustmentRequest' }
+      responses:
+        '201': { description: 'Adjusted', content: { application/json: { schema: { $ref: '#/components/schemas/WalletTransaction' } } } }
+        '200': { description: 'This idempotency key was already applied; the existing movement is returned', content: { application/json: { schema: { $ref: '#/components/schemas/WalletTransaction' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: 'The adjustment would drive a balance negative', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/tax-info/{accountID}/verification:
+    post:
+      tags: [admin]
+      summary: Record the verdict on a tax registration
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: accountID, in: path, required: true, schema: { $ref: '#/components/schemas/AccountID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaxVerificationRequest' }
+      responses:
+        '200': { description: 'Recorded', content: { application/json: { schema: { $ref: '#/components/schemas/TaxInfo' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'This tax code is already verified under another account', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  schemas:
+    # ------------------------------------------------------------- enums -----
+    PaymentSessionKind:
+      type: string
+      description: >
+        What the money is for; it is what routes the flow. A client cannot pick this
+        — the module that owes the money does.
+      enum: [buyer-checkout, seller-confirmation-fee, seller-payout, withdrawal]
+
+    PaymentSessionStatus:
+      type: string
+      enum: [pending, processing, success, cancelled, failed]
+
+    TransactionStatus:
+      type: string
+      description: A leg goes pending → success or failed, and success is terminal.
+        Deliberately narrower than a session's status.
+      enum: [pending, success, failed]
+
+    WalletTransactionKind:
+      type: string
+      enum: [topup, escrow-hold, escrow-release, payout, refund, withdrawal, fee, adjustment]
+
+    TaxVerificationStatus:
+      type: string
+      enum: [pending, verified, rejected]
+
+    TaxCodeType:
+      type: string
+      enum: [individual, business, household]
+
+    # --------------------------------------------------- payment sessions ----
+    PaymentSession:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/PaymentSessionID' }
+        kind: { $ref: '#/components/schemas/PaymentSessionKind' }
+        status: { $ref: '#/components/schemas/PaymentSessionStatus' }
+        from_id:
+          allOf: [{ $ref: '#/components/schemas/AccountID' }]
+          nullable: true
+          description: The payer. Null means the platform itself.
+        to_id:
+          allOf: [{ $ref: '#/components/schemas/AccountID' }]
+          nullable: true
+          description: The payee. Null means the platform itself.
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        total_amount: { type: integer, format: int64, description: 'Amount owed, smallest unit of `currency`' }
+        amount_paid:
+          type: integer
+          format: int64
+          description: Sum of the settled legs, so a partly-tendered session is
+            distinguishable from an unpaid one.
+        note: { type: string }
+        created_at: { type: string, format: date-time }
+        paid_at: { type: string, format: date-time, nullable: true }
+        expired_at:
+          type: string
+          format: date-time
+          description: A session still unsettled past this point is voided by a job.
+      required: [id, kind, status, currency, total_amount, amount_paid, note, created_at, expired_at]
+
+    PaymentSessionPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/PaymentSession' } }
+        next_cursor: { type: string, nullable: true }
+      required: [items]
+
+    Transaction:
+      type: object
+      description: One movement on an external rail. Append-only.
+      properties:
+        id: { $ref: '#/components/schemas/TransactionID' }
+        session_id: { $ref: '#/components/schemas/PaymentSessionID' }
+        status: { $ref: '#/components/schemas/TransactionStatus' }
+        payment_option: { type: string, description: A payment option slug owned by the common module }
+        amount:
+          type: integer
+          format: int64
+          description: Signed — positive is a charge, negative is a reversal.
+        currency:
+          allOf: [{ $ref: '#/components/schemas/CurrencyCode' }]
+          description: What the rail actually debits, which split tender may make
+            differ from the session's currency.
+        reverses_id:
+          allOf: [{ $ref: '#/components/schemas/TransactionID' }]
+          nullable: true
+          description: The leg this one reverses. Set on reversals, null on originals.
+        checkout_url:
+          type: string
+          nullable: true
+          description: Where to send the payer for this leg. Null once the rail no
+            longer needs it, or for rails that have none.
+        error: { type: string, nullable: true }
+        note: { type: string }
+        created_at: { type: string, format: date-time }
+        settled_at: { type: string, format: date-time, nullable: true }
+        expired_at: { type: string, format: date-time, nullable: true, description: Gateway URL expiry }
+      required: [id, session_id, status, payment_option, amount, currency, note, created_at]
+
+    TransactionList:
+      type: object
+      description: Unpaginated — a session has as many legs as rails it was split
+        across, which is a handful.
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Transaction' } }
+      required: [items]
+
+    StartPaymentRequest:
+      type: object
+      properties:
+        payment_option:
+          type: string
+          maxLength: 100
+          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+          description: A payment option slug from the common module.
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Omit to tender the whole outstanding balance. Pass it to split
+            the session across rails.
+        return_url: { type: string, description: Where the gateway sends the payer back }
+      required: [payment_option]
+
+    # -------------------------------------------------------------- wallet ---
+    Wallet:
+      type: object
+      properties:
+        account_id: { $ref: '#/components/schemas/AccountID' }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        available_balance: { type: integer, format: int64, description: Spendable and withdrawable }
+        held_balance: { type: integer, format: int64, description: 'Locked in escrow; not the owner''s to draw yet' }
+        created_at: { type: string, format: date-time }
+      required: [account_id, currency, available_balance, held_balance, created_at]
+
+    WalletList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Wallet' } }
+      required: [items]
+
+    WalletTransaction:
+      type: object
+      description: One balance change with its before/after snapshot. Append-only,
+        and the only record of a movement that stays inside a wallet.
+      properties:
+        seq:
+          type: integer
+          format: int64
+          description: >
+            Position in this wallet's ledger, from 1. Identifies the row and orders
+            it; a gap means a missing movement. Per wallet, so each currency counts
+            from 1 again.
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        kind: { $ref: '#/components/schemas/WalletTransactionKind' }
+        available_delta: { type: integer, format: int64, description: Signed change to the available balance }
+        held_delta: { type: integer, format: int64, description: Signed change to the held balance }
+        available_after: { type: integer, format: int64 }
+        held_after: { type: integer, format: int64 }
+        group_id:
+          type: string
+          nullable: true
+          description: Shared by every leg of one logical movement — a checkout is a
+            debit plus an escrow hold plus a fee.
+        ref_type:
+          type: string
+          nullable: true
+          enum: [order, payment-session]
+          description: What this movement was for. Null on an adjustment.
+        ref_id:
+          type: string
+          nullable: true
+          description: Opaque id of the referenced entity, its prefix given by `ref_type`.
+        note: { type: string }
+        created_at: { type: string, format: date-time }
+      required: [seq, currency, kind, available_delta, held_delta, available_after, held_after, note, created_at]
+
+    WalletTransactionPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/WalletTransaction' } }
+        next_cursor: { type: string, nullable: true }
+      required: [items]
+
+    WalletAdjustmentRequest:
+      type: object
+      properties:
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        available_delta: { type: integer, format: int64 }
+        held_delta: { type: integer, format: int64 }
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Required. A retried correction that posts twice is money invented.
+      required: [currency, reason, idempotency_key]
+
+    # --------------------------------------------------------- withdrawals ---
+    Withdrawal:
+      type: object
+      description: A payment session of kind `withdrawal`, projected with its
+        destination and the admin's resolution.
+      properties:
+        id: { $ref: '#/components/schemas/PaymentSessionID' }
+        status: { $ref: '#/components/schemas/PaymentSessionStatus' }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        amount: { type: integer, format: int64 }
+        bank_account: { $ref: '#/components/schemas/BankAccount' }
+        resolved_by_id: { allOf: [{ $ref: '#/components/schemas/AccountID' }], nullable: true }
+        resolved_at: { type: string, format: date-time, nullable: true }
+        resolution_note: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+      required: [id, status, currency, amount, bank_account, created_at]
+
+    WithdrawalPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Withdrawal' } }
+        next_cursor: { type: string, nullable: true }
+      required: [items]
+
+    CreateWithdrawalRequest:
+      type: object
+      properties:
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        amount: { type: integer, format: int64, minimum: 1 }
+        bank_account_id: { $ref: '#/components/schemas/BankAccountID' }
+      required: [currency, amount, bank_account_id]
+
+    WithdrawalApprovalRequest:
+      type: object
+      properties:
+        note: { type: string, maxLength: 2000 }
+        provider_ref: { type: string, maxLength: 200, description: The bank's or gateway's reference for the outbound transfer }
+      required: [note]
+
+    WithdrawalRejectionRequest:
+      type: object
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+      required: [reason]
+
+    # -------------------------------------------------------- bank account ---
+    BankAccount:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/BankAccountID' }
+        bank_code: { type: string, description: 'Bank identifier, e.g. `vcb`' }
+        account_number_masked:
+          type: string
+          description: Only the last digits. The full number leaves the system solely
+            to move money.
+          example: '****1234'
+        account_holder: { type: string }
+        is_default: { type: boolean }
+        created_at: { type: string, format: date-time }
+      required: [id, bank_code, account_number_masked, account_holder, is_default, created_at]
+
+    BankAccountList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/BankAccount' } }
+      required: [items]
+
+    CreateBankAccountRequest:
+      type: object
+      properties:
+        bank_code: { type: string, minLength: 1, maxLength: 20 }
+        account_number: { type: string, minLength: 1, maxLength: 50 }
+        account_holder: { type: string, minLength: 1, maxLength: 100 }
+        is_default: { type: boolean, default: false }
+      required: [bank_code, account_number, account_holder]
+
+    UpdateBankAccountRequest:
+      type: object
+      properties:
+        is_default: { type: boolean, enum: [true], description: The only mutable field }
+      required: [is_default]
+
+    # ------------------------------------------------------------ tax info ---
+    TaxInfo:
+      type: object
+      properties:
+        tax_code: { type: string, example: '0123456789' }
+        tax_code_type: { $ref: '#/components/schemas/TaxCodeType' }
+        legal_name: { type: string }
+        verification_status: { $ref: '#/components/schemas/TaxVerificationStatus' }
+        verified_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+      required: [tax_code, tax_code_type, legal_name, verification_status, created_at]
+
+    UpsertTaxInfoRequest:
+      type: object
+      properties:
+        tax_code:
+          type: string
+          pattern: '^\d{10}(-\d{3})?$'
+          description: Vietnamese MST — ten digits, or ten plus a three-digit branch.
+        tax_code_type: { $ref: '#/components/schemas/TaxCodeType' }
+        legal_name: { type: string, minLength: 1, maxLength: 200 }
+      required: [tax_code, tax_code_type, legal_name]
+
+    TaxVerificationRequest:
+      type: object
+      properties:
+        status: { type: string, enum: [verified, rejected], description: 'A verdict, so `pending` is not a choice' }
+        source: { type: string, maxLength: 200, description: What the verdict was based on }
+        note: { type: string, maxLength: 2000 }
+      required: [status, source]

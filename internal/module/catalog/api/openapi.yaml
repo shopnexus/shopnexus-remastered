@@ -1,0 +1,747 @@
+# OpenAPI fragment owned by the catalog module. Merged by cmd/specgen.
+#
+# Covers category, product_spu, product_sku, tag, product_spu_tag, stock, the three
+# embedding tables and account_interest.
+#
+# A listing is an SPU plus its SKUs. Price and package weight live on the SKU, so a
+# listing is never created without at least one, and both are created in one request
+# — the two tables reference each other and the insert order is SPU, then SKUs, then
+# point the SPU at its featured one.
+#
+# Browsing only ever shows live active listings; that is the predicate of the partial
+# indexes behind every feed. A seller's own draft, pending and hidden rows are
+# reachable through `GET /me/listings`, and a moderator's through `GET /admin/listings`.
+#
+# Two things deliberately absent. There is no cached price on a listing: sorting by
+# price leads with the SKU index and nested-loops into the SPU, which comes out
+# already ordered so a limit stops early. And embeddings are never written through
+# this API — a cron job fills them, and search only reads them.
+
+paths:
+  # ------------------------------------------------------------- browsing ----
+  /listings:
+    get:
+      tags: [catalog]
+      summary: Browse listings
+      description: >
+        Live active listings only. `sort=price-asc` and `price-desc` are answered
+        through the SKU price index rather than a cached price on the listing, so the
+        `price` shown is that of the cheapest matching variant.
+      parameters:
+        - { name: category_id, in: query, schema: { $ref: '#/components/schemas/CategoryID' } }
+        - { name: tag, in: query, schema: { $ref: '#/components/schemas/TagSlug' } }
+        - { name: seller_id, in: query, schema: { $ref: '#/components/schemas/AccountID' } }
+        - { name: condition, in: query, schema: { $ref: '#/components/schemas/ListingCondition' } }
+        - { name: min_price, in: query, schema: { type: integer, format: int64, minimum: 0 } }
+        - { name: max_price, in: query, schema: { type: integer, format: int64, minimum: 0 } }
+        - { name: sort, in: query, schema: { type: string, enum: [newest, rating, price-asc, price-desc], default: newest } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+    post:
+      tags: [catalog]
+      summary: Create a listing
+      description: >
+        Creates the listing and its variants together. At least one variant is
+        required because price and shipping weight live there.
+
+
+        Starts as a draft and is not public until published. The seller also chooses
+        here whether the buyer or the seller carries the shipping fee.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateListingRequest' }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'Category or tag or image not found', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Slug already taken', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'Identity verification is required before selling', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /listings/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
+    get:
+      tags: [catalog]
+      summary: Read a listing
+      description: Carries the variants with their prices and stock and the seller
+        summary. Only the owner and staff can read one that is not active.
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [catalog]
+      summary: Edit a listing
+      description: >
+        An edit to a draft applies immediately. An edit to a live listing that trips
+        the prohibited-goods filter is held as a pending edit and applied only when a
+        moderator approves it, so the version buyers see never changes into unreviewed
+        content.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateListingRequest' }
+      responses:
+        '200': { description: 'Applied', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '202': { description: 'Held as a pending edit awaiting moderation', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [catalog]
+      summary: Delete a listing
+      description: >
+        Soft delete, and distinct from hiding it. Order history holds the listing and
+        variant ids without a foreign key, so a past order has to stay resolvable
+        after the seller removes the listing.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'An open order still covers this listing', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /listings/{id}/publication:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
+    post:
+      tags: [catalog]
+      summary: Publish a listing
+      description: >
+        Every new listing is scanned automatically for prohibited-goods signals
+        first. A clean one goes live; a suspicious one goes to the moderation queue
+        and stays invisible until a moderator clears it. The response says which
+        happened.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'Live', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '202': { description: 'Queued for moderation and not yet public', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already live or under moderation', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'A listing needs at least one variant with a price', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [catalog]
+      summary: Hide a live listing
+      description: >
+        Takes it out of every feed while leaving it alive — the seller is away, or the
+        item is temporarily out of stock. Not the same as deleting it.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'Hidden', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /me/listings:
+    get:
+      tags: [catalog]
+      summary: The caller's own listings
+      description: Unlike browsing this shows every state — draft, pending, active,
+        hidden — because a seller has to see what is not public.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/ListingStatus' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # --------------------------------------------------------------- search ----
+  /search/listings:
+    get:
+      tags: [catalog]
+      summary: Search listings
+      description: >
+        `lexical` matches the listing name by trigram and tolerates missing
+        diacritics. `semantic` runs an approximate nearest-neighbour search over the
+        dense embedding. `hybrid` combines the dense vector with the sparse lexical
+        one, which is what the embedding model is built for.
+
+
+        `score` is always returned so that higher is better, whichever mode ran. A
+        listing whose embedding has not been computed yet can only be found
+        lexically.
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+        - { name: mode, in: query, schema: { type: string, enum: [lexical, semantic, hybrid], default: hybrid } }
+        - { name: category_id, in: query, schema: { $ref: '#/components/schemas/CategoryID' } }
+        - { name: min_price, in: query, schema: { type: integer, format: int64, minimum: 0 } }
+        - { name: max_price, in: query, schema: { type: integer, format: int64, minimum: 0 } }
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingSearchResult' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /feed:
+    get:
+      tags: [catalog]
+      summary: The caller's personalised feed
+      description: >
+        Nearest-neighbour search over listing embeddings from the caller's interest
+        slots. Falls back to the newest active listings for an account with no
+        interests computed yet.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingPage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ----------------------------------------------------------------- skus ----
+  /listings/{id}/skus:
+    post:
+      tags: [catalog]
+      summary: Add a variant to a listing
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSkuRequest' }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Sku' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /skus/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSKUID' } }
+    patch:
+      tags: [catalog]
+      summary: Edit a variant
+      description: >
+        A price change does not reach a buyer who already opened a purchase session:
+        that session froze the terms it was opened with.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateSkuRequest' }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Sku' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [catalog]
+      summary: Delete a variant
+      description: Soft delete for the same reason as a listing. Refused for the last
+        remaining variant of a live listing.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'This is the only variant of a live listing', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /skus/{id}/stock:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSKUID' } }
+    get:
+      tags: [catalog]
+      summary: Read a variant's stock
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Stock' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [catalog]
+      summary: Set a variant's stock
+      description: >
+        Sets the total on hand. The reserved count is not settable here — it is moved
+        by checkout and by cancellation — and a total below what is already reserved
+        is refused, because an oversold row must not be representable.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetStockRequest' }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Stock' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: 'Below the quantity already reserved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  # ----------------------------------------------------- categories & tags ---
+  /categories:
+    get:
+      tags: [catalog]
+      summary: The category tree
+      description: >
+        Flat list with a parent reference on each row; a client assembles the tree. A
+        category tree is small so this is unpaginated.
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/CategoryList' } } } }
+
+  /tags:
+    get:
+      tags: [catalog]
+      summary: The tag dictionary
+      description: A tag id is its slug and a natural key, so it is readable on the
+        wire rather than encoded.
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/TagList' } } } }
+
+  /admin/categories:
+    post:
+      tags: [admin]
+      summary: Create a category
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCategoryRequest' }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Category' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Name already taken', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/categories/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/CategoryID' } }
+    patch:
+      tags: [admin]
+      summary: Update a category
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCategoryRequest' }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Category' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [admin]
+      summary: Delete a category
+      description: >
+        Children are promoted to roots rather than deleted with it, so a branch is
+        never lost by accident. A category still holding listings cannot be deleted
+        at all — move them first.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Listings still reference this category', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/tags:
+    post:
+      tags: [admin]
+      summary: Create a tag
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTagRequest' }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Tag' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Slug already taken', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/tags/{slug}:
+    delete:
+      tags: [admin]
+      summary: Delete a tag
+      description: Removing it also detaches it from every listing that carried it.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/TagSlug' } }
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ----------------------------------------------------------- moderation ----
+  /admin/listings:
+    get:
+      tags: [admin]
+      summary: The listing moderation queue
+      description: >
+        Defaults to the pending ones — those the automatic scan flagged or that
+        enough reports pushed into review — oldest first, which is the order they
+        should be worked.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/ListingStatus' }, description: Defaults to pending. }
+        - { name: seller_id, in: query, schema: { $ref: '#/components/schemas/AccountID' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingPage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/listings/{id}/approval:
+    post:
+      tags: [admin]
+      summary: Clear a listing for publication
+      description: Applies any held pending edit and makes it live.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ModerationNoteRequest' }
+      responses:
+        '200': { description: 'Live', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Not awaiting moderation', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/listings/{id}/takedown:
+    post:
+      tags: [admin]
+      summary: Take a listing down
+      description: >
+        The moderator's verdict against a listing that breaks policy. Removes it from
+        the marketplace and records the reason. Suspending the seller as well is a
+        separate decision and a separate call.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TakedownRequest' }
+      responses:
+        '200': { description: 'Taken down', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  schemas:
+    TagSlug:
+      type: string
+      maxLength: 100
+      pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+      description: A tag's id is its slug. A natural key, so it is never encoded.
+      example: handmade
+
+    # ------------------------------------------------------------- enums -----
+    ListingStatus:
+      type: string
+      description: >
+        Lifecycle and moderation in one column. `hidden` is a live listing the seller
+        took down for now; deletion is a separate flag entirely.
+      enum: [draft, pending, active, hidden]
+
+    ListingCondition:
+      type: string
+      description: Item condition. This is a marketplace for used goods so it is
+        listing-level and not optional.
+      enum: [new, used, damaged]
+
+    PriceMode:
+      type: string
+      description: >
+        `fixed` can be bought straight from the listing page. `negotiable` has to go
+        through an offer first and cannot be checked out directly.
+      enum: [fixed, negotiable]
+
+    ShippingPaidBy:
+      type: string
+      description: >
+        Chosen by the seller when the listing is created. `buyer` adds the fee to the
+        checkout invoice. `seller` deducts it from the payout.
+      enum: [buyer, seller]
+
+    # ---------------------------------------------------------- category ------
+    Category:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/CategoryID' }
+        parent_id:
+          allOf: [{ $ref: '#/components/schemas/CategoryID' }]
+          nullable: true
+          description: Null for a root category.
+        name: { type: string }
+        description: { type: string }
+      required: [id, name, description]
+
+    CategoryList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Category' } }
+      required: [items]
+
+    CreateCategoryRequest:
+      type: object
+      properties:
+        parent_id: { $ref: '#/components/schemas/CategoryID' }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 2000 }
+      required: [name, description]
+
+    UpdateCategoryRequest:
+      type: object
+      description: Every field optional. Setting the parent to null makes it a root.
+      properties:
+        parent_id: { allOf: [{ $ref: '#/components/schemas/CategoryID' }], nullable: true }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 2000 }
+
+    Tag:
+      type: object
+      properties:
+        slug: { $ref: '#/components/schemas/TagSlug' }
+        description: { type: string, nullable: true }
+      required: [slug]
+
+    TagList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Tag' } }
+      required: [items]
+
+    CreateTagRequest:
+      type: object
+      properties:
+        slug: { $ref: '#/components/schemas/TagSlug' }
+        description: { type: string, maxLength: 255 }
+      required: [slug]
+
+    # -------------------------------------------------------------- stock -----
+    Stock:
+      type: object
+      properties:
+        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
+        stock: { type: integer, format: int64, description: Total on hand. }
+        reserved:
+          type: integer
+          format: int64
+          description: Held by paid but unconfirmed items. Moved by checkout and by
+            cancellation and never set directly.
+        available: { type: integer, format: int64, description: Total minus reserved. }
+      required: [sku_id, stock, reserved, available]
+
+    SetStockRequest:
+      type: object
+      properties:
+        stock: { type: integer, format: int64, minimum: 0 }
+      required: [stock]
+
+    # ---------------------------------------------------------------- sku -----
+    Sku:
+      type: object
+      description: A purchasable variant. Price and package details live here rather
+        than on the listing.
+      properties:
+        id: { $ref: '#/components/schemas/ProductSKUID' }
+        price: { type: integer, format: int64, description: Smallest unit of the listing's currency. }
+        attributes:
+          type: object
+          additionalProperties: true
+          description: Variant attributes such as size and colour.
+        package_details:
+          type: object
+          additionalProperties: true
+          description: Weight and dimensions. A shipping quote is computed from these.
+        images:
+          type: array
+          items: { $ref: '#/components/schemas/Resource' }
+          description: Empty means fall back to the listing gallery.
+        stock: { $ref: '#/components/schemas/Stock' }
+        created_at: { type: string, format: date-time }
+      required: [id, price, attributes, package_details, images, created_at]
+
+    CreateSkuRequest:
+      type: object
+      properties:
+        price: { type: integer, format: int64, minimum: 0 }
+        attributes: { type: object, additionalProperties: true }
+        package_details: { type: object, additionalProperties: true }
+        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+        stock: { type: integer, format: int64, minimum: 0, default: 0 }
+      required: [price, attributes, package_details]
+
+    UpdateSkuRequest:
+      type: object
+      description: Every field optional.
+      properties:
+        price: { type: integer, format: int64, minimum: 0 }
+        attributes: { type: object, additionalProperties: true }
+        package_details: { type: object, additionalProperties: true }
+        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+
+    # ------------------------------------------------------------ listing -----
+    Listing:
+      type: object
+      description: The card shown in a feed. `GET /listings/{id}` returns the full form.
+      properties:
+        id: { $ref: '#/components/schemas/ProductSPUID' }
+        slug: { type: string, description: URL-friendly and globally unique. }
+        name: { type: string }
+        status: { $ref: '#/components/schemas/ListingStatus' }
+        condition: { $ref: '#/components/schemas/ListingCondition' }
+        price_mode: { $ref: '#/components/schemas/PriceMode' }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        price:
+          type: integer
+          format: int64
+          description: >
+            The featured variant's price, or the cheapest one when a price sort is in
+            force. Not stored on the listing.
+        cover: { allOf: [{ $ref: '#/components/schemas/Resource' }], nullable: true }
+        rating:
+          type: number
+          format: double
+          description: >
+            Average review rating from 1 to 5, or 0 when there are none yet.
+            Maintained from review events because reviews live in another schema and
+            cannot be joined.
+        category_id: { $ref: '#/components/schemas/CategoryID' }
+        seller: { $ref: '#/components/schemas/AccountSummary' }
+        created_at: { type: string, format: date-time }
+      required: [id, slug, name, status, condition, price_mode, currency, price, rating, category_id, seller, created_at]
+
+    ListingDetail:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/ProductSPUID' }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        status: { $ref: '#/components/schemas/ListingStatus' }
+        condition: { $ref: '#/components/schemas/ListingCondition' }
+        price_mode: { $ref: '#/components/schemas/PriceMode' }
+        shipping_paid_by: { $ref: '#/components/schemas/ShippingPaidBy' }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        specifications:
+          type: object
+          additionalProperties: true
+          description: Structured attributes specific to the product type.
+        images: { type: array, items: { $ref: '#/components/schemas/Resource' }, description: Ordered. The first is the cover. }
+        category: { $ref: '#/components/schemas/Category' }
+        tags: { type: array, items: { $ref: '#/components/schemas/TagSlug' } }
+        skus: { type: array, items: { $ref: '#/components/schemas/Sku' } }
+        featured_sku_id: { allOf: [{ $ref: '#/components/schemas/ProductSKUID' }], nullable: true }
+        rating: { type: number, format: double }
+        seller: { $ref: '#/components/schemas/AccountSummary' }
+        pending_edit:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: >
+            An edit waiting on moderation. Visible to the owner and to staff only;
+            buyers see the published version until it is approved.
+        created_at: { type: string, format: date-time }
+      required: [id, slug, name, description, status, condition, price_mode, shipping_paid_by, currency, specifications, images, category, tags, skus, rating, seller, created_at]
+
+    ListingPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Listing' } }
+        next_cursor: { type: string, nullable: true }
+      required: [items]
+
+    ListingSearchHit:
+      type: object
+      properties:
+        listing: { $ref: '#/components/schemas/Listing' }
+        score:
+          type: number
+          format: double
+          description: Higher is more relevant in every mode.
+      required: [listing, score]
+
+    ListingSearchResult:
+      type: object
+      description: >
+        Ranked, so it is not cursor-paginated: page two of a relevance ranking is a
+        different query, not the tail of this one. Ask for a bigger limit instead.
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ListingSearchHit' } }
+        mode: { type: string, enum: [lexical, semantic, hybrid], description: The mode that actually ran. }
+      required: [items, mode]
+
+    CreateListingRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 20000 }
+        category_id: { $ref: '#/components/schemas/CategoryID' }
+        condition: { $ref: '#/components/schemas/ListingCondition' }
+        price_mode: { $ref: '#/components/schemas/PriceMode' }
+        shipping_paid_by: { $ref: '#/components/schemas/ShippingPaidBy' }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        specifications: { type: object, additionalProperties: true }
+        attachments:
+          type: array
+          items: { $ref: '#/components/schemas/ResourceID' }
+          description: Ordered. The first becomes the cover.
+        tags: { type: array, items: { $ref: '#/components/schemas/TagSlug' } }
+        skus:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/CreateSkuRequest' }
+          description: At least one. Price and shipping weight live on the variant.
+      required: [name, description, category_id, condition, price_mode, shipping_paid_by, currency, skus]
+
+    UpdateListingRequest:
+      type: object
+      description: Every field optional. Variants are edited through their own endpoints.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 20000 }
+        category_id: { $ref: '#/components/schemas/CategoryID' }
+        condition: { $ref: '#/components/schemas/ListingCondition' }
+        price_mode: { $ref: '#/components/schemas/PriceMode' }
+        shipping_paid_by: { $ref: '#/components/schemas/ShippingPaidBy' }
+        specifications: { type: object, additionalProperties: true }
+        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+        tags: { type: array, items: { $ref: '#/components/schemas/TagSlug' } }
+        featured_sku_id: { $ref: '#/components/schemas/ProductSKUID' }
+
+    ModerationNoteRequest:
+      type: object
+      properties:
+        note: { type: string, maxLength: 2000 }
+
+    TakedownRequest:
+      type: object
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+        notify_seller: { type: boolean, default: true }
+      required: [reason]

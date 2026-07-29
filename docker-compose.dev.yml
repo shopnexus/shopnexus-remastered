@@ -1,0 +1,22 @@
+# Dev overlay: publishes the infra ports the base compose file keeps internal.
+# Needed to run the gateway/migrate on the host, to reach the Grafana UI, or to
+# point psql/redis-cli at the containers.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+services:
+  db:
+    ports:
+      - "5432:5432"
+  redis:
+    ports:
+      - "6379:6379"
+  nats:
+    ports:
+      - "4222:4222"
+      - "8222:8222" # monitoring
+  grafana:
+    ports:
+      - "3000:3000"
+  loki:
+    ports:
+      - "3100:3100"

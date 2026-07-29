@@ -1,0 +1,10 @@
+.git
+.claude
+deploy
+legacy
+*_test.go
+README.md
+CLAUDE.md
+docker-compose.yml
+Dockerfile
+.dockerignore

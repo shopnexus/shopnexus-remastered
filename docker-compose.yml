@@ -1,0 +1,131 @@
+# Default `docker compose up -d` runs the infra (db, redis, grafana, loki, alloy);
+# run the app on the host with `go run ./cmd/gateway`.
+# `docker compose --profile app up -d --build` also builds+runs the gateway and
+# migrations as containers, so their JSON logs flow through Alloy into Loki.
+#
+# Only the gateway publishes a host port. Everything else talks over the compose
+# network by service name, which needs no `ports`/`expose` at all. To reach
+# db/redis/nats/grafana from the host (host-run gateway, psql, Grafana UI):
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+# Env for the containerized app (profile `app`): DSNs/hosts use compose service
+# names. Each module still gets its own DSN (all point at the shared db here).
+x-app-env: &app-env
+  GATEWAY_ADDR: "0.0.0.0:8080"
+  # Tags every telemetry row with its producer. One replica here; in Kubernetes
+  # take it from the downward API (metadata.name).
+  INSTANCE_ID: "gateway-1"
+  JWT_SECRET: "0123456789012345678901234567890123"
+  # Keys the opaque-id permutation. Permanent: rotating it invalidates every
+  # id ever handed out. 16, 24 or 32 bytes.
+  ID_CIPHER_KEY: "0123456789abcdef0123456789abcdef"
+  LOG_LEVEL: "info"
+  ACCOUNT_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
+  CATALOG_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
+  ORDER_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
+  CHAT_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
+  COMMON_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
+  TRUST_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
+  FINANCE_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
+  OBSERVABILITY_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
+  NATS_URL: "nats://nats:4222"
+  REDIS_ADDR: "redis:6379"
+  REDIS_PASSWORD: "app"
+
+services:
+  db:
+    image: timescale/timescaledb-ha:pg18
+    environment:
+      POSTGRES_DB: shopnexus
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+    volumes:
+      - db-data:/home/postgres/pgdata/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d shopnexus"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  redis:
+    image: redis:7
+    command: ["redis-server", "--requirepass", "app"]
+  nats:
+    # JetStream buffers observability telemetry between the Sink (publisher) and
+    # the writer (batching consumer), so a slow/down database never blocks a
+    # request and queued samples survive a restart. -m serves monitoring on 8222.
+    image: nats:2.10-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    volumes:
+      - nats-data:/data
+
+  # --- Observability: metrics (Postgres/Timescale) + logs (Loki), one Grafana ---
+  grafana:
+    # Datasources (TimescaleDB + Loki) and dashboards are provisioned from files
+    # (deploy/grafana), so no manual setup.
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - db
+      - loki
+  loki:
+    # Single-binary Loki (filesystem storage) using the image's default config.
+    image: grafana/loki:3.3.0
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - loki-data:/loki
+  alloy:
+    # Tails every container's stdout (Docker API) and ships JSON logs to Loki,
+    # labeling each line with its compose `service`.
+    image: grafana/alloy:v1.5.1
+    command:
+      - "run"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "--storage.path=/var/lib/alloy/data"
+      - "/etc/alloy/config.alloy"
+    volumes:
+      - ./deploy/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    depends_on:
+      - loki
+
+  # --- App (opt-in: `--profile app`), so its logs reach Loki via Alloy ---
+  migrate:
+    profiles: ["app"]
+    build: .
+    command: ["/migrate"]
+    environment: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+  gateway:
+    profiles: ["app"]
+    build: .
+    environment: *app-env
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      nats:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  db-data:
+  nats-data:
+  grafana-data:
+  loki-data:
+  alloy-data:

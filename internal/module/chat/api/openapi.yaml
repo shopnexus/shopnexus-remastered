@@ -1,0 +1,297 @@
+# OpenAPI fragment owned by the chat module. Merged by cmd/specgen.
+#
+# Covers conversation and message.
+#
+# One thread per pair of accounts, whoever happens to be buying. The pair is stored
+# ordered, which is what makes the uniqueness impossible to sidestep by swapping
+# sides and also rules out a thread with oneself. Threads are not scoped to a
+# listing: a product is referenced per message instead, which is how an offer card
+# appears in a conversation.
+#
+# Messages are a hypertable, so every read here is cursor-paginated over
+# `created_at` and marking messages read takes a time bound rather than a list of
+# ids. A query without a time bound has to visit every chunk.
+#
+# Offers are not created here. A negotiation is an order-module resource; accepting
+# or countering one emits a system message into the thread, which is why a message
+# can have no sender.
+
+paths:
+  /conversations:
+    get:
+      tags: [chat]
+      summary: The caller's inbox
+      description: >
+        Threads by latest activity. A participant sits on either side of the stored
+        pair, so this is answered as two ordered index scans merged together rather
+        than one scan that sorts.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ConversationPage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [chat]
+      summary: Open the thread with another account
+      description: >
+        Idempotent by design: there is exactly one thread per pair, so this returns
+        the existing one when it exists and creates it otherwise. A client does not
+        have to track whether it has messaged someone before.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartConversationRequest' }
+      responses:
+        '200': { description: 'The thread already existed', content: { application/json: { schema: { $ref: '#/components/schemas/Conversation' } } } }
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Conversation' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: 'An account cannot open a thread with itself', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /conversations/unread-count:
+    get:
+      tags: [chat]
+      summary: The unread badge across every thread
+      description: >
+        Read state is currently tracked per message rather than per participant, so
+        this counts unread rows across the whole partitioned table and cannot be
+        bounded by time — an unread message may be arbitrarily old. It is the one read
+        here that does not benefit from chunk exclusion.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ChatUnreadCount' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /conversations/{id}:
+    get:
+      tags: [chat]
+      summary: Read a thread
+      description: Carries the counterparty rather than both sides — the caller
+        already knows who they are.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ConversationID' } }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Conversation' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /conversations/{id}/messages:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ConversationID' } }
+    get:
+      tags: [chat]
+      summary: Read a thread's messages
+      description: >
+        Newest first, cursor only. Offset paging would defeat the chunk exclusion the
+        time partitioning exists for.
+
+
+        A redacted message is still returned, with its body emptied and `deleted_at`
+        set: a gap in a thread that a dispute may hinge on is worse than a visible
+        removal.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/MessagePage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [chat]
+      summary: Send a message
+      description: >
+        Text, attachments or both. `metadata` carries references to a listing or a
+        variant or an order, which is how a product is pointed at inside a thread that
+        is not itself listing-scoped.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendMessageRequest' }
+      responses:
+        '201': { description: 'Sent', content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: 'A message needs a body or an attachment', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /conversations/{id}/read:
+    post:
+      tags: [chat]
+      summary: Mark a thread read up to a point in time
+      description: >
+        Marks the counterparty's messages read. Takes a time bound rather than a list
+        of ids, for the same reason as the notification feed: a bound reads one range
+        of a partitioned table instead of searching all of it. Omit `before` to mark
+        the whole thread read.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ConversationID' } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MarkConversationReadRequest' }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ChatUnreadCount' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /messages/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/MessageID' } }
+    patch:
+      tags: [chat]
+      summary: Edit a message
+      description: >
+        Sender only, and it records that the message was edited — the counterparty has
+        to be able to see that what they read has changed. A system message cannot be
+        edited because it has no author.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateMessageRequest' }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Only the sender may edit a message', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'A system message cannot be edited', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [chat]
+      summary: Redact a message
+      description: >
+        The sender unsending, or a moderator acting on an upheld report. The row
+        survives with its body cleared: a thread is evidence in a refund dispute, so
+        removal is recorded rather than erased.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Redacted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Only the sender or a moderator may redact a message', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  schemas:
+    MessageType:
+      type: string
+      description: >
+        A `system` message is produced by the backend — an offer was accepted, an
+        order shipped — and belongs to no participant, which is why it has no sender.
+      enum: [user, system]
+
+    MessageStatus:
+      type: string
+      enum: [sent, delivered, read]
+
+    Conversation:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/ConversationID' }
+        counterparty: { $ref: '#/components/schemas/AccountSummary' }
+        last_message: { allOf: [{ $ref: '#/components/schemas/Message' }], nullable: true }
+        last_message_at:
+          type: string
+          format: date-time
+          description: >
+            Starts at the creation time so an empty thread still sorts predictably in
+            the inbox.
+        unread: { type: integer, format: int64, description: Unread messages in this thread. }
+        created_at: { type: string, format: date-time }
+      required: [id, counterparty, last_message_at, unread, created_at]
+
+    ConversationPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Conversation' } }
+        next_cursor: { type: string, nullable: true }
+      required: [items]
+
+    ChatUnreadCount:
+      type: object
+      properties:
+        unread: { type: integer, format: int64 }
+        conversations: { type: integer, format: int64, description: How many threads have anything unread. }
+      required: [unread, conversations]
+
+    Message:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/MessageID' }
+        conversation_id: { $ref: '#/components/schemas/ConversationID' }
+        sender_id:
+          allOf: [{ $ref: '#/components/schemas/AccountID' }]
+          nullable: true
+          description: Null on a system message.
+        type: { $ref: '#/components/schemas/MessageType' }
+        body: { type: string, description: Empty on a redacted message. }
+        status: { $ref: '#/components/schemas/MessageStatus' }
+        attachments: { type: array, items: { $ref: '#/components/schemas/Resource' } }
+        metadata:
+          type: object
+          additionalProperties: true
+          description: >
+            References to a listing or variant or order, and the payload of an offer
+            card.
+        created_at: { type: string, format: date-time }
+        edited_at: { type: string, format: date-time, nullable: true }
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set on a redacted message. The row stays so a thread has no
+            unexplained gaps.
+      required: [id, conversation_id, type, body, status, attachments, metadata, created_at]
+
+    MessagePage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Message' } }
+        next_cursor: { type: string, nullable: true }
+      required: [items]
+
+    StartConversationRequest:
+      type: object
+      properties:
+        account_id: { $ref: '#/components/schemas/AccountID' }
+      required: [account_id]
+
+    SendMessageRequest:
+      type: object
+      description: A body or at least one attachment is required.
+      properties:
+        body: { type: string, maxLength: 4000 }
+        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+        metadata: { type: object, additionalProperties: true }
+
+    UpdateMessageRequest:
+      type: object
+      properties:
+        body: { type: string, minLength: 1, maxLength: 4000 }
+      required: [body]
+
+    MarkConversationReadRequest:
+      type: object
+      properties:
+        before:
+          type: string
+          format: date-time
+          description: >
+            Mark everything sent at or before this instant read. Omit to mark the
+            whole thread read.

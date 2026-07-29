@@ -1,0 +1,134 @@
+openapi: 3.0.3
+info:
+  title: ShopNexus Gateway API
+  version: 0.1.0
+  description: >
+    Public REST surface of the ShopNexus C2C marketplace gateway. This file is
+    the base document (info, servers, security, shared parameters and
+    responses). Per-module paths and schemas live in
+    internal/module/<module>/api/openapi.yaml and are merged into
+    api/openapi.gen.yaml by `go generate ./...` (cmd/specgen). Edit the
+    fragments, not the generated file.
+
+    Only `paths` and `components.schemas` are merged from a fragment, so
+    everything reusable across modules — parameters, responses, security
+    schemes — has to be defined here.
+servers:
+  - url: /
+    description: Gateway (relative to host)
+
+tags:
+  - name: account
+  - name: catalog
+  - name: order
+  - name: finance
+  - name: chat
+  - name: trust
+  - name: common
+  - name: admin
+    description: Moderator and admin console surface. Separate from the user-facing
+      routes because the same URL must never return two different populations
+      depending on the caller's role.
+
+paths: {}
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    # Keyset pagination, used by every collection. Never OFFSET: the list indexes
+    # are all shaped (owner_id, created_at DESC), and chat.message is a hypertable
+    # where chunk exclusion needs a time bound in the query.
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor from the previous page's `next_cursor`. Omit for the first page.
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
+  responses:
+    BadRequest:
+      description: Validation or malformed request
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthorized:
+      description: Missing or invalid credentials
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: Authenticated but not allowed to act on this resource
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Resource not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Conflict:
+      description: Conflicts with the current state (already exists, already done, wrong state)
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    UnprocessableEntity:
+      description: Well-formed but rejected by a business rule
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+          required: [code, message]
+      required: [error]
+
+    # One schema per entity kind in internal/shared/id/kinds.go. They live here
+    # rather than in the fragments because an id is a cross-cutting primitive owned
+    # by shared/id, not by a module: half of these are referenced by three or four
+    # fragments, and cmd/specgen merges all fragments into one flat schema
+    # namespace, so a per-module copy would have to be prefixed
+    # (OrderAccountID, FinanceAccountID, ...) and the copies would drift.
+    #
+    # A prefix is permanent — it is mixed into the cipher tweak, so changing one
+    # invalidates every id of that kind already issued. Keep this list in step with
+    # kinds.go; adding an entity touches both.
+    AccountID: { type: string, pattern: '^acc_[0-9a-hjkmnp-tv-z]{13}$', example: acc_62mxefynht57b }
+    ContactID: { type: string, pattern: '^ctc_[0-9a-hjkmnp-tv-z]{13}$', example: ctc_kvq1wd6ptz3n8 }
+    DeviceID: { type: string, pattern: '^dvc_[0-9a-hjkmnp-tv-z]{13}$', example: dvc_ynht57b62mxef }
+    IdentityDocumentID: { type: string, pattern: '^idd_[0-9a-hjkmnp-tv-z]{13}$', example: idd_57b62mxefynht }
+    CategoryID: { type: string, pattern: '^cat_[0-9a-hjkmnp-tv-z]{13}$', example: cat_7v2p41ryaj811 }
+    ProductSPUID: { type: string, pattern: '^spu_[0-9a-hjkmnp-tv-z]{13}$', example: spu_1ryaj8117v2p4 }
+    ProductSKUID: { type: string, pattern: '^sku_[0-9a-hjkmnp-tv-z]{13}$', example: sku_vq1wd6ptz3n8k }
+    CartItemID: { type: string, pattern: '^crt_[0-9a-hjkmnp-tv-z]{13}$', example: crt_3n8kvq1wd6ptz }
+    DraftOrderID: { type: string, pattern: '^drf_[0-9a-hjkmnp-tv-z]{13}$', example: drf_8kvq1wd6ptz3n }
+    OrderID: { type: string, pattern: '^ord_[0-9a-hjkmnp-tv-z]{13}$', example: ord_fv2cpg50vkrfp }
+    OrderItemID: { type: string, pattern: '^itm_[0-9a-hjkmnp-tv-z]{13}$', example: itm_q1wd6ptz3n8kv }
+    TransportID: { type: string, pattern: '^trp_[0-9a-hjkmnp-tv-z]{13}$', example: trp_d6ptz3n8kvq1w }
+    OfferID: { type: string, pattern: '^ofr_[0-9a-hjkmnp-tv-z]{13}$', example: ofr_ptz3n8kvq1wd6 }
+    RefundID: { type: string, pattern: '^rfd_[0-9a-hjkmnp-tv-z]{13}$', example: rfd_z3n8kvq1wd6pt }
+    RefundDisputeID: { type: string, pattern: '^dsp_[0-9a-hjkmnp-tv-z]{13}$', example: dsp_n8kvq1wd6ptz3 }
+    PaymentSessionID: { type: string, pattern: '^pay_[0-9a-hjkmnp-tv-z]{13}$', example: pay_7bq2xn4tw9yef }
+    TransactionID: { type: string, pattern: '^txn_[0-9a-hjkmnp-tv-z]{13}$', example: txn_5wtc4mx8jd2qr }
+    BankAccountID: { type: string, pattern: '^bnk_[0-9a-hjkmnp-tv-z]{13}$', example: bnk_2qr5wtc4mx8jd }
+    FeedbackID: { type: string, pattern: '^fbk_[0-9a-hjkmnp-tv-z]{13}$', example: fbk_2h9qk4mfx7bd3 }
+    ReviewID: { type: string, pattern: '^rvw_[0-9a-hjkmnp-tv-z]{13}$', example: rvw_qk4mfx7bd32h9 }
+    ReviewReplyID: { type: string, pattern: '^rpl_[0-9a-hjkmnp-tv-z]{13}$', example: rpl_mfx7bd32h9qk4 }
+    ReportID: { type: string, pattern: '^rpt_[0-9a-hjkmnp-tv-z]{13}$', example: rpt_9c4vt6bkn1pzs }
+    ConversationID: { type: string, pattern: '^cnv_[0-9a-hjkmnp-tv-z]{13}$', example: cnv_6ptz3n8kvq1wd }
+    MessageID: { type: string, pattern: '^msg_[0-9a-hjkmnp-tv-z]{13}$', example: msg_agnc1pe4pjb4k }
+    ResourceID: { type: string, pattern: '^res_[0-9a-hjkmnp-tv-z]{13}$', example: res_4mx8jd2qr5wtc }
+
+    CurrencyCode:
+      type: string
+      minLength: 3
+      maxLength: 3
+      pattern: '^[A-Z]{3}$'
+      description: >
+        ISO 4217. Never inferred from the account's country — one currency spans
+        many countries, and a seller may want a balance in a foreign one.
+      example: VND

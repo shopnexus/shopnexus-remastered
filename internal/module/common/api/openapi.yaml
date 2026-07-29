@@ -1,0 +1,346 @@
+# OpenAPI fragment owned by the common module. Merged by cmd/specgen.
+#
+# Covers "resource" (uploaded files) and "option" (the registry of pluggable
+# integrations: payment rails, carriers, notification channels).
+#
+# Uploads are presigned, and the server — not the client — assigns "object_key".
+# The client asks for an upload slot, PUTs the bytes straight at the storage
+# backend, then confirms; the size, MIME type and checksum recorded are the ones
+# read back from storage. A client that could name its own object key could claim
+# or overwrite somebody else's object, and a client that could declare its own size
+# could lie about it, so neither is accepted from the request.
+#
+# A resource is soft-deleted: "provider" + "object_key" is the only handle on the
+# stored object, so the row has to outlive the delete request until a reaper has
+# removed the object. Deleting the row first leaks the file permanently.
+#
+# "option"."vault_secret_path" never appears in a response. It names where an
+# integration's credentials live, which is exactly what an attacker wants to know.
+
+paths:
+  # ----------------------------------------------------------- resources -----
+  /resources:
+    post:
+      tags: [common]
+      summary: Reserve an upload slot
+      description: >
+        Returns the resource row together with a presigned URL to PUT the bytes to.
+        The resource stays incomplete — and unusable as an attachment — until
+        `POST /resources/{id}/completion` confirms it.
+
+
+        Pass `checksum` when it is known up front: if the same bytes are already
+        stored, the existing resource comes back with no `upload_url` and there is
+        nothing to upload. Several sellers listing the same photo then share one
+        object.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateUploadRequest' }
+      responses:
+        '201': { description: 'Slot reserved', content: { application/json: { schema: { $ref: '#/components/schemas/UploadTicket' } } } }
+        '200': { description: 'These bytes are already stored so nothing needs uploading', content: { application/json: { schema: { $ref: '#/components/schemas/UploadTicket' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { description: 'MIME type or declared size outside what this account may upload', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /resources/{id}/completion:
+    post:
+      tags: [common]
+      summary: Confirm an upload finished
+      description: >
+        The server reads the object back from storage and records the size, MIME
+        type and checksum it actually has, rather than what the client said it would
+        be. Until this succeeds the resource cannot be attached to anything.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ResourceID' } }
+      responses:
+        '200': { description: 'Confirmed', content: { application/json: { schema: { $ref: '#/components/schemas/Resource' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already confirmed', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'No object at the reserved key or it does not match what was reserved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /resources/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ResourceID' } }
+    get:
+      tags: [common]
+      summary: Read a resource and get a URL to fetch it
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Resource' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [common]
+      summary: Delete a resource
+      description: Soft delete. The row is kept until a reaper has removed the object
+        from the storage backend, because the row holds the only handle on it.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Marked for deletion }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ------------------------------------------------------------- options -----
+  /options:
+    get:
+      tags: [common]
+      summary: List enabled integrations of one type
+      description: >
+        The checkout list: payment rails, carriers, notification channels. Enabled
+        options only, ordered by `priority` then `id` — priority ties are possible,
+        so the id is the tiebreaker that keeps the order stable between calls.
+
+
+        Public: which rails a marketplace accepts is not a secret, and a buyer sees
+        them before signing in.
+      parameters:
+        - { name: type, in: query, required: true, schema: { $ref: '#/components/schemas/OptionType' } }
+        - name: owner_id
+          in: query
+          schema: { $ref: '#/components/schemas/AccountID' }
+          description: Restrict to one seller's own options.
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/OptionList' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+    post:
+      tags: [common]
+      summary: Register an integration the caller owns
+      description: >
+        A seller configuring their own carriers or payment rails. `id` is a
+        marketplace-wide slug shared with the system-provided options, so it is
+        supplied by the caller and collides loudly rather than being silently
+        renamed.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOptionRequest' }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Option' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { description: 'This slug is taken', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /options/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OptionSlug' } }
+    get:
+      tags: [common]
+      summary: Read one integration
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Option' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [common]
+      summary: Update an integration
+      description: >
+        The owner, or an admin for a system-provided one. The slug is not editable:
+        other modules store it as a plain string with no foreign key
+        (`item.transport_option`, `transaction.payment_option`), so renaming it would
+        orphan every row that named it.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateOptionRequest' }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Option' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [common]
+      summary: Remove an integration
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Removed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Still named by an unsettled payment or an in-flight shipment', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/options:
+    get:
+      tags: [admin]
+      summary: List every integration, disabled ones included
+      description: The operator's view. `GET /options` only ever shows enabled rows,
+        so this is the only way to see one that was switched off.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: type, in: query, schema: { $ref: '#/components/schemas/OptionType' } }
+        - { name: is_enabled, in: query, schema: { type: boolean } }
+        - { name: owner_id, in: query, schema: { $ref: '#/components/schemas/AccountID' } }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/OptionList' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  schemas:
+    OptionSlug:
+      type: string
+      maxLength: 100
+      pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+      description: >
+        Stable kebab-case identifier, marketplace-wide. A natural key, not an
+        encoded one: other modules store it as a plain string, so it is readable on
+        the wire by design.
+      example: ghn-express
+
+    OptionType:
+      type: string
+      maxLength: 100
+      pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+      description: >
+        High-level grouping key. Open-ended rather than an enum — adding an
+        integration category must not need a migration and a spec change.
+      example: transport
+
+    # ----------------------------------------------------------- resources ---
+    Resource:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/ResourceID' }
+        provider:
+          type: string
+          description: Storage backend, kebab-case — `s3`, `minio`, `local`.
+        mime: { type: string, example: image/jpeg }
+        size:
+          type: integer
+          format: int64
+          description: Bytes, as read back from storage rather than as declared.
+        checksum:
+          type: string
+          nullable: true
+          description: Content hash, used to share one stored object between identical uploads.
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Backend-specific extras — dimensions, duration, CDN path.
+        url:
+          type: string
+          nullable: true
+          description: >
+            Short-lived URL to fetch the bytes. Null while the upload is
+            unconfirmed. Not a stable address: store the id, not this.
+        url_expires_at: { type: string, format: date-time, nullable: true }
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            Null until the upload was confirmed. An unconfirmed resource cannot be
+            attached to anything.
+        created_at: { type: string, format: date-time }
+      required: [id, provider, mime, size, metadata, created_at]
+
+    CreateUploadRequest:
+      type: object
+      properties:
+        mime: { type: string, minLength: 1, maxLength: 100 }
+        size:
+          type: integer
+          format: int64
+          minimum: 1
+          description: >
+            Expected byte count, used to bound the presigned PUT. The recorded size
+            is what storage reports at completion, not this.
+        checksum:
+          type: string
+          maxLength: 128
+          description: >
+            Content hash if known. A match returns the stored resource and skips the
+            upload entirely.
+      required: [mime, size]
+
+    UploadTicket:
+      type: object
+      properties:
+        resource: { $ref: '#/components/schemas/Resource' }
+        upload_url:
+          type: string
+          nullable: true
+          description: >
+            PUT the bytes here, then confirm. Null when a checksum match meant there
+            was nothing to upload.
+        upload_expires_at: { type: string, format: date-time, nullable: true }
+      required: [resource]
+
+    # ------------------------------------------------------------- options ---
+    Option:
+      type: object
+      description: >
+        One pluggable integration. `vault_secret_path` is deliberately absent: the
+        credentials live in Vault, and the path to them is not something the API
+        hands out.
+      properties:
+        id: { $ref: '#/components/schemas/OptionSlug' }
+        owner_id:
+          allOf: [{ $ref: '#/components/schemas/AccountID' }]
+          nullable: true
+          description: The seller who configured it. Null means system-provided.
+        type: { $ref: '#/components/schemas/OptionType' }
+        provider:
+          type: string
+          description: Sub-grouping key, kebab-case — `vnpay`, `ghn`.
+        name: { type: string }
+        description: { type: string }
+        priority:
+          type: integer
+          description: Display order; ties are broken by `id`.
+        is_enabled: { type: boolean }
+        logo: { allOf: [{ $ref: '#/components/schemas/Resource' }], nullable: true }
+        data:
+          type: object
+          additionalProperties: true
+          description: >
+            Non-secret configuration only — endpoints, supported currencies, feature
+            flags.
+        created_at: { type: string, format: date-time }
+      required: [id, type, provider, name, description, priority, is_enabled, data, created_at]
+
+    OptionList:
+      type: object
+      description: >
+        Unpaginated. A marketplace has a handful of rails and carriers, and the
+        checkout screen wants all of them at once.
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Option' } }
+      required: [items]
+
+    CreateOptionRequest:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/OptionSlug' }
+        type: { $ref: '#/components/schemas/OptionType' }
+        provider: { type: string, maxLength: 100, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 2000 }
+        priority: { type: integer, default: 0 }
+        is_enabled: { type: boolean, default: true }
+        logo_resource_id: { $ref: '#/components/schemas/ResourceID' }
+        data: { type: object, additionalProperties: true }
+      required: [id, type, provider, name]
+
+    UpdateOptionRequest:
+      type: object
+      description: >
+        Every field optional; the slug, type and provider are fixed at creation.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 2000 }
+        priority: { type: integer }
+        is_enabled: { type: boolean }
+        logo_resource_id: { allOf: [{ $ref: '#/components/schemas/ResourceID' }], nullable: true }
+        data: { type: object, additionalProperties: true }

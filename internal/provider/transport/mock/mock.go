@@ -8,17 +8,17 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
-	"shopnexus-server/internal/provider/transport"
-	sharedmodel "shopnexus-server/internal/shared/model"
-
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+
+	"shopnexus/internal/provider"
+	"shopnexus/internal/provider/transport"
 )
 
 const (
@@ -27,25 +27,26 @@ const (
 )
 
 // deliverHook is the app's transport ResultHandler, captured at WireWebhooks and
-// shared across all mock instances: GetTransportClient builds a fresh client per
-// call, so the booking instance can't hold the hook itself. Dev-only — one
-// transport webhook deliver exists per process.
+// shared across mock instances. Dev-only — one transport webhook deliver exists
+// per process.
 var (
 	hookMu      sync.RWMutex
 	deliverHook transport.ResultHandler
 )
 
-// Data is the provider config carried in sharedmodel.Option.Data.
+// Data is the provider config carried in provider.Option.Data.
 type Data struct {
 	DelaySeconds int `json:"delay_seconds"` // auto-deliver delay; 0 => 30s
 }
 
+var _ transport.Client = (*Client)(nil)
+
 type Client struct {
-	config sharedmodel.Option
+	config provider.Option
 	delay  time.Duration
 }
 
-func NewClient(cfg sharedmodel.Option) transport.Client {
+func NewClient(cfg provider.Option) transport.Client {
 	delay := defaultDelay
 	if len(cfg.Data) > 0 {
 		var d Data
@@ -56,7 +57,7 @@ func NewClient(cfg sharedmodel.Option) transport.Client {
 	return &Client{config: cfg, delay: delay}
 }
 
-func (c *Client) Config() sharedmodel.Option { return c.config }
+func (c *Client) Config() provider.Option { return c.config }
 
 func (c *Client) Quote(_ context.Context, _ transport.QuoteParams) (transport.QuoteResult, error) {
 	return transport.QuoteResult{Cost: flatCost, Data: json.RawMessage(`{}`)}, nil
@@ -68,7 +69,7 @@ func (c *Client) Create(_ context.Context, params transport.CreateParams) (trans
 	trackingID := newTrackingID()
 	id, err := uuid.NewRandom()
 	if err != nil {
-		return transport.Transport{}, err
+		return transport.Transport{}, fmt.Errorf("generate shipment id: %w", err)
 	}
 	data, _ := json.Marshal(map[string]string{"tracking_id": trackingID})
 
@@ -82,8 +83,7 @@ func (c *Client) Create(_ context.Context, params transport.CreateParams) (trans
 	}, nil
 }
 
-// scheduleDelivery fires Processing then Success after the delay. The order
-// webhook enforces Pending -> Processing -> Success, so both steps run in order.
+// scheduleDelivery fires Processing then Success after the delay.
 func (c *Client) scheduleDelivery(trackingID string) {
 	time.AfterFunc(c.delay, func() {
 		hookMu.RLock()
@@ -114,7 +114,7 @@ func (c *Client) Cancel(_ context.Context, _ string) error { return nil }
 
 // WireWebhooks captures the deliver hook and mounts a manual-trigger route for
 // dev: POST /api/v1/transport/webhook/mock {"tracking_id":...,"status":...}.
-func (c *Client) WireWebhooks(e *echo.Echo, deliver transport.ResultHandler, registered map[string]struct{}) string {
+func (c *Client) WireWebhooks(mux *http.ServeMux, deliver transport.ResultHandler, registered map[string]struct{}) string {
 	const key = "transport/mock"
 	if _, ok := registered[key]; ok {
 		return key
@@ -124,22 +124,23 @@ func (c *Client) WireWebhooks(e *echo.Echo, deliver transport.ResultHandler, reg
 	deliverHook = deliver
 	hookMu.Unlock()
 
-	e.POST("/api/v1/transport/webhook/mock", func(ec echo.Context) error {
+	mux.HandleFunc("POST /api/v1/transport/webhook/mock", func(w http.ResponseWriter, r *http.Request) {
 		var p struct {
 			TrackingID string `json:"tracking_id"`
 			Status     string `json:"status"`
 		}
-		if err := ec.Bind(&p); err != nil || p.TrackingID == "" {
-			return ec.NoContent(http.StatusBadRequest)
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil || p.TrackingID == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
-		if err := deliver(ec.Request().Context(), transport.WebhookResult{
+		if err := deliver(r.Context(), transport.WebhookResult{
 			TransportID: p.TrackingID,
 			Status:      p.Status,
 			Data:        map[string]any{"tracking_id": p.TrackingID},
 		}); err != nil {
 			slog.Error("mock transport: manual deliver", slog.Any("error", err))
 		}
-		return ec.NoContent(http.StatusOK)
+		w.WriteHeader(http.StatusOK)
 	})
 	return key
 }

@@ -4,102 +4,28 @@ import (
 	"context"
 	"fmt"
 
-	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
-	"shopnexus-server/config"
-	"shopnexus-server/internal/infras/cache"
-	"shopnexus-server/internal/infras/infra"
-	catalogbiz "shopnexus-server/internal/module/catalog/biz"
-	catalogdb "shopnexus-server/internal/module/catalog/db/sqlc"
-	catalogecho "shopnexus-server/internal/module/catalog/transport/echo"
-	catalogworkers "shopnexus-server/internal/module/catalog/workers"
-	"shopnexus-server/internal/provider/llm"
-	"shopnexus-server/internal/shared/besteffort"
-	"shopnexus-server/internal/shared/pgsqlc"
-	"shopnexus-server/internal/shared/restatesvc"
+	"shopnexus/internal/config"
+	"shopnexus/internal/infra/postgres"
+	catalogpg "shopnexus/internal/module/catalog/adapter/postgres"
+	catalogapi "shopnexus/internal/module/catalog/api"
+	"shopnexus/internal/module/catalog/port"
 )
 
-// Module provides the catalog module. Catalog OWNS llm (only module that uses
-// it). Infra is its own fx.Private set via infra.StandardModule.
+// Module wires the catalog service and its Postgres-backed repository.
 var Module = fx.Module("catalog",
-	infra.StandardModule("catalog"),
 	fx.Provide(
-		NewLLMClient,
-		NewCatalogStorage,
-		catalogbiz.NewCatalogHandler,
-		NewCatalogBiz,
-		catalogecho.NewHandler,
-	),
-	fx.Provide(
-		fx.Annotate(
-			func(b *catalogbiz.CatalogHandler) restate.ServiceDefinition {
-				return restatesvc.Reflect(catalogbiz.NewCatalogService(b))
-			},
-			fx.ResultTags(`group:"restate"`),
-		),
-		fx.Annotate(
-			func(b *catalogbiz.CatalogHandler) besteffort.Registrar {
-				return func(s *besteffort.Server) { catalogbiz.RegisterCatalogBestEffort(s, b) }
-			},
-			fx.ResultTags(`group:"besteffort"`),
-		),
-	),
-	fx.Invoke(
-		catalogecho.NewHandler,
-		catalogworkers.Register,
+		fx.Annotate(newRepo, fx.As(new(port.Repository))),
+		fx.Annotate(NewService, fx.As(new(catalogapi.Service))),
 	),
 )
 
-// NewLLMClient builds the configured provider and wraps it in a CachingClient
-// so repeated embedding queries (the common search case) skip the network hop.
-func NewLLMClient(cfg *config.Config, cache cache.Client) (llm.Client, error) {
-	var (
-		client llm.Client
-		err    error
-	)
-
-	switch cfg.LLM.Provider {
-	case "python":
-		client = llm.NewPythonClient(llm.PythonConfig{
-			URL: cfg.LLM.Python.URL,
-		})
-	case "openai":
-		client = llm.NewOpenAIClient(llm.OpenAIConfig{
-			APIKey:     cfg.LLM.OpenAI.APIKey,
-			BaseURL:    cfg.LLM.OpenAI.BaseURL,
-			EmbedModel: cfg.LLM.OpenAI.EmbedModel,
-			ChatModel:  cfg.LLM.OpenAI.ChatModel,
-		})
-	case "bedrock":
-		client, err = llm.NewBedrockClient(context.Background(), llm.BedrockConfig{
-			Region:       cfg.LLM.Bedrock.Region,
-			EmbedModelID: cfg.LLM.Bedrock.EmbedModelID,
-			ChatModelID:  cfg.LLM.Bedrock.ChatModelID,
-		})
-	case "openrouter":
-		client = llm.NewOpenRouterClient(llm.OpenRouterConfig{
-			APIKey:     cfg.LLM.OpenRouter.APIKey,
-			BaseURL:    cfg.LLM.OpenRouter.BaseURL,
-			EmbedModel: cfg.LLM.OpenRouter.EmbedModel,
-			ChatModel:  cfg.LLM.OpenRouter.ChatModel,
-		})
-	default:
-		return nil, fmt.Errorf("unknown LLM provider: %s", cfg.LLM.Provider)
-	}
+func newRepo(lc fx.Lifecycle, cfg *config.Config) (*catalogpg.Repo, error) {
+	pool, err := postgres.NewPool(context.Background(), cfg.CatalogDBDSN, "catalog")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open catalog db pool: %w", err)
 	}
-
-	return llm.NewCachingClient(client, cache, cfg.LLM.EmbedCacheTTL), nil
-}
-
-// NewCatalogStorage creates a new catalog storage backed by PostgreSQL.
-func NewCatalogStorage(pool pgsqlc.TxBeginner) catalogbiz.CatalogStorage {
-	return pgsqlc.NewStorage(pool, catalogdb.New(pool))
-}
-
-// NewCatalogBiz creates the catalog client. BestEffort calls run in-process.
-func NewCatalogBiz(cfg *config.Config, biz *catalogbiz.CatalogHandler) catalogbiz.CatalogBizClient {
-	return catalogbiz.NewCatalogBizClientInProcess(cfg.Restate.IngressAddress, biz)
+	lc.Append(fx.Hook{OnStop: func(context.Context) error { pool.Close(); return nil }})
+	return catalogpg.New(pool), nil
 }

@@ -1,0 +1,1122 @@
+# OpenAPI fragment owned by the order module. Merged by cmd/specgen.
+#
+# Covers the whole purchase lifecycle across the module's eight tables:
+# cart_item, draft_order, item, order, transport, offer, refund, refund_dispute.
+#
+# Two shapes recur:
+#   - Checkout is PAY-FIRST. A draft freezes the listing terms, checkout creates
+#     the items together with one buyer-checkout payment session, and only a
+#     seller confirmation turns paid items into an order.
+#   - A state transition is a POST to a noun sub-resource, never a PATCH of a
+#     status field. "order" has no status column on purpose: the lifecycle lives
+#     in the service and only outcome facts (completed_at, cancelled_at) persist.
+#
+# Work done by a job has no endpoint. Auto-payout 72h after receipt confirmation,
+# auto-accept of a refund the seller ignored for 48h, and draft/offer expiry are
+# all cron; the contract exposes the deadlines so a client can count down.
+
+paths:
+  # ---------------------------------------------------------------- cart -----
+  /cart-items:
+    get:
+      tags: [order]
+      summary: List the caller's cart
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/CartItemPage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [order]
+      summary: Add a SKU to the cart
+      description: One row per (account, SKU). Adding a SKU already in the cart is a
+        conflict — change the quantity instead.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddCartItemRequest' }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/CartItem' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /cart-items/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/CartItemID' } }
+    patch:
+      tags: [order]
+      summary: Change the quantity of a cart row
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCartItemRequest' }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/CartItem' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [order]
+      summary: Remove a cart row
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # -------------------------------------------------------------- drafts -----
+  /drafts:
+    post:
+      tags: [order]
+      summary: Open a purchase session for one listing
+      description: >
+        Freezes the listing terms so a price the seller edits afterwards cannot be
+        charged. The server snapshots the SPU together with all of its SKUs —
+        price and package_details live on the SKU, and those are exactly what must
+        not move under the buyer — and sets `valid_until`.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDraftRequest' }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/DraftOrder' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'Listing not found, deleted, or not active', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    get:
+      tags: [order]
+      summary: List the caller's purchase sessions
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - { name: state, in: query, schema: { type: string, enum: [live, cancelled, expired], default: live } }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/DraftOrderPage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /drafts/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/DraftOrderID' } }
+    get:
+      tags: [order]
+      summary: Read a purchase session and its frozen terms
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/DraftOrder' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [order]
+      summary: Cancel a purchase session
+      description: Sets `cancelled_at`. A session that already produced paid items
+        cannot be cancelled.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Cancelled }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /drafts/{id}/checkout:
+    post:
+      tags: [order]
+      summary: Check out a purchase session (pay-first)
+      description: >
+        Creates one `item` per line plus a single buyer-checkout payment session,
+        and returns both. Line prices come from the session's frozen snapshot,
+        never from the live catalog. `contact_id` is snapshotted into every line's
+        delivery address: one session covers one SPU and therefore one seller, so
+        a single address is correct.
+
+
+        A SKU whose listing is priced `negotiable` is rejected with 422 unless the
+        caller has an accepted offer for it — a negotiated listing must go through
+        the offer flow.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/DraftOrderID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckoutRequest' }
+      responses:
+        '201': { description: 'Items created and a payment session opened', content: { application/json: { schema: { $ref: '#/components/schemas/CheckoutResult' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Session expired, cancelled, or already checked out', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  # --------------------------------------------------------------- items -----
+  /items:
+    get:
+      tags: [order]
+      summary: List checkout items, as buyer or as seller
+      description: '`role=seller&state=pending` is the seller''s confirmation inbox:
+        paid items that no order covers yet.'
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: role, in: query, required: true, schema: { type: string, enum: [buyer, seller] } }
+        - { name: state, in: query, schema: { $ref: '#/components/schemas/OrderItemState' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/OrderItemPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /items/{id}/cancellation:
+    post:
+      tags: [order]
+      summary: Cancel an unconfirmed item
+      description: Either party may cancel while the item is not yet part of an
+        order. The cancelling account is recorded.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderItemID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancellationRequest' }
+      responses:
+        '200': { description: 'Cancelled', content: { application/json: { schema: { $ref: '#/components/schemas/OrderItem' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already confirmed into an order, or already cancelled', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  # -------------------------------------------------------------- orders -----
+  /orders:
+    post:
+      tags: [order]
+      summary: Confirm paid items into an order (seller)
+      description: >
+        The seller accepts the paid items of one purchase session. Creates the
+        shipment, then the order, then links the items to it. One order per
+        session is enforced by a unique constraint, so a retried confirmation
+        cannot mint a second order. When the listing says the seller pays
+        shipping, a seller-confirmation-fee payment session is opened too and
+        returned in `shipping_fee_session`.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmOrderRequest' }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/ConfirmOrderResult' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Caller is not the seller of these items', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Session already confirmed, items unpaid, or items cancelled', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+    get:
+      tags: [order]
+      summary: List orders, as buyer or as seller
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: role, in: query, required: true, schema: { type: string, enum: [buyer, seller] } }
+        - { name: state, in: query, schema: { $ref: '#/components/schemas/OrderState' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/OrderPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /orders/{id}:
+    get:
+      tags: [order]
+      summary: Read an order
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderID' } }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /orders/{id}/receipt:
+    post:
+      tags: [order]
+      summary: Confirm receipt of the goods (buyer)
+      description: >
+        The buyer confirms delivery and attaches unboxing evidence — at least one
+        photo or video is mandatory, because this evidence is what a later refund
+        or dispute is judged on. Sets `received_at` and starts the 72-hour payout
+        countdown in `payout_deadline_at`.
+
+
+        Confirming twice is a conflict rather than a no-op: a retried upload must
+        not be able to restart the clock and move the payout date.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmReceiptRequest' }
+      responses:
+        '200': { description: 'Receipt recorded', content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Caller is not the buyer of this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already confirmed, or the order is cancelled', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /orders/{id}/cancellation:
+    post:
+      tags: [order]
+      summary: Cancel an order
+      description: Either party may cancel while the shipment has not left `pending`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancellationRequest' }
+      responses:
+        '200': { description: 'Cancelled', content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Shipment already moved, or the order is closed', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /orders/{id}/transport:
+    get:
+      tags: [order]
+      summary: Read the shipment and its tracking events
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderID' } }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Transport' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /orders/{id}/refunds:
+    post:
+      tags: [order]
+      summary: Open a refund request (buyer)
+      description: >
+        Evidence is mandatory. The request goes straight to seller review with a
+        48-hour deadline in `review_deadline_at`; if the seller neither accepts nor
+        rejects before it passes, a job refunds the buyer in full. One open refund
+        per order.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRefundRequest' }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Caller is not the buyer of this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'A refund is already open on this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'Order is not in a refundable state', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  # -------------------------------------------------------------- offers -----
+  /offers:
+    post:
+      tags: [order]
+      summary: Open a price negotiation on a SKU
+      description: Either side may open it. One active negotiation per (buyer, SKU);
+        the terms are then revised in place rather than by stacking rows.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOfferRequest' }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Offer' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'An active negotiation already exists for this (buyer, SKU)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    get:
+      tags: [order]
+      summary: List negotiations, as buyer or as seller
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: role, in: query, required: true, schema: { type: string, enum: [buyer, seller] } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/OfferStatus' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/OfferPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /offers/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OfferID' } }
+    get:
+      tags: [order]
+      summary: Read a negotiation
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Offer' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [order]
+      summary: Counter-offer
+      description: Revises the current terms in place and moves authorship to the
+        caller. Only the party that does not own the standing proposal may counter.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateOfferRequest' }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Offer' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Caller already owns the standing proposal, or is not a party', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Negotiation is no longer active', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [order]
+      summary: Cancel a negotiation
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Cancelled }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Negotiation is no longer active', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /offers/{id}/acceptance:
+    post:
+      tags: [order]
+      summary: Accept the negotiated terms (buyer)
+      description: >
+        Only the buyer closes a negotiation, whichever side proposed the standing
+        terms — an order may not appear without the buyer's explicit acceptance.
+        Opens the checkout payment session at the agreed total and creates the
+        item, returning both.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OfferID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AcceptOfferRequest' }
+      responses:
+        '201': { description: 'Accepted; item created and a payment session opened', content: { application/json: { schema: { $ref: '#/components/schemas/CheckoutResult' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Caller is not the buyer of this negotiation', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Negotiation is expired, cancelled, or already accepted', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  # ------------------------------------------------------------- refunds -----
+  /refunds:
+    get:
+      tags: [order]
+      summary: List refunds, as buyer or as seller
+      description: '`role=seller` resolves through the order''s seller; a refund row
+        itself only records the buyer.'
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: role, in: query, required: true, schema: { type: string, enum: [buyer, seller] } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/RefundStatus' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/RefundPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /refunds/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundID' } }
+    get:
+      tags: [order]
+      summary: Read a refund
+      description: Carries `review_deadline_at` for the countdown, and `dispute_id`
+        once a rejection opened one — that is how either party reaches the dispute.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [order]
+      summary: Withdraw a refund request (buyer)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Withdrawn }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already decided or disputed', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /refunds/{id}/attachments:
+    post:
+      tags: [order]
+      summary: Add evidence to a refund (buyer)
+      description: The buyer may keep supplementing evidence while the refund is
+        under seller review or in dispute, up to the moderator's ruling.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddAttachmentsRequest' }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Refund is already closed', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /refunds/{id}/acceptance:
+    post:
+      tags: [order]
+      summary: Accept a refund (seller)
+      description: Releases the held money back to the buyer. Finance writes the
+        reversal leg and the refund records it.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundID' } }
+      responses:
+        '200': { description: 'Accepted', content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Caller is not the seller of this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Refund is not awaiting review', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /refunds/{id}/rejection:
+    post:
+      tags: [order]
+      summary: Reject a refund and open the dispute (seller)
+      description: >
+        A rejection *is* the dispute: refusing costs the seller a reason and
+        counter-evidence, and the case goes to a moderator immediately. The
+        response is the dispute, not the refund.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RejectRefundRequest' }
+      responses:
+        '201': { description: 'Dispute opened', content: { application/json: { schema: { $ref: '#/components/schemas/RefundDispute' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Caller is not the seller of this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Refund is not awaiting review', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  # ------------------------------------------------------------ disputes -----
+  /disputes/{id}:
+    get:
+      tags: [order]
+      summary: Read a dispute
+      description: Each side's evidence stays in its own list — the buyer's on the
+        refund, the seller's on the dispute — so a moderator can tell who submitted
+        what.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundDisputeID' } }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/RefundDispute' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /disputes/{id}/attachments:
+    post:
+      tags: [order]
+      summary: Add evidence to a dispute
+      description: Either party may add evidence until the moderator rules. The
+        caller's side of the case decides which list it lands in.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundDisputeID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddAttachmentsRequest' }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/RefundDispute' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Dispute is already resolved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/disputes:
+    get:
+      tags: [admin]
+      summary: The moderator's dispute queue
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/DisputeStatus' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/RefundDisputePage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/disputes/{id}/ruling:
+    post:
+      tags: [admin]
+      summary: Rule on a dispute (moderator)
+      description: >
+        Decided on whose evidence is more convincing, and final — there is no
+        appeal route. `buyer-wins` drives the refund to accepted and releases the
+        money back; `seller-wins` drives it to rejected and lets the payout stand.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundDisputeID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DisputeRulingRequest' }
+      responses:
+        '200': { description: 'Ruled', content: { application/json: { schema: { $ref: '#/components/schemas/RefundDispute' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Dispute is already resolved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  schemas:
+    # ------------------------------------------------------------- enums -----
+    OrderItemState:
+      type: string
+      description: >
+        Derived, not stored. `pending` = paid but no order covers it yet,
+        `confirmed` = linked to an order, `cancelled` = withdrawn by either party.
+      enum: [pending, confirmed, cancelled]
+
+    OrderState:
+      type: string
+      description: >
+        Derived from the two outcome timestamps: `open` means neither is set,
+        which is also the predicate of the partial indexes behind this filter.
+      enum: [open, completed, cancelled]
+
+    OrderPaymentStatus:
+      type: string
+      description: Status of the payment session covering the item; owned by finance.
+      enum: [pending, processing, success, cancelled, failed]
+
+    TransportStatus:
+      type: string
+      description: Shipment lifecycle as the carrier reports it.
+      enum: [pending, picked-up, in-transit, delivered, returned, failed, cancelled]
+
+    OfferStatus:
+      type: string
+      enum: [active, accepted, cancelled]
+
+    RefundStatus:
+      type: string
+      description: >
+        A refund goes straight to seller review; the buyer does not ship the goods
+        back first. `accepted` and `rejected` are the seller's or the moderator's
+        outcome, `cancelled` is the buyer withdrawing.
+      enum: [awaiting-seller-review, disputed, accepted, rejected, cancelled]
+
+    DisputeStatus:
+      type: string
+      enum: [open, seller-wins, buyer-wins]
+
+    DisputeOutcome:
+      type: string
+      description: A ruling, so `open` is not one of the choices.
+      enum: [seller-wins, buyer-wins]
+
+    OrderShippingPaidBy:
+      type: string
+      description: >
+        Chosen by the seller when the listing is created. `buyer` adds the fee to
+        the checkout invoice; `seller` deducts it from the payout.
+      enum: [buyer, seller]
+
+    # --------------------------------------------------------- addresses -----
+    OrderAddressSnapshot:
+      type: object
+      description: >
+        A contact copied into the row, not a pointer to one. The administrative
+        codes are what a carrier is called with, and the saved contact may have
+        changed since the order was placed.
+      properties:
+        full_name: { type: string }
+        phone: { type: string, description: E.164 }
+        country: { type: string, minLength: 2, maxLength: 2, description: ISO 3166-1 alpha-2 }
+        province_code: { type: string }
+        province_name: { type: string }
+        district_code: { type: string, nullable: true, description: Null where the country has no district tier }
+        district_name: { type: string, nullable: true }
+        ward_code: { type: string }
+        ward_name: { type: string }
+        postal_code: { type: string, nullable: true }
+        address: { type: string, description: 'Street or house-number line, below ward level' }
+        address_detail: { type: string, nullable: true, description: 'Unit, floor, notes' }
+        provider_codes:
+          type: object
+          additionalProperties: true
+          description: 'Per-carrier territory ids, e.g. {"ghn": {"province_id": 201}}'
+      required: [full_name, phone, country, province_code, ward_code, address]
+
+    # ---------------------------------------------------------------- cart ---
+    CartItem:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/CartItemID' }
+        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
+        quantity: { type: integer, format: int64 }
+        created_at: { type: string, format: date-time }
+      required: [id, sku_id, quantity, created_at]
+
+    CartItemPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/CartItem' } }
+        next_cursor: { type: string, nullable: true }
+      required: [items]
+
+    AddCartItemRequest:
+      type: object
+      properties:
+        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
+        quantity: { type: integer, format: int64, minimum: 1 }
+      required: [sku_id, quantity]
+
+    UpdateCartItemRequest:
+      type: object
+      properties:
+        quantity: { type: integer, format: int64, minimum: 1 }
+      required: [quantity]
+
+    # -------------------------------------------------------------- drafts ---
+    DraftSKUSnapshot:
+      type: object
+      description: One purchasable variant as it stood when the session opened.
+      properties:
+        id: { $ref: '#/components/schemas/ProductSKUID' }
+        price: { type: integer, format: int64, description: Smallest currency unit }
+        attributes: { type: object, additionalProperties: true }
+        package_details:
+          type: object
+          additionalProperties: true
+          description: Weight and dimensions; the shipping quote is computed from these.
+        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+      required: [id, price]
+
+    DraftSPUSnapshot:
+      type: object
+      description: >
+        The frozen listing terms. Carries the SKUs because price and shipping
+        weight live there, and those are what must not move under the buyer.
+      properties:
+        id: { $ref: '#/components/schemas/ProductSPUID' }
+        name: { type: string }
+        seller_id: { $ref: '#/components/schemas/AccountID' }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        price_mode: { type: string, enum: [fixed, negotiable] }
+        shipping_paid_by: { $ref: '#/components/schemas/OrderShippingPaidBy' }
+        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+        skus: { type: array, items: { $ref: '#/components/schemas/DraftSKUSnapshot' } }
+      required: [id, name, seller_id, currency, price_mode, skus]
+
+    DraftOrder:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/DraftOrderID' }
+        spu_id: { $ref: '#/components/schemas/ProductSPUID' }
+        snapshot: { $ref: '#/components/schemas/DraftSPUSnapshot' }
+        created_at: { type: string, format: date-time }
+        valid_until: { type: string, format: date-time }
+        cancelled_at: { type: string, format: date-time, nullable: true }
+      required: [id, spu_id, snapshot, created_at, valid_until]
+
+    DraftOrderPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/DraftOrder' } }
+        next_cursor: { type: string, nullable: true }
+      required: [items]
+
+    CreateDraftRequest:
+      type: object
+      properties:
+        spu_id: { $ref: '#/components/schemas/ProductSPUID' }
+      required: [spu_id]
+
+    # --------------------------------------------------------------- items ---
+    OrderItem:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/OrderItemID' }
+        draft_id: { $ref: '#/components/schemas/DraftOrderID' }
+        order_id:
+          allOf: [{ $ref: '#/components/schemas/OrderID' }]
+          nullable: true
+          description: Null until the seller confirms.
+        buyer_id: { $ref: '#/components/schemas/AccountID' }
+        seller_id: { $ref: '#/components/schemas/AccountID' }
+        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
+        quantity: { type: integer, format: int64 }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        total_amount: { type: integer, format: int64, description: 'Paid amount in the smallest unit of `currency`' }
+        transport_option: { type: string, description: A transport option slug owned by the common module }
+        address: { $ref: '#/components/schemas/OrderAddressSnapshot' }
+        note: { type: string, nullable: true, description: Buyer note }
+        state: { $ref: '#/components/schemas/OrderItemState' }
+        payment_status: { $ref: '#/components/schemas/OrderPaymentStatus' }
+        cancelled_at: { type: string, format: date-time, nullable: true }
+        cancelled_by_id:
+          allOf: [{ $ref: '#/components/schemas/AccountID' }]
+          nullable: true
+          description: Null means the system cancelled it.
+        created_at: { type: string, format: date-time }
+      required: [id, draft_id, buyer_id, seller_id, sku_id, quantity, currency, total_amount, transport_option, address, state, payment_status, created_at]
+
+    OrderItemPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
+        next_cursor: { type: string, nullable: true }
+      required: [items]
+
+    CheckoutLine:
+      type: object
+      properties:
+        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
+        quantity: { type: integer, format: int64, minimum: 1 }
+        transport_option: { type: string, maxLength: 100, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        note: { type: string, maxLength: 500 }
+      required: [sku_id, quantity, transport_option]
+
+    CheckoutRequest:
+      type: object
+      properties:
+        lines:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/CheckoutLine' }
+        contact_id: { $ref: '#/components/schemas/ContactID' }
+        currency:
+          allOf: [{ $ref: '#/components/schemas/CurrencyCode' }]
+          description: Must match the listing's currency.
+      required: [lines, contact_id, currency]
+
+    CheckoutResult:
+      type: object
+      description: >
+        The items and the single session that pays for them. Nothing is settled
+        until the session succeeds, and no order exists until the seller confirms.
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
+        payment_session: { $ref: '#/components/schemas/PaymentSession' }
+      required: [items, payment_session]
+
+    # -------------------------------------------------------------- orders ---
+    Order:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/OrderID' }
+        draft_id: { $ref: '#/components/schemas/DraftOrderID' }
+        buyer_id: { $ref: '#/components/schemas/AccountID' }
+        seller_id: { $ref: '#/components/schemas/AccountID' }
+        transport_id: { $ref: '#/components/schemas/TransportID' }
+        address: { $ref: '#/components/schemas/OrderAddressSnapshot' }
+        pickup_address: { $ref: '#/components/schemas/OrderAddressSnapshot' }
+        items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
+        note: { type: string, nullable: true, description: Seller note }
+        state: { $ref: '#/components/schemas/OrderState' }
+        received_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the buyer confirmed receipt. Null means the payout clock has not started.
+        receipt_attachments:
+          type: array
+          items: { $ref: '#/components/schemas/ResourceID' }
+          description: Unboxing evidence supplied with the receipt confirmation.
+        payout_deadline_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: '`received_at` + 72h. Absent a refund, a job pays the seller out at this point.'
+        created_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true, description: Set by the payout job }
+        cancelled_at: { type: string, format: date-time, nullable: true }
+      required: [id, draft_id, buyer_id, seller_id, transport_id, address, pickup_address, state, receipt_attachments, created_at]
+
+    OrderPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Order' } }
+        next_cursor: { type: string, nullable: true }
+      required: [items]
+
+    ConfirmOrderRequest:
+      type: object
+      properties:
+        draft_id: { $ref: '#/components/schemas/DraftOrderID' }
+        transport_option: { type: string, maxLength: 100, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        pickup_contact_id: { $ref: '#/components/schemas/ContactID' }
+        note: { type: string, maxLength: 500 }
+      required: [draft_id, transport_option, pickup_contact_id]
+
+    ConfirmOrderResult:
+      type: object
+      properties:
+        order: { $ref: '#/components/schemas/Order' }
+        shipping_fee_session:
+          allOf: [{ $ref: '#/components/schemas/PaymentSession' }]
+          nullable: true
+          description: Present only when the listing says the seller pays shipping.
+      required: [order]
+
+    ConfirmReceiptRequest:
+      type: object
+      properties:
+        attachments:
+          type: array
+          minItems: 1
+          description: >
+            Unboxing photos or video. At least one is mandatory — a later refund or
+            dispute is judged on this evidence.
+          items: { $ref: '#/components/schemas/ResourceID' }
+        note: { type: string, maxLength: 2000 }
+      required: [attachments]
+
+    CancellationRequest:
+      type: object
+      properties:
+        reason: { type: string, maxLength: 2000 }
+      required: [reason]
+
+    # ----------------------------------------------------------- transport ---
+    TransportEvent:
+      type: object
+      description: One carrier-reported checkpoint.
+      properties:
+        status: { $ref: '#/components/schemas/TransportStatus' }
+        note: { type: string }
+        occurred_at: { type: string, format: date-time }
+      required: [status, occurred_at]
+
+    Transport:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/TransportID' }
+        option: { type: string, description: A transport option slug owned by the common module }
+        status: { $ref: '#/components/schemas/TransportStatus' }
+        tracking_number: { type: string, nullable: true }
+        label_url: { type: string, nullable: true }
+        events: { type: array, items: { $ref: '#/components/schemas/TransportEvent' } }
+        created_at: { type: string, format: date-time }
+      required: [id, option, status, events, created_at]
+
+    # -------------------------------------------------------------- offers ---
+    Offer:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/OfferID' }
+        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
+        buyer_id: { $ref: '#/components/schemas/AccountID' }
+        seller_id: { $ref: '#/components/schemas/AccountID' }
+        author_id: { $ref: '#/components/schemas/AccountID' }
+        status: { $ref: '#/components/schemas/OfferStatus' }
+        quantity: { type: integer, format: int64 }
+        total: { type: integer, format: int64, description: 'Currently proposed total, smallest currency unit' }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        reason: { type: string, description: Shown on the offer card beside the proposed price }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+      required: [id, sku_id, buyer_id, seller_id, author_id, status, quantity, total, currency, created_at, expires_at]
+
+    OfferPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Offer' } }
+        next_cursor: { type: string, nullable: true }
+      required: [items]
+
+    CreateOfferRequest:
+      type: object
+      properties:
+        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
+        quantity: { type: integer, format: int64, minimum: 1 }
+        total: { type: integer, format: int64, minimum: 1 }
+        reason: { type: string, maxLength: 500 }
+      required: [sku_id, quantity, total]
+
+    UpdateOfferRequest:
+      type: object
+      properties:
+        quantity: { type: integer, format: int64, minimum: 1 }
+        total: { type: integer, format: int64, minimum: 1 }
+        reason: { type: string, maxLength: 500 }
+      required: [quantity, total]
+
+    AcceptOfferRequest:
+      type: object
+      description: Acceptance still needs a delivery address and a carrier — the
+        negotiation only settled price and quantity.
+      properties:
+        contact_id: { $ref: '#/components/schemas/ContactID' }
+        transport_option: { type: string, maxLength: 100, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        note: { type: string, maxLength: 500 }
+      required: [contact_id, transport_option]
+
+    # ------------------------------------------------------------- refunds ---
+    Refund:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/RefundID' }
+        order_id: { $ref: '#/components/schemas/OrderID' }
+        buyer_id: { $ref: '#/components/schemas/AccountID' }
+        status: { $ref: '#/components/schemas/RefundStatus' }
+        reason: { type: string }
+        attachments:
+          type: array
+          items: { $ref: '#/components/schemas/ResourceID' }
+          description: The buyer's evidence, kept apart from the seller's on the dispute.
+        review_deadline_at:
+          type: string
+          format: date-time
+          description: '`created_at` + 48h. Silence past it is a full refund, applied by a job.'
+        seller_decided_at: { type: string, format: date-time, nullable: true }
+        rejection_reason: { type: string, nullable: true }
+        dispute_id:
+          allOf: [{ $ref: '#/components/schemas/RefundDisputeID' }]
+          nullable: true
+          description: Set when a rejection opened a dispute; how either party reaches it.
+        return_transport_id:
+          allOf: [{ $ref: '#/components/schemas/TransportID' }]
+          nullable: true
+          description: The leg sending the goods back, recorded if and when it happens.
+        created_at: { type: string, format: date-time }
+      required: [id, order_id, buyer_id, status, reason, attachments, review_deadline_at, created_at]
+
+    RefundPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Refund' } }
+        next_cursor: { type: string, nullable: true }
+      required: [items]
+
+    CreateRefundRequest:
+      type: object
+      properties:
+        reason: { type: string, maxLength: 2000 }
+        attachments:
+          type: array
+          minItems: 1
+          description: Evidence is mandatory.
+          items: { $ref: '#/components/schemas/ResourceID' }
+      required: [reason, attachments]
+
+    RejectRefundRequest:
+      type: object
+      properties:
+        reason: { type: string, maxLength: 2000 }
+        attachments:
+          type: array
+          minItems: 1
+          description: >
+            Counter-evidence is mandatory — the packed state of the goods before
+            dispatch is what a moderator weighs against the buyer's evidence.
+          items: { $ref: '#/components/schemas/ResourceID' }
+      required: [reason, attachments]
+
+    AddAttachmentsRequest:
+      type: object
+      properties:
+        attachments:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/ResourceID' }
+      required: [attachments]
+
+    # ------------------------------------------------------------ disputes ---
+    RefundDispute:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/RefundDisputeID' }
+        refund_id: { $ref: '#/components/schemas/RefundID' }
+        order_id: { $ref: '#/components/schemas/OrderID' }
+        seller_id: { $ref: '#/components/schemas/AccountID' }
+        buyer_id: { $ref: '#/components/schemas/AccountID' }
+        status: { $ref: '#/components/schemas/DisputeStatus' }
+        reason: { type: string, description: The seller's grounds for refusing }
+        attachments:
+          type: array
+          items: { $ref: '#/components/schemas/ResourceID' }
+          description: The seller's evidence. The buyer's stays on the refund.
+        resolved_by_id:
+          allOf: [{ $ref: '#/components/schemas/AccountID' }]
+          nullable: true
+          description: The moderator who ruled.
+        resolved_at: { type: string, format: date-time, nullable: true }
+        resolution_note: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+      required: [id, refund_id, order_id, seller_id, buyer_id, status, reason, attachments, created_at]
+
+    RefundDisputePage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/RefundDispute' } }
+        next_cursor: { type: string, nullable: true }
+      required: [items]
+
+    DisputeRulingRequest:
+      type: object
+      properties:
+        outcome: { $ref: '#/components/schemas/DisputeOutcome' }
+        note: { type: string, maxLength: 2000, description: 'Recorded for audit; the ruling is final' }
+      required: [outcome, note]
