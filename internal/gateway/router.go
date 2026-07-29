@@ -34,11 +34,14 @@ type Deps struct {
 //
 // A route reachable without a token is under "Public"; everything else is wrapped
 // in the auth middleware, which mirrors the "security" field of the operation in
-// the spec. Role checks — moderator or admin on the /admin routes — are the
-// handler's job, since the middleware only establishes who the caller is.
+// the spec. An operation that lists both `{}` and `bearerAuth` gets OptionalAuth:
+// anonymous is allowed, but a token that is present is honoured. Role checks —
+// moderator or admin on the /admin routes — are the handler's job, since the
+// middleware only establishes who the caller is.
 func NewRouter(d Deps) http.Handler {
 	mux := http.NewServeMux()
 	auth := middleware.Auth(d.Tokens, d.Log)
+	optionalAuth := middleware.OptionalAuth(d.Tokens, d.Log)
 
 	// API docs (OpenAPI spec + Swagger UI)
 	mux.HandleFunc("GET /openapi.yaml", openapi.SpecHandler)
@@ -68,6 +71,8 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("POST /contacts", auth(http.HandlerFunc(d.Account.CreateContact)))
 	mux.Handle("PATCH /contacts/{id}", auth(http.HandlerFunc(d.Account.UpdateContact)))
 	mux.Handle("DELETE /contacts/{id}", auth(http.HandlerFunc(d.Account.DeleteContact)))
+	mux.Handle("POST /contacts/{id}/phone/verification-requests", auth(http.HandlerFunc(d.Account.RequestContactPhoneVerification)))
+	mux.Handle("POST /contacts/{id}/phone/verifications", auth(http.HandlerFunc(d.Account.VerifyContactPhone)))
 	mux.Handle("PUT /devices", auth(http.HandlerFunc(d.Account.RegisterDevice)))
 	mux.Handle("GET /me/devices", auth(http.HandlerFunc(d.Account.ListDevices)))
 	mux.Handle("DELETE /devices/{id}", auth(http.HandlerFunc(d.Account.DeleteDevice)))
@@ -76,9 +81,6 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("POST /notifications/read", auth(http.HandlerFunc(d.Account.MarkNotificationsRead)))
 	mux.Handle("GET /notification-preferences", auth(http.HandlerFunc(d.Account.GetNotificationPreferences)))
 	mux.Handle("PUT /notification-preferences", auth(http.HandlerFunc(d.Account.UpdateNotificationPreferences)))
-	mux.Handle("GET /favorites", auth(http.HandlerFunc(d.Account.ListFavorites)))
-	mux.Handle("PUT /favorites/{spuID}", auth(http.HandlerFunc(d.Account.AddFavorite)))
-	mux.Handle("DELETE /favorites/{spuID}", auth(http.HandlerFunc(d.Account.RemoveFavorite)))
 	mux.Handle("GET /me/following", auth(http.HandlerFunc(d.Account.ListFollowing)))
 	mux.Handle("PUT /follows/{accountID}", auth(http.HandlerFunc(d.Account.Follow)))
 	mux.Handle("DELETE /follows/{accountID}", auth(http.HandlerFunc(d.Account.Unfollow)))
@@ -94,28 +96,27 @@ func NewRouter(d Deps) http.Handler {
 
 	// ---- catalog ----
 	// Public
-	mux.HandleFunc("GET /listings", d.Catalog.ListListings)
-	mux.HandleFunc("GET /listings/{id}", d.Catalog.GetListing)
-	mux.HandleFunc("GET /search/listings", d.Catalog.SearchListings)
-	mux.HandleFunc("GET /skus/{id}/stock", d.Catalog.GetStock)
 	mux.HandleFunc("GET /categories", d.Catalog.ListCategories)
 	mux.HandleFunc("GET /tags", d.Catalog.ListTags)
+	// Public, wider for a known caller: the listing feed can be personalised or scoped
+	// to the caller's own drafts, and a draft is readable by its owner.
+	mux.Handle("GET /listings", optionalAuth(http.HandlerFunc(d.Catalog.ListListings)))
+	mux.Handle("GET /listings/{id}", optionalAuth(http.HandlerFunc(d.Catalog.GetListing)))
 	// Authenticated
 	mux.Handle("POST /listings", auth(http.HandlerFunc(d.Catalog.CreateListing)))
 	mux.Handle("PATCH /listings/{id}", auth(http.HandlerFunc(d.Catalog.UpdateListing)))
 	mux.Handle("DELETE /listings/{id}", auth(http.HandlerFunc(d.Catalog.DeleteListing)))
 	mux.Handle("POST /listings/{id}/publication", auth(http.HandlerFunc(d.Catalog.PublishListing)))
 	mux.Handle("DELETE /listings/{id}/publication", auth(http.HandlerFunc(d.Catalog.HideListing)))
-	mux.Handle("GET /me/listings", auth(http.HandlerFunc(d.Catalog.ListMyListings)))
-	mux.Handle("GET /feed", auth(http.HandlerFunc(d.Catalog.GetFeed)))
 	mux.Handle("POST /listings/{id}/skus", auth(http.HandlerFunc(d.Catalog.CreateSku)))
 	mux.Handle("PATCH /skus/{id}", auth(http.HandlerFunc(d.Catalog.UpdateSku)))
 	mux.Handle("DELETE /skus/{id}", auth(http.HandlerFunc(d.Catalog.DeleteSku)))
-	mux.Handle("PUT /skus/{id}/stock", auth(http.HandlerFunc(d.Catalog.SetStock)))
+	mux.Handle("PUT /favorites/{spuID}", auth(http.HandlerFunc(d.Catalog.AddFavorite)))
+	mux.Handle("DELETE /favorites/{spuID}", auth(http.HandlerFunc(d.Catalog.RemoveFavorite)))
 	mux.Handle("POST /admin/categories", auth(http.HandlerFunc(d.Catalog.AdminCreateCategory)))
 	mux.Handle("PATCH /admin/categories/{id}", auth(http.HandlerFunc(d.Catalog.AdminUpdateCategory)))
 	mux.Handle("DELETE /admin/categories/{id}", auth(http.HandlerFunc(d.Catalog.AdminDeleteCategory)))
-	mux.Handle("POST /admin/tags", auth(http.HandlerFunc(d.Catalog.AdminCreateTag)))
+	mux.Handle("PUT /admin/tags/{slug}", auth(http.HandlerFunc(d.Catalog.AdminPutTag)))
 	mux.Handle("DELETE /admin/tags/{slug}", auth(http.HandlerFunc(d.Catalog.AdminDeleteTag)))
 	mux.Handle("GET /admin/listings", auth(http.HandlerFunc(d.Catalog.AdminListListings)))
 	mux.Handle("POST /admin/listings/{id}/approval", auth(http.HandlerFunc(d.Catalog.AdminApproveListing)))
@@ -207,8 +208,7 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("POST /refunds/{id}/attachments", auth(http.HandlerFunc(d.Order.AddRefundAttachments)))
 	mux.Handle("POST /refunds/{id}/acceptance", auth(http.HandlerFunc(d.Order.AcceptRefund)))
 	mux.Handle("POST /refunds/{id}/rejection", auth(http.HandlerFunc(d.Order.RejectRefund)))
-	mux.Handle("GET /disputes/{id}", auth(http.HandlerFunc(d.Order.GetDispute)))
-	mux.Handle("POST /disputes/{id}/attachments", auth(http.HandlerFunc(d.Order.AddDisputeAttachments)))
+	mux.Handle("POST /refunds/{id}/dispute", auth(http.HandlerFunc(d.Order.OpenDispute)))
 	mux.Handle("GET /admin/disputes", auth(http.HandlerFunc(d.Order.AdminListDisputes)))
 	mux.Handle("POST /admin/disputes/{id}/ruling", auth(http.HandlerFunc(d.Order.AdminRuleDispute)))
 

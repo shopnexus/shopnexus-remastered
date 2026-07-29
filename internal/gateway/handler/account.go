@@ -126,6 +126,18 @@ func (h *Account) DeleteContact(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
+// RequestContactPhoneVerification handles POST /contacts/{id}/phone/verification-requests.
+func (h *Account) RequestContactPhoneVerification(w http.ResponseWriter, r *http.Request) {
+	notImplemented(w, h.log)
+}
+
+// VerifyContactPhone handles POST /contacts/{id}/phone/verifications. The verified flag
+// belongs to the phone on a contact — the one a carrier calls — not to the account's
+// sign-in phone.
+func (h *Account) VerifyContactPhone(w http.ResponseWriter, r *http.Request) {
+	notImplemented(w, h.log)
+}
+
 // RegisterDevice handles PUT /devices.
 func (h *Account) RegisterDevice(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
@@ -163,21 +175,6 @@ func (h *Account) GetNotificationPreferences(w http.ResponseWriter, r *http.Requ
 
 // UpdateNotificationPreferences handles PUT /notification-preferences.
 func (h *Account) UpdateNotificationPreferences(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
-}
-
-// ListFavorites handles GET /favorites.
-func (h *Account) ListFavorites(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
-}
-
-// AddFavorite handles PUT /favorites/{spuID}.
-func (h *Account) AddFavorite(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
-}
-
-// RemoveFavorite handles DELETE /favorites/{spuID}.
-func (h *Account) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 

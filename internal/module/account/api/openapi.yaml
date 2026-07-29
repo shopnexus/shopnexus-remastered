@@ -1,8 +1,13 @@
 # OpenAPI fragment owned by the account module. Merged by cmd/specgen.
 #
 # Covers account, oauth_identity, device, contact, profile, notification,
-# notification_delivery, notification_preference, favorite, follow and
-# identity_document.
+# notification_preference, follow and identity_document.
+#
+# Two things that look like they belong here and do not. Wishlists are catalog's, because
+# every question asked of a saved listing is a catalog question. And there is no
+# per-channel delivery record: fanning a notification out to push, email and SMS is a
+# durable workflow that Restate already journals, so this module stores what the user was
+# told, not how many times sending it was retried.
 #
 # One account, both roles. There is no seller entity: the same account buys and
 # sells, its profile *is* the shop page, and `role` only separates a user from the
@@ -200,9 +205,14 @@ paths:
       tags: [account]
       summary: Change the caller's identifiers
       description: >
-        Changing the email clears `email_verified` and sends a fresh verification;
-        changing the phone clears its verified flag the same way. The last remaining
-        identifier cannot be removed.
+        Changing the email clears `email_verified` and sends a fresh verification. The
+        last remaining identifier cannot be removed.
+
+
+        The phone here is an identifier — something to sign in and be reached by — and
+        carries no verified flag. Verification belongs to a phone a carrier will actually
+        call, which is the one on a `contact`: that is where `phone_verified` lives, and
+        editing this one does not touch it.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -334,6 +344,51 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /contacts/{id}/phone/verification-requests:
+    post:
+      tags: [account]
+      summary: Send a verification code to a saved address's phone
+      description: >
+        The phone a carrier will actually call, which is why this one is verified and the
+        account's sign-in phone is not. A courier who cannot reach the number is the most
+        common way a delivery fails, so a seller shipping to an unverified number is
+        worth flagging in the UI.
+
+
+        Re-sending replaces the outstanding code rather than issuing a second valid one.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ContactID' } }
+      responses:
+        '202': { description: Code sent }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already verified', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { description: 'Too many requests for this number', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /contacts/{id}/phone/verifications:
+    post:
+      tags: [account]
+      summary: Confirm a saved address's phone with the code
+      description: >
+        Editing the number clears the flag again — a verified flag on a number nobody
+        checked is worse than no flag.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ContactID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyContactPhoneRequest' }
+      responses:
+        '200': { description: 'Verified', content: { application/json: { schema: { $ref: '#/components/schemas/Contact' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { description: 'Code is wrong, expired, or already used', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   # --------------------------------------------------------------- devices ---
   /devices:
     put:
@@ -456,47 +511,15 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
-  # ------------------------------------------------------ favorites/follows --
-  /favorites:
-    get:
-      tags: [account]
-      summary: The caller's wishlist
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - $ref: '#/components/parameters/Cursor'
-        - $ref: '#/components/parameters/Limit'
-      responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/FavoritePage' } } } }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-
-  /favorites/{spuID}:
-    parameters:
-      - { name: spuID, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
-    put:
-      tags: [account]
-      summary: Save a listing
-      description: Idempotent. The account and listing pair is the whole row so
-        saving twice is the same as saving once.
-      security: [{ bearerAuth: [] }]
-      responses:
-        '204': { description: Saved }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
-    delete:
-      tags: [account]
-      summary: Unsave a listing
-      security: [{ bearerAuth: [] }]
-      responses:
-        '204': { description: Removed }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-
+  # ---------------------------------------------------------------- follows --
+  # Wishlists are catalog's: `/favorites/{spuID}` and `GET /listings?favorited=true`.
   /me/following:
     get:
       tags: [account]
       summary: Sellers the caller follows
       security: [{ bearerAuth: [] }]
       parameters:
-        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/AccountSummaryPage' } } } }
@@ -508,7 +531,7 @@ paths:
       summary: Who follows this seller
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/AccountID' } }
-        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/AccountSummaryPage' } } } }
@@ -573,12 +596,17 @@ paths:
     get:
       tags: [admin]
       summary: Search accounts
+      description: >
+        `q` is an **exact** match on email, phone or username — each is unique, so that
+        is a key lookup and is how a moderator arrives here from a report — or a
+        **fragment** match on the display name, which is answered by a trigram index.
+        Whichever it is, it is one query; the caller does not choose.
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: q, in: query, schema: { type: string }, description: Matches email or phone or username or display name. }
+        - { name: q, in: query, schema: { type: string, maxLength: 255 }, description: 'An exact identifier, or part of a display name.' }
         - { name: status, in: query, schema: { $ref: '#/components/schemas/AccountStatus' } }
         - { name: role, in: query, schema: { $ref: '#/components/schemas/AccountRole' } }
-        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/AdminAccountPage' } } } }
@@ -666,7 +694,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: status, in: query, schema: { $ref: '#/components/schemas/IdentityStatus' }, description: Defaults to pending. }
-        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/IdentityDocumentPage' } } } }
@@ -893,7 +921,7 @@ components:
       type: object
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/AccountSummary' } }
-        next_cursor: { type: string, nullable: true }
+        total: { $ref: '#/components/schemas/TotalCount' }
       required: [items]
 
     UpdateAccountRequest:
@@ -922,12 +950,6 @@ components:
       type: object
       properties:
         provider: { $ref: '#/components/schemas/OAuthProvider' }
-        email:
-          type: string
-          nullable: true
-          description: >
-            As the provider reported it. May differ from the account's email and is
-            not authoritative.
         created_at: { type: string, format: date-time }
       required: [provider, created_at]
 
@@ -1002,9 +1024,15 @@ components:
         longitude: { type: number, format: double }
       required: [full_name, phone, address_type, country, province_code, province_name, ward_code, ward_name, address]
 
+    VerifyContactPhoneRequest:
+      type: object
+      properties:
+        code: { type: string, minLength: 4, maxLength: 10 }
+      required: [code]
+
     UpdateContactRequest:
       type: object
-      description: Every field optional.
+      description: Every field optional. Changing `phone` clears `phone_verified`.
       properties:
         full_name: { type: string, minLength: 1, maxLength: 100 }
         phone: { type: string, pattern: '^\+[1-9][0-9]{7,14}$' }
@@ -1127,21 +1155,6 @@ components:
             required: [category, channel, is_enabled]
       required: [items]
 
-    # ------------------------------------------------ favorites and follows --
-    Favorite:
-      type: object
-      properties:
-        spu_id: { $ref: '#/components/schemas/ProductSPUID' }
-        created_at: { type: string, format: date-time }
-      required: [spu_id, created_at]
-
-    FavoritePage:
-      type: object
-      properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Favorite' } }
-        next_cursor: { type: string, nullable: true }
-      required: [items]
-
     # ------------------------------------------------------------- kyc -------
     IdentityDocument:
       type: object
@@ -1175,7 +1188,7 @@ components:
       type: object
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/AdminIdentityDocument' } }
-        next_cursor: { type: string, nullable: true }
+        total: { $ref: '#/components/schemas/TotalCount' }
       required: [items]
 
     AdminIdentityDocument:
@@ -1240,7 +1253,7 @@ components:
       type: object
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/AdminAccount' } }
-        next_cursor: { type: string, nullable: true }
+        total: { $ref: '#/components/schemas/TotalCount' }
       required: [items]
 
     SuspendAccountRequest:

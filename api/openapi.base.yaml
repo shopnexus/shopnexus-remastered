@@ -41,9 +41,26 @@ components:
       bearerFormat: JWT
 
   parameters:
-    # Keyset pagination, used by every collection. Never OFFSET: the list indexes
-    # are all shaped (owner_id, created_at DESC), and chat.message is a hypertable
-    # where chunk exclusion needs a time bound in the query.
+    # Two pagination styles. Which one a collection uses follows from the collection,
+    # not from taste.
+    #
+    # Page + limit is the default, for anything browsed: the client draws a pager,
+    # jumps to page four and says how many matches there are. It is also the only
+    # option for a ranked result — the sort key of a relevance or vector search is a
+    # score computed per query, not a stored column, so there is nothing to seek into.
+    #
+    # Cursor + limit is for the append-only streams: conversation and message, order,
+    # order item, offer, refund, dispute, report, notification, payment session,
+    # transaction, review, feedback. Their list indexes are all shaped
+    # (owner_id, created_at DESC) so a keyset seek is exact and never drifts when rows
+    # arrive at the head mid-page, and chat.message is a hypertable whose chunk
+    # exclusion needs a time bound in the query. None of them is ever ranked.
+    Page:
+      name: page
+      in: query
+      required: false
+      description: 1-based page number.
+      schema: { type: integer, minimum: 1, default: 1 }
     Cursor:
       name: cursor
       in: query
@@ -77,6 +94,15 @@ components:
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
   schemas:
+    TotalCount:
+      type: integer
+      format: int64
+      nullable: true
+      description: >
+        Rows matching the filter, so a page-paginated client can draw a pager. Null
+        when the result is a ranked top-K: an approximate nearest-neighbour search
+        never visits the rows it did not return, so there is no total to report.
+
     Error:
       type: object
       properties:

@@ -1,16 +1,38 @@
 # OpenAPI fragment owned by the catalog module. Merged by cmd/specgen.
 #
-# Covers category, product_spu, product_sku, tag, product_spu_tag, stock, the three
-# embedding tables and account_interest.
+# Covers category, product_spu, product_sku, tag, product_spu_tag, stock, favorite, the
+# three embedding tables and account_interest.
+#
+# The wishlist is here rather than in account because every question asked of a saved
+# listing is a catalog question: is this one saved, how many saved it, show me the ones I
+# saved. As a catalog table all three are joins; on the other side of the line all three
+# would have been cross-module calls, and the card could not have carried `favorited` at
+# all without one per page.
 #
 # A listing is an SPU plus its SKUs. Price and package weight live on the SKU, so a
 # listing is never created without at least one, and both are created in one request
 # — the two tables reference each other and the insert order is SPU, then SKUs, then
 # point the SPU at its featured one.
 #
+# The SPU is the aggregate root and a variant has no URL of its own: every write to a
+# variant answers with the whole refreshed listing. Not decoration — deleting the
+# featured variant nulls the listing's featured_sku_id by foreign key, and a response
+# carrying the variant alone could not report that.
+#
+# `GET /listings` is the only read for a collection. Browsing, lexical and vector
+# search, the personalised feed, a seller's own drawer and resolving the listings a
+# cart or an order list refers to are the same query under different filters, so they
+# are one endpoint rather than five nearly identical ones.
+#
 # Browsing only ever shows live active listings; that is the predicate of the partial
-# indexes behind every feed. A seller's own draft, pending and hidden rows are
-# reachable through `GET /me/listings`, and a moderator's through `GET /admin/listings`.
+# indexes behind every feed. A seller's own draft, pending and hidden rows need
+# `mine=true`, and a moderator reaches every seller's through `GET /admin/listings`.
+#
+# Every embedding column in this schema is vector(1024) under vector_cosine_ops, so
+# listings, categories and tags share one BGE-M3 space and a vector from any of them
+# can query any other. That is what `near` on `/tags` and `/categories` is: semantic
+# suggestion for the seller filling in the listing form, ranked by the same similarity
+# `score` a listing search returns.
 #
 # Two things deliberately absent. There is no cached price on a listing: sorting by
 # price leads with the SKU index and nested-loops into the SPU, which comes out
@@ -22,24 +44,78 @@ paths:
   /listings:
     get:
       tags: [catalog]
-      summary: Browse listings
+      summary: Browse, search and resolve listings
       description: >
-        Live active listings only. `sort=price-asc` and `price-desc` are answered
-        through the SKU price index rather than a cached price on the listing, so the
-        `price` shown is that of the cheapest matching variant.
+        With no parameters, the newest live active listings. The parameters narrow
+        that one query rather than selecting between separate endpoints.
+
+
+        `q` makes it a search and moves the default sort to `relevance`. `lexical`
+        matches the name by trigram and tolerates missing diacritics, `semantic` runs
+        an approximate nearest-neighbour search over the dense embedding, and
+        `hybrid` combines the dense vector with the sparse lexical one, which is what
+        the embedding model is built for. Each hit then carries `score`, always so
+        that higher is better. A listing whose embedding has not been computed yet
+        can only be found lexically.
+
+
+        `sort=recommended` is the personalised feed: nearest-neighbour search over
+        listing embeddings from the caller's interest slots. It needs a token, and
+        falls back to newest for an account with no interests computed yet.
+
+
+        `mine=true` restricts the result to the caller's own listings, and is the
+        only case in which `status` is honoured — a seller has to see what is not
+        public, and nobody else may.
+
+
+        `favorited=true` is the wishlist page. It is a filter here rather than its own
+        endpoint because a wishlist wants exactly what a feed wants — cards, with prices
+        and stock and every filter available — and a separate endpoint returning saved
+        ids left the client resolving them one by one.
+
+
+        `ids` resolves a known set, which is how a cart or an order list renders the
+        listings behind its rows. It ignores every other filter and answers for hidden and
+        soft-deleted listings too, because an order that references one still has to
+        display it; `deleted_at` says which. Listings that were never public
+        (`draft`, `pending`) stay out unless they are the caller's own.
+
+
+        `price-asc`, `price-desc` and `best-selling` are answered through the SKU
+        indexes rather than a value cached on the listing, so `price` is the cheapest
+        matching variant's and `sold` the total across variants.
+      security:
+        - {}
+        - bearerAuth: []
       parameters:
+        - name: ids
+          in: query
+          description: Resolve exactly these listings, ignoring the other filters.
+          style: form
+          explode: false
+          schema: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/ProductSPUID' } }
+        - { name: q, in: query, description: 'Free-text query. Turns the request into a search.', schema: { type: string, minLength: 1, maxLength: 200 } }
+        - { name: mode, in: query, description: 'Search mode. Ignored without a query.', schema: { type: string, enum: [lexical, semantic, hybrid], default: hybrid } }
+        - { name: mine, in: query, description: 'The caller''s own listings, in every state.', schema: { type: boolean, default: false } }
+        - { name: favorited, in: query, description: 'The caller''s wishlist. This is the wishlist page.', schema: { type: boolean, default: false } }
+        - { name: status, in: query, description: 'Only honoured together with mine=true.', schema: { $ref: '#/components/schemas/ListingStatus' } }
         - { name: category_id, in: query, schema: { $ref: '#/components/schemas/CategoryID' } }
         - { name: tag, in: query, schema: { $ref: '#/components/schemas/TagSlug' } }
         - { name: seller_id, in: query, schema: { $ref: '#/components/schemas/AccountID' } }
         - { name: condition, in: query, schema: { $ref: '#/components/schemas/ListingCondition' } }
         - { name: min_price, in: query, schema: { type: integer, format: int64, minimum: 0 } }
         - { name: max_price, in: query, schema: { type: integer, format: int64, minimum: 0 } }
-        - { name: sort, in: query, schema: { type: string, enum: [newest, rating, price-asc, price-desc], default: newest } }
-        - $ref: '#/components/parameters/Cursor'
+        - name: sort
+          in: query
+          description: Defaults to `relevance` when a query is given and `newest` otherwise.
+          schema: { type: string, enum: [newest, rating, price-asc, price-desc, best-selling, relevance, recommended] }
+        - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingPage' } } } }
-        '400': { $ref: '#/components/responses/BadRequest' }
+        '400': { description: '`sort=relevance` without a query, or `status` without `mine`', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: '`mine=true`, `favorited=true` or `sort=recommended` without a token', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     post:
       tags: [catalog]
       summary: Create a listing
@@ -66,12 +142,28 @@ paths:
 
   /listings/{id}:
     parameters:
-      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
+      - name: id
+        in: path
+        required: true
+        description: >
+          The listing's opaque id or its slug. A slug is lowercase, hyphen-separated
+          and never contains an underscore, so it cannot be mistaken for an id and
+          the product page needs no second endpoint to resolve one.
+        schema: { $ref: '#/components/schemas/ListingRef' }
     get:
       tags: [catalog]
       summary: Read a listing
-      description: Carries the variants with their prices and stock and the seller
-        summary. Only the owner and staff can read one that is not active.
+      description: >
+        Carries the variants with their prices and stock and the seller summary.
+
+
+        A listing that was never public — `draft` or `pending` — is readable only by
+        its owner and by staff. One that is `hidden` or soft-deleted is readable by
+        anyone, because a cart or an order that references it still has to render;
+        `status` and `deleted_at` say that it cannot be bought.
+      security:
+        - {}
+        - bearerAuth: []
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -83,6 +175,11 @@ paths:
         the prohibited-goods filter is held as a pending edit and applied only when a
         moderator approves it, so the version buyers see never changes into unreviewed
         content.
+
+
+        The slug is fixed at creation. Renaming a listing leaves it alone: there is no
+        redirect table, so a new slug would only turn every link already shared into a
+        404, and `GET /listings/{id}` takes the id as well.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -144,69 +241,18 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  /me/listings:
-    get:
-      tags: [catalog]
-      summary: The caller's own listings
-      description: Unlike browsing this shows every state — draft, pending, active,
-        hidden — because a seller has to see what is not public.
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - { name: status, in: query, schema: { $ref: '#/components/schemas/ListingStatus' } }
-        - $ref: '#/components/parameters/Cursor'
-        - $ref: '#/components/parameters/Limit'
-      responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingPage' } } } }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-
-  # --------------------------------------------------------------- search ----
-  /search/listings:
-    get:
-      tags: [catalog]
-      summary: Search listings
-      description: >
-        `lexical` matches the listing name by trigram and tolerates missing
-        diacritics. `semantic` runs an approximate nearest-neighbour search over the
-        dense embedding. `hybrid` combines the dense vector with the sparse lexical
-        one, which is what the embedding model is built for.
-
-
-        `score` is always returned so that higher is better, whichever mode ran. A
-        listing whose embedding has not been computed yet can only be found
-        lexically.
-      parameters:
-        - { name: q, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
-        - { name: mode, in: query, schema: { type: string, enum: [lexical, semantic, hybrid], default: hybrid } }
-        - { name: category_id, in: query, schema: { $ref: '#/components/schemas/CategoryID' } }
-        - { name: min_price, in: query, schema: { type: integer, format: int64, minimum: 0 } }
-        - { name: max_price, in: query, schema: { type: integer, format: int64, minimum: 0 } }
-        - $ref: '#/components/parameters/Limit'
-      responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingSearchResult' } } } }
-        '400': { $ref: '#/components/responses/BadRequest' }
-
-  /feed:
-    get:
-      tags: [catalog]
-      summary: The caller's personalised feed
-      description: >
-        Nearest-neighbour search over listing embeddings from the caller's interest
-        slots. Falls back to the newest active listings for an account with no
-        interests computed yet.
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - $ref: '#/components/parameters/Cursor'
-        - $ref: '#/components/parameters/Limit'
-      responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingPage' } } } }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-
   # ----------------------------------------------------------------- skus ----
+  # A variant is part of the listing aggregate and has no read of its own: every
+  # write here answers with the refreshed listing, which is also where the variant's
+  # stock is read from.
   /listings/{id}/skus:
     post:
       tags: [catalog]
       summary: Add a variant to a listing
+      description: >
+        Answers with the listing. The new variant is the one in `skus` that was not
+        there before — there is no separate id in the response, because a variant is
+        not addressable on its own.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
@@ -216,7 +262,7 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CreateSkuRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Sku' } } } }
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -231,6 +277,11 @@ paths:
       description: >
         A price change does not reach a buyer who already opened a purchase session:
         that session froze the terms it was opened with.
+
+
+        `stock` sets the total on hand. The reserved count is not settable — it is
+        moved by checkout and by cancellation — and a total below what is already
+        reserved is refused, because an oversold row must not be representable.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -238,73 +289,121 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateSkuRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Sku' } } } }
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: 'Stock below the quantity already reserved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     delete:
       tags: [catalog]
       summary: Delete a variant
-      description: Soft delete for the same reason as a listing. Refused for the last
-        remaining variant of a live listing.
+      description: >
+        Soft delete for the same reason as a listing. Refused for the last remaining
+        variant of a live listing.
+
+
+        Answers with the listing rather than an empty body: deleting the featured
+        variant clears the listing's `featured_sku_id`, and the seller has to see
+        that.
       security: [{ bearerAuth: [] }]
       responses:
-        '204': { description: Deleted }
+        '200': { description: 'Deleted', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'This is the only variant of a live listing', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
-  /skus/{id}/stock:
+  # ----------------------------------------------------------- wishlist ------
+  /favorites/{spuID}:
     parameters:
-      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSKUID' } }
-    get:
-      tags: [catalog]
-      summary: Read a variant's stock
-      responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Stock' } } } }
-        '404': { $ref: '#/components/responses/NotFound' }
+      - { name: spuID, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
     put:
       tags: [catalog]
-      summary: Set a variant's stock
+      summary: Save a listing
       description: >
-        Sets the total on hand. The reserved count is not settable here — it is moved
-        by checkout and by cancellation — and a total below what is already reserved
-        is refused, because an oversold row must not be representable.
+        Idempotent — the account and listing pair is the whole row, so saving twice is
+        the same as saving once. Read the wishlist back through
+        `GET /listings?favorited=true`.
       security: [{ bearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/SetStockRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Stock' } } } }
-        '400': { $ref: '#/components/responses/BadRequest' }
+        '204': { description: Saved }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '422': { description: 'Below the quantity already reserved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [catalog]
+      summary: Unsave a listing
+      description: Idempotent, so unsaving something that was never saved is not an error.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Removed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   # ----------------------------------------------------- categories & tags ---
   /categories:
     get:
       tags: [catalog]
-      summary: The category tree
+      summary: The category tree, or the categories nearest a set of seeds
       description: >
         Flat list with a parent reference on each row; a client assembles the tree. A
         category tree is small so this is unpaginated.
+
+
+        `near` answers a different question: which categories does this thing belong
+        in. It ranks by cosine distance over `category_embedding` and returns a
+        shortlist with a `score` instead of the tree, which is what the category field
+        of the listing form needs — a seller who has picked a few tags should not have
+        to walk a tree to find where the item goes.
+      parameters:
+        - name: near
+          in: query
+          style: form
+          explode: false
+          description: 'Rank by closeness to these seeds instead of returning the tree.'
+          schema: { type: array, minItems: 1, maxItems: 8, items: { $ref: '#/components/schemas/SemanticSeed' } }
+        - { name: limit, in: query, description: 'Only honoured with `near`; the whole tree is never truncated.', schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/CategoryList' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
 
   /tags:
     get:
       tags: [catalog]
       summary: The tag dictionary
-      description: A tag id is its slug and a natural key, so it is readable on the
-        wire rather than encoded.
+      description: >
+        A tag id is its slug and a natural key, so it is readable on the wire rather
+        than encoded.
+
+
+        Paginated, unlike the category tree: categories are a curated tree that stays
+        small, while tags grow with the catalog. `q` is a prefix match on the slug,
+        which is what the tag picker types into.
+
+
+        `near` is the other half of that picker: it ranks the dictionary by cosine
+        distance over `tag_embedding` and returns a `score`, so picking `handmade`
+        offers back the tags that sit next to it in the vector space. The seeds
+        themselves are never in the result — they are already on the listing — and a
+        tag the embedding cron has not reached yet cannot be suggested at all, because
+        `tag` carries no text index to fall back to.
+
+
+        `q` and `near` are mutually exclusive: one filters the dictionary by what was
+        typed, the other reorders it by meaning, and combining them would rank a set
+        the prefix already decided.
+      parameters:
+        - { name: q, in: query, description: 'Prefix match on the slug.', schema: { type: string, maxLength: 100 } }
+        - name: near
+          in: query
+          style: form
+          explode: false
+          description: 'Rank by closeness to these seeds. Excludes the seeds.'
+          schema: { type: array, minItems: 1, maxItems: 8, items: { $ref: '#/components/schemas/SemanticSeed' } }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/TagList' } } } }
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/TagPage' } } } }
+        '400': { description: '`q` and `near` together', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /admin/categories:
     post:
@@ -356,31 +455,32 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'Listings still reference this category', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
-  /admin/tags:
-    post:
+  /admin/tags/{slug}:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/TagSlug' } }
+    put:
       tags: [admin]
-      summary: Create a tag
+      summary: Create or update a tag
+      description: >
+        Upsert, not create: the slug is the whole identity of a tag and the only other
+        column is its description, so a separate create and update would be the same
+        statement twice and would need a 409 to tell them apart.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/CreateTagRequest' }
+            schema: { $ref: '#/components/schemas/PutTagRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Tag' } } } }
+        '200': { description: 'Created or updated', content: { application/json: { schema: { $ref: '#/components/schemas/Tag' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '409': { description: 'Slug already taken', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-
-  /admin/tags/{slug}:
     delete:
       tags: [admin]
       summary: Delete a tag
       description: Removing it also detaches it from every listing that carried it.
       security: [{ bearerAuth: [] }]
-      parameters:
-        - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/TagSlug' } }
       responses:
         '204': { description: Deleted }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -400,7 +500,7 @@ paths:
       parameters:
         - { name: status, in: query, schema: { $ref: '#/components/schemas/ListingStatus' }, description: Defaults to pending. }
         - { name: seller_id, in: query, schema: { $ref: '#/components/schemas/AccountID' } }
-        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingPage' } } } }
@@ -459,6 +559,40 @@ components:
       description: A tag's id is its slug. A natural key, so it is never encoded.
       example: handmade
 
+    SimilarityScore:
+      type: number
+      format: double
+      nullable: true
+      description: >
+        Relevance, always oriented so that higher is closer — for a vector ranking that
+        is `1 - (a <=> b)`, the cosine similarity, because the operator itself returns a
+        distance. Null unless the request asked for a ranking.
+
+    SemanticSeed:
+      description: >
+        A tag slug or a category id, told apart the same way a listing ref is: an
+        opaque id always carries an underscore after its prefix and a slug never does.
+
+
+        Both are legal seeds for the same query because every embedding column in this
+        schema is `vector(1024)` indexed with `vector_cosine_ops` — one BGE-M3 space —
+        so the distance between a category and a tag means the same thing as the
+        distance between two tags. A seed whose vector the cron has not computed yet is
+        rejected rather than silently ignored, since dropping it would answer a
+        different question than the one asked.
+      oneOf:
+        - $ref: '#/components/schemas/TagSlug'
+        - $ref: '#/components/schemas/CategoryID'
+
+    ListingRef:
+      description: >
+        A listing addressed either way. The id form is the opaque one; the slug form
+        is what a shareable product URL carries. They cannot collide because an
+        opaque id always has an underscore after its prefix and a slug never has one.
+      oneOf:
+        - $ref: '#/components/schemas/ProductSPUID'
+        - { type: string, maxLength: 100, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', example: ao-thun-uniqlo-xanh }
+
     # ------------------------------------------------------------- enums -----
     ListingStatus:
       type: string
@@ -498,6 +632,7 @@ components:
           description: Null for a root category.
         name: { type: string }
         description: { type: string }
+        score: { $ref: '#/components/schemas/SimilarityScore' }
       required: [id, name, description]
 
     CategoryList:
@@ -527,26 +662,28 @@ components:
       properties:
         slug: { $ref: '#/components/schemas/TagSlug' }
         description: { type: string, nullable: true }
+        score: { $ref: '#/components/schemas/SimilarityScore' }
       required: [slug]
 
-    TagList:
+    TagPage:
       type: object
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/Tag' } }
+        total: { $ref: '#/components/schemas/TotalCount' }
       required: [items]
 
-    CreateTagRequest:
+    PutTagRequest:
       type: object
+      description: The slug is in the path, so this carries only what can change.
       properties:
-        slug: { $ref: '#/components/schemas/TagSlug' }
         description: { type: string, maxLength: 255 }
-      required: [slug]
 
-    # -------------------------------------------------------------- stock -----
+    # ---------------------------------------------------------------- sku -----
     Stock:
       type: object
+      description: >
+        Always read inside its own variant, so it does not repeat the sku id.
       properties:
-        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
         stock: { type: integer, format: int64, description: Total on hand. }
         reserved:
           type: integer
@@ -554,15 +691,8 @@ components:
           description: Held by paid but unconfirmed items. Moved by checkout and by
             cancellation and never set directly.
         available: { type: integer, format: int64, description: Total minus reserved. }
-      required: [sku_id, stock, reserved, available]
+      required: [stock, reserved, available]
 
-    SetStockRequest:
-      type: object
-      properties:
-        stock: { type: integer, format: int64, minimum: 0 }
-      required: [stock]
-
-    # ---------------------------------------------------------------- sku -----
     Sku:
       type: object
       description: A purchasable variant. Price and package details live here rather
@@ -584,7 +714,7 @@ components:
           description: Empty means fall back to the listing gallery.
         stock: { $ref: '#/components/schemas/Stock' }
         created_at: { type: string, format: date-time }
-      required: [id, price, attributes, package_details, images, created_at]
+      required: [id, price, attributes, package_details, images, stock, created_at]
 
     CreateSkuRequest:
       type: object
@@ -604,6 +734,11 @@ components:
         attributes: { type: object, additionalProperties: true }
         package_details: { type: object, additionalProperties: true }
         attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+        stock:
+          type: integer
+          format: int64
+          minimum: 0
+          description: The new total on hand. Refused below what is already reserved.
 
     # ------------------------------------------------------------ listing -----
     Listing:
@@ -611,7 +746,7 @@ components:
       description: The card shown in a feed. `GET /listings/{id}` returns the full form.
       properties:
         id: { $ref: '#/components/schemas/ProductSPUID' }
-        slug: { type: string, description: URL-friendly and globally unique. }
+        slug: { type: string, description: 'URL-friendly, globally unique and fixed at creation.' }
         name: { type: string }
         status: { $ref: '#/components/schemas/ListingStatus' }
         condition: { $ref: '#/components/schemas/ListingCondition' }
@@ -623,6 +758,13 @@ components:
           description: >
             The featured variant's price, or the cheapest one when a price sort is in
             force. Not stored on the listing.
+        sold:
+          type: integer
+          format: int64
+          description: >
+            Units taken across the variants — sold plus whatever is reserved right
+            now, since a reservation that is later cancelled comes back out. Summed
+            from the variants, not cached on the listing.
         cover: { allOf: [{ $ref: '#/components/schemas/Resource' }], nullable: true }
         rating:
           type: number
@@ -633,8 +775,22 @@ components:
             cannot be joined.
         category_id: { $ref: '#/components/schemas/CategoryID' }
         seller: { $ref: '#/components/schemas/AccountSummary' }
+        favorited:
+          type: boolean
+          description: >
+            Whether the caller has this on their wishlist. False for an anonymous
+            request. A plain join, because the wishlist is a catalog table — the client
+            never has to fetch its own saves to know which hearts to fill in.
+        score: { $ref: '#/components/schemas/SimilarityScore' }
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            Set on a listing the seller removed. Only an `ids` lookup returns one, so
+            that an order or a cart referencing it can still be rendered.
         created_at: { type: string, format: date-time }
-      required: [id, slug, name, status, condition, price_mode, currency, price, rating, category_id, seller, created_at]
+      required: [id, slug, name, status, condition, price_mode, currency, price, sold, rating, category_id, seller, favorited, created_at]
 
     ListingDetail:
       type: object
@@ -657,8 +813,17 @@ components:
         tags: { type: array, items: { $ref: '#/components/schemas/TagSlug' } }
         skus: { type: array, items: { $ref: '#/components/schemas/Sku' } }
         featured_sku_id: { allOf: [{ $ref: '#/components/schemas/ProductSKUID' }], nullable: true }
+        sold: { type: integer, format: int64, description: 'Units taken across the variants — see Listing.sold.' }
         rating: { type: number, format: double }
         seller: { $ref: '#/components/schemas/AccountSummary' }
+        favorited: { type: boolean, description: 'Whether the caller has this saved. False for an anonymous request.' }
+        favorite_count:
+          type: integer
+          format: int64
+          description: >
+            How many accounts saved it — social proof on the product page. Only here and
+            not on the card: it is a count per listing, cheap for one row and N counts
+            for a page of them.
         pending_edit:
           type: object
           additionalProperties: true
@@ -667,34 +832,20 @@ components:
             An edit waiting on moderation. Visible to the owner and to staff only;
             buyers see the published version until it is approved.
         created_at: { type: string, format: date-time }
-      required: [id, slug, name, description, status, condition, price_mode, shipping_paid_by, currency, specifications, images, category, tags, skus, rating, seller, created_at]
+        deleted_at: { type: string, format: date-time, nullable: true, description: 'Set on a listing the seller removed.' }
+      required: [id, slug, name, description, status, condition, price_mode, shipping_paid_by, currency, specifications, images, category, tags, skus, sold, rating, seller, favorited, favorite_count, created_at]
 
     ListingPage:
       type: object
+      description: >
+        One page shape for every listing query, ranked or not. Page-paginated, because
+        a catalog is browsed with a pager and a relevance order has no stored column to
+        seek into; `total` is null for a ranked query, where the top-K is all the search
+        ever visited.
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/Listing' } }
-        next_cursor: { type: string, nullable: true }
+        total: { $ref: '#/components/schemas/TotalCount' }
       required: [items]
-
-    ListingSearchHit:
-      type: object
-      properties:
-        listing: { $ref: '#/components/schemas/Listing' }
-        score:
-          type: number
-          format: double
-          description: Higher is more relevant in every mode.
-      required: [listing, score]
-
-    ListingSearchResult:
-      type: object
-      description: >
-        Ranked, so it is not cursor-paginated: page two of a relevance ranking is a
-        different query, not the tail of this one. Ask for a bigger limit instead.
-      properties:
-        items: { type: array, items: { $ref: '#/components/schemas/ListingSearchHit' } }
-        mode: { type: string, enum: [lexical, semantic, hybrid], description: The mode that actually ran. }
-      required: [items, mode]
 
     CreateListingRequest:
       type: object

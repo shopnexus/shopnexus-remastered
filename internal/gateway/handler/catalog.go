@@ -9,7 +9,9 @@ import (
 	catalogapi "shopnexus/internal/module/catalog/api"
 )
 
-// Catalog serves the catalog module's routes: listings, variants, stock, categories, tags, search and listing moderation.
+// Catalog serves the catalog module's routes: listings and their variants, categories,
+// tags and listing moderation. A variant is part of the listing aggregate, so its
+// writes answer with the whole listing and it has no read of its own.
 //
 // Scaffold. Every method answers 501 until it is written, and the routes are
 // registered in router.go so the OpenAPI contract test can hold the two in step.
@@ -26,7 +28,8 @@ func NewCatalog(svc catalogapi.Service, v *validator.Validate, log *slog.Logger)
 	return &Catalog{svc: svc, v: v, log: log}
 }
 
-// ListListings handles GET /listings.
+// ListListings handles GET /listings — browsing, search, the personalised feed, the
+// caller's own drawer and resolving a batch of ids, all under one set of filters.
 func (h *Catalog) ListListings(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
@@ -61,21 +64,6 @@ func (h *Catalog) HideListing(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
-// ListMyListings handles GET /me/listings.
-func (h *Catalog) ListMyListings(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
-}
-
-// SearchListings handles GET /search/listings.
-func (h *Catalog) SearchListings(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
-}
-
-// GetFeed handles GET /feed.
-func (h *Catalog) GetFeed(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
-}
-
 // CreateSku handles POST /listings/{id}/skus.
 func (h *Catalog) CreateSku(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
@@ -91,13 +79,13 @@ func (h *Catalog) DeleteSku(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
-// GetStock handles GET /skus/{id}/stock.
-func (h *Catalog) GetStock(w http.ResponseWriter, r *http.Request) {
+// AddFavorite handles PUT /favorites/{spuID}.
+func (h *Catalog) AddFavorite(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
-// SetStock handles PUT /skus/{id}/stock.
-func (h *Catalog) SetStock(w http.ResponseWriter, r *http.Request) {
+// RemoveFavorite handles DELETE /favorites/{spuID}.
+func (h *Catalog) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
@@ -126,8 +114,8 @@ func (h *Catalog) AdminDeleteCategory(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
-// AdminCreateTag handles POST /admin/tags.
-func (h *Catalog) AdminCreateTag(w http.ResponseWriter, r *http.Request) {
+// AdminPutTag handles PUT /admin/tags/{slug}.
+func (h *Catalog) AdminPutTag(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 

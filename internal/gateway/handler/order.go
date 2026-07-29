@@ -161,7 +161,9 @@ func (h *Order) WithdrawRefund(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
-// AddRefundAttachments handles POST /refunds/{id}/attachments.
+// AddRefundAttachments handles POST /refunds/{id}/attachments. Which side of the case
+// the caller is on decides whether the evidence lands on the refund or on the dispute
+// round they opened.
 func (h *Order) AddRefundAttachments(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
@@ -176,13 +178,10 @@ func (h *Order) RejectRefund(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
-// GetDispute handles GET /disputes/{id}.
-func (h *Order) GetDispute(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
-}
-
-// AddDisputeAttachments handles POST /disputes/{id}/attachments.
-func (h *Order) AddDisputeAttachments(w http.ResponseWriter, r *http.Request) {
+// OpenDispute handles POST /refunds/{id}/dispute — the buyer escalating a refusal
+// (round 1) or the seller appealing what came back (round 2). Which round it opens
+// follows from the caller and the refund's state, so both are one route.
+func (h *Order) OpenDispute(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 

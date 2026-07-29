@@ -8,9 +8,15 @@
 # listing: a product is referenced per message instead, which is how an offer card
 # appears in a conversation.
 #
-# Messages are a hypertable, so every read here is cursor-paginated over
-# `created_at` and marking messages read takes a time bound rather than a list of
-# ids. A query without a time bound has to visit every chunk.
+# Messages are a hypertable, so every read here is cursor-paginated over `created_at`
+# and every single-message operation carries the message's own `sent_at`. A query
+# without a time bound has to visit every chunk: the primary key is
+# `(id, created_at)` — a unique index on a hypertable must contain its partitioning
+# column — so an id on its own is not a key lookup at all.
+#
+# Read state is two marks on the conversation, not a status per message. What each side
+# has read is one timestamp, so the unread badge is a bounded range scan, marking a
+# thread read is one UPDATE, and a read receipt is a comparison rather than a column.
 #
 # Offers are not created here. A negotiation is an order-module resource; accepting
 # or countering one emits a system message into the thread, which is why a message
@@ -58,10 +64,10 @@ paths:
       tags: [chat]
       summary: The unread badge across every thread
       description: >
-        Read state is currently tracked per message rather than per participant, so
-        this counts unread rows across the whole partitioned table and cannot be
-        bounded by time — an unread message may be arbitrarily old. It is the one read
-        here that does not benefit from chunk exclusion.
+        One bounded range scan per thread the caller has, each starting at that thread's
+        read mark, so an old unread message costs nothing extra and chunk exclusion
+        applies throughout. Separate from the inbox because the badge is read far more
+        often than the list.
       security: [{ bearerAuth: [] }]
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ChatUnreadCount' } } } }
@@ -109,9 +115,9 @@ paths:
       tags: [chat]
       summary: Send a message
       description: >
-        Text, attachments or both. `metadata` carries references to a listing or a
-        variant or an order, which is how a product is pointed at inside a thread that
-        is not itself listing-scoped.
+        Text, attachments or both. `refs` carries pointers to a listing or a variant or
+        an order, which is how a product is referred to inside a thread that is not
+        itself listing-scoped.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -131,10 +137,10 @@ paths:
       tags: [chat]
       summary: Mark a thread read up to a point in time
       description: >
-        Marks the counterparty's messages read. Takes a time bound rather than a list
-        of ids, for the same reason as the notification feed: a bound reads one range
-        of a partitioned table instead of searching all of it. Omit `before` to mark
-        the whole thread read.
+        Moves the caller's read mark on the thread — one UPDATE of one row, whatever it
+        covers. Omit `before` to mark the whole thread read. A mark never moves
+        backwards: passing an earlier instant than the current one is a no-op, because
+        un-reading is not a thing a client should be able to do to its own badge.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ConversationID' } }
@@ -153,6 +159,15 @@ paths:
   /messages/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/MessageID' } }
+      - name: sent_at
+        in: query
+        required: true
+        description: >
+          The message's own `created_at`. Required, and not redundant: `message` is
+          partitioned on it and its primary key is `(id, created_at)`, so without it the
+          row has to be hunted through every chunk of the table. A client always has the
+          message before editing or redacting it, so it always has this.
+        schema: { type: string, format: date-time }
     patch:
       tags: [chat]
       summary: Edit a message
@@ -178,8 +193,9 @@ paths:
       summary: Redact a message
       description: >
         The sender unsending, or a moderator acting on an upheld report. The row
-        survives with its body cleared: a thread is evidence in a refund dispute, so
-        removal is recorded rather than erased.
+        survives with its body **and its attachments** cleared: a thread is evidence in
+        a refund dispute, so removal is recorded rather than erased, but a redaction
+        that leaves the picture up has not removed anything.
       security: [{ bearerAuth: [] }]
       responses:
         '204': { description: Redacted }
@@ -196,10 +212,6 @@ components:
         order shipped — and belongs to no participant, which is why it has no sender.
       enum: [user, system]
 
-    MessageStatus:
-      type: string
-      enum: [sent, delivered, read]
-
     Conversation:
       type: object
       properties:
@@ -212,7 +224,20 @@ components:
           description: >
             Starts at the creation time so an empty thread still sorts predictably in
             the inbox.
-        unread: { type: integer, format: int64, description: Unread messages in this thread. }
+        unread: { type: integer, format: int64, description: The counterparty's messages after the caller's read mark. }
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: The caller's own read mark. Null while they have read nothing.
+        counterparty_read_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            How far the other side has read. This is the read receipt: a message the
+            caller sent is seen when this is at or past its `created_at`, which is why
+            no message carries a delivery status of its own.
         created_at: { type: string, format: date-time }
       required: [id, counterparty, last_message_at, unread, created_at]
 
@@ -241,14 +266,23 @@ components:
           description: Null on a system message.
         type: { $ref: '#/components/schemas/MessageType' }
         body: { type: string, description: Empty on a redacted message. }
-        status: { $ref: '#/components/schemas/MessageStatus' }
-        attachments: { type: array, items: { $ref: '#/components/schemas/Resource' } }
-        metadata:
+        attachments: { type: array, items: { $ref: '#/components/schemas/Resource' }, description: Empty on a redacted message. }
+        refs:
           type: object
           additionalProperties: true
           description: >
-            References to a listing or variant or order, and the payload of an offer
-            card.
+            What the sender pointed at — a listing, a variant, an order. Client-supplied
+            and validated against the caller's own access to each id, so it can carry a
+            reference but never assert anything about it.
+        card:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: >
+            The rendered payload of a system message, such as the terms of an accepted
+            offer. Written only by the backend and rejected on a `user` message —
+            otherwise anyone could send a card that looks like an offer the seller
+            accepted.
         created_at: { type: string, format: date-time }
         edited_at: { type: string, format: date-time, nullable: true }
         deleted_at:
@@ -257,7 +291,7 @@ components:
           nullable: true
           description: Set on a redacted message. The row stays so a thread has no
             unexplained gaps.
-      required: [id, conversation_id, type, body, status, attachments, metadata, created_at]
+      required: [id, conversation_id, type, body, attachments, refs, created_at]
 
     MessagePage:
       type: object
@@ -278,7 +312,13 @@ components:
       properties:
         body: { type: string, maxLength: 4000 }
         attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
-        metadata: { type: object, additionalProperties: true }
+        refs:
+          type: object
+          additionalProperties: true
+          description: >
+            References to point at, each checked against the caller's access to it.
+            There is no way to set `card` from here: a system payload is the backend's
+            to write.
 
     UpdateMessageRequest:
       type: object

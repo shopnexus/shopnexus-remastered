@@ -11,9 +11,32 @@
 #     status field. "order" has no status column on purpose: the lifecycle lives
 #     in the service and only outcome facts (completed_at, cancelled_at) persist.
 #
-# Work done by a job has no endpoint. Auto-payout 72h after receipt confirmation,
-# auto-accept of a refund the seller ignored for 48h, and draft/offer expiry are
-# all cron; the contract exposes the deadlines so a client can count down.
+# A refund covers the whole order — there is no per-item refund — and it moves in one
+# direction through parties, never back:
+#
+#   buyer opens it                       → awaiting-seller-review
+#   seller accepts                       → returning, and the goods go back
+#   seller rejects, or ignores it        → awaiting-buyer-action
+#   buyer escalates                      → disputed (round 1)
+#   moderator rules for the seller       → rejected, and the payout stands
+#   moderator rules for the buyer        → returning, and the goods go back
+#   the return is delivered              → returned
+#   seller appeals what arrived          → disputed (round 2), the same case
+#   moderator rules for the seller       → rejected, and the seller is paid out
+#   moderator rules for the buyer        → accepted
+#
+# Nothing ships until the refund is actually granted, because most requests end before
+# a parcel would have moved. The seller's appeal in round 2 is what makes that safe:
+# whoever receives a counterfeit or the wrong item back has one more turn, decided by
+# the same moderator on the same case.
+#
+# Every state named for a waiting party carries `deadline_at`, and letting it pass is
+# itself a move — a seller who ignores the review hands it to the buyer, a buyer who
+# never escalates lets it lapse to rejected, an unappealed return settles for the buyer.
+#
+# Work done by a job has no endpoint. Auto-payout 72h after receipt confirmation, the
+# three refund timeouts above, and draft/offer expiry are all cron; the contract
+# exposes the deadlines so a client can count down.
 
 paths:
   # ---------------------------------------------------------------- cart -----
@@ -23,7 +46,7 @@ paths:
       summary: List the caller's cart
       security: [{ bearerAuth: [] }]
       parameters:
-        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/CartItemPage' } } } }
@@ -100,7 +123,7 @@ paths:
       summary: List the caller's purchase sessions
       security: [{ bearerAuth: [] }]
       parameters:
-        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
         - { name: state, in: query, schema: { type: string, enum: [live, cancelled, expired], default: live } }
       responses:
@@ -325,10 +348,13 @@ paths:
       tags: [order]
       summary: Open a refund request (buyer)
       description: >
-        Evidence is mandatory. The request goes straight to seller review with a
-        48-hour deadline in `review_deadline_at`; if the seller neither accepts nor
-        rejects before it passes, a job refunds the buyer in full. One open refund
-        per order.
+        Covers the whole order; there is no way to refund part of one. Evidence is
+        mandatory, and one live refund per order.
+
+
+        Nothing ships yet — the buyer keeps the goods until the refund is granted. The
+        seller has until `deadline_at` to accept or reject, and letting that pass hands
+        the next move to the buyer rather than settling anything.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderID' } }
@@ -468,9 +494,12 @@ paths:
       - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundID' } }
     get:
       tags: [order]
-      summary: Read a refund
-      description: Carries `review_deadline_at` for the countdown, and `dispute_id`
-        once a rejection opened one — that is how either party reaches the dispute.
+      summary: Read a refund and its case
+      description: >
+        The whole case in one object: `deadline_at` for whoever is on the clock, the
+        return shipment once one exists, and `dispute` with every round a moderator has
+        seen. A dispute has no read of its own — it is not a thing that happens apart
+        from the refund it is about.
       security: [{ bearerAuth: [] }]
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
@@ -480,23 +509,29 @@ paths:
     delete:
       tags: [order]
       summary: Withdraw a refund request (buyer)
+      description: Only while the seller has not decided. Once anything has moved —
+        a decision, a moderator, a parcel — the case is closed by ruling, not by
+        walking away from it.
       security: [{ bearerAuth: [] }]
       responses:
         '204': { description: Withdrawn }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: 'Already decided or disputed', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'The seller has already decided, or the case has moved on', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /refunds/{id}/attachments:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundID' } }
     post:
       tags: [order]
-      summary: Add evidence to a refund (buyer)
-      description: The buyer may keep supplementing evidence while the refund is
-        under seller review or in dispute, up to the moderator's ruling.
+      summary: Add evidence to a refund case
+      description: >
+        Either party, up to the moderator's ruling. Which side the caller is on decides
+        where the evidence lands — the buyer's on the refund, the seller's on the
+        dispute round they opened — so a moderator can always tell who submitted what.
+        One endpoint because "add my evidence to this case" is one intent.
       security: [{ bearerAuth: [] }]
-      parameters:
-        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundID' } }
       requestBody:
         required: true
         content:
@@ -508,94 +543,104 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: 'Refund is already closed', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'The case is closed, or the caller has no open round to attach to', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /refunds/{id}/acceptance:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundID' } }
     post:
       tags: [order]
       summary: Accept a refund (seller)
-      description: Releases the held money back to the buyer. Finance writes the
-        reversal leg and the refund records it.
+      description: >
+        Grants it without a moderator. The goods have to come back first, so this
+        creates the return shipment and moves the refund to `returning`; the money is
+        released once the return is delivered and the seller has not appealed it.
       security: [{ bearerAuth: [] }]
-      parameters:
-        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AcceptRefundRequest' }
       responses:
-        '200': { description: 'Accepted', content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '200': { description: 'Accepted; the return shipment is booked', content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Caller is not the seller of this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: 'Refund is not awaiting review', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Refund is not awaiting seller review', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /refunds/{id}/rejection:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundID' } }
     post:
       tags: [order]
-      summary: Reject a refund and open the dispute (seller)
+      summary: Reject a refund (seller)
       description: >
-        A rejection *is* the dispute: refusing costs the seller a reason and
-        counter-evidence, and the case goes to a moderator immediately. The
-        response is the dispute, not the refund.
+        Refusing costs a reason, and it does not close the case: the next move is the
+        buyer's, who may escalate to a moderator until the refund lapses. A seller who
+        simply lets the review window pass ends up in the same place without one.
       security: [{ bearerAuth: [] }]
-      parameters:
-        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundID' } }
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/RejectRefundRequest' }
       responses:
-        '201': { description: 'Dispute opened', content: { application/json: { schema: { $ref: '#/components/schemas/RefundDispute' } } } }
+        '200': { description: 'Rejected; the buyer may now escalate', content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Caller is not the seller of this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: 'Refund is not awaiting review', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Refund is not awaiting seller review', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
-  # ------------------------------------------------------------ disputes -----
-  /disputes/{id}:
-    get:
-      tags: [order]
-      summary: Read a dispute
-      description: Each side's evidence stays in its own list — the buyer's on the
-        refund, the seller's on the dispute — so a moderator can tell who submitted
-        what.
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundDisputeID' } }
-      responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/RefundDispute' } } } }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /disputes/{id}/attachments:
+  /refunds/{id}/dispute:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundID' } }
     post:
       tags: [order]
-      summary: Add evidence to a dispute
-      description: Either party may add evidence until the moderator rules. The
-        caller's side of the case decides which list it lands in.
+      summary: Escalate the case to a moderator
+      description: >
+        Both escalations are this one call, because both are the same act — asking a
+        moderator to decide — and which round it opens follows from who the caller is
+        and where the refund stands.
+
+
+        The **buyer** may escalate once the seller has rejected the request or has let
+        the review window pass. That is round 1: ruling for the buyer grants the refund
+        and books the return, ruling for the seller ends it.
+
+
+        The **seller** may escalate what came back, while the refund is `returned` and
+        the inspection window is open — a counterfeit, the wrong item, an empty box.
+        That is round 2 on the same case: upholding the appeal ends the refund and pays
+        the seller out, denying it releases the money to the buyer.
       security: [{ bearerAuth: [] }]
-      parameters:
-        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundDisputeID' } }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/AddAttachmentsRequest' }
+            schema: { $ref: '#/components/schemas/OpenDisputeRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/RefundDispute' } } } }
+        '201': { description: 'A round was opened', content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403': { description: 'Caller is not a party to this order, or not the party whose move it is', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: 'Dispute is already resolved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Not escalatable from this state, a round is already open, or the window has closed', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
+  # ------------------------------------------------------------ disputes -----
   /admin/disputes:
     get:
       tags: [admin]
       summary: The moderator's dispute queue
+      description: >
+        Open rounds, oldest first, which is the order they should be worked. Round 2
+        entries are appeals on a refund a moderator has already ruled on once, so the
+        previous verdict comes with them.
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: status, in: query, schema: { $ref: '#/components/schemas/DisputeStatus' } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/DisputeStatus' }, description: Defaults to open. }
+        - { name: round, in: query, schema: { type: integer, enum: [1, 2] } }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -606,11 +651,25 @@ paths:
   /admin/disputes/{id}/ruling:
     post:
       tags: [admin]
-      summary: Rule on a dispute (moderator)
+      summary: Rule on the open round of a dispute (moderator)
       description: >
-        Decided on whose evidence is more convincing, and final — there is no
-        appeal route. `buyer-wins` drives the refund to accepted and releases the
-        money back; `seller-wins` drives it to rejected and lets the payout stand.
+        Decided on whose evidence is more convincing. What a verdict does depends on
+        the round, and the round is a property of the case rather than something the
+        moderator picks:
+
+
+        Round 1 — `buyer-wins` grants the refund and books the return shipment, so the
+        money is not released yet; `seller-wins` ends the refund and lets the payout
+        stand.
+
+
+        Round 2, the seller's appeal on what arrived — `seller-wins` upholds it, ends
+        the refund and pays the seller out; `buyer-wins` denies it and releases the
+        money to the buyer.
+
+
+        There is no third round. Round 2 is where an appeal already lives, so a ruling
+        on it is final.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundDisputeID' } }
@@ -620,7 +679,7 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/DisputeRulingRequest' }
       responses:
-        '200': { description: 'Ruled', content: { application/json: { schema: { $ref: '#/components/schemas/RefundDispute' } } } }
+        '200': { description: 'Ruled', content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -661,13 +720,28 @@ components:
     RefundStatus:
       type: string
       description: >
-        A refund goes straight to seller review; the buyer does not ship the goods
-        back first. `accepted` and `rejected` are the seller's or the moderator's
-        outcome, `cancelled` is the buyer withdrawing.
-      enum: [awaiting-seller-review, disputed, accepted, rejected, cancelled]
+        Every live value names the party whose move the refund is waiting on, and each
+        of those carries a `deadline_at` that the party can miss:
+
+
+        `awaiting-seller-review` — the seller accepts or rejects. Missing it hands the
+        case to the buyer. `awaiting-buyer-action` — the buyer escalates to a moderator
+        or lets the refund lapse; `rejection_reason` says whether the seller refused or
+        just went quiet. `disputed` — a moderator has an open round. `returning` — the
+        goods are on their way back; only a granted refund ever reaches here.
+        `returned` — the seller inspects and may appeal until the window closes.
+
+
+        Then three terminals: `accepted` is money back to the buyer, `rejected` is no
+        refund and the payout stands, `cancelled` is the buyer withdrawing before the
+        seller decided.
+      enum: [awaiting-seller-review, awaiting-buyer-action, disputed, returning, returned, accepted, rejected, cancelled]
 
     DisputeStatus:
       type: string
+      description: >
+        The winner of one round, or `open` while it is still with a moderator. What
+        winning does depends on the round — see the ruling endpoint.
       enum: [open, seller-wins, buyer-wins]
 
     DisputeOutcome:
@@ -711,18 +785,23 @@ components:
     # ---------------------------------------------------------------- cart ---
     CartItem:
       type: object
+      description: >
+        Carries the listing id as well as the variant's, because a variant has no read
+        of its own in the catalog: rendering the cart is one `GET /listings?ids=` over
+        the `spu_id`s, and the row would otherwise be unresolvable.
       properties:
         id: { $ref: '#/components/schemas/CartItemID' }
+        spu_id: { $ref: '#/components/schemas/ProductSPUID' }
         sku_id: { $ref: '#/components/schemas/ProductSKUID' }
         quantity: { type: integer, format: int64 }
         created_at: { type: string, format: date-time }
-      required: [id, sku_id, quantity, created_at]
+      required: [id, spu_id, sku_id, quantity, created_at]
 
     CartItemPage:
       type: object
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/CartItem' } }
-        next_cursor: { type: string, nullable: true }
+        total: { $ref: '#/components/schemas/TotalCount' }
       required: [items]
 
     AddCartItemRequest:
@@ -784,7 +863,7 @@ components:
       type: object
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/DraftOrder' } }
-        next_cursor: { type: string, nullable: true }
+        total: { $ref: '#/components/schemas/TotalCount' }
       required: [items]
 
     CreateDraftRequest:
@@ -805,6 +884,12 @@ components:
           description: Null until the seller confirms.
         buyer_id: { $ref: '#/components/schemas/AccountID' }
         seller_id: { $ref: '#/components/schemas/AccountID' }
+        spu_id:
+          allOf: [{ $ref: '#/components/schemas/ProductSPUID' }]
+          description: >
+            The listing the variant belongs to, denormalized the same way `seller_id`
+            is, so order history can resolve it through `GET /listings?ids=` — which
+            answers for a listing the seller has since hidden or deleted.
         sku_id: { $ref: '#/components/schemas/ProductSKUID' }
         quantity: { type: integer, format: int64 }
         currency: { $ref: '#/components/schemas/CurrencyCode' }
@@ -820,7 +905,7 @@ components:
           nullable: true
           description: Null means the system cancelled it.
         created_at: { type: string, format: date-time }
-      required: [id, draft_id, buyer_id, seller_id, sku_id, quantity, currency, total_amount, transport_option, address, state, payment_status, created_at]
+      required: [id, draft_id, buyer_id, seller_id, spu_id, sku_id, quantity, currency, total_amount, transport_option, address, state, payment_status, created_at]
 
     OrderItemPage:
       type: object
@@ -883,12 +968,21 @@ components:
         receipt_attachments:
           type: array
           items: { $ref: '#/components/schemas/ResourceID' }
-          description: Unboxing evidence supplied with the receipt confirmation.
+          description: >
+            Unboxing evidence, captured with the receipt confirmation and never added to
+            afterwards — a refund is judged on what the buyer showed at the moment of
+            unboxing.
         payout_deadline_at:
           type: string
           format: date-time
           nullable: true
-          description: '`received_at` + 72h. Absent a refund, a job pays the seller out at this point.'
+          description: >
+            `received_at` + 72h, computed rather than stored. A job pays the seller out
+            at this point unless a refund is live on the order.
+        payout_session_id:
+          allOf: [{ $ref: '#/components/schemas/PaymentSessionID' }]
+          nullable: true
+          description: The escrow release to the seller. Set once the payout job has run.
         created_at: { type: string, format: date-time }
         completed_at: { type: string, format: date-time, nullable: true, description: Set by the payout job }
         cancelled_at: { type: string, format: date-time, nullable: true }
@@ -966,6 +1060,9 @@ components:
       type: object
       properties:
         id: { $ref: '#/components/schemas/OfferID' }
+        spu_id:
+          allOf: [{ $ref: '#/components/schemas/ProductSPUID' }]
+          description: The listing whose card the offer is shown on.
         sku_id: { $ref: '#/components/schemas/ProductSKUID' }
         buyer_id: { $ref: '#/components/schemas/AccountID' }
         seller_id: { $ref: '#/components/schemas/AccountID' }
@@ -977,7 +1074,7 @@ components:
         reason: { type: string, description: Shown on the offer card beside the proposed price }
         created_at: { type: string, format: date-time }
         expires_at: { type: string, format: date-time }
-      required: [id, sku_id, buyer_id, seller_id, author_id, status, quantity, total, currency, created_at, expires_at]
+      required: [id, spu_id, sku_id, buyer_id, seller_id, author_id, status, quantity, total, currency, created_at, expires_at]
 
     OfferPage:
       type: object
@@ -1016,6 +1113,9 @@ components:
     # ------------------------------------------------------------- refunds ---
     Refund:
       type: object
+      description: >
+        The whole case. Always for one entire order, so it carries no amount of its own
+        — what is owed is the order's checkout total.
       properties:
         id: { $ref: '#/components/schemas/RefundID' }
         order_id: { $ref: '#/components/schemas/OrderID' }
@@ -1025,23 +1125,44 @@ components:
         attachments:
           type: array
           items: { $ref: '#/components/schemas/ResourceID' }
-          description: The buyer's evidence, kept apart from the seller's on the dispute.
-        review_deadline_at:
+          description: The buyer's evidence. Each dispute round holds its opener's.
+        deadline_at:
           type: string
           format: date-time
-          description: '`created_at` + 48h. Silence past it is a full refund, applied by a job.'
+          nullable: true
+          description: >
+            When the party named by `status` runs out of time, and missing it is itself
+            a move. Null while the case waits on a moderator or a carrier, and in the
+            terminal states.
         seller_decided_at: { type: string, format: date-time, nullable: true }
-        rejection_reason: { type: string, nullable: true }
-        dispute_id:
-          allOf: [{ $ref: '#/components/schemas/RefundDisputeID' }]
+        rejection_reason:
+          type: string
           nullable: true
-          description: Set when a rejection opened a dispute; how either party reaches it.
-        return_transport_id:
-          allOf: [{ $ref: '#/components/schemas/TransportID' }]
+          description: >
+            The seller's grounds for refusing. Null in `awaiting-buyer-action` when the
+            seller never answered at all, which is how the two paths into that state are
+            told apart.
+        return_transport:
+          allOf: [{ $ref: '#/components/schemas/Transport' }]
           nullable: true
-          description: The leg sending the goods back, recorded if and when it happens.
+          description: >
+            The leg carrying the goods back, booked when the refund is granted and not
+            before. Carried in full rather than as an id: the buyer was told to send this
+            parcel, so they have to be able to track it, and a shipment has no read of
+            its own outside the thing it belongs to.
+        returned_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the return reached the seller and the inspection window opened.
+        dispute:
+          allOf: [{ $ref: '#/components/schemas/RefundDispute' }]
+          nullable: true
+          description: >
+            The moderation case, with every round it has been through. Null until
+            somebody escalates.
         created_at: { type: string, format: date-time }
-      required: [id, order_id, buyer_id, status, reason, attachments, review_deadline_at, created_at]
+      required: [id, order_id, buyer_id, status, reason, attachments, created_at]
 
     RefundPage:
       type: object
@@ -1052,6 +1173,9 @@ components:
 
     CreateRefundRequest:
       type: object
+      description: >
+        No item selection and no amount: a refund is for the whole order. Nothing about
+        shipping either — the goods stay with the buyer until the refund is granted.
       properties:
         reason: { type: string, maxLength: 2000 }
         attachments:
@@ -1061,16 +1185,45 @@ components:
           items: { $ref: '#/components/schemas/ResourceID' }
       required: [reason, attachments]
 
+    AcceptRefundRequest:
+      type: object
+      description: >
+        Accepting books the return, so the seller says here where it goes and by which
+        carrier. `pickup_contact_id` defaults to the seller's default pickup address.
+      properties:
+        transport_option:
+          type: string
+          maxLength: 100
+          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+          description: A transport option slug owned by the common module.
+        pickup_contact_id:
+          allOf: [{ $ref: '#/components/schemas/ContactID' }]
+          description: Where the return is delivered. Defaults to the seller's pickup address.
+        note: { type: string, maxLength: 2000 }
+      required: [transport_option]
+
     RejectRefundRequest:
       type: object
+      description: >
+        A reason is mandatory: it is what the buyer decides whether to escalate on.
+        Counter-evidence is not required here, because a rejection is not yet a case —
+        the seller supplies it if the buyer escalates.
       properties:
-        reason: { type: string, maxLength: 2000 }
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+      required: [reason]
+
+    OpenDisputeRequest:
+      type: object
+      description: >
+        Grounds and evidence for the round being opened — the buyer's objection to a
+        refusal, or the seller's account of what actually arrived. Both are mandatory:
+        a moderator rules on evidence, and a round opened without any is one they cannot
+        decide.
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 2000 }
         attachments:
           type: array
           minItems: 1
-          description: >
-            Counter-evidence is mandatory — the packed state of the goods before
-            dispatch is what a moderator weighs against the buyer's evidence.
           items: { $ref: '#/components/schemas/ResourceID' }
       required: [reason, attachments]
 
@@ -1086,18 +1239,38 @@ components:
     # ------------------------------------------------------------ disputes ---
     RefundDispute:
       type: object
+      description: >
+        One moderation case on one refund, as the rounds it has been through. Read
+        inside the refund; there is no separate dispute resource, because a dispute
+        never exists apart from the refund it is about.
       properties:
-        id: { $ref: '#/components/schemas/RefundDisputeID' }
         refund_id: { $ref: '#/components/schemas/RefundID' }
         order_id: { $ref: '#/components/schemas/OrderID' }
-        seller_id: { $ref: '#/components/schemas/AccountID' }
         buyer_id: { $ref: '#/components/schemas/AccountID' }
+        seller_id: { $ref: '#/components/schemas/AccountID' }
+        rounds:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items: { $ref: '#/components/schemas/DisputeRound' }
+          description: >
+            Oldest first. Round 1 is the buyer's escalation, round 2 the seller's appeal
+            on what came back. Both are kept: ruling for the buyer and then for the
+            seller is two decisions, not one that changed its mind.
+      required: [refund_id, order_id, buyer_id, seller_id, rounds]
+
+    DisputeRound:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/RefundDisputeID' }
+        round: { type: integer, enum: [1, 2], description: '1 = the buyer escalating, 2 = the seller appealing the return.' }
+        opened_by_id: { $ref: '#/components/schemas/AccountID' }
         status: { $ref: '#/components/schemas/DisputeStatus' }
-        reason: { type: string, description: The seller's grounds for refusing }
+        reason: { type: string, description: The grounds of whoever opened this round. }
         attachments:
           type: array
           items: { $ref: '#/components/schemas/ResourceID' }
-          description: The seller's evidence. The buyer's stays on the refund.
+          description: This round's opener's evidence. The buyer's original evidence stays on the refund.
         resolved_by_id:
           allOf: [{ $ref: '#/components/schemas/AccountID' }]
           nullable: true
@@ -1105,12 +1278,22 @@ components:
         resolved_at: { type: string, format: date-time, nullable: true }
         resolution_note: { type: string, nullable: true }
         created_at: { type: string, format: date-time }
-      required: [id, refund_id, order_id, seller_id, buyer_id, status, reason, attachments, created_at]
+      required: [id, round, opened_by_id, status, reason, attachments, created_at]
+
+    AdminDisputeQueueEntry:
+      type: object
+      description: >
+        A queue row is the open round plus the refund it belongs to, since a moderator
+        decides on the case and not on the round in isolation.
+      properties:
+        round: { $ref: '#/components/schemas/DisputeRound' }
+        refund: { $ref: '#/components/schemas/Refund' }
+      required: [round, refund]
 
     RefundDisputePage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/RefundDispute' } }
+        items: { type: array, items: { $ref: '#/components/schemas/AdminDisputeQueueEntry' } }
         next_cursor: { type: string, nullable: true }
       required: [items]
 

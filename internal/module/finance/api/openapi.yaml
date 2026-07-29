@@ -194,7 +194,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: status, in: query, schema: { $ref: '#/components/schemas/PaymentSessionStatus' } }
-        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawalPage' } } } }
@@ -250,7 +250,13 @@ paths:
         '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/BankAccount' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: >
+            The caller already has this bank account registered. The same account
+            number under a *different* platform account is not refused here — it is a
+            mule signal, and answering it would confirm to a stranger that the number is
+            already on the platform.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
   /bank-accounts/{id}:
     parameters:
@@ -325,7 +331,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: status, in: query, schema: { $ref: '#/components/schemas/PaymentSessionStatus' }, description: Defaults to pending }
-        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawalPage' } } } }
@@ -429,7 +435,7 @@ paths:
       responses:
         '201': { description: 'Adjusted', content: { application/json: { schema: { $ref: '#/components/schemas/WalletTransaction' } } } }
         '200': { description: 'This idempotency key was already applied; the existing movement is returned', content: { application/json: { schema: { $ref: '#/components/schemas/WalletTransaction' } } } }
-        '400': { $ref: '#/components/responses/BadRequest' }
+        '400': { description: 'Malformed, or both deltas are zero', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -579,7 +585,13 @@ components:
           minimum: 1
           description: Omit to tender the whole outstanding balance. Pass it to split
             the session across rails.
-        return_url: { type: string, description: Where the gateway sends the payer back }
+        return_url:
+          type: string
+          maxLength: 2048
+          description: >
+            Where the gateway sends the payer back. Checked against the platform's own
+            allowlist of hosts and rejected otherwise — a URL that reaches a redirect
+            unvalidated is an open redirect wearing a payment flow.
       required: [payment_option]
 
     # -------------------------------------------------------------- wallet ---
@@ -620,8 +632,10 @@ components:
         group_id:
           type: string
           nullable: true
-          description: Shared by every leg of one logical movement — a checkout is a
-            debit plus an escrow hold plus a fee.
+          description: >
+            Shared by every leg of one logical movement — a checkout is a debit plus an
+            escrow hold plus a fee. An opaque token for grouping rows in a response, not
+            an address: nothing accepts it as input and no endpoint resolves it.
         ref_type:
           type: string
           nullable: true
@@ -644,10 +658,14 @@ components:
 
     WalletAdjustmentRequest:
       type: object
+      description: >
+        At least one delta must be non-zero. A movement that moves nothing is refused
+        rather than recorded: the ledger rejects it at the database, and a row that says
+        nothing is worse than an error.
       properties:
         currency: { $ref: '#/components/schemas/CurrencyCode' }
-        available_delta: { type: integer, format: int64 }
-        held_delta: { type: integer, format: int64 }
+        available_delta: { type: integer, format: int64, default: 0 }
+        held_delta: { type: integer, format: int64, default: 0 }
         reason: { type: string, minLength: 1, maxLength: 2000 }
         idempotency_key:
           type: string
@@ -667,7 +685,13 @@ components:
         currency: { $ref: '#/components/schemas/CurrencyCode' }
         amount: { type: integer, format: int64 }
         bank_account: { $ref: '#/components/schemas/BankAccount' }
-        resolved_by_id: { allOf: [{ $ref: '#/components/schemas/AccountID' }], nullable: true }
+        resolved_by_id:
+          allOf: [{ $ref: '#/components/schemas/AccountID' }]
+          nullable: true
+          description: >
+            The admin who decided. This is also what separates the two ways a withdrawal
+            ends up not-successful: set means an admin rejected it, null on a closed
+            withdrawal means the owner cancelled it themselves.
         resolved_at: { type: string, format: date-time, nullable: true }
         resolution_note: { type: string, nullable: true }
         created_at: { type: string, format: date-time }
@@ -677,7 +701,7 @@ components:
       type: object
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/Withdrawal' } }
-        next_cursor: { type: string, nullable: true }
+        total: { $ref: '#/components/schemas/TotalCount' }
       required: [items]
 
     CreateWithdrawalRequest:
