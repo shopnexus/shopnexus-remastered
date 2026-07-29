@@ -14,7 +14,8 @@ info:
     everything reusable across modules — parameters, responses, security
     schemes — has to be defined here.
 servers:
-  - url: /
+  # Must equal api.BasePath (contract test enforces it). Fragment paths stay unprefixed.
+  - url: /api/v1
     description: Gateway (relative to host)
 
 tags:

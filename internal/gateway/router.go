@@ -235,11 +235,18 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("POST /admin/reports/{id}/claim", auth(http.HandlerFunc(d.Trust.AdminClaimReport)))
 	mux.Handle("POST /admin/reports/{id}/resolution", auth(http.HandlerFunc(d.Trust.AdminResolveReport)))
 
-	// Logging outermost; metrics wraps the mux so it can read the matched route.
+	// Metrics wraps the mux so it can read the matched route.
 	// Metrics is optional (nil in tests that don't wire observability).
 	var routed http.Handler = mux
 	if d.Metrics != nil {
 		routed = d.Metrics.Middleware(mux)
 	}
-	return middleware.Logging(d.Log)(routed)
+
+	// Routes are registered unprefixed and mounted under the versioned base path, so
+	// the prefix lives only in openapi.BasePath. StripPrefix stays outside the
+	// metrics middleware, which labels by the inner mux's matched pattern.
+	root := http.NewServeMux()
+	root.Handle(openapi.BasePath+"/", http.StripPrefix(openapi.BasePath, routed))
+
+	return middleware.Logging(d.Log)(root)
 }

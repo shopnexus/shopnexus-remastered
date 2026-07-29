@@ -133,6 +133,9 @@ func TestOpenAPIContract_NoStrayKeys(t *testing.T) {
 // meaningful: a router built from the spec at startup would pass by construction.
 func TestOpenAPIContract_AllPathsRouted(t *testing.T) {
 	var doc struct {
+		Servers []struct {
+			URL string `yaml:"url"`
+		} `yaml:"servers"`
 		Paths map[string]map[string]yaml.Node `yaml:"paths"`
 	}
 	if err := yaml.Unmarshal(openapi.SpecYAML, &doc); err != nil {
@@ -142,6 +145,16 @@ func TestOpenAPIContract_AllPathsRouted(t *testing.T) {
 		t.Fatal("openapi spec declares no paths")
 	}
 
+	// Requests are built the way a client would: base + path. If the two disagree,
+	// every operation 404s while both halves look right in isolation.
+	if len(doc.Servers) == 0 {
+		t.Fatal("openapi spec declares no servers, so clients have no base path to call")
+	}
+	base := doc.Servers[0].URL
+	if base != openapi.BasePath {
+		t.Fatalf("spec servers[0].url is %q but the router mounts at api.BasePath %q — a client following the spec would 404 on every operation", base, openapi.BasePath)
+	}
+
 	r, tm := newRouter()
 	tok, _ := tm.Issue("acc-1")
 	paramRe := regexp.MustCompile(`\{[^}]+\}`)
@@ -149,7 +162,7 @@ func TestOpenAPIContract_AllPathsRouted(t *testing.T) {
 	var unrouted []string
 	total := 0
 	for path, ops := range doc.Paths {
-		reqPath := paramRe.ReplaceAllString(path, "x")
+		reqPath := base + paramRe.ReplaceAllString(path, "x")
 		for method := range ops {
 			m := strings.ToUpper(method)
 			switch m {

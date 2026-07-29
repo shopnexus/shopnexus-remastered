@@ -10,6 +10,7 @@ import (
 
 	"log/slog"
 
+	openapi "shopnexus/api"
 	"shopnexus/internal/gateway"
 	"shopnexus/internal/gateway/handler"
 	accountapi "shopnexus/internal/module/account/api"
@@ -133,7 +134,7 @@ func newRouter() (http.Handler, *token.Manager) {
 func TestRouter_UndocumentedPathIs404(t *testing.T) {
 	r, _ := newRouter()
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/no-such-route", nil))
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, openapi.BasePath+"/no-such-route", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
@@ -143,7 +144,7 @@ func TestRouter_UndocumentedPathIs404(t *testing.T) {
 func TestRouter_PublicRouteNeedsNoToken(t *testing.T) {
 	r, _ := newRouter()
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/listings/"+id.Of[id.ProductSPU](1).String(), nil))
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, openapi.BasePath+"/listings/"+id.Of[id.ProductSPU](1).String(), nil))
 	if rec.Code != http.StatusNotImplemented {
 		t.Fatalf("status = %d, want 501", rec.Code)
 	}
@@ -152,7 +153,7 @@ func TestRouter_PublicRouteNeedsNoToken(t *testing.T) {
 func TestRouter_AuthenticatedRouteRejectsNoToken(t *testing.T) {
 	r, _ := newRouter()
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/me", nil))
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, openapi.BasePath+"/me", nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
@@ -162,7 +163,7 @@ func TestRouter_AuthenticatedRouteRejectsNoToken(t *testing.T) {
 func TestRouter_AuthenticatedRouteWithToken(t *testing.T) {
 	r, tm := newRouter()
 	tok, _ := tm.Issue(id.Of[id.Account](1).String())
-	req := httptest.NewRequest(http.MethodGet, "/me", nil)
+	req := httptest.NewRequest(http.MethodGet, openapi.BasePath+"/me", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -174,7 +175,7 @@ func TestRouter_AuthenticatedRouteWithToken(t *testing.T) {
 func TestRouter_ConfirmOrderRequiresAuth(t *testing.T) {
 	r, _ := newRouter()
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/orders", strings.NewReader(`{}`)))
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, openapi.BasePath+"/orders", strings.NewReader(`{}`)))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
@@ -185,7 +186,7 @@ func TestRouter_ConfirmOrderRequiresAuth(t *testing.T) {
 func TestRouter_AdminRouteRequiresAuth(t *testing.T) {
 	r, _ := newRouter()
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/reports", nil))
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, openapi.BasePath+"/admin/reports", nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}

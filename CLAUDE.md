@@ -33,7 +33,12 @@ go run ./cmd/gateway                             # run the gateway (needs all en
 ```
 
 All config env vars are **required, no defaults** (`internal/config`); a missing
-one fails fast at startup. Swagger UI is served at `/docs`, raw spec at `/openapi.yaml`.
+one fails fast at startup.
+
+Every route is served under **`api.BasePath`** (`/api/v1`) — the router registers
+paths unprefixed and mounts the mux there, and `openapi.base.yaml`'s
+`servers[0].url` must match it (a contract test fails if they drift). So Swagger UI
+is at `/api/v1/docs` and the raw spec at `/api/v1/openapi.yaml`.
 
 ## Architecture (the parts that span files)
 
