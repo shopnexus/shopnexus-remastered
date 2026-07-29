@@ -114,12 +114,8 @@ func (c *Client) Cancel(_ context.Context, _ string) error { return nil }
 
 // WireWebhooks captures the deliver hook and mounts a manual-trigger route for
 // dev: POST /api/v1/transport/webhook/mock {"tracking_id":...,"status":...}.
-func (c *Client) WireWebhooks(mux *http.ServeMux, deliver transport.ResultHandler, registered map[string]struct{}) string {
+func (c *Client) WireWebhooks(mux *http.ServeMux, deliver transport.ResultHandler) string {
 	const key = "transport/mock"
-	if _, ok := registered[key]; ok {
-		return key
-	}
-
 	hookMu.Lock()
 	deliverHook = deliver
 	hookMu.Unlock()

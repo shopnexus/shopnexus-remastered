@@ -30,11 +30,8 @@ type Client interface {
 	Track(ctx context.Context, id string) (TrackResult, error)
 	Cancel(ctx context.Context, id string) error
 
-	// WireWebhooks mounts the provider's webhook route on mux, delivering
-	// verified events to deliver, and returns an idempotency key identifying
-	// that route. If the key already appears in registered, the call is a no-op.
-	// An empty key means the provider has no webhooks.
-	WireWebhooks(mux *http.ServeMux, deliver ResultHandler, registered map[string]struct{}) string
+	// WireWebhooks mounts the provider's webhook route on mux
+	WireWebhooks(mux *http.ServeMux, deliver ResultHandler) string
 }
 
 type QuoteParams struct {

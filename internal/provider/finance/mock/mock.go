@@ -39,6 +39,6 @@ func (c *Client) Tokenize(_ context.Context, _ finance.TokenizeParams) (finance.
 }
 
 // WireWebhooks is a no-op: the mock provider is synchronous-only.
-func (c *Client) WireWebhooks(_ *http.ServeMux, _ finance.NotificationHandler, _ map[string]struct{}) string {
+func (c *Client) WireWebhooks(_ *http.ServeMux, _ finance.NotificationHandler) string {
 	return ""
 }

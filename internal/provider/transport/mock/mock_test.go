@@ -43,7 +43,7 @@ func TestWireWebhooks_ManualTrigger(t *testing.T) {
 		defer mu.Unlock()
 		got = r
 		return nil
-	}, map[string]struct{}{})
+	})
 	if key != "transport/mock" {
 		t.Fatalf("key = %q", key)
 	}
@@ -60,16 +60,5 @@ func TestWireWebhooks_ManualTrigger(t *testing.T) {
 	defer mu.Unlock()
 	if got.TransportID != "MOCKAB12" || got.Status != "Delivered" {
 		t.Fatalf("unexpected webhook result: %+v", got)
-	}
-}
-
-// WireWebhooks is idempotent: a second call with the key already registered
-// is a no-op that returns the key without re-mounting.
-func TestWireWebhooks_Idempotent(t *testing.T) {
-	c := transportmock.NewClient(provider.Option{Provider: "mock"})
-	mux := http.NewServeMux()
-	registered := map[string]struct{}{"transport/mock": {}}
-	if key := c.WireWebhooks(mux, func(context.Context, transport.WebhookResult) error { return nil }, registered); key != "transport/mock" {
-		t.Fatalf("key = %q", key)
 	}
 }

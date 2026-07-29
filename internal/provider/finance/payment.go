@@ -74,10 +74,6 @@ type Client interface {
 	Refund(ctx context.Context, params RefundParams) (RefundResult, error)
 	Tokenize(ctx context.Context, params TokenizeParams) (TokenizeResult, error)
 
-	// WireWebhooks mounts the provider's IPN routes on mux, delivering verified
-	// notifications to deliver, and returns an idempotency key identifying those
-	// routes. If the key already appears in registered, the call is a no-op
-	// (returns the key without mounting). An empty key means the provider has no
-	// webhooks (synchronous-only).
-	WireWebhooks(mux *http.ServeMux, deliver NotificationHandler, registered map[string]struct{}) string
+	// WireWebhooks mounts the provider's IPN routes on mux
+	WireWebhooks(mux *http.ServeMux, deliver NotificationHandler) string
 }
