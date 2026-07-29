@@ -1787,6 +1787,11 @@ components:
                 created_at:
                     format: date-time
                     type: string
+                email:
+                    description: |
+                        As the provider reported it. May differ from the account's email and is not authoritative.
+                    nullable: true
+                    type: string
                 provider:
                     $ref: '#/components/schemas/OAuthProvider'
             required:
