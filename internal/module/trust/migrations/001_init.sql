@@ -51,8 +51,14 @@ CREATE TABLE IF NOT EXISTS "feedback" (
     CONSTRAINT "feedback_order_direction_key" UNIQUE ("order_id", "direction"),
     CONSTRAINT "feedback_rating_range_chk" CHECK ("rating" BETWEEN 1 AND 5)
 );
-CREATE INDEX IF NOT EXISTS "feedback_ratee_id_idx" ON "feedback" ("ratee_id") WHERE "published_at" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS "feedback_ratee_id_idx" ON "feedback" ("ratee_id", "created_at" DESC) WHERE "published_at" IS NOT NULL;
 CREATE INDEX IF NOT EXISTS "feedback_rater_id_idx" ON "feedback" ("rater_id");
+-- The reveal job: blind rows whose window has run out. The partial index above only
+-- covers what is already published, so without this the job scans the whole table
+-- looking for the handful of rows it has to act on.
+CREATE INDEX IF NOT EXISTS "feedback_unpublished_idx"
+    ON "feedback" ("created_at")
+    WHERE "published_at" IS NULL;
 
 -- A buyer's review of a product they bought. "order_id" is NOT NULL by design: no
 -- purchase, no review. Ratings here use the same 1..5 scale as "feedback".
@@ -63,18 +69,37 @@ CREATE TABLE IF NOT EXISTS "review" (
     "author_id" BIGINT NOT NULL, -- cross-ref account.account; no FK
     "rating" SMALLINT NOT NULL,
     "body" TEXT NOT NULL DEFAULT '',
+    -- Photos of the item as received; resource ids owned by the common module, held
+    -- inline for the same reason catalog.product_spu and chat.message do it — a review
+    -- and its images sit in two schemas, and writing both atomically stops being
+    -- possible once the modules are split apart.
+    "attachments" BIGINT[] NOT NULL DEFAULT '{}',
+    -- Vote tallies, denormalized from "review_vote" for the same reason
+    -- catalog.product_spu caches its rating: sorting a product's reviews by
+    -- helpfulness has to be an ordered index scan, and an aggregate computed per
+    -- query is neither indexable nor seekable by a cursor.
+    "helpful_count" BIGINT NOT NULL DEFAULT 0,
+    "not_helpful_count" BIGINT NOT NULL DEFAULT 0,
+    "reply_count" BIGINT NOT NULL DEFAULT 0, -- so a page need not count replies per row
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "review_pkey" PRIMARY KEY ("id"),
     -- One review per order, so buying the same product twice earns two reviews.
     CONSTRAINT "review_spu_author_order_key" UNIQUE ("spu_id", "author_id", "order_id"),
-    CONSTRAINT "review_rating_range_chk" CHECK ("rating" BETWEEN 1 AND 5)
+    CONSTRAINT "review_rating_range_chk" CHECK ("rating" BETWEEN 1 AND 5),
+    -- A tally that has gone negative means the maintaining code is wrong, and a
+    -- product page showing -3 helpful is worse than the write failing.
+    CONSTRAINT "review_counts_non_negative_chk" CHECK (
+        "helpful_count" >= 0 AND "not_helpful_count" >= 0 AND "reply_count" >= 0
+    )
 );
 -- The product page: one SPU's reviews, newest first. Also the source catalog reads to
 -- recompute its cached_rating.
 CREATE INDEX IF NOT EXISTS "review_spu_id_idx" ON "review" ("spu_id", "created_at" DESC);
+-- The same page sorted by helpfulness, which is why the tally is a column.
+CREATE INDEX IF NOT EXISTS "review_spu_id_helpful_idx" ON "review" ("spu_id", "helpful_count" DESC);
 -- "my reviews".
-CREATE INDEX IF NOT EXISTS "review_author_id_idx" ON "review" ("author_id");
+CREATE INDEX IF NOT EXISTS "review_author_id_idx" ON "review" ("author_id", "created_at" DESC);
 
 -- Flat replies under a review: a seller answering, a buyer following up. No rating
 -- and no order — a reply is not a review.
@@ -96,11 +121,13 @@ CREATE INDEX IF NOT EXISTS "review_reply_review_id_idx" ON "review_reply" ("revi
 CREATE TABLE IF NOT EXISTS "review_vote" (
     "review_id" BIGINT NOT NULL,
     "account_id" BIGINT NOT NULL, -- cross-ref account.account; no FK
-    "vote" SMALLINT NOT NULL, -- -1 = downvote, 0 = neutral, 1 = upvote
+    "vote" SMALLINT NOT NULL, -- -1 = downvote, 1 = upvote
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "review_vote_pkey" PRIMARY KEY ("review_id", "account_id"),
-    CONSTRAINT "review_vote_value" CHECK ("vote" IN (-1, 0, 1)),
+    -- No neutral value: withdrawing a vote deletes the row. A stored zero is a row
+    -- that says nothing, and it would also have to be excluded from every tally.
+    CONSTRAINT "review_vote_value" CHECK ("vote" IN (-1, 1)),
     CONSTRAINT "review_vote_review_id_fkey" FOREIGN KEY ("review_id")
         REFERENCES "review" ("id") ON DELETE CASCADE
 );
@@ -155,6 +182,12 @@ CREATE TABLE IF NOT EXISTS "report" (
     CONSTRAINT "report_pkey" PRIMARY KEY ("id")
 );
 CREATE INDEX IF NOT EXISTS "report_ref_type_ref_id_idx" ON "report" ("ref_type", "ref_id");
-CREATE INDEX IF NOT EXISTS "report_status_idx" ON "report" ("status");
-CREATE INDEX IF NOT EXISTS "report_reporter_id_idx" ON "report" ("reporter_id");
+CREATE INDEX IF NOT EXISTS "report_reporter_id_idx" ON "report" ("reporter_id", "created_at" DESC);
+-- The moderator queue: unresolved reports, oldest first, which is the order they are
+-- worked. Partial on the small hot slice, so a resolved backlog of any size costs
+-- nothing — "status" alone has too few values to lead an index, and on its own it could
+-- not deliver the ordering either.
+CREATE INDEX IF NOT EXISTS "report_queue_idx"
+    ON "report" ("created_at")
+    WHERE "status" IN ('open', 'reviewing');
 CREATE UNIQUE INDEX IF NOT EXISTS "report_one_open_per_target" ON "report" ("reporter_id", "ref_type", "ref_id") WHERE "status" IN ('open', 'reviewing');

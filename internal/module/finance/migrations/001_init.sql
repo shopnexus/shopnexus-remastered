@@ -69,9 +69,9 @@ CREATE TABLE IF NOT EXISTS "payment_session" (
     -- Shape: { "base": "USD", "rates": { "VND": "24500.0", ... }, "fetched_at": "..." }
     "fx_snapshot" JSONB,
 
-    -- Kind-specific context: cost breakdown, line items snapshot, applied
-    -- promotions, gateway URLs per rail, provider metadata; for 'withdrawal'
-    -- also the destination bank_account id and the admin resolution.
+    -- Kind-specific context: cost breakdown, line items snapshot, gateway URLs per
+    -- rail, provider metadata; for 'withdrawal' also the destination bank_account id
+    -- and the admin resolution.
     "data" JSONB NOT NULL,
 
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -91,6 +91,14 @@ CREATE INDEX IF NOT EXISTS "payment_session_to_id_idx" ON "payment_session" ("to
 CREATE INDEX IF NOT EXISTS "payment_session_expiring_idx"
     ON "payment_session" ("expired_at")
     WHERE "status" IN ('pending', 'processing');
+-- The admin withdrawal queue: cash-outs waiting on a human, oldest first. Real money
+-- leaves the platform through these, so the queue is worked in order and has to stay
+-- cheap however long the history behind it gets. Neither "kind" nor "status" can lead
+-- this on its own: each has a handful of values, and the pair still has to deliver the
+-- ordering.
+CREATE INDEX IF NOT EXISTS "payment_session_withdrawal_queue_idx"
+    ON "payment_session" ("created_at")
+    WHERE "kind" = 'withdrawal' AND "status" IN ('pending', 'processing');
 
 -- Append-only ledger leg: one row per **external rail** movement (card charge,
 -- refund leg). Status transitions pending -> success/failed only; success is
