@@ -6,7 +6,10 @@
 -- Rows can be duplicated — the JetStream consumer is at-least-once, so a redelivered
 -- batch is counted twice; accepted rather than a dedup key on the hot write path.
 -- Everything is compressed after a week and dropped on its retention window, because
--- telemetry kept forever takes down the database it is monitoring.
+-- telemetry kept forever takes down the database it is monitoring. That includes the
+-- continuous aggregates: they are hypertables too, and a rollup with no retention is the
+-- one table here that would grow without end — the raw rows it was built to replace get
+-- dropped, the summary of them never does.
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 -- Percentiles: avg hides the tail, and a plain percentile_cont cannot be kept in a
@@ -16,7 +19,11 @@ CREATE EXTENSION IF NOT EXISTS timescaledb_toolkit
 WITH
   SCHEMA public;
 
--- HTTP RED: one row per request. route is the ServeMux pattern (low cardinality).
+-- HTTP RED: one row per request. route is the matched ServeMux pattern, taken from
+-- http.Request.Pattern, which keeps cardinality at the number of registered routes rather
+-- than the number of distinct URLs. Note it already includes the method
+-- ("GET /listings/{id}"), so "method" repeats what "route" carries; a panel grouping by
+-- route is therefore already split by method whether it wanted that or not.
 CREATE TABLE IF NOT EXISTS "http_requests" (
     "ts"          TIMESTAMPTZ      NOT NULL DEFAULT now(),
     "instance"    TEXT             NOT NULL, -- pod / host that served the request
@@ -132,8 +139,56 @@ WITH NO DATA;
 -- start_offset is a day, not an hour: the refresh only recomputes buckets Timescale
 -- marked invalid, so a wide window costs little when nothing changed but lets a job
 -- that failed for a while catch up. A one-hour window would leave a permanent hole.
+-- It also has to stay well inside the raw table's retention, or the policy would be
+-- asked to rebuild buckets from chunks that have already been dropped.
 SELECT add_continuous_aggregate_policy('http_requests_1m',
     start_offset      => INTERVAL '1 day',
     end_offset        => INTERVAL '1 minute',
     schedule_interval => INTERVAL '1 minute',
     if_not_exists     => TRUE);
+-- The rollup outlives the raw rows — that is the point of having it — but not forever.
+-- A year of one-minute buckets per (instance, route, status) is what a
+-- year-over-year panel needs and is still a fraction of the raw table it replaces.
+ALTER MATERIALIZED VIEW "http_requests_1m" SET (
+    timescaledb.enable_columnstore = true,
+    timescaledb.segmentby = 'route'
+);
+CALL add_columnstore_policy('http_requests_1m', after => INTERVAL '30 days', if_not_exists => TRUE);
+SELECT add_retention_policy('http_requests_1m', INTERVAL '365 days', if_not_exists => TRUE);
+
+-- The same rollup for outbound calls, for the same reason: the provider dashboard is read
+-- as often as the inbound one and must not scan raw rows either.
+--
+-- Grouped by provider and status but not by path. A templated path is bounded, but
+-- provider x path x status x instance x minute is a wide enough key that the rollup stops
+-- being much smaller than what it summarises. Per-path is a drill-down, and drill-downs
+-- can afford the raw table inside its 30 days.
+--
+-- "failures" is materialized rather than left to each panel: "failed" means a transport
+-- error or a 5xx — a 4xx is a valid answer — and that rule belongs in one place instead of
+-- being restated in every query that wants an error rate.
+CREATE MATERIALIZED VIEW IF NOT EXISTS "provider_calls_1m"
+WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+SELECT time_bucket(INTERVAL '1 minute', "ts") AS "bucket",
+       "instance",
+       "provider",
+       "status",
+       count(*)                          AS "calls",
+       count(*) FILTER (WHERE "failed")  AS "failures",
+       avg("duration_ms")                AS "avg_ms",
+       max("duration_ms")                AS "max_ms",
+       percentile_agg("duration_ms")     AS "latency"
+FROM "provider_calls"
+GROUP BY "bucket", "instance", "provider", "status"
+WITH NO DATA;
+SELECT add_continuous_aggregate_policy('provider_calls_1m',
+    start_offset      => INTERVAL '1 day',
+    end_offset        => INTERVAL '1 minute',
+    schedule_interval => INTERVAL '1 minute',
+    if_not_exists     => TRUE);
+ALTER MATERIALIZED VIEW "provider_calls_1m" SET (
+    timescaledb.enable_columnstore = true,
+    timescaledb.segmentby = 'provider'
+);
+CALL add_columnstore_policy('provider_calls_1m', after => INTERVAL '30 days', if_not_exists => TRUE);
+SELECT add_retention_policy('provider_calls_1m', INTERVAL '365 days', if_not_exists => TRUE);

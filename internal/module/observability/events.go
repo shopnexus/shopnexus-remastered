@@ -10,6 +10,13 @@ import (
 // observedTopics are the bus topics mirrored into business_events. Add a new
 // topic name here to capture it (kept as strings so observability need not
 // import every module's event package).
+//
+// Adding one is a disclosure decision, not a config change. The payload is copied
+// verbatim into a table every Grafana user can read, which is a wider audience than
+// whoever may read the rows the event came from — so a topic only belongs here if its
+// payload is ids, amounts, statuses and timestamps. An address, a name, a phone or an
+// email in a published event puts that data on a dashboard, and nothing downstream of
+// this list will catch it.
 var observedTopics = []string{
 	"order.placed",
 }
