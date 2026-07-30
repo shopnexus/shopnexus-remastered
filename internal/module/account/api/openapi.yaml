@@ -43,7 +43,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/RegisterRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/AuthResult' } } } }
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AuthResult' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '409': { description: 'Email or phone or username already taken', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '422': { description: 'No identifier supplied', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -60,7 +68,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/LoginRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/AuthResult' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AuthResult' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { description: 'Wrong credentials', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '403': { description: 'Account suspended', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -80,8 +96,24 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/OAuthLoginRequest' }
       responses:
-        '200': { description: 'Signed in to an existing account', content: { application/json: { schema: { $ref: '#/components/schemas/AuthResult' } } } }
-        '201': { description: 'A new account was created', content: { application/json: { schema: { $ref: '#/components/schemas/AuthResult' } } } }
+        '200':
+          description: 'Signed in to an existing account'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AuthResult' }
+                required: [data]
+        '201':
+          description: 'A new account was created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AuthResult' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { description: 'Provider rejected the credential', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '403': { description: 'Account suspended', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -98,7 +130,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/RefreshRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/AuthResult' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AuthResult' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { description: 'Unknown or revoked refresh token', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
@@ -199,7 +239,15 @@ paths:
       summary: Read the caller's own account and profile
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Me' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Me' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
     patch:
       tags: [account]
@@ -220,7 +268,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateAccountRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Me' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Me' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '409': { description: 'Email or phone or username already taken', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -239,7 +295,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateProfileRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Profile' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Profile' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
@@ -254,7 +318,15 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/AccountID' } }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/PublicAccount' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PublicAccount' }
+                required: [data]
         '404': { $ref: '#/components/responses/NotFound' }
 
   /me/oauth-identities:
@@ -305,7 +377,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CreateContactRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Contact' } } } }
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Contact' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
@@ -329,7 +409,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateContactRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Contact' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Contact' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -383,7 +471,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/VerifyContactPhoneRequest' }
       responses:
-        '200': { description: 'Verified', content: { application/json: { schema: { $ref: '#/components/schemas/Contact' } } } }
+        '200':
+          description: 'Verified'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Contact' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { description: 'Code is wrong, expired, or already used', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -406,7 +502,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/RegisterDeviceRequest' }
       responses:
-        '200': { description: 'Registered or moved', content: { application/json: { schema: { $ref: '#/components/schemas/Device' } } } }
+        '200':
+          description: 'Registered or moved'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Device' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
@@ -459,7 +563,15 @@ paths:
         feed and answers from one partial index.
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/UnreadCount' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/UnreadCount' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /notifications/read:
@@ -477,7 +589,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/MarkNotificationsReadRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/UnreadCount' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/UnreadCount' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
@@ -575,7 +695,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/StartIdentityVerificationRequest' }
       responses:
-        '201': { description: 'Case opened', content: { application/json: { schema: { $ref: '#/components/schemas/IdentityVerificationTicket' } } } }
+        '201':
+          description: 'Case opened'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/IdentityVerificationTicket' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '409': { description: 'This account already holds a live verified document', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -634,7 +762,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/SuspendAccountRequest' }
       responses:
-        '200': { description: 'Suspended', content: { application/json: { schema: { $ref: '#/components/schemas/AdminAccount' } } } }
+        '200':
+          description: 'Suspended'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AdminAccount' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -646,7 +782,15 @@ paths:
         in the audit log rather than on the row.
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: 'Reinstated', content: { application/json: { schema: { $ref: '#/components/schemas/AdminAccount' } } } }
+        '200':
+          description: 'Reinstated'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AdminAccount' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -666,7 +810,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CreateModeratorRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/AdminAccount' } } } }
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AdminAccount' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -718,7 +870,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/IdentityVerdictRequest' }
       responses:
-        '200': { description: 'Recorded', content: { application/json: { schema: { $ref: '#/components/schemas/IdentityDocument' } } } }
+        '200':
+          description: 'Recorded'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/IdentityDocument' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -920,10 +1080,9 @@ components:
     AccountSummaryPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/AccountSummary' } }
-        total: { $ref: '#/components/schemas/TotalCount' }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/AccountSummary' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+      required: [data, meta]
     UpdateAccountRequest:
       type: object
       description: Every field optional. Setting one to null removes it, which is
@@ -956,9 +1115,8 @@ components:
     OAuthIdentityList:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/OAuthIdentity' } }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/OAuthIdentity' } }
+      required: [data]
     # ---------------------------------------------------------- contacts -----
     Contact:
       type: object
@@ -999,9 +1157,8 @@ components:
     ContactList:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Contact' } }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Contact' } }
+      required: [data]
     CreateContactRequest:
       type: object
       properties:
@@ -1069,9 +1226,8 @@ components:
     DeviceList:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Device' } }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Device' } }
+      required: [data]
     RegisterDeviceRequest:
       type: object
       properties:
@@ -1101,10 +1257,9 @@ components:
     NotificationPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Notification' } }
-        next_cursor: { type: string, nullable: true }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Notification' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
     UnreadCount:
       type: object
       properties:
@@ -1137,9 +1292,8 @@ components:
     NotificationPreferenceList:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/NotificationPreference' } }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/NotificationPreference' } }
+      required: [data]
     UpdateNotificationPreferencesRequest:
       type: object
       properties:
@@ -1181,16 +1335,14 @@ components:
     IdentityDocumentList:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/IdentityDocument' } }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/IdentityDocument' } }
+      required: [data]
     IdentityDocumentPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/AdminIdentityDocument' } }
-        total: { $ref: '#/components/schemas/TotalCount' }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/AdminIdentityDocument' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+      required: [data, meta]
     AdminIdentityDocument:
       type: object
       description: A queue entry, which needs the subject alongside the document.
@@ -1252,10 +1404,9 @@ components:
     AdminAccountPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/AdminAccount' } }
-        total: { $ref: '#/components/schemas/TotalCount' }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/AdminAccount' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+      required: [data, meta]
     SuspendAccountRequest:
       type: object
       properties:

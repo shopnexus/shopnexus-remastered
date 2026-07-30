@@ -82,9 +82,11 @@ paths:
         (`draft`, `pending`) stay out unless they are the caller's own.
 
 
-        `price-asc`, `price-desc` and `best-selling` are answered through the SKU
-        indexes rather than a value cached on the listing, so `price` is the cheapest
-        matching variant's and `sold` the total across variants.
+        `price-asc` and `price-desc` are answered through the SKU price index rather than
+        a value cached on the listing, so `price` is the cheapest matching variant's.
+        `best-selling` is the one that cannot work that way — it orders by a sum over the
+        variants, and a sum has no per-SKU index to scan in order — so it reads
+        `cached_sold` on the listing, maintained with the stock it counts.
       security:
         - {}
         - bearerAuth: []
@@ -114,7 +116,14 @@ paths:
         - $ref: '#/components/parameters/Limit'
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingPage' } } } }
-        '400': { description: '`sort=relevance` without a query, or `status` without `mine`', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '400':
+          description: >
+            A combination that has no answer: `sort=relevance` without a query, `status`
+            without `mine`, or `sort=recommended` together with `favorited` or `mine` —
+            a personalised ranking of a set the caller already chose is not a ranking of
+            anything. Combinations are refused rather than silently resolved by
+            precedence, so a client never gets a different list than it asked for.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '401': { description: '`mine=true`, `favorited=true` or `sort=recommended` without a token', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     post:
       tags: [catalog]
@@ -133,7 +142,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CreateListingRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ListingDetail' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { description: 'Category or tag or image not found', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -141,18 +158,18 @@ paths:
         '422': { description: 'Identity verification is required before selling', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /listings/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        description: >
-          The listing's opaque id or its slug. A slug is lowercase, hyphen-separated
-          and never contains an underscore, so it cannot be mistaken for an id and
-          the product page needs no second endpoint to resolve one.
-        schema: { $ref: '#/components/schemas/ListingRef' }
     get:
       tags: [catalog]
       summary: Read a listing
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: >
+            The listing's opaque id or its slug. A slug is lowercase, hyphen-separated and
+            never contains an underscore, so it cannot be mistaken for an id and the
+            product page needs no second endpoint to resolve one.
+          schema: { $ref: '#/components/schemas/ListingRef' }
       description: >
         Carries the variants with their prices and stock and the seller summary.
 
@@ -165,11 +182,25 @@ paths:
         - {}
         - bearerAuth: []
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ListingDetail' }
+                required: [data]
         '404': { $ref: '#/components/responses/NotFound' }
     patch:
       tags: [catalog]
       summary: Edit a listing
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The opaque id. A write addresses the listing, never its public slug.
+          schema: { $ref: '#/components/schemas/ProductSPUID' }
       description: >
         An edit to a draft applies immediately. An edit to a live listing that trips
         the prohibited-goods filter is held as a pending edit and applied only when a
@@ -187,8 +218,24 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateListingRequest' }
       responses:
-        '200': { description: 'Applied', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
-        '202': { description: 'Held as a pending edit awaiting moderation', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '200':
+          description: 'Applied'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ListingDetail' }
+                required: [data]
+        '202':
+          description: 'Held as a pending edit awaiting moderation'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ListingDetail' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -196,6 +243,12 @@ paths:
     delete:
       tags: [catalog]
       summary: Delete a listing
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The opaque id. A write addresses the listing, never its public slug.
+          schema: { $ref: '#/components/schemas/ProductSPUID' }
       description: >
         Soft delete, and distinct from hiding it. Order history holds the listing and
         variant ids without a foreign key, so a past order has to stay resolvable
@@ -221,8 +274,24 @@ paths:
         happened.
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: 'Live', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
-        '202': { description: 'Queued for moderation and not yet public', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '200':
+          description: 'Live'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ListingDetail' }
+                required: [data]
+        '202':
+          description: 'Queued for moderation and not yet public'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ListingDetail' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -236,7 +305,15 @@ paths:
         item is temporarily out of stock. Not the same as deleting it.
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: 'Hidden', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '200':
+          description: 'Hidden'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ListingDetail' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -262,7 +339,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CreateSkuRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ListingDetail' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -289,7 +374,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateSkuRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ListingDetail' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -308,7 +401,15 @@ paths:
         that.
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: 'Deleted', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '200':
+          description: 'Deleted'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ListingDetail' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -333,7 +434,11 @@ paths:
     delete:
       tags: [catalog]
       summary: Unsave a listing
-      description: Idempotent, so unsaving something that was never saved is not an error.
+      description: >
+        Idempotent, and deliberately so all the way: unsaving something that was never
+        saved answers 204, and so does a `spuID` that names no listing at all. The
+        post-condition — this listing is not on the caller's wishlist — holds either way,
+        and a 404 here would only tell a stranger which ids exist.
       security: [{ bearerAuth: [] }]
       responses:
         '204': { description: Removed }
@@ -416,7 +521,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CreateCategoryRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Category' } } } }
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Category' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -435,7 +548,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateCategoryRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Category' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Category' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -472,7 +593,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/PutTagRequest' }
       responses:
-        '200': { description: 'Created or updated', content: { application/json: { schema: { $ref: '#/components/schemas/Tag' } } } }
+        '200':
+          description: 'Created or updated'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Tag' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -521,7 +650,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ModerationNoteRequest' }
       responses:
-        '200': { description: 'Live', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '200':
+          description: 'Live'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ListingDetail' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -544,7 +681,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/TakedownRequest' }
       responses:
-        '200': { description: 'Taken down', content: { application/json: { schema: { $ref: '#/components/schemas/ListingDetail' } } } }
+        '200':
+          description: 'Taken down'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ListingDetail' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -638,9 +783,8 @@ components:
     CategoryList:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Category' } }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Category' } }
+      required: [data]
     CreateCategoryRequest:
       type: object
       properties:
@@ -668,10 +812,9 @@ components:
     TagPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Tag' } }
-        total: { $ref: '#/components/schemas/TotalCount' }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Tag' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+      required: [data, meta]
     PutTagRequest:
       type: object
       description: The slug is in the path, so this carries only what can change.
@@ -762,9 +905,10 @@ components:
           type: integer
           format: int64
           description: >
-            Units taken across the variants — sold plus whatever is reserved right
-            now, since a reservation that is later cancelled comes back out. Summed
-            from the variants, not cached on the listing.
+            Units taken across the variants — sold plus whatever is reserved right now,
+            since a reservation that is later cancelled comes back out. Read from
+            `cached_sold` on the listing rather than summed per request: a feed page would
+            otherwise aggregate the stock rows of every card on it.
         cover: { allOf: [{ $ref: '#/components/schemas/Resource' }], nullable: true }
         rating:
           type: number
@@ -843,10 +987,9 @@ components:
         seek into; `total` is null for a ranked query, where the top-K is all the search
         ever visited.
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Listing' } }
-        total: { $ref: '#/components/schemas/TotalCount' }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Listing' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+      required: [data, meta]
     CreateListingRequest:
       type: object
       properties:

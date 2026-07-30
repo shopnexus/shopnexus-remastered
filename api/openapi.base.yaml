@@ -94,25 +94,108 @@ components:
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
   schemas:
-    TotalCount:
-      type: integer
-      format: int64
-      nullable: true
-      description: >
-        Rows matching the filter, so a page-paginated client can draw a pager. Null
-        when the result is a ranked top-K: an approximate nearest-neighbour search
-        never visits the rows it did not return, so there is no total to report.
+    # ------------------------------------------------------------- envelope ----
+    # Every JSON body has the same three possible root keys and nothing else:
+    # "data" carries the payload, "meta" carries facts about the response rather than
+    # about the thing, "error" replaces both when the request failed. Exactly one of
+    # "data" and "error" is ever present.
+    #
+    # The root is reserved that way because a payload at the root is ambiguous with the
+    # response's own fields, and not hypothetically: a Transaction has an "error"
+    # (the rail's failure text, which is null on a success), an Order and a
+    # CheckoutResult have "items", an Option has "data". Returned at the root, a leg
+    # that failed at the gateway and one that came back 201 with an error string are the
+    # same JSON to a client that checks for "error" — and a middleware that does exactly
+    # that is the most common client-side pattern there is. Nesting under "data" makes
+    # the collision impossible instead of unlikely.
+    PageMeta:
+      type: object
+      description: Where this page sits in the collection, for a page-paginated read.
+      properties:
+        page: { type: integer, description: The 1-based page this is. }
+        limit: { type: integer }
+        total_count:
+          type: integer
+          format: int64
+          nullable: true
+          description: >
+            Rows matching the filter, so a client can draw a pager. Explicitly null — not
+            absent — when the result is a ranked top-K: an approximate nearest-neighbour
+            search never visits the rows it did not return, so there is no total to report,
+            and a client has to render "more results" rather than "page 3 of 12".
+
+
+            Named `total_count` rather than `total` because `total` is already a money
+            field in this document (an offer's proposed total), and a generated client
+            would end up with two `total`s meaning different things.
+      required: [page, limit, total_count]
+
+    CursorMeta:
+      type: object
+      description: How to continue a cursor-paginated read.
+      properties:
+        next_cursor:
+          type: string
+          nullable: true
+          description: >
+            Pass as `cursor` to get the next page. Null on the last one. Always present so
+            "no more pages" is a value rather than a missing key.
+      required: [next_cursor]
 
     Error:
       type: object
+      description: >
+        The only failure shape in this API, at every status. `data` is absent whenever this
+        is present.
       properties:
         error:
           type: object
           properties:
-            code: { type: string }
-            message: { type: string }
-          required: [code, message]
+            code:
+              type: string
+              description: >
+                Stable machine-readable code — switch on this, never on `message`. The
+                cross-cutting ones live in `shared/errx`; the rest belong to the module
+                that raised them.
+              example: validation
+            message:
+              type: string
+              description: Human-readable, for a developer or a log. Not a UI string.
+            request_id:
+              type: string
+              description: >
+                The id of this request, the same value as the `X-Request-Id` response
+                header and the one on every log line for it. Present so a user reporting
+                a failure hands over something that can be grepped, instead of a sentence.
+              example: dkav6vyqeqm3
+            fields:
+              type: array
+              items: { $ref: '#/components/schemas/ErrorField' }
+              description: >
+                Per-field detail, present when the request failed validation and absent
+                otherwise. Without it a form with twelve inputs and three problems gets one
+                sentence and cannot mark a single box red.
+          required: [code, message, request_id]
       required: [error]
+
+    ErrorField:
+      type: object
+      description: One field that failed validation.
+      properties:
+        field:
+          type: string
+          description: >
+            Dotted path from the request body's root, so a nested or repeated field is
+            addressable by the same client code that rendered it.
+          example: skus[0].price
+        rule:
+          type: string
+          description: >
+            Which constraint failed, as the validate tag that raised it. Machine-readable,
+            so a client can localise the message instead of showing this one.
+          example: required
+        message: { type: string }
+      required: [field, rule, message]
 
     # One schema per entity kind in internal/shared/id/kinds.go. They live here
     # rather than in the fragments because an id is a cross-cutting primitive owned

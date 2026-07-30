@@ -63,7 +63,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/AddCartItemRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/CartItem' } } } }
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CartItem' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -82,7 +90,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateCartItemRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/CartItem' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CartItem' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -114,7 +130,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CreateDraftRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/DraftOrder' } } } }
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/DraftOrder' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { description: 'Listing not found, deleted, or not active', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -138,7 +162,15 @@ paths:
       summary: Read a purchase session and its frozen terms
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/DraftOrder' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/DraftOrder' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -179,7 +211,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CheckoutRequest' }
       responses:
-        '201': { description: 'Items created and a payment session opened', content: { application/json: { schema: { $ref: '#/components/schemas/CheckoutResult' } } } }
+        '201':
+          description: 'Items created and a payment session opened'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CheckoutResult' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -220,7 +260,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CancellationRequest' }
       responses:
-        '200': { description: 'Cancelled', content: { application/json: { schema: { $ref: '#/components/schemas/OrderItem' } } } }
+        '200':
+          description: 'Cancelled'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/OrderItem' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -246,7 +294,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ConfirmOrderRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/ConfirmOrderResult' } } } }
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ConfirmOrderResult' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Caller is not the seller of these items', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -275,7 +331,15 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderID' } }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Order' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -302,7 +366,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ConfirmReceiptRequest' }
       responses:
-        '200': { description: 'Receipt recorded', content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '200':
+          description: 'Receipt recorded'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Order' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Caller is not the buyer of this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -323,7 +395,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CancellationRequest' }
       responses:
-        '200': { description: 'Cancelled', content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '200':
+          description: 'Cancelled'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Order' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -338,7 +418,15 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderID' } }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Transport' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Transport' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -364,7 +452,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CreateRefundRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Refund' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Caller is not the buyer of this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -386,7 +482,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CreateOfferRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Offer' } } } }
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Offer' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -413,7 +517,15 @@ paths:
       summary: Read a negotiation
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Offer' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Offer' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -429,7 +541,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateOfferRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Offer' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Offer' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Caller already owns the standing proposal, or is not a party', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -464,7 +584,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/AcceptOfferRequest' }
       responses:
-        '201': { description: 'Accepted; item created and a payment session opened', content: { application/json: { schema: { $ref: '#/components/schemas/CheckoutResult' } } } }
+        '201':
+          description: 'Accepted; item created and a payment session opened'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CheckoutResult' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Caller is not the buyer of this negotiation', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -502,7 +630,15 @@ paths:
         from the refund it is about.
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Refund' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -538,7 +674,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/AddAttachmentsRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Refund' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -562,7 +706,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/AcceptRefundRequest' }
       responses:
-        '200': { description: 'Accepted; the return shipment is booked', content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '200':
+          description: 'Accepted; the return shipment is booked'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Refund' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Caller is not the seller of this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -586,7 +738,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/RejectRefundRequest' }
       responses:
-        '200': { description: 'Rejected; the buyer may now escalate', content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '200':
+          description: 'Rejected; the buyer may now escalate'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Refund' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Caller is not the seller of this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -621,7 +781,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/OpenDisputeRequest' }
       responses:
-        '201': { description: 'A round was opened', content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '201':
+          description: 'A round was opened'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Refund' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Caller is not a party to this order, or not the party whose move it is', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -679,7 +847,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/DisputeRulingRequest' }
       responses:
-        '200': { description: 'Ruled', content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '200':
+          description: 'Ruled'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Refund' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -800,10 +976,9 @@ components:
     CartItemPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/CartItem' } }
-        total: { $ref: '#/components/schemas/TotalCount' }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/CartItem' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+      required: [data, meta]
     AddCartItemRequest:
       type: object
       properties:
@@ -862,10 +1037,9 @@ components:
     DraftOrderPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/DraftOrder' } }
-        total: { $ref: '#/components/schemas/TotalCount' }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/DraftOrder' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+      required: [data, meta]
     CreateDraftRequest:
       type: object
       properties:
@@ -910,10 +1084,9 @@ components:
     OrderItemPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
-        next_cursor: { type: string, nullable: true }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
     CheckoutLine:
       type: object
       properties:
@@ -991,10 +1164,9 @@ components:
     OrderPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Order' } }
-        next_cursor: { type: string, nullable: true }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Order' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
     ConfirmOrderRequest:
       type: object
       properties:
@@ -1079,10 +1251,9 @@ components:
     OfferPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Offer' } }
-        next_cursor: { type: string, nullable: true }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Offer' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
     CreateOfferRequest:
       type: object
       properties:
@@ -1167,10 +1338,9 @@ components:
     RefundPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Refund' } }
-        next_cursor: { type: string, nullable: true }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Refund' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
     CreateRefundRequest:
       type: object
       description: >
@@ -1293,10 +1463,9 @@ components:
     RefundDisputePage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/AdminDisputeQueueEntry' } }
-        next_cursor: { type: string, nullable: true }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/AdminDisputeQueueEntry' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
     DisputeRulingRequest:
       type: object
       properties:

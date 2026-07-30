@@ -49,7 +49,15 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/PaymentSessionID' } }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/PaymentSession' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PaymentSession' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -91,7 +99,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/StartPaymentRequest' }
       responses:
-        '201': { description: 'Leg created', content: { application/json: { schema: { $ref: '#/components/schemas/Transaction' } } } }
+        '201':
+          description: 'Leg created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Transaction' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Caller is not the payer of this session', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -109,7 +125,15 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/PaymentSessionID' } }
       responses:
-        '200': { description: 'Cancelled', content: { application/json: { schema: { $ref: '#/components/schemas/PaymentSession' } } } }
+        '200':
+          description: 'Cancelled'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PaymentSession' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -137,7 +161,15 @@ paths:
       parameters:
         - { name: currency, in: path, required: true, schema: { $ref: '#/components/schemas/CurrencyCode' } }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Wallet' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Wallet' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { description: 'No balance has been opened in this currency', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
@@ -183,7 +215,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CreateWithdrawalRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Withdrawal' } } } }
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Withdrawal' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { description: 'Bank account or currency balance not found', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -211,7 +251,15 @@ paths:
         carries the session prefix.
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Withdrawal' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Withdrawal' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -247,7 +295,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CreateBankAccountRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/BankAccount' } } } }
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/BankAccount' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '409':
@@ -275,7 +331,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateBankAccountRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/BankAccount' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/BankAccount' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -300,7 +364,15 @@ paths:
       summary: Read the caller's tax registration
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/TaxInfo' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/TaxInfo' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { description: 'Nothing registered yet', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     put:
@@ -318,7 +390,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/UpsertTaxInfoRequest' }
       responses:
-        '200': { description: 'Registered', content: { application/json: { schema: { $ref: '#/components/schemas/TaxInfo' } } } }
+        '200':
+          description: 'Registered'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/TaxInfo' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '409': { description: 'This tax code is already verified under another account', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -353,7 +433,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/WithdrawalApprovalRequest' }
       responses:
-        '200': { description: 'Approved', content: { application/json: { schema: { $ref: '#/components/schemas/Withdrawal' } } } }
+        '200':
+          description: 'Approved'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Withdrawal' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -373,7 +461,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/WithdrawalRejectionRequest' }
       responses:
-        '200': { description: 'Rejected and the debit reversed', content: { application/json: { schema: { $ref: '#/components/schemas/Withdrawal' } } } }
+        '200':
+          description: 'Rejected and the debit reversed'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Withdrawal' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -433,8 +529,24 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/WalletAdjustmentRequest' }
       responses:
-        '201': { description: 'Adjusted', content: { application/json: { schema: { $ref: '#/components/schemas/WalletTransaction' } } } }
-        '200': { description: 'This idempotency key was already applied; the existing movement is returned', content: { application/json: { schema: { $ref: '#/components/schemas/WalletTransaction' } } } }
+        '201':
+          description: 'Adjusted'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/WalletTransaction' }
+                required: [data]
+        '200':
+          description: 'This idempotency key was already applied; the existing movement is returned'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/WalletTransaction' }
+                required: [data]
         '400': { description: 'Malformed, or both deltas are zero', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -454,7 +566,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/TaxVerificationRequest' }
       responses:
-        '200': { description: 'Recorded', content: { application/json: { schema: { $ref: '#/components/schemas/TaxInfo' } } } }
+        '200':
+          description: 'Recorded'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/TaxInfo' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -489,6 +609,16 @@ components:
       type: string
       enum: [pending, verified, rejected]
 
+    WithdrawalOutcome:
+      type: string
+      description: >
+        How a withdrawal ended, stated rather than inferred. The underlying session status
+        cannot say it on its own: a cash-out the owner called off and one an admin refused
+        both leave the money back in the wallet and the session not-successful, and telling
+        them apart by whether `resolved_by_id` happens to be set is a rule every client
+        would have to know. `awaiting-review` covers both `pending` and `processing`.
+      enum: [awaiting-review, approved, rejected, cancelled]
+
     TaxCodeType:
       type: string
       enum: [individual, business, household]
@@ -513,8 +643,11 @@ components:
         amount_paid:
           type: integer
           format: int64
-          description: Sum of the settled legs, so a partly-tendered session is
-            distinguishable from an unpaid one.
+          description: >
+            Sum of the settled legs, so a partly-tendered session is distinguishable from an
+            unpaid one. Signed, so a reversal brings it back down — after a full refund this
+            reads zero again. It is what the rails currently hold, not a running total of
+            what was ever charged; the ledger has that.
         note: { type: string }
         created_at: { type: string, format: date-time }
         paid_at: { type: string, format: date-time, nullable: true }
@@ -527,10 +660,9 @@ components:
     PaymentSessionPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/PaymentSession' } }
-        next_cursor: { type: string, nullable: true }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/PaymentSession' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
     Transaction:
       type: object
       description: One movement on an external rail. Append-only.
@@ -568,9 +700,8 @@ components:
       description: Unpaginated — a session has as many legs as rails it was split
         across, which is a handful.
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Transaction' } }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Transaction' } }
+      required: [data]
     StartPaymentRequest:
       type: object
       properties:
@@ -608,9 +739,8 @@ components:
     WalletList:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Wallet' } }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Wallet' } }
+      required: [data]
     WalletTransaction:
       type: object
       description: One balance change with its before/after snapshot. Append-only,
@@ -652,10 +782,9 @@ components:
     WalletTransactionPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/WalletTransaction' } }
-        next_cursor: { type: string, nullable: true }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/WalletTransaction' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
     WalletAdjustmentRequest:
       type: object
       description: >
@@ -681,29 +810,31 @@ components:
         destination and the admin's resolution.
       properties:
         id: { $ref: '#/components/schemas/PaymentSessionID' }
-        status: { $ref: '#/components/schemas/PaymentSessionStatus' }
+        outcome: { $ref: '#/components/schemas/WithdrawalOutcome' }
+        status:
+          allOf: [{ $ref: '#/components/schemas/PaymentSessionStatus' }]
+          description: >
+            The underlying session status. `outcome` is what a client should render; this is
+            here because a withdrawal is a payment session and hiding that would make its
+            id unexplainable.
         currency: { $ref: '#/components/schemas/CurrencyCode' }
         amount: { type: integer, format: int64 }
         bank_account: { $ref: '#/components/schemas/BankAccount' }
         resolved_by_id:
           allOf: [{ $ref: '#/components/schemas/AccountID' }]
           nullable: true
-          description: >
-            The admin who decided. This is also what separates the two ways a withdrawal
-            ends up not-successful: set means an admin rejected it, null on a closed
-            withdrawal means the owner cancelled it themselves.
+          description: The admin who decided. Null on one the owner cancelled themselves.
         resolved_at: { type: string, format: date-time, nullable: true }
         resolution_note: { type: string, nullable: true }
         created_at: { type: string, format: date-time }
-      required: [id, status, currency, amount, bank_account, created_at]
+      required: [id, outcome, status, currency, amount, bank_account, created_at]
 
     WithdrawalPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Withdrawal' } }
-        total: { $ref: '#/components/schemas/TotalCount' }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Withdrawal' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+      required: [data, meta]
     CreateWithdrawalRequest:
       type: object
       properties:
@@ -744,9 +875,8 @@ components:
     BankAccountList:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/BankAccount' } }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/BankAccount' } }
+      required: [data]
     CreateBankAccountRequest:
       type: object
       properties:
@@ -772,7 +902,8 @@ components:
         verification_status: { $ref: '#/components/schemas/TaxVerificationStatus' }
         verified_at: { type: string, format: date-time, nullable: true }
         created_at: { type: string, format: date-time }
-      required: [tax_code, tax_code_type, legal_name, verification_status, created_at]
+        updated_at: { type: string, format: date-time, description: 'When the registration was last replaced, which also resets the verdict.' }
+      required: [tax_code, tax_code_type, legal_name, verification_status, created_at, updated_at]
 
     UpsertTaxInfoRequest:
       type: object

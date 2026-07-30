@@ -132,14 +132,15 @@ components:
             type: object
         AccountSummaryPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/AccountSummary'
                     type: array
-                total:
-                    $ref: '#/components/schemas/TotalCount'
+                meta:
+                    $ref: '#/components/schemas/PageMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         AddAttachmentsRequest:
             properties:
@@ -210,14 +211,15 @@ components:
             type: object
         AdminAccountPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/AdminAccount'
                     type: array
-                total:
-                    $ref: '#/components/schemas/TotalCount'
+                meta:
+                    $ref: '#/components/schemas/PageMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         AdminDisputeQueueEntry:
             description: |
@@ -270,15 +272,15 @@ components:
             type: object
         AdminReportPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/AdminReport'
                     type: array
-                next_cursor:
-                    nullable: true
-                    type: string
+                meta:
+                    $ref: '#/components/schemas/CursorMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         AuthResult:
             properties:
@@ -329,12 +331,12 @@ components:
             type: string
         BankAccountList:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/BankAccount'
                     type: array
             required:
-                - items
+                - data
             type: object
         CancellationRequest:
             properties:
@@ -373,14 +375,15 @@ components:
             type: string
         CartItemPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/CartItem'
                     type: array
-                total:
-                    $ref: '#/components/schemas/TotalCount'
+                meta:
+                    $ref: '#/components/schemas/PageMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         Category:
             properties:
@@ -408,12 +411,12 @@ components:
             type: string
         CategoryList:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Category'
                     type: array
             required:
-                - items
+                - data
             type: object
         ChangePasswordRequest:
             properties:
@@ -627,12 +630,12 @@ components:
             type: string
         ContactList:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Contact'
                     type: array
             required:
-                - items
+                - data
             type: object
         Conversation:
             properties:
@@ -680,15 +683,15 @@ components:
             type: string
         ConversationPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Conversation'
                     type: array
-                next_cursor:
-                    nullable: true
-                    type: string
+                meta:
+                    $ref: '#/components/schemas/CursorMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         CreateBankAccountRequest:
             properties:
@@ -934,6 +937,8 @@ components:
                     type: string
                 type:
                     $ref: '#/components/schemas/OptionType'
+                vault_secret_path:
+                    $ref: '#/components/schemas/VaultSecretPath'
             required:
                 - id
                 - type
@@ -1027,6 +1032,17 @@ components:
             minLength: 3
             pattern: ^[A-Z]{3}$
             type: string
+        CursorMeta:
+            description: How to continue a cursor-paginated read.
+            properties:
+                next_cursor:
+                    description: |
+                        Pass as `cursor` to get the next page. Null on the last one. Always present so "no more pages" is a value rather than a missing key.
+                    nullable: true
+                    type: string
+            required:
+                - next_cursor
+            type: object
         Device:
             properties:
                 created_at:
@@ -1056,12 +1072,12 @@ components:
             type: string
         DeviceList:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Device'
                     type: array
             required:
-                - items
+                - data
             type: object
         DevicePlatform:
             enum:
@@ -1172,14 +1188,15 @@ components:
             type: string
         DraftOrderPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/DraftOrder'
                     type: array
-                total:
-                    $ref: '#/components/schemas/TotalCount'
+                meta:
+                    $ref: '#/components/schemas/PageMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         DraftSKUSnapshot:
             description: One purchasable variant as it stood when the session opened.
@@ -1248,19 +1265,57 @@ components:
                 - token
             type: object
         Error:
+            description: |
+                The only failure shape in this API, at every status. `data` is absent whenever this is present.
             properties:
                 error:
                     properties:
                         code:
+                            description: |
+                                Stable machine-readable code — switch on this, never on `message`. The cross-cutting ones live in `shared/errx`; the rest belong to the module that raised them.
+                            example: validation
                             type: string
+                        fields:
+                            description: |
+                                Per-field detail, present when the request failed validation and absent otherwise. Without it a form with twelve inputs and three problems gets one sentence and cannot mark a single box red.
+                            items:
+                                $ref: '#/components/schemas/ErrorField'
+                            type: array
                         message:
+                            description: Human-readable, for a developer or a log. Not a UI string.
+                            type: string
+                        request_id:
+                            description: |
+                                The id of this request, the same value as the `X-Request-Id` response header and the one on every log line for it. Present so a user reporting a failure hands over something that can be grepped, instead of a sentence.
+                            example: dkav6vyqeqm3
                             type: string
                     required:
                         - code
                         - message
+                        - request_id
                     type: object
             required:
                 - error
+            type: object
+        ErrorField:
+            description: One field that failed validation.
+            properties:
+                field:
+                    description: |
+                        Dotted path from the request body's root, so a nested or repeated field is addressable by the same client code that rendered it.
+                    example: skus[0].price
+                    type: string
+                message:
+                    type: string
+                rule:
+                    description: |
+                        Which constraint failed, as the validate tag that raised it. Machine-readable, so a client can localise the message instead of showing this one.
+                    example: required
+                    type: string
+            required:
+                - field
+                - rule
+                - message
             type: object
         Feedback:
             properties:
@@ -1310,15 +1365,15 @@ components:
             type: string
         FeedbackPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Feedback'
                     type: array
-                next_cursor:
-                    nullable: true
-                    type: string
+                meta:
+                    $ref: '#/components/schemas/CursorMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         IdentityDocument:
             description: |
@@ -1362,23 +1417,24 @@ components:
             type: string
         IdentityDocumentList:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/IdentityDocument'
                     type: array
             required:
-                - items
+                - data
             type: object
         IdentityDocumentPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/AdminIdentityDocument'
                     type: array
-                total:
-                    $ref: '#/components/schemas/TotalCount'
+                meta:
+                    $ref: '#/components/schemas/PageMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         IdentityDocumentType:
             enum:
@@ -1477,7 +1533,7 @@ components:
                     type: string
                 sold:
                     description: |
-                        Units taken across the variants — sold plus whatever is reserved right now, since a reservation that is later cancelled comes back out. Summed from the variants, not cached on the listing.
+                        Units taken across the variants — sold plus whatever is reserved right now, since a reservation that is later cancelled comes back out. Read from `cached_sold` on the listing rather than summed per request: a feed page would otherwise aggregate the stock rows of every card on it.
                     format: int64
                     type: integer
                 status:
@@ -1605,14 +1661,15 @@ components:
             description: |
                 One page shape for every listing query, ranked or not. Page-paginated, because a catalog is browsed with a pager and a relevance order has no stored column to seek into; `total` is null for a ranked query, where the top-K is all the search ever visited.
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Listing'
                     type: array
-                total:
-                    $ref: '#/components/schemas/TotalCount'
+                meta:
+                    $ref: '#/components/schemas/PageMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         ListingRef:
             description: |
@@ -1765,15 +1822,15 @@ components:
             type: string
         MessagePage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Message'
                     type: array
-                next_cursor:
-                    nullable: true
-                    type: string
+                meta:
+                    $ref: '#/components/schemas/CursorMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         MessageType:
             description: |
@@ -1831,15 +1888,15 @@ components:
             type: string
         NotificationPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Notification'
                     type: array
-                next_cursor:
-                    nullable: true
-                    type: string
+                meta:
+                    $ref: '#/components/schemas/CursorMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         NotificationPreference:
             properties:
@@ -1861,12 +1918,12 @@ components:
             type: object
         NotificationPreferenceList:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/NotificationPreference'
                     type: array
             required:
-                - items
+                - data
             type: object
         OAuthIdentity:
             properties:
@@ -1881,12 +1938,12 @@ components:
             type: object
         OAuthIdentityList:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/OAuthIdentity'
                     type: array
             required:
-                - items
+                - data
             type: object
         OAuthLoginRequest:
             properties:
@@ -1970,15 +2027,15 @@ components:
             type: string
         OfferPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Offer'
                     type: array
-                next_cursor:
-                    nullable: true
-                    type: string
+                meta:
+                    $ref: '#/components/schemas/CursorMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         OfferStatus:
             enum:
@@ -2015,6 +2072,12 @@ components:
                     description: |
                         Non-secret configuration only — endpoints, supported currencies, feature flags.
                     type: object
+                deleted_at:
+                    description: |
+                        Set on a removed integration. It no longer appears in `GET /options` but stays readable by id, because past orders and settled payments still name it.
+                    format: date-time
+                    nullable: true
+                    type: string
                 description:
                     type: string
                 id:
@@ -2055,12 +2118,12 @@ components:
             description: |
                 Unpaginated. A marketplace has a handful of rails and carriers, and the checkout screen wants all of them at once.
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Option'
                     type: array
             required:
-                - items
+                - data
             type: object
         OptionSlug:
             description: |
@@ -2307,15 +2370,15 @@ components:
             type: string
         OrderItemPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/OrderItem'
                     type: array
-                next_cursor:
-                    nullable: true
-                    type: string
+                meta:
+                    $ref: '#/components/schemas/CursorMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         OrderItemState:
             description: |
@@ -2327,15 +2390,15 @@ components:
             type: string
         OrderPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Order'
                     type: array
-                next_cursor:
-                    nullable: true
-                    type: string
+                meta:
+                    $ref: '#/components/schemas/CursorMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         OrderPaymentStatus:
             description: Status of the payment session covering the item; owned by finance.
@@ -2361,6 +2424,27 @@ components:
                 - completed
                 - cancelled
             type: string
+        PageMeta:
+            description: Where this page sits in the collection, for a page-paginated read.
+            properties:
+                limit:
+                    type: integer
+                page:
+                    description: The 1-based page this is.
+                    type: integer
+                total_count:
+                    description: |
+                        Rows matching the filter, so a client can draw a pager. Explicitly null — not absent — when the result is a ranked top-K: an approximate nearest-neighbour search never visits the rows it did not return, so there is no total to report, and a client has to render "more results" rather than "page 3 of 12".
+
+                        Named `total_count` rather than `total` because `total` is already a money field in this document (an offer's proposed total), and a generated client would end up with two `total`s meaning different things.
+                    format: int64
+                    nullable: true
+                    type: integer
+            required:
+                - page
+                - limit
+                - total_count
+            type: object
         PasswordResetConfirmRequest:
             properties:
                 new_password:
@@ -2384,7 +2468,8 @@ components:
         PaymentSession:
             properties:
                 amount_paid:
-                    description: Sum of the settled legs, so a partly-tendered session is distinguishable from an unpaid one.
+                    description: |
+                        Sum of the settled legs, so a partly-tendered session is distinguishable from an unpaid one. Signed, so a reversal brings it back down — after a full refund this reads zero again. It is what the rails currently hold, not a running total of what was ever charged; the ledger has that.
                     format: int64
                     type: integer
                 created_at:
@@ -2448,15 +2533,15 @@ components:
             type: string
         PaymentSessionPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/PaymentSession'
                     type: array
-                next_cursor:
-                    nullable: true
-                    type: string
+                meta:
+                    $ref: '#/components/schemas/CursorMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         PaymentSessionStatus:
             enum:
@@ -2668,15 +2753,15 @@ components:
             type: string
         RefundDisputePage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/AdminDisputeQueueEntry'
                     type: array
-                next_cursor:
-                    nullable: true
-                    type: string
+                meta:
+                    $ref: '#/components/schemas/CursorMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         RefundID:
             example: rfd_z3n8kvq1wd6pt
@@ -2684,15 +2769,15 @@ components:
             type: string
         RefundPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Refund'
                     type: array
-                next_cursor:
-                    nullable: true
-                    type: string
+                meta:
+                    $ref: '#/components/schemas/CursorMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         RefundStatus:
             description: |
@@ -2837,15 +2922,15 @@ components:
             type: string
         ReportPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Report'
                     type: array
-                next_cursor:
-                    nullable: true
-                    type: string
+                meta:
+                    $ref: '#/components/schemas/CursorMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         ReportReason:
             enum:
@@ -3043,15 +3128,15 @@ components:
             type: string
         ReviewPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Review'
                     type: array
-                next_cursor:
-                    nullable: true
-                    type: string
+                meta:
+                    $ref: '#/components/schemas/CursorMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         ReviewReply:
             properties:
@@ -3079,6 +3164,8 @@ components:
             pattern: ^rpl_[0-9a-hjkmnp-tv-z]{13}$
             type: string
         ReviewVoteTally:
+            description: |
+                Counters on the review, not a count of `review_vote` rows per request — that is what lets `sort=helpful` be an index scan. Flipping a vote moves one unit between the two totals, so both sides have to change in the same transaction as the vote row itself; a tally that has drifted from the rows it summarises is recomputable, but a half-applied flip is visible.
             properties:
                 helpful:
                     format: int64
@@ -3311,14 +3398,15 @@ components:
             type: object
         TagPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Tag'
                     type: array
-                total:
-                    $ref: '#/components/schemas/TotalCount'
+                meta:
+                    $ref: '#/components/schemas/PageMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         TagSlug:
             description: A tag's id is its slug. A natural key, so it is never encoded.
@@ -3356,6 +3444,10 @@ components:
                     type: string
                 tax_code_type:
                     $ref: '#/components/schemas/TaxCodeType'
+                updated_at:
+                    description: When the registration was last replaced, which also resets the verdict.
+                    format: date-time
+                    type: string
                 verification_status:
                     $ref: '#/components/schemas/TaxVerificationStatus'
                 verified_at:
@@ -3368,6 +3460,7 @@ components:
                 - legal_name
                 - verification_status
                 - created_at
+                - updated_at
             type: object
         TaxVerificationRequest:
             properties:
@@ -3394,12 +3487,6 @@ components:
                 - verified
                 - rejected
             type: string
-        TotalCount:
-            description: |
-                Rows matching the filter, so a page-paginated client can draw a pager. Null when the result is a ranked top-K: an approximate nearest-neighbour search never visits the rows it did not return, so there is no total to report.
-            format: int64
-            nullable: true
-            type: integer
         Transaction:
             description: One movement on an external rail. Append-only.
             properties:
@@ -3463,12 +3550,12 @@ components:
         TransactionList:
             description: Unpaginated — a session has as many legs as rails it was split across, which is a handful.
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Transaction'
                     type: array
             required:
-                - items
+                - data
             type: object
         TransactionStatus:
             description: A leg goes pending → success or failed, and success is terminal. Deliberately narrower than a session's status.
@@ -3753,6 +3840,8 @@ components:
                     type: string
                 priority:
                     type: integer
+                vault_secret_path:
+                    $ref: '#/components/schemas/VaultSecretPath'
             type: object
         UpdateProfileRequest:
             description: Every field optional.
@@ -3860,6 +3949,15 @@ components:
                 - tax_code_type
                 - legal_name
             type: object
+        VaultSecretPath:
+            description: |
+                Where this integration's credentials live in Vault, e.g. `payment/stripe/main`. No key material passes through this API and none is stored in the database — only the path, which the provider client resolves at runtime.
+
+                Write-only: it never appears in a response, because it is precisely what an attacker wants to know. **Admin only.** The runtime reads whatever the path points at and authenticates as it, so a seller who could set this could aim their own integration at the platform's credentials and have the server use them.
+            example: transport/ghn/main
+            maxLength: 500
+            type: string
+            writeOnly: true
         VerifyContactPhoneRequest:
             properties:
                 code:
@@ -3935,12 +4033,12 @@ components:
             type: object
         WalletList:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Wallet'
                     type: array
             required:
-                - items
+                - data
             type: object
         WalletTransaction:
             description: One balance change with its before/after snapshot. Append-only, and the only record of a movement that stays inside a wallet.
@@ -4013,15 +4111,15 @@ components:
             type: string
         WalletTransactionPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/WalletTransaction'
                     type: array
-                next_cursor:
-                    nullable: true
-                    type: string
+                meta:
+                    $ref: '#/components/schemas/CursorMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         Withdrawal:
             description: A payment session of kind `withdrawal`, projected with its destination and the admin's resolution.
@@ -4038,6 +4136,8 @@ components:
                     $ref: '#/components/schemas/CurrencyCode'
                 id:
                     $ref: '#/components/schemas/PaymentSessionID'
+                outcome:
+                    $ref: '#/components/schemas/WithdrawalOutcome'
                 resolution_note:
                     nullable: true
                     type: string
@@ -4048,13 +4148,16 @@ components:
                 resolved_by_id:
                     allOf:
                         - $ref: '#/components/schemas/AccountID'
-                    description: |
-                        The admin who decided. This is also what separates the two ways a withdrawal ends up not-successful: set means an admin rejected it, null on a closed withdrawal means the owner cancelled it themselves.
+                    description: The admin who decided. Null on one the owner cancelled themselves.
                     nullable: true
                 status:
-                    $ref: '#/components/schemas/PaymentSessionStatus'
+                    allOf:
+                        - $ref: '#/components/schemas/PaymentSessionStatus'
+                    description: |
+                        The underlying session status. `outcome` is what a client should render; this is here because a withdrawal is a payment session and hiding that would make its id unexplainable.
             required:
                 - id
+                - outcome
                 - status
                 - currency
                 - amount
@@ -4073,16 +4176,26 @@ components:
             required:
                 - note
             type: object
+        WithdrawalOutcome:
+            description: |
+                How a withdrawal ended, stated rather than inferred. The underlying session status cannot say it on its own: a cash-out the owner called off and one an admin refused both leave the money back in the wallet and the session not-successful, and telling them apart by whether `resolved_by_id` happens to be set is a rule every client would have to know. `awaiting-review` covers both `pending` and `processing`.
+            enum:
+                - awaiting-review
+                - approved
+                - rejected
+                - cancelled
+            type: string
         WithdrawalPage:
             properties:
-                items:
+                data:
                     items:
                         $ref: '#/components/schemas/Withdrawal'
                     type: array
-                total:
-                    $ref: '#/components/schemas/TotalCount'
+                meta:
+                    $ref: '#/components/schemas/PageMeta'
             required:
-                - items
+                - data
+                - meta
             type: object
         WithdrawalRejectionRequest:
             properties:
@@ -4156,7 +4269,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Reputation'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Reputation'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -4180,7 +4298,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/PublicAccount'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/PublicAccount'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "404":
                     $ref: '#/components/responses/NotFound'
@@ -4258,7 +4381,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/AdminAccount'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/AdminAccount'
+                                required:
+                                    - data
+                                type: object
                     description: Reinstated
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -4297,7 +4425,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/AdminAccount'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/AdminAccount'
+                                required:
+                                    - data
+                                type: object
                     description: Suspended
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -4329,7 +4462,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Category'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Category'
+                                required:
+                                    - data
+                                type: object
                     description: Created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -4398,7 +4536,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Category'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Category'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -4483,7 +4626,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Refund'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Refund'
+                                required:
+                                    - data
+                                type: object
                     description: Ruled
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -4559,7 +4707,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/IdentityDocument'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/IdentityDocument'
+                                required:
+                                    - data
+                                type: object
                     description: Recorded
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -4640,7 +4793,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListingDetail'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ListingDetail'
+                                required:
+                                    - data
+                                type: object
                     description: Live
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -4684,7 +4842,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListingDetail'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ListingDetail'
+                                required:
+                                    - data
+                                type: object
                     description: Taken down
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -4718,7 +4881,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/AdminAccount'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/AdminAccount'
+                                required:
+                                    - data
+                                type: object
                     description: Created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -4913,7 +5081,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/AdminReport'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/AdminReport'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -4944,7 +5117,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Report'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Report'
+                                required:
+                                    - data
+                                type: object
                     description: Claimed
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -4990,7 +5168,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Report'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Report'
+                                required:
+                                    - data
+                                type: object
                     description: Resolved
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -5056,7 +5239,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Tag'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Tag'
+                                required:
+                                    - data
+                                type: object
                     description: Created or updated
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -5092,7 +5280,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/TaxInfo'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/TaxInfo'
+                                required:
+                                    - data
+                                type: object
                     description: Recorded
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -5168,13 +5361,23 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/WalletTransaction'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/WalletTransaction'
+                                required:
+                                    - data
+                                type: object
                     description: This idempotency key was already applied; the existing movement is returned
                 "201":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/WalletTransaction'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/WalletTransaction'
+                                required:
+                                    - data
+                                type: object
                     description: Adjusted
                 "400":
                     content:
@@ -5253,7 +5456,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Withdrawal'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Withdrawal'
+                                required:
+                                    - data
+                                type: object
                     description: Approved
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -5297,7 +5505,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Withdrawal'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Withdrawal'
+                                required:
+                                    - data
+                                type: object
                     description: Rejected and the debit reversed
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -5351,7 +5564,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/BankAccount'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/BankAccount'
+                                required:
+                                    - data
+                                type: object
                     description: Created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -5411,7 +5629,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/BankAccount'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/BankAccount'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -5458,7 +5681,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/CartItem'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/CartItem'
+                                required:
+                                    - data
+                                type: object
                     description: Created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -5507,7 +5735,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/CartItem'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/CartItem'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -5590,7 +5823,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Contact'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Contact'
+                                required:
+                                    - data
+                                type: object
                     description: Created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -5639,7 +5877,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Contact'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Contact'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -5713,7 +5956,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Contact'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Contact'
+                                required:
+                                    - data
+                                type: object
                     description: Verified
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -5767,13 +6015,23 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Conversation'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Conversation'
+                                required:
+                                    - data
+                                type: object
                     description: The thread already existed
                 "201":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Conversation'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Conversation'
+                                required:
+                                    - data
+                                type: object
                     description: Created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -5806,7 +6064,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Conversation'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Conversation'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -5866,7 +6129,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Message'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Message'
+                                required:
+                                    - data
+                                type: object
                     description: Sent
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -5908,7 +6176,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ChatUnreadCount'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ChatUnreadCount'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -5926,13 +6199,18 @@ paths:
     /conversations/unread-count:
         get:
             description: |
-                One bounded range scan per thread the caller has, each starting at that thread's read mark, so an old unread message costs nothing extra and chunk exclusion applies throughout. Separate from the inbox because the badge is read far more often than the list.
+                One range scan per thread the caller has, each bounded below by that thread's read mark — so an old unread message costs no more than a recent one and chunk exclusion applies throughout, but the work is proportional to how many threads the caller has, not constant. Separate from the inbox because the badge is read far more often than the list.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ChatUnreadCount'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ChatUnreadCount'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -5956,7 +6234,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Device'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Device'
+                                required:
+                                    - data
+                                type: object
                     description: Registered or moved
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -6031,7 +6314,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/DraftOrder'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/DraftOrder'
+                                required:
+                                    - data
+                                type: object
                     description: Created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -6073,7 +6361,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/DraftOrder'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/DraftOrder'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -6115,7 +6408,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/CheckoutResult'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/CheckoutResult'
+                                required:
+                                    - data
+                                type: object
                     description: Items created and a payment session opened
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -6186,7 +6484,8 @@ paths:
                 - account
     /favorites/{spuID}:
         delete:
-            description: Idempotent, so unsaving something that was never saved is not an error.
+            description: |
+                Idempotent, and deliberately so all the way: unsaving something that was never saved answers 204, and so does a `spuID` that names no listing at all. The post-condition — this listing is not on the caller's wishlist — holds either way, and a 404 here would only tell a stranger which ids exist.
             responses:
                 "204":
                     description: Removed
@@ -6271,7 +6570,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/IdentityVerificationTicket'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/IdentityVerificationTicket'
+                                required:
+                                    - data
+                                type: object
                     description: Case opened
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -6342,7 +6646,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/OrderItem'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/OrderItem'
+                                required:
+                                    - data
+                                type: object
                     description: Cancelled
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -6378,7 +6687,7 @@ paths:
 
                 `ids` resolves a known set, which is how a cart or an order list renders the listings behind its rows. It ignores every other filter and answers for hidden and soft-deleted listings too, because an order that references one still has to display it; `deleted_at` says which. Listings that were never public (`draft`, `pending`) stay out unless they are the caller's own.
 
-                `price-asc`, `price-desc` and `best-selling` are answered through the SKU indexes rather than a value cached on the listing, so `price` is the cheapest matching variant's and `sold` the total across variants.
+                `price-asc` and `price-desc` are answered through the SKU price index rather than a value cached on the listing, so `price` is the cheapest matching variant's. `best-selling` is the one that cannot work that way — it orders by a sum over the variants, and a sum has no per-SKU index to scan in order — so it reads `cached_sold` on the listing, maintained with the stock it counts.
             parameters:
                 - description: Resolve exactly these listings, ignoring the other filters.
                   explode: false
@@ -6479,7 +6788,8 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Error'
-                    description: '`sort=relevance` without a query, or `status` without `mine`'
+                    description: |
+                        A combination that has no answer: `sort=relevance` without a query, `status` without `mine`, or `sort=recommended` together with `favorited` or `mine` — a personalised ranking of a set the caller already chose is not a ranking of anything. Combinations are refused rather than silently resolved by precedence, so a client never gets a different list than it asked for.
                 "401":
                     content:
                         application/json:
@@ -6508,7 +6818,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListingDetail'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ListingDetail'
+                                required:
+                                    - data
+                                type: object
                     description: Created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -6541,6 +6856,13 @@ paths:
         delete:
             description: |
                 Soft delete, and distinct from hiding it. Order history holds the listing and variant ids without a foreign key, so a past order has to stay resolvable after the seller removes the listing.
+            parameters:
+                - description: The opaque id. A write addresses the listing, never its public slug.
+                  in: path
+                  name: id
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/ProductSPUID'
             responses:
                 "204":
                     description: Deleted
@@ -6566,12 +6888,25 @@ paths:
                 Carries the variants with their prices and stock and the seller summary.
 
                 A listing that was never public — `draft` or `pending` — is readable only by its owner and by staff. One that is `hidden` or soft-deleted is readable by anyone, because a cart or an order that references it still has to render; `status` and `deleted_at` say that it cannot be bought.
+            parameters:
+                - description: |
+                    The listing's opaque id or its slug. A slug is lowercase, hyphen-separated and never contains an underscore, so it cannot be mistaken for an id and the product page needs no second endpoint to resolve one.
+                  in: path
+                  name: id
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/ListingRef'
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListingDetail'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ListingDetail'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "404":
                     $ref: '#/components/responses/NotFound'
@@ -6581,19 +6916,18 @@ paths:
             summary: Read a listing
             tags:
                 - catalog
-        parameters:
-            - description: |
-                The listing's opaque id or its slug. A slug is lowercase, hyphen-separated and never contains an underscore, so it cannot be mistaken for an id and the product page needs no second endpoint to resolve one.
-              in: path
-              name: id
-              required: true
-              schema:
-                $ref: '#/components/schemas/ListingRef'
         patch:
             description: |
                 An edit to a draft applies immediately. An edit to a live listing that trips the prohibited-goods filter is held as a pending edit and applied only when a moderator approves it, so the version buyers see never changes into unreviewed content.
 
                 The slug is fixed at creation. Renaming a listing leaves it alone: there is no redirect table, so a new slug would only turn every link already shared into a 404, and `GET /listings/{id}` takes the id as well.
+            parameters:
+                - description: The opaque id. A write addresses the listing, never its public slug.
+                  in: path
+                  name: id
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/ProductSPUID'
             requestBody:
                 content:
                     application/json:
@@ -6605,13 +6939,23 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListingDetail'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ListingDetail'
+                                required:
+                                    - data
+                                type: object
                     description: Applied
                 "202":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListingDetail'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ListingDetail'
+                                required:
+                                    - data
+                                type: object
                     description: Held as a pending edit awaiting moderation
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -6635,7 +6979,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListingDetail'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ListingDetail'
+                                required:
+                                    - data
+                                type: object
                     description: Hidden
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -6662,13 +7011,23 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListingDetail'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ListingDetail'
+                                required:
+                                    - data
+                                type: object
                     description: Live
                 "202":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListingDetail'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ListingDetail'
+                                required:
+                                    - data
+                                type: object
                     description: Queued for moderation and not yet public
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -6714,7 +7073,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListingDetail'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ListingDetail'
+                                required:
+                                    - data
+                                type: object
                     description: Created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -6731,7 +7095,10 @@ paths:
                 - catalog
     /listings/{spuID}/reviews:
         get:
-            description: Public, with the seller's reply and the vote tally on each one.
+            description: |
+                Public, with the first few replies and the vote tally on each one.
+
+                `sort=helpful` orders by a counter that other people are changing while a client pages: a review that gains votes can move across a page boundary and be seen twice or not at all. Cursor paging is exact only over a key that does not move, and `newest` is that key. The drift is accepted rather than designed away — a review appearing twice in a list costs the reader nothing — but a caller that needs a stable traversal should page by `newest`.
             parameters:
                 - description: Restrict to one star rating.
                   in: query
@@ -6740,7 +7107,8 @@ paths:
                     maximum: 5
                     minimum: 1
                     type: integer
-                - in: query
+                - description: '`helpful` reads the stored tally; see the note above about paging it.'
+                  in: query
                   name: sort
                   schema:
                     default: newest
@@ -6784,7 +7152,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Review'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Review'
+                                required:
+                                    - data
+                                type: object
                     description: Created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -6829,7 +7202,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/AuthResult'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/AuthResult'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -6863,13 +7241,23 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/AuthResult'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/AuthResult'
+                                required:
+                                    - data
+                                type: object
                     description: Signed in to an existing account
                 "201":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/AuthResult'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/AuthResult'
+                                required:
+                                    - data
+                                type: object
                     description: A new account was created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -6914,7 +7302,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Me'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Me'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -6939,7 +7332,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Me'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Me'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -7071,7 +7469,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Profile'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Profile'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -7111,9 +7514,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/MessageID'
             - description: |
-                The message's own `created_at`. Required, and not redundant: `message` is partitioned on it and its primary key is `(id, created_at)`, so without it the row has to be hunted through every chunk of the table. A client always has the message before editing or redacting it, so it always has this.
+                The message's own `created_at`, passed straight back. Required, and not redundant: `message` is partitioned on it and its primary key is `(id, created_at)`, so without it the row has to be hunted through every chunk of the table. A client always has the message before editing or redacting it, so it always has this. Named after the field it comes from — anything else would have the client copying `created_at` into a differently-named parameter.
               in: query
-              name: sent_at
+              name: created_at
               required: true
               schema:
                 format: date-time
@@ -7132,7 +7535,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Message'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Message'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -7247,7 +7655,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/UnreadCount'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/UnreadCount'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -7266,7 +7679,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/UnreadCount'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/UnreadCount'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -7321,7 +7739,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Offer'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Offer'
+                                required:
+                                    - data
+                                type: object
                     description: Created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -7368,7 +7791,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Offer'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Offer'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -7400,7 +7828,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Offer'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Offer'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -7446,7 +7879,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/CheckoutResult'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/CheckoutResult'
+                                required:
+                                    - data
+                                type: object
                     description: Accepted; item created and a payment session opened
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -7474,16 +7912,19 @@ paths:
     /options:
         get:
             description: |
-                The checkout list: payment rails, carriers, notification channels. Enabled options only, ordered by `priority` then `id` — priority ties are possible, so the id is the tiebreaker that keeps the order stable between calls.
+                The checkout list. Enabled, not deleted, ordered by `priority` then `id` — priority ties are possible, so the id is the tiebreaker that keeps the order stable between calls.
 
-                Public: which rails a marketplace accepts is not a secret, and a buyer sees them before signing in.
+                Without `owner_id` this returns **system options only**. That is the important part: a seller can register their own carriers, and if their rows appeared in the unscoped list then anything a seller enabled would show up at every buyer's checkout — including, before this was scoped, a payment rail of their own naming. With `owner_id` the result is that seller's options plus the system ones, which is exactly what checking out with that seller needs.
+
+                Public either way: which rails a marketplace accepts is not a secret, and a buyer sees them before signing in.
             parameters:
                 - in: query
                   name: type
                   required: true
                   schema:
                     $ref: '#/components/schemas/OptionType'
-                - description: Restrict to one seller's own options.
+                - description: |
+                    Add this seller's own options to the system ones. Omit for system options alone.
                   in: query
                   name: owner_id
                   schema:
@@ -7497,12 +7938,14 @@ paths:
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
-            summary: List enabled integrations of one type
+            summary: List the live integrations of one type
             tags:
                 - common
         post:
             description: |
-                A seller configuring their own carriers or payment rails. `id` is a marketplace-wide slug shared with the system-provided options, so it is supplied by the caller and collides loudly rather than being silently renamed.
+                A seller configuring their own carriers. `owner_id` is the caller and is never taken from the body. `id` is a marketplace-wide slug shared with the system-provided options, so it is supplied by the caller and collides loudly rather than being silently renamed.
+
+                Which types a caller may register is a role question, not a free choice: an admin may register any, a seller only the ones where owning an integration means owning a relationship with a carrier. `payment` is not among them — how money is routed is the platform's to decide, and a rail nobody vetted must not be reachable from a buyer's checkout.
             requestBody:
                 content:
                     application/json:
@@ -7514,12 +7957,23 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Option'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Option'
+                                required:
+                                    - data
+                                type: object
                     description: Created
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
                     $ref: '#/components/responses/Unauthorized'
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: This role may not register an integration of this type, or may not set a credential path
                 "409":
                     content:
                         application/json:
@@ -7533,6 +7987,10 @@ paths:
                 - common
     /options/{id}:
         delete:
+            description: |
+                Soft delete, for the same reason the slug is immutable: past orders and settled payments hold it as a plain string, so a row that disappears leaves them naming something unresolvable. It stops appearing in `GET /options` and stays readable by id.
+
+                No conflict check, because there is nothing to conflict with. Guarding a hard delete would have meant this module asking finance and order whether anything still points at the slug — a question in the wrong direction, since every module depends on common and not the reverse, and one neither of those tables is indexed to answer for exactly the in-flight rows that would matter. To stop offering an option without removing it, set `is_enabled` to false.
             responses:
                 "204":
                     description: Removed
@@ -7542,24 +8000,25 @@ paths:
                     $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
-                "409":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: Still named by an unsettled payment or an in-flight shipment
             security:
                 - bearerAuth: []
             summary: Remove an integration
             tags:
                 - common
         get:
+            description: |
+                Answers for a removed one too, with `deleted_at` set. A year-old order still names its carrier by slug and has to be able to render the name.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Option'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Option'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "404":
                     $ref: '#/components/responses/NotFound'
@@ -7574,7 +8033,9 @@ paths:
                 $ref: '#/components/schemas/OptionSlug'
         patch:
             description: |
-                The owner, or an admin for a system-provided one. The slug is not editable: other modules store it as a plain string with no foreign key (`item.transport_option`, `transaction.payment_option`), so renaming it would orphan every row that named it.
+                The owner, or an admin for a system-provided one. The slug, type and provider are not editable: other modules store the slug as a plain string with no foreign key (`item.transport_option`, `transaction.payment_option`), so renaming it would orphan every row that named it, and changing what kind of integration a row is would silently move it into another checkout list.
+
+                `vault_secret_path` is admin-only here as well.
             requestBody:
                 content:
                     application/json:
@@ -7586,14 +8047,23 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Option'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Option'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
                     $ref: '#/components/responses/Unauthorized'
                 "403":
-                    $ref: '#/components/responses/Forbidden'
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Not the owner, or not allowed to set a credential path
                 "404":
                     $ref: '#/components/responses/NotFound'
             security:
@@ -7648,7 +8118,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ConfirmOrderResult'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ConfirmOrderResult'
+                                required:
+                                    - data
+                                type: object
                     description: Created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -7688,7 +8163,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Order'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Order'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -7721,7 +8201,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Order'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Order'
+                                required:
+                                    - data
+                                type: object
                     description: Cancelled
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -7765,7 +8250,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Order'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Order'
+                                required:
+                                    - data
+                                type: object
                     description: Receipt recorded
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -7813,7 +8303,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Refund'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Refund'
+                                required:
+                                    - data
+                                type: object
                     description: Created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -7857,7 +8352,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Transport'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Transport'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -7879,7 +8379,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/OrderFeedback'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/OrderFeedback'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -7914,7 +8419,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Feedback'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Feedback'
+                                required:
+                                    - data
+                                type: object
                     description: Submitted
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -8075,7 +8585,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/PaymentSession'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/PaymentSession'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -8102,7 +8617,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/PaymentSession'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/PaymentSession'
+                                required:
+                                    - data
+                                type: object
                     description: Cancelled
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -8144,7 +8664,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Transaction'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Transaction'
+                                required:
+                                    - data
+                                type: object
                     description: Leg created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -8271,7 +8796,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Refund'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Refund'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -8311,7 +8841,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Refund'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Refund'
+                                required:
+                                    - data
+                                type: object
                     description: Accepted; the return shipment is booked
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -8357,7 +8892,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Refund'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Refund'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -8403,7 +8943,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Refund'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Refund'
+                                required:
+                                    - data
+                                type: object
                     description: A round was opened
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -8449,7 +8994,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Refund'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Refund'
+                                required:
+                                    - data
+                                type: object
                     description: Rejected; the buyer may now escalate
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -8491,7 +9041,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/AuthResult'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/AuthResult'
+                                required:
+                                    - data
+                                type: object
                     description: Created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -8552,7 +9107,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Report'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Report'
+                                required:
+                                    - data
+                                type: object
                     description: Filed
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -8586,7 +9146,9 @@ paths:
             description: |
                 Returns the resource row together with a presigned URL to PUT the bytes to. The resource stays incomplete — and unusable as an attachment — until `POST /resources/{id}/completion` confirms it.
 
-                Pass `checksum` when it is known up front: if the same bytes are already stored, the existing resource comes back with no `upload_url` and there is nothing to upload. Several sellers listing the same photo then share one object.
+                Pass `checksum` when it is known up front: if the caller has already stored the same bytes, that resource comes back with no `upload_url` and there is nothing to upload.
+
+                Deduplication is per uploader, not marketplace-wide. A resource has one owner and no reference count, so two accounts sharing an object would mean either of them could delete it out from under the other's listing. The declared checksum is used to find that row and is then discarded — the one recorded is always the one read back from storage at completion, because a hash the client merely asserted would let it claim bytes it does not have and have the next honest upload of those bytes deduplicated onto its object.
             requestBody:
                 content:
                     application/json:
@@ -8598,13 +9160,23 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/UploadTicket'
-                    description: These bytes are already stored so nothing needs uploading
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/UploadTicket'
+                                required:
+                                    - data
+                                type: object
+                    description: The caller already has these bytes stored so nothing needs uploading
                 "201":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/UploadTicket'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/UploadTicket'
+                                required:
+                                    - data
+                                type: object
                     description: Slot reserved
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -8639,15 +9211,30 @@ paths:
             tags:
                 - common
         get:
+            description: |
+                The uploader, or staff. Not any authenticated caller holding an id: resources carry refund evidence, unboxing photos and whatever a KYC vendor left behind, and being signed in is not a reason to be shown someone else's dispute.
+
+                Everyone else reads a resource **embedded in the thing that carries it** — a listing's images, a review's photos — where the module that owns that thing has already decided who may see it. This endpoint is for the owner managing their own uploads, not a general-purpose fetch by id.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Resource'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Resource'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Not the uploader and not staff
                 "404":
                     $ref: '#/components/responses/NotFound'
             security:
@@ -8664,7 +9251,7 @@ paths:
     /resources/{id}/completion:
         post:
             description: |
-                The server reads the object back from storage and records the size, MIME type and checksum it actually has, rather than what the client said it would be. Until this succeeds the resource cannot be attached to anything.
+                The server reads the object back from storage and records the size, MIME type and checksum it actually has, rather than what the client said it would be, and stamps `completed_at`. Until that stamp exists the row is only a reservation — there may be no object at the reserved key at all — so an unconfirmed resource cannot be attached to anything, and a reservation nobody confirms is swept up by a job.
             parameters:
                 - in: path
                   name: id
@@ -8676,7 +9263,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Resource'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Resource'
+                                required:
+                                    - data
+                                type: object
                     description: Confirmed
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -8749,7 +9341,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Review'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Review'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "404":
                     $ref: '#/components/responses/NotFound'
@@ -8774,7 +9371,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Review'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Review'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -8810,7 +9412,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ReviewReply'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ReviewReply'
+                                required:
+                                    - data
+                                type: object
                     description: Created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -8832,7 +9439,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ReviewVoteTally'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ReviewVoteTally'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -8862,7 +9474,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ReviewVoteTally'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ReviewVoteTally'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -8892,7 +9509,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListingDetail'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ListingDetail'
+                                required:
+                                    - data
+                                type: object
                     description: Deleted
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -8933,7 +9555,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListingDetail'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ListingDetail'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -9007,7 +9634,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/TaxInfo'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/TaxInfo'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -9036,7 +9668,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/TaxInfo'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/TaxInfo'
+                                required:
+                                    - data
+                                type: object
                     description: Registered
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -9067,7 +9704,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/AuthResult'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/AuthResult'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -9111,7 +9753,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Wallet'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Wallet'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -9205,7 +9852,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Withdrawal'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Withdrawal'
+                                required:
+                                    - data
+                                type: object
                     description: Created
                 "400":
                     $ref: '#/components/responses/BadRequest'
@@ -9257,7 +9909,12 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Withdrawal'
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Withdrawal'
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'

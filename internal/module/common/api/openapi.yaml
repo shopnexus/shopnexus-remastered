@@ -14,8 +14,20 @@
 # stored object, so the row has to outlive the delete request until a reaper has
 # removed the object. Deleting the row first leaks the file permanently.
 #
-# "option"."vault_secret_path" never appears in a response. It names where an
-# integration's credentials live, which is exactly what an attacker wants to know.
+# So is an option, and for the opposite reason: order and finance hold its slug as a
+# plain string with no foreign key, so a row that vanishes leaves every past order and
+# settled payment naming a carrier or a rail nothing can resolve. Retiring one is
+# `is_enabled` = false; removing it keeps it readable by id.
+#
+# An option's visibility is scoped by owner. `GET /options` without `owner_id` returns
+# system options only, because a seller may register their own carriers and anything a
+# seller enabled must not turn up at every buyer's checkout. Which types a seller may
+# register at all is a role question, and `payment` is not one of them.
+#
+# "option"."vault_secret_path" is write-only and admin-only. It names where an
+# integration's credentials live — exactly what an attacker wants to know — and the
+# runtime authenticates as whatever it points at, so being able to set it is being able
+# to borrow someone else's credentials.
 
 paths:
   # ----------------------------------------------------------- resources -----
@@ -29,10 +41,18 @@ paths:
         `POST /resources/{id}/completion` confirms it.
 
 
-        Pass `checksum` when it is known up front: if the same bytes are already
-        stored, the existing resource comes back with no `upload_url` and there is
-        nothing to upload. Several sellers listing the same photo then share one
-        object.
+        Pass `checksum` when it is known up front: if the caller has already stored the
+        same bytes, that resource comes back with no `upload_url` and there is nothing to
+        upload.
+
+
+        Deduplication is per uploader, not marketplace-wide. A resource has one owner and
+        no reference count, so two accounts sharing an object would mean either of them
+        could delete it out from under the other's listing. The declared checksum is used
+        to find that row and is then discarded — the one recorded is always the one read
+        back from storage at completion, because a hash the client merely asserted would
+        let it claim bytes it does not have and have the next honest upload of those bytes
+        deduplicated onto its object.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -40,8 +60,24 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CreateUploadRequest' }
       responses:
-        '201': { description: 'Slot reserved', content: { application/json: { schema: { $ref: '#/components/schemas/UploadTicket' } } } }
-        '200': { description: 'These bytes are already stored so nothing needs uploading', content: { application/json: { schema: { $ref: '#/components/schemas/UploadTicket' } } } }
+        '201':
+          description: 'Slot reserved'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/UploadTicket' }
+                required: [data]
+        '200':
+          description: 'The caller already has these bytes stored so nothing needs uploading'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/UploadTicket' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '422': { description: 'MIME type or declared size outside what this account may upload', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -51,14 +87,24 @@ paths:
       tags: [common]
       summary: Confirm an upload finished
       description: >
-        The server reads the object back from storage and records the size, MIME
-        type and checksum it actually has, rather than what the client said it would
-        be. Until this succeeds the resource cannot be attached to anything.
+        The server reads the object back from storage and records the size, MIME type and
+        checksum it actually has, rather than what the client said it would be, and stamps
+        `completed_at`. Until that stamp exists the row is only a reservation — there may
+        be no object at the reserved key at all — so an unconfirmed resource cannot be
+        attached to anything, and a reservation nobody confirms is swept up by a job.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ResourceID' } }
       responses:
-        '200': { description: 'Confirmed', content: { application/json: { schema: { $ref: '#/components/schemas/Resource' } } } }
+        '200':
+          description: 'Confirmed'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Resource' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -71,10 +117,29 @@ paths:
     get:
       tags: [common]
       summary: Read a resource and get a URL to fetch it
+      description: >
+        The uploader, or staff. Not any authenticated caller holding an id: resources carry
+        refund evidence, unboxing photos and whatever a KYC vendor left behind, and being
+        signed in is not a reason to be shown someone else's dispute.
+
+
+        Everyone else reads a resource **embedded in the thing that carries it** — a
+        listing's images, a review's photos — where the module that owns that thing has
+        already decided who may see it. This endpoint is for the owner managing their own
+        uploads, not a general-purpose fetch by id.
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Resource' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Resource' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Not the uploader and not staff', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
     delete:
       tags: [common]
@@ -92,21 +157,31 @@ paths:
   /options:
     get:
       tags: [common]
-      summary: List enabled integrations of one type
+      summary: List the live integrations of one type
       description: >
-        The checkout list: payment rails, carriers, notification channels. Enabled
-        options only, ordered by `priority` then `id` — priority ties are possible,
-        so the id is the tiebreaker that keeps the order stable between calls.
+        The checkout list. Enabled, not deleted, ordered by `priority` then `id` —
+        priority ties are possible, so the id is the tiebreaker that keeps the order
+        stable between calls.
 
 
-        Public: which rails a marketplace accepts is not a secret, and a buyer sees
-        them before signing in.
+        Without `owner_id` this returns **system options only**. That is the important
+        part: a seller can register their own carriers, and if their rows appeared in the
+        unscoped list then anything a seller enabled would show up at every buyer's
+        checkout — including, before this was scoped, a payment rail of their own naming.
+        With `owner_id` the result is that seller's options plus the system ones, which
+        is exactly what checking out with that seller needs.
+
+
+        Public either way: which rails a marketplace accepts is not a secret, and a buyer
+        sees them before signing in.
       parameters:
         - { name: type, in: query, required: true, schema: { $ref: '#/components/schemas/OptionType' } }
         - name: owner_id
           in: query
           schema: { $ref: '#/components/schemas/AccountID' }
-          description: Restrict to one seller's own options.
+          description: >
+            Add this seller's own options to the system ones. Omit for system options
+            alone.
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/OptionList' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
@@ -114,10 +189,17 @@ paths:
       tags: [common]
       summary: Register an integration the caller owns
       description: >
-        A seller configuring their own carriers or payment rails. `id` is a
-        marketplace-wide slug shared with the system-provided options, so it is
-        supplied by the caller and collides loudly rather than being silently
-        renamed.
+        A seller configuring their own carriers. `owner_id` is the caller and is never
+        taken from the body. `id` is a marketplace-wide slug shared with the
+        system-provided options, so it is supplied by the caller and collides loudly
+        rather than being silently renamed.
+
+
+        Which types a caller may register is a role question, not a free choice: an admin
+        may register any, a seller only the ones where owning an integration means owning
+        a relationship with a carrier. `payment` is not among them — how money is routed
+        is the platform's to decide, and a rail nobody vetted must not be reachable from a
+        buyer's checkout.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -125,9 +207,18 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CreateOptionRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Option' } } } }
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Option' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'This role may not register an integration of this type, or may not set a credential path', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '409': { description: 'This slug is taken', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /options/{id}:
@@ -136,17 +227,32 @@ paths:
     get:
       tags: [common]
       summary: Read one integration
+      description: >
+        Answers for a removed one too, with `deleted_at` set. A year-old order still names
+        its carrier by slug and has to be able to render the name.
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Option' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Option' }
+                required: [data]
         '404': { $ref: '#/components/responses/NotFound' }
     patch:
       tags: [common]
       summary: Update an integration
       description: >
-        The owner, or an admin for a system-provided one. The slug is not editable:
-        other modules store it as a plain string with no foreign key
+        The owner, or an admin for a system-provided one. The slug, type and provider are
+        not editable: other modules store the slug as a plain string with no foreign key
         (`item.transport_option`, `transaction.payment_option`), so renaming it would
-        orphan every row that named it.
+        orphan every row that named it, and changing what kind of integration a row is
+        would silently move it into another checkout list.
+
+
+        `vault_secret_path` is admin-only here as well.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -154,21 +260,41 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateOptionRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Option' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Option' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403': { description: 'Not the owner, or not allowed to set a credential path', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
     delete:
       tags: [common]
       summary: Remove an integration
+      description: >
+        Soft delete, for the same reason the slug is immutable: past orders and settled
+        payments hold it as a plain string, so a row that disappears leaves them naming
+        something unresolvable. It stops appearing in `GET /options` and stays readable by
+        id.
+
+
+        No conflict check, because there is nothing to conflict with. Guarding a hard
+        delete would have meant this module asking finance and order whether anything
+        still points at the slug — a question in the wrong direction, since every module
+        depends on common and not the reverse, and one neither of those tables is indexed
+        to answer for exactly the in-flight rows that would matter. To stop offering an
+        option without removing it, set `is_enabled` to false.
       security: [{ bearerAuth: [] }]
       responses:
         '204': { description: Removed }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: 'Still named by an unsettled payment or an in-flight shipment', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /admin/options:
     get:
@@ -197,6 +323,22 @@ components:
         encoded one: other modules store it as a plain string, so it is readable on
         the wire by design.
       example: ghn-express
+
+    VaultSecretPath:
+      type: string
+      maxLength: 500
+      writeOnly: true
+      description: >
+        Where this integration's credentials live in Vault, e.g. `payment/stripe/main`. No
+        key material passes through this API and none is stored in the database — only the
+        path, which the provider client resolves at runtime.
+
+
+        Write-only: it never appears in a response, because it is precisely what an
+        attacker wants to know. **Admin only.** The runtime reads whatever the path points
+        at and authenticates as it, so a seller who could set this could aim their own
+        integration at the platform's credentials and have the server use them.
+      example: transport/ghn/main
 
     OptionType:
       type: string
@@ -308,6 +450,13 @@ components:
             Non-secret configuration only — endpoints, supported currencies, feature
             flags.
         created_at: { type: string, format: date-time }
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            Set on a removed integration. It no longer appears in `GET /options` but stays
+            readable by id, because past orders and settled payments still name it.
       required: [id, type, provider, name, description, priority, is_enabled, data, created_at]
 
     OptionList:
@@ -316,9 +465,8 @@ components:
         Unpaginated. A marketplace has a handful of rails and carriers, and the
         checkout screen wants all of them at once.
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Option' } }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Option' } }
+      required: [data]
     CreateOptionRequest:
       type: object
       properties:
@@ -331,6 +479,7 @@ components:
         is_enabled: { type: boolean, default: true }
         logo_resource_id: { $ref: '#/components/schemas/ResourceID' }
         data: { type: object, additionalProperties: true }
+        vault_secret_path: { $ref: '#/components/schemas/VaultSecretPath' }
       required: [id, type, provider, name]
 
     UpdateOptionRequest:
@@ -344,3 +493,4 @@ components:
         is_enabled: { type: boolean }
         logo_resource_id: { allOf: [{ $ref: '#/components/schemas/ResourceID' }], nullable: true }
         data: { type: object, additionalProperties: true }
+        vault_secret_path: { $ref: '#/components/schemas/VaultSecretPath' }

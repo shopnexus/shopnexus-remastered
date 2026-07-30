@@ -9,14 +9,21 @@
 # appears in a conversation.
 #
 # Messages are a hypertable, so every read here is cursor-paginated over `created_at`
-# and every single-message operation carries the message's own `sent_at`. A query
+# and every single-message operation carries the message's own `created_at`. A query
 # without a time bound has to visit every chunk: the primary key is
 # `(id, created_at)` — a unique index on a hypertable must contain its partitioning
 # column — so an id on its own is not a key lookup at all.
 #
 # Read state is two marks on the conversation, not a status per message. What each side
-# has read is one timestamp, so the unread badge is a bounded range scan, marking a
-# thread read is one UPDATE, and a read receipt is a comparison rather than a column.
+# has read is one timestamp, so marking a thread read is one UPDATE of one row and a read
+# receipt is a comparison rather than a column.
+#
+# An unread count is still one range scan per thread — the mark bounds it, so chunk
+# exclusion applies and an ancient unread message costs no more than a recent one, but it
+# is a scan per row on the page rather than a value read from it. That is the accepted
+# shape: two counters on "conversation" would make it free, at the price of a second
+# source of truth for the same fact that has to be kept in step and recomputed when it
+# drifts. If an inbox page ever becomes the slow query, that is the trade to revisit.
 #
 # Offers are not created here. A negotiation is an order-module resource; accepting
 # or countering one emits a system message into the thread, which is why a message
@@ -52,8 +59,24 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/StartConversationRequest' }
       responses:
-        '200': { description: 'The thread already existed', content: { application/json: { schema: { $ref: '#/components/schemas/Conversation' } } } }
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Conversation' } } } }
+        '200':
+          description: 'The thread already existed'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Conversation' }
+                required: [data]
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Conversation' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -64,13 +87,22 @@ paths:
       tags: [chat]
       summary: The unread badge across every thread
       description: >
-        One bounded range scan per thread the caller has, each starting at that thread's
-        read mark, so an old unread message costs nothing extra and chunk exclusion
-        applies throughout. Separate from the inbox because the badge is read far more
-        often than the list.
+        One range scan per thread the caller has, each bounded below by that thread's read
+        mark — so an old unread message costs no more than a recent one and chunk exclusion
+        applies throughout, but the work is proportional to how many threads the caller
+        has, not constant. Separate from the inbox because the badge is read far more often
+        than the list.
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ChatUnreadCount' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChatUnreadCount' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /conversations/{id}:
@@ -83,7 +115,15 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ConversationID' } }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Conversation' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Conversation' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -125,7 +165,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/SendMessageRequest' }
       responses:
-        '201': { description: 'Sent', content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '201':
+          description: 'Sent'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Message' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -150,7 +198,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/MarkConversationReadRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ChatUnreadCount' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChatUnreadCount' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -159,14 +215,16 @@ paths:
   /messages/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/MessageID' } }
-      - name: sent_at
+      - name: created_at
         in: query
         required: true
         description: >
-          The message's own `created_at`. Required, and not redundant: `message` is
-          partitioned on it and its primary key is `(id, created_at)`, so without it the
-          row has to be hunted through every chunk of the table. A client always has the
-          message before editing or redacting it, so it always has this.
+          The message's own `created_at`, passed straight back. Required, and not
+          redundant: `message` is partitioned on it and its primary key is
+          `(id, created_at)`, so without it the row has to be hunted through every chunk
+          of the table. A client always has the message before editing or redacting it, so
+          it always has this. Named after the field it comes from — anything else would
+          have the client copying `created_at` into a differently-named parameter.
         schema: { type: string, format: date-time }
     patch:
       tags: [chat]
@@ -182,7 +240,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateMessageRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Message' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Only the sender may edit a message', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -244,10 +310,9 @@ components:
     ConversationPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Conversation' } }
-        next_cursor: { type: string, nullable: true }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Conversation' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
     ChatUnreadCount:
       type: object
       properties:
@@ -296,10 +361,9 @@ components:
     MessagePage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Message' } }
-        next_cursor: { type: string, nullable: true }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Message' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
     StartConversationRequest:
       type: object
       properties:

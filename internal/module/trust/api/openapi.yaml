@@ -30,7 +30,15 @@ paths:
         can be told without breaking blindness.
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/OrderFeedback' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/OrderFeedback' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -51,7 +59,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/SubmitFeedbackRequest' }
       responses:
-        '201': { description: 'Submitted', content: { application/json: { schema: { $ref: '#/components/schemas/Feedback' } } } }
+        '201':
+          description: 'Submitted'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Feedback' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Caller is not a party to this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -86,7 +102,15 @@ paths:
         - { name: accountID, in: path, required: true, schema: { $ref: '#/components/schemas/AccountID' } }
         - { name: role, in: query, schema: { $ref: '#/components/schemas/ReputationRole' }, description: Defaults to seller. }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Reputation' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Reputation' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
 
@@ -97,10 +121,19 @@ paths:
     get:
       tags: [trust]
       summary: Reviews of a listing
-      description: Public, with the seller's reply and the vote tally on each one.
+      description: >
+        Public, with the first few replies and the vote tally on each one.
+
+
+        `sort=helpful` orders by a counter that other people are changing while a client
+        pages: a review that gains votes can move across a page boundary and be seen twice
+        or not at all. Cursor paging is exact only over a key that does not move, and
+        `newest` is that key. The drift is accepted rather than designed away — a review
+        appearing twice in a list costs the reader nothing — but a caller that needs a
+        stable traversal should page by `newest`.
       parameters:
         - { name: rating, in: query, schema: { type: integer, minimum: 1, maximum: 5 }, description: Restrict to one star rating. }
-        - { name: sort, in: query, schema: { type: string, enum: [newest, helpful], default: newest } }
+        - { name: sort, in: query, description: '`helpful` reads the stored tally; see the note above about paging it.', schema: { type: string, enum: [newest, helpful], default: newest } }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -121,7 +154,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/SubmitReviewRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Review' } } } }
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Review' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'The order does not belong to the caller', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -137,7 +178,15 @@ paths:
       summary: Read a review
       description: Carries the whole reply thread, unlike the listing page, which caps it.
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Review' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Review' }
+                required: [data]
         '404': { $ref: '#/components/responses/NotFound' }
     patch:
       tags: [trust]
@@ -149,7 +198,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateReviewRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Review' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Review' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -184,7 +241,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/SubmitReviewReplyRequest' }
       responses:
-        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/ReviewReply' } } } }
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewReply' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -218,7 +283,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/VoteReviewRequest' }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ReviewVoteTally' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewVoteTally' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -231,7 +304,15 @@ paths:
         says nothing.
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ReviewVoteTally' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewVoteTally' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
@@ -255,7 +336,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/SubmitReportRequest' }
       responses:
-        '201': { description: 'Filed', content: { application/json: { schema: { $ref: '#/components/schemas/Report' } } } }
+        '201':
+          description: 'Filed'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Report' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { description: 'The reported thing does not exist', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -308,7 +397,15 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ReportID' } }
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/AdminReport' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AdminReport' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -323,7 +420,15 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ReportID' } }
       responses:
-        '200': { description: 'Claimed', content: { application/json: { schema: { $ref: '#/components/schemas/Report' } } } }
+        '200':
+          description: 'Claimed'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Report' }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -351,7 +456,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ResolveReportRequest' }
       responses:
-        '200': { description: 'Resolved', content: { application/json: { schema: { $ref: '#/components/schemas/Report' } } } }
+        '200':
+          description: 'Resolved'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Report' }
+                required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -411,10 +524,9 @@ components:
     FeedbackPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Feedback' } }
-        next_cursor: { type: string, nullable: true }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Feedback' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
     OrderFeedback:
       type: object
       description: >
@@ -478,6 +590,12 @@ components:
     # ----------------------------------------------------------- reviews -----
     ReviewVoteTally:
       type: object
+      description: >
+        Counters on the review, not a count of `review_vote` rows per request — that is what
+        lets `sort=helpful` be an index scan. Flipping a vote moves one unit between the two
+        totals, so both sides have to change in the same transaction as the vote row itself;
+        a tally that has drifted from the rows it summarises is recomputable, but a
+        half-applied flip is visible.
       properties:
         helpful: { type: integer, format: int64 }
         not_helpful: { type: integer, format: int64 }
@@ -523,10 +641,9 @@ components:
     ReviewPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Review' } }
-        next_cursor: { type: string, nullable: true }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Review' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
     SubmitReviewRequest:
       type: object
       properties:
@@ -588,10 +705,9 @@ components:
     ReportPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Report' } }
-        next_cursor: { type: string, nullable: true }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/Report' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
     AdminReport:
       type: object
       description: A queue entry. A moderator needs the reporter and the target beside
@@ -617,10 +733,9 @@ components:
     AdminReportPage:
       type: object
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/AdminReport' } }
-        next_cursor: { type: string, nullable: true }
-      required: [items]
-
+        data: { type: array, items: { $ref: '#/components/schemas/AdminReport' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
     SubmitReportRequest:
       type: object
       properties:
