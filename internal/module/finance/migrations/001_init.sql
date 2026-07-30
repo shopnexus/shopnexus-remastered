@@ -277,6 +277,11 @@ CREATE TABLE IF NOT EXISTS "tax_info" (
     "verification_source" TEXT,
 
     "created_at"          TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- The API replaces this row rather than patching it, so without this there is no way
+    -- to tell a registration filed today from one filed a year ago and never touched —
+    -- and a re-registration resets the verdict, which is exactly the event an auditor asks
+    -- the date of.
+    "updated_at"          TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "tax_info_pkey" PRIMARY KEY ("account_id"),
     CONSTRAINT "tax_info_tax_code_format" CHECK ("tax_code" ~ '^\d{10}(-\d{3})?$')

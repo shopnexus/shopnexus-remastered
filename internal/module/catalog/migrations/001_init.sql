@@ -102,6 +102,13 @@ CREATE TABLE
     "pending_edits" JSONB NOT NULL DEFAULT '{}', -- Optional pending edits to be applied after moderation approval
     -- Denormalized
     "cached_rating" DOUBLE PRECISION NOT NULL DEFAULT 0, -- average trust.review rating (1..5), 0 = no reviews yet
+    -- Units taken across every SKU of this listing, maintained alongside "stock"."taken".
+    -- Denormalized for the same reason as the rating, and for one more: "sold" is a SUM
+    -- over the variants, and unlike the cheapest price — a MIN, which an ordered scan of
+    -- product_sku_price_idx yields correctly with an early LIMIT — a top-N by SUM cannot
+    -- be read off a per-SKU index at all. A listing with five steady variants outsells one
+    -- with a single hot variant, and a scan of stock_taken_idx never sees that.
+    "cached_sold" BIGINT NOT NULL DEFAULT 0,
 
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- sorts the "newest listings" feed
     -- Soft delete, because order.item holds spu_id / sku_id without an FK and order
@@ -114,6 +121,7 @@ CREATE TABLE
     CONSTRAINT "product_spu_slug_key" UNIQUE ("slug"),
     CONSTRAINT "product_spu_featured_sku_id_key" UNIQUE ("featured_sku_id"),
     CONSTRAINT "product_spu_currency_format" CHECK ("currency" ~ '^[A-Z]{3}$'),
+    CONSTRAINT "product_spu_cached_sold_non_negative" CHECK ("cached_sold" >= 0),
     -- RESTRICT: a category must be emptied before it can be deleted ("category_id"
     -- is NOT NULL, so SET NULL is not an option).
     CONSTRAINT "product_spu_category_id_fkey" FOREIGN KEY ("category_id") REFERENCES "category" ("id") ON DELETE RESTRICT
@@ -133,6 +141,9 @@ CREATE INDEX IF NOT EXISTS "product_spu_active_created_at_idx"
     WHERE "status" = 'active' AND "deleted_at" IS NULL;
 CREATE INDEX IF NOT EXISTS "product_spu_active_cached_rating_idx"
     ON "product_spu" ("cached_rating" DESC)
+    WHERE "status" = 'active' AND "deleted_at" IS NULL;
+CREATE INDEX IF NOT EXISTS "product_spu_active_cached_sold_idx"
+    ON "product_spu" ("cached_sold" DESC)
     WHERE "status" = 'active' AND "deleted_at" IS NULL;
 -- The moderation queue.
 CREATE INDEX IF NOT EXISTS "product_spu_pending_created_at_idx"
@@ -300,5 +311,7 @@ CREATE TABLE IF NOT EXISTS "stock" (
     CONSTRAINT "stock_sku_id_fkey" FOREIGN KEY ("sku_id")
         REFERENCES "product_sku" ("id") ON DELETE CASCADE
 );
--- Serves ListMostTakenSku: ORDER BY taken DESC, range scan stops at LIMIT.
+-- Per-SKU "most taken", for a seller looking at which variant moves. Listing-level
+-- best-selling does NOT come from here — see product_spu.cached_sold for why a SUM over
+-- variants cannot be read off this index.
 CREATE INDEX IF NOT EXISTS "stock_taken_idx" ON "stock" ("taken" DESC);
