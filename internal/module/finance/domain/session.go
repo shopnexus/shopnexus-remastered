@@ -4,7 +4,6 @@ package domain
 import (
 	"time"
 
-	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/validation"
 )
 
@@ -70,7 +69,7 @@ func NewSession(id int64, kind string, fromID, toID int64, note, currency string
 		return Session{}, ErrSessionExpiryInvalid
 	}
 	if err := validation.Default().Struct(s); err != nil {
-		return Session{}, errx.ErrValidation.Fmt(err.Error())
+		return Session{}, validation.AsError(err)
 	}
 	return s, nil
 }

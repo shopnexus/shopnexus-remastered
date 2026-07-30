@@ -4,7 +4,6 @@ package domain
 import (
 	"time"
 
-	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/validation"
 )
 
@@ -21,7 +20,7 @@ type Order struct {
 func NewOrder(buyerID, total int64) (Order, error) {
 	o := Order{BuyerID: buyerID, Total: total, Status: StatusPending}
 	if err := validation.Default().Struct(o); err != nil {
-		return Order{}, errx.ErrValidation.Fmt(err.Error())
+		return Order{}, validation.AsError(err)
 	}
 	return o, nil
 }

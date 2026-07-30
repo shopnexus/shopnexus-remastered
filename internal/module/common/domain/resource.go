@@ -4,7 +4,6 @@ package domain
 import (
 	"time"
 
-	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/validation"
 )
 
@@ -47,7 +46,7 @@ func NewResource(uploadedByID int64, provider, objectKey, mime string, size int6
 		Checksum:     checksum,
 	}
 	if err := validation.Default().Struct(r); err != nil {
-		return Resource{}, errx.ErrValidation.Fmt(err.Error())
+		return Resource{}, validation.AsError(err)
 	}
 	return r, nil
 }

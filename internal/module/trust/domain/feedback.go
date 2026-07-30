@@ -4,7 +4,6 @@ package domain
 import (
 	"time"
 
-	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/validation"
 )
 
@@ -45,7 +44,7 @@ func NewFeedback(orderID, raterID, rateeID int64, direction string, rating int16
 		Comment:   comment,
 	}
 	if err := validation.Default().Struct(f); err != nil {
-		return Feedback{}, errx.ErrValidation.Fmt(err.Error())
+		return Feedback{}, validation.AsError(err)
 	}
 	return f, nil
 }

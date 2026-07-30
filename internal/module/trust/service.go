@@ -80,7 +80,8 @@ func (s *Service) GetReputation(ctx context.Context, req trustapi.GetReputationR
 func (s *Service) SubmitReport(ctx context.Context, req trustapi.SubmitReportRequest) (trustapi.Report, error) {
 	prefix, ok := prefixFor(req.RefType)
 	if !ok {
-		return trustapi.Report{}, errx.ErrValidation.Fmt("unknown ref_type " + req.RefType)
+		return trustapi.Report{}, errx.NewValidationError("unknown ref_type "+req.RefType,
+			errx.Field{Field: "ref_type", Rule: "oneof", Message: "must be a known report target type"})
 	}
 	refID, err := id.ParseOpaque(prefix, req.RefID)
 	if err != nil {

@@ -21,20 +21,90 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-type errBody struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+// RequestIDHeader is where the request id travels. The logging middleware sets it on the
+// way in, so it is on every response — including a 204 and anything non-JSON — and
+// WriteError reads it back off the writer to put in the body.
+const RequestIDHeader = "X-Request-Id"
+
+// The response envelope. Every JSON body this package writes has "data" or "error" at the
+// root and never both, plus "meta" beside "data" for a paginated read.
+//
+// A payload is never the root object. Returning it bare makes its own fields ambiguous
+// with the envelope's, and that is not theoretical in this API: a Transaction has an
+// "error" field carrying the rail's failure text, so a successful 201 and a gateway
+// failure would be the same shape to the near-universal client pattern of "if
+// (body.error) throw". An Order and a CheckoutResult have "items", an Option has "data".
+// One level of nesting makes all of those impossible rather than merely unlikely.
+type dataEnvelope struct {
+	Data any `json:"data"`
+	Meta any `json:"meta,omitempty"`
 }
 
-type envelope struct {
+type errEnvelope struct {
 	Error errBody `json:"error"`
 }
 
+type errBody struct {
+	Code      string       `json:"code"`
+	Message   string       `json:"message"`
+	RequestID string       `json:"request_id"`
+	Fields    []errx.Field `json:"fields,omitempty"`
+}
+
+// PageMeta accompanies a page-paginated collection. TotalCount is a pointer because null
+// is a real answer: a ranked query never visits the rows it did not return, so it has no
+// total, and a client has to draw "more results" instead of "page 3 of 12".
+type PageMeta struct {
+	Page       int    `json:"page"`
+	Limit      int    `json:"limit"`
+	TotalCount *int64 `json:"total_count"`
+}
+
+// CursorMeta accompanies a cursor-paginated collection. NextCursor is a pointer so the
+// last page says null rather than omitting the key.
+type CursorMeta struct {
+	NextCursor *string `json:"next_cursor"`
+}
+
+// WriteData writes one resource: {"data": …}.
+func WriteData(w http.ResponseWriter, status int, data any) {
+	WriteJSON(w, status, dataEnvelope{Data: data})
+}
+
+// WritePage writes a page-paginated collection: {"data": […], "meta": {page, limit, total_count}}.
+func WritePage(w http.ResponseWriter, status int, data any, meta PageMeta) {
+	WriteJSON(w, status, dataEnvelope{Data: data, Meta: meta})
+}
+
+// WriteCursor writes a cursor-paginated collection: {"data": […], "meta": {next_cursor}}.
+func WriteCursor(w http.ResponseWriter, status int, data any, meta CursorMeta) {
+	WriteJSON(w, status, dataEnvelope{Data: data, Meta: meta})
+}
+
+// WriteNoContent answers 204 with no body — a delete, or a state change with nothing to
+// report. Deliberately not an empty envelope: there is no data, and {"data": null} would
+// invite a client to read it.
+func WriteNoContent(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func WriteError(w http.ResponseWriter, log *slog.Logger, err error) {
+	reqID := w.Header().Get(RequestIDHeader)
 	if status, code, message, ok := errx.Decompose(err); ok {
-		WriteJSON(w, int(status), envelope{Error: errBody{Code: code, Message: message}})
+		WriteJSON(w, int(status), errEnvelope{Error: errBody{
+			Code:      code,
+			Message:   message,
+			RequestID: reqID,
+			Fields:    errx.FieldsOf(err),
+		}})
 		return
 	}
-	log.Error("unhandled error", "err", err)
-	WriteJSON(w, http.StatusInternalServerError, envelope{Error: errBody{Code: "internal", Message: "internal error"}})
+	// An uncoded error is a bug, not a business outcome: log it whole and tell the caller
+	// nothing but the request id, which is the only thing that helps either of us.
+	log.Error("unhandled error", "err", err, "request_id", reqID)
+	WriteJSON(w, http.StatusInternalServerError, errEnvelope{Error: errBody{
+		Code:      "internal",
+		Message:   "internal error",
+		RequestID: reqID,
+	}})
 }

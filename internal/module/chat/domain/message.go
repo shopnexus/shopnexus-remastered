@@ -4,7 +4,6 @@ package domain
 import (
 	"time"
 
-	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/validation"
 )
 
@@ -19,7 +18,7 @@ type Message struct {
 func NewMessage(conversationID, senderID int64, body string) (Message, error) {
 	m := Message{ConversationID: conversationID, SenderID: senderID, Body: body}
 	if err := validation.Default().Struct(m); err != nil {
-		return Message{}, errx.ErrValidation.Fmt(err.Error())
+		return Message{}, validation.AsError(err)
 	}
 	return m, nil
 }

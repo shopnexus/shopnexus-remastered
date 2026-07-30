@@ -4,7 +4,6 @@ package domain
 import (
 	"time"
 
-	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/validation"
 )
 
@@ -22,7 +21,7 @@ type Listing struct {
 func NewListing(ownerID int64, title string, price int64) (Listing, error) {
 	l := Listing{OwnerID: ownerID, Title: title, Price: price, Status: StatusActive}
 	if err := validation.Default().Struct(l); err != nil {
-		return Listing{}, errx.ErrValidation.Fmt(err.Error())
+		return Listing{}, validation.AsError(err)
 	}
 	return l, nil
 }

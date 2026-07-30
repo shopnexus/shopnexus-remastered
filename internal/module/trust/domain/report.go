@@ -3,7 +3,6 @@ package domain
 import (
 	"time"
 
-	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/validation"
 )
 
@@ -45,7 +44,7 @@ func NewReport(reporterID int64, refType string, refID int64, reason, detail str
 		Status:     ReportStatusOpen,
 	}
 	if err := validation.Default().Struct(r); err != nil {
-		return Report{}, errx.ErrValidation.Fmt(err.Error())
+		return Report{}, validation.AsError(err)
 	}
 	return r, nil
 }
