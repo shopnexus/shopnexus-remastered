@@ -37,6 +37,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          # Explicit, not "the last stage wins": the Dockerfile also has a `dev`
+          # stage with the Go toolchain and air, which must never ship.
+          target: runtime
           push: true
           tags: |
             ${{ env.IMAGE }}:main

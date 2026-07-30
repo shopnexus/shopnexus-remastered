@@ -25,12 +25,30 @@ go test -run '^TestName$' ./internal/module/account/...   # a single test
 go test -tags integration ./...                  # adapter/postgres tests (need DBs up + *_DB_DSN set; skip otherwise)
 go generate ./...                                # regenerate api/openapi.gen.yaml via cmd/specgen
 
-docker compose up -d                             # infra: Postgres (timescaledb-ha:pg18) + Redis + NATS/JetStream + Grafana + Loki + Alloy — no host ports
-docker compose --profile app up -d --build       # also run gateway+migrate as containers so their logs ship to Loki
+docker compose up -d                             # infra only: Postgres (timescaledb-ha:pg18) + Redis + NATS/JetStream + Grafana + Loki + Alloy — no host ports
+docker compose --profile dev up -d --build       # + gateway with hot reload (air, Dockerfile `dev` target) on :5000
+docker compose --profile app up -d --build       # + gateway from the real production image, no hot reload
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d   # + publish infra ports to the host (host-run gateway, psql, Grafana UI)
+docker compose --profile mock up -d --build      # mock API from the spec on :4010 (Prism) — no DB, no Redis, no migrations
 go run ./cmd/migrate                             # apply migrations — REQUIRED before first run; app never migrates at startup
 go run ./cmd/gateway                             # run the gateway (needs all env vars — see README.md)
+
+go run ./cmd/mockspec /tmp/mock.yaml && npx -y @stoplight/prism-cli@5 mock -p 4010 /tmp/mock.yaml   # the same mock without Docker
 ```
+
+**Three dev modes, pick by what you are doing.** `--profile dev` and
+`--profile app` are alternatives — both publish host port 5000, so they are not
+meant to run together.
+
+| Mode | Use when | Cost |
+|---|---|---|
+| infra only + `go run ./cmd/gateway` on the host | normal Go iteration | fastest (native build cache); logs go to your terminal, not Loki |
+| `--profile dev` | you need logs in Loki, or to exercise observability | ~4s rebuild on save; matches prod libc/paths |
+| `--profile app` | last check before pushing | builds the real `runtime` image; no hot reload |
+
+`Dockerfile` has three stages: `build`, `dev` (air, bind-mounted source) and
+`runtime` (distroless). **CI builds `runtime` explicitly** — never rely on "last
+stage wins", or a stage appended later ships the Go toolchain.
 
 All config env vars are **required, no defaults** (`internal/config`); a missing
 one fails fast at startup.
@@ -155,6 +173,22 @@ give it its own doc under `docs/` and link it from here.
   already published. The codec is a package global set once by `id.SetCipher` at
   startup — the one sanctioned global, because `json.Marshaler` has no seam for a
   dependency. Design: `docs/superpowers/specs/2026-07-28-proxy-id-design.md`.
+- **An optional domain field is a pointer — always, mechanically.** If the column is
+  nullable, the Go field is `*T`; there is no judgment call about whether the type's
+  zero could pass for "not set", because that call has to be made again by every
+  reader. `nil` is the one representation of absent, so a `NULL` column scans straight
+  into the field and writes straight back — the adapter has no `nullText`/`nullID` and
+  the SELECT has no `COALESCE`, and a `*string` DTO field is a direct assignment rather
+  than a conversion. `shared/ptr` is the toolkit: `ptr.Of` (Go cannot take the address
+  of a literal), `ptr.Val` (nil reads as the zero value, for a log attribute or a query
+  filter), `ptr.Eq` (value equality — `==` on two pointers compares addresses), and
+  `ptr.NonZero` (the inverse, for a value arriving from a wire format or a text column
+  that cannot say "absent"). The cost this rule buys off is real and paid once per
+  field: a setter has to collapse `&""` to nil so there is still exactly one way to
+  spell absent — `domain.Account`'s `setIdentifier` is the pattern.
+- **Patching an optional field is `patch.ApplyPtr`, a required one `patch.Apply`.**
+  Since every optional field is a pointer, the destination type picks the helper and
+  there is nothing else to decide: `patch.Field[T]`'s null becomes the entity's nil.
 - **Persistence:** pgx `pgx.NamedArgs` + hand-written SQL. No ORM, no sqlc.
   `FindBy*` returns `(zero, domain.ErrXNotFound)` — never `(nil, nil)` sentinels
   across the port.
@@ -245,7 +279,14 @@ give it its own doc under `docs/` and link it from here.
   (`PATCH /me` removes an identifier by sending null). The service applies the
   patch onto the domain entity and then validates the **whole** entity, so a rule
   like "not the last identifier" or "a birth date is not in the future" is
-  checked against the result rather than the field.
+  checked against the result rather than the field. Applying it is
+  `patch.Apply(&entity.Field, req.Field)` — one shape for every field, where null
+  means the zero value and `Validate` is the **only** thing that decides whether
+  the result is legal; `patch.ApplyPtr` is the same for a destination that is
+  itself a pointer. Never skip a null to protect a required field: that answers
+  200 to a request the service did not carry out. A site that converts a type or
+  calls a setter stays a written-out `if req.X.Present()` with `patch.Value` —
+  it should look different, because it is doing something different.
 - **One-time secrets live in Redis, not in a table** (email verification,
   password reset, contact phone code): each is read once and then has to
   disappear, which is a TTL rather than a row somebody sweeps. Same for send
@@ -284,6 +325,20 @@ give it its own doc under `docs/` and link it from here.
 - **A message template that can silently drop its payload is validated at
   startup** (`esms`: rendering a probe code must contain it). A misconfiguration
   where every send succeeds and every user is stuck is the expensive kind.
+- **The spec is also the mock, so a schema carries bounds and an example.**
+  `docker compose --profile mock up -d --build` serves the whole contract from
+  `api/openapi.gen.yaml` on `:4010` (Prism), which is how a client gets written
+  against a route before its handler exists — it needs no database and validates
+  the request and the bearer requirement, so a bad body still gets the real error
+  envelope. What that mock answers *is* the spec: an unbounded integer mocks as
+  `-9007199254740991` and a plain string as `"string"`. So every numeric field
+  gets `minimum`/`maximum` where one is true (a signed delta gets neither — it
+  gets an example instead), and every field a client renders gets an `example`.
+  Both are contract claims, so they must be claims the service actually keeps:
+  bounds mirror the DTO's `validate` tag (`gt=0` → `minimum: 1`). `cmd/mockspec`
+  exists only because Prism mounts `paths` as written and ignores the relative
+  `servers[0].url`, so a mock would otherwise answer `/listings` while the gateway
+  answers `/api/v1/listings`.
 
 ## Commits
 

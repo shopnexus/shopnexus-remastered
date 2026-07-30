@@ -119,10 +119,13 @@ services:
       - loki
 
   # --- App (opt-in: `--profile app`), so its logs reach Loki via Alloy ---
+  # Also runs under `--profile dev`, since gateway-dev needs a migrated database.
   migrate:
-    profiles: ["app"]
+    profiles: ["app", "dev"]
     build: .
-    command: ["/migrate"]
+    # entrypoint, not command: the image's ENTRYPOINT is /gateway, so a command
+    # would be passed to the gateway as arguments instead of replacing it.
+    entrypoint: ["/migrate"]
     environment: *app-env
     depends_on:
       db:
@@ -133,7 +136,7 @@ services:
     build: .
     environment: *app-env
     ports:
-      - "8080:8080"
+      - "5000:8080"
     depends_on:
       db:
         condition: service_healthy
@@ -144,9 +147,77 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # --- Hot reload (opt-in: `--profile dev`) ---
+  # air rebuilds on save inside the container, so logs still reach Loki via Alloy —
+  # the one thing running `go run ./cmd/gateway` on the host does not give you.
+  # Shares host port 5000 with `gateway`: the two profiles are alternatives, not
+  # meant to run together.
+  gateway-dev:
+    profiles: ["dev"]
+    build:
+      context: .
+      target: dev
+    environment: *app-env
+    ports:
+      - "5000:8080"
+    volumes:
+      - .:/src
+      # Caches outside the bind mount, so a rebuild does not start from scratch.
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      nats:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+
+  # --- Mock API (opt-in: `docker compose --profile mock up -d --build mock`) ---
+  # Naming the service keeps it to these two containers; a bare `--profile mock up`
+  # would also start the infra, which the mock has no use for.
+  # Prism answers the whole contract from api/openapi.gen.yaml on :4010, so a client
+  # can be built against a route before the handler behind it exists. It validates
+  # the request and the security requirement, so a bad body still gets the real
+  # error envelope. Needs no database, no Redis and no migrations.
+  mockspec:
+    profiles: ["mock"]
+    build: .
+    # Prism mounts `paths` as written and ignores the relative servers[0].url, so
+    # the spec is rewritten with the /api/v1 prefix before it is served. Runs as
+    # root because the named volume starts root-owned and the image is nonroot.
+    user: "0:0"
+    entrypoint: ["/mockspec"]
+    command: ["/spec/openapi.mock.yaml"]
+    volumes:
+      - mock-spec:/spec
+    restart: "no"
+  mock:
+    profiles: ["mock"]
+    image: stoplight/prism:5
+    # Serves the spec's `example`s, so a body is realistic and the same every time —
+    # what a client being written against it wants. For variety instead, add
+    # `-d --json-schema-faker-fillProperties false`: json-schema-faker then builds each
+    # body from the schema, which respects bounds and patterns but invents lorem text
+    # and 1904 timestamps. `-m false` is not optional: the image crashes on startup
+    # with multiprocess left on.
+    command: ["mock", "-h", "0.0.0.0", "-p", "4010", "-m", "false", "/spec/openapi.mock.yaml"]
+    ports:
+      - "5003:4010"
+    volumes:
+      - mock-spec:/spec
+    depends_on:
+      mockspec:
+        condition: service_completed_successfully
+
 volumes:
   db-data:
   nats-data:
+  mock-spec:
   grafana-data:
   loki-data:
   alloy-data:
+  go-mod-cache:
+  go-build-cache:

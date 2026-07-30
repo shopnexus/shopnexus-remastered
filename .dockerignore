@@ -1,10 +1,14 @@
 .git
 .claude
-deploy
+.github
+dev
 legacy
+tmp
 *_test.go
+.air.toml
 README.md
 CLAUDE.md
 docker-compose.yml
+docker-compose.dev.yml
 Dockerfile
 .dockerignore

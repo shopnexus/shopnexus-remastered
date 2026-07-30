@@ -1,0 +1,18 @@
+# Hot reload inside the `dev` container (docker compose --profile dev up).
+# buildvcs=false: this repo is a git submodule, and the gitlink makes `git status`
+# fail in the container, which aborts the build.
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -buildvcs=false -o ./tmp/gateway ./cmd/gateway"
+  bin = "./tmp/gateway"
+  # sql and yaml are embedded (migrations, OpenAPI fragments), so they need a rebuild.
+  include_ext = ["go", "sql", "yaml", "yml"]
+  exclude_dir = ["tmp", "legacy", "assets", "docs", "dev", ".git", ".github"]
+  exclude_regex = ["_test\\.go"]
+  stop_on_error = true
+  delay = 300
+
+[log]
+  time = false
