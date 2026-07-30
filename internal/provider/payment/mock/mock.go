@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"shopnexus/internal/provider"
-	finance "shopnexus/internal/provider/finance"
+	finance "shopnexus/internal/provider/payment"
 )
 
 var _ finance.Client = (*Client)(nil)

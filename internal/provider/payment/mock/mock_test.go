@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"shopnexus/internal/provider"
-	finance "shopnexus/internal/provider/finance"
-	financemock "shopnexus/internal/provider/finance/mock"
+	finance "shopnexus/internal/provider/payment"
+	financemock "shopnexus/internal/provider/payment/mock"
 )
 
 func TestCharge_Success(t *testing.T) {

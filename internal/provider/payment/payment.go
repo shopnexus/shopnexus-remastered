@@ -1,6 +1,6 @@
 // Package finance defines the payment provider interface and shared types.
 // Ported from the legacy server; the webhook wiring is adapted to net/http.
-package finance
+package payment
 
 import (
 	"context"
