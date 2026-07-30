@@ -155,8 +155,11 @@ func TestOpenAPIContract_AllPathsRouted(t *testing.T) {
 		t.Fatalf("spec servers[0].url is %q but the router mounts at api.BasePath %q — a client following the spec would 404 on every operation", base, openapi.BasePath)
 	}
 
-	r, tm := newRouter()
-	tok, _ := tm.Issue("acc-1")
+	r, tm, sessions := newRouter()
+	// A real session, because the auth middleware checks the token *and* the session it
+	// names; a hand-built token would stop at 401 and every authenticated route would look
+	// routed for the wrong reason.
+	tok := bearer(t, tm, sessions, 1)
 	paramRe := regexp.MustCompile(`\{[^}]+\}`)
 
 	var unrouted []string

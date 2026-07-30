@@ -32,6 +32,27 @@ x-app-env: &app-env
   REDIS_ADDR: "redis:6379"
   REDIS_PASSWORD: "app"
 
+  # Outbound providers. Mocks by default, because a local stack must not need an SMTP
+  # account, an SMS contract or a KYC subscription: the mock notifier logs the token it
+  # would have sent, the mock verifier trusts the credential, and the mock KYC vendor
+  # leaves every case pending for a moderator.
+  #
+  # Switch a seam by changing its selector and filling in that vendor's vars — they are
+  # required only for the vendor selected, so an unused block can stay empty:
+  #
+  #   EMAIL_PROVIDER: "smtp"   -> SMTP_HOST/PORT/USERNAME/PASSWORD/FROM, SMTP_TIMEOUT,
+  #                               VERIFY_EMAIL_URL, RESET_PASSWORD_URL
+  #   SMS_PROVIDER: "esms"     -> ESMS_BASE_URL/API_KEY/SECRET_KEY/BRANDNAME/SMS_TYPE,
+  #                               ESMS_CONTENT_TEMPLATE, ESMS_TIMEOUT
+  #   OAUTH_VERIFIER: "oidc"   -> OIDC_GOOGLE_AUDIENCES and/or OIDC_APPLE_AUDIENCES,
+  #                               OIDC_TIMEOUT
+  #   KYC_PROVIDER: "fpt-ai"   -> FPT_AI_BASE_URL/API_KEY, FPT_AI_REQUEST_TIMEOUT,
+  #                               FPT_AI_DOWNLOAD_TIMEOUT
+  EMAIL_PROVIDER: "mock"
+  SMS_PROVIDER: "mock"
+  OAUTH_VERIFIER: "mock"
+  KYC_PROVIDER: "mock"
+
 services:
   db:
     image: timescale/timescaledb-ha:pg18

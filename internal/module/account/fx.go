@@ -14,6 +14,10 @@ import (
 )
 
 // Module wires the account service and its Postgres-backed repository.
+//
+// Everything else the service needs is provided at the app level and resolved by
+// interface: the session store, the cache, the notify/oauth/kyc providers and the
+// common module's service.
 var Module = fx.Module("account",
 	fx.Provide(
 		fx.Annotate(newRepo, fx.As(new(port.Repository))),

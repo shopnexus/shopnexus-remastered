@@ -1,41 +1,106 @@
-// Package accountapi is the published contract of the account service.
-// Only interface + DTO + validate tag (string). The sole non-stdlib import is
-// shared/id, whose ID[K] carries the opaque-id conversion for every key field.
+// Package accountapi is the published contract of the account service: sign-in,
+// the caller's own account and profile, saved addresses, push devices, the
+// notification feed and its preferences, the follow graph, payout identity
+// verification, and the moderator surface over all of it.
+//
+// One account, both roles: the same account buys and sells, its profile *is* the
+// shop page, and Role only separates a user from the staff who moderate them.
+//
+// Only interfaces, DTOs and validate tags live here. Every key field is an
+// id.ID[K], which marshals to the opaque wire form; a raw int64 never leaves the
+// module.
 package accountapi
 
-import (
-	"context"
+import "context"
 
-	"shopnexus/internal/shared/id"
-)
-
-type RegisterRequest struct {
-	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required,min=8,max=72"`
-	Name     string `json:"name" validate:"required,max=80"`
+// PageInfo is where a page sits in a page-paginated collection. TotalCount is a
+// pointer because null is a real answer for a result the query never counted.
+type PageInfo struct {
+	Page       int
+	Limit      int
+	TotalCount *int64
 }
 
-type LoginRequest struct {
-	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required"`
+// Page is one page of a browsable collection, and Cursor one page of an
+// append-only stream. Which a collection uses follows from the collection: the
+// notification feed is chunked by time and is only ever read newest-first, so it
+// seeks by cursor; a follower list is browsed with a pager.
+type Page[T any] struct {
+	Data []T
+	Meta PageInfo
 }
 
-type GetProfileRequest struct {
-	UserID id.ID[id.Account] `validate:"required"`
+type Cursor[T any] struct {
+	Data []T
+	// NextCursor is nil on the last page, so "no more pages" is a value rather than
+	// a missing one.
+	NextCursor *string
 }
 
-type Profile struct {
-	ID          id.ID[id.Account] `json:"id"`
-	DisplayName string            `json:"display_name"`
-	Email       string            `json:"email"`
-}
-
-type Token struct {
-	AccessToken string `json:"access_token"`
-}
-
+// Service is the account module's contract. Every method that acts on behalf of a
+// signed-in caller takes their id in the request's ActorID, which the gateway
+// fills from the token — never from the body.
+//
+// The role checks behind the admin methods are enforced here rather than in the
+// handler: the caller's role is a fact about a row in this module's table, so the
+// handler would have to ask this service for it anyway.
 type Service interface {
-	Register(ctx context.Context, req RegisterRequest) (Profile, error)
-	Login(ctx context.Context, req LoginRequest) (Token, error)
-	GetProfile(ctx context.Context, req GetProfileRequest) (Profile, error)
+	// --- authentication ---
+	Register(ctx context.Context, req RegisterRequest) (AuthResult, error)
+	Login(ctx context.Context, req LoginRequest) (AuthResult, error)
+	LoginOAuth(ctx context.Context, req OAuthLoginRequest) (OAuthLoginResult, error)
+	Refresh(ctx context.Context, req RefreshRequest) (AuthResult, error)
+	Logout(ctx context.Context, req LogoutRequest) error
+	ChangePassword(ctx context.Context, req ChangePasswordRequest) error
+	RequestPasswordReset(ctx context.Context, req PasswordResetRequest) error
+	ResetPassword(ctx context.Context, req PasswordResetConfirmRequest) error
+	RequestEmailVerification(ctx context.Context, req RequestEmailVerificationRequest) error
+	VerifyEmail(ctx context.Context, req EmailVerificationRequest) error
+
+	// --- the caller and other accounts ---
+	GetMe(ctx context.Context, req GetMeRequest) (Me, error)
+	UpdateMe(ctx context.Context, req UpdateAccountRequest) (Me, error)
+	UpdateProfile(ctx context.Context, req UpdateProfileRequest) (Profile, error)
+	GetPublicAccount(ctx context.Context, req GetPublicAccountRequest) (PublicAccount, error)
+	ListOAuthIdentities(ctx context.Context, req ListOAuthIdentitiesRequest) ([]OAuthIdentity, error)
+	UnlinkOAuthIdentity(ctx context.Context, req UnlinkOAuthIdentityRequest) error
+
+	// --- saved addresses ---
+	ListContacts(ctx context.Context, req ListContactsRequest) ([]Contact, error)
+	CreateContact(ctx context.Context, req CreateContactRequest) (Contact, error)
+	UpdateContact(ctx context.Context, req UpdateContactRequest) (Contact, error)
+	DeleteContact(ctx context.Context, req DeleteContactRequest) error
+	RequestContactPhoneVerification(ctx context.Context, req RequestContactPhoneVerificationRequest) error
+	VerifyContactPhone(ctx context.Context, req VerifyContactPhoneRequest) (Contact, error)
+
+	// --- push devices ---
+	RegisterDevice(ctx context.Context, req RegisterDeviceRequest) (Device, error)
+	ListDevices(ctx context.Context, req ListDevicesRequest) ([]Device, error)
+	DeleteDevice(ctx context.Context, req DeleteDeviceRequest) error
+
+	// --- notifications ---
+	ListNotifications(ctx context.Context, req ListNotificationsRequest) (Cursor[Notification], error)
+	GetUnreadCount(ctx context.Context, req GetUnreadCountRequest) (UnreadCount, error)
+	MarkNotificationsRead(ctx context.Context, req MarkNotificationsReadRequest) (UnreadCount, error)
+	GetNotificationPreferences(ctx context.Context, req GetNotificationPreferencesRequest) ([]NotificationPreference, error)
+	UpdateNotificationPreferences(ctx context.Context, req UpdateNotificationPreferencesRequest) ([]NotificationPreference, error)
+
+	// --- follow graph ---
+	ListFollowing(ctx context.Context, req ListFollowingRequest) (Page[AccountSummary], error)
+	ListFollowers(ctx context.Context, req ListFollowersRequest) (Page[AccountSummary], error)
+	Follow(ctx context.Context, req FollowRequest) error
+	Unfollow(ctx context.Context, req UnfollowRequest) error
+
+	// --- payout identity verification ---
+	StartIdentityVerification(ctx context.Context, req StartIdentityVerificationRequest) (IdentityVerificationTicket, error)
+	ListIdentityDocuments(ctx context.Context, req ListIdentityDocumentsRequest) ([]IdentityDocument, error)
+
+	// --- moderator and admin ---
+	AdminListAccounts(ctx context.Context, req AdminListAccountsRequest) (Page[AdminAccount], error)
+	AdminSuspendAccount(ctx context.Context, req SuspendAccountRequest) (AdminAccount, error)
+	AdminLiftSuspension(ctx context.Context, req LiftSuspensionRequest) (AdminAccount, error)
+	AdminCreateModerator(ctx context.Context, req CreateModeratorRequest) (AdminAccount, error)
+	AdminRevokeModerator(ctx context.Context, req RevokeModeratorRequest) error
+	AdminListIdentityDocuments(ctx context.Context, req AdminListIdentityDocumentsRequest) (Page[AdminIdentityDocument], error)
+	AdminRecordIdentityVerdict(ctx context.Context, req IdentityVerdictRequest) (IdentityDocument, error)
 }

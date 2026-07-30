@@ -26,6 +26,17 @@ func (f *fakeRepo) InsertResource(_ context.Context, r *domain.Resource) error {
 	return nil
 }
 
+// FindResources answers the batch read the account module uses to resolve an avatar.
+func (f *fakeRepo) FindResources(_ context.Context, ids []int64) ([]domain.Resource, error) {
+	var out []domain.Resource
+	for _, want := range ids {
+		if f.inserted != nil && f.inserted.ID == want {
+			out = append(out, *f.inserted)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeRepo) ListEnabledOptions(_ context.Context, _ string) ([]domain.Option, error) {
 	return f.options, nil
 }

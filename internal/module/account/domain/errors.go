@@ -6,11 +6,61 @@ import (
 	"shopnexus/internal/shared/errx"
 )
 
-// Account errors. Not-found lives here so the postgres adapter can produce it
-// without importing the module root package; the rest are business rules
-// enforced by the service.
+// Account errors — every 4xx this module can produce. Not-found lives here so the
+// postgres adapter can return it without importing the module root; the rest are
+// business rules the service enforces.
 var (
-	ErrAccountNotFound    = errx.NewError(http.StatusNotFound, "account_not_found", "account not found")
-	ErrEmailTaken         = errx.NewError(http.StatusConflict, "email_taken", "email already registered")
-	ErrInvalidCredentials = errx.NewError(http.StatusUnauthorized, "invalid_credentials", "invalid email or password")
+	// --- account and sign-in ---
+	ErrAccountNotFound = errx.NewError(http.StatusNotFound, "account_not_found", "account not found")
+	// One error for all three identifiers on purpose: telling a caller *which* one
+	// collided turns registration into a way to ask "is this address registered".
+	ErrIdentifierTaken    = errx.NewError(http.StatusConflict, "identifier_taken", "email or phone or username already taken")
+	ErrNoIdentifier       = errx.NewError(http.StatusUnprocessableEntity, "no_identifier", "an account needs at least one of email, phone or username")
+	ErrLastIdentifier     = errx.NewError(http.StatusUnprocessableEntity, "last_identifier", "that would leave the account with no identifier")
+	ErrInvalidCredentials = errx.NewError(http.StatusUnauthorized, "invalid_credentials", "wrong credentials")
+	ErrAccountSuspended   = errx.NewError(http.StatusForbidden, "account_suspended", "this account is suspended")
+	ErrNoPassword         = errx.NewError(http.StatusUnprocessableEntity, "no_password", "this account signs in through a provider and has no password")
+	ErrForbidden          = errx.NewError(http.StatusForbidden, "forbidden", "not allowed to act on this resource")
+	ErrModeratorRequired  = errx.NewError(http.StatusForbidden, "moderator_required", "moderator role required")
+	ErrAdminRequired      = errx.NewError(http.StatusForbidden, "admin_required", "admin role required")
+
+	// --- one-time secrets ---
+	// Unknown, already used and expired are one error each time: they are the same
+	// fact to a caller, and separating them leaks whether a guess ever existed.
+	ErrInvalidResetToken        = errx.NewError(http.StatusUnauthorized, "invalid_reset_token", "reset token is unknown or already used or expired")
+	ErrInvalidVerificationToken = errx.NewError(http.StatusUnauthorized, "invalid_verification_token", "verification token is unknown or already used or expired")
+	ErrInvalidPhoneCode         = errx.NewError(http.StatusUnauthorized, "invalid_phone_code", "code is wrong, expired, or already used")
+	ErrTooManyRequests          = errx.NewError(http.StatusTooManyRequests, "too_many_requests", "a message was already sent recently; try again later")
+
+	// --- email ---
+	ErrEmailAlreadyVerified = errx.NewError(http.StatusConflict, "email_already_verified", "this email is already verified")
+	ErrNoEmail              = errx.NewError(http.StatusUnprocessableEntity, "no_email", "this account has no email")
+
+	// --- federated identities ---
+	ErrOAuthIdentityNotFound = errx.NewError(http.StatusNotFound, "oauth_identity_not_found", "no such linked provider")
+	ErrLastSignInMethod      = errx.NewError(http.StatusUnprocessableEntity, "last_sign_in_method", "this is the only way left to sign in")
+
+	// --- contacts ---
+	ErrContactNotFound             = errx.NewError(http.StatusNotFound, "contact_not_found", "contact not found")
+	ErrContactPhoneAlreadyVerified = errx.NewError(http.StatusConflict, "contact_phone_already_verified", "this phone is already verified")
+
+	// --- devices ---
+	ErrDeviceNotFound = errx.NewError(http.StatusNotFound, "device_not_found", "device not found")
+
+	// --- follows ---
+	ErrSelfFollow = errx.NewError(http.StatusUnprocessableEntity, "self_follow", "an account cannot follow itself")
+
+	// --- identity documents ---
+	ErrIdentityDocumentNotFound = errx.NewError(http.StatusNotFound, "identity_document_not_found", "identity document not found")
+	ErrIdentityAlreadyVerified  = errx.NewError(http.StatusConflict, "identity_already_verified", "this account already holds a live verified document")
+	ErrIdentityAlreadyDecided   = errx.NewError(http.StatusConflict, "identity_already_decided", "this document already has a verdict")
+	ErrIdentityExpiryRequired   = errx.NewError(http.StatusBadRequest, "identity_expiry_required", "this document type expires, so expires_at is required")
+	// ErrScanUnavailable is a scan the vendor cannot be given: the resource does not
+	// exist, belongs to nobody, or its upload was never confirmed. 422 rather than 404,
+	// because the request named something real to *us* and the fixable part is the upload.
+	ErrScanUnavailable         = errx.NewError(http.StatusUnprocessableEntity, "scan_unavailable", "a scan for this verification is missing or not readable")
+	ErrRejectionReasonRequired = errx.NewError(http.StatusBadRequest, "rejection_reason_required", "a rejection needs a reason")
+	// ErrIdentityVendorIncomplete is a vendor answer with no provider or no case
+	// reference. 502: the request was fine and the dependency did not hold up its end.
+	ErrIdentityVendorIncomplete = errx.NewError(http.StatusBadGateway, "identity_vendor_incomplete", "the verification vendor returned no case reference")
 )

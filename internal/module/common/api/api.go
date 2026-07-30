@@ -4,6 +4,7 @@ package commonapi
 
 import (
 	"context"
+	"time"
 
 	"shopnexus/internal/shared/id"
 )
@@ -15,6 +16,14 @@ type Resource struct {
 	Mime      string             `json:"mime"`
 	Size      int64              `json:"size"`
 	Checksum  string             `json:"checksum,omitempty"`
+	// URL is a short-lived link to the bytes, issued by the storage provider. Not a
+	// stable address: store the id, not this. It is empty until this module can presign
+	// one, and a consumer that needs the bytes — the KYC check reading a scan — has to
+	// treat an empty URL as "not available yet" rather than as an empty object.
+	URL string `json:"url,omitempty"`
+	// URLExpiresAt is when that link stops working, so a caller can tell a stale URL
+	// from a wrong one.
+	URLExpiresAt *time.Time `json:"url_expires_at,omitempty"`
 }
 
 type Option struct {
@@ -44,7 +53,18 @@ type ListOptionsRequest struct {
 	Type string `validate:"required,oneof=payment transport notification"`
 }
 
+// GetResourcesRequest reads several resources at once. Batched rather than one call
+// per id because the callers are list views — a page of twenty sellers is twenty
+// avatars, and that has to be one query.
+type GetResourcesRequest struct {
+	IDs []id.ID[id.Resource] `validate:"required,min=1"`
+}
+
 type Service interface {
 	RegisterResource(ctx context.Context, req RegisterResourceRequest) (Resource, error)
+	// GetResources returns the resources that exist, in no guaranteed order. A missing
+	// id is simply absent from the result: a row pointing at a deleted resource is a
+	// picture that does not render, not an error that fails the page.
+	GetResources(ctx context.Context, req GetResourcesRequest) ([]Resource, error)
 	ListOptions(ctx context.Context, req ListOptionsRequest) ([]Option, error)
 }

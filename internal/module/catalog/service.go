@@ -104,11 +104,13 @@ func (s *Service) GetStock(ctx context.Context, req catalogapi.GetStockRequest) 
 func (s *Service) toAPIListing(ctx context.Context, l domain.Listing) catalogapi.Listing {
 	ownerID := id.Of[id.Account](l.OwnerID)
 	seller := catalogapi.Seller{ID: ownerID}
-	p, err := s.accounts.GetProfile(ctx, accountapi.GetProfileRequest{UserID: ownerID})
+	// The public view, not the caller's own: a listing shows its seller's shop page, and
+	// nothing an account keeps private has any business in a catalog response.
+	p, err := s.accounts.GetPublicAccount(ctx, accountapi.GetPublicAccountRequest{ID: ownerID})
 	if err != nil {
 		s.log.Warn("enrich seller failed", "owner_id", l.OwnerID, "err", err)
 	} else {
-		seller.DisplayName = p.DisplayName
+		seller.DisplayName = p.Name
 	}
 	return catalogapi.Listing{
 		ID:     id.Of[id.ProductSPU](l.ID),

@@ -9,5 +9,6 @@ import (
 
 type Repository interface {
 	InsertResource(ctx context.Context, r *domain.Resource) error
+	FindResources(ctx context.Context, ids []int64) ([]domain.Resource, error)
 	ListEnabledOptions(ctx context.Context, optionType string) ([]domain.Option, error)
 }

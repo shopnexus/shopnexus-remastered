@@ -12,6 +12,7 @@ import (
 	"shopnexus/internal/config"
 	"shopnexus/internal/gateway/handler"
 	"shopnexus/internal/module/observability"
+	"shopnexus/internal/shared/session"
 	"shopnexus/internal/shared/token"
 )
 
@@ -34,30 +35,32 @@ var Module = fx.Module("gateway",
 
 type routerParams struct {
 	fx.In
-	Account *handler.Account
-	Catalog *handler.Catalog
-	Chat    *handler.Chat
-	Common  *handler.Common
-	Finance *handler.Finance
-	Order   *handler.Order
-	Trust   *handler.Trust
-	Metrics *observability.Sink
-	Tokens  *token.Manager
-	Log     *slog.Logger
+	Account  *handler.Account
+	Catalog  *handler.Catalog
+	Chat     *handler.Chat
+	Common   *handler.Common
+	Finance  *handler.Finance
+	Order    *handler.Order
+	Trust    *handler.Trust
+	Metrics  *observability.Sink
+	Tokens   *token.Manager
+	Sessions *session.Store
+	Log      *slog.Logger
 }
 
 func newRouter(p routerParams) http.Handler {
 	return NewRouter(Deps{
-		Account: p.Account,
-		Catalog: p.Catalog,
-		Chat:    p.Chat,
-		Common:  p.Common,
-		Finance: p.Finance,
-		Order:   p.Order,
-		Trust:   p.Trust,
-		Metrics: p.Metrics,
-		Tokens:  p.Tokens,
-		Log:     p.Log,
+		Account:  p.Account,
+		Catalog:  p.Catalog,
+		Chat:     p.Chat,
+		Common:   p.Common,
+		Finance:  p.Finance,
+		Order:    p.Order,
+		Trust:    p.Trust,
+		Metrics:  p.Metrics,
+		Tokens:   p.Tokens,
+		Sessions: p.Sessions,
+		Log:      p.Log,
 	})
 }
 

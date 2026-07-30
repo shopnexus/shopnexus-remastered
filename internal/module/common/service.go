@@ -35,6 +35,22 @@ func (s *Service) RegisterResource(ctx context.Context, req commonapi.RegisterRe
 	return toAPIResource(res), nil
 }
 
+func (s *Service) GetResources(ctx context.Context, req commonapi.GetResourcesRequest) ([]commonapi.Resource, error) {
+	ids := make([]int64, 0, len(req.IDs))
+	for _, rid := range req.IDs {
+		ids = append(ids, rid.Int64())
+	}
+	rows, err := s.repo.FindResources(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("find resources: %w", err)
+	}
+	out := make([]commonapi.Resource, 0, len(rows))
+	for _, res := range rows {
+		out = append(out, toAPIResource(res))
+	}
+	return out, nil
+}
+
 func (s *Service) ListOptions(ctx context.Context, req commonapi.ListOptionsRequest) ([]commonapi.Option, error) {
 	rows, err := s.repo.ListEnabledOptions(ctx, req.Type)
 	if err != nil {

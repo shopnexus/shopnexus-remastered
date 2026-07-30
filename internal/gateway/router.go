@@ -9,20 +9,22 @@ import (
 	"shopnexus/internal/gateway/handler"
 	"shopnexus/internal/gateway/middleware"
 	"shopnexus/internal/module/observability"
+	"shopnexus/internal/shared/session"
 	"shopnexus/internal/shared/token"
 )
 
 type Deps struct {
-	Account *handler.Account
-	Catalog *handler.Catalog
-	Chat    *handler.Chat
-	Common  *handler.Common
-	Finance *handler.Finance
-	Order   *handler.Order
-	Trust   *handler.Trust
-	Metrics *observability.Sink
-	Tokens  *token.Manager
-	Log     *slog.Logger
+	Account  *handler.Account
+	Catalog  *handler.Catalog
+	Chat     *handler.Chat
+	Common   *handler.Common
+	Finance  *handler.Finance
+	Order    *handler.Order
+	Trust    *handler.Trust
+	Metrics  *observability.Sink
+	Tokens   *token.Manager
+	Sessions *session.Store
+	Log      *slog.Logger
 }
 
 // NewRouter registers every route the OpenAPI contract declares.
@@ -40,8 +42,8 @@ type Deps struct {
 // middleware only establishes who the caller is.
 func NewRouter(d Deps) http.Handler {
 	mux := http.NewServeMux()
-	auth := middleware.Auth(d.Tokens, d.Log)
-	optionalAuth := middleware.OptionalAuth(d.Tokens, d.Log)
+	auth := middleware.Auth(d.Tokens, d.Sessions, d.Log)
+	optionalAuth := middleware.OptionalAuth(d.Tokens, d.Sessions, d.Log)
 
 	// API docs (OpenAPI spec + Swagger UI)
 	mux.HandleFunc("GET /openapi.yaml", openapi.SpecHandler)

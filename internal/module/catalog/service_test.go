@@ -7,6 +7,7 @@ import (
 
 	"shopnexus/internal/infra/cache"
 	accountapi "shopnexus/internal/module/account/api"
+	"shopnexus/internal/module/account/api/accounttest"
 	accountdomain "shopnexus/internal/module/account/domain"
 	"shopnexus/internal/module/catalog"
 	catalogapi "shopnexus/internal/module/catalog/api"
@@ -49,22 +50,20 @@ func (f *fakeRepo) List(_ context.Context, _, _ int) ([]domain.Listing, error) {
 func (f *fakeRepo) UpsertStock(_ context.Context, _ int64, _ int64) error { return nil }
 func (f *fakeRepo) FindStock(_ context.Context, _ int64) (int64, error)   { return 0, nil }
 
+// fakeAccounts answers the one call catalog makes across the module boundary: the seller's
+// public page. Everything else comes from the stub, which refuses it — a catalog test that
+// starts reaching for private account data should fail loudly.
 type fakeAccounts struct {
-	profiles map[id.ID[id.Account]]accountapi.Profile
+	accounttest.Stub
+	accounts map[id.ID[id.Account]]accountapi.PublicAccount
 }
 
-func (f *fakeAccounts) Register(context.Context, accountapi.RegisterRequest) (accountapi.Profile, error) {
-	return accountapi.Profile{}, nil
-}
-func (f *fakeAccounts) Login(context.Context, accountapi.LoginRequest) (accountapi.Token, error) {
-	return accountapi.Token{}, nil
-}
-func (f *fakeAccounts) GetProfile(_ context.Context, req accountapi.GetProfileRequest) (accountapi.Profile, error) {
-	p, ok := f.profiles[req.UserID]
+func (f *fakeAccounts) GetPublicAccount(_ context.Context, req accountapi.GetPublicAccountRequest) (accountapi.PublicAccount, error) {
+	a, ok := f.accounts[req.ID]
 	if !ok {
-		return accountapi.Profile{}, accountdomain.ErrAccountNotFound
+		return accountapi.PublicAccount{}, accountdomain.ErrAccountNotFound
 	}
-	return p, nil
+	return a, nil
 }
 
 func TestCreateListing(t *testing.T) {
@@ -82,8 +81,8 @@ func TestGetListing_EnrichesSeller(t *testing.T) {
 	repo := &fakeRepo{byID: map[int64]domain.Listing{
 		spuID: {ID: spuID, OwnerID: ownerID, Title: "Bàn", Price: 500, Status: domain.StatusActive},
 	}}
-	accounts := &fakeAccounts{profiles: map[id.ID[id.Account]]accountapi.Profile{
-		id.Of[id.Account](ownerID): {ID: id.Of[id.Account](ownerID), DisplayName: "Alice"},
+	accounts := &fakeAccounts{accounts: map[id.ID[id.Account]]accountapi.PublicAccount{
+		id.Of[id.Account](ownerID): {ID: id.Of[id.Account](ownerID), Name: "Alice"},
 	}}
 	svc := catalog.NewService(repo, accounts, cache.NewInMemoryClient(), slog.Default())
 
@@ -110,7 +109,7 @@ func TestGetListing_EnrichFailsButStillReturns(t *testing.T) {
 	repo := &fakeRepo{byID: map[int64]domain.Listing{
 		spuID: {ID: spuID, OwnerID: ghostID, Title: "Bàn", Price: 500, Status: domain.StatusActive},
 	}}
-	// empty fakeAccounts -> GetProfile returns NotFound for ghostID
+	// empty fakeAccounts -> GetPublicAccount returns NotFound for ghostID
 	svc := catalog.NewService(repo, &fakeAccounts{}, cache.NewInMemoryClient(), slog.Default())
 
 	got, err := svc.GetListing(context.Background(), catalogapi.GetListingRequest{ID: id.Of[id.ProductSPU](spuID)})
@@ -126,8 +125,8 @@ func TestGetListing_ServedFromCache(t *testing.T) {
 	repo := &fakeRepo{byID: map[int64]domain.Listing{
 		spuID: {ID: spuID, OwnerID: ownerID, Title: "Bàn", Price: 500, Status: domain.StatusActive},
 	}}
-	accounts := &fakeAccounts{profiles: map[id.ID[id.Account]]accountapi.Profile{
-		id.Of[id.Account](ownerID): {ID: id.Of[id.Account](ownerID), DisplayName: "Alice"},
+	accounts := &fakeAccounts{accounts: map[id.ID[id.Account]]accountapi.PublicAccount{
+		id.Of[id.Account](ownerID): {ID: id.Of[id.Account](ownerID), Name: "Alice"},
 	}}
 	svc := catalog.NewService(repo, accounts, cache.NewInMemoryClient(), slog.Default())
 
@@ -152,8 +151,8 @@ func TestListListings_ReturnsMapped(t *testing.T) {
 		{ID: spuID, OwnerID: ownerID, Title: "Bàn", Price: 500, Status: domain.StatusActive},
 		{ID: spuID + 1, OwnerID: ownerID, Title: "Ghế", Price: 300, Status: domain.StatusActive},
 	}}
-	accounts := &fakeAccounts{profiles: map[id.ID[id.Account]]accountapi.Profile{
-		id.Of[id.Account](ownerID): {ID: id.Of[id.Account](ownerID), DisplayName: "Alice"},
+	accounts := &fakeAccounts{accounts: map[id.ID[id.Account]]accountapi.PublicAccount{
+		id.Of[id.Account](ownerID): {ID: id.Of[id.Account](ownerID), Name: "Alice"},
 	}}
 	svc := catalog.NewService(repo, accounts, cache.NewInMemoryClient(), slog.Default())
 

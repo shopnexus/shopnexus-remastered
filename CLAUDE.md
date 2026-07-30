@@ -228,6 +228,62 @@ give it its own doc under `docs/` and link it from here.
   pick another payment option) stays a hand-written decorator on the provider's
   interface. Timeouts are the exception, per the bullet above: the transport
   cannot tell a stream from a one-shot call.
+- **Sessions, not just tokens (`shared/session` + `shared/token`).** An access
+  token is a 15-minute JWT naming the account (subject, opaque id) *and* its
+  session (`jti`); the session itself is a Redis key with a 30-day TTL, and
+  `middleware.Auth` looks it up on **every** authenticated request. That one
+  lookup is what makes a logout, a password change or a suspension effective
+  against a token already in circulation. A refresh token is a second key
+  pointing at the same session and is rotated on every exchange. Revoking every
+  session of an account is an **epoch bump** (`session-epoch:<id>`), not a list
+  walk, so it stays O(1) and needs no set type in `cache.Client`; a session
+  record carries the epoch it was born with. Both TTLs are constructor arguments
+  in `cmd/gateway`, like the JWT TTL always was.
+- **Tri-state PATCH fields (`shared/patch`).** A `patch.Field[T]` distinguishes
+  absent / null / value; a pointer cannot. Every optional field of a PATCH body
+  uses it, because "leave this alone" and "clear this" are different requests
+  (`PATCH /me` removes an identifier by sending null). The service applies the
+  patch onto the domain entity and then validates the **whole** entity, so a rule
+  like "not the last identifier" or "a birth date is not in the future" is
+  checked against the result rather than the field.
+- **One-time secrets live in Redis, not in a table** (email verification,
+  password reset, contact phone code): each is read once and then has to
+  disappear, which is a TTL rather than a row somebody sweeps. Same for send
+  throttles, and a throttle key is set **before** the account lookup so a 429
+  cannot be used to tell an existing address from an unknown one.
+- **Request plumbing is shared (`gateway/handler/params.go`):** `actor`,
+  `pathID[K]`, `pageParams`/`limitParam`, `boolParam`, `decodeBody`/`check`. A
+  handler reads the request, fills in what only the gateway knows, calls the
+  service, writes the result — and a limit that means 20 on one route and 50 on
+  another is a bug a client finds in production.
+- **Role checks belong to the service, not the handler.** The caller's role is a
+  row in the account module's table, so a handler could only learn it by asking
+  that service anyway; `/admin/*` handlers stay as thin as the rest, and an admin
+  passes every moderator check.
+- **A module's `api` package ships a test stub** (`api/accounttest`, like
+  `shared/id/idtest`) once the contract grows past a handful of methods: embed it
+  and override the one method under test. It answers 501, so an unstubbed call is
+  an obviously wrong status rather than a plausible zero value.
+- **A provider seam is chosen by config, never by code.** Each one has a required
+  selector env var (`EMAIL_PROVIDER`, `SMS_PROVIDER`, `OAUTH_VERIFIER`,
+  `KYC_PROVIDER`) with `mock` as one of the choices, and that vendor's credentials
+  are `required_if` the selector picked it — the only conditional in
+  `internal/config`, and still not a default: an unknown selector fails at startup
+  rather than falling back, because a deployment that thinks it sends real email
+  and does not is discovered by the user who never got their reset link. Today:
+  SMTP (`net/smtp`, vendor-neutral) for email, eSMS.vn for SMS, OIDC id-token
+  verification (`coreos/go-oidc`) for federated sign-in, FPT.AI eKYC for identity.
+  Every real client is built with `httpx.ObserveOutbound` and no
+  `http.Client.Timeout`.
+- **Vendor-shaped differences stay behind the seam.** `kyc.Client.Check` covers
+  both a vendor that reads the scans and answers now (FPT.AI: a decided `Result`)
+  and one that runs its own web flow (Sumsub-style: pending plus a session URL);
+  the caller stores whichever came back. A verdict from a vendor goes through the
+  same `domain` transitions a moderator's does, so an automated check cannot skip
+  the rule that a passport needs an expiry or a rejection needs a reason.
+- **A message template that can silently drop its payload is validated at
+  startup** (`esms`: rendering a probe code must contain it). A misconfiguration
+  where every send succeeds and every user is stuck is the expensive kind.
 
 ## Commits
 

@@ -43,6 +43,38 @@ func (r *Repo) InsertResource(ctx context.Context, res *domain.Resource) error {
 	return nil
 }
 
+// FindResources reads a batch. Only live, completed uploads are returned: an
+// unconfirmed resource has no bytes behind it yet, and a soft-deleted row only exists
+// until the reaper has removed the object.
+func (r *Repo) FindResources(ctx context.Context, ids []int64) ([]domain.Resource, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	const q = `SELECT id, COALESCE(uploaded_by_id, 0), provider, object_key, mime, size,
+	                  metadata, COALESCE(checksum, ''), created_at
+	           FROM resource
+	           WHERE id = ANY(@ids) AND completed_at IS NOT NULL AND deleted_at IS NULL`
+	rows, err := r.pool.Query(ctx, q, pgx.NamedArgs{"ids": ids})
+	if err != nil {
+		return nil, fmt.Errorf("db query resources: %w", err)
+	}
+	defer rows.Close()
+
+	var out []domain.Resource
+	for rows.Next() {
+		var res domain.Resource
+		if err := rows.Scan(&res.ID, &res.UploadedByID, &res.Provider, &res.ObjectKey, &res.Mime,
+			&res.Size, &res.Metadata, &res.Checksum, &res.CreatedAt); err != nil {
+			return nil, fmt.Errorf("db scan resource row: %w", err)
+		}
+		out = append(out, res)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db iterate resources: %w", err)
+	}
+	return out, nil
+}
+
 func (r *Repo) ListEnabledOptions(ctx context.Context, optionType string) ([]domain.Option, error) {
 	const q = `SELECT id, COALESCE(owner_id::text, ''), is_enabled, name, description, priority,
 	                  COALESCE(logo_resource_id::text, ''), data, type, provider
