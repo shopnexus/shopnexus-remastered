@@ -1,0 +1,256 @@
+# The finance module's root aggregate — the payment session and the external-rail
+# ledger — plus the module's own boundary notes. Merged by cmd/specgen with every
+# other file in this directory.
+#
+# The module covers payment_session, transaction, wallet, wallet_transaction,
+# bank_account and tax_info — one file each, next to this one.
+#
+# The shape that decides this surface: a client never opens a payment session.
+# Sessions are minted by whoever owes the money — order at checkout, at offer
+# acceptance and at seller confirmation, and the payout job — so what a payer does
+# here is add a *leg* to a session that already exists, one per rail, each with its
+# own gateway URL. That is also how split tender works: keep adding legs until the
+# session total is covered. The single exception is a withdrawal, which the wallet
+# owner does open (withdrawal.yaml).
+
+paths:
+  /payment-sessions:
+    get:
+      tags: [finance]
+      summary: List the caller's payment sessions
+      description: '`role=payer` is money owed or sent, `role=payee` is money received
+        — seller payouts and refunds land on that side.'
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: role, in: query, required: true, schema: { type: string, enum: [payer, payee] } }
+        - { name: kind, in: query, schema: { $ref: '#/components/schemas/PaymentSessionKind' } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/PaymentSessionStatus' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/PaymentSessionPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /payment-sessions/{id}:
+    get:
+      tags: [finance]
+      summary: Read a payment session
+      description: >
+        `amount_paid` is the sum of the settled legs, so a client can tell a
+        partly-tendered session from an unpaid one without fetching the legs.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/PaymentSessionID' } }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PaymentSession' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /payment-sessions/{id}/transactions:
+    get:
+      tags: [finance]
+      summary: List the legs of a payment session
+      description: Append-only. A reversal is a new leg with a negative amount
+        pointing at the leg it reverses, never an edit of the original.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/PaymentSessionID' } }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/TransactionList' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /payment-sessions/{id}/payments:
+    post:
+      tags: [finance]
+      summary: Pay a session through one rail
+      description: >
+        Creates a ledger leg on the chosen rail and returns it with the gateway
+        redirect in `checkout_url`. Omit `amount` to tender the whole outstanding
+        balance; pass it to split the session across several rails, calling this
+        again per rail until the total is covered.
+
+
+        The leg starts `pending` and only the provider's webhook settles it — this
+        response is not a receipt. Poll the session or the leg for the outcome.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/PaymentSessionID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartPaymentRequest' }
+      responses:
+        '201':
+          description: 'Leg created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Transaction' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Caller is not the payer of this session', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: 'Session or payment option not found', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Session is already settled, cancelled, or expired', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'Amount exceeds the session''s outstanding balance', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /payment-sessions/{id}/cancellation:
+    post:
+      tags: [finance]
+      summary: Abandon an unpaid payment session
+      description: Only while nothing has settled. A session with a settled leg is
+        closed by refunding, not by cancelling.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/PaymentSessionID' } }
+      responses:
+        '200':
+          description: 'Cancelled'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PaymentSession' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'A leg has already settled', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  schemas:
+    PaymentSessionKind:
+      type: string
+      description: >
+        What the money is for; it is what routes the flow. A client cannot pick this
+        — the module that owes the money does.
+      enum: [buyer-checkout, seller-confirmation-fee, seller-payout, withdrawal]
+
+    PaymentSessionStatus:
+      type: string
+      enum: [pending, processing, success, cancelled, failed]
+
+    TransactionStatus:
+      type: string
+      description: A leg goes pending → success or failed, and success is terminal.
+        Deliberately narrower than a session's status.
+      enum: [pending, success, failed]
+
+    PaymentSession:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/PaymentSessionID' }
+        kind: { $ref: '#/components/schemas/PaymentSessionKind' }
+        status: { $ref: '#/components/schemas/PaymentSessionStatus' }
+        from_id:
+          allOf: [{ $ref: '#/components/schemas/AccountID' }]
+          nullable: true
+          description: The payer. Null means the platform itself.
+        to_id:
+          allOf: [{ $ref: '#/components/schemas/AccountID' }]
+          nullable: true
+          description: The payee. Null means the platform itself.
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        total_amount: { type: integer, format: int64, description: 'Amount owed, smallest unit of `currency`' }
+        amount_paid:
+          type: integer
+          format: int64
+          description: >
+            Sum of the settled legs, so a partly-tendered session is distinguishable from an
+            unpaid one. Signed, so a reversal brings it back down — after a full refund this
+            reads zero again. It is what the rails currently hold, not a running total of
+            what was ever charged; the ledger has that.
+        note: { type: string }
+        created_at: { type: string, format: date-time }
+        paid_at: { type: string, format: date-time, nullable: true }
+        expired_at:
+          type: string
+          format: date-time
+          description: A session still unsettled past this point is voided by a job.
+      required: [id, kind, status, currency, total_amount, amount_paid, note, created_at, expired_at]
+
+    PaymentSessionPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/PaymentSession' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
+
+    Transaction:
+      type: object
+      description: One movement on an external rail. Append-only.
+      properties:
+        id: { $ref: '#/components/schemas/TransactionID' }
+        session_id: { $ref: '#/components/schemas/PaymentSessionID' }
+        status: { $ref: '#/components/schemas/TransactionStatus' }
+        payment_option: { type: string, description: A payment option slug owned by the common module }
+        amount:
+          type: integer
+          format: int64
+          description: Signed — positive is a charge, negative is a reversal.
+        currency:
+          allOf: [{ $ref: '#/components/schemas/CurrencyCode' }]
+          description: What the rail actually debits, which split tender may make
+            differ from the session's currency.
+        reverses_id:
+          allOf: [{ $ref: '#/components/schemas/TransactionID' }]
+          nullable: true
+          description: The leg this one reverses. Set on reversals, null on originals.
+        checkout_url:
+          type: string
+          nullable: true
+          description: Where to send the payer for this leg. Null once the rail no
+            longer needs it, or for rails that have none.
+        error: { type: string, nullable: true }
+        note: { type: string }
+        created_at: { type: string, format: date-time }
+        settled_at: { type: string, format: date-time, nullable: true }
+        expired_at: { type: string, format: date-time, nullable: true, description: Gateway URL expiry }
+      required: [id, session_id, status, payment_option, amount, currency, note, created_at]
+
+    TransactionList:
+      type: object
+      description: Unpaginated — a session has as many legs as rails it was split
+        across, which is a handful.
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Transaction' } }
+      required: [data]
+
+    StartPaymentRequest:
+      type: object
+      properties:
+        payment_option:
+          type: string
+          maxLength: 100
+          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+          description: A payment option slug from the common module.
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Omit to tender the whole outstanding balance. Pass it to split
+            the session across rails.
+        return_url:
+          type: string
+          maxLength: 2048
+          description: >
+            Where the gateway sends the payer back. Checked against the platform's own
+            allowlist of hosts and rejected otherwise — a URL that reaches a redirect
+            unvalidated is an open redirect wearing a payment flow.
+      required: [payment_option]

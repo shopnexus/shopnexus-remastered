@@ -1,0 +1,80 @@
+# finance fragment: tax info — the payee's tax identity.
+
+paths:
+  /tax-info:
+    get:
+      tags: [finance]
+      summary: Read the caller's tax registration
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/TaxInfo' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'Nothing registered yet', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    put:
+      tags: [finance]
+      summary: Register or replace the caller's tax registration
+      description: >
+        One registration per account, so this is an upsert rather than a create.
+        Replacing it resets verification to `pending`: the previous verdict was
+        about the previous tax code. A code already verified under another account
+        is rejected.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpsertTaxInfoRequest' }
+      responses:
+        '200':
+          description: 'Registered'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/TaxInfo' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { description: 'This tax code is already verified under another account', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  schemas:
+    TaxVerificationStatus:
+      type: string
+      enum: [pending, verified, rejected]
+
+    TaxCodeType:
+      type: string
+      enum: [individual, business, household]
+
+    TaxInfo:
+      type: object
+      properties:
+        tax_code: { type: string, example: '0123456789' }
+        tax_code_type: { $ref: '#/components/schemas/TaxCodeType' }
+        legal_name: { type: string }
+        verification_status: { $ref: '#/components/schemas/TaxVerificationStatus' }
+        verified_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time, description: 'When the registration was last replaced, which also resets the verdict.' }
+      required: [tax_code, tax_code_type, legal_name, verification_status, created_at, updated_at]
+
+    UpsertTaxInfoRequest:
+      type: object
+      properties:
+        tax_code:
+          type: string
+          pattern: '^\d{10}(-\d{3})?$'
+          description: Vietnamese MST — ten digits, or ten plus a three-digit branch.
+        tax_code_type: { $ref: '#/components/schemas/TaxCodeType' }
+        legal_name: { type: string, minLength: 1, maxLength: 200 }
+      required: [tax_code, tax_code_type, legal_name]

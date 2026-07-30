@@ -1,0 +1,18 @@
+# common fragment: the admin surface over options.
+
+paths:
+  /admin/options:
+    get:
+      tags: [admin]
+      summary: List every integration, disabled ones included
+      description: The operator's view. `GET /options` only ever shows enabled rows,
+        so this is the only way to see one that was switched off.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: type, in: query, schema: { $ref: '#/components/schemas/OptionType' } }
+        - { name: is_enabled, in: query, schema: { type: boolean } }
+        - { name: owner_id, in: query, schema: { $ref: '#/components/schemas/AccountID' } }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/OptionList' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }

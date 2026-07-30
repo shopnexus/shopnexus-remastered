@@ -1,0 +1,195 @@
+# chat fragment: message — the hypertable behind a thread.
+#
+# Messages are a hypertable, so every read here is cursor-paginated over `created_at`
+# and every single-message operation carries the message's own `created_at`. A query
+# without a time bound has to visit every chunk: the primary key is
+# `(id, created_at)` — a unique index on a hypertable must contain its partitioning
+# column — so an id on its own is not a key lookup at all.
+#
+# Offers are not created here. A negotiation is an order-module resource; accepting
+# or countering one emits a system message into the thread, which is why a message
+# can have no sender.
+
+paths:
+  /conversations/{id}/messages:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ConversationID' } }
+    get:
+      tags: [chat]
+      summary: Read a thread's messages
+      description: >
+        Newest first, cursor only. Offset paging would defeat the chunk exclusion the
+        time partitioning exists for.
+
+
+        A redacted message is still returned, with its body emptied and `deleted_at`
+        set: a gap in a thread that a dispute may hinge on is worse than a visible
+        removal.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/MessagePage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [chat]
+      summary: Send a message
+      description: >
+        Text, attachments or both. `refs` carries pointers to a listing or a variant or
+        an order, which is how a product is referred to inside a thread that is not
+        itself listing-scoped.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendMessageRequest' }
+      responses:
+        '201':
+          description: 'Sent'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Message' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: 'A message needs a body or an attachment', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /messages/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/MessageID' } }
+      - name: created_at
+        in: query
+        required: true
+        description: >
+          The message's own `created_at`, passed straight back. Required, and not
+          redundant: `message` is partitioned on it and its primary key is
+          `(id, created_at)`, so without it the row has to be hunted through every chunk
+          of the table. A client always has the message before editing or redacting it, so
+          it always has this. Named after the field it comes from — anything else would
+          have the client copying `created_at` into a differently-named parameter.
+        schema: { type: string, format: date-time }
+    patch:
+      tags: [chat]
+      summary: Edit a message
+      description: >
+        Sender only, and it records that the message was edited — the counterparty has
+        to be able to see that what they read has changed. A system message cannot be
+        edited because it has no author.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateMessageRequest' }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Message' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Only the sender may edit a message', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'A system message cannot be edited', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [chat]
+      summary: Redact a message
+      description: >
+        The sender unsending, or a moderator acting on an upheld report. The row
+        survives with its body **and its attachments** cleared: a thread is evidence in
+        a refund dispute, so removal is recorded rather than erased, but a redaction
+        that leaves the picture up has not removed anything.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Redacted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Only the sender or a moderator may redact a message', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  schemas:
+    MessageType:
+      type: string
+      description: >
+        A `system` message is produced by the backend — an offer was accepted, an
+        order shipped — and belongs to no participant, which is why it has no sender.
+      enum: [user, system]
+
+    Message:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/MessageID' }
+        conversation_id: { $ref: '#/components/schemas/ConversationID' }
+        sender_id:
+          allOf: [{ $ref: '#/components/schemas/AccountID' }]
+          nullable: true
+          description: Null on a system message.
+        type: { $ref: '#/components/schemas/MessageType' }
+        body: { type: string, description: Empty on a redacted message. }
+        attachments: { type: array, items: { $ref: '#/components/schemas/Resource' }, description: Empty on a redacted message. }
+        refs:
+          type: object
+          additionalProperties: true
+          description: >
+            What the sender pointed at — a listing, a variant, an order. Client-supplied
+            and validated against the caller's own access to each id, so it can carry a
+            reference but never assert anything about it.
+        card:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: >
+            The rendered payload of a system message, such as the terms of an accepted
+            offer. Written only by the backend and rejected on a `user` message —
+            otherwise anyone could send a card that looks like an offer the seller
+            accepted.
+        created_at: { type: string, format: date-time }
+        edited_at: { type: string, format: date-time, nullable: true }
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set on a redacted message. The row stays so a thread has no
+            unexplained gaps.
+      required: [id, conversation_id, type, body, attachments, refs, created_at]
+
+    MessagePage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Message' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
+
+    SendMessageRequest:
+      type: object
+      description: A body or at least one attachment is required.
+      properties:
+        body: { type: string, maxLength: 4000 }
+        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+        refs:
+          type: object
+          additionalProperties: true
+          description: >
+            References to point at, each checked against the caller's access to it.
+            There is no way to set `card` from here: a system payload is the backend's
+            to write.
+
+    UpdateMessageRequest:
+      type: object
+      properties:
+        body: { type: string, minLength: 1, maxLength: 4000 }
+      required: [body]

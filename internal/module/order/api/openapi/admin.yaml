@@ -1,0 +1,93 @@
+# order fragment: the moderator surface over refund disputes.
+
+paths:
+  /admin/disputes:
+    get:
+      tags: [admin]
+      summary: The moderator's dispute queue
+      description: >
+        Open rounds, oldest first, which is the order they should be worked. Round 2
+        entries are appeals on a refund a moderator has already ruled on once, so the
+        previous verdict comes with them.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/DisputeStatus' }, description: Defaults to open. }
+        - { name: round, in: query, schema: { type: integer, enum: [1, 2] } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/RefundDisputePage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/disputes/{id}/ruling:
+    post:
+      tags: [admin]
+      summary: Rule on the open round of a dispute (moderator)
+      description: >
+        Decided on whose evidence is more convincing. What a verdict does depends on
+        the round, and the round is a property of the case rather than something the
+        moderator picks:
+
+
+        Round 1 — `buyer-wins` grants the refund and books the return shipment, so the
+        money is not released yet; `seller-wins` ends the refund and lets the payout
+        stand.
+
+
+        Round 2, the seller's appeal on what arrived — `seller-wins` upholds it, ends
+        the refund and pays the seller out; `buyer-wins` denies it and releases the
+        money to the buyer.
+
+
+        There is no third round. Round 2 is where an appeal already lives, so a ruling
+        on it is final.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundDisputeID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DisputeRulingRequest' }
+      responses:
+        '200':
+          description: 'Ruled'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Refund' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Dispute is already resolved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  schemas:
+    AdminDisputeQueueEntry:
+      type: object
+      description: >
+        A queue row is the open round plus the refund it belongs to, since a moderator
+        decides on the case and not on the round in isolation.
+      properties:
+        round: { $ref: '#/components/schemas/DisputeRound' }
+        refund: { $ref: '#/components/schemas/Refund' }
+      required: [round, refund]
+
+    RefundDisputePage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/AdminDisputeQueueEntry' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
+
+    DisputeRulingRequest:
+      type: object
+      properties:
+        outcome: { $ref: '#/components/schemas/DisputeOutcome' }
+        note: { type: string, maxLength: 2000, description: 'Recorded for audit; the ruling is final' }
+      required: [outcome, note]

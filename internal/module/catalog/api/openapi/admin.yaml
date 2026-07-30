@@ -1,0 +1,200 @@
+# catalog fragment: the moderator surface over listings, categories and tags.
+
+paths:
+  /admin/categories:
+    post:
+      tags: [admin]
+      summary: Create a category
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCategoryRequest' }
+      responses:
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Category' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Name already taken', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/categories/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/CategoryID' } }
+    patch:
+      tags: [admin]
+      summary: Update a category
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCategoryRequest' }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Category' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [admin]
+      summary: Delete a category
+      description: >
+        Children are promoted to roots rather than deleted with it, so a branch is
+        never lost by accident. A category still holding listings cannot be deleted
+        at all — move them first.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Listings still reference this category', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/tags/{slug}:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/TagSlug' } }
+    put:
+      tags: [admin]
+      summary: Create or update a tag
+      description: >
+        Upsert, not create: the slug is the whole identity of a tag and the only other
+        column is its description, so a separate create and update would be the same
+        statement twice and would need a 409 to tell them apart.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PutTagRequest' }
+      responses:
+        '200':
+          description: 'Created or updated'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Tag' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [admin]
+      summary: Delete a tag
+      description: Removing it also detaches it from every listing that carried it.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/listings:
+    get:
+      tags: [admin]
+      summary: The listing moderation queue
+      description: >
+        Defaults to the pending ones — those the automatic scan flagged or that
+        enough reports pushed into review — oldest first, which is the order they
+        should be worked.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/ListingStatus' }, description: Defaults to pending. }
+        - { name: seller_id, in: query, schema: { $ref: '#/components/schemas/AccountID' } }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingPage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/listings/{id}/approval:
+    post:
+      tags: [admin]
+      summary: Clear a listing for publication
+      description: Applies any held pending edit and makes it live.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ModerationNoteRequest' }
+      responses:
+        '200':
+          description: 'Live'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ListingDetail' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Not awaiting moderation', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/listings/{id}/takedown:
+    post:
+      tags: [admin]
+      summary: Take a listing down
+      description: >
+        The moderator's verdict against a listing that breaks policy. Removes it from
+        the marketplace and records the reason. Suspending the seller as well is a
+        separate decision and a separate call.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TakedownRequest' }
+      responses:
+        '200':
+          description: 'Taken down'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ListingDetail' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  schemas:
+    ModerationNoteRequest:
+      type: object
+      properties:
+        note: { type: string, maxLength: 2000 }
+
+    TakedownRequest:
+      type: object
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+        notify_seller: { type: boolean, default: true }
+      required: [reason]

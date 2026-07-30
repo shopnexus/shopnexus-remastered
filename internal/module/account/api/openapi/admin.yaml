@@ -1,0 +1,234 @@
+# account fragment: the moderator and admin surface over accounts, moderators and KYC.
+
+paths:
+  /admin/accounts:
+    get:
+      tags: [admin]
+      summary: Search accounts
+      description: >
+        `q` is an **exact** match on email, phone or username — each is unique, so that
+        is a key lookup and is how a moderator arrives here from a report — or a
+        **fragment** match on the display name, which is answered by a trigram index.
+        Whichever it is, it is one query; the caller does not choose.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 255 }, description: 'An exact identifier, or part of a display name.' }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/AccountStatus' } }
+        - { name: role, in: query, schema: { $ref: '#/components/schemas/AccountRole' } }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/AdminAccountPage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/accounts/{id}/suspension:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/AccountID' } }
+    post:
+      tags: [admin]
+      summary: Suspend an account
+      description: >
+        The outcome of upholding a report against a seller. Omit `until` for a
+        permanent suspension.
+
+
+        Suspending also drops the account's sessions. A suspended row does not stop
+        an access token that is already in circulation, so the two have to happen
+        together.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SuspendAccountRequest' }
+      responses:
+        '200':
+          description: 'Suspended'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AdminAccount' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [admin]
+      summary: Lift a suspension
+      description: Clears the reason and the deadline with it. Past suspensions stay
+        in the audit log rather than on the row.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 'Reinstated'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AdminAccount' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/moderators:
+    post:
+      tags: [admin]
+      summary: Provision a moderator account
+      description: >
+        Only an admin may do this and there is no self-service path — a moderator
+        decides disputes and takes listings down, so the role is granted, never
+        claimed.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateModeratorRequest' }
+      responses:
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AdminAccount' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Email or phone or username already taken', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/moderators/{id}:
+    delete:
+      tags: [admin]
+      summary: Revoke the moderator role
+      description: Demotes to a plain user and drops the account's sessions. The
+        account itself survives, since it may have traded.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/AccountID' } }
+      responses:
+        '204': { description: Revoked }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/identity-documents:
+    get:
+      tags: [admin]
+      summary: The identity review queue
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/IdentityStatus' }, description: Defaults to pending. }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/IdentityDocumentPage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/identity-documents/{id}/verdict:
+    post:
+      tags: [admin]
+      summary: Record an identity verdict
+      description: >
+        `verified` requires `expires_at` when the document type carries one, because
+        the payout gate reads the expiry and not only the status. `rejected` requires
+        a reason.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/IdentityDocumentID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentityVerdictRequest' }
+      responses:
+        '200':
+          description: 'Recorded'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/IdentityDocument' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already decided or the account already has a verified document', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  schemas:
+    AdminIdentityDocument:
+      type: object
+      description: A queue entry, which needs the subject alongside the document.
+      properties:
+        document: { $ref: '#/components/schemas/IdentityDocument' }
+        account: { $ref: '#/components/schemas/AccountSummary' }
+      required: [document, account]
+
+    IdentityVerdictRequest:
+      type: object
+      properties:
+        status: { type: string, enum: [verified, rejected], description: A verdict so pending is not a choice. }
+        rejection_reason: { type: string, maxLength: 2000, description: Required when rejecting. }
+        expires_at: { type: string, format: date-time, description: When the document runs out. }
+      required: [status]
+
+    AdminAccount:
+      type: object
+      description: >
+        The staff view of an account. Carries the identifiers and the suspension
+        state that `PublicAccount` withholds.
+      properties:
+        id: { $ref: '#/components/schemas/AccountID' }
+        email: { type: string, nullable: true }
+        email_verified: { type: boolean }
+        phone: { type: string, nullable: true }
+        username: { type: string, nullable: true }
+        name: { type: string }
+        role: { $ref: '#/components/schemas/AccountRole' }
+        status: { $ref: '#/components/schemas/AccountStatus' }
+        suspended_until:
+          type: string
+          format: date-time
+          nullable: true
+          description: Null while suspended means the suspension is permanent.
+        suspension_reason: { type: string, nullable: true }
+        identity_verified: { type: boolean }
+        created_at: { type: string, format: date-time }
+      required: [id, email_verified, name, role, status, identity_verified, created_at]
+
+    AdminAccountPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/AdminAccount' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+      required: [data, meta]
+
+    SuspendAccountRequest:
+      type: object
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+        until: { type: string, format: date-time, description: Omit for a permanent suspension. }
+      required: [reason]
+
+    CreateModeratorRequest:
+      type: object
+      properties:
+        email: { type: string, format: email, maxLength: 255 }
+        password: { type: string, minLength: 8, maxLength: 72 }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        country: { type: string, minLength: 2, maxLength: 2, pattern: '^[A-Z]{2}$' }
+        locale: { type: string, pattern: '^[a-z]{2}(-[A-Z]{2})?$' }
+        timezone: { type: string, maxLength: 64 }
+      required: [email, password, name, country, locale, timezone]

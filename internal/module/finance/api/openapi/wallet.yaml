@@ -1,0 +1,133 @@
+# finance fragment: wallet — internal balances and the movements between them.
+#
+# Two ledgers, one boundary. "transaction" (payment-session.yaml) records movements on
+# external rails; money that only moves inside a wallet is recorded solely in
+# "wallet_transaction". No movement is ever written to both, so the two lists never
+# show the same event twice.
+
+paths:
+  /wallets:
+    get:
+      tags: [finance]
+      summary: List the caller's wallet balances
+      description: >
+        One wallet per currency, so this is a list rather than a single object. It
+        is short and unpaginated: a balance is opened by receiving money in that
+        currency, not by browsing.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/WalletList' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /wallets/{currency}:
+    get:
+      tags: [finance]
+      summary: Read one currency balance
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: currency, in: path, required: true, schema: { $ref: '#/components/schemas/CurrencyCode' } }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Wallet' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'No balance has been opened in this currency', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /wallets/{currency}/transactions:
+    get:
+      tags: [finance]
+      summary: Read one wallet's ledger
+      description: >
+        Every balance change with its before/after snapshot, newest first. Ordered
+        by `seq`, not by time: two movements can share a timestamp, and a ledger
+        that cannot be totally ordered cannot be replayed or shown to be complete.
+        A gap in `seq` means a missing row.
+
+
+        Legs of one logical movement share a `group_id` — a checkout is a debit
+        plus an escrow hold plus a fee — which is what makes "does this add up"
+        answerable.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: currency, in: path, required: true, schema: { $ref: '#/components/schemas/CurrencyCode' } }
+        - { name: kind, in: query, schema: { $ref: '#/components/schemas/WalletTransactionKind' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/WalletTransactionPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'No balance has been opened in this currency', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  schemas:
+    WalletTransactionKind:
+      type: string
+      enum: [topup, escrow-hold, escrow-release, payout, refund, withdrawal, fee, adjustment]
+
+    Wallet:
+      type: object
+      properties:
+        account_id: { $ref: '#/components/schemas/AccountID' }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        available_balance: { type: integer, format: int64, description: Spendable and withdrawable }
+        held_balance: { type: integer, format: int64, description: 'Locked in escrow; not the owner''s to draw yet' }
+        created_at: { type: string, format: date-time }
+      required: [account_id, currency, available_balance, held_balance, created_at]
+
+    WalletList:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Wallet' } }
+      required: [data]
+
+    WalletTransaction:
+      type: object
+      description: One balance change with its before/after snapshot. Append-only,
+        and the only record of a movement that stays inside a wallet.
+      properties:
+        seq:
+          type: integer
+          format: int64
+          description: >
+            Position in this wallet's ledger, from 1. Identifies the row and orders
+            it; a gap means a missing movement. Per wallet, so each currency counts
+            from 1 again.
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        kind: { $ref: '#/components/schemas/WalletTransactionKind' }
+        available_delta: { type: integer, format: int64, description: Signed change to the available balance }
+        held_delta: { type: integer, format: int64, description: Signed change to the held balance }
+        available_after: { type: integer, format: int64 }
+        held_after: { type: integer, format: int64 }
+        group_id:
+          type: string
+          nullable: true
+          description: >
+            Shared by every leg of one logical movement — a checkout is a debit plus an
+            escrow hold plus a fee. An opaque token for grouping rows in a response, not
+            an address: nothing accepts it as input and no endpoint resolves it.
+        ref_type:
+          type: string
+          nullable: true
+          enum: [order, payment-session]
+          description: What this movement was for. Null on an adjustment.
+        ref_id:
+          type: string
+          nullable: true
+          description: Opaque id of the referenced entity, its prefix given by `ref_type`.
+        note: { type: string }
+        created_at: { type: string, format: date-time }
+      required: [seq, currency, kind, available_delta, held_delta, available_after, held_after, note, created_at]
+
+    WalletTransactionPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/WalletTransaction' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]

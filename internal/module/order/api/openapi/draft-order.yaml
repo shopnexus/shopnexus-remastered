@@ -1,0 +1,210 @@
+# order fragment: draft order — frozen listing terms, and the checkout that spends them.
+
+paths:
+  /drafts:
+    post:
+      tags: [order]
+      summary: Open a purchase session for one listing
+      description: >
+        Freezes the listing terms so a price the seller edits afterwards cannot be
+        charged. The server snapshots the SPU together with all of its SKUs —
+        price and package_details live on the SKU, and those are exactly what must
+        not move under the buyer — and sets `valid_until`.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDraftRequest' }
+      responses:
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/DraftOrder' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'Listing not found, deleted, or not active', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    get:
+      tags: [order]
+      summary: List the caller's purchase sessions
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - { name: state, in: query, schema: { type: string, enum: [live, cancelled, expired], default: live } }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/DraftOrderPage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /drafts/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/DraftOrderID' } }
+    get:
+      tags: [order]
+      summary: Read a purchase session and its frozen terms
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/DraftOrder' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [order]
+      summary: Cancel a purchase session
+      description: Sets `cancelled_at`. A session that already produced paid items
+        cannot be cancelled.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Cancelled }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /drafts/{id}/checkout:
+    post:
+      tags: [order]
+      summary: Check out a purchase session (pay-first)
+      description: >
+        Creates one `item` per line plus a single buyer-checkout payment session,
+        and returns both. Line prices come from the session's frozen snapshot,
+        never from the live catalog. `contact_id` is snapshotted into every line's
+        delivery address: one session covers one SPU and therefore one seller, so
+        a single address is correct.
+
+
+        A SKU whose listing is priced `negotiable` is rejected with 422 unless the
+        caller has an accepted offer for it — a negotiated listing must go through
+        the offer flow.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/DraftOrderID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckoutRequest' }
+      responses:
+        '201':
+          description: 'Items created and a payment session opened'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CheckoutResult' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Session expired, cancelled, or already checked out', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+components:
+  schemas:
+    OrderShippingPaidBy:
+      type: string
+      description: >
+        Chosen by the seller when the listing is created. `buyer` adds the fee to
+        the checkout invoice; `seller` deducts it from the payout.
+      enum: [buyer, seller]
+
+    DraftSKUSnapshot:
+      type: object
+      description: One purchasable variant as it stood when the session opened.
+      properties:
+        id: { $ref: '#/components/schemas/ProductSKUID' }
+        price: { type: integer, format: int64, description: Smallest currency unit }
+        attributes: { type: object, additionalProperties: true }
+        package_details:
+          type: object
+          additionalProperties: true
+          description: Weight and dimensions; the shipping quote is computed from these.
+        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+      required: [id, price]
+
+    DraftSPUSnapshot:
+      type: object
+      description: >
+        The frozen listing terms. Carries the SKUs because price and shipping
+        weight live there, and those are what must not move under the buyer.
+      properties:
+        id: { $ref: '#/components/schemas/ProductSPUID' }
+        name: { type: string }
+        seller_id: { $ref: '#/components/schemas/AccountID' }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        price_mode: { type: string, enum: [fixed, negotiable] }
+        shipping_paid_by: { $ref: '#/components/schemas/OrderShippingPaidBy' }
+        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+        skus: { type: array, items: { $ref: '#/components/schemas/DraftSKUSnapshot' } }
+      required: [id, name, seller_id, currency, price_mode, skus]
+
+    DraftOrder:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/DraftOrderID' }
+        spu_id: { $ref: '#/components/schemas/ProductSPUID' }
+        snapshot: { $ref: '#/components/schemas/DraftSPUSnapshot' }
+        created_at: { type: string, format: date-time }
+        valid_until: { type: string, format: date-time }
+        cancelled_at: { type: string, format: date-time, nullable: true }
+      required: [id, spu_id, snapshot, created_at, valid_until]
+
+    DraftOrderPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/DraftOrder' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+      required: [data, meta]
+
+    CreateDraftRequest:
+      type: object
+      properties:
+        spu_id: { $ref: '#/components/schemas/ProductSPUID' }
+      required: [spu_id]
+
+    CheckoutLine:
+      type: object
+      properties:
+        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
+        quantity: { type: integer, format: int64, minimum: 1 }
+        transport_option: { type: string, maxLength: 100, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        note: { type: string, maxLength: 500 }
+      required: [sku_id, quantity, transport_option]
+
+    CheckoutRequest:
+      type: object
+      properties:
+        lines:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/CheckoutLine' }
+        contact_id: { $ref: '#/components/schemas/ContactID' }
+        currency:
+          allOf: [{ $ref: '#/components/schemas/CurrencyCode' }]
+          description: Must match the listing's currency.
+      required: [lines, contact_id, currency]
+
+    CheckoutResult:
+      type: object
+      description: >
+        The items and the single session that pays for them. Nothing is settled
+        until the session succeeds, and no order exists until the seller confirms.
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
+        payment_session: { $ref: '#/components/schemas/PaymentSession' }
+      required: [items, payment_session]

@@ -1,0 +1,230 @@
+# account fragment: contact — addresses and phone verification.
+
+paths:
+  /contacts:
+    get:
+      tags: [account]
+      summary: List the caller's saved addresses
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ContactList' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [account]
+      summary: Save an address
+      description: >
+        The administrative codes are what a carrier is called with, so they are the
+        routing source of truth and the names beside them are display snapshots. A
+        coordinate is optional: geocoding may fail and the address still has to be
+        saveable.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateContactRequest' }
+      responses:
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Contact' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /contacts/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ContactID' } }
+    patch:
+      tags: [account]
+      summary: Update a saved address
+      description: >
+        Setting a default clears the previous one. Delivery and pickup defaults are
+        independent flags — the same address is usually both.
+
+
+        An order already placed keeps its own snapshot of the address, so editing
+        this row never rewrites where a shipment was going.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateContactRequest' }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Contact' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [account]
+      summary: Remove a saved address
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Removed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /contacts/{id}/phone/verification-requests:
+    post:
+      tags: [account]
+      summary: Send a verification code to a saved address's phone
+      description: >
+        The phone a carrier will actually call, which is why this one is verified and the
+        account's sign-in phone is not. A courier who cannot reach the number is the most
+        common way a delivery fails, so a seller shipping to an unverified number is
+        worth flagging in the UI.
+
+
+        Re-sending replaces the outstanding code rather than issuing a second valid one.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ContactID' } }
+      responses:
+        '202': { description: Code sent }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already verified', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { description: 'Too many requests for this number', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /contacts/{id}/phone/verifications:
+    post:
+      tags: [account]
+      summary: Confirm a saved address's phone with the code
+      description: >
+        Editing the number clears the flag again — a verified flag on a number nobody
+        checked is worse than no flag.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ContactID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyContactPhoneRequest' }
+      responses:
+        '200':
+          description: 'Verified'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Contact' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { description: 'Code is wrong, expired, or already used', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  schemas:
+    ContactAddressType:
+      type: string
+      enum: [home, work]
+
+    Contact:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/ContactID' }
+        full_name: { type: string }
+        phone: { type: string, description: E.164. }
+        phone_verified: { type: boolean }
+        address_type: { $ref: '#/components/schemas/ContactAddressType' }
+        is_default_delivery: { type: boolean }
+        is_default_pickup: { type: boolean }
+        country: { type: string, minLength: 2, maxLength: 2 }
+        province_code: { type: string }
+        province_name: { type: string }
+        district_code:
+          type: string
+          nullable: true
+          description: >
+            Null where the country has no district tier. Vietnam dropped it in 2025
+            and now goes province to ward.
+        district_name: { type: string, nullable: true }
+        ward_code: { type: string }
+        ward_name: { type: string }
+        postal_code: { type: string, nullable: true }
+        address: { type: string, description: Street or house-number line below ward level. }
+        address_detail: { type: string, nullable: true, description: Unit or floor or notes. }
+        latitude: { type: number, format: double, nullable: true }
+        longitude: { type: number, format: double, nullable: true }
+        provider_codes:
+          type: object
+          additionalProperties: true
+          description: >
+            Per-carrier territory ids. Carriers number territories their own way and
+            some still require a district.
+        created_at: { type: string, format: date-time }
+      required: [id, full_name, phone, phone_verified, address_type, is_default_delivery, is_default_pickup, country, province_code, province_name, ward_code, ward_name, address, created_at]
+
+    ContactList:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Contact' } }
+      required: [data]
+
+    CreateContactRequest:
+      type: object
+      properties:
+        full_name: { type: string, minLength: 1, maxLength: 100 }
+        phone: { type: string, pattern: '^\+[1-9][0-9]{7,14}$' }
+        address_type: { $ref: '#/components/schemas/ContactAddressType' }
+        is_default_delivery: { type: boolean, default: false }
+        is_default_pickup: { type: boolean, default: false }
+        country: { type: string, minLength: 2, maxLength: 2, pattern: '^[A-Z]{2}$' }
+        province_code: { type: string, minLength: 1, maxLength: 20 }
+        province_name: { type: string, minLength: 1, maxLength: 100 }
+        district_code: { type: string, maxLength: 20, description: Send both district fields or neither. }
+        district_name: { type: string, maxLength: 100 }
+        ward_code: { type: string, minLength: 1, maxLength: 20 }
+        ward_name: { type: string, minLength: 1, maxLength: 100 }
+        postal_code: { type: string, maxLength: 20 }
+        address: { type: string, minLength: 1, maxLength: 255 }
+        address_detail: { type: string, maxLength: 255 }
+        latitude: { type: number, format: double }
+        longitude: { type: number, format: double }
+      required: [full_name, phone, address_type, country, province_code, province_name, ward_code, ward_name, address]
+
+    VerifyContactPhoneRequest:
+      type: object
+      properties:
+        code: { type: string, minLength: 4, maxLength: 10 }
+      required: [code]
+
+    UpdateContactRequest:
+      type: object
+      description: Every field optional. Changing `phone` clears `phone_verified`.
+      properties:
+        full_name: { type: string, minLength: 1, maxLength: 100 }
+        phone: { type: string, pattern: '^\+[1-9][0-9]{7,14}$' }
+        address_type: { $ref: '#/components/schemas/ContactAddressType' }
+        is_default_delivery: { type: boolean }
+        is_default_pickup: { type: boolean }
+        province_code: { type: string, maxLength: 20 }
+        province_name: { type: string, maxLength: 100 }
+        district_code: { type: string, maxLength: 20, nullable: true }
+        district_name: { type: string, maxLength: 100, nullable: true }
+        ward_code: { type: string, maxLength: 20 }
+        ward_name: { type: string, maxLength: 100 }
+        postal_code: { type: string, maxLength: 20, nullable: true }
+        address: { type: string, maxLength: 255 }
+        address_detail: { type: string, maxLength: 255, nullable: true }
+        latitude: { type: number, format: double, nullable: true }
+        longitude: { type: number, format: double, nullable: true }

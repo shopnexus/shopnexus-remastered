@@ -1,0 +1,166 @@
+# catalog fragment: sku — the purchasable variant and its stock.
+#
+# The SPU is the aggregate root and a variant has no URL of its own: every write to a
+# variant answers with the whole refreshed listing. Not decoration — deleting the
+# featured variant nulls the listing's featured_sku_id by foreign key, and a response
+# carrying the variant alone could not report that.
+
+paths:
+  # A variant is part of the listing aggregate and has no read of its own: every
+  # write here answers with the refreshed listing, which is also where the variant's
+  # stock is read from.
+  /listings/{id}/skus:
+    post:
+      tags: [catalog]
+      summary: Add a variant to a listing
+      description: >
+        Answers with the listing. The new variant is the one in `skus` that was not
+        there before — there is no separate id in the response, because a variant is
+        not addressable on its own.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSkuRequest' }
+      responses:
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ListingDetail' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /skus/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSKUID' } }
+    patch:
+      tags: [catalog]
+      summary: Edit a variant
+      description: >
+        A price change does not reach a buyer who already opened a purchase session:
+        that session froze the terms it was opened with.
+
+
+        `stock` sets the total on hand. The reserved count is not settable — it is
+        moved by checkout and by cancellation — and a total below what is already
+        reserved is refused, because an oversold row must not be representable.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateSkuRequest' }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ListingDetail' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: 'Stock below the quantity already reserved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [catalog]
+      summary: Delete a variant
+      description: >
+        Soft delete for the same reason as a listing. Refused for the last remaining
+        variant of a live listing.
+
+
+        Answers with the listing rather than an empty body: deleting the featured
+        variant clears the listing's `featured_sku_id`, and the seller has to see
+        that.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 'Deleted'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ListingDetail' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'This is the only variant of a live listing', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  schemas:
+    Stock:
+      type: object
+      description: >
+        Always read inside its own variant, so it does not repeat the sku id.
+      properties:
+        stock: { type: integer, format: int64, description: Total on hand. }
+        reserved:
+          type: integer
+          format: int64
+          description: Held by paid but unconfirmed items. Moved by checkout and by
+            cancellation and never set directly.
+        available: { type: integer, format: int64, description: Total minus reserved. }
+      required: [stock, reserved, available]
+
+    Sku:
+      type: object
+      description: A purchasable variant. Price and package details live here rather
+        than on the listing.
+      properties:
+        id: { $ref: '#/components/schemas/ProductSKUID' }
+        price: { type: integer, format: int64, description: Smallest unit of the listing's currency. }
+        attributes:
+          type: object
+          additionalProperties: true
+          description: Variant attributes such as size and colour.
+        package_details:
+          type: object
+          additionalProperties: true
+          description: Weight and dimensions. A shipping quote is computed from these.
+        images:
+          type: array
+          items: { $ref: '#/components/schemas/Resource' }
+          description: Empty means fall back to the listing gallery.
+        stock: { $ref: '#/components/schemas/Stock' }
+        created_at: { type: string, format: date-time }
+      required: [id, price, attributes, package_details, images, stock, created_at]
+
+    CreateSkuRequest:
+      type: object
+      properties:
+        price: { type: integer, format: int64, minimum: 0 }
+        attributes: { type: object, additionalProperties: true }
+        package_details: { type: object, additionalProperties: true }
+        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+        stock: { type: integer, format: int64, minimum: 0, default: 0 }
+      required: [price, attributes, package_details]
+
+    UpdateSkuRequest:
+      type: object
+      description: Every field optional.
+      properties:
+        price: { type: integer, format: int64, minimum: 0 }
+        attributes: { type: object, additionalProperties: true }
+        package_details: { type: object, additionalProperties: true }
+        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+        stock:
+          type: integer
+          format: int64
+          minimum: 0
+          description: The new total on hand. Refused below what is already reserved.

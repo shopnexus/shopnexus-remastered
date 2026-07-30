@@ -1,0 +1,58 @@
+# trust fragment: reputation — the recomputed, read-only score.
+#
+# Reputation is never written through this API. It is recomputed from feedback,
+# reviews and order outcomes, and read-only here.
+
+paths:
+  /accounts/{accountID}/reputation:
+    get:
+      tags: [trust]
+      summary: Read an account's reputation for one role
+      description: >
+        Transaction ratings and product-review ratings are reported separately rather
+        than merged. Only a seller can have review ratings.
+      parameters:
+        - { name: accountID, in: path, required: true, schema: { $ref: '#/components/schemas/AccountID' } }
+        - { name: role, in: query, schema: { $ref: '#/components/schemas/ReputationRole' }, description: Defaults to seller. }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Reputation' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  schemas:
+    ReputationRole:
+      type: string
+      enum: [seller, buyer]
+
+    Reputation:
+      type: object
+      description: >
+        Recomputed, never written directly. Transaction ratings and product-review
+        ratings stay apart: one order can produce both and summing them would count it
+        twice.
+      properties:
+        account_id: { $ref: '#/components/schemas/AccountID' }
+        role: { $ref: '#/components/schemas/ReputationRole' }
+        rating_average:
+          type: number
+          format: double
+          description: Average transaction feedback from 1 to 5. Zero when there is none.
+        rating_count: { type: integer, format: int64 }
+        review_rating_average:
+          type: number
+          format: double
+          description: Average product-review rating. Always zero for the buyer role.
+        review_rating_count: { type: integer, format: int64 }
+        completed_orders: { type: integer, format: int64 }
+        cancelled_orders: { type: integer, format: int64 }
+        updated_at: { type: string, format: date-time, description: When it was last recomputed. }
+      required: [account_id, role, rating_average, rating_count, review_rating_average, review_rating_count, completed_orders, cancelled_orders, updated_at]

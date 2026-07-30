@@ -1,0 +1,99 @@
+# order fragment: order item — the per-SKU line and its own lifecycle.
+
+paths:
+  /items:
+    get:
+      tags: [order]
+      summary: List checkout items, as buyer or as seller
+      description: '`role=seller&state=pending` is the seller''s confirmation inbox:
+        paid items that no order covers yet.'
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: role, in: query, required: true, schema: { type: string, enum: [buyer, seller] } }
+        - { name: state, in: query, schema: { $ref: '#/components/schemas/OrderItemState' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/OrderItemPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /items/{id}/cancellation:
+    post:
+      tags: [order]
+      summary: Cancel an unconfirmed item
+      description: Either party may cancel while the item is not yet part of an
+        order. The cancelling account is recorded.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderItemID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancellationRequest' }
+      responses:
+        '200':
+          description: 'Cancelled'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/OrderItem' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already confirmed into an order, or already cancelled', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  schemas:
+    OrderItemState:
+      type: string
+      description: >
+        Derived, not stored. `pending` = paid but no order covers it yet,
+        `confirmed` = linked to an order, `cancelled` = withdrawn by either party.
+      enum: [pending, confirmed, cancelled]
+
+    OrderItem:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/OrderItemID' }
+        draft_id: { $ref: '#/components/schemas/DraftOrderID' }
+        order_id:
+          allOf: [{ $ref: '#/components/schemas/OrderID' }]
+          nullable: true
+          description: Null until the seller confirms.
+        buyer_id: { $ref: '#/components/schemas/AccountID' }
+        seller_id: { $ref: '#/components/schemas/AccountID' }
+        spu_id:
+          allOf: [{ $ref: '#/components/schemas/ProductSPUID' }]
+          description: >
+            The listing the variant belongs to, denormalized the same way `seller_id`
+            is, so order history can resolve it through `GET /listings?ids=` — which
+            answers for a listing the seller has since hidden or deleted.
+        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
+        quantity: { type: integer, format: int64 }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        total_amount: { type: integer, format: int64, description: 'Paid amount in the smallest unit of `currency`' }
+        transport_option: { type: string, description: A transport option slug owned by the common module }
+        address: { $ref: '#/components/schemas/OrderAddressSnapshot' }
+        note: { type: string, nullable: true, description: Buyer note }
+        state: { $ref: '#/components/schemas/OrderItemState' }
+        payment_status: { $ref: '#/components/schemas/OrderPaymentStatus' }
+        cancelled_at: { type: string, format: date-time, nullable: true }
+        cancelled_by_id:
+          allOf: [{ $ref: '#/components/schemas/AccountID' }]
+          nullable: true
+          description: Null means the system cancelled it.
+        created_at: { type: string, format: date-time }
+      required: [id, draft_id, buyer_id, seller_id, spu_id, sku_id, quantity, currency, total_amount, transport_option, address, state, payment_status, created_at]
+
+    OrderItemPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]

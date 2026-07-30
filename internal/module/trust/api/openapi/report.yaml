@@ -1,0 +1,110 @@
+# trust fragment: report — what a user flags for moderation.
+
+paths:
+  /reports:
+    post:
+      tags: [trust]
+      summary: Report something
+      description: >
+        A listing, an account, a message, a review or a reply. `ref_id` is the opaque
+        id of that thing and its prefix has to agree with `ref_type`.
+
+
+        One open report per target per reporter, so re-reporting while the first is
+        still being looked at is a conflict rather than a second row. Enough distinct
+        reports against one listing move it into the moderation queue on their own.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitReportRequest' }
+      responses:
+        '201':
+          description: 'Filed'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Report' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'The reported thing does not exist', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'You already have an open report against this target', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'The id does not match the declared target type', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    get:
+      tags: [trust]
+      summary: Reports the caller filed
+      description: A reporter sees the status of their own reports but not who else
+        reported the same target.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/ReportStatus' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ReportPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+components:
+  schemas:
+    ReportRefType:
+      type: string
+      enum: [listing, account, message, review, review-reply]
+
+    ReportReason:
+      type: string
+      enum: [scam, counterfeit, prohibited, harassment, spam, inappropriate, other]
+
+    ReportStatus:
+      type: string
+      enum: [open, reviewing, actioned, dismissed]
+
+    ReportAction:
+      type: string
+      description: What a moderator did about an upheld report. `none` goes with a
+        dismissal.
+      enum: [none, listing-removed, message-removed, account-suspended, warning]
+
+    Report:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/ReportID' }
+        ref_type: { $ref: '#/components/schemas/ReportRefType' }
+        ref_id:
+          type: string
+          pattern: '^[a-z]{3}_[0-9a-hjkmnp-tv-z]{13}$'
+          description: >
+            Opaque id of the reported thing. Which prefix is valid follows from
+            `ref_type`, which is why the two are validated together.
+          example: spu_1ryaj8117v2p4
+        reason: { $ref: '#/components/schemas/ReportReason' }
+        detail: { type: string }
+        status: { $ref: '#/components/schemas/ReportStatus' }
+        action_taken:
+          allOf: [{ $ref: '#/components/schemas/ReportAction' }]
+          nullable: true
+          description: Null until the report is resolved.
+        resolved_at: { type: string, format: date-time, nullable: true }
+        resolution_note: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+      required: [id, ref_type, ref_id, reason, detail, status, created_at]
+
+    ReportPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Report' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
+
+    SubmitReportRequest:
+      type: object
+      properties:
+        ref_type: { $ref: '#/components/schemas/ReportRefType' }
+        ref_id: { type: string, pattern: '^[a-z]{3}_[0-9a-hjkmnp-tv-z]{13}$' }
+        reason: { $ref: '#/components/schemas/ReportReason' }
+        detail: { type: string, maxLength: 2000 }
+      required: [ref_type, ref_id, reason]

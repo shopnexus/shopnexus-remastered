@@ -1,0 +1,122 @@
+# finance fragment: bank account — where a withdrawal is paid out.
+
+paths:
+  /bank-accounts:
+    get:
+      tags: [finance]
+      summary: List the caller's payout destinations
+      description: Account numbers come back masked. The full number is only ever
+        used to move money, never to display it back.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/BankAccountList' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [finance]
+      summary: Register a payout destination
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateBankAccountRequest' }
+      responses:
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/BankAccount' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: >
+            The caller already has this bank account registered. The same account
+            number under a *different* platform account is not refused here — it is a
+            mule signal, and answering it would confirm to a stranger that the number is
+            already on the platform.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /bank-accounts/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/BankAccountID' } }
+    patch:
+      tags: [finance]
+      summary: Make this the default payout destination
+      description: At most one default per account, so this clears the previous one.
+        Bank details themselves are not editable — register another destination and
+        remove this one, so a completed withdrawal never names a row whose details
+        have since changed.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateBankAccountRequest' }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/BankAccount' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [finance]
+      summary: Remove a payout destination
+      description: Soft delete. A completed withdrawal names this row as the place
+        real money went, so financial history cannot lose its payee.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Removed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'A withdrawal against it is still unresolved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  schemas:
+    BankAccount:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/BankAccountID' }
+        bank_code: { type: string, description: 'Bank identifier, e.g. `vcb`' }
+        account_number_masked:
+          type: string
+          description: Only the last digits. The full number leaves the system solely
+            to move money.
+          example: '****1234'
+        account_holder: { type: string }
+        is_default: { type: boolean }
+        created_at: { type: string, format: date-time }
+      required: [id, bank_code, account_number_masked, account_holder, is_default, created_at]
+
+    BankAccountList:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/BankAccount' } }
+      required: [data]
+
+    CreateBankAccountRequest:
+      type: object
+      properties:
+        bank_code: { type: string, minLength: 1, maxLength: 20 }
+        account_number: { type: string, minLength: 1, maxLength: 50 }
+        account_holder: { type: string, minLength: 1, maxLength: 100 }
+        is_default: { type: boolean, default: false }
+      required: [bank_code, account_number, account_holder]
+
+    UpdateBankAccountRequest:
+      type: object
+      properties:
+        is_default: { type: boolean, enum: [true], description: The only mutable field }
+      required: [is_default]

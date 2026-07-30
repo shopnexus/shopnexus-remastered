@@ -1,0 +1,51 @@
+# order fragment: transport — the carrier leg of an order.
+
+paths:
+  /orders/{id}/transport:
+    get:
+      tags: [order]
+      summary: Read the shipment and its tracking events
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderID' } }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Transport' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  schemas:
+    TransportStatus:
+      type: string
+      description: Shipment lifecycle as the carrier reports it.
+      enum: [pending, picked-up, in-transit, delivered, returned, failed, cancelled]
+
+    TransportEvent:
+      type: object
+      description: One carrier-reported checkpoint.
+      properties:
+        status: { $ref: '#/components/schemas/TransportStatus' }
+        note: { type: string }
+        occurred_at: { type: string, format: date-time }
+      required: [status, occurred_at]
+
+    Transport:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/TransportID' }
+        option: { type: string, description: A transport option slug owned by the common module }
+        status: { $ref: '#/components/schemas/TransportStatus' }
+        tracking_number: { type: string, nullable: true }
+        label_url: { type: string, nullable: true }
+        events: { type: array, items: { $ref: '#/components/schemas/TransportEvent' } }
+        created_at: { type: string, format: date-time }
+      required: [id, option, status, events, created_at]

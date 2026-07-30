@@ -1,5 +1,6 @@
-// Package openapi merges the base document and per-module OpenAPI fragments
-// (internal/<module>/api/openapi.yaml) into a single specification.
+// Package openapi merges the base document and per-aggregate OpenAPI fragments
+// (internal/module/<module>/api/openapi/<aggregate>.yaml) into a single
+// specification.
 package openapi
 
 import (
@@ -28,8 +29,9 @@ func FindRoot(dir string) (string, error) {
 	}
 }
 
-// MergeDoc reads api/openapi.base.yaml plus every internal/<module>/api/openapi.yaml
-// under root and returns the merged specification as a document tree.
+// MergeDoc reads api/openapi.base.yaml plus every
+// internal/module/<module>/api/openapi/*.yaml under root and returns the merged
+// specification as a document tree.
 func MergeDoc(root string) (map[string]any, error) {
 	base, err := readDoc(filepath.Join(root, "api", "openapi.base.yaml"))
 	if err != nil {
@@ -38,7 +40,7 @@ func MergeDoc(root string) (map[string]any, error) {
 	paths := child(base, "paths")
 	schemas := child(child(base, "components"), "schemas")
 
-	frags, err := filepath.Glob(filepath.Join(root, "internal", "module", "*", "api", "openapi.yaml"))
+	frags, err := filepath.Glob(filepath.Join(root, "internal", "module", "*", "api", "openapi", "*.yaml"))
 	if err != nil {
 		return nil, fmt.Errorf("glob openapi fragments: %w", err)
 	}

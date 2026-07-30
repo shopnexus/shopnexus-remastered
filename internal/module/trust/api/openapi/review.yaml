@@ -1,0 +1,295 @@
+# trust fragment: review — the buyer's rating of a product, its replies and votes.
+
+paths:
+  /listings/{spuID}/reviews:
+    parameters:
+      - { name: spuID, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
+    get:
+      tags: [trust]
+      summary: Reviews of a listing
+      description: >
+        Public, with the first few replies and the vote tally on each one.
+
+
+        `sort=helpful` orders by a counter that other people are changing while a client
+        pages: a review that gains votes can move across a page boundary and be seen twice
+        or not at all. Cursor paging is exact only over a key that does not move, and
+        `newest` is that key. The drift is accepted rather than designed away — a review
+        appearing twice in a list costs the reader nothing — but a caller that needs a
+        stable traversal should page by `newest`.
+      parameters:
+        - { name: rating, in: query, schema: { type: integer, minimum: 1, maximum: 5 }, description: Restrict to one star rating. }
+        - { name: sort, in: query, description: '`helpful` reads the stored tally; see the note above about paging it.', schema: { type: string, enum: [newest, helpful], default: newest } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ReviewPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [trust]
+      summary: Review a listing you bought
+      description: >
+        An order is required — no purchase, no review — and one review per listing per
+        order, so buying twice earns a second review but one purchase does not earn
+        two.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitReviewRequest' }
+      responses:
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Review' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'The order does not belong to the caller', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already reviewed for this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'The order did not include this listing or is not finished', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /reviews/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ReviewID' } }
+    get:
+      tags: [trust]
+      summary: Read a review
+      description: Carries the whole reply thread, unlike the listing page, which caps it.
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Review' }
+                required: [data]
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [trust]
+      summary: Edit your own review
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateReviewRequest' }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Review' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [trust]
+      summary: Delete a review
+      description: >
+        The author, or a moderator acting on an upheld report. Removal drops it from
+        the seller's rating too, so the recomputed reputation follows.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /reviews/{id}/replies:
+    post:
+      tags: [trust]
+      summary: Reply to a review
+      description: >
+        Mainly the seller answering, though anyone may add to the thread. There is no
+        per-thread limit — a conversation that stops after one reply each is not a
+        conversation.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ReviewID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitReviewReplyRequest' }
+      responses:
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewReply' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /review-replies/{id}:
+    delete:
+      tags: [trust]
+      summary: Delete a reply
+      description: The author, or a moderator acting on an upheld report.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ReviewReplyID' } }
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /reviews/{id}/vote:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ReviewID' } }
+    put:
+      tags: [trust]
+      summary: Vote a review helpful or not
+      description: One vote per account per review, replaced in place. Voting on your
+        own review is refused.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VoteReviewRequest' }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewVoteTally' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: 'An account cannot vote on its own review', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [trust]
+      summary: Withdraw your vote
+      description: >
+        Removes the row rather than storing a neutral one. A stored zero is a row that
+        says nothing.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewVoteTally' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  schemas:
+    ReviewVoteTally:
+      type: object
+      description: >
+        Counters on the review, not a count of `review_vote` rows per request — that is what
+        lets `sort=helpful` be an index scan. Flipping a vote moves one unit between the two
+        totals, so both sides have to change in the same transaction as the vote row itself;
+        a tally that has drifted from the rows it summarises is recomputable, but a
+        half-applied flip is visible.
+      properties:
+        helpful: { type: integer, format: int64 }
+        not_helpful: { type: integer, format: int64 }
+        my_vote:
+          type: integer
+          enum: [-1, 1]
+          nullable: true
+          description: The caller's own vote. Null when they have not voted.
+      required: [helpful, not_helpful]
+
+    ReviewReply:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/ReviewReplyID' }
+        author: { $ref: '#/components/schemas/AccountSummary' }
+        is_seller: { type: boolean, description: Whether the author owns the listing. }
+        body: { type: string }
+        created_at: { type: string, format: date-time }
+      required: [id, author, is_seller, body, created_at]
+
+    Review:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/ReviewID' }
+        spu_id: { $ref: '#/components/schemas/ProductSPUID' }
+        author: { $ref: '#/components/schemas/AccountSummary' }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        body: { type: string }
+        attachments: { type: array, items: { $ref: '#/components/schemas/Resource' } }
+        replies:
+          type: array
+          maxItems: 3
+          items: { $ref: '#/components/schemas/ReviewReply' }
+          description: >
+            The first few, oldest first. Replies are unlimited, so a page of reviews
+            cannot carry all of them — `reply_count` says how many there are and
+            `GET /reviews/{id}` returns the rest.
+        reply_count: { type: integer, format: int64 }
+        votes: { $ref: '#/components/schemas/ReviewVoteTally' }
+        created_at: { type: string, format: date-time }
+      required: [id, spu_id, author, rating, body, attachments, replies, reply_count, votes, created_at]
+
+    ReviewPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Review' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
+
+    SubmitReviewRequest:
+      type: object
+      properties:
+        order_id: { $ref: '#/components/schemas/OrderID' }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        body: { type: string, maxLength: 2000 }
+        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+      required: [order_id, rating]
+
+    UpdateReviewRequest:
+      type: object
+      description: Every field optional.
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        body: { type: string, maxLength: 2000 }
+        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+
+    SubmitReviewReplyRequest:
+      type: object
+      properties:
+        body: { type: string, minLength: 1, maxLength: 2000 }
+      required: [body]
+
+    VoteReviewRequest:
+      type: object
+      properties:
+        vote:
+          type: integer
+          enum: [-1, 1]
+          description: >
+            Helpful or not. There is no neutral value — withdrawing a vote is a delete.
+      required: [vote]

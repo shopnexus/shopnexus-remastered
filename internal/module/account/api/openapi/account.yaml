@@ -1,0 +1,263 @@
+# The account module's root aggregate, and the module's own boundary notes.
+# Merged by cmd/specgen with every other file in this directory.
+#
+# The module covers account, oauth_identity, device, contact, profile, notification,
+# notification_preference, follow and identity_document — one file each, next to this
+# one.
+#
+# Two things that look like they belong here and do not. Wishlists are catalog's, because
+# every question asked of a saved listing is a catalog question. And there is no
+# per-channel delivery record: fanning a notification out to push, email and SMS is a
+# durable workflow that Restate already journals, so this module stores what the user was
+# told, not how many times sending it was retried.
+#
+# One account, both roles. There is no seller entity: the same account buys and
+# sells, its profile *is* the shop page, and `role` only separates a user from the
+# staff who moderate them. A moderator is provisioned by an admin and can never be
+# self-registered.
+
+paths:
+  /me:
+    get:
+      tags: [account]
+      summary: Read the caller's own account and profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Me' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      tags: [account]
+      summary: Change the caller's identifiers
+      description: >
+        Changing the email clears `email_verified` and sends a fresh verification. The
+        last remaining identifier cannot be removed.
+
+
+        The phone here is an identifier — something to sign in and be reached by — and
+        carries no verified flag. Verification belongs to a phone a carrier will actually
+        call, which is the one on a `contact`: that is where `phone_verified` lives, and
+        editing this one does not touch it.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateAccountRequest' }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Me' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { description: 'Email or phone or username already taken', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'That would leave the account with no identifier', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /me/profile:
+    patch:
+      tags: [account]
+      summary: Update the caller's public profile
+      description: This is the shop front. `locale` and `timezone` also decide how
+        notifications are written and when they are sent.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProfileRequest' }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Profile' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /accounts/{id}:
+    get:
+      tags: [account]
+      summary: Read another account's public profile
+      description: >
+        The seller page. Deliberately narrow: a display name, an avatar, a blurb and
+        a join date. Email, phone, birth date and saved addresses are never part of
+        it.
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/AccountID' } }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PublicAccount' }
+                required: [data]
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /me/oauth-identities:
+    get:
+      tags: [account]
+      summary: List the caller's linked providers
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/OAuthIdentityList' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/oauth-identities/{provider}:
+    delete:
+      tags: [account]
+      summary: Unlink a provider
+      description: Refused when it would leave the account with no way to sign in —
+        no password and no other linked provider.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: provider, in: path, required: true, schema: { $ref: '#/components/schemas/OAuthProvider' } }
+      responses:
+        '204': { description: Unlinked }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: 'This is the only way left to sign in', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  schemas:
+    AccountStatus:
+      type: string
+      enum: [active, suspended]
+
+    AccountRole:
+      type: string
+      description: >
+        `user` self-registers and both buys and sells. `moderator` is granted by an
+        admin. `admin` is configured, not created.
+      enum: [user, moderator, admin]
+
+    ProfileGender:
+      type: string
+      enum: [male, female, other]
+
+    OAuthProvider:
+      type: string
+      pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+      example: google
+
+    Profile:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string, nullable: true }
+        gender: { allOf: [{ $ref: '#/components/schemas/ProfileGender' }], nullable: true }
+        date_of_birth: { type: string, format: date, nullable: true }
+        avatar: { allOf: [{ $ref: '#/components/schemas/Resource' }], nullable: true }
+        country: { type: string, minLength: 2, maxLength: 2 }
+        locale: { type: string, example: vi-VN }
+        timezone: { type: string, example: Asia/Ho_Chi_Minh }
+        created_at: { type: string, format: date-time }
+      required: [name, country, locale, timezone, created_at]
+
+    Me:
+      type: object
+      description: The caller's own view. Everything here is private to them.
+      properties:
+        id: { $ref: '#/components/schemas/AccountID' }
+        email: { type: string, format: email, nullable: true }
+        email_verified: { type: boolean }
+        phone: { type: string, nullable: true }
+        username: { type: string, nullable: true }
+        role: { $ref: '#/components/schemas/AccountRole' }
+        status: { $ref: '#/components/schemas/AccountStatus' }
+        has_password:
+          type: boolean
+          description: False on a provider-only account. Unlinking the last provider
+            is refused when this is false.
+        identity_verified:
+          type: boolean
+          description: Whether a live verified identity document exists. The payout
+            gate reads this.
+        profile: { $ref: '#/components/schemas/Profile' }
+        created_at: { type: string, format: date-time }
+      required: [id, email_verified, role, status, has_password, identity_verified, profile, created_at]
+
+    PublicAccount:
+      type: object
+      description: >
+        What anyone may see about an account. The seller page: no email, no phone, no
+        birth date, no addresses.
+      properties:
+        id: { $ref: '#/components/schemas/AccountID' }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        avatar: { allOf: [{ $ref: '#/components/schemas/Resource' }], nullable: true }
+        identity_verified: { type: boolean, description: Shown as a trust signal. }
+        follower_count: { type: integer, format: int64 }
+        created_at: { type: string, format: date-time, description: Member since. }
+      required: [id, name, identity_verified, follower_count, created_at]
+
+    AccountSummary:
+      type: object
+      description: The compact form used in follower and following lists.
+      properties:
+        id: { $ref: '#/components/schemas/AccountID' }
+        name: { type: string }
+        avatar: { allOf: [{ $ref: '#/components/schemas/Resource' }], nullable: true }
+      required: [id, name]
+
+    AccountSummaryPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/AccountSummary' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+      required: [data, meta]
+
+    UpdateAccountRequest:
+      type: object
+      description: Every field optional. Setting one to null removes it, which is
+        refused when it is the last identifier.
+      properties:
+        email: { type: string, format: email, maxLength: 255, nullable: true }
+        phone: { type: string, pattern: '^\+[1-9][0-9]{7,14}$', nullable: true }
+        username: { type: string, minLength: 3, maxLength: 100, pattern: '^[a-z0-9._-]+$', nullable: true }
+
+    UpdateProfileRequest:
+      type: object
+      description: Every field optional.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 2000, nullable: true }
+        gender: { allOf: [{ $ref: '#/components/schemas/ProfileGender' }], nullable: true }
+        date_of_birth: { type: string, format: date, nullable: true }
+        avatar_resource_id: { allOf: [{ $ref: '#/components/schemas/ResourceID' }], nullable: true }
+        country: { type: string, minLength: 2, maxLength: 2, pattern: '^[A-Z]{2}$' }
+        locale: { type: string, pattern: '^[a-z]{2}(-[A-Z]{2})?$' }
+        timezone: { type: string, maxLength: 64 }
+
+    OAuthIdentity:
+      type: object
+      properties:
+        provider: { $ref: '#/components/schemas/OAuthProvider' }
+        created_at: { type: string, format: date-time }
+      required: [provider, created_at]
+
+    OAuthIdentityList:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/OAuthIdentity' } }
+      required: [data]

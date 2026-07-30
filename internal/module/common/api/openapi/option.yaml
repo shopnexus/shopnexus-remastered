@@ -1,23 +1,10 @@
-# OpenAPI fragment owned by the common module. Merged by cmd/specgen.
+# common fragment: option — the registry of pluggable integrations (payment rails,
+# carriers, notification channels).
 #
-# Covers "resource" (uploaded files) and "option" (the registry of pluggable
-# integrations: payment rails, carriers, notification channels).
-#
-# Uploads are presigned, and the server — not the client — assigns "object_key".
-# The client asks for an upload slot, PUTs the bytes straight at the storage
-# backend, then confirms; the size, MIME type and checksum recorded are the ones
-# read back from storage. A client that could name its own object key could claim
-# or overwrite somebody else's object, and a client that could declare its own size
-# could lie about it, so neither is accepted from the request.
-#
-# A resource is soft-deleted: "provider" + "object_key" is the only handle on the
-# stored object, so the row has to outlive the delete request until a reaper has
-# removed the object. Deleting the row first leaks the file permanently.
-#
-# So is an option, and for the opposite reason: order and finance hold its slug as a
-# plain string with no foreign key, so a row that vanishes leaves every past order and
-# settled payment naming a carrier or a rail nothing can resolve. Retiring one is
-# `is_enabled` = false; removing it keeps it readable by id.
+# An option is soft-deleted, and for the opposite reason to a resource's: order and
+# finance hold its slug as a plain string with no foreign key, so a row that vanishes
+# leaves every past order and settled payment naming a carrier or a rail nothing can
+# resolve. Retiring one is `is_enabled` = false; removing it keeps it readable by id.
 #
 # An option's visibility is scoped by owner. `GET /options` without `owner_id` returns
 # system options only, because a seller may register their own carriers and anything a
@@ -30,130 +17,6 @@
 # to borrow someone else's credentials.
 
 paths:
-  # ----------------------------------------------------------- resources -----
-  /resources:
-    post:
-      tags: [common]
-      summary: Reserve an upload slot
-      description: >
-        Returns the resource row together with a presigned URL to PUT the bytes to.
-        The resource stays incomplete — and unusable as an attachment — until
-        `POST /resources/{id}/completion` confirms it.
-
-
-        Pass `checksum` when it is known up front: if the caller has already stored the
-        same bytes, that resource comes back with no `upload_url` and there is nothing to
-        upload.
-
-
-        Deduplication is per uploader, not marketplace-wide. A resource has one owner and
-        no reference count, so two accounts sharing an object would mean either of them
-        could delete it out from under the other's listing. The declared checksum is used
-        to find that row and is then discarded — the one recorded is always the one read
-        back from storage at completion, because a hash the client merely asserted would
-        let it claim bytes it does not have and have the next honest upload of those bytes
-        deduplicated onto its object.
-      security: [{ bearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/CreateUploadRequest' }
-      responses:
-        '201':
-          description: 'Slot reserved'
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data: { $ref: '#/components/schemas/UploadTicket' }
-                required: [data]
-        '200':
-          description: 'The caller already has these bytes stored so nothing needs uploading'
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data: { $ref: '#/components/schemas/UploadTicket' }
-                required: [data]
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { description: 'MIME type or declared size outside what this account may upload', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-
-  /resources/{id}/completion:
-    post:
-      tags: [common]
-      summary: Confirm an upload finished
-      description: >
-        The server reads the object back from storage and records the size, MIME type and
-        checksum it actually has, rather than what the client said it would be, and stamps
-        `completed_at`. Until that stamp exists the row is only a reservation — there may
-        be no object at the reserved key at all — so an unconfirmed resource cannot be
-        attached to anything, and a reservation nobody confirms is swept up by a job.
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ResourceID' } }
-      responses:
-        '200':
-          description: 'Confirmed'
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data: { $ref: '#/components/schemas/Resource' }
-                required: [data]
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: 'Already confirmed', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '422': { description: 'No object at the reserved key or it does not match what was reserved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-
-  /resources/{id}:
-    parameters:
-      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ResourceID' } }
-    get:
-      tags: [common]
-      summary: Read a resource and get a URL to fetch it
-      description: >
-        The uploader, or staff. Not any authenticated caller holding an id: resources carry
-        refund evidence, unboxing photos and whatever a KYC vendor left behind, and being
-        signed in is not a reason to be shown someone else's dispute.
-
-
-        Everyone else reads a resource **embedded in the thing that carries it** — a
-        listing's images, a review's photos — where the module that owns that thing has
-        already decided who may see it. This endpoint is for the owner managing their own
-        uploads, not a general-purpose fetch by id.
-      security: [{ bearerAuth: [] }]
-      responses:
-        '200':
-          description: 'OK'
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data: { $ref: '#/components/schemas/Resource' }
-                required: [data]
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { description: 'Not the uploader and not staff', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '404': { $ref: '#/components/responses/NotFound' }
-    delete:
-      tags: [common]
-      summary: Delete a resource
-      description: Soft delete. The row is kept until a reaper has removed the object
-        from the storage backend, because the row holds the only handle on it.
-      security: [{ bearerAuth: [] }]
-      responses:
-        '204': { description: Marked for deletion }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  # ------------------------------------------------------------- options -----
   /options:
     get:
       tags: [common]
@@ -296,22 +159,6 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  /admin/options:
-    get:
-      tags: [admin]
-      summary: List every integration, disabled ones included
-      description: The operator's view. `GET /options` only ever shows enabled rows,
-        so this is the only way to see one that was switched off.
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - { name: type, in: query, schema: { $ref: '#/components/schemas/OptionType' } }
-        - { name: is_enabled, in: query, schema: { type: boolean } }
-        - { name: owner_id, in: query, schema: { $ref: '#/components/schemas/AccountID' } }
-      responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/OptionList' } } } }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-
 components:
   schemas:
     OptionSlug:
@@ -349,77 +196,6 @@ components:
         integration category must not need a migration and a spec change.
       example: transport
 
-    # ----------------------------------------------------------- resources ---
-    Resource:
-      type: object
-      properties:
-        id: { $ref: '#/components/schemas/ResourceID' }
-        provider:
-          type: string
-          description: Storage backend, kebab-case — `s3`, `minio`, `local`.
-        mime: { type: string, example: image/jpeg }
-        size:
-          type: integer
-          format: int64
-          description: Bytes, as read back from storage rather than as declared.
-        checksum:
-          type: string
-          nullable: true
-          description: Content hash, used to share one stored object between identical uploads.
-        metadata:
-          type: object
-          additionalProperties: true
-          description: Backend-specific extras — dimensions, duration, CDN path.
-        url:
-          type: string
-          nullable: true
-          description: >
-            Short-lived URL to fetch the bytes. Null while the upload is
-            unconfirmed. Not a stable address: store the id, not this.
-        url_expires_at: { type: string, format: date-time, nullable: true }
-        completed_at:
-          type: string
-          format: date-time
-          nullable: true
-          description: >
-            Null until the upload was confirmed. An unconfirmed resource cannot be
-            attached to anything.
-        created_at: { type: string, format: date-time }
-      required: [id, provider, mime, size, metadata, created_at]
-
-    CreateUploadRequest:
-      type: object
-      properties:
-        mime: { type: string, minLength: 1, maxLength: 100 }
-        size:
-          type: integer
-          format: int64
-          minimum: 1
-          description: >
-            Expected byte count, used to bound the presigned PUT. The recorded size
-            is what storage reports at completion, not this.
-        checksum:
-          type: string
-          maxLength: 128
-          description: >
-            Content hash if known. A match returns the stored resource and skips the
-            upload entirely.
-      required: [mime, size]
-
-    UploadTicket:
-      type: object
-      properties:
-        resource: { $ref: '#/components/schemas/Resource' }
-        upload_url:
-          type: string
-          nullable: true
-          description: >
-            PUT the bytes here, then confirm. Null when a checksum match meant there
-            was nothing to upload.
-        upload_expires_at: { type: string, format: date-time, nullable: true }
-      required: [resource]
-
-    # ------------------------------------------------------------- options ---
     Option:
       type: object
       description: >
@@ -467,6 +243,7 @@ components:
       properties:
         data: { type: array, items: { $ref: '#/components/schemas/Option' } }
       required: [data]
+
     CreateOptionRequest:
       type: object
       properties:

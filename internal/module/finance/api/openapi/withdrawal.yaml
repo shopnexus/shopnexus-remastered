@@ -1,0 +1,132 @@
+# finance fragment: withdrawal — the one payout the wallet owner opens.
+#
+# The exception to the rule in payment-session.yaml that a client never opens a
+# session: the wallet owner does open a withdrawal, and an admin resolves it before
+# real money leaves.
+
+paths:
+  /withdrawals:
+    post:
+      tags: [finance]
+      summary: Request a cash-out to a bank account
+      description: >
+        Debits the available balance and opens a withdrawal for review; an admin
+        resolves it before money leaves the platform. Only the available balance can
+        be drawn — money still held in escrow is not the caller's yet.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateWithdrawalRequest' }
+      responses:
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Withdrawal' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'Bank account or currency balance not found', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'Insufficient available balance, or the payee identity is unverified', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    get:
+      tags: [finance]
+      summary: List the caller's withdrawals
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/PaymentSessionStatus' } }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawalPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /withdrawals/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/PaymentSessionID' } }
+    get:
+      tags: [finance]
+      summary: Read a withdrawal
+      description: A withdrawal is a payment session of kind `withdrawal`, so its id
+        carries the session prefix.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Withdrawal' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [finance]
+      summary: Withdraw the request and return the money to the balance
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Cancelled and the debit reversed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already resolved by an admin', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  schemas:
+    WithdrawalOutcome:
+      type: string
+      description: >
+        How a withdrawal ended, stated rather than inferred. The underlying session status
+        cannot say it on its own: a cash-out the owner called off and one an admin refused
+        both leave the money back in the wallet and the session not-successful, and telling
+        them apart by whether `resolved_by_id` happens to be set is a rule every client
+        would have to know. `awaiting-review` covers both `pending` and `processing`.
+      enum: [awaiting-review, approved, rejected, cancelled]
+
+    Withdrawal:
+      type: object
+      description: A payment session of kind `withdrawal`, projected with its
+        destination and the admin's resolution.
+      properties:
+        id: { $ref: '#/components/schemas/PaymentSessionID' }
+        outcome: { $ref: '#/components/schemas/WithdrawalOutcome' }
+        status:
+          allOf: [{ $ref: '#/components/schemas/PaymentSessionStatus' }]
+          description: >
+            The underlying session status. `outcome` is what a client should render; this is
+            here because a withdrawal is a payment session and hiding that would make its
+            id unexplainable.
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        amount: { type: integer, format: int64 }
+        bank_account: { $ref: '#/components/schemas/BankAccount' }
+        resolved_by_id:
+          allOf: [{ $ref: '#/components/schemas/AccountID' }]
+          nullable: true
+          description: The admin who decided. Null on one the owner cancelled themselves.
+        resolved_at: { type: string, format: date-time, nullable: true }
+        resolution_note: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+      required: [id, outcome, status, currency, amount, bank_account, created_at]
+
+    WithdrawalPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Withdrawal' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+      required: [data, meta]
+
+    CreateWithdrawalRequest:
+      type: object
+      properties:
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        amount: { type: integer, format: int64, minimum: 1 }
+        bank_account_id: { $ref: '#/components/schemas/BankAccountID' }
+      required: [currency, amount, bank_account_id]

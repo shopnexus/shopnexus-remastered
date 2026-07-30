@@ -1,0 +1,159 @@
+# The trust module's per-order rating of the other party, in both directions, plus the
+# module's own boundary notes. Merged by cmd/specgen with every other file in this
+# directory.
+#
+# The module covers feedback (here), review + review_reply + review_vote
+# (review.yaml), reputation (reputation.yaml) and report (report.yaml, admin.yaml).
+#
+# Two ratings that are deliberately not the same thing. Feedback rates the *other
+# party of one order* and runs in both directions; a review rates the *product* and
+# only a buyer writes it. They are counted separately, because one order can produce
+# both and adding them together would count that order twice — and "arrived on time"
+# is not the same claim as "matches the description".
+#
+# Feedback is blind until published. Neither side sees the other's rating until both
+# have submitted or the window runs out, so nobody can retaliate for a rating they
+# have already read.
+
+paths:
+  /orders/{orderID}/feedback:
+    parameters:
+      - { name: orderID, in: path, required: true, schema: { $ref: '#/components/schemas/OrderID' } }
+    get:
+      tags: [trust]
+      summary: Read the feedback on one order
+      description: >
+        Returns the caller's own submission always. The counterparty's arrives as
+        `theirs` only once it is published; while it is still blind `theirs` is null and
+        `theirs_submitted` says whether there is anything waiting, which is as much as
+        can be told without breaking blindness.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/OrderFeedback' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [trust]
+      summary: Rate the counterparty of a completed order
+      description: >
+        One submission per direction per order, so this cannot be revised — a rating
+        that could be edited after seeing the other side is not blind.
+
+
+        The direction is derived from which side of the order the caller is on rather
+        than sent, so nobody can file feedback as the other party.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitFeedbackRequest' }
+      responses:
+        '201':
+          description: 'Submitted'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Feedback' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Caller is not a party to this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already submitted for this direction', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'The order is not finished yet', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /accounts/{accountID}/feedback:
+    get:
+      tags: [trust]
+      summary: Published feedback received by an account
+      description: Published rows only. A blind submission is not visible to anyone
+        but its author until the window closes.
+      parameters:
+        - { name: accountID, in: path, required: true, schema: { $ref: '#/components/schemas/AccountID' } }
+        - { name: role, in: query, schema: { $ref: '#/components/schemas/ReputationRole' }, description: Which side the account was on. }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/FeedbackPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  schemas:
+    FeedbackDirection:
+      type: string
+      enum: [buyer-to-seller, seller-to-buyer]
+
+    Feedback:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/FeedbackID' }
+        order_id: { $ref: '#/components/schemas/OrderID' }
+        rater: { $ref: '#/components/schemas/AccountSummary' }
+        ratee_id: { $ref: '#/components/schemas/AccountID' }
+        direction: { $ref: '#/components/schemas/FeedbackDirection' }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            Null while the rating is still blind. Only published feedback is visible
+            to anyone but its author and counted towards reputation.
+        created_at: { type: string, format: date-time }
+      required: [id, order_id, rater, ratee_id, direction, rating, comment, created_at]
+
+    FeedbackPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Feedback' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
+
+    OrderFeedback:
+      type: object
+      description: >
+        Both directions on one order, as far as the caller is allowed to see them.
+      properties:
+        mine: { allOf: [{ $ref: '#/components/schemas/Feedback' }], nullable: true }
+        theirs:
+          allOf: [{ $ref: '#/components/schemas/Feedback' }]
+          nullable: true
+          description: Present only once published.
+        theirs_submitted:
+          type: boolean
+          description: >
+            Whether the counterparty has rated at all. Shown while their rating is
+            still blind so the caller knows a reveal is coming.
+        reveal_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            When the blind window closes and whatever has been submitted becomes
+            visible, whether or not both sides rated. Null once both are published.
+            Exposed for the same reason the order module exposes its deadlines: a
+            client that cannot count down has to guess.
+      required: [theirs_submitted]
+
+    SubmitFeedbackRequest:
+      type: object
+      description: >
+        The direction and the ratee both follow from the order, so neither is sent.
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string, maxLength: 2000 }
+      required: [rating]

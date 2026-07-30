@@ -1,0 +1,151 @@
+# trust fragment: the moderator surface over reports.
+
+paths:
+  /admin/reports:
+    get:
+      tags: [admin]
+      summary: The report queue
+      description: >
+        Defaults to the open and under-review ones, oldest first — that is the small
+        hot slice the queue is worked from, and the index behind it covers exactly
+        that predicate.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/ReportStatus' }, description: Defaults to open and reviewing. }
+        - { name: ref_type, in: query, schema: { $ref: '#/components/schemas/ReportRefType' } }
+        - { name: reason, in: query, schema: { $ref: '#/components/schemas/ReportReason' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/AdminReportPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/reports/{id}:
+    get:
+      tags: [admin]
+      summary: Read a report with its target
+      description: >
+        Includes the reported content itself and how many other open reports name the
+        same target, since a moderator decides on the pattern and not one complaint.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ReportID' } }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AdminReport' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/reports/{id}/claim:
+    post:
+      tags: [admin]
+      summary: Take a report for review
+      description: Moves it out of the open queue so two moderators do not work the
+        same case.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ReportID' } }
+      responses:
+        '200':
+          description: 'Claimed'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Report' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already claimed or resolved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/reports/{id}/resolution:
+    post:
+      tags: [admin]
+      summary: Resolve a report
+      description: >
+        Records the verdict and what was done about it. `dismissed` takes the action
+        `none`; upholding it names the action instead — the listing was removed, the
+        message was removed, the account was suspended, a warning was issued.
+
+
+        Recording the action here does not carry it out. Taking a listing down and
+        suspending a seller are separate calls to the modules that own them, so the
+        decision and its effects each stay where they can be audited.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ReportID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResolveReportRequest' }
+      responses:
+        '200':
+          description: 'Resolved'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Report' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already resolved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  schemas:
+    AdminReport:
+      type: object
+      description: A queue entry. A moderator needs the reporter and the target beside
+        the report itself.
+      properties:
+        report: { $ref: '#/components/schemas/Report' }
+        reporter: { $ref: '#/components/schemas/AccountSummary' }
+        resolved_by: { allOf: [{ $ref: '#/components/schemas/AccountSummary' }], nullable: true }
+        open_reports_against_target:
+          type: integer
+          format: int64
+          description: >
+            How many other unresolved reports name the same target. A pattern is
+            what a decision rests on rather than a single complaint.
+        target:
+          type: object
+          additionalProperties: true
+          description: >
+            The reported content, shaped by `ref_type`. Fetched from the module that
+            owns it.
+      required: [report, reporter, open_reports_against_target]
+
+    AdminReportPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/AdminReport' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
+
+    ResolveReportRequest:
+      type: object
+      properties:
+        status: { type: string, enum: [actioned, dismissed], description: A verdict so open and reviewing are not choices. }
+        action_taken:
+          allOf: [{ $ref: '#/components/schemas/ReportAction' }]
+          description: >
+            Required. `none` goes with a dismissal; upholding the report names what
+            was done.
+        note: { type: string, maxLength: 2000 }
+      required: [status, action_taken]

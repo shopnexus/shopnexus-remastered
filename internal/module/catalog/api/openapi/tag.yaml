@@ -1,0 +1,75 @@
+# catalog fragment: tag — free-form labels on a listing. Admin CRUD is in admin.yaml.
+#
+# `near` is semantic suggestion for the seller filling in the listing form: tags share
+# the listing embedding space, so it ranks by the same `score` a listing search returns
+# (listing.yaml).
+
+paths:
+  /tags:
+    get:
+      tags: [catalog]
+      summary: The tag dictionary
+      description: >
+        A tag id is its slug and a natural key, so it is readable on the wire rather
+        than encoded.
+
+
+        Paginated, unlike the category tree: categories are a curated tree that stays
+        small, while tags grow with the catalog. `q` is a prefix match on the slug,
+        which is what the tag picker types into.
+
+
+        `near` is the other half of that picker: it ranks the dictionary by cosine
+        distance over `tag_embedding` and returns a `score`, so picking `handmade`
+        offers back the tags that sit next to it in the vector space. The seeds
+        themselves are never in the result — they are already on the listing — and a
+        tag the embedding cron has not reached yet cannot be suggested at all, because
+        `tag` carries no text index to fall back to.
+
+
+        `q` and `near` are mutually exclusive: one filters the dictionary by what was
+        typed, the other reorders it by meaning, and combining them would rank a set
+        the prefix already decided.
+      parameters:
+        - { name: q, in: query, description: 'Prefix match on the slug.', schema: { type: string, maxLength: 100 } }
+        - name: near
+          in: query
+          style: form
+          explode: false
+          description: 'Rank by closeness to these seeds. Excludes the seeds.'
+          schema: { type: array, minItems: 1, maxItems: 8, items: { $ref: '#/components/schemas/SemanticSeed' } }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/TagPage' } } } }
+        '400': { description: '`q` and `near` together', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  schemas:
+    TagSlug:
+      type: string
+      maxLength: 100
+      pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+      description: A tag's id is its slug. A natural key, so it is never encoded.
+      example: handmade
+
+    Tag:
+      type: object
+      properties:
+        slug: { $ref: '#/components/schemas/TagSlug' }
+        description: { type: string, nullable: true }
+        score: { $ref: '#/components/schemas/SimilarityScore' }
+      required: [slug]
+
+    TagPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Tag' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+      required: [data, meta]
+
+    PutTagRequest:
+      type: object
+      description: The slug is in the path, so this carries only what can change.
+      properties:
+        description: { type: string, maxLength: 255 }

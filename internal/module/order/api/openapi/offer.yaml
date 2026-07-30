@@ -1,0 +1,192 @@
+# order fragment: offer — price negotiation before checkout.
+
+paths:
+  /offers:
+    post:
+      tags: [order]
+      summary: Open a price negotiation on a SKU
+      description: Either side may open it. One active negotiation per (buyer, SKU);
+        the terms are then revised in place rather than by stacking rows.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOfferRequest' }
+      responses:
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Offer' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'An active negotiation already exists for this (buyer, SKU)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    get:
+      tags: [order]
+      summary: List negotiations, as buyer or as seller
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: role, in: query, required: true, schema: { type: string, enum: [buyer, seller] } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/OfferStatus' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/OfferPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /offers/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OfferID' } }
+    get:
+      tags: [order]
+      summary: Read a negotiation
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Offer' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [order]
+      summary: Counter-offer
+      description: Revises the current terms in place and moves authorship to the
+        caller. Only the party that does not own the standing proposal may counter.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateOfferRequest' }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Offer' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Caller already owns the standing proposal, or is not a party', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Negotiation is no longer active', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [order]
+      summary: Cancel a negotiation
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Cancelled }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Negotiation is no longer active', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /offers/{id}/acceptance:
+    post:
+      tags: [order]
+      summary: Accept the negotiated terms (buyer)
+      description: >
+        Only the buyer closes a negotiation, whichever side proposed the standing
+        terms — an order may not appear without the buyer's explicit acceptance.
+        Opens the checkout payment session at the agreed total and creates the
+        item, returning both.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OfferID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AcceptOfferRequest' }
+      responses:
+        '201':
+          description: 'Accepted; item created and a payment session opened'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CheckoutResult' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Caller is not the buyer of this negotiation', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Negotiation is expired, cancelled, or already accepted', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  schemas:
+    OfferStatus:
+      type: string
+      enum: [active, accepted, cancelled]
+
+    Offer:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/OfferID' }
+        spu_id:
+          allOf: [{ $ref: '#/components/schemas/ProductSPUID' }]
+          description: The listing whose card the offer is shown on.
+        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
+        buyer_id: { $ref: '#/components/schemas/AccountID' }
+        seller_id: { $ref: '#/components/schemas/AccountID' }
+        author_id: { $ref: '#/components/schemas/AccountID' }
+        status: { $ref: '#/components/schemas/OfferStatus' }
+        quantity: { type: integer, format: int64 }
+        total: { type: integer, format: int64, description: 'Currently proposed total, smallest currency unit' }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        reason: { type: string, description: Shown on the offer card beside the proposed price }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+      required: [id, spu_id, sku_id, buyer_id, seller_id, author_id, status, quantity, total, currency, created_at, expires_at]
+
+    OfferPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Offer' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
+
+    CreateOfferRequest:
+      type: object
+      properties:
+        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
+        quantity: { type: integer, format: int64, minimum: 1 }
+        total: { type: integer, format: int64, minimum: 1 }
+        reason: { type: string, maxLength: 500 }
+      required: [sku_id, quantity, total]
+
+    UpdateOfferRequest:
+      type: object
+      properties:
+        quantity: { type: integer, format: int64, minimum: 1 }
+        total: { type: integer, format: int64, minimum: 1 }
+        reason: { type: string, maxLength: 500 }
+      required: [quantity, total]
+
+    AcceptOfferRequest:
+      type: object
+      description: Acceptance still needs a delivery address and a carrier — the
+        negotiation only settled price and quantity.
+      properties:
+        contact_id: { $ref: '#/components/schemas/ContactID' }
+        transport_option: { type: string, maxLength: 100, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        note: { type: string, maxLength: 500 }
+      required: [contact_id, transport_option]

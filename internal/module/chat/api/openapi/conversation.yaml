@@ -1,0 +1,213 @@
+# The chat module's root aggregate — the conversation — plus read state and the
+# module's own boundary notes. Merged by cmd/specgen with every other file in this
+# directory. The module covers conversation and message; the message surface is in
+# message.yaml.
+#
+# One thread per pair of accounts, whoever happens to be buying. The pair is stored
+# ordered, which is what makes the uniqueness impossible to sidestep by swapping
+# sides and also rules out a thread with oneself. Threads are not scoped to a
+# listing: a product is referenced per message instead, which is how an offer card
+# appears in a conversation.
+#
+# Read state is two marks on the conversation, not a status per message. What each side
+# has read is one timestamp, so marking a thread read is one UPDATE of one row and a read
+# receipt is a comparison rather than a column.
+#
+# An unread count is still one range scan per thread — the mark bounds it, so chunk
+# exclusion applies and an ancient unread message costs no more than a recent one, but it
+# is a scan per row on the page rather than a value read from it. That is the accepted
+# shape: two counters on "conversation" would make it free, at the price of a second
+# source of truth for the same fact that has to be kept in step and recomputed when it
+# drifts. If an inbox page ever becomes the slow query, that is the trade to revisit.
+
+paths:
+  /conversations:
+    get:
+      tags: [chat]
+      summary: The caller's inbox
+      description: >
+        Threads by latest activity. A participant sits on either side of the stored
+        pair, so this is answered as two ordered index scans merged together rather
+        than one scan that sorts.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ConversationPage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [chat]
+      summary: Open the thread with another account
+      description: >
+        Idempotent by design: there is exactly one thread per pair, so this returns
+        the existing one when it exists and creates it otherwise. A client does not
+        have to track whether it has messaged someone before.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartConversationRequest' }
+      responses:
+        '200':
+          description: 'The thread already existed'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Conversation' }
+                required: [data]
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Conversation' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: 'An account cannot open a thread with itself', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /conversations/unread-count:
+    get:
+      tags: [chat]
+      summary: The unread badge across every thread
+      description: >
+        One range scan per thread the caller has, each bounded below by that thread's read
+        mark — so an old unread message costs no more than a recent one and chunk exclusion
+        applies throughout, but the work is proportional to how many threads the caller
+        has, not constant. Separate from the inbox because the badge is read far more often
+        than the list.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChatUnreadCount' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /conversations/{id}:
+    get:
+      tags: [chat]
+      summary: Read a thread
+      description: Carries the counterparty rather than both sides — the caller
+        already knows who they are.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ConversationID' } }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Conversation' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /conversations/{id}/read:
+    post:
+      tags: [chat]
+      summary: Mark a thread read up to a point in time
+      description: >
+        Moves the caller's read mark on the thread — one UPDATE of one row, whatever it
+        covers. Omit `before` to mark the whole thread read. A mark never moves
+        backwards: passing an earlier instant than the current one is a no-op, because
+        un-reading is not a thing a client should be able to do to its own badge.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ConversationID' } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MarkConversationReadRequest' }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChatUnreadCount' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  schemas:
+    Conversation:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/ConversationID' }
+        counterparty: { $ref: '#/components/schemas/AccountSummary' }
+        last_message: { allOf: [{ $ref: '#/components/schemas/Message' }], nullable: true }
+        last_message_at:
+          type: string
+          format: date-time
+          description: >
+            Starts at the creation time so an empty thread still sorts predictably in
+            the inbox.
+        unread: { type: integer, format: int64, description: The counterparty's messages after the caller's read mark. }
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: The caller's own read mark. Null while they have read nothing.
+        counterparty_read_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            How far the other side has read. This is the read receipt: a message the
+            caller sent is seen when this is at or past its `created_at`, which is why
+            no message carries a delivery status of its own.
+        created_at: { type: string, format: date-time }
+      required: [id, counterparty, last_message_at, unread, created_at]
+
+    ConversationPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Conversation' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
+
+    ChatUnreadCount:
+      type: object
+      properties:
+        unread: { type: integer, format: int64 }
+        conversations: { type: integer, format: int64, description: How many threads have anything unread. }
+      required: [unread, conversations]
+
+    StartConversationRequest:
+      type: object
+      properties:
+        account_id: { $ref: '#/components/schemas/AccountID' }
+      required: [account_id]
+
+    MarkConversationReadRequest:
+      type: object
+      properties:
+        before:
+          type: string
+          format: date-time
+          description: >
+            Mark everything sent at or before this instant read. Omit to mark the
+            whole thread read.

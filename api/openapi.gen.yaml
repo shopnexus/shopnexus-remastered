@@ -4213,7 +4213,7 @@ components:
             type: http
 info:
     description: |
-        Public REST surface of the ShopNexus C2C marketplace gateway. This file is the base document (info, servers, security, shared parameters and responses). Per-module paths and schemas live in internal/module/<module>/api/openapi.yaml and are merged into api/openapi.gen.yaml by `go generate ./...` (cmd/specgen). Edit the fragments, not the generated file.
+        Public REST surface of the ShopNexus C2C marketplace gateway. This file is the base document (info, servers, security, shared parameters and responses). Paths and schemas live in one fragment per aggregate, internal/module/<module>/api/openapi/<aggregate>.yaml, and are merged into api/openapi.gen.yaml by `go generate ./...` (cmd/specgen). Edit the fragments, not the generated file.
         Only `paths` and `components.schemas` are merged from a fragment, so everything reusable across modules — parameters, responses, security schemes — has to be defined here.
     title: ShopNexus Gateway API
     version: 0.1.0

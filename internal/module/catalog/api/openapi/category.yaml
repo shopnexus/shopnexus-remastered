@@ -1,0 +1,69 @@
+# catalog fragment: category — the browse tree. Admin CRUD is in admin.yaml.
+#
+# `near` is semantic suggestion for the seller filling in the listing form: categories
+# share the listing embedding space, so it ranks by the same `score` a listing search
+# returns (listing.yaml).
+
+paths:
+  /categories:
+    get:
+      tags: [catalog]
+      summary: The category tree, or the categories nearest a set of seeds
+      description: >
+        Flat list with a parent reference on each row; a client assembles the tree. A
+        category tree is small so this is unpaginated.
+
+
+        `near` answers a different question: which categories does this thing belong
+        in. It ranks by cosine distance over `category_embedding` and returns a
+        shortlist with a `score` instead of the tree, which is what the category field
+        of the listing form needs — a seller who has picked a few tags should not have
+        to walk a tree to find where the item goes.
+      parameters:
+        - name: near
+          in: query
+          style: form
+          explode: false
+          description: 'Rank by closeness to these seeds instead of returning the tree.'
+          schema: { type: array, minItems: 1, maxItems: 8, items: { $ref: '#/components/schemas/SemanticSeed' } }
+        - { name: limit, in: query, description: 'Only honoured with `near`; the whole tree is never truncated.', schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/CategoryList' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+components:
+  schemas:
+    Category:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/CategoryID' }
+        parent_id:
+          allOf: [{ $ref: '#/components/schemas/CategoryID' }]
+          nullable: true
+          description: Null for a root category.
+        name: { type: string }
+        description: { type: string }
+        score: { $ref: '#/components/schemas/SimilarityScore' }
+      required: [id, name, description]
+
+    CategoryList:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Category' } }
+      required: [data]
+
+    CreateCategoryRequest:
+      type: object
+      properties:
+        parent_id: { $ref: '#/components/schemas/CategoryID' }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 2000 }
+      required: [name, description]
+
+    UpdateCategoryRequest:
+      type: object
+      description: Every field optional. Setting the parent to null makes it a root.
+      properties:
+        parent_id: { allOf: [{ $ref: '#/components/schemas/CategoryID' }], nullable: true }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 2000 }

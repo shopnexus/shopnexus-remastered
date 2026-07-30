@@ -1,0 +1,48 @@
+# account fragment: follow — the seller/buyer follow graph.
+
+paths:
+  # Wishlists are catalog's: `/favorites/{spuID}` and `GET /listings?favorited=true`.
+  /me/following:
+    get:
+      tags: [account]
+      summary: Sellers the caller follows
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/AccountSummaryPage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /accounts/{id}/followers:
+    get:
+      tags: [account]
+      summary: Who follows this seller
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/AccountID' } }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/AccountSummaryPage' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /follows/{accountID}:
+    parameters:
+      - { name: accountID, in: path, required: true, schema: { $ref: '#/components/schemas/AccountID' } }
+    put:
+      tags: [account]
+      summary: Follow a seller
+      description: Idempotent. Following yourself is refused.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Following }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: 'An account cannot follow itself', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [account]
+      summary: Unfollow a seller
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Unfollowed }
+        '401': { $ref: '#/components/responses/Unauthorized' }

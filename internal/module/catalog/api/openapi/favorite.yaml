@@ -1,0 +1,36 @@
+# catalog fragment: favorite — the wishlist.
+#
+# The wishlist is here rather than in account because every question asked of a saved
+# listing is a catalog question: is this one saved, how many saved it, show me the ones I
+# saved. As a catalog table all three are joins; on the other side of the line all three
+# would have been cross-module calls, and the card could not have carried `favorited` at
+# all without one per page.
+
+paths:
+  /favorites/{spuID}:
+    parameters:
+      - { name: spuID, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
+    put:
+      tags: [catalog]
+      summary: Save a listing
+      description: >
+        Idempotent — the account and listing pair is the whole row, so saving twice is
+        the same as saving once. Read the wishlist back through
+        `GET /listings?favorited=true`.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Saved }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [catalog]
+      summary: Unsave a listing
+      description: >
+        Idempotent, and deliberately so all the way: unsaving something that was never
+        saved answers 204, and so does a `spuID` that names no listing at all. The
+        post-condition — this listing is not on the caller's wishlist — holds either way,
+        and a 404 here would only tell a stranger which ids exist.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Removed }
+        '401': { $ref: '#/components/responses/Unauthorized' }

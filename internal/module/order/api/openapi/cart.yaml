@@ -1,0 +1,111 @@
+# order fragment: cart item — the buyer's saved intent to buy a SKU.
+
+paths:
+  /cart-items:
+    get:
+      tags: [order]
+      summary: List the caller's cart
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/CartItemPage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [order]
+      summary: Add a SKU to the cart
+      description: One row per (account, SKU). Adding a SKU already in the cart is a
+        conflict — change the quantity instead.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddCartItemRequest' }
+      responses:
+        '201':
+          description: 'Created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CartItem' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /cart-items/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/CartItemID' } }
+    patch:
+      tags: [order]
+      summary: Change the quantity of a cart row
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCartItemRequest' }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CartItem' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [order]
+      summary: Remove a cart row
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  schemas:
+    CartItem:
+      type: object
+      description: >
+        Carries the listing id as well as the variant's, because a variant has no read
+        of its own in the catalog: rendering the cart is one `GET /listings?ids=` over
+        the `spu_id`s, and the row would otherwise be unresolvable.
+      properties:
+        id: { $ref: '#/components/schemas/CartItemID' }
+        spu_id: { $ref: '#/components/schemas/ProductSPUID' }
+        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
+        quantity: { type: integer, format: int64 }
+        created_at: { type: string, format: date-time }
+      required: [id, spu_id, sku_id, quantity, created_at]
+
+    CartItemPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/CartItem' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+      required: [data, meta]
+
+    AddCartItemRequest:
+      type: object
+      properties:
+        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
+        quantity: { type: integer, format: int64, minimum: 1 }
+      required: [sku_id, quantity]
+
+    UpdateCartItemRequest:
+      type: object
+      properties:
+        quantity: { type: integer, format: int64, minimum: 1 }
+      required: [quantity]

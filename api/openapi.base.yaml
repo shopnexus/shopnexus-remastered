@@ -5,8 +5,8 @@ info:
   description: >
     Public REST surface of the ShopNexus C2C marketplace gateway. This file is
     the base document (info, servers, security, shared parameters and
-    responses). Per-module paths and schemas live in
-    internal/module/<module>/api/openapi.yaml and are merged into
+    responses). Paths and schemas live in one fragment per aggregate,
+    internal/module/<module>/api/openapi/<aggregate>.yaml, and are merged into
     api/openapi.gen.yaml by `go generate ./...` (cmd/specgen). Edit the
     fragments, not the generated file.
 

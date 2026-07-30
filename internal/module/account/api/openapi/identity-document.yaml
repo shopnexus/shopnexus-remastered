@@ -1,0 +1,104 @@
+# account fragment: identity document — the seller KYC submission.
+
+paths:
+  /identity-documents:
+    post:
+      tags: [account]
+      summary: Start identity verification
+      description: >
+        Opens a case with the KYC vendor and returns the vendor's session URL for the
+        caller to finish in. Neither a document number nor a scan is stored here —
+        only the vendor, its case reference and the verdict — so a leak of this data
+        cannot impersonate anyone.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartIdentityVerificationRequest' }
+      responses:
+        '201':
+          description: 'Case opened'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/IdentityVerificationTicket' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { description: 'This account already holds a live verified document', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /me/identity-documents:
+    get:
+      tags: [account]
+      summary: The caller's verification history
+      description: Includes `expires_at` — a passport runs out and a payout gate has
+        to look at more than the status.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/IdentityDocumentList' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+components:
+  schemas:
+    IdentityDocumentType:
+      type: string
+      enum: [national-id, passport, driver-license]
+
+    IdentityStatus:
+      type: string
+      enum: [pending, verified, rejected]
+
+    IdentityDocument:
+      type: object
+      description: >
+        A verification outcome. No document number and no scan: the vendor performs
+        the check and only its verdict is kept.
+      properties:
+        id: { $ref: '#/components/schemas/IdentityDocumentID' }
+        doc_type: { $ref: '#/components/schemas/IdentityDocumentType' }
+        provider: { type: string, description: 'KYC vendor, kebab-case.' }
+        status: { $ref: '#/components/schemas/IdentityStatus' }
+        rejection_reason: { type: string, nullable: true }
+        verified_at: { type: string, format: date-time, nullable: true }
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            When the document itself runs out. A payout gate reads this as well as
+            the status.
+        created_at: { type: string, format: date-time }
+      required: [id, doc_type, provider, status, created_at]
+
+    IdentityDocumentList:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/IdentityDocument' } }
+      required: [data]
+
+    IdentityDocumentPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/AdminIdentityDocument' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+      required: [data, meta]
+
+    StartIdentityVerificationRequest:
+      type: object
+      properties:
+        doc_type: { $ref: '#/components/schemas/IdentityDocumentType' }
+      required: [doc_type]
+
+    IdentityVerificationTicket:
+      type: object
+      properties:
+        document: { $ref: '#/components/schemas/IdentityDocument' }
+        vendor_session_url:
+          type: string
+          nullable: true
+          description: Where the caller finishes the check with the vendor.
+        vendor_session_expires_at: { type: string, format: date-time, nullable: true }
+      required: [document]

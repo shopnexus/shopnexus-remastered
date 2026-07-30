@@ -70,10 +70,20 @@ retried, while `errors.As` still reaches the code same-process. `errx` holds
 every module-specific error — not-found and app-level alike — lives in that
 module's `domain/errors.go` (so the adapter can return it and imports stay one-way).
 
-**OpenAPI** — the spec is authored as per-module YAML fragments merged by
-`cmd/specgen` into `api/openapi.gen.yaml` (embedded + served + published).
-Regenerate with `go generate ./...`. `internal/gateway/openapi_contract_test.go`
-guards that the served spec is valid.
+**OpenAPI** — the spec is authored as **one fragment per aggregate**,
+`internal/module/<module>/api/openapi/<aggregate>.yaml`, merged by `cmd/specgen`
+into `api/openapi.gen.yaml` (embedded + served + published). Regenerate with
+`go generate ./...`. `internal/gateway/openapi_contract_test.go` guards that the
+served spec is valid. Rules for a fragment: only `paths` and
+`components.schemas` are merged (anything reusable across modules —
+parameters, responses, security schemes — belongs in `api/openapi.base.yaml`);
+schema and path keys share **one flat namespace** across every module, so a
+duplicate key fails the merge; a schema lives with the aggregate that owns it
+even when another module refs it. The module's admin/moderator surface is one
+`admin.yaml` per module, and the module-level prose (what it covers, its
+boundaries) sits at the top of its **root** aggregate's file — `account.yaml`,
+`listing.yaml`, `conversation.yaml`, `resource.yaml`, `payment-session.yaml`,
+`order.yaml`, `feedback.yaml`.
 
 **Observability** — the `observability` module is cross-cutting operational
 telemetry. It follows the module layout (`domain/`, `port/`,
@@ -234,4 +244,5 @@ Examples: `feat: redis bus for order events`, `refactor: module/infra/shared lay
 3. Register `<name>.Module` in `cmd/gateway` and its migration target in `cmd/migrate`.
 4. Add gateway handler(s) in `internal/gateway/handler`, routes in `router.go`,
    and provide the handler in `internal/gateway/fx.go`.
-5. Add the module's OpenAPI fragment; run `go generate ./...`.
+5. Add `api/openapi/<aggregate>.yaml` — one per aggregate, plus `admin.yaml` if it
+   has a moderator surface; run `go generate ./...`.
