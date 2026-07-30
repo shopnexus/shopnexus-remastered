@@ -3265,11 +3265,28 @@ components:
                 - account_id
             type: object
         StartIdentityVerificationRequest:
+            description: |
+                The scans are uploaded first through `POST /resources` and named here by id: a photo of a government ID does not belong in a JSON body, and the upload has its own retry story.
             properties:
+                back_resource_id:
+                    allOf:
+                        - $ref: '#/components/schemas/ResourceID'
+                    description: The reverse, for a document that has one. Omit for a passport.
                 doc_type:
                     $ref: '#/components/schemas/IdentityDocumentType'
+                front_resource_id:
+                    allOf:
+                        - $ref: '#/components/schemas/ResourceID'
+                    description: The data page, or the front of the card.
+                selfie_resource_id:
+                    allOf:
+                        - $ref: '#/components/schemas/ResourceID'
+                    description: |
+                        A live photo, matched against the portrait on the document. Required: without it the document is verified but nothing ties it to the person holding the account.
             required:
                 - doc_type
+                - front_resource_id
+                - selfie_resource_id
             type: object
         StartPaymentRequest:
             properties:
@@ -6558,7 +6575,11 @@ paths:
     /identity-documents:
         post:
             description: |
-                Opens a case with the KYC vendor and returns the vendor's session URL for the caller to finish in. Neither a document number nor a scan is stored here — only the vendor, its case reference and the verdict — so a leak of this data cannot impersonate anyone.
+                Hands the uploaded scans to the KYC vendor. Neither a document number nor a scan is stored here — only the vendor, its case reference and the verdict — so a leak of this data cannot impersonate anyone.
+
+                The verdict may already be final in the response: a vendor that reads the images answers in the same call, so `status` can come back `verified` or `rejected` with no session URL. A vendor that runs its own web flow answers `pending` and returns `vendor_session_url` for the caller to finish in. A client has to read the status rather than assume one of the two.
+
+                A rejected case leaves the account free to submit another one: the usual reason is glare on the card, and there is nothing to appeal.
             requestBody:
                 content:
                     application/json:
@@ -6587,6 +6608,12 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/Error'
                     description: This account already holds a live verified document
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: A named scan is missing, unconfirmed, or cannot be fetched
             security:
                 - bearerAuth: []
             summary: Start identity verification

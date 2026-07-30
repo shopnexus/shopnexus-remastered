@@ -6,10 +6,20 @@ paths:
       tags: [account]
       summary: Start identity verification
       description: >
-        Opens a case with the KYC vendor and returns the vendor's session URL for the
-        caller to finish in. Neither a document number nor a scan is stored here —
-        only the vendor, its case reference and the verdict — so a leak of this data
-        cannot impersonate anyone.
+        Hands the uploaded scans to the KYC vendor. Neither a document number nor a scan
+        is stored here — only the vendor, its case reference and the verdict — so a leak
+        of this data cannot impersonate anyone.
+
+
+        The verdict may already be final in the response: a vendor that reads the images
+        answers in the same call, so `status` can come back `verified` or `rejected` with
+        no session URL. A vendor that runs its own web flow answers `pending` and returns
+        `vendor_session_url` for the caller to finish in. A client has to read the status
+        rather than assume one of the two.
+
+
+        A rejected case leaves the account free to submit another one: the usual reason is
+        glare on the card, and there is nothing to appeal.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -29,6 +39,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '409': { description: 'This account already holds a live verified document', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'A named scan is missing, unconfirmed, or cannot be fetched', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /me/identity-documents:
     get:
@@ -88,9 +99,25 @@ components:
 
     StartIdentityVerificationRequest:
       type: object
+      description: >
+        The scans are uploaded first through `POST /resources` and named here by id: a
+        photo of a government ID does not belong in a JSON body, and the upload has its
+        own retry story.
       properties:
         doc_type: { $ref: '#/components/schemas/IdentityDocumentType' }
-      required: [doc_type]
+        front_resource_id:
+          allOf: [{ $ref: '#/components/schemas/ResourceID' }]
+          description: The data page, or the front of the card.
+        back_resource_id:
+          allOf: [{ $ref: '#/components/schemas/ResourceID' }]
+          description: The reverse, for a document that has one. Omit for a passport.
+        selfie_resource_id:
+          allOf: [{ $ref: '#/components/schemas/ResourceID' }]
+          description: >
+            A live photo, matched against the portrait on the document. Required: without
+            it the document is verified but nothing ties it to the person holding the
+            account.
+      required: [doc_type, front_resource_id, selfie_resource_id]
 
     IdentityVerificationTicket:
       type: object
