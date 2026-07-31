@@ -389,3 +389,17 @@ type IdentityVerdictRequest struct {
 	RejectionReason string                     `json:"rejection_reason,omitempty" validate:"max=2000"`
 	ExpiresAt       *time.Time                 `json:"expires_at,omitempty"`
 }
+
+// GetContactRequest reads one of the caller's own contacts — the delivery address a
+// checkout snapshots into its lines.
+type GetContactRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	ID      id.ID[id.Contact] `json:"-" validate:"required"`
+}
+
+// GetPickupContactRequest reads a seller's collection point. Cross-account on purpose and
+// with no actor: order needs it to create a shipment, and the seller is not present when
+// the money lands. Only the pickup default is exposed, never the rest of their addresses.
+type GetPickupContactRequest struct {
+	AccountID id.ID[id.Account] `json:"-" validate:"required"`
+}

@@ -21,6 +21,7 @@ import (
 func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.ListingSummary, int64, error) {
 	args := pgx.NamedArgs{
 		"ids":         nullInt64Array(f.IDs),
+		"variant_ids": nullInt64Array(f.VariantIDs),
 		"query":       nullText(f.Query),
 		"viewer_id":   f.ViewerID,
 		"mine":        f.Mine,
@@ -88,7 +89,15 @@ const feedFrom = ` AS score,
 // and only "never public" stays out unless the caller owns it.
 const feedWhere = `
 	           WHERE (
-	             CASE WHEN @ids::bigint[] IS NOT NULL THEN
+	             CASE WHEN @variant_ids::bigint[] IS NOT NULL THEN
+	               -- Resolving a variant to its listing: same visibility rule as an id
+	               -- lookup, because the caller already holds a reference to it.
+	               EXISTS (
+	                 SELECT 1 FROM variant rv
+	                 WHERE rv.listing_id = l.id AND rv.id = ANY(@variant_ids::bigint[])
+	               )
+	               AND (l.status NOT IN ('draft', 'pending') OR l.account_id = @viewer_id)
+	             WHEN @ids::bigint[] IS NOT NULL THEN
 	               l.id = ANY(@ids::bigint[])
 	               AND (l.status NOT IN ('draft', 'pending') OR l.account_id = @viewer_id)
 	             ELSE

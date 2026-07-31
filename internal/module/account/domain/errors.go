@@ -70,4 +70,8 @@ var (
 	// ErrIdentityVendorIncomplete is a vendor answer with no provider or no case
 	// reference. 502: the request was fine and the dependency did not hold up its end.
 	ErrIdentityVendorIncomplete = errx.NewError(http.StatusBadGateway, "identity_vendor_incomplete", "the verification vendor returned no case reference")
+	// ErrNoPickupContact is a seller who has never set a collection point. It stops a sale
+	// rather than guessing an address: a parcel collected from the wrong place is worse
+	// than a checkout that says why it cannot proceed.
+	ErrNoPickupContact = errx.NewError(http.StatusUnprocessableEntity, "no_pickup_contact", "the seller has no pickup address on file")
 )

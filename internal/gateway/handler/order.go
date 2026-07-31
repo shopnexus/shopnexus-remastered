@@ -7,15 +7,15 @@ import (
 	"github.com/go-playground/validator/v10"
 
 	orderapi "shopnexus/internal/module/order/api"
+	"shopnexus/internal/shared/httpx"
+	"shopnexus/internal/shared/id"
 )
 
-// Order serves the order module's routes: the cart, purchase sessions, checkout, orders, offers, refunds and disputes.
+// Order serves the order module's routes: the cart, the purchase session, the negotiation,
+// the order, its shipment and its refunds.
 //
-// Scaffold. Every method answers 501 until it is written, and the routes are
-// registered in router.go so the OpenAPI contract test can hold the two in step.
-// The service, validator and logger are held already: it keeps the fx graph real —
-// so the module's pool is opened and its config validated at startup — and makes
-// filling a method in a local edit rather than a rewiring.
+// There is no route that turns paid lines into an order — the money does that — so the
+// handlers here are the buyer's and the seller's decisions and nothing else.
 type Order struct {
 	svc orderapi.Service
 	v   *validator.Validate
@@ -26,166 +26,753 @@ func NewOrder(svc orderapi.Service, v *validator.Validate, log *slog.Logger) *Or
 	return &Order{svc: svc, v: v, log: log}
 }
 
+// --- cart ---
+
 // ListCartItems handles GET /cart-items.
 func (h *Order) ListCartItems(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	req := orderapi.ListCartRequest{ActorID: uid}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListCartItems(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// AddCartItem handles POST /cart-items.
+// AddCartItem handles POST /cart-items. Adding the same variant twice tops the row up rather
+// than stacking: the cart is keyed by (account, variant).
 func (h *Order) AddCartItem(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.AddCartItemRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID = uid
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.AddCartItem(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, res)
 }
 
-// UpdateCartItem handles PATCH /cart-items/{id}.
+// UpdateCartItem handles PATCH /cart-items/{id} — the quantity outright.
 func (h *Order) UpdateCartItem(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	cartItemID, err := pathID[id.CartItem](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.UpdateCartItemRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, cartItemID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.UpdateCartItem(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
 // DeleteCartItem handles DELETE /cart-items/{id}.
 func (h *Order) DeleteCartItem(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	cartItemID, err := pathID[id.CartItem](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := orderapi.CartItemRequest{ActorID: uid, ID: cartItemID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	if failed(w, h.log, h.svc.DeleteCartItem(r.Context(), req)) {
+		return
+	}
+	httpx.WriteNoContent(w)
 }
 
-// CreateDraft handles POST /drafts.
+// --- purchase sessions ---
+
+// CreateDraft handles POST /drafts — freezing a fixed-price listing's terms.
 func (h *Order) CreateDraft(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.CreateDraftRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID = uid
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.CreateDraft(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, res)
 }
 
 // ListDrafts handles GET /drafts.
 func (h *Order) ListDrafts(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	limit, err := limitParam(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	req := orderapi.ListDraftsRequest{
+		ActorID: uid, Cursor: r.URL.Query().Get("cursor"), Limit: limit,
+	}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListDrafts(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteCursor(w, http.StatusOK, res.Data, orderCursor(res.Meta))
 }
 
 // GetDraft handles GET /drafts/{id}.
 func (h *Order) GetDraft(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	req, err := h.draftRequest(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	res, err := h.svc.GetDraft(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
 // CancelDraft handles DELETE /drafts/{id}.
 func (h *Order) CancelDraft(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	req, err := h.draftRequest(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	if failed(w, h.log, h.svc.CancelDraft(r.Context(), req)) {
+		return
+	}
+	httpx.WriteNoContent(w)
 }
 
-// Checkout handles POST /drafts/{id}/checkout.
+func (h *Order) draftRequest(r *http.Request) (orderapi.DraftRequest, error) {
+	uid, err := actor(r)
+	if err != nil {
+		return orderapi.DraftRequest{}, err
+	}
+	draftID, err := pathID[id.DraftOrder](r, "id")
+	if err != nil {
+		return orderapi.DraftRequest{}, err
+	}
+	req := orderapi.DraftRequest{ActorID: uid, ID: draftID}
+	return req, check(h.v, req)
+}
+
+// Checkout handles POST /drafts/{id}/checkout. 201 for the lines and the session; the order
+// follows when the money lands, which has no route of its own.
 func (h *Order) Checkout(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	draftID, err := pathID[id.DraftOrder](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.CheckoutRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, draftID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.Checkout(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, res)
 }
 
-// ListItems handles GET /items.
+// --- lines ---
+
+// ListItems handles GET /items — "my purchases", or what a seller is shipping.
 func (h *Order) ListItems(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	limit, err := limitParam(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	pending, err := boolParam(r, "pending")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := orderapi.ListItemsRequest{
+		ActorID: uid,
+		Role:    r.URL.Query().Get("role"),
+		Cursor:  r.URL.Query().Get("cursor"),
+		Limit:   limit,
+	}
+	if pending != nil {
+		req.Pending = *pending
+	}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListItems(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteCursor(w, http.StatusOK, res.Data, orderCursor(res.Meta))
 }
 
-// CancelItem handles POST /items/{id}/cancellation.
+// CancelItem handles POST /items/{id}/cancellation — before the money lands. After that the
+// buyer asks for a refund instead.
 func (h *Order) CancelItem(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	itemID, err := pathID[id.Item](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := orderapi.ItemRequest{ActorID: uid, ID: itemID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.CancelItem(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// ListOrders handles GET /orders.
-func (h *Order) ListOrders(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
-}
+// --- negotiations ---
 
-// GetOrder handles GET /orders/{id}.
-func (h *Order) GetOrder(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
-}
-
-// ConfirmReceipt handles POST /orders/{id}/receipt.
-func (h *Order) ConfirmReceipt(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
-}
-
-// CancelOrder handles POST /orders/{id}/cancellation.
-func (h *Order) CancelOrder(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
-}
-
-// GetOrderTransport handles GET /orders/{id}/transport.
-func (h *Order) GetOrderTransport(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
-}
-
-// CreateRefund handles POST /orders/{id}/refunds.
-func (h *Order) CreateRefund(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
-}
-
-// CreateOffer handles POST /offers.
+// CreateOffer handles POST /offers — opening a negotiation on a negotiable listing.
 func (h *Order) CreateOffer(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.CreateOfferRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID = uid
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.CreateOffer(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, res)
 }
 
 // ListOffers handles GET /offers.
 func (h *Order) ListOffers(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	limit, err := limitParam(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	req := orderapi.ListOffersRequest{
+		ActorID: uid,
+		Status:  r.URL.Query().Get("status"),
+		Cursor:  r.URL.Query().Get("cursor"),
+		Limit:   limit,
+	}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListOffers(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteCursor(w, http.StatusOK, res.Data, orderCursor(res.Meta))
 }
 
 // GetOffer handles GET /offers/{id}.
 func (h *Order) GetOffer(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	req, err := h.offerRequest(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	res, err := h.svc.GetOffer(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// CounterOffer handles PATCH /offers/{id}.
+// CounterOffer handles PATCH /offers/{id} — revising the terms and handing the turn over.
 func (h *Order) CounterOffer(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	offerID, err := pathID[id.Offer](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.CounterOfferRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, offerID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.CounterOffer(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
 // CancelOffer handles DELETE /offers/{id}.
 func (h *Order) CancelOffer(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	req, err := h.offerRequest(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	if failed(w, h.log, h.svc.CancelOffer(r.Context(), req)) {
+		return
+	}
+	httpx.WriteNoContent(w)
 }
 
-// AcceptOffer handles POST /offers/{id}/acceptance.
+func (h *Order) offerRequest(r *http.Request) (orderapi.OfferRequest, error) {
+	uid, err := actor(r)
+	if err != nil {
+		return orderapi.OfferRequest{}, err
+	}
+	offerID, err := pathID[id.Offer](r, "id")
+	if err != nil {
+		return orderapi.OfferRequest{}, err
+	}
+	req := orderapi.OfferRequest{ActorID: uid, ID: offerID}
+	return req, check(h.v, req)
+}
+
+// AcceptOffer handles POST /offers/{id}/acceptance — the buyer closing it, which opens the
+// same checkout a fixed-price sale uses.
 func (h *Order) AcceptOffer(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	offerID, err := pathID[id.Offer](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.AcceptOfferRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, offerID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.AcceptOffer(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, res)
+}
+
+// --- orders ---
+
+// ListOrders handles GET /orders, as buyer or as seller.
+func (h *Order) ListOrders(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	limit, err := limitParam(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	req := orderapi.ListOrdersRequest{
+		ActorID: uid,
+		Role:    r.URL.Query().Get("role"),
+		State:   r.URL.Query().Get("state"),
+		Cursor:  r.URL.Query().Get("cursor"),
+		Limit:   limit,
+	}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListOrders(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteCursor(w, http.StatusOK, res.Data, orderCursor(res.Meta))
+}
+
+// GetOrder handles GET /orders/{id}.
+func (h *Order) GetOrder(w http.ResponseWriter, r *http.Request) {
+	req, err := h.orderRequest(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	res, err := h.svc.GetOrder(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
+// GetOrderTransport handles GET /orders/{id}/transport.
+func (h *Order) GetOrderTransport(w http.ResponseWriter, r *http.Request) {
+	req, err := h.orderRequest(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	res, err := h.svc.GetOrderTransport(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
+func (h *Order) orderRequest(r *http.Request) (orderapi.OrderRequest, error) {
+	uid, err := actor(r)
+	if err != nil {
+		return orderapi.OrderRequest{}, err
+	}
+	orderID, err := pathID[id.Order](r, "id")
+	if err != nil {
+		return orderapi.OrderRequest{}, err
+	}
+	req := orderapi.OrderRequest{ActorID: uid, ID: orderID}
+	return req, check(h.v, req)
+}
+
+// ConfirmReceipt handles POST /orders/{id}/receipt. The evidence is mandatory: a later refund
+// or dispute is judged on it.
+func (h *Order) ConfirmReceipt(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	orderID, err := pathID[id.Order](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.ConfirmReceiptRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, orderID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ConfirmReceipt(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
+// CancelOrder handles POST /orders/{id}/cancellation — only before the parcel leaves.
+func (h *Order) CancelOrder(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	orderID, err := pathID[id.Order](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.CancelOrderRequest
+	if failed(w, h.log, decodeOptionalBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, orderID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.CancelOrder(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
+// --- refunds and disputes ---
+
+// CreateRefund handles POST /orders/{id}/refunds.
+func (h *Order) CreateRefund(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	orderID, err := pathID[id.Order](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.CreateRefundRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.OrderID = uid, orderID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.CreateRefund(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, res)
 }
 
 // ListRefunds handles GET /refunds.
 func (h *Order) ListRefunds(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	limit, err := limitParam(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	req := orderapi.ListRefundsRequest{
+		ActorID: uid,
+		Role:    r.URL.Query().Get("role"),
+		Status:  r.URL.Query().Get("status"),
+		Cursor:  r.URL.Query().Get("cursor"),
+		Limit:   limit,
+	}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListRefunds(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteCursor(w, http.StatusOK, res.Data, orderCursor(res.Meta))
 }
 
 // GetRefund handles GET /refunds/{id}.
 func (h *Order) GetRefund(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	req, err := h.refundRequest(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	res, err := h.svc.GetRefund(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// WithdrawRefund handles DELETE /refunds/{id}.
+// WithdrawRefund handles DELETE /refunds/{id} — the buyer dropping it before a verdict.
 func (h *Order) WithdrawRefund(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	req, err := h.refundRequest(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	if failed(w, h.log, h.svc.WithdrawRefund(r.Context(), req)) {
+		return
+	}
+	httpx.WriteNoContent(w)
 }
 
-// AddRefundAttachments handles POST /refunds/{id}/attachments. Which side of the case
-// the caller is on decides whether the evidence lands on the refund or on the dispute
-// round they opened.
-func (h *Order) AddRefundAttachments(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
-}
-
-// AcceptRefund handles POST /refunds/{id}/acceptance.
+// AcceptRefund handles POST /refunds/{id}/acceptance — the seller granting it, which opens
+// the return leg.
 func (h *Order) AcceptRefund(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	req, err := h.refundRequest(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	res, err := h.svc.AcceptRefund(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// RejectRefund handles POST /refunds/{id}/rejection.
+func (h *Order) refundRequest(r *http.Request) (orderapi.RefundRequest, error) {
+	uid, err := actor(r)
+	if err != nil {
+		return orderapi.RefundRequest{}, err
+	}
+	refundID, err := pathID[id.Refund](r, "id")
+	if err != nil {
+		return orderapi.RefundRequest{}, err
+	}
+	req := orderapi.RefundRequest{ActorID: uid, ID: refundID}
+	return req, check(h.v, req)
+}
+
+// AddRefundAttachments handles POST /refunds/{id}/attachments — topping up the evidence while
+// the case is open.
+func (h *Order) AddRefundAttachments(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	refundID, err := pathID[id.Refund](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.AddRefundAttachmentsRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, refundID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.AddRefundAttachments(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
+// RejectRefund handles POST /refunds/{id}/rejection. The reason is required: the buyer is
+// owed the why, and it is what separates a refusal from a seller who said nothing.
 func (h *Order) RejectRefund(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	refundID, err := pathID[id.Refund](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.RejectRefundRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, refundID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.RejectRefund(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// OpenDispute handles POST /refunds/{id}/dispute — the buyer escalating a refusal
-// (round 1) or the seller appealing what came back (round 2). Which round it opens
-// follows from the caller and the refund's state, so both are one route.
+// OpenDispute handles POST /refunds/{id}/dispute — the buyer after a rejection, or the seller
+// after the goods came back.
 func (h *Order) OpenDispute(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	refundID, err := pathID[id.Refund](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.OpenDisputeRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, refundID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.OpenDispute(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, res)
 }
 
-// AdminListDisputes handles GET /admin/disputes.
+// AdminListDisputes handles GET /admin/disputes — the moderator queue.
 func (h *Order) AdminListDisputes(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	limit, err := limitParam(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	req := orderapi.ListDisputesRequest{
+		ActorID: uid, Cursor: r.URL.Query().Get("cursor"), Limit: limit,
+	}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.AdminListDisputes(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteCursor(w, http.StatusOK, res.Data, orderCursor(res.Meta))
 }
 
 // AdminRuleDispute handles POST /admin/disputes/{id}/ruling.
 func (h *Order) AdminRuleDispute(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	disputeID, err := pathID[id.RefundDispute](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.RuleDisputeRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, disputeID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.AdminRuleDispute(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
+// orderCursor converts the service's cursor info to the envelope's. NextCursor is a pointer
+// there so the last page says null rather than omitting the key.
+func orderCursor(meta orderapi.CursorInfo) httpx.CursorMeta {
+	if meta.NextCursor == "" {
+		return httpx.CursorMeta{}
+	}
+	return httpx.CursorMeta{NextCursor: new(meta.NextCursor)}
 }

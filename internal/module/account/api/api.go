@@ -67,6 +67,10 @@ type Service interface {
 
 	// --- saved addresses ---
 	ListContacts(ctx context.Context, req ListContactsRequest) ([]Contact, error)
+	GetContact(ctx context.Context, req GetContactRequest) (Contact, error)
+	// GetPickupContact answers a seller's collection point, which the order module needs to
+	// create a shipment while the seller is not present. Pickup only.
+	GetPickupContact(ctx context.Context, req GetPickupContactRequest) (Contact, error)
 	CreateContact(ctx context.Context, req CreateContactRequest) (Contact, error)
 	UpdateContact(ctx context.Context, req UpdateContactRequest) (Contact, error)
 	DeleteContact(ctx context.Context, req DeleteContactRequest) error

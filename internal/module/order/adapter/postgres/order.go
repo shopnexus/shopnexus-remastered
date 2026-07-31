@@ -1,0 +1,360 @@
+package postgres
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"shopnexus/internal/module/common/dbx"
+	"shopnexus/internal/module/order/domain"
+	"shopnexus/internal/module/order/port"
+)
+
+const itemColumns = `id, draft_id, offer_id, order_id, buyer_id, seller_id, listing_id,
+	       variant_id, address, note, currency, quantity, transport_option, total_amount,
+	       payment_session_id, cancelled_at, cancelled_by_id, created_at`
+
+func scanItem(row pgx.Row) (domain.Item, error) {
+	var (
+		i       domain.Item
+		address []byte
+		note    *string
+	)
+	err := row.Scan(&i.ID, &i.DraftID, &i.OfferID, &i.OrderID, &i.BuyerID, &i.SellerID,
+		&i.ListingID, &i.VariantID, &address, &note, &i.Currency, &i.Quantity,
+		&i.TransportOption, &i.TotalAmount, &i.PaymentSessionID, &i.CancelledAt,
+		&i.CancelledByID, &i.CreatedAt)
+	if dbx.IsNoRows(err) {
+		return domain.Item{}, domain.ErrItemNotFound
+	}
+	if err != nil {
+		return domain.Item{}, fmt.Errorf("db scan item: %w", err)
+	}
+	if note != nil {
+		i.Note = *note
+	}
+	snapshot, err := domain.DecodeAddress(address)
+	if err != nil {
+		return domain.Item{}, fmt.Errorf("decode item address: %w", err)
+	}
+	i.Address = snapshot
+	return i, nil
+}
+
+// InsertItems writes a checkout's lines in one transaction: a partial checkout is a buyer
+// charged for something they have no row for.
+func (r *Repo) InsertItems(ctx context.Context, items []*domain.Item) error {
+	if len(items) == 0 {
+		return nil
+	}
+	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
+		const q = `INSERT INTO item (draft_id, offer_id, buyer_id, seller_id, listing_id,
+		                     variant_id, address, note, currency, quantity,
+		                     transport_option, total_amount, payment_session_id)
+		           VALUES (@draft_id, @offer_id, @buyer_id, @seller_id, @listing_id,
+		                   @variant_id, @address, @note, @currency, @quantity,
+		                   @transport_option, @total_amount, @payment_session_id)
+		           RETURNING id, created_at`
+		for _, i := range items {
+			address, err := domain.EncodeAddress(i.Address)
+			if err != nil {
+				return fmt.Errorf("encode item address: %w", err)
+			}
+			args := pgx.NamedArgs{
+				"draft_id": i.DraftID, "offer_id": i.OfferID, "buyer_id": i.BuyerID,
+				"seller_id": i.SellerID, "listing_id": i.ListingID, "variant_id": i.VariantID,
+				"address": address, "note": nullText(i.Note), "currency": i.Currency,
+				"quantity": i.Quantity, "transport_option": i.TransportOption,
+				"total_amount": i.TotalAmount, "payment_session_id": i.PaymentSessionID,
+			}
+			if err := tx.QueryRow(ctx, q, args).Scan(&i.ID, &i.CreatedAt); err != nil {
+				return fmt.Errorf("db insert item: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+func (r *Repo) FindItem(ctx context.Context, id int64) (domain.Item, error) {
+	const q = `SELECT ` + itemColumns + ` FROM item WHERE id = @id`
+	return scanItem(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id}))
+}
+
+func (r *Repo) ListItems(ctx context.Context, f port.ItemFilter) ([]domain.Item, error) {
+	const q = `SELECT ` + itemColumns + ` FROM item
+	           WHERE (@buyer_id = 0 OR buyer_id = @buyer_id)
+	             AND (@seller_id = 0 OR seller_id = @seller_id)
+	             AND (NOT @pending_only OR (order_id IS NULL AND cancelled_at IS NULL))
+	             AND (@before::timestamptz IS NULL OR created_at < @before::timestamptz)
+	           ORDER BY created_at DESC, id DESC
+	           LIMIT @limit`
+	before, limit := cursorBound(f.Cursor)
+	args := pgx.NamedArgs{
+		"buyer_id": f.BuyerID, "seller_id": f.SellerID, "pending_only": f.PendingOnly,
+		"before": before, "limit": limit,
+	}
+	return r.queryItems(ctx, q, args)
+}
+
+// ItemsByPaymentSession is the webhook's first lookup: which lines did this session pay for.
+func (r *Repo) ItemsByPaymentSession(ctx context.Context, sessionID int64) ([]domain.Item, error) {
+	const q = `SELECT ` + itemColumns + ` FROM item WHERE payment_session_id = @session_id
+	           ORDER BY id`
+	return r.queryItems(ctx, q, pgx.NamedArgs{"session_id": sessionID})
+}
+
+func (r *Repo) OrderItems(ctx context.Context, orderID int64) ([]domain.Item, error) {
+	const q = `SELECT ` + itemColumns + ` FROM item WHERE order_id = @order_id ORDER BY id`
+	return r.queryItems(ctx, q, pgx.NamedArgs{"order_id": orderID})
+}
+
+func (r *Repo) queryItems(ctx context.Context, q string, args pgx.NamedArgs) ([]domain.Item, error) {
+	rows, err := r.pool.Query(ctx, q, args)
+	if err != nil {
+		return nil, fmt.Errorf("db query items: %w", err)
+	}
+	defer rows.Close()
+
+	var out []domain.Item
+	for rows.Next() {
+		i, err := scanItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db iterate items: %w", err)
+	}
+	return out, nil
+}
+
+// SaveItem writes a cancellation. `order_id IS NULL` is the guard: a line already covered
+// by an order is refunded, not cancelled.
+func (r *Repo) SaveItem(ctx context.Context, i domain.Item) error {
+	const q = `UPDATE item SET cancelled_at = @cancelled_at, cancelled_by_id = @cancelled_by
+	           WHERE id = @id AND order_id IS NULL AND cancelled_at IS NULL`
+	args := pgx.NamedArgs{
+		"id": i.ID, "cancelled_at": i.CancelledAt, "cancelled_by": i.CancelledByID,
+	}
+	tag, err := r.pool.Exec(ctx, q, args)
+	if err != nil {
+		return fmt.Errorf("db update item: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrItemNotCancellable
+	}
+	return nil
+}
+
+const transportColumns = `id, option, status::text, data, created_at`
+
+func (r *Repo) InsertTransport(ctx context.Context, option string) (int64, error) {
+	const q = `INSERT INTO transport (option) VALUES (@option) RETURNING id`
+	var id int64
+	if err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{"option": option}).Scan(&id); err != nil {
+		return 0, fmt.Errorf("db insert transport: %w", err)
+	}
+	return id, nil
+}
+
+func (r *Repo) FindTransport(ctx context.Context, id int64) (domain.Transport, error) {
+	const q = `SELECT ` + transportColumns + ` FROM transport WHERE id = @id`
+	var t domain.Transport
+	err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id}).
+		Scan(&t.ID, &t.Option, &t.Status, &t.Data, &t.CreatedAt)
+	if dbx.IsNoRows(err) {
+		return domain.Transport{}, domain.ErrOrderNotFound
+	}
+	if err != nil {
+		return domain.Transport{}, fmt.Errorf("db scan transport: %w", err)
+	}
+	return t, nil
+}
+
+func (r *Repo) SaveTransport(ctx context.Context, t domain.Transport) error {
+	const q = `UPDATE transport SET status = @status, data = @data WHERE id = @id`
+	args := pgx.NamedArgs{"id": t.ID, "status": t.Status, "data": dbx.JSONObject(rawJSON(t.Data))}
+	if _, err := r.pool.Exec(ctx, q, args); err != nil {
+		return fmt.Errorf("db update transport: %w", err)
+	}
+	return nil
+}
+
+const orderColumns = `id, draft_id, offer_id, buyer_id, seller_id, transport_id, address,
+	       pickup_address, received_at, receipt_attachments, payout_session_id, created_at,
+	       completed_at, cancelled_at`
+
+func scanOrder(row pgx.Row) (domain.Order, error) {
+	var (
+		o       domain.Order
+		address []byte
+		pickup  []byte
+	)
+	err := row.Scan(&o.ID, &o.DraftID, &o.OfferID, &o.BuyerID, &o.SellerID, &o.TransportID,
+		&address, &pickup, &o.ReceivedAt, &o.ReceiptAttachments, &o.PayoutSessionID,
+		&o.CreatedAt, &o.CompletedAt, &o.CancelledAt)
+	if dbx.IsNoRows(err) {
+		return domain.Order{}, domain.ErrOrderNotFound
+	}
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("db scan order: %w", err)
+	}
+	if o.Address, err = domain.DecodeAddress(address); err != nil {
+		return domain.Order{}, fmt.Errorf("decode order address: %w", err)
+	}
+	if o.PickupAddress, err = domain.DecodeAddress(pickup); err != nil {
+		return domain.Order{}, fmt.Errorf("decode pickup address: %w", err)
+	}
+	return o, nil
+}
+
+// CreateOrder writes the order and links its lines in one transaction. The unique origin is
+// what makes a redelivered webhook idempotent: the second attempt loses on the constraint
+// rather than minting a second order.
+func (r *Repo) CreateOrder(ctx context.Context, o *domain.Order, itemIDs []int64) error {
+	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
+		const q = `INSERT INTO "order" (draft_id, offer_id, buyer_id, seller_id, transport_id,
+		                       address, pickup_address)
+		           VALUES (@draft_id, @offer_id, @buyer_id, @seller_id, @transport_id,
+		                   @address, @pickup_address)
+		           RETURNING id, created_at`
+		address, err := domain.EncodeAddress(o.Address)
+		if err != nil {
+			return fmt.Errorf("encode order address: %w", err)
+		}
+		pickup, err := domain.EncodeAddress(o.PickupAddress)
+		if err != nil {
+			return fmt.Errorf("encode pickup address: %w", err)
+		}
+		args := pgx.NamedArgs{
+			"draft_id": o.DraftID, "offer_id": o.OfferID, "buyer_id": o.BuyerID,
+			"seller_id": o.SellerID, "transport_id": o.TransportID,
+			"address": address, "pickup_address": pickup,
+		}
+		if err := tx.QueryRow(ctx, q, args).Scan(&o.ID, &o.CreatedAt); err != nil {
+			if dbx.IsUniqueViolation(err) {
+				return domain.ErrOrderSettled
+			}
+			return fmt.Errorf("db insert order: %w", err)
+		}
+		const link = `UPDATE item SET order_id = @order_id
+		              WHERE id = ANY(@ids) AND order_id IS NULL AND cancelled_at IS NULL`
+		linkArgs := pgx.NamedArgs{"order_id": o.ID, "ids": itemIDs}
+		if _, err := tx.Exec(ctx, link, linkArgs); err != nil {
+			return fmt.Errorf("db link items: %w", err)
+		}
+		return nil
+	})
+}
+
+func (r *Repo) FindOrder(ctx context.Context, id int64) (domain.Order, error) {
+	const q = `SELECT ` + orderColumns + ` FROM "order" WHERE id = @id`
+	return scanOrder(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id}))
+}
+
+// FindOrderByOrigin answers "was this sale already turned into an order" — the question a
+// redelivered webhook asks before it does anything.
+func (r *Repo) FindOrderByOrigin(ctx context.Context, origin domain.Origin) (domain.Order, error) {
+	const q = `SELECT ` + orderColumns + ` FROM "order"
+	           WHERE (@draft_id::bigint IS NOT NULL AND draft_id = @draft_id::bigint)
+	              OR (@offer_id::bigint IS NOT NULL AND offer_id = @offer_id::bigint)`
+	args := pgx.NamedArgs{"draft_id": origin.DraftID, "offer_id": origin.OfferID}
+	return scanOrder(r.pool.QueryRow(ctx, q, args))
+}
+
+func (r *Repo) ListOrders(ctx context.Context, f port.OrderFilter) ([]domain.Order, error) {
+	// The state is derived from the two outcome timestamps, so it is a predicate rather
+	// than a column — and 'open' is exactly the partial indexes' own predicate.
+	const q = `SELECT ` + orderColumns + ` FROM "order"
+	           WHERE (@buyer_id = 0 OR buyer_id = @buyer_id)
+	             AND (@seller_id = 0 OR seller_id = @seller_id)
+	             AND (@state::text IS NULL
+	                  OR (@state::text = 'open' AND completed_at IS NULL AND cancelled_at IS NULL)
+	                  OR (@state::text = 'completed' AND completed_at IS NOT NULL)
+	                  OR (@state::text = 'cancelled' AND cancelled_at IS NOT NULL))
+	             AND (@before::timestamptz IS NULL OR created_at < @before::timestamptz)
+	           ORDER BY created_at DESC, id DESC
+	           LIMIT @limit`
+	before, limit := cursorBound(f.Cursor)
+	args := pgx.NamedArgs{
+		"buyer_id": f.BuyerID, "seller_id": f.SellerID, "state": nullText(f.State),
+		"before": before, "limit": limit,
+	}
+	return r.queryOrders(ctx, q, args)
+}
+
+// PayoutDue is the escrow release list: a confirmed receipt whose window has passed, with
+// no live refund on the order. The per-order timer does this too; the sweep is the net.
+func (r *Repo) PayoutDue(ctx context.Context, now time.Time, limit int) ([]domain.Order, error) {
+	const q = `SELECT ` + orderColumns + ` FROM "order" o
+	           WHERE o.completed_at IS NULL AND o.cancelled_at IS NULL
+	             AND o.received_at IS NOT NULL
+	             AND o.received_at + @window::interval < @now
+	             AND NOT EXISTS (
+	               SELECT 1 FROM refund
+	               WHERE refund.order_id = o.id
+	                 AND refund.status NOT IN ('accepted', 'rejected')
+	             )
+	           ORDER BY o.received_at
+	           LIMIT @limit`
+	args := pgx.NamedArgs{
+		"now": now, "limit": limit,
+		"window": fmt.Sprintf("%d hours", int(domain.PayoutWindow.Hours())),
+	}
+	return r.queryOrders(ctx, q, args)
+}
+
+func (r *Repo) queryOrders(ctx context.Context, q string, args pgx.NamedArgs) ([]domain.Order, error) {
+	rows, err := r.pool.Query(ctx, q, args)
+	if err != nil {
+		return nil, fmt.Errorf("db query orders: %w", err)
+	}
+	defer rows.Close()
+
+	var out []domain.Order
+	for rows.Next() {
+		o, err := scanOrder(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db iterate orders: %w", err)
+	}
+	return out, nil
+}
+
+// SaveOrder writes the receipt and the outcome. Guarded on the order still being open, so
+// two payouts or a payout racing a cancellation cannot both land.
+func (r *Repo) SaveOrder(ctx context.Context, o domain.Order) error {
+	const q = `UPDATE "order"
+	           SET received_at = @received_at, receipt_attachments = @receipt_attachments,
+	               payout_session_id = @payout_session_id, completed_at = @completed_at,
+	               cancelled_at = @cancelled_at
+	           WHERE id = @id AND completed_at IS NULL AND cancelled_at IS NULL`
+	args := pgx.NamedArgs{
+		"id": o.ID, "received_at": o.ReceivedAt,
+		"receipt_attachments": dbx.Int64Array(o.ReceiptAttachments),
+		"payout_session_id":   o.PayoutSessionID,
+		"completed_at":        o.CompletedAt, "cancelled_at": o.CancelledAt,
+	}
+	tag, err := r.pool.Exec(ctx, q, args)
+	if err != nil {
+		return fmt.Errorf("db update order: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrOrderSettled
+	}
+	return nil
+}
+
+func rawJSON(b []byte) any {
+	if len(b) == 0 {
+		return nil
+	}
+	return b
+}

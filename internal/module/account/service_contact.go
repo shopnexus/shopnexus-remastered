@@ -26,6 +26,32 @@ func (s *Service) ListContacts(ctx context.Context, req accountapi.ListContactsR
 	return out, nil
 }
 
+// GetContact reads one of the caller's own. Somebody else's is not found rather than
+// forbidden — it is not theirs to know about.
+func (s *Service) GetContact(ctx context.Context, req accountapi.GetContactRequest) (accountapi.Contact, error) {
+	c, err := s.repo.FindContact(ctx, req.ActorID.Int64(), req.ID.Int64())
+	if err != nil {
+		return accountapi.Contact{}, fmt.Errorf("find contact: %w", err)
+	}
+	return toAPIContact(c), nil
+}
+
+// GetPickupContact answers a seller's collection point. No actor: the order module calls it
+// when the money lands and the seller is not there, and only the pickup default is exposed
+// — the rest of somebody's addresses are not another module's business.
+func (s *Service) GetPickupContact(ctx context.Context, req accountapi.GetPickupContactRequest) (accountapi.Contact, error) {
+	rows, err := s.repo.ListContacts(ctx, req.AccountID.Int64())
+	if err != nil {
+		return accountapi.Contact{}, fmt.Errorf("list contacts: %w", err)
+	}
+	for _, c := range rows {
+		if c.IsDefaultPickup {
+			return toAPIContact(c), nil
+		}
+	}
+	return accountapi.Contact{}, domain.ErrNoPickupContact
+}
+
 func (s *Service) CreateContact(ctx context.Context, req accountapi.CreateContactRequest) (accountapi.Contact, error) {
 	c := domain.Contact{
 		AccountID:         req.ActorID.Int64(),

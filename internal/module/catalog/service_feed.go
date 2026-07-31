@@ -84,6 +84,9 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 	for _, listingID := range req.IDs {
 		filter.IDs = append(filter.IDs, listingID.Int64())
 	}
+	for _, variantID := range req.Variants {
+		filter.VariantIDs = append(filter.VariantIDs, variantID.Int64())
+	}
 	if req.CategoryID != nil {
 		filter.CategoryID = req.CategoryID.Int64()
 	}

@@ -184,7 +184,11 @@ type ListListingsRequest struct {
 	// ViewerID is zero for an anonymous read. Mine, Favorited and Recommended need it.
 	ViewerID id.ID[id.Account] `json:"-"`
 	// IDs ignores every other filter.
-	IDs        []id.ID[id.Listing] `json:"-" validate:"max=100"`
+	IDs []id.ID[id.Listing] `json:"-" validate:"max=100"`
+	// Variants resolves the listings a set of variants belongs to, which is what a cart or
+	// an order row needs: a variant is not addressable on its own here, so the listing it
+	// hangs off is the only thing that can be rendered. Ignores the other filters too.
+	Variants   []id.ID[id.Variant] `json:"-" validate:"max=100"`
 	Query      string              `json:"-" validate:"max=200"`
 	Mode       string              `json:"-" validate:"omitempty,oneof=lexical semantic hybrid"`
 	Mine       bool                `json:"-"`

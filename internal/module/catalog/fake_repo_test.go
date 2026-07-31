@@ -636,7 +636,22 @@ func (f *fakeRepo) ListListings(_ context.Context, filter port.ListingFilter) ([
 	var matched []port.ListingSummary
 	for _, stored := range f.listings {
 		l := stored.listing
-		if len(filter.IDs) > 0 {
+		if len(filter.VariantIDs) > 0 {
+			// Resolving a variant to its listing, with the same visibility rule an id
+			// lookup has.
+			var holds bool
+			for _, v := range stored.variants {
+				if slices.Contains(filter.VariantIDs, v.ID) {
+					holds = true
+				}
+			}
+			if !holds {
+				continue
+			}
+			if (l.Status == domain.StatusDraft || l.Status == domain.StatusPending) && l.SellerID != filter.ViewerID {
+				continue
+			}
+		} else if len(filter.IDs) > 0 {
 			// An id lookup ignores every other filter and answers for hidden and deleted rows;
 			// only "never public" stays out unless the caller owns it.
 			if !slices.Contains(filter.IDs, l.ID) {

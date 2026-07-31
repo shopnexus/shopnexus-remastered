@@ -74,6 +74,9 @@ type ListingFilter struct {
 	// IDs resolves a known set and ignores every other filter — a cart or an order list
 	// rendering the listings behind its rows.
 	IDs []int64
+	// VariantIDs resolves the listings those variants belong to, and ignores the rest of
+	// the filter for the same reason IDs does.
+	VariantIDs []int64
 	// Query turns the request into a search; Mode picks how. Probe is its dense embedding,
 	// resolved by the service, and is nil when the query is lexical or nothing embedded it.
 	Query string

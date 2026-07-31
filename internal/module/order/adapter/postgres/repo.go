@@ -1,15 +1,17 @@
-// Package postgres implements the order port.Repository using pgx named args.
+// Package postgres implements the order port.Repository with pgx named args and
+// hand-written SQL.
+//
+// All SQL is unqualified: the pool sets search_path to this module's schema, so a table
+// name is enough and the module can later move to its own database without a rewrite.
 package postgres
 
 import (
 	"context"
-	"errors"
-	"fmt"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"shopnexus/internal/module/order/domain"
+	"shopnexus/internal/module/common"
+	"shopnexus/internal/module/common/dbx"
 	"shopnexus/internal/module/order/port"
 )
 
@@ -21,28 +23,14 @@ func New(pool *pgxpool.Pool) *Repo { return &Repo{pool: pool} }
 
 var _ port.Repository = (*Repo)(nil)
 
-func (r *Repo) Save(ctx context.Context, o *domain.Order) error {
-	const q = `INSERT INTO orders (buyer_id, total, status)
-	           VALUES (@buyer_id, @total, @status)
-	           RETURNING id, created_at`
-	args := pgx.NamedArgs{"buyer_id": o.BuyerID, "total": o.Total, "status": o.Status}
-	if err := r.pool.QueryRow(ctx, q, args).Scan(&o.ID, &o.CreatedAt); err != nil {
-		return fmt.Errorf("db insert order: %w", err)
-	}
-	return nil
+// FindResources reads this module's own uploaded evidence — receipt photos, refund
+// attachments. Shared DDL, per-schema rows: the upload belongs to order.
+func (r *Repo) FindResources(ctx context.Context, ids []int64) ([]common.Resource, error) {
+	return dbx.NewResources(r.pool).Find(ctx, ids)
 }
 
-func (r *Repo) FindByID(ctx context.Context, id int64) (domain.Order, error) {
-	const q = `SELECT id, buyer_id, total, status, created_at
-	           FROM orders WHERE id = @id`
-	var o domain.Order
-	err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id}).
-		Scan(&o.ID, &o.BuyerID, &o.Total, &o.Status, &o.CreatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.Order{}, domain.ErrOrderNotFound
-	}
-	if err != nil {
-		return domain.Order{}, fmt.Errorf("db scan order: %w", err)
-	}
-	return o, nil
+// cursorBound is the shared shape of every list here: newest first, bounded by a
+// timestamp the previous page ended at.
+func cursorBound(f port.CursorFilter) (any, int) {
+	return dbx.NullTime(f.Before), f.Limit
 }

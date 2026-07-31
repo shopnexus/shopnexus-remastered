@@ -84,6 +84,14 @@ func (Stub) ListContacts(context.Context, accountapi.ListContactsRequest) ([]acc
 	return nil, errx.ErrNotImplemented
 }
 
+func (Stub) GetContact(context.Context, accountapi.GetContactRequest) (accountapi.Contact, error) {
+	return accountapi.Contact{}, errx.ErrNotImplemented
+}
+
+func (Stub) GetPickupContact(context.Context, accountapi.GetPickupContactRequest) (accountapi.Contact, error) {
+	return accountapi.Contact{}, errx.ErrNotImplemented
+}
+
 func (Stub) CreateContact(context.Context, accountapi.CreateContactRequest) (accountapi.Contact, error) {
 	return accountapi.Contact{}, errx.ErrNotImplemented
 }
