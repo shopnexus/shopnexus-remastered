@@ -45,26 +45,18 @@ func (s *Service) AdminSuspendAccount(ctx context.Context, req accountapi.Suspen
 	if err != nil {
 		return accountapi.AdminAccount{}, err
 	}
-	target, err := s.repo.FindAccountByID(ctx, req.AccountID.Int64())
+	target, err := s.repo.Get(ctx, req.AccountID.Int64())
 	if err != nil {
-		return accountapi.AdminAccount{}, fmt.Errorf("find account by id: %w", err)
+		return accountapi.AdminAccount{}, fmt.Errorf("get account: %w", err)
 	}
 	target.Suspend(req.Reason, req.Until)
-	if err := s.repo.UpdateAccountStatus(ctx, target); err != nil {
-		return accountapi.AdminAccount{}, fmt.Errorf("update account status: %w", err)
+	// Save writes the trail for what Suspend recorded, in the transaction that suspends.
+	if err := s.repo.Save(ctx, target, moderator.ID); err != nil {
+		return accountapi.AdminAccount{}, fmt.Errorf("save account: %w", err)
 	}
 	if err := s.sessions.RevokeAll(ctx, target.ID, ""); err != nil {
 		return accountapi.AdminAccount{}, fmt.Errorf("revoke sessions: %w", err)
 	}
-	s.audit(ctx, port.AuditEntry{
-		Table:      "account",
-		RecordID:   target.ID,
-		ChangeType: "update",
-		Code:       "account.suspend",
-		ChangedBy:  moderator.ID,
-		Diff:       map[string]any{"status": string(target.Status), "suspension_reason": req.Reason, "suspended_until": req.Until},
-		Snapshot:   accountSnapshot(target),
-	})
 	return s.adminAccount(ctx, target)
 }
 
@@ -75,23 +67,14 @@ func (s *Service) AdminLiftSuspension(ctx context.Context, req accountapi.LiftSu
 	if err != nil {
 		return accountapi.AdminAccount{}, err
 	}
-	target, err := s.repo.FindAccountByID(ctx, req.AccountID.Int64())
+	target, err := s.repo.Get(ctx, req.AccountID.Int64())
 	if err != nil {
-		return accountapi.AdminAccount{}, fmt.Errorf("find account by id: %w", err)
+		return accountapi.AdminAccount{}, fmt.Errorf("get account: %w", err)
 	}
 	target.Reinstate()
-	if err := s.repo.UpdateAccountStatus(ctx, target); err != nil {
-		return accountapi.AdminAccount{}, fmt.Errorf("update account status: %w", err)
+	if err := s.repo.Save(ctx, target, moderator.ID); err != nil {
+		return accountapi.AdminAccount{}, fmt.Errorf("save account: %w", err)
 	}
-	s.audit(ctx, port.AuditEntry{
-		Table:      "account",
-		RecordID:   target.ID,
-		ChangeType: "update",
-		Code:       "account.reinstate",
-		ChangedBy:  moderator.ID,
-		Diff:       map[string]any{"status": string(target.Status)},
-		Snapshot:   accountSnapshot(target),
-	})
 	return s.adminAccount(ctx, target)
 }
 
@@ -106,27 +89,28 @@ func (s *Service) AdminCreateModerator(ctx context.Context, req accountapi.Creat
 	if err != nil {
 		return accountapi.AdminAccount{}, err
 	}
-	acc, err := domain.NewAccount(domain.RoleModerator, req.Email, "", "", hash)
-	if err != nil {
-		return accountapi.AdminAccount{}, err
-	}
 	profile, err := domain.NewProfile(req.Name, req.Country, req.Locale, req.Timezone)
 	if err != nil {
 		return accountapi.AdminAccount{}, err
 	}
-	if err := s.repo.CreateAccount(ctx, &acc, &profile); err != nil {
+	acc, err := domain.NewAccount(domain.RoleModerator, req.Email, "", "", hash, profile)
+	if err != nil {
+		return accountapi.AdminAccount{}, err
+	}
+	if err := s.repo.Create(ctx, acc); err != nil {
 		return accountapi.AdminAccount{}, fmt.Errorf("create account: %w", err)
 	}
+	// An insert has no events to carry the trail, so this one is written on its own.
 	s.audit(ctx, port.AuditEntry{
 		Table:      "account",
 		RecordID:   acc.ID,
 		ChangeType: "insert",
-		Code:       "account.grant_moderator",
-		ChangedBy:  admin.ID,
-		Diff:       map[string]any{"role": string(acc.Role)},
-		Snapshot:   accountSnapshot(acc),
+		Code:       string(domain.RoleGranted.Code),
+		ChangedBy:  &admin.ID,
+		Diff:       domain.RoleChange{Role: acc.Role},
+		Snapshot:   acc.Snapshot(),
 	})
-	return toAdminAccount(acc, profile, false), nil
+	return toAdminAccount(acc, false), nil
 }
 
 // AdminRevokeModerator demotes to a plain user and drops the account's sessions — the
@@ -138,64 +122,50 @@ func (s *Service) AdminRevokeModerator(ctx context.Context, req accountapi.Revok
 	if err != nil {
 		return err
 	}
-	target, err := s.repo.FindAccountByID(ctx, req.AccountID.Int64())
+	target, err := s.repo.Get(ctx, req.AccountID.Int64())
 	if err != nil {
-		return fmt.Errorf("find account by id: %w", err)
+		return fmt.Errorf("get account: %w", err)
 	}
 	// The resource being addressed is the moderator, so an account that is not one is
 	// simply not there.
 	if target.Role != domain.RoleModerator {
 		return domain.ErrAccountNotFound
 	}
-	if err := s.repo.UpdateAccountRole(ctx, target.ID, domain.RoleUser); err != nil {
-		return fmt.Errorf("update account role: %w", err)
+	target.SetRole(domain.RoleUser)
+	if err := s.repo.Save(ctx, target, admin.ID); err != nil {
+		return fmt.Errorf("save account: %w", err)
 	}
 	if err := s.sessions.RevokeAll(ctx, target.ID, ""); err != nil {
 		return fmt.Errorf("revoke sessions: %w", err)
 	}
-	s.audit(ctx, port.AuditEntry{
-		Table:      "account",
-		RecordID:   target.ID,
-		ChangeType: "update",
-		Code:       "account.revoke_moderator",
-		ChangedBy:  admin.ID,
-		Diff:       map[string]any{"role": string(domain.RoleUser)},
-		Snapshot:   accountSnapshot(target),
-	})
 	return nil
 }
 
 // --- helpers ---
 
 // adminAccount builds the staff view of one account.
-func (s *Service) adminAccount(ctx context.Context, a domain.Account) (accountapi.AdminAccount, error) {
-	profile, err := s.repo.FindProfile(ctx, a.ID)
-	if err != nil {
-		return accountapi.AdminAccount{}, fmt.Errorf("find profile: %w", err)
-	}
+func (s *Service) adminAccount(ctx context.Context, a *domain.Account) (accountapi.AdminAccount, error) {
 	verified, err := s.repo.HasLiveVerifiedDocument(ctx, a.ID)
 	if err != nil {
 		return accountapi.AdminAccount{}, fmt.Errorf("check identity verified: %w", err)
 	}
-	return toAdminAccount(a, profile, verified), nil
+	return toAdminAccount(a, verified), nil
 }
 
-func (s *Service) toAdminAccounts(ctx context.Context, rows []domain.Account) ([]accountapi.AdminAccount, error) {
+// toAdminAccounts resolves the identity flags for a whole page in one call — the display
+// name already came back with the row.
+func (s *Service) toAdminAccounts(ctx context.Context, rows []port.AccountSummary) ([]accountapi.AdminAccount, error) {
 	ids := make([]int64, 0, len(rows))
-	for _, a := range rows {
-		ids = append(ids, a.ID)
-	}
-	profiles, err := s.repo.FindProfiles(ctx, ids)
-	if err != nil {
-		return nil, fmt.Errorf("find profiles: %w", err)
+	for _, r := range rows {
+		ids = append(ids, r.ID)
 	}
 	verified, err := s.repo.LiveVerifiedDocuments(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("check identity verified: %w", err)
 	}
 	out := make([]accountapi.AdminAccount, 0, len(rows))
-	for _, a := range rows {
-		out = append(out, toAdminAccount(a, profiles[a.ID], verified[a.ID]))
+	for _, r := range rows {
+		out = append(out, summaryToAdminAccount(r, verified[r.ID]))
 	}
 	return out, nil
 }
@@ -210,23 +180,6 @@ func (s *Service) audit(ctx context.Context, e port.AuditEntry) {
 	}
 }
 
-// accountSnapshot is the whole row as the audit log keeps it — identifiers included,
-// password never.
-func accountSnapshot(a domain.Account) map[string]any {
-	return map[string]any{
-		"id":                a.ID,
-		"status":            string(a.Status),
-		"role":              string(a.Role),
-		"email":             a.Email,
-		"phone":             a.Phone,
-		"username":          a.Username,
-		"email_verified":    a.EmailVerified,
-		"suspended_until":   a.SuspendedUntil,
-		"suspension_reason": a.SuspensionReason,
-		"created_at":        a.CreatedAt,
-	}
-}
-
 // auditIdentityVerdict records who decided a KYC case and how — the one fact the
 // document row does not keep, since it holds the verdict but not its author.
 func auditIdentityVerdict(d domain.IdentityDocument, byID int64) port.AuditEntry {
@@ -234,18 +187,13 @@ func auditIdentityVerdict(d domain.IdentityDocument, byID int64) port.AuditEntry
 		Table:      "identity_document",
 		RecordID:   d.ID,
 		ChangeType: "update",
-		Code:       "identity_document.verdict",
-		ChangedBy:  byID,
-		Diff:       map[string]any{"status": string(d.Status), "rejection_reason": d.RejectionReason, "expires_at": d.ExpiresAt},
-		Snapshot: map[string]any{
-			"id":               d.ID,
-			"account_id":       d.AccountID,
-			"doc_type":         string(d.DocType),
-			"provider":         d.Provider,
-			"status":           string(d.Status),
-			"rejection_reason": d.RejectionReason,
-			"verified_at":      d.VerifiedAt,
-			"expires_at":       d.ExpiresAt,
+		Code:       string(domain.IdentityVerdict.Code),
+		ChangedBy:  &byID,
+		Diff: domain.Verdict{
+			Status:          d.Status,
+			RejectionReason: d.RejectionReason,
+			ExpiresAt:       d.ExpiresAt,
 		},
+		Snapshot: d.Snapshot(),
 	}
 }

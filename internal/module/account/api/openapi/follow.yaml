@@ -1,7 +1,7 @@
 # account fragment: follow — the seller/buyer follow graph.
 
 paths:
-  # Wishlists are catalog's: `/favorites/{spuID}` and `GET /listings?favorited=true`.
+  # Wishlists are catalog's: `/favorites/{listingID}` and `GET /listings?favorited=true`.
   /me/following:
     get:
       tags: [account]

@@ -2,7 +2,7 @@
 # module's own boundary notes. Merged by cmd/specgen with every other file in this
 # directory.
 #
-# The module covers category, product_spu, product_sku, tag, product_spu_tag, stock,
+# The module covers category, listing, variant, tag, listing_tag, stock,
 # favorite, the three embedding tables and account_interest.
 #
 # A listing is an SPU plus its SKUs. Price and package weight live on the SKU, so a
@@ -76,7 +76,7 @@ paths:
         a value cached on the listing, so `price` is the cheapest matching variant's.
         `best-selling` is the one that cannot work that way — it orders by a sum over the
         variants, and a sum has no per-SKU index to scan in order — so it reads
-        `cached_sold` on the listing, maintained with the stock it counts.
+        `cached_sold` on the listing, maintained with the sales it counts.
       security:
         - {}
         - bearerAuth: []
@@ -86,7 +86,7 @@ paths:
           description: Resolve exactly these listings, ignoring the other filters.
           style: form
           explode: false
-          schema: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/ProductSPUID' } }
+          schema: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/ListingID' } }
         - { name: q, in: query, description: 'Free-text query. Turns the request into a search.', schema: { type: string, minLength: 1, maxLength: 200 } }
         - { name: mode, in: query, description: 'Search mode. Ignored without a query.', schema: { type: string, enum: [lexical, semantic, hybrid], default: hybrid } }
         - { name: mine, in: query, description: 'The caller''s own listings, in every state.', schema: { type: boolean, default: false } }
@@ -190,7 +190,7 @@ paths:
           in: path
           required: true
           description: The opaque id. A write addresses the listing, never its public slug.
-          schema: { $ref: '#/components/schemas/ProductSPUID' }
+          schema: { $ref: '#/components/schemas/ListingID' }
       description: >
         An edit to a draft applies immediately. An edit to a live listing that trips
         the prohibited-goods filter is held as a pending edit and applied only when a
@@ -238,7 +238,7 @@ paths:
           in: path
           required: true
           description: The opaque id. A write addresses the listing, never its public slug.
-          schema: { $ref: '#/components/schemas/ProductSPUID' }
+          schema: { $ref: '#/components/schemas/ListingID' }
       description: >
         Soft delete, and distinct from hiding it. Order history holds the listing and
         variant ids without a foreign key, so a past order has to stay resolvable
@@ -253,26 +253,21 @@ paths:
 
   /listings/{id}/publication:
     parameters:
-      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ListingID' } }
     post:
       tags: [catalog]
-      summary: Publish a listing
+      summary: Submit a listing for publication
       description: >
-        Every new listing is scanned automatically for prohibited-goods signals
-        first. A clean one goes live; a suspicious one goes to the moderation queue
-        and stays invisible until a moderator clears it. The response says which
-        happened.
+        Publication always goes through moderation: this queues the listing and it
+        stays invisible until a moderator clears it. There is no path that makes a
+        listing live without a human, which is also why re-publishing something a
+        moderator took down cannot undo the takedown.
+
+
+        An automatic prohibited-goods scan still runs — it orders the queue and
+        flags what to look at first, it does not clear anything.
       security: [{ bearerAuth: [] }]
       responses:
-        '200':
-          description: 'Live'
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data: { $ref: '#/components/schemas/ListingDetail' }
-                required: [data]
         '202':
           description: 'Queued for moderation and not yet public'
           content:
@@ -285,7 +280,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: 'Already live or under moderation', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Already live or already under moderation', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '422': { description: 'A listing needs at least one variant with a price', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     delete:
       tags: [catalog]
@@ -313,6 +308,9 @@ components:
     SimilarityScore:
       type: number
       format: double
+      minimum: -1
+      maximum: 1
+      example: 0.87
       nullable: true
       description: >
         Relevance, always oriented so that higher is closer — for a vector ranking that
@@ -341,7 +339,7 @@ components:
         is what a shareable product URL carries. They cannot collide because an
         opaque id always has an underscore after its prefix and a slug never has one.
       oneOf:
-        - $ref: '#/components/schemas/ProductSPUID'
+        - $ref: '#/components/schemas/ListingID'
         - { type: string, maxLength: 100, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', example: ao-thun-uniqlo-xanh }
 
     ListingStatus:
@@ -375,9 +373,9 @@ components:
       type: object
       description: The card shown in a feed. `GET /listings/{id}` returns the full form.
       properties:
-        id: { $ref: '#/components/schemas/ProductSPUID' }
-        slug: { type: string, description: 'URL-friendly, globally unique and fixed at creation.' }
-        name: { type: string }
+        id: { $ref: '#/components/schemas/ListingID' }
+        slug: { type: string, example: ao-thun-uniqlo-xanh, description: 'URL-friendly, globally unique and fixed at creation.' }
+        name: { type: string, example: Áo thun Uniqlo cổ tròn xanh navy }
         status: { $ref: '#/components/schemas/ListingStatus' }
         condition: { $ref: '#/components/schemas/ListingCondition' }
         price_mode: { $ref: '#/components/schemas/PriceMode' }
@@ -385,21 +383,28 @@ components:
         price:
           type: integer
           format: int64
+          minimum: 1
+          example: 299000
           description: >
             The featured variant's price, or the cheapest one when a price sort is in
             force. Not stored on the listing.
         sold:
           type: integer
           format: int64
+          minimum: 0
+          example: 128
           description: >
-            Units taken across the variants — sold plus whatever is reserved right now,
-            since a reservation that is later cancelled comes back out. Read from
-            `cached_sold` on the listing rather than summed per request: a feed page would
-            otherwise aggregate the stock rows of every card on it.
+            Completed sales across the variants. An open checkout does not count and a
+            cancelled one never did, so the number only goes up. Read from `cached_sold`
+            on the listing rather than summed per request: a feed page would otherwise
+            aggregate the stock rows of every card on it.
         cover: { allOf: [{ $ref: '#/components/schemas/Resource' }], nullable: true }
         rating:
           type: number
           format: double
+          minimum: 0
+          maximum: 5
+          example: 4.6
           description: >
             Average review rating from 1 to 5, or 0 when there are none yet.
             Maintained from review events because reviews live in another schema and
@@ -426,9 +431,9 @@ components:
     ListingDetail:
       type: object
       properties:
-        id: { $ref: '#/components/schemas/ProductSPUID' }
-        slug: { type: string }
-        name: { type: string }
+        id: { $ref: '#/components/schemas/ListingID' }
+        slug: { type: string, example: ao-thun-uniqlo-xanh }
+        name: { type: string, example: Áo thun Uniqlo cổ tròn xanh navy }
         description: { type: string }
         status: { $ref: '#/components/schemas/ListingStatus' }
         condition: { $ref: '#/components/schemas/ListingCondition' }
@@ -442,29 +447,30 @@ components:
         images: { type: array, items: { $ref: '#/components/schemas/Resource' }, description: Ordered. The first is the cover. }
         category: { $ref: '#/components/schemas/Category' }
         tags: { type: array, items: { $ref: '#/components/schemas/TagSlug' } }
-        skus: { type: array, items: { $ref: '#/components/schemas/Sku' } }
-        featured_sku_id: { allOf: [{ $ref: '#/components/schemas/ProductSKUID' }], nullable: true }
-        sold: { type: integer, format: int64, description: 'Units taken across the variants — see Listing.sold.' }
-        rating: { type: number, format: double }
+        variants: { type: array, items: { $ref: '#/components/schemas/Variant' } }
+        featured_variant_id: { allOf: [{ $ref: '#/components/schemas/VariantID' }], nullable: true }
+        sold: { type: integer, format: int64, minimum: 0, example: 128, description: 'Completed sales across the variants — see Listing.sold.' }
+        rating: { type: number, format: double, minimum: 0, maximum: 5, example: 4.6 }
         seller: { $ref: '#/components/schemas/AccountSummary' }
         favorited: { type: boolean, description: 'Whether the caller has this saved. False for an anonymous request.' }
         favorite_count:
           type: integer
           format: int64
+          minimum: 0
+          example: 340
           description: >
             How many accounts saved it — social proof on the product page. Only here and
             not on the card: it is a count per listing, cheap for one row and N counts
             for a page of them.
         pending_edit:
-          type: object
-          additionalProperties: true
+          allOf: [{ $ref: '#/components/schemas/PendingEdit' }]
           nullable: true
           description: >
-            An edit waiting on moderation. Visible to the owner and to staff only;
-            buyers see the published version until it is approved.
+            An edit waiting on moderation, null when there is none. Visible to the owner
+            and to staff only; buyers see the published version until it is approved.
         created_at: { type: string, format: date-time }
         deleted_at: { type: string, format: date-time, nullable: true, description: 'Set on a listing the seller removed.' }
-      required: [id, slug, name, description, status, condition, price_mode, shipping_paid_by, currency, specifications, images, category, tags, skus, sold, rating, seller, favorited, favorite_count, created_at]
+      required: [id, slug, name, description, status, condition, price_mode, shipping_paid_by, currency, specifications, images, category, tags, variants, sold, rating, seller, favorited, favorite_count, created_at]
 
     ListingPage:
       type: object
@@ -494,12 +500,12 @@ components:
           items: { $ref: '#/components/schemas/ResourceID' }
           description: Ordered. The first becomes the cover.
         tags: { type: array, items: { $ref: '#/components/schemas/TagSlug' } }
-        skus:
+        variants:
           type: array
           minItems: 1
-          items: { $ref: '#/components/schemas/CreateSkuRequest' }
+          items: { $ref: '#/components/schemas/CreateVariantRequest' }
           description: At least one. Price and shipping weight live on the variant.
-      required: [name, description, category_id, condition, price_mode, shipping_paid_by, currency, skus]
+      required: [name, description, category_id, condition, price_mode, shipping_paid_by, currency, variants]
 
     UpdateListingRequest:
       type: object
@@ -514,4 +520,22 @@ components:
         specifications: { type: object, additionalProperties: true }
         attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
         tags: { type: array, items: { $ref: '#/components/schemas/TagSlug' } }
-        featured_sku_id: { $ref: '#/components/schemas/ProductSKUID' }
+        featured_variant_id: { $ref: '#/components/schemas/VariantID' }
+        clear_featured_variant_id: { type: boolean, example: false, description: 'Leaves the listing with no featured variant; the card then shows the cheapest one.' }
+
+    PendingEdit:
+      type: object
+      description: >
+        The editable subset of a listing, held until moderation applies it. Same fields as
+        UpdateListingRequest and only those: an edit that could carry anything would be a
+        blob nobody can diff or review.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200, example: Áo thun Uniqlo cổ tròn xanh navy }
+        description: { type: string, maxLength: 20000 }
+        category_id: { $ref: '#/components/schemas/CategoryID' }
+        condition: { $ref: '#/components/schemas/ListingCondition' }
+        price_mode: { $ref: '#/components/schemas/PriceMode' }
+        shipping_paid_by: { $ref: '#/components/schemas/ShippingPaidBy' }
+        specifications: { type: object, additionalProperties: true }
+        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+        tags: { type: array, items: { $ref: '#/components/schemas/TagSlug' } }

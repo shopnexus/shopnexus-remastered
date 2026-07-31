@@ -179,19 +179,72 @@ give it its own doc under `docs/` and link it from here.
   reader. `nil` is the one representation of absent, so a `NULL` column scans straight
   into the field and writes straight back — the adapter has no `nullText`/`nullID` and
   the SELECT has no `COALESCE`, and a `*string` DTO field is a direct assignment rather
-  than a conversion. `shared/ptr` is the toolkit: `ptr.Of` (Go cannot take the address
-  of a literal), `ptr.Val` (nil reads as the zero value, for a log attribute or a query
-  filter), `ptr.Eq` (value equality — `==` on two pointers compares addresses), and
-  `ptr.NonZero` (the inverse, for a value arriving from a wire format or a text column
-  that cannot say "absent"). The cost this rule buys off is real and paid once per
-  field: a setter has to collapse `&""` to nil so there is still exactly one way to
-  spell absent — `domain.Account`'s `setIdentifier` is the pattern.
-- **Patching an optional field is `patch.ApplyPtr`, a required one `patch.Apply`.**
-  Since every optional field is a pointer, the destination type picks the helper and
-  there is nothing else to decide: `patch.Field[T]`'s null becomes the entity's nil.
+  than a conversion.
+- **Pointer handling is written out, not routed through a helper package.** There is no
+  `optional`/`patch` package: `if s := NormalizeEmail(email); s != "" { a.Email = &s }`
+  says what it does at the site, where a generic `NonZero` made the reader jump. So —
+  building an optional field is `if v != "" { x = &v }`; reading one is
+  `if p != nil { … *p … }` (or a plain `*p` where a guard just proved it non-nil, with the
+  guard named in a comment); comparing two is `a != nil && b != nil && *a == *b`; and a
+  pointer to a literal is a local variable, which is also how tests build DTOs. No double
+  pointer anywhere: `**T` as a parameter or a field is not a shape this codebase has.
+- **A domain mutator takes the value, not the pointer, and clearing is its own method.**
+  `SetEmail(string)` / `ClearEmail()` beats `ChangeEmail(*string)`: the domain then holds no
+  pointer logic at all, and the service reads
+  `switch { case req.ClearEmail: acc.ClearEmail(); case req.Email != nil: acc.SetEmail(*req.Email) }`.
+  Passing `""` is the same fact as clearing, so there stays exactly one way to spell absent.
 - **Persistence:** pgx `pgx.NamedArgs` + hand-written SQL. No ORM, no sqlc.
   `FindBy*` returns `(zero, domain.ErrXNotFound)` — never `(nil, nil)` sentinels
   across the port.
+- **An entity is a child of an aggregate only when a rule spans it and the root.**
+  Apply the test, do not assume a table is a child because it has the account's id:
+  "at least one way to sign in" spans `account.password` and the linked providers, so
+  `oauth_identity` is a child; a push token identifies an install and moves between
+  accounts, so `device` is its own aggregate. Pulling every table under one root is the
+  legacy mistake in a new shape — a display-name change should not load a hypertable.
+  Today the only aggregate is `account` = {`account`, `oauth_identity[]`}; everything else
+  in the module — `contact`, `device`, `identity_document` — is its own.
+- **A mandatory 1-1 table is columns on the parent, not a table.** `profile` was merged into
+  `account`: a display name is required, inserted in the same statement, read by every
+  command and written by the same UPDATE, so the split bought a join and a second write and
+  nothing else. `domain.Profile` survives as a value object over those columns — the DTO
+  shape is unchanged and `FindProfile` still answers just the display half. A 1-1 table
+  earns its keep only when the halves are written or read apart (a hypertable, an optional
+  detail row nobody loads on the common path).
+  `contact` is the worked example of the test failing: one-default-per-kind spans the
+  contact set only, never a field of the account row, so pulling it in would load
+  eighteen columns of address on every display-name change.
+- **A child is an exported field, mutated directly.** `domain.Account` holds
+  `Profile` and `Identities []*OAuthIdentity` in the open; a caller assigns
+  `acc.Profile.Name` and appends. Three things make that safe and they are one package
+  deal: `Get` is the **only** loader (so a slice is always the whole set), `Save`
+  **validates the whole aggregate** (so a broken invariant is refused at the write), and
+  `Save` **deletes by negation** (`provider <> ALL(@keep)`, so no removal list has to be
+  kept and forgetting to record one is not a failure mode that exists). Break one and the
+  other two stop holding. A method is written only for what an assignment cannot do: a
+  rule only the root sees (`Unlink`), a change with a consequence (`ChangeEmail` clears
+  `email_verified`), a fact worth recording.
+- **A command is `Get` → mutate in memory → `Save`, guarded by `Version`.** No callback,
+  no write-surface interface: `Save` validates, writes the row `WHERE version = @version`,
+  syncs the children and commits, or answers `domain.ErrVersionConflict` (409) — a stale
+  read loses instead of overwriting what it never saw. That is what stops two concurrent
+  unlinks of different providers from both reading "there is another way in". Retry is the
+  client's call; add a retry loop in a service only when a route needs it.
+  The conditional-write idiom (`UPDATE ... WHERE status = 'pending'`, check
+  `RowsAffected`) stays for a guard with no aggregate to version — `identity_document`.
+- **A DB constraint that already enforces a rule stays.** The aggregate does not replace a
+  partial unique index: `contact`'s one-default-per-kind is cleared by the adapter in the
+  same transaction as the write, because the index holds even when a service is wrong.
+- **A domain event is a fact, never an instruction.** `domain.Event{Code, Fields}` is what
+  a mutator recorded (`account.email_changed`, `account.suspend`); `Save` turns each into
+  an `audit_log` row **in the same transaction as the change**, so a write that landed
+  always has a trail and the diff comes from the decision instead of a reconstruction.
+  The test that keeps the line: **delete every `record()` call and the database is still
+  right** — only the trail is lost. Persistence is driven by the struct's state, never by
+  the event list, because "no event" must never mean "no write". `Happened(code)` is how a
+  service asks "did this command change the email" without snapshotting a field first.
+  An insert has no version to guard and no events yet, so its one audit row is still
+  written by hand (`InsertAuditLog`).
 - **Schema isolation:** every module lives in a Postgres schema named after it.
   Each module's pool sets `search_path = <schema>, public` (in `newRepo` via
   `postgres.NewPool(dsn, schema)`), so **all SQL — DDL and queries — stays
@@ -273,20 +326,37 @@ give it its own doc under `docs/` and link it from here.
   walk, so it stays O(1) and needs no set type in `cache.Client`; a session
   record carries the epoch it was born with. Both TTLs are constructor arguments
   in `cmd/gateway`, like the JWT TTL always was.
-- **Tri-state PATCH fields (`shared/patch`).** A `patch.Field[T]` distinguishes
-  absent / null / value; a pointer cannot. Every optional field of a PATCH body
-  uses it, because "leave this alone" and "clear this" are different requests
-  (`PATCH /me` removes an identifier by sending null). The service applies the
-  patch onto the domain entity and then validates the **whole** entity, so a rule
-  like "not the last identifier" or "a birth date is not in the future" is
-  checked against the result rather than the field. Applying it is
-  `patch.Apply(&entity.Field, req.Field)` — one shape for every field, where null
-  means the zero value and `Validate` is the **only** thing that decides whether
-  the result is legal; `patch.ApplyPtr` is the same for a destination that is
-  itself a pointer. Never skip a null to protect a required field: that answers
-  200 to a request the service did not carry out. A site that converts a type or
-  calls a setter stays a written-out `if req.X.Present()` with `patch.Value` —
-  it should look different, because it is doing something different.
+- **A tri-state PATCH field is a pointer plus a `clear_*` bool.** Absent leaves the field
+  alone, a value replaces it, the flag removes it — three states out of two ordinary JSON
+  fields, no custom unmarshaller and no `null` on the wire. A **required** column gets no
+  flag, because there is nothing to clear (`if req.X != nil { dst = *req.X }`); a nullable
+  one gets one (`switch { case req.ClearX: dst = nil; case req.X != nil: dst = req.X }`).
+  Fields that only make sense together share a single flag — `clear_district`,
+  `clear_location` — but are still **applied one field at a time**, or half a pair reaches
+  the entity as two set values and the "both or neither" rule can no longer refuse it. The
+  service applies the patch onto the entity and then validates the **whole** entity, so
+  "not the last identifier" or "a birth date is not in the future" is checked against the
+  result rather than the field. Never drop a clear to protect a required field: that answers
+  200 to a request the service did not carry out.
+- **An event binds its code to its payload type, like `eventbus.Topic[T]` does for the bus.**
+  `domain/events.go` declares one var per fact —
+  `var EmailChanged = newEventType[IdentifierChange]("account.email_changed")` — and nothing
+  else names that string. Recording is the generic free function `record(a, EmailChanged,
+  IdentifierChange{…})` (Go has no generic methods), reading is
+  `PayloadOf(e, EmailChanged)`, which answers false for a different fact so nobody reads the
+  wrong shape out of an `any`. A payload is a **struct with json tags**, never
+  `map[string]any`: those tags are `audit_log.diff`'s column names, so changing one rewrites
+  how history reads. Same for a row dump — `Account.Snapshot()` returns `AccountSnapshot`.
+  The point is the pair being declared once: a typo'd literal used to compile and silently
+  match nothing, and a map payload made every reader guess its keys.
+- **A repository write is static SQL, never built by string concatenation.** After a
+  `Get`/`Find` the caller holds the whole row, so the statement is a plain
+  `SET col = @col` list. Where a patch is applied without reading first, it is still one
+  constant string: `COALESCE(@x, x)` for a NOT NULL column, and
+  `CASE WHEN @set_x THEN @x ELSE x END` for a nullable one, where the pair on the params
+  struct is the same `*T` + `SetX bool` the DTO carries. A cross-field rule ("changing the
+  phone clears `phone_verified`") disqualifies the blind patch: writing it in SQL moves the
+  rule out of `domain`, where no test reaches it without a database.
 - **One-time secrets live in Redis, not in a table** (email verification,
   password reset, contact phone code): each is read once and then has to
   disappear, which is a TTL rather than a row somebody sweeps. Same for send

@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -11,13 +10,17 @@ import (
 )
 
 const identityColumns = `id, account_id, doc_type::text, provider, provider_ref, status::text,
-	       COALESCE(rejection_reason, ''), verified_at, expires_at, created_at`
+	       rejection_reason, verified_at, expires_at, created_at`
 
-func scanIdentity(row pgx.Row) (domain.IdentityDocument, error) {
+// scanIdentity reads identityColumns, plus whatever the caller appended to the SELECT —
+// a window count, on the paged read. pgx.Rows satisfies pgx.Row, so this one list serves
+// every read of the table.
+func scanIdentity(row pgx.Row, tail ...any) (domain.IdentityDocument, error) {
 	var d domain.IdentityDocument
-	err := row.Scan(&d.ID, &d.AccountID, &d.DocType, &d.Provider, &d.ProviderRef, &d.Status,
-		&d.RejectionReason, &d.VerifiedAt, &d.ExpiresAt, &d.CreatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
+	dest := append([]any{&d.ID, &d.AccountID, &d.DocType, &d.Provider, &d.ProviderRef, &d.Status,
+		&d.RejectionReason, &d.VerifiedAt, &d.ExpiresAt, &d.CreatedAt}, tail...)
+	err := row.Scan(dest...)
+	if isNoRows(err) {
 		return domain.IdentityDocument{}, domain.ErrIdentityDocumentNotFound
 	}
 	if err != nil {
@@ -42,7 +45,7 @@ func (r *Repo) InsertIdentityDocument(ctx context.Context, d *domain.IdentityDoc
 		"provider":         d.Provider,
 		"provider_ref":     d.ProviderRef,
 		"status":           string(d.Status),
-		"rejection_reason": nullText(d.RejectionReason),
+		"rejection_reason": d.RejectionReason,
 		"verified_at":      d.VerifiedAt,
 		"expires_at":       d.ExpiresAt,
 	}
@@ -102,10 +105,9 @@ func (r *Repo) ListIdentityDocumentsByStatus(ctx context.Context, status domain.
 		total int64
 	)
 	for rows.Next() {
-		var d domain.IdentityDocument
-		if err := rows.Scan(&d.ID, &d.AccountID, &d.DocType, &d.Provider, &d.ProviderRef, &d.Status,
-			&d.RejectionReason, &d.VerifiedAt, &d.ExpiresAt, &d.CreatedAt, &total); err != nil {
-			return nil, 0, fmt.Errorf("db scan identity document queue row: %w", err)
+		d, err := scanIdentity(rows, &total)
+		if err != nil {
+			return nil, 0, err
 		}
 		out = append(out, d)
 	}
@@ -129,7 +131,7 @@ func (r *Repo) UpdateIdentityVerdict(ctx context.Context, d domain.IdentityDocum
 	args := pgx.NamedArgs{
 		"id":               d.ID,
 		"status":           string(d.Status),
-		"rejection_reason": nullText(d.RejectionReason),
+		"rejection_reason": d.RejectionReason,
 		"verified_at":      d.VerifiedAt,
 		"expires_at":       d.ExpiresAt,
 	}
@@ -149,10 +151,9 @@ func (r *Repo) UpdateIdentityVerdict(ctx context.Context, d domain.IdentityDocum
 func collectIdentities(rows pgx.Rows) ([]domain.IdentityDocument, error) {
 	var out []domain.IdentityDocument
 	for rows.Next() {
-		var d domain.IdentityDocument
-		if err := rows.Scan(&d.ID, &d.AccountID, &d.DocType, &d.Provider, &d.ProviderRef, &d.Status,
-			&d.RejectionReason, &d.VerifiedAt, &d.ExpiresAt, &d.CreatedAt); err != nil {
-			return nil, fmt.Errorf("db scan identity document row: %w", err)
+		d, err := scanIdentity(rows)
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, d)
 	}

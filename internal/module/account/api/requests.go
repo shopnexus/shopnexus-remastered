@@ -4,16 +4,15 @@ import (
 	"time"
 
 	"shopnexus/internal/shared/id"
-	"shopnexus/internal/shared/patch"
 )
 
 // A field tagged `json:"-"` is filled by the gateway from the token or the path,
 // never from the body: a request that could name its own actor is a request that
 // can act as somebody else.
 //
-// Optional fields of a PATCH body are patch.Field, which distinguishes "absent"
-// from "null" — the API needs both, since sending null is how an identifier or an
-// avatar is removed.
+// An optional PATCH field is a pointer, and a nullable one carries a `clear_*` bool
+// beside it: omitted leaves the field alone, a value replaces it, the flag removes it.
+// Fields that only make sense together (the district pair, the coordinate) share one flag.
 
 // --- authentication ---
 
@@ -96,27 +95,36 @@ type GetMeRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 }
 
-// UpdateAccountRequest changes the caller's identifiers. Every field is optional;
-// null removes one, which is refused when it is the last.
+// UpdateAccountRequest changes the caller's identifiers. Clearing the last one is
+// refused, because an account nobody can be addressed by cannot sign in.
 type UpdateAccountRequest struct {
-	ActorID  id.ID[id.Account]   `json:"-" validate:"required"`
-	Email    patch.Field[string] `json:"email"`
-	Phone    patch.Field[string] `json:"phone"`
-	Username patch.Field[string] `json:"username"`
+	ActorID       id.ID[id.Account] `json:"-" validate:"required"`
+	Email         *string           `json:"email,omitempty" validate:"omitempty,email,max=255"`
+	Phone         *string           `json:"phone,omitempty" validate:"omitempty,e164"`
+	Username      *string           `json:"username,omitempty" validate:"omitempty,min=3,max=100"`
+	ClearEmail    bool              `json:"clear_email,omitempty"`
+	ClearPhone    bool              `json:"clear_phone,omitempty"`
+	ClearUsername bool              `json:"clear_username,omitempty"`
 }
 
 // UpdateProfileRequest is the shop front. Locale and timezone also decide how
-// notifications are written and when they are sent.
+// notifications are written and when they are sent — they are required columns, so they
+// have a value or are left alone, and there is nothing to clear.
 type UpdateProfileRequest struct {
-	ActorID          id.ID[id.Account]               `json:"-" validate:"required"`
-	Name             patch.Field[string]             `json:"name"`
-	Description      patch.Field[string]             `json:"description"`
-	Gender           patch.Field[string]             `json:"gender"`
-	DateOfBirth      patch.Field[string]             `json:"date_of_birth"`
-	AvatarResourceID patch.Field[id.ID[id.Resource]] `json:"avatar_resource_id"`
-	Country          patch.Field[string]             `json:"country"`
-	Locale           patch.Field[string]             `json:"locale"`
-	Timezone         patch.Field[string]             `json:"timezone"`
+	ActorID          id.ID[id.Account]   `json:"-" validate:"required"`
+	Name             *string             `json:"name,omitempty" validate:"omitempty,min=1,max=100"`
+	Country          *string             `json:"country,omitempty" validate:"omitempty,len=2"`
+	Locale           *string             `json:"locale,omitempty" validate:"omitempty,max=10"`
+	Timezone         *string             `json:"timezone,omitempty" validate:"omitempty,max=64"`
+	Description      *string             `json:"description,omitempty" validate:"omitempty,max=2000"`
+	Gender           *string             `json:"gender,omitempty" validate:"omitempty,oneof=male female other"`
+	DateOfBirth      *string             `json:"date_of_birth,omitempty"`
+	AvatarResourceID *id.ID[id.Resource] `json:"avatar_resource_id,omitempty"`
+
+	ClearDescription      bool `json:"clear_description,omitempty"`
+	ClearGender           bool `json:"clear_gender,omitempty"`
+	ClearDateOfBirth      bool `json:"clear_date_of_birth,omitempty"`
+	ClearAvatarResourceID bool `json:"clear_avatar_resource_id,omitempty"`
 }
 
 type GetPublicAccountRequest struct {
@@ -167,24 +175,31 @@ type CreateContactRequest struct {
 // placed keeps its own snapshot, so editing this row never rewrites where a
 // shipment was going.
 type UpdateContactRequest struct {
-	ActorID           id.ID[id.Account]    `json:"-" validate:"required"`
-	ID                id.ID[id.Contact]    `json:"-" validate:"required"`
-	FullName          patch.Field[string]  `json:"full_name"`
-	Phone             patch.Field[string]  `json:"phone"`
-	AddressType       patch.Field[string]  `json:"address_type"`
-	IsDefaultDelivery patch.Field[bool]    `json:"is_default_delivery"`
-	IsDefaultPickup   patch.Field[bool]    `json:"is_default_pickup"`
-	ProvinceCode      patch.Field[string]  `json:"province_code"`
-	ProvinceName      patch.Field[string]  `json:"province_name"`
-	DistrictCode      patch.Field[string]  `json:"district_code"`
-	DistrictName      patch.Field[string]  `json:"district_name"`
-	WardCode          patch.Field[string]  `json:"ward_code"`
-	WardName          patch.Field[string]  `json:"ward_name"`
-	PostalCode        patch.Field[string]  `json:"postal_code"`
-	Address           patch.Field[string]  `json:"address"`
-	AddressDetail     patch.Field[string]  `json:"address_detail"`
-	Latitude          patch.Field[float64] `json:"latitude"`
-	Longitude         patch.Field[float64] `json:"longitude"`
+	ActorID           id.ID[id.Account] `json:"-" validate:"required"`
+	ID                id.ID[id.Contact] `json:"-" validate:"required"`
+	FullName          *string           `json:"full_name,omitempty" validate:"omitempty,min=1,max=100"`
+	Phone             *string           `json:"phone,omitempty" validate:"omitempty,e164"`
+	AddressType       *string           `json:"address_type,omitempty" validate:"omitempty,oneof=home work"`
+	IsDefaultDelivery *bool             `json:"is_default_delivery,omitempty"`
+	IsDefaultPickup   *bool             `json:"is_default_pickup,omitempty"`
+	Country           *string           `json:"country,omitempty" validate:"omitempty,len=2"`
+	ProvinceCode      *string           `json:"province_code,omitempty" validate:"omitempty,max=20"`
+	ProvinceName      *string           `json:"province_name,omitempty" validate:"omitempty,max=100"`
+	DistrictCode      *string           `json:"district_code,omitempty" validate:"omitempty,max=20"`
+	DistrictName      *string           `json:"district_name,omitempty" validate:"omitempty,max=100"`
+	WardCode          *string           `json:"ward_code,omitempty" validate:"omitempty,max=20"`
+	WardName          *string           `json:"ward_name,omitempty" validate:"omitempty,max=100"`
+	PostalCode        *string           `json:"postal_code,omitempty" validate:"omitempty,max=20"`
+	Address           *string           `json:"address,omitempty" validate:"omitempty,min=1,max=255"`
+	AddressDetail     *string           `json:"address_detail,omitempty" validate:"omitempty,max=255"`
+	Latitude          *float64          `json:"latitude,omitempty" validate:"omitempty,gte=-90,lte=90"`
+	Longitude         *float64          `json:"longitude,omitempty" validate:"omitempty,gte=-180,lte=180"`
+
+	// The district pair and the coordinate travel together, so they clear together.
+	ClearDistrict      bool `json:"clear_district,omitempty"`
+	ClearPostalCode    bool `json:"clear_postal_code,omitempty"`
+	ClearAddressDetail bool `json:"clear_address_detail,omitempty"`
+	ClearLocation      bool `json:"clear_location,omitempty"`
 }
 
 type DeleteContactRequest struct {

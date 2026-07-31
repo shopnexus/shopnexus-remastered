@@ -69,11 +69,15 @@ func (s *Service) StartIdentityVerification(ctx context.Context, req accountapi.
 	if err := s.repo.InsertIdentityDocument(ctx, &doc); err != nil {
 		return accountapi.IdentityVerificationTicket{}, fmt.Errorf("insert identity document: %w", err)
 	}
-	return accountapi.IdentityVerificationTicket{
+	ticket := accountapi.IdentityVerificationTicket{
 		Document:               toIdentityDocument(doc),
-		VendorSessionURL:       optional(verdict.SessionURL),
 		VendorSessionExpiresAt: verdict.SessionExpiresAt,
-	}, nil
+	}
+	// A vendor that decides on the spot hands back no session to finish in.
+	if verdict.SessionURL != "" {
+		ticket.VendorSessionURL = &verdict.SessionURL
+	}
+	return ticket, nil
 }
 
 // scans resolves the uploaded images to the short-lived URLs the vendor reads them from.
@@ -137,19 +141,15 @@ func (s *Service) AdminListIdentityDocuments(ctx context.Context, req accountapi
 	if err != nil {
 		return accountapi.Page[accountapi.AdminIdentityDocument]{}, fmt.Errorf("find profiles: %w", err)
 	}
-	ordered := make([]domain.Profile, 0, len(rows))
-	for _, d := range rows {
-		ordered = append(ordered, profiles[d.AccountID])
-	}
-	subjects := s.summaries(ctx, ordered)
+	subjects := s.summariesByID(ctx, profiles)
 
 	out := make([]accountapi.AdminIdentityDocument, 0, len(rows))
-	for i, d := range rows {
-		subject := subjects[i]
-		// A profile that did not come back leaves the summary with a zero id; name the
-		// account anyway, so the queue entry is still actionable.
-		if subject.ID == 0 {
-			subject.ID = id.Of[id.Account](d.AccountID)
+	for _, d := range rows {
+		subject, ok := subjects[d.AccountID]
+		if !ok {
+			// A profile that did not come back still has to leave the case actionable, so
+			// the entry names the account and nothing else.
+			subject = accountapi.AccountSummary{ID: id.Of[id.Account](d.AccountID)}
 		}
 		out = append(out, accountapi.AdminIdentityDocument{
 			Document: toIdentityDocument(d),

@@ -105,7 +105,7 @@ components:
             here because a withdrawal is a payment session and hiding that would make its
             id unexplainable.
         currency: { $ref: '#/components/schemas/CurrencyCode' }
-        amount: { type: integer, format: int64 }
+        amount: { type: integer, format: int64, minimum: 1, example: 500000 }
         bank_account: { $ref: '#/components/schemas/BankAccount' }
         resolved_by_id:
           allOf: [{ $ref: '#/components/schemas/AccountID' }]
@@ -127,6 +127,6 @@ components:
       type: object
       properties:
         currency: { $ref: '#/components/schemas/CurrencyCode' }
-        amount: { type: integer, format: int64, minimum: 1 }
+        amount: { type: integer, format: int64, minimum: 1, example: 500000 }
         bank_account_id: { $ref: '#/components/schemas/BankAccountID' }
       required: [currency, amount, bank_account_id]

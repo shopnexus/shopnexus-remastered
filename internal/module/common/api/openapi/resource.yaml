@@ -148,14 +148,18 @@ components:
         id: { $ref: '#/components/schemas/ResourceID' }
         provider:
           type: string
+          example: minio
           description: Storage backend, kebab-case — `s3`, `minio`, `local`.
         mime: { type: string, example: image/jpeg }
         size:
           type: integer
           format: int64
+          minimum: 0
+          example: 248132
           description: Bytes, as read back from storage rather than as declared.
         checksum:
           type: string
+          example: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
           nullable: true
           description: Content hash, used to share one stored object between identical uploads.
         metadata:
@@ -164,6 +168,8 @@ components:
           description: Backend-specific extras — dimensions, duration, CDN path.
         url:
           type: string
+          format: uri
+          example: https://cdn.shopnexus.test/o/9f86d081?expires=1785000000
           nullable: true
           description: >
             Short-lived URL to fetch the bytes. Null while the upload is
@@ -187,11 +193,13 @@ components:
           type: integer
           format: int64
           minimum: 1
+          example: 248132
           description: >
             Expected byte count, used to bound the presigned PUT. The recorded size
             is what storage reports at completion, not this.
         checksum:
           type: string
+          example: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
           maxLength: 128
           description: >
             Content hash if known. A match returns the stored resource and skips the

@@ -120,6 +120,7 @@ components:
         open_reports_against_target:
           type: integer
           format: int64
+          minimum: 0
           description: >
             How many other unresolved reports name the same target. A pattern is
             what a decision rests on rather than a single complaint.

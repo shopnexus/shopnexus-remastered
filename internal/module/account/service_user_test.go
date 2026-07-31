@@ -7,7 +7,6 @@ import (
 
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/domain"
-	"shopnexus/internal/shared/patch"
 )
 
 func contactRequest() accountapi.CreateContactRequest {
@@ -66,9 +65,32 @@ func TestCreateContact_HalfADistrictRejected(t *testing.T) {
 	}
 }
 
-// Someone else's address is forbidden, not missing: the id is real and the caller has no
-// business with it.
-func TestUpdateContact_OtherAccountForbidden(t *testing.T) {
+// The same rule on a PATCH, which is a separate code path: sending one district field
+// leaves the other as it was, so the pair has to reach Validate half-set and be refused.
+func TestUpdateContact_HalfADistrictRejected(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	owner := h.register(t, registerRequest())
+	req := contactRequest()
+	req.ActorID = owner.Account.ID
+	created, err := h.svc.CreateContact(ctx, req)
+	if err != nil {
+		t.Fatalf("CreateContact: %v", err)
+	}
+
+	districtCode := "760"
+	_, err = h.svc.UpdateContact(ctx, accountapi.UpdateContactRequest{
+		ActorID: owner.Account.ID, ID: created.ID, DistrictCode: &districtCode,
+	})
+	if got := status(t, err); got != 400 {
+		t.Fatalf("status = %d, want 400", got)
+	}
+}
+
+// Someone else's address is not found rather than forbidden: a contact is reached through
+// its account's aggregate, so one that is not in the caller's set does not exist to them —
+// and 404 leaks less than 403, which confirms the id is real.
+func TestUpdateContact_OtherAccountNotFound(t *testing.T) {
 	h := newHarness()
 	ctx := context.Background()
 	owner := h.register(t, registerRequest())
@@ -83,11 +105,12 @@ func TestUpdateContact_OtherAccountForbidden(t *testing.T) {
 		t.Fatalf("CreateContact: %v", err)
 	}
 
+	hijacked := "Hijack"
 	_, err = h.svc.UpdateContact(ctx, accountapi.UpdateContactRequest{
-		ActorID: intruder.Account.ID, ID: created.ID, FullName: patch.Of("Hijack"),
+		ActorID: intruder.Account.ID, ID: created.ID, FullName: &hijacked,
 	})
-	if got := status(t, err); got != 403 {
-		t.Fatalf("status = %d, want 403", got)
+	if got := status(t, err); got != 404 {
+		t.Fatalf("status = %d, want 404", got)
 	}
 }
 
@@ -120,14 +143,108 @@ func TestUpdateContact_NewPhoneIsUnverified(t *testing.T) {
 		t.Fatal("phone_verified = false after a correct code")
 	}
 
+	newPhone := "+84909999999"
 	updated, err := h.svc.UpdateContact(ctx, accountapi.UpdateContactRequest{
-		ActorID: owner.Account.ID, ID: created.ID, Phone: patch.Of("+84909999999"),
+		ActorID: owner.Account.ID, ID: created.ID, Phone: &newPhone,
 	})
 	if err != nil {
 		t.Fatalf("UpdateContact: %v", err)
 	}
 	if updated.PhoneVerified {
 		t.Fatal("phone_verified survived a number change")
+	}
+}
+
+// A required field has no clear flag, so the only way to empty it is to send an empty
+// value — and that is refused rather than silently dropped: answering 200 to a request
+// that was not carried out leaves the client with no way to find out.
+func TestUpdateContact_EmptyingARequiredFieldRejected(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	owner := h.register(t, registerRequest())
+	req := contactRequest()
+	req.ActorID = owner.Account.ID
+	created, err := h.svc.CreateContact(ctx, req)
+	if err != nil {
+		t.Fatalf("CreateContact: %v", err)
+	}
+
+	empty := ""
+	_, err = h.svc.UpdateContact(ctx, accountapi.UpdateContactRequest{
+		ActorID: owner.Account.ID, ID: created.ID, FullName: &empty,
+	})
+	if got := status(t, err); got != 400 {
+		t.Fatalf("status = %d, want 400", got)
+	}
+	// And the stored contact is untouched, since the patch never reached the repository.
+	list, err := h.svc.ListContacts(ctx, accountapi.ListContactsRequest{ActorID: owner.Account.ID})
+	if err != nil {
+		t.Fatalf("ListContacts: %v", err)
+	}
+	if list[0].FullName != req.FullName {
+		t.Errorf("full_name = %q, want it unchanged as %q", list[0].FullName, req.FullName)
+	}
+}
+
+// A PATCH goes through the same coordinate range as a POST. The rule lives on the entity
+// precisely so the two paths cannot drift: a create that refuses latitude 999 and an update
+// that accepts it puts a courier in the wrong hemisphere.
+func TestUpdateContact_CoordinateRangeHoldsOnPatch(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	owner := h.register(t, registerRequest())
+	req := contactRequest()
+	req.ActorID = owner.Account.ID
+	created, err := h.svc.CreateContact(ctx, req)
+	if err != nil {
+		t.Fatalf("CreateContact: %v", err)
+	}
+
+	badLat, lng := 999.0, 106.6
+	_, err = h.svc.UpdateContact(ctx, accountapi.UpdateContactRequest{
+		ActorID: owner.Account.ID, ID: created.ID,
+		Latitude: &badLat, Longitude: &lng,
+	})
+	if got := status(t, err); got != 400 {
+		t.Fatalf("status = %d, want 400", got)
+	}
+
+	// And 0,0 is a real place, so it must still be accepted — the range check must not be
+	// a disguised "is this the zero value" test.
+	zeroLat, zeroLng := 0.0, 0.0
+	if _, err := h.svc.UpdateContact(ctx, accountapi.UpdateContactRequest{
+		ActorID: owner.Account.ID, ID: created.ID,
+		Latitude: &zeroLat, Longitude: &zeroLng,
+	}); err != nil {
+		t.Fatalf("UpdateContact with 0,0: %v", err)
+	}
+}
+
+// The genuinely optional neighbours of that field do clear, which is the other half of the
+// same rule — null means "remove this", and only Validate decides whether that is allowed.
+func TestUpdateContact_ClearingAnOptionalFieldWorks(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	owner := h.register(t, registerRequest())
+	req := contactRequest()
+	req.ActorID = owner.Account.ID
+	req.PostalCode = "70000"
+	req.AddressDetail = "Apartment 4B"
+	created, err := h.svc.CreateContact(ctx, req)
+	if err != nil {
+		t.Fatalf("CreateContact: %v", err)
+	}
+
+	updated, err := h.svc.UpdateContact(ctx, accountapi.UpdateContactRequest{
+		ActorID: owner.Account.ID, ID: created.ID,
+		ClearPostalCode:    true,
+		ClearAddressDetail: true,
+	})
+	if err != nil {
+		t.Fatalf("UpdateContact: %v", err)
+	}
+	if updated.PostalCode != nil || updated.AddressDetail != nil {
+		t.Fatalf("postal_code = %v, address_detail = %v; want both null", updated.PostalCode, updated.AddressDetail)
 	}
 }
 

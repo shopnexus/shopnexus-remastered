@@ -13,11 +13,11 @@ type Seller struct {
 }
 
 type Listing struct {
-	ID     id.ID[id.ProductSPU] `json:"id"`
-	Title  string               `json:"title"`
-	Price  int64                `json:"price"`
-	Status string               `json:"status"`
-	Seller Seller               `json:"seller"`
+	ID     id.ID[id.Listing] `json:"id"`
+	Title  string            `json:"title"`
+	Price  int64             `json:"price"`
+	Status string            `json:"status"`
+	Seller Seller            `json:"seller"`
 }
 
 type CreateListingRequest struct {
@@ -27,7 +27,7 @@ type CreateListingRequest struct {
 }
 
 type GetListingRequest struct {
-	ID id.ID[id.ProductSPU] `validate:"required"`
+	ID id.ID[id.Listing] `validate:"required"`
 }
 
 type ListListingsRequest struct {
@@ -36,17 +36,17 @@ type ListListingsRequest struct {
 }
 
 type Stock struct {
-	ProductID id.ID[id.ProductSKU] `json:"product_id"`
-	Quantity  int64                `json:"quantity"`
+	ProductID id.ID[id.Variant] `json:"product_id"`
+	Quantity  int64             `json:"quantity"`
 }
 
 type SetStockRequest struct {
-	ProductID id.ID[id.ProductSKU] `json:"product_id" validate:"required"`
-	Quantity  int64                `json:"quantity" validate:"gte=0"`
+	ProductID id.ID[id.Variant] `json:"product_id" validate:"required"`
+	Quantity  int64             `json:"quantity" validate:"gte=0"`
 }
 
 type GetStockRequest struct {
-	ProductID id.ID[id.ProductSKU] `validate:"required"`
+	ProductID id.ID[id.Variant] `validate:"required"`
 }
 
 type Service interface {

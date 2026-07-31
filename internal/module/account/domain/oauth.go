@@ -21,16 +21,16 @@ type OAuthIdentity struct {
 	CreatedAt   time.Time
 }
 
-func NewOAuthIdentity(accountID int64, provider, uid string) (OAuthIdentity, error) {
+func NewOAuthIdentity(accountID int64, provider, uid string) (*OAuthIdentity, error) {
 	if err := ValidateProvider(provider); err != nil {
-		return OAuthIdentity{}, err
+		return nil, err
 	}
 	if uid == "" {
-		return OAuthIdentity{}, errx.NewValidationError("invalid field: credential", errx.Field{
+		return nil, errx.NewValidationError("invalid field: credential", errx.Field{
 			Field: "credential", Rule: "required", Message: "the provider returned no subject id",
 		})
 	}
-	return OAuthIdentity{AccountID: accountID, Provider: provider, ProviderUID: uid}, nil
+	return &OAuthIdentity{AccountID: accountID, Provider: provider, ProviderUID: uid}, nil
 }
 
 // ValidateProvider guards the kebab-case shape the column CHECKs, and is also the

@@ -140,7 +140,7 @@ components:
     UnreadCount:
       type: object
       properties:
-        unread: { type: integer, format: int64 }
+        unread: { type: integer, format: int64, minimum: 0, example: 3 }
       required: [unread]
 
     MarkNotificationsReadRequest:

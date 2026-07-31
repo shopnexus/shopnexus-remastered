@@ -165,7 +165,7 @@ components:
           description: >
             Starts at the creation time so an empty thread still sorts predictably in
             the inbox.
-        unread: { type: integer, format: int64, description: The counterparty's messages after the caller's read mark. }
+        unread: { type: integer, format: int64, minimum: 0, example: 3, description: The counterparty's messages after the caller's read mark. }
         read_at:
           type: string
           format: date-time
@@ -192,8 +192,8 @@ components:
     ChatUnreadCount:
       type: object
       properties:
-        unread: { type: integer, format: int64 }
-        conversations: { type: integer, format: int64, description: How many threads have anything unread. }
+        unread: { type: integer, format: int64, minimum: 0, example: 3 }
+        conversations: { type: integer, format: int64, minimum: 0, example: 2, description: How many threads have anything unread. }
       required: [unread, conversations]
 
     StartConversationRequest:

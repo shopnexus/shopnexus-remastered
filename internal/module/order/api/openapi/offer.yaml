@@ -141,21 +141,21 @@ components:
       type: object
       properties:
         id: { $ref: '#/components/schemas/OfferID' }
-        spu_id:
-          allOf: [{ $ref: '#/components/schemas/ProductSPUID' }]
+        listing_id:
+          allOf: [{ $ref: '#/components/schemas/ListingID' }]
           description: The listing whose card the offer is shown on.
-        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
+        variant_id: { $ref: '#/components/schemas/VariantID' }
         buyer_id: { $ref: '#/components/schemas/AccountID' }
         seller_id: { $ref: '#/components/schemas/AccountID' }
         author_id: { $ref: '#/components/schemas/AccountID' }
         status: { $ref: '#/components/schemas/OfferStatus' }
-        quantity: { type: integer, format: int64 }
-        total: { type: integer, format: int64, description: 'Currently proposed total, smallest currency unit' }
+        quantity: { type: integer, format: int64, minimum: 1, example: 2 }
+        total: { type: integer, format: int64, minimum: 1, example: 598000, description: 'Currently proposed total, smallest currency unit' }
         currency: { $ref: '#/components/schemas/CurrencyCode' }
         reason: { type: string, description: Shown on the offer card beside the proposed price }
         created_at: { type: string, format: date-time }
         expires_at: { type: string, format: date-time }
-      required: [id, spu_id, sku_id, buyer_id, seller_id, author_id, status, quantity, total, currency, created_at, expires_at]
+      required: [id, listing_id, variant_id, buyer_id, seller_id, author_id, status, quantity, total, currency, created_at, expires_at]
 
     OfferPage:
       type: object
@@ -167,17 +167,17 @@ components:
     CreateOfferRequest:
       type: object
       properties:
-        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
-        quantity: { type: integer, format: int64, minimum: 1 }
-        total: { type: integer, format: int64, minimum: 1 }
+        variant_id: { $ref: '#/components/schemas/VariantID' }
+        quantity: { type: integer, format: int64, minimum: 1, example: 2 }
+        total: { type: integer, format: int64, minimum: 1, example: 598000 }
         reason: { type: string, maxLength: 500 }
-      required: [sku_id, quantity, total]
+      required: [variant_id, quantity, total]
 
     UpdateOfferRequest:
       type: object
       properties:
-        quantity: { type: integer, format: int64, minimum: 1 }
-        total: { type: integer, format: int64, minimum: 1 }
+        quantity: { type: integer, format: int64, minimum: 1, example: 2 }
+        total: { type: integer, format: int64, minimum: 1, example: 598000 }
         reason: { type: string, maxLength: 500 }
       required: [quantity, total]
 

@@ -14,15 +14,22 @@ var (
 	ErrAccountNotFound = errx.NewError(http.StatusNotFound, "account_not_found", "account not found")
 	// One error for all three identifiers on purpose: telling a caller *which* one
 	// collided turns registration into a way to ask "is this address registered".
-	ErrIdentifierTaken    = errx.NewError(http.StatusConflict, "identifier_taken", "email or phone or username already taken")
+	ErrIdentifierTaken = errx.NewError(http.StatusConflict, "identifier_taken", "email or phone or username already taken")
+	// ErrNoIdentifier covers both directions: a new account with nothing to be addressed
+	// by, and a PATCH that would clear the last one. Validate sees the resulting account
+	// rather than the request, so there is one rule and one code.
 	ErrNoIdentifier       = errx.NewError(http.StatusUnprocessableEntity, "no_identifier", "an account needs at least one of email, phone or username")
-	ErrLastIdentifier     = errx.NewError(http.StatusUnprocessableEntity, "last_identifier", "that would leave the account with no identifier")
 	ErrInvalidCredentials = errx.NewError(http.StatusUnauthorized, "invalid_credentials", "wrong credentials")
 	ErrAccountSuspended   = errx.NewError(http.StatusForbidden, "account_suspended", "this account is suspended")
 	ErrNoPassword         = errx.NewError(http.StatusUnprocessableEntity, "no_password", "this account signs in through a provider and has no password")
 	ErrForbidden          = errx.NewError(http.StatusForbidden, "forbidden", "not allowed to act on this resource")
 	ErrModeratorRequired  = errx.NewError(http.StatusForbidden, "moderator_required", "moderator role required")
 	ErrAdminRequired      = errx.NewError(http.StatusForbidden, "admin_required", "admin role required")
+	// ErrVersionConflict is a save built on a stale read: somebody else changed the
+	// account between the load and the write, so the rule the root checked may no longer
+	// hold. 409 because retrying the whole command is exactly the right response, and the
+	// client is the one that knows whether it still wants to.
+	ErrVersionConflict = errx.NewError(http.StatusConflict, "version_conflict", "this account changed while you were editing it; try again")
 
 	// --- one-time secrets ---
 	// Unknown, already used and expired are one error each time: they are the same

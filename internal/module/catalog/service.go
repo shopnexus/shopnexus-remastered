@@ -113,7 +113,7 @@ func (s *Service) toAPIListing(ctx context.Context, l domain.Listing) catalogapi
 		seller.DisplayName = p.Name
 	}
 	return catalogapi.Listing{
-		ID:     id.Of[id.ProductSPU](l.ID),
+		ID:     id.Of[id.Listing](l.ID),
 		Title:  l.Title,
 		Price:  l.Price,
 		Status: l.Status,

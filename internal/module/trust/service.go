@@ -19,7 +19,7 @@ import (
 func prefixFor(refType string) (string, bool) {
 	switch refType {
 	case "listing":
-		return id.Prefix[id.ProductSPU](), true
+		return id.Prefix[id.Listing](), true
 	case "account":
 		return id.Prefix[id.Account](), true
 	case "message":

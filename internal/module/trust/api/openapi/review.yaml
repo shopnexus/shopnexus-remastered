@@ -1,9 +1,9 @@
 # trust fragment: review — the buyer's rating of a product, its replies and votes.
 
 paths:
-  /listings/{spuID}/reviews:
+  /listings/{listingID}/reviews:
     parameters:
-      - { name: spuID, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
+      - { name: listingID, in: path, required: true, schema: { $ref: '#/components/schemas/ListingID' } }
     get:
       tags: [trust]
       summary: Reviews of a listing
@@ -213,8 +213,8 @@ components:
         a tally that has drifted from the rows it summarises is recomputable, but a
         half-applied flip is visible.
       properties:
-        helpful: { type: integer, format: int64 }
-        not_helpful: { type: integer, format: int64 }
+        helpful: { type: integer, format: int64, minimum: 0, example: 12 }
+        not_helpful: { type: integer, format: int64, minimum: 0, example: 1 }
         my_vote:
           type: integer
           enum: [-1, 1]
@@ -236,7 +236,7 @@ components:
       type: object
       properties:
         id: { $ref: '#/components/schemas/ReviewID' }
-        spu_id: { $ref: '#/components/schemas/ProductSPUID' }
+        listing_id: { $ref: '#/components/schemas/ListingID' }
         author: { $ref: '#/components/schemas/AccountSummary' }
         rating: { type: integer, minimum: 1, maximum: 5 }
         body: { type: string }
@@ -249,10 +249,10 @@ components:
             The first few, oldest first. Replies are unlimited, so a page of reviews
             cannot carry all of them — `reply_count` says how many there are and
             `GET /reviews/{id}` returns the rest.
-        reply_count: { type: integer, format: int64 }
+        reply_count: { type: integer, format: int64, minimum: 0, example: 2 }
         votes: { $ref: '#/components/schemas/ReviewVoteTally' }
         created_at: { type: string, format: date-time }
-      required: [id, spu_id, author, rating, body, attachments, replies, reply_count, votes, created_at]
+      required: [id, listing_id, author, rating, body, attachments, replies, reply_count, votes, created_at]
 
     ReviewPage:
       type: object

@@ -3,6 +3,7 @@ package account_test
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -18,7 +19,6 @@ import (
 	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/id"
 	"shopnexus/internal/shared/id/idtest"
-	"shopnexus/internal/shared/patch"
 	"shopnexus/internal/shared/session"
 	"shopnexus/internal/shared/token"
 )
@@ -119,6 +119,18 @@ func status(t *testing.T, err error) uint16 {
 
 func mustErr[T any](_ T, err error) error { return err }
 
+// markEmailVerified sets the flag the way the service does, for a test that needs an
+// already-verified address rather than the flow that produces one.
+func (h *harness) markEmailVerified(accountID int64) error {
+	ctx := context.Background()
+	acc, err := h.repo.Get(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	acc.MarkEmailVerified()
+	return h.repo.Save(ctx, acc, acc.ID)
+}
+
 // storedPhoneCode reads back the code the service minted for a contact. The key is spelled
 // out here because it is private to the service — a test that wants to finish the SMS flow
 // has to look where the real one does.
@@ -164,12 +176,12 @@ func TestRegister_PasswordIsHashed(t *testing.T) {
 	h := newHarness()
 	res := h.register(t, registerRequest())
 
-	acc, err := h.repo.FindAccountByID(context.Background(), res.Account.ID.Int64())
+	acc, err := h.repo.Get(context.Background(), res.Account.ID.Int64())
 	if err != nil {
-		t.Fatalf("FindAccountByID: %v", err)
+		t.Fatalf("Get: %v", err)
 	}
-	if acc.PasswordHash == "" || acc.PasswordHash == "password1" {
-		t.Fatalf("password must be hashed, got %q", acc.PasswordHash)
+	if acc.PasswordHash == nil || *acc.PasswordHash == "password1" {
+		t.Fatalf("password must be hashed, got %v", acc.PasswordHash)
 	}
 }
 
@@ -219,10 +231,10 @@ func TestLogin_UnknownAndWrongPasswordAreIndistinguishable(t *testing.T) {
 func TestLogin_SuspendedAccountRefused(t *testing.T) {
 	h := newHarness()
 	res := h.register(t, registerRequest())
-	acc, _ := h.repo.FindAccountByID(context.Background(), res.Account.ID.Int64())
+	acc, _ := h.repo.Get(context.Background(), res.Account.ID.Int64())
 	acc.Suspend("scam", nil)
-	if err := h.repo.UpdateAccountStatus(context.Background(), acc); err != nil {
-		t.Fatalf("UpdateAccountStatus: %v", err)
+	if err := h.repo.Save(context.Background(), acc, 0); err != nil {
+		t.Fatalf("Save: %v", err)
 	}
 
 	_, err := h.svc.Login(context.Background(), accountapi.LoginRequest{Identifier: "alice@example.com", Password: "password1"})
@@ -284,7 +296,7 @@ func TestLoginOAuth_MergesOnVerifiedEmail(t *testing.T) {
 	if res.Auth.Account.ID != existing.Account.ID {
 		t.Errorf("account = %v, want the existing %v", res.Auth.Account.ID, existing.Account.ID)
 	}
-	links, _ := h.repo.ListOAuthIdentities(context.Background(), existing.Account.ID.Int64())
+	links := h.repo.oauth[existing.Account.ID.Int64()]
 	if len(links) != 1 {
 		t.Fatalf("links = %d, want the provider linked to the existing account", len(links))
 	}
@@ -482,13 +494,14 @@ func TestGetMe_ReportsTheIdentityFlags(t *testing.T) {
 func TestUpdateMe_NewEmailIsUnverified(t *testing.T) {
 	h := newHarness()
 	res := h.register(t, registerRequest())
-	if err := h.repo.MarkEmailVerified(context.Background(), res.Account.ID.Int64()); err != nil {
+	if err := h.markEmailVerified(res.Account.ID.Int64()); err != nil {
 		t.Fatalf("MarkEmailVerified: %v", err)
 	}
 
+	newEmail := "alice2@example.com"
 	me, err := h.svc.UpdateMe(context.Background(), accountapi.UpdateAccountRequest{
 		ActorID: res.Account.ID,
-		Email:   patch.Of("alice2@example.com"),
+		Email:   &newEmail,
 	})
 	if err != nil {
 		t.Fatalf("UpdateMe: %v", err)
@@ -501,9 +514,9 @@ func TestUpdateMe_NewEmailIsUnverified(t *testing.T) {
 	}
 }
 
-// An absent field is left alone; null removes the value. Both have to be possible, which is
-// what patch.Field is for.
-func TestUpdateMe_AbsentAndNullDiffer(t *testing.T) {
+// An absent field is left alone; the clear flag removes the value. Both have to be
+// possible, which is the whole reason a PATCH field is a pointer plus a bool.
+func TestUpdateMe_AbsentAndClearDiffer(t *testing.T) {
 	h := newHarness()
 	req := registerRequest()
 	req.Username = "alice"
@@ -518,13 +531,13 @@ func TestUpdateMe_AbsentAndNullDiffer(t *testing.T) {
 		t.Fatalf("username = %v, want it untouched", me.Username)
 	}
 
-	// Null: removed, because the email is still there to sign in with.
-	me, err = h.svc.UpdateMe(ctx, accountapi.UpdateAccountRequest{ActorID: res.Account.ID, Username: patch.Clear[string]()})
+	// Cleared: removed, because the email is still there to sign in with.
+	me, err = h.svc.UpdateMe(ctx, accountapi.UpdateAccountRequest{ActorID: res.Account.ID, ClearUsername: true})
 	if err != nil {
 		t.Fatalf("UpdateMe: %v", err)
 	}
 	if me.Username != nil {
-		t.Fatalf("username = %v, want null", *me.Username)
+		t.Fatalf("username = %v, want it cleared", *me.Username)
 	}
 }
 
@@ -533,8 +546,8 @@ func TestUpdateMe_LastIdentifierCannotBeRemoved(t *testing.T) {
 	res := h.register(t, registerRequest())
 
 	_, err := h.svc.UpdateMe(context.Background(), accountapi.UpdateAccountRequest{
-		ActorID: res.Account.ID,
-		Email:   patch.Clear[string](),
+		ActorID:    res.Account.ID,
+		ClearEmail: true,
 	})
 	if got := status(t, err); got != 422 {
 		t.Fatalf("status = %d, want 422", got)
@@ -548,9 +561,10 @@ func TestUpdateMe_TakenIdentifierConflicts(t *testing.T) {
 	other.Email = "bob@example.com"
 	h.register(t, other)
 
+	takenEmail := "bob@example.com"
 	_, err := h.svc.UpdateMe(context.Background(), accountapi.UpdateAccountRequest{
 		ActorID: first.Account.ID,
-		Email:   patch.Of("bob@example.com"),
+		Email:   &takenEmail,
 	})
 	if got := status(t, err); got != 409 {
 		t.Fatalf("status = %d, want 409", got)
@@ -562,10 +576,11 @@ func TestUpdateProfile_PatchesAndValidates(t *testing.T) {
 	res := h.register(t, registerRequest())
 	ctx := context.Background()
 
+	description, dob := "Bán đồ cũ", "2001-02-03"
 	p, err := h.svc.UpdateProfile(ctx, accountapi.UpdateProfileRequest{
 		ActorID:     res.Account.ID,
-		Description: patch.Of("Bán đồ cũ"),
-		DateOfBirth: patch.Of("2001-02-03"),
+		Description: &description,
+		DateOfBirth: &dob,
 	})
 	if err != nil {
 		t.Fatalf("UpdateProfile: %v", err)
@@ -584,7 +599,7 @@ func TestUpdateProfile_PatchesAndValidates(t *testing.T) {
 	// A birth date in the future is a rule about the resulting profile, not about the field.
 	future := time.Now().AddDate(1, 0, 0).Format(time.DateOnly)
 	err = mustErr(h.svc.UpdateProfile(ctx, accountapi.UpdateProfileRequest{
-		ActorID: res.Account.ID, DateOfBirth: patch.Of(future),
+		ActorID: res.Account.ID, DateOfBirth: &future,
 	}))
 	if got := status(t, err); got != 400 {
 		t.Errorf("status = %d, want 400 for a future birth date", got)
@@ -624,8 +639,51 @@ func TestUnlinkOAuthIdentity_AllowedWithAPassword(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("UnlinkOAuthIdentity: %v", err)
 	}
-	links, _ := h.repo.ListOAuthIdentities(context.Background(), existing.Account.ID.Int64())
+	links := h.repo.oauth[existing.Account.ID.Int64()]
 	if len(links) != 0 {
 		t.Fatalf("links = %d, want none", len(links))
+	}
+}
+
+// A self-service change leaves a trail too, and it is written by Save rather than by a
+// separate call that could be forgotten — or succeed after the change already failed.
+func TestUpdateMe_RecordsTheChangeInTheAuditLog(t *testing.T) {
+	h := newHarness()
+	res := h.register(t, registerRequest())
+
+	newEmail := "alice2@example.com"
+	if _, err := h.svc.UpdateMe(context.Background(), accountapi.UpdateAccountRequest{
+		ActorID: res.Account.ID, Email: &newEmail,
+	}); err != nil {
+		t.Fatalf("UpdateMe: %v", err)
+	}
+	if !slices.Contains(h.repo.codes(), string(domain.EmailChanged.Code)) {
+		t.Fatalf("audit codes = %v, want the change recorded", h.repo.codes())
+	}
+}
+
+// Two commands built on the same read: the second loses on the version check instead of
+// overwriting a decision it never saw. 409, because retrying the whole command is the
+// right answer and only the client knows whether it still wants to.
+func TestSave_StaleAggregateIsAConflict(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	res := h.register(t, registerRequest())
+
+	first, err := h.repo.Get(ctx, res.Account.ID.Int64())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	stale, err := h.repo.Get(ctx, res.Account.ID.Int64())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	first.SetPhone("+84901234567")
+	if err := h.repo.Save(ctx, first, first.ID); err != nil {
+		t.Fatalf("first Save: %v", err)
+	}
+	stale.SetUsername("alice")
+	if got := status(t, h.repo.Save(ctx, stale, stale.ID)); got != 409 {
+		t.Fatalf("status = %d, want 409", got)
 	}
 }

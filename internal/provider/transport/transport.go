@@ -41,7 +41,7 @@ type QuoteParams struct {
 }
 
 type ItemMetadata struct {
-	SkuID          uuid.UUID
+	VariantID      uuid.UUID
 	Quantity       int64
 	PackageDetails json.RawMessage
 }

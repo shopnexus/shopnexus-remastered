@@ -76,8 +76,8 @@ components:
       properties:
         account_id: { $ref: '#/components/schemas/AccountID' }
         currency: { $ref: '#/components/schemas/CurrencyCode' }
-        available_balance: { type: integer, format: int64, description: Spendable and withdrawable }
-        held_balance: { type: integer, format: int64, description: 'Locked in escrow; not the owner''s to draw yet' }
+        available_balance: { type: integer, format: int64, minimum: 0, example: 1250000, description: Spendable and withdrawable }
+        held_balance: { type: integer, format: int64, minimum: 0, example: 299000, description: 'Locked in escrow; not the owner''s to draw yet' }
         created_at: { type: string, format: date-time }
       required: [account_id, currency, available_balance, held_balance, created_at]
 
@@ -95,16 +95,18 @@ components:
         seq:
           type: integer
           format: int64
+          minimum: 1
+          example: 42
           description: >
             Position in this wallet's ledger, from 1. Identifies the row and orders
             it; a gap means a missing movement. Per wallet, so each currency counts
             from 1 again.
         currency: { $ref: '#/components/schemas/CurrencyCode' }
         kind: { $ref: '#/components/schemas/WalletTransactionKind' }
-        available_delta: { type: integer, format: int64, description: Signed change to the available balance }
-        held_delta: { type: integer, format: int64, description: Signed change to the held balance }
-        available_after: { type: integer, format: int64 }
-        held_after: { type: integer, format: int64 }
+        available_delta: { type: integer, format: int64, example: 250000, description: Signed change to the available balance }
+        held_delta: { type: integer, format: int64, example: -250000, description: Signed change to the held balance }
+        available_after: { type: integer, format: int64, minimum: 0, example: 1250000 }
+        held_after: { type: integer, format: int64, minimum: 0, example: 299000 }
         group_id:
           type: string
           nullable: true

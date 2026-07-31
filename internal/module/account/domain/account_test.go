@@ -8,8 +8,6 @@ import (
 	"shopnexus/internal/shared/errx"
 )
 
-func ptr[T any](v T) *T { return &v }
-
 func status(t *testing.T, err error) uint16 {
 	t.Helper()
 	s, _, _, ok := errx.Decompose(err)
@@ -17,6 +15,25 @@ func status(t *testing.T, err error) uint16 {
 		t.Fatalf("expected a coded error, got %v", err)
 	}
 	return s
+}
+
+// testProfile is the display half of the aggregate, valid and uninteresting.
+func testProfile(t *testing.T) domain.Profile {
+	t.Helper()
+	p, err := domain.NewProfile("Alice", "VN", "vi-VN", "Asia/Ho_Chi_Minh")
+	if err != nil {
+		t.Fatalf("NewProfile: %v", err)
+	}
+	return p
+}
+
+func newAccount(t *testing.T, email, phone, username, hash string) *domain.Account {
+	t.Helper()
+	a, err := domain.NewAccount(domain.RoleUser, email, phone, username, hash, testProfile(t))
+	if err != nil {
+		t.Fatalf("NewAccount: %v", err)
+	}
+	return a
 }
 
 // An account is addressable by any one of the three identifiers, and the values are
@@ -28,21 +45,29 @@ func TestNewAccount_AnyOneIdentifierIsEnough(t *testing.T) {
 		{name: "username", username: "Alice"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			a, err := domain.NewAccount(domain.RoleUser, tc.email, tc.phone, tc.username, "hash")
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			a := newAccount(t, tc.email, tc.phone, tc.username, "hash")
 			if !a.HasIdentifier() {
 				t.Fatal("HasIdentifier() = false")
 			}
-			if tc.email != "" && a.Email != "a@b.com" {
-				t.Errorf("email = %q, want lowercase", a.Email)
+			if tc.email != "" {
+				if a.Email == nil {
+					t.Error("email was not stored")
+				} else if *a.Email != "a@b.com" {
+					t.Errorf("email = %q, want it lowercased", *a.Email)
+				}
 			}
-			if tc.username != "" && a.Username != "alice" {
-				t.Errorf("username = %q, want lowercase", a.Username)
+			if tc.username != "" {
+				if a.Username == nil {
+					t.Error("username was not stored")
+				} else if *a.Username != "alice" {
+					t.Errorf("username = %q, want it lowercased", *a.Username)
+				}
 			}
 			if a.Status != domain.StatusActive || a.Role != domain.RoleUser {
 				t.Errorf("account = %+v, want an active user", a)
+			}
+			if a.Version != 1 {
+				t.Errorf("version = %d, want 1 — Save has a value to check against", a.Version)
 			}
 		})
 	}
@@ -50,21 +75,19 @@ func TestNewAccount_AnyOneIdentifierIsEnough(t *testing.T) {
 
 // An account nobody can be addressed by cannot sign in, so it is not a state that exists.
 func TestNewAccount_NoIdentifierRejected(t *testing.T) {
-	_, err := domain.NewAccount(domain.RoleUser, "", "", "", "hash")
+	_, err := domain.NewAccount(domain.RoleUser, "", "", "", "hash", testProfile(t))
 	if got := status(t, err); got != 422 {
 		t.Fatalf("status = %d, want 422", got)
 	}
 }
 
 // A provider-only account has no password, which is what HasPassword reports and what
-// makes unlinking the last provider refusable.
-func TestNewAccount_PasswordIsOptional(t *testing.T) {
-	a, err := domain.NewAccount(domain.RoleUser, "a@b.com", "", "", "")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if a.HasPassword() {
-		t.Fatal("HasPassword() = true for a provider-only account")
+// makes unlinking the last provider refusable. It still needs a way in, so the constructor
+// counts the password *and* the links.
+func TestNewAccount_PasswordIsOptionalButNotFreeOfCharge(t *testing.T) {
+	_, err := domain.NewAccount(domain.RoleUser, "a@b.com", "", "", "", testProfile(t))
+	if got := status(t, err); got != 422 {
+		t.Fatalf("status = %d, want 422 for an account with no password and no link", got)
 	}
 }
 
@@ -76,66 +99,77 @@ func TestNewAccount_MalformedIdentifiersRejected(t *testing.T) {
 		{name: "username charset", username: "Ali ce!"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := domain.NewAccount(domain.RoleUser, tc.email, tc.phone, tc.username, "hash"); status(t, err) != 400 {
+			_, err := domain.NewAccount(domain.RoleUser, tc.email, tc.phone, tc.username, "hash", testProfile(t))
+			if status(t, err) != 400 {
 				t.Fatalf("expected 400, got %v", err)
 			}
 		})
 	}
 }
 
-// Removing the last identifier is refused, and the entity is left exactly as it was so the
-// caller can report the error and carry on.
-func TestSetEmail_LastIdentifierRefusedAndRolledBack(t *testing.T) {
-	a, err := domain.NewAccount(domain.RoleUser, "a@b.com", "", "", "hash")
-	if err != nil {
-		t.Fatalf("NewAccount: %v", err)
+// An invalid profile is an invalid account: the aggregate validates as one thing, so a
+// caller cannot store a display name the profile's own rules refuse.
+func TestValidate_CoversTheProfile(t *testing.T) {
+	a := newAccount(t, "a@b.com", "", "", "hash")
+	a.Profile.Name = ""
+	if got := status(t, a.Validate()); got != 400 {
+		t.Fatalf("status = %d, want 400", got)
 	}
-	if got := status(t, a.SetEmail(nil)); got != 422 {
+}
+
+// Clearing the last identifier is refused at Validate — which is where Save asks, so the
+// change never reaches the database. The entity is left holding the illegal value on
+// purpose: the command is abandoned, not repaired.
+func TestClearEmail_LastIdentifierIsRefusedAtValidate(t *testing.T) {
+	a := newAccount(t, "a@b.com", "", "", "hash")
+	a.ClearEmail()
+	if got := status(t, a.Validate()); got != 422 {
 		t.Fatalf("status = %d, want 422", got)
-	}
-	if a.Email != "a@b.com" {
-		t.Fatalf("email = %q, want the change rolled back", a.Email)
 	}
 }
 
 // A new address is unverified by definition: keeping the flag would let anyone claim a
 // verified address by editing it.
-func TestSetEmail_ClearsVerified(t *testing.T) {
-	a, _ := domain.NewAccount(domain.RoleUser, "a@b.com", "+84901234567", "", "hash")
+func TestSetEmail_ClearsVerifiedAndRecordsIt(t *testing.T) {
+	a := newAccount(t, "a@b.com", "+84901234567", "", "hash")
 	a.EmailVerified = true
 
-	if err := a.SetEmail(ptr("c@d.com")); err != nil {
-		t.Fatalf("SetEmail: %v", err)
-	}
+	a.SetEmail("c@d.com")
 	if a.EmailVerified {
 		t.Fatal("email_verified survived an address change")
 	}
-	if a.Email != "c@d.com" {
-		t.Fatalf("email = %q", a.Email)
+	if a.Email == nil || *a.Email != "c@d.com" {
+		t.Fatalf("email = %v, want c@d.com", a.Email)
+	}
+	if !a.Happened(domain.EmailChanged.Code) {
+		t.Fatal("the change was not recorded")
 	}
 }
 
-// Re-sending the same address is not a change, so the verified flag stays.
-func TestSetEmail_SameAddressKeepsVerified(t *testing.T) {
-	a, _ := domain.NewAccount(domain.RoleUser, "a@b.com", "", "", "hash")
+// Re-sending the same address is not a change, so the verified flag stays and nothing is
+// recorded — which is what lets a caller ask "did this command change the email".
+func TestSetEmail_SameAddressIsNotAChange(t *testing.T) {
+	a := newAccount(t, "a@b.com", "", "", "hash")
 	a.EmailVerified = true
 
-	if err := a.SetEmail(ptr("A@B.com")); err != nil {
-		t.Fatalf("SetEmail: %v", err)
-	}
+	a.SetEmail("A@B.com")
 	if !a.EmailVerified {
 		t.Fatal("email_verified was cleared by a no-op change")
+	}
+	if a.Happened(domain.EmailChanged.Code) {
+		t.Fatal("a no-op was recorded as a change")
 	}
 }
 
 // Removing one identifier while another remains is fine — that is the point of having three.
-func TestSetPhone_RemovableWhileAnotherIdentifierRemains(t *testing.T) {
-	a, _ := domain.NewAccount(domain.RoleUser, "a@b.com", "+84901234567", "", "hash")
-	if err := a.SetPhone(nil); err != nil {
-		t.Fatalf("SetPhone: %v", err)
+func TestClearPhone_AllowedWhileAnotherIdentifierRemains(t *testing.T) {
+	a := newAccount(t, "a@b.com", "+84901234567", "", "hash")
+	a.ClearPhone()
+	if a.Phone != nil {
+		t.Fatalf("phone = %q, want cleared", *a.Phone)
 	}
-	if a.Phone != "" {
-		t.Fatalf("phone = %q, want cleared", a.Phone)
+	if err := a.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
 	}
 }
 
@@ -145,24 +179,24 @@ func TestIsSuspended(t *testing.T) {
 
 	for _, tc := range []struct {
 		name  string
-		build func() domain.Account
+		build func() *domain.Account
 		want  bool
 	}{
-		{name: "active", build: func() domain.Account { return domain.Account{Status: domain.StatusActive} }, want: false},
+		{name: "active", build: func() *domain.Account { return &domain.Account{Status: domain.StatusActive} }, want: false},
 		{
 			name:  "permanent",
-			build: func() domain.Account { a := domain.Account{}; a.Suspend("scam", nil); return a },
+			build: func() *domain.Account { a := &domain.Account{}; a.Suspend("scam", nil); return a },
 			want:  true,
 		},
 		{
 			name:  "still running",
-			build: func() domain.Account { a := domain.Account{}; a.Suspend("scam", &future); return a },
+			build: func() *domain.Account { a := &domain.Account{}; a.Suspend("scam", &future); return a },
 			want:  true,
 		},
 		{
 			// Nothing rewrites the row when the clock runs out, so the deadline has to be read.
 			name:  "deadline passed",
-			build: func() domain.Account { a := domain.Account{}; a.Suspend("scam", &past); return a },
+			build: func() *domain.Account { a := &domain.Account{}; a.Suspend("scam", &past); return a },
 			want:  false,
 		},
 	} {
@@ -177,13 +211,16 @@ func TestIsSuspended(t *testing.T) {
 // Reinstating clears the details with the status: the row keeps only the suspension in
 // force, and past ones live in the audit log.
 func TestReinstate_ClearsTheDetails(t *testing.T) {
-	a := domain.Account{}
+	a := &domain.Account{}
 	until := time.Now().Add(time.Hour)
 	a.Suspend("scam", &until)
 	a.Reinstate()
 
-	if a.Status != domain.StatusActive || a.SuspensionReason != "" || a.SuspendedUntil != nil {
+	if a.Status != domain.StatusActive || a.SuspensionReason != nil || a.SuspendedUntil != nil {
 		t.Fatalf("account = %+v, want a clean active row", a)
+	}
+	if !a.Happened(domain.Suspended.Code) || !a.Happened(domain.Reinstated.Code) {
+		t.Fatalf("events = %v, want both recorded", a.Events())
 	}
 }
 
@@ -193,7 +230,7 @@ func TestGenerateUsername_ValidAndUnique(t *testing.T) {
 		t.Fatalf("GenerateUsername: %v", err)
 	}
 	// It has to satisfy the same rules as one a user picks, or the insert fails.
-	if _, err := domain.NewAccount(domain.RoleUser, "", "", first, ""); err != nil {
+	if _, err := domain.NewAccount(domain.RoleUser, "", "", first, "hash", testProfile(t)); err != nil {
 		t.Fatalf("generated username %q is not valid: %v", first, err)
 	}
 	second, _ := domain.GenerateUsername()

@@ -23,31 +23,31 @@ func (s *Service) Register(ctx context.Context, req accountapi.RegisterRequest) 
 	if err != nil {
 		return accountapi.AuthResult{}, err
 	}
-	acc, err := domain.NewAccount(domain.RoleUser, req.Email, req.Phone, req.Username, hash)
-	if err != nil {
-		return accountapi.AuthResult{}, err
-	}
 	profile, err := domain.NewProfile(req.Name, req.Country, req.Locale, req.Timezone)
 	if err != nil {
 		return accountapi.AuthResult{}, err
 	}
-	if err := s.repo.CreateAccount(ctx, &acc, &profile); err != nil {
+	acc, err := domain.NewAccount(domain.RoleUser, req.Email, req.Phone, req.Username, hash, profile)
+	if err != nil {
+		return accountapi.AuthResult{}, err
+	}
+	if err := s.repo.Create(ctx, acc); err != nil {
 		return accountapi.AuthResult{}, fmt.Errorf("create account: %w", err)
 	}
 	// A fresh account with an email starts the verification itself, so the user does
 	// not have to find the button before their address is worth anything.
-	if acc.Email != "" {
-		s.startEmailVerification(ctx, acc, profile.Locale)
+	if acc.Email != nil {
+		s.startEmailVerification(ctx, acc, acc.Profile.Locale)
 	}
 	// Nothing to verify identity against yet, so the flag is false without a query.
-	return s.authResult(ctx, acc, profile, false)
+	return s.authResult(ctx, acc, false)
 }
 
 // Login answers the same way whichever identifier was sent, and the same way for an
 // unknown account as for a wrong password: the endpoint must not be usable to find out
 // who is registered.
 func (s *Service) Login(ctx context.Context, req accountapi.LoginRequest) (accountapi.AuthResult, error) {
-	acc, err := s.repo.FindAccountByIdentifier(ctx, domain.NormalizeEmail(req.Identifier))
+	acc, err := s.repo.GetByIdentifier(ctx, domain.NormalizeEmail(req.Identifier))
 	if err != nil {
 		if errors.Is(err, domain.ErrAccountNotFound) {
 			return accountapi.AuthResult{}, domain.ErrInvalidCredentials
@@ -59,7 +59,8 @@ func (s *Service) Login(ctx context.Context, req accountapi.LoginRequest) (accou
 	if !acc.HasPassword() {
 		return accountapi.AuthResult{}, domain.ErrInvalidCredentials
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(acc.PasswordHash), []byte(req.Password)); err != nil {
+	// HasPassword above is what makes this deref safe.
+	if err := bcrypt.CompareHashAndPassword([]byte(*acc.PasswordHash), []byte(req.Password)); err != nil {
 		return accountapi.AuthResult{}, domain.ErrInvalidCredentials
 	}
 	// Checked after the password on purpose: an attacker guessing passwords should not
@@ -97,33 +98,29 @@ func (s *Service) LoginOAuth(ctx context.Context, req accountapi.OAuthLoginReque
 
 // resolveOAuthAccount is the three-way decision behind a federated sign-in, kept apart
 // from the token work so each branch stays readable.
-func (s *Service) resolveOAuthAccount(ctx context.Context, req accountapi.OAuthLoginRequest, identity oauth.Identity) (domain.Account, bool, error) {
+func (s *Service) resolveOAuthAccount(ctx context.Context, req accountapi.OAuthLoginRequest, identity oauth.Identity) (*domain.Account, bool, error) {
 	// 1. The provider's subject is already linked: this is a plain sign-in.
-	link, err := s.repo.FindOAuthIdentity(ctx, identity.Provider, identity.Subject)
+	acc, err := s.repo.GetByOAuth(ctx, identity.Provider, identity.Subject)
 	switch {
 	case err == nil:
-		acc, err := s.repo.FindAccountByID(ctx, link.AccountID)
-		if err != nil {
-			return domain.Account{}, false, fmt.Errorf("find linked account: %w", err)
-		}
 		return acc, false, nil
 	case !errors.Is(err, domain.ErrOAuthIdentityNotFound):
-		return domain.Account{}, false, fmt.Errorf("find oauth identity: %w", err)
+		return nil, false, fmt.Errorf("get account by oauth: %w", err)
 	}
 
 	// 2. The provider vouches for an email we already know: link to that account. Only a
 	// provider-*verified* address may merge — an unverified one is a claim, and honouring
 	// it would let anyone take an account by signing up at a provider with its address.
 	if identity.Email != "" && identity.EmailVerified {
-		acc, err := s.repo.FindAccountByEmail(ctx, domain.NormalizeEmail(identity.Email))
+		acc, err := s.repo.GetByEmail(ctx, domain.NormalizeEmail(identity.Email))
 		switch {
 		case err == nil:
-			if err := s.linkIdentity(ctx, acc.ID, identity); err != nil {
-				return domain.Account{}, false, err
+			if err := s.linkIdentity(ctx, acc, identity); err != nil {
+				return nil, false, err
 			}
 			return acc, false, nil
 		case !errors.Is(err, domain.ErrAccountNotFound):
-			return domain.Account{}, false, fmt.Errorf("find account by email: %w", err)
+			return nil, false, fmt.Errorf("get account by email: %w", err)
 		}
 	}
 
@@ -134,16 +131,9 @@ func (s *Service) resolveOAuthAccount(ctx context.Context, req accountapi.OAuthL
 	if identity.Email == "" {
 		username, err = domain.GenerateUsername()
 		if err != nil {
-			return domain.Account{}, false, err
+			return nil, false, err
 		}
 	}
-	// No password: this account signs in through the provider, which is what
-	// Me.has_password reports and what makes unlinking the last provider refusable.
-	acc, err := domain.NewAccount(domain.RoleUser, identity.Email, "", username, "")
-	if err != nil {
-		return domain.Account{}, false, err
-	}
-	acc.EmailVerified = identity.EmailVerified
 	name := identity.Name
 	if name == "" {
 		name = username
@@ -153,31 +143,31 @@ func (s *Service) resolveOAuthAccount(ctx context.Context, req accountapi.OAuthL
 		orDefault(req.Locale, defaultLocale),
 		orDefault(req.Timezone, defaultTimezone))
 	if err != nil {
-		return domain.Account{}, false, err
+		return nil, false, err
 	}
-	if err := s.repo.CreateAccount(ctx, &acc, &profile); err != nil {
-		return domain.Account{}, false, fmt.Errorf("create account: %w", err)
+	// No password: this account signs in through the provider, which is what
+	// Me.has_password reports and what makes unlinking the last provider refusable.
+	acc, err = domain.NewOAuthAccount(identity.Email, username, profile, identity.Provider, identity.Subject)
+	if err != nil {
+		return nil, false, err
 	}
-	if acc.EmailVerified {
-		// NewAccount cannot be told an address is already verified — that is a fact about
-		// the provider, not about the account — so the flag is written straight after.
-		if err := s.repo.MarkEmailVerified(ctx, acc.ID); err != nil {
-			return domain.Account{}, false, fmt.Errorf("mark email verified: %w", err)
-		}
-	}
-	if err := s.linkIdentity(ctx, acc.ID, identity); err != nil {
-		return domain.Account{}, false, err
+	// Whether the address is already verified is a fact about the provider, so the flag is
+	// set on the aggregate rather than passed to the constructor.
+	acc.EmailVerified = identity.EmailVerified
+	// One transaction: the account, its profile and the link that made it reachable.
+	if err := s.repo.Create(ctx, acc); err != nil {
+		return nil, false, fmt.Errorf("create account: %w", err)
 	}
 	return acc, true, nil
 }
 
-func (s *Service) linkIdentity(ctx context.Context, accountID int64, identity oauth.Identity) error {
-	link, err := domain.NewOAuthIdentity(accountID, identity.Provider, identity.Subject)
-	if err != nil {
+// linkIdentity records a federated identity on an account that already exists.
+func (s *Service) linkIdentity(ctx context.Context, acc *domain.Account, identity oauth.Identity) error {
+	if _, err := acc.Link(identity.Provider, identity.Subject); err != nil {
 		return err
 	}
-	if err := s.repo.InsertOAuthIdentity(ctx, &link); err != nil {
-		return fmt.Errorf("insert oauth identity: %w", err)
+	if err := s.repo.Save(ctx, acc, acc.ID); err != nil {
+		return fmt.Errorf("save account: %w", err)
 	}
 	return nil
 }
@@ -189,13 +179,9 @@ func (s *Service) Refresh(ctx context.Context, req accountapi.RefreshRequest) (a
 	if err != nil {
 		return accountapi.AuthResult{}, fmt.Errorf("rotate session: %w", err)
 	}
-	acc, err := s.repo.FindAccountByID(ctx, sess.AccountID)
+	acc, err := s.repo.Get(ctx, sess.AccountID)
 	if err != nil {
-		return accountapi.AuthResult{}, fmt.Errorf("find account by id: %w", err)
-	}
-	profile, err := s.repo.FindProfile(ctx, acc.ID)
-	if err != nil {
-		return accountapi.AuthResult{}, fmt.Errorf("find profile: %w", err)
+		return accountapi.AuthResult{}, fmt.Errorf("get account: %w", err)
 	}
 	verified, err := s.repo.HasLiveVerifiedDocument(ctx, acc.ID)
 	if err != nil {
@@ -212,7 +198,7 @@ func (s *Service) Refresh(ctx context.Context, req accountapi.RefreshRequest) (a
 		AccessToken:  access,
 		RefreshToken: sess.RefreshToken,
 		ExpiresIn:    int(s.tokens.TTL().Seconds()),
-		Account:      s.toMe(ctx, acc, profile, verified),
+		Account:      s.toMe(ctx, acc, verified),
 	}, nil
 }
 
@@ -255,15 +241,16 @@ func (s *Service) ChangePassword(ctx context.Context, req accountapi.ChangePassw
 	if !acc.HasPassword() {
 		return domain.ErrNoPassword
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(acc.PasswordHash), []byte(req.CurrentPassword)); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(*acc.PasswordHash), []byte(req.CurrentPassword)); err != nil {
 		return domain.ErrInvalidCredentials
 	}
 	hash, err := hashPassword(req.NewPassword)
 	if err != nil {
 		return err
 	}
-	if err := s.repo.UpdateAccountPassword(ctx, acc.ID, hash); err != nil {
-		return fmt.Errorf("update account password: %w", err)
+	acc.SetPassword(hash)
+	if err := s.repo.Save(ctx, acc, acc.ID); err != nil {
+		return fmt.Errorf("save account: %w", err)
 	}
 	if err := s.sessions.RevokeAll(ctx, acc.ID, req.SessionID); err != nil {
 		return fmt.Errorf("revoke other sessions: %w", err)
@@ -279,12 +266,12 @@ func (s *Service) RequestPasswordReset(ctx context.Context, req accountapi.Passw
 	if err := s.throttle(ctx, "password-reset", identifier); err != nil {
 		return err
 	}
-	acc, err := s.repo.FindAccountByIdentifier(ctx, identifier)
+	acc, err := s.repo.GetByIdentifier(ctx, identifier)
 	if err != nil {
 		if errors.Is(err, domain.ErrAccountNotFound) {
 			return nil
 		}
-		return fmt.Errorf("find account by identifier: %w", err)
+		return fmt.Errorf("get account by identifier: %w", err)
 	}
 	secret, err := mintSecret()
 	if err != nil {
@@ -293,13 +280,19 @@ func (s *Service) RequestPasswordReset(ctx context.Context, req accountapi.Passw
 	if err := s.putSecret(ctx, passwordResetPrefix+secret, acc.ID, passwordResetTTL); err != nil {
 		return err
 	}
-	locale := s.localeOf(ctx, acc.ID)
+	// An account that signs in by phone has nowhere else to receive the link.
+	email, phone := "", ""
+	if acc.Email != nil {
+		email = *acc.Email
+	} else if acc.Phone != nil {
+		phone = *acc.Phone
+	}
 	s.send(ctx, notify.Message{
 		Kind:   notify.KindPasswordReset,
-		Email:  acc.Email,
-		Phone:  phoneWhenNoEmail(acc),
+		Email:  email,
+		Phone:  phone,
 		Token:  secret,
-		Locale: locale,
+		Locale: acc.Profile.Locale,
 	})
 	return nil
 }
@@ -315,8 +308,13 @@ func (s *Service) ResetPassword(ctx context.Context, req accountapi.PasswordRese
 	if err != nil {
 		return err
 	}
-	if err := s.repo.UpdateAccountPassword(ctx, accountID, hash); err != nil {
-		return fmt.Errorf("update account password: %w", err)
+	acc, err := s.repo.Get(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("get account: %w", err)
+	}
+	acc.SetPassword(hash)
+	if err := s.repo.Save(ctx, acc, acc.ID); err != nil {
+		return fmt.Errorf("save account: %w", err)
 	}
 	if err := s.sessions.RevokeAll(ctx, accountID, ""); err != nil {
 		return fmt.Errorf("revoke sessions: %w", err)
@@ -329,16 +327,16 @@ func (s *Service) RequestEmailVerification(ctx context.Context, req accountapi.R
 	if err != nil {
 		return err
 	}
-	if acc.Email == "" {
+	if acc.Email == nil {
 		return domain.ErrNoEmail
 	}
 	if acc.EmailVerified {
 		return domain.ErrEmailAlreadyVerified
 	}
-	if err := s.throttle(ctx, "email-verify", acc.Email); err != nil {
+	if err := s.throttle(ctx, "email-verify", *acc.Email); err != nil {
 		return err
 	}
-	return s.startEmailVerificationErr(ctx, acc, s.localeOf(ctx, acc.ID))
+	return s.startEmailVerificationErr(ctx, acc, acc.Profile.Locale)
 }
 
 func (s *Service) VerifyEmail(ctx context.Context, req accountapi.EmailVerificationRequest) error {
@@ -346,8 +344,13 @@ func (s *Service) VerifyEmail(ctx context.Context, req accountapi.EmailVerificat
 	if err != nil {
 		return err
 	}
-	if err := s.repo.MarkEmailVerified(ctx, accountID); err != nil {
-		return fmt.Errorf("mark email verified: %w", err)
+	acc, err := s.repo.Get(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("get account: %w", err)
+	}
+	acc.MarkEmailVerified()
+	if err := s.repo.Save(ctx, acc, acc.ID); err != nil {
+		return fmt.Errorf("save account: %w", err)
 	}
 	return nil
 }
@@ -355,20 +358,16 @@ func (s *Service) VerifyEmail(ctx context.Context, req accountapi.EmailVerificat
 // --- helpers ---
 
 // signIn opens a session and builds the auth response for an existing account.
-func (s *Service) signIn(ctx context.Context, acc domain.Account) (accountapi.AuthResult, error) {
-	profile, err := s.repo.FindProfile(ctx, acc.ID)
-	if err != nil {
-		return accountapi.AuthResult{}, fmt.Errorf("find profile: %w", err)
-	}
+func (s *Service) signIn(ctx context.Context, acc *domain.Account) (accountapi.AuthResult, error) {
 	verified, err := s.repo.HasLiveVerifiedDocument(ctx, acc.ID)
 	if err != nil {
 		return accountapi.AuthResult{}, fmt.Errorf("check identity verified: %w", err)
 	}
-	return s.authResult(ctx, acc, profile, verified)
+	return s.authResult(ctx, acc, verified)
 }
 
 // authResult mints the session and the access token that names it.
-func (s *Service) authResult(ctx context.Context, acc domain.Account, profile domain.Profile, identityVerified bool) (accountapi.AuthResult, error) {
+func (s *Service) authResult(ctx context.Context, acc *domain.Account, identityVerified bool) (accountapi.AuthResult, error) {
 	sess, err := s.sessions.Create(ctx, acc.ID)
 	if err != nil {
 		return accountapi.AuthResult{}, fmt.Errorf("create session: %w", err)
@@ -384,19 +383,19 @@ func (s *Service) authResult(ctx context.Context, acc domain.Account, profile do
 		AccessToken:  access,
 		RefreshToken: sess.RefreshToken,
 		ExpiresIn:    int(s.tokens.TTL().Seconds()),
-		Account:      s.toMe(ctx, acc, profile, identityVerified),
+		Account:      s.toMe(ctx, acc, identityVerified),
 	}, nil
 }
 
 // startEmailVerification is the fire-and-forget form used where the caller did not ask
 // for the message and must not be failed by it.
-func (s *Service) startEmailVerification(ctx context.Context, acc domain.Account, locale string) {
+func (s *Service) startEmailVerification(ctx context.Context, acc *domain.Account, locale string) {
 	if err := s.startEmailVerificationErr(ctx, acc, locale); err != nil {
 		s.log.Error("start email verification failed", "account_id", acc.ID, "err", err)
 	}
 }
 
-func (s *Service) startEmailVerificationErr(ctx context.Context, acc domain.Account, locale string) error {
+func (s *Service) startEmailVerificationErr(ctx context.Context, acc *domain.Account, locale string) error {
 	secret, err := mintSecret()
 	if err != nil {
 		return err
@@ -404,9 +403,14 @@ func (s *Service) startEmailVerificationErr(ctx context.Context, acc domain.Acco
 	if err := s.putSecret(ctx, emailVerifyPrefix+secret, acc.ID, emailVerifyTTL); err != nil {
 		return err
 	}
+	// Only ever called for an account that has an address; the check is the caller's.
+	email := ""
+	if acc.Email != nil {
+		email = *acc.Email
+	}
 	s.send(ctx, notify.Message{
 		Kind:   notify.KindEmailVerification,
-		Email:  acc.Email,
+		Email:  email,
 		Token:  secret,
 		Locale: locale,
 	})
@@ -422,15 +426,6 @@ func (s *Service) localeOf(ctx context.Context, accountID int64) string {
 		return defaultLocale
 	}
 	return profile.Locale
-}
-
-// phoneWhenNoEmail picks the channel for a reset: an account that signs in by phone has
-// nowhere else to receive it.
-func phoneWhenNoEmail(acc domain.Account) string {
-	if acc.Email != "" {
-		return ""
-	}
-	return acc.Phone
 }
 
 func hashPassword(plain string) (string, error) {

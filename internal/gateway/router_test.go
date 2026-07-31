@@ -46,7 +46,7 @@ func (stubCat) CreateListing(context.Context, catalogapi.CreateListingRequest) (
 	return catalogapi.Listing{}, nil
 }
 func (stubCat) GetListing(context.Context, catalogapi.GetListingRequest) (catalogapi.Listing, error) {
-	return catalogapi.Listing{ID: id.Of[id.ProductSPU](1)}, nil
+	return catalogapi.Listing{ID: id.Of[id.Listing](1)}, nil
 }
 func (stubCat) ListListings(context.Context, catalogapi.ListListingsRequest) ([]catalogapi.Listing, error) {
 	return nil, nil
@@ -164,7 +164,7 @@ func TestRouter_UndocumentedPathIs404(t *testing.T) {
 func TestRouter_PublicRouteNeedsNoToken(t *testing.T) {
 	r, _, _ := newRouter()
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, openapi.BasePath+"/listings/"+id.Of[id.ProductSPU](1).String(), nil))
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, openapi.BasePath+"/listings/"+id.Of[id.Listing](1).String(), nil))
 	if rec.Code != http.StatusNotImplemented {
 		t.Fatalf("status = %d, want 501", rec.Code)
 	}

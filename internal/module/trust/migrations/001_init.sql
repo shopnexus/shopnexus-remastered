@@ -6,7 +6,7 @@
 --              and helpfulness votes, per-account reputation aggregates
 --              (as-seller / as-buyer), and polymorphic abuse reports with an
 --              admin resolution workflow. Every rating in this module is on the
---              same 1..5 scale. Cross-module refs (account_id, order_id, spu_id,
+--              same 1..5 scale. Cross-module refs (account_id, order_id, listing_id,
 --              reported ref_id) carry no FK.
 -- =============================================
 
@@ -64,18 +64,18 @@ CREATE INDEX IF NOT EXISTS "feedback_unpublished_idx"
 -- purchase, no review. Ratings here use the same 1..5 scale as "feedback".
 CREATE TABLE IF NOT EXISTS "review" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
-    "spu_id" BIGINT NOT NULL, -- cross-ref catalog.product_spu; no FK
+    "listing_id" BIGINT NOT NULL, -- cross-ref catalog.listing; no FK
     "order_id" BIGINT NOT NULL, -- cross-ref order.order; no FK
     "author_id" BIGINT NOT NULL, -- cross-ref account.account; no FK
     "rating" SMALLINT NOT NULL,
     "body" TEXT NOT NULL DEFAULT '',
     -- Photos of the item as received; resource ids owned by the common module, held
-    -- inline for the same reason catalog.product_spu and chat.message do it — a review
+    -- inline for the same reason catalog.listing and chat.message do it — a review
     -- and its images sit in two schemas, and writing both atomically stops being
     -- possible once the modules are split apart.
     "attachments" BIGINT[] NOT NULL DEFAULT '{}',
     -- Vote tallies, denormalized from "review_vote" for the same reason
-    -- catalog.product_spu caches its rating: sorting a product's reviews by
+    -- catalog.listing caches its rating: sorting a product's reviews by
     -- helpfulness has to be an ordered index scan, and an aggregate computed per
     -- query is neither indexable nor seekable by a cursor.
     "helpful_count" BIGINT NOT NULL DEFAULT 0,
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS "review" (
 
     CONSTRAINT "review_pkey" PRIMARY KEY ("id"),
     -- One review per order, so buying the same product twice earns two reviews.
-    CONSTRAINT "review_spu_author_order_key" UNIQUE ("spu_id", "author_id", "order_id"),
+    CONSTRAINT "review_spu_author_order_key" UNIQUE ("listing_id", "author_id", "order_id"),
     CONSTRAINT "review_rating_range_chk" CHECK ("rating" BETWEEN 1 AND 5),
     -- A tally that has gone negative means the maintaining code is wrong, and a
     -- product page showing -3 helpful is worse than the write failing.
@@ -95,9 +95,9 @@ CREATE TABLE IF NOT EXISTS "review" (
 );
 -- The product page: one SPU's reviews, newest first. Also the source catalog reads to
 -- recompute its cached_rating.
-CREATE INDEX IF NOT EXISTS "review_spu_id_idx" ON "review" ("spu_id", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "review_listing_id_idx" ON "review" ("listing_id", "created_at" DESC);
 -- The same page sorted by helpfulness, which is why the tally is a column.
-CREATE INDEX IF NOT EXISTS "review_spu_id_helpful_idx" ON "review" ("spu_id", "helpful_count" DESC);
+CREATE INDEX IF NOT EXISTS "review_listing_id_helpful_idx" ON "review" ("listing_id", "helpful_count" DESC);
 -- "my reviews".
 CREATE INDEX IF NOT EXISTS "review_author_id_idx" ON "review" ("author_id", "created_at" DESC);
 

@@ -37,12 +37,12 @@ func (r *Repo) DeleteFollow(ctx context.Context, followerID, followeeID int64) e
 }
 
 // ListFollowing and ListFollowers are the same query from the two ends of the edge.
-// Both join profile, because a list of ids is not something a client can render, and
-// both order by the edge's created_at — the index is (owner, created_at DESC).
+// Both join account for the display half, because a list of ids is not something a client
+// can render, and both order by the edge's created_at — the index is (owner, created_at DESC).
 func (r *Repo) ListFollowing(ctx context.Context, accountID int64, offset, limit int) ([]domain.Profile, int64, error) {
 	const q = `SELECT ` + followProfileColumns + `, COUNT(*) OVER () AS total_count
 	           FROM follow f
-	           JOIN profile p ON p.id = f.followee_id
+	           JOIN account p ON p.id = f.followee_id
 	           WHERE f.follower_id = @account_id
 	           ORDER BY f.created_at DESC
 	           LIMIT @limit OFFSET @offset`
@@ -52,7 +52,7 @@ func (r *Repo) ListFollowing(ctx context.Context, accountID int64, offset, limit
 func (r *Repo) ListFollowers(ctx context.Context, accountID int64, offset, limit int) ([]domain.Profile, int64, error) {
 	const q = `SELECT ` + followProfileColumns + `, COUNT(*) OVER () AS total_count
 	           FROM follow f
-	           JOIN profile p ON p.id = f.follower_id
+	           JOIN account p ON p.id = f.follower_id
 	           WHERE f.followee_id = @account_id
 	           ORDER BY f.created_at DESC
 	           LIMIT @limit OFFSET @offset`

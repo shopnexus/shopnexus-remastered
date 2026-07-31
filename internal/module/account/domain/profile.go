@@ -26,26 +26,26 @@ var (
 // customer.
 var earliestBirthDate = time.Date(1900, time.January, 2, 0, 0, 0, 0, time.UTC)
 
-// Profile is the public face of an account and doubles as the shop page. It shares
-// the account's primary key, so there is no separate profile id on the wire.
+// Profile is the display half of the account row — the public face, which doubles as the
+// shop page. It is a value object over the same row, so its ID is the account's and there
+// is no separate profile id on the wire, and no created_at of its own.
 //
 // Locale and timezone are not decoration: they decide the language a notification
 // is written in and the local hour it is allowed to arrive at.
 type Profile struct {
 	ID          int64
-	Name        string `validate:"required,min=1,max=100"`
-	Description string `validate:"max=2000"`
-	Gender      Gender `validate:"omitempty,oneof=male female other"`
+	Name        string  `validate:"required,min=1,max=100"`
+	Description *string `validate:"omitempty,max=2000"`
+	Gender      *Gender `validate:"omitempty,oneof=male female other"`
 	// DateOfBirth is a date, not an instant: it is stored as DATE and compared by
 	// day, so the location on this value is never significant.
 	DateOfBirth *time.Time
-	// AvatarResourceID is a common.resource key; 0 means no avatar. Not unique —
-	// several accounts may share one image.
-	AvatarResourceID int64
+	// AvatarResourceID is a common.resource key. Not unique — several accounts may
+	// share one image.
+	AvatarResourceID *int64
 	Country          string `validate:"required,len=2"`
 	Locale           string `validate:"required,max=10"`
 	Timezone         string `validate:"required,max=64"`
-	CreatedAt        time.Time
 }
 
 func NewProfile(name, country, locale, timezone string) (Profile, error) {

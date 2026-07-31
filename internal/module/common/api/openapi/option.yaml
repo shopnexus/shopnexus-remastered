@@ -216,6 +216,7 @@ components:
         description: { type: string }
         priority:
           type: integer
+          example: 10
           description: Display order; ties are broken by `id`.
         is_enabled: { type: boolean }
         logo: { allOf: [{ $ref: '#/components/schemas/Resource' }], nullable: true }
@@ -252,7 +253,7 @@ components:
         provider: { type: string, maxLength: 100, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
         name: { type: string, minLength: 1, maxLength: 200 }
         description: { type: string, maxLength: 2000 }
-        priority: { type: integer, default: 0 }
+        priority: { type: integer, default: 0, example: 10 }
         is_enabled: { type: boolean, default: true }
         logo_resource_id: { $ref: '#/components/schemas/ResourceID' }
         data: { type: object, additionalProperties: true }
@@ -266,7 +267,7 @@ components:
       properties:
         name: { type: string, minLength: 1, maxLength: 200 }
         description: { type: string, maxLength: 2000 }
-        priority: { type: integer }
+        priority: { type: integer, example: 10 }
         is_enabled: { type: boolean }
         logo_resource_id: { allOf: [{ $ref: '#/components/schemas/ResourceID' }], nullable: true }
         data: { type: object, additionalProperties: true }

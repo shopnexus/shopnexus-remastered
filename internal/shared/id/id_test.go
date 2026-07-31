@@ -42,8 +42,8 @@ func TestRoundTrip(t *testing.T) {
 	}
 
 	for _, want := range values {
-		s := id.Of[id.ProductSPU](want).String()
-		got, err := id.Parse[id.ProductSPU](s)
+		s := id.Of[id.Listing](want).String()
+		got, err := id.Parse[id.Listing](s)
 		if err != nil {
 			t.Fatalf("Parse(%q) for %d: %v", s, want, err)
 		}
@@ -96,23 +96,23 @@ func TestKindSeparation(t *testing.T) {
 }
 
 func TestParse_Rejects(t *testing.T) {
-	valid := id.Of[id.ProductSPU](42).String()
-	body := strings.TrimPrefix(valid, "spu_")
+	valid := id.Of[id.Listing](42).String()
+	body := strings.TrimPrefix(valid, "lst_")
 
 	cases := map[string]string{
 		"empty":            "",
 		"no prefix":        body,
 		"foreign prefix":   "acc_" + body,
-		"prefix only":      "spu_",
-		"missing sep":      "spu" + body,
-		"too short":        "spu_" + body[:12],
-		"too long":         "spu_" + body + "0",
-		"letter u":         "spu_uuuuuuuuuuuuu",
-		"character out":    "spu_" + body[:12] + "-",
-		"overflows uint64": "spu_zzzzzzzzzzzzz",
+		"prefix only":      "lst_",
+		"missing sep":      "lst" + body,
+		"too short":        "lst_" + body[:12],
+		"too long":         "lst_" + body + "0",
+		"letter u":         "lst_uuuuuuuuuuuuu",
+		"character out":    "lst_" + body[:12] + "-",
+		"overflows uint64": "lst_zzzzzzzzzzzzz",
 	}
 	for name, s := range cases {
-		if _, err := id.Parse[id.ProductSPU](s); err == nil {
+		if _, err := id.Parse[id.Listing](s); err == nil {
 			t.Errorf("%s: Parse(%q) must fail", name, s)
 		} else if status, code, _, ok := errx.Decompose(err); !ok || status != 400 || code != "invalid_id" {
 			t.Errorf("%s: want 400/invalid_id, got %v", name, err)
@@ -124,12 +124,12 @@ func TestParse_Rejects(t *testing.T) {
 // before it ever reaches the database.
 func TestParse_RejectsNonPositive(t *testing.T) {
 	for _, n := range []int64{0, -1, math.MinInt64} {
-		s := "spu_" + strings.TrimPrefix(id.Of[id.ProductSPU](n).String(), "spu_")
+		s := "lst_" + strings.TrimPrefix(id.Of[id.Listing](n).String(), "lst_")
 		if n == 0 {
 			// The zero id has no wire form; encode it through the escape hatch.
-			s = id.FormatOpaque(id.Prefix[id.ProductSPU](), 0)
+			s = id.FormatOpaque(id.Prefix[id.Listing](), 0)
 		}
-		if _, err := id.Parse[id.ProductSPU](s); err == nil {
+		if _, err := id.Parse[id.Listing](s); err == nil {
 			t.Errorf("Parse of %d (%q) must fail", n, s)
 		}
 	}
@@ -175,13 +175,13 @@ func TestZero(t *testing.T) {
 }
 
 type payload struct {
-	ID      id.ID[id.ProductSPU] `json:"id"`
-	OwnerID id.ID[id.Account]    `json:"owner_id"`
-	Parent  id.ID[id.ProductSPU] `json:"parent"`
+	ID      id.ID[id.Listing] `json:"id"`
+	OwnerID id.ID[id.Account] `json:"owner_id"`
+	Parent  id.ID[id.Listing] `json:"parent"`
 }
 
 func TestJSON_RoundTrip(t *testing.T) {
-	in := payload{ID: id.Of[id.ProductSPU](7), OwnerID: id.Of[id.Account](7)}
+	in := payload{ID: id.Of[id.Listing](7), OwnerID: id.Of[id.Account](7)}
 	b, err := json.Marshal(in)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
@@ -204,7 +204,7 @@ func TestJSON_RoundTrip(t *testing.T) {
 }
 
 func TestJSON_RejectsMalformed(t *testing.T) {
-	for _, body := range []string{`{"id":"spu_nope"}`, `{"id":"acc_2h9qk4mfx7bd3"}`, `{"id":42}`} {
+	for _, body := range []string{`{"id":"lst_nope"}`, `{"id":"acc_2h9qk4mfx7bd3"}`, `{"id":42}`} {
 		var out payload
 		if err := json.Unmarshal([]byte(body), &out); err == nil {
 			t.Errorf("Unmarshal(%s) must fail", body)
@@ -263,7 +263,7 @@ func TestOpaque_MatchesTypedForm(t *testing.T) {
 func TestPrefixesAreUniqueAndWellFormed(t *testing.T) {
 	prefixes := []string{
 		id.Prefix[id.Account](), id.Prefix[id.Contact](), id.Prefix[id.Category](),
-		id.Prefix[id.ProductSPU](), id.Prefix[id.ProductSKU](), id.Prefix[id.Order](),
+		id.Prefix[id.Listing](), id.Prefix[id.Variant](), id.Prefix[id.Order](),
 		id.Prefix[id.Item](), id.Prefix[id.Refund](), id.Prefix[id.RefundDispute](),
 		id.Prefix[id.Offer](), id.Prefix[id.PaymentSession](), id.Prefix[id.Transaction](),
 		id.Prefix[id.BankAccount](), id.Prefix[id.Feedback](), id.Prefix[id.Review](),
@@ -289,8 +289,8 @@ func TestStability_GoldenVectors(t *testing.T) {
 		"acc:1":   "acc_3pb2yypj6z4pj",
 		"acc:2":   "acc_06jh8rqsvf19t",
 		"acc:42":  "acc_62mxefynht57b",
-		"spu:1":   "spu_489954jm3d8bd",
-		"spu:42":  "spu_1ryaj8117v2p4",
+		"lst:1":   "lst_8fd46etc0b7ex",
+		"lst:42":  "lst_5y5w68r4918v8",
 		"ord:42":  "ord_fv2cpg50vkrfp",
 		"msg:999": "msg_agnc1pe4pjb4k",
 	}
@@ -298,8 +298,8 @@ func TestStability_GoldenVectors(t *testing.T) {
 		"acc:1":   id.Of[id.Account](1).String(),
 		"acc:2":   id.Of[id.Account](2).String(),
 		"acc:42":  id.Of[id.Account](42).String(),
-		"spu:1":   id.Of[id.ProductSPU](1).String(),
-		"spu:42":  id.Of[id.ProductSPU](42).String(),
+		"lst:1":   id.Of[id.Listing](1).String(),
+		"lst:42":  id.Of[id.Listing](42).String(),
 		"ord:42":  id.Of[id.Order](42).String(),
 		"msg:999": id.Of[id.Message](999).String(),
 	}

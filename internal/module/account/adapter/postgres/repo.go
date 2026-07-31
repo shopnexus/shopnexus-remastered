@@ -51,32 +51,22 @@ func (r *Repo) inTx(ctx context.Context, fn func(pgx.Tx) error) error {
 	return nil
 }
 
-// nullText keeps an optional column NULL rather than storing an empty string, which
-// is what makes the UNIQUE constraints on the identifiers work: Postgres allows many
-// NULLs and exactly one ”.
-func nullText(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
-// nullID does the same for an optional key. The zero id means "no id", and identity
-// columns never produce 0.
-func nullID(n int64) any {
-	if n == 0 {
-		return nil
-	}
-	return n
-}
-
-// jsonObject keeps a JSONB column at '{}' instead of the JSON literal null, so a
-// reader never has to tell the two apart.
-func jsonObject(m map[string]any) map[string]any {
-	if m == nil {
+// jsonObject keeps a JSONB column at '{}' instead of the JSON literal null, so a reader
+// never has to tell the two apart. Anything else is handed to pgx as-is and marshalled by
+// its JSON codec.
+//
+// The map case is spelled out because a nil map boxed in an interface is *not* == nil —
+// that is what silently turned an unset provider_codes into a NOT NULL violation.
+func jsonObject(v any) any {
+	switch m := v.(type) {
+	case nil:
 		return map[string]any{}
+	case map[string]any:
+		if m == nil {
+			return map[string]any{}
+		}
 	}
-	return m
+	return v
 }
 
 // nullTime is for a bound the query itself treats as optional — the SQL reads
@@ -96,42 +86,79 @@ func sqlState(err error) string {
 	return ""
 }
 
+func isNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
+
 func isUniqueViolation(err error) bool { return sqlState(err) == uniqueViolation }
 
 func isForeignKeyViolation(err error) bool { return sqlState(err) == foreignKeyViolation }
 
-// accountColumns is shared by every read of a whole account. COALESCE turns the
-// nullable identifier columns into the empty string the domain uses for "not set",
-// and every enum column is cast to text: the domain's own types are strings, and an
-// explicit cast keeps the scan independent of whether the driver knows the enum's OID.
-const accountColumns = `id, status::text, role::text, COALESCE(phone, ''), COALESCE(email, ''), COALESCE(username, ''),
-	       COALESCE(password, ''), email_verified, created_at, suspended_until, COALESCE(suspension_reason, '')`
+// accountColumns is every column of the root, display half included — one table, so one
+// read. A nullable column is scanned straight into the domain's pointer field: NULL
+// arrives as nil, the same "not set" the entity uses. Enum columns are cast to text
+// because the domain's types are strings.
+const accountColumns = `id, version, status::text, role::text, phone, email, username,
+	       password_hash, email_verified, created_at, suspended_until, suspension_reason,
+	       name, description, gender::text, date_of_birth, avatar_resource_id,
+	       country, locale, timezone`
 
 // scanAccount reads accountColumns, in that order.
-func scanAccount(row pgx.Row) (domain.Account, error) {
+func scanAccount(row pgx.Row) (*domain.Account, error) {
 	var a domain.Account
-	err := row.Scan(&a.ID, &a.Status, &a.Role, &a.Phone, &a.Email, &a.Username,
-		&a.PasswordHash, &a.EmailVerified, &a.CreatedAt, &a.SuspendedUntil, &a.SuspensionReason)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.Account{}, domain.ErrAccountNotFound
+	// Gender goes through a *string: the column is cast to text, and converting the
+	// pointer afterwards keeps the scan off the driver's handling of named types.
+	var gender *string
+	err := row.Scan(&a.ID, &a.Version, &a.Status, &a.Role, &a.Phone, &a.Email, &a.Username,
+		&a.PasswordHash, &a.EmailVerified, &a.CreatedAt, &a.SuspendedUntil, &a.SuspensionReason,
+		&a.Profile.Name, &a.Profile.Description, &gender, &a.Profile.DateOfBirth,
+		&a.Profile.AvatarResourceID, &a.Profile.Country, &a.Profile.Locale, &a.Profile.Timezone)
+	if isNoRows(err) {
+		return nil, domain.ErrAccountNotFound
 	}
 	if err != nil {
-		return domain.Account{}, fmt.Errorf("db scan account: %w", err)
+		return nil, fmt.Errorf("db scan account: %w", err)
 	}
-	return a, nil
+	a.Profile.ID = a.ID
+	a.Profile.Gender = (*domain.Gender)(gender)
+	return &a, nil
 }
 
-// profileColumns is shared by the profile reads.
-const profileColumns = `id, name, COALESCE(description, ''), COALESCE(gender::text, ''), date_of_birth,
-	       COALESCE(avatar_resource_id, 0), country, locale, timezone, created_at`
+// accountArgs is the whole row, so an insert and an update name the same values.
+func accountArgs(a *domain.Account) pgx.NamedArgs {
+	return pgx.NamedArgs{
+		"id":                 a.ID,
+		"version":            a.Version,
+		"status":             string(a.Status),
+		"role":               string(a.Role),
+		"phone":              a.Phone,
+		"email":              a.Email,
+		"username":           a.Username,
+		"password_hash":      a.PasswordHash,
+		"email_verified":     a.EmailVerified,
+		"suspended_until":    a.SuspendedUntil,
+		"suspension_reason":  a.SuspensionReason,
+		"name":               a.Profile.Name,
+		"description":        a.Profile.Description,
+		"gender":             a.Profile.Gender,
+		"date_of_birth":      a.Profile.DateOfBirth,
+		"avatar_resource_id": a.Profile.AvatarResourceID,
+		"country":            a.Profile.Country,
+		"locale":             a.Profile.Locale,
+		"timezone":           a.Profile.Timezone,
+	}
+}
+
+// profileColumns is the display half on its own, for a caller that wants a name and an
+// avatar rather than an account.
+const profileColumns = `id, name, description, gender::text, date_of_birth,
+	       avatar_resource_id, country, locale, timezone`
 
 func scanProfile(row pgx.Row) (domain.Profile, error) {
 	var p domain.Profile
-	err := row.Scan(&p.ID, &p.Name, &p.Description, &p.Gender, &p.DateOfBirth,
-		&p.AvatarResourceID, &p.Country, &p.Locale, &p.Timezone, &p.CreatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		// A profile is created with its account in one transaction, so a missing one
-		// means a missing account rather than a half-built row.
+	var gender *string
+	err := row.Scan(&p.ID, &p.Name, &p.Description, &gender, &p.DateOfBirth,
+		&p.AvatarResourceID, &p.Country, &p.Locale, &p.Timezone)
+	p.Gender = (*domain.Gender)(gender)
+	if isNoRows(err) {
 		return domain.Profile{}, domain.ErrAccountNotFound
 	}
 	if err != nil {

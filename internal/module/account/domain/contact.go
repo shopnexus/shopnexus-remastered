@@ -37,17 +37,20 @@ type Contact struct {
 	// DistrictCode and DistrictName are set together or not at all: Vietnam dropped
 	// the district tier in 2025 and goes province to ward, other countries still
 	// have one. The column has the same CHECK.
-	DistrictCode  string `validate:"max=20"`
-	DistrictName  string `validate:"max=100"`
-	WardCode      string `validate:"required,max=20"`
-	WardName      string `validate:"required,max=100"`
-	PostalCode    string `validate:"max=20"`
-	Address       string `validate:"required,min=1,max=255"`
-	AddressDetail string `validate:"max=255"`
+	DistrictCode  *string `validate:"omitempty,max=20"`
+	DistrictName  *string `validate:"omitempty,max=100"`
+	WardCode      string  `validate:"required,max=20"`
+	WardName      string  `validate:"required,max=100"`
+	PostalCode    *string `validate:"omitempty,max=20"`
+	Address       string  `validate:"required,min=1,max=255"`
+	AddressDetail *string `validate:"omitempty,max=255"`
 	// Latitude and Longitude are advisory — geocoding may fail and the address still
-	// has to be saveable — and travel together.
-	Latitude  *float64
-	Longitude *float64
+	// has to be saveable — and travel together. Pointers because 0 is a real
+	// coordinate, so there is no zero value to spend on "not set". The range is
+	// checked here rather than only on the create DTO, so a PATCH cannot put a
+	// courier at latitude 999.
+	Latitude  *float64 `validate:"omitempty,gte=-90,lte=90"`
+	Longitude *float64 `validate:"omitempty,gte=-180,lte=180"`
 	// ProviderCodes holds per-carrier territory ids, e.g.
 	// {"ghn": {"district_id": 1442}}. Carriers number territories their own way.
 	ProviderCodes map[string]any
@@ -62,7 +65,7 @@ func (c Contact) Validate() error {
 	if !countryRe.MatchString(c.Country) {
 		fields = append(fields, errx.Field{Field: "country", Rule: "pattern", Message: "must be an ISO 3166-1 alpha-2 code"})
 	}
-	if (c.DistrictCode == "") != (c.DistrictName == "") {
+	if (c.DistrictCode == nil) != (c.DistrictName == nil) {
 		fields = append(fields, errx.Field{Field: "district_code", Rule: "together", Message: "send both district fields or neither"})
 	}
 	if (c.Latitude == nil) != (c.Longitude == nil) {
@@ -84,7 +87,3 @@ func (c *Contact) SetPhone(v string) {
 	c.Phone = next
 	c.PhoneVerified = false
 }
-
-// Owns reports whether the contact belongs to the account, which is the check
-// behind every 403 on this resource.
-func (c Contact) Owns(accountID int64) bool { return c.AccountID == accountID }

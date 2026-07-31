@@ -162,7 +162,7 @@ components:
     Profile:
       type: object
       properties:
-        name: { type: string }
+        name: { type: string, example: Nguyễn Văn An }
         description: { type: string, nullable: true }
         gender: { allOf: [{ $ref: '#/components/schemas/ProfileGender' }], nullable: true }
         date_of_birth: { type: string, format: date, nullable: true }
@@ -203,11 +203,11 @@ components:
         birth date, no addresses.
       properties:
         id: { $ref: '#/components/schemas/AccountID' }
-        name: { type: string }
+        name: { type: string, example: Nguyễn Văn An }
         description: { type: string, nullable: true }
         avatar: { allOf: [{ $ref: '#/components/schemas/Resource' }], nullable: true }
         identity_verified: { type: boolean, description: Shown as a trust signal. }
-        follower_count: { type: integer, format: int64 }
+        follower_count: { type: integer, format: int64, minimum: 0, example: 1240 }
         created_at: { type: string, format: date-time, description: Member since. }
       required: [id, name, identity_verified, follower_count, created_at]
 
@@ -216,7 +216,7 @@ components:
       description: The compact form used in follower and following lists.
       properties:
         id: { $ref: '#/components/schemas/AccountID' }
-        name: { type: string }
+        name: { type: string, example: Nguyễn Văn An }
         avatar: { allOf: [{ $ref: '#/components/schemas/Resource' }], nullable: true }
       required: [id, name]
 
@@ -229,25 +229,34 @@ components:
 
     UpdateAccountRequest:
       type: object
-      description: Every field optional. Setting one to null removes it, which is
-        refused when it is the last identifier.
+      description: Every field optional. Omit one to leave it alone, send a value to
+        replace it, send its `clear_*` flag to remove it — which is refused when it is
+        the last identifier (422 `no_identifier`).
       properties:
-        email: { type: string, format: email, maxLength: 255, nullable: true }
-        phone: { type: string, pattern: '^\+[1-9][0-9]{7,14}$', nullable: true }
-        username: { type: string, minLength: 3, maxLength: 100, pattern: '^[a-z0-9._-]+$', nullable: true }
+        email: { type: string, format: email, maxLength: 255, example: alice@example.com }
+        phone: { type: string, pattern: '^\+[1-9][0-9]{7,14}$', example: '+84901234567' }
+        username: { type: string, minLength: 3, maxLength: 100, pattern: '^[a-z0-9._-]+$', example: alice }
+        clear_email: { type: boolean, example: false }
+        clear_phone: { type: boolean, example: false }
+        clear_username: { type: boolean, example: false }
 
     UpdateProfileRequest:
       type: object
-      description: Every field optional.
+      description: Every field optional. `name`, `country`, `locale` and `timezone` are
+        required columns, so they can be replaced but not cleared.
       properties:
-        name: { type: string, minLength: 1, maxLength: 100 }
-        description: { type: string, maxLength: 2000, nullable: true }
-        gender: { allOf: [{ $ref: '#/components/schemas/ProfileGender' }], nullable: true }
-        date_of_birth: { type: string, format: date, nullable: true }
-        avatar_resource_id: { allOf: [{ $ref: '#/components/schemas/ResourceID' }], nullable: true }
-        country: { type: string, minLength: 2, maxLength: 2, pattern: '^[A-Z]{2}$' }
-        locale: { type: string, pattern: '^[a-z]{2}(-[A-Z]{2})?$' }
-        timezone: { type: string, maxLength: 64 }
+        name: { type: string, minLength: 1, maxLength: 100, example: Alice }
+        description: { type: string, maxLength: 2000, example: Bán đồ cũ }
+        gender: { $ref: '#/components/schemas/ProfileGender' }
+        date_of_birth: { type: string, format: date, example: '2001-02-03' }
+        avatar_resource_id: { $ref: '#/components/schemas/ResourceID' }
+        country: { type: string, minLength: 2, maxLength: 2, pattern: '^[A-Z]{2}$', example: VN }
+        locale: { type: string, pattern: '^[a-z]{2}(-[A-Z]{2})?$', example: vi-VN }
+        timezone: { type: string, maxLength: 64, example: Asia/Ho_Chi_Minh }
+        clear_description: { type: boolean, example: false }
+        clear_gender: { type: boolean, example: false }
+        clear_date_of_birth: { type: boolean, example: false }
+        clear_avatar_resource_id: { type: boolean, example: false }
 
     OAuthIdentity:
       type: object

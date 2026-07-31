@@ -42,7 +42,7 @@ func TestReject_RequiresAReason(t *testing.T) {
 	if err := d.Reject("blurry scan"); err != nil {
 		t.Fatalf("Reject: %v", err)
 	}
-	if d.Status != domain.IdentityRejected || d.RejectionReason != "blurry scan" {
+	if d.Status != domain.IdentityRejected || d.RejectionReason == nil || *d.RejectionReason != "blurry scan" {
 		t.Fatalf("document = %+v", d)
 	}
 }

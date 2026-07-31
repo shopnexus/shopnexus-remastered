@@ -12,8 +12,8 @@ type (
 	Device           struct{} // account.device
 	IdentityDocument struct{} // account.identity_document
 	Category         struct{} // catalog.category
-	ProductSPU       struct{} // catalog.product_spu
-	ProductSKU       struct{} // catalog.product_sku
+	Listing          struct{} // catalog.listing
+	Variant          struct{} // catalog.variant
 	CartItem         struct{} // order.cart_item
 	DraftOrder       struct{} // order.draft_order
 	Transport        struct{} // order.transport
@@ -39,8 +39,8 @@ func (Contact) Prefix() string          { return "ctc" }
 func (Device) Prefix() string           { return "dvc" }
 func (IdentityDocument) Prefix() string { return "idd" }
 func (Category) Prefix() string         { return "cat" }
-func (ProductSPU) Prefix() string       { return "spu" }
-func (ProductSKU) Prefix() string       { return "sku" }
+func (Listing) Prefix() string          { return "lst" }
+func (Variant) Prefix() string          { return "vrn" }
 func (CartItem) Prefix() string         { return "crt" }
 func (DraftOrder) Prefix() string       { return "drf" }
 func (Transport) Prefix() string        { return "trp" }

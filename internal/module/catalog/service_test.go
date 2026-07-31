@@ -17,7 +17,7 @@ import (
 	"shopnexus/internal/shared/id/idtest"
 )
 
-// Fixed keys: 1 = the product_spu, 7 = its owner, 9 = an owner with no profile.
+// Fixed keys: 1 = the listing, 7 = its owner, 9 = an owner with no profile.
 const (
 	spuID   = 1
 	ownerID = 7
@@ -72,7 +72,7 @@ func TestCreateListing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateListing: %v", err)
 	}
-	if got.ID != id.Of[id.ProductSPU](spuID) || got.Status != domain.StatusActive {
+	if got.ID != id.Of[id.Listing](spuID) || got.Status != domain.StatusActive {
 		t.Fatalf("unexpected listing: %+v", got)
 	}
 }
@@ -86,7 +86,7 @@ func TestGetListing_EnrichesSeller(t *testing.T) {
 	}}
 	svc := catalog.NewService(repo, accounts, cache.NewInMemoryClient(), slog.Default())
 
-	got, err := svc.GetListing(context.Background(), catalogapi.GetListingRequest{ID: id.Of[id.ProductSPU](spuID)})
+	got, err := svc.GetListing(context.Background(), catalogapi.GetListingRequest{ID: id.Of[id.Listing](spuID)})
 	if err != nil {
 		t.Fatalf("GetListing: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestGetListing_EnrichesSeller(t *testing.T) {
 
 func TestGetListing_NotFound(t *testing.T) {
 	svc := catalog.NewService(&fakeRepo{byID: map[int64]domain.Listing{}}, &fakeAccounts{}, cache.NewInMemoryClient(), slog.Default())
-	_, err := svc.GetListing(context.Background(), catalogapi.GetListingRequest{ID: id.Of[id.ProductSPU](404)})
+	_, err := svc.GetListing(context.Background(), catalogapi.GetListingRequest{ID: id.Of[id.Listing](404)})
 	if status, _, _, ok := errx.Decompose(err); !ok || status != 404 {
 		t.Fatalf("expected NotFound, got %v", err)
 	}
@@ -112,7 +112,7 @@ func TestGetListing_EnrichFailsButStillReturns(t *testing.T) {
 	// empty fakeAccounts -> GetPublicAccount returns NotFound for ghostID
 	svc := catalog.NewService(repo, &fakeAccounts{}, cache.NewInMemoryClient(), slog.Default())
 
-	got, err := svc.GetListing(context.Background(), catalogapi.GetListingRequest{ID: id.Of[id.ProductSPU](spuID)})
+	got, err := svc.GetListing(context.Background(), catalogapi.GetListingRequest{ID: id.Of[id.Listing](spuID)})
 	if err != nil {
 		t.Fatalf("must not fail when enrichment fails, got %v", err)
 	}
@@ -131,17 +131,17 @@ func TestGetListing_ServedFromCache(t *testing.T) {
 	svc := catalog.NewService(repo, accounts, cache.NewInMemoryClient(), slog.Default())
 
 	// First call populates the cache.
-	if _, err := svc.GetListing(context.Background(), catalogapi.GetListingRequest{ID: id.Of[id.ProductSPU](spuID)}); err != nil {
+	if _, err := svc.GetListing(context.Background(), catalogapi.GetListingRequest{ID: id.Of[id.Listing](spuID)}); err != nil {
 		t.Fatalf("first GetListing: %v", err)
 	}
 	// Remove it from the repo; a cache hit must still return the listing.
 	delete(repo.byID, spuID)
 
-	got, err := svc.GetListing(context.Background(), catalogapi.GetListingRequest{ID: id.Of[id.ProductSPU](spuID)})
+	got, err := svc.GetListing(context.Background(), catalogapi.GetListingRequest{ID: id.Of[id.Listing](spuID)})
 	if err != nil {
 		t.Fatalf("cached GetListing: %v", err)
 	}
-	if got.ID != id.Of[id.ProductSPU](spuID) || got.Seller.DisplayName != "Alice" {
+	if got.ID != id.Of[id.Listing](spuID) || got.Seller.DisplayName != "Alice" {
 		t.Fatalf("expected listing served from cache, got %+v", got)
 	}
 }

@@ -64,18 +64,18 @@ func (h *Catalog) HideListing(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
-// CreateSku handles POST /listings/{id}/skus.
-func (h *Catalog) CreateSku(w http.ResponseWriter, r *http.Request) {
+// CreateVariant handles POST /listings/{id}/variants.
+func (h *Catalog) CreateVariant(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
-// UpdateSku handles PATCH /skus/{id}.
-func (h *Catalog) UpdateSku(w http.ResponseWriter, r *http.Request) {
+// UpdateVariant handles PATCH /variants/{id}.
+func (h *Catalog) UpdateVariant(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
-// DeleteSku handles DELETE /skus/{id}.
-func (h *Catalog) DeleteSku(w http.ResponseWriter, r *http.Request) {
+// DeleteVariant handles DELETE /variants/{id}.
+func (h *Catalog) DeleteVariant(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 

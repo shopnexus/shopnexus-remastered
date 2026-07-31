@@ -220,7 +220,7 @@ components:
       properties:
         access_token: { type: string }
         refresh_token: { type: string }
-        expires_in: { type: integer, description: Access token lifetime in seconds. }
+        expires_in: { type: integer, minimum: 0, example: 900, description: Access token lifetime in seconds. }
         account: { $ref: '#/components/schemas/Me' }
       required: [access_token, refresh_token, expires_in, account]
 

@@ -112,9 +112,9 @@ paths:
       tags: [admin]
       summary: The listing moderation queue
       description: >
-        Defaults to the pending ones — those the automatic scan flagged or that
-        enough reports pushed into review — oldest first, which is the order they
-        should be worked.
+        Every listing awaiting a decision, oldest first, which is the order they
+        should be worked: one waiting for its first publication, and one that is live
+        while holding an edit its seller submitted. Defaults to both.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: status, in: query, schema: { $ref: '#/components/schemas/ListingStatus' }, description: Defaults to pending. }
@@ -133,7 +133,7 @@ paths:
       description: Applies any held pending edit and makes it live.
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ListingID' } }
       requestBody:
         required: false
         content:
@@ -164,7 +164,7 @@ paths:
         separate decision and a separate call.
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ListingID' } }
       requestBody:
         required: true
         content:

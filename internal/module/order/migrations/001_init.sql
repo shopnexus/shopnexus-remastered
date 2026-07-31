@@ -66,7 +66,7 @@ CREATE TABLE
     "table_name" VARCHAR(100) NOT NULL,
     "record_id" BIGINT NOT NULL,
     "change_type" VARCHAR(10) NOT NULL, -- 'insert', 'update', 'delete'
-    "code" VARCHAR(100) NOT NULL, -- e.g. Business code 'product_spu.publish', 'comment.delete', 'account.suspend'
+    "code" VARCHAR(100) NOT NULL, -- e.g. Business code 'listing.publish', 'comment.delete', 'account.suspend'
     "changed_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "changed_by" BIGINT, -- account_id of the user who made the change (if applicable)
     "diff" JSONB NOT NULL, -- JSON diff of the record's fields (for insert only, other diff = snapshot)
@@ -82,13 +82,13 @@ CREATE TABLE IF NOT EXISTS "cart_item" (
     -- Aggregate root of the SKU, denormalized on insert like "item"."seller_id" is.
     -- Rendering a cart means reading listings, and the variant is not addressable on
     -- its own in the catalog API, so without this a cart row cannot be resolved at all.
-    "spu_id" BIGINT NOT NULL,
-    "sku_id" BIGINT NOT NULL,
+    "listing_id" BIGINT NOT NULL,
+    "variant_id" BIGINT NOT NULL,
     "quantity" BIGINT NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- sorts the cart, and ages out stale ones
 
     CONSTRAINT "cart_item_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "cart_item_account_id_sku_id_key" UNIQUE ("account_id", "sku_id"),
+    CONSTRAINT "cart_item_account_id_variant_id_key" UNIQUE ("account_id", "variant_id"),
     CONSTRAINT "cart_item_quantity_positive" CHECK ("quantity" > 0)
 );
 
@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS "transport" (
 CREATE TABLE IF NOT EXISTS "draft_order" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
     "buyer_id" BIGINT NOT NULL,
-    "spu_id" BIGINT NOT NULL, -- Aggregate root id (not sku_id)
+    "listing_id" BIGINT NOT NULL, -- Aggregate root id (not variant_id)
     -- The listing when the session opened: { "spu": {…}, "skus": [{ id, price,
     -- attributes, package_details }] }. Carries the SKUs because price and shipping
     -- weight live there, and those are what must not move under the buyer.
@@ -210,8 +210,8 @@ CREATE TABLE IF NOT EXISTS "item" (
     "order_id" BIGINT, -- NULL until the seller confirms
     "buyer_id" BIGINT NOT NULL,
     "seller_id" BIGINT NOT NULL, -- Denormalized from sku->spu->seller
-    "spu_id" BIGINT NOT NULL, -- The same hop's midpoint, kept so order history can resolve the listing
-    "sku_id" BIGINT NOT NULL,
+    "listing_id" BIGINT NOT NULL, -- The same hop's midpoint, kept so order history can resolve the listing
+    "variant_id" BIGINT NOT NULL,
     "address" JSONB NOT NULL, -- Delivery contact snapshot, same shape as "order"."address"
     "note" TEXT, -- Buyer note
     "currency" VARCHAR(3) NOT NULL, -- Currency the SPU was originally priced in; combined with session.fx_snapshot to replay conversion
@@ -242,7 +242,7 @@ CREATE TABLE IF NOT EXISTS "item" (
         REFERENCES "draft_order" ("id") ON DELETE NO ACTION
 );
 CREATE INDEX IF NOT EXISTS "item_order_id_idx" ON "item" ("order_id");
-CREATE INDEX IF NOT EXISTS "item_sku_id_idx" ON "item" ("sku_id");
+CREATE INDEX IF NOT EXISTS "item_variant_id_idx" ON "item" ("variant_id");
 CREATE INDEX IF NOT EXISTS "item_draft_id_idx" ON "item" ("draft_id");
 -- The payment webhook's first lookup: which items did this session pay for.
 CREATE INDEX IF NOT EXISTS "item_payment_session_id_idx" ON "item" ("payment_session_id");
@@ -385,8 +385,8 @@ CREATE INDEX IF NOT EXISTS "refund_dispute_queue_idx"
 -- One negotiation per (buyer, sku); current terms updated in place.
 CREATE TABLE IF NOT EXISTS "offer" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
-    "spu_id" BIGINT NOT NULL, -- cross-ref catalog.product_spu; the listing an offer card renders
-    "sku_id" BIGINT NOT NULL, -- cross-ref catalog.product_sku; no FK
+    "listing_id" BIGINT NOT NULL, -- cross-ref catalog.listing; the listing an offer card renders
+    "variant_id" BIGINT NOT NULL, -- cross-ref catalog.variant; no FK
     "author_id" BIGINT NOT NULL, -- account that created the offer (buyer or seller)
     "buyer_id" BIGINT NOT NULL,
     "seller_id" BIGINT NOT NULL, -- denormalized from sku -> spu -> owner
@@ -403,11 +403,11 @@ CREATE TABLE IF NOT EXISTS "offer" (
     CONSTRAINT "offer_total_positive" CHECK ("total" > 0),
     CONSTRAINT "offer_quantity_positive" CHECK ("quantity" > 0)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS "offer_one_active_per_buyer_sku" ON "offer" ("buyer_id", "sku_id") WHERE "status" = 'active';
+CREATE UNIQUE INDEX IF NOT EXISTS "offer_one_active_per_buyer_sku" ON "offer" ("buyer_id", "variant_id") WHERE "status" = 'active';
 -- The expiry job: live offers past their deadline.
 CREATE INDEX IF NOT EXISTS "offer_expiring_idx"
     ON "offer" ("expires_at")
     WHERE "status" = 'active';
 CREATE INDEX IF NOT EXISTS "offer_seller_id_status_idx" ON "offer" ("seller_id", "status");
 CREATE INDEX IF NOT EXISTS "offer_buyer_id_status_idx" ON "offer" ("buyer_id", "status");
-CREATE INDEX IF NOT EXISTS "offer_sku_id_idx" ON "offer" ("sku_id");
+CREATE INDEX IF NOT EXISTS "offer_variant_id_idx" ON "offer" ("variant_id");

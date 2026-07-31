@@ -81,14 +81,14 @@ components:
       description: >
         Carries the listing id as well as the variant's, because a variant has no read
         of its own in the catalog: rendering the cart is one `GET /listings?ids=` over
-        the `spu_id`s, and the row would otherwise be unresolvable.
+        the `listing_id`s, and the row would otherwise be unresolvable.
       properties:
         id: { $ref: '#/components/schemas/CartItemID' }
-        spu_id: { $ref: '#/components/schemas/ProductSPUID' }
-        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
-        quantity: { type: integer, format: int64 }
+        listing_id: { $ref: '#/components/schemas/ListingID' }
+        variant_id: { $ref: '#/components/schemas/VariantID' }
+        quantity: { type: integer, format: int64, minimum: 1, example: 2 }
         created_at: { type: string, format: date-time }
-      required: [id, spu_id, sku_id, quantity, created_at]
+      required: [id, listing_id, variant_id, quantity, created_at]
 
     CartItemPage:
       type: object
@@ -100,12 +100,12 @@ components:
     AddCartItemRequest:
       type: object
       properties:
-        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
-        quantity: { type: integer, format: int64, minimum: 1 }
-      required: [sku_id, quantity]
+        variant_id: { $ref: '#/components/schemas/VariantID' }
+        quantity: { type: integer, format: int64, minimum: 1, example: 2 }
+      required: [variant_id, quantity]
 
     UpdateCartItemRequest:
       type: object
       properties:
-        quantity: { type: integer, format: int64, minimum: 1 }
+        quantity: { type: integer, format: int64, minimum: 1, example: 2 }
       required: [quantity]

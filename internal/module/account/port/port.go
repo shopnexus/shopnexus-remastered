@@ -1,10 +1,8 @@
 // Package port: the interface the account adapter must satisfy.
 //
-// It speaks in raw int64 keys and domain entities. Opaque ids stop at the api
-// boundary, and the service is the only place that composes several of these calls
-// into one answer — the repository returns entities and never a join-shaped row,
-// so a queue listing resolves its subjects with one extra lookup instead of a
-// second SQL shape that has to be kept in step with the first.
+// It speaks in raw int64 keys and domain entities — opaque ids stop at the api boundary.
+// The repository returns entities, never a join-shaped row, so the service is the one
+// place that composes several calls into one answer.
 package port
 
 import (
@@ -24,6 +22,22 @@ type AccountFilter struct {
 	Limit  int
 }
 
+// AccountSummary is the admin list row: a flat read model, so a page of twenty accounts
+// is one query rather than twenty aggregate loads.
+type AccountSummary struct {
+	ID               int64
+	Status           domain.Status
+	Role             domain.Role
+	Email            *string
+	Phone            *string
+	Username         *string
+	Name             string
+	EmailVerified    bool
+	SuspendedUntil   *time.Time
+	SuspensionReason *string
+	CreatedAt        time.Time
+}
+
 // NotificationQuery reads one page of the feed. Before is the keyset cursor —
 // strictly older than this instant — and is zero on the first page; it is also the
 // time bound that lets the hypertable exclude chunks.
@@ -35,65 +49,69 @@ type NotificationQuery struct {
 	Limit      int
 }
 
-// AuditEntry is one row of the module's audit log: the trail a suspension, a
-// reinstatement or a role change leaves behind, since the account row itself
-// carries only the state in force.
+// AuditEntry is one row of the module's audit log. Save writes these itself from the
+// aggregate's events; InsertAuditLog covers the rest — an insert, or another table.
 type AuditEntry struct {
 	Table      string
 	RecordID   int64
 	ChangeType string
 	// Code is the business event, e.g. "account.suspend".
-	Code      string
-	ChangedBy int64
-	Diff      map[string]any
-	Snapshot  map[string]any
+	Code string
+	// ChangedBy is nil for a change no account is responsible for (a scheduled job,
+	// a vendor callback).
+	ChangedBy *int64
+	// Diff and Snapshot are whatever the recorder declared — a domain event's payload and
+	// a row snapshot — and reach the JSONB columns through json.Marshal. `any` because the
+	// shape belongs to the fact, not to the trail.
+	Diff     any
+	Snapshot any
 }
 
 type Repository interface {
-	// --- account ---
-	// CreateAccount inserts the account and its profile in one transaction, so an
-	// account without a display name is never a reachable state.
-	CreateAccount(ctx context.Context, a *domain.Account, p *domain.Profile) error
-	FindAccountByID(ctx context.Context, id int64) (domain.Account, error)
-	// FindAccountByIdentifier matches an email, a phone or a username — the sign-in
-	// lookup, where the caller does not say which kind it sent.
-	FindAccountByIdentifier(ctx context.Context, identifier string) (domain.Account, error)
-	FindAccountByEmail(ctx context.Context, email string) (domain.Account, error)
-	UpdateAccountIdentifiers(ctx context.Context, a domain.Account) error
-	UpdateAccountPassword(ctx context.Context, accountID int64, passwordHash string) error
-	MarkEmailVerified(ctx context.Context, accountID int64) error
-	UpdateAccountStatus(ctx context.Context, a domain.Account) error
-	UpdateAccountRole(ctx context.Context, accountID int64, role domain.Role) error
-	SearchAccounts(ctx context.Context, f AccountFilter) ([]domain.Account, int64, error)
+	// --- the account aggregate: load it, change it in memory, save it ---
 
-	// --- profile ---
+	// Create inserts the account with its profile in one transaction, so an account
+	// without a display name is never a reachable state.
+	Create(ctx context.Context, a *domain.Account) error
+	// Get reads the root with its children, and is the only loader — which is what makes
+	// exported children and a state-based Save safe.
+	Get(ctx context.Context, id int64) (*domain.Account, error)
+	// GetByIdentifier matches an email, a phone or a username: the sign-in lookup, where
+	// the caller does not say which kind it sent.
+	GetByIdentifier(ctx context.Context, identifier string) (*domain.Account, error)
+	GetByEmail(ctx context.Context, email string) (*domain.Account, error)
+	// GetByOAuth is the one account read that cannot start from an id.
+	GetByOAuth(ctx context.Context, provider, providerUID string) (*domain.Account, error)
+	// Save validates the aggregate and writes the root, its links and the audit rows for
+	// what it recorded in one transaction, guarded by Version. A stale copy gets
+	// domain.ErrVersionConflict rather than overwriting somebody else's change.
+	//
+	// actor is who is performing the write, for those audit rows — a fact about this
+	// transaction rather than about the account, which is why it is an argument and not a
+	// field somebody has to remember to set. Zero means no account is responsible: a
+	// scheduled job, a vendor callback.
+	Save(ctx context.Context, a *domain.Account, actor int64) error
+
+	// --- read models: flat rows, no children ---
+	SearchAccounts(ctx context.Context, f AccountFilter) ([]AccountSummary, int64, error)
+	// FindProfile is for a caller that wants only the profile — the locale a notification
+	// is written in, not the account behind it.
 	FindProfile(ctx context.Context, accountID int64) (domain.Profile, error)
-	// FindProfiles resolves many at once, for the summaries in a follower list or the
-	// identity review queue.
 	FindProfiles(ctx context.Context, accountIDs []int64) (map[int64]domain.Profile, error)
-	UpdateProfile(ctx context.Context, p domain.Profile) error
 
 	// --- the cross-table facts an account view needs ---
 	HasLiveVerifiedDocument(ctx context.Context, accountID int64) (bool, error)
 	LiveVerifiedDocuments(ctx context.Context, accountIDs []int64) (map[int64]bool, error)
 	CountFollowers(ctx context.Context, accountID int64) (int64, error)
 
-	// --- federated identities ---
-	FindOAuthIdentity(ctx context.Context, provider, providerUID string) (domain.OAuthIdentity, error)
-	InsertOAuthIdentity(ctx context.Context, i *domain.OAuthIdentity) error
-	ListOAuthIdentities(ctx context.Context, accountID int64) ([]domain.OAuthIdentity, error)
-	DeleteOAuthIdentity(ctx context.Context, accountID int64, provider string) error
-	CountOAuthIdentities(ctx context.Context, accountID int64) (int64, error)
-
-	// --- saved addresses ---
-	// InsertContact and UpdateContact own the "one default per role" rule: a row that
-	// claims a default clears the previous one in the same transaction, because the
-	// partial unique index would otherwise reject the write.
+	// --- saved addresses: their own aggregate, scoped by the owner rather than reached
+	// through one. The one-default-per-kind rule is a partial unique index, which the
+	// adapter clears the previous holder for in the same transaction.
 	InsertContact(ctx context.Context, c *domain.Contact) error
 	UpdateContact(ctx context.Context, c domain.Contact) error
-	FindContact(ctx context.Context, id int64) (domain.Contact, error)
+	DeleteContact(ctx context.Context, accountID, contactID int64) error
+	FindContact(ctx context.Context, accountID, contactID int64) (domain.Contact, error)
 	ListContacts(ctx context.Context, accountID int64) ([]domain.Contact, error)
-	DeleteContact(ctx context.Context, id int64) error
 
 	// --- push devices ---
 	// UpsertDevice keys on the push token alone, not on (account, token): the token

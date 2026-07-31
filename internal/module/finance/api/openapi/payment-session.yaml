@@ -167,10 +167,12 @@ components:
           nullable: true
           description: The payee. Null means the platform itself.
         currency: { $ref: '#/components/schemas/CurrencyCode' }
-        total_amount: { type: integer, format: int64, description: 'Amount owed, smallest unit of `currency`' }
+        total_amount: { type: integer, format: int64, minimum: 0, example: 598000, description: 'Amount owed, smallest unit of `currency`' }
         amount_paid:
           type: integer
           format: int64
+          minimum: 0
+          example: 598000
           description: >
             Sum of the settled legs, so a partly-tendered session is distinguishable from an
             unpaid one. Signed, so a reversal brings it back down — after a full refund this
@@ -203,6 +205,7 @@ components:
         amount:
           type: integer
           format: int64
+          example: 299000
           description: Signed — positive is a charge, negative is a reversal.
         currency:
           allOf: [{ $ref: '#/components/schemas/CurrencyCode' }]
@@ -243,6 +246,7 @@ components:
         amount:
           type: integer
           format: int64
+          example: 299000
           minimum: 1
           description: Omit to tender the whole outstanding balance. Pass it to split
             the session across rails.

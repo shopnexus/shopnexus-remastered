@@ -123,12 +123,12 @@ components:
         the checkout invoice; `seller` deducts it from the payout.
       enum: [buyer, seller]
 
-    DraftSKUSnapshot:
+    DraftVariantSnapshot:
       type: object
       description: One purchasable variant as it stood when the session opened.
       properties:
-        id: { $ref: '#/components/schemas/ProductSKUID' }
-        price: { type: integer, format: int64, description: Smallest currency unit }
+        id: { $ref: '#/components/schemas/VariantID' }
+        price: { type: integer, format: int64, minimum: 1, example: 299000, description: Smallest currency unit }
         attributes: { type: object, additionalProperties: true }
         package_details:
           type: object
@@ -137,32 +137,32 @@ components:
         attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
       required: [id, price]
 
-    DraftSPUSnapshot:
+    DraftListingSnapshot:
       type: object
       description: >
         The frozen listing terms. Carries the SKUs because price and shipping
         weight live there, and those are what must not move under the buyer.
       properties:
-        id: { $ref: '#/components/schemas/ProductSPUID' }
+        id: { $ref: '#/components/schemas/ListingID' }
         name: { type: string }
         seller_id: { $ref: '#/components/schemas/AccountID' }
         currency: { $ref: '#/components/schemas/CurrencyCode' }
         price_mode: { type: string, enum: [fixed, negotiable] }
         shipping_paid_by: { $ref: '#/components/schemas/OrderShippingPaidBy' }
         attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
-        skus: { type: array, items: { $ref: '#/components/schemas/DraftSKUSnapshot' } }
+        skus: { type: array, items: { $ref: '#/components/schemas/DraftVariantSnapshot' } }
       required: [id, name, seller_id, currency, price_mode, skus]
 
     DraftOrder:
       type: object
       properties:
         id: { $ref: '#/components/schemas/DraftOrderID' }
-        spu_id: { $ref: '#/components/schemas/ProductSPUID' }
-        snapshot: { $ref: '#/components/schemas/DraftSPUSnapshot' }
+        listing_id: { $ref: '#/components/schemas/ListingID' }
+        snapshot: { $ref: '#/components/schemas/DraftListingSnapshot' }
         created_at: { type: string, format: date-time }
         valid_until: { type: string, format: date-time }
         cancelled_at: { type: string, format: date-time, nullable: true }
-      required: [id, spu_id, snapshot, created_at, valid_until]
+      required: [id, listing_id, snapshot, created_at, valid_until]
 
     DraftOrderPage:
       type: object
@@ -174,17 +174,17 @@ components:
     CreateDraftRequest:
       type: object
       properties:
-        spu_id: { $ref: '#/components/schemas/ProductSPUID' }
-      required: [spu_id]
+        listing_id: { $ref: '#/components/schemas/ListingID' }
+      required: [listing_id]
 
     CheckoutLine:
       type: object
       properties:
-        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
+        variant_id: { $ref: '#/components/schemas/VariantID' }
         quantity: { type: integer, format: int64, minimum: 1 }
         transport_option: { type: string, maxLength: 100, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
         note: { type: string, maxLength: 500 }
-      required: [sku_id, quantity, transport_option]
+      required: [variant_id, quantity, transport_option]
 
     CheckoutRequest:
       type: object

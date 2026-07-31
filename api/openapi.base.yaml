@@ -112,11 +112,13 @@ components:
       type: object
       description: Where this page sits in the collection, for a page-paginated read.
       properties:
-        page: { type: integer, description: The 1-based page this is. }
-        limit: { type: integer }
+        page: { type: integer, minimum: 1, example: 1, description: The 1-based page this is. }
+        limit: { type: integer, minimum: 1, maximum: 100, example: 20 }
         total_count:
           type: integer
           format: int64
+          minimum: 0
+          example: 137
           nullable: true
           description: >
             Rows matching the filter, so a client can draw a pager. Explicitly null — not
@@ -161,6 +163,7 @@ components:
             message:
               type: string
               description: Human-readable, for a developer or a log. Not a UI string.
+              example: price must be greater than 0
             request_id:
               type: string
               description: >
@@ -212,8 +215,8 @@ components:
     DeviceID: { type: string, pattern: '^dvc_[0-9a-hjkmnp-tv-z]{13}$', example: dvc_ynht57b62mxef }
     IdentityDocumentID: { type: string, pattern: '^idd_[0-9a-hjkmnp-tv-z]{13}$', example: idd_57b62mxefynht }
     CategoryID: { type: string, pattern: '^cat_[0-9a-hjkmnp-tv-z]{13}$', example: cat_7v2p41ryaj811 }
-    ProductSPUID: { type: string, pattern: '^spu_[0-9a-hjkmnp-tv-z]{13}$', example: spu_1ryaj8117v2p4 }
-    ProductSKUID: { type: string, pattern: '^sku_[0-9a-hjkmnp-tv-z]{13}$', example: sku_vq1wd6ptz3n8k }
+    ListingID: { type: string, pattern: '^lst_[0-9a-hjkmnp-tv-z]{13}$', example: lst_5y5w68r4918v8 }
+    VariantID: { type: string, pattern: '^vrn_[0-9a-hjkmnp-tv-z]{13}$', example: vrn_vq1wd6ptz3n8k }
     CartItemID: { type: string, pattern: '^crt_[0-9a-hjkmnp-tv-z]{13}$', example: crt_3n8kvq1wd6ptz }
     DraftOrderID: { type: string, pattern: '^drf_[0-9a-hjkmnp-tv-z]{13}$', example: drf_8kvq1wd6ptz3n }
     OrderID: { type: string, pattern: '^ord_[0-9a-hjkmnp-tv-z]{13}$', example: ord_fv2cpg50vkrfp }

@@ -62,8 +62,11 @@ components:
 
     UpdateCategoryRequest:
       type: object
-      description: Every field optional. Setting the parent to null makes it a root.
+      description: >
+        Every field optional. Omit a field to leave it, send a value to replace it, send
+        `clear_parent_id` to make the category a root.
       properties:
-        parent_id: { allOf: [{ $ref: '#/components/schemas/CategoryID' }], nullable: true }
+        parent_id: { $ref: '#/components/schemas/CategoryID' }
+        clear_parent_id: { type: boolean, example: false, description: Promotes the category to a root. }
         name: { type: string, minLength: 1, maxLength: 100 }
         description: { type: string, maxLength: 2000 }

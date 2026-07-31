@@ -114,7 +114,7 @@ func TestReputation_AverageWithoutRatings(t *testing.T) {
 func TestSubmitReport(t *testing.T) {
 	svc := trust.NewService(&fakeRepo{}, slog.Default())
 	got, err := svc.SubmitReport(context.Background(), trustapi.SubmitReportRequest{
-		ReporterID: raterID, RefType: domain.ReportRefListing, RefID: id.Of[id.ProductSPU](5).String(), Reason: "scam",
+		ReporterID: raterID, RefType: domain.ReportRefListing, RefID: id.Of[id.Listing](5).String(), Reason: "scam",
 	})
 	if err != nil {
 		t.Fatalf("SubmitReport: %v", err)

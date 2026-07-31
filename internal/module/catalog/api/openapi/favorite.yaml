@@ -7,9 +7,9 @@
 # all without one per page.
 
 paths:
-  /favorites/{spuID}:
+  /favorites/{listingID}:
     parameters:
-      - { name: spuID, in: path, required: true, schema: { $ref: '#/components/schemas/ProductSPUID' } }
+      - { name: listingID, in: path, required: true, schema: { $ref: '#/components/schemas/ListingID' } }
     put:
       tags: [catalog]
       summary: Save a listing
@@ -27,7 +27,7 @@ paths:
       summary: Unsave a listing
       description: >
         Idempotent, and deliberately so all the way: unsaving something that was never
-        saved answers 204, and so does a `spuID` that names no listing at all. The
+        saved answers 204, and so does a `listingID` that names no listing at all. The
         post-condition — this listing is not on the caller's wishlist — holds either way,
         and a 404 here would only tell a stranger which ids exist.
       security: [{ bearerAuth: [] }]

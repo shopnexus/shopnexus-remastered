@@ -2,6 +2,7 @@ package account_test
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -12,13 +13,14 @@ import (
 
 // fakeRepo is an in-memory port.Repository. It exists so the service's rules can be tested
 // without a database, and it enforces the constraints the schema does — the unique
-// identifiers, one default contact per role, one live verified document per account —
-// because those are the ones the service's behaviour is built on top of.
+// identifiers, the version check, one default contact per role, one live verified document
+// per account — because those are the ones the service's behaviour is built on top of.
 type fakeRepo struct {
 	nextID int64
 
+	// accounts holds the row — display half included, as in the table. The links live
+	// beside it, so nothing the test holds aliases what is stored.
 	accounts  map[int64]domain.Account
-	profiles  map[int64]domain.Profile
 	oauth     map[int64][]domain.OAuthIdentity
 	contacts  map[int64]domain.Contact
 	devices   map[int64]domain.Device
@@ -32,7 +34,6 @@ type fakeRepo struct {
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
 		accounts:  map[int64]domain.Account{},
-		profiles:  map[int64]domain.Profile{},
 		oauth:     map[int64][]domain.OAuthIdentity{},
 		contacts:  map[int64]domain.Contact{},
 		devices:   map[int64]domain.Device{},
@@ -49,113 +50,152 @@ func (f *fakeRepo) id() int64 {
 
 var _ port.Repository = (*fakeRepo)(nil)
 
-// --- account ---
+// --- the account aggregate ---
 
-func (f *fakeRepo) CreateAccount(_ context.Context, a *domain.Account, p *domain.Profile) error {
-	for _, existing := range f.accounts {
-		if taken(existing.Email, a.Email) || taken(existing.Phone, a.Phone) || taken(existing.Username, a.Username) {
-			return domain.ErrIdentifierTaken
-		}
+func (f *fakeRepo) Create(_ context.Context, a *domain.Account) error {
+	if err := a.Validate(); err != nil {
+		return err
+	}
+	if err := f.identifiersFree(a, 0); err != nil {
+		return err
 	}
 	a.ID = f.id()
+	a.Version = 1
 	a.CreatedAt = time.Now()
-	p.ID = a.ID
-	p.CreatedAt = a.CreatedAt
-	f.accounts[a.ID] = *a
-	f.profiles[p.ID] = *p
+	a.Profile.ID = a.ID
+	f.putRow(a)
+	f.syncIdentities(a)
+	a.ClearEvents()
 	return nil
 }
 
-// taken mirrors the UNIQUE columns: two NULLs do not collide, two equal values do.
-func taken(a, b string) bool { return a != "" && a == b }
-
-func (f *fakeRepo) FindAccountByID(_ context.Context, id int64) (domain.Account, error) {
-	a, ok := f.accounts[id]
+func (f *fakeRepo) Get(_ context.Context, id int64) (*domain.Account, error) {
+	row, ok := f.accounts[id]
 	if !ok {
-		return domain.Account{}, domain.ErrAccountNotFound
+		return nil, domain.ErrAccountNotFound
 	}
-	return a, nil
+	return f.hydrate(row), nil
 }
 
-func (f *fakeRepo) FindAccountByIdentifier(_ context.Context, identifier string) (domain.Account, error) {
+func (f *fakeRepo) GetByIdentifier(ctx context.Context, identifier string) (*domain.Account, error) {
 	for _, a := range f.accounts {
-		if taken(a.Email, identifier) || taken(a.Phone, identifier) || taken(a.Username, identifier) {
-			return a, nil
+		if takenBy(a.Email, identifier) || takenBy(a.Phone, identifier) || takenBy(a.Username, identifier) {
+			return f.Get(ctx, a.ID)
 		}
 	}
-	return domain.Account{}, domain.ErrAccountNotFound
+	return nil, domain.ErrAccountNotFound
 }
 
-func (f *fakeRepo) FindAccountByEmail(_ context.Context, email string) (domain.Account, error) {
+func (f *fakeRepo) GetByEmail(ctx context.Context, email string) (*domain.Account, error) {
 	for _, a := range f.accounts {
-		if taken(a.Email, email) {
-			return a, nil
+		if takenBy(a.Email, email) {
+			return f.Get(ctx, a.ID)
 		}
 	}
-	return domain.Account{}, domain.ErrAccountNotFound
+	return nil, domain.ErrAccountNotFound
 }
 
-func (f *fakeRepo) UpdateAccountIdentifiers(_ context.Context, a domain.Account) error {
-	current, ok := f.accounts[a.ID]
-	if !ok {
-		return domain.ErrAccountNotFound
+func (f *fakeRepo) GetByOAuth(ctx context.Context, provider, uid string) (*domain.Account, error) {
+	for accountID, links := range f.oauth {
+		for _, l := range links {
+			if l.Provider == provider && l.ProviderUID == uid {
+				return f.Get(ctx, accountID)
+			}
+		}
 	}
+	return nil, domain.ErrOAuthIdentityNotFound
+}
+
+// Save mirrors the adapter: validate, take the version, write the row and the links, then
+// the trail for whatever the root recorded.
+func (f *fakeRepo) Save(_ context.Context, a *domain.Account, actor int64) error {
+	if err := a.Validate(); err != nil {
+		return err
+	}
+	stored, ok := f.accounts[a.ID]
+	if !ok || stored.Version != a.Version {
+		return domain.ErrVersionConflict
+	}
+	if err := f.identifiersFree(a, a.ID); err != nil {
+		return err
+	}
+	f.putRow(a)
+	f.syncIdentities(a)
+	var changedBy *int64
+	if actor != 0 {
+		changedBy = &actor
+	}
+	snapshot := a.Snapshot()
+	for _, e := range a.Events() {
+		f.audit = append(f.audit, port.AuditEntry{
+			Table: "account", RecordID: a.ID, ChangeType: "update", Code: string(e.Code),
+			ChangedBy: changedBy, Diff: e.Payload, Snapshot: snapshot,
+		})
+	}
+	row := f.accounts[a.ID]
+	row.Version++
+	f.accounts[a.ID] = row
+	a.Version++
+	a.ClearEvents()
+	return nil
+}
+
+// hydrate builds an aggregate out of the stored row, cloning the links so a caller that
+// never saves cannot change what is stored.
+func (f *fakeRepo) hydrate(row domain.Account) *domain.Account {
+	acc := row
+	acc.Identities = nil
+	for _, l := range f.oauth[row.ID] {
+		acc.Identities = append(acc.Identities, &domain.OAuthIdentity{
+			ID: l.ID, AccountID: l.AccountID, Provider: l.Provider,
+			ProviderUID: l.ProviderUID, CreatedAt: l.CreatedAt,
+		})
+	}
+	return &acc
+}
+
+// putRow stores the row without its links, so the oauth map stays the single source.
+func (f *fakeRepo) putRow(a *domain.Account) {
+	row := *a
+	row.Identities = nil
+	f.accounts[a.ID] = row
+}
+
+// syncIdentities is the adapter's delete-by-negation: the table matches the slice.
+func (f *fakeRepo) syncIdentities(a *domain.Account) {
+	kept := make([]domain.OAuthIdentity, 0, len(a.Identities))
+	for _, i := range a.Identities {
+		if i.ID == 0 {
+			i.AccountID = a.ID
+			i.ID = f.id()
+			i.CreatedAt = time.Now()
+		}
+		kept = append(kept, *i)
+	}
+	f.oauth[a.ID] = kept
+}
+
+// identifiersFree mirrors the UNIQUE columns, skipping the account being written.
+func (f *fakeRepo) identifiersFree(a *domain.Account, self int64) error {
 	for id, other := range f.accounts {
-		if id == a.ID {
+		if id == self {
 			continue
 		}
 		if taken(other.Email, a.Email) || taken(other.Phone, a.Phone) || taken(other.Username, a.Username) {
 			return domain.ErrIdentifierTaken
 		}
 	}
-	current.Email, current.Phone, current.Username = a.Email, a.Phone, a.Username
-	current.EmailVerified = a.EmailVerified
-	f.accounts[a.ID] = current
 	return nil
 }
 
-func (f *fakeRepo) UpdateAccountPassword(_ context.Context, accountID int64, hash string) error {
-	a, ok := f.accounts[accountID]
-	if !ok {
-		return domain.ErrAccountNotFound
-	}
-	a.PasswordHash = hash
-	f.accounts[accountID] = a
-	return nil
-}
+// taken mirrors the UNIQUE columns: two NULLs do not collide, two equal values do.
+func taken(a, b *string) bool { return a != nil && b != nil && *a == *b }
 
-func (f *fakeRepo) MarkEmailVerified(_ context.Context, accountID int64) error {
-	a, ok := f.accounts[accountID]
-	if !ok {
-		return domain.ErrAccountNotFound
-	}
-	a.EmailVerified = true
-	f.accounts[accountID] = a
-	return nil
-}
+// takenBy is the same check against a plain lookup value.
+func takenBy(a *string, b string) bool { return a != nil && *a == b }
 
-func (f *fakeRepo) UpdateAccountStatus(_ context.Context, a domain.Account) error {
-	current, ok := f.accounts[a.ID]
-	if !ok {
-		return domain.ErrAccountNotFound
-	}
-	current.Status, current.SuspendedUntil, current.SuspensionReason = a.Status, a.SuspendedUntil, a.SuspensionReason
-	f.accounts[a.ID] = current
-	return nil
-}
-
-func (f *fakeRepo) UpdateAccountRole(_ context.Context, accountID int64, role domain.Role) error {
-	a, ok := f.accounts[accountID]
-	if !ok {
-		return domain.ErrAccountNotFound
-	}
-	a.Role = role
-	f.accounts[accountID] = a
-	return nil
-}
-
-func (f *fakeRepo) SearchAccounts(_ context.Context, filter port.AccountFilter) ([]domain.Account, int64, error) {
-	var matched []domain.Account
+func (f *fakeRepo) SearchAccounts(_ context.Context, filter port.AccountFilter) ([]port.AccountSummary, int64, error) {
+	var matched []port.AccountSummary
 	for _, a := range f.accounts {
 		if filter.Status != "" && a.Status != filter.Status {
 			continue
@@ -166,7 +206,12 @@ func (f *fakeRepo) SearchAccounts(_ context.Context, filter port.AccountFilter) 
 		if filter.Query != "" && !f.matchesQuery(a, filter.Query) {
 			continue
 		}
-		matched = append(matched, a)
+		matched = append(matched, port.AccountSummary{
+			ID: a.ID, Status: a.Status, Role: a.Role, Email: a.Email, Phone: a.Phone,
+			Username: a.Username, Name: a.Profile.Name, EmailVerified: a.EmailVerified,
+			SuspendedUntil: a.SuspendedUntil, SuspensionReason: a.SuspensionReason,
+			CreatedAt: a.CreatedAt,
+		})
 	}
 	sort.Slice(matched, func(i, j int) bool { return matched[i].ID < matched[j].ID })
 	total := int64(len(matched))
@@ -180,41 +225,31 @@ func (f *fakeRepo) SearchAccounts(_ context.Context, filter port.AccountFilter) 
 // matchesQuery is the adapter's "exact identifier or display-name fragment", in one place
 // so a test exercises the same choice the SQL makes.
 func (f *fakeRepo) matchesQuery(a domain.Account, q string) bool {
-	if taken(a.Email, q) || taken(a.Phone, q) || taken(a.Username, q) {
+	if takenBy(a.Email, q) || takenBy(a.Phone, q) || takenBy(a.Username, q) {
 		return true
 	}
-	return strings.Contains(strings.ToLower(f.profiles[a.ID].Name), strings.ToLower(q))
+	return strings.Contains(strings.ToLower(a.Profile.Name), strings.ToLower(q))
 }
 
 // --- profile ---
 
 func (f *fakeRepo) FindProfile(_ context.Context, accountID int64) (domain.Profile, error) {
-	p, ok := f.profiles[accountID]
+	a, ok := f.accounts[accountID]
 	if !ok {
 		return domain.Profile{}, domain.ErrAccountNotFound
 	}
-	return p, nil
+	return a.Profile, nil
 }
 
 func (f *fakeRepo) FindProfiles(_ context.Context, ids []int64) (map[int64]domain.Profile, error) {
 	out := map[int64]domain.Profile{}
 	for _, id := range ids {
-		if p, ok := f.profiles[id]; ok {
-			out[id] = p
+		if a, ok := f.accounts[id]; ok {
+			out[id] = a.Profile
 		}
 	}
 	return out, nil
 }
-
-func (f *fakeRepo) UpdateProfile(_ context.Context, p domain.Profile) error {
-	if _, ok := f.profiles[p.ID]; !ok {
-		return domain.ErrAccountNotFound
-	}
-	f.profiles[p.ID] = p
-	return nil
-}
-
-// --- cross-table facts ---
 
 func (f *fakeRepo) HasLiveVerifiedDocument(_ context.Context, accountID int64) (bool, error) {
 	for _, d := range f.documents {
@@ -249,53 +284,12 @@ func (f *fakeRepo) CountFollowers(_ context.Context, accountID int64) (int64, er
 	return n, nil
 }
 
-// --- federated identities ---
-
-func (f *fakeRepo) FindOAuthIdentity(_ context.Context, provider, uid string) (domain.OAuthIdentity, error) {
-	for _, links := range f.oauth {
-		for _, l := range links {
-			if l.Provider == provider && l.ProviderUID == uid {
-				return l, nil
-			}
-		}
-	}
-	return domain.OAuthIdentity{}, domain.ErrOAuthIdentityNotFound
-}
-
-func (f *fakeRepo) InsertOAuthIdentity(_ context.Context, i *domain.OAuthIdentity) error {
-	for _, l := range f.oauth[i.AccountID] {
-		if l.Provider == i.Provider {
-			return domain.ErrIdentifierTaken
-		}
-	}
-	i.ID = f.id()
-	i.CreatedAt = time.Now()
-	f.oauth[i.AccountID] = append(f.oauth[i.AccountID], *i)
-	return nil
-}
-
-func (f *fakeRepo) ListOAuthIdentities(_ context.Context, accountID int64) ([]domain.OAuthIdentity, error) {
-	return f.oauth[accountID], nil
-}
-
-func (f *fakeRepo) DeleteOAuthIdentity(_ context.Context, accountID int64, provider string) error {
-	links := f.oauth[accountID]
-	for i, l := range links {
-		if l.Provider == provider {
-			f.oauth[accountID] = append(links[:i:i], links[i+1:]...)
-			return nil
-		}
-	}
-	return domain.ErrOAuthIdentityNotFound
-}
-
-func (f *fakeRepo) CountOAuthIdentities(_ context.Context, accountID int64) (int64, error) {
-	return int64(len(f.oauth[accountID])), nil
-}
-
 // --- saved addresses ---
 
 func (f *fakeRepo) InsertContact(_ context.Context, c *domain.Contact) error {
+	if _, ok := f.accounts[c.AccountID]; !ok {
+		return domain.ErrAccountNotFound
+	}
 	c.ID = f.id()
 	c.CreatedAt = time.Now()
 	f.clearDefaults(*c)
@@ -304,7 +298,8 @@ func (f *fakeRepo) InsertContact(_ context.Context, c *domain.Contact) error {
 }
 
 func (f *fakeRepo) UpdateContact(_ context.Context, c domain.Contact) error {
-	if _, ok := f.contacts[c.ID]; !ok {
+	current, ok := f.contacts[c.ID]
+	if !ok || current.AccountID != c.AccountID {
 		return domain.ErrContactNotFound
 	}
 	f.clearDefaults(c)
@@ -312,25 +307,18 @@ func (f *fakeRepo) UpdateContact(_ context.Context, c domain.Contact) error {
 	return nil
 }
 
-// clearDefaults is the partial unique index: one default per role per account.
-func (f *fakeRepo) clearDefaults(c domain.Contact) {
-	for id, other := range f.contacts {
-		if id == c.ID || other.AccountID != c.AccountID {
-			continue
-		}
-		if c.IsDefaultDelivery {
-			other.IsDefaultDelivery = false
-		}
-		if c.IsDefaultPickup {
-			other.IsDefaultPickup = false
-		}
-		f.contacts[id] = other
+func (f *fakeRepo) DeleteContact(_ context.Context, accountID, contactID int64) error {
+	c, ok := f.contacts[contactID]
+	if !ok || c.AccountID != accountID {
+		return domain.ErrContactNotFound
 	}
+	delete(f.contacts, contactID)
+	return nil
 }
 
-func (f *fakeRepo) FindContact(_ context.Context, id int64) (domain.Contact, error) {
-	c, ok := f.contacts[id]
-	if !ok {
+func (f *fakeRepo) FindContact(_ context.Context, accountID, contactID int64) (domain.Contact, error) {
+	c, ok := f.contacts[contactID]
+	if !ok || c.AccountID != accountID {
 		return domain.Contact{}, domain.ErrContactNotFound
 	}
 	return c, nil
@@ -347,12 +335,20 @@ func (f *fakeRepo) ListContacts(_ context.Context, accountID int64) ([]domain.Co
 	return out, nil
 }
 
-func (f *fakeRepo) DeleteContact(_ context.Context, id int64) error {
-	if _, ok := f.contacts[id]; !ok {
-		return domain.ErrContactNotFound
+// clearDefaults is the partial unique index: one default per role per account.
+func (f *fakeRepo) clearDefaults(c domain.Contact) {
+	for id, other := range f.contacts {
+		if id == c.ID || other.AccountID != c.AccountID {
+			continue
+		}
+		if c.IsDefaultDelivery {
+			other.IsDefaultDelivery = false
+		}
+		if c.IsDefaultPickup {
+			other.IsDefaultPickup = false
+		}
+		f.contacts[id] = other
 	}
-	delete(f.contacts, id)
-	return nil
 }
 
 // --- push devices ---
@@ -503,14 +499,14 @@ func (f *fakeRepo) followPage(accountID int64, side int, offset, limit int) ([]d
 			ids = append(ids, edge[1-side])
 		}
 	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	slices.Sort(ids)
 	total := int64(len(ids))
 	if offset >= len(ids) {
 		return nil, total, nil
 	}
 	var out []domain.Profile
 	for _, id := range ids[offset:min(offset+limit, len(ids))] {
-		out = append(out, f.profiles[id])
+		out = append(out, f.accounts[id].Profile)
 	}
 	return out, total, nil
 }
@@ -586,6 +582,21 @@ func (f *fakeRepo) UpdateIdentityVerdict(_ context.Context, d domain.IdentityDoc
 func (f *fakeRepo) InsertAuditLog(_ context.Context, e port.AuditEntry) error {
 	f.audit = append(f.audit, e)
 	return nil
+}
+
+// auditedDiff finds the payload recorded under one event type, at that type. A test that
+// asserts on the trail should not be reaching into a map to do it.
+func auditedDiff[T any](f *fakeRepo, e domain.EventType[T]) (T, bool) {
+	for _, entry := range f.audit {
+		if entry.Code != string(e.Code) {
+			continue
+		}
+		if payload, ok := entry.Diff.(T); ok {
+			return payload, true
+		}
+	}
+	var zero T
+	return zero, false
 }
 
 // codes lists the audit codes written so far, which is what a test asserts on.

@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -11,6 +10,20 @@ import (
 )
 
 const deviceColumns = `id, account_id, platform::text, push_token, last_seen_at, created_at`
+
+// scanDevice reads deviceColumns, in that order. pgx.Rows satisfies pgx.Row, so it serves
+// the single-row read and the loop alike and the column list exists once.
+func scanDevice(row pgx.Row) (domain.Device, error) {
+	var d domain.Device
+	err := row.Scan(&d.ID, &d.AccountID, &d.Platform, &d.PushToken, &d.LastSeenAt, &d.CreatedAt)
+	if isNoRows(err) {
+		return domain.Device{}, domain.ErrDeviceNotFound
+	}
+	if err != nil {
+		return domain.Device{}, fmt.Errorf("db scan device: %w", err)
+	}
+	return d, nil
+}
 
 // UpsertDevice conflicts on the push token alone. That is the point: the token
 // identifies an install, and the platform hands the same one to whoever signs in on
@@ -40,16 +53,7 @@ func (r *Repo) UpsertDevice(ctx context.Context, d *domain.Device) error {
 
 func (r *Repo) FindDevice(ctx context.Context, id int64) (domain.Device, error) {
 	q := `SELECT ` + deviceColumns + ` FROM device WHERE id = @id`
-	var d domain.Device
-	err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id}).
-		Scan(&d.ID, &d.AccountID, &d.Platform, &d.PushToken, &d.LastSeenAt, &d.CreatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.Device{}, domain.ErrDeviceNotFound
-	}
-	if err != nil {
-		return domain.Device{}, fmt.Errorf("db scan device: %w", err)
-	}
-	return d, nil
+	return scanDevice(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id}))
 }
 
 func (r *Repo) ListDevices(ctx context.Context, accountID int64) ([]domain.Device, error) {
@@ -63,9 +67,9 @@ func (r *Repo) ListDevices(ctx context.Context, accountID int64) ([]domain.Devic
 
 	var out []domain.Device
 	for rows.Next() {
-		var d domain.Device
-		if err := rows.Scan(&d.ID, &d.AccountID, &d.Platform, &d.PushToken, &d.LastSeenAt, &d.CreatedAt); err != nil {
-			return nil, fmt.Errorf("db scan device row: %w", err)
+		d, err := scanDevice(rows)
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, d)
 	}

@@ -188,8 +188,8 @@ components:
         nothing is worse than an error.
       properties:
         currency: { $ref: '#/components/schemas/CurrencyCode' }
-        available_delta: { type: integer, format: int64, default: 0 }
-        held_delta: { type: integer, format: int64, default: 0 }
+        available_delta: { type: integer, format: int64, default: 0, example: 250000 }
+        held_delta: { type: integer, format: int64, default: 0, example: -250000 }
         reason: { type: string, minLength: 1, maxLength: 2000 }
         idempotency_key:
           type: string

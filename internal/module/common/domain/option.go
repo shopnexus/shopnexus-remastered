@@ -14,12 +14,12 @@ type Option struct {
 	// ID is a natural key ('stripe-xxx', 'ghn-xxx'), not a surrogate one, so it
 	// stays a string and is never encoded.
 	ID             string
-	OwnerID        int64 // zero for system-provided options
+	OwnerID        *int64 // nil for system-provided options
 	IsEnabled      bool
 	Name           string
 	Description    string
 	Priority       int
-	LogoResourceID int64
+	LogoResourceID *int64
 	Data           []byte // JSON: provider-specific configuration
 	Type           string
 	Provider       string

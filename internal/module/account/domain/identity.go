@@ -29,12 +29,38 @@ type IdentityDocument struct {
 	// ProviderRef is the vendor's case id, for re-reading the verdict later.
 	ProviderRef     string
 	Status          IdentityStatus
-	RejectionReason string
+	RejectionReason *string
 	VerifiedAt      *time.Time
 	// ExpiresAt is when the document itself runs out. A payout gate reads this as
 	// well as the status, which is why a passport's expiry is not optional detail.
 	ExpiresAt *time.Time
 	CreatedAt time.Time
+}
+
+// IdentityDocumentSnapshot is the row as the audit log keeps it. The document number and
+// the scans are not here and never were — a leak of the trail must not impersonate anyone.
+type IdentityDocumentSnapshot struct {
+	ID              int64          `json:"id"`
+	AccountID       int64          `json:"account_id"`
+	DocType         DocType        `json:"doc_type"`
+	Provider        string         `json:"provider"`
+	Status          IdentityStatus `json:"status"`
+	RejectionReason *string        `json:"rejection_reason"`
+	VerifiedAt      *time.Time     `json:"verified_at"`
+	ExpiresAt       *time.Time     `json:"expires_at"`
+}
+
+func (d IdentityDocument) Snapshot() IdentityDocumentSnapshot {
+	return IdentityDocumentSnapshot{
+		ID:              d.ID,
+		AccountID:       d.AccountID,
+		DocType:         d.DocType,
+		Provider:        d.Provider,
+		Status:          d.Status,
+		RejectionReason: d.RejectionReason,
+		VerifiedAt:      d.VerifiedAt,
+		ExpiresAt:       d.ExpiresAt,
+	}
 }
 
 // expiringDocTypes are the ones that carry an expiry date, so a verdict of
@@ -84,7 +110,7 @@ func (d *IdentityDocument) Verify(now time.Time, expiresAt *time.Time) error {
 	d.Status = IdentityVerified
 	d.VerifiedAt = &now
 	d.ExpiresAt = expiresAt
-	d.RejectionReason = ""
+	d.RejectionReason = nil
 	return nil
 }
 
@@ -98,7 +124,7 @@ func (d *IdentityDocument) Reject(reason string) error {
 		return ErrRejectionReasonRequired
 	}
 	d.Status = IdentityRejected
-	d.RejectionReason = reason
+	d.RejectionReason = &reason
 	d.VerifiedAt = nil
 	return nil
 }

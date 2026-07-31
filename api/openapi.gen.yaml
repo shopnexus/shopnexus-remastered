@@ -125,6 +125,7 @@ components:
                 id:
                     $ref: '#/components/schemas/AccountID'
                 name:
+                    example: Nguyễn Văn An
                     type: string
             required:
                 - id
@@ -155,13 +156,14 @@ components:
         AddCartItemRequest:
             properties:
                 quantity:
+                    example: 2
                     format: int64
                     minimum: 1
                     type: integer
-                sku_id:
-                    $ref: '#/components/schemas/ProductSKUID'
+                variant_id:
+                    $ref: '#/components/schemas/VariantID'
             required:
-                - sku_id
+                - variant_id
                 - quantity
             type: object
         AdminAccount:
@@ -251,6 +253,7 @@ components:
                     description: |
                         How many other unresolved reports name the same target. A pattern is what a decision rests on rather than a single complaint.
                     format: int64
+                    minimum: 0
                     type: integer
                 report:
                     $ref: '#/components/schemas/Report'
@@ -290,6 +293,8 @@ components:
                     $ref: '#/components/schemas/Me'
                 expires_in:
                     description: Access token lifetime in seconds.
+                    example: 900
+                    minimum: 0
                     type: integer
                 refresh_token:
                     type: string
@@ -348,24 +353,26 @@ components:
             type: object
         CartItem:
             description: |
-                Carries the listing id as well as the variant's, because a variant has no read of its own in the catalog: rendering the cart is one `GET /listings?ids=` over the `spu_id`s, and the row would otherwise be unresolvable.
+                Carries the listing id as well as the variant's, because a variant has no read of its own in the catalog: rendering the cart is one `GET /listings?ids=` over the `listing_id`s, and the row would otherwise be unresolvable.
             properties:
                 created_at:
                     format: date-time
                     type: string
                 id:
                     $ref: '#/components/schemas/CartItemID'
+                listing_id:
+                    $ref: '#/components/schemas/ListingID'
                 quantity:
+                    example: 2
                     format: int64
+                    minimum: 1
                     type: integer
-                sku_id:
-                    $ref: '#/components/schemas/ProductSKUID'
-                spu_id:
-                    $ref: '#/components/schemas/ProductSPUID'
+                variant_id:
+                    $ref: '#/components/schemas/VariantID'
             required:
                 - id
-                - spu_id
-                - sku_id
+                - listing_id
+                - variant_id
                 - quantity
                 - created_at
             type: object
@@ -434,10 +441,14 @@ components:
             properties:
                 conversations:
                     description: How many threads have anything unread.
+                    example: 2
                     format: int64
+                    minimum: 0
                     type: integer
                 unread:
+                    example: 3
                     format: int64
+                    minimum: 0
                     type: integer
             required:
                 - unread
@@ -452,14 +463,14 @@ components:
                     format: int64
                     minimum: 1
                     type: integer
-                sku_id:
-                    $ref: '#/components/schemas/ProductSKUID'
                 transport_option:
                     maxLength: 100
                     pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
                     type: string
+                variant_id:
+                    $ref: '#/components/schemas/VariantID'
             required:
-                - sku_id
+                - variant_id
                 - quantity
                 - transport_option
             type: object
@@ -575,11 +586,17 @@ components:
                 is_default_pickup:
                     type: boolean
                 latitude:
+                    example: 10.7769
                     format: double
+                    maximum: 90
+                    minimum: -90
                     nullable: true
                     type: number
                 longitude:
+                    example: 106.7009
                     format: double
+                    maximum: 180
+                    minimum: -180
                     nullable: true
                     type: number
                 phone:
@@ -668,7 +685,9 @@ components:
                     type: string
                 unread:
                     description: The counterparty's messages after the caller's read mark.
+                    example: 3
                     format: int64
+                    minimum: 0
                     type: integer
             required:
                 - id
@@ -764,10 +783,16 @@ components:
                     default: false
                     type: boolean
                 latitude:
+                    example: 10.7769
                     format: double
+                    maximum: 90
+                    minimum: -90
                     type: number
                 longitude:
+                    example: 106.7009
                     format: double
+                    maximum: 180
+                    minimum: -180
                     type: number
                 phone:
                     pattern: ^\+[1-9][0-9]{7,14}$
@@ -804,10 +829,10 @@ components:
             type: object
         CreateDraftRequest:
             properties:
-                spu_id:
-                    $ref: '#/components/schemas/ProductSPUID'
+                listing_id:
+                    $ref: '#/components/schemas/ListingID'
             required:
-                - spu_id
+                - listing_id
             type: object
         CreateListingRequest:
             properties:
@@ -833,18 +858,18 @@ components:
                     $ref: '#/components/schemas/PriceMode'
                 shipping_paid_by:
                     $ref: '#/components/schemas/ShippingPaidBy'
-                skus:
-                    description: At least one. Price and shipping weight live on the variant.
-                    items:
-                        $ref: '#/components/schemas/CreateSkuRequest'
-                    minItems: 1
-                    type: array
                 specifications:
                     additionalProperties: true
                     type: object
                 tags:
                     items:
                         $ref: '#/components/schemas/TagSlug'
+                    type: array
+                variants:
+                    description: At least one. Price and shipping weight live on the variant.
+                    items:
+                        $ref: '#/components/schemas/CreateVariantRequest'
+                    minItems: 1
                     type: array
             required:
                 - name
@@ -854,7 +879,7 @@ components:
                 - price_mode
                 - shipping_paid_by
                 - currency
-                - skus
+                - variants
             type: object
         CreateModeratorRequest:
             properties:
@@ -892,20 +917,22 @@ components:
         CreateOfferRequest:
             properties:
                 quantity:
+                    example: 2
                     format: int64
                     minimum: 1
                     type: integer
                 reason:
                     maxLength: 500
                     type: string
-                sku_id:
-                    $ref: '#/components/schemas/ProductSKUID'
                 total:
+                    example: 598000
                     format: int64
                     minimum: 1
                     type: integer
+                variant_id:
+                    $ref: '#/components/schemas/VariantID'
             required:
-                - sku_id
+                - variant_id
                 - quantity
                 - total
             type: object
@@ -930,6 +957,7 @@ components:
                     type: string
                 priority:
                     default: 0
+                    example: 10
                     type: integer
                 provider:
                     maxLength: 100
@@ -962,7 +990,30 @@ components:
                 - reason
                 - attachments
             type: object
-        CreateSkuRequest:
+        CreateUploadRequest:
+            properties:
+                checksum:
+                    description: |
+                        Content hash if known. A match returns the stored resource and skips the upload entirely.
+                    example: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+                    maxLength: 128
+                    type: string
+                mime:
+                    maxLength: 100
+                    minLength: 1
+                    type: string
+                size:
+                    description: |
+                        Expected byte count, used to bound the presigned PUT. The recorded size is what storage reports at completion, not this.
+                    example: 248132
+                    format: int64
+                    minimum: 1
+                    type: integer
+            required:
+                - mime
+                - size
+            type: object
+        CreateVariantRequest:
             properties:
                 attachments:
                     items:
@@ -978,8 +1029,9 @@ components:
                     format: int64
                     minimum: 0
                     type: integer
-                stock:
+                quantity:
                     default: 0
+                    description: Units on hand at creation.
                     format: int64
                     minimum: 0
                     type: integer
@@ -988,30 +1040,10 @@ components:
                 - attributes
                 - package_details
             type: object
-        CreateUploadRequest:
-            properties:
-                checksum:
-                    description: |
-                        Content hash if known. A match returns the stored resource and skips the upload entirely.
-                    maxLength: 128
-                    type: string
-                mime:
-                    maxLength: 100
-                    minLength: 1
-                    type: string
-                size:
-                    description: |
-                        Expected byte count, used to bound the presigned PUT. The recorded size is what storage reports at completion, not this.
-                    format: int64
-                    minimum: 1
-                    type: integer
-            required:
-                - mime
-                - size
-            type: object
         CreateWithdrawalRequest:
             properties:
                 amount:
+                    example: 500000
                     format: int64
                     minimum: 1
                     type: integer
@@ -1157,6 +1189,41 @@ components:
                 - seller-wins
                 - buyer-wins
             type: string
+        DraftListingSnapshot:
+            description: |
+                The frozen listing terms. Carries the SKUs because price and shipping weight live there, and those are what must not move under the buyer.
+            properties:
+                attachments:
+                    items:
+                        $ref: '#/components/schemas/ResourceID'
+                    type: array
+                currency:
+                    $ref: '#/components/schemas/CurrencyCode'
+                id:
+                    $ref: '#/components/schemas/ListingID'
+                name:
+                    type: string
+                price_mode:
+                    enum:
+                        - fixed
+                        - negotiable
+                    type: string
+                seller_id:
+                    $ref: '#/components/schemas/AccountID'
+                shipping_paid_by:
+                    $ref: '#/components/schemas/OrderShippingPaidBy'
+                skus:
+                    items:
+                        $ref: '#/components/schemas/DraftVariantSnapshot'
+                    type: array
+            required:
+                - id
+                - name
+                - seller_id
+                - currency
+                - price_mode
+                - skus
+            type: object
         DraftOrder:
             properties:
                 cancelled_at:
@@ -1168,16 +1235,16 @@ components:
                     type: string
                 id:
                     $ref: '#/components/schemas/DraftOrderID'
+                listing_id:
+                    $ref: '#/components/schemas/ListingID'
                 snapshot:
-                    $ref: '#/components/schemas/DraftSPUSnapshot'
-                spu_id:
-                    $ref: '#/components/schemas/ProductSPUID'
+                    $ref: '#/components/schemas/DraftListingSnapshot'
                 valid_until:
                     format: date-time
                     type: string
             required:
                 - id
-                - spu_id
+                - listing_id
                 - snapshot
                 - created_at
                 - valid_until
@@ -1198,7 +1265,7 @@ components:
                 - data
                 - meta
             type: object
-        DraftSKUSnapshot:
+        DraftVariantSnapshot:
             description: One purchasable variant as it stood when the session opened.
             properties:
                 attachments:
@@ -1209,53 +1276,20 @@ components:
                     additionalProperties: true
                     type: object
                 id:
-                    $ref: '#/components/schemas/ProductSKUID'
+                    $ref: '#/components/schemas/VariantID'
                 package_details:
                     additionalProperties: true
                     description: Weight and dimensions; the shipping quote is computed from these.
                     type: object
                 price:
                     description: Smallest currency unit
+                    example: 299000
                     format: int64
+                    minimum: 1
                     type: integer
             required:
                 - id
                 - price
-            type: object
-        DraftSPUSnapshot:
-            description: |
-                The frozen listing terms. Carries the SKUs because price and shipping weight live there, and those are what must not move under the buyer.
-            properties:
-                attachments:
-                    items:
-                        $ref: '#/components/schemas/ResourceID'
-                    type: array
-                currency:
-                    $ref: '#/components/schemas/CurrencyCode'
-                id:
-                    $ref: '#/components/schemas/ProductSPUID'
-                name:
-                    type: string
-                price_mode:
-                    enum:
-                        - fixed
-                        - negotiable
-                    type: string
-                seller_id:
-                    $ref: '#/components/schemas/AccountID'
-                shipping_paid_by:
-                    $ref: '#/components/schemas/OrderShippingPaidBy'
-                skus:
-                    items:
-                        $ref: '#/components/schemas/DraftSKUSnapshot'
-                    type: array
-            required:
-                - id
-                - name
-                - seller_id
-                - currency
-                - price_mode
-                - skus
             type: object
         EmailVerificationRequest:
             properties:
@@ -1283,6 +1317,7 @@ components:
                             type: array
                         message:
                             description: Human-readable, for a developer or a log. Not a UI string.
+                            example: price must be greater than 0
                             type: string
                         request_id:
                             description: |
@@ -1509,20 +1544,26 @@ components:
                         Whether the caller has this on their wishlist. False for an anonymous request. A plain join, because the wishlist is a catalog table — the client never has to fetch its own saves to know which hearts to fill in.
                     type: boolean
                 id:
-                    $ref: '#/components/schemas/ProductSPUID'
+                    $ref: '#/components/schemas/ListingID'
                 name:
+                    example: Áo thun Uniqlo cổ tròn xanh navy
                     type: string
                 price:
                     description: |
                         The featured variant's price, or the cheapest one when a price sort is in force. Not stored on the listing.
+                    example: 299000
                     format: int64
+                    minimum: 1
                     type: integer
                 price_mode:
                     $ref: '#/components/schemas/PriceMode'
                 rating:
                     description: |
                         Average review rating from 1 to 5, or 0 when there are none yet. Maintained from review events because reviews live in another schema and cannot be joined.
+                    example: 4.6
                     format: double
+                    maximum: 5
+                    minimum: 0
                     type: number
                 score:
                     $ref: '#/components/schemas/SimilarityScore'
@@ -1530,11 +1571,14 @@ components:
                     $ref: '#/components/schemas/AccountSummary'
                 slug:
                     description: URL-friendly, globally unique and fixed at creation.
+                    example: ao-thun-uniqlo-xanh
                     type: string
                 sold:
                     description: |
-                        Units taken across the variants — sold plus whatever is reserved right now, since a reservation that is later cancelled comes back out. Read from `cached_sold` on the listing rather than summed per request: a feed page would otherwise aggregate the stock rows of every card on it.
+                        Completed sales across the variants. An open checkout does not count and a cancelled one never did, so the number only goes up. Read from `cached_sold` on the listing rather than summed per request: a feed page would otherwise aggregate the stock rows of every card on it.
+                    example: 128
                     format: int64
+                    minimum: 0
                     type: integer
                 status:
                     $ref: '#/components/schemas/ListingStatus'
@@ -1582,48 +1626,53 @@ components:
                 favorite_count:
                     description: |
                         How many accounts saved it — social proof on the product page. Only here and not on the card: it is a count per listing, cheap for one row and N counts for a page of them.
+                    example: 340
                     format: int64
+                    minimum: 0
                     type: integer
                 favorited:
                     description: Whether the caller has this saved. False for an anonymous request.
                     type: boolean
-                featured_sku_id:
+                featured_variant_id:
                     allOf:
-                        - $ref: '#/components/schemas/ProductSKUID'
+                        - $ref: '#/components/schemas/VariantID'
                     nullable: true
                 id:
-                    $ref: '#/components/schemas/ProductSPUID'
+                    $ref: '#/components/schemas/ListingID'
                 images:
                     description: Ordered. The first is the cover.
                     items:
                         $ref: '#/components/schemas/Resource'
                     type: array
                 name:
+                    example: Áo thun Uniqlo cổ tròn xanh navy
                     type: string
                 pending_edit:
-                    additionalProperties: true
+                    allOf:
+                        - $ref: '#/components/schemas/PendingEdit'
                     description: |
-                        An edit waiting on moderation. Visible to the owner and to staff only; buyers see the published version until it is approved.
+                        An edit waiting on moderation, null when there is none. Visible to the owner and to staff only; buyers see the published version until it is approved.
                     nullable: true
-                    type: object
                 price_mode:
                     $ref: '#/components/schemas/PriceMode'
                 rating:
+                    example: 4.6
                     format: double
+                    maximum: 5
+                    minimum: 0
                     type: number
                 seller:
                     $ref: '#/components/schemas/AccountSummary'
                 shipping_paid_by:
                     $ref: '#/components/schemas/ShippingPaidBy'
-                skus:
-                    items:
-                        $ref: '#/components/schemas/Sku'
-                    type: array
                 slug:
+                    example: ao-thun-uniqlo-xanh
                     type: string
                 sold:
-                    description: Units taken across the variants — see Listing.sold.
+                    description: Completed sales across the variants — see Listing.sold.
+                    example: 128
                     format: int64
+                    minimum: 0
                     type: integer
                 specifications:
                     additionalProperties: true
@@ -1634,6 +1683,10 @@ components:
                 tags:
                     items:
                         $ref: '#/components/schemas/TagSlug'
+                    type: array
+                variants:
+                    items:
+                        $ref: '#/components/schemas/Variant'
                     type: array
             required:
                 - id
@@ -1649,7 +1702,7 @@ components:
                 - images
                 - category
                 - tags
-                - skus
+                - variants
                 - sold
                 - rating
                 - seller
@@ -1657,6 +1710,10 @@ components:
                 - favorite_count
                 - created_at
             type: object
+        ListingID:
+            example: lst_5y5w68r4918v8
+            pattern: ^lst_[0-9a-hjkmnp-tv-z]{13}$
+            type: string
         ListingPage:
             description: |
                 One page shape for every listing query, ranked or not. Page-paginated, because a catalog is browsed with a pager and a relevance order has no stored column to seek into; `total` is null for a ranked query, where the top-K is all the search ever visited.
@@ -1675,7 +1732,7 @@ components:
             description: |
                 A listing addressed either way. The id form is the opaque one; the slug form is what a shareable product URL carries. They cannot collide because an opaque id always has an underscore after its prefix and a slug never has one.
             oneOf:
-                - $ref: '#/components/schemas/ProductSPUID'
+                - $ref: '#/components/schemas/ListingID'
                 - example: ao-thun-uniqlo-xanh
                   maxLength: 100
                   pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
@@ -1987,30 +2044,34 @@ components:
                     type: string
                 id:
                     $ref: '#/components/schemas/OfferID'
+                listing_id:
+                    allOf:
+                        - $ref: '#/components/schemas/ListingID'
+                    description: The listing whose card the offer is shown on.
                 quantity:
+                    example: 2
                     format: int64
+                    minimum: 1
                     type: integer
                 reason:
                     description: Shown on the offer card beside the proposed price
                     type: string
                 seller_id:
                     $ref: '#/components/schemas/AccountID'
-                sku_id:
-                    $ref: '#/components/schemas/ProductSKUID'
-                spu_id:
-                    allOf:
-                        - $ref: '#/components/schemas/ProductSPUID'
-                    description: The listing whose card the offer is shown on.
                 status:
                     $ref: '#/components/schemas/OfferStatus'
                 total:
                     description: Currently proposed total, smallest currency unit
+                    example: 598000
                     format: int64
+                    minimum: 1
                     type: integer
+                variant_id:
+                    $ref: '#/components/schemas/VariantID'
             required:
                 - id
-                - spu_id
-                - sku_id
+                - listing_id
+                - variant_id
                 - buyer_id
                 - seller_id
                 - author_id
@@ -2097,6 +2158,7 @@ components:
                     nullable: true
                 priority:
                     description: Display order; ties are broken by `id`.
+                    example: 10
                     type: integer
                 provider:
                     description: Sub-grouping key, kebab-case — `vnpay`, `ghn`.
@@ -2316,6 +2378,11 @@ components:
                     $ref: '#/components/schemas/DraftOrderID'
                 id:
                     $ref: '#/components/schemas/OrderItemID'
+                listing_id:
+                    allOf:
+                        - $ref: '#/components/schemas/ListingID'
+                    description: |
+                        The listing the variant belongs to, denormalized the same way `seller_id` is, so order history can resolve it through `GET /listings?ids=` — which answers for a listing the seller has since hidden or deleted.
                 note:
                     description: Buyer note
                     nullable: true
@@ -2328,33 +2395,32 @@ components:
                 payment_status:
                     $ref: '#/components/schemas/OrderPaymentStatus'
                 quantity:
+                    example: 2
                     format: int64
+                    minimum: 1
                     type: integer
                 seller_id:
                     $ref: '#/components/schemas/AccountID'
-                sku_id:
-                    $ref: '#/components/schemas/ProductSKUID'
-                spu_id:
-                    allOf:
-                        - $ref: '#/components/schemas/ProductSPUID'
-                    description: |
-                        The listing the variant belongs to, denormalized the same way `seller_id` is, so order history can resolve it through `GET /listings?ids=` — which answers for a listing the seller has since hidden or deleted.
                 state:
                     $ref: '#/components/schemas/OrderItemState'
                 total_amount:
                     description: Paid amount in the smallest unit of `currency`
+                    example: 598000
                     format: int64
+                    minimum: 0
                     type: integer
                 transport_option:
                     description: A transport option slug owned by the common module
                     type: string
+                variant_id:
+                    $ref: '#/components/schemas/VariantID'
             required:
                 - id
                 - draft_id
                 - buyer_id
                 - seller_id
-                - spu_id
-                - sku_id
+                - listing_id
+                - variant_id
                 - quantity
                 - currency
                 - total_amount
@@ -2428,16 +2494,23 @@ components:
             description: Where this page sits in the collection, for a page-paginated read.
             properties:
                 limit:
+                    example: 20
+                    maximum: 100
+                    minimum: 1
                     type: integer
                 page:
                     description: The 1-based page this is.
+                    example: 1
+                    minimum: 1
                     type: integer
                 total_count:
                     description: |
                         Rows matching the filter, so a client can draw a pager. Explicitly null — not absent — when the result is a ranked top-K: an approximate nearest-neighbour search never visits the rows it did not return, so there is no total to report, and a client has to render "more results" rather than "page 3 of 12".
 
                         Named `total_count` rather than `total` because `total` is already a money field in this document (an offer's proposed total), and a generated client would end up with two `total`s meaning different things.
+                    example: 137
                     format: int64
+                    minimum: 0
                     nullable: true
                     type: integer
             required:
@@ -2470,7 +2543,9 @@ components:
                 amount_paid:
                     description: |
                         Sum of the settled legs, so a partly-tendered session is distinguishable from an unpaid one. Signed, so a reversal brings it back down — after a full refund this reads zero again. It is what the rails currently hold, not a running total of what was ever charged; the ledger has that.
+                    example: 598000
                     format: int64
+                    minimum: 0
                     type: integer
                 created_at:
                     format: date-time
@@ -2505,7 +2580,9 @@ components:
                     nullable: true
                 total_amount:
                     description: Amount owed, smallest unit of `currency`
+                    example: 598000
                     format: int64
+                    minimum: 0
                     type: integer
             required:
                 - id
@@ -2551,20 +2628,44 @@ components:
                 - cancelled
                 - failed
             type: string
+        PendingEdit:
+            description: |
+                The editable subset of a listing, held until moderation applies it. Same fields as UpdateListingRequest and only those: an edit that could carry anything would be a blob nobody can diff or review.
+            properties:
+                attachments:
+                    items:
+                        $ref: '#/components/schemas/ResourceID'
+                    type: array
+                category_id:
+                    $ref: '#/components/schemas/CategoryID'
+                condition:
+                    $ref: '#/components/schemas/ListingCondition'
+                description:
+                    maxLength: 20000
+                    type: string
+                name:
+                    example: Áo thun Uniqlo cổ tròn xanh navy
+                    maxLength: 200
+                    minLength: 1
+                    type: string
+                price_mode:
+                    $ref: '#/components/schemas/PriceMode'
+                shipping_paid_by:
+                    $ref: '#/components/schemas/ShippingPaidBy'
+                specifications:
+                    additionalProperties: true
+                    type: object
+                tags:
+                    items:
+                        $ref: '#/components/schemas/TagSlug'
+                    type: array
+            type: object
         PriceMode:
             description: |
                 `fixed` can be bought straight from the listing page. `negotiable` has to go through an offer first and cannot be checked out directly.
             enum:
                 - fixed
                 - negotiable
-            type: string
-        ProductSKUID:
-            example: sku_vq1wd6ptz3n8k
-            pattern: ^sku_[0-9a-hjkmnp-tv-z]{13}$
-            type: string
-        ProductSPUID:
-            example: spu_1ryaj8117v2p4
-            pattern: ^spu_[0-9a-hjkmnp-tv-z]{13}$
             type: string
         Profile:
             properties:
@@ -2594,6 +2695,7 @@ components:
                     example: vi-VN
                     type: string
                 name:
+                    example: Nguyễn Văn An
                     type: string
                 timezone:
                     example: Asia/Ho_Chi_Minh
@@ -2627,7 +2729,9 @@ components:
                     nullable: true
                     type: string
                 follower_count:
+                    example: 1240
                     format: int64
+                    minimum: 0
                     type: integer
                 id:
                     $ref: '#/components/schemas/AccountID'
@@ -2635,6 +2739,7 @@ components:
                     description: Shown as a trust signal.
                     type: boolean
                 name:
+                    example: Nguyễn Văn An
                     type: string
             required:
                 - id
@@ -2964,24 +3069,38 @@ components:
                 account_id:
                     $ref: '#/components/schemas/AccountID'
                 cancelled_orders:
+                    example: 3
                     format: int64
+                    minimum: 0
                     type: integer
                 completed_orders:
+                    example: 152
                     format: int64
+                    minimum: 0
                     type: integer
                 rating_average:
                     description: Average transaction feedback from 1 to 5. Zero when there is none.
+                    example: 4.6
                     format: double
+                    maximum: 5
+                    minimum: 0
                     type: number
                 rating_count:
+                    example: 87
                     format: int64
+                    minimum: 0
                     type: integer
                 review_rating_average:
                     description: Average product-review rating. Always zero for the buyer role.
+                    example: 4.6
                     format: double
+                    maximum: 5
+                    minimum: 0
                     type: number
                 review_rating_count:
+                    example: 64
                     format: int64
+                    minimum: 0
                     type: integer
                 role:
                     $ref: '#/components/schemas/ReputationRole'
@@ -3029,6 +3148,7 @@ components:
             properties:
                 checksum:
                     description: Content hash, used to share one stored object between identical uploads.
+                    example: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
                     nullable: true
                     type: string
                 completed_at:
@@ -3051,14 +3171,19 @@ components:
                     type: string
                 provider:
                     description: Storage backend, kebab-case — `s3`, `minio`, `local`.
+                    example: minio
                     type: string
                 size:
                     description: Bytes, as read back from storage rather than as declared.
+                    example: 248132
                     format: int64
+                    minimum: 0
                     type: integer
                 url:
                     description: |
                         Short-lived URL to fetch the bytes. Null while the upload is unconfirmed. Not a stable address: store the id, not this.
+                    example: https://cdn.shopnexus.test/o/9f86d081?expires=1785000000
+                    format: uri
                     nullable: true
                     type: string
                 url_expires_at:
@@ -3092,6 +3217,8 @@ components:
                     type: string
                 id:
                     $ref: '#/components/schemas/ReviewID'
+                listing_id:
+                    $ref: '#/components/schemas/ListingID'
                 rating:
                     maximum: 5
                     minimum: 1
@@ -3104,15 +3231,15 @@ components:
                     maxItems: 3
                     type: array
                 reply_count:
+                    example: 2
                     format: int64
+                    minimum: 0
                     type: integer
-                spu_id:
-                    $ref: '#/components/schemas/ProductSPUID'
                 votes:
                     $ref: '#/components/schemas/ReviewVoteTally'
             required:
                 - id
-                - spu_id
+                - listing_id
                 - author
                 - rating
                 - body
@@ -3168,7 +3295,9 @@ components:
                 Counters on the review, not a count of `review_vote` rows per request — that is what lets `sort=helpful` be an index scan. Flipping a vote moves one unit between the two totals, so both sides have to change in the same transaction as the vote row itself; a tally that has drifted from the rows it summarises is recomputable, but a half-applied flip is visible.
             properties:
                 helpful:
+                    example: 12
                     format: int64
+                    minimum: 0
                     type: integer
                 my_vote:
                     description: The caller's own vote. Null when they have not voted.
@@ -3178,7 +3307,9 @@ components:
                     nullable: true
                     type: integer
                 not_helpful:
+                    example: 1
                     format: int64
+                    minimum: 0
                     type: integer
             required:
                 - helpful
@@ -3218,45 +3349,12 @@ components:
         SimilarityScore:
             description: |
                 Relevance, always oriented so that higher is closer — for a vector ranking that is `1 - (a <=> b)`, the cosine similarity, because the operator itself returns a distance. Null unless the request asked for a ranking.
+            example: 0.87
             format: double
+            maximum: 1
+            minimum: -1
             nullable: true
             type: number
-        Sku:
-            description: A purchasable variant. Price and package details live here rather than on the listing.
-            properties:
-                attributes:
-                    additionalProperties: true
-                    description: Variant attributes such as size and colour.
-                    type: object
-                created_at:
-                    format: date-time
-                    type: string
-                id:
-                    $ref: '#/components/schemas/ProductSKUID'
-                images:
-                    description: Empty means fall back to the listing gallery.
-                    items:
-                        $ref: '#/components/schemas/Resource'
-                    type: array
-                package_details:
-                    additionalProperties: true
-                    description: Weight and dimensions. A shipping quote is computed from these.
-                    type: object
-                price:
-                    description: Smallest unit of the listing's currency.
-                    format: int64
-                    type: integer
-                stock:
-                    $ref: '#/components/schemas/Stock'
-            required:
-                - id
-                - price
-                - attributes
-                - package_details
-                - images
-                - stock
-                - created_at
-            type: object
         StartConversationRequest:
             properties:
                 account_id:
@@ -3292,6 +3390,7 @@ components:
             properties:
                 amount:
                     description: Omit to tender the whole outstanding balance. Pass it to split the session across rails.
+                    example: 299000
                     format: int64
                     minimum: 1
                     type: integer
@@ -3313,20 +3412,35 @@ components:
                 Always read inside its own variant, so it does not repeat the sku id.
             properties:
                 available:
-                    description: Total minus reserved.
+                    description: quantity − reserved − sold.
+                    example: 39
                     format: int64
+                    minimum: 0
+                    type: integer
+                quantity:
+                    description: Total on hand.
+                    example: 42
+                    format: int64
+                    minimum: 0
                     type: integer
                 reserved:
-                    description: Held by paid but unconfirmed items. Moved by checkout and by cancellation and never set directly.
+                    description: |
+                        Held by a checkout that has not completed. Moved by checkout and by cancellation, never set directly, and it comes back when a session expires.
+                    example: 3
                     format: int64
+                    minimum: 0
                     type: integer
-                stock:
-                    description: Total on hand.
+                sold:
+                    description: |
+                        Completed sales. Only ever goes up, which is what makes it usable as social proof — a reservation counts here only once the purchase completes.
+                    example: 128
                     format: int64
+                    minimum: 0
                     type: integer
             required:
-                - stock
+                - quantity
                 - reserved
+                - sold
                 - available
             type: object
         SubmitFeedbackRequest:
@@ -3509,6 +3623,7 @@ components:
             properties:
                 amount:
                     description: Signed — positive is a charge, negative is a reversal.
+                    example: 299000
                     format: int64
                     type: integer
                 checkout_url:
@@ -3642,27 +3757,38 @@ components:
         UnreadCount:
             properties:
                 unread:
+                    example: 3
                     format: int64
+                    minimum: 0
                     type: integer
             required:
                 - unread
             type: object
         UpdateAccountRequest:
-            description: Every field optional. Setting one to null removes it, which is refused when it is the last identifier.
+            description: Every field optional. Omit one to leave it alone, send a value to replace it, send its `clear_*` flag to remove it — which is refused when it is the last identifier (422 `no_identifier`).
             properties:
+                clear_email:
+                    example: false
+                    type: boolean
+                clear_phone:
+                    example: false
+                    type: boolean
+                clear_username:
+                    example: false
+                    type: boolean
                 email:
+                    example: alice@example.com
                     format: email
                     maxLength: 255
-                    nullable: true
                     type: string
                 phone:
-                    nullable: true
+                    example: "+84901234567"
                     pattern: ^\+[1-9][0-9]{7,14}$
                     type: string
                 username:
+                    example: alice
                     maxLength: 100
                     minLength: 3
-                    nullable: true
                     pattern: ^[a-z0-9._-]+$
                     type: string
             type: object
@@ -3679,6 +3805,7 @@ components:
         UpdateCartItemRequest:
             properties:
                 quantity:
+                    example: 2
                     format: int64
                     minimum: 1
                     type: integer
@@ -3686,8 +3813,13 @@ components:
                 - quantity
             type: object
         UpdateCategoryRequest:
-            description: Every field optional. Setting the parent to null makes it a root.
+            description: |
+                Every field optional. Omit a field to leave it, send a value to replace it, send `clear_parent_id` to make the category a root.
             properties:
+                clear_parent_id:
+                    description: Promotes the category to a root.
+                    example: false
+                    type: boolean
                 description:
                     maxLength: 2000
                     type: string
@@ -3696,63 +3828,92 @@ components:
                     minLength: 1
                     type: string
                 parent_id:
-                    allOf:
-                        - $ref: '#/components/schemas/CategoryID'
-                    nullable: true
+                    $ref: '#/components/schemas/CategoryID'
             type: object
         UpdateContactRequest:
-            description: Every field optional. Changing `phone` clears `phone_verified`.
+            description: Every field optional. Changing `phone` clears `phone_verified`. The `clear_*` flags remove a nullable field; the district pair and the coordinate travel together, so they clear together.
             properties:
                 address:
+                    example: 1 Lê Lợi
                     maxLength: 255
                     type: string
                 address_detail:
+                    example: Tầng 3
                     maxLength: 255
-                    nullable: true
                     type: string
                 address_type:
                     $ref: '#/components/schemas/ContactAddressType'
+                clear_address_detail:
+                    example: false
+                    type: boolean
+                clear_district:
+                    example: false
+                    type: boolean
+                clear_location:
+                    example: false
+                    type: boolean
+                clear_postal_code:
+                    example: false
+                    type: boolean
+                country:
+                    example: VN
+                    maxLength: 2
+                    minLength: 2
+                    pattern: ^[A-Z]{2}$
+                    type: string
                 district_code:
+                    example: "760"
                     maxLength: 20
-                    nullable: true
                     type: string
                 district_name:
+                    example: Quận 1
                     maxLength: 100
-                    nullable: true
                     type: string
                 full_name:
+                    example: Nguyễn An
                     maxLength: 100
                     minLength: 1
                     type: string
                 is_default_delivery:
+                    example: true
                     type: boolean
                 is_default_pickup:
+                    example: false
                     type: boolean
                 latitude:
+                    example: 10.7769
                     format: double
-                    nullable: true
+                    maximum: 90
+                    minimum: -90
                     type: number
                 longitude:
+                    example: 106.7009
                     format: double
-                    nullable: true
+                    maximum: 180
+                    minimum: -180
                     type: number
                 phone:
+                    example: "+84901234567"
                     pattern: ^\+[1-9][0-9]{7,14}$
                     type: string
                 postal_code:
+                    example: "700000"
                     maxLength: 20
-                    nullable: true
                     type: string
                 province_code:
+                    example: "79"
                     maxLength: 20
                     type: string
                 province_name:
+                    example: TP Hồ Chí Minh
                     maxLength: 100
                     type: string
                 ward_code:
+                    example: "26734"
                     maxLength: 20
                     type: string
                 ward_name:
+                    example: Bến Nghé
                     maxLength: 100
                     type: string
             type: object
@@ -3765,13 +3926,17 @@ components:
                     type: array
                 category_id:
                     $ref: '#/components/schemas/CategoryID'
+                clear_featured_variant_id:
+                    description: Leaves the listing with no featured variant; the card then shows the cheapest one.
+                    example: false
+                    type: boolean
                 condition:
                     $ref: '#/components/schemas/ListingCondition'
                 description:
                     maxLength: 20000
                     type: string
-                featured_sku_id:
-                    $ref: '#/components/schemas/ProductSKUID'
+                featured_variant_id:
+                    $ref: '#/components/schemas/VariantID'
                 name:
                     maxLength: 200
                     minLength: 1
@@ -3821,6 +3986,7 @@ components:
         UpdateOfferRequest:
             properties:
                 quantity:
+                    example: 2
                     format: int64
                     minimum: 1
                     type: integer
@@ -3828,6 +3994,7 @@ components:
                     maxLength: 500
                     type: string
                 total:
+                    example: 598000
                     format: int64
                     minimum: 1
                     type: integer
@@ -3856,42 +4023,55 @@ components:
                     minLength: 1
                     type: string
                 priority:
+                    example: 10
                     type: integer
                 vault_secret_path:
                     $ref: '#/components/schemas/VaultSecretPath'
             type: object
         UpdateProfileRequest:
-            description: Every field optional.
+            description: Every field optional. `name`, `country`, `locale` and `timezone` are required columns, so they can be replaced but not cleared.
             properties:
                 avatar_resource_id:
-                    allOf:
-                        - $ref: '#/components/schemas/ResourceID'
-                    nullable: true
+                    $ref: '#/components/schemas/ResourceID'
+                clear_avatar_resource_id:
+                    example: false
+                    type: boolean
+                clear_date_of_birth:
+                    example: false
+                    type: boolean
+                clear_description:
+                    example: false
+                    type: boolean
+                clear_gender:
+                    example: false
+                    type: boolean
                 country:
+                    example: VN
                     maxLength: 2
                     minLength: 2
                     pattern: ^[A-Z]{2}$
                     type: string
                 date_of_birth:
+                    example: "2001-02-03"
                     format: date
-                    nullable: true
                     type: string
                 description:
+                    example: Bán đồ cũ
                     maxLength: 2000
-                    nullable: true
                     type: string
                 gender:
-                    allOf:
-                        - $ref: '#/components/schemas/ProfileGender'
-                    nullable: true
+                    $ref: '#/components/schemas/ProfileGender'
                 locale:
+                    example: vi-VN
                     pattern: ^[a-z]{2}(-[A-Z]{2})?$
                     type: string
                 name:
+                    example: Alice
                     maxLength: 100
                     minLength: 1
                     type: string
                 timezone:
+                    example: Asia/Ho_Chi_Minh
                     maxLength: 64
                     type: string
             type: object
@@ -3910,7 +4090,7 @@ components:
                     minimum: 1
                     type: integer
             type: object
-        UpdateSkuRequest:
+        UpdateVariantRequest:
             description: Every field optional.
             properties:
                 attachments:
@@ -3927,8 +4107,9 @@ components:
                     format: int64
                     minimum: 0
                     type: integer
-                stock:
-                    description: The new total on hand. Refused below what is already reserved.
+                quantity:
+                    description: The new total on hand. Refused below `reserved + sold`.
+                    example: 42
                     format: int64
                     minimum: 0
                     type: integer
@@ -3966,6 +4147,48 @@ components:
                 - tax_code_type
                 - legal_name
             type: object
+        Variant:
+            description: A purchasable variant. Price and package details live here rather than on the listing.
+            properties:
+                attributes:
+                    additionalProperties: true
+                    description: Variant attributes such as size and colour.
+                    type: object
+                created_at:
+                    format: date-time
+                    type: string
+                id:
+                    $ref: '#/components/schemas/VariantID'
+                images:
+                    description: Empty means fall back to the listing gallery.
+                    items:
+                        $ref: '#/components/schemas/Resource'
+                    type: array
+                package_details:
+                    additionalProperties: true
+                    description: Weight and dimensions. A shipping quote is computed from these.
+                    type: object
+                price:
+                    description: Smallest unit of the listing's currency.
+                    example: 299000
+                    format: int64
+                    minimum: 1
+                    type: integer
+                stock:
+                    $ref: '#/components/schemas/Stock'
+            required:
+                - id
+                - price
+                - attributes
+                - package_details
+                - images
+                - stock
+                - created_at
+            type: object
+        VariantID:
+            example: vrn_vq1wd6ptz3n8k
+            pattern: ^vrn_[0-9a-hjkmnp-tv-z]{13}$
+            type: string
         VaultSecretPath:
             description: |
                 Where this integration's credentials live in Vault, e.g. `payment/stripe/main`. No key material passes through this API and none is stored in the database — only the path, which the provider client resolves at runtime.
@@ -4002,7 +4225,9 @@ components:
                     $ref: '#/components/schemas/AccountID'
                 available_balance:
                     description: Spendable and withdrawable
+                    example: 1250000
                     format: int64
+                    minimum: 0
                     type: integer
                 created_at:
                     format: date-time
@@ -4011,7 +4236,9 @@ components:
                     $ref: '#/components/schemas/CurrencyCode'
                 held_balance:
                     description: Locked in escrow; not the owner's to draw yet
+                    example: 299000
                     format: int64
+                    minimum: 0
                     type: integer
             required:
                 - account_id
@@ -4026,12 +4253,14 @@ components:
             properties:
                 available_delta:
                     default: 0
+                    example: 250000
                     format: int64
                     type: integer
                 currency:
                     $ref: '#/components/schemas/CurrencyCode'
                 held_delta:
                     default: 0
+                    example: -250000
                     format: int64
                     type: integer
                 idempotency_key:
@@ -4061,10 +4290,13 @@ components:
             description: One balance change with its before/after snapshot. Append-only, and the only record of a movement that stays inside a wallet.
             properties:
                 available_after:
+                    example: 1250000
                     format: int64
+                    minimum: 0
                     type: integer
                 available_delta:
                     description: Signed change to the available balance
+                    example: 250000
                     format: int64
                     type: integer
                 created_at:
@@ -4078,10 +4310,13 @@ components:
                     nullable: true
                     type: string
                 held_after:
+                    example: 299000
                     format: int64
+                    minimum: 0
                     type: integer
                 held_delta:
                     description: Signed change to the held balance
+                    example: -250000
                     format: int64
                     type: integer
                 kind:
@@ -4102,7 +4337,9 @@ components:
                 seq:
                     description: |
                         Position in this wallet's ledger, from 1. Identifies the row and orders it; a gap means a missing movement. Per wallet, so each currency counts from 1 again.
+                    example: 42
                     format: int64
+                    minimum: 1
                     type: integer
             required:
                 - seq
@@ -4142,7 +4379,9 @@ components:
             description: A payment session of kind `withdrawal`, projected with its destination and the admin's resolution.
             properties:
                 amount:
+                    example: 500000
                     format: int64
+                    minimum: 1
                     type: integer
                 bank_account:
                     $ref: '#/components/schemas/BankAccount'
@@ -4757,7 +4996,7 @@ paths:
     /admin/listings:
         get:
             description: |
-                Defaults to the pending ones — those the automatic scan flagged or that enough reports pushed into review — oldest first, which is the order they should be worked.
+                Every listing awaiting a decision, oldest first, which is the order they should be worked: one waiting for its first publication, and one that is live while holding an edit its seller submitted. Defaults to both.
             parameters:
                 - description: Defaults to pending.
                   in: query
@@ -4798,7 +5037,7 @@ paths:
                   name: id
                   required: true
                   schema:
-                    $ref: '#/components/schemas/ProductSPUID'
+                    $ref: '#/components/schemas/ListingID'
             requestBody:
                 content:
                     application/json:
@@ -4847,7 +5086,7 @@ paths:
                   name: id
                   required: true
                   schema:
-                    $ref: '#/components/schemas/ProductSPUID'
+                    $ref: '#/components/schemas/ListingID'
             requestBody:
                 content:
                     application/json:
@@ -6499,10 +6738,10 @@ paths:
             summary: Confirm an email address
             tags:
                 - account
-    /favorites/{spuID}:
+    /favorites/{listingID}:
         delete:
             description: |
-                Idempotent, and deliberately so all the way: unsaving something that was never saved answers 204, and so does a `spuID` that names no listing at all. The post-condition — this listing is not on the caller's wishlist — holds either way, and a 404 here would only tell a stranger which ids exist.
+                Idempotent, and deliberately so all the way: unsaving something that was never saved answers 204, and so does a `listingID` that names no listing at all. The post-condition — this listing is not on the caller's wishlist — holds either way, and a 404 here would only tell a stranger which ids exist.
             responses:
                 "204":
                     description: Removed
@@ -6515,10 +6754,10 @@ paths:
                 - catalog
         parameters:
             - in: path
-              name: spuID
+              name: listingID
               required: true
               schema:
-                $ref: '#/components/schemas/ProductSPUID'
+                $ref: '#/components/schemas/ListingID'
         put:
             description: |
                 Idempotent — the account and listing pair is the whole row, so saving twice is the same as saving once. Read the wishlist back through `GET /listings?favorited=true`.
@@ -6714,7 +6953,7 @@ paths:
 
                 `ids` resolves a known set, which is how a cart or an order list renders the listings behind its rows. It ignores every other filter and answers for hidden and soft-deleted listings too, because an order that references one still has to display it; `deleted_at` says which. Listings that were never public (`draft`, `pending`) stay out unless they are the caller's own.
 
-                `price-asc` and `price-desc` are answered through the SKU price index rather than a value cached on the listing, so `price` is the cheapest matching variant's. `best-selling` is the one that cannot work that way — it orders by a sum over the variants, and a sum has no per-SKU index to scan in order — so it reads `cached_sold` on the listing, maintained with the stock it counts.
+                `price-asc` and `price-desc` are answered through the SKU price index rather than a value cached on the listing, so `price` is the cheapest matching variant's. `best-selling` is the one that cannot work that way — it orders by a sum over the variants, and a sum has no per-SKU index to scan in order — so it reads `cached_sold` on the listing, maintained with the sales it counts.
             parameters:
                 - description: Resolve exactly these listings, ignoring the other filters.
                   explode: false
@@ -6722,7 +6961,7 @@ paths:
                   name: ids
                   schema:
                     items:
-                        $ref: '#/components/schemas/ProductSPUID'
+                        $ref: '#/components/schemas/ListingID'
                     maxItems: 100
                     type: array
                   style: form
@@ -6889,7 +7128,7 @@ paths:
                   name: id
                   required: true
                   schema:
-                    $ref: '#/components/schemas/ProductSPUID'
+                    $ref: '#/components/schemas/ListingID'
             responses:
                 "204":
                     description: Deleted
@@ -6954,7 +7193,7 @@ paths:
                   name: id
                   required: true
                   schema:
-                    $ref: '#/components/schemas/ProductSPUID'
+                    $ref: '#/components/schemas/ListingID'
             requestBody:
                 content:
                     application/json:
@@ -7029,22 +7268,13 @@ paths:
               name: id
               required: true
               schema:
-                $ref: '#/components/schemas/ProductSPUID'
+                $ref: '#/components/schemas/ListingID'
         post:
             description: |
-                Every new listing is scanned automatically for prohibited-goods signals first. A clean one goes live; a suspicious one goes to the moderation queue and stays invisible until a moderator clears it. The response says which happened.
+                Publication always goes through moderation: this queues the listing and it stays invisible until a moderator clears it. There is no path that makes a listing live without a human, which is also why re-publishing something a moderator took down cannot undo the takedown.
+
+                An automatic prohibited-goods scan still runs — it orders the queue and flags what to look at first, it does not clear anything.
             responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                properties:
-                                    data:
-                                        $ref: '#/components/schemas/ListingDetail'
-                                required:
-                                    - data
-                                type: object
-                    description: Live
                 "202":
                     content:
                         application/json:
@@ -7067,7 +7297,7 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Error'
-                    description: Already live or under moderation
+                    description: Already live or already under moderation
                 "422":
                     content:
                         application/json:
@@ -7076,10 +7306,10 @@ paths:
                     description: A listing needs at least one variant with a price
             security:
                 - bearerAuth: []
-            summary: Publish a listing
+            summary: Submit a listing for publication
             tags:
                 - catalog
-    /listings/{id}/skus:
+    /listings/{id}/variants:
         post:
             description: |
                 Answers with the listing. The new variant is the one in `skus` that was not there before — there is no separate id in the response, because a variant is not addressable on its own.
@@ -7088,12 +7318,12 @@ paths:
                   name: id
                   required: true
                   schema:
-                    $ref: '#/components/schemas/ProductSPUID'
+                    $ref: '#/components/schemas/ListingID'
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/CreateSkuRequest'
+                            $ref: '#/components/schemas/CreateVariantRequest'
                 required: true
             responses:
                 "201":
@@ -7120,7 +7350,7 @@ paths:
             summary: Add a variant to a listing
             tags:
                 - catalog
-    /listings/{spuID}/reviews:
+    /listings/{listingID}/reviews:
         get:
             description: |
                 Public, with the first few replies and the vote tally on each one.
@@ -7161,10 +7391,10 @@ paths:
                 - trust
         parameters:
             - in: path
-              name: spuID
+              name: listingID
               required: true
               schema:
-                $ref: '#/components/schemas/ProductSPUID'
+                $ref: '#/components/schemas/ListingID'
         post:
             description: |
                 An order is required — no purchase, no review — and one review per listing per order, so buying twice earns a second review but one purchase does not earn two.
@@ -9525,89 +9755,6 @@ paths:
             summary: Vote a review helpful or not
             tags:
                 - trust
-    /skus/{id}:
-        delete:
-            description: |
-                Soft delete for the same reason as a listing. Refused for the last remaining variant of a live listing.
-
-                Answers with the listing rather than an empty body: deleting the featured variant clears the listing's `featured_sku_id`, and the seller has to see that.
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                properties:
-                                    data:
-                                        $ref: '#/components/schemas/ListingDetail'
-                                required:
-                                    - data
-                                type: object
-                    description: Deleted
-                "401":
-                    $ref: '#/components/responses/Unauthorized'
-                "403":
-                    $ref: '#/components/responses/Forbidden'
-                "404":
-                    $ref: '#/components/responses/NotFound'
-                "409":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: This is the only variant of a live listing
-            security:
-                - bearerAuth: []
-            summary: Delete a variant
-            tags:
-                - catalog
-        parameters:
-            - in: path
-              name: id
-              required: true
-              schema:
-                $ref: '#/components/schemas/ProductSKUID'
-        patch:
-            description: |
-                A price change does not reach a buyer who already opened a purchase session: that session froze the terms it was opened with.
-
-                `stock` sets the total on hand. The reserved count is not settable — it is moved by checkout and by cancellation — and a total below what is already reserved is refused, because an oversold row must not be representable.
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/UpdateSkuRequest'
-                required: true
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                properties:
-                                    data:
-                                        $ref: '#/components/schemas/ListingDetail'
-                                required:
-                                    - data
-                                type: object
-                    description: OK
-                "400":
-                    $ref: '#/components/responses/BadRequest'
-                "401":
-                    $ref: '#/components/responses/Unauthorized'
-                "403":
-                    $ref: '#/components/responses/Forbidden'
-                "404":
-                    $ref: '#/components/responses/NotFound'
-                "422":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: Stock below the quantity already reserved
-            security:
-                - bearerAuth: []
-            summary: Edit a variant
-            tags:
-                - catalog
     /tags:
         get:
             description: |
@@ -9749,6 +9896,95 @@ paths:
             summary: Exchange a refresh token for a new access token
             tags:
                 - account
+    /variants/{id}:
+        delete:
+            description: |
+                Soft delete for the same reason as a listing. Refused for the last remaining variant of a live listing.
+
+                Answers with the listing rather than an empty body: deleting the featured variant leaves `featured_variant_id` null, and the seller has to see that.
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ListingDetail'
+                                required:
+                                    - data
+                                type: object
+                    description: Deleted
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: This is the only variant of a live listing
+            security:
+                - bearerAuth: []
+            summary: Delete a variant
+            tags:
+                - catalog
+        parameters:
+            - in: path
+              name: id
+              required: true
+              schema:
+                $ref: '#/components/schemas/VariantID'
+        patch:
+            description: |
+                A price change does not reach a buyer who already opened a purchase session: that session froze the terms it was opened with.
+
+                `quantity` sets the total on hand. Neither `reserved` nor `sold` is settable — checkout and cancellation move the first, completing a purchase moves both — and a total below `reserved + sold` is refused, because an oversold row must not be representable.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpdateVariantRequest'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ListingDetail'
+                                required:
+                                    - data
+                                type: object
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Another live variant of this listing already has these attributes
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Quantity below what is already reserved or sold
+            security:
+                - bearerAuth: []
+            summary: Edit a variant
+            tags:
+                - catalog
     /wallets:
         get:
             description: |

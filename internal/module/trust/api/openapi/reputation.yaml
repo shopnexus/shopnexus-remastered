@@ -45,14 +45,20 @@ components:
         rating_average:
           type: number
           format: double
+          minimum: 0
+          maximum: 5
+          example: 4.6
           description: Average transaction feedback from 1 to 5. Zero when there is none.
-        rating_count: { type: integer, format: int64 }
+        rating_count: { type: integer, format: int64, minimum: 0, example: 87 }
         review_rating_average:
           type: number
           format: double
+          minimum: 0
+          maximum: 5
+          example: 4.6
           description: Average product-review rating. Always zero for the buyer role.
-        review_rating_count: { type: integer, format: int64 }
-        completed_orders: { type: integer, format: int64 }
-        cancelled_orders: { type: integer, format: int64 }
+        review_rating_count: { type: integer, format: int64, minimum: 0, example: 64 }
+        completed_orders: { type: integer, format: int64, minimum: 0, example: 152 }
+        cancelled_orders: { type: integer, format: int64, minimum: 0, example: 3 }
         updated_at: { type: string, format: date-time, description: When it was last recomputed. }
       required: [account_id, role, rating_average, rating_count, review_rating_average, review_rating_count, completed_orders, cancelled_orders, updated_at]

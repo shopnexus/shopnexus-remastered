@@ -37,15 +37,26 @@ func (s *Service) CreateContact(ctx context.Context, req accountapi.CreateContac
 		Country:           req.Country,
 		ProvinceCode:      req.ProvinceCode,
 		ProvinceName:      req.ProvinceName,
-		DistrictCode:      req.DistrictCode,
-		DistrictName:      req.DistrictName,
 		WardCode:          req.WardCode,
 		WardName:          req.WardName,
-		PostalCode:        req.PostalCode,
 		Address:           req.Address,
-		AddressDetail:     req.AddressDetail,
 		Latitude:          req.Latitude,
 		Longitude:         req.Longitude,
+	}
+	// A nullable column left empty on a create is not set at all, so nil stays the one way
+	// to spell absent. The district pair is filled in field by field on purpose: half a
+	// district has to reach Validate as one nil and one value so it can be refused.
+	if req.DistrictCode != "" {
+		c.DistrictCode = &req.DistrictCode
+	}
+	if req.DistrictName != "" {
+		c.DistrictName = &req.DistrictName
+	}
+	if req.PostalCode != "" {
+		c.PostalCode = &req.PostalCode
+	}
+	if req.AddressDetail != "" {
+		c.AddressDetail = &req.AddressDetail
 	}
 	if err := c.Validate(); err != nil {
 		return accountapi.Contact{}, err
@@ -56,59 +67,83 @@ func (s *Service) CreateContact(ctx context.Context, req accountapi.CreateContac
 	return toAPIContact(c), nil
 }
 
+// UpdateContact reads the row, applies the patch, validates the result: the rules that
+// matter are about the whole address — both district fields or neither, both coordinates
+// or neither — so they cannot be checked one field at a time.
 func (s *Service) UpdateContact(ctx context.Context, req accountapi.UpdateContactRequest) (accountapi.Contact, error) {
 	c, err := s.ownedContact(ctx, req.ActorID, req.ID)
 	if err != nil {
 		return accountapi.Contact{}, err
 	}
-	if v, ok := req.FullName.Get(); ok {
-		c.FullName = v
+	// A required column: absent leaves it, a value replaces it.
+	if req.FullName != nil {
+		c.FullName = *req.FullName
 	}
-	if v, ok := req.Phone.Get(); ok {
-		// SetPhone, not an assignment: changing the number clears the verified flag with it.
-		c.SetPhone(v)
+	if req.IsDefaultDelivery != nil {
+		c.IsDefaultDelivery = *req.IsDefaultDelivery
 	}
-	if v, ok := req.AddressType.Get(); ok {
-		c.AddressType = domain.AddressType(v)
+	if req.IsDefaultPickup != nil {
+		c.IsDefaultPickup = *req.IsDefaultPickup
 	}
-	if v, ok := req.IsDefaultDelivery.Get(); ok {
-		c.IsDefaultDelivery = v
+	if req.Country != nil {
+		c.Country = *req.Country
 	}
-	if v, ok := req.IsDefaultPickup.Get(); ok {
-		c.IsDefaultPickup = v
+	if req.ProvinceCode != nil {
+		c.ProvinceCode = *req.ProvinceCode
 	}
-	if v, ok := req.ProvinceCode.Get(); ok {
-		c.ProvinceCode = v
+	if req.ProvinceName != nil {
+		c.ProvinceName = *req.ProvinceName
 	}
-	if v, ok := req.ProvinceName.Get(); ok {
-		c.ProvinceName = v
+	if req.WardCode != nil {
+		c.WardCode = *req.WardCode
 	}
-	if req.DistrictCode.Present() {
-		c.DistrictCode = valueOrEmpty(req.DistrictCode.Ptr())
+	if req.WardName != nil {
+		c.WardName = *req.WardName
 	}
-	if req.DistrictName.Present() {
-		c.DistrictName = valueOrEmpty(req.DistrictName.Ptr())
+	if req.Address != nil {
+		c.Address = *req.Address
 	}
-	if v, ok := req.WardCode.Get(); ok {
-		c.WardCode = v
+	// A nullable one also takes a clear. The district pair and the coordinate travel
+	// together, so they clear together.
+	if req.ClearDistrict {
+		c.DistrictCode, c.DistrictName = nil, nil
+	} else {
+		if req.DistrictCode != nil {
+			c.DistrictCode = req.DistrictCode
+		}
+		if req.DistrictName != nil {
+			c.DistrictName = req.DistrictName
+		}
 	}
-	if v, ok := req.WardName.Get(); ok {
-		c.WardName = v
+	switch {
+	case req.ClearPostalCode:
+		c.PostalCode = nil
+	case req.PostalCode != nil:
+		c.PostalCode = req.PostalCode
 	}
-	if req.PostalCode.Present() {
-		c.PostalCode = valueOrEmpty(req.PostalCode.Ptr())
+	switch {
+	case req.ClearAddressDetail:
+		c.AddressDetail = nil
+	case req.AddressDetail != nil:
+		c.AddressDetail = req.AddressDetail
 	}
-	if v, ok := req.Address.Get(); ok {
-		c.Address = v
+	if req.ClearLocation {
+		c.Latitude, c.Longitude = nil, nil
+	} else {
+		if req.Latitude != nil {
+			c.Latitude = req.Latitude
+		}
+		if req.Longitude != nil {
+			c.Longitude = req.Longitude
+		}
 	}
-	if req.AddressDetail.Present() {
-		c.AddressDetail = valueOrEmpty(req.AddressDetail.Ptr())
+	// Not assignments: a new number clears the verified flag, and the address type is
+	// narrower than the string on the wire.
+	if req.Phone != nil {
+		c.SetPhone(*req.Phone)
 	}
-	if req.Latitude.Present() {
-		c.Latitude = req.Latitude.Ptr()
-	}
-	if req.Longitude.Present() {
-		c.Longitude = req.Longitude.Ptr()
+	if req.AddressType != nil {
+		c.AddressType = domain.AddressType(*req.AddressType)
 	}
 	if err := c.Validate(); err != nil {
 		return accountapi.Contact{}, err
@@ -120,11 +155,7 @@ func (s *Service) UpdateContact(ctx context.Context, req accountapi.UpdateContac
 }
 
 func (s *Service) DeleteContact(ctx context.Context, req accountapi.DeleteContactRequest) error {
-	c, err := s.ownedContact(ctx, req.ActorID, req.ID)
-	if err != nil {
-		return err
-	}
-	if err := s.repo.DeleteContact(ctx, c.ID); err != nil {
+	if err := s.repo.DeleteContact(ctx, req.ActorID.Int64(), req.ID.Int64()); err != nil {
 		return fmt.Errorf("delete contact: %w", err)
 	}
 	return nil
@@ -186,18 +217,11 @@ func (s *Service) VerifyContactPhone(ctx context.Context, req accountapi.VerifyC
 	return toAPIContact(c), nil
 }
 
-// ownedContact is the one place a 404 and a 403 on this resource are told apart: a
-// contact that does not exist is not found, and one belonging to somebody else is
-// forbidden.
+// ownedContact reads one of the caller's saved addresses. The owner is part of the lookup,
+// so somebody else's contact is a 404 rather than a 403 — the resource is not theirs to
+// know about.
 func (s *Service) ownedContact(ctx context.Context, actorID id.ID[id.Account], contactID id.ID[id.Contact]) (domain.Contact, error) {
-	c, err := s.repo.FindContact(ctx, contactID.Int64())
-	if err != nil {
-		return domain.Contact{}, fmt.Errorf("find contact: %w", err)
-	}
-	if !c.Owns(actorID.Int64()) {
-		return domain.Contact{}, domain.ErrForbidden
-	}
-	return c, nil
+	return s.repo.FindContact(ctx, actorID.Int64(), contactID.Int64())
 }
 
 func phoneCodeKey(contactID int64) string {
@@ -216,13 +240,13 @@ func toAPIContact(c domain.Contact) accountapi.Contact {
 		Country:           c.Country,
 		ProvinceCode:      c.ProvinceCode,
 		ProvinceName:      c.ProvinceName,
-		DistrictCode:      optional(c.DistrictCode),
-		DistrictName:      optional(c.DistrictName),
+		DistrictCode:      c.DistrictCode,
+		DistrictName:      c.DistrictName,
 		WardCode:          c.WardCode,
 		WardName:          c.WardName,
-		PostalCode:        optional(c.PostalCode),
+		PostalCode:        c.PostalCode,
 		Address:           c.Address,
-		AddressDetail:     optional(c.AddressDetail),
+		AddressDetail:     c.AddressDetail,
 		Latitude:          c.Latitude,
 		Longitude:         c.Longitude,
 		ProviderCodes:     c.ProviderCodes,

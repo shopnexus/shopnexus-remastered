@@ -25,7 +25,16 @@ func NewService(repo port.Repository, log *slog.Logger) *Service {
 var _ commonapi.Service = (*Service)(nil)
 
 func (s *Service) RegisterResource(ctx context.Context, req commonapi.RegisterResourceRequest) (commonapi.Resource, error) {
-	res, err := domain.NewResource(req.UploadedByID.Int64(), req.Provider, req.ObjectKey, req.Mime, req.Size, req.Metadata, req.Checksum)
+	// An anonymous upload has no uploader, and a provider may return no checksum.
+	var uploadedBy *int64
+	if uid := req.UploadedByID.Int64(); uid != 0 {
+		uploadedBy = &uid
+	}
+	var checksum *string
+	if req.Checksum != "" {
+		checksum = &req.Checksum
+	}
+	res, err := domain.NewResource(uploadedBy, req.Provider, req.ObjectKey, req.Mime, req.Size, req.Metadata, checksum)
 	if err != nil {
 		return commonapi.Resource{}, err
 	}
@@ -72,12 +81,18 @@ func (s *Service) ListOptions(ctx context.Context, req commonapi.ListOptionsRequ
 }
 
 func toAPIResource(r domain.Resource) commonapi.Resource {
+	// The wire field is a plain string: a provider that returned no checksum and one that
+	// returned an empty one are the same fact to a client.
+	checksum := ""
+	if r.Checksum != nil {
+		checksum = *r.Checksum
+	}
 	return commonapi.Resource{
 		ID:        id.Of[id.Resource](r.ID),
 		Provider:  r.Provider,
 		ObjectKey: r.ObjectKey,
 		Mime:      r.Mime,
 		Size:      r.Size,
-		Checksum:  r.Checksum,
+		Checksum:  checksum,
 	}
 }

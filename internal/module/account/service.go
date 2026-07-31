@@ -99,10 +99,10 @@ var _ accountapi.Service = (*Service)(nil)
 // actor loads the signed-in caller. It is a plain read: a request that got past the
 // gateway has a live session, and every bulk revocation drops sessions, so there is no
 // second status check to make here.
-func (s *Service) actor(ctx context.Context, actorID id.ID[id.Account]) (domain.Account, error) {
-	a, err := s.repo.FindAccountByID(ctx, actorID.Int64())
+func (s *Service) actor(ctx context.Context, actorID id.ID[id.Account]) (*domain.Account, error) {
+	a, err := s.repo.Get(ctx, actorID.Int64())
 	if err != nil {
-		return domain.Account{}, fmt.Errorf("find actor account: %w", err)
+		return nil, fmt.Errorf("get actor account: %w", err)
 	}
 	return a, nil
 }
@@ -111,74 +111,94 @@ func (s *Service) actor(ctx context.Context, actorID id.ID[id.Account]) (domain.
 // caller's role is a column in this module's table, so a handler could only learn it by
 // asking this service anyway. An admin passes every moderator check — a role that
 // outranks another and still gets refused is a bug waiting to be filed.
-func (s *Service) requireModerator(ctx context.Context, actorID id.ID[id.Account]) (domain.Account, error) {
+func (s *Service) requireModerator(ctx context.Context, actorID id.ID[id.Account]) (*domain.Account, error) {
 	a, err := s.actor(ctx, actorID)
 	if err != nil {
-		return domain.Account{}, err
+		return nil, err
 	}
 	if a.Role != domain.RoleModerator && a.Role != domain.RoleAdmin {
-		return domain.Account{}, domain.ErrModeratorRequired
+		return nil, domain.ErrModeratorRequired
 	}
 	return a, nil
 }
 
-func (s *Service) requireAdmin(ctx context.Context, actorID id.ID[id.Account]) (domain.Account, error) {
+func (s *Service) requireAdmin(ctx context.Context, actorID id.ID[id.Account]) (*domain.Account, error) {
 	a, err := s.actor(ctx, actorID)
 	if err != nil {
-		return domain.Account{}, err
+		return nil, err
 	}
 	if a.Role != domain.RoleAdmin {
-		return domain.Account{}, domain.ErrAdminRequired
+		return nil, domain.ErrAdminRequired
 	}
 	return a, nil
 }
 
 // --- DTO mapping ---
 
-func (s *Service) toMe(ctx context.Context, a domain.Account, p domain.Profile, identityVerified bool) accountapi.Me {
+func (s *Service) toMe(ctx context.Context, a *domain.Account, identityVerified bool) accountapi.Me {
 	return accountapi.Me{
 		ID:               id.Of[id.Account](a.ID),
-		Email:            optional(a.Email),
+		Email:            a.Email,
 		EmailVerified:    a.EmailVerified,
-		Phone:            optional(a.Phone),
-		Username:         optional(a.Username),
+		Phone:            a.Phone,
+		Username:         a.Username,
 		Role:             string(a.Role),
 		Status:           string(a.Status),
 		HasPassword:      a.HasPassword(),
 		IdentityVerified: identityVerified,
-		Profile:          s.toProfile(ctx, p),
+		Profile:          s.toProfile(ctx, a),
 		CreatedAt:        a.CreatedAt,
 	}
 }
 
-func (s *Service) toProfile(ctx context.Context, p domain.Profile) accountapi.Profile {
+func (s *Service) toProfile(ctx context.Context, a *domain.Account) accountapi.Profile {
+	p := a.Profile
 	return accountapi.Profile{
 		Name:        p.Name,
-		Description: optional(p.Description),
-		Gender:      optional(string(p.Gender)),
+		Description: p.Description,
+		Gender:      (*string)(p.Gender),
 		DateOfBirth: optionalDate(p.DateOfBirth),
 		Avatar:      s.avatar(ctx, p.AvatarResourceID),
 		Country:     p.Country,
 		Locale:      p.Locale,
 		Timezone:    p.Timezone,
-		CreatedAt:   p.CreatedAt,
+		CreatedAt:   a.CreatedAt,
 	}
 }
 
-func toAdminAccount(a domain.Account, p domain.Profile, identityVerified bool) accountapi.AdminAccount {
+func toAdminAccount(a *domain.Account, identityVerified bool) accountapi.AdminAccount {
 	return accountapi.AdminAccount{
 		ID:               id.Of[id.Account](a.ID),
-		Email:            optional(a.Email),
+		Email:            a.Email,
 		EmailVerified:    a.EmailVerified,
-		Phone:            optional(a.Phone),
-		Username:         optional(a.Username),
-		Name:             p.Name,
+		Phone:            a.Phone,
+		Username:         a.Username,
+		Name:             a.Profile.Name,
 		Role:             string(a.Role),
 		Status:           string(a.Status),
 		SuspendedUntil:   a.SuspendedUntil,
-		SuspensionReason: optional(a.SuspensionReason),
+		SuspensionReason: a.SuspensionReason,
 		IdentityVerified: identityVerified,
 		CreatedAt:        a.CreatedAt,
+	}
+}
+
+// summaryToAdminAccount is the same view built from a list row, which carries the display
+// name instead of a whole profile.
+func summaryToAdminAccount(s port.AccountSummary, identityVerified bool) accountapi.AdminAccount {
+	return accountapi.AdminAccount{
+		ID:               id.Of[id.Account](s.ID),
+		Email:            s.Email,
+		EmailVerified:    s.EmailVerified,
+		Phone:            s.Phone,
+		Username:         s.Username,
+		Name:             s.Name,
+		Role:             string(s.Role),
+		Status:           string(s.Status),
+		SuspendedUntil:   s.SuspendedUntil,
+		SuspensionReason: s.SuspensionReason,
+		IdentityVerified: identityVerified,
+		CreatedAt:        s.CreatedAt,
 	}
 }
 
@@ -188,41 +208,63 @@ func toIdentityDocument(d domain.IdentityDocument) accountapi.IdentityDocument {
 		DocType:         string(d.DocType),
 		Provider:        d.Provider,
 		Status:          string(d.Status),
-		RejectionReason: optional(d.RejectionReason),
+		RejectionReason: d.RejectionReason,
 		VerifiedAt:      d.VerifiedAt,
 		ExpiresAt:       d.ExpiresAt,
 		CreatedAt:       d.CreatedAt,
 	}
 }
 
-// summaries turns a page of profiles into the compact form, resolving every avatar in
-// one call rather than one per row.
+// summariesByID is the keyed form, for a caller that pairs a row with its subject by
+// account id. A profile that did not come back is simply absent, which the caller answers
+// for explicitly instead of reading a zero id back out of a slice.
+func (s *Service) summariesByID(ctx context.Context, profiles map[int64]domain.Profile) map[int64]accountapi.AccountSummary {
+	ids := make([]int64, 0, len(profiles))
+	for _, p := range profiles {
+		if p.AvatarResourceID != nil {
+			ids = append(ids, *p.AvatarResourceID)
+		}
+	}
+	avatars := s.avatars(ctx, ids)
+	out := make(map[int64]accountapi.AccountSummary, len(profiles))
+	for accountID, p := range profiles {
+		summary := accountapi.AccountSummary{ID: id.Of[id.Account](accountID), Name: p.Name}
+		if p.AvatarResourceID != nil {
+			summary.Avatar = avatars[*p.AvatarResourceID]
+		}
+		out[accountID] = summary
+	}
+	return out
+}
+
+// summaries is the ordered form, for a page whose order is the answer (a follower list).
+// It is 1-1 with its input.
 func (s *Service) summaries(ctx context.Context, profiles []domain.Profile) []accountapi.AccountSummary {
 	ids := make([]int64, 0, len(profiles))
 	for _, p := range profiles {
-		if p.AvatarResourceID != 0 {
-			ids = append(ids, p.AvatarResourceID)
+		if p.AvatarResourceID != nil {
+			ids = append(ids, *p.AvatarResourceID)
 		}
 	}
 	avatars := s.avatars(ctx, ids)
 	out := make([]accountapi.AccountSummary, 0, len(profiles))
 	for _, p := range profiles {
-		out = append(out, accountapi.AccountSummary{
-			ID:     id.Of[id.Account](p.ID),
-			Name:   p.Name,
-			Avatar: avatars[p.AvatarResourceID],
-		})
+		summary := accountapi.AccountSummary{ID: id.Of[id.Account](p.ID), Name: p.Name}
+		if p.AvatarResourceID != nil {
+			summary.Avatar = avatars[*p.AvatarResourceID]
+		}
+		out = append(out, summary)
 	}
 	return out
 }
 
 // avatar resolves one image through the common module. A failure degrades to no avatar
 // and a warning: the storage catalogue being down must not take a profile read with it.
-func (s *Service) avatar(ctx context.Context, resourceID int64) *commonapi.Resource {
-	if resourceID == 0 {
+func (s *Service) avatar(ctx context.Context, resourceID *int64) *commonapi.Resource {
+	if resourceID == nil {
 		return nil
 	}
-	return s.avatars(ctx, []int64{resourceID})[resourceID]
+	return s.avatars(ctx, []int64{*resourceID})[*resourceID]
 }
 
 func (s *Service) avatars(ctx context.Context, resourceIDs []int64) map[int64]*commonapi.Resource {
@@ -247,15 +289,6 @@ func (s *Service) avatars(ctx context.Context, resourceIDs []int64) map[int64]*c
 
 // --- small conversions ---
 
-// optional maps the domain's "" to JSON null. The two are the same fact — the field is
-// not set — and the wire form says so explicitly.
-func optional(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
 // optionalDate renders a date as a plain day, because that is what it is.
 func optionalDate(t *time.Time) *string {
 	if t == nil {
@@ -265,7 +298,12 @@ func optionalDate(t *time.Time) *string {
 	return &s
 }
 
+// parseDate reads a plain date off the wire. An empty string is "no date" — that is how
+// a cleared patch field arrives, and it is not a malformed one.
 func parseDate(s string) (*time.Time, error) {
+	if s == "" {
+		return nil, nil
+	}
 	t, err := time.Parse(time.DateOnly, s)
 	if err != nil {
 		return nil, errx.NewValidationError("invalid field: date_of_birth", errx.Field{

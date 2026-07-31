@@ -58,7 +58,7 @@ CREATE TABLE
     "table_name" VARCHAR(100) NOT NULL,
     "record_id" BIGINT NOT NULL,
     "change_type" VARCHAR(10) NOT NULL, -- 'insert', 'update', 'delete'
-    "code" VARCHAR(100) NOT NULL, -- e.g. Business code 'product_spu.publish', 'comment.delete', 'account.suspend'
+    "code" VARCHAR(100) NOT NULL, -- e.g. Business code 'listing.publish', 'comment.delete', 'account.suspend'
     "changed_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "changed_by" BIGINT, -- account_id of the user who made the change (if applicable)
     "diff" JSONB NOT NULL, -- JSON diff of the record's fields (for insert only, other diff = snapshot)
@@ -70,14 +70,20 @@ CREATE TABLE
 -- Core identity record. Each of phone/email/username is optional on its own, but
 -- "account_has_identifier" requires at least one. They are stored normalized (E.164
 -- phone, lowercase email and username), which is what makes plain UNIQUE enough.
+-- The display columns live here rather than in a 1-1 "profile" table: a display name is
+-- mandatory, created in the same statement, loaded with every command and written by the
+-- same UPDATE, so splitting it bought a join and a second write and nothing else.
 CREATE TABLE IF NOT EXISTS "account" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
+    -- Optimistic lock: every aggregate write is `WHERE version = @version` and bumps it,
+    -- so a command built on a stale read is refused instead of overwriting it.
+    "version" BIGINT NOT NULL DEFAULT 1,
     "status" "account_status" NOT NULL DEFAULT 'active',
     "role" "account_role" NOT NULL DEFAULT 'user',
     "phone" VARCHAR(16), -- E.164: '+' plus up to 15 digits
     "email" VARCHAR(255),
     "username" VARCHAR(100),
-    "password" VARCHAR(255),
+    "password_hash" VARCHAR(255), -- bcrypt; NULL on a provider-only account
 
     "email_verified" BOOLEAN NOT NULL DEFAULT false,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -85,6 +91,16 @@ CREATE TABLE IF NOT EXISTS "account" (
     -- Set together with status = 'suspended'; NULL "suspended_until" means permanent.
     "suspended_until" TIMESTAMPTZ,
     "suspension_reason" TEXT,
+
+    -- The public face, which doubles as the shop page.
+    "name" VARCHAR(100) NOT NULL,
+    "description" TEXT,
+    "gender" "profile_gender",
+    "date_of_birth" DATE, -- age rules are enforced in the domain
+    "avatar_resource_id" BIGINT, -- not unique: accounts may share a resource, e.g. a default avatar
+    "country" VARCHAR(2) NOT NULL, -- ISO 3166-1 alpha-2; picks the currency of finance.wallet
+    "locale" VARCHAR(10) NOT NULL, -- BCP 47, e.g. 'vi-VN'; notification + UI language
+    "timezone" VARCHAR(64) NOT NULL, -- IANA name; renders times, schedules notifications
 
     CONSTRAINT "account_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "account_phone_key" UNIQUE ("phone"),
@@ -102,8 +118,16 @@ CREATE TABLE IF NOT EXISTS "account" (
     CONSTRAINT "account_suspension_requires_suspended" CHECK (
         "status" = 'suspended'
         OR ("suspended_until" IS NULL AND "suspension_reason" IS NULL)
-    )
+    ),
+    CONSTRAINT "account_country_format" CHECK ("country" ~ '^[A-Z]{2}$'),
+    CONSTRAINT "account_locale_format" CHECK ("locale" ~ '^[a-z]{2}(-[A-Z]{2})?$'),
+    CONSTRAINT "account_date_of_birth_sane" CHECK ("date_of_birth" > DATE '1900-01-01')
 );
+-- The display-name half of the admin account search. The identifier half needs no index
+-- of its own: phone, email and username are each UNIQUE, so an exact match is already a
+-- key lookup. A name is not unique and is searched by fragment, which only a trigram
+-- index can serve.
+CREATE INDEX IF NOT EXISTS "account_name_trgm_idx" ON "account" USING gin ("name" gin_trgm_ops);
 -- The reinstatement job: temporary suspensions that have run out. Without it a
 -- suspension with a deadline never actually ends, because nothing else in the system
 -- looks at "suspended_until" — a permanent one leaves it NULL and is skipped here.
@@ -214,36 +238,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS "contact_one_default_pickup_per_account"
 -- Distance queries (nearest seller, shipping-radius promos).
 CREATE INDEX IF NOT EXISTS "contact_location_idx" ON "contact" USING GIST ("location");
 
--- Extended public profile details; 1-1 with account via shared PK.
-CREATE TABLE IF NOT EXISTS "profile" (
-    "id" BIGINT NOT NULL,
-    "gender" "profile_gender",
-    "name" VARCHAR(100) NOT NULL,
-    "description" TEXT,
-    "date_of_birth" DATE, -- age rules are enforced in the domain
-    "avatar_resource_id" BIGINT, -- not unique: accounts may share a resource, e.g. a default avatar
-    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    "country" VARCHAR(2) NOT NULL, -- ISO 3166-1 alpha-2; picks the currency of finance.wallet
-    "locale" VARCHAR(10) NOT NULL, -- BCP 47, e.g. 'vi-VN'; notification + UI language
-    "timezone" VARCHAR(64) NOT NULL, -- IANA name, e.g. 'Asia/Ho_Chi_Minh'; renders times, schedules notifications
-
-    CONSTRAINT "profile_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "profile_country_format" CHECK ("country" ~ '^[A-Z]{2}$'),
-    CONSTRAINT "profile_locale_format" CHECK ("locale" ~ '^[a-z]{2}(-[A-Z]{2})?$'),
-    CONSTRAINT "profile_date_of_birth_sane" CHECK ("date_of_birth" > DATE '1900-01-01'),
-
-    -- profile shares the same PK as account (1-1 relationship)
-    CONSTRAINT "profile_id_fkey" FOREIGN KEY ("id")
-        REFERENCES "account" ("id") ON DELETE CASCADE
-);
--- The display-name half of the admin account search. The identifier half needs no index
--- of its own: phone, email and username are each UNIQUE on "account", so an exact match
--- is already a key lookup. A name is not unique and is searched by fragment, which only
--- a trigram index can serve — the alternative is a scan of every account plus a join
--- per moderator keystroke.
-CREATE INDEX IF NOT EXISTS "profile_name_trgm_idx" ON "profile" USING gin ("name" gin_trgm_ops);
-
 -- In-app notifications: what the user is told, once, whatever channels it went out on.
 -- The fan-out itself is a Restate workflow and keeps no state here.
 CREATE TABLE IF NOT EXISTS "notification" (
@@ -308,7 +302,7 @@ CREATE TABLE IF NOT EXISTS "notification_preference" (
 
 -- "favorite" lives in catalog, not here. All three questions asked of a wishlist — is
 -- this listing saved, how many saved it, show me my saved listings — are answered
--- against product_spu, so the row belongs on that side of the line: as a catalog table
+-- against catalog.listing, so the row belongs on that side of the line: as a catalog table
 -- it is a plain join, and here it would have made every one of them a cross-module call.
 -- "follow" stays: both of its sides are accounts.
 

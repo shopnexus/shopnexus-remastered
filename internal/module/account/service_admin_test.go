@@ -15,8 +15,14 @@ import (
 // configured, not claimed.
 func (h *harness) promote(t *testing.T, accountID id.ID[id.Account], role domain.Role) {
 	t.Helper()
-	if err := h.repo.UpdateAccountRole(context.Background(), accountID.Int64(), role); err != nil {
-		t.Fatalf("UpdateAccountRole: %v", err)
+	ctx := context.Background()
+	acc, err := h.repo.Get(ctx, accountID.Int64())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	acc.SetRole(role)
+	if err := h.repo.Save(ctx, acc, acc.ID); err != nil {
+		t.Fatalf("Save: %v", err)
 	}
 }
 
@@ -87,7 +93,7 @@ func TestAdminCreateModerator_ByAdmin(t *testing.T) {
 	if created.Role != string(domain.RoleModerator) || created.Name != "Mod" {
 		t.Fatalf("account = %+v", created)
 	}
-	if !slices.Contains(h.repo.codes(), "account.grant_moderator") {
+	if !slices.Contains(h.repo.codes(), string(domain.RoleGranted.Code)) {
 		t.Errorf("audit codes = %v, want the grant recorded", h.repo.codes())
 	}
 }
@@ -114,8 +120,14 @@ func TestAdminSuspendAccount_DropsSessionsAndAudits(t *testing.T) {
 	if _, err := h.sessions.Lookup(ctx, targetSession); err == nil {
 		t.Error("the suspended account still has a live session")
 	}
-	if !slices.Contains(h.repo.codes(), "account.suspend") {
-		t.Errorf("audit codes = %v, want the suspension recorded", h.repo.codes())
+	// The trail carries the decision at the type the event declares, so an assertion reads
+	// a field rather than guessing a map key.
+	diff, ok := auditedDiff(h.repo, domain.Suspended)
+	if !ok {
+		t.Fatalf("audit codes = %v, want the suspension recorded", h.repo.codes())
+	}
+	if diff.Reason != "scam" || diff.Until == nil || !diff.Until.Equal(until) {
+		t.Errorf("recorded suspension = %+v, want the reason and the deadline", diff)
 	}
 }
 
@@ -142,7 +154,7 @@ func TestAdminLiftSuspension_ClearsTheDetails(t *testing.T) {
 		t.Fatalf("account = %+v, want a clean active row", got)
 	}
 	// The lifted suspension stays in the audit log rather than on the row.
-	if !slices.Contains(h.repo.codes(), "account.reinstate") {
+	if !slices.Contains(h.repo.codes(), string(domain.Reinstated.Code)) {
 		t.Errorf("audit codes = %v", h.repo.codes())
 	}
 }
@@ -161,9 +173,9 @@ func TestAdminRevokeModerator_DemotesAndDropsSessions(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("AdminRevokeModerator: %v", err)
 	}
-	acc, err := h.repo.FindAccountByID(ctx, moderator.Account.ID.Int64())
+	acc, err := h.repo.Get(ctx, moderator.Account.ID.Int64())
 	if err != nil {
-		t.Fatalf("FindAccountByID: %v", err)
+		t.Fatalf("Get: %v", err)
 	}
 	if acc.Role != domain.RoleUser {
 		t.Errorf("role = %q, want user", acc.Role)

@@ -43,8 +43,8 @@ func (s *Service) ListFollowing(ctx context.Context, req accountapi.ListFollowin
 // ListFollowers is public, so the account has to be looked up: an unknown seller is a
 // 404, not an empty follower list, which a client cannot tell from a new seller.
 func (s *Service) ListFollowers(ctx context.Context, req accountapi.ListFollowersRequest) (accountapi.Page[accountapi.AccountSummary], error) {
-	if _, err := s.repo.FindAccountByID(ctx, req.AccountID.Int64()); err != nil {
-		return accountapi.Page[accountapi.AccountSummary]{}, fmt.Errorf("find account by id: %w", err)
+	if _, err := s.repo.Get(ctx, req.AccountID.Int64()); err != nil {
+		return accountapi.Page[accountapi.AccountSummary]{}, fmt.Errorf("get account: %w", err)
 	}
 	rows, total, err := s.repo.ListFollowers(ctx, req.AccountID.Int64(), offsetOf(req.Page, req.Limit), req.Limit)
 	if err != nil {

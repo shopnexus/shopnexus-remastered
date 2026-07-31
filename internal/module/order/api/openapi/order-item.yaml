@@ -68,16 +68,16 @@ components:
           description: Null until the seller confirms.
         buyer_id: { $ref: '#/components/schemas/AccountID' }
         seller_id: { $ref: '#/components/schemas/AccountID' }
-        spu_id:
-          allOf: [{ $ref: '#/components/schemas/ProductSPUID' }]
+        listing_id:
+          allOf: [{ $ref: '#/components/schemas/ListingID' }]
           description: >
             The listing the variant belongs to, denormalized the same way `seller_id`
             is, so order history can resolve it through `GET /listings?ids=` — which
             answers for a listing the seller has since hidden or deleted.
-        sku_id: { $ref: '#/components/schemas/ProductSKUID' }
-        quantity: { type: integer, format: int64 }
+        variant_id: { $ref: '#/components/schemas/VariantID' }
+        quantity: { type: integer, format: int64, minimum: 1, example: 2 }
         currency: { $ref: '#/components/schemas/CurrencyCode' }
-        total_amount: { type: integer, format: int64, description: 'Paid amount in the smallest unit of `currency`' }
+        total_amount: { type: integer, format: int64, minimum: 0, example: 598000, description: 'Paid amount in the smallest unit of `currency`' }
         transport_option: { type: string, description: A transport option slug owned by the common module }
         address: { $ref: '#/components/schemas/OrderAddressSnapshot' }
         note: { type: string, nullable: true, description: Buyer note }
@@ -89,7 +89,7 @@ components:
           nullable: true
           description: Null means the system cancelled it.
         created_at: { type: string, format: date-time }
-      required: [id, draft_id, buyer_id, seller_id, spu_id, sku_id, quantity, currency, total_amount, transport_option, address, state, payment_status, created_at]
+      required: [id, draft_id, buyer_id, seller_id, listing_id, variant_id, quantity, currency, total_amount, transport_option, address, state, payment_status, created_at]
 
     OrderItemPage:
       type: object

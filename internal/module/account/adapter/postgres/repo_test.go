@@ -4,6 +4,7 @@ package postgres_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -37,40 +38,39 @@ func unique(prefix string) string {
 	return prefix + time.Now().Format("150405.000000000")
 }
 
-func createAccount(t *testing.T, repo *pgadapter.Repo) domain.Account {
+func createAccount(t *testing.T, repo *pgadapter.Repo) *domain.Account {
 	t.Helper()
-	acc, err := domain.NewAccount(domain.RoleUser, unique("it-")+"@test.local", "", "", "hash")
-	if err != nil {
-		t.Fatalf("NewAccount: %v", err)
-	}
 	profile, err := domain.NewProfile("Integration", "VN", "vi-VN", "Asia/Ho_Chi_Minh")
 	if err != nil {
 		t.Fatalf("NewProfile: %v", err)
 	}
-	if err := repo.CreateAccount(context.Background(), &acc, &profile); err != nil {
-		t.Fatalf("CreateAccount: %v", err)
+	acc, err := domain.NewAccount(domain.RoleUser, unique("it-")+"@test.local", "", "", "hash", profile)
+	if err != nil {
+		t.Fatalf("NewAccount: %v", err)
+	}
+	if err := repo.Create(context.Background(), acc); err != nil {
+		t.Fatalf("Create: %v", err)
 	}
 	return acc
 }
 
-func TestRepo_CreateAccountWritesProfileToo(t *testing.T) {
+func TestRepo_CreateWritesTheWholeAggregate(t *testing.T) {
 	repo := newRepo(t)
 	ctx := context.Background()
 	acc := createAccount(t, repo)
 
-	got, err := repo.FindAccountByIdentifier(ctx, acc.Email)
+	got, err := repo.GetByIdentifier(ctx, *acc.Email)
 	if err != nil {
-		t.Fatalf("FindAccountByIdentifier: %v", err)
+		t.Fatalf("GetByIdentifier: %v", err)
 	}
-	if got.ID != acc.ID || got.Email != acc.Email {
+	if got.ID != acc.ID || got.Email == nil || *got.Email != *acc.Email {
 		t.Fatalf("account = %+v, want %+v", got, acc)
 	}
-	profile, err := repo.FindProfile(ctx, acc.ID)
-	if err != nil {
-		t.Fatalf("FindProfile: %v", err)
+	if got.Profile.Name != "Integration" {
+		t.Fatalf("profile = %+v", got.Profile)
 	}
-	if profile.Name != "Integration" {
-		t.Fatalf("profile = %+v", profile)
+	if got.Version != 1 {
+		t.Fatalf("version = %d, want 1", got.Version)
 	}
 }
 
@@ -80,9 +80,9 @@ func TestRepo_DuplicateIdentifierIsConflict(t *testing.T) {
 	repo := newRepo(t)
 	first := createAccount(t, repo)
 
-	dup, _ := domain.NewAccount(domain.RoleUser, first.Email, "", "", "hash")
 	profile, _ := domain.NewProfile("Dup", "VN", "vi-VN", "Asia/Ho_Chi_Minh")
-	if err := repo.CreateAccount(context.Background(), &dup, &profile); err != domain.ErrIdentifierTaken {
+	dup, _ := domain.NewAccount(domain.RoleUser, *first.Email, "", "", "hash", profile)
+	if err := repo.Create(context.Background(), dup); !errors.Is(err, domain.ErrIdentifierTaken) {
 		t.Fatalf("err = %v, want ErrIdentifierTaken", err)
 	}
 }
@@ -91,7 +91,6 @@ func TestRepo_DuplicateIdentifierIsConflict(t *testing.T) {
 // API speaks.
 func TestRepo_ContactRoundTripsTheCoordinate(t *testing.T) {
 	repo := newRepo(t)
-	ctx := context.Background()
 	acc := createAccount(t, repo)
 
 	lat, lng := 10.7769, 106.7009
@@ -102,13 +101,8 @@ func TestRepo_ContactRoundTripsTheCoordinate(t *testing.T) {
 		WardCode: "26734", WardName: "Bến Nghé", Address: "1 Lê Lợi",
 		Latitude: &lat, Longitude: &lng,
 	}
-	if err := repo.InsertContact(ctx, &c); err != nil {
-		t.Fatalf("InsertContact: %v", err)
-	}
-	got, err := repo.FindContact(ctx, c.ID)
-	if err != nil {
-		t.Fatalf("FindContact: %v", err)
-	}
+	c = addContact(t, repo, c)
+	got := findContact(t, repo, acc.ID, c.ID)
 	if got.Latitude == nil || got.Longitude == nil {
 		t.Fatalf("contact = %+v, want the coordinate back", got)
 	}
@@ -122,7 +116,6 @@ func TestRepo_ContactRoundTripsTheCoordinate(t *testing.T) {
 // partial unique index.
 func TestRepo_SecondDefaultContactMovesTheFlag(t *testing.T) {
 	repo := newRepo(t)
-	ctx := context.Background()
 	acc := createAccount(t, repo)
 
 	base := domain.Contact{
@@ -130,20 +123,12 @@ func TestRepo_SecondDefaultContactMovesTheFlag(t *testing.T) {
 		IsDefaultDelivery: true, Country: "VN", ProvinceCode: "79", ProvinceName: "TP HCM",
 		WardCode: "26734", WardName: "Bến Nghé", Address: "1 Lê Lợi",
 	}
-	first := base
-	if err := repo.InsertContact(ctx, &first); err != nil {
-		t.Fatalf("first InsertContact: %v", err)
-	}
+	first := addContact(t, repo, base)
 	second := base
 	second.Address = "2 Lê Lợi"
-	if err := repo.InsertContact(ctx, &second); err != nil {
-		t.Fatalf("second InsertContact: %v", err)
-	}
+	addContact(t, repo, second)
 
-	got, err := repo.FindContact(ctx, first.ID)
-	if err != nil {
-		t.Fatalf("FindContact: %v", err)
-	}
+	got := findContact(t, repo, acc.ID, first.ID)
 	if got.IsDefaultDelivery {
 		t.Error("the previous default was not cleared")
 	}
@@ -227,9 +212,11 @@ func TestRepo_AuditLogVersionsPerRecord(t *testing.T) {
 
 	for i := 0; i < 2; i++ {
 		err := repo.InsertAuditLog(ctx, port.AuditEntry{
-			Table: "account", RecordID: acc.ID, ChangeType: "update", Code: "account.suspend",
-			ChangedBy: acc.ID, Diff: map[string]any{"status": "suspended"},
-			Snapshot: map[string]any{"id": acc.ID},
+			Table: "account", RecordID: acc.ID, ChangeType: "update",
+			Code:      string(domain.Suspended.Code),
+			ChangedBy: &acc.ID,
+			Diff:      domain.StatusChange{Status: domain.StatusSuspended},
+			Snapshot:  acc.Snapshot(),
 		})
 		if err != nil {
 			t.Fatalf("InsertAuditLog #%d: %v", i+1, err)
@@ -243,7 +230,7 @@ func TestRepo_SearchAccountsMatchesIdentifierAndName(t *testing.T) {
 	ctx := context.Background()
 	acc := createAccount(t, repo)
 
-	byEmail, total, err := repo.SearchAccounts(ctx, port.AccountFilter{Query: acc.Email, Limit: 10})
+	byEmail, total, err := repo.SearchAccounts(ctx, port.AccountFilter{Query: *acc.Email, Limit: 10})
 	if err != nil {
 		t.Fatalf("SearchAccounts (email): %v", err)
 	}
@@ -256,5 +243,95 @@ func TestRepo_SearchAccountsMatchesIdentifierAndName(t *testing.T) {
 	}
 	if len(byName) == 0 {
 		t.Fatal("a display-name fragment matched nothing")
+	}
+}
+
+func addContact(t *testing.T, repo *pgadapter.Repo, c domain.Contact) domain.Contact {
+	t.Helper()
+	if err := repo.InsertContact(context.Background(), &c); err != nil {
+		t.Fatalf("InsertContact: %v", err)
+	}
+	return c
+}
+
+func findContact(t *testing.T, repo *pgadapter.Repo, accountID, contactID int64) domain.Contact {
+	t.Helper()
+	c, err := repo.FindContact(context.Background(), accountID, contactID)
+	if err != nil {
+		t.Fatalf("FindContact: %v", err)
+	}
+	return c
+}
+
+// Two commands built on the same read: the second one loses on the version check rather
+// than overwriting what the first decided. This is what stops two concurrent unlinks of
+// different providers from both finding "another way in" and leaving an account nobody can
+// reach.
+func TestRepo_SaveRefusesAStaleAggregate(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	acc := createAccount(t, repo)
+
+	first, err := repo.Get(ctx, acc.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	second, err := repo.Get(ctx, acc.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if _, err := first.Link("google", unique("google-sub-")); err != nil {
+		t.Fatalf("Link: %v", err)
+	}
+	if err := repo.Save(ctx, first, first.ID); err != nil {
+		t.Fatalf("first Save: %v", err)
+	}
+	if _, err := second.Link("apple", unique("apple-sub-")); err != nil {
+		t.Fatalf("Link: %v", err)
+	}
+	if err := repo.Save(ctx, second, second.ID); !errors.Is(err, domain.ErrVersionConflict) {
+		t.Fatalf("second Save = %v, want ErrVersionConflict", err)
+	}
+	// And the winner's change is the one on disk, links included.
+	got, err := repo.Get(ctx, acc.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(got.Identities) != 1 || got.Identities[0].Provider != "google" {
+		t.Fatalf("identities = %+v, want only the committed one", got.Identities)
+	}
+	if got.Version != first.Version {
+		t.Errorf("version = %d, want %d", got.Version, first.Version)
+	}
+}
+
+// Save synchronises the links to the slice, so unlinking is a delete with no removal list
+// to keep — and the trail for it lands in the same transaction.
+func TestRepo_SaveSyncsLinksAndWritesTheTrail(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	acc := createAccount(t, repo)
+
+	if _, err := acc.Link("google", unique("google-sub-")); err != nil {
+		t.Fatalf("Link: %v", err)
+	}
+	if err := repo.Save(ctx, acc, acc.ID); err != nil {
+		t.Fatalf("Save (link): %v", err)
+	}
+	if err := acc.Unlink("google"); err != nil {
+		t.Fatalf("Unlink: %v", err)
+	}
+	if err := repo.Save(ctx, acc, acc.ID); err != nil {
+		t.Fatalf("Save (unlink): %v", err)
+	}
+	got, err := repo.Get(ctx, acc.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(got.Identities) != 0 {
+		t.Fatalf("identities = %+v, want the row deleted", got.Identities)
+	}
+	if len(acc.Events()) != 0 {
+		t.Error("Save left the events on the aggregate")
 	}
 }

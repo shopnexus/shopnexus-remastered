@@ -26,13 +26,13 @@ func (r *Repo) InsertResource(ctx context.Context, res *domain.Resource) error {
 	           VALUES (@uploaded_by_id, @provider, @object_key, @mime, @size, @metadata, @checksum)
 	           RETURNING id, created_at`
 	args := pgx.NamedArgs{
-		"uploaded_by_id": nullID(res.UploadedByID),
+		"uploaded_by_id": res.UploadedByID,
 		"provider":       res.Provider,
 		"object_key":     res.ObjectKey,
 		"mime":           res.Mime,
 		"size":           res.Size,
 		"metadata":       res.Metadata,
-		"checksum":       nullText(res.Checksum),
+		"checksum":       res.Checksum,
 	}
 	if err := r.pool.QueryRow(ctx, q, args).Scan(&res.ID, &res.CreatedAt); err != nil {
 		if isUniqueViolation(err) {
@@ -50,8 +50,8 @@ func (r *Repo) FindResources(ctx context.Context, ids []int64) ([]domain.Resourc
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	const q = `SELECT id, COALESCE(uploaded_by_id, 0), provider, object_key, mime, size,
-	                  metadata, COALESCE(checksum, ''), created_at
+	const q = `SELECT id, uploaded_by_id, provider, object_key, mime, size,
+	                  metadata, checksum, created_at
 	           FROM resource
 	           WHERE id = ANY(@ids) AND completed_at IS NOT NULL AND deleted_at IS NULL`
 	rows, err := r.pool.Query(ctx, q, pgx.NamedArgs{"ids": ids})
@@ -76,8 +76,8 @@ func (r *Repo) FindResources(ctx context.Context, ids []int64) ([]domain.Resourc
 }
 
 func (r *Repo) ListEnabledOptions(ctx context.Context, optionType string) ([]domain.Option, error) {
-	const q = `SELECT id, COALESCE(owner_id::text, ''), is_enabled, name, description, priority,
-	                  COALESCE(logo_resource_id::text, ''), data, type, provider
+	const q = `SELECT id, owner_id, is_enabled, name, description, priority,
+	                  logo_resource_id, data, type, provider
 	           FROM option
 	           WHERE type = @type AND is_enabled
 	           ORDER BY priority DESC, name`
@@ -100,22 +100,6 @@ func (r *Repo) ListEnabledOptions(ctx context.Context, optionType string) ([]dom
 		return nil, fmt.Errorf("db iterate options: %w", err)
 	}
 	return out, nil
-}
-
-// nullID/nullText keep optional columns NULL instead of storing a zero value.
-// The zero id means "no id" (shared/id), and identity columns never produce 0.
-func nullID(n int64) any {
-	if n == 0 {
-		return nil
-	}
-	return n
-}
-
-func nullText(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
 }
 
 // isUniqueViolation reports whether err is Postgres 23505 (unique_violation).
