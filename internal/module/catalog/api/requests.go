@@ -57,3 +57,10 @@ type DeleteTagRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	Slug    string            `json:"-" validate:"required,max=100"`
 }
+
+// StockMovementRequest is a service-to-service call from order: no route, no actor, because
+// a reservation is not a user action — it is what a checkout does on the way past.
+type StockMovementRequest struct {
+	VariantID id.ID[id.Variant] `validate:"required"`
+	Units     int64             `validate:"required,gt=0"`
+}

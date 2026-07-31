@@ -18,6 +18,7 @@ import (
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/api/accounttest"
 	catalogapi "shopnexus/internal/module/catalog/api"
+	"shopnexus/internal/module/catalog/api/catalogtest"
 	chatapi "shopnexus/internal/module/chat/api"
 	commonapi "shopnexus/internal/module/common/api"
 	financeapi "shopnexus/internal/module/finance/api"
@@ -40,19 +41,22 @@ func (stubAccount) GetMe(context.Context, accountapi.GetMeRequest) (accountapi.M
 	return accountapi.Me{ID: id.Of[id.Account](1)}, nil
 }
 
-type stubCat struct{}
-
-var _ catalogapi.Service = stubCat{}
+// stubCat embeds the published stub and answers the routes this test walks. The rest answer
+// 501, which is what keeps a new contract method from silently passing as a zero value.
+type stubCat struct{ catalogtest.Stub }
 
 func (stubCat) ListCategories(context.Context, catalogapi.ListCategoriesRequest) ([]catalogapi.Category, error) {
 	return nil, nil
 }
+
 func (stubCat) AdminCreateCategory(context.Context, catalogapi.CreateCategoryRequest) (catalogapi.Category, error) {
 	return catalogapi.Category{ID: id.Of[id.Category](1)}, nil
 }
+
 func (stubCat) AdminUpdateCategory(context.Context, catalogapi.UpdateCategoryRequest) (catalogapi.Category, error) {
 	return catalogapi.Category{ID: id.Of[id.Category](1)}, nil
 }
+
 func (stubCat) ListTags(context.Context, catalogapi.ListTagsRequest) (catalogapi.TagPage, error) {
 	return catalogapi.TagPage{}, nil
 }

@@ -3,8 +3,10 @@ package catalog_test
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
@@ -24,6 +26,21 @@ type fakeRepo struct {
 	// seed absent from them is one that has not been embedded yet.
 	tagVectors      map[string]port.Vector
 	categoryVectors map[int64]port.Vector
+
+	// The listing aggregate, stored flat the way the tables are: the root, its variants and
+	// its tag joins are separate so a Save that forgets one is visible here too.
+	listings []storedListing
+	stock    map[int64]domain.Stock
+	// variantListing is the join CommitStock walks to bump the listing's counter.
+	variantListing map[int64]int64
+}
+
+// storedListing is the row plus its children, cloned in and out so a caller that never saves
+// cannot change what is stored — the same isolation a database read gives.
+type storedListing struct {
+	listing  domain.Listing
+	variants []domain.Variant
+	tags     []string
 }
 
 func newFakeRepo() *fakeRepo {
@@ -34,6 +51,9 @@ func newFakeRepo() *fakeRepo {
 
 		tagVectors:      map[string]port.Vector{},
 		categoryVectors: map[int64]port.Vector{},
+
+		stock:          map[int64]domain.Stock{},
+		variantListing: map[int64]int64{},
 	}
 }
 
@@ -241,4 +261,189 @@ func dot(a, b port.Vector) float64 {
 		total += float64(a[i] * b[i])
 	}
 	return total
+}
+
+// --- stock ---
+
+func (f *fakeRepo) FindStock(_ context.Context, variantID int64) (domain.Stock, error) {
+	s, ok := f.stock[variantID]
+	if !ok {
+		return domain.Stock{}, domain.ErrVariantNotFound
+	}
+	return s, nil
+}
+
+func (f *fakeRepo) ReserveStock(_ context.Context, variantID, units int64) error {
+	s, ok := f.stock[variantID]
+	if !ok || units <= 0 || s.Committed()+units > s.Quantity {
+		return domain.ErrInsufficientStock
+	}
+	s.Reserved += units
+	f.stock[variantID] = s
+	return nil
+}
+
+func (f *fakeRepo) ReleaseStock(_ context.Context, variantID, units int64) error {
+	s, ok := f.stock[variantID]
+	if !ok || units <= 0 || s.Reserved < units {
+		return domain.ErrInsufficientStock
+	}
+	s.Reserved -= units
+	f.stock[variantID] = s
+	return nil
+}
+
+func (f *fakeRepo) CommitStock(_ context.Context, variantID, units int64) error {
+	s, ok := f.stock[variantID]
+	if !ok || units <= 0 || s.Reserved < units {
+		return domain.ErrInsufficientStock
+	}
+	s.Reserved -= units
+	s.Sold += units
+	f.stock[variantID] = s
+	// The listing's counter moves with the sale, as the adapter does in one transaction.
+	if listingID, ok := f.variantListing[variantID]; ok {
+		if at := f.listingAt(listingID); at >= 0 {
+			f.listings[at].listing.CachedSold += units
+		}
+	}
+	return nil
+}
+
+// --- the listing aggregate ---
+
+func (f *fakeRepo) listingAt(id int64) int {
+	return slices.IndexFunc(f.listings, func(s storedListing) bool { return s.listing.ID == id })
+}
+
+func (f *fakeRepo) CreateListing(_ context.Context, l *domain.Listing, _ int64) error {
+	if err := l.Validate(); err != nil {
+		return err
+	}
+	// The slug is globally unique, as "listing_slug_key" is.
+	if slices.ContainsFunc(f.listings, func(s storedListing) bool { return s.listing.Slug == l.Slug }) {
+		return domain.ErrSlugTaken
+	}
+	if _, ok := f.categories[l.CategoryID]; !ok {
+		return domain.ErrCategoryNotFound
+	}
+	l.ID = f.id()
+	l.Version = 1
+	l.CreatedAt = time.Now()
+	if err := f.putListing(l); err != nil {
+		return err
+	}
+	l.ClearEvents()
+	return nil
+}
+
+func (f *fakeRepo) SaveListing(_ context.Context, l *domain.Listing, _ int64) error {
+	if err := l.Validate(); err != nil {
+		return err
+	}
+	at := f.listingAt(l.ID)
+	// A stale version loses, exactly as `WHERE version = @version` does.
+	if at < 0 || f.listings[at].listing.Version != l.Version || f.listings[at].listing.DeletedAt != nil {
+		return domain.ErrVersionConflict
+	}
+	if _, ok := f.categories[l.CategoryID]; !ok {
+		return domain.ErrCategoryNotFound
+	}
+	l.Version++
+	if err := f.putListing(l); err != nil {
+		l.Version--
+		return err
+	}
+	l.ClearEvents()
+	return nil
+}
+
+// putListing writes the root and syncs the children the way the adapter does: a variant with
+// no id is inserted with its stock row, one absent from the slice is soft deleted, and the
+// tag slice is the whole set.
+func (f *fakeRepo) putListing(l *domain.Listing) error {
+	live := make(map[string]bool, len(l.Variants))
+	for _, v := range l.Variants {
+		if !v.IsLive() {
+			continue
+		}
+		// "variant_listing_id_attributes_key": two live variants cannot describe the same
+		// combination.
+		key := fmt.Sprint(v.Attributes)
+		if live[key] {
+			return domain.ErrDuplicateVariant
+		}
+		live[key] = true
+		if v.ID == 0 {
+			v.ID = f.id()
+			v.ListingID = l.ID
+			f.stock[v.ID] = v.Stock
+			f.variantListing[v.ID] = l.ID
+			continue
+		}
+		// A seller edit writes the quantity only; reserved and sold move by their own
+		// guarded statements.
+		s := f.stock[v.ID]
+		if v.Stock.Quantity < s.Committed() {
+			return domain.ErrQuantityBelowCommitted
+		}
+		s.Quantity = v.Stock.Quantity
+		f.stock[v.ID] = s
+	}
+	for _, tag := range l.Tags {
+		if _, ok := f.tags[tag]; !ok {
+			return domain.ErrTagNotFound
+		}
+	}
+	stored := storedListing{listing: *l, tags: slices.Clone(l.Tags)}
+	for _, v := range l.Variants {
+		stored.variants = append(stored.variants, *v)
+	}
+	if at := f.listingAt(l.ID); at >= 0 {
+		f.listings[at] = stored
+		return nil
+	}
+	f.listings = append(f.listings, stored)
+	return nil
+}
+
+func (f *fakeRepo) GetListing(_ context.Context, id int64) (*domain.Listing, error) {
+	at := f.listingAt(id)
+	if at < 0 || f.listings[at].listing.DeletedAt != nil {
+		return nil, domain.ErrListingNotFound
+	}
+	return f.hydrate(f.listings[at]), nil
+}
+
+func (f *fakeRepo) GetListingForSeller(ctx context.Context, id, sellerID int64) (*domain.Listing, error) {
+	l, err := f.GetListing(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	// Ownership is part of the lookup, so another seller's listing is not found.
+	if l.SellerID != sellerID {
+		return nil, domain.ErrListingNotFound
+	}
+	return l, nil
+}
+
+// hydrate rebuilds the aggregate the way the loader does: live variants only, with their
+// stock read from the stock table rather than from whatever the last Save happened to hold.
+func (f *fakeRepo) hydrate(stored storedListing) *domain.Listing {
+	l := stored.listing
+	l.Tags = slices.Clone(stored.tags)
+	l.Variants = nil
+	for _, v := range stored.variants {
+		if !v.IsLive() {
+			continue
+		}
+		copied := v
+		copied.Stock = f.stock[v.ID]
+		l.Variants = append(l.Variants, &copied)
+	}
+	return &l
+}
+
+func (f *fakeRepo) SlugTaken(_ context.Context, slug string) (bool, error) {
+	return slices.ContainsFunc(f.listings, func(s storedListing) bool { return s.listing.Slug == slug }), nil
 }

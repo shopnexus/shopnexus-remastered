@@ -103,4 +103,18 @@ type Repository interface {
 	// slice is *soft* deleted: order.item holds variant_id without a foreign key.
 	SaveListing(ctx context.Context, l *domain.Listing, actor int64) error
 	SlugTaken(ctx context.Context, slug string) (bool, error)
+
+	// --- stock: its own aggregate, one row per variant ---
+	// Each of these is a single guarded statement: the WHERE clause is the invariant, so no
+	// version is involved and two checkouts on different variants never contend. Zero rows
+	// affected is the refusal, not an error to wrap.
+	//
+	// ReserveStock holds units for a checkout that has not completed.
+	ReserveStock(ctx context.Context, variantID, units int64) error
+	// ReleaseStock gives them back — a cancelled or expired session.
+	ReleaseStock(ctx context.Context, variantID, units int64) error
+	// CommitStock turns a reservation into a sale and bumps listing.cached_sold in the same
+	// transaction, so the badge and the counter cannot drift apart.
+	CommitStock(ctx context.Context, variantID, units int64) error
+	FindStock(ctx context.Context, variantID int64) (domain.Stock, error)
 }

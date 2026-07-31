@@ -17,4 +17,12 @@ type Service interface {
 	ListTags(ctx context.Context, req ListTagsRequest) (TagPage, error)
 	AdminPutTag(ctx context.Context, req PutTagRequest) (Tag, error)
 	AdminDeleteTag(ctx context.Context, req DeleteTagRequest) error
+
+	// --- stock: called by order, not by a route ---
+	// ReserveStock holds units for a checkout that has not completed. Answers
+	// 409 insufficient_stock when there is no room, which the caller acts on.
+	ReserveStock(ctx context.Context, req StockMovementRequest) error
+	ReleaseStock(ctx context.Context, req StockMovementRequest) error
+	// CommitStock turns a reservation into a sale.
+	CommitStock(ctx context.Context, req StockMovementRequest) error
 }
