@@ -11,6 +11,14 @@ import (
 	"shopnexus/internal/module/catalog/domain"
 )
 
+// TagFilter drives the tag picker: Prefix is matched against the head of the slug, which
+// is what a picker types into, and the page is what keeps a growing dictionary answerable.
+type TagFilter struct {
+	Prefix string
+	Offset int
+	Limit  int
+}
+
 type Repository interface {
 	// --- category: the browse tree. Small and curated, so the whole of it is one read
 	// and a client assembles the shape.
@@ -22,4 +30,11 @@ type Repository interface {
 	// only the database can see the path. Answers ErrCategoryCycle when it is.
 	UpdateCategory(ctx context.Context, c domain.Category) error
 	DeleteCategory(ctx context.Context, id int64) error
+
+	// --- tags: a flat dictionary keyed by its slug ---
+	ListTags(ctx context.Context, f TagFilter) ([]domain.Tag, int64, error)
+	// PutTag is an upsert, so the admin route is idempotent: the slug is in the path and
+	// only the description can change.
+	PutTag(ctx context.Context, t domain.Tag) error
+	DeleteTag(ctx context.Context, slug string) error
 }

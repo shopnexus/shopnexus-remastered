@@ -114,7 +114,22 @@ func (h *Catalog) ListCategories(w http.ResponseWriter, r *http.Request) {
 
 // ListTags handles GET /tags.
 func (h *Catalog) ListTags(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	page, limit, err := pageParams(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	req := catalogapi.ListTagsRequest{Query: r.URL.Query().Get("q"), Page: page, Limit: limit}
+	if raw := r.URL.Query().Get("near"); raw != "" {
+		req.Near = strings.Split(raw, ",")
+	}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListTags(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WritePage(w, http.StatusOK, res.Data, httpx.PageMeta(res.Meta))
 }
 
 // AdminCreateCategory handles POST /admin/categories.
@@ -185,12 +200,42 @@ func (h *Catalog) AdminDeleteCategory(w http.ResponseWriter, r *http.Request) {
 
 // AdminPutTag handles PUT /admin/tags/{slug}.
 func (h *Catalog) AdminPutTag(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	var req catalogapi.PutTagRequest
+	// Only the description can change, so a body-less PUT is a legal way to clear it.
+	if failed(w, h.log, decodeOptionalBody(r, &req)) {
+		return
+	}
+	// The slug is a natural key, so it comes off the path as a plain string — never parsed
+	// as an opaque id.
+	req.ActorID, req.Slug = uid, r.PathValue("slug")
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.AdminPutTag(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
 // AdminDeleteTag handles DELETE /admin/tags/{slug}.
 func (h *Catalog) AdminDeleteTag(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	req := catalogapi.DeleteTagRequest{ActorID: uid, Slug: r.PathValue("slug")}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	if failed(w, h.log, h.svc.AdminDeleteTag(r.Context(), req)) {
+		return
+	}
+	httpx.WriteNoContent(w)
 }
 
 // AdminListListings handles GET /admin/listings.

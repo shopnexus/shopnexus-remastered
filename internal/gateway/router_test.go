@@ -53,6 +53,18 @@ func (stubCat) AdminCreateCategory(context.Context, catalogapi.CreateCategoryReq
 func (stubCat) AdminUpdateCategory(context.Context, catalogapi.UpdateCategoryRequest) (catalogapi.Category, error) {
 	return catalogapi.Category{ID: id.Of[id.Category](1)}, nil
 }
+func (stubCat) ListTags(context.Context, catalogapi.ListTagsRequest) (catalogapi.TagPage, error) {
+	return catalogapi.TagPage{}, nil
+}
+
+func (stubCat) AdminPutTag(context.Context, catalogapi.PutTagRequest) (catalogapi.Tag, error) {
+	return catalogapi.Tag{}, nil
+}
+
+func (stubCat) AdminDeleteTag(context.Context, catalogapi.DeleteTagRequest) error {
+	return nil
+}
+
 func (stubCat) AdminDeleteCategory(context.Context, catalogapi.DeleteCategoryRequest) error {
 	return nil
 }

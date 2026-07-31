@@ -18,10 +18,15 @@ type fakeRepo struct {
 	// inUse marks a category a listing references, which the fake cannot derive because
 	// listings are not in this slice.
 	inUse map[int64]bool
+	tags  map[string]domain.Tag
 }
 
 func newFakeRepo() *fakeRepo {
-	return &fakeRepo{categories: map[int64]domain.Category{}, inUse: map[int64]bool{}}
+	return &fakeRepo{
+		categories: map[int64]domain.Category{},
+		inUse:      map[int64]bool{},
+		tags:       map[string]domain.Tag{},
+	}
 }
 
 func (f *fakeRepo) id() int64 {
@@ -117,4 +122,36 @@ func (f *fakeRepo) isDescendant(candidate, id int64) bool {
 		}
 		at = *c.ParentID
 	}
+}
+
+// --- tags ---
+
+func (f *fakeRepo) ListTags(_ context.Context, filter port.TagFilter) ([]domain.Tag, int64, error) {
+	var matched []domain.Tag
+	for _, t := range f.tags {
+		if filter.Prefix != "" && !strings.HasPrefix(t.Slug, filter.Prefix) {
+			continue
+		}
+		matched = append(matched, t)
+	}
+	slices.SortFunc(matched, func(a, b domain.Tag) int { return strings.Compare(a.Slug, b.Slug) })
+	total := int64(len(matched))
+	if filter.Offset >= len(matched) {
+		return nil, total, nil
+	}
+	return matched[filter.Offset:min(filter.Offset+filter.Limit, len(matched))], total, nil
+}
+
+// PutTag is an upsert, as the ON CONFLICT in the adapter is.
+func (f *fakeRepo) PutTag(_ context.Context, t domain.Tag) error {
+	f.tags[t.Slug] = t
+	return nil
+}
+
+func (f *fakeRepo) DeleteTag(_ context.Context, slug string) error {
+	if _, ok := f.tags[slug]; !ok {
+		return domain.ErrTagNotFound
+	}
+	delete(f.tags, slug)
+	return nil
 }

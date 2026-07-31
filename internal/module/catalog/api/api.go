@@ -12,4 +12,9 @@ type Service interface {
 	AdminCreateCategory(ctx context.Context, req CreateCategoryRequest) (Category, error)
 	AdminUpdateCategory(ctx context.Context, req UpdateCategoryRequest) (Category, error)
 	AdminDeleteCategory(ctx context.Context, req DeleteCategoryRequest) error
+
+	// --- tags: reading is public, writing is admin-only ---
+	ListTags(ctx context.Context, req ListTagsRequest) (TagPage, error)
+	AdminPutTag(ctx context.Context, req PutTagRequest) (Tag, error)
+	AdminDeleteTag(ctx context.Context, req DeleteTagRequest) error
 }

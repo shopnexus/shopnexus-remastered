@@ -6,6 +6,8 @@ import (
 
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
+	"shopnexus/internal/module/catalog/port"
+	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/id"
 )
 
@@ -111,3 +113,64 @@ func toAPICategory(c domain.Category) catalogapi.Category {
 	}
 	return out
 }
+
+// ListTags pages the dictionary. Query and Near answer different questions, so asking both
+// is a bad request rather than a silent precedence rule.
+func (s *Service) ListTags(ctx context.Context, req catalogapi.ListTagsRequest) (catalogapi.TagPage, error) {
+	if req.Query != "" && len(req.Near) > 0 {
+		return catalogapi.TagPage{}, errx.NewValidationError("invalid field: near", errx.Field{
+			Field:   "near",
+			Rule:    "excluded_with",
+			Message: "cannot be combined with q: one filters the dictionary, the other ranks it",
+		})
+	}
+	rows, total, err := s.repo.ListTags(ctx, port.TagFilter{
+		Prefix: req.Query,
+		Offset: offsetOf(req.Page, req.Limit),
+		Limit:  req.Limit,
+	})
+	if err != nil {
+		return catalogapi.TagPage{}, fmt.Errorf("list tags: %w", err)
+	}
+	out := make([]catalogapi.Tag, 0, len(rows))
+	for _, t := range rows {
+		out = append(out, catalogapi.Tag{Slug: t.Slug, Description: t.Description})
+	}
+	return catalogapi.TagPage{
+		Data: out,
+		Meta: catalogapi.PageInfo{Page: req.Page, Limit: req.Limit, TotalCount: &total},
+	}, nil
+}
+
+func (s *Service) AdminPutTag(ctx context.Context, req catalogapi.PutTagRequest) (catalogapi.Tag, error) {
+	if err := s.requireAdmin(ctx, req.ActorID); err != nil {
+		return catalogapi.Tag{}, err
+	}
+	t, err := domain.NewTag(req.Slug, req.Description)
+	if err != nil {
+		return catalogapi.Tag{}, err
+	}
+	if err := s.repo.PutTag(ctx, *t); err != nil {
+		return catalogapi.Tag{}, fmt.Errorf("put tag: %w", err)
+	}
+	return catalogapi.Tag{Slug: t.Slug, Description: t.Description}, nil
+}
+
+func (s *Service) AdminDeleteTag(ctx context.Context, req catalogapi.DeleteTagRequest) error {
+	if err := s.requireAdmin(ctx, req.ActorID); err != nil {
+		return err
+	}
+	// The slug comes off the path unparsed, so its shape is checked here rather than by a
+	// failed lookup.
+	if err := domain.ValidateTagSlug(req.Slug); err != nil {
+		return err
+	}
+	if err := s.repo.DeleteTag(ctx, req.Slug); err != nil {
+		return fmt.Errorf("delete tag: %w", err)
+	}
+	return nil
+}
+
+// offsetOf turns a 1-based page into an offset. Page and limit are validated at the DTO, so
+// this needs no bounds of its own.
+func offsetOf(page, limit int) int { return (page - 1) * limit }

@@ -36,3 +36,24 @@ type DeleteCategoryRequest struct {
 	ActorID id.ID[id.Account]  `json:"-" validate:"required"`
 	ID      id.ID[id.Category] `json:"-" validate:"required"`
 }
+
+// ListTagsRequest: Query is a prefix match on the slug, Near reorders the dictionary by
+// meaning. They are mutually exclusive — one filters by what was typed, the other ranks by
+// closeness, and combining them would rank a set the prefix already decided.
+type ListTagsRequest struct {
+	Query string   `json:"-" validate:"max=100"`
+	Near  []string `json:"-" validate:"max=8,dive,required,max=100"`
+	Page  int      `json:"-" validate:"required,min=1"`
+	Limit int      `json:"-" validate:"required,min=1,max=100"`
+}
+
+type PutTagRequest struct {
+	ActorID     id.ID[id.Account] `json:"-" validate:"required"`
+	Slug        string            `json:"-" validate:"required,max=100"`
+	Description *string           `json:"description,omitempty" validate:"omitempty,max=255"`
+}
+
+type DeleteTagRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	Slug    string            `json:"-" validate:"required,max=100"`
+}

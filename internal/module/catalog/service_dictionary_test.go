@@ -206,3 +206,109 @@ func TestAdminDeleteCategory(t *testing.T) {
 }
 
 func mustErr[T any](_ T, err error) error { return err }
+
+// --- tags ---
+
+func TestAdminPutTag_IsIdempotentAndAdminOnly(t *testing.T) {
+	ctx := context.Background()
+	if got := status(t, mustErr(newHarness("user").svc.AdminPutTag(ctx, catalogapi.PutTagRequest{
+		ActorID: actor, Slug: "handmade",
+	}))); got != 403 {
+		t.Fatalf("status = %d, want 403", got)
+	}
+
+	h := newHarness("admin")
+	desc := "Made by hand"
+	first, err := h.svc.AdminPutTag(ctx, catalogapi.PutTagRequest{ActorID: actor, Slug: "handmade", Description: &desc})
+	if err != nil {
+		t.Fatalf("AdminPutTag: %v", err)
+	}
+	if first.Slug != "handmade" || first.Description == nil || *first.Description != desc {
+		t.Fatalf("tag = %+v", first)
+	}
+	// The same slug again is the same row: PUT is idempotent, and a body-less one clears the
+	// description rather than conflicting.
+	again, err := h.svc.AdminPutTag(ctx, catalogapi.PutTagRequest{ActorID: actor, Slug: "handmade"})
+	if err != nil {
+		t.Fatalf("AdminPutTag (again): %v", err)
+	}
+	if again.Description != nil {
+		t.Errorf("description = %v, want nil", again.Description)
+	}
+	page, err := h.svc.ListTags(ctx, catalogapi.ListTagsRequest{Page: 1, Limit: 20})
+	if err != nil {
+		t.Fatalf("ListTags: %v", err)
+	}
+	if len(page.Data) != 1 || page.Meta.TotalCount == nil || *page.Meta.TotalCount != 1 {
+		t.Fatalf("page = %+v", page)
+	}
+}
+
+// A malformed slug is refused by the domain, not by the database.
+func TestAdminPutTag_BadSlugRejected(t *testing.T) {
+	h := newHarness("admin")
+	err := mustErr(h.svc.AdminPutTag(context.Background(), catalogapi.PutTagRequest{
+		ActorID: actor, Slug: "Not A Slug",
+	}))
+	if got := status(t, err); got != 400 {
+		t.Fatalf("status = %d, want 400", got)
+	}
+}
+
+// q filters by what the picker typed; combining it with near is refused rather than silently
+// ranking a set the prefix already decided.
+func TestListTags_QueryAndNearAreExclusive(t *testing.T) {
+	h := newHarness("user")
+	err := mustErr(h.svc.ListTags(context.Background(), catalogapi.ListTagsRequest{
+		Query: "hand", Near: []string{"handmade"}, Page: 1, Limit: 20,
+	}))
+	if got := status(t, err); got != 400 {
+		t.Fatalf("status = %d, want 400", got)
+	}
+}
+
+// The prefix is what the picker types, and the page is what keeps a growing dictionary
+// answerable.
+func TestListTags_PrefixAndPage(t *testing.T) {
+	h := newHarness("admin")
+	ctx := context.Background()
+	for _, slug := range []string{"handmade", "hand-dyed", "eco-friendly"} {
+		if _, err := h.svc.AdminPutTag(ctx, catalogapi.PutTagRequest{ActorID: actor, Slug: slug}); err != nil {
+			t.Fatalf("AdminPutTag(%q): %v", slug, err)
+		}
+	}
+	page, err := h.svc.ListTags(ctx, catalogapi.ListTagsRequest{Query: "hand", Page: 1, Limit: 20})
+	if err != nil {
+		t.Fatalf("ListTags: %v", err)
+	}
+	if len(page.Data) != 2 {
+		t.Fatalf("page = %+v, want the two hand* tags", page.Data)
+	}
+	// The window count is the whole match, not the page, or a pager cannot draw itself.
+	second, err := h.svc.ListTags(ctx, catalogapi.ListTagsRequest{Query: "hand", Page: 2, Limit: 1})
+	if err != nil {
+		t.Fatalf("ListTags: %v", err)
+	}
+	if len(second.Data) != 1 || second.Data[0].Slug != "handmade" {
+		t.Fatalf("second page = %+v", second.Data)
+	}
+	if second.Meta.TotalCount == nil || *second.Meta.TotalCount != 2 {
+		t.Fatalf("total = %v, want 2", second.Meta.TotalCount)
+	}
+}
+
+func TestAdminDeleteTag(t *testing.T) {
+	h := newHarness("admin")
+	ctx := context.Background()
+	if _, err := h.svc.AdminPutTag(ctx, catalogapi.PutTagRequest{ActorID: actor, Slug: "handmade"}); err != nil {
+		t.Fatalf("AdminPutTag: %v", err)
+	}
+	if err := h.svc.AdminDeleteTag(ctx, catalogapi.DeleteTagRequest{ActorID: actor, Slug: "handmade"}); err != nil {
+		t.Fatalf("AdminDeleteTag: %v", err)
+	}
+	if got := status(t, h.svc.AdminDeleteTag(ctx, catalogapi.DeleteTagRequest{
+		ActorID: actor, Slug: "handmade",
+	})); got != 404 {
+		t.Fatalf("status = %d, want 404", got)
+	}
+}
