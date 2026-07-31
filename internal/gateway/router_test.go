@@ -42,21 +42,7 @@ func (stubAccount) GetMe(context.Context, accountapi.GetMeRequest) (accountapi.M
 
 type stubCat struct{}
 
-func (stubCat) CreateListing(context.Context, catalogapi.CreateListingRequest) (catalogapi.Listing, error) {
-	return catalogapi.Listing{}, nil
-}
-func (stubCat) GetListing(context.Context, catalogapi.GetListingRequest) (catalogapi.Listing, error) {
-	return catalogapi.Listing{ID: id.Of[id.Listing](1)}, nil
-}
-func (stubCat) ListListings(context.Context, catalogapi.ListListingsRequest) ([]catalogapi.Listing, error) {
-	return nil, nil
-}
-func (stubCat) SetStock(context.Context, catalogapi.SetStockRequest) (catalogapi.Stock, error) {
-	return catalogapi.Stock{}, nil
-}
-func (stubCat) GetStock(context.Context, catalogapi.GetStockRequest) (catalogapi.Stock, error) {
-	return catalogapi.Stock{}, nil
-}
+var _ catalogapi.Service = stubCat{}
 
 type stubOrder struct{}
 

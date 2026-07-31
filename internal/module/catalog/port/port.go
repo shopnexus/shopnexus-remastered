@@ -1,16 +1,9 @@
-// Package port: interface the catalog adapter must satisfy.
+// Package port: the interface the catalog adapter must satisfy.
+//
+// It speaks in raw int64 keys and domain entities — opaque ids stop at the api boundary.
+// Methods are added one slice at a time; the dictionaries come first because a listing
+// cannot reference a category that has no way of existing.
 package port
 
-import (
-	"context"
-
-	"shopnexus/internal/module/catalog/domain"
-)
-
 type Repository interface {
-	Save(ctx context.Context, l *domain.Listing) error
-	FindByID(ctx context.Context, id int64) (domain.Listing, error)
-	List(ctx context.Context, limit, offset int) ([]domain.Listing, error)
-	UpsertStock(ctx context.Context, productID int64, quantity int64) error
-	FindStock(ctx context.Context, productID int64) (int64, error)
 }
