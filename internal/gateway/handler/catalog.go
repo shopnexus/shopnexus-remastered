@@ -103,17 +103,74 @@ func (h *Catalog) HideListing(w http.ResponseWriter, r *http.Request) {
 
 // CreateVariant handles POST /listings/{id}/variants.
 func (h *Catalog) CreateVariant(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	listingID, err := pathID[id.Listing](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req catalogapi.CreateVariantRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ListingID = uid, listingID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.CreateVariant(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, res)
 }
 
 // UpdateVariant handles PATCH /variants/{id}.
 func (h *Catalog) UpdateVariant(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	variantID, err := pathID[id.Variant](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req catalogapi.UpdateVariantRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, variantID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.UpdateVariant(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// DeleteVariant handles DELETE /variants/{id}.
+// DeleteVariant handles DELETE /variants/{id}. Answers the listing rather than an empty
+// body: deleting the featured variant moves the flag, and the seller has to see that.
 func (h *Catalog) DeleteVariant(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	variantID, err := pathID[id.Variant](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := catalogapi.DeleteVariantRequest{ActorID: uid, ID: variantID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.DeleteVariant(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
 // AddFavorite handles PUT /favorites/{listingID}.

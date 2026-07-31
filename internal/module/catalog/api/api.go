@@ -23,6 +23,12 @@ type Service interface {
 	CreateListing(ctx context.Context, req CreateListingRequest) (ListingDetail, error)
 	GetListing(ctx context.Context, req GetListingRequest) (ListingDetail, error)
 
+	// A variant write answers with the whole listing: deleting the featured one moves the
+	// flag, and a response carrying the variant alone could not report that.
+	CreateVariant(ctx context.Context, req CreateVariantRequest) (ListingDetail, error)
+	UpdateVariant(ctx context.Context, req UpdateVariantRequest) (ListingDetail, error)
+	DeleteVariant(ctx context.Context, req DeleteVariantRequest) (ListingDetail, error)
+
 	// --- stock: called by order, not by a route ---
 	// ReserveStock holds units for a checkout that has not completed. Answers
 	// 409 insufficient_stock when there is no room, which the caller acts on.

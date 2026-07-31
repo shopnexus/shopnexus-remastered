@@ -53,6 +53,18 @@ func (Stub) GetListing(context.Context, catalogapi.GetListingRequest) (catalogap
 	return catalogapi.ListingDetail{}, errx.ErrNotImplemented
 }
 
+func (Stub) CreateVariant(context.Context, catalogapi.CreateVariantRequest) (catalogapi.ListingDetail, error) {
+	return catalogapi.ListingDetail{}, errx.ErrNotImplemented
+}
+
+func (Stub) UpdateVariant(context.Context, catalogapi.UpdateVariantRequest) (catalogapi.ListingDetail, error) {
+	return catalogapi.ListingDetail{}, errx.ErrNotImplemented
+}
+
+func (Stub) DeleteVariant(context.Context, catalogapi.DeleteVariantRequest) (catalogapi.ListingDetail, error) {
+	return catalogapi.ListingDetail{}, errx.ErrNotImplemented
+}
+
 func (Stub) ReserveStock(context.Context, catalogapi.StockMovementRequest) error {
 	return errx.ErrNotImplemented
 }

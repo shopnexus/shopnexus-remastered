@@ -486,3 +486,16 @@ func (f *fakeRepo) CountFavorites(_ context.Context, listingID int64) (int64, er
 	}
 	return n, nil
 }
+
+func (f *fakeRepo) GetListingByVariant(ctx context.Context, variantID, sellerID int64) (*domain.Listing, error) {
+	listingID, ok := f.variantListing[variantID]
+	if !ok {
+		return nil, domain.ErrVariantNotFound
+	}
+	l, err := f.GetListingForSeller(ctx, listingID, sellerID)
+	if err != nil {
+		// Another seller's variant is not found rather than forbidden.
+		return nil, domain.ErrVariantNotFound
+	}
+	return l, nil
+}

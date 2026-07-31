@@ -450,3 +450,19 @@ func (r *Repo) CountFavorites(ctx context.Context, listingID int64) (int64, erro
 	}
 	return n, nil
 }
+
+func (r *Repo) GetListingByVariant(ctx context.Context, variantID, sellerID int64) (*domain.Listing, error) {
+	const q = `SELECT l.id FROM variant v
+	           JOIN listing l ON l.id = v.listing_id
+	           WHERE v.id = @variant_id AND v.deleted_at IS NULL
+	             AND l.account_id = @account_id AND l.deleted_at IS NULL`
+	var listingID int64
+	args := pgx.NamedArgs{"variant_id": variantID, "account_id": sellerID}
+	if err := r.pool.QueryRow(ctx, q, args).Scan(&listingID); err != nil {
+		if isNoRows(err) {
+			return nil, domain.ErrVariantNotFound
+		}
+		return nil, fmt.Errorf("db query listing by variant: %w", err)
+	}
+	return r.GetListing(ctx, listingID)
+}

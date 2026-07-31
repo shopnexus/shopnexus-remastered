@@ -103,6 +103,9 @@ type Repository interface {
 	// slice is *soft* deleted: order.item holds variant_id without a foreign key.
 	SaveListing(ctx context.Context, l *domain.Listing, actor int64) error
 	SlugTaken(ctx context.Context, slug string) (bool, error)
+	// GetListingByVariant loads the aggregate a variant belongs to, scoped by owner: the
+	// variant routes address the variant, but the rules live on the root.
+	GetListingByVariant(ctx context.Context, variantID, sellerID int64) (*domain.Listing, error)
 
 	// --- wishlist reads. The routes that write it are another slice; the product page needs
 	// these two now, and answering them from another module would be a call per card.

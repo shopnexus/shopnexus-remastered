@@ -97,3 +97,27 @@ type GetListingRequest struct {
 	ID       id.ID[id.Listing] `json:"-" validate:"required"`
 	ViewerID id.ID[id.Account] `json:"-"`
 }
+
+type CreateVariantRequest struct {
+	ActorID   id.ID[id.Account] `json:"-" validate:"required"`
+	ListingID id.ID[id.Listing] `json:"-" validate:"required"`
+	CreateVariantInput
+}
+
+// UpdateVariantRequest: every field optional. quantity sets the total on hand; reserved and
+// sold are not settable — checkout and cancellation move them.
+type UpdateVariantRequest struct {
+	ActorID        id.ID[id.Account]    `json:"-" validate:"required"`
+	ID             id.ID[id.Variant]    `json:"-" validate:"required"`
+	Price          *int64               `json:"price,omitempty" validate:"omitempty,gte=1"`
+	Attributes     map[string]any       `json:"attributes,omitempty"`
+	PackageDetails map[string]any       `json:"package_details,omitempty"`
+	Attachments    []id.ID[id.Resource] `json:"attachments,omitempty" validate:"max=10"`
+	Quantity       *int64               `json:"quantity,omitempty" validate:"omitempty,gte=0"`
+	IsFeatured     *bool                `json:"is_featured,omitempty"`
+}
+
+type DeleteVariantRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	ID      id.ID[id.Variant] `json:"-" validate:"required"`
+}
