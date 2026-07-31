@@ -186,8 +186,11 @@ give it its own doc under `docs/` and link it from here.
   building an optional field is `if v != "" { x = &v }`; reading one is
   `if p != nil { … *p … }` (or a plain `*p` where a guard just proved it non-nil, with the
   guard named in a comment); comparing two is `a != nil && b != nil && *a == *b`; and a
-  pointer to a literal is a local variable, which is also how tests build DTOs. No double
-  pointer anywhere: `**T` as a parameter or a field is not a shape this codebase has.
+  pointer to a value is the **`new(expr)` builtin** — Go 1.26 lets `new` take an expression, so
+  `new(time.Now())` and `new("draft")` replace both a one-use local and the `ptr[T]` helper every
+  package used to redeclare. A local variable stays where the value is also read (`next :=
+  NormalizeEmail(email)` then `&next`). No double pointer anywhere: `**T` as a parameter or a
+  field is not a shape this codebase has.
 - **A domain mutator takes the value, not the pointer, and clearing is its own method.**
   `SetEmail(string)` / `ClearEmail()` beats `ChangeEmail(*string)`: the domain then holds no
   pointer logic at all, and the service reads

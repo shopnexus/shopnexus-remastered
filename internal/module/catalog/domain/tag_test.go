@@ -42,7 +42,7 @@ func TestNewTag(t *testing.T) {
 
 // An empty description is absent, not an empty string: one representation of "not set".
 func TestNewTag_BlankDescriptionIsAbsent(t *testing.T) {
-	for _, blank := range []*string{nil, ptr(""), ptr("   ")} {
+	for _, blank := range []*string{nil, new(""), new("   ")} {
 		tag, err := domain.NewTag("handmade", blank)
 		if err != nil {
 			t.Fatalf("NewTag: %v", err)

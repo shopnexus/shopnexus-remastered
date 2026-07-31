@@ -231,13 +231,13 @@ func toAPIPendingEdit(e domain.PendingEdit) *catalogapi.PendingEdit {
 		out.CategoryID = &categoryID
 	}
 	if e.Condition != nil {
-		out.Condition = ptr(string(*e.Condition))
+		out.Condition = new(string(*e.Condition))
 	}
 	if e.PriceMode != nil {
-		out.PriceMode = ptr(string(*e.PriceMode))
+		out.PriceMode = new(string(*e.PriceMode))
 	}
 	if e.ShippingPaidBy != nil {
-		out.ShippingPaidBy = ptr(string(*e.ShippingPaidBy))
+		out.ShippingPaidBy = new(string(*e.ShippingPaidBy))
 	}
 	for _, key := range e.Attachments {
 		out.Attachments = append(out.Attachments, id.Of[id.Resource](key))
@@ -265,13 +265,13 @@ func (s *Service) UpdateListing(ctx context.Context, req catalogapi.UpdateListin
 		edit.CategoryID = &categoryID
 	}
 	if req.Condition != nil {
-		edit.Condition = ptr(domain.Condition(*req.Condition))
+		edit.Condition = new(domain.Condition(*req.Condition))
 	}
 	if req.PriceMode != nil {
-		edit.PriceMode = ptr(domain.PriceMode(*req.PriceMode))
+		edit.PriceMode = new(domain.PriceMode(*req.PriceMode))
 	}
 	if req.ShippingPaidBy != nil {
-		edit.ShippingPaidBy = ptr(domain.ShippingPaidBy(*req.ShippingPaidBy))
+		edit.ShippingPaidBy = new(domain.ShippingPaidBy(*req.ShippingPaidBy))
 	}
 	if req.Attachments != nil {
 		edit.Attachments = resourceKeys(req.Attachments)

@@ -128,7 +128,7 @@ func NewListing(sellerID, categoryID int64, in NewListingInput) (*Listing, error
 		Specifications:   in.Specifications,
 		Attachments:      in.Attachments,
 		Tags:             dedupe(in.Tags),
-		EmbeddingStaleAt: ptr(time.Now()),
+		EmbeddingStaleAt: new(time.Now()),
 	}
 	if l.Specifications == nil {
 		l.Specifications = map[string]any{}
@@ -361,7 +361,7 @@ func (l *Listing) RemoveVariant(variantID int64) error {
 	if len(live) == 1 && (l.Status == StatusActive || l.Status == StatusPending) {
 		return ErrLastVariant
 	}
-	v.DeletedAt = ptr(time.Now())
+	v.DeletedAt = new(time.Now())
 	v.IsFeatured = false
 	if remaining := l.LiveVariants(); len(remaining) > 0 && !slices.ContainsFunc(remaining, func(x *Variant) bool { return x.IsFeatured }) {
 		remaining[0].IsFeatured = true
