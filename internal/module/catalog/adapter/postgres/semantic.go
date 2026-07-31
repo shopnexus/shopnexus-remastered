@@ -18,9 +18,9 @@ type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-// SeedVectors reads one dense vector per seed. Two statements rather than a UNION, because
-// the two seed kinds are keyed differently; a seed the embedding pass has not reached yet is
-// simply absent, and the service counts what came back against what it asked for.
+// SeedVectors reads one vector per seed, in the order asked. Two statements rather than a
+// UNION, because the two seed kinds are keyed differently; a seed the embedding pass has not
+// reached yet comes back nil, which is what lets the service name it.
 func (r *Repo) SeedVectors(ctx context.Context, seeds []port.Seed) ([]port.Vector, error) {
 	var (
 		slugs       []string
@@ -33,53 +33,67 @@ func (r *Repo) SeedVectors(ctx context.Context, seeds []port.Seed) ([]port.Vecto
 		}
 		categoryIDs = append(categoryIDs, s.CategoryID)
 	}
-	out := make([]port.Vector, 0, len(seeds))
+	byTag := map[string]port.Vector{}
 	if len(slugs) > 0 {
-		const q = `SELECT dense::text FROM tag_embedding
+		const q = `SELECT tag_id, dense::text FROM tag_embedding
 		           WHERE tag_id = ANY(@slugs) AND dense IS NOT NULL`
-		vectors, err := collectVectors(ctx, r.pool, q, pgx.NamedArgs{"slugs": slugs})
-		if err != nil {
+		if err := collectVectors(ctx, r.pool, q, pgx.NamedArgs{"slugs": slugs}, func(key any, v port.Vector) {
+			byTag[key.(string)] = v
+		}); err != nil {
 			return nil, err
 		}
-		out = append(out, vectors...)
 	}
+	byCategory := map[int64]port.Vector{}
 	if len(categoryIDs) > 0 {
-		const q = `SELECT dense::text FROM category_embedding
+		const q = `SELECT category_id, dense::text FROM category_embedding
 		           WHERE category_id = ANY(@ids) AND dense IS NOT NULL`
-		vectors, err := collectVectors(ctx, r.pool, q, pgx.NamedArgs{"ids": categoryIDs})
-		if err != nil {
+		if err := collectVectors(ctx, r.pool, q, pgx.NamedArgs{"ids": categoryIDs}, func(key any, v port.Vector) {
+			byCategory[key.(int64)] = v
+		}); err != nil {
 			return nil, err
 		}
-		out = append(out, vectors...)
+	}
+	// One entry per seed, nil included: the caller reads the result positionally.
+	out := make([]port.Vector, len(seeds))
+	for i, s := range seeds {
+		if s.TagSlug != "" {
+			out[i] = byTag[s.TagSlug]
+			continue
+		}
+		out[i] = byCategory[s.CategoryID]
 	}
 	return out, nil
 }
 
-func collectVectors(ctx context.Context, q querier, sql string, args pgx.NamedArgs) ([]port.Vector, error) {
+// collectVectors scans a (key, vector) read and hands each pair to keep, which files it under
+// the map its seed kind is keyed by.
+func collectVectors(ctx context.Context, q querier, sql string, args pgx.NamedArgs, keep func(key any, v port.Vector)) error {
 	rows, err := q.Query(ctx, sql, args)
 	if err != nil {
-		return nil, fmt.Errorf("db query seed vectors: %w", err)
+		return fmt.Errorf("db query seed vectors: %w", err)
 	}
 	defer rows.Close()
 
-	var out []port.Vector
 	for rows.Next() {
 		// pgx has no codec for the vector OID and this module adds no dependency for one, so
 		// the column is cast to text and parsed here.
-		var literal string
-		if err := rows.Scan(&literal); err != nil {
-			return nil, fmt.Errorf("db scan seed vector: %w", err)
+		var (
+			key     any
+			literal string
+		)
+		if err := rows.Scan(&key, &literal); err != nil {
+			return fmt.Errorf("db scan seed vector: %w", err)
 		}
 		v, err := parseVector(literal)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		out = append(out, v)
+		keep(key, v)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("db iterate seed vectors: %w", err)
+		return fmt.Errorf("db iterate seed vectors: %w", err)
 	}
-	return out, nil
+	return nil
 }
 
 // NearestCategories ranks by cosine distance to the centroid of the probes. One probe is the
@@ -126,10 +140,12 @@ func (r *Repo) NearestTags(ctx context.Context, vectors []port.Vector, exclude [
 	if len(vectors) == 0 {
 		return nil, nil
 	}
+	// COALESCE, because `id <> ALL(NULL)` is NULL rather than true: a nil exclude list would
+	// otherwise answer nothing at all.
 	const q = `SELECT t.id, t.description, 1 - (e.dense <=> @probe::vector) AS score
 	           FROM tag_embedding e
 	           JOIN tag t ON t.id = e.tag_id
-	           WHERE e.dense IS NOT NULL AND t.id <> ALL(@exclude)
+	           WHERE e.dense IS NOT NULL AND t.id <> ALL(COALESCE(@exclude::text[], '{}'))
 	           ORDER BY e.dense <=> @probe::vector
 	           LIMIT @limit OFFSET @offset`
 	args := pgx.NamedArgs{

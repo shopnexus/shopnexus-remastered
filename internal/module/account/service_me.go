@@ -48,12 +48,14 @@ func (s *Service) UpdateMe(ctx context.Context, req accountapi.UpdateAccountRequ
 	case req.Username != nil:
 		acc.SetUsername(*req.Username)
 	}
+	// Asked before the write, because Save clears the events once they are audited.
+	emailChanged := acc.Happened(domain.EmailChanged.Code)
 	if err := s.repo.Save(ctx, acc, acc.ID); err != nil {
 		return accountapi.Me{}, fmt.Errorf("save account: %w", err)
 	}
 	// A new address arrives unverified, so the verification goes out with the change
 	// rather than waiting for the client to ask for it.
-	if acc.Happened(domain.EmailChanged.Code) && acc.Email != nil {
+	if emailChanged && acc.Email != nil {
 		s.startEmailVerification(ctx, acc, acc.Profile.Locale)
 	}
 	verified, err := s.repo.HasLiveVerifiedDocument(ctx, acc.ID)

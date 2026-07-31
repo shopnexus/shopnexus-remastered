@@ -26,5 +26,5 @@ var (
 	// ErrSeedNotEmbedded is a semantic seed whose vector the embedding pass has not written
 	// yet. Rejected rather than dropped: ranking against the rest would answer a different
 	// question than the one asked.
-	ErrSeedNotEmbedded = errx.NewError(http.StatusUnprocessableEntity, "seed_not_embedded", "one of the seeds has no embedding yet")
+	ErrSeedNotEmbedded = errx.NewErrorf(http.StatusUnprocessableEntity, "seed_not_embedded", "seed %q has no embedding yet")
 )

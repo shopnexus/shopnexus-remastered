@@ -74,9 +74,17 @@ func insertListing(t *testing.T, categoryID int64) {
 		"shipping_paid_by": "seller",
 		"currency":         "USD",
 	}
-	if _, err := pool.Exec(context.Background(), q, args); err != nil {
+	var listingID int64
+	if err := pool.QueryRow(context.Background(), q+` RETURNING id`, args).Scan(&listingID); err != nil {
 		t.Fatalf("insert listing: %v", err)
 	}
+	// Registered after the category, so it is deleted before it, and RESTRICT stops blocking.
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), `DELETE FROM listing WHERE id = @id`,
+			pgx.NamedArgs{"id": listingID}); err != nil {
+			t.Logf("cleanup listing %d: %v", listingID, err)
+		}
+	})
 }
 
 // unique keeps repeated runs against the same database apart.
@@ -84,6 +92,9 @@ func unique(prefix string) string {
 	return prefix + time.Now().Format("150405.000000000")
 }
 
+// createCategory registers its own cleanup. The schema is shared across runs, so a test that
+// leaves rows behind changes what the next run reads — a ranking with a leftover perfect match
+// ties, and the tie order is arbitrary.
 func createCategory(t *testing.T, repo *pgadapter.Repo, name string, parent *int64) *domain.Category {
 	t.Helper()
 	c, err := domain.NewCategory(name, "", parent)
@@ -93,7 +104,33 @@ func createCategory(t *testing.T, repo *pgadapter.Repo, name string, parent *int
 	if err := repo.CreateCategory(context.Background(), c); err != nil {
 		t.Fatalf("CreateCategory: %v", err)
 	}
+	// Cleanups run last-registered first, so a child goes before its parent and a listing
+	// before the category RESTRICT would otherwise hold.
+	t.Cleanup(func() {
+		if err := repo.DeleteCategory(context.Background(), c.ID); err != nil {
+			t.Logf("cleanup category %d: %v", c.ID, err)
+		}
+	})
 	return c
+}
+
+// createTag is the same bargain for the dictionary: the row goes away with the test, and its
+// embedding cascades with it.
+func createTag(t *testing.T, repo *pgadapter.Repo, slug string, description *string) domain.Tag {
+	t.Helper()
+	tag, err := domain.NewTag(slug, description)
+	if err != nil {
+		t.Fatalf("NewTag: %v", err)
+	}
+	if err := repo.PutTag(context.Background(), *tag); err != nil {
+		t.Fatalf("PutTag: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := repo.DeleteTag(context.Background(), tag.Slug); err != nil && !errors.Is(err, domain.ErrTagNotFound) {
+			t.Logf("cleanup tag %q: %v", tag.Slug, err)
+		}
+	})
+	return *tag
 }
 
 // The rule the guard exists for: a node cannot be moved under its own descendant, which
@@ -171,5 +208,68 @@ func TestRepo_CategoryNotFound(t *testing.T) {
 	missing := domain.Category{ID: 0, Name: "x"}
 	if err := repo.UpdateCategory(ctx, missing); !errors.Is(err, domain.ErrCategoryNotFound) {
 		t.Fatalf("UpdateCategory = %v, want ErrCategoryNotFound", err)
+	}
+}
+
+// Two concurrent re-parents of each other's node is the write skew a read-then-write cycle
+// guard cannot see on its own: under READ COMMITTED each statement's subquery reads a tree in
+// which its own move is legal, so both land and the tree comes out looped. The advisory lock is
+// what makes one of them lose.
+//
+// One attempt is not enough to observe it — the window is the statement itself, and the first
+// pair of goroutines rarely overlaps. Unguarded, this loop closes a loop on nearly every
+// iteration; guarded, on none.
+func TestRepo_ConcurrentMovesCannotCreateACycle(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	pool := poolOf(t)
+
+	const attempts = 50
+	for i := 0; i < attempts; i++ {
+		a := createCategory(t, repo, unique("race-a-"), nil)
+		b := createCategory(t, repo, unique("race-b-"), nil)
+
+		// a under b and b under a, at the same time.
+		done := make(chan error, 2)
+		start := make(chan struct{})
+		for _, move := range []struct{ child, parent *domain.Category }{{a, b}, {b, a}} {
+			go func() {
+				<-start
+				c := *move.child
+				c.ParentID = &move.parent.ID
+				done <- repo.UpdateCategory(ctx, c)
+			}()
+		}
+		close(start)
+		for range 2 {
+			if err := <-done; err != nil && !errors.Is(err, domain.ErrCategoryCycle) {
+				t.Fatalf("UpdateCategory: %v", err)
+			}
+		}
+
+		parentOf := func(id int64) *int64 {
+			var parent *int64
+			if err := pool.QueryRow(ctx, `SELECT parent_id FROM category WHERE id = @id`,
+				pgx.NamedArgs{"id": id}).Scan(&parent); err != nil {
+				t.Fatalf("read parent: %v", err)
+			}
+			return parent
+		}
+		pa, pb := parentOf(a.ID), parentOf(b.ID)
+		if pa != nil && pb != nil && *pa == b.ID && *pb == a.ID {
+			// Break it, or the cleanup cannot delete either row.
+			if _, err := pool.Exec(ctx, `UPDATE category SET parent_id = NULL WHERE id = @id`,
+				pgx.NamedArgs{"id": a.ID}); err != nil {
+				t.Fatalf("unloop: %v", err)
+			}
+			t.Fatalf("attempt %d: both moves landed, so %d and %d are each other's parent", i, a.ID, b.ID)
+		}
+		// The tree stays walkable, which a cycle plus UNION ALL would not: the guard's
+		// recursive walk would never terminate.
+		root := *a
+		root.ParentID = nil
+		if err := repo.UpdateCategory(ctx, root); err != nil {
+			t.Fatalf("attempt %d: moving back to a root failed: %v", i, err)
+		}
 	}
 }

@@ -60,8 +60,8 @@ type Repository interface {
 	DeleteTag(ctx context.Context, slug string) error
 
 	// --- semantic suggestion ---
-	// SeedVectors reads the dense vector of each seed. One whose vector has not been written
-	// yet is missing from the result, which the service turns into ErrSeedNotEmbedded.
+	// SeedVectors reads one vector per seed, in the order asked, nil where the embedding pass
+	// has not written one yet — so the service can name the seed it rejects.
 	SeedVectors(ctx context.Context, seeds []Seed) ([]Vector, error)
 	NearestCategories(ctx context.Context, vectors []Vector, limit int) ([]ScoredCategory, error)
 	NearestTags(ctx context.Context, vectors []Vector, exclude []string, offset, limit int) ([]ScoredTag, error)

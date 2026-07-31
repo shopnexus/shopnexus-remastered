@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"slices"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 	"shopnexus/internal/module/account/domain"
 	commonapi "shopnexus/internal/module/common/api"
 	kycmock "shopnexus/internal/provider/kyc/mock"
-	notifymock "shopnexus/internal/provider/notify/mock"
+	"shopnexus/internal/provider/notify"
 	oauthmock "shopnexus/internal/provider/oauth/mock"
 	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/id"
@@ -55,10 +56,37 @@ func (fakeResources) ListOptions(context.Context, commonapi.ListOptionsRequest) 
 	return nil, nil
 }
 
+// fakeNotifier records what was sent. A message that never goes out is invisible to every
+// other assertion — the send is the only observable half of a verification flow.
+type fakeNotifier struct {
+	mu   sync.Mutex
+	sent []notify.Message
+}
+
+func (f *fakeNotifier) Send(_ context.Context, m notify.Message) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sent = append(f.sent, m)
+	return nil
+}
+
+func (f *fakeNotifier) sentOf(kind notify.Kind) []notify.Message {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []notify.Message
+	for _, m := range f.sent {
+		if m.Kind == kind {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 // harness is the service with the real session store, the real dev providers and an
 // in-memory repository — everything except a database.
 type harness struct {
 	svc       *account.Service
+	notes     *fakeNotifier
 	repo      *fakeRepo
 	sessions  *session.Store
 	tokens    *token.Manager
@@ -73,9 +101,10 @@ func newHarness() *harness {
 	tokens := token.NewManager("0123456789012345678901234567890123", 15*time.Minute)
 	log := slog.New(slog.DiscardHandler)
 	resources := &fakeResources{missing: map[id.ID[id.Resource]]bool{}}
+	notes := &fakeNotifier{}
 	svc := account.NewService(repo, sessions, tokens, c,
-		notifymock.NewClient(log), oauthmock.NewVerifier(), kycmock.NewClient(), resources, log)
-	return &harness{svc: svc, repo: repo, sessions: sessions, tokens: tokens, cache: c, resources: resources}
+		notes, oauthmock.NewVerifier(), kycmock.NewClient(), resources, log)
+	return &harness{svc: svc, notes: notes, repo: repo, sessions: sessions, tokens: tokens, cache: c, resources: resources}
 }
 
 func registerRequest() accountapi.RegisterRequest {
@@ -511,6 +540,35 @@ func TestUpdateMe_NewEmailIsUnverified(t *testing.T) {
 	}
 	if me.EmailVerified {
 		t.Error("email_verified survived an address change")
+	}
+	// The verification goes out with the change. Nothing else observes this: the flag would
+	// read the same if the message were never sent, leaving the account unverifiable until
+	// the client thought to ask.
+	sent := h.notes.sentOf(notify.KindEmailVerification)
+	if len(sent) == 0 || sent[len(sent)-1].Email != newEmail {
+		t.Fatalf("verification messages = %+v, want one to %q", sent, newEmail)
+	}
+	if sent[len(sent)-1].Token == "" {
+		t.Error("the verification message carries no token")
+	}
+}
+
+// The other half: a change that leaves the address alone must not send anything, or every
+// profile edit mails the user a token they did not ask for.
+func TestUpdateMe_UnchangedEmailSendsNothing(t *testing.T) {
+	h := newHarness()
+	res := h.register(t, registerRequest())
+	before := len(h.notes.sentOf(notify.KindEmailVerification))
+
+	username := "alice"
+	if _, err := h.svc.UpdateMe(context.Background(), accountapi.UpdateAccountRequest{
+		ActorID:  res.Account.ID,
+		Username: &username,
+	}); err != nil {
+		t.Fatalf("UpdateMe: %v", err)
+	}
+	if got := len(h.notes.sentOf(notify.KindEmailVerification)); got != before {
+		t.Errorf("verification messages = %d, want the %d from registration", got, before)
 	}
 }
 

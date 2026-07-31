@@ -3,6 +3,7 @@ package catalog_test
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 
 	accountapi "shopnexus/internal/module/account/api"
@@ -429,5 +430,63 @@ func TestListCategories_NearRejectsAMalformedSeed(t *testing.T) {
 		if got := status(t, err); got != 400 {
 			t.Errorf("seed %q: status = %d, want 400", bad, got)
 		}
+	}
+}
+
+// A repeated seed is one seed. A picker that does not dedupe its own chips must not be told
+// the embedding pass has not run.
+func TestListCategories_NearAcceptsARepeatedSeed(t *testing.T) {
+	h := newHarness("user")
+	near := h.seedCategory(t, "Ceramics")
+	slug := h.seedTag(t, "handmade")
+	h.repo.tagVectors[slug] = port.Vector{1, 0}
+	h.repo.categoryVectors[near] = port.Vector{1, 0}
+
+	got, err := h.svc.ListCategories(context.Background(), catalogapi.ListCategoriesRequest{
+		Near: []string{slug, slug}, Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("ListCategories: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("categories = %+v, want the one embedded category", got)
+	}
+}
+
+// A category id is a seed too — every embedding column in this schema is one vector space, so
+// "more like this category" is the same question as "more like this tag".
+func TestListTags_NearAcceptsACategorySeed(t *testing.T) {
+	h := newHarness("user")
+	seed := h.seedCategory(t, "Ceramics")
+	slug := h.seedTag(t, "handmade")
+	h.repo.categoryVectors[seed] = port.Vector{1, 0}
+	h.repo.tagVectors[slug] = port.Vector{1, 0}
+
+	page, err := h.svc.ListTags(context.Background(), catalogapi.ListTagsRequest{
+		Near: []string{id.Of[id.Category](seed).String()}, Page: 1, Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("ListTags: %v", err)
+	}
+	if len(page.Data) != 1 || page.Data[0].Slug != slug {
+		t.Fatalf("tags = %+v, want the embedded tag", page.Data)
+	}
+}
+
+// The 422 names the seed, because "one of them" leaves the client guessing which chip to drop.
+func TestListTags_NearNamesTheUnembeddedSeed(t *testing.T) {
+	h := newHarness("user")
+	embedded := h.seedTag(t, "handmade")
+	missing := h.seedTag(t, "ceramic")
+	h.repo.tagVectors[embedded] = port.Vector{1, 0}
+
+	_, err := h.svc.ListTags(context.Background(), catalogapi.ListTagsRequest{
+		Near: []string{embedded, missing}, Page: 1, Limit: 10,
+	})
+	if got := status(t, err); got != 422 {
+		t.Fatalf("status = %d, want 422", got)
+	}
+	if !strings.Contains(err.Error(), missing) {
+		t.Errorf("error = %q, want it to name %q", err.Error(), missing)
 	}
 }

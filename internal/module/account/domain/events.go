@@ -111,7 +111,8 @@ func PayloadOf[T any](e Event, t EventType[T]) (T, bool) {
 }
 
 // Happened answers "did this command actually do the thing", so a caller stops
-// snapshotting a field before the change to compare it after.
+// snapshotting a field before the change to compare it after. Ask it before Save, which
+// clears the events once they are audited.
 func (a *Account) Happened(code EventCode) bool {
 	return slices.ContainsFunc(a.events, func(e Event) bool { return e.Code == code })
 }

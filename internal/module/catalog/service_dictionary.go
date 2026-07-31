@@ -18,11 +18,7 @@ func (s *Service) ListCategories(ctx context.Context, req catalogapi.ListCategor
 	// `near` answers a different question — which categories does this thing belong in — so
 	// it returns a scored shortlist instead of the tree.
 	if len(req.Near) > 0 {
-		seeds, _, err := s.seeds(req.Near)
-		if err != nil {
-			return nil, err
-		}
-		vectors, err := s.probes(ctx, seeds)
+		vectors, _, err := s.probes(ctx, req.Near)
 		if err != nil {
 			return nil, err
 		}
@@ -150,11 +146,7 @@ func (s *Service) ListTags(ctx context.Context, req catalogapi.ListTagsRequest) 
 		})
 	}
 	if len(req.Near) > 0 {
-		seeds, slugs, err := s.seeds(req.Near)
-		if err != nil {
-			return catalogapi.TagPage{}, err
-		}
-		vectors, err := s.probes(ctx, seeds)
+		vectors, slugs, err := s.probes(ctx, req.Near)
 		if err != nil {
 			return catalogapi.TagPage{}, err
 		}
@@ -224,39 +216,50 @@ func (s *Service) AdminDeleteTag(ctx context.Context, req catalogapi.DeleteTagRe
 // this needs no bounds of its own.
 func offsetOf(page, limit int) int { return (page - 1) * limit }
 
-// seeds turns the wire form into port seeds. A tag slug and an opaque id are told apart the
-// same way a polymorphic ref is: an opaque id always carries an underscore after its prefix
-// and a slug never does. The slugs come back too, because a tag ranking excludes its seeds.
-func (s *Service) seeds(raw []string) ([]port.Seed, []string, error) {
-	out := make([]port.Seed, 0, len(raw))
-	slugs := make([]string, 0, len(raw))
+// probes turns the wire seeds into probe vectors. It also answers the tag slugs among them,
+// because a tag ranking excludes its own seeds.
+//
+// A seed is a tag slug or a category id, told apart the same way a polymorphic ref is: an
+// opaque id always carries an underscore after its prefix and a slug never does. A repeated
+// seed is one seed — a picker that does not dedupe its own chips must not get a 422.
+func (s *Service) probes(ctx context.Context, raw []string) ([]port.Vector, []string, error) {
+	var (
+		seeds  []port.Seed
+		labels []string
+		slugs  []string
+		seen   = make(map[string]bool, len(raw))
+	)
 	for _, value := range raw {
+		if seen[value] {
+			continue
+		}
+		seen[value] = true
 		if !strings.Contains(value, "_") {
 			if err := domain.ValidateTagSlug(value); err != nil {
 				return nil, nil, err
 			}
-			out = append(out, port.Seed{TagSlug: value})
+			seeds = append(seeds, port.Seed{TagSlug: value})
 			slugs = append(slugs, value)
+			labels = append(labels, value)
 			continue
 		}
 		categoryID, err := id.Parse[id.Category](value)
 		if err != nil {
 			return nil, nil, err
 		}
-		out = append(out, port.Seed{CategoryID: categoryID.Int64()})
+		seeds = append(seeds, port.Seed{CategoryID: categoryID.Int64()})
+		labels = append(labels, value)
 	}
-	return out, slugs, nil
-}
-
-// probes resolves the seeds to vectors and refuses the request when any of them has none:
-// dropping one would rank against a different question than the caller asked.
-func (s *Service) probes(ctx context.Context, seeds []port.Seed) ([]port.Vector, error) {
 	vectors, err := s.repo.SeedVectors(ctx, seeds)
 	if err != nil {
-		return nil, fmt.Errorf("read seed vectors: %w", err)
+		return nil, nil, fmt.Errorf("read seed vectors: %w", err)
 	}
-	if len(vectors) != len(seeds) {
-		return nil, domain.ErrSeedNotEmbedded
+	// One vector per seed, so a missing one is named rather than dropped: ranking against the
+	// rest would answer a different question than the caller asked.
+	for i, v := range vectors {
+		if v == nil {
+			return nil, nil, domain.ErrSeedNotEmbedded.Fmt(labels[i])
+		}
 	}
-	return vectors, nil
+	return vectors, slugs, nil
 }

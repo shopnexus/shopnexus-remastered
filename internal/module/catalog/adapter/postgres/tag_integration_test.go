@@ -25,22 +25,10 @@ func TestRepo_TagPrefixSearchAndUpsert(t *testing.T) {
 	ctx := context.Background()
 	prefix := slugOf("it-")
 
-	first, err := domain.NewTag(prefix+"-alpha", nil)
-	if err != nil {
-		t.Fatalf("NewTag: %v", err)
-	}
-	if err := repo.PutTag(ctx, *first); err != nil {
-		t.Fatalf("PutTag: %v", err)
-	}
+	createTag(t, repo, prefix+"-alpha", nil)
 	// The same slug again is an update, not a conflict: the route is idempotent.
 	desc := "second write"
-	again, err := domain.NewTag(prefix+"-alpha", &desc)
-	if err != nil {
-		t.Fatalf("NewTag: %v", err)
-	}
-	if err := repo.PutTag(ctx, *again); err != nil {
-		t.Fatalf("PutTag (upsert): %v", err)
-	}
+	createTag(t, repo, prefix+"-alpha", &desc)
 
 	rows, total, err := repo.ListTags(ctx, port.TagFilter{Prefix: prefix, Limit: 10})
 	if err != nil {
@@ -54,19 +42,32 @@ func TestRepo_TagPrefixSearchAndUpsert(t *testing.T) {
 	}
 }
 
+// A prefix is matched literally: LIKE metacharacters in what the picker typed are escaped, so
+// "%" is a per-cent sign and not the whole dictionary — which would also lose the index.
+func TestRepo_ListTagsEscapesLikeMetacharacters(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	createTag(t, repo, slugOf("like-"), nil)
+
+	for _, prefix := range []string{"%", "_", `\`} {
+		rows, total, err := repo.ListTags(ctx, port.TagFilter{Prefix: prefix, Limit: 10})
+		if err != nil {
+			t.Fatalf("ListTags(%q): %v", prefix, err)
+		}
+		// No slug can contain any of these, so a literal match finds nothing.
+		if total != 0 || len(rows) != 0 {
+			t.Errorf("prefix %q matched %d rows, want none — the pattern is not escaped", prefix, total)
+		}
+	}
+}
+
 // An empty prefix is the whole dictionary, and the page bounds it.
 func TestRepo_ListTagsPages(t *testing.T) {
 	repo := newRepo(t)
 	ctx := context.Background()
 	prefix := slugOf("page-")
 	for _, suffix := range []string{"a", "b", "c"} {
-		tag, err := domain.NewTag(prefix+"-"+suffix, nil)
-		if err != nil {
-			t.Fatalf("NewTag: %v", err)
-		}
-		if err := repo.PutTag(ctx, *tag); err != nil {
-			t.Fatalf("PutTag: %v", err)
-		}
+		createTag(t, repo, prefix+"-"+suffix, nil)
 	}
 	rows, total, err := repo.ListTags(ctx, port.TagFilter{Prefix: prefix, Offset: 1, Limit: 1})
 	if err != nil {
@@ -83,13 +84,7 @@ func TestRepo_ListTagsPages(t *testing.T) {
 func TestRepo_DeleteTag(t *testing.T) {
 	repo := newRepo(t)
 	ctx := context.Background()
-	tag, err := domain.NewTag(slugOf("del-"), nil)
-	if err != nil {
-		t.Fatalf("NewTag: %v", err)
-	}
-	if err := repo.PutTag(ctx, *tag); err != nil {
-		t.Fatalf("PutTag: %v", err)
-	}
+	tag := createTag(t, repo, slugOf("del-"), nil)
 	if err := repo.DeleteTag(ctx, tag.Slug); err != nil {
 		t.Fatalf("DeleteTag: %v", err)
 	}

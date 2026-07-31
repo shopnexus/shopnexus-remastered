@@ -169,17 +169,15 @@ func (f *fakeRepo) DeleteTag(_ context.Context, slug string) error {
 // The fake ranks by dot product on the tiny vectors a test writes, which orders the same way
 // cosine distance does for the unit-ish vectors used there.
 func (f *fakeRepo) SeedVectors(_ context.Context, seeds []port.Seed) ([]port.Vector, error) {
-	var out []port.Vector
-	for _, s := range seeds {
+	// One entry per seed, nil where the embedding pass has not written one — the adapter's
+	// contract, and the reason a missing seed can be named.
+	out := make([]port.Vector, len(seeds))
+	for i, s := range seeds {
 		if s.TagSlug != "" {
-			if v, ok := f.tagVectors[s.TagSlug]; ok {
-				out = append(out, v)
-			}
+			out[i] = f.tagVectors[s.TagSlug]
 			continue
 		}
-		if v, ok := f.categoryVectors[s.CategoryID]; ok {
-			out = append(out, v)
-		}
+		out[i] = f.categoryVectors[s.CategoryID]
 	}
 	return out, nil
 }
@@ -191,7 +189,11 @@ func (f *fakeRepo) NearestCategories(_ context.Context, vectors []port.Vector, l
 	probe := mean(vectors)
 	var out []port.ScoredCategory
 	for id, v := range f.categoryVectors {
-		out = append(out, port.ScoredCategory{Category: f.categories[id], Score: dot(probe, v)})
+		c, ok := f.categories[id]
+		if !ok {
+			continue // the adapter JOINs, so an orphan embedding is not a row
+		}
+		out = append(out, port.ScoredCategory{Category: c, Score: dot(probe, v)})
 	}
 	slices.SortFunc(out, func(a, b port.ScoredCategory) int { return cmp.Compare(b.Score, a.Score) })
 	return out[:min(limit, len(out))], nil
@@ -207,7 +209,11 @@ func (f *fakeRepo) NearestTags(_ context.Context, vectors []port.Vector, exclude
 		if slices.Contains(exclude, slug) {
 			continue
 		}
-		out = append(out, port.ScoredTag{Tag: f.tags[slug], Score: dot(probe, v)})
+		t, ok := f.tags[slug]
+		if !ok {
+			continue // as above: an embedding with no tag row is not a result
+		}
+		out = append(out, port.ScoredTag{Tag: t, Score: dot(probe, v)})
 	}
 	slices.SortFunc(out, func(a, b port.ScoredTag) int { return cmp.Compare(b.Score, a.Score) })
 	if offset >= len(out) {

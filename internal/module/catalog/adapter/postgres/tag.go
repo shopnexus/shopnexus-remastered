@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -19,13 +20,14 @@ import (
 func (r *Repo) ListTags(ctx context.Context, f port.TagFilter) ([]domain.Tag, int64, error) {
 	const q = `SELECT id, description, COUNT(*) OVER () AS total_count
 	           FROM tag
-	           WHERE @prefix = '' OR id LIKE @pattern
+	           WHERE @prefix = '' OR id LIKE @pattern ESCAPE '\'
 	           ORDER BY id
 	           LIMIT @limit OFFSET @offset`
-	// The LIKE pattern is built from a parameter, never concatenated into the statement.
+	// The LIKE pattern is built from a parameter, never concatenated into the statement, and
+	// the prefix is escaped: a bare "%" would match the whole dictionary and lose the index.
 	args := pgx.NamedArgs{
 		"prefix":  f.Prefix,
-		"pattern": f.Prefix + "%",
+		"pattern": escapeLike(f.Prefix) + "%",
 		"limit":   f.Limit,
 		"offset":  f.Offset,
 	}
@@ -50,6 +52,13 @@ func (r *Repo) ListTags(ctx context.Context, f port.TagFilter) ([]domain.Tag, in
 		return nil, 0, fmt.Errorf("db iterate tags: %w", err)
 	}
 	return out, total, nil
+}
+
+// escapeLike makes a user-supplied string a literal inside a LIKE pattern, so a typed "%"
+// means a per-cent sign and not "everything".
+func escapeLike(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
+	return r.Replace(s)
 }
 
 // PutTag is an upsert on the natural key, which is what makes PUT idempotent.
