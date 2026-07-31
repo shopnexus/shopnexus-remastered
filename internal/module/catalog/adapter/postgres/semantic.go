@@ -7,16 +7,11 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
 )
-
-// querier is what a pool and a transaction have in common, so a read is written once.
-type querier interface {
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-}
 
 // SeedVectors reads one vector per seed, in the order asked. Two statements rather than a
 // UNION, because the two seed kinds are keyed differently; a seed the embedding pass has not
@@ -67,7 +62,7 @@ func (r *Repo) SeedVectors(ctx context.Context, seeds []port.Seed) ([]port.Vecto
 
 // collectVectors scans a (key, vector) read and hands each pair to keep, which files it under
 // the map its seed kind is keyed by.
-func collectVectors(ctx context.Context, q querier, sql string, args pgx.NamedArgs, keep func(key any, v port.Vector)) error {
+func collectVectors(ctx context.Context, q *pgxpool.Pool, sql string, args pgx.NamedArgs, keep func(key any, v port.Vector)) error {
 	rows, err := q.Query(ctx, sql, args)
 	if err != nil {
 		return fmt.Errorf("db query seed vectors: %w", err)

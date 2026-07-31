@@ -57,8 +57,6 @@ func sqlState(err error) string {
 	return ""
 }
 
-func isNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
-
 func isUniqueViolation(err error) bool { return sqlState(err) == uniqueViolation }
 
 // isRestrictViolation is ON DELETE RESTRICT refusing to orphan a referencing row —

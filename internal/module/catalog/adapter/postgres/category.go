@@ -12,7 +12,7 @@ import (
 const categoryColumns = `id, parent_id, name, description`
 
 func (r *Repo) ListCategories(ctx context.Context) ([]domain.Category, error) {
-	q := `SELECT ` + categoryColumns + ` FROM category ORDER BY name`
+	const q = `SELECT ` + categoryColumns + ` FROM category ORDER BY name`
 	rows, err := r.pool.Query(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("db query categories: %w", err)
