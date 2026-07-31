@@ -1,60 +1,413 @@
-// Package chat implements chatapi.Service.
+// Package chat implements chatapi.Service — one thread per pair of accounts, its
+// messages, and the read marks behind an unread badge.
 package chat
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"time"
 
+	"github.com/go-playground/validator/v10"
+
+	accountapi "shopnexus/internal/module/account/api"
 	chatapi "shopnexus/internal/module/chat/api"
 	"shopnexus/internal/module/chat/domain"
 	"shopnexus/internal/module/chat/port"
+	"shopnexus/internal/module/common"
 	"shopnexus/internal/shared/id"
 )
 
 type Service struct {
 	repo port.Repository
-	log  *slog.Logger
+	// accounts answers what a counterparty is called, which is what an inbox row shows.
+	accounts accountapi.Service
+	v        *validator.Validate
+	log      *slog.Logger
 }
 
-func NewService(repo port.Repository, log *slog.Logger) *Service {
-	return &Service{repo: repo, log: log}
+func NewService(repo port.Repository, accounts accountapi.Service, v *validator.Validate, log *slog.Logger) *Service {
+	return &Service{repo: repo, accounts: accounts, v: v, log: log}
 }
 
 var _ chatapi.Service = (*Service)(nil)
 
+// ListConversations is the inbox, latest activity first. Two extra queries for the whole
+// page — the last message and the unread counts — rather than per row.
+func (s *Service) ListConversations(ctx context.Context, req chatapi.ListConversationsRequest) (chatapi.ConversationPage, error) {
+	before, err := parseCursor(req.Cursor)
+	if err != nil {
+		return chatapi.ConversationPage{}, err
+	}
+	// One more than asked, so "is there another page" is answered without a count.
+	threads, err := s.repo.ListConversations(ctx, port.InboxFilter{
+		AccountID: req.ActorID.Int64(),
+		Before:    before,
+		Limit:     req.Limit + 1,
+	})
+	if err != nil {
+		return chatapi.ConversationPage{}, fmt.Errorf("list conversations: %w", err)
+	}
+	hasMore := len(threads) > req.Limit
+	if hasMore {
+		threads = threads[:req.Limit]
+	}
+	out, err := s.inboxRows(ctx, req.ActorID.Int64(), threads)
+	if err != nil {
+		return chatapi.ConversationPage{}, err
+	}
+	page := chatapi.ConversationPage{Data: out, Meta: chatapi.CursorInfo{HasMore: hasMore}}
+	if hasMore && len(threads) > 0 {
+		page.Meta.NextCursor = formatCursor(threads[len(threads)-1].LastMessageAt)
+	}
+	return page, nil
+}
+
+// StartConversation opens the thread with one account, or answers the one that already
+// exists — there is one per pair, so the route is idempotent by construction.
+func (s *Service) StartConversation(ctx context.Context, req chatapi.StartConversationRequest) (chatapi.Conversation, error) {
+	thread, err := s.repo.EnsureConversation(ctx, req.ActorID.Int64(), req.AccountID.Int64())
+	if err != nil {
+		return chatapi.Conversation{}, fmt.Errorf("ensure conversation: %w", err)
+	}
+	return s.inboxRow(ctx, req.ActorID.Int64(), thread, nil, 0)
+}
+
+func (s *Service) GetConversation(ctx context.Context, req chatapi.GetConversationRequest) (chatapi.Conversation, error) {
+	thread, err := s.participant(ctx, req.ActorID, req.ID)
+	if err != nil {
+		return chatapi.Conversation{}, err
+	}
+	rows, err := s.inboxRows(ctx, req.ActorID.Int64(), []domain.Conversation{thread})
+	if err != nil {
+		return chatapi.Conversation{}, err
+	}
+	return rows[0], nil
+}
+
+// GetUnreadCount is the badge. Two numbers, because "12 unread" and "in 3 threads" are
+// different things a client shows in different places.
+func (s *Service) GetUnreadCount(ctx context.Context, req chatapi.UnreadCountRequest) (chatapi.UnreadCount, error) {
+	total, threads, err := s.repo.UnreadTotal(ctx, req.ActorID.Int64())
+	if err != nil {
+		return chatapi.UnreadCount{}, fmt.Errorf("read unread total: %w", err)
+	}
+	return chatapi.UnreadCount{Unread: total, Conversations: threads}, nil
+}
+
+// ListMessages pages a thread newest first. A thread the caller is not in is not found
+// rather than forbidden — it is not theirs to know about.
+func (s *Service) ListMessages(ctx context.Context, req chatapi.ListMessagesRequest) (chatapi.MessagePage, error) {
+	if _, err := s.participant(ctx, req.ActorID, req.ID); err != nil {
+		return chatapi.MessagePage{}, err
+	}
+	before, err := parseCursor(req.Cursor)
+	if err != nil {
+		return chatapi.MessagePage{}, err
+	}
+	messages, err := s.repo.ListMessages(ctx, port.HistoryFilter{
+		ConversationID: req.ID.Int64(),
+		Before:         before,
+		Limit:          req.Limit + 1,
+	})
+	if err != nil {
+		return chatapi.MessagePage{}, fmt.Errorf("list messages: %w", err)
+	}
+	hasMore := len(messages) > req.Limit
+	if hasMore {
+		messages = messages[:req.Limit]
+	}
+	out, err := s.toAPIMessages(ctx, messages)
+	if err != nil {
+		return chatapi.MessagePage{}, err
+	}
+	page := chatapi.MessagePage{Data: out, Meta: chatapi.CursorInfo{HasMore: hasMore}}
+	if hasMore && len(messages) > 0 {
+		page.Meta.NextCursor = formatCursor(messages[len(messages)-1].CreatedAt)
+	}
+	return page, nil
+}
+
+// SendMessage appends to a thread the caller is in. The attachments have to be this
+// module's own confirmed uploads: a message pointing at nothing is a photo that never
+// renders.
 func (s *Service) SendMessage(ctx context.Context, req chatapi.SendMessageRequest) (chatapi.Message, error) {
-	m, err := domain.NewMessage(req.ConversationID.Int64(), req.SenderID.Int64(), req.Body)
+	if _, err := s.participant(ctx, req.ActorID, req.ConversationID); err != nil {
+		return chatapi.Message{}, err
+	}
+	attachments := resourceKeys(req.Attachments)
+	if err := s.requireResources(ctx, attachments); err != nil {
+		return chatapi.Message{}, err
+	}
+	m, err := domain.NewMessage(req.ConversationID.Int64(), req.ActorID.Int64(), req.Body,
+		attachments, req.Refs)
 	if err != nil {
 		return chatapi.Message{}, err
 	}
-	if err := s.repo.Save(ctx, &m); err != nil {
-		return chatapi.Message{}, fmt.Errorf("save message: %w", err)
+	if err := s.repo.InsertMessage(ctx, &m); err != nil {
+		return chatapi.Message{}, fmt.Errorf("insert message: %w", err)
 	}
-	return s.toAPIMessage(m), nil
+	return s.toAPIMessage(ctx, m)
 }
 
-func (s *Service) ListMessages(ctx context.Context, req chatapi.ListMessagesRequest) ([]chatapi.Message, error) {
-	limit := req.Limit
-	if limit == 0 {
-		limit = 50
-	}
-	rows, err := s.repo.ListByConversation(ctx, req.ConversationID.Int64(), limit, req.Offset)
+// MarkConversationRead moves the caller's own mark. Absent means "everything so far",
+// which is what opening a thread does.
+func (s *Service) MarkConversationRead(ctx context.Context, req chatapi.MarkConversationReadRequest) (chatapi.Conversation, error) {
+	thread, err := s.participant(ctx, req.ActorID, req.ID)
 	if err != nil {
-		return nil, fmt.Errorf("list messages: %w", err)
+		return chatapi.Conversation{}, err
 	}
-	out := make([]chatapi.Message, 0, len(rows))
-	for _, m := range rows {
-		out = append(out, s.toAPIMessage(m))
+	at := time.Now()
+	if req.At != nil {
+		at = *req.At
+	}
+	if err := thread.MarkRead(req.ActorID.Int64(), at); err != nil {
+		return chatapi.Conversation{}, err
+	}
+	if err := s.repo.SaveConversation(ctx, thread); err != nil {
+		return chatapi.Conversation{}, fmt.Errorf("save conversation: %w", err)
+	}
+	rows, err := s.inboxRows(ctx, req.ActorID.Int64(), []domain.Conversation{thread})
+	if err != nil {
+		return chatapi.Conversation{}, err
+	}
+	return rows[0], nil
+}
+
+// UpdateMessage rewrites a body. Only the sender's own, and never a system message or one
+// already unsent.
+func (s *Service) UpdateMessage(ctx context.Context, req chatapi.UpdateMessageRequest) (chatapi.Message, error) {
+	m, err := s.repo.FindMessage(ctx, req.ID.Int64())
+	if err != nil {
+		return chatapi.Message{}, fmt.Errorf("find message: %w", err)
+	}
+	if err := m.Edit(req.ActorID.Int64(), req.Body); err != nil {
+		return chatapi.Message{}, err
+	}
+	if err := s.repo.SaveMessage(ctx, m); err != nil {
+		return chatapi.Message{}, fmt.Errorf("save message: %w", err)
+	}
+	return s.toAPIMessage(ctx, m)
+}
+
+// RedactMessage is unsending: the content goes, the row stays so the thread has no
+// unexplained gaps.
+func (s *Service) RedactMessage(ctx context.Context, req chatapi.RedactMessageRequest) error {
+	m, err := s.repo.FindMessage(ctx, req.ID.Int64())
+	if err != nil {
+		return fmt.Errorf("find message: %w", err)
+	}
+	if err := m.Redact(req.ActorID.Int64(), false); err != nil {
+		return err
+	}
+	if err := s.repo.SaveMessage(ctx, m); err != nil {
+		return fmt.Errorf("save message: %w", err)
+	}
+	return nil
+}
+
+// PostSystemMessage is another module speaking into the pair's thread — an offer card, an
+// order update. It opens the thread if they have never spoken, so a caller never has to
+// know whether one exists.
+func (s *Service) PostSystemMessage(ctx context.Context, req chatapi.PostSystemMessageRequest) (chatapi.Message, error) {
+	if err := s.v.Struct(req); err != nil {
+		return chatapi.Message{}, fmt.Errorf("validate system message: %w", err)
+	}
+	thread, err := s.repo.EnsureConversation(ctx, req.AccountAID.Int64(), req.AccountBID.Int64())
+	if err != nil {
+		return chatapi.Message{}, fmt.Errorf("ensure conversation: %w", err)
+	}
+	m, err := domain.NewSystemMessage(thread.ID, req.Body, req.Card)
+	if err != nil {
+		return chatapi.Message{}, err
+	}
+	if err := s.repo.InsertMessage(ctx, &m); err != nil {
+		return chatapi.Message{}, fmt.Errorf("insert message: %w", err)
+	}
+	return s.toAPIMessage(ctx, m)
+}
+
+// participant reads a thread the caller is in. Not found rather than forbidden: a thread
+// they are not part of is not theirs to know about.
+func (s *Service) participant(ctx context.Context, actorID id.ID[id.Account], conversationID id.ID[id.Conversation]) (domain.Conversation, error) {
+	thread, err := s.repo.FindConversation(ctx, conversationID.Int64())
+	if err != nil {
+		return domain.Conversation{}, fmt.Errorf("find conversation: %w", err)
+	}
+	if !thread.Involves(actorID.Int64()) {
+		return domain.Conversation{}, domain.ErrConversationNotFound
+	}
+	return thread, nil
+}
+
+// inboxRows fills a page: the last message and the unread count for every thread at once,
+// and the counterparty's name per row because the account module has no batch read.
+func (s *Service) inboxRows(ctx context.Context, viewerID int64, threads []domain.Conversation) ([]chatapi.Conversation, error) {
+	ids := make([]int64, 0, len(threads))
+	for _, t := range threads {
+		ids = append(ids, t.ID)
+	}
+	lastMessages, err := s.repo.LastMessages(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("read last messages: %w", err)
+	}
+	unread, err := s.repo.UnreadCounts(ctx, viewerID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("read unread counts: %w", err)
+	}
+	out := make([]chatapi.Conversation, 0, len(threads))
+	for _, t := range threads {
+		var last *domain.Message
+		if m, ok := lastMessages[t.ID]; ok {
+			last = &m
+		}
+		row, err := s.inboxRow(ctx, viewerID, t, last, unread[t.ID])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, row)
 	}
 	return out, nil
 }
 
-func (s *Service) toAPIMessage(m domain.Message) chatapi.Message {
-	return chatapi.Message{
+func (s *Service) inboxRow(ctx context.Context, viewerID int64, t domain.Conversation, last *domain.Message, unread int64) (chatapi.Conversation, error) {
+	counterparty, err := s.accounts.GetPublicAccount(ctx, accountapi.GetPublicAccountRequest{
+		ID: id.Of[id.Account](t.Counterparty(viewerID)),
+	})
+	if err != nil {
+		return chatapi.Conversation{}, fmt.Errorf("read counterparty: %w", err)
+	}
+	row := chatapi.Conversation{
+		ID: id.Of[id.Conversation](t.ID),
+		Counterparty: accountapi.AccountSummary{
+			ID: counterparty.ID, Name: counterparty.Name, Avatar: counterparty.Avatar,
+		},
+		LastMessageAt:      t.LastMessageAt,
+		Unread:             unread,
+		ReadAt:             t.ReadMark(viewerID),
+		CounterpartyReadAt: t.CounterpartyReadMark(viewerID),
+		CreatedAt:          t.CreatedAt,
+	}
+	if last != nil {
+		message, err := s.toAPIMessage(ctx, *last)
+		if err != nil {
+			return chatapi.Conversation{}, err
+		}
+		row.LastMessage = &message
+	}
+	return row, nil
+}
+
+func (s *Service) toAPIMessages(ctx context.Context, messages []domain.Message) ([]chatapi.Message, error) {
+	// One resource read for the whole page rather than one per message.
+	var keys []int64
+	for _, m := range messages {
+		keys = append(keys, m.Attachments...)
+	}
+	images, err := s.resources(ctx, keys)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]chatapi.Message, 0, len(messages))
+	for _, m := range messages {
+		out = append(out, buildMessage(m, images))
+	}
+	return out, nil
+}
+
+func (s *Service) toAPIMessage(ctx context.Context, m domain.Message) (chatapi.Message, error) {
+	images, err := s.resources(ctx, m.Attachments)
+	if err != nil {
+		return chatapi.Message{}, err
+	}
+	return buildMessage(m, images), nil
+}
+
+func buildMessage(m domain.Message, images map[int64]common.ResourceDTO) chatapi.Message {
+	out := chatapi.Message{
 		ID:             id.Of[id.Message](m.ID),
 		ConversationID: id.Of[id.Conversation](m.ConversationID),
-		SenderID:       id.Of[id.Account](m.SenderID),
+		Type:           m.Type,
 		Body:           m.Body,
+		Images:         pick(images, m.Attachments),
+		Refs:           m.Refs,
+		Card:           m.Card,
+		CreatedAt:      m.CreatedAt,
+		EditedAt:       m.EditedAt,
+		DeletedAt:      m.DeletedAt,
 	}
+	// Null on a system message: that one is the backend's word, not a person's.
+	if m.SenderID != 0 {
+		out.SenderID = new(id.Of[id.Account](m.SenderID))
+	}
+	return out
+}
+
+// requireResources refuses an attachment that names no confirmed upload of this module's.
+func (s *Service) requireResources(ctx context.Context, keys []int64) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	found, err := s.resources(ctx, keys)
+	if err != nil {
+		return err
+	}
+	for _, key := range keys {
+		if _, ok := found[key]; !ok {
+			return domain.ErrAttachmentNotFound
+		}
+	}
+	return nil
+}
+
+func (s *Service) resources(ctx context.Context, keys []int64) (map[int64]common.ResourceDTO, error) {
+	out := make(map[int64]common.ResourceDTO, len(keys))
+	if len(keys) == 0 {
+		return out, nil
+	}
+	found, err := s.repo.FindResources(ctx, keys)
+	if err != nil {
+		return nil, fmt.Errorf("find resources: %w", err)
+	}
+	for _, res := range found {
+		out[res.ID] = res.ToDTO()
+	}
+	return out, nil
+}
+
+// pick keeps the sender's order, which is the only thing the array encodes.
+func pick(found map[int64]common.ResourceDTO, keys []int64) []common.ResourceDTO {
+	out := make([]common.ResourceDTO, 0, len(keys))
+	for _, key := range keys {
+		if res, ok := found[key]; ok {
+			out = append(out, res)
+		}
+	}
+	return out
+}
+
+func resourceKeys(ids []id.ID[id.Resource]) []int64 {
+	out := make([]int64, 0, len(ids))
+	for _, rid := range ids {
+		out = append(out, rid.Int64())
+	}
+	return out
+}
+
+// The cursor is the timestamp a page ended at, in nanoseconds — opaque to a client, and
+// stable under a thread that keeps moving.
+func formatCursor(at time.Time) string {
+	return strconv.FormatInt(at.UnixNano(), 10)
+}
+
+func parseCursor(cursor string) (time.Time, error) {
+	if cursor == "" {
+		return time.Time{}, nil
+	}
+	nanos, err := strconv.ParseInt(cursor, 10, 64)
+	if err != nil {
+		return time.Time{}, domain.ErrCursorInvalid
+	}
+	return time.Unix(0, nanos), nil
 }

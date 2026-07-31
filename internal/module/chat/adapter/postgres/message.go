@@ -1,0 +1,190 @@
+package postgres
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+
+	"shopnexus/internal/module/chat/domain"
+	"shopnexus/internal/module/chat/port"
+	"shopnexus/internal/module/common/dbx"
+)
+
+// A system message has no sender, which the column holds as NULL — so the scan reads it
+// into a pointer and the entity keeps zero for "the backend said this".
+const messageColumns = `id, conversation_id, sender_id, type::text, body, attachments,
+	       metadata, created_at, edited_at, deleted_at`
+
+func scanMessage(row pgx.Row) (domain.Message, error) {
+	var (
+		m        domain.Message
+		senderID *int64
+		metadata []byte
+	)
+	err := row.Scan(&m.ID, &m.ConversationID, &senderID, &m.Type, &m.Body, &m.Attachments,
+		&metadata, &m.CreatedAt, &m.EditedAt, &m.DeletedAt)
+	if dbx.IsNoRows(err) {
+		return domain.Message{}, domain.ErrMessageNotFound
+	}
+	if err != nil {
+		return domain.Message{}, fmt.Errorf("db scan message: %w", err)
+	}
+	if senderID != nil {
+		m.SenderID = *senderID
+	}
+	// One JSONB column carries both halves: what the sender pointed at, and what the
+	// backend rendered. They are read apart because only one of them is the client's.
+	if len(metadata) > 0 {
+		var envelope messageMetadata
+		if err := json.Unmarshal(metadata, &envelope); err != nil {
+			return domain.Message{}, fmt.Errorf("decode message metadata: %w", err)
+		}
+		m.Refs, m.Card = envelope.Refs, envelope.Card
+	}
+	return m, nil
+}
+
+// messageMetadata is the shape of the metadata column. Declared once, so a reader and a
+// writer cannot disagree about which half is which.
+type messageMetadata struct {
+	Refs map[string]any `json:"refs,omitempty"`
+	Card map[string]any `json:"card,omitempty"`
+}
+
+// InsertMessage appends to the thread and moves its last_message_at in one transaction.
+// An inbox ordered by a timestamp the message did not set would sort wrongly for as long
+// as the two disagreed, which under a retry is forever.
+func (r *Repo) InsertMessage(ctx context.Context, m *domain.Message) error {
+	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
+		const q = `INSERT INTO message
+		             (conversation_id, sender_id, type, body, attachments, metadata)
+		           VALUES (@conversation_id, @sender_id, @type, @body, @attachments, @metadata)
+		           RETURNING id, created_at`
+		metadata, err := json.Marshal(messageMetadata{Refs: m.Refs, Card: m.Card})
+		if err != nil {
+			return fmt.Errorf("encode message metadata: %w", err)
+		}
+		args := pgx.NamedArgs{
+			"conversation_id": m.ConversationID,
+			"sender_id":       dbx.NullID(m.SenderID),
+			"type":            m.Type,
+			"body":            m.Body,
+			"attachments":     dbx.Int64Array(m.Attachments),
+			"metadata":        metadata,
+		}
+		if err := tx.QueryRow(ctx, q, args).Scan(&m.ID, &m.CreatedAt); err != nil {
+			return fmt.Errorf("db insert message: %w", err)
+		}
+		const touch = `UPDATE conversation SET last_message_at = @at WHERE id = @id`
+		touchArgs := pgx.NamedArgs{"id": m.ConversationID, "at": m.CreatedAt}
+		if _, err := tx.Exec(ctx, touch, touchArgs); err != nil {
+			return fmt.Errorf("db touch conversation: %w", err)
+		}
+		return nil
+	})
+}
+
+// FindMessage reads one by id. The primary key includes created_at because the table is a
+// hypertable, so this is a scan across chunks rather than a point lookup — which is why
+// nothing on the hot path uses it.
+func (r *Repo) FindMessage(ctx context.Context, id int64) (domain.Message, error) {
+	const q = `SELECT ` + messageColumns + ` FROM message WHERE id = @id`
+	return scanMessage(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id}))
+}
+
+// SaveMessage writes an edit or a redaction. Keyed by id and created_at, which the caller
+// read: a hypertable's primary key includes its partitioning column.
+func (r *Repo) SaveMessage(ctx context.Context, m domain.Message) error {
+	const q = `UPDATE message
+	           SET body = @body, attachments = @attachments, metadata = @metadata,
+	               edited_at = @edited_at, deleted_at = @deleted_at
+	           WHERE id = @id AND created_at = @created_at`
+	metadata, err := json.Marshal(messageMetadata{Refs: m.Refs, Card: m.Card})
+	if err != nil {
+		return fmt.Errorf("encode message metadata: %w", err)
+	}
+	args := pgx.NamedArgs{
+		"id": m.ID, "created_at": m.CreatedAt, "body": m.Body,
+		"attachments": dbx.Int64Array(m.Attachments), "metadata": metadata,
+		"edited_at": m.EditedAt, "deleted_at": m.DeletedAt,
+	}
+	tag, err := r.pool.Exec(ctx, q, args)
+	if err != nil {
+		return fmt.Errorf("db update message: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrMessageNotFound
+	}
+	return nil
+}
+
+// ListMessages pages a thread newest first on a created_at cursor rather than an offset,
+// so chunk exclusion can skip chunks instead of scanning all of them — and so a message
+// arriving mid-read cannot shift the page.
+func (r *Repo) ListMessages(ctx context.Context, f port.HistoryFilter) ([]domain.Message, error) {
+	const q = `SELECT ` + messageColumns + ` FROM message
+	           WHERE conversation_id = @conversation_id
+	             AND (@before::timestamptz IS NULL OR created_at < @before::timestamptz)
+	           ORDER BY created_at DESC, id DESC
+	           LIMIT @limit`
+	args := pgx.NamedArgs{
+		"conversation_id": f.ConversationID,
+		"before":          dbx.NullTime(f.Before),
+		"limit":           f.Limit,
+	}
+	rows, err := r.pool.Query(ctx, q, args)
+	if err != nil {
+		return nil, fmt.Errorf("db query messages: %w", err)
+	}
+	defer rows.Close()
+
+	var out []domain.Message
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db iterate messages: %w", err)
+	}
+	return out, nil
+}
+
+// LastMessages is what an inbox row shows: one message per thread, chosen by a lateral
+// join so a page of twenty threads is one query rather than twenty histories.
+func (r *Repo) LastMessages(ctx context.Context, conversationIDs []int64) (map[int64]domain.Message, error) {
+	out := make(map[int64]domain.Message, len(conversationIDs))
+	if len(conversationIDs) == 0 {
+		return out, nil
+	}
+	const q = `SELECT m.id, m.conversation_id, m.sender_id, m.type::text, m.body,
+	                  m.attachments, m.metadata, m.created_at, m.edited_at, m.deleted_at
+	           FROM unnest(@ids::bigint[]) AS t(conversation_id)
+	           JOIN LATERAL (
+	             SELECT * FROM message
+	             WHERE conversation_id = t.conversation_id
+	             ORDER BY created_at DESC
+	             LIMIT 1
+	           ) m ON true`
+	rows, err := r.pool.Query(ctx, q, pgx.NamedArgs{"ids": conversationIDs})
+	if err != nil {
+		return nil, fmt.Errorf("db query last messages: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[m.ConversationID] = m
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db iterate last messages: %w", err)
+	}
+	return out, nil
+}

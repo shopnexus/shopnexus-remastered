@@ -7,15 +7,15 @@ import (
 	"github.com/go-playground/validator/v10"
 
 	chatapi "shopnexus/internal/module/chat/api"
+	"shopnexus/internal/shared/httpx"
+	"shopnexus/internal/shared/id"
 )
 
-// Chat serves the chat module's routes: conversations and messages.
+// Chat serves the chat module's routes: the thread a pair of accounts shares, its
+// messages, and the read marks behind an unread badge.
 //
-// Scaffold. Every method answers 501 until it is written, and the routes are
-// registered in router.go so the OpenAPI contract test can hold the two in step.
-// The service, validator and logger are held already: it keeps the fx graph real —
-// so the module's pool is opened and its config validated at startup — and makes
-// filling a method in a local edit rather than a rewiring.
+// Cursor-paginated rather than page-paginated, because a thread moves under the reader:
+// an offset would skip or repeat a message whenever one arrives mid-read.
 type Chat struct {
 	svc chatapi.Service
 	v   *validator.Validate
@@ -26,47 +26,223 @@ func NewChat(svc chatapi.Service, v *validator.Validate, log *slog.Logger) *Chat
 	return &Chat{svc: svc, v: v, log: log}
 }
 
-// ListConversations handles GET /conversations.
+// ListConversations handles GET /conversations — the inbox.
 func (h *Chat) ListConversations(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	limit, err := limitParam(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	req := chatapi.ListConversationsRequest{
+		ActorID: uid,
+		Cursor:  r.URL.Query().Get("cursor"),
+		Limit:   limit,
+	}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListConversations(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta))
 }
 
-// OpenConversation handles POST /conversations.
+// OpenConversation handles POST /conversations. Idempotent: there is one thread per pair,
+// so this answers the existing one rather than refusing.
 func (h *Chat) OpenConversation(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	var req chatapi.StartConversationRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID = uid
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.StartConversation(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, res)
 }
 
-// GetUnreadCount handles GET /conversations/unread-count.
+// GetUnreadCount handles GET /conversations/unread-count — the badge.
 func (h *Chat) GetUnreadCount(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	req := chatapi.UnreadCountRequest{ActorID: uid}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.GetUnreadCount(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
 // GetConversation handles GET /conversations/{id}.
 func (h *Chat) GetConversation(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	conversationID, err := pathID[id.Conversation](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := chatapi.GetConversationRequest{ActorID: uid, ID: conversationID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.GetConversation(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// ListMessages handles GET /conversations/{id}/messages.
+// ListMessages handles GET /conversations/{id}/messages — newest first, on a cursor.
 func (h *Chat) ListMessages(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	conversationID, err := pathID[id.Conversation](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	limit, err := limitParam(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	req := chatapi.ListMessagesRequest{
+		ActorID: uid,
+		ID:      conversationID,
+		Cursor:  r.URL.Query().Get("cursor"),
+		Limit:   limit,
+	}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListMessages(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta))
 }
 
 // SendMessage handles POST /conversations/{id}/messages.
 func (h *Chat) SendMessage(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	conversationID, err := pathID[id.Conversation](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req chatapi.SendMessageRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ConversationID = uid, conversationID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.SendMessage(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, res)
 }
 
-// MarkConversationRead handles POST /conversations/{id}/read.
+// MarkConversationRead handles POST /conversations/{id}/read. The body is optional:
+// nothing in it means "everything so far", which is what opening a thread does.
 func (h *Chat) MarkConversationRead(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	conversationID, err := pathID[id.Conversation](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req chatapi.MarkConversationReadRequest
+	if failed(w, h.log, decodeOptionalBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, conversationID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.MarkConversationRead(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// UpdateMessage handles PATCH /messages/{id}.
+// UpdateMessage handles PATCH /messages/{id} — the sender's own, and never a system one.
 func (h *Chat) UpdateMessage(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	messageID, err := pathID[id.Message](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req chatapi.UpdateMessageRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, messageID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.UpdateMessage(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// RedactMessage handles DELETE /messages/{id}.
+// RedactMessage handles DELETE /messages/{id} — unsending. The row stays so the thread
+// has no unexplained gaps.
 func (h *Chat) RedactMessage(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	messageID, err := pathID[id.Message](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := chatapi.RedactMessageRequest{ActorID: uid, ID: messageID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	if failed(w, h.log, h.svc.RedactMessage(r.Context(), req)) {
+		return
+	}
+	httpx.WriteNoContent(w)
+}
+
+// cursorMeta converts the service's cursor info to the envelope's. NextCursor is a
+// pointer there so the last page says null rather than omitting the key.
+func cursorMeta(meta chatapi.CursorInfo) httpx.CursorMeta {
+	if meta.NextCursor == "" {
+		return httpx.CursorMeta{}
+	}
+	return httpx.CursorMeta{NextCursor: new(meta.NextCursor)}
 }

@@ -20,6 +20,7 @@ import (
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/api/catalogtest"
 	chatapi "shopnexus/internal/module/chat/api"
+	"shopnexus/internal/module/chat/api/chattest"
 	financeapi "shopnexus/internal/module/finance/api"
 	"shopnexus/internal/module/finance/api/financetest"
 	orderapi "shopnexus/internal/module/order/api"
@@ -82,17 +83,18 @@ func (stubOrder) GetOrder(context.Context, orderapi.GetOrderRequest) (orderapi.O
 	return orderapi.Order{ID: id.Of[id.Order](1)}, nil
 }
 
-type stubChat struct{}
+// stubChat embeds the published stub and answers the routes this test walks; the rest
+// answer 501, which keeps a new contract method from passing as a zero value.
+type stubChat struct{ chattest.Stub }
 
 func (stubChat) SendMessage(context.Context, chatapi.SendMessageRequest) (chatapi.Message, error) {
 	return chatapi.Message{ID: id.Of[id.Message](1)}, nil
 }
-func (stubChat) ListMessages(context.Context, chatapi.ListMessagesRequest) ([]chatapi.Message, error) {
-	return nil, nil
+
+func (stubChat) ListMessages(context.Context, chatapi.ListMessagesRequest) (chatapi.MessagePage, error) {
+	return chatapi.MessagePage{}, nil
 }
 
-// stubPayment embeds the published stub and answers the routes this test walks; the rest
-// answer 501, which is what keeps a new contract method from passing as a zero value.
 type stubPayment struct{ financetest.Stub }
 
 func (stubPayment) GetSession(context.Context, financeapi.GetSessionRequest) (financeapi.Session, error) {
