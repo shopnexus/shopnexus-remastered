@@ -1029,8 +1029,9 @@ components:
                     additionalProperties: true
                     type: object
                 price:
+                    example: 299000
                     format: int64
-                    minimum: 0
+                    minimum: 1
                     type: integer
                 quantity:
                     default: 0
@@ -1731,15 +1732,6 @@ components:
                 - data
                 - meta
             type: object
-        ListingRef:
-            description: |
-                A listing addressed either way. The id form is the opaque one; the slug form is what a shareable product URL carries. They cannot collide because an opaque id always has an underscore after its prefix and a slug never has one.
-            oneOf:
-                - $ref: '#/components/schemas/ListingID'
-                - example: ao-thun-uniqlo-xanh
-                  maxLength: 100
-                  pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
-                  type: string
         ListingStatus:
             description: |
                 Lifecycle and moderation in one column. `hidden` is a live listing the seller took down for now; deletion is a separate flag entirely.
@@ -4107,12 +4099,18 @@ components:
                 attributes:
                     additionalProperties: true
                     type: object
+                is_featured:
+                    description: |
+                        True moves the card's variant to this one. False is ignored: which variant is featured is cleared through `clear_featured_variant_id` on the listing, so there is one way to spell it.
+                    example: true
+                    type: boolean
                 package_details:
                     additionalProperties: true
                     type: object
                 price:
+                    example: 299000
                     format: int64
-                    minimum: 0
+                    minimum: 1
                     type: integer
                 quantity:
                     description: The new total on hand. Refused below `reserved + sold`.
@@ -4171,6 +4169,10 @@ components:
                     items:
                         $ref: '#/components/schemas/Resource'
                     type: array
+                is_featured:
+                    description: The variant the card and search results show. At most one per listing.
+                    example: true
+                    type: boolean
                 package_details:
                     additionalProperties: true
                     description: Weight and dimensions. A shipping quote is computed from these.
@@ -4189,6 +4191,7 @@ components:
                 - attributes
                 - package_details
                 - images
+                - is_featured
                 - stock
                 - created_at
             type: object
@@ -5023,7 +5026,7 @@ paths:
             description: |
                 Every listing awaiting a decision, oldest first, which is the order they should be worked: one waiting for its first publication, and one that is live while holding an edit its seller submitted. Defaults to both.
             parameters:
-                - description: Defaults to pending.
+                - description: Defaults to everything awaiting a decision.
                   in: query
                   name: status
                   schema:
@@ -5081,6 +5084,8 @@ paths:
                                     - data
                                 type: object
                     description: Live
+                "400":
+                    $ref: '#/components/responses/BadRequest'
                 "401":
                     $ref: '#/components/responses/Unauthorized'
                 "403":
@@ -5097,6 +5102,12 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/Error'
                     description: Not awaiting moderation
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: The approved edit names an image that no longer exists
             security:
                 - bearerAuth: []
             summary: Clear a listing for publication
@@ -5142,6 +5153,12 @@ paths:
                     description: Moderator role required
                 "404":
                     $ref: '#/components/responses/NotFound'
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Already hidden or still a draft, so there is nothing to take down
             security:
                 - bearerAuth: []
             summary: Take a listing down
@@ -7187,12 +7204,12 @@ paths:
                 A listing that was never public — `draft` or `pending` — is readable only by its owner and by staff. One that is `hidden` or soft-deleted is readable by anyone, because a cart or an order that references it still has to render; `status` and `deleted_at` say that it cannot be bought.
             parameters:
                 - description: |
-                    The listing's opaque id or its slug. A slug is lowercase, hyphen-separated and never contains an underscore, so it cannot be mistaken for an id and the product page needs no second endpoint to resolve one.
+                    The listing's opaque id or its slug. A slug is lowercase, hyphen-separated and never contains an underscore, so it cannot be mistaken for an id — but only the id is accepted today; resolving a slug needs a lookup this route does not have yet.
                   in: path
                   name: id
                   required: true
                   schema:
-                    $ref: '#/components/schemas/ListingRef'
+                    $ref: '#/components/schemas/ListingID'
             responses:
                 "200":
                     content:
@@ -7262,6 +7279,18 @@ paths:
                     $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: The listing changed while you were editing it
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: The result would break a rule — no variant left, more than ten tags
             security:
                 - bearerAuth: []
             summary: Edit a listing
@@ -7289,6 +7318,12 @@ paths:
                     $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Not live, so there is nothing to take down
             security:
                 - bearerAuth: []
             summary: Hide a live listing
@@ -9938,7 +9973,7 @@ paths:
             description: |
                 Soft delete for the same reason as a listing. Refused for the last remaining variant of a live listing.
 
-                Answers with the listing rather than an empty body: deleting the featured variant leaves `featured_variant_id` null, and the seller has to see that.
+                Answers with the listing rather than an empty body: deleting the featured variant moves the flag to a surviving one, and the seller has to see which.
             responses:
                 "200":
                     content:

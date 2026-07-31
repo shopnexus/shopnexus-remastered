@@ -133,7 +133,6 @@ type Repository interface {
 	// Variants are synchronised to the slice, tags by negation. A variant absent from the
 	// slice is *soft* deleted: order.item holds variant_id without a foreign key.
 	SaveListing(ctx context.Context, l *domain.Listing, actor int64) error
-	SlugTaken(ctx context.Context, slug string) (bool, error)
 	// SoftDeleteListing marks the row deleted and writes the trail. Soft, because order.item
 	// holds listing_id without a foreign key and a past order has to stay renderable.
 	SoftDeleteListing(ctx context.Context, id, sellerID, actor int64) error

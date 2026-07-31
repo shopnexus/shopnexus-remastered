@@ -104,15 +104,25 @@ func TestCreateListing_TooManyTags(t *testing.T) {
 	}
 }
 
-// A read by a stranger still works — a listing is public — and `favorited` is false for one
-// who has not saved it.
+// An approved listing is public, and `favorited` is false for a viewer who has not saved it.
+// A draft is not public — that is TestGetListing_DraftIsTheSellersOwn.
 func TestGetListing(t *testing.T) {
 	h := newHarnessWith("user", true)
+	mod := newHarnessModerator(h)
 	ctx := context.Background()
 	created, err := h.svc.CreateListing(ctx, createListingRequest(h, t))
 	if err != nil {
 		t.Fatalf("CreateListing: %v", err)
 	}
+	if _, err := h.svc.PublishListing(ctx, catalogapi.PublishListingRequest{ActorID: actor, ID: created.ID}); err != nil {
+		t.Fatalf("PublishListing: %v", err)
+	}
+	if _, err := mod.svc.AdminApproveListing(ctx, catalogapi.ApproveListingRequest{
+		ActorID: actor, ID: created.ID,
+	}); err != nil {
+		t.Fatalf("AdminApproveListing: %v", err)
+	}
+
 	got, err := h.svc.GetListing(ctx, catalogapi.GetListingRequest{ID: created.ID})
 	if err != nil {
 		t.Fatalf("GetListing: %v", err)
@@ -242,5 +252,137 @@ func TestUpdateListing_LiveEditIsHeld(t *testing.T) {
 	}
 	if got.PendingEdit == nil || got.PendingEdit.Name == nil {
 		t.Fatal("the edit was not held")
+	}
+}
+
+// A listing that was never public is the seller's own: a stranger gets a 404 rather than a
+// competitor's unpublished draft. Hidden and soft-deleted stay readable, because a cart that
+// names one still has to render.
+func TestGetListing_DraftIsTheSellersOwn(t *testing.T) {
+	h := newHarnessWith("user", true)
+	mod := newHarnessModerator(h)
+	ctx := context.Background()
+	listing := seedListing(t, h)
+	stranger := id.Of[id.Account](999)
+
+	for _, name := range []string{"draft", "pending"} {
+		if name == "pending" {
+			if _, err := h.svc.PublishListing(ctx, catalogapi.PublishListingRequest{
+				ActorID: actor, ID: listing.ID,
+			}); err != nil {
+				t.Fatalf("PublishListing: %v", err)
+			}
+		}
+		if s := status(t, mustErr(h.svc.GetListing(ctx, catalogapi.GetListingRequest{
+			ID: listing.ID, ViewerID: stranger,
+		}))); s != 404 {
+			t.Errorf("%s read by a stranger = %d, want 404", name, s)
+		}
+		// Anonymous is the same answer.
+		if s := status(t, mustErr(h.svc.GetListing(ctx, catalogapi.GetListingRequest{
+			ID: listing.ID,
+		}))); s != 404 {
+			t.Errorf("%s read anonymously = %d, want 404", name, s)
+		}
+		// The owner and a moderator both see it.
+		if _, err := h.svc.GetListing(ctx, catalogapi.GetListingRequest{
+			ID: listing.ID, ViewerID: actor,
+		}); err != nil {
+			t.Errorf("%s read by its seller: %v", name, err)
+		}
+		if _, err := mod.svc.GetListing(ctx, catalogapi.GetListingRequest{
+			ID: listing.ID, ViewerID: stranger,
+		}); err != nil {
+			t.Errorf("%s read by a moderator: %v", name, err)
+		}
+	}
+}
+
+// A held edit is the owner's and staff's to see; a buyer gets the approved version until it is
+// applied, so the field is absent rather than leaking the wording under review.
+func TestGetListing_PendingEditIsNotPublic(t *testing.T) {
+	h := newHarnessWith("user", true)
+	mod := newHarnessModerator(h)
+	ctx := context.Background()
+	listing := seedListing(t, h)
+	if _, err := h.svc.PublishListing(ctx, catalogapi.PublishListingRequest{ActorID: actor, ID: listing.ID}); err != nil {
+		t.Fatalf("PublishListing: %v", err)
+	}
+	if _, err := mod.svc.AdminApproveListing(ctx, catalogapi.ApproveListingRequest{
+		ActorID: actor, ID: listing.ID,
+	}); err != nil {
+		t.Fatalf("AdminApproveListing: %v", err)
+	}
+	renamed := "Renamed"
+	if _, err := h.svc.UpdateListing(ctx, catalogapi.UpdateListingRequest{
+		ActorID: actor, ID: listing.ID, Name: &renamed,
+	}); err != nil {
+		t.Fatalf("UpdateListing: %v", err)
+	}
+
+	owner, err := h.svc.GetListing(ctx, catalogapi.GetListingRequest{ID: listing.ID, ViewerID: actor})
+	if err != nil {
+		t.Fatalf("GetListing: %v", err)
+	}
+	if owner.PendingEdit == nil {
+		t.Error("the owner cannot see their own held edit")
+	}
+	buyer, err := h.svc.GetListing(ctx, catalogapi.GetListingRequest{
+		ID: listing.ID, ViewerID: id.Of[id.Account](999),
+	})
+	if err != nil {
+		t.Fatalf("GetListing: %v", err)
+	}
+	if buyer.PendingEdit != nil {
+		t.Errorf("a buyer sees the edit under review: %+v", buyer.PendingEdit)
+	}
+}
+
+// An image id that names no confirmed resource is refused: a row pointing at nothing is a
+// picture that never renders, and the seller should hear it now rather than from a buyer.
+func TestCreateListing_UnknownAttachmentNotFound(t *testing.T) {
+	h := newHarnessWith("user", true)
+	req := createListingRequest(h, t)
+	req.Attachments = []id.ID[id.Resource]{id.Of[id.Resource](42)}
+	if got := status(t, mustErr(h.svc.CreateListing(context.Background(), req))); got != 404 {
+		t.Fatalf("status = %d, want 404", got)
+	}
+
+	// Declared as confirmed, it goes through — and the gallery keeps the order it was sent in,
+	// because the first image is the cover.
+	h.images[id.Of[id.Resource](42)] = true
+	h.images[id.Of[id.Resource](7)] = true
+	req.Attachments = []id.ID[id.Resource]{id.Of[id.Resource](42), id.Of[id.Resource](7)}
+	got, err := h.svc.CreateListing(context.Background(), req)
+	if err != nil {
+		t.Fatalf("CreateListing: %v", err)
+	}
+	if len(got.Images) != 2 || got.Images[0].ID != id.Of[id.Resource](42) {
+		t.Fatalf("images = %+v, want the order they were sent in", got.Images)
+	}
+}
+
+// A held edit's attachments are checked when it is parked and again when it is approved: the
+// row still carries the old ids while the edit waits, so validating the row alone would let an
+// approval write ids that name nothing.
+func TestUpdateListing_HeldEditAttachmentsAreChecked(t *testing.T) {
+	h := newHarnessWith("user", true)
+	mod := newHarnessModerator(h)
+	ctx := context.Background()
+	listing := seedListing(t, h)
+	if _, err := h.svc.PublishListing(ctx, catalogapi.PublishListingRequest{ActorID: actor, ID: listing.ID}); err != nil {
+		t.Fatalf("PublishListing: %v", err)
+	}
+	if _, err := mod.svc.AdminApproveListing(ctx, catalogapi.ApproveListingRequest{
+		ActorID: actor, ID: listing.ID,
+	}); err != nil {
+		t.Fatalf("AdminApproveListing: %v", err)
+	}
+
+	unknown := []id.ID[id.Resource]{id.Of[id.Resource](99)}
+	if got := status(t, mustErr(h.svc.UpdateListing(ctx, catalogapi.UpdateListingRequest{
+		ActorID: actor, ID: listing.ID, Attachments: unknown,
+	}))); got != 404 {
+		t.Fatalf("status = %d, want 404 for an edit naming an unknown image", got)
 	}
 }

@@ -385,9 +385,17 @@ func (f *fakeRepo) recordTrail(l *domain.Listing, actor int64) {
 // tag slice is the whole set.
 func (f *fakeRepo) putListing(l *domain.Listing) error {
 	live := make(map[string]bool, len(l.Variants))
+	featured := 0
 	for _, v := range l.Variants {
 		if !v.IsLive() {
 			continue
+		}
+		// "variant_one_featured_per_listing": at most one live featured variant.
+		if v.IsFeatured {
+			featured++
+			if featured > 1 {
+				return domain.ErrTooManyFeatured
+			}
 		}
 		// "variant_listing_id_attributes_key": two live variants cannot describe the same
 		// combination.
@@ -419,6 +427,11 @@ func (f *fakeRepo) putListing(l *domain.Listing) error {
 	}
 	stored := storedListing{listing: *l, tags: slices.Clone(l.Tags)}
 	for _, v := range l.Variants {
+		// A soft-deleted variant leaves the join, as `v.deleted_at IS NULL` takes it out of the
+		// adapter's lookup.
+		if !v.IsLive() {
+			delete(f.variantListing, v.ID)
+		}
 		stored.variants = append(stored.variants, *v)
 	}
 	if at := f.listingAt(l.ID); at >= 0 {
@@ -466,10 +479,6 @@ func (f *fakeRepo) hydrate(stored storedListing) *domain.Listing {
 	return &l
 }
 
-func (f *fakeRepo) SlugTaken(_ context.Context, slug string) (bool, error) {
-	return slices.ContainsFunc(f.listings, func(s storedListing) bool { return s.listing.Slug == slug }), nil
-}
-
 func (f *fakeRepo) IsFavorited(_ context.Context, accountID, listingID int64) (bool, error) {
 	if accountID == 0 {
 		return false, nil
@@ -504,6 +513,13 @@ func (f *fakeRepo) SoftDeleteListing(_ context.Context, id, sellerID, actor int6
 	at := f.listingAt(id)
 	if at < 0 || f.listings[at].listing.SellerID != sellerID || f.listings[at].listing.DeletedAt != nil {
 		return domain.ErrListingNotFound
+	}
+	// The adapter carries this in its WHERE clause, so a reservation that landed after the
+	// service read loses here rather than deleting a listing with units held.
+	for _, v := range f.listings[at].variants {
+		if v.DeletedAt == nil && f.stock[v.ID].Reserved > 0 {
+			return domain.ErrListingInUse
+		}
 	}
 	now := time.Now()
 	f.listings[at].listing.DeletedAt = &now
@@ -541,18 +557,30 @@ func (f *fakeRepo) ListModerationQueue(_ context.Context, filter port.QueueFilte
 		if filter.SellerID != 0 && l.SellerID != filter.SellerID {
 			continue
 		}
-		// The price is the featured variant's, as the lateral join makes it.
+		// The featured variant's price, else the cheapest — what
+		// `ORDER BY is_featured DESC, price LIMIT 1` answers.
 		var price int64
 		for _, v := range stored.variants {
-			if v.DeletedAt == nil && (price == 0 || v.IsFeatured) {
+			if v.DeletedAt != nil {
+				continue
+			}
+			if v.IsFeatured {
+				price = v.Price
+				break
+			}
+			if price == 0 || v.Price < price {
 				price = v.Price
 			}
+		}
+		var coverID *int64
+		if len(l.Attachments) > 0 {
+			coverID = new(l.Attachments[0])
 		}
 		matched = append(matched, port.ListingSummary{
 			ID: l.ID, SellerID: l.SellerID, Slug: l.Slug, Name: l.Name, Status: l.Status,
 			Condition: l.Condition, PriceMode: l.PriceMode, Currency: l.Currency,
 			Price: price, Sold: l.CachedSold, Rating: l.CachedRating,
-			CategoryID: l.CategoryID, HasPendingEdit: l.PendingEdit != nil,
+			CategoryID: l.CategoryID, CoverID: coverID, HasPendingEdit: l.PendingEdit != nil,
 			CreatedAt: l.CreatedAt,
 		})
 	}

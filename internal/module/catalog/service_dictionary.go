@@ -129,8 +129,7 @@ func toAPICategory(c domain.Category) catalogapi.Category {
 		Description: c.Description,
 	}
 	if c.ParentID != nil {
-		parent := id.Of[id.Category](*c.ParentID)
-		out.ParentID = &parent
+		out.ParentID = new(id.Of[id.Category](*c.ParentID))
 	}
 	return out
 }

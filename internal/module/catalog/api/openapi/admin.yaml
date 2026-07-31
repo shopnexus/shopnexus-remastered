@@ -122,7 +122,7 @@ paths:
         while holding an edit its seller submitted. Defaults to both.
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: status, in: query, schema: { $ref: '#/components/schemas/ListingStatus' }, description: Defaults to pending. }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/ListingStatus' }, description: Defaults to everything awaiting a decision. }
         - { name: seller_id, in: query, schema: { $ref: '#/components/schemas/AccountID' } }
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
@@ -157,7 +157,9 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '409': { description: 'Not awaiting moderation', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'The approved edit names an image that no longer exists', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /admin/listings/{id}/takedown:
     post:
@@ -189,6 +191,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Already hidden or still a draft, so there is nothing to take down', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
 components:
   schemas:

@@ -85,8 +85,8 @@ paths:
         variant of a live listing.
 
 
-        Answers with the listing rather than an empty body: deleting the featured
-        variant leaves `featured_variant_id` null, and the seller has to see that.
+        Answers with the listing rather than an empty body: deleting the featured variant
+        moves the flag to a surviving one, and the seller has to see which.
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -149,14 +149,15 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Resource' }
           description: Empty means fall back to the listing gallery.
+        is_featured: { type: boolean, example: true, description: 'The variant the card and search results show. At most one per listing.' }
         stock: { $ref: '#/components/schemas/Stock' }
         created_at: { type: string, format: date-time }
-      required: [id, price, attributes, package_details, images, stock, created_at]
+      required: [id, price, attributes, package_details, images, is_featured, stock, created_at]
 
     CreateVariantRequest:
       type: object
       properties:
-        price: { type: integer, format: int64, minimum: 0 }
+        price: { type: integer, format: int64, minimum: 1, example: 299000 }
         attributes: { type: object, additionalProperties: true }
         package_details: { type: object, additionalProperties: true }
         attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
@@ -167,10 +168,17 @@ components:
       type: object
       description: Every field optional.
       properties:
-        price: { type: integer, format: int64, minimum: 0 }
+        price: { type: integer, format: int64, minimum: 1, example: 299000 }
         attributes: { type: object, additionalProperties: true }
         package_details: { type: object, additionalProperties: true }
         attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+        is_featured:
+          type: boolean
+          example: true
+          description: >
+            True moves the card's variant to this one. False is ignored: which variant is
+            featured is cleared through `clear_featured_variant_id` on the listing, so there is
+            one way to spell it.
         quantity:
           type: integer
           format: int64

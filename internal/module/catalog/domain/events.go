@@ -17,7 +17,7 @@ func newEventType[T any](code EventCode) EventType[T] { return EventType[T]{Code
 // its example, so the vocabulary is `listing.*`.
 var (
 	Published      = newEventType[StatusChange]("listing.publish")
-	Approved       = newEventType[StatusChange]("listing.approve")
+	Approved       = newEventType[Decision]("listing.approve")
 	TakenDown      = newEventType[Takedown]("listing.takedown")
 	Hidden         = newEventType[StatusChange]("listing.hide")
 	EditSubmitted  = newEventType[EditSubmission]("listing.edit_submitted")
@@ -36,6 +36,15 @@ type (
 	Takedown struct {
 		Status Status `json:"status"`
 		Reason string `json:"reason"`
+		// NotifySeller is the moderator's choice, recorded rather than acted on: the account
+		// module owns notifications and this module has no seam to it yet.
+		NotifySeller bool `json:"notify_seller"`
+	}
+
+	// Decision is an approval: the status it reached and whatever the moderator wrote down.
+	Decision struct {
+		Status Status `json:"status"`
+		Note   string `json:"note,omitempty"`
 	}
 
 	// EditSubmission records which fields the seller asked to change, not their values:

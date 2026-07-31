@@ -157,9 +157,10 @@ paths:
           required: true
           description: >
             The listing's opaque id or its slug. A slug is lowercase, hyphen-separated and
-            never contains an underscore, so it cannot be mistaken for an id and the
-            product page needs no second endpoint to resolve one.
-          schema: { $ref: '#/components/schemas/ListingRef' }
+            never contains an underscore, so it cannot be mistaken for an id — but only the
+            id is accepted today; resolving a slug needs a lookup this route does not have
+            yet.
+          schema: { $ref: '#/components/schemas/ListingID' }
       description: >
         Carries the variants with their prices and stock and the seller summary.
 
@@ -230,6 +231,8 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The listing changed while you were editing it', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'The result would break a rule — no variant left, more than ten tags', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     delete:
       tags: [catalog]
       summary: Delete a listing
@@ -302,6 +305,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Not live, so there is nothing to take down', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
 components:
   schemas:
@@ -332,15 +336,6 @@ components:
       oneOf:
         - $ref: '#/components/schemas/TagSlug'
         - $ref: '#/components/schemas/CategoryID'
-
-    ListingRef:
-      description: >
-        A listing addressed either way. The id form is the opaque one; the slug form
-        is what a shareable product URL carries. They cannot collide because an
-        opaque id always has an underscore after its prefix and a slug never has one.
-      oneOf:
-        - $ref: '#/components/schemas/ListingID'
-        - { type: string, maxLength: 100, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', example: ao-thun-uniqlo-xanh }
 
     ListingStatus:
       type: string

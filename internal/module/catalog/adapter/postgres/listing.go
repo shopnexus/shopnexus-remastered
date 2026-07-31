@@ -178,16 +178,6 @@ func listListingTags(ctx context.Context, pool *pgxpool.Pool, listingID int64) (
 	return out, nil
 }
 
-func (r *Repo) SlugTaken(ctx context.Context, slug string) (bool, error) {
-	var ok bool
-	err := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM listing WHERE slug = @slug)`,
-		pgx.NamedArgs{"slug": slug}).Scan(&ok)
-	if err != nil {
-		return false, fmt.Errorf("db query slug taken: %w", err)
-	}
-	return ok, nil
-}
-
 func (r *Repo) CreateListing(ctx context.Context, l *domain.Listing, actor int64) error {
 	if err := l.Validate(); err != nil {
 		return err
@@ -300,14 +290,41 @@ func saveVariants(ctx context.Context, tx pgx.Tx, l *domain.Listing) error {
 			return err
 		}
 	}
+	return setFeatured(ctx, tx, l)
+}
+
+// setFeatured moves the flag in two statements: clear, then set. "variant_one_featured_per_
+// listing" is not deferrable and Postgres checks it row by row, so any statement that sets one
+// row's flag before clearing another's can transiently hold two — which is what a per-row pass
+// in id order did whenever the new variant had the lower id. Clearing first cannot violate a
+// uniqueness rule, and after it no other row is featured.
+func setFeatured(ctx context.Context, tx pgx.Tx, l *domain.Listing) error {
+	var featured int64
+	if v := l.Featured(); v != nil {
+		featured = v.ID
+	}
+	const clear = `UPDATE variant SET is_featured = false
+	               WHERE listing_id = @listing_id AND is_featured AND id <> @featured`
+	args := pgx.NamedArgs{"listing_id": l.ID, "featured": featured}
+	if _, err := tx.Exec(ctx, clear, args); err != nil {
+		return fmt.Errorf("db clear featured variant: %w", err)
+	}
+	if featured == 0 {
+		return nil
+	}
+	const set = `UPDATE variant SET is_featured = true
+	             WHERE id = @featured AND deleted_at IS NULL AND NOT is_featured`
+	if _, err := tx.Exec(ctx, set, pgx.NamedArgs{"featured": featured}); err != nil {
+		return fmt.Errorf("db set featured variant: %w", err)
+	}
 	return nil
 }
 
 func insertVariant(ctx context.Context, tx pgx.Tx, listingID int64, v *domain.Variant) error {
-	const q = `INSERT INTO variant (listing_id, price, attributes, package_details, attachments,
-	                        is_featured)
-	           VALUES (@listing_id, @price, @attributes, @package_details, @attachments,
-	                   @is_featured)
+	// is_featured is left false here and written for the whole set by setFeatured, so the
+	// non-deferrable unique index never sees two featured rows mid-transaction.
+	const q = `INSERT INTO variant (listing_id, price, attributes, package_details, attachments)
+	           VALUES (@listing_id, @price, @attributes, @package_details, @attachments)
 	           RETURNING id, created_at`
 	v.ListingID = listingID
 	if err := tx.QueryRow(ctx, q, variantArgs(v)).Scan(&v.ID, &v.CreatedAt); err != nil {
@@ -318,12 +335,10 @@ func insertVariant(ctx context.Context, tx pgx.Tx, listingID int64, v *domain.Va
 	}
 	// A variant is born with its stock row: a purchasable thing with no stock record is not
 	// a state anything downstream has to handle.
-	const stockQ = `INSERT INTO stock (variant_id, quantity, reserved, sold)
-	                VALUES (@variant_id, @quantity, @reserved, @sold)`
-	args := pgx.NamedArgs{
-		"variant_id": v.ID, "quantity": v.Stock.Quantity,
-		"reserved": v.Stock.Reserved, "sold": v.Stock.Sold,
-	}
+	// quantity is the only settable counter, here as in updateVariant: reserved and sold move
+	// by the guarded statements in stock.go and default to 0.
+	const stockQ = `INSERT INTO stock (variant_id, quantity) VALUES (@variant_id, @quantity)`
+	args := pgx.NamedArgs{"variant_id": v.ID, "quantity": v.Stock.Quantity}
 	if _, err := tx.Exec(ctx, stockQ, args); err != nil {
 		return fmt.Errorf("db insert stock: %w", err)
 	}
@@ -336,7 +351,7 @@ func insertVariant(ctx context.Context, tx pgx.Tx, listingID int64, v *domain.Va
 func updateVariant(ctx context.Context, tx pgx.Tx, v *domain.Variant) error {
 	const q = `UPDATE variant
 	           SET price = @price, attributes = @attributes, package_details = @package_details,
-	               attachments = @attachments, is_featured = @is_featured
+	               attachments = @attachments
 	           WHERE id = @id`
 	if _, err := tx.Exec(ctx, q, variantArgs(v)); err != nil {
 		if isUniqueViolation(err) {
@@ -365,7 +380,6 @@ func variantArgs(v *domain.Variant) pgx.NamedArgs {
 		"attributes":      jsonObject(v.Attributes),
 		"package_details": jsonObject(v.PackageDetails),
 		"attachments":     int64Array(v.Attachments),
-		"is_featured":     v.IsFeatured,
 	}
 }
 
@@ -467,16 +481,26 @@ func (r *Repo) GetListingByVariant(ctx context.Context, variantID, sellerID int6
 	return r.GetListing(ctx, listingID)
 }
 
+// SoftDeleteListing carries the "no reservation in flight" rule in its own WHERE clause. The
+// service checks it too, for the error a client can act on — but a checkout landing between
+// that read and this write would otherwise leave a deleted listing holding reserved units.
 func (r *Repo) SoftDeleteListing(ctx context.Context, id, sellerID, actor int64) error {
 	return r.inTx(ctx, func(tx pgx.Tx) error {
 		const q = `UPDATE listing SET deleted_at = now(), version = version + 1
-		           WHERE id = @id AND account_id = @account_id AND deleted_at IS NULL`
+		           WHERE id = @id AND account_id = @account_id AND deleted_at IS NULL
+		             AND NOT EXISTS (
+		               SELECT 1 FROM variant v
+		               JOIN stock s ON s.variant_id = v.id
+		               WHERE v.listing_id = listing.id AND v.deleted_at IS NULL AND s.reserved > 0
+		             )`
 		tag, err := tx.Exec(ctx, q, pgx.NamedArgs{"id": id, "account_id": sellerID})
 		if err != nil {
 			return fmt.Errorf("db soft delete listing: %w", err)
 		}
+		// Zero rows is a missing listing, a stranger's, or one a checkout just reserved. The
+		// service already answered the first two, so what is left is the race.
 		if tag.RowsAffected() == 0 {
-			return domain.ErrListingNotFound
+			return domain.ErrListingInUse
 		}
 		var changedBy *int64
 		if actor != 0 {

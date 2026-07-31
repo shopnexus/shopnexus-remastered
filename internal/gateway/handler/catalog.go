@@ -103,6 +103,12 @@ func (h *Catalog) UpdateListing(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
+	// 202 when the change is waiting on a moderator, 200 when it landed. The body says which
+	// either way; the status saves a client from having to read it to find out.
+	if res.PendingEdit != nil {
+		httpx.WriteData(w, http.StatusAccepted, res)
+		return
+	}
 	httpx.WriteData(w, http.StatusOK, res)
 }
 

@@ -127,13 +127,13 @@ func TestLifecycle(t *testing.T) {
 	if err := l.Publish(); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	if err := l.Approve(); err != nil {
+	if err := l.Approve(""); err != nil {
 		t.Fatalf("Approve: %v", err)
 	}
 	if l.Status != domain.StatusActive {
 		t.Fatalf("status = %q, want active", l.Status)
 	}
-	if err := l.Takedown("counterfeit"); err != nil {
+	if err := l.Takedown("counterfeit", true); err != nil {
 		t.Fatalf("Takedown: %v", err)
 	}
 	if l.Status != domain.StatusHidden {
@@ -149,7 +149,7 @@ func TestLifecycle(t *testing.T) {
 
 func TestApprove_NothingToApprove(t *testing.T) {
 	l := newListing(t)
-	if err := l.Approve(); !errors.Is(err, domain.ErrNotAwaitingModeration) {
+	if err := l.Approve(""); !errors.Is(err, domain.ErrNotAwaitingModeration) {
 		t.Fatalf("Approve on a draft = %v, want ErrNotAwaitingModeration", err)
 	}
 }
@@ -161,7 +161,7 @@ func TestSubmitEdit_KeepsTheListingLive(t *testing.T) {
 	if err := l.Publish(); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	if err := l.Approve(); err != nil {
+	if err := l.Approve(""); err != nil {
 		t.Fatalf("Approve: %v", err)
 	}
 	name := "Áo thun Uniqlo cổ tròn"
@@ -228,7 +228,7 @@ func TestVariants(t *testing.T) {
 	if err := l.Publish(); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	if err := l.Approve(); err != nil {
+	if err := l.Approve(""); err != nil {
 		t.Fatalf("Approve: %v", err)
 	}
 	if err := l.RemoveVariant(first.ID); err != nil {
@@ -255,5 +255,28 @@ func TestRemoveVariant_MovesTheFeaturedFlag(t *testing.T) {
 	}
 	if !second.IsFeatured {
 		t.Error("the flag did not move to the surviving variant")
+	}
+}
+
+// A listing still in the queue has no approved version to protect, so an edit is written
+// through rather than held — otherwise approving it would flip the status and silently leave
+// the reviewed change unapplied, putting the listing straight back in the queue.
+func TestSubmitEdit_PendingWritesThrough(t *testing.T) {
+	l := newListing(t)
+	if err := l.Publish(); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	name := "Renamed while queued"
+	if err := l.SubmitEdit(domain.PendingEdit{Name: &name}); err != nil {
+		t.Fatalf("SubmitEdit: %v", err)
+	}
+	if l.Name != name || l.PendingEdit != nil {
+		t.Fatalf("listing = %+v, want the edit written through", l)
+	}
+	if err := l.Approve(""); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	if l.Status != domain.StatusActive || l.PendingEdit != nil {
+		t.Fatalf("listing = %+v, want it live with nothing left to review", l)
 	}
 }

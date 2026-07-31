@@ -46,8 +46,11 @@ var (
 	ErrVariantNotFound = errx.NewError(http.StatusNotFound, "variant_not_found", "variant not found")
 	// ErrDuplicateVariant is two live variants describing the same combination. The
 	// partial unique index says it too; this is the answer a caller gets.
-	ErrDuplicateVariant       = errx.NewError(http.StatusConflict, "duplicate_variant", "another live variant already has these attributes")
-	ErrLastVariant            = errx.NewError(http.StatusConflict, "last_variant", "this is the only variant of a live listing")
+	ErrDuplicateVariant = errx.NewError(http.StatusConflict, "duplicate_variant", "another live variant already has these attributes")
+	ErrLastVariant      = errx.NewError(http.StatusConflict, "last_variant", "this is the only variant of a live listing")
+	// ErrTooManyFeatured is two live variants both claiming the card. "duplicate_variant" used
+	// to answer this, which told the caller about attributes it had not touched.
+	ErrTooManyFeatured        = errx.NewError(http.StatusConflict, "too_many_featured", "only one variant can be featured")
 	ErrQuantityBelowCommitted = errx.NewError(http.StatusUnprocessableEntity, "quantity_below_committed", "quantity is below what is already reserved or sold")
 	ErrInsufficientStock      = errx.NewError(http.StatusConflict, "insufficient_stock", "not enough stock for this variant")
 	// ErrFeaturedNotMine is a programmer error rather than a client one: the featured

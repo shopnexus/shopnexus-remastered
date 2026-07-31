@@ -62,5 +62,3 @@ func TestNewTag_Rejects(t *testing.T) {
 		t.Error("a 256-character description was accepted")
 	}
 }
-
-func ptr[T any](v T) *T { return &v }

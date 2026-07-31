@@ -95,7 +95,12 @@ func (s *Service) AdminApproveListing(ctx context.Context, req catalogapi.Approv
 	if err != nil {
 		return catalogapi.ListingDetail{}, fmt.Errorf("get listing: %w", err)
 	}
-	if err := l.Approve(); err != nil {
+	if err := l.Approve(req.Note); err != nil {
+		return catalogapi.ListingDetail{}, err
+	}
+	// Approve may have written a held edit onto the row, so its attachments are checked here
+	// rather than trusting what was validated when the edit was parked.
+	if err := s.requireResources(ctx, l); err != nil {
 		return catalogapi.ListingDetail{}, err
 	}
 	if err := s.repo.SaveListing(ctx, l, req.ActorID.Int64()); err != nil {
@@ -114,14 +119,15 @@ func (s *Service) AdminTakedownListing(ctx context.Context, req catalogapi.Taked
 	if err != nil {
 		return catalogapi.ListingDetail{}, fmt.Errorf("get listing: %w", err)
 	}
-	if err := l.Takedown(req.Reason); err != nil {
+	notify := req.NotifySeller == nil || *req.NotifySeller
+	if err := l.Takedown(req.Reason, notify); err != nil {
 		return catalogapi.ListingDetail{}, err
 	}
 	if err := s.repo.SaveListing(ctx, l, req.ActorID.Int64()); err != nil {
 		return catalogapi.ListingDetail{}, fmt.Errorf("save listing: %w", err)
 	}
-	// Telling the seller is a notification the account module owns, and this slice has no
-	// seam to it: NotifySeller is accepted and recorded in the trail, not acted on. Wire it
-	// when the notification API is a dependency rather than a plan.
+	// Telling the seller is a notification the account module owns, and this slice has no seam
+	// to it: the choice lands in the trail, not in an outbox. Wire it when that API is a
+	// dependency rather than a plan.
 	return s.detail(ctx, l, req.ActorID.Int64())
 }

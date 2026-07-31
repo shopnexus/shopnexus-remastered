@@ -5,7 +5,9 @@ package postgres_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -14,9 +16,13 @@ import (
 	"shopnexus/internal/module/catalog/port"
 )
 
+// testSeller keeps one run's listings out of another's: the queue test asserts on every row a
+// seller owns, and t.Cleanup does not run when a run is killed.
+var testSeller = time.Now().UnixNano() % 1_000_000
+
 func newListingFor(t *testing.T, repo *pgadapter.Repo, categoryID int64, name string) *domain.Listing {
 	t.Helper()
-	l, err := domain.NewListing(7, categoryID, domain.NewListingInput{
+	l, err := domain.NewListing(testSeller, categoryID, domain.NewListingInput{
 		Name:           name,
 		Description:    "probe",
 		Condition:      domain.ConditionUsed,
@@ -32,7 +38,7 @@ func newListingFor(t *testing.T, repo *pgadapter.Repo, categoryID int64, name st
 	if err != nil {
 		t.Fatalf("NewListing: %v", err)
 	}
-	if err := repo.CreateListing(context.Background(), l, 7); err != nil {
+	if err := repo.CreateListing(context.Background(), l, testSeller); err != nil {
 		t.Fatalf("CreateListing: %v", err)
 	}
 	// The category cleanup is RESTRICTed by this row, so it goes first (cleanups run LIFO).
@@ -71,7 +77,7 @@ func TestRepo_CreateAndGetListing(t *testing.T) {
 		t.Fatalf("tags = %v", got.Tags)
 	}
 	// Ownership is part of the lookup, so another seller's listing is not found at all.
-	if _, err := repo.GetListingForSeller(ctx, created.ID, 8); !errors.Is(err, domain.ErrListingNotFound) {
+	if _, err := repo.GetListingForSeller(ctx, created.ID, testSeller+1); !errors.Is(err, domain.ErrListingNotFound) {
 		t.Errorf("GetListingForSeller for a stranger = %v, want ErrListingNotFound", err)
 	}
 }
@@ -96,13 +102,13 @@ func TestRepo_SaveListingRefusesAStaleAggregate(t *testing.T) {
 	if err := first.Publish(); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	if err := repo.SaveListing(ctx, first, 7); err != nil {
+	if err := repo.SaveListing(ctx, first, testSeller); err != nil {
 		t.Fatalf("first SaveListing: %v", err)
 	}
 	if err := stale.Publish(); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	if err := repo.SaveListing(ctx, stale, 7); !errors.Is(err, domain.ErrVersionConflict) {
+	if err := repo.SaveListing(ctx, stale, testSeller); !errors.Is(err, domain.ErrVersionConflict) {
 		t.Fatalf("stale SaveListing = %v, want ErrVersionConflict", err)
 	}
 }
@@ -129,7 +135,7 @@ func TestRepo_SaveListingSyncsChildren(t *testing.T) {
 		t.Fatalf("AddVariant: %v", err)
 	}
 	l.Tags = []string{"eco-friendly"}
-	if err := repo.SaveListing(ctx, l, 7); err != nil {
+	if err := repo.SaveListing(ctx, l, testSeller); err != nil {
 		t.Fatalf("SaveListing: %v", err)
 	}
 
@@ -148,7 +154,7 @@ func TestRepo_SaveListingSyncsChildren(t *testing.T) {
 	if err := got.RemoveVariant(got.Variants[0].ID); err != nil {
 		t.Fatalf("RemoveVariant: %v", err)
 	}
-	if err := repo.SaveListing(ctx, got, 7); err != nil {
+	if err := repo.SaveListing(ctx, got, testSeller); err != nil {
 		t.Fatalf("SaveListing (remove): %v", err)
 	}
 	after, err := repo.GetListing(ctx, l.ID)
@@ -179,11 +185,6 @@ func TestRepo_SaveListingRefusesDuplicatesAndSlugs(t *testing.T) {
 	name := unique("Listing ")
 	first := newListingFor(t, repo, category.ID, name)
 
-	taken, err := repo.SlugTaken(ctx, first.Slug)
-	if err != nil || !taken {
-		t.Fatalf("SlugTaken = %v, %v; want true", taken, err)
-	}
-
 	// The same derived slug twice.
 	again, err := domain.NewListing(7, category.ID, domain.NewListingInput{
 		Name: name, Description: "x", Condition: domain.ConditionUsed,
@@ -201,14 +202,27 @@ func TestRepo_SaveListingRefusesDuplicatesAndSlugs(t *testing.T) {
 		t.Fatalf("CreateListing = %v, want ErrSlugTaken", err)
 	}
 
-	// A second variant with the first's attributes, written past the domain check.
+	// A second variant with the first's attributes. Validate catches it before any SQL runs —
+	// which is the point of checking it in the domain — so the index is exercised separately
+	// below, with the write the domain cannot see.
 	dup, _ := domain.NewVariant(domain.NewVariantInput{
 		Price: 1000, Attributes: map[string]any{"size": "l"},
 		PackageDetails: map[string]any{}, Quantity: 1,
 	})
 	first.Variants = append(first.Variants, dup)
-	if err := repo.SaveListing(ctx, first, 7); !errors.Is(err, domain.ErrDuplicateVariant) {
+	if err := repo.SaveListing(ctx, first, testSeller); !errors.Is(err, domain.ErrDuplicateVariant) {
 		t.Fatalf("SaveListing = %v, want ErrDuplicateVariant", err)
+	}
+
+	// "variant_listing_id_attributes_key" holds even when a service is wrong: the same
+	// attributes written straight to the table are refused, and that is the violation
+	// insertVariant maps back to ErrDuplicateVariant.
+	_, err = poolOf(t).Exec(ctx,
+		`INSERT INTO variant (listing_id, price, attributes, package_details)
+		 VALUES ($1, 1000, $2::jsonb, '{}'::jsonb)`,
+		first.ID, `{"size": "l"}`)
+	if err == nil || !strings.Contains(err.Error(), "variant_listing_id_attributes_key") {
+		t.Fatalf("raw insert = %v, want the unique index to refuse it", err)
 	}
 }
 
@@ -222,7 +236,7 @@ func TestRepo_SaveListingWritesTheTrail(t *testing.T) {
 	if err := l.Publish(); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	if err := repo.SaveListing(ctx, l, 7); err != nil {
+	if err := repo.SaveListing(ctx, l, testSeller); err != nil {
 		t.Fatalf("SaveListing: %v", err)
 	}
 	var code string
@@ -255,24 +269,24 @@ func TestRepo_ModerationQueueCoversBothHalves(t *testing.T) {
 	if err := pending.Publish(); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	if err := repo.SaveListing(ctx, pending, 7); err != nil {
+	if err := repo.SaveListing(ctx, pending, testSeller); err != nil {
 		t.Fatalf("SaveListing: %v", err)
 	}
 	if err := edited.Publish(); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	if err := edited.Approve(); err != nil {
+	if err := edited.Approve(""); err != nil {
 		t.Fatalf("Approve: %v", err)
 	}
 	name := "Edited again"
 	if err := edited.SubmitEdit(domain.PendingEdit{Name: &name}); err != nil {
 		t.Fatalf("SubmitEdit: %v", err)
 	}
-	if err := repo.SaveListing(ctx, edited, 7); err != nil {
+	if err := repo.SaveListing(ctx, edited, testSeller); err != nil {
 		t.Fatalf("SaveListing: %v", err)
 	}
 
-	rows, _, err := repo.ListModerationQueue(ctx, port.QueueFilter{SellerID: 7, Limit: 50})
+	rows, _, err := repo.ListModerationQueue(ctx, port.QueueFilter{SellerID: testSeller, Limit: 50})
 	if err != nil {
 		t.Fatalf("ListModerationQueue: %v", err)
 	}
@@ -288,5 +302,52 @@ func TestRepo_ModerationQueueCoversBothHalves(t *testing.T) {
 	}
 	if seen[draft.ID] {
 		t.Error("a draft is not awaiting a decision")
+	}
+}
+
+// The featured flag is written for the whole set in one statement, because
+// "variant_one_featured_per_listing" cannot be deferred: a per-row pass in id order used to set
+// the new flag before clearing the old one, and answered a 409 about attributes for it.
+func TestRepo_FeaturedFlagMovesEitherDirection(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	category := createCategory(t, repo, unique("cat-"), nil)
+	createTag(t, repo, "handmade", nil)
+	l := newListingFor(t, repo, category.ID, unique("Listing "))
+
+	second, err := domain.NewVariant(domain.NewVariantInput{
+		Price: 1000, Attributes: map[string]any{"size": "m"},
+		PackageDetails: map[string]any{}, Quantity: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewVariant: %v", err)
+	}
+	if err := l.AddVariant(second); err != nil {
+		t.Fatalf("AddVariant: %v", err)
+	}
+	if err := repo.SaveListing(ctx, l, testSeller); err != nil {
+		t.Fatalf("SaveListing: %v", err)
+	}
+
+	// Up to the higher id, then back down to the lower one — the direction that used to fail.
+	for _, at := range []int{1, 0} {
+		got, err := repo.GetListing(ctx, l.ID)
+		if err != nil {
+			t.Fatalf("GetListing: %v", err)
+		}
+		want := got.Variants[at].ID
+		if err := got.SetFeatured(want); err != nil {
+			t.Fatalf("SetFeatured: %v", err)
+		}
+		if err := repo.SaveListing(ctx, got, testSeller); err != nil {
+			t.Fatalf("SaveListing featuring variant %d: %v", want, err)
+		}
+		after, err := repo.GetListing(ctx, l.ID)
+		if err != nil {
+			t.Fatalf("GetListing: %v", err)
+		}
+		if f := after.Featured(); f == nil || f.ID != want {
+			t.Fatalf("featured = %v, want %d", f, want)
+		}
 	}
 }

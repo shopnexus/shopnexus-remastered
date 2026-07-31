@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"slices"
@@ -50,6 +51,12 @@ var (
 	slugEdges  = regexp.MustCompile(`(^-+)|(-+$)`)
 	currencyRe = regexp.MustCompile(`^[A-Z]{3}$`)
 )
+
+// errSlugFormat catches a name of only punctuation, which derives an empty slug: the second
+// such listing would otherwise get a confusing slug_taken.
+var errSlugFormat = errx.NewValidationError("invalid field: name", errx.Field{
+	Field: "name", Rule: "pattern", Message: "must contain at least one letter or digit",
+})
 
 // errCurrencyFormat mirrors the column CHECK. A currency the wallet cannot hold is a
 // finance question; the shape is this module's.
@@ -134,6 +141,11 @@ func NewListing(sellerID, categoryID int64, in NewListingInput) (*Listing, error
 		l.Specifications = map[string]any{}
 	}
 	l.Slug = Slugify(l.Name)
+	// The create request carries the variants inline, so an empty one is refused here rather
+	// than by Validate — which allows an empty *draft*, reached by deleting them afterwards.
+	if len(in.Variants) == 0 {
+		return nil, ErrNoVariant
+	}
 	for _, vin := range in.Variants {
 		v, err := NewVariant(vin)
 		if err != nil {
@@ -169,8 +181,13 @@ func (l *Listing) Validate() error {
 			return err
 		}
 	}
+	if l.Slug == "" {
+		return errSlugFormat
+	}
 	live := l.LiveVariants()
-	if len(live) == 0 {
+	// A draft may be emptied — DELETE /variants only refuses the last variant of a listing that
+	// is live or queued, so Publish is where "there has to be something to buy" is checked.
+	if len(live) == 0 && l.Status != StatusDraft {
 		return ErrNoVariant
 	}
 	seen := make(map[string]bool, len(live))
@@ -189,7 +206,7 @@ func (l *Listing) Validate() error {
 		}
 	}
 	if featured > 1 {
-		return ErrDuplicateVariant
+		return ErrTooManyFeatured
 	}
 	return nil
 }
@@ -221,11 +238,15 @@ func (l *Listing) Publish() error {
 }
 
 // Approve clears whatever was awaiting a decision: a first publication, or an edit held
-// against a live listing.
-func (l *Listing) Approve() error {
+// against a live listing. The note is the moderator's, kept in the trail.
+func (l *Listing) Approve(note string) error {
 	switch {
 	case l.Status == StatusPending:
 		l.Status = StatusActive
+		// A queued listing writes its edits through, so there is never one held here to lose.
+		if l.PendingEdit != nil {
+			return ErrNotAwaitingModeration
+		}
 	case l.Status == StatusActive && l.PendingEdit != nil:
 		if err := l.ApplyPendingEdit(); err != nil {
 			return err
@@ -233,19 +254,19 @@ func (l *Listing) Approve() error {
 	default:
 		return ErrNotAwaitingModeration
 	}
-	record(l, Approved, StatusChange{Status: l.Status})
+	record(l, Approved, Decision{Status: l.Status, Note: note})
 	return nil
 }
 
 // Takedown is the moderator's verdict. It also drops a held edit: whatever was under review
 // is not going live.
-func (l *Listing) Takedown(reason string) error {
+func (l *Listing) Takedown(reason string, notifySeller bool) error {
 	if l.Status != StatusPending && l.Status != StatusActive {
 		return ErrInvalidTransition
 	}
 	l.Status = StatusHidden
 	l.PendingEdit = nil
-	record(l, TakenDown, Takedown{Status: l.Status, Reason: reason})
+	record(l, TakenDown, Takedown{Status: l.Status, Reason: reason, NotifySeller: notifySeller})
 	return nil
 }
 
@@ -261,13 +282,15 @@ func (l *Listing) Hide() error {
 	return nil
 }
 
-// SubmitEdit writes the change straight onto a draft or a hidden listing and parks it for a
-// live one: buyers keep seeing the approved version until a moderator applies it.
+// SubmitEdit parks the change only for a live listing, where buyers are seeing an approved
+// version that has to stay put. A draft, a hidden listing and one still in the queue have no
+// approved version to protect, so the edit is written through — and the moderator then reviews
+// the listing as it now is rather than approving a row plus a held edit describing it.
 func (l *Listing) SubmitEdit(edit PendingEdit) error {
 	if edit.IsEmpty() {
 		return nil
 	}
-	if l.Status != StatusActive && l.Status != StatusPending {
+	if l.Status != StatusActive {
 		return l.apply(edit)
 	}
 	l.PendingEdit = &edit
@@ -384,8 +407,8 @@ func (l *Listing) SetFeatured(variantID int64) error {
 	return nil
 }
 
-// Featured is what a card shows. Nil when every variant was removed, which only a draft can
-// be in.
+// Featured is what a card shows. Nil is legal: `clear_featured_variant_id` leaves a listing
+// with none, and the card then shows the cheapest variant instead.
 func (l *Listing) Featured() *Variant {
 	for _, v := range l.LiveVariants() {
 		if v.IsFeatured {
@@ -441,19 +464,14 @@ func dedupe(tags []string) []string {
 	return out
 }
 
-// attributeKey is the comparison the partial unique index makes: jsonb ignores key order,
-// so the Go side sorts before joining.
+// attributeKey is the comparison "variant_listing_id_attributes_key" makes. json.Marshal of a
+// map sorts its keys, which is what makes this match jsonb equality — and it keeps the value's
+// type, so {"size": 1} and {"size": "1"} stay the two distinct rows the index allows.
 func attributeKey(attributes map[string]any) string {
-	keys := make([]string, 0, len(attributes))
-	for k := range attributes {
-		keys = append(keys, k)
+	encoded, err := json.Marshal(attributes)
+	if err != nil {
+		// Unencodable attributes cannot reach jsonb either; Validate refuses them at the write.
+		return fmt.Sprintf("unencodable:%v", attributes)
 	}
-	slices.Sort(keys)
-	var b strings.Builder
-	for _, k := range keys {
-		fmt.Fprintf(&b, "%s=%v;", k, attributes[k])
-	}
-	return b.String()
+	return string(encoded)
 }
-
-func ptr[T any](v T) *T { return &v }

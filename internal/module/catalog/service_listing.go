@@ -60,7 +60,16 @@ func (s *Service) GetListing(ctx context.Context, req catalogapi.GetListingReque
 	if err != nil {
 		return catalogapi.ListingDetail{}, fmt.Errorf("get listing: %w", err)
 	}
-	return s.detail(ctx, l, req.ViewerID.Int64())
+	// A listing that was never public is the seller's own draft. Hidden and soft-deleted stay
+	// readable, because a cart or an order that names one still has to render.
+	privileged := l.SellerID == req.ViewerID.Int64()
+	if !privileged && (l.Status == domain.StatusDraft || l.Status == domain.StatusPending) {
+		if err := s.requireModerator(ctx, req.ViewerID); err != nil {
+			return catalogapi.ListingDetail{}, domain.ErrListingNotFound
+		}
+		privileged = true
+	}
+	return s.detailFor(ctx, l, req.ViewerID.Int64(), privileged)
 }
 
 // requireSeller refuses a seller with no live verified identity document. The flag lives in
@@ -79,10 +88,16 @@ func (s *Service) requireSeller(ctx context.Context, actorID id.ID[id.Account]) 
 // requireResources refuses an image id that is not a confirmed resource. A row pointing at
 // nothing is a picture that never renders, and the seller should hear about it at upload
 // time rather than from a buyer.
+//
+// A held edit's attachments are checked too: the row still carries the old ids while the edit
+// waits, so validating the row alone would let an approval write ids that name nothing.
 func (s *Service) requireResources(ctx context.Context, l *domain.Listing) error {
 	wanted := append([]int64{}, l.Attachments...)
 	for _, v := range l.Variants {
 		wanted = append(wanted, v.Attachments...)
+	}
+	if l.PendingEdit != nil {
+		wanted = append(wanted, l.PendingEdit.Attachments...)
 	}
 	if len(wanted) == 0 {
 		return nil
@@ -127,9 +142,16 @@ func resourceKeys(ids []id.ID[id.Resource]) []int64 {
 	return out
 }
 
-// detail builds the product page: the aggregate plus the four things it does not own — the
-// seller, the category, the images and the viewer's own wishlist state.
+// detail is the seller's or a moderator's view: every command answers it, and only the owner
+// or staff can issue one.
 func (s *Service) detail(ctx context.Context, l *domain.Listing, viewerID int64) (catalogapi.ListingDetail, error) {
+	return s.detailFor(ctx, l, viewerID, true)
+}
+
+// detailFor builds the product page: the aggregate plus the four things it does not own — the
+// seller, the category, the images and the viewer's own wishlist state. A held edit is the
+// owner's and staff's to see; a buyer gets the approved version until it is applied.
+func (s *Service) detailFor(ctx context.Context, l *domain.Listing, viewerID int64, privileged bool) (catalogapi.ListingDetail, error) {
 	seller, err := s.accounts.GetPublicAccount(ctx, accountapi.GetPublicAccountRequest{
 		ID: id.Of[id.Account](l.SellerID),
 	})
@@ -197,11 +219,10 @@ func (s *Service) detail(ctx context.Context, l *domain.Listing, viewerID int64)
 		}
 		out.Variants = append(out.Variants, variant)
 		if v.IsFeatured {
-			featured := variant.ID
-			out.FeaturedVariantID = &featured
+			out.FeaturedVariantID = new(variant.ID)
 		}
 	}
-	if l.PendingEdit != nil {
+	if l.PendingEdit != nil && privileged {
 		out.PendingEdit = toAPIPendingEdit(*l.PendingEdit)
 	}
 	return out, nil
@@ -227,8 +248,7 @@ func toAPIPendingEdit(e domain.PendingEdit) *catalogapi.PendingEdit {
 		Tags:           e.Tags,
 	}
 	if e.CategoryID != nil {
-		categoryID := id.Of[id.Category](*e.CategoryID)
-		out.CategoryID = &categoryID
+		out.CategoryID = new(id.Of[id.Category](*e.CategoryID))
 	}
 	if e.Condition != nil {
 		out.Condition = new(string(*e.Condition))
@@ -245,8 +265,6 @@ func toAPIPendingEdit(e domain.PendingEdit) *catalogapi.PendingEdit {
 	return out
 }
 
-func ptr[T any](v T) *T { return &v }
-
 // UpdateListing applies the patch through the root, which decides whether it lands on the
 // row or waits for a moderator.
 func (s *Service) UpdateListing(ctx context.Context, req catalogapi.UpdateListingRequest) (catalogapi.ListingDetail, error) {
@@ -261,8 +279,7 @@ func (s *Service) UpdateListing(ctx context.Context, req catalogapi.UpdateListin
 		Tags:           req.Tags,
 	}
 	if req.CategoryID != nil {
-		categoryID := req.CategoryID.Int64()
-		edit.CategoryID = &categoryID
+		edit.CategoryID = new(req.CategoryID.Int64())
 	}
 	if req.Condition != nil {
 		edit.Condition = new(domain.Condition(*req.Condition))
