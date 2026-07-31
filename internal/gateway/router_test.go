@@ -217,14 +217,17 @@ func TestRouter_AdminRouteRequiresAuth(t *testing.T) {
 func TestRouter_RequestIDReachesHeaderAndErrorBody(t *testing.T) {
 	r, _, _ := newRouter()
 
-	// A documented route with no implementation answers 501 through httpx.WriteError, so
-	// this exercises the real error path rather than a hand-built one.
-	req := httptest.NewRequest(http.MethodGet, openapi.BasePath+"/tags", nil)
+	// An authenticated route without a token answers 401 through httpx.WriteError, so this
+	// exercises the real error path. Deliberately not a 501 route: those disappear as the
+	// modules get implemented, and this test is about the middleware, not about which
+	// module happens to be a stub today. A 404 would not do either — that one comes from
+	// ServeMux and never reaches the error writer.
+	req := httptest.NewRequest(http.MethodGet, openapi.BasePath+"/me", nil)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNotImplemented {
-		t.Fatalf("status = %d, want 501", rec.Code)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
 	}
 	hdr := rec.Header().Get("X-Request-Id")
 	if hdr == "" {
@@ -244,7 +247,7 @@ func TestRouter_RequestIDReachesHeaderAndErrorBody(t *testing.T) {
 	if body.Data != nil {
 		t.Error("an error response must not carry data")
 	}
-	if body.Error.Code != "not_implemented" {
+	if body.Error.Code != "unauthorized" {
 		t.Errorf("code = %q", body.Error.Code)
 	}
 	if body.Error.RequestID != hdr {
