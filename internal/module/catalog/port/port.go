@@ -40,6 +40,23 @@ type ScoredTag struct {
 	Score float64
 }
 
+// AuditEntry is one row of the module's audit log. SaveListing writes these itself from the
+// aggregate's events.
+type AuditEntry struct {
+	Table      string
+	RecordID   int64
+	ChangeType string
+	// Code is the business event, e.g. "listing.publish".
+	Code string
+	// ChangedBy is nil for a change no account is responsible for (a scheduled job).
+	ChangedBy *int64
+	// Diff and Snapshot are whatever the recorder declared — a domain event's payload and a
+	// row snapshot — and reach the JSONB columns through json.Marshal. `any` because the
+	// shape belongs to the fact, not to the trail.
+	Diff     any
+	Snapshot any
+}
+
 type Repository interface {
 	// --- category: the browse tree. Small and curated, so the whole of it is one read
 	// and a client assembles the shape.
@@ -65,4 +82,25 @@ type Repository interface {
 	SeedVectors(ctx context.Context, seeds []Seed) ([]Vector, error)
 	NearestCategories(ctx context.Context, vectors []Vector, limit int) ([]ScoredCategory, error)
 	NearestTags(ctx context.Context, vectors []Vector, exclude []string, offset, limit int) ([]ScoredTag, error)
+
+	// --- the listing aggregate: load it, change it in memory, save it ---
+
+	// CreateListing writes the listing, its variants, their stock rows and its tag joins in
+	// one transaction. The create request carries the variants inline, so there is no window
+	// in which a listing has nothing to sell.
+	CreateListing(ctx context.Context, l *domain.Listing, actor int64) error
+	// GetListing reads the root with its children, and is the only loader — which is what
+	// makes exported children and a state-based Save safe.
+	GetListing(ctx context.Context, id int64) (*domain.Listing, error)
+	// GetListingForSeller scopes the read by owner, so another seller's listing is not found
+	// rather than forbidden.
+	GetListingForSeller(ctx context.Context, id, sellerID int64) (*domain.Listing, error)
+	// SaveListing validates the aggregate and writes the root, its variants, its tags and
+	// the audit rows for what it recorded in one transaction, guarded by Version. A stale
+	// copy gets domain.ErrVersionConflict.
+	//
+	// Variants are synchronised to the slice, tags by negation. A variant absent from the
+	// slice is *soft* deleted: order.item holds variant_id without a foreign key.
+	SaveListing(ctx context.Context, l *domain.Listing, actor int64) error
+	SlugTaken(ctx context.Context, slug string) (bool, error)
 }
