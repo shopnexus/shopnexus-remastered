@@ -52,6 +52,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: 'A category cannot be its own descendant', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     delete:
       tags: [admin]
       summary: Delete a category

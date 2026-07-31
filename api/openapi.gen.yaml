@@ -4811,6 +4811,12 @@ paths:
                     description: Admin role required
                 "404":
                     $ref: '#/components/responses/NotFound'
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: A category cannot be its own descendant
             security:
                 - bearerAuth: []
             summary: Update a category

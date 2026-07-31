@@ -44,6 +44,19 @@ type stubCat struct{}
 
 var _ catalogapi.Service = stubCat{}
 
+func (stubCat) ListCategories(context.Context, catalogapi.ListCategoriesRequest) ([]catalogapi.Category, error) {
+	return nil, nil
+}
+func (stubCat) AdminCreateCategory(context.Context, catalogapi.CreateCategoryRequest) (catalogapi.Category, error) {
+	return catalogapi.Category{ID: id.Of[id.Category](1)}, nil
+}
+func (stubCat) AdminUpdateCategory(context.Context, catalogapi.UpdateCategoryRequest) (catalogapi.Category, error) {
+	return catalogapi.Category{ID: id.Of[id.Category](1)}, nil
+}
+func (stubCat) AdminDeleteCategory(context.Context, catalogapi.DeleteCategoryRequest) error {
+	return nil
+}
+
 type stubOrder struct{}
 
 func (stubOrder) PlaceOrder(context.Context, orderapi.PlaceOrderRequest) (orderapi.Order, error) {
@@ -206,7 +219,7 @@ func TestRouter_RequestIDReachesHeaderAndErrorBody(t *testing.T) {
 
 	// A documented route with no implementation answers 501 through httpx.WriteError, so
 	// this exercises the real error path rather than a hand-built one.
-	req := httptest.NewRequest(http.MethodGet, openapi.BasePath+"/categories", nil)
+	req := httptest.NewRequest(http.MethodGet, openapi.BasePath+"/tags", nil)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 

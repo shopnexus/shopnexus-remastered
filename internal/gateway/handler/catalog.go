@@ -3,10 +3,13 @@ package handler
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 
 	catalogapi "shopnexus/internal/module/catalog/api"
+	"shopnexus/internal/shared/httpx"
+	"shopnexus/internal/shared/id"
 )
 
 // Catalog serves the catalog module's routes: listings and their variants, categories,
@@ -89,9 +92,24 @@ func (h *Catalog) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
-// ListCategories handles GET /categories.
+// ListCategories handles GET /categories — the tree, or a `near` ranking.
 func (h *Catalog) ListCategories(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	limit, err := intParam(r, "limit", 10, 1, 50)
+	if failed(w, h.log, err) {
+		return
+	}
+	req := catalogapi.ListCategoriesRequest{Limit: limit}
+	if raw := r.URL.Query().Get("near"); raw != "" {
+		req.Near = strings.Split(raw, ",")
+	}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListCategories(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
 // ListTags handles GET /tags.
@@ -101,17 +119,68 @@ func (h *Catalog) ListTags(w http.ResponseWriter, r *http.Request) {
 
 // AdminCreateCategory handles POST /admin/categories.
 func (h *Catalog) AdminCreateCategory(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	var req catalogapi.CreateCategoryRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID = uid
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.AdminCreateCategory(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, res)
 }
 
 // AdminUpdateCategory handles PATCH /admin/categories/{id}.
 func (h *Catalog) AdminUpdateCategory(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	categoryID, err := pathID[id.Category](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req catalogapi.UpdateCategoryRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, categoryID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.AdminUpdateCategory(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
 // AdminDeleteCategory handles DELETE /admin/categories/{id}.
 func (h *Catalog) AdminDeleteCategory(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	categoryID, err := pathID[id.Category](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := catalogapi.DeleteCategoryRequest{ActorID: uid, ID: categoryID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	if failed(w, h.log, h.svc.AdminDeleteCategory(r.Context(), req)) {
+		return
+	}
+	httpx.WriteNoContent(w)
 }
 
 // AdminPutTag handles PUT /admin/tags/{slug}.
