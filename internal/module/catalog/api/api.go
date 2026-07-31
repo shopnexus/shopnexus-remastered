@@ -29,6 +29,14 @@ type Service interface {
 	UpdateVariant(ctx context.Context, req UpdateVariantRequest) (ListingDetail, error)
 	DeleteVariant(ctx context.Context, req DeleteVariantRequest) (ListingDetail, error)
 
+	UpdateListing(ctx context.Context, req UpdateListingRequest) (ListingDetail, error)
+	DeleteListing(ctx context.Context, req DeleteListingRequest) error
+	// PublishListing always enters moderation: there is no path that makes a listing live
+	// without a human, which is also why re-publishing a taken-down listing cannot undo the
+	// takedown.
+	PublishListing(ctx context.Context, req PublishListingRequest) (ListingDetail, error)
+	HideListing(ctx context.Context, req HideListingRequest) (ListingDetail, error)
+
 	// --- stock: called by order, not by a route ---
 	// ReserveStock holds units for a checkout that has not completed. Answers
 	// 409 insufficient_stock when there is no room, which the caller acts on.

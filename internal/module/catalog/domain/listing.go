@@ -320,7 +320,7 @@ func (l *Listing) apply(edit PendingEdit) error {
 	}
 	// The name and the description are what the vector is built from, so an edit makes it
 	// stale. The slug is not touched: it is fixed at creation and lives in URLs.
-	l.EmbeddingStaleAt = ptr(time.Now())
+	l.EmbeddingStaleAt = new(time.Now())
 	return l.Validate()
 }
 

@@ -121,3 +121,37 @@ type DeleteVariantRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	ID      id.ID[id.Variant] `json:"-" validate:"required"`
 }
+
+// UpdateListingRequest: every field optional. Variants are edited through their own routes,
+// which is why none appear here — and why an edit to a live listing waits on moderation
+// while a price change does not.
+type UpdateListingRequest struct {
+	ActorID                id.ID[id.Account]    `json:"-" validate:"required"`
+	ID                     id.ID[id.Listing]    `json:"-" validate:"required"`
+	Name                   *string              `json:"name,omitempty" validate:"omitempty,min=1,max=200"`
+	Description            *string              `json:"description,omitempty" validate:"omitempty,max=20000"`
+	CategoryID             *id.ID[id.Category]  `json:"category_id,omitempty"`
+	Condition              *string              `json:"condition,omitempty" validate:"omitempty,oneof=new used damaged"`
+	PriceMode              *string              `json:"price_mode,omitempty" validate:"omitempty,oneof=fixed negotiable"`
+	ShippingPaidBy         *string              `json:"shipping_paid_by,omitempty" validate:"omitempty,oneof=buyer seller"`
+	Specifications         map[string]any       `json:"specifications,omitempty"`
+	Attachments            []id.ID[id.Resource] `json:"attachments,omitempty" validate:"max=10"`
+	Tags                   []string             `json:"tags,omitempty" validate:"max=10,dive,required,max=100"`
+	FeaturedVariantID      *id.ID[id.Variant]   `json:"featured_variant_id,omitempty"`
+	ClearFeaturedVariantID bool                 `json:"clear_featured_variant_id,omitempty"`
+}
+
+type DeleteListingRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	ID      id.ID[id.Listing] `json:"-" validate:"required"`
+}
+
+type PublishListingRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	ID      id.ID[id.Listing] `json:"-" validate:"required"`
+}
+
+type HideListingRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	ID      id.ID[id.Listing] `json:"-" validate:"required"`
+}

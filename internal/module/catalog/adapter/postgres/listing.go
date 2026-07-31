@@ -466,3 +466,26 @@ func (r *Repo) GetListingByVariant(ctx context.Context, variantID, sellerID int6
 	}
 	return r.GetListing(ctx, listingID)
 }
+
+func (r *Repo) SoftDeleteListing(ctx context.Context, id, sellerID, actor int64) error {
+	return r.inTx(ctx, func(tx pgx.Tx) error {
+		const q = `UPDATE listing SET deleted_at = now(), version = version + 1
+		           WHERE id = @id AND account_id = @account_id AND deleted_at IS NULL`
+		tag, err := tx.Exec(ctx, q, pgx.NamedArgs{"id": id, "account_id": sellerID})
+		if err != nil {
+			return fmt.Errorf("db soft delete listing: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return domain.ErrListingNotFound
+		}
+		var changedBy *int64
+		if actor != 0 {
+			changedBy = &actor
+		}
+		return insertAuditLog(ctx, tx, port.AuditEntry{
+			Table: "listing", RecordID: id, ChangeType: "delete",
+			Code: string(domain.Deleted.Code), ChangedBy: changedBy,
+			Diff: domain.NoPayload{}, Snapshot: domain.NoPayload{},
+		})
+	})
+}

@@ -131,3 +131,22 @@ func TestUpdateVariant_MovesTheFeaturedFlag(t *testing.T) {
 		t.Fatalf("featured = %v, want %v", got.FeaturedVariantID, second)
 	}
 }
+
+// The last live variant of a listing that is live or queued cannot go: there would be
+// nothing to buy.
+func TestDeleteVariant_LastOneOfALiveListing(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	listing := seedListing(t, h)
+	if _, err := h.svc.PublishListing(ctx, catalogapi.PublishListingRequest{
+		ActorID: actor, ID: listing.ID,
+	}); err != nil {
+		t.Fatalf("PublishListing: %v", err)
+	}
+	err := mustErr(h.svc.DeleteVariant(ctx, catalogapi.DeleteVariantRequest{
+		ActorID: actor, ID: listing.Variants[0].ID,
+	}))
+	if got := status(t, err); got != 409 {
+		t.Fatalf("status = %d, want 409", got)
+	}
+}

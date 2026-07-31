@@ -126,3 +126,87 @@ func TestGetListing(t *testing.T) {
 		t.Fatalf("a missing listing must be 404")
 	}
 }
+
+// Publication always enters the queue. A listing does not go live because a scan liked it.
+func TestPublishListing_EntersModeration(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	listing := seedListing(t, h)
+
+	got, err := h.svc.PublishListing(ctx, catalogapi.PublishListingRequest{ActorID: actor, ID: listing.ID})
+	if err != nil {
+		t.Fatalf("PublishListing: %v", err)
+	}
+	if got.Status != string(domain.StatusPending) {
+		t.Fatalf("status = %q, want pending", got.Status)
+	}
+	// Again is a conflict: there is already something in the queue.
+	if s := status(t, mustErr(h.svc.PublishListing(ctx, catalogapi.PublishListingRequest{
+		ActorID: actor, ID: listing.ID,
+	}))); s != 409 {
+		t.Fatalf("status = %d, want 409", s)
+	}
+}
+
+// A draft is edited in place: there is nothing published to protect. The live half of this
+// rule is TestUpdateListing_LiveEditIsHeld, which needs a moderator to approve first.
+func TestUpdateListing_DraftWritesThrough(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	listing := seedListing(t, h)
+
+	renamed := "Áo thun Uniqlo cổ tròn"
+	got, err := h.svc.UpdateListing(ctx, catalogapi.UpdateListingRequest{
+		ActorID: actor, ID: listing.ID, Name: &renamed,
+	})
+	if err != nil {
+		t.Fatalf("UpdateListing: %v", err)
+	}
+	if got.Name != renamed || got.PendingEdit != nil {
+		t.Fatalf("draft edit = %+v, want it written through", got)
+	}
+}
+
+// A delete is refused while a checkout is in flight — the reservation is the signal, and it
+// is local, so there is no call into order and no second notion of "open".
+func TestDeleteListing_RefusedWhileReserved(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	listing := seedListing(t, h)
+	if err := h.repo.ReserveStock(ctx, listing.Variants[0].ID.Int64(), 1); err != nil {
+		t.Fatalf("ReserveStock: %v", err)
+	}
+	if s := status(t, h.svc.DeleteListing(ctx, catalogapi.DeleteListingRequest{
+		ActorID: actor, ID: listing.ID,
+	})); s != 409 {
+		t.Fatalf("status = %d, want 409", s)
+	}
+
+	// Released, it goes. A completed sale would not have blocked it: soft delete is what
+	// keeps that order renderable.
+	if err := h.repo.ReleaseStock(ctx, listing.Variants[0].ID.Int64(), 1); err != nil {
+		t.Fatalf("ReleaseStock: %v", err)
+	}
+	if err := h.svc.DeleteListing(ctx, catalogapi.DeleteListingRequest{
+		ActorID: actor, ID: listing.ID,
+	}); err != nil {
+		t.Fatalf("DeleteListing: %v", err)
+	}
+	if _, err := h.svc.GetListing(ctx, catalogapi.GetListingRequest{ID: listing.ID}); status(t, err) != 404 {
+		t.Fatal("a deleted listing must read as 404")
+	}
+}
+
+// The seller taking their own listing down reads the same in the row as a takedown; who did
+// it is in the trail. Safe only because publishing from hidden re-enters moderation.
+func TestHideListing_NeedsToBeLive(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	listing := seedListing(t, h)
+	// A draft has nothing to hide.
+	if s := status(t, mustErr(h.svc.HideListing(ctx, catalogapi.HideListingRequest{
+		ActorID: actor, ID: listing.ID,
+	}))); s != 409 {
+		t.Fatalf("status = %d, want 409", s)
+	}
+}

@@ -246,3 +246,103 @@ func toAPIPendingEdit(e domain.PendingEdit) *catalogapi.PendingEdit {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// UpdateListing applies the patch through the root, which decides whether it lands on the
+// row or waits for a moderator.
+func (s *Service) UpdateListing(ctx context.Context, req catalogapi.UpdateListingRequest) (catalogapi.ListingDetail, error) {
+	l, err := s.repo.GetListingForSeller(ctx, req.ID.Int64(), req.ActorID.Int64())
+	if err != nil {
+		return catalogapi.ListingDetail{}, fmt.Errorf("get listing: %w", err)
+	}
+	edit := domain.PendingEdit{
+		Name:           req.Name,
+		Description:    req.Description,
+		Specifications: req.Specifications,
+		Tags:           req.Tags,
+	}
+	if req.CategoryID != nil {
+		categoryID := req.CategoryID.Int64()
+		edit.CategoryID = &categoryID
+	}
+	if req.Condition != nil {
+		edit.Condition = ptr(domain.Condition(*req.Condition))
+	}
+	if req.PriceMode != nil {
+		edit.PriceMode = ptr(domain.PriceMode(*req.PriceMode))
+	}
+	if req.ShippingPaidBy != nil {
+		edit.ShippingPaidBy = ptr(domain.ShippingPaidBy(*req.ShippingPaidBy))
+	}
+	if req.Attachments != nil {
+		edit.Attachments = resourceKeys(req.Attachments)
+	}
+	if err := l.SubmitEdit(edit); err != nil {
+		return catalogapi.ListingDetail{}, err
+	}
+	// Featuring is not part of the reviewed set: which variant the card shows is not a claim
+	// about what the listing is, so it takes effect at once.
+	switch {
+	case req.ClearFeaturedVariantID:
+		for _, v := range l.Variants {
+			v.IsFeatured = false
+		}
+	case req.FeaturedVariantID != nil:
+		if err := l.SetFeatured(req.FeaturedVariantID.Int64()); err != nil {
+			return catalogapi.ListingDetail{}, err
+		}
+	}
+	if err := s.requireResources(ctx, l); err != nil {
+		return catalogapi.ListingDetail{}, err
+	}
+	if err := s.repo.SaveListing(ctx, l, req.ActorID.Int64()); err != nil {
+		return catalogapi.ListingDetail{}, fmt.Errorf("save listing: %w", err)
+	}
+	return s.detail(ctx, l, req.ActorID.Int64())
+}
+
+// DeleteListing is a soft delete, refused while a checkout is in flight. A reservation exists
+// exactly during that window, and it is a local fact — so no call into order, and no second
+// definition of "open" to keep in step.
+func (s *Service) DeleteListing(ctx context.Context, req catalogapi.DeleteListingRequest) error {
+	l, err := s.repo.GetListingForSeller(ctx, req.ID.Int64(), req.ActorID.Int64())
+	if err != nil {
+		return fmt.Errorf("get listing: %w", err)
+	}
+	for _, v := range l.Variants {
+		if v.Stock.Reserved > 0 {
+			return domain.ErrListingInUse
+		}
+	}
+	if err := s.repo.SoftDeleteListing(ctx, l.ID, req.ActorID.Int64(), req.ActorID.Int64()); err != nil {
+		return fmt.Errorf("delete listing: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) PublishListing(ctx context.Context, req catalogapi.PublishListingRequest) (catalogapi.ListingDetail, error) {
+	l, err := s.repo.GetListingForSeller(ctx, req.ID.Int64(), req.ActorID.Int64())
+	if err != nil {
+		return catalogapi.ListingDetail{}, fmt.Errorf("get listing: %w", err)
+	}
+	if err := l.Publish(); err != nil {
+		return catalogapi.ListingDetail{}, err
+	}
+	if err := s.repo.SaveListing(ctx, l, req.ActorID.Int64()); err != nil {
+		return catalogapi.ListingDetail{}, fmt.Errorf("save listing: %w", err)
+	}
+	return s.detail(ctx, l, req.ActorID.Int64())
+}
+
+func (s *Service) HideListing(ctx context.Context, req catalogapi.HideListingRequest) (catalogapi.ListingDetail, error) {
+	l, err := s.repo.GetListingForSeller(ctx, req.ID.Int64(), req.ActorID.Int64())
+	if err != nil {
+		return catalogapi.ListingDetail{}, fmt.Errorf("get listing: %w", err)
+	}
+	if err := l.Hide(); err != nil {
+		return catalogapi.ListingDetail{}, err
+	}
+	if err := s.repo.SaveListing(ctx, l, req.ActorID.Int64()); err != nil {
+		return catalogapi.ListingDetail{}, fmt.Errorf("save listing: %w", err)
+	}
+	return s.detail(ctx, l, req.ActorID.Int64())
+}

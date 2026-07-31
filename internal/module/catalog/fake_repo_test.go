@@ -499,3 +499,23 @@ func (f *fakeRepo) GetListingByVariant(ctx context.Context, variantID, sellerID 
 	}
 	return l, nil
 }
+
+func (f *fakeRepo) SoftDeleteListing(_ context.Context, id, sellerID, actor int64) error {
+	at := f.listingAt(id)
+	if at < 0 || f.listings[at].listing.SellerID != sellerID || f.listings[at].listing.DeletedAt != nil {
+		return domain.ErrListingNotFound
+	}
+	now := time.Now()
+	f.listings[at].listing.DeletedAt = &now
+	f.listings[at].listing.Version++
+	var changedBy *int64
+	if actor != 0 {
+		changedBy = &actor
+	}
+	f.audit = append(f.audit, port.AuditEntry{
+		Table: "listing", RecordID: id, ChangeType: "delete",
+		Code: string(domain.Deleted.Code), ChangedBy: changedBy,
+		Diff: domain.NoPayload{}, Snapshot: domain.NoPayload{},
+	})
+	return nil
+}

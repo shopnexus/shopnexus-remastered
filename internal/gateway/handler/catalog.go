@@ -83,22 +83,91 @@ func (h *Catalog) GetListing(w http.ResponseWriter, r *http.Request) {
 
 // UpdateListing handles PATCH /listings/{id}.
 func (h *Catalog) UpdateListing(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	listingID, err := pathID[id.Listing](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req catalogapi.UpdateListingRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, listingID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.UpdateListing(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// DeleteListing handles DELETE /listings/{id}.
+// DeleteListing handles DELETE /listings/{id} — soft, so order history stays resolvable.
 func (h *Catalog) DeleteListing(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	listingID, err := pathID[id.Listing](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := catalogapi.DeleteListingRequest{ActorID: uid, ID: listingID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	if failed(w, h.log, h.svc.DeleteListing(r.Context(), req)) {
+		return
+	}
+	httpx.WriteNoContent(w)
 }
 
-// PublishListing handles POST /listings/{id}/publication.
+// PublishListing handles POST /listings/{id}/publication. 202, not 200: it queues the
+// listing for moderation and nothing is live yet.
 func (h *Catalog) PublishListing(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	listingID, err := pathID[id.Listing](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := catalogapi.PublishListingRequest{ActorID: uid, ID: listingID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.PublishListing(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusAccepted, res)
 }
 
-// HideListing handles DELETE /listings/{id}/publication.
+// HideListing handles DELETE /listings/{id}/publication — the seller taking their own listing
+// down. Publishing it again re-enters moderation.
 func (h *Catalog) HideListing(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	listingID, err := pathID[id.Listing](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := catalogapi.HideListingRequest{ActorID: uid, ID: listingID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.HideListing(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
 // CreateVariant handles POST /listings/{id}/variants.
