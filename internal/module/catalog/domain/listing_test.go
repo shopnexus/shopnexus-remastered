@@ -280,3 +280,74 @@ func TestSubmitEdit_PendingWritesThrough(t *testing.T) {
 		t.Fatalf("listing = %+v, want it live with nothing left to review", l)
 	}
 }
+
+// A draft may be emptied: DELETE /variants only refuses the last variant of a listing that is
+// live or queued, so Publish is where "there has to be something to buy" is checked.
+func TestValidate_AnEmptyDraftIsStorable(t *testing.T) {
+	l := newListing(t)
+	if err := l.RemoveVariant(l.Variants[0].ID); err != nil {
+		t.Fatalf("RemoveVariant: %v", err)
+	}
+	if err := l.Validate(); err != nil {
+		t.Fatalf("Validate on an emptied draft: %v", err)
+	}
+	if err := l.Publish(); !errors.Is(err, domain.ErrNoVariant) {
+		t.Fatalf("Publish = %v, want ErrNoVariant", err)
+	}
+	// A create still has to carry one: the request brings them inline.
+	in := listingInput()
+	in.Variants = nil
+	if _, err := domain.NewListing(7, 3, in); !errors.Is(err, domain.ErrNoVariant) {
+		t.Fatalf("NewListing = %v, want ErrNoVariant", err)
+	}
+}
+
+// A name of only punctuation derives an empty slug, and the second such listing would get a
+// confusing slug_taken instead of being told about the name.
+func TestNewListing_NameMustDeriveASlug(t *testing.T) {
+	in := listingInput()
+	in.Name = "!!! ???"
+	if _, err := domain.NewListing(7, 3, in); err == nil {
+		t.Fatal("a name with no letter or digit was accepted")
+	}
+}
+
+// Two live variants both claiming the card is its own error: "duplicate_variant" used to
+// answer this, which told the caller about attributes it had not touched.
+func TestValidate_OnlyOneFeatured(t *testing.T) {
+	l := newListing(t)
+	second, err := domain.NewVariant(domain.NewVariantInput{
+		Price: 1000, Attributes: map[string]any{"size": "m"},
+		PackageDetails: map[string]any{}, Quantity: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewVariant: %v", err)
+	}
+	if err := l.AddVariant(second); err != nil {
+		t.Fatalf("AddVariant: %v", err)
+	}
+	second.IsFeatured = true
+	if err := l.Validate(); !errors.Is(err, domain.ErrTooManyFeatured) {
+		t.Fatalf("Validate = %v, want ErrTooManyFeatured", err)
+	}
+}
+
+// The attribute key keeps the value's type, so {"size": 1} and {"size": "1"} stay the two
+// distinct rows "variant_listing_id_attributes_key" allows.
+func TestValidate_AttributeTypesAreDistinct(t *testing.T) {
+	l := newListing(t)
+	l.Variants[0].Attributes = map[string]any{"size": 1}
+	second, err := domain.NewVariant(domain.NewVariantInput{
+		Price: 1000, Attributes: map[string]any{"size": "1"},
+		PackageDetails: map[string]any{}, Quantity: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewVariant: %v", err)
+	}
+	if err := l.AddVariant(second); err != nil {
+		t.Fatalf("AddVariant: %v", err)
+	}
+	if err := l.Validate(); err != nil {
+		t.Fatalf("Validate: %v — a number and a string are two jsonb values", err)
+	}
+}
