@@ -66,8 +66,13 @@ func (f *fakeRepo) UpdateCategory(_ context.Context, c domain.Category) error {
 	if f.nameTaken(c.Name, c.ID) {
 		return domain.ErrCategoryNameTaken
 	}
-	if c.ParentID != nil && f.isDescendant(*c.ParentID, c.ID) {
-		return domain.ErrCategoryCycle
+	if c.ParentID != nil {
+		if _, ok := f.categories[*c.ParentID]; !ok {
+			return domain.ErrCategoryNotFound
+		}
+		if f.isDescendant(*c.ParentID, c.ID) {
+			return domain.ErrCategoryCycle
+		}
 	}
 	f.categories[c.ID] = c
 	return nil

@@ -142,6 +142,24 @@ func TestAdminUpdateCategory_PatchAndClearParent(t *testing.T) {
 	}
 }
 
+// Patching parent_id to an id nobody has is a 404, the same as the schema's FK violation
+// on a dangling parent — the fake has to enforce that itself, since it holds no real FK.
+func TestAdminUpdateCategory_UnknownParentNotFound(t *testing.T) {
+	h := newHarness("admin")
+	ctx := context.Background()
+	root, err := h.svc.AdminCreateCategory(ctx, catalogapi.CreateCategoryRequest{ActorID: actor, Name: "Root"})
+	if err != nil {
+		t.Fatalf("create root: %v", err)
+	}
+	unknown := id.Of[id.Category](999999)
+	err = mustErr(h.svc.AdminUpdateCategory(ctx, catalogapi.UpdateCategoryRequest{
+		ActorID: actor, ID: root.ID, ParentID: &unknown,
+	}))
+	if got := status(t, err); got != 404 {
+		t.Fatalf("status = %d, want 404", got)
+	}
+}
+
 // Moving a node under its own descendant is refused, and the answer is the domain's
 // rather than a driver error.
 func TestAdminUpdateCategory_CycleRefused(t *testing.T) {

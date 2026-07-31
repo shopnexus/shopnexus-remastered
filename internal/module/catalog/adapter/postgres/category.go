@@ -62,8 +62,9 @@ func (r *Repo) CreateCategory(ctx context.Context, c *domain.Category) error {
 
 // UpdateCategory writes the row and moves it in one statement. The NOT EXISTS walks the
 // subtree of the row being moved: if the new parent is inside it, the move would loop the
-// tree, and no row is touched. Existence is checked first so that "no rows" has exactly
-// one remaining meaning.
+// tree, and no row is touched. The pre-check only disambiguates the common case: it and
+// the UPDATE are two round trips with no lock between them, so a row deleted in the gap
+// still reports as the cycle error, not not-found.
 func (r *Repo) UpdateCategory(ctx context.Context, c domain.Category) error {
 	exists, err := r.CategoryExists(ctx, c.ID)
 	if err != nil {

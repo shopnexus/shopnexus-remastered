@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"shopnexus/internal/infra/postgres"
 	pgadapter "shopnexus/internal/module/catalog/adapter/postgres"
 	"shopnexus/internal/module/catalog/domain"
@@ -17,18 +19,55 @@ import (
 // These exercise the SQL a fake cannot: the recursive cycle guard, the name UNIQUE and
 // ON DELETE RESTRICT. They skip when no DSN is set, so `go test ./...` stays
 // database-free.
-func newRepo(t *testing.T) *pgadapter.Repo {
+func testDSN(t *testing.T) string {
 	t.Helper()
 	dsn := os.Getenv("CATALOG_DB_DSN")
 	if dsn == "" {
 		t.Skip("CATALOG_DB_DSN not set")
 	}
-	pool, err := postgres.NewPool(context.Background(), dsn, "catalog")
+	return dsn
+}
+
+func newRepo(t *testing.T) *pgadapter.Repo {
+	t.Helper()
+	pool, err := postgres.NewPool(context.Background(), testDSN(t), "catalog")
 	if err != nil {
 		t.Fatalf("pool: %v", err)
 	}
 	t.Cleanup(pool.Close)
 	return pgadapter.New(pool)
+}
+
+// insertListing writes a listing referencing categoryID directly with SQL: the listing
+// aggregate has no Go repository yet, and this is the only way to produce the row that
+// makes "listing_category_id_fkey" (ON DELETE RESTRICT) fire.
+func insertListing(t *testing.T, categoryID int64) {
+	t.Helper()
+	pool, err := postgres.NewPool(context.Background(), testDSN(t), "catalog")
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	defer pool.Close()
+	const q = `INSERT INTO listing
+	           (slug, account_id, category_id, name, description, specifications,
+	            price_mode, condition, shipping_paid_by, currency)
+	           VALUES (@slug, @account_id, @category_id, @name, @description, @specifications::jsonb,
+	                   @price_mode, @condition, @shipping_paid_by, @currency)`
+	args := pgx.NamedArgs{
+		"slug":             unique("listing-"),
+		"account_id":       int64(1),
+		"category_id":      categoryID,
+		"name":             "test listing",
+		"description":      "",
+		"specifications":   `{}`,
+		"price_mode":       "fixed",
+		"condition":        "new",
+		"shipping_paid_by": "seller",
+		"currency":         "USD",
+	}
+	if _, err := pool.Exec(context.Background(), q, args); err != nil {
+		t.Fatalf("insert listing: %v", err)
+	}
 }
 
 // unique keeps repeated runs against the same database apart.
@@ -82,6 +121,35 @@ func TestRepo_CategoryNameIsUnique(t *testing.T) {
 	}
 	if err := repo.CreateCategory(context.Background(), dup); !errors.Is(err, domain.ErrCategoryNameTaken) {
 		t.Fatalf("CreateCategory = %v, want ErrCategoryNameTaken", err)
+	}
+}
+
+// The mapping DeleteCategory rests on: ON DELETE RESTRICT refuses to orphan a listing
+// still pointing at the category, and the adapter turns that into ErrCategoryInUse rather
+// than a bare driver error.
+func TestRepo_CategoryInUseRefusesDelete(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	cat := createCategory(t, repo, unique("used-"), nil)
+	insertListing(t, cat.ID)
+
+	if err := repo.DeleteCategory(ctx, cat.ID); !errors.Is(err, domain.ErrCategoryInUse) {
+		t.Fatalf("DeleteCategory = %v, want ErrCategoryInUse", err)
+	}
+}
+
+// The mapping UpdateCategory rests on: moving a category under a parent id that does not
+// exist trips "category_parent_id_fkey", which the adapter reports as ErrCategoryNotFound.
+func TestRepo_CategoryMoveRefusesUnknownParent(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	cat := createCategory(t, repo, unique("orphan-"), nil)
+
+	unknown := int64(-1)
+	moved := *cat
+	moved.ParentID = &unknown
+	if err := repo.UpdateCategory(ctx, moved); !errors.Is(err, domain.ErrCategoryNotFound) {
+		t.Fatalf("UpdateCategory = %v, want ErrCategoryNotFound", err)
 	}
 }
 
