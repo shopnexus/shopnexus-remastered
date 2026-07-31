@@ -7,6 +7,7 @@ package port
 
 import (
 	"context"
+	"time"
 
 	"shopnexus/internal/module/catalog/domain"
 )
@@ -55,6 +56,36 @@ type AuditEntry struct {
 	// shape belongs to the fact, not to the trail.
 	Diff     any
 	Snapshot any
+}
+
+// ListingSummary is the moderation queue row: the flat shape a table renders, so a page of
+// twenty is one query rather than twenty aggregate loads. Price is the featured variant's,
+// resolved in the same statement.
+type ListingSummary struct {
+	ID             int64
+	SellerID       int64
+	Slug           string
+	Name           string
+	Status         domain.Status
+	Condition      domain.Condition
+	PriceMode      domain.PriceMode
+	Currency       string
+	Price          int64
+	Sold           int64
+	Rating         float64
+	CategoryID     int64
+	CoverID        *int64
+	HasPendingEdit bool
+	CreatedAt      time.Time
+}
+
+// QueueFilter drives the queue. Status empty means both halves of it: a listing waiting for
+// its first publication, and a live one holding an edit.
+type QueueFilter struct {
+	Status   domain.Status
+	SellerID int64
+	Offset   int
+	Limit    int
 }
 
 type Repository interface {
@@ -106,6 +137,9 @@ type Repository interface {
 	// SoftDeleteListing marks the row deleted and writes the trail. Soft, because order.item
 	// holds listing_id without a foreign key and a past order has to stay renderable.
 	SoftDeleteListing(ctx context.Context, id, sellerID, actor int64) error
+	// ListModerationQueue answers the moderator's worklist, oldest first — the order it should
+	// be worked.
+	ListModerationQueue(ctx context.Context, f QueueFilter) ([]ListingSummary, int64, error)
 	// GetListingByVariant loads the aggregate a variant belongs to, scoped by owner: the
 	// variant routes address the variant, but the rules live on the root.
 	GetListingByVariant(ctx context.Context, variantID, sellerID int64) (*domain.Listing, error)

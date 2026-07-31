@@ -53,3 +53,17 @@ func (s *Service) requireAdmin(ctx context.Context, actorID id.ID[id.Account]) e
 	}
 	return nil
 }
+
+// requireModerator asks the account module for the caller's role. An admin passes every
+// moderator check — a role that outranks another and still gets refused is a bug waiting to
+// be filed.
+func (s *Service) requireModerator(ctx context.Context, actorID id.ID[id.Account]) error {
+	me, err := s.accounts.GetMe(ctx, accountapi.GetMeRequest{ActorID: actorID})
+	if err != nil {
+		return fmt.Errorf("read caller role: %w", err)
+	}
+	if me.Role != "moderator" && me.Role != "admin" {
+		return domain.ErrModeratorRequired
+	}
+	return nil
+}

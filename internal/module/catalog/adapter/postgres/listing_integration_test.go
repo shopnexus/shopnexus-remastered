@@ -11,6 +11,7 @@ import (
 
 	pgadapter "shopnexus/internal/module/catalog/adapter/postgres"
 	"shopnexus/internal/module/catalog/domain"
+	"shopnexus/internal/module/catalog/port"
 )
 
 func newListingFor(t *testing.T, repo *pgadapter.Repo, categoryID int64, name string) *domain.Listing {
@@ -236,5 +237,56 @@ func TestRepo_SaveListingWritesTheTrail(t *testing.T) {
 	}
 	if len(l.Events()) != 0 {
 		t.Error("Save left the events on the aggregate")
+	}
+}
+
+// The queue's two halves in SQL: a pending listing and a live one holding an edit, and
+// neither a draft nor a plain active one.
+func TestRepo_ModerationQueueCoversBothHalves(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	category := createCategory(t, repo, unique("cat-"), nil)
+	createTag(t, repo, "handmade", nil)
+
+	draft := newListingFor(t, repo, category.ID, unique("Draft "))
+	pending := newListingFor(t, repo, category.ID, unique("Pending "))
+	edited := newListingFor(t, repo, category.ID, unique("Edited "))
+
+	if err := pending.Publish(); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if err := repo.SaveListing(ctx, pending, 7); err != nil {
+		t.Fatalf("SaveListing: %v", err)
+	}
+	if err := edited.Publish(); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if err := edited.Approve(); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	name := "Edited again"
+	if err := edited.SubmitEdit(domain.PendingEdit{Name: &name}); err != nil {
+		t.Fatalf("SubmitEdit: %v", err)
+	}
+	if err := repo.SaveListing(ctx, edited, 7); err != nil {
+		t.Fatalf("SaveListing: %v", err)
+	}
+
+	rows, _, err := repo.ListModerationQueue(ctx, port.QueueFilter{SellerID: 7, Limit: 50})
+	if err != nil {
+		t.Fatalf("ListModerationQueue: %v", err)
+	}
+	seen := map[int64]bool{}
+	for _, row := range rows {
+		seen[row.ID] = true
+		if row.Price == 0 {
+			t.Errorf("row %d has no price — the lateral join found no variant", row.ID)
+		}
+	}
+	if !seen[pending.ID] || !seen[edited.ID] {
+		t.Fatalf("queue = %+v, want both the pending and the edited listing", rows)
+	}
+	if seen[draft.ID] {
+		t.Error("a draft is not awaiting a decision")
 	}
 }

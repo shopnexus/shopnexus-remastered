@@ -37,6 +37,13 @@ type Service interface {
 	PublishListing(ctx context.Context, req PublishListingRequest) (ListingDetail, error)
 	HideListing(ctx context.Context, req HideListingRequest) (ListingDetail, error)
 
+	// --- moderation: moderator or admin only ---
+	AdminListListings(ctx context.Context, req AdminListListingsRequest) (ListingPage, error)
+	// AdminApproveListing clears whatever was awaiting a decision: a first publication, or an
+	// edit held against a live listing.
+	AdminApproveListing(ctx context.Context, req ApproveListingRequest) (ListingDetail, error)
+	AdminTakedownListing(ctx context.Context, req TakedownListingRequest) (ListingDetail, error)
+
 	// --- stock: called by order, not by a route ---
 	// ReserveStock holds units for a checkout that has not completed. Answers
 	// 409 insufficient_stock when there is no room, which the caller acts on.

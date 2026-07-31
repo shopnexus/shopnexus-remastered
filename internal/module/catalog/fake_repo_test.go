@@ -519,3 +519,64 @@ func (f *fakeRepo) SoftDeleteListing(_ context.Context, id, sellerID, actor int6
 	})
 	return nil
 }
+
+func (f *fakeRepo) ListModerationQueue(_ context.Context, filter port.QueueFilter) ([]port.ListingSummary, int64, error) {
+	var matched []port.ListingSummary
+	for _, stored := range f.listings {
+		l := stored.listing
+		if l.DeletedAt != nil {
+			continue
+		}
+		switch {
+		case filter.Status != "":
+			if l.Status != filter.Status {
+				continue
+			}
+		default:
+			// Both halves of the queue: awaiting a first publication, or holding an edit.
+			if l.Status != domain.StatusPending && l.PendingEdit == nil {
+				continue
+			}
+		}
+		if filter.SellerID != 0 && l.SellerID != filter.SellerID {
+			continue
+		}
+		// The price is the featured variant's, as the lateral join makes it.
+		var price int64
+		for _, v := range stored.variants {
+			if v.DeletedAt == nil && (price == 0 || v.IsFeatured) {
+				price = v.Price
+			}
+		}
+		matched = append(matched, port.ListingSummary{
+			ID: l.ID, SellerID: l.SellerID, Slug: l.Slug, Name: l.Name, Status: l.Status,
+			Condition: l.Condition, PriceMode: l.PriceMode, Currency: l.Currency,
+			Price: price, Sold: l.CachedSold, Rating: l.CachedRating,
+			CategoryID: l.CategoryID, HasPendingEdit: l.PendingEdit != nil,
+			CreatedAt: l.CreatedAt,
+		})
+	}
+	slices.SortFunc(matched, func(a, b port.ListingSummary) int {
+		return a.CreatedAt.Compare(b.CreatedAt)
+	})
+	total := int64(len(matched))
+	if filter.Offset >= len(matched) {
+		return nil, total, nil
+	}
+	return matched[filter.Offset:min(filter.Offset+filter.Limit, len(matched))], total, nil
+}
+
+// auditedDiff finds the payload recorded under one event type, at that type. A test that
+// asserts on the trail should not be reaching into a map to do it.
+func auditedDiff[T any](f *fakeRepo, e domain.EventType[T]) (T, bool) {
+	for _, entry := range f.audit {
+		if entry.Code != string(e.Code) {
+			continue
+		}
+		if payload, ok := entry.Diff.(T); ok {
+			return payload, true
+		}
+	}
+	var zero T
+	return zero, false
+}

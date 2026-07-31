@@ -81,6 +81,18 @@ func (Stub) HideListing(context.Context, catalogapi.HideListingRequest) (catalog
 	return catalogapi.ListingDetail{}, errx.ErrNotImplemented
 }
 
+func (Stub) AdminListListings(context.Context, catalogapi.AdminListListingsRequest) (catalogapi.ListingPage, error) {
+	return catalogapi.ListingPage{}, errx.ErrNotImplemented
+}
+
+func (Stub) AdminApproveListing(context.Context, catalogapi.ApproveListingRequest) (catalogapi.ListingDetail, error) {
+	return catalogapi.ListingDetail{}, errx.ErrNotImplemented
+}
+
+func (Stub) AdminTakedownListing(context.Context, catalogapi.TakedownListingRequest) (catalogapi.ListingDetail, error) {
+	return catalogapi.ListingDetail{}, errx.ErrNotImplemented
+}
+
 func (Stub) ReserveStock(context.Context, catalogapi.StockMovementRequest) error {
 	return errx.ErrNotImplemented
 }

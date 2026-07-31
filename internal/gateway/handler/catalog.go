@@ -398,17 +398,86 @@ func (h *Catalog) AdminDeleteTag(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteNoContent(w)
 }
 
-// AdminListListings handles GET /admin/listings.
+// AdminListListings handles GET /admin/listings — the moderation queue.
 func (h *Catalog) AdminListListings(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	page, limit, err := pageParams(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	req := catalogapi.AdminListListingsRequest{
+		ActorID: uid,
+		Status:  r.URL.Query().Get("status"),
+		Page:    page,
+		Limit:   limit,
+	}
+	if raw := r.URL.Query().Get("seller_id"); raw != "" {
+		sellerID, err := id.Parse[id.Account](raw)
+		if failed(w, h.log, err) {
+			return
+		}
+		req.SellerID = sellerID
+	}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.AdminListListings(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WritePage(w, http.StatusOK, res.Data, httpx.PageMeta(res.Meta))
 }
 
 // AdminApproveListing handles POST /admin/listings/{id}/approval.
 func (h *Catalog) AdminApproveListing(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	listingID, err := pathID[id.Listing](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req catalogapi.ApproveListingRequest
+	// The note is optional, so the body may be absent entirely.
+	if failed(w, h.log, decodeOptionalBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, listingID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.AdminApproveListing(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
 // AdminTakedownListing handles POST /admin/listings/{id}/takedown.
 func (h *Catalog) AdminTakedownListing(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	listingID, err := pathID[id.Listing](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req catalogapi.TakedownListingRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, listingID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.AdminTakedownListing(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }

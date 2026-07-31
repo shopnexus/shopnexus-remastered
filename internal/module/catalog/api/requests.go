@@ -155,3 +155,26 @@ type HideListingRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	ID      id.ID[id.Listing] `json:"-" validate:"required"`
 }
+
+// AdminListListingsRequest is the moderation queue. Status empty means everything awaiting a
+// decision — a first publication or a held edit.
+type AdminListListingsRequest struct {
+	ActorID  id.ID[id.Account] `json:"-" validate:"required"`
+	Status   string            `json:"-" validate:"omitempty,oneof=draft pending active hidden"`
+	SellerID id.ID[id.Account] `json:"-"`
+	Page     int               `json:"-" validate:"required,min=1"`
+	Limit    int               `json:"-" validate:"required,min=1,max=100"`
+}
+
+type ApproveListingRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	ID      id.ID[id.Listing] `json:"-" validate:"required"`
+	Note    string            `json:"note,omitempty" validate:"max=2000"`
+}
+
+type TakedownListingRequest struct {
+	ActorID      id.ID[id.Account] `json:"-" validate:"required"`
+	ID           id.ID[id.Listing] `json:"-" validate:"required"`
+	Reason       string            `json:"reason" validate:"required,min=1,max=2000"`
+	NotifySeller *bool             `json:"notify_seller,omitempty"`
+}

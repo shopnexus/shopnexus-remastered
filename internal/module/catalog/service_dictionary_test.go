@@ -61,6 +61,13 @@ func newHarnessWith(role string, identityVerified bool) *harness {
 	return &harness{svc: svc, repo: repo}
 }
 
+// newHarnessModerator reuses one harness's repository with a moderator caller.
+func newHarnessModerator(h *harness) *harness {
+	svc := catalog.NewService(h.repo, fakeAccounts{role: "moderator", verified: true},
+		fakeResources{}, validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: h.repo}
+}
+
 // newHarnessAdmin reuses one harness's repository with an admin caller, so a test can seed a
 // category and then act as a plain seller against the same data.
 func newHarnessAdmin(h *harness) *harness {

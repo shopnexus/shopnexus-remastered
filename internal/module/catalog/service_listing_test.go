@@ -148,8 +148,7 @@ func TestPublishListing_EntersModeration(t *testing.T) {
 	}
 }
 
-// A draft is edited in place: there is nothing published to protect. The live half of this
-// rule is TestUpdateListing_LiveEditIsHeld, which needs a moderator to approve first.
+// A draft is edited in place: there is nothing published to protect.
 func TestUpdateListing_DraftWritesThrough(t *testing.T) {
 	h := newHarnessWith("user", true)
 	ctx := context.Background()
@@ -208,5 +207,40 @@ func TestHideListing_NeedsToBeLive(t *testing.T) {
 		ActorID: actor, ID: listing.ID,
 	}))); s != 409 {
 		t.Fatalf("status = %d, want 409", s)
+	}
+}
+
+// Editing a live listing parks the change so buyers keep seeing what was approved, and the
+// listing stays live while it waits.
+func TestUpdateListing_LiveEditIsHeld(t *testing.T) {
+	h := newHarnessWith("user", true)
+	mod := newHarnessModerator(h)
+	ctx := context.Background()
+	listing := seedListing(t, h)
+
+	if _, err := h.svc.PublishListing(ctx, catalogapi.PublishListingRequest{ActorID: actor, ID: listing.ID}); err != nil {
+		t.Fatalf("PublishListing: %v", err)
+	}
+	if _, err := mod.svc.AdminApproveListing(ctx, catalogapi.ApproveListingRequest{
+		ActorID: actor, ID: listing.ID,
+	}); err != nil {
+		t.Fatalf("AdminApproveListing: %v", err)
+	}
+
+	renamed := "Áo thun Uniqlo cổ tròn xanh navy"
+	got, err := h.svc.UpdateListing(ctx, catalogapi.UpdateListingRequest{
+		ActorID: actor, ID: listing.ID, Name: &renamed,
+	})
+	if err != nil {
+		t.Fatalf("UpdateListing: %v", err)
+	}
+	if got.Status != string(domain.StatusActive) {
+		t.Errorf("status = %q, want it still active", got.Status)
+	}
+	if got.Name == renamed {
+		t.Error("the live row was rewritten; the edit must be held")
+	}
+	if got.PendingEdit == nil || got.PendingEdit.Name == nil {
+		t.Fatal("the edit was not held")
 	}
 }
