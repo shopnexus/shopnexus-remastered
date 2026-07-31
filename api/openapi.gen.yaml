@@ -395,10 +395,12 @@ components:
         Category:
             properties:
                 description:
+                    example: Hand-thrown and slipcast pottery.
                     type: string
                 id:
                     $ref: '#/components/schemas/CategoryID'
                 name:
+                    example: Ceramics
                     type: string
                 parent_id:
                     allOf:
@@ -737,9 +739,11 @@ components:
         CreateCategoryRequest:
             properties:
                 description:
+                    example: Hand-thrown and slipcast pottery.
                     maxLength: 2000
                     type: string
                 name:
+                    example: Ceramics
                     maxLength: 100
                     minLength: 1
                     type: string
@@ -747,7 +751,6 @@ components:
                     $ref: '#/components/schemas/CategoryID'
             required:
                 - name
-                - description
             type: object
         CreateContactRequest:
             properties:
@@ -1212,7 +1215,7 @@ components:
                     $ref: '#/components/schemas/AccountID'
                 shipping_paid_by:
                     $ref: '#/components/schemas/OrderShippingPaidBy'
-                skus:
+                variants:
                     items:
                         $ref: '#/components/schemas/DraftVariantSnapshot'
                     type: array
@@ -1222,7 +1225,7 @@ components:
                 - seller_id
                 - currency
                 - price_mode
-                - skus
+                - variants
             type: object
         DraftOrder:
             properties:
@@ -2752,6 +2755,7 @@ components:
             description: The slug is in the path, so this carries only what can change.
             properties:
                 description:
+                    example: Made by hand, one at a time.
                     maxLength: 255
                     type: string
             type: object
@@ -2989,7 +2993,7 @@ components:
                 ref_id:
                     description: |
                         Opaque id of the reported thing. Which prefix is valid follows from `ref_type`, which is why the two are validated together.
-                    example: spu_1ryaj8117v2p4
+                    example: lst_1ryaj8117v2p4
                     pattern: ^[a-z]{3}_[0-9a-hjkmnp-tv-z]{13}$
                     type: string
                 ref_type:
@@ -3409,7 +3413,7 @@ components:
             type: object
         Stock:
             description: |
-                Always read inside its own variant, so it does not repeat the sku id.
+                Always read inside its own variant, so it does not repeat the variant id.
             properties:
                 available:
                     description: quantity − reserved − sold.
@@ -3518,6 +3522,7 @@ components:
         Tag:
             properties:
                 description:
+                    example: Made by hand, one at a time.
                     nullable: true
                     type: string
                 score:
@@ -3821,9 +3826,11 @@ components:
                     example: false
                     type: boolean
                 description:
+                    example: Hand-thrown and slipcast pottery.
                     maxLength: 2000
                     type: string
                 name:
+                    example: Ceramics
                     maxLength: 100
                     minLength: 1
                     type: string
@@ -4735,6 +4742,12 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/Error'
                     description: Admin role required
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: The named parent does not exist
                 "409":
                     content:
                         application/json:
@@ -4811,6 +4824,12 @@ paths:
                     description: Admin role required
                 "404":
                     $ref: '#/components/responses/NotFound'
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Name already taken
                 "422":
                     content:
                         application/json:
@@ -5495,7 +5514,7 @@ paths:
                     application/json:
                         schema:
                             $ref: '#/components/schemas/PutTagRequest'
-                required: true
+                required: false
             responses:
                 "200":
                     content:
@@ -7324,7 +7343,7 @@ paths:
     /listings/{id}/variants:
         post:
             description: |
-                Answers with the listing. The new variant is the one in `skus` that was not there before — there is no separate id in the response, because a variant is not addressable on its own.
+                Answers with the listing. The new variant is the one in `variants` that was not there before — there is no separate id in the response, because a variant is not addressable on its own.
             parameters:
                 - in: path
                   name: id

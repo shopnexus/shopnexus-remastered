@@ -80,7 +80,7 @@ components:
           description: >
             Opaque id of the reported thing. Which prefix is valid follows from
             `ref_type`, which is why the two are validated together.
-          example: spu_1ryaj8117v2p4
+          example: lst_1ryaj8117v2p4
         reason: { $ref: '#/components/schemas/ReportReason' }
         detail: { type: string }
         status: { $ref: '#/components/schemas/ReportStatus' }

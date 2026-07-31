@@ -125,6 +125,12 @@ func (f *fakeRepo) Save(_ context.Context, a *domain.Account, actor int64) error
 	if actor != 0 {
 		changedBy = &actor
 	}
+	row := f.accounts[a.ID]
+	row.Version++
+	f.accounts[a.ID] = row
+	// As the adapter does: the version is bumped before the trail, so the snapshot describes
+	// the row as it now is.
+	a.Version++
 	snapshot := a.Snapshot()
 	for _, e := range a.Events() {
 		f.audit = append(f.audit, port.AuditEntry{
@@ -132,10 +138,6 @@ func (f *fakeRepo) Save(_ context.Context, a *domain.Account, actor int64) error
 			ChangedBy: changedBy, Diff: e.Payload, Snapshot: snapshot,
 		})
 	}
-	row := f.accounts[a.ID]
-	row.Version++
-	f.accounts[a.ID] = row
-	a.Version++
 	a.ClearEvents()
 	return nil
 }

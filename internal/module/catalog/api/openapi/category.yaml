@@ -42,8 +42,8 @@ components:
           allOf: [{ $ref: '#/components/schemas/CategoryID' }]
           nullable: true
           description: Null for a root category.
-        name: { type: string }
-        description: { type: string }
+        name: { type: string, example: Ceramics }
+        description: { type: string, example: 'Hand-thrown and slipcast pottery.' }
         score: { $ref: '#/components/schemas/SimilarityScore' }
       required: [id, name, description]
 
@@ -57,9 +57,9 @@ components:
       type: object
       properties:
         parent_id: { $ref: '#/components/schemas/CategoryID' }
-        name: { type: string, minLength: 1, maxLength: 100 }
-        description: { type: string, maxLength: 2000 }
-      required: [name, description]
+        name: { type: string, minLength: 1, maxLength: 100, example: Ceramics }
+        description: { type: string, maxLength: 2000, example: 'Hand-thrown and slipcast pottery.' }
+      required: [name]
 
     UpdateCategoryRequest:
       type: object
@@ -69,5 +69,5 @@ components:
       properties:
         parent_id: { $ref: '#/components/schemas/CategoryID' }
         clear_parent_id: { type: boolean, example: false, description: Promotes the category to a root. }
-        name: { type: string, minLength: 1, maxLength: 100 }
-        description: { type: string, maxLength: 2000 }
+        name: { type: string, minLength: 1, maxLength: 100, example: Ceramics }
+        description: { type: string, maxLength: 2000, example: 'Hand-thrown and slipcast pottery.' }

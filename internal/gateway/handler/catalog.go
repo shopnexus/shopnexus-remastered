@@ -82,12 +82,12 @@ func (h *Catalog) DeleteVariant(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
-// AddFavorite handles PUT /favorites/{spuID}.
+// AddFavorite handles PUT /favorites/{listingID}.
 func (h *Catalog) AddFavorite(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
-// RemoveFavorite handles DELETE /favorites/{spuID}.
+// RemoveFavorite handles DELETE /favorites/{listingID}.
 func (h *Catalog) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }

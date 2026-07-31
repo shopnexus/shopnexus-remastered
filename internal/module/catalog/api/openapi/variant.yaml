@@ -14,7 +14,7 @@ paths:
       tags: [catalog]
       summary: Add a variant to a listing
       description: >
-        Answers with the listing. The new variant is the one in `skus` that was not
+        Answers with the listing. The new variant is the one in `variants` that was not
         there before — there is no separate id in the response, because a variant is
         not addressable on its own.
       security: [{ bearerAuth: [] }]
@@ -108,7 +108,7 @@ components:
     Stock:
       type: object
       description: >
-        Always read inside its own variant, so it does not repeat the sku id.
+        Always read inside its own variant, so it does not repeat the variant id.
       properties:
         quantity: { type: integer, format: int64, minimum: 0, example: 42, description: Total on hand. }
         reserved:

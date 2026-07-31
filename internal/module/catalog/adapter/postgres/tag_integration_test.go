@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
 )
@@ -90,5 +92,23 @@ func TestRepo_DeleteTag(t *testing.T) {
 	}
 	if err := repo.DeleteTag(ctx, tag.Slug); !errors.Is(err, domain.ErrTagNotFound) {
 		t.Fatalf("second DeleteTag = %v, want ErrTagNotFound", err)
+	}
+}
+
+// The slug shape is enforced twice on purpose: the domain refuses it early, and
+// "tag_id_slug_check" holds even when a service is wrong. This is the second one, on the real
+// table — the only place a bad slug could still arrive from.
+func TestMigration_TagSlugCheck(t *testing.T) {
+	ctx := context.Background()
+	pool := poolOf(t)
+	for _, bad := range []string{"Handmade", "eco_friendly", "-lead", "trail-", "double--dash", ""} {
+		_, err := pool.Exec(ctx, `INSERT INTO tag (id) VALUES (@id)`, pgx.NamedArgs{"id": bad})
+		if err == nil || !strings.Contains(err.Error(), "tag_id_slug_check") {
+			// Undo the write the constraint should have refused, so the run stays repeatable.
+			if err == nil {
+				_, _ = pool.Exec(ctx, `DELETE FROM tag WHERE id = @id`, pgx.NamedArgs{"id": bad})
+			}
+			t.Errorf("slug %q: err = %v, want the check constraint to refuse it", bad, err)
+		}
 	}
 }

@@ -61,7 +61,7 @@ is at `/api/v1/docs` and the raw spec at `/api/v1/openapi.yaml`.
 ## Architecture (the parts that span files)
 
 **Module layout** — every `internal/module/<name>/` is identical in shape:
-- `domain/` — entities + pure business rules + **all** module errors in `domain/errors.go` (not-found *and* app-level, e.g. `ErrAccountNotFound`, `ErrEmailTaken`). Imports only stdlib + `shared/errx`.
+- `domain/` — entities + pure business rules + **all** module errors in `domain/errors.go` (not-found *and* app-level, e.g. `ErrAccountNotFound`, `ErrEmailTaken`). Imports only stdlib + `shared/errx` + `shared/validation`.
 - `api/` (package `<name>api`) — the **published contract**: `Service` interface + request/response DTOs with `validate` tags. Imports **only `context`** — never pgx/http/fx/validator. Other modules and the gateway depend on this, not on the service package.
 - `port/` — `Repository` interface the adapter must satisfy.
 - `adapter/postgres/` — `Repository` impl using pgx `pgx.NamedArgs` + hand-written SQL. Its `_test.go` is `//go:build integration`.
@@ -222,7 +222,7 @@ give it its own doc under `docs/` and link it from here.
   `Save` **deletes by negation** (`provider <> ALL(@keep)`, so no removal list has to be
   kept and forgetting to record one is not a failure mode that exists). Break one and the
   other two stop holding. A method is written only for what an assignment cannot do: a
-  rule only the root sees (`Unlink`), a change with a consequence (`ChangeEmail` clears
+  rule only the root sees (`Unlink`), a change with a consequence (`SetEmail` clears
   `email_verified`), a fact worth recording.
 - **A command is `Get` → mutate in memory → `Save`, guarded by `Version`.** No callback,
   no write-surface interface: `Save` validates, writes the row `WHERE version = @version`,
@@ -232,17 +232,26 @@ give it its own doc under `docs/` and link it from here.
   client's call; add a retry loop in a service only when a route needs it.
   The conditional-write idiom (`UPDATE ... WHERE status = 'pending'`, check
   `RowsAffected`) stays for a guard with no aggregate to version — `identity_document`.
+- **A guard that reads before it writes needs a lock, not just a subquery.** `NOT EXISTS` in
+  the `WHERE` of an UPDATE is a read: under READ COMMITTED two concurrent statements each see a
+  world where their own write is legal, so both land (write skew). `UpdateCategory` takes
+  `pg_advisory_xact_lock(categoryTreeLock)` first, which serialises re-parents against each
+  other and nothing else — cheaper than SERIALIZABLE, which would push a 40001 retry loop into
+  every service. A recursive walk in such a guard uses `UNION`, never `UNION ALL`: with
+  `UNION ALL` one cycle that did get in makes the statement non-terminating, so the route that
+  would repair it hangs too.
 - **A DB constraint that already enforces a rule stays.** The aggregate does not replace a
   partial unique index: `contact`'s one-default-per-kind is cleared by the adapter in the
   same transaction as the write, because the index holds even when a service is wrong.
-- **A domain event is a fact, never an instruction.** `domain.Event{Code, Fields}` is what
+- **A domain event is a fact, never an instruction.** `domain.Event{Code, Payload}` is what
   a mutator recorded (`account.email_changed`, `account.suspend`); `Save` turns each into
   an `audit_log` row **in the same transaction as the change**, so a write that landed
   always has a trail and the diff comes from the decision instead of a reconstruction.
   The test that keeps the line: **delete every `record()` call and the database is still
   right** — only the trail is lost. Persistence is driven by the struct's state, never by
   the event list, because "no event" must never mean "no write". `Happened(code)` is how a
-  service asks "did this command change the email" without snapshotting a field first.
+  service asks "did this command change the email" without snapshotting a field first — asked
+  **before** `Save`, which clears the events once they are audited.
   An insert has no version to guard and no events yet, so its one audit row is still
   written by hand (`InsertAuditLog`).
 - **Schema isolation:** every module lives in a Postgres schema named after it.

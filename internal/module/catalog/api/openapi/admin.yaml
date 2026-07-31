@@ -24,6 +24,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: 'The named parent does not exist', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '409': { description: 'Name already taken', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /admin/categories/{id}:
@@ -52,6 +53,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Name already taken', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '422': { description: 'A category cannot be its own descendant', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     delete:
       tags: [admin]
@@ -80,7 +82,9 @@ paths:
         statement twice and would need a 409 to tell them apart.
       security: [{ bearerAuth: [] }]
       requestBody:
-        required: true
+        # Optional: a body-less PUT is how the description is cleared, since the slug is
+        # already in the path and nothing else is required.
+        required: false
         content:
           application/json:
             schema: { $ref: '#/components/schemas/PutTagRequest' }

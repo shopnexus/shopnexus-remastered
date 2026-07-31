@@ -46,12 +46,12 @@ func (h *Trust) GetReputation(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
-// ListReviews handles GET /listings/{spuID}/reviews.
+// ListReviews handles GET /listings/{listingID}/reviews.
 func (h *Trust) ListReviews(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
-// SubmitReview handles POST /listings/{spuID}/reviews.
+// SubmitReview handles POST /listings/{listingID}/reviews.
 func (h *Trust) SubmitReview(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }

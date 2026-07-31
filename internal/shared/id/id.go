@@ -4,7 +4,7 @@
 // Only the published api DTOs use ID[K], whose JSON form is an encrypted,
 // kind-prefixed string:
 //
-//	int64(42) as ID[Listing]  <->  "spu_1ryaj8117v2p4"
+//	int64(42) as ID[Listing]  <->  "lst_1ryaj8117v2p4"
 //
 // The mapping is a keyed permutation of the whole int64 range (see cipher.go),
 // so it round-trips exactly without a lookup table. The phantom type parameter

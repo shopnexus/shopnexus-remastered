@@ -58,7 +58,7 @@ components:
       type: object
       properties:
         slug: { $ref: '#/components/schemas/TagSlug' }
-        description: { type: string, nullable: true }
+        description: { type: string, nullable: true, example: 'Made by hand, one at a time.' }
         score: { $ref: '#/components/schemas/SimilarityScore' }
       required: [slug]
 
@@ -73,4 +73,4 @@ components:
       type: object
       description: The slug is in the path, so this carries only what can change.
       properties:
-        description: { type: string, maxLength: 255 }
+        description: { type: string, maxLength: 255, example: 'Made by hand, one at a time.' }

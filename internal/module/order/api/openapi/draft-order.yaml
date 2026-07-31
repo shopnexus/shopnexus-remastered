@@ -150,8 +150,8 @@ components:
         price_mode: { type: string, enum: [fixed, negotiable] }
         shipping_paid_by: { $ref: '#/components/schemas/OrderShippingPaidBy' }
         attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
-        skus: { type: array, items: { $ref: '#/components/schemas/DraftVariantSnapshot' } }
-      required: [id, name, seller_id, currency, price_mode, skus]
+        variants: { type: array, items: { $ref: '#/components/schemas/DraftVariantSnapshot' } }
+      required: [id, name, seller_id, currency, price_mode, variants]
 
     DraftOrder:
       type: object

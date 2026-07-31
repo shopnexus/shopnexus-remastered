@@ -41,7 +41,7 @@ func NewTag(slug string, description *string) (*Tag, error) {
 	return t, nil
 }
 
-// ValidateTagSlug guards the shape the column CHECKs and the path parameter carries.
+// ValidateTagSlug guards the shape "tag_id_slug_check" enforces and the path parameter carries.
 func ValidateTagSlug(slug string) error {
 	if tagSlugRe.MatchString(slug) && len(slug) <= 100 {
 		return nil

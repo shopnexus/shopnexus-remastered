@@ -117,10 +117,12 @@ func (r *Repo) Save(ctx context.Context, a *domain.Account, actor int64) error {
 		if err := saveIdentities(ctx, tx, a); err != nil {
 			return err
 		}
+		// Bumped before the trail is written, so the snapshot carries the version the row
+		// now has rather than the one it was read at.
+		a.Version++
 		if err := saveEvents(ctx, tx, a, actor); err != nil {
 			return err
 		}
-		a.Version++
 		a.ClearEvents()
 		return nil
 	})

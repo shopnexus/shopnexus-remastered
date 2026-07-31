@@ -208,7 +208,10 @@ CREATE TABLE
     "id" VARCHAR(100) NOT NULL,
     "description" VARCHAR(255),
     "embedding_stale_at" TIMESTAMPTZ, -- NULL = fresh
-    CONSTRAINT "tag_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "tag_pkey" PRIMARY KEY ("id"),
+    -- The slug is on the wire and in a URL, so one label has one spelling: lowercase
+    -- kebab-case, no leading, trailing or doubled dash. Also checked in the domain.
+    CONSTRAINT "tag_id_slug_check" CHECK ("id" ~ '^[a-z0-9]+(-[a-z0-9]+)*$')
   );
 
 -- The tag picker's prefix search. "tag_pkey" cannot serve LIKE 'x%': a btree under a
