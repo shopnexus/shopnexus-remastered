@@ -27,13 +27,23 @@ var Module = fx.Module("gateway",
 		handler.NewFinance,
 		handler.NewOrder,
 		handler.NewTrust,
+		// One mux for every provider callback. Provided here rather than by a provider,
+		// because several of them mount on it and the router mounts the result.
+		newWebhookMux,
 		newRouter,
 	),
 	fx.Invoke(startServer),
 )
 
+// newWebhookMux is where a provider's IPN routes land. Outside the versioned API and
+// outside auth: a gateway calls the URL it was configured with and has no token.
+func newWebhookMux() *http.ServeMux { return http.NewServeMux() }
+
 type routerParams struct {
 	fx.In
+	// Webhooks is the mux providers mount their callbacks on, provided by this module so
+	// a provider can register on it before the router mounts it.
+	Webhooks *http.ServeMux
 	Account  *handler.Account
 	Catalog  *handler.Catalog
 	Chat     *handler.Chat
@@ -48,6 +58,7 @@ type routerParams struct {
 
 func newRouter(p routerParams) http.Handler {
 	return NewRouter(Deps{
+		Webhooks: p.Webhooks,
 		Account:  p.Account,
 		Catalog:  p.Catalog,
 		Chat:     p.Chat,

@@ -1,4 +1,9 @@
-// Package finance implements financeapi.Service.
+// Package finance implements financeapi.Service — payment sessions, the wallet
+// ledger, bank accounts, withdrawals and tax registrations.
+//
+// Every balance change goes through port.Move, which is one transaction per logical
+// movement: this module owns all the money primitives so an escrow move cannot be
+// half-applied.
 package finance
 
 import (
@@ -7,75 +12,159 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/go-playground/validator/v10"
+
+	"shopnexus/internal/infra/eventbus"
+	accountapi "shopnexus/internal/module/account/api"
+	"shopnexus/internal/module/common"
 	financeapi "shopnexus/internal/module/finance/api"
 	"shopnexus/internal/module/finance/domain"
 	"shopnexus/internal/module/finance/port"
+	"shopnexus/internal/provider/payment"
 	"shopnexus/internal/shared/id"
 )
 
-// sessionTTL is how long a pending session stays payable before it auto-voids.
+// sessionTTL is how long a pending session stays payable before the expiry job voids
+// it. A checkout that sits open holds stock reserved, so it is deliberately short.
 const sessionTTL = 15 * time.Minute
+
+// withdrawalTTL is longer: a cash-out waits on a human, and an admin queue is not
+// worked in fifteen minutes.
+const withdrawalTTL = 30 * 24 * time.Hour
 
 type Service struct {
 	repo port.Repository
-	log  *slog.Logger
+	// accounts answers the caller's role, and whether a payee's identity is verified —
+	// both are rows in the account module's tables.
+	accounts accountapi.Service
+	// options is the payment rails registry: this module's own `option` rows, so a rail
+	// nobody enabled cannot be tendered.
+	options port.Options
+	// gateway is the rail. One client for now; a per-option client is what the
+	// registry's `provider` column is for once there is a second.
+	gateway payment.Client
+	bus     eventbus.Client
+	v       *validator.Validate
+	log     *slog.Logger
 }
 
-func NewService(repo port.Repository, log *slog.Logger) *Service {
-	return &Service{repo: repo, log: log}
+func NewService(
+	repo port.Repository,
+	accounts accountapi.Service,
+	options port.Options,
+	gateway payment.Client,
+	bus eventbus.Client,
+	v *validator.Validate,
+	log *slog.Logger,
+) *Service {
+	return &Service{
+		repo: repo, accounts: accounts, options: options, gateway: gateway,
+		bus: bus, v: v, log: log,
+	}
 }
 
 var _ financeapi.Service = (*Service)(nil)
 
-func (s *Service) CreateSession(ctx context.Context, req financeapi.CreateSessionRequest) (financeapi.Session, error) {
-	// The id is allocated before the INSERT, not by DEFAULT: a provider may need
-	// it before the row exists (gateway redirect URLs embed it).
-	sessionID, err := s.repo.NextSessionID(ctx)
+// requireAdmin asks the account module for the caller's role: it is a column in that
+// module's table, so there is nowhere else to learn it.
+func (s *Service) requireAdmin(ctx context.Context, actorID id.ID[id.Account]) error {
+	me, err := s.accounts.GetMe(ctx, accountapi.GetMeRequest{ActorID: actorID})
 	if err != nil {
-		return financeapi.Session{}, fmt.Errorf("allocate session id: %w", err)
+		return fmt.Errorf("read caller role: %w", err)
 	}
-	session, err := domain.NewSession(sessionID, req.Kind, req.FromID.Int64(), req.ToID.Int64(), req.Note,
-		req.Currency, req.TotalAmount, req.Data, sessionTTL)
-	if err != nil {
-		return financeapi.Session{}, err
+	if me.Role != "admin" {
+		return domain.ErrAdminRequired
 	}
-	if err := s.repo.InsertSession(ctx, &session); err != nil {
-		return financeapi.Session{}, fmt.Errorf("insert finance session: %w", err)
-	}
-	return toAPISession(session), nil
+	return nil
 }
 
-func (s *Service) GetSession(ctx context.Context, req financeapi.GetSessionRequest) (financeapi.Session, error) {
-	session, err := s.repo.FindSessionByID(ctx, req.ID.Int64())
+// paymentOption resolves a rail from this module's registry. A slug nobody enabled is
+// refused here rather than handed to a gateway that has never heard of it.
+func (s *Service) paymentOption(ctx context.Context, slug string) (common.Option, error) {
+	options, err := s.options.ListEnabled(ctx, common.OptionTypePayment)
 	if err != nil {
-		return financeapi.Session{}, fmt.Errorf("find finance session: %w", err)
+		return common.Option{}, fmt.Errorf("list payment options: %w", err)
 	}
-	return toAPISession(session), nil
+	for _, o := range options {
+		if o.ID == slug {
+			return o, nil
+		}
+	}
+	return common.Option{}, domain.ErrPaymentOptionUnknown
 }
 
-func (s *Service) GetWallet(ctx context.Context, req financeapi.GetWalletRequest) (financeapi.Wallet, error) {
-	w, err := s.repo.FindWallet(ctx, req.AccountID.Int64(), req.Currency)
-	if err != nil {
-		return financeapi.Wallet{}, fmt.Errorf("find wallet: %w", err)
-	}
-	return financeapi.Wallet{
-		AccountID:        id.Of[id.Account](w.AccountID),
-		Currency:         w.Currency,
-		AvailableBalance: w.AvailableBalance,
-		HeldBalance:      w.HeldBalance,
-	}, nil
-}
+// offsetOf turns a 1-based page into an offset. Page and limit are validated at the
+// DTO, so this needs no bounds of its own.
+func offsetOf(page, limit int) int { return (page - 1) * limit }
 
-func toAPISession(s domain.Session) financeapi.Session {
+func toAPISession(s domain.Session, outstanding int64) financeapi.Session {
 	return financeapi.Session{
 		ID:          id.Of[id.PaymentSession](s.ID),
 		Kind:        s.Kind,
 		Status:      s.Status,
 		Currency:    s.Currency,
 		TotalAmount: s.TotalAmount,
+		Outstanding: outstanding,
 		Note:        s.Note,
 		CreatedAt:   s.CreatedAt,
 		PaidAt:      s.PaidAt,
 		ExpiredAt:   s.ExpiredAt,
 	}
+}
+
+func toAPIWallet(w domain.Wallet) financeapi.Wallet {
+	return financeapi.Wallet{
+		AccountID:        id.Of[id.Account](w.AccountID),
+		Currency:         w.Currency,
+		AvailableBalance: w.AvailableBalance,
+		HeldBalance:      w.HeldBalance,
+	}
+}
+
+func toAPITransaction(t domain.Transaction, checkoutURL string) financeapi.Transaction {
+	out := financeapi.Transaction{
+		ID:            id.Of[id.Transaction](t.ID),
+		SessionID:     id.Of[id.PaymentSession](t.SessionID),
+		Status:        t.Status,
+		PaymentOption: t.PaymentOption,
+		Amount:        t.Amount,
+		Currency:      t.Currency,
+		CheckoutURL:   checkoutURL,
+		CreatedAt:     t.CreatedAt,
+		SettledAt:     t.SettledAt,
+		ExpiredAt:     t.ExpiredAt,
+	}
+	if t.ReversesID != nil {
+		out.ReversesID = new(id.Of[id.Transaction](*t.ReversesID))
+	}
+	if t.Error != nil {
+		out.Error = *t.Error
+	}
+	return out
+}
+
+func toAPIMovement(m domain.Movement) financeapi.WalletMovement {
+	out := financeapi.WalletMovement{
+		Seq:            m.Seq,
+		Currency:       m.Currency,
+		Kind:           m.Kind,
+		AvailableDelta: m.AvailableDelta,
+		HeldDelta:      m.HeldDelta,
+		AvailableAfter: m.AvailableAfter,
+		HeldAfter:      m.HeldAfter,
+		Note:           m.Note,
+		CreatedAt:      m.CreatedAt,
+	}
+	// A ref is a polymorphic pointer, so it goes out as the opaque id of whatever kind
+	// it names — the same shape a report's ref_id has.
+	if m.RefType != nil && m.RefID != nil {
+		out.RefType = *m.RefType
+		switch *m.RefType {
+		case domain.RefOrder:
+			out.RefID = id.Of[id.Order](*m.RefID).String()
+		case domain.RefPaymentSession:
+			out.RefID = id.Of[id.PaymentSession](*m.RefID).String()
+		}
+	}
+	return out
 }

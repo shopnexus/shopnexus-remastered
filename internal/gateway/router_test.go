@@ -21,6 +21,7 @@ import (
 	"shopnexus/internal/module/catalog/api/catalogtest"
 	chatapi "shopnexus/internal/module/chat/api"
 	financeapi "shopnexus/internal/module/finance/api"
+	"shopnexus/internal/module/finance/api/financetest"
 	orderapi "shopnexus/internal/module/order/api"
 	trustapi "shopnexus/internal/module/trust/api"
 	"shopnexus/internal/shared/id"
@@ -90,14 +91,14 @@ func (stubChat) ListMessages(context.Context, chatapi.ListMessagesRequest) ([]ch
 	return nil, nil
 }
 
-type stubPayment struct{}
+// stubPayment embeds the published stub and answers the routes this test walks; the rest
+// answer 501, which is what keeps a new contract method from passing as a zero value.
+type stubPayment struct{ financetest.Stub }
 
-func (stubPayment) CreateSession(context.Context, financeapi.CreateSessionRequest) (financeapi.Session, error) {
-	return financeapi.Session{ID: id.Of[id.PaymentSession](1)}, nil
-}
 func (stubPayment) GetSession(context.Context, financeapi.GetSessionRequest) (financeapi.Session, error) {
 	return financeapi.Session{ID: id.Of[id.PaymentSession](1)}, nil
 }
+
 func (stubPayment) GetWallet(context.Context, financeapi.GetWalletRequest) (financeapi.Wallet, error) {
 	return financeapi.Wallet{Currency: "VND"}, nil
 }

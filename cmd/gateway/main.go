@@ -23,6 +23,7 @@ import (
 	"shopnexus/internal/module/observability"
 	"shopnexus/internal/module/order"
 	"shopnexus/internal/module/trust"
+	"shopnexus/internal/provider"
 	"shopnexus/internal/provider/kyc"
 	"shopnexus/internal/provider/kyc/fptai"
 	kycmock "shopnexus/internal/provider/kyc/mock"
@@ -33,6 +34,8 @@ import (
 	"shopnexus/internal/provider/oauth"
 	oauthmock "shopnexus/internal/provider/oauth/mock"
 	oidcverify "shopnexus/internal/provider/oauth/oidc"
+	"shopnexus/internal/provider/payment"
+	paymentmock "shopnexus/internal/provider/payment/mock"
 	"shopnexus/internal/shared/httpx"
 	"shopnexus/internal/shared/id"
 	"shopnexus/internal/shared/logger"
@@ -57,6 +60,7 @@ func main() {
 			newNotifier,
 			newOAuthVerifier,
 			newKYCClient,
+			newPaymentClient,
 		),
 		// Domain modules — each wires its own service + repository.
 		account.Module,
@@ -187,6 +191,12 @@ func newKYCClient(cfg *config.Config, log *slog.Logger, metrics *observability.S
 		DownloadTimeout: cfg.FPTAIDownloadTimeout,
 		HTTPClient:      observedClient("fpt-ai", log, metrics),
 	})
+}
+
+// newPaymentClient picks the rail. Only the mock exists today; a real gateway is a new
+// case here plus its credentials in config, exactly like the other seams.
+func newPaymentClient(cfg *config.Config) payment.Client {
+	return paymentmock.NewClient(provider.Option{Provider: cfg.PaymentProvider})
 }
 
 // observedClient builds the HTTP client a provider uses: metrics when the telemetry sink

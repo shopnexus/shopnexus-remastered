@@ -1,6 +1,10 @@
 // Package financeapi is the published contract of the finance service: payment
-// sessions, wallet balances, and tax info. All money primitives live in this
-// module so an escrow move stays atomic.
+// sessions and their rail legs, wallets and their ledger, bank accounts,
+// withdrawals and tax registrations.
+//
+// All money primitives live in this module so an escrow move stays atomic. Order
+// calls the four service-to-service methods at the bottom; everything above them is
+// a route.
 package financeapi
 
 import (
@@ -16,10 +20,38 @@ type Session struct {
 	Status      string                   `json:"status"`
 	Currency    string                   `json:"currency"`
 	TotalAmount int64                    `json:"total_amount"`
-	Note        string                   `json:"note,omitempty"`
-	CreatedAt   time.Time                `json:"created_at"`
-	PaidAt      *time.Time               `json:"paid_at,omitempty"`
-	ExpiredAt   time.Time                `json:"expired_at"`
+	// Outstanding is the total less what has already settled on a rail: what a further
+	// payment may still tender. Computed, because a stored copy is a second fact to
+	// keep in step with every leg.
+	Outstanding int64      `json:"outstanding"`
+	Note        string     `json:"note,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	PaidAt      *time.Time `json:"paid_at,omitempty"`
+	ExpiredAt   time.Time  `json:"expired_at"`
+}
+
+type SessionPage struct {
+	Data []Session `json:"data"`
+	Meta PageInfo  `json:"meta"`
+}
+
+// Transaction is one leg on an external rail. Append-only: a reversal is another leg
+// with a negative amount, never an edit of this one.
+type Transaction struct {
+	ID            id.ID[id.Transaction]    `json:"id"`
+	SessionID     id.ID[id.PaymentSession] `json:"session_id"`
+	Status        string                   `json:"status"`
+	PaymentOption string                   `json:"payment_option"`
+	Amount        int64                    `json:"amount"`
+	Currency      string                   `json:"currency"`
+	ReversesID    *id.ID[id.Transaction]   `json:"reverses_id,omitempty"`
+	// CheckoutURL is the gateway's redirect, present only while the leg is pending and
+	// only for a rail that redirects. Not a receipt: the webhook settles the leg.
+	CheckoutURL string     `json:"checkout_url,omitempty"`
+	Error       string     `json:"error,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	SettledAt   *time.Time `json:"settled_at,omitempty"`
+	ExpiredAt   *time.Time `json:"expired_at,omitempty"`
 }
 
 type Wallet struct {
@@ -29,29 +61,281 @@ type Wallet struct {
 	HeldBalance      int64             `json:"held_balance"`
 }
 
-type CreateSessionRequest struct {
-	Kind        string            `json:"kind" validate:"required,oneof=buyer-checkout seller-payout withdrawal"`
-	FromID      id.ID[id.Account] `json:"-"`               // taken from the token
-	ToID        id.ID[id.Account] `json:"to_id,omitempty"` // zero = system
-	Note        string            `json:"note,omitempty"`
-	Currency    string            `json:"currency" validate:"required,len=3"`
-	TotalAmount int64             `json:"total_amount" validate:"required,gt=0"`
-	Data        []byte            `json:"data,omitempty"`
+// WalletMovement is one row of the ledger, with the balances it produced — which is
+// what makes the history auditable without replaying it.
+type WalletMovement struct {
+	Seq            int64     `json:"seq"`
+	Currency       string    `json:"currency"`
+	Kind           string    `json:"kind"`
+	AvailableDelta int64     `json:"available_delta"`
+	HeldDelta      int64     `json:"held_delta"`
+	AvailableAfter int64     `json:"available_after"`
+	HeldAfter      int64     `json:"held_after"`
+	RefType        string    `json:"ref_type,omitempty"`
+	RefID          string    `json:"ref_id,omitempty"`
+	Note           string    `json:"note,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+type WalletMovementPage struct {
+	Data []WalletMovement `json:"data"`
+	Meta PageInfo         `json:"meta"`
+}
+
+// BankAccount is a payout destination. The number is masked on the way out: the full
+// value leaves the system only towards the bank.
+type BankAccount struct {
+	ID                  id.ID[id.BankAccount] `json:"id"`
+	BankCode            string                `json:"bank_code"`
+	AccountNumberMasked string                `json:"account_number_masked"`
+	AccountHolder       string                `json:"account_holder"`
+	IsDefault           bool                  `json:"is_default"`
+	CreatedAt           time.Time             `json:"created_at"`
+}
+
+// Withdrawal is a cash-out: a payment session of its own kind, plus where the money is
+// going and what an admin decided.
+type Withdrawal struct {
+	ID            id.ID[id.PaymentSession] `json:"id"`
+	Status        string                   `json:"status"`
+	Currency      string                   `json:"currency"`
+	Amount        int64                    `json:"amount"`
+	BankAccountID id.ID[id.BankAccount]    `json:"bank_account_id"`
+	Reason        string                   `json:"reason,omitempty"`
+	CreatedAt     time.Time                `json:"created_at"`
+	ResolvedAt    *time.Time               `json:"resolved_at,omitempty"`
+}
+
+type WithdrawalPage struct {
+	Data []Withdrawal `json:"data"`
+	Meta PageInfo     `json:"meta"`
+}
+
+type TaxInfo struct {
+	TaxCode            string     `json:"tax_code"`
+	TaxCodeType        string     `json:"tax_code_type"`
+	LegalName          string     `json:"legal_name"`
+	VerificationStatus string     `json:"verification_status"`
+	VerifiedAt         *time.Time `json:"verified_at,omitempty"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
+// PageInfo is the page-paginated meta every finance list answers with. Field for
+// field identical to httpx.PageMeta, so a handler converts rather than maps.
+type PageInfo struct {
+	Page       int    `json:"page"`
+	Limit      int    `json:"limit"`
+	TotalCount *int64 `json:"total_count"`
+}
+
+// --- requests ---
+
+type ListSessionsRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	// Admin lists every account's sessions. The service refuses it for a caller without
+	// the role rather than quietly filtering it away.
+	Admin  bool   `json:"-"`
+	Kind   string `json:"-" validate:"omitempty,oneof=buyer-checkout seller-payout withdrawal"`
+	Status string `json:"-" validate:"omitempty,oneof=pending processing success cancelled failed"`
+	Page   int    `json:"-" validate:"required,min=1"`
+	Limit  int    `json:"-" validate:"required,min=1,max=100"`
 }
 
 type GetSessionRequest struct {
-	ID id.ID[id.PaymentSession] `validate:"required"`
+	ActorID id.ID[id.Account]        `json:"-" validate:"required"`
+	ID      id.ID[id.PaymentSession] `json:"-" validate:"required"`
 }
 
-// A wallet is keyed by account *and* currency, so the currency is part of the
-// request: an account can hold several balances.
+// StartPaymentRequest tenders one rail. Amount omitted is the whole outstanding
+// balance; passing it splits the session across rails, one call each.
+type StartPaymentRequest struct {
+	ActorID       id.ID[id.Account]        `json:"-" validate:"required"`
+	ID            id.ID[id.PaymentSession] `json:"-" validate:"required"`
+	PaymentOption string                   `json:"payment_option" validate:"required,max=100"`
+	Amount        *int64                   `json:"amount,omitempty" validate:"omitempty,gt=0"`
+	ReturnURL     string                   `json:"return_url,omitempty" validate:"omitempty,url,max=2048"`
+}
+
+type ListWalletsRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+}
+
 type GetWalletRequest struct {
-	AccountID id.ID[id.Account] `validate:"required"`
-	Currency  string            `validate:"required,len=3"`
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	// AccountID is whose wallet to read. An admin may name another account; anybody
+	// else reading somebody else's balance is refused.
+	AccountID id.ID[id.Account] `json:"-" validate:"required"`
+	Currency  string            `json:"-" validate:"required,len=3"`
+}
+
+type ListMovementsRequest struct {
+	ActorID  id.ID[id.Account] `json:"-" validate:"required"`
+	Currency string            `json:"-" validate:"required,len=3"`
+	Page     int               `json:"-" validate:"required,min=1"`
+	Limit    int               `json:"-" validate:"required,min=1,max=100"`
+}
+
+type AdjustWalletRequest struct {
+	ActorID   id.ID[id.Account] `json:"-" validate:"required"`
+	AccountID id.ID[id.Account] `json:"-" validate:"required"`
+	Currency  string            `json:"currency" validate:"required,len=3"`
+	// The deltas are signed and at least one must move, which is what makes a
+	// correction in either direction one request rather than two endpoints.
+	AvailableDelta int64 `json:"available_delta"`
+	HeldDelta      int64 `json:"held_delta"`
+	// Reason is mandatory: an adjustment is the only movement with no order behind it,
+	// so the note is the whole explanation an audit will ever have.
+	Reason string `json:"reason" validate:"required,min=1,max=500"`
+}
+
+type CreateBankAccountRequest struct {
+	ActorID       id.ID[id.Account] `json:"-" validate:"required"`
+	BankCode      string            `json:"bank_code" validate:"required,max=20"`
+	AccountNumber string            `json:"account_number" validate:"required,max=50"`
+	AccountHolder string            `json:"account_holder" validate:"required,max=100"`
+	IsDefault     bool              `json:"is_default,omitempty"`
+}
+
+type UpdateBankAccountRequest struct {
+	ActorID id.ID[id.Account]     `json:"-" validate:"required"`
+	ID      id.ID[id.BankAccount] `json:"-" validate:"required"`
+	// IsDefault is the only mutable field: a number that changed is a different
+	// destination, and a withdrawal already pointing at this row must not follow it.
+	IsDefault bool `json:"is_default" validate:"required,eq=true"`
+}
+
+type DeleteBankAccountRequest struct {
+	ActorID id.ID[id.Account]     `json:"-" validate:"required"`
+	ID      id.ID[id.BankAccount] `json:"-" validate:"required"`
+}
+
+type ListBankAccountsRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+}
+
+type CreateWithdrawalRequest struct {
+	ActorID       id.ID[id.Account]     `json:"-" validate:"required"`
+	BankAccountID id.ID[id.BankAccount] `json:"bank_account_id" validate:"required"`
+	Currency      string                `json:"currency" validate:"required,len=3"`
+	Amount        int64                 `json:"amount" validate:"required,gt=0"`
+}
+
+type ListWithdrawalsRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	Admin   bool              `json:"-"`
+	Status  string            `json:"-" validate:"omitempty,oneof=pending processing success cancelled failed"`
+	Page    int               `json:"-" validate:"required,min=1"`
+	Limit   int               `json:"-" validate:"required,min=1,max=100"`
+}
+
+type WithdrawalRequest struct {
+	ActorID id.ID[id.Account]        `json:"-" validate:"required"`
+	ID      id.ID[id.PaymentSession] `json:"-" validate:"required"`
+}
+
+// ResolveWithdrawalRequest is the admin's decision. A rejection needs a reason —
+// somebody's money did not move and they are owed the why.
+type ResolveWithdrawalRequest struct {
+	ActorID id.ID[id.Account]        `json:"-" validate:"required"`
+	ID      id.ID[id.PaymentSession] `json:"-" validate:"required"`
+	Reason  string                   `json:"reason,omitempty" validate:"max=500"`
+	// ProviderRef is the bank's own reference for the transfer, recorded on approval so
+	// a payout can be traced outside the platform.
+	ProviderRef string `json:"provider_ref,omitempty" validate:"max=200"`
+}
+
+type GetTaxInfoRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+}
+
+type PutTaxInfoRequest struct {
+	ActorID     id.ID[id.Account] `json:"-" validate:"required"`
+	TaxCode     string            `json:"tax_code" validate:"required,max=14"`
+	TaxCodeType string            `json:"tax_code_type" validate:"required,oneof=individual business household"`
+	LegalName   string            `json:"legal_name" validate:"required,max=200"`
+}
+
+type VerifyTaxInfoRequest struct {
+	ActorID   id.ID[id.Account] `json:"-" validate:"required"`
+	AccountID id.ID[id.Account] `json:"-" validate:"required"`
+	Verified  bool              `json:"verified"`
+	Source    string            `json:"source,omitempty" validate:"max=200"`
+}
+
+// --- service-to-service: what order calls, with no route of its own ---
+
+// OpenCheckoutRequest opens the session that pays for a purchase. Order supplies the
+// parties and the total; finance owns everything after that.
+type OpenCheckoutRequest struct {
+	BuyerID  id.ID[id.Account] `validate:"required"`
+	SellerID id.ID[id.Account] `validate:"required"`
+	Currency string            `validate:"required,len=3"`
+	Total    int64             `validate:"required,gt=0"`
+	Note     string            `validate:"max=500"`
+	// Data is the checkout context order wants back when the money lands — the draft or
+	// the offer the sale came from — stored on the session and carried by the event.
+	Data []byte
+}
+
+// EscrowRequest moves money for one order. IdempotencyKey is the caller's: a retried
+// escrow move reuses it and is refused rather than posted twice.
+type EscrowRequest struct {
+	BuyerID        id.ID[id.Account] `validate:"required"`
+	SellerID       id.ID[id.Account] `validate:"required"`
+	OrderID        id.ID[id.Order]   `validate:"required"`
+	Currency       string            `validate:"required,len=3"`
+	Amount         int64             `validate:"required,gt=0"`
+	IdempotencyKey string            `validate:"required,max=200"`
 }
 
 type Service interface {
-	CreateSession(ctx context.Context, req CreateSessionRequest) (Session, error)
+	// --- payment sessions ---
+	ListSessions(ctx context.Context, req ListSessionsRequest) (SessionPage, error)
 	GetSession(ctx context.Context, req GetSessionRequest) (Session, error)
+	ListSessionTransactions(ctx context.Context, req GetSessionRequest) ([]Transaction, error)
+	// StartPayment opens a leg on one rail. The response is not a receipt: the leg is
+	// pending until the provider's webhook settles it.
+	StartPayment(ctx context.Context, req StartPaymentRequest) (Transaction, error)
+	CancelSession(ctx context.Context, req GetSessionRequest) (Session, error)
+
+	// --- wallets ---
+	ListWallets(ctx context.Context, req ListWalletsRequest) ([]Wallet, error)
 	GetWallet(ctx context.Context, req GetWalletRequest) (Wallet, error)
+	ListWalletMovements(ctx context.Context, req ListMovementsRequest) (WalletMovementPage, error)
+	// AdminAdjustWallet is the correction of last resort, and the only movement with no
+	// order or session behind it.
+	AdminAdjustWallet(ctx context.Context, req AdjustWalletRequest) (Wallet, error)
+
+	// --- bank accounts ---
+	ListBankAccounts(ctx context.Context, req ListBankAccountsRequest) ([]BankAccount, error)
+	CreateBankAccount(ctx context.Context, req CreateBankAccountRequest) (BankAccount, error)
+	UpdateBankAccount(ctx context.Context, req UpdateBankAccountRequest) (BankAccount, error)
+	DeleteBankAccount(ctx context.Context, req DeleteBankAccountRequest) error
+
+	// --- withdrawals ---
+	CreateWithdrawal(ctx context.Context, req CreateWithdrawalRequest) (Withdrawal, error)
+	ListWithdrawals(ctx context.Context, req ListWithdrawalsRequest) (WithdrawalPage, error)
+	GetWithdrawal(ctx context.Context, req WithdrawalRequest) (Withdrawal, error)
+	CancelWithdrawal(ctx context.Context, req WithdrawalRequest) error
+	// AdminApproveWithdrawal releases the money to the bank; AdminRejectWithdrawal
+	// returns it to the available balance with a reason.
+	AdminApproveWithdrawal(ctx context.Context, req ResolveWithdrawalRequest) (Withdrawal, error)
+	AdminRejectWithdrawal(ctx context.Context, req ResolveWithdrawalRequest) (Withdrawal, error)
+
+	// --- tax registration ---
+	GetTaxInfo(ctx context.Context, req GetTaxInfoRequest) (TaxInfo, error)
+	PutTaxInfo(ctx context.Context, req PutTaxInfoRequest) (TaxInfo, error)
+	AdminVerifyTaxInfo(ctx context.Context, req VerifyTaxInfoRequest) (TaxInfo, error)
+
+	// --- called by order, not by a route ---
+
+	// OpenCheckout creates the buyer-checkout session a purchase is paid through.
+	OpenCheckout(ctx context.Context, req OpenCheckoutRequest) (Session, error)
+	// HoldEscrow moves the buyer's money into the seller's held balance: paid, but not
+	// the seller's to spend until the buyer confirms receipt.
+	HoldEscrow(ctx context.Context, req EscrowRequest) error
+	// ReleaseEscrow makes it spendable — the payout at the end of a completed order.
+	ReleaseEscrow(ctx context.Context, req EscrowRequest) error
+	// RefundEscrow sends it back to the buyer instead.
+	RefundEscrow(ctx context.Context, req EscrowRequest) error
 }

@@ -77,3 +77,61 @@ func NewSession(id int64, kind string, fromID, toID int64, note, currency string
 func (s Session) Expired(now time.Time) bool {
 	return s.Status == StatusPending && now.After(s.ExpiredAt)
 }
+
+// Settled reports whether the session has reached a terminal state. Nothing moves a
+// settled session: the ledger is appended to instead.
+func (s Session) Settled() bool {
+	return s.Status == StatusSuccess || s.Status == StatusCancelled || s.Status == StatusFailed
+}
+
+// Charge is the session accepting a payment attempt. Only a pending session is
+// payable — a processing one already has a leg in flight, and paying twice is what
+// the status is there to prevent.
+func (s *Session) Charge(now time.Time) error {
+	if s.Status != StatusPending {
+		return ErrSessionNotPayable
+	}
+	if s.Expired(now) {
+		return ErrSessionExpired
+	}
+	s.Status = StatusProcessing
+	return nil
+}
+
+// MarkPaid is what a settled charge does to the session. It is the moment the money
+// is real, and everything downstream — an order appearing, escrow being held — hangs
+// off it.
+func (s *Session) MarkPaid(now time.Time) error {
+	if s.Settled() {
+		return ErrSessionSettled
+	}
+	s.Status = StatusSuccess
+	s.PaidAt = &now
+	return nil
+}
+
+// MarkFailed records that the rail refused. A failed session is terminal: the buyer
+// opens a new one rather than retrying this, so there is no path back to pending.
+func (s *Session) MarkFailed() error {
+	if s.Settled() {
+		return ErrSessionSettled
+	}
+	s.Status = StatusFailed
+	return nil
+}
+
+// Cancel is the payer walking away, or the expiry job doing it for them. Only
+// before the money moves: a paid session is refunded, not cancelled.
+func (s *Session) Cancel() error {
+	if s.Settled() {
+		return ErrSessionSettled
+	}
+	s.Status = StatusCancelled
+	return nil
+}
+
+// Involves reports whether the account is a party to this session — which is what
+// makes reading it legitimate. A session with no parties is the system's own.
+func (s Session) Involves(accountID int64) bool {
+	return accountID != 0 && (s.FromID == accountID || s.ToID == accountID)
+}

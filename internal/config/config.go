@@ -62,6 +62,9 @@ type Config struct {
 	// KYCProvider is "fpt-ai" for the real check, or "mock" to leave every case pending
 	// for a moderator.
 	KYCProvider string `validate:"required,oneof=fpt-ai mock"`
+	// PaymentProvider picks the rail money actually moves on. `mock` settles
+	// synchronously with no gateway, which is what dev and the tests use.
+	PaymentProvider string `validate:"required,oneof=mock"`
 
 	// --- SMTP ---
 
@@ -140,10 +143,11 @@ func Load(v *validator.Validate) (*Config, error) {
 		IDCipherKey:        os.Getenv("ID_CIPHER_KEY"),
 		LogLevel:           os.Getenv("LOG_LEVEL"),
 
-		EmailProvider: os.Getenv("EMAIL_PROVIDER"),
-		SMSProvider:   os.Getenv("SMS_PROVIDER"),
-		OAuthVerifier: os.Getenv("OAUTH_VERIFIER"),
-		KYCProvider:   os.Getenv("KYC_PROVIDER"),
+		EmailProvider:   os.Getenv("EMAIL_PROVIDER"),
+		SMSProvider:     os.Getenv("SMS_PROVIDER"),
+		OAuthVerifier:   os.Getenv("OAUTH_VERIFIER"),
+		KYCProvider:     os.Getenv("KYC_PROVIDER"),
+		PaymentProvider: os.Getenv("PAYMENT_PROVIDER"),
 
 		SMTPHost:         os.Getenv("SMTP_HOST"),
 		SMTPPort:         p.intVar("SMTP_PORT"),

@@ -39,6 +39,7 @@ func fullEnv() map[string]string {
 		"SMS_PROVIDER":         "mock",
 		"OAUTH_VERIFIER":       "mock",
 		"KYC_PROVIDER":         "mock",
+		"PAYMENT_PROVIDER":     "mock",
 	}
 }
 

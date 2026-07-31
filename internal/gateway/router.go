@@ -14,6 +14,10 @@ import (
 )
 
 type Deps struct {
+	// Webhooks is where providers mount their own IPN paths. It is outside the versioned
+	// base path and outside auth: a gateway calls the URL it was configured with, signs
+	// the payload its own way, and has no bearer token to present.
+	Webhooks *http.ServeMux
 	Account  *handler.Account
 	Catalog  *handler.Catalog
 	Chat     *handler.Chat
@@ -237,6 +241,11 @@ func NewRouter(d Deps) http.Handler {
 	// metrics middleware, which labels by the inner mux's matched pattern.
 	root := http.NewServeMux()
 	root.Handle(openapi.BasePath+"/", http.StripPrefix(openapi.BasePath, routed))
+	// Provider callbacks. Mounted on the root rather than under the API base path,
+	// because the URL a provider was given is not ours to version.
+	if d.Webhooks != nil {
+		root.Handle("/webhooks/", d.Webhooks)
+	}
 
 	return middleware.Logging(d.Log)(root)
 }
