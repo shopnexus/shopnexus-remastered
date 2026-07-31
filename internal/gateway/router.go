@@ -17,7 +17,6 @@ type Deps struct {
 	Account  *handler.Account
 	Catalog  *handler.Catalog
 	Chat     *handler.Chat
-	Common   *handler.Common
 	Finance  *handler.Finance
 	Order    *handler.Order
 	Trust    *handler.Trust
@@ -136,19 +135,9 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("PATCH /messages/{id}", auth(http.HandlerFunc(d.Chat.UpdateMessage)))
 	mux.Handle("DELETE /messages/{id}", auth(http.HandlerFunc(d.Chat.RedactMessage)))
 
-	// ---- common ----
-	// Public
-	mux.HandleFunc("GET /options", d.Common.ListOptions)
-	mux.HandleFunc("GET /options/{id}", d.Common.GetOption)
-	// Authenticated
-	mux.Handle("POST /resources", auth(http.HandlerFunc(d.Common.CreateUpload)))
-	mux.Handle("POST /resources/{id}/completion", auth(http.HandlerFunc(d.Common.CompleteUpload)))
-	mux.Handle("GET /resources/{id}", auth(http.HandlerFunc(d.Common.GetResource)))
-	mux.Handle("DELETE /resources/{id}", auth(http.HandlerFunc(d.Common.DeleteResource)))
-	mux.Handle("POST /options", auth(http.HandlerFunc(d.Common.CreateOption)))
-	mux.Handle("PATCH /options/{id}", auth(http.HandlerFunc(d.Common.UpdateOption)))
-	mux.Handle("DELETE /options/{id}", auth(http.HandlerFunc(d.Common.DeleteOption)))
-	mux.Handle("GET /admin/options", auth(http.HandlerFunc(d.Common.AdminListOptions)))
+	// No /resources or /options routes: the resource and option tables are now per module
+	// (shared DDL, one copy per schema), so there is no module-agnostic place for an upload to
+	// land. Each module grows its own upload route when it implements that flow.
 
 	// ---- finance ----
 	// Authenticated

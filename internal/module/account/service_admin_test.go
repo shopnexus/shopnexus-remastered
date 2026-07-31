@@ -356,7 +356,7 @@ func scanRequest(actorID id.ID[id.Account], docType domain.DocType) accountapi.S
 func TestStartIdentityVerification_UnavailableScanRefused(t *testing.T) {
 	h := newHarness()
 	user := h.register(t, registerRequest())
-	h.resources.missing[id.Of[id.Resource](13)] = true // the selfie
+	h.repo.missingResources[13] = true // the selfie
 
 	_, err := h.svc.StartIdentityVerification(context.Background(), scanRequest(user.Account.ID, domain.DocTypeNationalID))
 	if got := status(t, err); got != 422 {

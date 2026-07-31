@@ -1,4 +1,4 @@
-package domain
+package common
 
 import (
 	"net/http"
@@ -6,8 +6,8 @@ import (
 	"shopnexus/internal/shared/errx"
 )
 
-// Common module errors. Not-found lives here so the postgres adapter can produce
-// it without importing the module root package.
+// The errors the shared tables produce. They live here for the same reason a module's live in
+// its own domain: the adapter has to return them, and the import stays one-way.
 var (
 	ErrResourceNotFound = errx.NewError(http.StatusNotFound, "resource_not_found", "resource not found")
 	ErrOptionNotFound   = errx.NewError(http.StatusNotFound, "option_not_found", "option not found")

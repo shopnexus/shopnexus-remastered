@@ -26,7 +26,6 @@ func fullEnv() map[string]string {
 		"CATALOG_DB_DSN":       "postgres://y",
 		"ORDER_DB_DSN":         "postgres://o",
 		"CHAT_DB_DSN":          "postgres://c",
-		"COMMON_DB_DSN":        "postgres://cm",
 		"TRUST_DB_DSN":         "postgres://tr",
 		"FINANCE_DB_DSN":       "postgres://fin",
 		"OBSERVABILITY_DB_DSN": "postgres://o2",
@@ -46,7 +45,7 @@ func fullEnv() map[string]string {
 // requiredVars is every var that is required whatever the deployment does.
 var requiredVars = []string{
 	"GATEWAY_ADDR", "INSTANCE_ID", "ACCOUNT_DB_DSN", "CATALOG_DB_DSN", "ORDER_DB_DSN",
-	"CHAT_DB_DSN", "COMMON_DB_DSN", "TRUST_DB_DSN", "FINANCE_DB_DSN", "OBSERVABILITY_DB_DSN",
+	"CHAT_DB_DSN", "TRUST_DB_DSN", "FINANCE_DB_DSN", "OBSERVABILITY_DB_DSN",
 	"NATS_URL", "REDIS_ADDR", "REDIS_PASSWORD", "JWT_SECRET", "ID_CIPHER_KEY", "LOG_LEVEL",
 	"EMAIL_PROVIDER", "SMS_PROVIDER", "OAUTH_VERIFIER", "KYC_PROVIDER",
 }

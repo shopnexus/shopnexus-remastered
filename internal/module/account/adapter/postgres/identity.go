@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"shopnexus/internal/module/account/domain"
+	"shopnexus/internal/module/common/dbx"
 )
 
 const identityColumns = `id, account_id, doc_type::text, provider, provider_ref, status::text,
@@ -20,7 +21,7 @@ func scanIdentity(row pgx.Row, tail ...any) (domain.IdentityDocument, error) {
 	dest := append([]any{&d.ID, &d.AccountID, &d.DocType, &d.Provider, &d.ProviderRef, &d.Status,
 		&d.RejectionReason, &d.VerifiedAt, &d.ExpiresAt, &d.CreatedAt}, tail...)
 	err := row.Scan(dest...)
-	if isNoRows(err) {
+	if dbx.IsNoRows(err) {
 		return domain.IdentityDocument{}, domain.ErrIdentityDocumentNotFound
 	}
 	if err != nil {
@@ -51,9 +52,9 @@ func (r *Repo) InsertIdentityDocument(ctx context.Context, d *domain.IdentityDoc
 	}
 	if err := r.pool.QueryRow(ctx, q, args).Scan(&d.ID, &d.CreatedAt); err != nil {
 		switch {
-		case isForeignKeyViolation(err):
+		case dbx.IsForeignKeyViolation(err):
 			return domain.ErrAccountNotFound
-		case isUniqueViolation(err):
+		case dbx.IsUniqueViolation(err):
 			// The partial unique index on verified rows: another check landed first.
 			return domain.ErrIdentityAlreadyVerified
 		}
@@ -137,7 +138,7 @@ func (r *Repo) UpdateIdentityVerdict(ctx context.Context, d domain.IdentityDocum
 	}
 	tag, err := r.pool.Exec(ctx, q, args)
 	if err != nil {
-		if isUniqueViolation(err) {
+		if dbx.IsUniqueViolation(err) {
 			return domain.ErrIdentityAlreadyVerified
 		}
 		return fmt.Errorf("db update identity document verdict: %w", err)

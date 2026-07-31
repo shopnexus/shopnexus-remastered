@@ -88,9 +88,15 @@ Each module has its own README with ER diagrams, domain concepts, flows, and end
 | [`promotion`](internal/module/promotion/)    | Discounts, ship discounts, scheduling, group-based price stacking      |
 | [`analytic`](internal/module/analytic/)      | Interaction tracking, weighted product popularity scoring              |
 | [`chat`](internal/module/chat/)              | Messaging, conversations, read receipts                                |
-| [`common`](internal/module/common/)          | Resource/file management, object storage, service options, SSE         |
 
-Module boundaries follow DDD bounded contexts: each owns its schema, and cross-module writes go through sagas rather than shared transactions. `common` is a generic supporting subdomain — one reusable file/resource system that every other module attaches to, instead of each reimplementing storage.
+Module boundaries follow DDD bounded contexts: each owns its schema, and cross-module writes go through sagas rather than shared transactions.
+
+[`common`](internal/module/common/) is **not** a module: it has no service and nothing calls it
+over an interface. It is the DDL every module's schema gets — `audit_log`, `resource`, `option`,
+applied by `cmd/migrate` before that module's own migrations — plus the pgx helpers their
+adapters share (`common/dbx`). So an uploaded file belongs to the module that took the upload
+and travels with it if that module moves to its own database; in dev every DSN points at the
+same server.
 
 ## Tools
 

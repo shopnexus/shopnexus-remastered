@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"shopnexus/internal/module/catalog/domain"
+	"shopnexus/internal/module/common/dbx"
 )
 
 func (r *Repo) FindStock(ctx context.Context, variantID int64) (domain.Stock, error) {
@@ -14,7 +15,7 @@ func (r *Repo) FindStock(ctx context.Context, variantID int64) (domain.Stock, er
 	var s domain.Stock
 	err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{"variant_id": variantID}).
 		Scan(&s.Quantity, &s.Reserved, &s.Sold)
-	if isNoRows(err) {
+	if dbx.IsNoRows(err) {
 		return domain.Stock{}, domain.ErrVariantNotFound
 	}
 	if err != nil {
@@ -46,7 +47,7 @@ func (r *Repo) CommitStock(ctx context.Context, variantID, units int64) error {
 	if units <= 0 {
 		return domain.ErrInsufficientStock
 	}
-	return r.inTx(ctx, func(tx pgx.Tx) error {
+	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
 		const q = `UPDATE stock SET reserved = reserved - @units, sold = sold + @units
 		           WHERE variant_id = @variant_id AND reserved >= @units`
 		tag, err := tx.Exec(ctx, q, pgx.NamedArgs{"variant_id": variantID, "units": units})

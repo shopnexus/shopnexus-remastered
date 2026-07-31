@@ -4,7 +4,7 @@ import (
 	"time"
 
 	accountapi "shopnexus/internal/module/account/api"
-	commonapi "shopnexus/internal/module/common/api"
+	"shopnexus/internal/module/common"
 	"shopnexus/internal/shared/id"
 )
 
@@ -62,7 +62,7 @@ type Variant struct {
 	Price          int64                `json:"price"`
 	Attributes     map[string]any       `json:"attributes"`
 	PackageDetails map[string]any       `json:"package_details"`
-	Images         []commonapi.Resource `json:"images"`
+	Images         []common.ResourceDTO `json:"images"`
 	IsFeatured     bool                 `json:"is_featured"`
 	Stock          Stock                `json:"stock"`
 	CreatedAt      time.Time            `json:"created_at"`
@@ -95,7 +95,7 @@ type ListingDetail struct {
 	ShippingPaidBy    string                    `json:"shipping_paid_by"`
 	Currency          string                    `json:"currency"`
 	Specifications    map[string]any            `json:"specifications"`
-	Images            []commonapi.Resource      `json:"images"`
+	Images            []common.ResourceDTO      `json:"images"`
 	Category          Category                  `json:"category"`
 	Tags              []string                  `json:"tags"`
 	Variants          []Variant                 `json:"variants"`
@@ -122,7 +122,7 @@ type Listing struct {
 	Currency   string                    `json:"currency"`
 	Price      int64                     `json:"price"`
 	Sold       int64                     `json:"sold"`
-	Cover      *commonapi.Resource       `json:"cover"`
+	Cover      *common.ResourceDTO       `json:"cover"`
 	Rating     float64                   `json:"rating"`
 	CategoryID id.ID[id.Category]        `json:"category_id"`
 	Seller     accountapi.AccountSummary `json:"seller"`

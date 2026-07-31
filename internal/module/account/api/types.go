@@ -3,7 +3,7 @@ package accountapi
 import (
 	"time"
 
-	commonapi "shopnexus/internal/module/common/api"
+	"shopnexus/internal/module/common"
 	"shopnexus/internal/shared/id"
 )
 
@@ -38,7 +38,7 @@ type Profile struct {
 	// DateOfBirth is a plain date (2006-01-02): the day is the fact, and an instant
 	// would drag a timezone into it that nobody set.
 	DateOfBirth *string             `json:"date_of_birth"`
-	Avatar      *commonapi.Resource `json:"avatar"`
+	Avatar      *common.ResourceDTO `json:"avatar"`
 	Country     string              `json:"country"`
 	Locale      string              `json:"locale"`
 	Timezone    string              `json:"timezone"`
@@ -74,7 +74,7 @@ type PublicAccount struct {
 	ID          id.ID[id.Account]   `json:"id"`
 	Name        string              `json:"name"`
 	Description *string             `json:"description"`
-	Avatar      *commonapi.Resource `json:"avatar"`
+	Avatar      *common.ResourceDTO `json:"avatar"`
 	// IdentityVerified is shown as a trust signal.
 	IdentityVerified bool  `json:"identity_verified"`
 	FollowerCount    int64 `json:"follower_count"`
@@ -87,7 +87,7 @@ type PublicAccount struct {
 type AccountSummary struct {
 	ID     id.ID[id.Account]   `json:"id"`
 	Name   string              `json:"name"`
-	Avatar *commonapi.Resource `json:"avatar,omitempty"`
+	Avatar *common.ResourceDTO `json:"avatar,omitempty"`
 }
 
 type OAuthIdentity struct {

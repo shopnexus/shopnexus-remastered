@@ -20,20 +20,6 @@ CREATE TYPE "report_action" AS ENUM ('none', 'listing-removed', 'message-removed
 
 -- Tables
 
-CREATE TABLE IF NOT EXISTS "audit_log" (
-    "id" BIGINT GENERATED ALWAYS AS IDENTITY,
-    "version" BIGINT NOT NULL DEFAULT 1, -- Incremented on each change to the same record
-    "table_name" VARCHAR(100) NOT NULL,
-    "record_id" BIGINT NOT NULL,
-    "change_type" VARCHAR(10) NOT NULL, -- 'insert', 'update', 'delete'
-    "code" VARCHAR(100) NOT NULL, -- e.g. Business code 'review.delete', 'report.resolve'
-    "changed_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "changed_by" BIGINT, -- account_id of the user who made the change (if applicable)
-    "diff" JSONB NOT NULL, -- JSON diff of the record's fields (for insert only, other diff = snapshot)
-    "snapshot" JSONB NOT NULL, -- Full record values after the change
-    CONSTRAINT "audit_log_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "audit_log_table_name_record_id_version_key" UNIQUE ("table_name", "record_id", "version")
-);
 
 -- One rating in one direction for one completed order; blind until revealed.
 CREATE TABLE IF NOT EXISTS "feedback" (

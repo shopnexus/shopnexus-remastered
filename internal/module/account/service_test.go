@@ -13,48 +13,16 @@ import (
 	"shopnexus/internal/module/account"
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/domain"
-	commonapi "shopnexus/internal/module/common/api"
 	kycmock "shopnexus/internal/provider/kyc/mock"
 	"shopnexus/internal/provider/notify"
 	oauthmock "shopnexus/internal/provider/oauth/mock"
 	"shopnexus/internal/shared/errx"
-	"shopnexus/internal/shared/id"
 	"shopnexus/internal/shared/id/idtest"
 	"shopnexus/internal/shared/session"
 	"shopnexus/internal/shared/token"
 )
 
 func TestMain(m *testing.M) { idtest.Install(); m.Run() }
-
-// fakeResources stands in for the common module. It answers for any id unless the test
-// puts one in missing, which is how the "the vendor cannot be shown this scan" path is
-// reached — a resource that was never confirmed has no fetch URL.
-type fakeResources struct {
-	missing map[id.ID[id.Resource]]bool
-}
-
-func (fakeResources) RegisterResource(context.Context, commonapi.RegisterResourceRequest) (commonapi.Resource, error) {
-	return commonapi.Resource{}, nil
-}
-
-func (f fakeResources) GetResources(_ context.Context, req commonapi.GetResourcesRequest) ([]commonapi.Resource, error) {
-	out := make([]commonapi.Resource, 0, len(req.IDs))
-	for _, rid := range req.IDs {
-		if f.missing[rid] {
-			continue
-		}
-		out = append(out, commonapi.Resource{
-			ID:   rid,
-			Mime: "image/jpeg",
-			URL:  "https://storage.invalid/scans/" + rid.String(),
-		})
-	}
-	return out, nil
-}
-
-func (fakeResources) ListOptions(context.Context, commonapi.ListOptionsRequest) ([]commonapi.Option, error) {
-	return nil, nil
-}
 
 // fakeNotifier records what was sent. A message that never goes out is invisible to every
 // other assertion — the send is the only observable half of a verification flow.
@@ -85,13 +53,12 @@ func (f *fakeNotifier) sentOf(kind notify.Kind) []notify.Message {
 // harness is the service with the real session store, the real dev providers and an
 // in-memory repository — everything except a database.
 type harness struct {
-	svc       *account.Service
-	notes     *fakeNotifier
-	repo      *fakeRepo
-	sessions  *session.Store
-	tokens    *token.Manager
-	cache     cache.Client
-	resources *fakeResources
+	svc      *account.Service
+	notes    *fakeNotifier
+	repo     *fakeRepo
+	sessions *session.Store
+	tokens   *token.Manager
+	cache    cache.Client
 }
 
 func newHarness() *harness {
@@ -100,11 +67,10 @@ func newHarness() *harness {
 	sessions := session.New(c, time.Hour)
 	tokens := token.NewManager("0123456789012345678901234567890123", 15*time.Minute)
 	log := slog.New(slog.DiscardHandler)
-	resources := &fakeResources{missing: map[id.ID[id.Resource]]bool{}}
 	notes := &fakeNotifier{}
 	svc := account.NewService(repo, sessions, tokens, c,
-		notes, oauthmock.NewVerifier(), kycmock.NewClient(), resources, log)
-	return &harness{svc: svc, notes: notes, repo: repo, sessions: sessions, tokens: tokens, cache: c, resources: resources}
+		notes, oauthmock.NewVerifier(), kycmock.NewClient(), log)
+	return &harness{svc: svc, notes: notes, repo: repo, sessions: sessions, tokens: tokens, cache: c}
 }
 
 func registerRequest() accountapi.RegisterRequest {

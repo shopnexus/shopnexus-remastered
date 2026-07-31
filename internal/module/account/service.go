@@ -16,7 +16,7 @@ import (
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/module/account/port"
-	commonapi "shopnexus/internal/module/common/api"
+	"shopnexus/internal/module/common"
 	"shopnexus/internal/provider/kyc"
 	"shopnexus/internal/provider/notify"
 	"shopnexus/internal/provider/oauth"
@@ -60,12 +60,11 @@ type Service struct {
 	sessions *session.Store
 	tokens   *token.Manager
 	// cache holds the one-time secrets and the send throttles.
-	cache     cache.Client
-	notify    notify.Client
-	oauth     oauth.Verifier
-	kyc       kyc.Client
-	resources commonapi.Service
-	log       *slog.Logger
+	cache  cache.Client
+	notify notify.Client
+	oauth  oauth.Verifier
+	kyc    kyc.Client
+	log    *slog.Logger
 }
 
 func NewService(
@@ -76,19 +75,17 @@ func NewService(
 	notifier notify.Client,
 	verifier oauth.Verifier,
 	kycClient kyc.Client,
-	resources commonapi.Service,
 	log *slog.Logger,
 ) *Service {
 	return &Service{
-		repo:      repo,
-		sessions:  sessions,
-		tokens:    tokens,
-		cache:     c,
-		notify:    notifier,
-		oauth:     verifier,
-		kyc:       kycClient,
-		resources: resources,
-		log:       log,
+		repo:     repo,
+		sessions: sessions,
+		tokens:   tokens,
+		cache:    c,
+		notify:   notifier,
+		oauth:    verifier,
+		kyc:      kycClient,
+		log:      log,
 	}
 }
 
@@ -260,29 +257,29 @@ func (s *Service) summaries(ctx context.Context, profiles []domain.Profile) []ac
 
 // avatar resolves one image through the common module. A failure degrades to no avatar
 // and a warning: the storage catalogue being down must not take a profile read with it.
-func (s *Service) avatar(ctx context.Context, resourceID *int64) *commonapi.Resource {
+func (s *Service) avatar(ctx context.Context, resourceID *int64) *common.ResourceDTO {
 	if resourceID == nil {
 		return nil
 	}
 	return s.avatars(ctx, []int64{*resourceID})[*resourceID]
 }
 
-func (s *Service) avatars(ctx context.Context, resourceIDs []int64) map[int64]*commonapi.Resource {
-	out := map[int64]*commonapi.Resource{}
+// avatars resolves image ids from this module's own resource table — one query for the whole
+// page, because a list of twenty sellers is twenty avatars. A missing one is left out rather
+// than failing the page.
+func (s *Service) avatars(ctx context.Context, resourceIDs []int64) map[int64]*common.ResourceDTO {
+	out := map[int64]*common.ResourceDTO{}
 	if len(resourceIDs) == 0 {
 		return out
 	}
-	req := commonapi.GetResourcesRequest{IDs: make([]id.ID[id.Resource], 0, len(resourceIDs))}
-	for _, rid := range resourceIDs {
-		req.IDs = append(req.IDs, id.Of[id.Resource](rid))
-	}
-	found, err := s.resources.GetResources(ctx, req)
+	found, err := s.repo.FindResources(ctx, resourceIDs)
 	if err != nil {
 		s.log.Warn("resolve avatars failed", "count", len(resourceIDs), "err", err)
 		return out
 	}
 	for _, res := range found {
-		out[res.ID.Int64()] = &res
+		dto := res.ToDTO()
+		out[res.ID] = &dto
 	}
 	return out
 }

@@ -24,7 +24,6 @@ x-app-env: &app-env
   CATALOG_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
   ORDER_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
   CHAT_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
-  COMMON_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
   TRUST_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
   FINANCE_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
   OBSERVABILITY_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"

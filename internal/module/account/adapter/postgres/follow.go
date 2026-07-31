@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"shopnexus/internal/module/account/domain"
+	"shopnexus/internal/module/common/dbx"
 )
 
 // InsertFollow is idempotent: following twice is the same state as following once, so a
@@ -17,7 +18,7 @@ func (r *Repo) InsertFollow(ctx context.Context, followerID, followeeID int64) e
 	           ON CONFLICT DO NOTHING`
 	args := pgx.NamedArgs{"follower_id": followerID, "followee_id": followeeID}
 	if _, err := r.pool.Exec(ctx, q, args); err != nil {
-		if isForeignKeyViolation(err) {
+		if dbx.IsForeignKeyViolation(err) {
 			return domain.ErrAccountNotFound
 		}
 		return fmt.Errorf("db insert follow: %w", err)

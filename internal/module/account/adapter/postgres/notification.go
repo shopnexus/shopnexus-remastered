@@ -9,6 +9,7 @@ import (
 
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/module/account/port"
+	"shopnexus/internal/module/common/dbx"
 )
 
 // ListNotifications reads one page of the feed, newest first.
@@ -33,7 +34,7 @@ func (r *Repo) ListNotifications(ctx context.Context, q port.NotificationQuery) 
 		"account_id":  q.AccountID,
 		"category":    string(q.Category),
 		"unread_only": q.UnreadOnly,
-		"before":      nullTime(q.Before),
+		"before":      dbx.NullTime(q.Before),
 		"limit":       q.Limit,
 	}
 	rows, err := r.pool.Query(ctx, sql, args)
@@ -114,7 +115,7 @@ func (r *Repo) SavePreferences(ctx context.Context, accountID int64, store, remo
 	if len(store) == 0 && len(remove) == 0 {
 		return nil
 	}
-	return r.inTx(ctx, func(tx pgx.Tx) error {
+	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
 		const upsert = `INSERT INTO notification_preference (account_id, category, channel, is_enabled)
 		                VALUES (@account_id, @category, @channel, @is_enabled)
 		                ON CONFLICT (account_id, category, channel) DO UPDATE
@@ -127,7 +128,7 @@ func (r *Repo) SavePreferences(ctx context.Context, accountID int64, store, remo
 				"is_enabled": p.IsEnabled,
 			}
 			if _, err := tx.Exec(ctx, upsert, args); err != nil {
-				if isForeignKeyViolation(err) {
+				if dbx.IsForeignKeyViolation(err) {
 					return domain.ErrAccountNotFound
 				}
 				return fmt.Errorf("db upsert notification preference: %w", err)

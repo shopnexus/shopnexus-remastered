@@ -13,6 +13,7 @@ import (
 	pgadapter "shopnexus/internal/module/account/adapter/postgres"
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/module/account/port"
+	"shopnexus/internal/module/common"
 )
 
 // These exercise the SQL a fake cannot: the identifier uniqueness, the geography column,
@@ -211,7 +212,7 @@ func TestRepo_AuditLogVersionsPerRecord(t *testing.T) {
 	acc := createAccount(t, repo)
 
 	for i := 0; i < 2; i++ {
-		err := repo.InsertAuditLog(ctx, port.AuditEntry{
+		err := repo.InsertAuditLog(ctx, common.AuditEntry{
 			Table: "account", RecordID: acc.ID, ChangeType: "update",
 			Code:      string(domain.Suspended.Code),
 			ChangedBy: &acc.ID,

@@ -7,6 +7,7 @@ import (
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/module/account/port"
+	"shopnexus/internal/module/common"
 )
 
 // AdminListAccounts is the moderator's search. The rows come back as accounts, and the
@@ -101,7 +102,7 @@ func (s *Service) AdminCreateModerator(ctx context.Context, req accountapi.Creat
 		return accountapi.AdminAccount{}, fmt.Errorf("create account: %w", err)
 	}
 	// An insert has no events to carry the trail, so this one is written on its own.
-	s.audit(ctx, port.AuditEntry{
+	s.audit(ctx, common.AuditEntry{
 		Table:      "account",
 		RecordID:   acc.ID,
 		ChangeType: "insert",
@@ -174,7 +175,7 @@ func (s *Service) toAdminAccounts(ctx context.Context, rows []port.AccountSummar
 // records has already been committed, so failing the request afterwards would report a
 // suspension that did happen as one that did not — a dropped trail entry is a problem to
 // alert on, not to hide behind a 500.
-func (s *Service) audit(ctx context.Context, e port.AuditEntry) {
+func (s *Service) audit(ctx context.Context, e common.AuditEntry) {
 	if err := s.repo.InsertAuditLog(ctx, e); err != nil {
 		s.log.Error("write audit log failed", "code", e.Code, "record_id", e.RecordID, "err", err)
 	}
@@ -182,8 +183,8 @@ func (s *Service) audit(ctx context.Context, e port.AuditEntry) {
 
 // auditIdentityVerdict records who decided a KYC case and how — the one fact the
 // document row does not keep, since it holds the verdict but not its author.
-func auditIdentityVerdict(d domain.IdentityDocument, byID int64) port.AuditEntry {
-	return port.AuditEntry{
+func auditIdentityVerdict(d domain.IdentityDocument, byID int64) common.AuditEntry {
+	return common.AuditEntry{
 		Table:      "identity_document",
 		RecordID:   d.ID,
 		ChangeType: "update",

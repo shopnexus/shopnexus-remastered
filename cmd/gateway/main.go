@@ -19,7 +19,6 @@ import (
 	"shopnexus/internal/module/account"
 	"shopnexus/internal/module/catalog"
 	"shopnexus/internal/module/chat"
-	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/finance"
 	"shopnexus/internal/module/observability"
 	"shopnexus/internal/module/order"
@@ -64,7 +63,6 @@ func main() {
 		catalog.Module,
 		order.Module,
 		chat.Module,
-		common.Module,
 		finance.Module,
 		trust.Module,
 		// Analytics + observability (product events, HTTP/runtime metrics into TimescaleDB).

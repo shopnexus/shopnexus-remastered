@@ -32,7 +32,6 @@ type Config struct {
 	CatalogDBDSN string `validate:"required"`
 	OrderDBDSN   string `validate:"required"`
 	ChatDBDSN    string `validate:"required"`
-	CommonDBDSN  string `validate:"required"`
 	TrustDBDSN   string `validate:"required"`
 	FinanceDBDSN string `validate:"required"`
 	// ObservabilityDBDSN backs the observability schema (product events + metrics hypertables).
@@ -131,7 +130,6 @@ func Load(v *validator.Validate) (*Config, error) {
 		CatalogDBDSN:       os.Getenv("CATALOG_DB_DSN"),
 		OrderDBDSN:         os.Getenv("ORDER_DB_DSN"),
 		ChatDBDSN:          os.Getenv("CHAT_DB_DSN"),
-		CommonDBDSN:        os.Getenv("COMMON_DB_DSN"),
 		TrustDBDSN:         os.Getenv("TRUST_DB_DSN"),
 		FinanceDBDSN:       os.Getenv("FINANCE_DB_DSN"),
 		ObservabilityDBDSN: os.Getenv("OBSERVABILITY_DB_DSN"),

@@ -10,6 +10,7 @@ import (
 
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
+	"shopnexus/internal/module/common"
 )
 
 // fakeRepo is an in-memory port.Repository. It enforces the constraints the schema does —
@@ -34,8 +35,11 @@ type fakeRepo struct {
 	// variantListing is the join CommitStock walks to bump the listing's counter.
 	variantListing map[int64]int64
 	favorites      map[[2]int64]bool
+	// resources is this module's own resource table: an id absent from it names no confirmed
+	// upload, which is what ErrAttachmentNotFound is about.
+	resources map[int64]bool
 	// audit is the trail Save writes in the same transaction as the change.
-	audit []port.AuditEntry
+	audit []common.AuditEntry
 }
 
 // storedListing is the row plus its children, cloned in and out so a caller that never saves
@@ -58,6 +62,7 @@ func newFakeRepo() *fakeRepo {
 		stock:          map[int64]domain.Stock{},
 		variantListing: map[int64]int64{},
 		favorites:      map[[2]int64]bool{},
+		resources:      map[int64]bool{},
 	}
 }
 
@@ -373,7 +378,7 @@ func (f *fakeRepo) recordTrail(l *domain.Listing, actor int64) {
 	}
 	snapshot := l.Snapshot()
 	for _, e := range l.Events() {
-		f.audit = append(f.audit, port.AuditEntry{
+		f.audit = append(f.audit, common.AuditEntry{
 			Table: "listing", RecordID: l.ID, ChangeType: "update", Code: string(e.Code),
 			ChangedBy: changedBy, Diff: e.Payload, Snapshot: snapshot,
 		})
@@ -528,7 +533,7 @@ func (f *fakeRepo) SoftDeleteListing(_ context.Context, id, sellerID, actor int6
 	if actor != 0 {
 		changedBy = &actor
 	}
-	f.audit = append(f.audit, port.AuditEntry{
+	f.audit = append(f.audit, common.AuditEntry{
 		Table: "listing", RecordID: id, ChangeType: "delete",
 		Code: string(domain.Deleted.Code), ChangedBy: changedBy,
 		Diff: domain.NoPayload{}, Snapshot: domain.NoPayload{},
@@ -607,4 +612,14 @@ func auditedDiff[T any](f *fakeRepo, e domain.EventType[T]) (T, bool) {
 	}
 	var zero T
 	return zero, false
+}
+
+func (f *fakeRepo) FindResources(_ context.Context, ids []int64) ([]common.Resource, error) {
+	out := make([]common.Resource, 0, len(ids))
+	for _, key := range ids {
+		if f.resources[key] {
+			out = append(out, common.Resource{ID: key, Mime: "image/jpeg"})
+		}
+	}
+	return out, nil
 }

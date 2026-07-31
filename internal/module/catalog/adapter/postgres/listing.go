@@ -9,7 +9,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"shopnexus/internal/module/catalog/domain"
-	"shopnexus/internal/module/catalog/port"
+	"shopnexus/internal/module/common"
+	"shopnexus/internal/module/common/dbx"
 )
 
 // listingColumns is every column of the root. A nullable one is scanned straight into the
@@ -29,7 +30,7 @@ func scanListing(row pgx.Row) (*domain.Listing, error) {
 		&l.CategoryID, &l.Condition, &l.PriceMode, &l.ShippingPaidBy, &l.Currency,
 		&l.Specifications, &l.Attachments, &pending, &l.CachedRating, &l.CachedSold,
 		&l.CreatedAt, &l.DeletedAt, &l.EmbeddingStaleAt)
-	if isNoRows(err) {
+	if dbx.IsNoRows(err) {
 		return nil, domain.ErrListingNotFound
 	}
 	if err != nil {
@@ -66,8 +67,8 @@ func listingArgs(l *domain.Listing) pgx.NamedArgs {
 		"price_mode":         string(l.PriceMode),
 		"shipping_paid_by":   string(l.ShippingPaidBy),
 		"currency":           l.Currency,
-		"specifications":     jsonObject(l.Specifications),
-		"attachments":        int64Array(l.Attachments),
+		"specifications":     dbx.JSONObject(l.Specifications),
+		"attachments":        dbx.Int64Array(l.Attachments),
 		"pending_edit":       pending,
 		"cached_rating":      l.CachedRating,
 		"cached_sold":        l.CachedSold,
@@ -87,7 +88,7 @@ func scanVariant(row pgx.Row) (*domain.Variant, error) {
 	err := row.Scan(&v.ID, &v.ListingID, &v.Price, &v.Attributes, &v.PackageDetails,
 		&v.Attachments, &v.IsFeatured, &v.CreatedAt, &v.DeletedAt,
 		&v.Stock.Quantity, &v.Stock.Reserved, &v.Stock.Sold)
-	if isNoRows(err) {
+	if dbx.IsNoRows(err) {
 		return nil, domain.ErrVariantNotFound
 	}
 	if err != nil {
@@ -182,7 +183,7 @@ func (r *Repo) CreateListing(ctx context.Context, l *domain.Listing, actor int64
 	if err := l.Validate(); err != nil {
 		return err
 	}
-	return r.inTx(ctx, func(tx pgx.Tx) error {
+	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
 		const q = `INSERT INTO listing (account_id, slug, status, name, description, category_id,
 		                       condition, price_mode, shipping_paid_by, currency, specifications,
 		                       attachments, pending_edit, embedding_stale_at)
@@ -192,10 +193,10 @@ func (r *Repo) CreateListing(ctx context.Context, l *domain.Listing, actor int64
 		           RETURNING id, version, created_at`
 		err := tx.QueryRow(ctx, q, listingArgs(l)).Scan(&l.ID, &l.Version, &l.CreatedAt)
 		if err != nil {
-			if isUniqueViolation(err) {
+			if dbx.IsUniqueViolation(err) {
 				return domain.ErrSlugTaken
 			}
-			if isRestrictViolation(err) {
+			if dbx.IsRestrictViolation(err) {
 				return domain.ErrCategoryNotFound
 			}
 			return fmt.Errorf("db insert listing: %w", err)
@@ -220,7 +221,7 @@ func (r *Repo) SaveListing(ctx context.Context, l *domain.Listing, actor int64) 
 	if err := l.Validate(); err != nil {
 		return err
 	}
-	return r.inTx(ctx, func(tx pgx.Tx) error {
+	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
 		const q = `UPDATE listing
 		           SET status = @status, name = @name, description = @description,
 		               category_id = @category_id, condition = @condition,
@@ -231,10 +232,10 @@ func (r *Repo) SaveListing(ctx context.Context, l *domain.Listing, actor int64) 
 		           WHERE id = @id AND version = @version AND deleted_at IS NULL`
 		tag, err := tx.Exec(ctx, q, listingArgs(l))
 		if err != nil {
-			if isUniqueViolation(err) {
+			if dbx.IsUniqueViolation(err) {
 				return domain.ErrSlugTaken
 			}
-			if isRestrictViolation(err) {
+			if dbx.IsRestrictViolation(err) {
 				return domain.ErrCategoryNotFound
 			}
 			return fmt.Errorf("db update listing: %w", err)
@@ -328,7 +329,7 @@ func insertVariant(ctx context.Context, tx pgx.Tx, listingID int64, v *domain.Va
 	           RETURNING id, created_at`
 	v.ListingID = listingID
 	if err := tx.QueryRow(ctx, q, variantArgs(v)).Scan(&v.ID, &v.CreatedAt); err != nil {
-		if isUniqueViolation(err) {
+		if dbx.IsUniqueViolation(err) {
 			return domain.ErrDuplicateVariant
 		}
 		return fmt.Errorf("db insert variant: %w", err)
@@ -354,7 +355,7 @@ func updateVariant(ctx context.Context, tx pgx.Tx, v *domain.Variant) error {
 	               attachments = @attachments
 	           WHERE id = @id`
 	if _, err := tx.Exec(ctx, q, variantArgs(v)); err != nil {
-		if isUniqueViolation(err) {
+		if dbx.IsUniqueViolation(err) {
 			return domain.ErrDuplicateVariant
 		}
 		return fmt.Errorf("db update variant: %w", err)
@@ -377,9 +378,9 @@ func variantArgs(v *domain.Variant) pgx.NamedArgs {
 		"id":              v.ID,
 		"listing_id":      v.ListingID,
 		"price":           v.Price,
-		"attributes":      jsonObject(v.Attributes),
-		"package_details": jsonObject(v.PackageDetails),
-		"attachments":     int64Array(v.Attachments),
+		"attributes":      dbx.JSONObject(v.Attributes),
+		"package_details": dbx.JSONObject(v.PackageDetails),
+		"attachments":     dbx.Int64Array(v.Attachments),
 	}
 }
 
@@ -398,7 +399,7 @@ func saveListingTags(ctx context.Context, tx pgx.Tx, l *domain.Listing) error {
 	for _, tag := range l.Tags {
 		args := pgx.NamedArgs{"listing_id": l.ID, "tag": tag}
 		if _, err := tx.Exec(ctx, ins, args); err != nil {
-			if isRestrictViolation(err) {
+			if dbx.IsRestrictViolation(err) {
 				return domain.ErrTagNotFound
 			}
 			return fmt.Errorf("db insert listing tag: %w", err)
@@ -422,7 +423,7 @@ func saveListingEvents(ctx context.Context, tx pgx.Tx, l *domain.Listing, actor 
 	}
 	snapshot := l.Snapshot()
 	for _, e := range events {
-		entry := port.AuditEntry{
+		entry := common.AuditEntry{
 			Table:      "listing",
 			RecordID:   l.ID,
 			ChangeType: "update",
@@ -431,7 +432,7 @@ func saveListingEvents(ctx context.Context, tx pgx.Tx, l *domain.Listing, actor 
 			Diff:       e.Payload,
 			Snapshot:   snapshot,
 		}
-		if err := insertAuditLog(ctx, tx, entry); err != nil {
+		if err := dbx.InsertAuditLog(ctx, tx, entry); err != nil {
 			return err
 		}
 	}
@@ -473,7 +474,7 @@ func (r *Repo) GetListingByVariant(ctx context.Context, variantID, sellerID int6
 	var listingID int64
 	args := pgx.NamedArgs{"variant_id": variantID, "account_id": sellerID}
 	if err := r.pool.QueryRow(ctx, q, args).Scan(&listingID); err != nil {
-		if isNoRows(err) {
+		if dbx.IsNoRows(err) {
 			return nil, domain.ErrVariantNotFound
 		}
 		return nil, fmt.Errorf("db query listing by variant: %w", err)
@@ -485,7 +486,7 @@ func (r *Repo) GetListingByVariant(ctx context.Context, variantID, sellerID int6
 // service checks it too, for the error a client can act on — but a checkout landing between
 // that read and this write would otherwise leave a deleted listing holding reserved units.
 func (r *Repo) SoftDeleteListing(ctx context.Context, id, sellerID, actor int64) error {
-	return r.inTx(ctx, func(tx pgx.Tx) error {
+	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
 		const q = `UPDATE listing SET deleted_at = now(), version = version + 1
 		           WHERE id = @id AND account_id = @account_id AND deleted_at IS NULL
 		             AND NOT EXISTS (
@@ -506,7 +507,7 @@ func (r *Repo) SoftDeleteListing(ctx context.Context, id, sellerID, actor int64)
 		if actor != 0 {
 			changedBy = &actor
 		}
-		return insertAuditLog(ctx, tx, port.AuditEntry{
+		return dbx.InsertAuditLog(ctx, tx, common.AuditEntry{
 			Table: "listing", RecordID: id, ChangeType: "delete",
 			Code: string(domain.Deleted.Code), ChangedBy: changedBy,
 			Diff: domain.NoPayload{}, Snapshot: domain.NoPayload{},

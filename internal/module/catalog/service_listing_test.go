@@ -350,8 +350,7 @@ func TestCreateListing_UnknownAttachmentNotFound(t *testing.T) {
 
 	// Declared as confirmed, it goes through — and the gallery keeps the order it was sent in,
 	// because the first image is the cover.
-	h.images[id.Of[id.Resource](42)] = true
-	h.images[id.Of[id.Resource](7)] = true
+	h.images[42], h.images[7] = true, true
 	req.Attachments = []id.ID[id.Resource]{id.Of[id.Resource](42), id.Of[id.Resource](7)}
 	got, err := h.svc.CreateListing(context.Background(), req)
 	if err != nil {

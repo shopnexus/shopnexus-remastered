@@ -13,7 +13,6 @@ import (
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
-	commonapi "shopnexus/internal/module/common/api"
 	"shopnexus/internal/shared/id"
 )
 
@@ -22,21 +21,17 @@ type Service struct {
 	// accounts answers two questions this module cannot: may the caller act as staff,
 	// and what is a seller called. Both are rows in the account module's tables.
 	accounts accountapi.Service
-	// resourceSvc resolves image ids, which are held inline without a foreign key because
-	// they live in another schema.
-	resourceSvc commonapi.Service
-	v           *validator.Validate
-	log         *slog.Logger
+	v        *validator.Validate
+	log      *slog.Logger
 }
 
 func NewService(
 	repo port.Repository,
 	accounts accountapi.Service,
-	resources commonapi.Service,
 	v *validator.Validate,
 	log *slog.Logger,
 ) *Service {
-	return &Service{repo: repo, accounts: accounts, resourceSvc: resources, v: v, log: log}
+	return &Service{repo: repo, accounts: accounts, v: v, log: log}
 }
 
 var _ catalogapi.Service = (*Service)(nil)

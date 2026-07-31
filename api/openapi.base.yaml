@@ -236,6 +236,44 @@ components:
     MessageID: { type: string, pattern: '^msg_[0-9a-hjkmnp-tv-z]{13}$', example: msg_agnc1pe4pjb4k }
     ResourceID: { type: string, pattern: '^res_[0-9a-hjkmnp-tv-z]{13}$', example: res_4mx8jd2qr5wtc }
 
+    # An attachment, as every module hands one out: a listing image, an avatar, a review photo
+    # and a KYC scan are the same fact. The table is shared DDL applied into each module's
+    # schema, so a resource id only resolves inside the module that stored it — which is why
+    # every DTO carrying one carries the resolved resource rather than just the id.
+    Resource:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/ResourceID' }
+        provider:
+          type: string
+          example: minio
+          description: Storage backend, kebab-case — `s3`, `minio`, `local`.
+        object_key:
+          type: string
+          example: listings/2026/07/9f86d081.jpg
+          description: Provider-specific path to the bytes.
+        mime: { type: string, example: image/jpeg }
+        size:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 248132
+          description: Bytes, as read back from storage rather than as declared.
+        checksum:
+          type: string
+          example: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+          description: Content hash, read back from storage at completion.
+        url:
+          type: string
+          format: uri
+          example: https://cdn.shopnexus.test/o/9f86d081?expires=1785000000
+          description: >
+            Short-lived URL to fetch the bytes. Absent until a module can presign one, so a
+            consumer that needs the bytes has to treat it as "not available yet" rather than as
+            an empty object. Not a stable address: store the id, not this.
+        url_expires_at: { type: string, format: date-time }
+      required: [id, provider, object_key, mime, size]
+
     CurrencyCode:
       type: string
       minLength: 3

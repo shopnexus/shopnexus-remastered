@@ -12,8 +12,6 @@ import (
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
-	commonapi "shopnexus/internal/module/common/api"
-	"shopnexus/internal/module/common/api/commontest"
 	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/id"
 	"shopnexus/internal/shared/id/idtest"
@@ -39,30 +37,12 @@ func (f fakeAccounts) GetPublicAccount(_ context.Context, req accountapi.GetPubl
 	return accountapi.PublicAccount{ID: req.ID, Name: "Seller", IdentityVerified: f.verified}, nil
 }
 
-// fakeResources answers the resource ids a test declared as confirmed; anything else is
-// absent, which is how a deleted resource reads. Embedding the published stub means an
-// unstubbed method answers 501 rather than panicking on a nil interface.
-type fakeResources struct {
-	commontest.Stub
-	confirmed map[id.ID[id.Resource]]bool
-}
-
-func (f fakeResources) GetResources(_ context.Context, req commonapi.GetResourcesRequest) ([]commonapi.Resource, error) {
-	out := make([]commonapi.Resource, 0, len(req.IDs))
-	for _, rid := range req.IDs {
-		if f.confirmed[rid] {
-			out = append(out, commonapi.Resource{ID: rid})
-		}
-	}
-	return out, nil
-}
-
 type harness struct {
 	svc  *catalog.Service
 	repo *fakeRepo
-	// images is the set of resource ids the common module would confirm. A test that attaches
-	// one has to declare it, which is what makes ErrAttachmentNotFound reachable.
-	images map[id.ID[id.Resource]]bool
+	// images is the set of resource ids this module's own resource table holds. A test that
+	// attaches one has to declare it, which is what makes ErrAttachmentNotFound reachable.
+	images map[int64]bool
 }
 
 func newHarness(role string) *harness { return newHarnessWith(role, false) }
@@ -71,16 +51,15 @@ func newHarness(role string) *harness { return newHarnessWith(role, false) }
 // as it was, for the tests that only care about the role.
 func newHarnessWith(role string, identityVerified bool) *harness {
 	repo := newFakeRepo()
-	images := map[id.ID[id.Resource]]bool{}
 	svc := catalog.NewService(repo, fakeAccounts{role: role, verified: identityVerified},
-		fakeResources{confirmed: images}, validation.Default(), slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: repo, images: images}
+		validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: repo, images: repo.resources}
 }
 
 // newHarnessModerator reuses one harness's repository with a moderator caller.
 func newHarnessModerator(h *harness) *harness {
 	svc := catalog.NewService(h.repo, fakeAccounts{role: "moderator", verified: true},
-		fakeResources{confirmed: h.images}, validation.Default(), slog.New(slog.DiscardHandler))
+		validation.Default(), slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: h.repo, images: h.images}
 }
 
@@ -88,7 +67,7 @@ func newHarnessModerator(h *harness) *harness {
 // category and then act as a plain seller against the same data.
 func newHarnessAdmin(h *harness) *harness {
 	svc := catalog.NewService(h.repo, fakeAccounts{role: "admin", verified: true},
-		fakeResources{confirmed: h.images}, validation.Default(), slog.New(slog.DiscardHandler))
+		validation.Default(), slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: h.repo, images: h.images}
 }
 

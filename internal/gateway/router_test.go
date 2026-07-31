@@ -20,7 +20,6 @@ import (
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/api/catalogtest"
 	chatapi "shopnexus/internal/module/chat/api"
-	commonapi "shopnexus/internal/module/common/api"
 	financeapi "shopnexus/internal/module/finance/api"
 	orderapi "shopnexus/internal/module/order/api"
 	trustapi "shopnexus/internal/module/trust/api"
@@ -91,18 +90,6 @@ func (stubChat) ListMessages(context.Context, chatapi.ListMessagesRequest) ([]ch
 	return nil, nil
 }
 
-type stubCommon struct{}
-
-func (stubCommon) RegisterResource(context.Context, commonapi.RegisterResourceRequest) (commonapi.Resource, error) {
-	return commonapi.Resource{ID: id.Of[id.Resource](1)}, nil
-}
-func (stubCommon) GetResources(context.Context, commonapi.GetResourcesRequest) ([]commonapi.Resource, error) {
-	return nil, nil
-}
-func (stubCommon) ListOptions(context.Context, commonapi.ListOptionsRequest) ([]commonapi.Option, error) {
-	return nil, nil
-}
-
 type stubPayment struct{}
 
 func (stubPayment) CreateSession(context.Context, financeapi.CreateSessionRequest) (financeapi.Session, error) {
@@ -137,7 +124,6 @@ func newRouter() (http.Handler, *token.Manager, *session.Store) {
 		Catalog:  handler.NewCatalog(stubCat{}, v, log),
 		Order:    handler.NewOrder(stubOrder{}, v, log),
 		Chat:     handler.NewChat(stubChat{}, v, log),
-		Common:   handler.NewCommon(stubCommon{}, v, log),
 		Finance:  handler.NewFinance(stubPayment{}, v, log),
 		Trust:    handler.NewTrust(stubTrust{}, v, log),
 		Tokens:   tm,

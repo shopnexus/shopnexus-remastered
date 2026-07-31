@@ -1,7 +1,7 @@
-// Command migrate applies each module's embedded SQL migrations into its own
-// schema (the module name) within its database. Run it as a CI/CD step or a
-// Kubernetes Job/initContainer before rolling out the app — the application
-// does not migrate at startup. Each module's DSN may point at the same URL
+// Command migrate applies the shared DDL and then each module's own embedded SQL
+// migrations into that module's schema (the module name) within its database. Run it
+// as a CI/CD step or a Kubernetes Job/initContainer before rolling out the app — the
+// application does not migrate at startup. Each module's DSN may point at the same URL
 // (shared DB, isolated by schema) or a dedicated one once split out.
 package main
 
@@ -33,20 +33,24 @@ func main() {
 	}
 
 	// name doubles as the schema; the pool's search_path is set to it.
+	//
+	// shared says whether the module gets common's DDL — the audit trail, the resource table
+	// and the option registry — applied into its schema first. Every domain module does;
+	// observability is telemetry hypertables with nothing to audit and no uploads.
 	type target struct {
-		name string
-		dsn  string
-		fsys fs.FS
+		name   string
+		dsn    string
+		fsys   fs.FS
+		shared bool
 	}
 	targets := []target{
-		{"account", cfg.AccountDBDSN, account.Migrations()},
-		{"catalog", cfg.CatalogDBDSN, catalog.Migrations()},
-		{"chat", cfg.ChatDBDSN, chat.Migrations()},
-		{"common", cfg.CommonDBDSN, common.Migrations()},
-		{"order", cfg.OrderDBDSN, order.Migrations()},
-		{"finance", cfg.FinanceDBDSN, finance.Migrations()},
-		{"observability", cfg.ObservabilityDBDSN, observability.Migrations()},
-		{"trust", cfg.TrustDBDSN, trust.Migrations()},
+		{"account", cfg.AccountDBDSN, account.Migrations(), true},
+		{"catalog", cfg.CatalogDBDSN, catalog.Migrations(), true},
+		{"chat", cfg.ChatDBDSN, chat.Migrations(), true},
+		{"order", cfg.OrderDBDSN, order.Migrations(), true},
+		{"finance", cfg.FinanceDBDSN, finance.Migrations(), true},
+		{"trust", cfg.TrustDBDSN, trust.Migrations(), true},
+		{"observability", cfg.ObservabilityDBDSN, observability.Migrations(), false},
 	}
 
 	ctx := context.Background()
@@ -60,6 +64,14 @@ func main() {
 		if _, err := pool.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+pgx.Identifier{t.name}.Sanitize()); err != nil {
 			pool.Close()
 			log.Fatalf("migrate %s: create schema: %v", t.name, err)
+		}
+		// Shared first: its files sort ahead of the module's own, and the runner tracks each
+		// by filename, so the two sets share one schema_migrations table without colliding.
+		if t.shared {
+			if err := postgres.Migrate(ctx, pool, common.Migrations()); err != nil {
+				pool.Close()
+				log.Fatalf("migrate %s: shared: %v", t.name, err)
+			}
 		}
 		if err := postgres.Migrate(ctx, pool, t.fsys); err != nil {
 			pool.Close()

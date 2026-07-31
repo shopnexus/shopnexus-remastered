@@ -24,7 +24,6 @@ var Module = fx.Module("gateway",
 		handler.NewAccount,
 		handler.NewCatalog,
 		handler.NewChat,
-		handler.NewCommon,
 		handler.NewFinance,
 		handler.NewOrder,
 		handler.NewTrust,
@@ -38,7 +37,6 @@ type routerParams struct {
 	Account  *handler.Account
 	Catalog  *handler.Catalog
 	Chat     *handler.Chat
-	Common   *handler.Common
 	Finance  *handler.Finance
 	Order    *handler.Order
 	Trust    *handler.Trust
@@ -53,7 +51,6 @@ func newRouter(p routerParams) http.Handler {
 		Account:  p.Account,
 		Catalog:  p.Catalog,
 		Chat:     p.Chat,
-		Common:   p.Common,
 		Finance:  p.Finance,
 		Order:    p.Order,
 		Trust:    p.Trust,

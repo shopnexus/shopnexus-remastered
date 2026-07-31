@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"shopnexus/internal/module/account/domain"
+	"shopnexus/internal/module/common/dbx"
 )
 
 const deviceColumns = `id, account_id, platform::text, push_token, last_seen_at, created_at`
@@ -16,7 +17,7 @@ const deviceColumns = `id, account_id, platform::text, push_token, last_seen_at,
 func scanDevice(row pgx.Row) (domain.Device, error) {
 	var d domain.Device
 	err := row.Scan(&d.ID, &d.AccountID, &d.Platform, &d.PushToken, &d.LastSeenAt, &d.CreatedAt)
-	if isNoRows(err) {
+	if dbx.IsNoRows(err) {
 		return domain.Device{}, domain.ErrDeviceNotFound
 	}
 	if err != nil {
@@ -43,7 +44,7 @@ func (r *Repo) UpsertDevice(ctx context.Context, d *domain.Device) error {
 		"push_token": d.PushToken,
 	}
 	if err := r.pool.QueryRow(ctx, q, args).Scan(&d.ID, &d.LastSeenAt, &d.CreatedAt); err != nil {
-		if isForeignKeyViolation(err) {
+		if dbx.IsForeignKeyViolation(err) {
 			return domain.ErrAccountNotFound
 		}
 		return fmt.Errorf("db upsert device: %w", err)

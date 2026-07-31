@@ -8,7 +8,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"shopnexus/internal/module/account/domain"
-	"shopnexus/internal/module/account/port"
+	"shopnexus/internal/module/common"
+	"shopnexus/internal/module/common/dbx"
 )
 
 // querier is what a pool and a transaction have in common, so the aggregate loads the
@@ -25,7 +26,7 @@ func (r *Repo) Create(ctx context.Context, a *domain.Account) error {
 	if err := a.Validate(); err != nil {
 		return err
 	}
-	return r.inTx(ctx, func(tx pgx.Tx) error {
+	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
 		const q = `INSERT INTO account (status, role, phone, email, username, password_hash,
 		                        email_verified, name, description, gender, date_of_birth,
 		                        avatar_resource_id, country, locale, timezone)
@@ -34,7 +35,7 @@ func (r *Repo) Create(ctx context.Context, a *domain.Account) error {
 		                   @avatar_resource_id, @country, @locale, @timezone)
 		           RETURNING id, version, created_at`
 		if err := tx.QueryRow(ctx, q, accountArgs(a)).Scan(&a.ID, &a.Version, &a.CreatedAt); err != nil {
-			if isUniqueViolation(err) {
+			if dbx.IsUniqueViolation(err) {
 				return domain.ErrIdentifierTaken
 			}
 			return fmt.Errorf("db insert account: %w", err)
@@ -77,7 +78,7 @@ func (r *Repo) GetByOAuth(ctx context.Context, provider, providerUID string) (*d
 	err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{"provider": provider, "provider_uid": providerUID}).
 		Scan(&accountID)
 	if err != nil {
-		if isNoRows(err) {
+		if dbx.IsNoRows(err) {
 			return nil, domain.ErrOAuthIdentityNotFound
 		}
 		return nil, fmt.Errorf("db query oauth identity: %w", err)
@@ -91,7 +92,7 @@ func (r *Repo) Save(ctx context.Context, a *domain.Account, actor int64) error {
 	if err := a.Validate(); err != nil {
 		return err
 	}
-	return r.inTx(ctx, func(tx pgx.Tx) error {
+	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
 		const q = `UPDATE account
 		           SET status = @status, role = @role, phone = @phone, email = @email,
 		               username = @username, password_hash = @password_hash,
@@ -104,7 +105,7 @@ func (r *Repo) Save(ctx context.Context, a *domain.Account, actor int64) error {
 		           WHERE id = @id AND version = @version`
 		tag, err := tx.Exec(ctx, q, accountArgs(a))
 		if err != nil {
-			if isUniqueViolation(err) {
+			if dbx.IsUniqueViolation(err) {
 				return domain.ErrIdentifierTaken
 			}
 			return fmt.Errorf("db update account: %w", err)
@@ -164,7 +165,7 @@ func saveIdentities(ctx context.Context, tx pgx.Tx, a *domain.Account) error {
 		i.AccountID = a.ID
 		args := pgx.NamedArgs{"account_id": a.ID, "provider": i.Provider, "provider_uid": i.ProviderUID}
 		if err := tx.QueryRow(ctx, ins, args).Scan(&i.ID, &i.CreatedAt); err != nil {
-			if isUniqueViolation(err) {
+			if dbx.IsUniqueViolation(err) {
 				return domain.ErrIdentifierTaken
 			}
 			return fmt.Errorf("db insert oauth identity: %w", err)
@@ -188,7 +189,7 @@ func saveEvents(ctx context.Context, tx pgx.Tx, a *domain.Account, actor int64) 
 	}
 	snapshot := a.Snapshot()
 	for _, e := range events {
-		entry := port.AuditEntry{
+		entry := common.AuditEntry{
 			Table:      "account",
 			RecordID:   a.ID,
 			ChangeType: "update",
@@ -197,7 +198,7 @@ func saveEvents(ctx context.Context, tx pgx.Tx, a *domain.Account, actor int64) 
 			Diff:       e.Payload,
 			Snapshot:   snapshot,
 		}
-		if err := insertAuditLog(ctx, tx, entry); err != nil {
+		if err := dbx.InsertAuditLog(ctx, tx, entry); err != nil {
 			return err
 		}
 	}

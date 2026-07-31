@@ -7,7 +7,7 @@ import (
 	accountapi "shopnexus/internal/module/account/api"
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
-	commonapi "shopnexus/internal/module/common/api"
+	"shopnexus/internal/module/common"
 	"shopnexus/internal/shared/id"
 )
 
@@ -114,22 +114,19 @@ func (s *Service) requireResources(ctx context.Context, l *domain.Listing) error
 	return nil
 }
 
-// resources resolves image ids in one batched call — a page of variants is not a call each.
-func (s *Service) resources(ctx context.Context, keys []int64) (map[int64]commonapi.Resource, error) {
-	out := make(map[int64]commonapi.Resource, len(keys))
+// resources resolves image ids in one query — a page of variants is not a query each. They come
+// from this module's own resource table: the upload that produced them was catalog's.
+func (s *Service) resources(ctx context.Context, keys []int64) (map[int64]common.ResourceDTO, error) {
+	out := make(map[int64]common.ResourceDTO, len(keys))
 	if len(keys) == 0 {
 		return out, nil
 	}
-	req := commonapi.GetResourcesRequest{IDs: make([]id.ID[id.Resource], 0, len(keys))}
-	for _, key := range keys {
-		req.IDs = append(req.IDs, id.Of[id.Resource](key))
-	}
-	found, err := s.resourceSvc.GetResources(ctx, req)
+	found, err := s.repo.FindResources(ctx, keys)
 	if err != nil {
-		return nil, fmt.Errorf("get resources: %w", err)
+		return nil, fmt.Errorf("find resources: %w", err)
 	}
 	for _, res := range found {
-		out[res.ID.Int64()] = res
+		out[res.ID] = res.ToDTO()
 	}
 	return out, nil
 }
@@ -230,8 +227,8 @@ func (s *Service) detailFor(ctx context.Context, l *domain.Listing, viewerID int
 
 // pick keeps the caller's order: the gallery's first image is the cover, so a map iteration
 // would lose the one thing the array encodes.
-func pick(found map[int64]commonapi.Resource, keys []int64) []commonapi.Resource {
-	out := make([]commonapi.Resource, 0, len(keys))
+func pick(found map[int64]common.ResourceDTO, keys []int64) []common.ResourceDTO {
+	out := make([]common.ResourceDTO, 0, len(keys))
 	for _, key := range keys {
 		if res, ok := found[key]; ok {
 			out = append(out, res)

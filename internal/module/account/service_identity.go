@@ -7,7 +7,6 @@ import (
 
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/domain"
-	commonapi "shopnexus/internal/module/common/api"
 	"shopnexus/internal/provider/kyc"
 	"shopnexus/internal/shared/id"
 )
@@ -88,13 +87,18 @@ func (s *Service) scans(ctx context.Context, req accountapi.StartIdentityVerific
 	if req.BackResourceID != 0 {
 		wanted = append(wanted, req.BackResourceID)
 	}
-	found, err := s.resources.GetResources(ctx, commonapi.GetResourcesRequest{IDs: wanted})
+	keys := make([]int64, 0, len(wanted))
+	for _, rid := range wanted {
+		keys = append(keys, rid.Int64())
+	}
+	found, err := s.repo.FindResources(ctx, keys)
 	if err != nil {
 		return nil, fmt.Errorf("get scan resources: %w", err)
 	}
 	out := make(map[id.ID[id.Resource]]kyc.Image, len(found))
 	for _, res := range found {
-		out[res.ID] = kyc.Image{URL: res.URL, Mime: res.Mime}
+		dto := res.ToDTO()
+		out[dto.ID] = kyc.Image{URL: dto.URL, Mime: dto.Mime}
 	}
 	for _, want := range wanted {
 		// A resource that does not exist, was never confirmed, or has no fetch URL yet is

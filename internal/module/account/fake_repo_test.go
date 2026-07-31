@@ -9,6 +9,8 @@ import (
 
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/module/account/port"
+	"shopnexus/internal/module/common"
+	"shopnexus/internal/shared/id"
 )
 
 // fakeRepo is an in-memory port.Repository. It exists so the service's rules can be tested
@@ -28,18 +30,23 @@ type fakeRepo struct {
 	prefs     map[int64][]domain.Preference
 	follows   map[[2]int64]time.Time
 	documents map[int64]domain.IdentityDocument
-	audit     []port.AuditEntry
+	audit     []common.AuditEntry
+	// resources stands in for this module's own resource table. Every id resolves unless a
+	// test marks it missing, which is how "the vendor cannot be shown this scan" is reached — a
+	// resource that was never confirmed has no fetch URL.
+	missingResources map[int64]bool
 }
 
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
-		accounts:  map[int64]domain.Account{},
-		oauth:     map[int64][]domain.OAuthIdentity{},
-		contacts:  map[int64]domain.Contact{},
-		devices:   map[int64]domain.Device{},
-		prefs:     map[int64][]domain.Preference{},
-		follows:   map[[2]int64]time.Time{},
-		documents: map[int64]domain.IdentityDocument{},
+		missingResources: map[int64]bool{},
+		accounts:         map[int64]domain.Account{},
+		oauth:            map[int64][]domain.OAuthIdentity{},
+		contacts:         map[int64]domain.Contact{},
+		devices:          map[int64]domain.Device{},
+		prefs:            map[int64][]domain.Preference{},
+		follows:          map[[2]int64]time.Time{},
+		documents:        map[int64]domain.IdentityDocument{},
 	}
 }
 
@@ -133,7 +140,7 @@ func (f *fakeRepo) Save(_ context.Context, a *domain.Account, actor int64) error
 	a.Version++
 	snapshot := a.Snapshot()
 	for _, e := range a.Events() {
-		f.audit = append(f.audit, port.AuditEntry{
+		f.audit = append(f.audit, common.AuditEntry{
 			Table: "account", RecordID: a.ID, ChangeType: "update", Code: string(e.Code),
 			ChangedBy: changedBy, Diff: e.Payload, Snapshot: snapshot,
 		})
@@ -581,7 +588,7 @@ func (f *fakeRepo) UpdateIdentityVerdict(_ context.Context, d domain.IdentityDoc
 
 // --- audit ---
 
-func (f *fakeRepo) InsertAuditLog(_ context.Context, e port.AuditEntry) error {
+func (f *fakeRepo) InsertAuditLog(_ context.Context, e common.AuditEntry) error {
 	f.audit = append(f.audit, e)
 	return nil
 }
@@ -608,4 +615,21 @@ func (f *fakeRepo) codes() []string {
 		out = append(out, e.Code)
 	}
 	return out
+}
+
+// FindResources answers for every id a test has not marked missing. The URL is what a
+// presigner would fill in; the row itself has no such column.
+func (f *fakeRepo) FindResources(_ context.Context, ids []int64) ([]common.Resource, error) {
+	out := make([]common.Resource, 0, len(ids))
+	for _, key := range ids {
+		if f.missingResources[key] {
+			continue
+		}
+		out = append(out, common.Resource{
+			ID:   key,
+			Mime: "image/jpeg",
+			URL:  "https://storage.invalid/scans/" + id.Of[id.Resource](key).String(),
+		})
+	}
+	return out, nil
 }

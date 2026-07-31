@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"shopnexus/internal/module/account/domain"
+	"shopnexus/internal/module/common/dbx"
 )
 
 // contactColumns reads the coordinate back out of the geography column as two
@@ -30,7 +31,7 @@ func scanContact(row pgx.Row) (domain.Contact, error) {
 		&c.IsDefaultDelivery, &c.IsDefaultPickup, &c.Country, &c.ProvinceCode, &c.ProvinceName,
 		&c.DistrictCode, &c.DistrictName, &c.WardCode, &c.WardName, &c.PostalCode,
 		&c.Address, &c.AddressDetail, &c.Latitude, &c.Longitude, &c.ProviderCodes, &c.CreatedAt)
-	if isNoRows(err) {
+	if dbx.IsNoRows(err) {
 		return domain.Contact{}, domain.ErrContactNotFound
 	}
 	if err != nil {
@@ -61,14 +62,14 @@ func contactArgs(c domain.Contact) pgx.NamedArgs {
 		"address_detail":      c.AddressDetail,
 		"latitude":            c.Latitude,
 		"longitude":           c.Longitude,
-		"provider_codes":      jsonObject(c.ProviderCodes),
+		"provider_codes":      dbx.JSONObject(c.ProviderCodes),
 	}
 }
 
 // InsertContact and UpdateContact write every column from the row the caller already
 // holds, so the SQL is one constant string with no presence flags in it.
 func (r *Repo) InsertContact(ctx context.Context, c *domain.Contact) error {
-	return r.inTx(ctx, func(tx pgx.Tx) error {
+	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
 		if err := clearDefaults(ctx, tx, *c); err != nil {
 			return err
 		}
@@ -82,7 +83,7 @@ func (r *Repo) InsertContact(ctx context.Context, c *domain.Contact) error {
 		                   @provider_codes, @address, @address_detail, ` + locationExpr + `)
 		           RETURNING id, created_at`
 		if err := tx.QueryRow(ctx, q, contactArgs(*c)).Scan(&c.ID, &c.CreatedAt); err != nil {
-			if isForeignKeyViolation(err) {
+			if dbx.IsForeignKeyViolation(err) {
 				return domain.ErrAccountNotFound
 			}
 			return fmt.Errorf("db insert contact: %w", err)
@@ -94,7 +95,7 @@ func (r *Repo) InsertContact(ctx context.Context, c *domain.Contact) error {
 // UpdateContact is scoped by the owner: a contact belonging to somebody else matches no
 // row, so ownership needs no separate check.
 func (r *Repo) UpdateContact(ctx context.Context, c domain.Contact) error {
-	return r.inTx(ctx, func(tx pgx.Tx) error {
+	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
 		if err := clearDefaults(ctx, tx, c); err != nil {
 			return err
 		}

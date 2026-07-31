@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"shopnexus/internal/module/common/dbx"
 	"shopnexus/internal/module/finance/domain"
 	"shopnexus/internal/module/finance/port"
 )
@@ -41,12 +42,12 @@ func (r *Repo) InsertSession(ctx context.Context, s *domain.Session) error {
 		"id":           s.ID,
 		"kind":         s.Kind,
 		"status":       s.Status,
-		"from_id":      nullID(s.FromID),
-		"to_id":        nullID(s.ToID),
+		"from_id":      dbx.NullID(s.FromID),
+		"to_id":        dbx.NullID(s.ToID),
 		"note":         s.Note,
 		"currency":     s.Currency,
 		"total_amount": s.TotalAmount,
-		"fx_snapshot":  nullJSON(s.FXSnapshot),
+		"fx_snapshot":  dbx.NullJSON(s.FXSnapshot),
 		"data":         s.Data,
 		"expired_at":   s.ExpiredAt,
 	}
@@ -87,21 +88,4 @@ func (r *Repo) FindWallet(ctx context.Context, accountID int64, currency string)
 		return domain.Wallet{}, fmt.Errorf("db scan wallet: %w", err)
 	}
 	return w, nil
-}
-
-// nullID keeps an optional key column NULL instead of storing 0. The zero id
-// means "no id" (shared/id), and identity columns never produce 0.
-func nullID(n int64) any {
-	if n == 0 {
-		return nil
-	}
-	return n
-}
-
-// nullJSON keeps an absent JSONB column NULL rather than storing an empty value.
-func nullJSON(b []byte) any {
-	if len(b) == 0 {
-		return nil
-	}
-	return b
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"shopnexus/internal/module/catalog/domain"
+	"shopnexus/internal/module/common/dbx"
 )
 
 const categoryColumns = `id, parent_id, name, description`
@@ -49,10 +50,10 @@ func (r *Repo) CreateCategory(ctx context.Context, c *domain.Category) error {
 	           RETURNING id`
 	args := pgx.NamedArgs{"parent_id": c.ParentID, "name": c.Name, "description": c.Description}
 	if err := r.pool.QueryRow(ctx, q, args).Scan(&c.ID); err != nil {
-		if isUniqueViolation(err) {
+		if dbx.IsUniqueViolation(err) {
 			return domain.ErrCategoryNameTaken
 		}
-		if isRestrictViolation(err) {
+		if dbx.IsRestrictViolation(err) {
 			return domain.ErrCategoryNotFound // the named parent does not exist
 		}
 		return fmt.Errorf("db insert category: %w", err)
@@ -75,7 +76,7 @@ const categoryTreeLock = 8_070_101
 // cycle never terminates, and no statement_timeout is set — so one bad row would burn a
 // backend on every later attempt to repair it, including through this route.
 func (r *Repo) UpdateCategory(ctx context.Context, c domain.Category) error {
-	return r.inTx(ctx, func(tx pgx.Tx) error {
+	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(@key)`,
 			pgx.NamedArgs{"key": int64(categoryTreeLock)}); err != nil {
 			return fmt.Errorf("db lock category tree: %w", err)
@@ -107,10 +108,10 @@ func (r *Repo) UpdateCategory(ctx context.Context, c domain.Category) error {
 		}
 		tag, err := tx.Exec(ctx, q, args)
 		if err != nil {
-			if isUniqueViolation(err) {
+			if dbx.IsUniqueViolation(err) {
 				return domain.ErrCategoryNameTaken
 			}
-			if isRestrictViolation(err) {
+			if dbx.IsRestrictViolation(err) {
 				return domain.ErrCategoryNotFound // the named parent does not exist
 			}
 			return fmt.Errorf("db update category: %w", err)
@@ -127,7 +128,7 @@ func (r *Repo) UpdateCategory(ctx context.Context, c domain.Category) error {
 func (r *Repo) DeleteCategory(ctx context.Context, id int64) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM category WHERE id = @id`, pgx.NamedArgs{"id": id})
 	if err != nil {
-		if isRestrictViolation(err) {
+		if dbx.IsRestrictViolation(err) {
 			return domain.ErrCategoryInUse
 		}
 		return fmt.Errorf("db delete category: %w", err)

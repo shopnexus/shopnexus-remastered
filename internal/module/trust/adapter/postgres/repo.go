@@ -9,14 +9,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"shopnexus/internal/module/common/dbx"
 	"shopnexus/internal/module/trust/domain"
 	"shopnexus/internal/module/trust/port"
 )
-
-// uniqueViolation is Postgres 23505; the schema turns "already rated" and
-// "already reported" into unique constraints, so the adapter maps them back to
-// domain errors.
-const uniqueViolation = "23505"
 
 type Repo struct {
 	pool *pgxpool.Pool
@@ -39,7 +35,7 @@ func (r *Repo) InsertFeedback(ctx context.Context, f *domain.Feedback) error {
 		"comment":   f.Comment,
 	}
 	if err := r.pool.QueryRow(ctx, q, args).Scan(&f.ID, &f.CreatedAt, &f.PublishedAt); err != nil {
-		if isUniqueViolation(err) {
+		if dbx.IsUniqueViolation(err) {
 			return domain.ErrFeedbackExists
 		}
 		return fmt.Errorf("db insert feedback: %w", err)
@@ -76,15 +72,10 @@ func (r *Repo) InsertReport(ctx context.Context, rep *domain.Report) error {
 		"status":      rep.Status,
 	}
 	if err := r.pool.QueryRow(ctx, q, args).Scan(&rep.ID, &rep.CreatedAt); err != nil {
-		if isUniqueViolation(err) {
+		if dbx.IsUniqueViolation(err) {
 			return domain.ErrReportExists
 		}
 		return fmt.Errorf("db insert report: %w", err)
 	}
 	return nil
-}
-
-func isUniqueViolation(err error) bool {
-	var pgErr interface{ SQLState() string }
-	return errors.As(err, &pgErr) && pgErr.SQLState() == uniqueViolation
 }

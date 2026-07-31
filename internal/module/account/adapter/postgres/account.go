@@ -8,6 +8,8 @@ import (
 
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/module/account/port"
+	"shopnexus/internal/module/common"
+	"shopnexus/internal/module/common/dbx"
 )
 
 // SearchAccounts is the moderator's search. One statement covers both shapes of
@@ -151,35 +153,11 @@ func (r *Repo) CountFollowers(ctx context.Context, accountID int64) (int64, erro
 // InsertAuditLog is the standalone path: an insert, or a table that is not the account
 // aggregate. An update to the aggregate has its trail written by Save, in the same
 // transaction as the change it describes.
-func (r *Repo) InsertAuditLog(ctx context.Context, e port.AuditEntry) error {
-	return insertAuditLog(ctx, r.pool, e)
+func (r *Repo) InsertAuditLog(ctx context.Context, e common.AuditEntry) error {
+	return dbx.InsertAuditLog(ctx, r.pool, e)
 }
 
 // insertAuditLog appends the next version for that record in one statement: the version
 // is derived from the rows already there, so two concurrent writers collide on the UNIQUE
 // (table_name, record_id, version) instead of silently overwriting a history entry.
 //
-// Every parameter in the SELECT list is cast: an INSERT ... SELECT does not give the
-// planner the target column's type, so table_name and record_id — which appear in the
-// WHERE too — would otherwise be deduced twice and disagree (42P08).
-func insertAuditLog(ctx context.Context, q querier, e port.AuditEntry) error {
-	const stmt = `INSERT INTO audit_log (version, table_name, record_id, change_type, code, changed_by, diff, snapshot)
-	           SELECT COALESCE(MAX(version), 0) + 1, @table_name::varchar, @record_id::bigint,
-	                  @change_type::varchar, @code::varchar, @changed_by::bigint,
-	                  @diff::jsonb, @snapshot::jsonb
-	           FROM audit_log
-	           WHERE table_name = @table_name AND record_id = @record_id`
-	args := pgx.NamedArgs{
-		"table_name":  e.Table,
-		"record_id":   e.RecordID,
-		"change_type": e.ChangeType,
-		"code":        e.Code,
-		"changed_by":  e.ChangedBy,
-		"diff":        jsonObject(e.Diff),
-		"snapshot":    jsonObject(e.Snapshot),
-	}
-	if _, err := q.Exec(ctx, stmt, args); err != nil {
-		return fmt.Errorf("db insert audit log: %w", err)
-	}
-	return nil
-}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"shopnexus/internal/module/account/domain"
+	"shopnexus/internal/module/common"
 )
 
 // AccountFilter drives the admin search. Query is matched exactly against the
@@ -49,25 +50,12 @@ type NotificationQuery struct {
 	Limit      int
 }
 
-// AuditEntry is one row of the module's audit log. Save writes these itself from the
-// aggregate's events; InsertAuditLog covers the rest — an insert, or another table.
-type AuditEntry struct {
-	Table      string
-	RecordID   int64
-	ChangeType string
-	// Code is the business event, e.g. "account.suspend".
-	Code string
-	// ChangedBy is nil for a change no account is responsible for (a scheduled job,
-	// a vendor callback).
-	ChangedBy *int64
-	// Diff and Snapshot are whatever the recorder declared — a domain event's payload and
-	// a row snapshot — and reach the JSONB columns through json.Marshal. `any` because the
-	// shape belongs to the fact, not to the trail.
-	Diff     any
-	Snapshot any
-}
-
 type Repository interface {
+	// FindResources reads this module's own uploaded resources — avatars and identity scans.
+	// A missing id is absent from the result: a row pointing at a deleted resource is a
+	// picture that does not render, not an error.
+	FindResources(ctx context.Context, ids []int64) ([]common.Resource, error)
+
 	// --- the account aggregate: load it, change it in memory, save it ---
 
 	// Create inserts the account with its profile in one transaction, so an account
@@ -144,5 +132,5 @@ type Repository interface {
 	UpdateIdentityVerdict(ctx context.Context, d domain.IdentityDocument) error
 
 	// --- audit ---
-	InsertAuditLog(ctx context.Context, e AuditEntry) error
+	InsertAuditLog(ctx context.Context, e common.AuditEntry) error
 }
