@@ -295,6 +295,8 @@ func (s *Service) payRefund(ctx context.Context, r domain.Refund) error {
 	if err := o.Cancel(false); err == nil {
 		if err := s.repo.SaveOrder(ctx, o); err != nil {
 			s.log.Error("close refunded order", "order_id", o.ID, "err", err)
+		} else {
+			s.publishSettled(ctx, o, false)
 		}
 	}
 	s.releaseOrderStock(ctx, o)

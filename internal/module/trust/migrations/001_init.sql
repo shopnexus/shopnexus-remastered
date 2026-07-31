@@ -68,6 +68,9 @@ CREATE TABLE IF NOT EXISTS "review" (
     "not_helpful_count" BIGINT NOT NULL DEFAULT 0,
     "reply_count" BIGINT NOT NULL DEFAULT 0, -- so a page need not count replies per row
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- NULL until the author edits it. A review rewritten after the seller answered it
+    -- should say so, and the reply thread cannot say it on its own.
+    "updated_at" TIMESTAMPTZ,
 
     CONSTRAINT "review_pkey" PRIMARY KEY ("id"),
     -- One review per order, so buying the same product twice earns two reviews.

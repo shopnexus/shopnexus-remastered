@@ -116,3 +116,7 @@ func (Stub) ReleaseStock(context.Context, catalogapi.StockMovementRequest) error
 func (Stub) CommitStock(context.Context, catalogapi.StockMovementRequest) error {
 	return errx.ErrNotImplemented
 }
+
+func (Stub) SyncListingRating(context.Context, catalogapi.SyncListingRatingRequest) error {
+	return errx.ErrNotImplemented
+}

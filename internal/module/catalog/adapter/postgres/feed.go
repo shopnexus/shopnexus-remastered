@@ -51,7 +51,7 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 	for rows.Next() {
 		var s port.ListingSummary
 		if err := rows.Scan(&s.ID, &s.SellerID, &s.Slug, &s.Name, &s.Status, &s.Condition,
-			&s.PriceMode, &s.Currency, &s.Price, &s.Sold, &s.Rating, &s.CategoryID,
+			&s.PriceMode, &s.Currency, &s.Price, &s.Sold, &s.Rating, &s.ReviewCount, &s.CategoryID,
 			&s.CoverID, &s.HasPendingEdit, &s.CreatedAt, &s.DeletedAt, &s.Score,
 			&total); err != nil {
 			return nil, 0, fmt.Errorf("db scan listing card: %w", err)
@@ -69,7 +69,7 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 // fact to keep in step with every variant edit.
 const feedSelect = `SELECT l.id, l.account_id, l.slug, l.name, l.status::text, l.condition::text,
 	                  l.price_mode::text, l.currency, COALESCE(v.price, 0), l.cached_sold,
-	                  l.cached_rating, l.category_id, l.attachments[1],
+	                  l.cached_rating, l.cached_review_count, l.category_id, l.attachments[1],
 	                  l.pending_edit IS NOT NULL, l.created_at, l.deleted_at,
 	                  `
 

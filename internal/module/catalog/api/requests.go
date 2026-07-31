@@ -65,6 +65,15 @@ type StockMovementRequest struct {
 	Units     int64             `validate:"required,gt=0"`
 }
 
+// SyncListingRatingRequest is trust pushing a recomputed review average into the cache
+// catalog keeps. No route and no actor: reviews live in another schema, so the number cannot
+// be joined and has to be handed over.
+type SyncListingRatingRequest struct {
+	ListingID id.ID[id.Listing] `validate:"required"`
+	Rating    float64           `validate:"gte=0,lte=5"`
+	Count     int64             `validate:"gte=0"`
+}
+
 // CreateVariantInput is one variant inside a create. It is not a request of its own: a
 // listing is created with its variants, so there is no window in which it has nothing to
 // sell.

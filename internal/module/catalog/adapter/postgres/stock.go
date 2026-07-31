@@ -82,3 +82,16 @@ func (r *Repo) moveStock(ctx context.Context, sql string, variantID, units int64
 	}
 	return nil
 }
+
+// SetCachedRating writes the average trust recomputed and the count behind it. A listing that
+// no longer exists is not an error: its reviews outlive it, so there is nothing left to
+// cache and nothing wrong with the caller.
+func (r *Repo) SetCachedRating(ctx context.Context, listingID int64, rating float64, count int64) error {
+	const q = `UPDATE listing SET cached_rating = @rating, cached_review_count = @count
+	           WHERE id = @id`
+	args := pgx.NamedArgs{"id": listingID, "rating": rating, "count": count}
+	if _, err := r.pool.Exec(ctx, q, args); err != nil {
+		return fmt.Errorf("db set cached rating: %w", err)
+	}
+	return nil
+}

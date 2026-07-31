@@ -228,6 +228,37 @@ func (s *Service) PostSystemMessage(ctx context.Context, req chatapi.PostSystemM
 	return s.toAPIMessage(ctx, m)
 }
 
+// GetMessage reads one message. A participant sees their own thread's; a moderator sees any,
+// because a report about a message is judged on the message itself. Not found rather than
+// forbidden for everyone else: a thread they are not part of is not theirs to know about.
+func (s *Service) GetMessage(ctx context.Context, req chatapi.GetMessageRequest) (chatapi.Message, error) {
+	if err := s.v.Struct(req); err != nil {
+		return chatapi.Message{}, err
+	}
+	m, err := s.repo.FindMessage(ctx, req.ID.Int64())
+	if err != nil {
+		return chatapi.Message{}, fmt.Errorf("find message: %w", err)
+	}
+	thread, err := s.repo.FindConversation(ctx, m.ConversationID)
+	if err != nil {
+		return chatapi.Message{}, fmt.Errorf("find conversation: %w", err)
+	}
+	if !thread.Involves(req.ActorID.Int64()) && !s.isModerator(ctx, req.ActorID) {
+		return chatapi.Message{}, domain.ErrMessageNotFound
+	}
+	return s.toAPIMessage(ctx, m)
+}
+
+// isModerator asks the account module for the caller's role: it is a row in that module's
+// table. An admin passes every moderator check.
+func (s *Service) isModerator(ctx context.Context, actorID id.ID[id.Account]) bool {
+	me, err := s.accounts.GetMe(ctx, accountapi.GetMeRequest{ActorID: actorID})
+	if err != nil {
+		return false
+	}
+	return me.Role == "moderator" || me.Role == "admin"
+}
+
 // participant reads a thread the caller is in. Not found rather than forbidden: a thread
 // they are not part of is not theirs to know about.
 func (s *Service) participant(ctx context.Context, actorID id.ID[id.Account], conversationID id.ID[id.Conversation]) (domain.Conversation, error) {

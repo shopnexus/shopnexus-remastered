@@ -160,6 +160,7 @@ func (s *Service) CancelOrder(ctx context.Context, req orderapi.CancelOrderReque
 		return orderapi.Order{}, err
 	}
 	s.releaseOrderStock(ctx, o)
+	s.publishSettled(ctx, o, false)
 	return s.orderView(ctx, o)
 }
 

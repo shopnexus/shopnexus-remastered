@@ -18,7 +18,7 @@ import (
 // columns are cast to text because the domain's types are strings.
 const listingColumns = `id, version, account_id, slug, status::text, name, description,
 	       category_id, condition::text, price_mode::text, currency,
-	       specifications, attachments, pending_edit, cached_rating, cached_sold,
+	       specifications, attachments, pending_edit, cached_rating, cached_review_count, cached_sold,
 	       created_at, deleted_at, embedding_stale_at`
 
 func scanListing(row pgx.Row) (*domain.Listing, error) {
@@ -28,7 +28,7 @@ func scanListing(row pgx.Row) (*domain.Listing, error) {
 	)
 	err := row.Scan(&l.ID, &l.Version, &l.SellerID, &l.Slug, &l.Status, &l.Name, &l.Description,
 		&l.CategoryID, &l.Condition, &l.PriceMode, &l.Currency,
-		&l.Specifications, &l.Attachments, &pending, &l.CachedRating, &l.CachedSold,
+		&l.Specifications, &l.Attachments, &pending, &l.CachedRating, &l.CachedReviewCount, &l.CachedSold,
 		&l.CreatedAt, &l.DeletedAt, &l.EmbeddingStaleAt)
 	if dbx.IsNoRows(err) {
 		return nil, domain.ErrListingNotFound
@@ -55,23 +55,24 @@ func listingArgs(l *domain.Listing) pgx.NamedArgs {
 		pending = l.PendingEdit
 	}
 	return pgx.NamedArgs{
-		"id":                 l.ID,
-		"version":            l.Version,
-		"account_id":         l.SellerID,
-		"slug":               l.Slug,
-		"status":             string(l.Status),
-		"name":               l.Name,
-		"description":        l.Description,
-		"category_id":        l.CategoryID,
-		"condition":          string(l.Condition),
-		"price_mode":         string(l.PriceMode),
-		"currency":           l.Currency,
-		"specifications":     dbx.JSONObject(l.Specifications),
-		"attachments":        dbx.Int64Array(l.Attachments),
-		"pending_edit":       pending,
-		"cached_rating":      l.CachedRating,
-		"cached_sold":        l.CachedSold,
-		"embedding_stale_at": l.EmbeddingStaleAt,
+		"id":                  l.ID,
+		"version":             l.Version,
+		"account_id":          l.SellerID,
+		"slug":                l.Slug,
+		"status":              string(l.Status),
+		"name":                l.Name,
+		"description":         l.Description,
+		"category_id":         l.CategoryID,
+		"condition":           string(l.Condition),
+		"price_mode":          string(l.PriceMode),
+		"currency":            l.Currency,
+		"specifications":      dbx.JSONObject(l.Specifications),
+		"attachments":         dbx.Int64Array(l.Attachments),
+		"pending_edit":        pending,
+		"cached_rating":       l.CachedRating,
+		"cached_review_count": l.CachedReviewCount,
+		"cached_sold":         l.CachedSold,
+		"embedding_stale_at":  l.EmbeddingStaleAt,
 	}
 }
 

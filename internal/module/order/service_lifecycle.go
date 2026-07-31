@@ -195,6 +195,7 @@ func (s *Service) ReleaseDuePayouts(ctx context.Context, limit int) (int, error)
 			s.log.Debug("order already settled", "order_id", o.ID, "err", err)
 			continue
 		}
+		s.publishSettled(ctx, o, true)
 		paid++
 	}
 	return paid, nil
@@ -243,6 +244,17 @@ func (s *Service) AdvanceOverdueRefunds(ctx context.Context, limit int) (int, er
 		advanced++
 	}
 	return advanced, nil
+}
+
+// publishSettled announces an outcome. Best-effort for the same reason publishPlaced is: the
+// row is already the truth, and a bus that is down must not undo a payout.
+func (s *Service) publishSettled(ctx context.Context, o domain.Order, completed bool) {
+	event := OrderSettled{
+		OrderID: o.ID, BuyerID: o.BuyerID, SellerID: o.SellerID, Completed: completed,
+	}
+	if err := publishOrderSettled(ctx, s.bus, event); err != nil {
+		s.log.Error("publish order settled failed", "order_id", o.ID, "err", err)
+	}
 }
 
 // publishPlaced announces the sale. Best-effort: the order is written and the money is held,

@@ -31,3 +31,12 @@ func (s *Service) CommitStock(ctx context.Context, req catalogapi.StockMovementR
 	}
 	return nil
 }
+
+// SyncListingRating writes the review average trust recomputed. A listing that no longer
+// exists is not an error: its reviews outlive it, and there is nothing left to cache.
+func (s *Service) SyncListingRating(ctx context.Context, req catalogapi.SyncListingRatingRequest) error {
+	if err := s.repo.SetCachedRating(ctx, req.ListingID.Int64(), req.Rating, req.Count); err != nil {
+		return fmt.Errorf("set cached rating: %w", err)
+	}
+	return nil
+}

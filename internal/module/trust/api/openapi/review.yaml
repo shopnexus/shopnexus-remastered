@@ -252,6 +252,13 @@ components:
         reply_count: { type: integer, format: int64, minimum: 0, example: 2 }
         votes: { $ref: '#/components/schemas/ReviewVoteTally' }
         created_at: { type: string, format: date-time }
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            Null until the author edits it. A review rewritten after the seller answered it
+            should say so, and the reply thread cannot say it on its own.
       required: [id, listing_id, author, rating, body, attachments, replies, reply_count, votes, created_at]
 
     ReviewPage:

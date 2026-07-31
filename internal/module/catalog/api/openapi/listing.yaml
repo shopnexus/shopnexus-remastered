@@ -408,6 +408,15 @@ components:
             Average review rating from 1 to 5, or 0 when there are none yet.
             Maintained from review events because reviews live in another schema and
             cannot be joined.
+        review_count:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 64
+          description: >
+            How many reviews the rating averages. Beside it rather than derivable from it,
+            because a 5.0 from one review and a 5.0 from two hundred are not the same
+            claim.
         category_id: { $ref: '#/components/schemas/CategoryID' }
         seller: { $ref: '#/components/schemas/AccountSummary' }
         favorited:
@@ -425,7 +434,7 @@ components:
             Set on a listing the seller removed. Only an `ids` lookup returns one, so
             that an order or a cart referencing it can still be rendered.
         created_at: { type: string, format: date-time }
-      required: [id, slug, name, status, condition, price_mode, currency, price, sold, rating, category_id, seller, favorited, created_at]
+      required: [id, slug, name, status, condition, price_mode, currency, price, sold, rating, review_count, category_id, seller, favorited, created_at]
 
     ListingDetail:
       type: object
@@ -449,6 +458,7 @@ components:
         featured_variant_id: { allOf: [{ $ref: '#/components/schemas/VariantID' }], nullable: true }
         sold: { type: integer, format: int64, minimum: 0, example: 128, description: 'Completed sales across the variants — see Listing.sold.' }
         rating: { type: number, format: double, minimum: 0, maximum: 5, example: 4.6 }
+        review_count: { type: integer, format: int64, minimum: 0, example: 64, description: 'How many reviews the rating averages — see Listing.review_count.' }
         seller: { $ref: '#/components/schemas/AccountSummary' }
         favorited: { type: boolean, description: 'Whether the caller has this saved. False for an anonymous request.' }
         favorite_count:
@@ -468,7 +478,7 @@ components:
             and to staff only; buyers see the published version until it is approved.
         created_at: { type: string, format: date-time }
         deleted_at: { type: string, format: date-time, nullable: true, description: 'Set on a listing the seller removed.' }
-      required: [id, slug, name, description, status, condition, price_mode, currency, specifications, images, category, tags, variants, sold, rating, seller, favorited, favorite_count, created_at]
+      required: [id, slug, name, description, status, condition, price_mode, currency, specifications, images, category, tags, variants, sold, rating, review_count, seller, favorited, favorite_count, created_at]
 
     ListingPage:
       type: object

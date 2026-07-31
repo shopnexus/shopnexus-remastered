@@ -190,6 +190,7 @@ func (s *Service) detailFor(ctx context.Context, l *domain.Listing, viewerID int
 		Tags:           l.Tags,
 		Sold:           l.CachedSold,
 		Rating:         l.CachedRating,
+		ReviewCount:    l.CachedReviewCount,
 		Seller:         accountapi.AccountSummary{ID: seller.ID, Name: seller.Name, Avatar: seller.Avatar},
 		Favorited:      favorited,
 		FavoriteCount:  favoriteCount,

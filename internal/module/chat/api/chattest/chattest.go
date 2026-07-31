@@ -56,3 +56,7 @@ func (Stub) RedactMessage(context.Context, chatapi.RedactMessageRequest) error {
 func (Stub) PostSystemMessage(context.Context, chatapi.PostSystemMessageRequest) (chatapi.Message, error) {
 	return chatapi.Message{}, errx.ErrNotImplemented
 }
+
+func (Stub) GetMessage(context.Context, chatapi.GetMessageRequest) (chatapi.Message, error) {
+	return chatapi.Message{}, errx.ErrNotImplemented
+}

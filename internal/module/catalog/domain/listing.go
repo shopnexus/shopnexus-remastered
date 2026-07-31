@@ -83,8 +83,10 @@ type Listing struct {
 	// PendingEdit is an edit held for moderation; nil means none.
 	PendingEdit  *PendingEdit
 	CachedRating float64
-	CachedSold   int64
-	CreatedAt    time.Time
+	// CachedReviewCount is how many reviews the rating averages.
+	CachedReviewCount int64
+	CachedSold        int64
+	CreatedAt         time.Time
 	// DeletedAt is a soft delete, distinct from StatusHidden: order history holds the ids
 	// without a foreign key and has to stay resolvable.
 	DeletedAt        *time.Time

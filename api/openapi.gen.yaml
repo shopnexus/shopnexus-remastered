@@ -1474,6 +1474,13 @@ components:
                     maximum: 5
                     minimum: 0
                     type: number
+                review_count:
+                    description: |
+                        How many reviews the rating averages. Beside it rather than derivable from it, because a 5.0 from one review and a 5.0 from two hundred are not the same claim.
+                    example: 64
+                    format: int64
+                    minimum: 0
+                    type: integer
                 score:
                     $ref: '#/components/schemas/SimilarityScore'
                 seller:
@@ -1502,6 +1509,7 @@ components:
                 - price
                 - sold
                 - rating
+                - review_count
                 - category_id
                 - seller
                 - favorited
@@ -1570,6 +1578,12 @@ components:
                     maximum: 5
                     minimum: 0
                     type: number
+                review_count:
+                    description: How many reviews the rating averages — see Listing.review_count.
+                    example: 64
+                    format: int64
+                    minimum: 0
+                    type: integer
                 seller:
                     $ref: '#/components/schemas/AccountSummary'
                 slug:
@@ -1611,6 +1625,7 @@ components:
                 - variants
                 - sold
                 - rating
+                - review_count
                 - seller
                 - favorited
                 - favorite_count
@@ -3038,6 +3053,12 @@ components:
                     format: int64
                     minimum: 0
                     type: integer
+                updated_at:
+                    description: |
+                        Null until the author edits it. A review rewritten after the seller answered it should say so, and the reply thread cannot say it on its own.
+                    format: date-time
+                    nullable: true
+                    type: string
                 votes:
                     $ref: '#/components/schemas/ReviewVoteTally'
             required:

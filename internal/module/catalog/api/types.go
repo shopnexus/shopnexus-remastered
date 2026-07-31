@@ -100,6 +100,7 @@ type ListingDetail struct {
 	FeaturedVariantID *id.ID[id.Variant]        `json:"featured_variant_id"`
 	Sold              int64                     `json:"sold"`
 	Rating            float64                   `json:"rating"`
+	ReviewCount       int64                     `json:"review_count"`
 	Seller            accountapi.AccountSummary `json:"seller"`
 	Favorited         bool                      `json:"favorited"`
 	FavoriteCount     int64                     `json:"favorite_count"`
@@ -111,23 +112,24 @@ type ListingDetail struct {
 // Listing is the card a feed shows. Price is the featured variant's, or the cheapest one
 // when a price sort is in force — not stored on the listing.
 type Listing struct {
-	ID         id.ID[id.Listing]         `json:"id"`
-	Slug       string                    `json:"slug"`
-	Name       string                    `json:"name"`
-	Status     string                    `json:"status"`
-	Condition  string                    `json:"condition"`
-	PriceMode  string                    `json:"price_mode"`
-	Currency   string                    `json:"currency"`
-	Price      int64                     `json:"price"`
-	Sold       int64                     `json:"sold"`
-	Cover      *common.ResourceDTO       `json:"cover"`
-	Rating     float64                   `json:"rating"`
-	CategoryID id.ID[id.Category]        `json:"category_id"`
-	Seller     accountapi.AccountSummary `json:"seller"`
-	Favorited  bool                      `json:"favorited"`
-	Score      *float64                  `json:"score,omitempty"`
-	DeletedAt  *time.Time                `json:"deleted_at"`
-	CreatedAt  time.Time                 `json:"created_at"`
+	ID          id.ID[id.Listing]         `json:"id"`
+	Slug        string                    `json:"slug"`
+	Name        string                    `json:"name"`
+	Status      string                    `json:"status"`
+	Condition   string                    `json:"condition"`
+	PriceMode   string                    `json:"price_mode"`
+	Currency    string                    `json:"currency"`
+	Price       int64                     `json:"price"`
+	Sold        int64                     `json:"sold"`
+	Cover       *common.ResourceDTO       `json:"cover"`
+	Rating      float64                   `json:"rating"`
+	ReviewCount int64                     `json:"review_count"`
+	CategoryID  id.ID[id.Category]        `json:"category_id"`
+	Seller      accountapi.AccountSummary `json:"seller"`
+	Favorited   bool                      `json:"favorited"`
+	Score       *float64                  `json:"score,omitempty"`
+	DeletedAt   *time.Time                `json:"deleted_at"`
+	CreatedAt   time.Time                 `json:"created_at"`
 }
 
 type ListingPage struct {

@@ -57,6 +57,9 @@ type ListingSummary struct {
 	Price     int64
 	Sold      int64
 	Rating    float64
+	// ReviewCount is how many reviews the rating averages: a 5.0 from one review and a 5.0
+	// from two hundred are not the same claim.
+	ReviewCount int64
 	// Score is the search's, and only a search sets it: higher is better whichever mode ran.
 	Score          *float64
 	CategoryID     int64
@@ -220,4 +223,7 @@ type Repository interface {
 	// transaction, so the badge and the counter cannot drift apart.
 	CommitStock(ctx context.Context, variantID, units int64) error
 	FindStock(ctx context.Context, variantID int64) (domain.Stock, error)
+	// SetCachedRating writes the review average trust recomputed. Denormalized here because
+	// trust is another schema: the number cannot be joined, so it is handed over.
+	SetCachedRating(ctx context.Context, listingID int64, rating float64, count int64) error
 }

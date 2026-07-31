@@ -92,6 +92,10 @@ CREATE TABLE
     "pending_edit" JSONB,
     -- Denormalized
     "cached_rating" DOUBLE PRECISION NOT NULL DEFAULT 0, -- average trust.review rating (1..5), 0 = no reviews yet
+    -- How many reviews that average is over. Kept beside it because a 5.0 from one review
+    -- and a 5.0 from two hundred are not the same claim, and a card showing only the first
+    -- number cannot tell them apart.
+    "cached_review_count" BIGINT NOT NULL DEFAULT 0,
     -- Units sold across every variant of this listing, maintained alongside "stock"."sold" —
     -- completed sales only, so an abandoned checkout never moves it. Denormalized for the
     -- same reason as the rating, and for one more: it is a SUM over the variants, and

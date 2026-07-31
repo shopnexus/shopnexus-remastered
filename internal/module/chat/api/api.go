@@ -128,6 +128,13 @@ type RedactMessageRequest struct {
 	ID      id.ID[id.Message] `json:"-" validate:"required"`
 }
 
+// GetMessageRequest reads one message. A participant may read their own thread's; a
+// moderator may read any, because a harassment report is judged on the message itself.
+type GetMessageRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	ID      id.ID[id.Message] `json:"-" validate:"required"`
+}
+
 type UnreadCountRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 }
@@ -161,4 +168,8 @@ type Service interface {
 	// PostSystemMessage puts a card into the pair's thread, opening it if they have never
 	// spoken. Order calls it when a negotiation moves.
 	PostSystemMessage(ctx context.Context, req PostSystemMessageRequest) (Message, error)
+
+	// GetMessage reads one message: a participant's own, or any of them for a moderator.
+	// Trust calls it to check a reported message exists and to show it in the queue.
+	GetMessage(ctx context.Context, req GetMessageRequest) (Message, error)
 }

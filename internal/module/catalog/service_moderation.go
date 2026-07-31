@@ -53,20 +53,21 @@ func (s *Service) cards(ctx context.Context, rows []port.ListingSummary) ([]cata
 	out := make([]catalogapi.Listing, 0, len(rows))
 	for _, row := range rows {
 		card := catalogapi.Listing{
-			ID:         id.Of[id.Listing](row.ID),
-			Slug:       row.Slug,
-			Name:       row.Name,
-			Status:     string(row.Status),
-			Condition:  string(row.Condition),
-			PriceMode:  string(row.PriceMode),
-			Currency:   row.Currency,
-			Price:      row.Price,
-			Sold:       row.Sold,
-			Rating:     row.Rating,
-			CategoryID: id.Of[id.Category](row.CategoryID),
-			Score:      row.Score,
-			DeletedAt:  row.DeletedAt,
-			CreatedAt:  row.CreatedAt,
+			ID:          id.Of[id.Listing](row.ID),
+			Slug:        row.Slug,
+			Name:        row.Name,
+			Status:      string(row.Status),
+			Condition:   string(row.Condition),
+			PriceMode:   string(row.PriceMode),
+			Currency:    row.Currency,
+			Price:       row.Price,
+			Sold:        row.Sold,
+			Rating:      row.Rating,
+			ReviewCount: row.ReviewCount,
+			CategoryID:  id.Of[id.Category](row.CategoryID),
+			Score:       row.Score,
+			DeletedAt:   row.DeletedAt,
+			CreatedAt:   row.CreatedAt,
 		}
 		if row.CoverID != nil {
 			if res, ok := images[*row.CoverID]; ok {

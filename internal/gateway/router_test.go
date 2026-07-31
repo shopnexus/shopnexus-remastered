@@ -26,6 +26,7 @@ import (
 	orderapi "shopnexus/internal/module/order/api"
 	"shopnexus/internal/module/order/api/ordertest"
 	trustapi "shopnexus/internal/module/trust/api"
+	"shopnexus/internal/module/trust/api/trusttest"
 	"shopnexus/internal/shared/id"
 	"shopnexus/internal/shared/id/idtest"
 	"shopnexus/internal/shared/session"
@@ -107,7 +108,7 @@ func (stubPayment) GetWallet(context.Context, financeapi.GetWalletRequest) (fina
 	return financeapi.Wallet{Currency: "VND"}, nil
 }
 
-type stubTrust struct{}
+type stubTrust struct{ trusttest.Stub }
 
 func (stubTrust) SubmitFeedback(context.Context, trustapi.SubmitFeedbackRequest) (trustapi.Feedback, error) {
 	return trustapi.Feedback{ID: id.Of[id.Feedback](1)}, nil

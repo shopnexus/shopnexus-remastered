@@ -210,8 +210,10 @@ func NewRouter(d Deps) http.Handler {
 	// Public
 	mux.HandleFunc("GET /accounts/{accountID}/feedback", d.Trust.ListAccountFeedback)
 	mux.HandleFunc("GET /accounts/{accountID}/reputation", d.Trust.GetReputation)
-	mux.HandleFunc("GET /listings/{listingID}/reviews", d.Trust.ListReviews)
-	mux.HandleFunc("GET /reviews/{id}", d.Trust.GetReview)
+	// Reading a review is public, but a signed-in caller also gets their own vote back on
+	// each row, which is what optionalAuth is for.
+	mux.Handle("GET /listings/{listingID}/reviews", optionalAuth(http.HandlerFunc(d.Trust.ListReviews)))
+	mux.Handle("GET /reviews/{id}", optionalAuth(http.HandlerFunc(d.Trust.GetReview)))
 	// Authenticated
 	mux.Handle("GET /orders/{orderID}/feedback", auth(http.HandlerFunc(d.Trust.GetOrderFeedback)))
 	mux.Handle("POST /orders/{orderID}/feedback", auth(http.HandlerFunc(d.Trust.SubmitFeedback)))

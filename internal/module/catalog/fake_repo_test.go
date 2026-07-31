@@ -322,6 +322,16 @@ func (f *fakeRepo) CommitStock(_ context.Context, variantID, units int64) error 
 	return nil
 }
 
+// SetCachedRating is trust handing over the review average, which cannot be joined across
+// schemas. A listing that has gone is not an error: its reviews outlive it.
+func (f *fakeRepo) SetCachedRating(_ context.Context, listingID int64, rating float64, count int64) error {
+	if at := f.listingAt(listingID); at >= 0 {
+		f.listings[at].listing.CachedRating = rating
+		f.listings[at].listing.CachedReviewCount = count
+	}
+	return nil
+}
+
 // --- the listing aggregate ---
 
 func (f *fakeRepo) listingAt(id int64) int {

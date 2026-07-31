@@ -58,4 +58,9 @@ type Service interface {
 	ReleaseStock(ctx context.Context, req StockMovementRequest) error
 	// CommitStock turns a reservation into a sale.
 	CommitStock(ctx context.Context, req StockMovementRequest) error
+
+	// --- the review cache: called by trust, not by a route ---
+	// SyncListingRating writes the average and the count trust recomputed. Best-effort by
+	// design on the caller's side: a cached number that lags is repaired by the next write.
+	SyncListingRating(ctx context.Context, req SyncListingRatingRequest) error
 }
