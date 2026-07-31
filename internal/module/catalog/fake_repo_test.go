@@ -35,6 +35,8 @@ type fakeRepo struct {
 	// variantListing is the join CommitStock walks to bump the listing's counter.
 	variantListing map[int64]int64
 	favorites      map[[2]int64]bool
+	// interests are the account's slots, which is what sort=recommended ranks against.
+	interests map[int64][]port.Vector
 	// resources is this module's own resource table: an id absent from it names no confirmed
 	// upload, which is what ErrAttachmentNotFound is about.
 	resources map[int64]bool
@@ -62,6 +64,7 @@ func newFakeRepo() *fakeRepo {
 		stock:          map[int64]domain.Stock{},
 		variantListing: map[int64]int64{},
 		favorites:      map[[2]int64]bool{},
+		interests:      map[int64][]port.Vector{},
 		resources:      map[int64]bool{},
 	}
 }
@@ -622,4 +625,151 @@ func (f *fakeRepo) FindResources(_ context.Context, ids []int64) ([]common.Resou
 		}
 	}
 	return out, nil
+}
+
+// --- the browse feed ---
+
+// ListListings applies the same filters and visibility rules the statement does. It is longer
+// than the others on purpose: this is the one read whose rules a service test can get wrong
+// without a database noticing.
+func (f *fakeRepo) ListListings(_ context.Context, filter port.ListingFilter) ([]port.ListingSummary, int64, error) {
+	var matched []port.ListingSummary
+	for _, stored := range f.listings {
+		l := stored.listing
+		if len(filter.IDs) > 0 {
+			// An id lookup ignores every other filter and answers for hidden and deleted rows;
+			// only "never public" stays out unless the caller owns it.
+			if !slices.Contains(filter.IDs, l.ID) {
+				continue
+			}
+			if (l.Status == domain.StatusDraft || l.Status == domain.StatusPending) && l.SellerID != filter.ViewerID {
+				continue
+			}
+		} else {
+			if l.DeletedAt != nil {
+				continue
+			}
+			if filter.Mine {
+				if l.SellerID != filter.ViewerID {
+					continue
+				}
+				if filter.Status != "" && l.Status != filter.Status {
+					continue
+				}
+			} else if l.Status != domain.StatusActive {
+				continue
+			}
+			if filter.Favorited && !f.favorites[[2]int64{filter.ViewerID, l.ID}] {
+				continue
+			}
+			if filter.CategoryID != 0 && l.CategoryID != filter.CategoryID {
+				continue
+			}
+			if filter.SellerID != 0 && l.SellerID != filter.SellerID {
+				continue
+			}
+			if filter.Condition != "" && l.Condition != filter.Condition {
+				continue
+			}
+			if filter.Tag != "" && !slices.Contains(stored.tags, filter.Tag) {
+				continue
+			}
+			if filter.Query != "" && !strings.Contains(strings.ToLower(l.Name), strings.ToLower(filter.Query)) {
+				continue
+			}
+			if !priceInRange(stored, filter) {
+				continue
+			}
+		}
+		matched = append(matched, f.summaryOf(stored))
+	}
+	sortFeed(matched, filter.Sort)
+	total := int64(len(matched))
+	if filter.Offset >= len(matched) {
+		return nil, total, nil
+	}
+	return matched[filter.Offset:min(filter.Offset+filter.Limit, len(matched))], total, nil
+}
+
+// priceInRange is satisfied by any one live variant, as the EXISTS subqueries are.
+func priceInRange(stored storedListing, filter port.ListingFilter) bool {
+	if filter.MinPrice == 0 && filter.MaxPrice == 0 {
+		return true
+	}
+	okMin, okMax := filter.MinPrice == 0, filter.MaxPrice == 0
+	for _, v := range stored.variants {
+		if v.DeletedAt != nil {
+			continue
+		}
+		if filter.MinPrice != 0 && v.Price >= filter.MinPrice {
+			okMin = true
+		}
+		if filter.MaxPrice != 0 && v.Price <= filter.MaxPrice {
+			okMax = true
+		}
+	}
+	return okMin && okMax
+}
+
+func (f *fakeRepo) summaryOf(stored storedListing) port.ListingSummary {
+	l := stored.listing
+	// The cheapest live variant, as the lateral join reads it.
+	var price int64
+	for _, v := range stored.variants {
+		if v.DeletedAt == nil && (price == 0 || v.Price < price) {
+			price = v.Price
+		}
+	}
+	var coverID *int64
+	if len(l.Attachments) > 0 {
+		coverID = new(l.Attachments[0])
+	}
+	return port.ListingSummary{
+		ID: l.ID, SellerID: l.SellerID, Slug: l.Slug, Name: l.Name, Status: l.Status,
+		Condition: l.Condition, PriceMode: l.PriceMode, Currency: l.Currency, Price: price,
+		Sold: l.CachedSold, Rating: l.CachedRating, CategoryID: l.CategoryID, CoverID: coverID,
+		HasPendingEdit: l.PendingEdit != nil, CreatedAt: l.CreatedAt, DeletedAt: l.DeletedAt,
+	}
+}
+
+func sortFeed(rows []port.ListingSummary, order string) {
+	switch order {
+	case port.SortRating:
+		slices.SortFunc(rows, func(a, b port.ListingSummary) int { return cmp.Compare(b.Rating, a.Rating) })
+	case port.SortPriceAsc:
+		slices.SortFunc(rows, func(a, b port.ListingSummary) int { return cmp.Compare(a.Price, b.Price) })
+	case port.SortPriceDesc:
+		slices.SortFunc(rows, func(a, b port.ListingSummary) int { return cmp.Compare(b.Price, a.Price) })
+	case port.SortBestSelling:
+		slices.SortFunc(rows, func(a, b port.ListingSummary) int { return cmp.Compare(b.Sold, a.Sold) })
+	default:
+		slices.SortFunc(rows, func(a, b port.ListingSummary) int { return cmp.Compare(b.ID, a.ID) })
+	}
+}
+
+func (f *fakeRepo) InterestVectors(_ context.Context, accountID int64) ([]port.Vector, error) {
+	return f.interests[accountID], nil
+}
+
+func (f *fakeRepo) FavoritedAmong(_ context.Context, accountID int64, listingIDs []int64) (map[int64]bool, error) {
+	out := make(map[int64]bool, len(listingIDs))
+	for _, listingID := range listingIDs {
+		if f.favorites[[2]int64{accountID, listingID}] {
+			out[listingID] = true
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeRepo) AddFavorite(_ context.Context, accountID, listingID int64) error {
+	if f.listingAt(listingID) < 0 {
+		return domain.ErrListingNotFound
+	}
+	f.favorites[[2]int64{accountID, listingID}] = true
+	return nil
+}
+
+func (f *fakeRepo) RemoveFavorite(_ context.Context, accountID, listingID int64) error {
+	delete(f.favorites, [2]int64{accountID, listingID})
+	return nil
 }

@@ -62,4 +62,8 @@ var (
 	// after the first sale is worse than finding out now.
 	ErrIdentityRequired   = errx.NewError(http.StatusUnprocessableEntity, "identity_required", "identity verification is required before selling")
 	ErrAttachmentNotFound = errx.NewError(http.StatusNotFound, "attachment_not_found", "an image id names no confirmed resource")
+	// ErrAuthenticationRequired is a filter about the caller — their own listings, their
+	// wishlist, their recommendations — asked for without a token. 401 rather than an empty
+	// page, because an empty wishlist and "we do not know who you are" are different answers.
+	ErrAuthenticationRequired = errx.NewError(http.StatusUnauthorized, "authentication_required", "this filter is about the caller and needs a token")
 )

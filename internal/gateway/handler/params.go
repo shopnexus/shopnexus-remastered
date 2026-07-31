@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"shopnexus/internal/gateway/gwctx"
 	"shopnexus/internal/shared/errx"
@@ -102,6 +103,38 @@ func boolParam(r *http.Request, name string) (*bool, error) {
 		})
 	}
 	return &v, nil
+}
+
+// int64Param reads an optional numeric bound. Absent is nil, not zero: "min_price=0" and no
+// min_price at all are the same answer here, but the filter that decides that is the service's.
+func int64Param(r *http.Request, name string) (*int64, error) {
+	raw := r.URL.Query().Get(name)
+	if raw == "" {
+		return nil, nil
+	}
+	v, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return nil, errx.NewValidationError("invalid field: "+name, errx.Field{
+			Field: name, Rule: "numeric", Message: "must be an integer",
+		})
+	}
+	return &v, nil
+}
+
+// splitList reads a comma-separated query parameter — the `style: form, explode: false` shape
+// the spec uses for every list of ids. An empty value is no items rather than one empty one.
+func splitList(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 // decodeBody reads the JSON body. It does not validate: the fields that come from the

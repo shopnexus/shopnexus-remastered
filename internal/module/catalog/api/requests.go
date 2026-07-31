@@ -176,3 +176,34 @@ type TakedownListingRequest struct {
 	Reason       string            `json:"reason" validate:"required,min=1,max=2000"`
 	NotifySeller *bool             `json:"notify_seller,omitempty"`
 }
+
+// ListListingsRequest is the browse feed, the search, the wishlist page and the "resolve these
+// ids" lookup — one query narrowed by parameters, because a wishlist wants exactly what a feed
+// wants and a separate endpoint left the client resolving ids one by one.
+type ListListingsRequest struct {
+	// ViewerID is zero for an anonymous read. Mine, Favorited and Recommended need it.
+	ViewerID id.ID[id.Account] `json:"-"`
+	// IDs ignores every other filter.
+	IDs        []id.ID[id.Listing] `json:"-" validate:"max=100"`
+	Query      string              `json:"-" validate:"max=200"`
+	Mode       string              `json:"-" validate:"omitempty,oneof=lexical semantic hybrid"`
+	Mine       bool                `json:"-"`
+	Favorited  bool                `json:"-"`
+	Status     string              `json:"-" validate:"omitempty,oneof=draft pending active hidden"`
+	CategoryID *id.ID[id.Category] `json:"-"`
+	Tag        string              `json:"-" validate:"max=100"`
+	SellerID   *id.ID[id.Account]  `json:"-"`
+	Condition  string              `json:"-" validate:"omitempty,oneof=new used damaged"`
+	MinPrice   *int64              `json:"-" validate:"omitempty,gte=0"`
+	MaxPrice   *int64              `json:"-" validate:"omitempty,gte=0"`
+	Sort       string              `json:"-" validate:"omitempty,oneof=newest rating price-asc price-desc best-selling relevance recommended"`
+	Page       int                 `json:"-" validate:"required,min=1"`
+	Limit      int                 `json:"-" validate:"required,min=1,max=100"`
+}
+
+// FavoriteRequest is one wishlist write. PUT and DELETE are both idempotent, so neither needs
+// to know whether the row was already there.
+type FavoriteRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	ID      id.ID[id.Listing] `json:"-" validate:"required"`
+}

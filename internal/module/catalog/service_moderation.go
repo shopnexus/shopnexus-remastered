@@ -64,6 +64,8 @@ func (s *Service) cards(ctx context.Context, rows []port.ListingSummary) ([]cata
 			Sold:       row.Sold,
 			Rating:     row.Rating,
 			CategoryID: id.Of[id.Category](row.CategoryID),
+			Score:      row.Score,
+			DeletedAt:  row.DeletedAt,
 			CreatedAt:  row.CreatedAt,
 		}
 		if row.CoverID != nil {

@@ -45,6 +45,18 @@ func (Stub) AdminDeleteTag(context.Context, catalogapi.DeleteTagRequest) error {
 	return errx.ErrNotImplemented
 }
 
+func (Stub) ListListings(context.Context, catalogapi.ListListingsRequest) (catalogapi.ListingPage, error) {
+	return catalogapi.ListingPage{}, errx.ErrNotImplemented
+}
+
+func (Stub) AddFavorite(context.Context, catalogapi.FavoriteRequest) error {
+	return errx.ErrNotImplemented
+}
+
+func (Stub) RemoveFavorite(context.Context, catalogapi.FavoriteRequest) error {
+	return errx.ErrNotImplemented
+}
+
 func (Stub) CreateListing(context.Context, catalogapi.CreateListingRequest) (catalogapi.ListingDetail, error) {
 	return catalogapi.ListingDetail{}, errx.ErrNotImplemented
 }

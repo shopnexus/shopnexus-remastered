@@ -1,0 +1,183 @@
+package catalog_test
+
+import (
+	"context"
+	"testing"
+
+	catalogapi "shopnexus/internal/module/catalog/api"
+	"shopnexus/internal/module/catalog/domain"
+	"shopnexus/internal/shared/id"
+)
+
+// publish takes a seeded listing all the way live, which is what the public feed shows.
+func publish(t *testing.T, h *harness, listing catalogapi.ListingDetail) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := h.svc.PublishListing(ctx, catalogapi.PublishListingRequest{
+		ActorID: actor, ID: listing.ID,
+	}); err != nil {
+		t.Fatalf("PublishListing: %v", err)
+	}
+	if _, err := newHarnessModerator(h).svc.AdminApproveListing(ctx, catalogapi.ApproveListingRequest{
+		ActorID: actor, ID: listing.ID,
+	}); err != nil {
+		t.Fatalf("AdminApproveListing: %v", err)
+	}
+}
+
+// With no parameters the feed is the live listings only: a draft is the seller's business.
+func TestListListings_OnlyLiveByDefault(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	live := seedListing(t, h)
+	publish(t, h, live)
+	draft := seedListingNamed(t, h, "Second listing")
+
+	page, err := h.svc.ListListings(ctx, catalogapi.ListListingsRequest{Page: 1, Limit: 20})
+	if err != nil {
+		t.Fatalf("ListListings: %v", err)
+	}
+	if len(page.Data) != 1 || page.Data[0].ID != live.ID {
+		t.Fatalf("feed = %+v, want only the live listing", page.Data)
+	}
+	if page.Meta.TotalCount == nil || *page.Meta.TotalCount != 1 {
+		t.Errorf("total = %v, want 1", page.Meta.TotalCount)
+	}
+
+	// mine=true is how the seller sees the draft, and status is only honoured with it.
+	page, err = h.svc.ListListings(ctx, catalogapi.ListListingsRequest{
+		ViewerID: actor, Mine: true, Page: 1, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListListings(mine): %v", err)
+	}
+	if len(page.Data) != 2 {
+		t.Fatalf("own listings = %d, want both", len(page.Data))
+	}
+	page, err = h.svc.ListListings(ctx, catalogapi.ListListingsRequest{
+		ViewerID: actor, Mine: true, Status: string(domain.StatusDraft), Page: 1, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListListings(mine,draft): %v", err)
+	}
+	if len(page.Data) != 1 || page.Data[0].ID != draft.ID {
+		t.Fatalf("drafts = %+v, want the draft alone", page.Data)
+	}
+}
+
+// The combinations that have no answer are refused rather than resolved by precedence.
+func TestListListings_RefusesCombinationsWithNoAnswer(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name string
+		req  catalogapi.ListListingsRequest
+		want uint16
+	}{
+		{"mine without a token", catalogapi.ListListingsRequest{Mine: true, Page: 1, Limit: 20}, 401},
+		{"wishlist without a token", catalogapi.ListListingsRequest{Favorited: true, Page: 1, Limit: 20}, 401},
+		{"recommended without a token", catalogapi.ListListingsRequest{Sort: "recommended", Page: 1, Limit: 20}, 401},
+		{"status without mine", catalogapi.ListListingsRequest{ViewerID: actor, Status: "draft", Page: 1, Limit: 20}, 400},
+		{"relevance without a query", catalogapi.ListListingsRequest{Sort: "relevance", Page: 1, Limit: 20}, 400},
+		{"recommended over one's own", catalogapi.ListListingsRequest{ViewerID: actor, Sort: "recommended", Mine: true, Page: 1, Limit: 20}, 400},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := status(t, mustErr(h.svc.ListListings(ctx, tc.req))); got != tc.want {
+				t.Fatalf("status = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// The wishlist is a filter on the feed, so a saved listing comes back as a card with prices —
+// which is the whole reason it is not its own endpoint.
+func TestFavorites_RoundTrip(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	listing := seedListing(t, h)
+	publish(t, h, listing)
+	buyer := id.Of[id.Account](99)
+
+	if err := h.svc.AddFavorite(ctx, catalogapi.FavoriteRequest{ActorID: buyer, ID: listing.ID}); err != nil {
+		t.Fatalf("AddFavorite: %v", err)
+	}
+	// Twice is once: PUT is idempotent, so a retried request is not a conflict.
+	if err := h.svc.AddFavorite(ctx, catalogapi.FavoriteRequest{ActorID: buyer, ID: listing.ID}); err != nil {
+		t.Fatalf("AddFavorite twice: %v", err)
+	}
+
+	page, err := h.svc.ListListings(ctx, catalogapi.ListListingsRequest{
+		ViewerID: buyer, Favorited: true, Page: 1, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListListings(favorited): %v", err)
+	}
+	if len(page.Data) != 1 || page.Data[0].ID != listing.ID {
+		t.Fatalf("wishlist = %+v, want the saved listing", page.Data)
+	}
+	if !page.Data[0].Favorited {
+		t.Error("the card does not say it is saved")
+	}
+	if page.Data[0].Price == 0 {
+		t.Error("the card has no price — a wishlist wants what a feed wants")
+	}
+
+	if err := h.svc.RemoveFavorite(ctx, catalogapi.FavoriteRequest{ActorID: buyer, ID: listing.ID}); err != nil {
+		t.Fatalf("RemoveFavorite: %v", err)
+	}
+	// Also idempotent, and it does not need the listing to exist: a wishlist whose listing was
+	// deleted still has to be cleanable.
+	if err := h.svc.RemoveFavorite(ctx, catalogapi.FavoriteRequest{ActorID: buyer, ID: listing.ID}); err != nil {
+		t.Fatalf("RemoveFavorite twice: %v", err)
+	}
+	page, err = h.svc.ListListings(ctx, catalogapi.ListListingsRequest{
+		ViewerID: buyer, Favorited: true, Page: 1, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListListings(favorited): %v", err)
+	}
+	if len(page.Data) != 0 {
+		t.Fatalf("wishlist = %+v, want it empty", page.Data)
+	}
+}
+
+// A draft is not saveable by a stranger: a wishlist of ids nobody can read renders nothing.
+func TestAddFavorite_StrangersDraftNotFound(t *testing.T) {
+	h := newHarnessWith("user", true)
+	listing := seedListing(t, h)
+	err := h.svc.AddFavorite(context.Background(), catalogapi.FavoriteRequest{
+		ActorID: id.Of[id.Account](99), ID: listing.ID,
+	})
+	if got := status(t, err); got != 404 {
+		t.Fatalf("status = %d, want 404", got)
+	}
+}
+
+// `ids` resolves a known set and ignores the other filters — how a cart renders its rows.
+func TestListListings_IDsResolveEvenWhenHidden(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	listing := seedListing(t, h)
+	publish(t, h, listing)
+	if _, err := h.svc.HideListing(ctx, catalogapi.HideListingRequest{ActorID: actor, ID: listing.ID}); err != nil {
+		t.Fatalf("HideListing: %v", err)
+	}
+
+	// Gone from the feed, still resolvable by id: an order that references it has to render.
+	page, err := h.svc.ListListings(ctx, catalogapi.ListListingsRequest{Page: 1, Limit: 20})
+	if err != nil {
+		t.Fatalf("ListListings: %v", err)
+	}
+	if len(page.Data) != 0 {
+		t.Fatalf("feed = %+v, want a hidden listing out of it", page.Data)
+	}
+	page, err = h.svc.ListListings(ctx, catalogapi.ListListingsRequest{
+		IDs: []id.ID[id.Listing]{listing.ID}, Page: 1, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListListings(ids): %v", err)
+	}
+	if len(page.Data) != 1 || page.Data[0].ID != listing.ID {
+		t.Fatalf("ids = %+v, want the hidden listing", page.Data)
+	}
+}

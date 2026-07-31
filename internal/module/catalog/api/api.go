@@ -20,6 +20,9 @@ type Service interface {
 
 	// --- listings: the seller's write model. Every write answers with the whole listing,
 	// because a variant has no read of its own.
+	// ListListings is the feed, the search, the wishlist page and the id lookup. Cards, not
+	// aggregates: a page of twenty must not be twenty loads.
+	ListListings(ctx context.Context, req ListListingsRequest) (ListingPage, error)
 	CreateListing(ctx context.Context, req CreateListingRequest) (ListingDetail, error)
 	GetListing(ctx context.Context, req GetListingRequest) (ListingDetail, error)
 
@@ -36,6 +39,10 @@ type Service interface {
 	// takedown.
 	PublishListing(ctx context.Context, req PublishListingRequest) (ListingDetail, error)
 	HideListing(ctx context.Context, req HideListingRequest) (ListingDetail, error)
+
+	// --- wishlist: both idempotent, so a retry is the state the caller asked for ---
+	AddFavorite(ctx context.Context, req FavoriteRequest) error
+	RemoveFavorite(ctx context.Context, req FavoriteRequest) error
 
 	// --- moderation: moderator or admin only ---
 	AdminListListings(ctx context.Context, req AdminListListingsRequest) (ListingPage, error)

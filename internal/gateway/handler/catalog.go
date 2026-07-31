@@ -31,10 +31,77 @@ func NewCatalog(svc catalogapi.Service, v *validator.Validate, log *slog.Logger)
 	return &Catalog{svc: svc, v: v, log: log}
 }
 
-// ListListings handles GET /listings — browsing, search, the personalised feed, the
-// caller's own drawer and resolving a batch of ids, all under one set of filters.
+// ListListings handles GET /listings — the feed, the search, the wishlist page and the
+// "resolve these ids" lookup, all narrowing one query. Optional auth: the three filters that
+// are about the caller need a token, and the service is what refuses them without one.
 func (h *Catalog) ListListings(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	page, limit, err := pageParams(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	query := r.URL.Query()
+	req := catalogapi.ListListingsRequest{
+		Query:     query.Get("q"),
+		Mode:      query.Get("mode"),
+		Status:    query.Get("status"),
+		Tag:       query.Get("tag"),
+		Condition: query.Get("condition"),
+		Sort:      query.Get("sort"),
+		Page:      page,
+		Limit:     limit,
+	}
+	if uid, err := actor(r); err == nil {
+		req.ViewerID = uid
+	}
+	mine, err := boolParam(r, "mine")
+	if failed(w, h.log, err) {
+		return
+	}
+	if mine != nil {
+		req.Mine = *mine
+	}
+	favorited, err := boolParam(r, "favorited")
+	if failed(w, h.log, err) {
+		return
+	}
+	if favorited != nil {
+		req.Favorited = *favorited
+	}
+	for _, raw := range splitList(query.Get("ids")) {
+		listingID, err := id.Parse[id.Listing](raw)
+		if failed(w, h.log, err) {
+			return
+		}
+		req.IDs = append(req.IDs, listingID)
+	}
+	if raw := query.Get("category_id"); raw != "" {
+		categoryID, err := id.Parse[id.Category](raw)
+		if failed(w, h.log, err) {
+			return
+		}
+		req.CategoryID = &categoryID
+	}
+	if raw := query.Get("seller_id"); raw != "" {
+		sellerID, err := id.Parse[id.Account](raw)
+		if failed(w, h.log, err) {
+			return
+		}
+		req.SellerID = &sellerID
+	}
+	if req.MinPrice, err = int64Param(r, "min_price"); failed(w, h.log, err) {
+		return
+	}
+	if req.MaxPrice, err = int64Param(r, "max_price"); failed(w, h.log, err) {
+		return
+	}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListListings(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WritePage(w, http.StatusOK, res.Data, httpx.PageMeta(res.Meta))
 }
 
 // CreateListing handles POST /listings — the listing and its variants in one call.
@@ -248,14 +315,43 @@ func (h *Catalog) DeleteVariant(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// AddFavorite handles PUT /favorites/{listingID}.
+// AddFavorite handles PUT /favorites/{listingID}. Idempotent, so saving twice answers the same.
 func (h *Catalog) AddFavorite(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	req, err := h.favoriteRequest(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	if failed(w, h.log, h.svc.AddFavorite(r.Context(), req)) {
+		return
+	}
+	httpx.WriteNoContent(w)
 }
 
-// RemoveFavorite handles DELETE /favorites/{listingID}.
+// RemoveFavorite handles DELETE /favorites/{listingID}. Also idempotent: unsaving what is not
+// saved leaves the caller where they wanted to be.
 func (h *Catalog) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	req, err := h.favoriteRequest(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	if failed(w, h.log, h.svc.RemoveFavorite(r.Context(), req)) {
+		return
+	}
+	httpx.WriteNoContent(w)
+}
+
+// favoriteRequest reads the two things both wishlist writes need.
+func (h *Catalog) favoriteRequest(r *http.Request) (catalogapi.FavoriteRequest, error) {
+	uid, err := actor(r)
+	if err != nil {
+		return catalogapi.FavoriteRequest{}, err
+	}
+	listingID, err := pathID[id.Listing](r, "listingID")
+	if err != nil {
+		return catalogapi.FavoriteRequest{}, err
+	}
+	req := catalogapi.FavoriteRequest{ActorID: uid, ID: listingID}
+	return req, check(h.v, req)
 }
 
 // ListCategories handles GET /categories — the tree, or a `near` ranking.

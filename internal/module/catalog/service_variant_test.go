@@ -17,6 +17,19 @@ func seedListing(t *testing.T, h *harness) catalogapi.ListingDetail {
 	return created
 }
 
+// seedListingNamed is the same with a name of its own, for a test that needs two: the slug is
+// derived from the name and is globally unique.
+func seedListingNamed(t *testing.T, h *harness, name string) catalogapi.ListingDetail {
+	t.Helper()
+	req := createListingRequest(h, t)
+	req.Name = name
+	created, err := h.svc.CreateListing(context.Background(), req)
+	if err != nil {
+		t.Fatalf("CreateListing: %v", err)
+	}
+	return created
+}
+
 func TestCreateVariant(t *testing.T) {
 	h := newHarnessWith("user", true)
 	ctx := context.Background()

@@ -2,6 +2,7 @@ package catalog_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	catalogapi "shopnexus/internal/module/catalog/api"
@@ -9,10 +10,15 @@ import (
 	"shopnexus/internal/shared/id"
 )
 
+// seeded counts the categories one test has made, because the name is unique and a test that
+// seeds two listings would otherwise collide with itself.
+var seeded int
+
 func createListingRequest(h *harness, t *testing.T) catalogapi.CreateListingRequest {
 	t.Helper()
+	seeded++
 	category, err := newHarnessAdmin(h).svc.AdminCreateCategory(context.Background(),
-		catalogapi.CreateCategoryRequest{ActorID: actor, Name: "Tops"})
+		catalogapi.CreateCategoryRequest{ActorID: actor, Name: fmt.Sprintf("Tops %d", seeded)})
 	if err != nil {
 		t.Fatalf("AdminCreateCategory: %v", err)
 	}

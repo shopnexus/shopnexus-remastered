@@ -46,22 +46,69 @@ type ScoredTag struct {
 // twenty is one query rather than twenty aggregate loads. Price is the featured variant's,
 // resolved in the same statement.
 type ListingSummary struct {
-	ID             int64
-	SellerID       int64
-	Slug           string
-	Name           string
-	Status         domain.Status
-	Condition      domain.Condition
-	PriceMode      domain.PriceMode
-	Currency       string
-	Price          int64
-	Sold           int64
-	Rating         float64
+	ID        int64
+	SellerID  int64
+	Slug      string
+	Name      string
+	Status    domain.Status
+	Condition domain.Condition
+	PriceMode domain.PriceMode
+	Currency  string
+	Price     int64
+	Sold      int64
+	Rating    float64
+	// Score is the search's, and only a search sets it: higher is better whichever mode ran.
+	Score          *float64
 	CategoryID     int64
 	CoverID        *int64
 	HasPendingEdit bool
 	CreatedAt      time.Time
+	// DeletedAt is set on a listing the seller removed. Only an `ids` lookup returns one — an
+	// order that references it still has to render.
+	DeletedAt *time.Time
 }
+
+// ListingFilter is the browse feed: one query narrowed by parameters rather than a family of
+// endpoints. Zero values mean "not filtered", so a bare filter is "the newest live listings".
+type ListingFilter struct {
+	// IDs resolves a known set and ignores every other filter — a cart or an order list
+	// rendering the listings behind its rows.
+	IDs []int64
+	// Query turns the request into a search; Mode picks how. Probe is its dense embedding,
+	// resolved by the service, and is nil when the query is lexical or nothing embedded it.
+	Query string
+	Mode  string
+	Probe Vector
+	// ViewerID is the caller, needed for Mine, Favorited and Recommended. Zero is anonymous.
+	ViewerID   int64
+	Mine       bool
+	Favorited  bool
+	Status     domain.Status
+	CategoryID int64
+	Tag        string
+	SellerID   int64
+	Condition  domain.Condition
+	MinPrice   int64
+	MaxPrice   int64
+	Sort       string
+	Offset     int
+	Limit      int
+}
+
+// The search modes and the sorts, spelled once so the service and the adapter agree.
+const (
+	ModeLexical  = "lexical"
+	ModeSemantic = "semantic"
+	ModeHybrid   = "hybrid"
+
+	SortNewest      = "newest"
+	SortRating      = "rating"
+	SortPriceAsc    = "price-asc"
+	SortPriceDesc   = "price-desc"
+	SortBestSelling = "best-selling"
+	SortRelevance   = "relevance"
+	SortRecommended = "recommended"
+)
 
 // QueueFilter drives the queue. Status empty means both halves of it: a listing waiting for
 // its first publication, and a live one holding an edit.
@@ -123,6 +170,27 @@ type Repository interface {
 	// ListModerationQueue answers the moderator's worklist, oldest first — the order it should
 	// be worked.
 	ListModerationQueue(ctx context.Context, f QueueFilter) ([]ListingSummary, int64, error)
+
+	// --- the browse feed ---
+
+	// ListListings answers the feed: cards from a flat read model, because a page of twenty
+	// must not be twenty aggregate loads. Score is set only when the filter was a search.
+	ListListings(ctx context.Context, f ListingFilter) ([]ListingSummary, int64, error)
+	// InterestVectors reads an account's interest slots, which is what `sort=recommended`
+	// ranks against. Empty for an account nothing has computed yet, and the service falls
+	// back to newest.
+	InterestVectors(ctx context.Context, accountID int64) ([]Vector, error)
+
+	// --- wishlist writes ---
+
+	// FavoritedAmong answers which of these listings the account saved — one query for a whole
+	// page rather than one per card.
+	FavoritedAmong(ctx context.Context, accountID int64, listingIDs []int64) (map[int64]bool, error)
+	// AddFavorite is idempotent: saving twice is saving once.
+	AddFavorite(ctx context.Context, accountID, listingID int64) error
+	// RemoveFavorite answers no error when the row was not there — unsaving something that is
+	// not saved is the state the caller asked for.
+	RemoveFavorite(ctx context.Context, accountID, listingID int64) error
 	// GetListingByVariant loads the aggregate a variant belongs to, scoped by owner: the
 	// variant routes address the variant, but the rules live on the root.
 	GetListingByVariant(ctx context.Context, variantID, sellerID int64) (*domain.Listing, error)
