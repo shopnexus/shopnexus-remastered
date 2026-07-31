@@ -47,9 +47,12 @@ type Service struct {
 	// options is the carrier registry — this module's own `option` rows, so a carrier
 	// nobody enabled cannot be chosen.
 	options port.Options
-	bus     eventbus.Client
-	v       *validator.Validate
-	log     *slog.Logger
+	// workflows holds the timers: the durable runtime when there is one, nothing when there
+	// is not. Best-effort at every call site — the row is already committed.
+	workflows port.Workflows
+	bus       eventbus.Client
+	v         *validator.Validate
+	log       *slog.Logger
 }
 
 func NewService(
@@ -59,13 +62,14 @@ func NewService(
 	finance financeapi.Service,
 	chat chatapi.Service,
 	options port.Options,
+	workflows port.Workflows,
 	bus eventbus.Client,
 	v *validator.Validate,
 	log *slog.Logger,
 ) *Service {
 	return &Service{
 		repo: repo, accounts: accounts, catalog: catalog, finance: finance, chat: chat,
-		options: options, bus: bus, v: v, log: log,
+		options: options, workflows: workflows, bus: bus, v: v, log: log,
 	}
 }
 
@@ -220,4 +224,14 @@ func cursorFilter(cursor string, limit int) (port.CursorFilter, error) {
 		return port.CursorFilter{}, err
 	}
 	return port.CursorFilter{Before: before, Limit: limit + 1}, nil
+}
+
+// timer is every call into the durable runtime: the row is already committed, so a runtime
+// that is unreachable is a slower clock rather than a failed request — the sweep still moves
+// the state. Logged at warn because a deployment where every one of these fails has lost its
+// promptness, and nothing else would say so.
+func (s *Service) timer(what string, err error) {
+	if err != nil {
+		s.log.Warn("durable timer not set", "what", what, "err", err)
+	}
 }

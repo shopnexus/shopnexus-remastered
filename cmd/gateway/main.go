@@ -9,12 +9,14 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/redis/rueidis"
+	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 
 	"shopnexus/internal/config"
 	"shopnexus/internal/gateway"
 	"shopnexus/internal/infra/cache"
+	"shopnexus/internal/infra/durable"
 	"shopnexus/internal/infra/eventbus"
 	"shopnexus/internal/module/account"
 	"shopnexus/internal/module/catalog"
@@ -61,6 +63,11 @@ func main() {
 			newOAuthVerifier,
 			newKYCClient,
 			newPaymentClient,
+			// Durable execution: the client modules submit runs through, the server the
+			// runtime invokes, and the sweeper that catches whatever a run missed.
+			newWorkflowClient,
+			fx.Annotate(newWorkflowServer, fx.ParamTags(``, ``, `group:"restate-definitions"`)),
+			fx.Annotate(newSweeper, fx.ParamTags(``, ``, `group:"sweeps"`)),
 		),
 		// Domain modules — each wires its own service + repository.
 		account.Module,
@@ -76,6 +83,9 @@ func main() {
 		// Before the server accepts traffic: marshalling an id without a cipher
 		// panics, and fx runs every Invoke before OnStart hooks.
 		fx.Invoke(installIDCipher),
+		// Eager: nothing in the graph depends on a timer running, so without this the
+		// clocks would only start when something happened to ask for them.
+		fx.Invoke(startDurable),
 		// Route fx's own logs through slog.
 		fx.WithLogger(func(log *slog.Logger) fxevent.Logger {
 			return &fxevent.SlogLogger{Logger: log}
@@ -254,4 +264,57 @@ func newCache(lc fx.Lifecycle, cfg *config.Config) (cache.Client, error) {
 	}
 	lc.Append(fx.Hook{OnStop: func(context.Context) error { return c.Close() }})
 	return c, nil
+}
+
+// --- durable execution ---
+//
+// Two mechanisms, deliberately: a Restate run per entity is prompt and survives a restart,
+// and the sweeper is the periodic net under a run that was lost. Both call the same
+// idempotent service methods, so neither is a second definition of "due".
+
+// newWorkflowClient is what modules submit and signal runs through. Nil when no runtime is
+// configured, which is why every consumer takes it as an optional dependency: a graph that
+// could not be built without a Restate URL would make the runtime mandatory by accident.
+func newWorkflowClient(cfg *config.Config, log *slog.Logger) *durable.Client {
+	if cfg.WorkflowRuntime != "restate" {
+		return nil
+	}
+	return durable.NewClient(cfg.RestateIngressURL, cfg.RestateSendTimeout, log)
+}
+
+// newWorkflowServer hosts the handlers the runtime invokes. Nil when there are no
+// definitions, which is the same condition as having no runtime.
+func newWorkflowServer(cfg *config.Config, log *slog.Logger, definitions []restate.ServiceDefinition) *durable.Server {
+	if cfg.WorkflowRuntime != "restate" || len(definitions) == 0 {
+		return nil
+	}
+	return durable.NewServer(cfg.RestateServeAddr, log, definitions...)
+}
+
+// newSweeper collects every module's catch-up pass onto one interval.
+func newSweeper(cfg *config.Config, log *slog.Logger, sweeps []durable.Sweep) *durable.Sweeper {
+	return durable.NewSweeper(cfg.SweepInterval, log, sweeps...)
+}
+
+// startDurable runs both on the process's own lifetime. The context is cancelled on shutdown,
+// which is what stops the sweeper's ticker and the handler server.
+func startDurable(lc fx.Lifecycle, server *durable.Server, sweeper *durable.Sweeper, log *slog.Logger) {
+	ctx, stop := context.WithCancel(context.Background())
+	lc.Append(fx.Hook{
+		OnStart: func(context.Context) error {
+			if server != nil {
+				go func() {
+					if err := server.Serve(ctx); err != nil && ctx.Err() == nil {
+						log.Error("restate handler server stopped", "err", err)
+					}
+				}()
+			}
+			go sweeper.Run(ctx)
+			return nil
+		},
+		OnStop: func(context.Context) error {
+			stop()
+			return nil
+		},
+	})
 }

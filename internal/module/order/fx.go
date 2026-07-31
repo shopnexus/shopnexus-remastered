@@ -6,13 +6,16 @@ import (
 	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	restate "github.com/restatedev/sdk-go"
 	"go.uber.org/fx"
 
 	"shopnexus/internal/config"
+	infradurable "shopnexus/internal/infra/durable"
 	"shopnexus/internal/infra/eventbus"
 	"shopnexus/internal/infra/postgres"
 	"shopnexus/internal/module/common/dbx"
 	finance "shopnexus/internal/module/finance"
+	"shopnexus/internal/module/order/adapter/durable"
 	orderpg "shopnexus/internal/module/order/adapter/postgres"
 	orderapi "shopnexus/internal/module/order/api"
 	"shopnexus/internal/module/order/port"
@@ -20,20 +23,63 @@ import (
 )
 
 // Module wires the order service, its repository, the carrier registry it reads from its own
-// schema, the durable lifecycle, and the subscriber that turns a settled payment into an
-// order.
+// schema, the durable lifecycle and the seam that drives it, and the subscriber that turns a
+// settled payment into an order.
 var Module = fx.Module("order",
+	// Private, and in a Provide of its own because fx.Private applies to every constructor
+	// in the same call: the pool is this module's own, and two modules each providing a bare
+	// *pgxpool.Pool into the root graph is a conflict rather than two pools.
+	fx.Provide(fx.Private, newPool),
 	fx.Provide(
-		newPool,
 		fx.Annotate(newRepo, fx.As(new(port.Repository))),
 		fx.Annotate(newOptions, fx.As(new(port.Options))),
+		newWorkflows,
 		fx.Annotate(NewService, fx.As(new(orderapi.Service))),
 		NewLifecycle,
+		fx.Annotate(newDefinitions, fx.ResultTags(`group:"restate-definitions,flatten"`)),
+		fx.Annotate(newSweep, fx.ResultTags(`group:"sweeps"`)),
 	),
 	// Eager, because nothing else in the graph depends on a subscription: without this the
 	// bus would have no consumer until something happened to ask for the service.
 	fx.Invoke(SubscribePaidSessions),
 )
+
+// workflowDeps takes the ingress client as optional, because the `off` deployment has none —
+// and a graph that could not be built without a Restate URL would make the runtime mandatory
+// by accident.
+type workflowDeps struct {
+	fx.In
+
+	Config *config.Config
+	Client *infradurable.Client `optional:"true"`
+	Log    *slog.Logger
+}
+
+// newWorkflows picks who holds this module's timers. The selector is config, never code: a
+// deployment that thinks it has durable timers and does not is found at startup rather than by
+// the seller who was never paid.
+func newWorkflows(deps workflowDeps) (port.Workflows, error) {
+	if deps.Config.WorkflowRuntime != "restate" {
+		return durable.NewOff(deps.Log), nil
+	}
+	if deps.Client == nil {
+		return nil, fmt.Errorf("workflow runtime is restate but no ingress client was built")
+	}
+	return durable.New(deps.Client), nil
+}
+
+// newDefinitions hands the three workflows to whoever serves them. Empty when there is no
+// runtime: serving handlers nobody can invoke would only be a port to get wrong.
+func newDefinitions(cfg *config.Config, l *Lifecycle) []restate.ServiceDefinition {
+	if cfg.WorkflowRuntime != "restate" {
+		return nil
+	}
+	return l.Definitions()
+}
+
+// newSweep is the periodic net under every timed transition, registered whether or not there
+// is a runtime: with one it finds nothing, which is what makes leaving it on cheap.
+func newSweep(l *Lifecycle) infradurable.Sweep { return l.Sweep }
 
 func newPool(lc fx.Lifecycle, cfg *config.Config) (*pgxpool.Pool, error) {
 	pool, err := postgres.NewPool(context.Background(), cfg.OrderDBDSN, "order")

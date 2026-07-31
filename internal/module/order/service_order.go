@@ -69,7 +69,29 @@ func (s *Service) CancelItem(ctx context.Context, req orderapi.ItemRequest) (ord
 		// expires on its own rather than a reason to un-cancel.
 		s.log.Error("release stock after cancelled item", "item_id", i.ID, "err", err)
 	}
+	// With every line of the session gone there is nothing left to pay for, so the run
+	// waiting on the money stops waiting instead of holding its timer to the end.
+	if s.sessionAbandoned(ctx, i.PaymentSessionID) {
+		s.timer("checkout cancelled", s.workflows.CheckoutCancelled(ctx, i.PaymentSessionID))
+	}
 	return toAPIItem(i), nil
+}
+
+// sessionAbandoned reports whether a payment session has no live line left. Read after the
+// cancellation rather than counted as it goes: the lines are the truth, and a counter would be
+// a second one to keep in step.
+func (s *Service) sessionAbandoned(ctx context.Context, sessionID int64) bool {
+	lines, err := s.repo.ItemsByPaymentSession(ctx, sessionID)
+	if err != nil {
+		s.log.Error("read session lines", "session_id", sessionID, "err", err)
+		return false
+	}
+	for _, line := range lines {
+		if line.Live() {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Service) ListOrders(ctx context.Context, req orderapi.ListOrdersRequest) (orderapi.OrderPage, error) {
@@ -134,6 +156,8 @@ func (s *Service) ConfirmReceipt(ctx context.Context, req orderapi.ConfirmReceip
 	if err := s.repo.SaveOrder(ctx, o); err != nil {
 		return orderapi.Order{}, fmt.Errorf("save order: %w", err)
 	}
+	// The receipt is what starts the escrow window, so the run waiting on delivery is told.
+	s.timer("order received", s.workflows.OrderReceived(ctx, o.ID))
 	return s.orderView(ctx, o)
 }
 
@@ -161,6 +185,8 @@ func (s *Service) CancelOrder(ctx context.Context, req orderapi.CancelOrderReque
 	}
 	s.releaseOrderStock(ctx, o)
 	s.publishSettled(ctx, o, false)
+	// Nothing is left to wait for: the money went back, so the escrow window must not fire.
+	s.timer("refund resolved", s.workflows.RefundResolved(ctx, o.ID, true))
 	return s.orderView(ctx, o)
 }
 

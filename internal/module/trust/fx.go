@@ -8,6 +8,7 @@ import (
 	"go.uber.org/fx"
 
 	"shopnexus/internal/config"
+	"shopnexus/internal/infra/durable"
 	"shopnexus/internal/infra/eventbus"
 	"shopnexus/internal/infra/postgres"
 	"shopnexus/internal/module/order"
@@ -24,6 +25,7 @@ var Module = fx.Module("trust",
 		fx.Annotate(newRepo, fx.As(new(port.Repository))),
 		fx.Annotate(NewService, fx.As(new(trustapi.Service))),
 		NewReveal,
+		fx.Annotate(newSweep, fx.ResultTags(`group:"sweeps"`)),
 	),
 	// Eager, because nothing else in the graph depends on a subscription: without this the
 	// bus would have no consumer until something happened to ask for the service.
@@ -59,3 +61,7 @@ func SubscribeSettledOrders(bus eventbus.Client, svc trustapi.Service, log *slog
 		return nil
 	})
 }
+
+// newSweep registers the blind-window pass with the shared sweeper: one interval for every
+// module's catch-up work rather than a ticker each.
+func newSweep(r *Reveal) durable.Sweep { return r.Sweep }

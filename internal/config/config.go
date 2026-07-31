@@ -49,6 +49,25 @@ type Config struct {
 	IDCipherKey string `validate:"required"`
 	LogLevel    string `validate:"required,oneof=debug info warn error"`
 
+	// --- durable execution ---
+
+	// WorkflowRuntime picks who holds the timers this marketplace waits on — an unpaid
+	// checkout expiring, an escrow window closing, a refund deadline passing. `restate`
+	// starts a run per entity and signals it; `off` leaves every transition to the sweep,
+	// which is the same code on a slower clock. Same rule as the provider seams: a selector,
+	// not a default, so a deployment that thinks it has durable timers and does not is found
+	// at startup rather than by the seller who was never paid.
+	WorkflowRuntime string `validate:"required,oneof=restate off"`
+	// RestateServeAddr is where the SDK serves the workflow handlers for the runtime to
+	// invoke; RestateIngressURL is where this process submits and signals runs.
+	RestateServeAddr   string        `validate:"required_if=WorkflowRuntime restate,omitempty,hostname_port"`
+	RestateIngressURL  string        `validate:"required_if=WorkflowRuntime restate,omitempty,url"`
+	RestateSendTimeout time.Duration `validate:"required_if=WorkflowRuntime restate"`
+	// SweepInterval is how often the timed transitions are swept. Required even with
+	// Restate: the sweep is the net under a lost run, and with a runtime in place it finds
+	// nothing, which is what makes it cheap to leave on.
+	SweepInterval time.Duration `validate:"required"`
+
 	// --- outbound providers: which implementation each seam gets ---
 
 	// EmailProvider and SMSProvider are separate because no vendor is good at both:
@@ -142,6 +161,12 @@ func Load(v *validator.Validate) (*Config, error) {
 		JWTSecret:          os.Getenv("JWT_SECRET"),
 		IDCipherKey:        os.Getenv("ID_CIPHER_KEY"),
 		LogLevel:           os.Getenv("LOG_LEVEL"),
+
+		WorkflowRuntime:    os.Getenv("WORKFLOW_RUNTIME"),
+		RestateServeAddr:   os.Getenv("RESTATE_SERVE_ADDR"),
+		RestateIngressURL:  os.Getenv("RESTATE_INGRESS_URL"),
+		RestateSendTimeout: p.durationVar("RESTATE_SEND_TIMEOUT"),
+		SweepInterval:      p.durationVar("SWEEP_INTERVAL"),
 
 		EmailProvider:   os.Getenv("EMAIL_PROVIDER"),
 		SMSProvider:     os.Getenv("SMS_PROVIDER"),

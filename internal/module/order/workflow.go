@@ -10,6 +10,7 @@ import (
 
 	orderapi "shopnexus/internal/module/order/api"
 	"shopnexus/internal/module/order/domain"
+	"shopnexus/internal/module/order/port"
 	"shopnexus/internal/shared/id"
 )
 
@@ -42,21 +43,8 @@ const (
 	promResolved  = "refund-resolved"
 )
 
-// CheckoutParams starts a run per payment session.
-type CheckoutParams struct {
-	SessionID int64 `json:"session_id"`
-}
-
-// OrderParams starts a run per order, once the money has landed.
-type OrderParams struct {
-	OrderID int64 `json:"order_id"`
-}
-
-// RefundParams starts a run per refund. The windows are the refund's own, so the workflow
-// only has to know which one it is following.
-type RefundParams struct {
-	RefundID int64 `json:"refund_id"`
-}
+// The three run inputs live in port, because the code that submits a run and the code that
+// hosts it have to agree and that is the only package both import.
 
 // Checkout follows one payment session: it waits for the money, and closes the session's
 // lines if nothing arrives.
@@ -67,7 +55,12 @@ type Checkout struct{ l *Lifecycle }
 
 func (l *Lifecycle) Checkout() *Checkout { return &Checkout{l: l} }
 
-func (w *Checkout) Run(ctx restate.WorkflowContext, p CheckoutParams) error {
+// ServiceName is what the runtime registers this workflow as. Explicit rather than the
+// struct's name, because the registry is shared across modules and "Checkout" alone is a name
+// another one could want.
+func (w *Checkout) ServiceName() string { return port.CheckoutWorkflow }
+
+func (w *Checkout) Run(ctx restate.WorkflowContext, p port.CheckoutParams) error {
 	paid := restate.Promise[bool](ctx, promPaid)
 	cancelled := restate.Promise[bool](ctx, promCancelled)
 	// Race the money against the session's own window. Whichever resolves first decides;
@@ -105,7 +98,9 @@ type Order struct{ l *Lifecycle }
 
 func (l *Lifecycle) Order() *Order { return &Order{l: l} }
 
-func (w *Order) Run(ctx restate.WorkflowContext, p OrderParams) error {
+func (w *Order) ServiceName() string { return port.OrderWorkflow }
+
+func (w *Order) Run(ctx restate.WorkflowContext, p port.OrderParams) error {
 	// Phase one has no timeout on purpose: how long delivery takes is the carrier's and the
 	// seller's business, and a clock here would cancel an order that is merely slow.
 	if _, err := restate.Promise[bool](ctx, promReceived).Result(); err != nil {
@@ -159,7 +154,9 @@ type Refund struct{ l *Lifecycle }
 
 func (l *Lifecycle) Refund() *Refund { return &Refund{l: l} }
 
-func (w *Refund) Run(ctx restate.WorkflowContext, p RefundParams) error {
+func (w *Refund) ServiceName() string { return port.RefundWorkflow }
+
+func (w *Refund) Run(ctx restate.WorkflowContext, p port.RefundParams) error {
 	// One loop rather than three phases: every non-terminal status names the party it waits
 	// on and carries their deadline, so "wait, then advance" is the same step each time.
 	for {
@@ -238,9 +235,21 @@ func (l *Lifecycle) cancelSessionLines(ctx context.Context, sessionID int64) err
 	return nil
 }
 
-// LogTimers is what a deployment without a Restate runtime falls back on: the same
-// transitions, driven by whoever calls them. Kept as one place so the sweep and the workflow
-// cannot drift into two different definitions of "due".
+// Definitions are the three workflows for a runtime to serve. Reflect turns each exported
+// method with a workflow context into a handler, so the signal names the submitter uses are
+// the method names here — that pairing is the only thing keeping them in step.
+func (l *Lifecycle) Definitions() []restate.ServiceDefinition {
+	return []restate.ServiceDefinition{
+		restate.Reflect(l.Checkout()),
+		restate.Reflect(l.Order()),
+		restate.Reflect(l.Refund()),
+	}
+}
+
+// Sweep is what a deployment without a durable runtime falls back on, and the net under a
+// lost run when there is one: the same
+// the same transitions, driven by a plain interval. Kept as one place so the sweep and the
+// workflows cannot drift into two different definitions of "due".
 func (l *Lifecycle) Sweep(ctx context.Context, log *slog.Logger) {
 	if closed, err := l.svc.ExpireDrafts(ctx, 100); err != nil {
 		log.Error("expire drafts", "err", err)

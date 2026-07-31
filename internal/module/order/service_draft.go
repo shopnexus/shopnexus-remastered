@@ -188,6 +188,8 @@ func (s *Service) Checkout(ctx context.Context, req orderapi.CheckoutRequest) (o
 			s.log.Error("close checked-out draft", "draft_id", d.ID, "err", err)
 		}
 	}
+	// The reserved stock is now on a clock: a checkout nobody pays has to give it back.
+	s.timer("start checkout", s.workflows.StartCheckout(ctx, session.ID.Int64()))
 	return s.checkoutResult(lines, session), nil
 }
 

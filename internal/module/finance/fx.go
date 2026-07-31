@@ -21,8 +21,11 @@ import (
 // Module wires the finance service, its Postgres-backed repository, the payment-option
 // registry it reads from its own schema, and the provider webhook that settles a leg.
 var Module = fx.Module("finance",
+	// Private, and in a Provide of its own because fx.Private applies to every constructor
+	// in the same call: the pool is this module's own, and two modules each providing a bare
+	// *pgxpool.Pool into the root graph is a conflict rather than two pools.
+	fx.Provide(fx.Private, newPool),
 	fx.Provide(
-		newPool,
 		fx.Annotate(newRepo, fx.As(new(port.Repository))),
 		fx.Annotate(newOptions, fx.As(new(port.Options))),
 		fx.Annotate(NewService, fx.As(new(financeapi.Service))),

@@ -37,6 +37,10 @@ func (s *Service) CreateRefund(ctx context.Context, req orderapi.CreateRefundReq
 	if err := s.repo.InsertRefund(ctx, &r); err != nil {
 		return orderapi.Refund{}, fmt.Errorf("insert refund: %w", err)
 	}
+	// The case has its own clock, and the order's escrow window must not release money the
+	// buyer is disputing.
+	s.timer("start refund", s.workflows.StartRefund(ctx, r.ID))
+	s.timer("refund raised", s.workflows.RefundRaised(ctx, o.ID))
 	return s.refundView(ctx, r)
 }
 
@@ -103,8 +107,8 @@ func (s *Service) WithdrawRefund(ctx context.Context, req orderapi.RefundRequest
 		r.Status = domain.RefundRejected
 		r.DeadlineAt = nil
 	}
-	if err := s.repo.SaveRefund(ctx, r); err != nil {
-		return fmt.Errorf("save refund: %w", err)
+	if err := s.saveRefund(ctx, r); err != nil {
+		return err
 	}
 	return nil
 }
@@ -123,8 +127,8 @@ func (s *Service) AddRefundAttachments(ctx context.Context, req orderapi.AddRefu
 	if err := r.AddAttachments(attachments); err != nil {
 		return orderapi.Refund{}, err
 	}
-	if err := s.repo.SaveRefund(ctx, r); err != nil {
-		return orderapi.Refund{}, fmt.Errorf("save refund: %w", err)
+	if err := s.saveRefund(ctx, r); err != nil {
+		return orderapi.Refund{}, err
 	}
 	return s.refundView(ctx, r)
 }
@@ -155,8 +159,8 @@ func (s *Service) AcceptRefund(ctx context.Context, req orderapi.RefundRequest) 
 	if err := r.StartReturn(returnID); err != nil {
 		return orderapi.Refund{}, err
 	}
-	if err := s.repo.SaveRefund(ctx, r); err != nil {
-		return orderapi.Refund{}, fmt.Errorf("save refund: %w", err)
+	if err := s.saveRefund(ctx, r); err != nil {
+		return orderapi.Refund{}, err
 	}
 	return s.refundView(ctx, r)
 }
@@ -174,8 +178,8 @@ func (s *Service) RejectRefund(ctx context.Context, req orderapi.RejectRefundReq
 	if err := r.Reject(req.Reason); err != nil {
 		return orderapi.Refund{}, err
 	}
-	if err := s.repo.SaveRefund(ctx, r); err != nil {
-		return orderapi.Refund{}, fmt.Errorf("save refund: %w", err)
+	if err := s.saveRefund(ctx, r); err != nil {
+		return orderapi.Refund{}, err
 	}
 	return s.refundView(ctx, r)
 }
@@ -211,8 +215,8 @@ func (s *Service) OpenDispute(ctx context.Context, req orderapi.OpenDisputeReque
 	if err := s.repo.InsertDispute(ctx, &d); err != nil {
 		return orderapi.Dispute{}, fmt.Errorf("insert dispute: %w", err)
 	}
-	if err := s.repo.SaveRefund(ctx, r); err != nil {
-		return orderapi.Dispute{}, fmt.Errorf("save refund: %w", err)
+	if err := s.saveRefund(ctx, r); err != nil {
+		return orderapi.Dispute{}, err
 	}
 	return toAPIDispute(d), nil
 }
@@ -271,8 +275,8 @@ func (s *Service) AdminRuleDispute(ctx context.Context, req orderapi.RuleDispute
 	if err := s.repo.SaveDispute(ctx, d); err != nil {
 		return orderapi.Dispute{}, fmt.Errorf("save dispute: %w", err)
 	}
-	if err := s.repo.SaveRefund(ctx, r); err != nil {
-		return orderapi.Dispute{}, fmt.Errorf("save refund: %w", err)
+	if err := s.saveRefund(ctx, r); err != nil {
+		return orderapi.Dispute{}, err
 	}
 	if settled {
 		if err := s.payRefund(ctx, r); err != nil {
@@ -352,4 +356,20 @@ func toAPIDispute(d domain.Dispute) orderapi.Dispute {
 		CreatedAt: d.CreatedAt,
 		RuledAt:   d.RuledAt,
 	}
+}
+
+// saveRefund writes a transition and tells the durable run the row moved: the workflow
+// re-reads it and waits on whatever deadline the new status carries, rather than being told
+// what changed. A case that closed also releases the order's escrow window, which was held
+// waiting on exactly this verdict.
+func (s *Service) saveRefund(ctx context.Context, r domain.Refund) error {
+	if err := s.repo.SaveRefund(ctx, r); err != nil {
+		return fmt.Errorf("save refund: %w", err)
+	}
+	s.timer("refund moved", s.workflows.RefundMoved(ctx, r.ID))
+	if r.Settled() {
+		s.timer("refund resolved",
+			s.workflows.RefundResolved(ctx, r.OrderID, r.Status == domain.RefundAccepted))
+	}
+	return nil
 }

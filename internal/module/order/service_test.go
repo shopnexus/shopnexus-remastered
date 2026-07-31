@@ -2,7 +2,9 @@ package order_test
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"slices"
 	"testing"
 
 	"shopnexus/internal/infra/eventbus"
@@ -177,12 +179,64 @@ func (f *fakeChat) PostSystemMessage(_ context.Context, req chatapi.PostSystemMe
 }
 
 type harness struct {
-	svc      *order.Service
-	repo     *fakeRepo
-	catalog  *fakeCatalog
-	finance  *fakeFinance
-	chat     *fakeChat
-	accounts fakeAccounts
+	svc       *order.Service
+	repo      *fakeRepo
+	catalog   *fakeCatalog
+	finance   *fakeFinance
+	chat      *fakeChat
+	accounts  fakeAccounts
+	workflows *fakeWorkflows
+}
+
+// fakeWorkflows records the durable timers the service asked for. They are best-effort by
+// contract, so what a test checks is that the run was started at all — a checkout with no
+// clock on it is reserved stock nobody gives back.
+type fakeWorkflows struct {
+	// calls is "what, id" in order, which is enough to assert a wait was opened or closed.
+	calls []string
+}
+
+func (f *fakeWorkflows) record(what string, id int64) error {
+	f.calls = append(f.calls, fmt.Sprintf("%s:%d", what, id))
+	return nil
+}
+
+func (f *fakeWorkflows) saw(want string) bool { return slices.Contains(f.calls, want) }
+
+func (f *fakeWorkflows) StartCheckout(_ context.Context, sessionID int64) error {
+	return f.record("start-checkout", sessionID)
+}
+
+func (f *fakeWorkflows) CheckoutPaid(_ context.Context, sessionID int64) error {
+	return f.record("checkout-paid", sessionID)
+}
+
+func (f *fakeWorkflows) CheckoutCancelled(_ context.Context, sessionID int64) error {
+	return f.record("checkout-cancelled", sessionID)
+}
+
+func (f *fakeWorkflows) StartOrder(_ context.Context, orderID int64) error {
+	return f.record("start-order", orderID)
+}
+
+func (f *fakeWorkflows) OrderReceived(_ context.Context, orderID int64) error {
+	return f.record("order-received", orderID)
+}
+
+func (f *fakeWorkflows) RefundRaised(_ context.Context, orderID int64) error {
+	return f.record("refund-raised", orderID)
+}
+
+func (f *fakeWorkflows) RefundResolved(_ context.Context, orderID int64, buyerPaid bool) error {
+	return f.record(fmt.Sprintf("refund-resolved(%t)", buyerPaid), orderID)
+}
+
+func (f *fakeWorkflows) StartRefund(_ context.Context, refundID int64) error {
+	return f.record("start-refund", refundID)
+}
+
+func (f *fakeWorkflows) RefundMoved(_ context.Context, refundID int64) error {
+	return f.record("refund-moved", refundID)
 }
 
 func newHarness(priceMode string) *harness {
@@ -191,16 +245,18 @@ func newHarness(priceMode string) *harness {
 	finance := newFakeFinance()
 	chat := &fakeChat{}
 	accounts := fakeAccounts{role: "user"}
-	svc := order.NewService(repo, accounts, catalog, finance, chat, repo,
+	workflows := &fakeWorkflows{}
+	svc := order.NewService(repo, accounts, catalog, finance, chat, repo, workflows,
 		eventbus.NewMemory(slog.New(slog.DiscardHandler)), validation.Default(),
 		slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: repo, catalog: catalog, finance: finance, chat: chat, accounts: accounts}
+	return &harness{svc: svc, repo: repo, catalog: catalog, finance: finance, chat: chat,
+		accounts: accounts, workflows: workflows}
 }
 
 // moderator reuses one harness's repository with a staff caller.
 func (h *harness) moderator() *order.Service {
 	return order.NewService(h.repo, fakeAccounts{role: "moderator"}, h.catalog, h.finance,
-		h.chat, h.repo, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
+		h.chat, h.repo, h.workflows, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
 		validation.Default(), slog.New(slog.DiscardHandler))
 }
 
@@ -274,6 +330,16 @@ func TestCheckout_MoneyCreatesTheOrder(t *testing.T) {
 	// The reservation became a sale: the units are gone, not merely held.
 	if h.catalog.sold != 1 || h.catalog.reserved != 0 {
 		t.Errorf("stock = reserved %d sold %d, want it committed", h.catalog.reserved, h.catalog.sold)
+	}
+
+	// Every wait this sale needed was opened and closed on time: a checkout with no clock on
+	// it is reserved stock nobody gives back, and an order with none is escrow nobody releases.
+	for _, want := range []string{
+		"start-checkout:1", "checkout-paid:1", fmt.Sprintf("start-order:%d", o.ID.Int64()),
+	} {
+		if !h.workflows.saw(want) {
+			t.Errorf("timer %q was never set; calls = %v", want, h.workflows.calls)
+		}
 	}
 
 	// A redelivered webhook is a no-op, not a second order: the origin is unique.
@@ -428,6 +494,10 @@ func TestOrder_ReceiptThenPayout(t *testing.T) {
 	if confirmed.ReceivedAt == nil || confirmed.PayoutDeadlineAt == nil {
 		t.Fatalf("order = %+v, want the payout clock started", confirmed)
 	}
+	// The receipt is what starts the escrow window, so the run following the order is told.
+	if !h.workflows.saw(fmt.Sprintf("order-received:%d", o.ID.Int64())) {
+		t.Errorf("the escrow window was never started; calls = %v", h.workflows.calls)
+	}
 
 	// Not due yet: the window has not passed.
 	if paid, err := h.svc.ReleaseDuePayouts(ctx, 10); err != nil || paid != 0 {
@@ -470,6 +540,15 @@ func TestRefund_BlocksPayoutAndAdvancesOnTime(t *testing.T) {
 	}
 	if refund.Status != domain.RefundAwaitingSeller || refund.DeadlineAt == nil {
 		t.Fatalf("refund = %+v, want the seller on the clock", refund)
+	}
+	// The case has its own clock, and the escrow window is told to stop counting down.
+	for _, want := range []string{
+		fmt.Sprintf("start-refund:%d", refund.ID.Int64()),
+		fmt.Sprintf("refund-raised:%d", o.ID.Int64()),
+	} {
+		if !h.workflows.saw(want) {
+			t.Errorf("timer %q was never set; calls = %v", want, h.workflows.calls)
+		}
 	}
 	// One live refund per order: a refund covers the whole order.
 	if got := status(t, mustErr(h.svc.CreateRefund(ctx, orderapi.CreateRefundRequest{
@@ -636,6 +715,12 @@ func TestCancelItem_ReleasesStockBeforePayment(t *testing.T) {
 	if h.catalog.reserved != 0 {
 		t.Errorf("reserved = %d, want the units back", h.catalog.reserved)
 	}
+	// With every line gone there is nothing left to pay for, so the run stops waiting rather
+	// than holding its timer to the end.
+	if !h.workflows.saw("checkout-cancelled:1") {
+		t.Errorf("an abandoned checkout is still waiting on its timer; calls = %v", h.workflows.calls)
+	}
+
 	// Cancelling twice is refused rather than releasing twice.
 	if got := status(t, mustErr(h.svc.CancelItem(ctx, orderapi.ItemRequest{
 		ActorID: buyer, ID: result.Items[0].ID,
@@ -649,7 +734,7 @@ func TestCancelItem_ReleasesStockBeforePayment(t *testing.T) {
 func TestSettlePaidSession_NeedsAPickupAddress(t *testing.T) {
 	h := newHarness("fixed")
 	h.svc = order.NewService(h.repo, fakeAccounts{role: "user", noPickup: true}, h.catalog,
-		h.finance, h.chat, h.repo, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
+		h.finance, h.chat, h.repo, h.workflows, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
 		validation.Default(), slog.New(slog.DiscardHandler))
 	ctx := context.Background()
 	draft, err := h.svc.CreateDraft(ctx, orderapi.CreateDraftRequest{ActorID: buyer, ListingID: listingID})

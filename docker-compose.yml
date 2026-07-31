@@ -53,6 +53,23 @@ x-app-env: &app-env
   KYC_PROVIDER: "mock"
   PAYMENT_PROVIDER: "mock"
 
+  # Durable execution. `off` leaves every timed transition — an unpaid checkout
+  # expiring, an escrow window closing, a refund deadline passing, a blind rating
+  # revealing — to the sweep below, which is the same code on a slower clock. Switch to
+  # `restate` and start the `restate` profile to get a run per entity, signalled the
+  # moment the state moves:
+  #
+  #   WORKFLOW_RUNTIME: "restate"  -> RESTATE_SERVE_ADDR/RESTATE_INGRESS_URL,
+  #                                   RESTATE_SEND_TIMEOUT, and `--profile restate`
+  WORKFLOW_RUNTIME: "off"
+  RESTATE_SERVE_ADDR: "0.0.0.0:9080"
+  RESTATE_INGRESS_URL: "http://restate:8080"
+  RESTATE_SEND_TIMEOUT: "5s"
+  # The sweep runs whether or not there is a runtime: it is the net under a lost run, and
+  # with one in place it finds nothing. A minute in dev so a window is visible while you
+  # watch it; longer in production, where the runtime is the prompt path.
+  SWEEP_INTERVAL: "1m"
+
 services:
   db:
     image: timescale/timescaledb-ha:pg18
@@ -177,6 +194,20 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # --- Durable execution (opt-in: `--profile restate`) ---
+  # The runtime that holds the timers. It invokes the handlers the gateway serves on
+  # :9080, so it has to be told where they are once:
+  #
+  #   docker compose --profile restate exec restate restate deployments register http://gateway:9080
+  #
+  # Only useful with WORKFLOW_RUNTIME=restate in the env above; with `off` the gateway
+  # serves no handlers and this container would have nothing to invoke.
+  restate:
+    profiles: ["restate"]
+    image: restatedev/restate:1.1
+    volumes:
+      - restate-data:/restate-data
+
   # --- Mock API (opt-in: `docker compose --profile mock up -d --build mock`) ---
   # Naming the service keeps it to these two containers; a bare `--profile mock up`
   # would also start the infra, which the mock has no use for.
@@ -215,6 +246,7 @@ services:
         condition: service_completed_successfully
 
 volumes:
+  restate-data:
   db-data:
   nats-data:
   mock-spec:

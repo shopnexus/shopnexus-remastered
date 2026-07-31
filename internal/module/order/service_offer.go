@@ -217,6 +217,7 @@ func (s *Service) AcceptOffer(ctx context.Context, req orderapi.AcceptOfferReque
 		return orderapi.CheckoutResult{}, fmt.Errorf("save offer: %w", err)
 	}
 	s.postOfferCard(ctx, o, "offer accepted")
+	s.timer("start checkout", s.workflows.StartCheckout(ctx, sessionID))
 	return s.checkoutResult(lines, session), nil
 }
 

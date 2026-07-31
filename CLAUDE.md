@@ -9,7 +9,9 @@ DDL every module's schema gets (audit_log, resource, option) plus the pgx
 helpers their adapters share (`common/dbx`). The `finance` module owns all money primitives
 (payment sessions, transaction ledger, wallets, bank accounts, withdrawals) so
 escrow moves stay atomic; `trust` owns feedback/reputation/report plus product
-reviews (review, review_reply, review_vote). Stock lives in `catalog` — there is no
+reviews (review, review_reply, review_vote) and pushes each listing's recomputed average
+into catalog's `cached_rating`/`cached_review_count`, because the two live in different schemas
+and cannot be joined. Stock lives in `catalog` — there is no
 separate inventory module. Product/web analytics is external (Rybbit + ClickHouse). Single Go module
 `shopnexus`, Go 1.26, `net/http` ServeMux. Each module is a pragmatic hexagon
 that isolates its tables in its own Postgres **schema** (per-module DSN, so a
@@ -341,6 +343,33 @@ give it its own doc under `docs/` and link it from here.
   metadata and nothing else — copying the price into the message would let a counter-offer leave
   the thread showing terms that are no longer on the table. Chat already has one thread per pair
   of accounts, so there is nothing to create and no id to pass around.
+- **A timed transition has two drivers and one definition.** Every wait this marketplace
+  makes — an unpaid checkout expiring, an escrow window closing, a refund deadline passing, a
+  blind rating revealing — is an **idempotent service method**. A Restate run per entity calls
+  it promptly (`internal/infra/durable` + each module's `workflow.go`), and `durable.Sweeper`
+  calls the same method on `SWEEP_INTERVAL` as the net under a lost run. Neither is a second
+  definition of "due", which is what makes leaving the sweep on under Restate free: it finds
+  nothing. `WORKFLOW_RUNTIME` (`restate`|`off`) is the selector, same rule as a provider seam,
+  and `off` is a real deployment — the sweep is then the only clock. A module reaches the
+  runtime through its own `port.Workflows`, every call **best-effort**: the row is already
+  committed, so an unreachable runtime is a slower clock rather than a failed request. Restate
+  workflow *names* are declared in `port` (`OrderCheckout`, …), because the code that submits a
+  run and the code that hosts it must agree and that is the only package both import; a signal
+  name is the workflow struct's **method name**, since `restate.Reflect` is what pairs them.
+- **Feedback is blind, and the two ratings are counted apart.** `trust.feedback` stays
+  invisible (`published_at IS NULL`) until both sides submit or `BlindWindow` passes, so a
+  rating cannot be retaliatory — and the *direction is derived* from which side of the order
+  the caller is on, never sent. Publishing is what folds a rating into `reputation`, in the
+  same transaction, so a visible rating is always a counted one and the `published_at IS NULL`
+  guard is what stops a second count. Transaction feedback (`rating_*`) and product reviews
+  (`review_rating_*`) are separate column pairs on the same row: one order can produce both,
+  and summing them would count that order twice. A `reputation` row is **zeroes, not
+  not-found**, for an account nobody has rated.
+- **A counter that can go down is written with UPDATE-then-INSERT, not an upsert.** Postgres
+  checks a constraint against the *proposed* row before it detects the conflict, so
+  `INSERT ... ON CONFLICT DO UPDATE` carrying the negative delta of a deleted review fails
+  `counters_non_negative` on a row it was never going to write. Update first, insert only if
+  nothing was updated, and retry the update on a unique violation (two first-writes racing).
 - **Migrations:** embedded per module, applied only by `cmd/migrate` (a
   CI/CD/init step) — never at app startup.
 - **Tests:** table/behavior tests with fakes for services (no DB); real DB only

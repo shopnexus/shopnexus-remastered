@@ -40,6 +40,10 @@ func fullEnv() map[string]string {
 		"OAUTH_VERIFIER":       "mock",
 		"KYC_PROVIDER":         "mock",
 		"PAYMENT_PROVIDER":     "mock",
+		// No durable runtime in the base env: the sweep is the clock, which is the shape a
+		// local stack runs in.
+		"WORKFLOW_RUNTIME": "off",
+		"SWEEP_INTERVAL":   "1m",
 	}
 }
 
@@ -49,6 +53,7 @@ var requiredVars = []string{
 	"CHAT_DB_DSN", "TRUST_DB_DSN", "FINANCE_DB_DSN", "OBSERVABILITY_DB_DSN",
 	"NATS_URL", "REDIS_ADDR", "REDIS_PASSWORD", "JWT_SECRET", "ID_CIPHER_KEY", "LOG_LEVEL",
 	"EMAIL_PROVIDER", "SMS_PROVIDER", "OAUTH_VERIFIER", "KYC_PROVIDER",
+	"WORKFLOW_RUNTIME", "SWEEP_INTERVAL",
 }
 
 func TestLoad_MissingAnyRequiredFails(t *testing.T) {
@@ -127,6 +132,35 @@ func TestLoad_VendorVarsRequiredOnlyWhenSelected(t *testing.T) {
 		setEnv(t, fullEnv())
 		if _, err := config.Load(validation.Default()); err != nil {
 			t.Fatalf("mock providers must not need vendor credentials: %v", err)
+		}
+	})
+
+	// The durable runtime is the same shape of selector, and the reason it matters is the same:
+	// a deployment that thinks it has durable timers and has no ingress URL would discover it
+	// when a seller was never paid.
+	t.Run("restate selected without its vars fails", func(t *testing.T) {
+		env := fullEnv()
+		env["WORKFLOW_RUNTIME"] = "restate"
+		setEnv(t, env)
+		if _, err := config.Load(validation.Default()); err == nil {
+			t.Fatal("expected error when WORKFLOW_RUNTIME=restate and the Restate vars are empty")
+		}
+	})
+
+	t.Run("restate selected with its vars loads", func(t *testing.T) {
+		env := fullEnv()
+		env["WORKFLOW_RUNTIME"] = "restate"
+		env["RESTATE_SERVE_ADDR"] = "0.0.0.0:9080"
+		env["RESTATE_INGRESS_URL"] = "http://restate:8080"
+		env["RESTATE_SEND_TIMEOUT"] = "5s"
+		setEnv(t, env)
+
+		cfg, err := config.Load(validation.Default())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.RestateSendTimeout != 5*time.Second || cfg.RestateIngressURL != "http://restate:8080" {
+			t.Fatalf("restate vars not parsed: %+v", cfg)
 		}
 	})
 }

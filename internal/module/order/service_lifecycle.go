@@ -96,6 +96,10 @@ func (s *Service) SettlePaidSession(ctx context.Context, sessionID id.ID[id.Paym
 		}
 	}
 	s.publishPlaced(ctx, o, total, first.Currency)
+	// The checkout's wait is over, and the order's has begun: delivery, then the escrow
+	// window. Both signals are best-effort — the row already says the sale happened.
+	s.timer("checkout paid", s.workflows.CheckoutPaid(ctx, sessionID.Int64()))
+	s.timer("start order", s.workflows.StartOrder(ctx, o.ID))
 	return nil
 }
 
@@ -232,7 +236,7 @@ func (s *Service) AdvanceOverdueRefunds(ctx context.Context, limit int) (int, er
 		if err != nil {
 			continue
 		}
-		if err := s.repo.SaveRefund(ctx, r); err != nil {
+		if err := s.saveRefund(ctx, r); err != nil {
 			s.log.Debug("refund already moved", "refund_id", r.ID, "err", err)
 			continue
 		}
