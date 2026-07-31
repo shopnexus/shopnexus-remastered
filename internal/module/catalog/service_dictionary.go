@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
@@ -14,6 +15,30 @@ import (
 // ListCategories answers the whole tree flat, unpaginated: a curated tree stays small,
 // and a client assembles the shape from the parent reference on each row.
 func (s *Service) ListCategories(ctx context.Context, req catalogapi.ListCategoriesRequest) ([]catalogapi.Category, error) {
+	// `near` answers a different question — which categories does this thing belong in — so
+	// it returns a scored shortlist instead of the tree.
+	if len(req.Near) > 0 {
+		seeds, _, err := s.seeds(req.Near)
+		if err != nil {
+			return nil, err
+		}
+		vectors, err := s.probes(ctx, seeds)
+		if err != nil {
+			return nil, err
+		}
+		ranked, err := s.repo.NearestCategories(ctx, vectors, req.Limit)
+		if err != nil {
+			return nil, fmt.Errorf("rank categories: %w", err)
+		}
+		out := make([]catalogapi.Category, 0, len(ranked))
+		for _, row := range ranked {
+			c := toAPICategory(row.Category)
+			score := row.Score
+			c.Score = &score
+			out = append(out, c)
+		}
+		return out, nil
+	}
 	rows, err := s.repo.ListCategories(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list categories: %w", err)
@@ -124,6 +149,30 @@ func (s *Service) ListTags(ctx context.Context, req catalogapi.ListTagsRequest) 
 			Message: "cannot be combined with q: one filters the dictionary, the other ranks it",
 		})
 	}
+	if len(req.Near) > 0 {
+		seeds, slugs, err := s.seeds(req.Near)
+		if err != nil {
+			return catalogapi.TagPage{}, err
+		}
+		vectors, err := s.probes(ctx, seeds)
+		if err != nil {
+			return catalogapi.TagPage{}, err
+		}
+		ranked, err := s.repo.NearestTags(ctx, vectors, slugs, offsetOf(req.Page, req.Limit), req.Limit)
+		if err != nil {
+			return catalogapi.TagPage{}, fmt.Errorf("rank tags: %w", err)
+		}
+		out := make([]catalogapi.Tag, 0, len(ranked))
+		for _, row := range ranked {
+			score := row.Score
+			out = append(out, catalogapi.Tag{Slug: row.Tag.Slug, Description: row.Tag.Description, Score: &score})
+		}
+		// TotalCount stays nil: the top-K is all the ranking ever visited.
+		return catalogapi.TagPage{
+			Data: out,
+			Meta: catalogapi.PageInfo{Page: req.Page, Limit: req.Limit},
+		}, nil
+	}
 	rows, total, err := s.repo.ListTags(ctx, port.TagFilter{
 		Prefix: req.Query,
 		Offset: offsetOf(req.Page, req.Limit),
@@ -174,3 +223,40 @@ func (s *Service) AdminDeleteTag(ctx context.Context, req catalogapi.DeleteTagRe
 // offsetOf turns a 1-based page into an offset. Page and limit are validated at the DTO, so
 // this needs no bounds of its own.
 func offsetOf(page, limit int) int { return (page - 1) * limit }
+
+// seeds turns the wire form into port seeds. A tag slug and an opaque id are told apart the
+// same way a polymorphic ref is: an opaque id always carries an underscore after its prefix
+// and a slug never does. The slugs come back too, because a tag ranking excludes its seeds.
+func (s *Service) seeds(raw []string) ([]port.Seed, []string, error) {
+	out := make([]port.Seed, 0, len(raw))
+	slugs := make([]string, 0, len(raw))
+	for _, value := range raw {
+		if !strings.Contains(value, "_") {
+			if err := domain.ValidateTagSlug(value); err != nil {
+				return nil, nil, err
+			}
+			out = append(out, port.Seed{TagSlug: value})
+			slugs = append(slugs, value)
+			continue
+		}
+		categoryID, err := id.Parse[id.Category](value)
+		if err != nil {
+			return nil, nil, err
+		}
+		out = append(out, port.Seed{CategoryID: categoryID.Int64()})
+	}
+	return out, slugs, nil
+}
+
+// probes resolves the seeds to vectors and refuses the request when any of them has none:
+// dropping one would rank against a different question than the caller asked.
+func (s *Service) probes(ctx context.Context, seeds []port.Seed) ([]port.Vector, error) {
+	vectors, err := s.repo.SeedVectors(ctx, seeds)
+	if err != nil {
+		return nil, fmt.Errorf("read seed vectors: %w", err)
+	}
+	if len(vectors) != len(seeds) {
+		return nil, domain.ErrSeedNotEmbedded
+	}
+	return vectors, nil
+}

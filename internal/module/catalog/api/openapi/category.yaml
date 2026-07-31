@@ -30,6 +30,7 @@ paths:
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/CategoryList' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '422': { description: 'A `near` seed has no embedding yet', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
 components:
   schemas:

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"shopnexus/internal/infra/postgres"
 	pgadapter "shopnexus/internal/module/catalog/adapter/postgres"
@@ -38,16 +39,24 @@ func newRepo(t *testing.T) *pgadapter.Repo {
 	return pgadapter.New(pool)
 }
 
-// insertListing writes a listing referencing categoryID directly with SQL: the listing
-// aggregate has no Go repository yet, and this is the only way to produce the row that
-// makes "listing_category_id_fkey" (ON DELETE RESTRICT) fire.
-func insertListing(t *testing.T, categoryID int64) {
+// poolOf opens a pool for the assertions that read or write a column no port method exposes —
+// a listing row, an embedding vector. Closed with the test.
+func poolOf(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	pool, err := postgres.NewPool(context.Background(), testDSN(t), "catalog")
 	if err != nil {
 		t.Fatalf("pool: %v", err)
 	}
-	defer pool.Close()
+	t.Cleanup(pool.Close)
+	return pool
+}
+
+// insertListing writes a listing referencing categoryID directly with SQL: the listing
+// aggregate has no Go repository yet, and this is the only way to produce the row that
+// makes "listing_category_id_fkey" (ON DELETE RESTRICT) fire.
+func insertListing(t *testing.T, categoryID int64) {
+	t.Helper()
+	pool := poolOf(t)
 	const q = `INSERT INTO listing
 	           (slug, account_id, category_id, name, description, specifications,
 	            price_mode, condition, shipping_paid_by, currency)

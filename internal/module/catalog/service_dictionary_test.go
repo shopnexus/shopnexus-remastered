@@ -9,6 +9,8 @@ import (
 	"shopnexus/internal/module/account/api/accounttest"
 	"shopnexus/internal/module/catalog"
 	catalogapi "shopnexus/internal/module/catalog/api"
+	"shopnexus/internal/module/catalog/domain"
+	"shopnexus/internal/module/catalog/port"
 	commonapi "shopnexus/internal/module/common/api"
 	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/id"
@@ -54,6 +56,33 @@ func status(t *testing.T, err error) uint16 {
 }
 
 const actor = id.ID[id.Account](1)
+
+// seedCategory and seedTag write straight to the fake. These are the rows a ranking test
+// needs to exist; the admin routes that normally create them have their own tests, and going
+// through them would need a second harness with an admin role.
+func (h *harness) seedCategory(t *testing.T, name string) int64 {
+	t.Helper()
+	c, err := domain.NewCategory(name, "", nil)
+	if err != nil {
+		t.Fatalf("NewCategory: %v", err)
+	}
+	if err := h.repo.CreateCategory(context.Background(), c); err != nil {
+		t.Fatalf("CreateCategory: %v", err)
+	}
+	return c.ID
+}
+
+func (h *harness) seedTag(t *testing.T, slug string) string {
+	t.Helper()
+	tag, err := domain.NewTag(slug, nil)
+	if err != nil {
+		t.Fatalf("NewTag: %v", err)
+	}
+	if err := h.repo.PutTag(context.Background(), *tag); err != nil {
+		t.Fatalf("PutTag: %v", err)
+	}
+	return tag.Slug
+}
 
 // Writing the tree is admin-only, and the check is the service's because the role is a
 // row in the account module's table.
@@ -310,5 +339,95 @@ func TestAdminDeleteTag(t *testing.T) {
 		ActorID: actor, Slug: "handmade",
 	})); got != 404 {
 		t.Fatalf("status = %d, want 404", got)
+	}
+}
+
+// --- near ---
+
+// The route exists to answer "which categories does this belong in", so a seed the embedding
+// pass has not reached yet is refused: ranking against the remaining seeds would answer a
+// different question, and silently.
+func TestListCategories_NearRejectsAnUnembeddedSeed(t *testing.T) {
+	h := newHarness("user")
+	slug := h.seedTag(t, "handmade")
+	_, err := h.svc.ListCategories(context.Background(), catalogapi.ListCategoriesRequest{
+		Near: []string{slug}, Limit: 10,
+	})
+	if got := status(t, err); got != 422 {
+		t.Fatalf("status = %d, want 422", got)
+	}
+}
+
+func TestListCategories_NearRanks(t *testing.T) {
+	h := newHarness("user")
+	ctx := context.Background()
+	near := h.seedCategory(t, "Ceramics")
+	far := h.seedCategory(t, "Car parts")
+	slug := h.seedTag(t, "handmade")
+	h.repo.tagVectors[slug] = port.Vector{1, 0}
+	h.repo.categoryVectors[near] = port.Vector{1, 0}
+	h.repo.categoryVectors[far] = port.Vector{0, 1}
+
+	got, err := h.svc.ListCategories(ctx, catalogapi.ListCategoriesRequest{
+		Near: []string{slug}, Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("ListCategories: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("categories = %d, want 2", len(got))
+	}
+	if got[0].ID.Int64() != near {
+		t.Errorf("first = %v, want the aligned category %v", got[0].ID.Int64(), near)
+	}
+	// The score is what makes the shortlist reviewable, so it is on the wire.
+	if got[0].Score == nil || *got[0].Score <= 0 {
+		t.Errorf("score = %v, want the similarity", got[0].Score)
+	}
+	// The tree answer carries no score, because there is no question it is close to.
+	tree, err := h.svc.ListCategories(ctx, catalogapi.ListCategoriesRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListCategories: %v", err)
+	}
+	if tree[0].Score != nil {
+		t.Errorf("score = %v on the tree answer, want nil", *tree[0].Score)
+	}
+}
+
+// A tag ranking excludes its own seeds: they are already on the listing, so offering them
+// back says nothing.
+func TestListTags_NearExcludesItsSeeds(t *testing.T) {
+	h := newHarness("user")
+	seed := h.seedTag(t, "handmade")
+	other := h.seedTag(t, "ceramic")
+	h.repo.tagVectors[seed] = port.Vector{1, 0}
+	h.repo.tagVectors[other] = port.Vector{1, 0}
+
+	page, err := h.svc.ListTags(context.Background(), catalogapi.ListTagsRequest{
+		Near: []string{seed}, Page: 1, Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("ListTags: %v", err)
+	}
+	if len(page.Data) != 1 || page.Data[0].Slug != other {
+		t.Fatalf("tags = %+v, want only %q", page.Data, other)
+	}
+	// A ranking visits only its top-K, so there is no total to report.
+	if page.Meta.TotalCount != nil {
+		t.Errorf("total_count = %d, want nil on a ranking", *page.Meta.TotalCount)
+	}
+}
+
+// A seed is a tag slug or a category id, told apart by the underscore an opaque id always
+// carries — so neither a malformed id nor a malformed slug reaches the repository.
+func TestListCategories_NearRejectsAMalformedSeed(t *testing.T) {
+	h := newHarness("user")
+	for _, bad := range []string{"Not A Slug", "cat_notavalidid"} {
+		_, err := h.svc.ListCategories(context.Background(), catalogapi.ListCategoriesRequest{
+			Near: []string{bad}, Limit: 10,
+		})
+		if got := status(t, err); got != 400 {
+			t.Errorf("seed %q: status = %d, want 400", bad, got)
+		}
 	}
 }

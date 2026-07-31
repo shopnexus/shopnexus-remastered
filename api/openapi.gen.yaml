@@ -6052,6 +6052,12 @@ paths:
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: A `near` seed has no embedding yet
             summary: The category tree, or the categories nearest a set of seeds
             tags:
                 - catalog
@@ -9803,7 +9809,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Error'
-                    description: '`q` and `near` together'
+                    description: '`q` and `near` together, or a malformed seed'
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: A `near` seed has no embedding yet
             summary: The tag dictionary
             tags:
                 - catalog

@@ -19,6 +19,27 @@ type TagFilter struct {
 	Limit  int
 }
 
+// Seed is one `near` seed: exactly one field is set. A tag slug and a category id are both
+// legal because every embedding column in this schema is vector(1024) in one BGE-M3 space, so
+// the distance between a category and a tag means the same as between two tags.
+type Seed struct {
+	TagSlug    string
+	CategoryID int64
+}
+
+// Vector is a dense embedding as pgvector stores it.
+type Vector []float32
+
+type ScoredCategory struct {
+	Category domain.Category
+	Score    float64
+}
+
+type ScoredTag struct {
+	Tag   domain.Tag
+	Score float64
+}
+
 type Repository interface {
 	// --- category: the browse tree. Small and curated, so the whole of it is one read
 	// and a client assembles the shape.
@@ -37,4 +58,11 @@ type Repository interface {
 	// only the description can change.
 	PutTag(ctx context.Context, t domain.Tag) error
 	DeleteTag(ctx context.Context, slug string) error
+
+	// --- semantic suggestion ---
+	// SeedVectors reads the dense vector of each seed. One whose vector has not been written
+	// yet is missing from the result, which the service turns into ErrSeedNotEmbedded.
+	SeedVectors(ctx context.Context, seeds []Seed) ([]Vector, error)
+	NearestCategories(ctx context.Context, vectors []Vector, limit int) ([]ScoredCategory, error)
+	NearestTags(ctx context.Context, vectors []Vector, exclude []string, offset, limit int) ([]ScoredTag, error)
 }

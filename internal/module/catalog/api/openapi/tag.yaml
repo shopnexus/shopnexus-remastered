@@ -42,7 +42,8 @@ paths:
         - $ref: '#/components/parameters/Limit'
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/TagPage' } } } }
-        '400': { description: '`q` and `near` together', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '400': { description: '`q` and `near` together, or a malformed seed', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'A `near` seed has no embedding yet', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
 components:
   schemas:

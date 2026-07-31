@@ -1,6 +1,7 @@
 package catalog_test
 
 import (
+	"cmp"
 	"context"
 	"slices"
 	"strings"
@@ -19,6 +20,10 @@ type fakeRepo struct {
 	// listings are not in this slice.
 	inUse map[int64]bool
 	tags  map[string]domain.Tag
+	// The vector maps stand in for the embedding pass, which nothing in this module runs: a
+	// seed absent from them is one that has not been embedded yet.
+	tagVectors      map[string]port.Vector
+	categoryVectors map[int64]port.Vector
 }
 
 func newFakeRepo() *fakeRepo {
@@ -26,6 +31,9 @@ func newFakeRepo() *fakeRepo {
 		categories: map[int64]domain.Category{},
 		inUse:      map[int64]bool{},
 		tags:       map[string]domain.Tag{},
+
+		tagVectors:      map[string]port.Vector{},
+		categoryVectors: map[int64]port.Vector{},
 	}
 }
 
@@ -154,4 +162,77 @@ func (f *fakeRepo) DeleteTag(_ context.Context, slug string) error {
 	}
 	delete(f.tags, slug)
 	return nil
+}
+
+// --- semantic ---
+
+// The fake ranks by dot product on the tiny vectors a test writes, which orders the same way
+// cosine distance does for the unit-ish vectors used there.
+func (f *fakeRepo) SeedVectors(_ context.Context, seeds []port.Seed) ([]port.Vector, error) {
+	var out []port.Vector
+	for _, s := range seeds {
+		if s.TagSlug != "" {
+			if v, ok := f.tagVectors[s.TagSlug]; ok {
+				out = append(out, v)
+			}
+			continue
+		}
+		if v, ok := f.categoryVectors[s.CategoryID]; ok {
+			out = append(out, v)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeRepo) NearestCategories(_ context.Context, vectors []port.Vector, limit int) ([]port.ScoredCategory, error) {
+	if len(vectors) == 0 {
+		return nil, nil
+	}
+	probe := mean(vectors)
+	var out []port.ScoredCategory
+	for id, v := range f.categoryVectors {
+		out = append(out, port.ScoredCategory{Category: f.categories[id], Score: dot(probe, v)})
+	}
+	slices.SortFunc(out, func(a, b port.ScoredCategory) int { return cmp.Compare(b.Score, a.Score) })
+	return out[:min(limit, len(out))], nil
+}
+
+func (f *fakeRepo) NearestTags(_ context.Context, vectors []port.Vector, exclude []string, offset, limit int) ([]port.ScoredTag, error) {
+	if len(vectors) == 0 {
+		return nil, nil
+	}
+	probe := mean(vectors)
+	var out []port.ScoredTag
+	for slug, v := range f.tagVectors {
+		if slices.Contains(exclude, slug) {
+			continue
+		}
+		out = append(out, port.ScoredTag{Tag: f.tags[slug], Score: dot(probe, v)})
+	}
+	slices.SortFunc(out, func(a, b port.ScoredTag) int { return cmp.Compare(b.Score, a.Score) })
+	if offset >= len(out) {
+		return nil, nil
+	}
+	return out[offset:min(offset+limit, len(out))], nil
+}
+
+func mean(vectors []port.Vector) port.Vector {
+	sum := make(port.Vector, len(vectors[0]))
+	for _, v := range vectors {
+		for i := range sum {
+			sum[i] += v[i]
+		}
+	}
+	for i := range sum {
+		sum[i] /= float32(len(vectors))
+	}
+	return sum
+}
+
+func dot(a, b port.Vector) float64 {
+	var total float64
+	for i := range a {
+		total += float64(a[i] * b[i])
+	}
+	return total
 }
