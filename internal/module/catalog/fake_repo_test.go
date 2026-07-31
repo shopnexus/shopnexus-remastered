@@ -33,6 +33,9 @@ type fakeRepo struct {
 	stock    map[int64]domain.Stock
 	// variantListing is the join CommitStock walks to bump the listing's counter.
 	variantListing map[int64]int64
+	favorites      map[[2]int64]bool
+	// audit is the trail Save writes in the same transaction as the change.
+	audit []port.AuditEntry
 }
 
 // storedListing is the row plus its children, cloned in and out so a caller that never saves
@@ -54,6 +57,7 @@ func newFakeRepo() *fakeRepo {
 
 		stock:          map[int64]domain.Stock{},
 		variantListing: map[int64]int64{},
+		favorites:      map[[2]int64]bool{},
 	}
 }
 
@@ -316,7 +320,7 @@ func (f *fakeRepo) listingAt(id int64) int {
 	return slices.IndexFunc(f.listings, func(s storedListing) bool { return s.listing.ID == id })
 }
 
-func (f *fakeRepo) CreateListing(_ context.Context, l *domain.Listing, _ int64) error {
+func (f *fakeRepo) CreateListing(_ context.Context, l *domain.Listing, actor int64) error {
 	if err := l.Validate(); err != nil {
 		return err
 	}
@@ -333,11 +337,12 @@ func (f *fakeRepo) CreateListing(_ context.Context, l *domain.Listing, _ int64) 
 	if err := f.putListing(l); err != nil {
 		return err
 	}
+	f.recordTrail(l, actor)
 	l.ClearEvents()
 	return nil
 }
 
-func (f *fakeRepo) SaveListing(_ context.Context, l *domain.Listing, _ int64) error {
+func (f *fakeRepo) SaveListing(_ context.Context, l *domain.Listing, actor int64) error {
 	if err := l.Validate(); err != nil {
 		return err
 	}
@@ -354,8 +359,25 @@ func (f *fakeRepo) SaveListing(_ context.Context, l *domain.Listing, _ int64) er
 		l.Version--
 		return err
 	}
+	f.recordTrail(l, actor)
 	l.ClearEvents()
 	return nil
+}
+
+// recordTrail is the audit half of a write: one row per fact the root recorded, with the
+// snapshot as it now is.
+func (f *fakeRepo) recordTrail(l *domain.Listing, actor int64) {
+	var changedBy *int64
+	if actor != 0 {
+		changedBy = &actor
+	}
+	snapshot := l.Snapshot()
+	for _, e := range l.Events() {
+		f.audit = append(f.audit, port.AuditEntry{
+			Table: "listing", RecordID: l.ID, ChangeType: "update", Code: string(e.Code),
+			ChangedBy: changedBy, Diff: e.Payload, Snapshot: snapshot,
+		})
+	}
 }
 
 // putListing writes the root and syncs the children the way the adapter does: a variant with
@@ -446,4 +468,21 @@ func (f *fakeRepo) hydrate(stored storedListing) *domain.Listing {
 
 func (f *fakeRepo) SlugTaken(_ context.Context, slug string) (bool, error) {
 	return slices.ContainsFunc(f.listings, func(s storedListing) bool { return s.listing.Slug == slug }), nil
+}
+
+func (f *fakeRepo) IsFavorited(_ context.Context, accountID, listingID int64) (bool, error) {
+	if accountID == 0 {
+		return false, nil
+	}
+	return f.favorites[[2]int64{accountID, listingID}], nil
+}
+
+func (f *fakeRepo) CountFavorites(_ context.Context, listingID int64) (int64, error) {
+	var n int64
+	for pair := range f.favorites {
+		if pair[1] == listingID {
+			n++
+		}
+	}
+	return n, nil
 }

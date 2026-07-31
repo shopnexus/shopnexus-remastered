@@ -18,6 +18,11 @@ type Service interface {
 	AdminPutTag(ctx context.Context, req PutTagRequest) (Tag, error)
 	AdminDeleteTag(ctx context.Context, req DeleteTagRequest) error
 
+	// --- listings: the seller's write model. Every write answers with the whole listing,
+	// because a variant has no read of its own.
+	CreateListing(ctx context.Context, req CreateListingRequest) (ListingDetail, error)
+	GetListing(ctx context.Context, req GetListingRequest) (ListingDetail, error)
+
 	// --- stock: called by order, not by a route ---
 	// ReserveStock holds units for a checkout that has not completed. Answers
 	// 409 insufficient_stock when there is no room, which the caller acts on.

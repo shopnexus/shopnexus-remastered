@@ -22,11 +22,11 @@ type Service struct {
 	// accounts answers two questions this module cannot: may the caller act as staff,
 	// and what is a seller called. Both are rows in the account module's tables.
 	accounts accountapi.Service
-	// resources resolves image ids, which are held inline without a foreign key because
+	// resourceSvc resolves image ids, which are held inline without a foreign key because
 	// they live in another schema.
-	resources commonapi.Service
-	v         *validator.Validate
-	log       *slog.Logger
+	resourceSvc commonapi.Service
+	v           *validator.Validate
+	log         *slog.Logger
 }
 
 func NewService(
@@ -36,7 +36,7 @@ func NewService(
 	v *validator.Validate,
 	log *slog.Logger,
 ) *Service {
-	return &Service{repo: repo, accounts: accounts, resources: resources, v: v, log: log}
+	return &Service{repo: repo, accounts: accounts, resourceSvc: resources, v: v, log: log}
 }
 
 var _ catalogapi.Service = (*Service)(nil)

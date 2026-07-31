@@ -64,3 +64,36 @@ type StockMovementRequest struct {
 	VariantID id.ID[id.Variant] `validate:"required"`
 	Units     int64             `validate:"required,gt=0"`
 }
+
+// CreateVariantInput is one variant inside a create. It is not a request of its own: a
+// listing is created with its variants, so there is no window in which it has nothing to
+// sell.
+type CreateVariantInput struct {
+	Price          int64                `json:"price" validate:"required,gte=1"`
+	Attributes     map[string]any       `json:"attributes" validate:"required,min=1"`
+	PackageDetails map[string]any       `json:"package_details" validate:"required"`
+	Attachments    []id.ID[id.Resource] `json:"attachments,omitempty" validate:"max=10"`
+	Quantity       int64                `json:"quantity" validate:"gte=0"`
+}
+
+type CreateListingRequest struct {
+	ActorID        id.ID[id.Account]    `json:"-" validate:"required"`
+	Name           string               `json:"name" validate:"required,min=1,max=200"`
+	Description    string               `json:"description" validate:"max=20000"`
+	CategoryID     id.ID[id.Category]   `json:"category_id" validate:"required"`
+	Condition      string               `json:"condition" validate:"required,oneof=new used damaged"`
+	PriceMode      string               `json:"price_mode" validate:"required,oneof=fixed negotiable"`
+	ShippingPaidBy string               `json:"shipping_paid_by" validate:"required,oneof=buyer seller"`
+	Currency       string               `json:"currency" validate:"required,len=3"`
+	Specifications map[string]any       `json:"specifications,omitempty"`
+	Attachments    []id.ID[id.Resource] `json:"attachments,omitempty" validate:"max=10"`
+	Tags           []string             `json:"tags,omitempty" validate:"max=10,dive,required,max=100"`
+	Variants       []CreateVariantInput `json:"variants" validate:"required,min=1,dive"`
+}
+
+// GetListingRequest carries the viewer so `favorited` can be answered without a second
+// round trip. ViewerID is zero for an anonymous read.
+type GetListingRequest struct {
+	ID       id.ID[id.Listing] `json:"-" validate:"required"`
+	ViewerID id.ID[id.Account] `json:"-"`
+}

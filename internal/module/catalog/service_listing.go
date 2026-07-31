@@ -1,0 +1,248 @@
+package catalog
+
+import (
+	"context"
+	"fmt"
+
+	accountapi "shopnexus/internal/module/account/api"
+	catalogapi "shopnexus/internal/module/catalog/api"
+	"shopnexus/internal/module/catalog/domain"
+	commonapi "shopnexus/internal/module/common/api"
+	"shopnexus/internal/shared/id"
+)
+
+// CreateListing writes the listing and its variants in one transaction. The request carries
+// at least one variant, so a listing with nothing to sell is not a state a client can reach.
+func (s *Service) CreateListing(ctx context.Context, req catalogapi.CreateListingRequest) (catalogapi.ListingDetail, error) {
+	// Selling requires a verified identity: payouts are gated on the same flag, and finding
+	// that out after the first sale is worse than finding it out now.
+	if err := s.requireSeller(ctx, req.ActorID); err != nil {
+		return catalogapi.ListingDetail{}, err
+	}
+	variants := make([]domain.NewVariantInput, 0, len(req.Variants))
+	for _, in := range req.Variants {
+		variants = append(variants, domain.NewVariantInput{
+			Price:          in.Price,
+			Attributes:     in.Attributes,
+			PackageDetails: in.PackageDetails,
+			Attachments:    resourceKeys(in.Attachments),
+			Quantity:       in.Quantity,
+		})
+	}
+	l, err := domain.NewListing(req.ActorID.Int64(), req.CategoryID.Int64(), domain.NewListingInput{
+		Name:           req.Name,
+		Description:    req.Description,
+		Condition:      domain.Condition(req.Condition),
+		PriceMode:      domain.PriceMode(req.PriceMode),
+		ShippingPaidBy: domain.ShippingPaidBy(req.ShippingPaidBy),
+		Currency:       req.Currency,
+		Specifications: req.Specifications,
+		Attachments:    resourceKeys(req.Attachments),
+		Tags:           req.Tags,
+		Variants:       variants,
+	})
+	if err != nil {
+		return catalogapi.ListingDetail{}, err
+	}
+	// The images are resource ids held inline without a foreign key, so they are checked
+	// here rather than by the database.
+	if err := s.requireResources(ctx, l); err != nil {
+		return catalogapi.ListingDetail{}, err
+	}
+	if err := s.repo.CreateListing(ctx, l, req.ActorID.Int64()); err != nil {
+		return catalogapi.ListingDetail{}, fmt.Errorf("create listing: %w", err)
+	}
+	return s.detail(ctx, l, req.ActorID.Int64())
+}
+
+func (s *Service) GetListing(ctx context.Context, req catalogapi.GetListingRequest) (catalogapi.ListingDetail, error) {
+	l, err := s.repo.GetListing(ctx, req.ID.Int64())
+	if err != nil {
+		return catalogapi.ListingDetail{}, fmt.Errorf("get listing: %w", err)
+	}
+	return s.detail(ctx, l, req.ViewerID.Int64())
+}
+
+// requireSeller refuses a seller with no live verified identity document. The flag lives in
+// the account module, which is also where the payout gate reads it.
+func (s *Service) requireSeller(ctx context.Context, actorID id.ID[id.Account]) error {
+	seller, err := s.accounts.GetPublicAccount(ctx, accountapi.GetPublicAccountRequest{ID: actorID})
+	if err != nil {
+		return fmt.Errorf("read seller: %w", err)
+	}
+	if !seller.IdentityVerified {
+		return domain.ErrIdentityRequired
+	}
+	return nil
+}
+
+// requireResources refuses an image id that is not a confirmed resource. A row pointing at
+// nothing is a picture that never renders, and the seller should hear about it at upload
+// time rather than from a buyer.
+func (s *Service) requireResources(ctx context.Context, l *domain.Listing) error {
+	wanted := append([]int64{}, l.Attachments...)
+	for _, v := range l.Variants {
+		wanted = append(wanted, v.Attachments...)
+	}
+	if len(wanted) == 0 {
+		return nil
+	}
+	found, err := s.resources(ctx, wanted)
+	if err != nil {
+		return err
+	}
+	for _, key := range wanted {
+		if _, ok := found[key]; !ok {
+			return domain.ErrAttachmentNotFound
+		}
+	}
+	return nil
+}
+
+// resources resolves image ids in one batched call — a page of variants is not a call each.
+func (s *Service) resources(ctx context.Context, keys []int64) (map[int64]commonapi.Resource, error) {
+	out := make(map[int64]commonapi.Resource, len(keys))
+	if len(keys) == 0 {
+		return out, nil
+	}
+	req := commonapi.GetResourcesRequest{IDs: make([]id.ID[id.Resource], 0, len(keys))}
+	for _, key := range keys {
+		req.IDs = append(req.IDs, id.Of[id.Resource](key))
+	}
+	found, err := s.resourceSvc.GetResources(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("get resources: %w", err)
+	}
+	for _, res := range found {
+		out[res.ID.Int64()] = res
+	}
+	return out, nil
+}
+
+func resourceKeys(ids []id.ID[id.Resource]) []int64 {
+	out := make([]int64, 0, len(ids))
+	for _, rid := range ids {
+		out = append(out, rid.Int64())
+	}
+	return out
+}
+
+// detail builds the product page: the aggregate plus the four things it does not own — the
+// seller, the category, the images and the viewer's own wishlist state.
+func (s *Service) detail(ctx context.Context, l *domain.Listing, viewerID int64) (catalogapi.ListingDetail, error) {
+	seller, err := s.accounts.GetPublicAccount(ctx, accountapi.GetPublicAccountRequest{
+		ID: id.Of[id.Account](l.SellerID),
+	})
+	if err != nil {
+		return catalogapi.ListingDetail{}, fmt.Errorf("read seller: %w", err)
+	}
+	category, err := s.category(ctx, l.CategoryID)
+	if err != nil {
+		return catalogapi.ListingDetail{}, err
+	}
+	keys := append([]int64{}, l.Attachments...)
+	for _, v := range l.Variants {
+		keys = append(keys, v.Attachments...)
+	}
+	images, err := s.resources(ctx, keys)
+	if err != nil {
+		return catalogapi.ListingDetail{}, err
+	}
+	favorited, err := s.repo.IsFavorited(ctx, viewerID, l.ID)
+	if err != nil {
+		return catalogapi.ListingDetail{}, fmt.Errorf("read favorited: %w", err)
+	}
+	favoriteCount, err := s.repo.CountFavorites(ctx, l.ID)
+	if err != nil {
+		return catalogapi.ListingDetail{}, fmt.Errorf("count favorites: %w", err)
+	}
+
+	out := catalogapi.ListingDetail{
+		ID:             id.Of[id.Listing](l.ID),
+		Slug:           l.Slug,
+		Name:           l.Name,
+		Description:    l.Description,
+		Status:         string(l.Status),
+		Condition:      string(l.Condition),
+		PriceMode:      string(l.PriceMode),
+		ShippingPaidBy: string(l.ShippingPaidBy),
+		Currency:       l.Currency,
+		Specifications: l.Specifications,
+		Images:         pick(images, l.Attachments),
+		Category:       toAPICategory(category),
+		Tags:           l.Tags,
+		Sold:           l.CachedSold,
+		Rating:         l.CachedRating,
+		Seller:         accountapi.AccountSummary{ID: seller.ID, Name: seller.Name, Avatar: seller.Avatar},
+		Favorited:      favorited,
+		FavoriteCount:  favoriteCount,
+		CreatedAt:      l.CreatedAt,
+		DeletedAt:      l.DeletedAt,
+	}
+	for _, v := range l.Variants {
+		variant := catalogapi.Variant{
+			ID:             id.Of[id.Variant](v.ID),
+			Price:          v.Price,
+			Attributes:     v.Attributes,
+			PackageDetails: v.PackageDetails,
+			Images:         pick(images, v.Attachments),
+			IsFeatured:     v.IsFeatured,
+			Stock: catalogapi.Stock{
+				Quantity:  v.Stock.Quantity,
+				Reserved:  v.Stock.Reserved,
+				Sold:      v.Stock.Sold,
+				Available: v.Stock.Available(),
+			},
+			CreatedAt: v.CreatedAt,
+		}
+		out.Variants = append(out.Variants, variant)
+		if v.IsFeatured {
+			featured := variant.ID
+			out.FeaturedVariantID = &featured
+		}
+	}
+	if l.PendingEdit != nil {
+		out.PendingEdit = toAPIPendingEdit(*l.PendingEdit)
+	}
+	return out, nil
+}
+
+// pick keeps the caller's order: the gallery's first image is the cover, so a map iteration
+// would lose the one thing the array encodes.
+func pick(found map[int64]commonapi.Resource, keys []int64) []commonapi.Resource {
+	out := make([]commonapi.Resource, 0, len(keys))
+	for _, key := range keys {
+		if res, ok := found[key]; ok {
+			out = append(out, res)
+		}
+	}
+	return out
+}
+
+func toAPIPendingEdit(e domain.PendingEdit) *catalogapi.PendingEdit {
+	out := &catalogapi.PendingEdit{
+		Name:           e.Name,
+		Description:    e.Description,
+		Specifications: e.Specifications,
+		Tags:           e.Tags,
+	}
+	if e.CategoryID != nil {
+		categoryID := id.Of[id.Category](*e.CategoryID)
+		out.CategoryID = &categoryID
+	}
+	if e.Condition != nil {
+		out.Condition = ptr(string(*e.Condition))
+	}
+	if e.PriceMode != nil {
+		out.PriceMode = ptr(string(*e.PriceMode))
+	}
+	if e.ShippingPaidBy != nil {
+		out.ShippingPaidBy = ptr(string(*e.ShippingPaidBy))
+	}
+	for _, key := range e.Attachments {
+		out.Attachments = append(out.Attachments, id.Of[id.Resource](key))
+	}
+	return out
+}
+
+func ptr[T any](v T) *T { return &v }

@@ -54,4 +54,9 @@ var (
 	// variant is chosen from the listing's own set, and the schema cannot express any
 	// other kind. 500 because the request was fine.
 	ErrFeaturedNotMine = errx.NewError(http.StatusInternalServerError, "featured_not_mine", "the featured variant does not belong to this listing")
+
+	// ErrIdentityRequired gates selling on the same flag the payout gate reads: finding out
+	// after the first sale is worse than finding out now.
+	ErrIdentityRequired   = errx.NewError(http.StatusUnprocessableEntity, "identity_required", "identity verification is required before selling")
+	ErrAttachmentNotFound = errx.NewError(http.StatusNotFound, "attachment_not_found", "an image id names no confirmed resource")
 )

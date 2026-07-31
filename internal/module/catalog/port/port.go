@@ -104,6 +104,11 @@ type Repository interface {
 	SaveListing(ctx context.Context, l *domain.Listing, actor int64) error
 	SlugTaken(ctx context.Context, slug string) (bool, error)
 
+	// --- wishlist reads. The routes that write it are another slice; the product page needs
+	// these two now, and answering them from another module would be a call per card.
+	IsFavorited(ctx context.Context, accountID, listingID int64) (bool, error)
+	CountFavorites(ctx context.Context, listingID int64) (int64, error)
+
 	// --- stock: its own aggregate, one row per variant ---
 	// Each of these is a single guarded statement: the WHERE clause is the invariant, so no
 	// version is involved and two checkouts on different variants never contend. Zero rows

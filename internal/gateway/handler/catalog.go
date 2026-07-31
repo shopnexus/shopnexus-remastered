@@ -37,14 +37,48 @@ func (h *Catalog) ListListings(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
-// CreateListing handles POST /listings.
+// CreateListing handles POST /listings — the listing and its variants in one call.
 func (h *Catalog) CreateListing(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	var req catalogapi.CreateListingRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID = uid
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.CreateListing(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, res)
 }
 
-// GetListing handles GET /listings/{id}.
+// GetListing handles GET /listings/{id}. Optional auth: a signed-in viewer also learns
+// whether the listing is on their wishlist.
 func (h *Catalog) GetListing(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
+	listingID, err := pathID[id.Listing](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := catalogapi.GetListingRequest{ID: listingID}
+	// actor() answers an error for an anonymous request, which is not one here: the route is
+	// registered under optionalAuth precisely so a buyer need not sign in to read.
+	if uid, err := actor(r); err == nil {
+		req.ViewerID = uid
+	}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.GetListing(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
 // UpdateListing handles PATCH /listings/{id}.

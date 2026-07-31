@@ -26,11 +26,16 @@ func TestMain(m *testing.M) { idtest.Install(); m.Run() }
 // than a plausible zero value.
 type fakeAccounts struct {
 	accounttest.Stub
-	role string
+	role     string
+	verified bool
 }
 
 func (f fakeAccounts) GetMe(context.Context, accountapi.GetMeRequest) (accountapi.Me, error) {
 	return accountapi.Me{Role: f.role}, nil
+}
+
+func (f fakeAccounts) GetPublicAccount(_ context.Context, req accountapi.GetPublicAccountRequest) (accountapi.PublicAccount, error) {
+	return accountapi.PublicAccount{ID: req.ID, Name: "Seller", IdentityVerified: f.verified}, nil
 }
 
 type fakeResources struct{ commonapi.Service }
@@ -45,6 +50,23 @@ func newHarness(role string) *harness {
 	svc := catalog.NewService(repo, fakeAccounts{role: role}, fakeResources{},
 		validation.Default(), slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: repo}
+}
+
+// newHarnessWith varies the identity state too, which is what gates selling. newHarness stays
+// as it was, for the tests that only care about the role.
+func newHarnessWith(role string, identityVerified bool) *harness {
+	repo := newFakeRepo()
+	svc := catalog.NewService(repo, fakeAccounts{role: role, verified: identityVerified},
+		fakeResources{}, validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: repo}
+}
+
+// newHarnessAdmin reuses one harness's repository with an admin caller, so a test can seed a
+// category and then act as a plain seller against the same data.
+func newHarnessAdmin(h *harness) *harness {
+	svc := catalog.NewService(h.repo, fakeAccounts{role: "admin", verified: true},
+		fakeResources{}, validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: h.repo}
 }
 
 func status(t *testing.T, err error) uint16 {

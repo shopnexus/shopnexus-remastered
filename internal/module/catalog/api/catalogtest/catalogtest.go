@@ -45,6 +45,14 @@ func (Stub) AdminDeleteTag(context.Context, catalogapi.DeleteTagRequest) error {
 	return errx.ErrNotImplemented
 }
 
+func (Stub) CreateListing(context.Context, catalogapi.CreateListingRequest) (catalogapi.ListingDetail, error) {
+	return catalogapi.ListingDetail{}, errx.ErrNotImplemented
+}
+
+func (Stub) GetListing(context.Context, catalogapi.GetListingRequest) (catalogapi.ListingDetail, error) {
+	return catalogapi.ListingDetail{}, errx.ErrNotImplemented
+}
+
 func (Stub) ReserveStock(context.Context, catalogapi.StockMovementRequest) error {
 	return errx.ErrNotImplemented
 }

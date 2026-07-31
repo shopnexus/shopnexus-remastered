@@ -423,3 +423,30 @@ func saveListingEvents(ctx context.Context, tx pgx.Tx, l *domain.Listing, actor 
 	}
 	return nil
 }
+
+// IsFavorited answers false for an anonymous viewer without touching the database: a zero
+// account id is not a row anybody has.
+func (r *Repo) IsFavorited(ctx context.Context, accountID, listingID int64) (bool, error) {
+	if accountID == 0 {
+		return false, nil
+	}
+	const q = `SELECT EXISTS (
+	               SELECT 1 FROM favorite WHERE account_id = @account_id AND listing_id = @listing_id
+	           )`
+	var ok bool
+	args := pgx.NamedArgs{"account_id": accountID, "listing_id": listingID}
+	if err := r.pool.QueryRow(ctx, q, args).Scan(&ok); err != nil {
+		return false, fmt.Errorf("db query favorited: %w", err)
+	}
+	return ok, nil
+}
+
+func (r *Repo) CountFavorites(ctx context.Context, listingID int64) (int64, error) {
+	var n int64
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM favorite WHERE listing_id = @listing_id`,
+		pgx.NamedArgs{"listing_id": listingID}).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("db count favorites: %w", err)
+	}
+	return n, nil
+}
