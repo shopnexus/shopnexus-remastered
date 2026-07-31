@@ -153,10 +153,11 @@ components:
           additionalProperties: true
           nullable: true
           description: >
-            The rendered payload of a system message, such as the terms of an accepted
-            offer. Written only by the backend and rejected on a `user` message —
-            otherwise anyone could send a card that looks like an offer the seller
-            accepted.
+            What a system message renders, and for a price negotiation that is
+            `{"offer_id": "ofr_…"}` and nothing else — the terms are read from the offer, so a
+            counter-offer cannot leave an old price on screen. Written only by the backend and
+            rejected on a `user` message, otherwise anyone could send a card that looks like an
+            offer the seller accepted.
         created_at: { type: string, format: date-time }
         edited_at: { type: string, format: date-time, nullable: true }
         deleted_at:

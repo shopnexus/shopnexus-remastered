@@ -180,7 +180,6 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("POST /drafts/{id}/checkout", auth(http.HandlerFunc(d.Order.Checkout)))
 	mux.Handle("GET /items", auth(http.HandlerFunc(d.Order.ListItems)))
 	mux.Handle("POST /items/{id}/cancellation", auth(http.HandlerFunc(d.Order.CancelItem)))
-	mux.Handle("POST /orders", auth(http.HandlerFunc(d.Order.ConfirmOrder)))
 	mux.Handle("GET /orders", auth(http.HandlerFunc(d.Order.ListOrders)))
 	mux.Handle("GET /orders/{id}", auth(http.HandlerFunc(d.Order.GetOrder)))
 	mux.Handle("POST /orders/{id}/receipt", auth(http.HandlerFunc(d.Order.ConfirmReceipt)))

@@ -64,7 +64,8 @@ components:
             description: Well-formed but rejected by a business rule
     schemas:
         AcceptOfferRequest:
-            description: Acceptance still needs a delivery address and a carrier — the negotiation only settled price and quantity.
+            description: |
+                Acceptance still needs a delivery address and a carrier — the negotiation only settled price and quantity, and the buyer pays the delivery fee either way, so the carrier is their trade-off to make.
             properties:
                 contact_id:
                     $ref: '#/components/schemas/ContactID'
@@ -508,36 +509,6 @@ components:
                 - items
                 - payment_session
             type: object
-        ConfirmOrderRequest:
-            properties:
-                draft_id:
-                    $ref: '#/components/schemas/DraftOrderID'
-                note:
-                    maxLength: 500
-                    type: string
-                pickup_contact_id:
-                    $ref: '#/components/schemas/ContactID'
-                transport_option:
-                    maxLength: 100
-                    pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
-                    type: string
-            required:
-                - draft_id
-                - transport_option
-                - pickup_contact_id
-            type: object
-        ConfirmOrderResult:
-            properties:
-                order:
-                    $ref: '#/components/schemas/Order'
-                shipping_fee_session:
-                    allOf:
-                        - $ref: '#/components/schemas/PaymentSession'
-                    description: Present only when the listing says the seller pays shipping.
-                    nullable: true
-            required:
-                - order
-            type: object
         ConfirmReceiptRequest:
             properties:
                 attachments:
@@ -859,8 +830,6 @@ components:
                     type: string
                 price_mode:
                     $ref: '#/components/schemas/PriceMode'
-                shipping_paid_by:
-                    $ref: '#/components/schemas/ShippingPaidBy'
                 specifications:
                     additionalProperties: true
                     type: object
@@ -876,11 +845,9 @@ components:
                     type: array
             required:
                 - name
-                - description
                 - category_id
                 - condition
                 - price_mode
-                - shipping_paid_by
                 - currency
                 - variants
             type: object
@@ -1154,8 +1121,6 @@ components:
                     type: string
                 seller_id:
                     $ref: '#/components/schemas/AccountID'
-                shipping_paid_by:
-                    $ref: '#/components/schemas/OrderShippingPaidBy'
                 variants:
                     items:
                         $ref: '#/components/schemas/DraftVariantSnapshot'
@@ -1607,8 +1572,6 @@ components:
                     type: number
                 seller:
                     $ref: '#/components/schemas/AccountSummary'
-                shipping_paid_by:
-                    $ref: '#/components/schemas/ShippingPaidBy'
                 slug:
                     example: ao-thun-uniqlo-xanh
                     type: string
@@ -1640,7 +1603,6 @@ components:
                 - status
                 - condition
                 - price_mode
-                - shipping_paid_by
                 - currency
                 - specifications
                 - images
@@ -1768,7 +1730,7 @@ components:
                 card:
                     additionalProperties: true
                     description: |
-                        The rendered payload of a system message, such as the terms of an accepted offer. Written only by the backend and rejected on a `user` message — otherwise anyone could send a card that looks like an offer the seller accepted.
+                        What a system message renders, and for a price negotiation that is `{"offer_id": "ofr_…"}` and nothing else — the terms are read from the offer, so a counter-offer cannot leave an old price on screen. Written only by the backend and rejected on a `user` message, otherwise anyone could send a card that looks like an offer the seller accepted.
                     nullable: true
                     type: object
                 conversation_id:
@@ -2075,17 +2037,22 @@ components:
                     format: date-time
                     type: string
                 draft_id:
-                    $ref: '#/components/schemas/DraftOrderID'
+                    allOf:
+                        - $ref: '#/components/schemas/DraftOrderID'
+                    description: |
+                        The checkout this came from. Exactly one of `draft_id` and `offer_id` is set: a fixed-price sale is checked out from a draft, a negotiated one from the offer both sides accepted.
+                    nullable: true
                 id:
                     $ref: '#/components/schemas/OrderID'
                 items:
                     items:
                         $ref: '#/components/schemas/OrderItem'
                     type: array
-                note:
-                    description: Seller note
+                offer_id:
+                    allOf:
+                        - $ref: '#/components/schemas/OfferID'
+                    description: The accepted negotiation this came from. Null on a fixed-price sale.
                     nullable: true
-                    type: string
                 payout_deadline_at:
                     description: |
                         `received_at` + 72h, computed rather than stored. A job pays the seller out at this point unless a refund is live on the order.
@@ -2118,7 +2085,6 @@ components:
                     $ref: '#/components/schemas/TransportID'
             required:
                 - id
-                - draft_id
                 - buyer_id
                 - seller_id
                 - transport_id
@@ -2330,13 +2296,6 @@ components:
                 - cancelled
                 - failed
             type: string
-        OrderShippingPaidBy:
-            description: |
-                Chosen by the seller when the listing is created. `buyer` adds the fee to the checkout invoice; `seller` deducts it from the payout.
-            enum:
-                - buyer
-                - seller
-            type: string
         OrderState:
             description: |
                 Derived from the two outcome timestamps: `open` means neither is set, which is also the predicate of the partial indexes behind this filter.
@@ -2459,7 +2418,6 @@ components:
                 What the money is for; it is what routes the flow. A client cannot pick this — the module that owes the money does.
             enum:
                 - buyer-checkout
-                - seller-confirmation-fee
                 - seller-payout
                 - withdrawal
             type: string
@@ -2505,8 +2463,6 @@ components:
                     type: string
                 price_mode:
                     $ref: '#/components/schemas/PriceMode'
-                shipping_paid_by:
-                    $ref: '#/components/schemas/ShippingPaidBy'
                 specifications:
                     additionalProperties: true
                     type: object
@@ -2517,7 +2473,11 @@ components:
             type: object
         PriceMode:
             description: |
-                `fixed` can be bought straight from the listing page. `negotiable` has to go through an offer first and cannot be checked out directly.
+                How a sale on this listing starts, and it is the only thing that differs between the two.
+
+                `fixed` is bought straight from the listing page: the buyer checks out, pays the item plus the shipping quote, and the order and its shipment exist as soon as the money lands. The seller confirms nothing.
+
+                `negotiable` cannot be checked out. The buyer opens a negotiation, which is a thread in chat where either side revises the terms, and accepting them is what starts the same checkout. Either way the seller never approves an order — the only thing they can refuse is a price.
             enum:
                 - fixed
                 - negotiable
@@ -3182,13 +3142,6 @@ components:
                         References to point at, each checked against the caller's access to it. There is no way to set `card` from here: a system payload is the backend's to write.
                     type: object
             type: object
-        ShippingPaidBy:
-            description: |
-                Chosen by the seller when the listing is created. `buyer` adds the fee to the checkout invoice. `seller` deducts it from the payout.
-            enum:
-                - buyer
-                - seller
-            type: string
         SimilarityScore:
             description: |
                 Relevance, always oriented so that higher is closer — for a vector ranking that is `1 - (a <=> b)`, the cosine similarity, because the operator itself returns a distance. Null unless the request asked for a ranking.
@@ -3789,8 +3742,6 @@ components:
                     type: string
                 price_mode:
                     $ref: '#/components/schemas/PriceMode'
-                shipping_paid_by:
-                    $ref: '#/components/schemas/ShippingPaidBy'
                 specifications:
                     additionalProperties: true
                     type: object
@@ -7810,7 +7761,8 @@ paths:
             tags:
                 - order
         post:
-            description: Either side may open it. One active negotiation per (buyer, SKU); the terms are then revised in place rather than by stacking rows.
+            description: |
+                Either side may open it — the buyer from the listing page, the seller from a thread. One active negotiation per (buyer, variant); the terms are then revised in place rather than by stacking rows, and each revision posts a card into the pair's chat thread.
             requestBody:
                 content:
                     application/json:
@@ -7843,7 +7795,7 @@ paths:
                     description: An active negotiation already exists for this (buyer, SKU)
             security:
                 - bearerAuth: []
-            summary: Open a price negotiation on a SKU
+            summary: Open a price negotiation on a variant
             tags:
                 - order
     /offers/{id}:
@@ -7899,7 +7851,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/OfferID'
         patch:
-            description: Revises the current terms in place and moves authorship to the caller. Only the party that does not own the standing proposal may counter.
+            description: |
+                Revises the current terms in place, moves authorship to the caller and posts the new card into the thread. Only the party that does not own the standing proposal may counter, so the two sides alternate.
             requestBody:
                 content:
                     application/json:
@@ -7944,7 +7897,9 @@ paths:
     /offers/{id}/acceptance:
         post:
             description: |
-                Only the buyer closes a negotiation, whichever side proposed the standing terms — an order may not appear without the buyer's explicit acceptance. Opens the checkout payment session at the agreed total and creates the item, returning both.
+                Only the buyer closes a negotiation, whichever side proposed the standing terms — an order may not appear without the buyer's explicit acceptance. Opens the checkout payment session at the agreed total and creates the item, returning both; the order follows when the session completes, with `offer_id` set to this negotiation and no draft.
+
+                The seller is not asked again. Accepting is the last decision either party makes about whether the sale happens.
             parameters:
                 - in: path
                   name: id
@@ -8023,52 +7978,6 @@ paths:
             security:
                 - bearerAuth: []
             summary: List orders, as buyer or as seller
-            tags:
-                - order
-        post:
-            description: |
-                The seller accepts the paid items of one purchase session. Creates the shipment, then the order, then links the items to it. One order per session is enforced by a unique constraint, so a retried confirmation cannot mint a second order. When the listing says the seller pays shipping, a seller-confirmation-fee payment session is opened too and returned in `shipping_fee_session`.
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/ConfirmOrderRequest'
-                required: true
-            responses:
-                "201":
-                    content:
-                        application/json:
-                            schema:
-                                properties:
-                                    data:
-                                        $ref: '#/components/schemas/ConfirmOrderResult'
-                                required:
-                                    - data
-                                type: object
-                    description: Created
-                "400":
-                    $ref: '#/components/responses/BadRequest'
-                "401":
-                    $ref: '#/components/responses/Unauthorized'
-                "403":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: Caller is not the seller of these items
-                "404":
-                    $ref: '#/components/responses/NotFound'
-                "409":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: Session already confirmed, items unpaid, or items cancelled
-                "422":
-                    $ref: '#/components/responses/UnprocessableEntity'
-            security:
-                - bearerAuth: []
-            summary: Confirm paid items into an order (seller)
             tags:
                 - order
     /orders/{id}:

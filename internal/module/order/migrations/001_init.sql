@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS "cart_item" (
 
 -- payment_session, transaction, and the transaction_settled view moved to the
 -- payment module (money primitives live together for atomicity). order refers
--- to them by id only: confirm_session_id / payout_session_id (order),
+-- to them by id only: payout_session_id (order),
 -- payment_session_id (item, offer), refund_tx_id (refund) — no cross-schema FK.
 
 -- Transport/delivery record
@@ -93,9 +93,9 @@ CREATE TABLE IF NOT EXISTS "transport" (
     CONSTRAINT "transport_option_format" CHECK ("option" ~ '^[a-z0-9]+(-[a-z0-9]+)*$')
 );
 
--- A buyer's purchase session for one product: it freezes the terms, so a listing that
--- showed 100k cannot charge a newly-updated price at confirmation. Its items hang off it
--- until a seller confirms them into an "order".
+-- A buyer's purchase session for one fixed-price listing: it freezes the terms, so a listing
+-- that showed 100k cannot charge a newly-updated price at checkout. A negotiable listing has
+-- no draft — the accepted offer is what freezes its terms.
 CREATE TABLE IF NOT EXISTS "draft_order" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
     "buyer_id" BIGINT NOT NULL,
@@ -117,20 +117,59 @@ CREATE INDEX IF NOT EXISTS "draft_order_expiring_idx"
     WHERE "cancelled_at" IS NULL;
 CREATE INDEX IF NOT EXISTS "draft_order_buyer_id_idx" ON "draft_order" ("buyer_id", "created_at" DESC);
 
--- Order created when a seller confirms pending items.
+-- One negotiation per (buyer, variant); the current terms are revised in place rather than
+-- by stacking rows, so "what is on the table" is one row and not a scan of a thread.
+--
+-- The negotiation is conducted in chat: each revision posts a message carrying this row's id
+-- in its metadata, so the thread renders the cards while the terms, the status and the expiry
+-- stay here — they decide money, and a hypertable is the wrong place for a rule like
+-- one-active-per-pair.
+CREATE TABLE IF NOT EXISTS "offer" (
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY,
+    "listing_id" BIGINT NOT NULL, -- cross-ref catalog.listing; the listing an offer card renders
+    "variant_id" BIGINT NOT NULL, -- cross-ref catalog.variant; no FK
+    "author_id" BIGINT NOT NULL, -- account that created the offer (buyer or seller)
+    "buyer_id" BIGINT NOT NULL,
+    "seller_id" BIGINT NOT NULL, -- denormalized from sku -> spu -> owner
+    "status" "offer_status" NOT NULL DEFAULT 'active',
+    "quantity" BIGINT NOT NULL,
+    "total" BIGINT NOT NULL, -- current proposed price (the agreed terms once accepted)
+    "reason" TEXT NOT NULL DEFAULT '', -- offer-card note (e.g. discount reason)
+    "payment_session_id" BIGINT, -- set on accept (auto-created checkout)
+
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "expires_at" TIMESTAMPTZ NOT NULL,
+
+    CONSTRAINT "offer_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "offer_total_positive" CHECK ("total" > 0),
+    CONSTRAINT "offer_quantity_positive" CHECK ("quantity" > 0)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "offer_one_active_per_buyer_sku" ON "offer" ("buyer_id", "variant_id") WHERE "status" = 'active';
+-- The expiry job: live offers past their deadline.
+CREATE INDEX IF NOT EXISTS "offer_expiring_idx"
+    ON "offer" ("expires_at")
+    WHERE "status" = 'active';
+CREATE INDEX IF NOT EXISTS "offer_seller_id_status_idx" ON "offer" ("seller_id", "status");
+CREATE INDEX IF NOT EXISTS "offer_buyer_id_status_idx" ON "offer" ("buyer_id", "status");
+CREATE INDEX IF NOT EXISTS "offer_variant_id_idx" ON "offer" ("variant_id");
+
+-- The purchase, created as soon as the money lands — by the payment webhook, not by anybody
+-- pressing a button. A seller never approves an order: on a fixed-price listing there is
+-- nothing for them to approve, and on a negotiable one the only thing they can refuse is the
+-- price, which happens in the negotiation before this row exists.
 CREATE TABLE IF NOT EXISTS "order" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
-    "draft_id" BIGINT NOT NULL, -- The draft order that was confirmed to create this order
+    -- Where the sale came from, and exactly one of the two is set. A fixed-price listing is
+    -- checked out from a draft; a negotiable one is agreed in a negotiation and the accepted
+    -- offer takes the draft's place. Both are unique, so neither path can mint two orders.
+    "draft_id" BIGINT,
+    "offer_id" BIGINT,
     "buyer_id" BIGINT NOT NULL,
     "transport_id" BIGINT NOT NULL,
     -- Contact snapshot shaped like account.contact. JSONB not text: the administrative
     -- codes are what a carrier is called with, and account.contact may have changed since.
     "address" JSONB NOT NULL,
     "pickup_address" JSONB NOT NULL, -- Seller's collection point, snapshotted the same way
-
-    -- Seller confirmation of the order
-    "confirm_session_id" BIGINT, -- Seller confirmation shipping fee session (if seller pays the shipping)
-    "note" TEXT, -- Seller note
 
     -- Buyer's receipt confirmation. The unboxing evidence lives here rather than in a
     -- side table because it is captured in the same request that sets "received_at" and
@@ -152,8 +191,14 @@ CREATE TABLE IF NOT EXISTS "order" (
 
     CONSTRAINT "order_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "order_transport_id_key" UNIQUE ("transport_id"),
-    -- One order per purchase session, so confirming twice cannot mint a second order.
+    -- One order per checkout and one per accepted offer, so a retried write — a webhook
+    -- delivered twice, an acceptance double-clicked — cannot mint a second order.
     CONSTRAINT "order_draft_id_key" UNIQUE ("draft_id"),
+    CONSTRAINT "order_offer_id_key" UNIQUE ("offer_id"),
+    -- An order is born of one or the other, never both and never neither.
+    CONSTRAINT "order_origin_exactly_one" CHECK (
+        ("draft_id" IS NOT NULL) <> ("offer_id" IS NOT NULL)
+    ),
     -- Confirming receipt and showing the goods are one act; neither half is a state.
     CONSTRAINT "order_receipt_attachments_match_received" CHECK (
         ("received_at" IS NOT NULL) = (cardinality("receipt_attachments") > 0)
@@ -166,7 +211,9 @@ CREATE TABLE IF NOT EXISTS "order" (
     CONSTRAINT "order_transport_id_fkey" FOREIGN KEY ("transport_id")
         REFERENCES "transport" ("id") ON DELETE NO ACTION,
     CONSTRAINT "order_draft_id_fkey" FOREIGN KEY ("draft_id")
-        REFERENCES "draft_order" ("id") ON DELETE NO ACTION
+        REFERENCES "draft_order" ("id") ON DELETE NO ACTION,
+    CONSTRAINT "order_offer_id_fkey" FOREIGN KEY ("offer_id")
+        REFERENCES "offer" ("id") ON DELETE NO ACTION
 );
 CREATE INDEX IF NOT EXISTS "order_transport_id_idx" ON "order" ("transport_id");
 -- Buyer's and seller's order lists, newest first, open ones only. Partial because an
@@ -187,11 +234,16 @@ CREATE INDEX IF NOT EXISTS "order_payout_due_idx"
     ON "order" ("received_at")
     WHERE "payout_session_id" IS NULL AND "received_at" IS NOT NULL AND "cancelled_at" IS NULL;
 
--- Checkout item: starts unconfirmed (order_id IS NULL), linked to an order on seller confirmation.
+-- One purchased line. It exists from checkout, before the money lands, which is what
+-- "order_id" being NULL means: paid-for lines become an order as soon as the payment
+-- session completes, and nobody confirms anything in between.
 CREATE TABLE IF NOT EXISTS "item" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
-    "draft_id" BIGINT NOT NULL, -- The purchase session this was checked out in
-    "order_id" BIGINT, -- NULL until the seller confirms
+    -- Same origin pair as "order", for the same reason: a fixed-price line comes from a
+    -- checked-out draft, a negotiated one from the accepted offer.
+    "draft_id" BIGINT,
+    "offer_id" BIGINT,
+    "order_id" BIGINT, -- NULL until the payment session completes
     "buyer_id" BIGINT NOT NULL,
     "seller_id" BIGINT NOT NULL, -- Denormalized from sku->spu->seller
     "listing_id" BIGINT NOT NULL, -- The same hop's midpoint, kept so order history can resolve the listing
@@ -202,7 +254,9 @@ CREATE TABLE IF NOT EXISTS "item" (
 
     -- PAY-FIRST
     "quantity" BIGINT NOT NULL,
-    "transport_option" VARCHAR(100) NOT NULL, -- References common.option (transport); same kebab-case slug
+    -- The carrier, chosen by the buyer at checkout: they pay the delivery fee, so it is their
+    -- trade-off between price and speed. References the transport `option` rows.
+    "transport_option" VARCHAR(100) NOT NULL,
     "total_amount" BIGINT NOT NULL, -- Final paid amount in session.currency after discounts, taxes, etc. Used for display & refunds
     "payment_session_id" BIGINT NOT NULL,
 
@@ -217,13 +271,18 @@ CREATE TABLE IF NOT EXISTS "item" (
     CONSTRAINT "item_total_amount_non_negative" CHECK ("total_amount" >= 0),
     CONSTRAINT "item_currency_format" CHECK ("currency" ~ '^[A-Z]{3}$'),
     CONSTRAINT "item_transport_option_format" CHECK ("transport_option" ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+    CONSTRAINT "item_origin_exactly_one" CHECK (
+        ("draft_id" IS NOT NULL) <> ("offer_id" IS NOT NULL)
+    ),
 
     -- NO ACTION, not CASCADE: this row records money the buyer paid, so deleting an
     -- order must not erase it.
     CONSTRAINT "item_order_id_fkey" FOREIGN KEY ("order_id")
         REFERENCES "order" ("id") ON DELETE NO ACTION,
     CONSTRAINT "item_draft_id_fkey" FOREIGN KEY ("draft_id")
-        REFERENCES "draft_order" ("id") ON DELETE NO ACTION
+        REFERENCES "draft_order" ("id") ON DELETE NO ACTION,
+    CONSTRAINT "item_offer_id_fkey" FOREIGN KEY ("offer_id")
+        REFERENCES "offer" ("id") ON DELETE NO ACTION
 );
 CREATE INDEX IF NOT EXISTS "item_order_id_idx" ON "item" ("order_id");
 CREATE INDEX IF NOT EXISTS "item_variant_id_idx" ON "item" ("variant_id");
@@ -232,10 +291,8 @@ CREATE INDEX IF NOT EXISTS "item_draft_id_idx" ON "item" ("draft_id");
 CREATE INDEX IF NOT EXISTS "item_payment_session_id_idx" ON "item" ("payment_session_id");
 -- "My purchases", newest first.
 CREATE INDEX IF NOT EXISTS "item_buyer_id_idx" ON "item" ("buyer_id", "created_at" DESC);
--- Seller's confirmation inbox: paid items no order covers yet, newest first. Ordered on
--- "created_at" because that is how the inbox is read and paged; grouping the same
--- carrier together is the confirm step's business, and it works from a page this
--- already returned rather than from the index.
+-- Lines that are paid for but not yet covered by an order — the window between the payment
+-- webhook landing and the order being written, and the retry list if that write failed.
 CREATE INDEX IF NOT EXISTS "item_seller_pending_idx"
     ON "item" ("seller_id", "created_at" DESC)
     WHERE "order_id" IS NULL AND "cancelled_at" IS NULL;
@@ -366,32 +423,3 @@ CREATE INDEX IF NOT EXISTS "refund_dispute_queue_idx"
 
 -- Order cancellation is derived in the order service (was a DB function; moved to domain).
 
--- One negotiation per (buyer, sku); current terms updated in place.
-CREATE TABLE IF NOT EXISTS "offer" (
-    "id" BIGINT GENERATED ALWAYS AS IDENTITY,
-    "listing_id" BIGINT NOT NULL, -- cross-ref catalog.listing; the listing an offer card renders
-    "variant_id" BIGINT NOT NULL, -- cross-ref catalog.variant; no FK
-    "author_id" BIGINT NOT NULL, -- account that created the offer (buyer or seller)
-    "buyer_id" BIGINT NOT NULL,
-    "seller_id" BIGINT NOT NULL, -- denormalized from sku -> spu -> owner
-    "status" "offer_status" NOT NULL DEFAULT 'active',
-    "quantity" BIGINT NOT NULL,
-    "total" BIGINT NOT NULL, -- current proposed price (the agreed terms once accepted)
-    "reason" TEXT NOT NULL DEFAULT '', -- offer-card note (e.g. discount reason)
-    "payment_session_id" BIGINT, -- set on accept (auto-created checkout)
-
-    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "expires_at" TIMESTAMPTZ NOT NULL,
-
-    CONSTRAINT "offer_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "offer_total_positive" CHECK ("total" > 0),
-    CONSTRAINT "offer_quantity_positive" CHECK ("quantity" > 0)
-);
-CREATE UNIQUE INDEX IF NOT EXISTS "offer_one_active_per_buyer_sku" ON "offer" ("buyer_id", "variant_id") WHERE "status" = 'active';
--- The expiry job: live offers past their deadline.
-CREATE INDEX IF NOT EXISTS "offer_expiring_idx"
-    ON "offer" ("expires_at")
-    WHERE "status" = 'active';
-CREATE INDEX IF NOT EXISTS "offer_seller_id_status_idx" ON "offer" ("seller_id", "status");
-CREATE INDEX IF NOT EXISTS "offer_buyer_id_status_idx" ON "offer" ("buyer_id", "status");
-CREATE INDEX IF NOT EXISTS "offer_variant_id_idx" ON "offer" ("variant_id");

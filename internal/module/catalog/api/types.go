@@ -76,7 +76,6 @@ type PendingEdit struct {
 	CategoryID     *id.ID[id.Category]  `json:"category_id,omitempty"`
 	Condition      *string              `json:"condition,omitempty"`
 	PriceMode      *string              `json:"price_mode,omitempty"`
-	ShippingPaidBy *string              `json:"shipping_paid_by,omitempty"`
 	Specifications map[string]any       `json:"specifications,omitempty"`
 	Attachments    []id.ID[id.Resource] `json:"attachments,omitempty"`
 	Tags           []string             `json:"tags,omitempty"`
@@ -92,7 +91,6 @@ type ListingDetail struct {
 	Status            string                    `json:"status"`
 	Condition         string                    `json:"condition"`
 	PriceMode         string                    `json:"price_mode"`
-	ShippingPaidBy    string                    `json:"shipping_paid_by"`
 	Currency          string                    `json:"currency"`
 	Specifications    map[string]any            `json:"specifications"`
 	Images            []common.ResourceDTO      `json:"images"`

@@ -13,7 +13,6 @@ func listingInput() domain.NewListingInput {
 		Description:    "Còn mới",
 		Condition:      domain.ConditionUsed,
 		PriceMode:      domain.PriceModeFixed,
-		ShippingPaidBy: domain.ShippingPaidByBuyer,
 		Currency:       "VND",
 		Specifications: map[string]any{"brand": "Uniqlo"},
 		Tags:           []string{"handmade"},

@@ -23,13 +23,12 @@ var testSeller = time.Now().UnixNano() % 1_000_000
 func newListingFor(t *testing.T, repo *pgadapter.Repo, categoryID int64, name string) *domain.Listing {
 	t.Helper()
 	l, err := domain.NewListing(testSeller, categoryID, domain.NewListingInput{
-		Name:           name,
-		Description:    "probe",
-		Condition:      domain.ConditionUsed,
-		PriceMode:      domain.PriceModeFixed,
-		ShippingPaidBy: domain.ShippingPaidByBuyer,
-		Currency:       "VND",
-		Tags:           []string{"handmade"},
+		Name:        name,
+		Description: "probe",
+		Condition:   domain.ConditionUsed,
+		PriceMode:   domain.PriceModeFixed,
+		Currency:    "VND",
+		Tags:        []string{"handmade"},
 		Variants: []domain.NewVariantInput{{
 			Price: 299000, Attributes: map[string]any{"size": "l"},
 			PackageDetails: map[string]any{}, Quantity: 5,
@@ -188,8 +187,8 @@ func TestRepo_SaveListingRefusesDuplicatesAndSlugs(t *testing.T) {
 	// The same derived slug twice.
 	again, err := domain.NewListing(7, category.ID, domain.NewListingInput{
 		Name: name, Description: "x", Condition: domain.ConditionUsed,
-		PriceMode: domain.PriceModeFixed, ShippingPaidBy: domain.ShippingPaidByBuyer,
-		Currency: "VND",
+		PriceMode: domain.PriceModeFixed,
+		Currency:  "VND",
 		Variants: []domain.NewVariantInput{{
 			Price: 1000, Attributes: map[string]any{"size": "s"},
 			PackageDetails: map[string]any{}, Quantity: 1,

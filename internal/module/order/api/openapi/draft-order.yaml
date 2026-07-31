@@ -116,13 +116,6 @@ paths:
 
 components:
   schemas:
-    OrderShippingPaidBy:
-      type: string
-      description: >
-        Chosen by the seller when the listing is created. `buyer` adds the fee to
-        the checkout invoice; `seller` deducts it from the payout.
-      enum: [buyer, seller]
-
     DraftVariantSnapshot:
       type: object
       description: One purchasable variant as it stood when the session opened.
@@ -148,7 +141,6 @@ components:
         seller_id: { $ref: '#/components/schemas/AccountID' }
         currency: { $ref: '#/components/schemas/CurrencyCode' }
         price_mode: { type: string, enum: [fixed, negotiable] }
-        shipping_paid_by: { $ref: '#/components/schemas/OrderShippingPaidBy' }
         attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
         variants: { type: array, items: { $ref: '#/components/schemas/DraftVariantSnapshot' } }
       required: [id, name, seller_id, currency, price_mode, variants]

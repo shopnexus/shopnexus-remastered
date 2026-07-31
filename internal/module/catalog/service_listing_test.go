@@ -17,14 +17,13 @@ func createListingRequest(h *harness, t *testing.T) catalogapi.CreateListingRequ
 		t.Fatalf("AdminCreateCategory: %v", err)
 	}
 	return catalogapi.CreateListingRequest{
-		ActorID:        actor,
-		Name:           "Áo thun Uniqlo",
-		Description:    "Còn mới",
-		CategoryID:     category.ID,
-		Condition:      "used",
-		PriceMode:      "fixed",
-		ShippingPaidBy: "buyer",
-		Currency:       "VND",
+		ActorID:     actor,
+		Name:        "Áo thun Uniqlo",
+		Description: "Còn mới",
+		CategoryID:  category.ID,
+		Condition:   "used",
+		PriceMode:   "fixed",
+		Currency:    "VND",
 		Variants: []catalogapi.CreateVariantInput{{
 			Price: 299000, Attributes: map[string]any{"size": "l"},
 			PackageDetails: map[string]any{"weight_g": 200}, Quantity: 5,

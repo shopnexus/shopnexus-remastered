@@ -81,11 +81,6 @@ func (h *Order) CancelItem(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)
 }
 
-// ConfirmOrder handles POST /orders.
-func (h *Order) ConfirmOrder(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w, h.log)
-}
-
 // ListOrders handles GET /orders.
 func (h *Order) ListOrders(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w, h.log)

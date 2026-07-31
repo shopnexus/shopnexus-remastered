@@ -1,12 +1,24 @@
-# order fragment: offer — price negotiation before checkout.
+# order fragment: offer — the negotiation a `negotiable` listing has to go through.
+#
+# It is conducted in the chat thread the two accounts already share (chat has one thread per
+# pair, so there is nothing to create and nothing to address it by): every route here also
+# posts a message carrying the offer's id in its metadata, and the client renders the card from
+# this row. The terms, the status and the expiry stay here because they decide money, and
+# one-active-per-pair is a constraint a hypertable cannot hold.
+#
+# Nobody approves an order at the end of it. Acceptance opens the checkout at the agreed total,
+# and the order appears when that payment session completes — the same ending a fixed-price
+# purchase has. The only thing a seller can refuse is a price, and this is where they refuse it.
 
 paths:
   /offers:
     post:
       tags: [order]
-      summary: Open a price negotiation on a SKU
-      description: Either side may open it. One active negotiation per (buyer, SKU);
-        the terms are then revised in place rather than by stacking rows.
+      summary: Open a price negotiation on a variant
+      description: >
+        Either side may open it — the buyer from the listing page, the seller from a thread.
+        One active negotiation per (buyer, variant); the terms are then revised in place rather
+        than by stacking rows, and each revision posts a card into the pair's chat thread.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -64,8 +76,10 @@ paths:
     patch:
       tags: [order]
       summary: Counter-offer
-      description: Revises the current terms in place and moves authorship to the
-        caller. Only the party that does not own the standing proposal may counter.
+      description: >
+        Revises the current terms in place, moves authorship to the caller and posts the new
+        card into the thread. Only the party that does not own the standing proposal may
+        counter, so the two sides alternate.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -103,10 +117,15 @@ paths:
       tags: [order]
       summary: Accept the negotiated terms (buyer)
       description: >
-        Only the buyer closes a negotiation, whichever side proposed the standing
-        terms — an order may not appear without the buyer's explicit acceptance.
-        Opens the checkout payment session at the agreed total and creates the
-        item, returning both.
+        Only the buyer closes a negotiation, whichever side proposed the standing terms — an
+        order may not appear without the buyer's explicit acceptance. Opens the checkout
+        payment session at the agreed total and creates the item, returning both; the order
+        follows when the session completes, with `offer_id` set to this negotiation and no
+        draft.
+
+
+        The seller is not asked again. Accepting is the last decision either party makes about
+        whether the sale happens.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OfferID' } }
@@ -183,8 +202,10 @@ components:
 
     AcceptOfferRequest:
       type: object
-      description: Acceptance still needs a delivery address and a carrier — the
-        negotiation only settled price and quantity.
+      description: >
+        Acceptance still needs a delivery address and a carrier — the negotiation only settled
+        price and quantity, and the buyer pays the delivery fee either way, so the carrier is
+        their trade-off to make.
       properties:
         contact_id: { $ref: '#/components/schemas/ContactID' }
         transport_option: { type: string, maxLength: 100, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }

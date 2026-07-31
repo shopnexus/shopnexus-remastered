@@ -192,10 +192,12 @@ func TestRouter_AuthenticatedRouteWithToken(t *testing.T) {
 	}
 }
 
-func TestRouter_ConfirmOrderRequiresAuth(t *testing.T) {
+// Checking out is the last thing a buyer does; there is no route that turns paid items into
+// an order, so this stands in for "a write behind auth on the order module".
+func TestRouter_CheckoutRequiresAuth(t *testing.T) {
 	r, _, _ := newRouter()
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, openapi.BasePath+"/orders", strings.NewReader(`{}`)))
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, openapi.BasePath+"/drafts/1/checkout", strings.NewReader(`{}`)))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}

@@ -319,7 +319,28 @@ give it its own doc under `docs/` and link it from here.
   `kind` = `'buyer-checkout'`, resource `provider` = `'minio'`). SQL
   *identifiers* (schema/table/column/type/constraint names) stay `snake_case`;
   only the stored value strings are kebab. Multi-word: `product-spu`,
-  `awaiting-buyer-action`, `seller-confirmation-fee`.
+  `awaiting-buyer-action`, `awaiting-seller-review`.
+- **A seller never approves an order; the money creates it.** `price_mode` is the only thing
+  that differs between the two ways a sale starts. `fixed` is bought from the listing page: the
+  buyer checks out a draft, pays the item plus the shipping quote, and the order and its shipment
+  exist as soon as that payment session completes. `negotiable` cannot be checked out — the buyer
+  opens a negotiation, which is the chat thread the pair already shares, either side revises the
+  terms, and the buyer accepting opens the same checkout. So the only thing a seller can refuse
+  is a price, and there is no route that turns paid items into an order: the payment webhook
+  does, which is why `item.order_id` is nullable and `item_seller_pending_idx` is a retry list
+  rather than an inbox. The buyer always pays delivery, so a seller is never charged and
+  `session_kind` has no `seller-confirmation-fee`.
+- **An order records which of the two it came from.** `order` and `item` each carry a nullable
+  `draft_id` and a nullable `offer_id` with `CHECK ((draft_id IS NOT NULL) <> (offer_id IS NOT
+  NULL))`, and both are UNIQUE — so a webhook delivered twice or an acceptance double-clicked
+  cannot mint a second order, and "where did this sale come from" is answered by the row instead
+  of a join. A negotiated sale has no draft: the accepted offer is what froze its terms.
+- **A negotiation is order's row and chat's thread.** `order.offer` holds the terms, the status
+  and the expiry, because they decide money and one-active-per-`(buyer, variant)` is a partial
+  unique index a hypertable cannot hold. Chat carries `{"offer_id": N}` in a system message's
+  metadata and nothing else — copying the price into the message would let a counter-offer leave
+  the thread showing terms that are no longer on the table. Chat already has one thread per pair
+  of accounts, so there is nothing to create and no id to pass around.
 - **Migrations:** embedded per module, applied only by `cmd/migrate` (a
   CI/CD/init step) — never at app startup.
 - **Tests:** table/behavior tests with fakes for services (no DB); real DB only

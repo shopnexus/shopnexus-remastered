@@ -39,8 +39,6 @@ CREATE TYPE "price_mode" AS ENUM ('fixed', 'negotiable');
 
 -- Who pays the shipping fee, chosen by the seller at creation. Not derivable from
 -- anything else on the row, and the checkout quote reads it.
-CREATE TYPE "shipping_paid_by" AS ENUM ('buyer', 'seller');
-
 
 -- Hierarchical product category tree. parent_id = NULL means root category.
 -- Declared before "listing" because that table FKs it.
@@ -84,7 +82,6 @@ CREATE TABLE
     -- Pricing
     "price_mode" "price_mode" NOT NULL, -- fixed price vs negotiable (offer)
     "condition" "listing_condition" NOT NULL, -- item condition (C2C used goods), listing-level
-    "shipping_paid_by" "shipping_paid_by" NOT NULL, -- who carries the delivery fee
     "currency" VARCHAR(3) NOT NULL, -- ISO 4217 currency code for every variant price under this listing
 
     -- Edits

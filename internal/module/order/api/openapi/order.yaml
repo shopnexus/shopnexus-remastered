@@ -1,15 +1,17 @@
-# The order module's root aggregate — the seller-confirmed purchase — plus the
-# module's own boundary notes. Merged by cmd/specgen with every other file in this
-# directory.
+# The order module's root aggregate — the purchase — plus the module's own boundary
+# notes. Merged by cmd/specgen with every other file in this directory.
 #
 # The module covers the whole purchase lifecycle across eight tables: cart_item,
 # draft_order, item, order, transport, offer, refund, refund_dispute — one file each,
 # next to this one.
 #
 # Two shapes recur:
-#   - Checkout is PAY-FIRST. A draft freezes the listing terms, checkout creates
-#     the items together with one buyer-checkout payment session, and only a
-#     seller confirmation turns paid items into an order.
+#   - Checkout is PAY-FIRST, and the money is what creates the order. A fixed-price
+#     listing freezes its terms in a draft; a negotiable one freezes them in the offer
+#     both sides accepted. Either way checkout writes the items plus one buyer-checkout
+#     payment session, and the order appears when that session completes. There is no
+#     endpoint for it and no seller confirmation: a seller can refuse a price, never an
+#     order.
 #   - A state transition is a POST to a noun sub-resource, never a PATCH of a
 #     status field. "order" has no status column on purpose: the lifecycle lives
 #     in the service and only outcome facts (completed_at, cancelled_at) persist.
@@ -20,38 +22,6 @@
 
 paths:
   /orders:
-    post:
-      tags: [order]
-      summary: Confirm paid items into an order (seller)
-      description: >
-        The seller accepts the paid items of one purchase session. Creates the
-        shipment, then the order, then links the items to it. One order per
-        session is enforced by a unique constraint, so a retried confirmation
-        cannot mint a second order. When the listing says the seller pays
-        shipping, a seller-confirmation-fee payment session is opened too and
-        returned in `shipping_fee_session`.
-      security: [{ bearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ConfirmOrderRequest' }
-      responses:
-        '201':
-          description: 'Created'
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data: { $ref: '#/components/schemas/ConfirmOrderResult' }
-                required: [data]
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { description: 'Caller is not the seller of these items', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: 'Session already confirmed, items unpaid, or items cancelled', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '422': { $ref: '#/components/responses/UnprocessableEntity' }
     get:
       tags: [order]
       summary: List orders, as buyer or as seller
@@ -196,14 +166,23 @@ components:
       type: object
       properties:
         id: { $ref: '#/components/schemas/OrderID' }
-        draft_id: { $ref: '#/components/schemas/DraftOrderID' }
+        draft_id:
+          allOf: [{ $ref: '#/components/schemas/DraftOrderID' }]
+          nullable: true
+          description: >
+            The checkout this came from. Exactly one of `draft_id` and `offer_id` is set: a
+            fixed-price sale is checked out from a draft, a negotiated one from the offer both
+            sides accepted.
+        offer_id:
+          allOf: [{ $ref: '#/components/schemas/OfferID' }]
+          nullable: true
+          description: The accepted negotiation this came from. Null on a fixed-price sale.
         buyer_id: { $ref: '#/components/schemas/AccountID' }
         seller_id: { $ref: '#/components/schemas/AccountID' }
         transport_id: { $ref: '#/components/schemas/TransportID' }
         address: { $ref: '#/components/schemas/OrderAddressSnapshot' }
         pickup_address: { $ref: '#/components/schemas/OrderAddressSnapshot' }
         items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
-        note: { type: string, nullable: true, description: Seller note }
         state: { $ref: '#/components/schemas/OrderState' }
         received_at:
           type: string
@@ -231,7 +210,7 @@ components:
         created_at: { type: string, format: date-time }
         completed_at: { type: string, format: date-time, nullable: true, description: Set by the payout job }
         cancelled_at: { type: string, format: date-time, nullable: true }
-      required: [id, draft_id, buyer_id, seller_id, transport_id, address, pickup_address, state, receipt_attachments, created_at]
+      required: [id, buyer_id, seller_id, transport_id, address, pickup_address, state, receipt_attachments, created_at]
 
     OrderPage:
       type: object
@@ -239,25 +218,6 @@ components:
         data: { type: array, items: { $ref: '#/components/schemas/Order' } }
         meta: { $ref: '#/components/schemas/CursorMeta' }
       required: [data, meta]
-
-    ConfirmOrderRequest:
-      type: object
-      properties:
-        draft_id: { $ref: '#/components/schemas/DraftOrderID' }
-        transport_option: { type: string, maxLength: 100, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
-        pickup_contact_id: { $ref: '#/components/schemas/ContactID' }
-        note: { type: string, maxLength: 500 }
-      required: [draft_id, transport_option, pickup_contact_id]
-
-    ConfirmOrderResult:
-      type: object
-      properties:
-        order: { $ref: '#/components/schemas/Order' }
-        shipping_fee_session:
-          allOf: [{ $ref: '#/components/schemas/PaymentSession' }]
-          nullable: true
-          description: Present only when the listing says the seller pays shipping.
-      required: [order]
 
     ConfirmReceiptRequest:
       type: object

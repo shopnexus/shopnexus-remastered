@@ -140,7 +140,7 @@ components:
       description: >
         What the money is for; it is what routes the flow. A client cannot pick this
         — the module that owes the money does.
-      enum: [buyer-checkout, seller-confirmation-fee, seller-payout, withdrawal]
+      enum: [buyer-checkout, seller-payout, withdrawal]
 
     PaymentSessionStatus:
       type: string

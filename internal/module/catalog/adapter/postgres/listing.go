@@ -17,7 +17,7 @@ import (
 // domain's pointer field: NULL arrives as nil, the same "not set" the entity uses. Enum
 // columns are cast to text because the domain's types are strings.
 const listingColumns = `id, version, account_id, slug, status::text, name, description,
-	       category_id, condition::text, price_mode::text, shipping_paid_by::text, currency,
+	       category_id, condition::text, price_mode::text, currency,
 	       specifications, attachments, pending_edit, cached_rating, cached_sold,
 	       created_at, deleted_at, embedding_stale_at`
 
@@ -27,7 +27,7 @@ func scanListing(row pgx.Row) (*domain.Listing, error) {
 		pending []byte
 	)
 	err := row.Scan(&l.ID, &l.Version, &l.SellerID, &l.Slug, &l.Status, &l.Name, &l.Description,
-		&l.CategoryID, &l.Condition, &l.PriceMode, &l.ShippingPaidBy, &l.Currency,
+		&l.CategoryID, &l.Condition, &l.PriceMode, &l.Currency,
 		&l.Specifications, &l.Attachments, &pending, &l.CachedRating, &l.CachedSold,
 		&l.CreatedAt, &l.DeletedAt, &l.EmbeddingStaleAt)
 	if dbx.IsNoRows(err) {
@@ -65,7 +65,6 @@ func listingArgs(l *domain.Listing) pgx.NamedArgs {
 		"category_id":        l.CategoryID,
 		"condition":          string(l.Condition),
 		"price_mode":         string(l.PriceMode),
-		"shipping_paid_by":   string(l.ShippingPaidBy),
 		"currency":           l.Currency,
 		"specifications":     dbx.JSONObject(l.Specifications),
 		"attachments":        dbx.Int64Array(l.Attachments),
@@ -185,10 +184,10 @@ func (r *Repo) CreateListing(ctx context.Context, l *domain.Listing, actor int64
 	}
 	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
 		const q = `INSERT INTO listing (account_id, slug, status, name, description, category_id,
-		                       condition, price_mode, shipping_paid_by, currency, specifications,
+		                       condition, price_mode, currency, specifications,
 		                       attachments, pending_edit, embedding_stale_at)
 		           VALUES (@account_id, @slug, @status, @name, @description, @category_id,
-		                   @condition, @price_mode, @shipping_paid_by, @currency, @specifications,
+		                   @condition, @price_mode, @currency, @specifications,
 		                   @attachments, @pending_edit, @embedding_stale_at)
 		           RETURNING id, version, created_at`
 		err := tx.QueryRow(ctx, q, listingArgs(l)).Scan(&l.ID, &l.Version, &l.CreatedAt)
@@ -225,8 +224,8 @@ func (r *Repo) SaveListing(ctx context.Context, l *domain.Listing, actor int64) 
 		const q = `UPDATE listing
 		           SET status = @status, name = @name, description = @description,
 		               category_id = @category_id, condition = @condition,
-		               price_mode = @price_mode, shipping_paid_by = @shipping_paid_by,
-		               currency = @currency, specifications = @specifications,
+		               price_mode = @price_mode, currency = @currency,
+		               specifications = @specifications,
 		               attachments = @attachments, pending_edit = @pending_edit,
 		               embedding_stale_at = @embedding_stale_at, version = version + 1
 		           WHERE id = @id AND version = @version AND deleted_at IS NULL`

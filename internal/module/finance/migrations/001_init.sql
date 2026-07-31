@@ -17,7 +17,7 @@
 
 -- What a session is for. An enum, not free text: "kind" routes the money, so a typo
 -- would be a session no handler ever picks up.
-CREATE TYPE "session_kind" AS ENUM ('buyer-checkout', 'seller-confirmation-fee', 'seller-payout', 'withdrawal');
+CREATE TYPE "session_kind" AS ENUM ('buyer-checkout', 'seller-payout', 'withdrawal');
 -- Payment session lifecycle
 CREATE TYPE "session_status" AS ENUM ('pending', 'processing', 'success', 'cancelled', 'failed');
 -- Ledger leg lifecycle: pending -> success or failed, and success is terminal.

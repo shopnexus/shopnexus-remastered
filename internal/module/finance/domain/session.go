@@ -12,10 +12,9 @@ import (
 // another kind — there is no separate withdrawal table; its destination bank
 // account and admin resolution live in the session's Data.
 const (
-	KindBuyerCheckout         = "buyer-checkout"
-	KindSellerConfirmationFee = "seller-confirmation-fee"
-	KindSellerPayout          = "seller-payout"
-	KindWithdrawal            = "withdrawal"
+	KindBuyerCheckout = "buyer-checkout"
+	KindSellerPayout  = "seller-payout"
+	KindWithdrawal    = "withdrawal"
 )
 
 // Lifecycle status shared by sessions and ledger transactions (status enum).
@@ -32,7 +31,7 @@ const (
 // moved, so split tender across rails stays auditable.
 type Session struct {
 	ID          int64  `validate:"required"`
-	Kind        string `validate:"required,oneof=buyer-checkout seller-confirmation-fee seller-payout withdrawal"`
+	Kind        string `validate:"required,oneof=buyer-checkout seller-payout withdrawal"`
 	Status      string `validate:"required,oneof=pending processing success cancelled failed"`
 	FromID      int64  // zero = system
 	ToID        int64  // zero = system

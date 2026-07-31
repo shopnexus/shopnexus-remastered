@@ -30,7 +30,7 @@ type Wallet struct {
 }
 
 type CreateSessionRequest struct {
-	Kind        string            `json:"kind" validate:"required,oneof=buyer-checkout seller-confirmation-fee seller-payout withdrawal"`
+	Kind        string            `json:"kind" validate:"required,oneof=buyer-checkout seller-payout withdrawal"`
 	FromID      id.ID[id.Account] `json:"-"`               // taken from the token
 	ToID        id.ID[id.Account] `json:"to_id,omitempty"` // zero = system
 	Note        string            `json:"note,omitempty"`

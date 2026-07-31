@@ -83,7 +83,7 @@ Each module has its own README with ER diagrams, domain concepts, flows, and end
 | -------------------------------------------- | ---------------------------------------------------------------------- |
 | [`account`](internal/module/account/)        | Auth, profiles, contacts, favorites, payment methods, notifications    |
 | [`catalog`](internal/module/catalog/)        | Products, categories, tags, comments, hybrid search                    |
-| [`order`](internal/module/order/)            | Cart, checkout, pending items, seller confirmation, payment, refunds   |
+| [`order`](internal/module/order/)            | Cart, checkout, price negotiation, orders, shipment, refunds           |
 | [`inventory`](internal/module/inventory/)    | Stock management, serial tracking, audit history                       |
 | [`promotion`](internal/module/promotion/)    | Discounts, ship discounts, scheduling, group-based price stacking      |
 | [`analytic`](internal/module/analytic/)      | Interaction tracking, weighted product popularity scoring              |

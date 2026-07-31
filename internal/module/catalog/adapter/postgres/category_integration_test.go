@@ -59,20 +59,19 @@ func insertListing(t *testing.T, categoryID int64) {
 	pool := poolOf(t)
 	const q = `INSERT INTO listing
 	           (slug, account_id, category_id, name, description, specifications,
-	            price_mode, condition, shipping_paid_by, currency)
+	            price_mode, condition, currency)
 	           VALUES (@slug, @account_id, @category_id, @name, @description, @specifications::jsonb,
-	                   @price_mode, @condition, @shipping_paid_by, @currency)`
+	                   @price_mode, @condition, @currency)`
 	args := pgx.NamedArgs{
-		"slug":             unique("listing-"),
-		"account_id":       int64(1),
-		"category_id":      categoryID,
-		"name":             "test listing",
-		"description":      "",
-		"specifications":   `{}`,
-		"price_mode":       "fixed",
-		"condition":        "new",
-		"shipping_paid_by": "seller",
-		"currency":         "USD",
+		"slug":           unique("listing-"),
+		"account_id":     int64(1),
+		"category_id":    categoryID,
+		"name":           "test listing",
+		"description":    "",
+		"specifications": `{}`,
+		"price_mode":     "fixed",
+		"condition":      "new",
+		"currency":       "USD",
 	}
 	var listingID int64
 	if err := pool.QueryRow(context.Background(), q+` RETURNING id`, args).Scan(&listingID); err != nil {

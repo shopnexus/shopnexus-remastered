@@ -34,7 +34,6 @@ func (s *Service) CreateListing(ctx context.Context, req catalogapi.CreateListin
 		Description:    req.Description,
 		Condition:      domain.Condition(req.Condition),
 		PriceMode:      domain.PriceMode(req.PriceMode),
-		ShippingPaidBy: domain.ShippingPaidBy(req.ShippingPaidBy),
 		Currency:       req.Currency,
 		Specifications: req.Specifications,
 		Attachments:    resourceKeys(req.Attachments),
@@ -184,7 +183,6 @@ func (s *Service) detailFor(ctx context.Context, l *domain.Listing, viewerID int
 		Status:         string(l.Status),
 		Condition:      string(l.Condition),
 		PriceMode:      string(l.PriceMode),
-		ShippingPaidBy: string(l.ShippingPaidBy),
 		Currency:       l.Currency,
 		Specifications: l.Specifications,
 		Images:         pick(images, l.Attachments),
@@ -253,9 +251,6 @@ func toAPIPendingEdit(e domain.PendingEdit) *catalogapi.PendingEdit {
 	if e.PriceMode != nil {
 		out.PriceMode = new(string(*e.PriceMode))
 	}
-	if e.ShippingPaidBy != nil {
-		out.ShippingPaidBy = new(string(*e.ShippingPaidBy))
-	}
 	for _, key := range e.Attachments {
 		out.Attachments = append(out.Attachments, id.Of[id.Resource](key))
 	}
@@ -283,9 +278,6 @@ func (s *Service) UpdateListing(ctx context.Context, req catalogapi.UpdateListin
 	}
 	if req.PriceMode != nil {
 		edit.PriceMode = new(domain.PriceMode(*req.PriceMode))
-	}
-	if req.ShippingPaidBy != nil {
-		edit.ShippingPaidBy = new(domain.ShippingPaidBy(*req.ShippingPaidBy))
 	}
 	if req.Attachments != nil {
 		edit.Attachments = resourceKeys(req.Attachments)

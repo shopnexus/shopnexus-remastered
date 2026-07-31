@@ -36,13 +36,6 @@ const (
 	PriceModeNegotiable PriceMode = "negotiable"
 )
 
-type ShippingPaidBy string
-
-const (
-	ShippingPaidByBuyer  ShippingPaidBy = "buyer"
-	ShippingPaidBySeller ShippingPaidBy = "seller"
-)
-
 // maxTags is a product rule, not a column: eleven tags is a seller gaming search.
 const maxTags = 10
 
@@ -78,14 +71,13 @@ type Listing struct {
 	Version        int64
 	SellerID       int64 `validate:"required"`
 	Slug           string
-	Status         Status         `validate:"required,oneof=draft pending active hidden"`
-	Name           string         `validate:"required,min=1,max=200"`
-	Description    string         `validate:"max=20000"`
-	CategoryID     int64          `validate:"required"`
-	Condition      Condition      `validate:"required,oneof=new used damaged"`
-	PriceMode      PriceMode      `validate:"required,oneof=fixed negotiable"`
-	ShippingPaidBy ShippingPaidBy `validate:"required,oneof=buyer seller"`
-	Currency       string         `validate:"required,len=3"`
+	Status         Status    `validate:"required,oneof=draft pending active hidden"`
+	Name           string    `validate:"required,min=1,max=200"`
+	Description    string    `validate:"max=20000"`
+	CategoryID     int64     `validate:"required"`
+	Condition      Condition `validate:"required,oneof=new used damaged"`
+	PriceMode      PriceMode `validate:"required,oneof=fixed negotiable"`
+	Currency       string    `validate:"required,len=3"`
 	Specifications map[string]any
 	Attachments    []int64
 	// PendingEdit is an edit held for moderation; nil means none.
@@ -110,7 +102,6 @@ type NewListingInput struct {
 	Description    string
 	Condition      Condition
 	PriceMode      PriceMode
-	ShippingPaidBy ShippingPaidBy
 	Currency       string
 	Specifications map[string]any
 	Attachments    []int64
@@ -130,7 +121,6 @@ func NewListing(sellerID, categoryID int64, in NewListingInput) (*Listing, error
 		Description:      strings.TrimSpace(in.Description),
 		Condition:        in.Condition,
 		PriceMode:        in.PriceMode,
-		ShippingPaidBy:   in.ShippingPaidBy,
 		Currency:         strings.ToUpper(strings.TrimSpace(in.Currency)),
 		Specifications:   in.Specifications,
 		Attachments:      in.Attachments,
@@ -328,9 +318,6 @@ func (l *Listing) apply(edit PendingEdit) error {
 	}
 	if edit.PriceMode != nil {
 		l.PriceMode = *edit.PriceMode
-	}
-	if edit.ShippingPaidBy != nil {
-		l.ShippingPaidBy = *edit.ShippingPaidBy
 	}
 	if edit.Specifications != nil {
 		l.Specifications = edit.Specifications

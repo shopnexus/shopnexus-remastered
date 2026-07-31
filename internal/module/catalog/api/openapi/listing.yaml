@@ -353,16 +353,20 @@ components:
     PriceMode:
       type: string
       description: >
-        `fixed` can be bought straight from the listing page. `negotiable` has to go
-        through an offer first and cannot be checked out directly.
-      enum: [fixed, negotiable]
+        How a sale on this listing starts, and it is the only thing that differs between
+        the two.
 
-    ShippingPaidBy:
-      type: string
-      description: >
-        Chosen by the seller when the listing is created. `buyer` adds the fee to the
-        checkout invoice. `seller` deducts it from the payout.
-      enum: [buyer, seller]
+
+        `fixed` is bought straight from the listing page: the buyer checks out, pays the
+        item plus the shipping quote, and the order and its shipment exist as soon as the
+        money lands. The seller confirms nothing.
+
+
+        `negotiable` cannot be checked out. The buyer opens a negotiation, which is a
+        thread in chat where either side revises the terms, and accepting them is what
+        starts the same checkout. Either way the seller never approves an order — the only
+        thing they can refuse is a price.
+      enum: [fixed, negotiable]
 
     Listing:
       type: object
@@ -433,7 +437,6 @@ components:
         status: { $ref: '#/components/schemas/ListingStatus' }
         condition: { $ref: '#/components/schemas/ListingCondition' }
         price_mode: { $ref: '#/components/schemas/PriceMode' }
-        shipping_paid_by: { $ref: '#/components/schemas/ShippingPaidBy' }
         currency: { $ref: '#/components/schemas/CurrencyCode' }
         specifications:
           type: object
@@ -465,7 +468,7 @@ components:
             and to staff only; buyers see the published version until it is approved.
         created_at: { type: string, format: date-time }
         deleted_at: { type: string, format: date-time, nullable: true, description: 'Set on a listing the seller removed.' }
-      required: [id, slug, name, description, status, condition, price_mode, shipping_paid_by, currency, specifications, images, category, tags, variants, sold, rating, seller, favorited, favorite_count, created_at]
+      required: [id, slug, name, description, status, condition, price_mode, currency, specifications, images, category, tags, variants, sold, rating, seller, favorited, favorite_count, created_at]
 
     ListingPage:
       type: object
@@ -487,7 +490,6 @@ components:
         category_id: { $ref: '#/components/schemas/CategoryID' }
         condition: { $ref: '#/components/schemas/ListingCondition' }
         price_mode: { $ref: '#/components/schemas/PriceMode' }
-        shipping_paid_by: { $ref: '#/components/schemas/ShippingPaidBy' }
         currency: { $ref: '#/components/schemas/CurrencyCode' }
         specifications: { type: object, additionalProperties: true }
         attachments:
@@ -500,7 +502,7 @@ components:
           minItems: 1
           items: { $ref: '#/components/schemas/CreateVariantRequest' }
           description: At least one. Price and shipping weight live on the variant.
-      required: [name, description, category_id, condition, price_mode, shipping_paid_by, currency, variants]
+      required: [name, category_id, condition, price_mode, currency, variants]
 
     UpdateListingRequest:
       type: object
@@ -511,7 +513,6 @@ components:
         category_id: { $ref: '#/components/schemas/CategoryID' }
         condition: { $ref: '#/components/schemas/ListingCondition' }
         price_mode: { $ref: '#/components/schemas/PriceMode' }
-        shipping_paid_by: { $ref: '#/components/schemas/ShippingPaidBy' }
         specifications: { type: object, additionalProperties: true }
         attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
         tags: { type: array, items: { $ref: '#/components/schemas/TagSlug' } }
@@ -530,7 +531,6 @@ components:
         category_id: { $ref: '#/components/schemas/CategoryID' }
         condition: { $ref: '#/components/schemas/ListingCondition' }
         price_mode: { $ref: '#/components/schemas/PriceMode' }
-        shipping_paid_by: { $ref: '#/components/schemas/ShippingPaidBy' }
         specifications: { type: object, additionalProperties: true }
         attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
         tags: { type: array, items: { $ref: '#/components/schemas/TagSlug' } }

@@ -69,7 +69,11 @@ CREATE TABLE IF NOT EXISTS "message" (
     -- common.resource_reference: a message and its references live in two schemas, and
     -- writing both atomically stops being possible once the modules are split apart.
     "attachments" BIGINT[] NOT NULL DEFAULT '{}',
-    "metadata" JSONB NOT NULL DEFAULT '{}', -- referenced spu / sku / order ids, offer payloads
+    -- Referenced ids: listing / variant / order, and `{"offer_id": N}` for a price
+    -- negotiation. The offer's terms are NOT copied here — order.offer is the source of truth
+    -- and this message only says which card to render, so a revision cannot leave the thread
+    -- showing a price that is no longer on the table.
+    "metadata" JSONB NOT NULL DEFAULT '{}',
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "edited_at" TIMESTAMPTZ,
     "deleted_at" TIMESTAMPTZ, -- redaction: the sender unsending, or moderation acting on a report

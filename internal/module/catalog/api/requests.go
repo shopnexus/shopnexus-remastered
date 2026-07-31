@@ -83,7 +83,6 @@ type CreateListingRequest struct {
 	CategoryID     id.ID[id.Category]   `json:"category_id" validate:"required"`
 	Condition      string               `json:"condition" validate:"required,oneof=new used damaged"`
 	PriceMode      string               `json:"price_mode" validate:"required,oneof=fixed negotiable"`
-	ShippingPaidBy string               `json:"shipping_paid_by" validate:"required,oneof=buyer seller"`
 	Currency       string               `json:"currency" validate:"required,len=3"`
 	Specifications map[string]any       `json:"specifications,omitempty"`
 	Attachments    []id.ID[id.Resource] `json:"attachments,omitempty" validate:"max=10"`
@@ -133,7 +132,6 @@ type UpdateListingRequest struct {
 	CategoryID             *id.ID[id.Category]  `json:"category_id,omitempty"`
 	Condition              *string              `json:"condition,omitempty" validate:"omitempty,oneof=new used damaged"`
 	PriceMode              *string              `json:"price_mode,omitempty" validate:"omitempty,oneof=fixed negotiable"`
-	ShippingPaidBy         *string              `json:"shipping_paid_by,omitempty" validate:"omitempty,oneof=buyer seller"`
 	Specifications         map[string]any       `json:"specifications,omitempty"`
 	Attachments            []id.ID[id.Resource] `json:"attachments,omitempty" validate:"max=10"`
 	Tags                   []string             `json:"tags,omitempty" validate:"max=10,dive,required,max=100"`
