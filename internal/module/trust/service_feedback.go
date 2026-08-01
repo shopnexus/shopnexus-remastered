@@ -42,10 +42,9 @@ func (s *Service) GetOrderFeedback(ctx context.Context, req trustapi.OrderFeedba
 		if err != nil {
 			return trustapi.OrderFeedback{}, err
 		}
-		switch {
-		case row.Direction == direction:
+		if row.Direction == direction {
 			out.Mine = &view
-		default:
+		} else {
 			out.TheirsSubmitted = true
 			if row.Published() {
 				out.Theirs = &view

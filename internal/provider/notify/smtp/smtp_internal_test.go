@@ -1,6 +1,7 @@
 package smtp
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -152,7 +153,7 @@ func TestNewClient_RequiredFields(t *testing.T) {
 
 func TestSendEmail_WithoutARecipient(t *testing.T) {
 	c, _ := NewClient(testConfig())
-	if err := c.SendEmail(nil, notify.Message{Kind: notify.KindEmailVerification, Token: "t"}); err != notify.ErrNoChannel {
+	if err := c.SendEmail(context.TODO(), notify.Message{Kind: notify.KindEmailVerification, Token: "t"}); err != notify.ErrNoChannel {
 		t.Fatalf("err = %v, want ErrNoChannel", err)
 	}
 }

@@ -30,16 +30,6 @@ func NewAccount(svc accountapi.Service, v *validator.Validate, log *slog.Logger)
 	return &Account{svc: svc, v: v, log: log}
 }
 
-// failed writes err and reports whether the request is over. It exists so a handler reads
-// as the four steps above rather than as error plumbing with steps buried in it.
-func failed(w http.ResponseWriter, log *slog.Logger, err error) bool {
-	if err == nil {
-		return false
-	}
-	httpx.WriteError(w, log, err)
-	return true
-}
-
 // ---------------------------------------------------------------- auth ------
 
 // Register handles POST /register.
@@ -554,7 +544,7 @@ func (h *Account) ListNotifications(w http.ResponseWriter, r *http.Request) {
 		ActorID:  uid,
 		Category: r.URL.Query().Get("category"),
 		Unread:   unread,
-		Cursor:   r.URL.Query().Get("cursor"),
+		Cursor:   cursorParam(r),
 		Limit:    limit,
 	}
 	if failed(w, h.log, check(h.v, req)) {
@@ -895,10 +885,7 @@ func (h *Account) AdminListIdentityDocuments(w http.ResponseWriter, r *http.Requ
 	if failed(w, h.log, err) {
 		return
 	}
-	status := r.URL.Query().Get("status")
-	if status == "" {
-		status = "pending"
-	}
+	status := stringParam(r, "status", accountapi.IdentityStatusPending)
 	req := accountapi.AdminListIdentityDocumentsRequest{ActorID: uid, Status: status, Page: page, Limit: limit}
 	if failed(w, h.log, check(h.v, req)) {
 		return

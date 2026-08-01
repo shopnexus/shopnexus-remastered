@@ -215,7 +215,7 @@ func (w *Refund) ServiceName() string { return port.RefundWorkflow }
 
 func (w *Refund) Run(ctx restate.WorkflowContext, p port.RefundParams) error {
 	refund, err := restate.Run(ctx, func(rctx restate.RunContext) (domain.Refund, error) {
-		return w.l.refund(rctx, p.RefundID)
+		return w.l.svc.repo.FindRefund(rctx, p.RefundID)
 	}, restate.WithName("readRefund"))
 	if err != nil {
 		return fmt.Errorf("read refund: %w", err)
@@ -237,15 +237,6 @@ func (w *Refund) Run(ctx restate.WorkflowContext, p port.RefundParams) error {
 	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
 		return w.l.svc.AdvanceRefund(rctx, id.Of[id.Refund](p.RefundID))
 	}, restate.WithName("advanceRefund"))
-}
-
-// checkoutWindow mirrors the payment session's own expiry: the workflow must not outlive the
-// thing it is waiting for.
-const checkoutWindow = 15 * time.Minute
-
-// refund reads one case, which is all the workflow needs to know whose clock is running.
-func (l *Lifecycle) refund(ctx context.Context, refundID int64) (domain.Refund, error) {
-	return l.svc.repo.FindRefund(ctx, refundID)
 }
 
 // cancelSessionLines closes the lines of a session nobody paid and gives the stock back. The

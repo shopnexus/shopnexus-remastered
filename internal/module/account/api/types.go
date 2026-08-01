@@ -17,6 +17,14 @@ const (
 	RoleAdmin     = "admin"
 )
 
+// The identity-document statuses a moderator's queue filters on, as the published `status`
+// reports them.
+const (
+	IdentityStatusPending  = "pending"
+	IdentityStatusVerified = "verified"
+	IdentityStatusRejected = "rejected"
+)
+
 // --- authentication ---
 
 // AuthResult is what every successful sign-in returns: the two tokens, the access

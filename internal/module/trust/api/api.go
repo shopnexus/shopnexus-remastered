@@ -17,6 +17,13 @@ import (
 	"shopnexus/internal/shared/id"
 )
 
+// The two roles a reputation is kept for: the same account is rated separately as a seller and as
+// a buyer, so every read names one. Published because the gateway defaults to one of them.
+const (
+	RoleSeller = "seller"
+	RoleBuyer  = "buyer"
+)
+
 // CursorInfo is the cursor meta every list here answers with. A timestamp cursor, not an
 // offset: these lists move under the reader.
 type CursorInfo struct {

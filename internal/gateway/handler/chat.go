@@ -82,7 +82,7 @@ func (h *Chat) ListConversations(w http.ResponseWriter, r *http.Request) {
 	}
 	req := chatapi.ListConversationsRequest{
 		ActorID: uid,
-		Cursor:  r.URL.Query().Get("cursor"),
+		Cursor:  cursorParam(r),
 		Limit:   limit,
 	}
 	if failed(w, h.log, check(h.v, req)) {
@@ -92,7 +92,7 @@ func (h *Chat) ListConversations(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta))
+	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta.NextCursor))
 }
 
 // OpenConversation handles POST /conversations. Idempotent: there is one thread per pair,
@@ -172,7 +172,7 @@ func (h *Chat) ListMessages(w http.ResponseWriter, r *http.Request) {
 	req := chatapi.ListMessagesRequest{
 		ActorID: uid,
 		ID:      conversationID,
-		Cursor:  r.URL.Query().Get("cursor"),
+		Cursor:  cursorParam(r),
 		Limit:   limit,
 	}
 	if failed(w, h.log, check(h.v, req)) {
@@ -182,7 +182,7 @@ func (h *Chat) ListMessages(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta))
+	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta.NextCursor))
 }
 
 // SendMessage handles POST /conversations/{id}/messages.
@@ -288,13 +288,4 @@ func (h *Chat) RedactMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteNoContent(w)
-}
-
-// cursorMeta converts the service's cursor info to the envelope's. NextCursor is a
-// pointer there so the last page says null rather than omitting the key.
-func cursorMeta(meta chatapi.CursorInfo) httpx.CursorMeta {
-	if meta.NextCursor == "" {
-		return httpx.CursorMeta{}
-	}
-	return httpx.CursorMeta{NextCursor: new(meta.NextCursor)}
 }

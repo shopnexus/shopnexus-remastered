@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	catalogapi "shopnexus/internal/module/catalog/api"
 	financeapi "shopnexus/internal/module/finance/api"
@@ -30,20 +31,14 @@ func (s *Service) ListItems(ctx context.Context, req orderapi.ListItemsRequest) 
 	if err != nil {
 		return orderapi.ItemPage{}, fmt.Errorf("list items: %w", err)
 	}
-	hasMore := len(rows) > req.Limit
-	if hasMore {
-		rows = rows[:req.Limit]
-	}
+	rows, meta := page(rows, req.Limit, func(i domain.Item) (time.Time, int64) {
+		return i.CreatedAt, i.ID
+	})
 	out := make([]orderapi.Item, 0, len(rows))
 	for _, i := range rows {
 		out = append(out, toAPIItem(i))
 	}
-	page := orderapi.ItemPage{Data: out, Meta: orderapi.CursorInfo{HasMore: hasMore}}
-	if hasMore && len(rows) > 0 {
-		last := rows[len(rows)-1]
-		page.Meta.NextCursor = formatCursor(last.CreatedAt, last.ID)
-	}
-	return page, nil
+	return orderapi.ItemPage{Data: out, Meta: meta}, nil
 }
 
 // CancelItem voids a line before it becomes an order, and gives the reserved stock back.
@@ -145,10 +140,9 @@ func (s *Service) ListOrders(ctx context.Context, req orderapi.ListOrdersRequest
 	if err != nil {
 		return orderapi.OrderPage{}, fmt.Errorf("list orders: %w", err)
 	}
-	hasMore := len(rows) > req.Limit
-	if hasMore {
-		rows = rows[:req.Limit]
-	}
+	rows, meta := page(rows, req.Limit, func(o domain.Order) (time.Time, int64) {
+		return o.CreatedAt, o.ID
+	})
 	out := make([]orderapi.Order, 0, len(rows))
 	for _, o := range rows {
 		view, err := s.orderView(ctx, o)
@@ -157,12 +151,7 @@ func (s *Service) ListOrders(ctx context.Context, req orderapi.ListOrdersRequest
 		}
 		out = append(out, view)
 	}
-	page := orderapi.OrderPage{Data: out, Meta: orderapi.CursorInfo{HasMore: hasMore}}
-	if hasMore && len(rows) > 0 {
-		last := rows[len(rows)-1]
-		page.Meta.NextCursor = formatCursor(last.CreatedAt, last.ID)
-	}
-	return page, nil
+	return orderapi.OrderPage{Data: out, Meta: meta}, nil
 }
 
 func (s *Service) GetOrder(ctx context.Context, req orderapi.OrderRequest) (orderapi.Order, error) {

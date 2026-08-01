@@ -11,9 +11,6 @@ import (
 
 	"shopnexus/internal/config"
 	"shopnexus/internal/gateway/handler"
-	"shopnexus/internal/module/observability"
-	"shopnexus/internal/shared/session"
-	"shopnexus/internal/shared/token"
 )
 
 // Module wires the HTTP handlers, the router, and the HTTP server lifecycle.
@@ -39,42 +36,7 @@ var Module = fx.Module("gateway",
 // outside auth: a gateway calls the URL it was configured with and has no token.
 func newWebhookMux() *http.ServeMux { return http.NewServeMux() }
 
-type routerParams struct {
-	fx.In
-	// Webhooks is the mux providers mount their callbacks on, provided by this module so
-	// a provider can register on it before the router mounts it.
-	Webhooks *http.ServeMux
-	Account  *handler.Account
-	Catalog  *handler.Catalog
-	Chat     *handler.Chat
-	Finance  *handler.Finance
-	Order    *handler.Order
-	Trust    *handler.Trust
-	// Uploads is optional: only a storage backend that needs this process to serve the bytes
-	// provides one, so a graph without it is a deployment whose bucket signs its own URLs.
-	Uploads  *handler.Uploads `optional:"true"`
-	Metrics  *observability.Sink
-	Tokens   *token.Manager
-	Sessions *session.Store
-	Log      *slog.Logger
-}
-
-func newRouter(p routerParams) http.Handler {
-	return NewRouter(Deps{
-		Webhooks: p.Webhooks,
-		Account:  p.Account,
-		Catalog:  p.Catalog,
-		Chat:     p.Chat,
-		Finance:  p.Finance,
-		Order:    p.Order,
-		Trust:    p.Trust,
-		Uploads:  p.Uploads,
-		Metrics:  p.Metrics,
-		Tokens:   p.Tokens,
-		Sessions: p.Sessions,
-		Log:      p.Log,
-	})
-}
+func newRouter(d Deps) http.Handler { return NewRouter(d) }
 
 func startServer(lc fx.Lifecycle, cfg *config.Config, h http.Handler, log *slog.Logger) {
 	srv := &http.Server{Addr: cfg.GatewayAddr, Handler: h}

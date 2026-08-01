@@ -43,6 +43,10 @@ const (
 	// half-hour a draft gets, for the same reason: both are a frozen price, and stock nobody has
 	// reserved yet must not be promised at yesterday's number.
 	acceptedWindow = 30 * time.Minute
+	// checkoutWindow is how long an unpaid checkout holds its reservation. Read by the sweep as
+	// well as by the timer, which is why it lives with the other windows rather than beside one
+	// of its two callers.
+	checkoutWindow = 15 * time.Minute
 	// bookingGrace is how long a shipment is left alone before the retry pass tries the carrier
 	// again: long enough that a booking still in flight is never raced by the sweep.
 	bookingGrace = 2 * time.Minute
@@ -272,6 +276,21 @@ func parseCursor(cursor string) (time.Time, int64, error) {
 		return time.Time{}, 0, domain.ErrCursorInvalid
 	}
 	return time.Unix(0, at), id, nil
+}
+
+// page cuts the extra row every list reads and turns the last one into the next cursor. Six routes
+// had this written out; the accessor is what keeps it honest for a list keyed by something other
+// than `created_at`.
+func page[T any](rows []T, limit int, key func(T) (time.Time, int64)) ([]T, orderapi.CursorInfo) {
+	hasMore := len(rows) > limit
+	if hasMore {
+		rows = rows[:limit]
+	}
+	meta := orderapi.CursorInfo{HasMore: hasMore}
+	if hasMore && len(rows) > 0 {
+		meta.NextCursor = formatCursor(key(rows[len(rows)-1]))
+	}
+	return rows, meta
 }
 
 // cursorFilter reads one more row than asked, so "is there another page" is answered

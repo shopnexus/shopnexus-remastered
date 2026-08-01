@@ -570,15 +570,6 @@ func (f *fakeUploads) Resolve(_ context.Context, ids []int64) (map[int64]common.
 	return out, nil
 }
 
-// confirmedUpload is the shorthand a test uses when it just needs a usable photo id.
-func (f *fakeUploads) confirmedUpload() int64 {
-	f.nextID++
-	f.slots[f.nextID] = true
-	f.arrived[f.nextID] = true
-	f.confirmed[f.nextID] = true
-	return f.nextID
-}
-
 // A cursor here is the pair (ordering key, row id), compared as a tuple — which is what makes
 // a boundary tie skip nothing when two rows share a timestamp exactly.
 func timeKey(at time.Time, rowID int64) [2]int64 { return [2]int64{at.UnixNano(), rowID} }

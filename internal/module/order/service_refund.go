@@ -3,6 +3,7 @@ package order
 import (
 	"context"
 	"fmt"
+	"time"
 
 	orderapi "shopnexus/internal/module/order/api"
 	"shopnexus/internal/module/order/domain"
@@ -62,10 +63,9 @@ func (s *Service) ListRefunds(ctx context.Context, req orderapi.ListRefundsReque
 	if err != nil {
 		return orderapi.RefundPage{}, fmt.Errorf("list refunds: %w", err)
 	}
-	hasMore := len(rows) > req.Limit
-	if hasMore {
-		rows = rows[:req.Limit]
-	}
+	rows, meta := page(rows, req.Limit, func(r domain.Refund) (time.Time, int64) {
+		return r.CreatedAt, r.ID
+	})
 	out := make([]orderapi.Refund, 0, len(rows))
 	for _, r := range rows {
 		view, err := s.refundView(ctx, r)
@@ -74,12 +74,7 @@ func (s *Service) ListRefunds(ctx context.Context, req orderapi.ListRefundsReque
 		}
 		out = append(out, view)
 	}
-	page := orderapi.RefundPage{Data: out, Meta: orderapi.CursorInfo{HasMore: hasMore}}
-	if hasMore && len(rows) > 0 {
-		last := rows[len(rows)-1]
-		page.Meta.NextCursor = formatCursor(last.CreatedAt, last.ID)
-	}
-	return page, nil
+	return orderapi.RefundPage{Data: out, Meta: meta}, nil
 }
 
 func (s *Service) GetRefund(ctx context.Context, req orderapi.RefundRequest) (orderapi.Refund, error) {
@@ -290,20 +285,14 @@ func (s *Service) AdminListDisputes(ctx context.Context, req orderapi.ListDisput
 	if err != nil {
 		return orderapi.DisputePage{}, fmt.Errorf("list disputes: %w", err)
 	}
-	hasMore := len(rows) > req.Limit
-	if hasMore {
-		rows = rows[:req.Limit]
-	}
+	rows, meta := page(rows, req.Limit, func(d domain.Dispute) (time.Time, int64) {
+		return d.CreatedAt, d.ID
+	})
 	out := make([]orderapi.Dispute, 0, len(rows))
 	for _, d := range rows {
 		out = append(out, toAPIDispute(d))
 	}
-	page := orderapi.DisputePage{Data: out, Meta: orderapi.CursorInfo{HasMore: hasMore}}
-	if hasMore && len(rows) > 0 {
-		last := rows[len(rows)-1]
-		page.Meta.NextCursor = formatCursor(last.CreatedAt, last.ID)
-	}
-	return page, nil
+	return orderapi.DisputePage{Data: out, Meta: meta}, nil
 }
 
 // AdminRuleDispute applies the verdict to the round and to the refund behind it. A buyer who

@@ -5,7 +5,9 @@ import (
 	"log/slog"
 	"net/http"
 
+	"go.uber.org/fx"
 	openapi "shopnexus/api"
+
 	"shopnexus/internal/gateway/handler"
 	"shopnexus/internal/gateway/middleware"
 	"shopnexus/internal/module/observability"
@@ -14,7 +16,13 @@ import (
 	"shopnexus/internal/shared/token"
 )
 
+// Deps is what a router needs, and it is also the fx parameter object: one declaration, because
+// two structs with the same twelve fields and a function copying one into the other is a field
+// somebody adds to one and forgets in the other. `router_test.go` still builds it as a literal —
+// an embedded fx.In is inert outside a graph.
 type Deps struct {
+	fx.In
+
 	// Webhooks is where providers mount their own IPN paths. It is outside the versioned
 	// base path and outside auth: a gateway calls the URL it was configured with, signs
 	// the payload its own way, and has no bearer token to present.
@@ -27,7 +35,7 @@ type Deps struct {
 	Trust    *handler.Trust
 	// Uploads is nil unless the storage backend needs this process to serve the bytes — the
 	// `local` one does, a real bucket does not.
-	Uploads  *handler.Uploads
+	Uploads  *handler.Uploads `optional:"true"`
 	Metrics  *observability.Sink
 	Tokens   *token.Manager
 	Sessions *session.Store

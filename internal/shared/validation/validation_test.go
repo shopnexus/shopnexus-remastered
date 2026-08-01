@@ -27,7 +27,8 @@ func TestDefault_ValidPasses(t *testing.T) {
 }
 
 func TestDefault_ReturnsSameInstance(t *testing.T) {
-	if validation.Default() != validation.Default() {
+	first, second := validation.Default(), validation.Default()
+	if first != second {
 		t.Fatal("Default() must return the same singleton instance")
 	}
 }

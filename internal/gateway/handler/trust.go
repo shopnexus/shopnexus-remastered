@@ -3,12 +3,10 @@ package handler
 import (
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"github.com/go-playground/validator/v10"
 
 	trustapi "shopnexus/internal/module/trust/api"
-	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/httpx"
 	"shopnexus/internal/shared/id"
 )
@@ -89,7 +87,7 @@ func (h *Trust) ListAccountFeedback(w http.ResponseWriter, r *http.Request) {
 	req := trustapi.ListFeedbackRequest{
 		AccountID: accountID,
 		Role:      r.URL.Query().Get("role"),
-		Cursor:    r.URL.Query().Get("cursor"),
+		Cursor:    cursorParam(r),
 		Limit:     limit,
 	}
 	if failed(w, h.log, check(h.v, req)) {
@@ -99,7 +97,7 @@ func (h *Trust) ListAccountFeedback(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	httpx.WriteCursor(w, http.StatusOK, res.Data, trustCursor(res.Meta))
+	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta.NextCursor))
 }
 
 // GetReputation handles GET /accounts/{accountID}/reputation. The role defaults to seller,
@@ -109,10 +107,7 @@ func (h *Trust) GetReputation(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	role := r.URL.Query().Get("role")
-	if role == "" {
-		role = "seller"
-	}
+	role := stringParam(r, "role", trustapi.RoleSeller)
 	req := trustapi.GetReputationRequest{AccountID: accountID, Role: role}
 	if failed(w, h.log, check(h.v, req)) {
 		return
@@ -137,15 +132,15 @@ func (h *Trust) ListReviews(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	rating, err := ratingParam(r)
+	rating, err := intParam(r, "rating", 0, 1, 5)
 	if failed(w, h.log, err) {
 		return
 	}
 	req := trustapi.ListReviewsRequest{
 		ListingID: listingID,
-		Rating:    rating,
+		Rating:    int16(rating),
 		Sort:      r.URL.Query().Get("sort"),
-		Cursor:    r.URL.Query().Get("cursor"),
+		Cursor:    cursorParam(r),
 		Limit:     limit,
 	}
 	// actor() answers an error for an anonymous request, which is not one here: the route is
@@ -160,7 +155,7 @@ func (h *Trust) ListReviews(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	httpx.WriteCursor(w, http.StatusOK, res.Data, trustCursor(res.Meta))
+	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta.NextCursor))
 }
 
 // SubmitReview handles POST /listings/{listingID}/reviews.
@@ -407,7 +402,7 @@ func (h *Trust) ListMyReports(w http.ResponseWriter, r *http.Request) {
 	req := trustapi.ListReportsRequest{
 		ActorID: uid,
 		Status:  r.URL.Query().Get("status"),
-		Cursor:  r.URL.Query().Get("cursor"),
+		Cursor:  cursorParam(r),
 		Limit:   limit,
 	}
 	if failed(w, h.log, check(h.v, req)) {
@@ -417,7 +412,7 @@ func (h *Trust) ListMyReports(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	httpx.WriteCursor(w, http.StatusOK, res.Data, trustCursor(res.Meta))
+	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta.NextCursor))
 }
 
 // AdminListReports handles GET /admin/reports.
@@ -435,7 +430,7 @@ func (h *Trust) AdminListReports(w http.ResponseWriter, r *http.Request) {
 		Status:  r.URL.Query().Get("status"),
 		RefType: r.URL.Query().Get("ref_type"),
 		Reason:  r.URL.Query().Get("reason"),
-		Cursor:  r.URL.Query().Get("cursor"),
+		Cursor:  cursorParam(r),
 		Limit:   limit,
 	}
 	if failed(w, h.log, check(h.v, req)) {
@@ -445,7 +440,7 @@ func (h *Trust) AdminListReports(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	httpx.WriteCursor(w, http.StatusOK, res.Data, trustCursor(res.Meta))
+	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta.NextCursor))
 }
 
 // AdminGetReport handles GET /admin/reports/{id}.
@@ -530,27 +525,4 @@ func (h *Trust) reportRequest(w http.ResponseWriter, r *http.Request) (trustapi.
 		return trustapi.ReportRequest{}, false
 	}
 	return req, true
-}
-
-func trustCursor(meta trustapi.CursorInfo) httpx.CursorMeta {
-	if meta.NextCursor == "" {
-		return httpx.CursorMeta{}
-	}
-	return httpx.CursorMeta{NextCursor: new(meta.NextCursor)}
-}
-
-// ratingParam reads the star filter. Out of range is rejected rather than ignored: a client
-// asking for six stars has a bug, and answering with everything hides it.
-func ratingParam(r *http.Request) (int16, error) {
-	raw := r.URL.Query().Get("rating")
-	if raw == "" {
-		return 0, nil
-	}
-	v, err := strconv.Atoi(raw)
-	if err != nil || v < 1 || v > 5 {
-		return 0, errx.NewValidationError("invalid field: rating", errx.Field{
-			Field: "rating", Rule: "range", Message: "must be an integer between 1 and 5",
-		})
-	}
-	return int16(v), nil
 }

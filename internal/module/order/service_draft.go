@@ -62,20 +62,14 @@ func (s *Service) ListDrafts(ctx context.Context, req orderapi.ListDraftsRequest
 	if err != nil {
 		return orderapi.DraftPage{}, fmt.Errorf("list drafts: %w", err)
 	}
-	hasMore := len(rows) > req.Limit
-	if hasMore {
-		rows = rows[:req.Limit]
-	}
+	rows, meta := page(rows, req.Limit, func(d domain.Draft) (time.Time, int64) {
+		return d.CreatedAt, d.ID
+	})
 	out := make([]orderapi.Draft, 0, len(rows))
 	for _, d := range rows {
 		out = append(out, toAPIDraft(d))
 	}
-	page := orderapi.DraftPage{Data: out, Meta: orderapi.CursorInfo{HasMore: hasMore}}
-	if hasMore && len(rows) > 0 {
-		last := rows[len(rows)-1]
-		page.Meta.NextCursor = formatCursor(last.CreatedAt, last.ID)
-	}
-	return page, nil
+	return orderapi.DraftPage{Data: out, Meta: meta}, nil
 }
 
 func (s *Service) GetDraft(ctx context.Context, req orderapi.DraftRequest) (orderapi.Draft, error) {

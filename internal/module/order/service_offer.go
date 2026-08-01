@@ -107,10 +107,9 @@ func (s *Service) ListOffers(ctx context.Context, req orderapi.ListOffersRequest
 	if err != nil {
 		return orderapi.OfferPage{}, fmt.Errorf("list offers: %w", err)
 	}
-	hasMore := len(rows) > req.Limit
-	if hasMore {
-		rows = rows[:req.Limit]
-	}
+	rows, meta := page(rows, req.Limit, func(o domain.Offer) (time.Time, int64) {
+		return o.CreatedAt, o.ID
+	})
 	currencies, err := s.listingCurrencies(ctx, req.ActorID, rows)
 	if err != nil {
 		return orderapi.OfferPage{}, err
@@ -119,12 +118,7 @@ func (s *Service) ListOffers(ctx context.Context, req orderapi.ListOffersRequest
 	for _, o := range rows {
 		out = append(out, toAPIOffer(o, currencies[o.ListingID]))
 	}
-	page := orderapi.OfferPage{Data: out, Meta: orderapi.CursorInfo{HasMore: hasMore}}
-	if hasMore && len(rows) > 0 {
-		last := rows[len(rows)-1]
-		page.Meta.NextCursor = formatCursor(last.CreatedAt, last.ID)
-	}
-	return page, nil
+	return orderapi.OfferPage{Data: out, Meta: meta}, nil
 }
 
 func (s *Service) GetOffer(ctx context.Context, req orderapi.OfferRequest) (orderapi.Offer, error) {

@@ -1,6 +1,13 @@
+// Package handler holds the thin HTTP handlers. A handler decodes and validates the request,
+// calls the module's api.Service, and writes the result; it holds no business logic of its own.
+//
+// This file is the shared plumbing every handler goes through — the actor, the path and query
+// parameters, the body decode and the validation — so a limit that means 20 on one route and 50 on
+// another is not a bug a client finds in production.
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +19,16 @@ import (
 	"shopnexus/internal/shared/id"
 	"shopnexus/internal/shared/validation"
 )
+
+// failed writes err and reports whether the request is over. It exists so a handler reads
+// as the four steps above rather than as error plumbing with steps buried in it.
+func failed(w http.ResponseWriter, log *slog.Logger, err error) bool {
+	if err == nil {
+		return false
+	}
+	httpx.WriteError(w, log, err)
+	return true
+}
 
 // Request-plumbing shared by every handler: who is calling, which resource, which page.
 // It lives here rather than in each handler because the answers have to be identical
@@ -79,6 +96,18 @@ func intParam(r *http.Request, name string, def, min, max int) (int, error) {
 		})
 	}
 	return v, nil
+}
+
+// cursorParam is the opaque page marker a list route continues from. Through here rather than read
+// at each of thirteen call sites, for the same reason limitParam is: one spelling of the key.
+func cursorParam(r *http.Request) string { return r.URL.Query().Get("cursor") }
+
+// stringParam is a query value with a default, for the routes that filter on a fixed vocabulary.
+func stringParam(r *http.Request, name, def string) string {
+	if v := r.URL.Query().Get(name); v != "" {
+		return v
+	}
+	return def
 }
 
 func rangeMessage(min, max int) string {
@@ -187,4 +216,14 @@ func check(v structValidator, req any) error {
 // not drag the concrete type into every signature.
 type structValidator interface {
 	Struct(any) error
+}
+
+// cursorMeta converts a service's next-page cursor into the envelope's. It takes the string
+// rather than each module's own CursorInfo, which is what let three identical copies of this
+// exist — NextCursor is a pointer here so the last page says null instead of omitting the key.
+func cursorMeta(next string) httpx.CursorMeta {
+	if next == "" {
+		return httpx.CursorMeta{}
+	}
+	return httpx.CursorMeta{NextCursor: new(next)}
 }

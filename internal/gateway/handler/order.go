@@ -146,7 +146,7 @@ func (h *Order) ListDrafts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := orderapi.ListDraftsRequest{
-		ActorID: uid, Cursor: r.URL.Query().Get("cursor"), Limit: limit,
+		ActorID: uid, Cursor: cursorParam(r), Limit: limit,
 	}
 	if failed(w, h.log, check(h.v, req)) {
 		return
@@ -155,7 +155,7 @@ func (h *Order) ListDrafts(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	httpx.WriteCursor(w, http.StatusOK, res.Data, orderCursor(res.Meta))
+	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta.NextCursor))
 }
 
 // GetDraft handles GET /drafts/{id}.
@@ -241,7 +241,7 @@ func (h *Order) ListItems(w http.ResponseWriter, r *http.Request) {
 	req := orderapi.ListItemsRequest{
 		ActorID: uid,
 		Role:    r.URL.Query().Get("role"),
-		Cursor:  r.URL.Query().Get("cursor"),
+		Cursor:  cursorParam(r),
 		Limit:   limit,
 	}
 	if pending != nil {
@@ -254,7 +254,7 @@ func (h *Order) ListItems(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	httpx.WriteCursor(w, http.StatusOK, res.Data, orderCursor(res.Meta))
+	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta.NextCursor))
 }
 
 // CancelItem handles POST /items/{id}/cancellation — before the money lands. After that the
@@ -315,7 +315,7 @@ func (h *Order) ListOffers(w http.ResponseWriter, r *http.Request) {
 	req := orderapi.ListOffersRequest{
 		ActorID: uid,
 		Status:  r.URL.Query().Get("status"),
-		Cursor:  r.URL.Query().Get("cursor"),
+		Cursor:  cursorParam(r),
 		Limit:   limit,
 	}
 	if failed(w, h.log, check(h.v, req)) {
@@ -325,7 +325,7 @@ func (h *Order) ListOffers(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	httpx.WriteCursor(w, http.StatusOK, res.Data, orderCursor(res.Meta))
+	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta.NextCursor))
 }
 
 // GetOffer handles GET /offers/{id}.
@@ -478,7 +478,7 @@ func (h *Order) ListOrders(w http.ResponseWriter, r *http.Request) {
 		ActorID: uid,
 		Role:    r.URL.Query().Get("role"),
 		State:   r.URL.Query().Get("state"),
-		Cursor:  r.URL.Query().Get("cursor"),
+		Cursor:  cursorParam(r),
 		Limit:   limit,
 	}
 	if failed(w, h.log, check(h.v, req)) {
@@ -488,7 +488,7 @@ func (h *Order) ListOrders(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	httpx.WriteCursor(w, http.StatusOK, res.Data, orderCursor(res.Meta))
+	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta.NextCursor))
 }
 
 // GetOrder handles GET /orders/{id}.
@@ -648,7 +648,7 @@ func (h *Order) ListRefunds(w http.ResponseWriter, r *http.Request) {
 		ActorID: uid,
 		Role:    r.URL.Query().Get("role"),
 		Status:  r.URL.Query().Get("status"),
-		Cursor:  r.URL.Query().Get("cursor"),
+		Cursor:  cursorParam(r),
 		Limit:   limit,
 	}
 	if failed(w, h.log, check(h.v, req)) {
@@ -658,7 +658,7 @@ func (h *Order) ListRefunds(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	httpx.WriteCursor(w, http.StatusOK, res.Data, orderCursor(res.Meta))
+	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta.NextCursor))
 }
 
 // GetRefund handles GET /refunds/{id}.
@@ -828,7 +828,7 @@ func (h *Order) AdminListDisputes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := orderapi.ListDisputesRequest{
-		ActorID: uid, Cursor: r.URL.Query().Get("cursor"), Limit: limit,
+		ActorID: uid, Cursor: cursorParam(r), Limit: limit,
 	}
 	if failed(w, h.log, check(h.v, req)) {
 		return
@@ -837,7 +837,7 @@ func (h *Order) AdminListDisputes(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	httpx.WriteCursor(w, http.StatusOK, res.Data, orderCursor(res.Meta))
+	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta.NextCursor))
 }
 
 // AdminRuleDispute handles POST /admin/disputes/{id}/ruling.
@@ -908,13 +908,4 @@ func (h *Order) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteData(w, http.StatusOK, res)
-}
-
-// orderCursor converts the service's cursor info to the envelope's. NextCursor is a pointer
-// there so the last page says null rather than omitting the key.
-func orderCursor(meta orderapi.CursorInfo) httpx.CursorMeta {
-	if meta.NextCursor == "" {
-		return httpx.CursorMeta{}
-	}
-	return httpx.CursorMeta{NextCursor: new(meta.NextCursor)}
 }

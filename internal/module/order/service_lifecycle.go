@@ -154,7 +154,7 @@ func (s *Service) finishSettlement(ctx context.Context, o domain.Order, paid []*
 	// The parcel is handed to the courier the buyer paid for. Best-effort: the sale has happened
 	// and the money has moved, so a carrier that is down is a booking to retry rather than an
 	// order to refuse — `RetryUnbookedShipments` is the net under it.
-	s.bookShipment(ctx, o, deref(paid))
+	s.bookShipment(ctx, o, paid)
 	return nil
 }
 
@@ -164,7 +164,7 @@ func (s *Service) finishSettlement(ctx context.Context, o domain.Order, paid []*
 // Never fatal to the caller: the order exists either way, and the seller can still report the
 // handover. What the courier gives back — its own reference, a label — is written onto the
 // shipment, which is also the marker that says this parcel no longer needs booking.
-func (s *Service) bookShipment(ctx context.Context, o domain.Order, lines []domain.Item) {
+func (s *Service) bookShipment(ctx context.Context, o domain.Order, lines []*domain.Item) {
 	t, err := s.repo.FindTransport(ctx, o.TransportID)
 	if err != nil {
 		s.log.Error("read shipment to book", "order_id", o.ID, "err", err)
@@ -271,21 +271,16 @@ func (s *Service) RetryUnbookedShipments(ctx context.Context, limit int) (int, e
 			s.log.Error("read order lines to book", "order_id", orderID, "err", err)
 			continue
 		}
-		s.bookShipment(ctx, o, lines)
+		parcel := make([]*domain.Item, 0, len(lines))
+		for i := range lines {
+			parcel = append(parcel, &lines[i])
+		}
+		s.bookShipment(ctx, o, parcel)
 		if t, err := s.repo.FindTransport(ctx, o.TransportID); err == nil && t.Booked() {
 			booked++
 		}
 	}
 	return booked, nil
-}
-
-// deref is the settlement's lines as values: the booking only reads them.
-func deref(items []*domain.Item) []domain.Item {
-	out := make([]domain.Item, 0, len(items))
-	for _, i := range items {
-		out = append(out, *i)
-	}
-	return out
 }
 
 func itemIDs(items []*domain.Item) []int64 {
