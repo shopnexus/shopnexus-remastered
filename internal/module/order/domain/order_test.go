@@ -180,7 +180,7 @@ func TestDispute_RuledOnce(t *testing.T) {
 // only the buyer closes it.
 func TestOffer_AlternatesAndOnlyBuyerAccepts(t *testing.T) {
 	const buyer, seller = int64(7), int64(8)
-	o, err := domain.NewOffer(1, 2, buyer, buyer, seller, 1, 100_000, "", time.Hour)
+	o, err := domain.NewOffer(domain.NewTerms{ListingID: 1, VariantID: 2, BuyerID: buyer, SellerID: seller, Quantity: 1, Total: 100_000, Reason: ""}, time.Hour)
 	if err != nil {
 		t.Fatalf("NewOffer: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestOffer_AlternatesAndOnlyBuyerAccepts(t *testing.T) {
 
 	// The other direction: a seller may agree to the buyer's price, and it is still the buyer who
 	// pays — which is what makes that safe.
-	fromBuyer, err := domain.NewOffer(1, 2, buyer, buyer, seller, 1, 90_000, "", time.Hour)
+	fromBuyer, err := domain.NewOffer(domain.NewTerms{ListingID: 1, VariantID: 2, BuyerID: buyer, SellerID: seller, Quantity: 1, Total: 90_000, Reason: ""}, time.Hour)
 	if err != nil {
 		t.Fatalf("NewOffer: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestOffer_AlternatesAndOnlyBuyerAccepts(t *testing.T) {
 	}
 
 	// And an expired negotiation is not answerable at all.
-	stale, err := domain.NewOffer(1, 2, buyer, buyer, seller, 1, 100_000, "", -time.Hour)
+	stale, err := domain.NewOffer(domain.NewTerms{ListingID: 1, VariantID: 2, BuyerID: buyer, SellerID: seller, Quantity: 1, Total: 100_000, Reason: ""}, -time.Hour)
 	if err != nil {
 		t.Fatalf("NewOffer: %v", err)
 	}

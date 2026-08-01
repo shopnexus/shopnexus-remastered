@@ -31,9 +31,11 @@ type Item struct {
 	Quantity int64  `validate:"required,gt=0"`
 	// TransportOption is the carrier the buyer chose. They pay the delivery fee, so it is
 	// their trade-off between price and speed.
-	TransportOption  string `validate:"required"`
-	TotalAmount      int64  `validate:"gte=0"`
-	PaymentSessionID int64  `validate:"required"`
+	TransportOption string `validate:"required"`
+	TotalAmount     int64  `validate:"gte=0"`
+	// PaymentSessionID is the checkout that pays for this line. Not part of NewItem: at
+	// construction the session does not exist yet, so it is set once it has been opened.
+	PaymentSessionID int64
 	CancelledAt      *time.Time
 	CancelledByID    *int64
 	CreatedAt        time.Time
@@ -70,16 +72,33 @@ func (o Origin) Valid() bool {
 	return (o.DraftID == nil) != (o.OfferID == nil)
 }
 
-func NewItem(origin Origin, buyerID, sellerID, listingID, variantID int64, address AddressSnapshot, note, currency string, quantity int64, transportOption string, total, paymentSessionID int64) (Item, error) {
-	if !origin.Valid() {
+// NewLine is what a checkout knows about one line. A struct rather than twelve positional
+// arguments: four account/listing ids in a row transpose without a compile error, and the price
+// and the quantity are both int64. The payment session is deliberately absent — it does not
+// exist until the line has been priced.
+type NewLine struct {
+	Origin          Origin
+	BuyerID         int64
+	SellerID        int64
+	ListingID       int64
+	VariantID       int64
+	Address         AddressSnapshot
+	Note            string
+	Currency        string
+	Quantity        int64
+	TransportOption string
+	Total           int64
+}
+
+func NewItem(in NewLine) (Item, error) {
+	if !in.Origin.Valid() {
 		return Item{}, ErrVariantNotInDraft
 	}
 	i := Item{
-		DraftID: origin.DraftID, OfferID: origin.OfferID,
-		BuyerID: buyerID, SellerID: sellerID, ListingID: listingID, VariantID: variantID,
-		Address: address, Note: note, Currency: currency, Quantity: quantity,
-		TransportOption: transportOption, TotalAmount: total,
-		PaymentSessionID: paymentSessionID,
+		DraftID: in.Origin.DraftID, OfferID: in.Origin.OfferID,
+		BuyerID: in.BuyerID, SellerID: in.SellerID, ListingID: in.ListingID,
+		VariantID: in.VariantID, Address: in.Address, Note: in.Note, Currency: in.Currency,
+		Quantity: in.Quantity, TransportOption: in.TransportOption, TotalAmount: in.Total,
 	}
 	if err := validation.Default().Struct(i); err != nil {
 		return Item{}, validation.AsError(err)

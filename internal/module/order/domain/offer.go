@@ -45,20 +45,30 @@ type Offer struct {
 	ExpiresAt        time.Time `validate:"required"`
 }
 
-// NewOffer opens a negotiation. Either side may start it — the buyer from the listing
-// page, the seller from a thread — and whoever does owns the standing proposal.
-func NewOffer(listingID, variantID, authorID, buyerID, sellerID, quantity, total int64, reason string, window time.Duration) (Offer, error) {
+// NewTerms is what opening a negotiation takes. A struct rather than seven consecutive int64s:
+// swapping the quantity and the total, or the buyer and the seller, would compile and produce a
+// negotiation that looks entirely valid.
+type NewTerms struct {
+	ListingID int64
+	VariantID int64
+	BuyerID   int64
+	SellerID  int64
+	Quantity  int64
+	Total     int64
+	Reason    string
+}
+
+// NewOffer opens a negotiation. The buyer starts it — a seller has nobody to propose to on their
+// own listing — so the buyer owns the standing proposal and the seller answers it.
+func NewOffer(in NewTerms, window time.Duration) (Offer, error) {
 	o := Offer{
-		ListingID: listingID, VariantID: variantID, AuthorID: authorID,
-		BuyerID: buyerID, SellerID: sellerID, Status: OfferActive,
-		Quantity: quantity, Total: total, Reason: reason,
+		ListingID: in.ListingID, VariantID: in.VariantID, AuthorID: in.BuyerID,
+		BuyerID: in.BuyerID, SellerID: in.SellerID, Status: OfferActive,
+		Quantity: in.Quantity, Total: in.Total, Reason: in.Reason,
 		ExpiresAt: time.Now().Add(window),
 	}
-	if buyerID == sellerID {
+	if in.BuyerID == in.SellerID {
 		return Offer{}, ErrSellerCannotOffer
-	}
-	if authorID != buyerID && authorID != sellerID {
-		return Offer{}, ErrNotYourTurn
 	}
 	if err := validation.Default().Struct(o); err != nil {
 		return Offer{}, validation.AsError(err)

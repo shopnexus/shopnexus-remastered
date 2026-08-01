@@ -59,9 +59,8 @@ const (
 	cardOfferExpired   = "offer expired"
 )
 
-// CreateOffer opens a negotiation on a variant of a `negotiable` listing. Either side may
-// start it — the buyer from the listing page, the seller from a thread — and whoever does
-// owns the standing proposal, so the other one answers.
+// CreateOffer opens a negotiation on a variant of a `negotiable` listing. The buyer's route: a
+// seller has nobody to propose to on their own listing, so they answer the terms instead.
 //
 // The card goes into the pair's chat thread: the conversation is chat's, the terms are this
 // row's, and the message carries only the offer's id so a counter cannot leave an old price
@@ -75,14 +74,20 @@ func (s *Service) CreateOffer(ctx context.Context, req orderapi.CreateOfferReque
 		return orderapi.Offer{}, domain.ErrFixedPriceListing
 	}
 	sellerID := listing.Seller.ID
-	buyerID := req.ActorID
 	if req.ActorID == sellerID {
 		// The seller opening it means they are proposing to somebody; without a buyer there
 		// is nobody to propose to, so this route is the buyer's to start.
 		return orderapi.Offer{}, domain.ErrSellerCannotOffer
 	}
-	o, err := domain.NewOffer(listing.ID.Int64(), req.VariantID.Int64(), req.ActorID.Int64(),
-		buyerID.Int64(), sellerID.Int64(), req.Quantity, req.Total, req.Reason, offerWindow)
+	o, err := domain.NewOffer(domain.NewTerms{
+		ListingID: listing.ID.Int64(),
+		VariantID: req.VariantID.Int64(),
+		BuyerID:   req.ActorID.Int64(),
+		SellerID:  sellerID.Int64(),
+		Quantity:  req.Quantity,
+		Total:     req.Total,
+		Reason:    req.Reason,
+	}, offerWindow)
 	if err != nil {
 		return orderapi.Offer{}, err
 	}
@@ -293,9 +298,19 @@ func (s *Service) CheckoutOffer(ctx context.Context, req orderapi.CheckoutOfferR
 		}
 	}
 
-	item, err := domain.NewItem(domain.FromOffer(o.ID), o.BuyerID, o.SellerID, o.ListingID,
-		o.VariantID, address, req.Note, listing.Currency, o.Quantity, req.TransportOption,
-		o.Total, 1)
+	item, err := domain.NewItem(domain.NewLine{
+		Origin:          domain.FromOffer(o.ID),
+		BuyerID:         o.BuyerID,
+		SellerID:        o.SellerID,
+		ListingID:       o.ListingID,
+		VariantID:       o.VariantID,
+		Address:         address,
+		Note:            req.Note,
+		Currency:        listing.Currency,
+		Quantity:        o.Quantity,
+		TransportOption: req.TransportOption,
+		Total:           o.Total,
+	})
 	if err != nil {
 		release()
 		return orderapi.CheckoutResult{}, err

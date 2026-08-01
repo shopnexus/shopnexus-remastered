@@ -18,9 +18,10 @@ paths:
       tags: [order]
       summary: Open a price negotiation on a variant
       description: >
-        Either side may open it — the buyer from the listing page, the seller from a thread.
-        One active negotiation per (buyer, variant); the terms are then revised in place rather
-        than by stacking rows, and each revision posts a card into the pair's chat thread.
+        The buyer opens it, from the listing page: a seller has nobody to propose to on their own
+        listing, so they answer rather than start. One active negotiation per (buyer, variant); the
+        terms are then revised in place rather than by stacking rows, and each revision posts a card
+        into the pair's chat thread.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -39,6 +40,7 @@ paths:
                 required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'A seller cannot open a negotiation on their own listing', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'An active negotiation already exists for this (buyer, SKU)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     get:

@@ -161,9 +161,19 @@ func (s *Service) Checkout(ctx context.Context, req orderapi.CheckoutRequest) (o
 		reserved = append(reserved, line)
 		amount := frozen.Price * line.Quantity
 		total += amount
-		item, err := domain.NewItem(domain.FromDraft(d.ID), req.ActorID.Int64(),
-			d.Snapshot.SellerID, d.ListingID, line.VariantID.Int64(), address, req.Note,
-			req.Currency, line.Quantity, req.TransportOption, amount, 1)
+		item, err := domain.NewItem(domain.NewLine{
+			Origin:          domain.FromDraft(d.ID),
+			BuyerID:         req.ActorID.Int64(),
+			SellerID:        d.Snapshot.SellerID,
+			ListingID:       d.ListingID,
+			VariantID:       line.VariantID.Int64(),
+			Address:         address,
+			Note:            req.Note,
+			Currency:        req.Currency,
+			Quantity:        line.Quantity,
+			TransportOption: req.TransportOption,
+			Total:           amount,
+		})
 		if err != nil {
 			release()
 			return orderapi.CheckoutResult{}, err

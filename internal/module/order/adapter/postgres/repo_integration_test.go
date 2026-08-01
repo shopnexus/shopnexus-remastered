@@ -74,11 +74,15 @@ func draft(t *testing.T, r *orderpg.Repo, buyer, seller int64) domain.Draft {
 // order_id means.
 func paidItem(t *testing.T, r *orderpg.Repo, origin domain.Origin, buyer, seller, sessionID int64) domain.Item {
 	t.Helper()
-	i, err := domain.NewItem(origin, buyer, seller, 500, 501, address(), "", "VND", 1,
-		"ghn-express", 100_000, sessionID)
+	i, err := domain.NewItem(domain.NewLine{
+		Origin: origin, BuyerID: buyer, SellerID: seller, ListingID: 500, VariantID: 501,
+		Address: address(), Currency: "VND", Quantity: 1,
+		TransportOption: "ghn-express", Total: 100_000,
+	})
 	if err != nil {
 		t.Fatalf("NewItem: %v", err)
 	}
+	i.PaymentSessionID = sessionID
 	if err := r.InsertItems(context.Background(), []*domain.Item{&i}); err != nil {
 		t.Fatalf("InsertItems: %v", err)
 	}
@@ -401,14 +405,14 @@ func TestInsertOffer_OneActivePerBuyerAndVariant(t *testing.T) {
 	ctx := context.Background()
 	buyer, seller := party(t)
 
-	first, err := domain.NewOffer(500, 501, buyer, buyer, seller, 1, 80_000, "bundle", 48*time.Hour)
+	first, err := domain.NewOffer(domain.NewTerms{ListingID: 500, VariantID: 501, BuyerID: buyer, SellerID: seller, Quantity: 1, Total: 80_000, Reason: "bundle"}, 48*time.Hour)
 	if err != nil {
 		t.Fatalf("NewOffer: %v", err)
 	}
 	if err := r.InsertOffer(ctx, &first); err != nil {
 		t.Fatalf("InsertOffer: %v", err)
 	}
-	dup, err := domain.NewOffer(500, 501, buyer, buyer, seller, 1, 70_000, "again", 48*time.Hour)
+	dup, err := domain.NewOffer(domain.NewTerms{ListingID: 500, VariantID: 501, BuyerID: buyer, SellerID: seller, Quantity: 1, Total: 70_000, Reason: "again"}, 48*time.Hour)
 	if err != nil {
 		t.Fatalf("NewOffer: %v", err)
 	}
@@ -446,7 +450,7 @@ func TestInsertOffer_OneActivePerBuyerAndVariant(t *testing.T) {
 	if err := r.SaveOffer(ctx, reread, []string{domain.OfferActive}); err != nil {
 		t.Fatalf("SaveOffer: %v", err)
 	}
-	again, err := domain.NewOffer(500, 501, buyer, buyer, seller, 1, 75_000, "retry", 48*time.Hour)
+	again, err := domain.NewOffer(domain.NewTerms{ListingID: 500, VariantID: 501, BuyerID: buyer, SellerID: seller, Quantity: 1, Total: 75_000, Reason: "retry"}, 48*time.Hour)
 	if err != nil {
 		t.Fatalf("NewOffer: %v", err)
 	}
@@ -467,7 +471,7 @@ func TestExpiryLists(t *testing.T) {
 		time.Now().Add(-time.Minute), d.ID); err != nil {
 		t.Fatalf("backdate draft: %v", err)
 	}
-	o, err := domain.NewOffer(500, 502, buyer, buyer, seller, 1, 80_000, "bundle", 48*time.Hour)
+	o, err := domain.NewOffer(domain.NewTerms{ListingID: 500, VariantID: 502, BuyerID: buyer, SellerID: seller, Quantity: 1, Total: 80_000, Reason: "bundle"}, 48*time.Hour)
 	if err != nil {
 		t.Fatalf("NewOffer: %v", err)
 	}
@@ -531,7 +535,7 @@ func TestClaimOfferCheckout_OnlyOnePressWins(t *testing.T) {
 	ctx := context.Background()
 	buyer, seller := party(t)
 
-	o, err := domain.NewOffer(500, 503, buyer, buyer, seller, 1, 80_000, "bundle", time.Hour)
+	o, err := domain.NewOffer(domain.NewTerms{ListingID: 500, VariantID: 503, BuyerID: buyer, SellerID: seller, Quantity: 1, Total: 80_000, Reason: "bundle"}, time.Hour)
 	if err != nil {
 		t.Fatalf("NewOffer: %v", err)
 	}
@@ -596,7 +600,7 @@ func TestClaimOfferCheckout_OnlyOnePressWins(t *testing.T) {
 		t.Fatalf("offer = %+v, want it naming its checkout", settled)
 	}
 	// And an accepted price nobody checked out does lapse — the other half of the same sweep.
-	other, err := domain.NewOffer(500, 504, buyer, buyer, seller, 1, 60_000, "", time.Hour)
+	other, err := domain.NewOffer(domain.NewTerms{ListingID: 500, VariantID: 504, BuyerID: buyer, SellerID: seller, Quantity: 1, Total: 60_000, Reason: ""}, time.Hour)
 	if err != nil {
 		t.Fatalf("NewOffer: %v", err)
 	}
@@ -1067,11 +1071,15 @@ func TestListItems_CursorReachesRowsSharingATimestamp(t *testing.T) {
 	session := time.Now().UnixNano() % 1_000_000_000
 	lines := make([]*domain.Item, 0, 3)
 	for range 3 {
-		i, err := domain.NewItem(domain.FromDraft(d.ID), buyer, seller, 500, 501, address(), "",
-			"VND", 1, "ghn-express", 100_000, session)
+		i, err := domain.NewItem(domain.NewLine{
+			Origin: domain.FromDraft(d.ID), BuyerID: buyer, SellerID: seller,
+			ListingID: 500, VariantID: 501, Address: address(), Currency: "VND", Quantity: 1,
+			TransportOption: "ghn-express", Total: 100_000,
+		})
 		if err != nil {
 			t.Fatalf("NewItem: %v", err)
 		}
+		i.PaymentSessionID = session
 		lines = append(lines, &i)
 	}
 	if err := r.InsertItems(ctx, lines); err != nil {

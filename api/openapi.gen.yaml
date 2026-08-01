@@ -8052,7 +8052,7 @@ paths:
                 - order
         post:
             description: |
-                Either side may open it — the buyer from the listing page, the seller from a thread. One active negotiation per (buyer, variant); the terms are then revised in place rather than by stacking rows, and each revision posts a card into the pair's chat thread.
+                The buyer opens it, from the listing page: a seller has nobody to propose to on their own listing, so they answer rather than start. One active negotiation per (buyer, variant); the terms are then revised in place rather than by stacking rows, and each revision posts a card into the pair's chat thread.
             requestBody:
                 content:
                     application/json:
@@ -8075,6 +8075,12 @@ paths:
                     $ref: '#/components/responses/BadRequest'
                 "401":
                     $ref: '#/components/responses/Unauthorized'
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: A seller cannot open a negotiation on their own listing
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "409":
