@@ -9,7 +9,8 @@ import (
 // ErrCacheMiss is returned by Get when the key is absent.
 var ErrCacheMiss = errors.New("cache: key not found")
 
-// Client defines methods for caching structured data (e.g., User, Post, ...).
+// Client is a key/value cache over JSON-encoded values. Get decodes into dest, so a caller works
+// in its own types rather than in bytes.
 type Client interface {
 	Get(ctx context.Context, key string, dest any) error
 	Set(ctx context.Context, key string, value any, expiration time.Duration) error
@@ -18,10 +19,4 @@ type Client interface {
 
 	Ping() error
 	Close() error
-}
-
-// Config provides custom encoding and decoding functions for struct caching.
-type Config struct {
-	Decoder func(data []byte, v any) error
-	Encoder func(value any) ([]byte, error)
 }

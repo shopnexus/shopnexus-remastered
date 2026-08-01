@@ -1,7 +1,7 @@
-// Package trust is the C2C trust & safety schema: two-way transaction
-// feedback, per-account reputation aggregates, and polymorphic abuse reports.
-// Data-only for now — no service. Reputation is maintained by the (future)
-// trust service subscribing to order.completed / order.cancelled on the bus.
+// Package trust is this marketplace's trust & safety module: blind two-way transaction feedback,
+// product reviews, per-account reputation and the abuse-report queue. Publishing a rating folds it
+// into reputation in the same transaction, and a settled order's counters arrive on the bus
+// (see fx.go).
 package trust
 
 import (

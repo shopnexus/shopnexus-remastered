@@ -30,8 +30,8 @@ import (
 	"shopnexus/internal/shared/id"
 )
 
-// The two windows this module owns. A draft is short because it freezes a price; a
-// negotiation is longer because it waits on a person.
+// Every wait this module makes. A draft is short because it freezes a price; a standing proposal
+// is longer because it waits on a person.
 const (
 	draftWindow = 30 * time.Minute
 	// offerWindow is how long a standing proposal waits for the other side. Short by design: a

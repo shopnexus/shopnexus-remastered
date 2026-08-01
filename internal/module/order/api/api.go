@@ -211,8 +211,6 @@ type DisputePage struct {
 	Meta CursorInfo `json:"meta"`
 }
 
-// CheckoutResult is the lines and the single session that pays for them. Nothing is settled
-// yet: the order appears when the session completes.
 // CheckoutResult is the bill, itemised: what the goods cost, what delivery costs, and the total
 // the payment session will collect. Both halves are shown because the buyer pays both — on a
 // fixed-price sale and a negotiated one alike — and a total with no breakdown is a number nobody

@@ -1,4 +1,4 @@
-// Package bus provides a type-safe pub/sub event eventbus. Topics bind a name to a
+// Package eventbus is the type-safe pub/sub seam. Topics bind a name to a
 // payload type at compile time; transports move raw bytes so implementations
 // (in-memory, redis, ...) stay codec-agnostic.
 package eventbus

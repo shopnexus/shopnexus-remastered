@@ -10,13 +10,11 @@ import (
 	"os"
 )
 
-// Options configures the logger. Level is required (debug|info|warn|error);
-// Service tags every line; Source adds caller file:line; Writer defaults to
-// stdout (override in tests).
+// Options configures the logger. Level is required (debug|info|warn|error); Service tags every
+// line; Writer defaults to stdout, and a test overrides it.
 type Options struct {
 	Level   string
 	Service string
-	Source  bool
 	Writer  io.Writer
 }
 
@@ -28,8 +26,7 @@ func New(opts Options) *slog.Logger {
 		w = os.Stdout
 	}
 	log := slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{
-		Level:     parseLevel(opts.Level),
-		AddSource: opts.Source,
+		Level: parseLevel(opts.Level),
 	}))
 	if opts.Service != "" {
 		log = log.With("service", opts.Service)

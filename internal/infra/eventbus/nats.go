@@ -54,7 +54,7 @@ func DialNATS(ctx context.Context, url string, logger *slog.Logger) (*NATS, erro
 	if err != nil {
 		return nil, fmt.Errorf("eventbus: connect nats %s: %w", url, err)
 	}
-	n, err := NewNATS(ctx, conn, logger)
+	n, err := newNATS(ctx, conn, logger)
 	if err != nil {
 		conn.Close()
 		return nil, err
@@ -62,9 +62,9 @@ func DialNATS(ctx context.Context, url string, logger *slog.Logger) (*NATS, erro
 	return n, nil
 }
 
-// NewNATS wraps an existing connection, creating the stream if it is missing.
+// newNATS wraps an existing connection, creating the stream if it is missing.
 // The returned NATS owns conn (Close closes it).
-func NewNATS(ctx context.Context, conn *nats.Conn, logger *slog.Logger) (*NATS, error) {
+func newNATS(ctx context.Context, conn *nats.Conn, logger *slog.Logger) (*NATS, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}

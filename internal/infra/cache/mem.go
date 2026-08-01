@@ -8,48 +8,40 @@ import (
 	"time"
 )
 
-// cacheItem holds the cached value and its expiration time.
 type cacheItem struct {
 	value      any
 	expiration time.Time
 }
 
-// isExpired checks if the item has expired.
 func (item *cacheItem) isExpired() bool {
 	return !item.expiration.IsZero() && time.Now().After(item.expiration)
 }
 
-// InMemoryCache implements the Client interface using a simple map.
+// InMemoryCache is the Client a test uses: a map plus a janitor, no server to run.
 type InMemoryCache struct {
 	mu    sync.RWMutex
 	items map[string]*cacheItem
 
-	// Optional: cleanup ticker for expired items
+	// stop closes the janitor that drops expired entries
 	cleanupTicker *time.Ticker
 	stopCleanup   chan struct{}
 	closeOnce     sync.Once
 }
 
-// NewInMemoryClient creates a new in-memory cache instance.
 func NewInMemoryClient() *InMemoryCache {
 	cache := new(InMemoryCache)
 	cache.items = make(map[string]*cacheItem)
 	cache.stopCleanup = make(chan struct{})
 
-	// Start background cleanup routine (runs every 5 minutes)
 	cache.cleanupTicker = time.NewTicker(5 * time.Minute)
 	go cache.cleanupExpired()
 
 	return cache
 }
 
-// Get retrieves a value from cache and copies it to dest.
 func (c *InMemoryCache) Get(ctx context.Context, key string, dest any) error {
-	// Check if context is cancelled
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	c.mu.RLock()
@@ -60,33 +52,25 @@ func (c *InMemoryCache) Get(ctx context.Context, key string, dest any) error {
 		return ErrCacheMiss
 	}
 
-	// Check if item is expired
 	if item.isExpired() {
-		// Remove expired item
 		c.mu.Lock()
 		delete(c.items, key)
 		c.mu.Unlock()
 		return ErrCacheMiss
 	}
 
-	// Copy value to destination using reflection
 	return c.copyValue(item.value, dest)
 }
 
-// Set stores a value in cache with expiration.
 func (c *InMemoryCache) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
-	// Check if context is cancelled
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	item := &cacheItem{
 		value: value,
 	}
 
-	// Set expiration time if duration is positive
 	if expiration > 0 {
 		item.expiration = time.Now().Add(expiration)
 	}
@@ -98,13 +82,9 @@ func (c *InMemoryCache) Set(ctx context.Context, key string, value any, expirati
 	return nil
 }
 
-// Delete removes a key from cache.
 func (c *InMemoryCache) Delete(ctx context.Context, key string) error {
-	// Check if context is cancelled
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	c.mu.Lock()
@@ -116,11 +96,8 @@ func (c *InMemoryCache) Delete(ctx context.Context, key string) error {
 
 // Exists checks if a key exists and is not expired.
 func (c *InMemoryCache) Exists(ctx context.Context, key string) (bool, error) {
-	// Check if context is cancelled
-	select {
-	case <-ctx.Done():
-		return false, ctx.Err()
-	default:
+	if err := ctx.Err(); err != nil {
+		return false, err
 	}
 
 	c.mu.RLock()
@@ -131,9 +108,7 @@ func (c *InMemoryCache) Exists(ctx context.Context, key string) (bool, error) {
 		return false, nil
 	}
 
-	// Check if item is expired
 	if item.isExpired() {
-		// Remove expired item
 		c.mu.Lock()
 		delete(c.items, key)
 		c.mu.Unlock()

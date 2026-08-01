@@ -313,11 +313,7 @@ func newCache(lc fx.Lifecycle, cfg *config.Config) (cache.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, err := cache.NewRedisStructClient(rdb, cache.Config{})
-	if err != nil {
-		rdb.Close()
-		return nil, fmt.Errorf("init redis cache: %w", err)
-	}
+	c := cache.NewRedisClient(rdb)
 	lc.Append(fx.Hook{OnStop: func(context.Context) error { return c.Close() }})
 	return c, nil
 }

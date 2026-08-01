@@ -13,7 +13,7 @@ const (
 	OfferWorkflow    = "OrderOffer"
 )
 
-// The three run inputs. Small structs with json tags: a run's input is stored by the runtime,
+// The run inputs. Small structs with json tags: a run's input is stored by the runtime,
 // so a field name here is a stored contract.
 type CheckoutParams struct {
 	SessionID int64 `json:"session_id"`

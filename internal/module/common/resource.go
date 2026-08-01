@@ -60,10 +60,7 @@ type ResourceDTO struct {
 	Mime      string             `json:"mime"`
 	Size      int64              `json:"size"`
 	Checksum  string             `json:"checksum,omitempty"`
-	// URL is a short-lived link to the bytes, issued by the storage provider. Not a stable
-	// address: store the id, not this. It is empty until a module can presign one, and a
-	// consumer that needs the bytes — the KYC check reading a scan — has to treat an empty URL
-	// as "not available yet" rather than as an empty object.
+	// URL is the presigned link, as on Resource above: short-lived, not an address to store.
 	URL string `json:"url,omitempty"`
 	// URLExpiresAt is when that link stops working, so a caller can tell a stale URL from a
 	// wrong one.

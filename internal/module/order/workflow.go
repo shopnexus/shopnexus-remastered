@@ -44,7 +44,7 @@ const (
 	promResolved  = "refund-resolved"
 )
 
-// The three run inputs live in port, because the code that submits a run and the code that
+// The run inputs live in port, because the code that submits a run and the code that
 // hosts it have to agree and that is the only package both import.
 
 // Checkout follows one payment session: it waits for the money, and closes the session's
@@ -260,7 +260,7 @@ func (l *Lifecycle) cancelSessionLines(ctx context.Context, sessionID int64) err
 	return nil
 }
 
-// Definitions are the three workflows for a runtime to serve. Reflect turns each exported
+// Definitions are the workflows for a runtime to serve. Reflect turns each exported
 // method with a workflow context into a handler, so the signal names the submitter uses are
 // the method names here — that pairing is the only thing keeping them in step.
 func (l *Lifecycle) Definitions() []restate.ServiceDefinition {

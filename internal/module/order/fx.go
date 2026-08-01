@@ -95,7 +95,7 @@ func newWorkflows(deps workflowDeps) (port.Workflows, error) {
 	return durable.New(deps.Client), nil
 }
 
-// newDefinitions hands the three workflows to whoever serves them. Empty when there is no
+// newDefinitions hands this module's workflows to whoever serves them. Empty when there is no
 // runtime: serving handlers nobody can invoke would only be a port to get wrong.
 func newDefinitions(cfg *config.Config, l *Lifecycle) []restate.ServiceDefinition {
 	if cfg.WorkflowRuntime != config.WorkflowRestate {

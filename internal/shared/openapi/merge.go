@@ -29,10 +29,10 @@ func FindRoot(dir string) (string, error) {
 	}
 }
 
-// MergeDoc reads api/openapi.base.yaml plus every
+// mergeDoc reads api/openapi.base.yaml plus every
 // internal/module/<module>/api/openapi/*.yaml under root and returns the merged
 // specification as a document tree.
-func MergeDoc(root string) (map[string]any, error) {
+func mergeDoc(root string) (map[string]any, error) {
 	base, err := readDoc(filepath.Join(root, "api", "openapi.base.yaml"))
 	if err != nil {
 		return nil, err
@@ -64,7 +64,7 @@ func MergeDoc(root string) (map[string]any, error) {
 // Merge returns the merged spec as deterministic YAML bytes (served/embedded
 // and published to the docs site).
 func Merge(root string) ([]byte, error) {
-	d, err := MergeDoc(root)
+	d, err := mergeDoc(root)
 	if err != nil {
 		return nil, err
 	}

@@ -45,25 +45,25 @@ func InTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx) error) error 
 	return nil
 }
 
-func SQLState(err error) string {
-	var pgErr interface{ SQLState() string }
+func sqlState(err error) string {
+	var pgErr interface{ sqlState() string }
 	if errors.As(err, &pgErr) {
-		return pgErr.SQLState()
+		return pgErr.sqlState()
 	}
 	return ""
 }
 
 func IsNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
 
-func IsUniqueViolation(err error) bool { return SQLState(err) == uniqueViolation }
+func IsUniqueViolation(err error) bool { return sqlState(err) == uniqueViolation }
 
-func IsForeignKeyViolation(err error) bool { return SQLState(err) == foreignKeyViolation }
+func IsForeignKeyViolation(err error) bool { return sqlState(err) == foreignKeyViolation }
 
 // IsRestrictViolation is ON DELETE RESTRICT refusing to orphan a referencing row, or a
 // foreign key naming a parent that does not exist — a caller cannot act differently on the
 // two, and both mean "the thing you named is not there or not free".
 func IsRestrictViolation(err error) bool {
-	state := SQLState(err)
+	state := sqlState(err)
 	return state == restrictViolation || state == foreignKeyViolation
 }
 
