@@ -30,7 +30,11 @@ type Session struct {
 	// from, and the delivery charge included in the total. Read back rather than kept only by the
 	// opener, because the session is what the buyer paid against and the module that settles it
 	// is handed nothing but the session id.
-	Data      json.RawMessage `json:"data,omitempty"`
+	//
+	// Never serialised (`json:"-"`): it is the opener's own shape, holding raw row ids rather
+	// than opaque ones, and a client that reads it would be reading another module's internals
+	// off the wire. It travels between modules in-process, like `order`'s carrier payload.
+	Data      json.RawMessage `json:"-"`
 	CreatedAt time.Time       `json:"created_at"`
 	PaidAt    *time.Time      `json:"paid_at,omitempty"`
 	ExpiredAt time.Time       `json:"expired_at"`

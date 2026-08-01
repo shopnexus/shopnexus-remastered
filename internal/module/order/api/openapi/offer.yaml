@@ -6,9 +6,11 @@
 # this row. The terms, the status and the expiry stay here because they decide money, and
 # one-active-per-pair is a constraint a hypertable cannot hold.
 #
-# Nobody approves an order at the end of it. Acceptance opens the checkout at the agreed total,
-# and the order appears when that payment session completes — the same ending a fixed-price
-# purchase has. The only thing a seller can refuse is a price, and this is where they refuse it.
+# Nobody approves an order at the end of it, and agreeing is not the sale. Either party may accept
+# the terms on the table, which charges nothing and freezes the price for a short window; the buyer
+# then presses "create order now" and checks out with a carrier of their choosing, and the order
+# appears when that payment session completes — the same ending a fixed-price purchase has. The
+# only thing a seller can refuse is a price, and this is where they refuse it.
 
 paths:
   /offers:
@@ -188,6 +190,7 @@ paths:
         '403': { description: 'Only the buyer checks out agreed terms', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'Terms are not agreed, have lapsed, or are already checked out', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'A carrier nobody enabled, or a variant that is no longer sellable', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '502': { description: 'No carrier could price the delivery', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /shipping-quotes:
@@ -224,8 +227,10 @@ paths:
                 required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Only the buyer prices delivery on agreed terms', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'The draft or the agreed terms are no longer checkout-able', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'A variant that is not on this purchase', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
 components:
   schemas:
@@ -288,46 +293,8 @@ components:
         transport_option:
           type: string
           maxLength: 100
-          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
-          example: ghn-express
-          description: A carrier slug from `POST /shipping-quotes`; one nobody enabled is refused.
+          example: standard-delivery
+          description: A carrier slug from `POST /shipping-quotes`; one nobody enabled is refused with 422.
         note: { type: string, maxLength: 500 }
       required: [contact_id, transport_option]
 
-    ShippingQuotesRequest:
-      type: object
-      description: >
-        Exactly one of `draft_id` or `offer_id` — they are the two things that freeze a price, and
-        the parcel is whichever of them is about to be checked out.
-      properties:
-        draft_id: { $ref: '#/components/schemas/DraftOrderID' }
-        offer_id: { $ref: '#/components/schemas/OfferID' }
-        contact_id: { $ref: '#/components/schemas/ContactID' }
-        lines:
-          type: array
-          maxItems: 50
-          items: { $ref: '#/components/schemas/CheckoutLine' }
-          description: >
-            The draft's variants and quantities, as a checkout would send them. Ignored for an
-            offer, whose quantity was negotiated.
-      required: [contact_id]
-
-    ShippingQuotes:
-      type: object
-      properties:
-        options: { type: array, items: { $ref: '#/components/schemas/ShippingQuote' } }
-        currency: { $ref: '#/components/schemas/CurrencyCode' }
-      required: [options, currency]
-
-    ShippingQuote:
-      type: object
-      properties:
-        option: { type: string, example: ghn-express }
-        name: { type: string, example: GHN Express }
-        fee:
-          type: integer
-          format: int64
-          minimum: 0
-          example: 15000
-          description: What the buyer would pay this carrier. Re-quoted at checkout, so it is an estimate a client renders rather than a price it can hold.
-      required: [option, name, fee]

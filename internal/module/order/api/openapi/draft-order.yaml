@@ -95,9 +95,9 @@ paths:
         than handed a second payment session for the same frozen price.
 
 
-        A `negotiable` listing has no draft at all, so there is nothing to check out here —
-        its terms are frozen by the offer both sides accepted, and `POST /offers/{id}/acceptance`
-        opens this same checkout.
+        A `negotiable` listing has no draft at all, so there is nothing to check out here — its
+        terms are frozen by the offer both sides agreed on, and `POST /offers/{id}/checkout` is the
+        same checkout from there. The buyer pays delivery either way.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/DraftOrderID' } }
@@ -232,3 +232,41 @@ components:
         total: { type: integer, format: int64, minimum: 0, example: 613000, description: 'What the session asks for: goods plus delivery' }
         currency: { $ref: '#/components/schemas/CurrencyCode' }
       required: [items, payment_session_id, goods_total, shipping_fee, total, currency]
+
+    ShippingQuotesRequest:
+      type: object
+      description: >
+        Exactly one of `draft_id` or `offer_id` — they are the two things that freeze a price, and
+        the parcel is whichever of them is about to be checked out.
+      properties:
+        draft_id: { $ref: '#/components/schemas/DraftOrderID' }
+        offer_id: { $ref: '#/components/schemas/OfferID' }
+        contact_id: { $ref: '#/components/schemas/ContactID' }
+        lines:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/CheckoutLine' }
+          description: >
+            The draft's variants and quantities, as a checkout would send them. Ignored for an
+            offer, whose quantity was negotiated.
+      required: [contact_id]
+
+    ShippingQuotes:
+      type: object
+      properties:
+        options: { type: array, items: { $ref: '#/components/schemas/ShippingQuote' } }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+      required: [options, currency]
+
+    ShippingQuote:
+      type: object
+      properties:
+        option: { type: string, example: ghn-express }
+        name: { type: string, example: GHN Express }
+        fee:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 15000
+          description: What the buyer would pay this carrier. Re-quoted at checkout, so it is an estimate a client renders rather than a price it can hold.
+      required: [option, name, fee]

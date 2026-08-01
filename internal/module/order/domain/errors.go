@@ -41,8 +41,13 @@ var (
 	ErrNotYourTurn = errx.NewError(http.StatusForbidden, "not_your_turn", "the standing proposal is yours; wait for a reply")
 	// ErrOfferNotAccepted is a checkout of terms nobody has agreed to yet. A negotiable listing
 	// cannot be bought until one side says yes to the other's price.
-	ErrOfferNotAccepted  = errx.NewError(http.StatusConflict, "offer_not_accepted", "these terms have not been agreed yet")
-	ErrOnlyBuyerAccepts  = errx.NewError(http.StatusForbidden, "only_buyer_accepts", "only the buyer closes a negotiation")
+	ErrOfferNotAccepted = errx.NewError(http.StatusConflict, "offer_not_accepted", "these terms have not been agreed yet")
+	// ErrSellerCannotOffer is the seller trying to open the negotiation. A proposal needs
+	// somebody to propose to, and on their own listing there is nobody.
+	ErrSellerCannotOffer = errx.NewError(http.StatusForbidden, "seller_cannot_offer", "the buyer opens a negotiation")
+	// ErrOnlyBuyerCheckout is a seller pressing "create order now". Either side may agree to a
+	// price; only the buyer turns it into an order, because only the buyer pays.
+	ErrOnlyBuyerCheckout = errx.NewError(http.StatusForbidden, "only_buyer_checkout", "only the buyer checks out agreed terms")
 	ErrFixedPriceListing = errx.NewError(http.StatusUnprocessableEntity, "fixed_price_listing", "this listing is not negotiable")
 
 	// --- orders ---

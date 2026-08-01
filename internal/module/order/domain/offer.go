@@ -48,7 +48,7 @@ func NewOffer(listingID, variantID, authorID, buyerID, sellerID, quantity, total
 		ExpiresAt: time.Now().Add(window),
 	}
 	if buyerID == sellerID {
-		return Offer{}, ErrOnlyBuyerAccepts
+		return Offer{}, ErrSellerCannotOffer
 	}
 	if authorID != buyerID && authorID != sellerID {
 		return Offer{}, ErrNotYourTurn
@@ -124,7 +124,7 @@ func (o Offer) CheckoutBy(actorID int64, now time.Time) error {
 		return ErrOfferNotAccepted
 	}
 	if actorID != o.BuyerID {
-		return ErrOnlyBuyerAccepts
+		return ErrOnlyBuyerCheckout
 	}
 	if !now.Before(o.ExpiresAt) {
 		return ErrOfferExpired

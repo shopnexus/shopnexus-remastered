@@ -446,10 +446,9 @@ components:
                     maxLength: 500
                     type: string
                 transport_option:
-                    description: A carrier slug from `POST /shipping-quotes`; one nobody enabled is refused.
-                    example: ghn-express
+                    description: A carrier slug from `POST /shipping-quotes`; one nobody enabled is refused with 422.
+                    example: standard-delivery
                     maxLength: 100
-                    pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
                     type: string
             required:
                 - contact_id
@@ -6522,7 +6521,7 @@ paths:
 
                 The session is spent before the money is asked for: the claim is what makes two concurrent checkouts of one draft impossible, and the loser is answered 409 rather than handed a second payment session for the same frozen price.
 
-                A `negotiable` listing has no draft at all, so there is nothing to check out here — its terms are frozen by the offer both sides accepted, and `POST /offers/{id}/acceptance` opens this same checkout.
+                A `negotiable` listing has no draft at all, so there is nothing to check out here — its terms are frozen by the offer both sides agreed on, and `POST /offers/{id}/checkout` is the same checkout from there. The buyer pays delivery either way.
             parameters:
                 - in: path
                   name: id
@@ -8278,6 +8277,12 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/Error'
                     description: Terms are not agreed, have lapsed, or are already checked out
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: A carrier nobody enabled, or a variant that is no longer sellable
                 "502":
                     content:
                         application/json:
@@ -9809,6 +9814,12 @@ paths:
                     $ref: '#/components/responses/BadRequest'
                 "401":
                     $ref: '#/components/responses/Unauthorized'
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Only the buyer prices delivery on agreed terms
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "409":
@@ -9817,6 +9828,12 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/Error'
                     description: The draft or the agreed terms are no longer checkout-able
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: A variant that is not on this purchase
             security:
                 - bearerAuth: []
             summary: What delivery would cost, per carrier

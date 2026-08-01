@@ -84,7 +84,7 @@ func (s *Service) CreateOffer(ctx context.Context, req orderapi.CreateOfferReque
 	if req.ActorID == sellerID {
 		// The seller opening it means they are proposing to somebody; without a buyer there
 		// is nobody to propose to, so this route is the buyer's to start.
-		return orderapi.Offer{}, domain.ErrOnlyBuyerAccepts
+		return orderapi.Offer{}, domain.ErrSellerCannotOffer
 	}
 	o, err := domain.NewOffer(listing.ID.Int64(), req.VariantID.Int64(), req.ActorID.Int64(),
 		buyerID.Int64(), sellerID.Int64(), req.Quantity, req.Total, req.Reason, offerWindow)
@@ -228,7 +228,13 @@ func (s *Service) AcceptOffer(ctx context.Context, req orderapi.OfferRequest) (o
 	// The frozen price is on a clock, and the run that closes it is the same one a standing
 	// proposal had: the row carries its own deadline either way.
 	s.timer("start offer", s.workflows.StartOffer(ctx, o.ID))
-	return toAPIOffer(o, ""), nil
+	// The currency is the listing's, resolved for the same reason a read resolves it: a total
+	// with nothing beside it is not a price, and this answer is the agreed one.
+	currencies, err := s.listingCurrencies(ctx, req.ActorID, []domain.Offer{o})
+	if err != nil {
+		return orderapi.Offer{}, err
+	}
+	return toAPIOffer(o, currencies[o.ListingID]), nil
 }
 
 // CheckoutOffer is the buyer's "create order now": the agreed price, plus the delivery they choose

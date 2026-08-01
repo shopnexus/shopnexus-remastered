@@ -216,8 +216,8 @@ func TestOffer_AlternatesAndOnlyBuyerAccepts(t *testing.T) {
 		t.Fatalf("expires at %v, want a short window from %v", o.ExpiresAt, now)
 	}
 	// Only the buyer turns it into an order, and only once.
-	if err := o.CheckoutBy(seller, now); !errors.Is(err, domain.ErrOnlyBuyerAccepts) {
-		t.Fatalf("seller checking out = %v, want ErrOnlyBuyerAccepts", err)
+	if err := o.CheckoutBy(seller, now); !errors.Is(err, domain.ErrOnlyBuyerCheckout) {
+		t.Fatalf("seller checking out = %v, want ErrOnlyBuyerCheckout", err)
 	}
 	if err := o.CheckoutBy(buyer, now); err != nil {
 		t.Fatalf("CheckoutBy: %v", err)
@@ -236,8 +236,8 @@ func TestOffer_AlternatesAndOnlyBuyerAccepts(t *testing.T) {
 	if err := fromBuyer.Accept(seller, now, 30*time.Minute); err != nil {
 		t.Fatalf("seller accepting the buyer's price: %v", err)
 	}
-	if err := fromBuyer.CheckoutBy(seller, now); !errors.Is(err, domain.ErrOnlyBuyerAccepts) {
-		t.Fatalf("seller checking out = %v, want ErrOnlyBuyerAccepts", err)
+	if err := fromBuyer.CheckoutBy(seller, now); !errors.Is(err, domain.ErrOnlyBuyerCheckout) {
+		t.Fatalf("seller checking out = %v, want ErrOnlyBuyerCheckout", err)
 	}
 	if err := fromBuyer.CheckoutBy(buyer, now); err != nil {
 		t.Fatalf("buyer checking out agreed terms: %v", err)
