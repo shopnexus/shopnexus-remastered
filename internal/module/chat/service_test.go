@@ -27,14 +27,16 @@ func (fakeAccounts) GetPublicAccount(_ context.Context, req accountapi.GetPublic
 }
 
 type harness struct {
-	svc  *chat.Service
-	repo *fakeRepo
+	svc     *chat.Service
+	repo    *fakeRepo
+	uploads *fakeUploads
 }
 
 func newHarness() *harness {
 	repo := newFakeRepo()
-	svc := chat.NewService(repo, fakeAccounts{}, validation.Default(), slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: repo}
+	uploads := newFakeUploads()
+	svc := chat.NewService(repo, fakeAccounts{}, uploads, validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: repo, uploads: uploads}
 }
 
 func status(t *testing.T, err error) uint16 {
@@ -310,7 +312,7 @@ func TestSendMessage_UnknownAttachment(t *testing.T) {
 
 	// Declared as confirmed, a photo with no caption goes through: an attachment is
 	// something to say.
-	h.repo.resources[42] = true
+	h.uploads.confirmed[42] = true
 	if _, err := h.svc.SendMessage(ctx, chatapi.SendMessageRequest{
 		ActorID: alice, ConversationID: thread.ID,
 		Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},

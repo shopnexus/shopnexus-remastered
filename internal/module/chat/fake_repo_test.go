@@ -3,11 +3,13 @@ package chat_test
 import (
 	"context"
 	"slices"
+	"strconv"
 	"time"
 
 	"shopnexus/internal/module/chat/domain"
 	"shopnexus/internal/module/chat/port"
 	"shopnexus/internal/module/common"
+	"shopnexus/internal/provider/storage"
 )
 
 // fakeRepo is an in-memory port.Repository. It keeps the rules the schema holds — one
@@ -17,13 +19,10 @@ type fakeRepo struct {
 	nextID   int64
 	threads  map[int64]domain.Conversation
 	messages []domain.Message
-	// resources is this module's own resource table: an id absent from it names no
-	// confirmed upload.
-	resources map[int64]bool
 }
 
 func newFakeRepo() *fakeRepo {
-	return &fakeRepo{threads: map[int64]domain.Conversation{}, resources: map[int64]bool{}}
+	return &fakeRepo{threads: map[int64]domain.Conversation{}}
 }
 
 func (f *fakeRepo) id() int64 {
@@ -228,12 +227,69 @@ func (f *fakeRepo) unreadIn(thread domain.Conversation, accountID int64) int64 {
 	return unread
 }
 
-func (f *fakeRepo) FindResources(_ context.Context, ids []int64) ([]common.Resource, error) {
-	out := make([]common.Resource, 0, len(ids))
-	for _, key := range ids {
-		if f.resources[key] {
-			out = append(out, common.Resource{ID: key, Mime: "image/jpeg"})
+// fakeUploads is the upload seam a service test needs: it records a slot per resource id and
+// resolves a confirmed one, refusing what the real store refuses — an unconfirmed id, another
+// uploader's slot, and bytes that never arrived.
+type fakeUploads struct {
+	nextID int64
+	// slots is what Presign handed out, pending is whether it has been confirmed, and owner is
+	// who may confirm it.
+	slots     map[int64]bool
+	owner     map[int64]int64
+	confirmed map[int64]bool
+	// arrived is whether the client actually uploaded. A confirm without it is refused, which
+	// is what stops a row rendering as a broken image.
+	arrived map[int64]bool
+}
+
+func newFakeUploads() *fakeUploads {
+	return &fakeUploads{
+		slots: map[int64]bool{}, owner: map[int64]int64{},
+		confirmed: map[int64]bool{}, arrived: map[int64]bool{},
+	}
+}
+
+func (f *fakeUploads) Presign(_ context.Context, uploaderID int64, _ string, req common.UploadRequest) (common.UploadSlot, error) {
+	f.nextID++
+	f.slots[f.nextID] = true
+	f.owner[f.nextID] = uploaderID
+	return common.UploadSlot{
+		ResourceID: f.nextID,
+		URL:        "https://store.test/put/" + strconv.FormatInt(f.nextID, 10),
+		ExpiresAt:  time.Now().Add(15 * time.Minute),
+	}, nil
+}
+
+func (f *fakeUploads) Confirm(_ context.Context, uploaderID, resourceID int64) (common.Resource, error) {
+	if !f.slots[resourceID] || f.confirmed[resourceID] || f.owner[resourceID] != uploaderID {
+		return common.Resource{}, common.ErrResourceNotFound
+	}
+	if !f.arrived[resourceID] {
+		return common.Resource{}, storage.ErrObjectNotFound
+	}
+	f.confirmed[resourceID] = true
+	return common.Resource{ID: resourceID, Provider: "test", ObjectKey: "k", Mime: "image/jpeg"}, nil
+}
+
+func (f *fakeUploads) Resolve(_ context.Context, ids []int64) (map[int64]common.ResourceDTO, error) {
+	out := make(map[int64]common.ResourceDTO, len(ids))
+	for _, one := range ids {
+		if !f.confirmed[one] {
+			continue
 		}
+		out[one] = common.Resource{
+			ID: one, Provider: "test", ObjectKey: "k", Mime: "image/jpeg",
+			URL: "https://store.test/get/" + strconv.FormatInt(one, 10),
+		}.ToDTO()
 	}
 	return out, nil
+}
+
+// confirmedUpload is the shorthand a test uses when it just needs a usable attachment id.
+func (f *fakeUploads) confirmedUpload() int64 {
+	f.nextID++
+	f.slots[f.nextID] = true
+	f.arrived[f.nextID] = true
+	f.confirmed[f.nextID] = true
+	return f.nextID
 }

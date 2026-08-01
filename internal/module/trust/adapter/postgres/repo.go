@@ -6,12 +6,9 @@
 package postgres
 
 import (
-	"context"
-
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/common/dbx"
 	"shopnexus/internal/module/trust/port"
 )
@@ -23,12 +20,6 @@ type Repo struct {
 func New(pool *pgxpool.Pool) *Repo { return &Repo{pool: pool} }
 
 var _ port.Repository = (*Repo)(nil)
-
-// FindResources reads this module's own uploads — a review's photos. Shared DDL, per-schema
-// rows: the upload belongs to trust.
-func (r *Repo) FindResources(ctx context.Context, ids []int64) ([]common.Resource, error) {
-	return dbx.NewResources(r.pool).Find(ctx, ids)
-}
 
 // addCursor fills in the bound every list here shares: the key the previous page ended at and
 // that row's id, compared as a tuple. `@before_id = 0` is how a first page says "no bound",

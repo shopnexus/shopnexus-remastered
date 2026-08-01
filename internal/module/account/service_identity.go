@@ -91,13 +91,12 @@ func (s *Service) scans(ctx context.Context, req accountapi.StartIdentityVerific
 	for _, rid := range wanted {
 		keys = append(keys, rid.Int64())
 	}
-	found, err := s.repo.FindResources(ctx, keys)
+	found, err := s.uploads.Resolve(ctx, keys)
 	if err != nil {
 		return nil, fmt.Errorf("get scan resources: %w", err)
 	}
 	out := make(map[id.ID[id.Resource]]kyc.Image, len(found))
-	for _, res := range found {
-		dto := res.ToDTO()
+	for _, dto := range found {
 		out[dto.ID] = kyc.Image{URL: dto.URL, Mime: dto.Mime}
 	}
 	for _, want := range wanted {

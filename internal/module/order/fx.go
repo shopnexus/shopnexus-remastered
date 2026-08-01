@@ -13,26 +13,36 @@ import (
 	infradurable "shopnexus/internal/infra/durable"
 	"shopnexus/internal/infra/eventbus"
 	"shopnexus/internal/infra/postgres"
+	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/common/dbx"
+	"shopnexus/internal/module/common/uploads"
 	finance "shopnexus/internal/module/finance"
 	"shopnexus/internal/module/order/adapter/durable"
 	orderpg "shopnexus/internal/module/order/adapter/postgres"
 	orderapi "shopnexus/internal/module/order/api"
 	"shopnexus/internal/module/order/port"
+	"shopnexus/internal/provider/storage"
 	"shopnexus/internal/shared/id"
 )
 
 // Module wires the order service, its repository, the carrier registry it reads from its own
-// schema, the durable lifecycle and the seam that drives it, and the subscriber that turns a
-// settled payment into an order.
+// schema, the evidence uploads its receipt confirmations and refunds carry, the durable
+// lifecycle and the seam that drives it, and the subscriber that turns a settled payment into
+// an order.
 var Module = fx.Module("order",
-	// Private, and in a Provide of its own because fx.Private applies to every constructor
-	// in the same call: the pool is this module's own, and two modules each providing a bare
-	// *pgxpool.Pool into the root graph is a conflict rather than two pools.
-	fx.Provide(fx.Private, newPool),
+	// Private, and in a Provide of its own because fx.Private applies to every constructor in
+	// the same call. All three are this module's own: two modules each providing a bare
+	// *pgxpool.Pool, a bare *uploads.Store or a bare common.Uploads into the root graph is a
+	// conflict rather than one of each per module — only this module's own service may see them.
+	fx.Provide(fx.Private,
+		newPool,
+		newUploads,
+		fx.Annotate(func(s *uploads.Store) common.Uploads { return s }),
+	),
 	fx.Provide(
 		fx.Annotate(newRepo, fx.As(new(port.Repository))),
 		fx.Annotate(newOptions, fx.As(new(port.Options))),
+		fx.Annotate(newUploadSweep, fx.ResultTags(`group:"sweeps"`)),
 		newWorkflows,
 		fx.Annotate(NewService, fx.As(new(orderapi.Service))),
 		NewLifecycle,
@@ -93,6 +103,16 @@ func newPool(lc fx.Lifecycle, cfg *config.Config) (*pgxpool.Pool, error) {
 func newRepo(pool *pgxpool.Pool) *orderpg.Repo { return orderpg.New(pool) }
 
 func newOptions(pool *pgxpool.Pool) *dbx.Options { return dbx.NewOptions(pool) }
+
+// newUploads is this module's own `resource` rows plus the object store. The prefix keeps
+// order's objects together, so an operator holding only a key can tell what it belongs to.
+func newUploads(pool *pgxpool.Pool, cfg *config.Config, client storage.Client) *uploads.Store {
+	return uploads.New(dbx.NewResources(pool), client, "order", cfg.StorageUploadTTL)
+}
+
+// newUploadSweep reaps the slots nobody confirmed. Registered with the shared sweeper, because
+// an abandoned upload is a row and an object that would otherwise accumulate for ever.
+func newUploadSweep(store *uploads.Store) infradurable.Sweep { return store.Sweep }
 
 // SubscribePaidSessions is what makes the money create the order. Finance publishes a
 // settled session; this turns it into an order, a shipment and an escrow hold.

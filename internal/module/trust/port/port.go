@@ -7,7 +7,6 @@ import (
 	"context"
 	"time"
 
-	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/trust/domain"
 )
 
@@ -149,7 +148,4 @@ type Repository interface {
 	// on a pattern rather than on one complaint. A whole page of targets in one query, so the
 	// queue does not cost a round trip per row.
 	CountOpenAgainst(ctx context.Context, targets []ReportTarget) (map[ReportTarget]int64, error)
-
-	// FindResources reads this module's own uploads — a review's photos.
-	FindResources(ctx context.Context, ids []int64) ([]common.Resource, error)
 }

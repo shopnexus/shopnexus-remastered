@@ -15,6 +15,15 @@ import (
 	"shopnexus/internal/shared/id"
 )
 
+// UploadSlot is where to PUT, what to confirm afterwards, and until when.
+type UploadSlot struct {
+	ResourceID id.ID[id.Resource] `json:"resource_id"`
+	URL        string             `json:"url"`
+	// Headers the client must send with the PUT, when the signature covers any.
+	Headers   map[string]string `json:"headers,omitempty"`
+	ExpiresAt time.Time         `json:"expires_at"`
+}
+
 // Conversation is one inbox row: who it is with, what was said last, and how much of it
 // the caller has not read.
 type Conversation struct {
@@ -75,6 +84,24 @@ type UnreadCount struct {
 }
 
 // --- requests ---
+
+// CreateUploadRequest asks for a slot to PUT a message attachment into. The bytes never
+// pass through the API: the answer is a short-lived signed URL, and a second call confirms
+// the row once the object is there — so a message can never render a photo whose bytes
+// never arrived.
+type CreateUploadRequest struct {
+	ActorID  id.ID[id.Account] `json:"-" validate:"required"`
+	Filename string            `json:"filename" validate:"required,max=255"`
+	Mime     string            `json:"mime" validate:"required,max=100"`
+	Size     int64             `json:"size" validate:"required,gt=0"`
+}
+
+// ConfirmUploadRequest is the second step. The size is read from the store rather than
+// taken from the client, so what it declared cannot become the record.
+type ConfirmUploadRequest struct {
+	ActorID id.ID[id.Account]  `json:"-" validate:"required"`
+	ID      id.ID[id.Resource] `json:"-" validate:"required"`
+}
 
 type ListConversationsRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
@@ -160,6 +187,12 @@ type PostSystemMessageRequest struct {
 }
 
 type Service interface {
+	// CreateUpload reserves a row and a presigned slot for a message attachment;
+	// ConfirmUpload makes it real once the bytes are at the store. Until then the resource
+	// resolves to nothing, so a half-finished upload cannot be attached to a message.
+	CreateUpload(ctx context.Context, req CreateUploadRequest) (UploadSlot, error)
+	ConfirmUpload(ctx context.Context, req ConfirmUploadRequest) (common.ResourceDTO, error)
+
 	ListConversations(ctx context.Context, req ListConversationsRequest) (ConversationPage, error)
 	StartConversation(ctx context.Context, req StartConversationRequest) (Conversation, error)
 	GetConversation(ctx context.Context, req GetConversationRequest) (Conversation, error)

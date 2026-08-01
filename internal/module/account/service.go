@@ -64,7 +64,11 @@ type Service struct {
 	notify notify.Client
 	oauth  oauth.Verifier
 	kyc    kyc.Client
-	log    *slog.Logger
+	// uploads is this module's own resource table plus the object store. An avatar and an
+	// identity scan share it — presigning per request is what keeps a scan from ever being
+	// a public link, unlike the avatar it sits beside.
+	uploads common.Uploads
+	log     *slog.Logger
 }
 
 func NewService(
@@ -75,6 +79,7 @@ func NewService(
 	notifier notify.Client,
 	verifier oauth.Verifier,
 	kycClient kyc.Client,
+	uploads common.Uploads,
 	log *slog.Logger,
 ) *Service {
 	return &Service{
@@ -85,11 +90,41 @@ func NewService(
 		notify:   notifier,
 		oauth:    verifier,
 		kyc:      kycClient,
+		uploads:  uploads,
 		log:      log,
 	}
 }
 
 var _ accountapi.Service = (*Service)(nil)
+
+// CreateUpload reserves a row and a signed slot for an avatar or an identity scan. The
+// client PUTs the bytes at the store and confirms; until then the resource resolves to
+// nothing, so a half-finished upload cannot be attached to anything.
+func (s *Service) CreateUpload(ctx context.Context, req accountapi.CreateUploadRequest) (accountapi.UploadSlot, error) {
+	slot, err := s.uploads.Presign(ctx, req.ActorID.Int64(), req.Kind, common.UploadRequest{
+		Filename: req.Filename, Mime: req.Mime, Size: req.Size,
+	})
+	if err != nil {
+		return accountapi.UploadSlot{}, err
+	}
+	return accountapi.UploadSlot{
+		ResourceID: id.Of[id.Resource](slot.ResourceID),
+		URL:        slot.URL,
+		Headers:    slot.Headers,
+		ExpiresAt:  slot.ExpiresAt,
+	}, nil
+}
+
+// ConfirmUpload makes the upload real, with the size the store reports rather than the one
+// the client declared. Scoped to the uploader: a resource id is guessable, and confirming
+// somebody else's slot would be claiming their upload.
+func (s *Service) ConfirmUpload(ctx context.Context, req accountapi.ConfirmUploadRequest) (common.ResourceDTO, error) {
+	res, err := s.uploads.Confirm(ctx, req.ActorID.Int64(), req.ID.Int64())
+	if err != nil {
+		return common.ResourceDTO{}, err
+	}
+	return res.ToDTO(), nil
+}
 
 // --- shared loaders ---
 
@@ -264,7 +299,7 @@ func (s *Service) avatar(ctx context.Context, resourceID *int64) *common.Resourc
 	return s.avatars(ctx, []int64{*resourceID})[*resourceID]
 }
 
-// avatars resolves image ids from this module's own resource table — one query for the whole
+// avatars resolves image ids through this module's own uploads — one query for the whole
 // page, because a list of twenty sellers is twenty avatars. A missing one is left out rather
 // than failing the page.
 func (s *Service) avatars(ctx context.Context, resourceIDs []int64) map[int64]*common.ResourceDTO {
@@ -272,14 +307,13 @@ func (s *Service) avatars(ctx context.Context, resourceIDs []int64) map[int64]*c
 	if len(resourceIDs) == 0 {
 		return out
 	}
-	found, err := s.repo.FindResources(ctx, resourceIDs)
+	found, err := s.uploads.Resolve(ctx, resourceIDs)
 	if err != nil {
 		s.log.Warn("resolve avatars failed", "count", len(resourceIDs), "err", err)
 		return out
 	}
-	for _, res := range found {
-		dto := res.ToDTO()
-		out[res.ID] = &dto
+	for resourceID, dto := range found {
+		out[resourceID] = &dto
 	}
 	return out
 }

@@ -160,6 +160,64 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /reviews/uploads:
+    post:
+      tags: [trust]
+      summary: Reserve a slot to upload a review photo into
+      description: >
+        The bytes never pass through this API. The answer is a short-lived signed URL to PUT to,
+        and `POST /reviews/uploads/{id}/confirmation` makes the row real once the object is
+        there — so a review can never render a photo whose bytes never arrived.
+
+
+        `mime` and `size` are checked before a byte moves: a slot signed for anything is a slot
+        for anything.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateUploadRequest' }
+      responses:
+        '201':
+          description: 'Reserved'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/UploadSlot' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { description: 'Larger than this platform accepts', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'That file type is not accepted', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /reviews/uploads/{id}/confirmation:
+    post:
+      tags: [trust]
+      summary: Confirm the bytes are at the store
+      description: >
+        Until this lands the resource resolves to nothing, so a half-finished upload cannot be
+        attached to a review. The recorded size is the store's, not the one declared when the
+        slot was reserved.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ResourceID' } }
+      responses:
+        '200':
+          description: 'Confirmed'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Resource' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'No such reserved slot of the caller''s', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Nothing was uploaded to that slot', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
   /reviews/{id}/vote:
     parameters:
       - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ReviewID' } }

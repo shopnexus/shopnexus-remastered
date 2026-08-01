@@ -8,14 +8,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
 
 	"shopnexus/internal/provider"
 	"shopnexus/internal/provider/transport"
@@ -67,16 +64,12 @@ func (c *Client) Quote(_ context.Context, _ transport.QuoteParams) (transport.Qu
 // automatic Processing -> Success delivery after the configured delay.
 func (c *Client) Create(_ context.Context, params transport.CreateParams) (transport.Transport, error) {
 	trackingID := newTrackingID()
-	id, err := uuid.NewRandom()
-	if err != nil {
-		return transport.Transport{}, fmt.Errorf("generate shipment id: %w", err)
-	}
 	data, _ := json.Marshal(map[string]string{"tracking_id": trackingID})
 
 	c.scheduleDelivery(trackingID)
 
 	return transport.Transport{
-		ID:     id,
+		ID:     trackingID,
 		Option: params.Option,
 		Cost:   flatCost,
 		Data:   data,
@@ -93,7 +86,7 @@ func (c *Client) scheduleDelivery(trackingID string) {
 			slog.Warn("mock transport: no deliver hook (WireWebhooks not called)", slog.String("tracking_id", trackingID))
 			return
 		}
-		for _, status := range []string{"Processing", "Success"} {
+		for _, status := range []string{string(transport.StatusProcessing), string(transport.StatusSuccess)} {
 			if err := deliver(context.Background(), transport.WebhookResult{
 				TransportID: trackingID,
 				Status:      status,

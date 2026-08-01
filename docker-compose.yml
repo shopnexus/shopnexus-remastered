@@ -52,6 +52,9 @@ x-app-env: &app-env
   OAUTH_VERIFIER: "mock"
   KYC_PROVIDER: "mock"
   PAYMENT_PROVIDER: "mock"
+  # The courier a shipping fee is quoted from. The buyer pays delivery on every sale, so an
+  # unquoted fee is one the platform silently absorbs. `mock` prices a flat fee.
+  TRANSPORT_PROVIDER: "mock"
   # Where a payment gateway may send a payer back. An allowlist, because a redirect target
   # nobody checked is an open redirect that borrows this platform's credibility.
   PAYMENT_RETURN_URL_HOSTS: "localhost:5000,localhost:3000"

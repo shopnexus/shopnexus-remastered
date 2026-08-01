@@ -234,7 +234,7 @@ func TestIdentityVerdict_VerifiesThenBlocksASecondLiveDocument(t *testing.T) {
 	moderator := h.staff(t, "mod@example.com", domain.RoleModerator)
 	user := h.register(t, registerRequest())
 
-	ticket, err := h.svc.StartIdentityVerification(ctx, scanRequest(user.Account.ID, domain.DocTypeNationalID))
+	ticket, err := h.svc.StartIdentityVerification(ctx, scanRequest(h, user.Account.ID, domain.DocTypeNationalID))
 	if err != nil {
 		t.Fatalf("StartIdentityVerification: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestIdentityVerdict_VerifiesThenBlocksASecondLiveDocument(t *testing.T) {
 		t.Error("identity_verified = false after a verified document")
 	}
 	// A second case is refused while a live one exists.
-	if _, err := h.svc.StartIdentityVerification(ctx, scanRequest(user.Account.ID, domain.DocTypePassport)); status(t, err) != 409 {
+	if _, err := h.svc.StartIdentityVerification(ctx, scanRequest(h, user.Account.ID, domain.DocTypePassport)); status(t, err) != 409 {
 		t.Errorf("status = %v, want 409 for a second live document", err)
 	}
 }
@@ -283,7 +283,7 @@ func TestIdentityVerdict_PassportNeedsAnExpiry(t *testing.T) {
 	moderator := h.staff(t, "mod@example.com", domain.RoleModerator)
 	user := h.register(t, registerRequest())
 
-	ticket, err := h.svc.StartIdentityVerification(ctx, scanRequest(user.Account.ID, domain.DocTypePassport))
+	ticket, err := h.svc.StartIdentityVerification(ctx, scanRequest(h, user.Account.ID, domain.DocTypePassport))
 	if err != nil {
 		t.Fatalf("StartIdentityVerification: %v", err)
 	}
@@ -308,7 +308,7 @@ func TestIdentityVerdict_RejectionNeedsAReason(t *testing.T) {
 	ctx := context.Background()
 	moderator := h.staff(t, "mod@example.com", domain.RoleModerator)
 	user := h.register(t, registerRequest())
-	ticket, err := h.svc.StartIdentityVerification(ctx, scanRequest(user.Account.ID, domain.DocTypeNationalID))
+	ticket, err := h.svc.StartIdentityVerification(ctx, scanRequest(h, user.Account.ID, domain.DocTypeNationalID))
 	if err != nil {
 		t.Fatalf("StartIdentityVerification: %v", err)
 	}
@@ -338,10 +338,11 @@ func TestIdentityVerdict_RejectionNeedsAReason(t *testing.T) {
 	}
 }
 
-// scanRequest names the three uploads a real submission carries. The ids are arbitrary:
-// what matters is that the service resolves each one to a fetch URL before calling the
-// vendor.
-func scanRequest(actorID id.ID[id.Account], docType domain.DocType) accountapi.StartIdentityVerificationRequest {
+// scanRequest names the three uploads a real submission carries and marks each confirmed in
+// the harness's upload store. The ids are arbitrary: what matters is that the service
+// resolves each one to a fetch URL before calling the vendor.
+func scanRequest(h *harness, actorID id.ID[id.Account], docType domain.DocType) accountapi.StartIdentityVerificationRequest {
+	h.uploads.confirmed[11], h.uploads.confirmed[12], h.uploads.confirmed[13] = true, true, true
 	return accountapi.StartIdentityVerificationRequest{
 		ActorID:          actorID,
 		DocType:          string(docType),
@@ -356,9 +357,10 @@ func scanRequest(actorID id.ID[id.Account], docType domain.DocType) accountapi.S
 func TestStartIdentityVerification_UnavailableScanRefused(t *testing.T) {
 	h := newHarness()
 	user := h.register(t, registerRequest())
-	h.repo.missingResources[13] = true // the selfie
+	req := scanRequest(h, user.Account.ID, domain.DocTypeNationalID)
+	h.uploads.confirmed[13] = false // the selfie was never confirmed
 
-	_, err := h.svc.StartIdentityVerification(context.Background(), scanRequest(user.Account.ID, domain.DocTypeNationalID))
+	_, err := h.svc.StartIdentityVerification(context.Background(), req)
 	if got := status(t, err); got != 422 {
 		t.Fatalf("status = %d, want 422", got)
 	}
@@ -370,7 +372,7 @@ func TestStartIdentityVerification_MockVendorLeavesItPending(t *testing.T) {
 	h := newHarness()
 	user := h.register(t, registerRequest())
 
-	ticket, err := h.svc.StartIdentityVerification(context.Background(), scanRequest(user.Account.ID, domain.DocTypeNationalID))
+	ticket, err := h.svc.StartIdentityVerification(context.Background(), scanRequest(h, user.Account.ID, domain.DocTypeNationalID))
 	if err != nil {
 		t.Fatalf("StartIdentityVerification: %v", err)
 	}

@@ -197,6 +197,35 @@ type VoteReviewRequest struct {
 	Vote int16 `json:"vote" validate:"required,oneof=-1 1"`
 }
 
+// CreateUploadRequest asks for a slot to PUT a review photo into. The bytes never pass
+// through the API: the answer is a short-lived signed URL, and a second call confirms the
+// row once the object is there — so a review can never render a photo whose bytes never
+// arrived.
+type CreateUploadRequest struct {
+	ActorID  id.ID[id.Account] `json:"-" validate:"required"`
+	Filename string            `json:"filename" validate:"required,max=255"`
+	// Mime and Size are what the client is about to send. Both are checked before a byte
+	// moves: a slot signed for anything is a slot for anything.
+	Mime string `json:"mime" validate:"required,max=100"`
+	Size int64  `json:"size" validate:"required,gt=0"`
+}
+
+// UploadSlot is where to PUT, what to confirm afterwards, and until when.
+type UploadSlot struct {
+	ResourceID id.ID[id.Resource] `json:"resource_id"`
+	URL        string             `json:"url"`
+	// Headers the client must send with the PUT, when the signature covers any.
+	Headers   map[string]string `json:"headers,omitempty"`
+	ExpiresAt time.Time         `json:"expires_at"`
+}
+
+// ConfirmUploadRequest is the second step. The size is read from the store rather than
+// taken from the client, so what it declared cannot become the record.
+type ConfirmUploadRequest struct {
+	ActorID id.ID[id.Account]  `json:"-" validate:"required"`
+	ID      id.ID[id.Resource] `json:"-" validate:"required"`
+}
+
 // ----------------------------------------------------------------- reports ---
 
 // Report's RefID is an opaque id whose kind is given by RefType, so it is a string here and
@@ -312,6 +341,13 @@ type Service interface {
 	DeleteReply(ctx context.Context, req ReplyRequest) error
 	VoteReview(ctx context.Context, req VoteReviewRequest) (VoteTally, error)
 	UnvoteReview(ctx context.Context, req ReviewRequest) (VoteTally, error)
+
+	// --- uploads: a review photo, in two steps ---
+	// CreateUpload reserves a row and a presigned slot; ConfirmUpload makes it real once the
+	// bytes are at the store. Until then the resource resolves to nothing, so a
+	// half-finished upload cannot be attached to anything.
+	CreateUpload(ctx context.Context, req CreateUploadRequest) (UploadSlot, error)
+	ConfirmUpload(ctx context.Context, req ConfirmUploadRequest) (common.ResourceDTO, error)
 
 	// --- reports ---
 	SubmitReport(ctx context.Context, req SubmitReportRequest) (Report, error)

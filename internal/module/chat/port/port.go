@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"shopnexus/internal/module/chat/domain"
-	"shopnexus/internal/module/common"
 )
 
 // InboxFilter pages a participant's threads, latest activity first. The cursor is a
@@ -60,7 +59,4 @@ type Repository interface {
 	UnreadCounts(ctx context.Context, accountID int64, conversationIDs []int64) (map[int64]int64, error)
 	// UnreadTotal is the badge: everything unread across every thread.
 	UnreadTotal(ctx context.Context, accountID int64) (total int64, threads int64, err error)
-
-	// FindResources reads this module's own uploaded attachments.
-	FindResources(ctx context.Context, ids []int64) ([]common.Resource, error)
 }

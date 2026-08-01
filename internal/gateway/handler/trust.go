@@ -329,6 +329,48 @@ func (h *Trust) UnvoteReview(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteData(w, http.StatusOK, res)
 }
 
+// CreateUpload handles POST /reviews/uploads — a slot to PUT a review photo into.
+func (h *Trust) CreateUpload(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	var req trustapi.CreateUploadRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID = uid
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.CreateUpload(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, res)
+}
+
+// ConfirmUpload handles POST /reviews/uploads/{id}/confirmation — the bytes are at the store.
+func (h *Trust) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	resourceID, err := pathID[id.Resource](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := trustapi.ConfirmUploadRequest{ActorID: uid, ID: resourceID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ConfirmUpload(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
 // ----------------------------------------------------------------- reports ---
 
 // SubmitReport handles POST /reports.

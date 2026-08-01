@@ -127,6 +127,29 @@ Each seam that talks to the outside world is chosen by its own selector (`EMAIL_
 of the choices, so a local stack needs no SMTP account, SMS contract or KYC subscription. A
 vendor's credentials are required only when that vendor is the one selected.
 
+### Uploads
+
+A photo, a receipt or an identity scan is uploaded in **two steps, and the bytes never pass
+through the API**:
+
+```
+POST /listings/uploads              -> { resource_id, url, headers, expires_at }
+PUT  <url>                          (the client sends the bytes straight to the store)
+POST /listings/uploads/{id}/confirmation
+```
+
+Until that confirmation lands the resource resolves to nothing, so a listing can never render a
+photo whose bytes never arrived — and the recorded size is the **store's**, not the one the client
+declared. Each module has its own pair of routes (`/listings`, `/reviews`, `/orders`,
+`/conversations`, `/me`) because an upload belongs to the module that took it and travels with
+that module's schema; a resource id from one module resolves to nothing in another.
+
+`STORAGE_PROVIDER=local` keeps objects on the host and signs URLs back to the gateway's own
+object route — the signature covers the method, the key and an expiry, so a write slot cannot be
+turned into a read link. A real S3-compatible store is a second implementation behind
+`internal/provider/storage` plus a selector value; there the bytes never reach this process at
+all.
+
 ### Durable execution
 
 Every wait this marketplace makes — an unpaid checkout expiring and releasing its stock, an

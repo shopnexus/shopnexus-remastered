@@ -283,6 +283,50 @@ func (h *Account) UnlinkOAuthIdentity(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteNoContent(w)
 }
 
+// ---------------------------------------------------------------- uploads ------
+
+// CreateUpload handles POST /me/uploads — a slot to PUT an avatar or an identity scan into.
+func (h *Account) CreateUpload(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	var req accountapi.CreateUploadRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID = uid
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.CreateUpload(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, res)
+}
+
+// ConfirmUpload handles POST /me/uploads/{id}/confirmation — the bytes are at the store.
+func (h *Account) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	resourceID, err := pathID[id.Resource](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := accountapi.ConfirmUploadRequest{ActorID: uid, ID: resourceID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ConfirmUpload(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
 // ------------------------------------------------------------ contacts ------
 
 // ListContacts handles GET /contacts.

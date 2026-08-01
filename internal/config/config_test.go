@@ -40,6 +40,7 @@ func fullEnv() map[string]string {
 		"OAUTH_VERIFIER":           "mock",
 		"KYC_PROVIDER":             "mock",
 		"PAYMENT_PROVIDER":         "mock",
+		"TRANSPORT_PROVIDER":       "mock",
 		"PAYMENT_RETURN_URL_HOSTS": "localhost:5000",
 		// No durable runtime in the base env: the sweep is the clock, which is the shape a
 		// local stack runs in.
@@ -63,7 +64,7 @@ var requiredVars = []string{
 	"CHAT_DB_DSN", "TRUST_DB_DSN", "FINANCE_DB_DSN", "OBSERVABILITY_DB_DSN",
 	"NATS_URL", "REDIS_ADDR", "REDIS_PASSWORD", "JWT_SECRET", "ID_CIPHER_KEY", "LOG_LEVEL",
 	"EMAIL_PROVIDER", "SMS_PROVIDER", "OAUTH_VERIFIER", "KYC_PROVIDER",
-	"WORKFLOW_RUNTIME", "SWEEP_INTERVAL", "PAYMENT_RETURN_URL_HOSTS",
+	"WORKFLOW_RUNTIME", "SWEEP_INTERVAL", "PAYMENT_RETURN_URL_HOSTS", "TRANSPORT_PROVIDER",
 	"STORAGE_PROVIDER", "STORAGE_UPLOAD_TTL", "STORAGE_DOWNLOAD_TTL",
 	"STORAGE_MAX_UPLOAD_BYTES", "STORAGE_ALLOWED_MIMES",
 }

@@ -3,11 +3,13 @@ package trust_test
 import (
 	"context"
 	"slices"
+	"strconv"
 	"time"
 
 	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/trust/domain"
 	"shopnexus/internal/module/trust/port"
+	"shopnexus/internal/provider/storage"
 	"shopnexus/internal/shared/errx"
 )
 
@@ -26,10 +28,7 @@ type fakeRepo struct {
 	// outcomes is the dedupe key AddOrderOutcome writes with the bump: the settled event is
 	// at-least-once, so a second delivery of one order must count nothing.
 	outcomes map[int64]bool
-	// resources is this module's own resource table: an id absent from it names no confirmed
-	// upload, which is what ErrAttachmentNotFound is about.
-	resources map[int64]bool
-	nextID    int64
+	nextID   int64
 	// ratingSync records what was pushed to catalog's cache, per listing.
 	ratingSync map[int64][2]float64
 	// saveReportErr stands in for a database that is simply unreachable, which a service must
@@ -45,8 +44,8 @@ func newFakeRepo() *fakeRepo {
 		feedback: map[int64]domain.Feedback{}, reputation: map[[2]any]domain.Reputation{},
 		reviews: map[int64]domain.Review{}, replies: map[int64]domain.ReviewReply{},
 		votes: map[[2]int64]int16{}, reports: map[int64]domain.Report{},
-		outcomes:  map[int64]bool{},
-		resources: map[int64]bool{}, ratingSync: map[int64][2]float64{},
+		outcomes:   map[int64]bool{},
+		ratingSync: map[int64][2]float64{},
 	}
 }
 
@@ -513,14 +512,71 @@ func (f *fakeRepo) CountOpenAgainst(_ context.Context, targets []port.ReportTarg
 	return out, nil
 }
 
-func (f *fakeRepo) FindResources(_ context.Context, ids []int64) ([]common.Resource, error) {
-	out := make([]common.Resource, 0, len(ids))
+// fakeUploads is the upload seam a service test needs: it records a slot per resource id and
+// resolves a confirmed one, refusing what the real store refuses — an unconfirmed id, another
+// uploader's slot, and bytes that never arrived.
+type fakeUploads struct {
+	nextID int64
+	// slots is what Presign handed out, pending is whether it has been confirmed, and owner is
+	// who may confirm it.
+	slots     map[int64]bool
+	owner     map[int64]int64
+	confirmed map[int64]bool
+	// arrived is whether the client actually uploaded. A confirm without it is refused, which
+	// is what stops a row rendering as a broken image.
+	arrived map[int64]bool
+}
+
+func newFakeUploads() *fakeUploads {
+	return &fakeUploads{
+		slots: map[int64]bool{}, owner: map[int64]int64{},
+		confirmed: map[int64]bool{}, arrived: map[int64]bool{},
+	}
+}
+
+func (f *fakeUploads) Presign(_ context.Context, uploaderID int64, _ string, req common.UploadRequest) (common.UploadSlot, error) {
+	f.nextID++
+	f.slots[f.nextID] = true
+	f.owner[f.nextID] = uploaderID
+	return common.UploadSlot{
+		ResourceID: f.nextID,
+		URL:        "https://store.test/put/" + strconv.FormatInt(f.nextID, 10),
+		ExpiresAt:  time.Now().Add(15 * time.Minute),
+	}, nil
+}
+
+func (f *fakeUploads) Confirm(_ context.Context, uploaderID, resourceID int64) (common.Resource, error) {
+	if !f.slots[resourceID] || f.confirmed[resourceID] || f.owner[resourceID] != uploaderID {
+		return common.Resource{}, common.ErrResourceNotFound
+	}
+	if !f.arrived[resourceID] {
+		return common.Resource{}, storage.ErrObjectNotFound
+	}
+	f.confirmed[resourceID] = true
+	return common.Resource{ID: resourceID, Provider: "test", ObjectKey: "k", Mime: "image/jpeg"}, nil
+}
+
+func (f *fakeUploads) Resolve(_ context.Context, ids []int64) (map[int64]common.ResourceDTO, error) {
+	out := make(map[int64]common.ResourceDTO, len(ids))
 	for _, one := range ids {
-		if f.resources[one] {
-			out = append(out, common.Resource{ID: one, Provider: "minio", ObjectKey: "k", Mime: "image/jpeg"})
+		if !f.confirmed[one] {
+			continue
 		}
+		out[one] = common.Resource{
+			ID: one, Provider: "test", ObjectKey: "k", Mime: "image/jpeg",
+			URL: "https://store.test/get/" + strconv.FormatInt(one, 10),
+		}.ToDTO()
 	}
 	return out, nil
+}
+
+// confirmedUpload is the shorthand a test uses when it just needs a usable photo id.
+func (f *fakeUploads) confirmedUpload() int64 {
+	f.nextID++
+	f.slots[f.nextID] = true
+	f.arrived[f.nextID] = true
+	f.confirmed[f.nextID] = true
+	return f.nextID
 }
 
 // A cursor here is the pair (ordering key, row id), compared as a tuple — which is what makes

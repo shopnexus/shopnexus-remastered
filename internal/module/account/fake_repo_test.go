@@ -4,13 +4,14 @@ import (
 	"context"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/module/account/port"
 	"shopnexus/internal/module/common"
-	"shopnexus/internal/shared/id"
+	"shopnexus/internal/provider/storage"
 )
 
 // fakeRepo is an in-memory port.Repository. It exists so the service's rules can be tested
@@ -31,22 +32,17 @@ type fakeRepo struct {
 	follows   map[[2]int64]time.Time
 	documents map[int64]domain.IdentityDocument
 	audit     []common.AuditEntry
-	// resources stands in for this module's own resource table. Every id resolves unless a
-	// test marks it missing, which is how "the vendor cannot be shown this scan" is reached — a
-	// resource that was never confirmed has no fetch URL.
-	missingResources map[int64]bool
 }
 
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
-		missingResources: map[int64]bool{},
-		accounts:         map[int64]domain.Account{},
-		oauth:            map[int64][]domain.OAuthIdentity{},
-		contacts:         map[int64]domain.Contact{},
-		devices:          map[int64]domain.Device{},
-		prefs:            map[int64][]domain.Preference{},
-		follows:          map[[2]int64]time.Time{},
-		documents:        map[int64]domain.IdentityDocument{},
+		accounts:  map[int64]domain.Account{},
+		oauth:     map[int64][]domain.OAuthIdentity{},
+		contacts:  map[int64]domain.Contact{},
+		devices:   map[int64]domain.Device{},
+		prefs:     map[int64][]domain.Preference{},
+		follows:   map[[2]int64]time.Time{},
+		documents: map[int64]domain.IdentityDocument{},
 	}
 }
 
@@ -617,19 +613,70 @@ func (f *fakeRepo) codes() []string {
 	return out
 }
 
-// FindResources answers for every id a test has not marked missing. The URL is what a
-// presigner would fill in; the row itself has no such column.
-func (f *fakeRepo) FindResources(_ context.Context, ids []int64) ([]common.Resource, error) {
-	out := make([]common.Resource, 0, len(ids))
-	for _, key := range ids {
-		if f.missingResources[key] {
+// fakeUploads is the upload seam a service test needs: it records a slot per resource id and
+// resolves a confirmed one, refusing what the real store refuses — an unconfirmed id, another
+// uploader's slot, and bytes that never arrived.
+type fakeUploads struct {
+	nextID int64
+	// slots is what Presign handed out, pending is whether it has been confirmed, and owner is
+	// who may confirm it.
+	slots     map[int64]bool
+	owner     map[int64]int64
+	confirmed map[int64]bool
+	// arrived is whether the client actually uploaded. A confirm without it is refused, which
+	// is what stops a row rendering as a broken image.
+	arrived map[int64]bool
+}
+
+func newFakeUploads() *fakeUploads {
+	return &fakeUploads{
+		slots: map[int64]bool{}, owner: map[int64]int64{},
+		confirmed: map[int64]bool{}, arrived: map[int64]bool{},
+	}
+}
+
+func (f *fakeUploads) Presign(_ context.Context, uploaderID int64, _ string, req common.UploadRequest) (common.UploadSlot, error) {
+	f.nextID++
+	f.slots[f.nextID] = true
+	f.owner[f.nextID] = uploaderID
+	return common.UploadSlot{
+		ResourceID: f.nextID,
+		URL:        "https://store.test/put/" + strconv.FormatInt(f.nextID, 10),
+		ExpiresAt:  time.Now().Add(15 * time.Minute),
+	}, nil
+}
+
+func (f *fakeUploads) Confirm(_ context.Context, uploaderID, resourceID int64) (common.Resource, error) {
+	if !f.slots[resourceID] || f.confirmed[resourceID] || f.owner[resourceID] != uploaderID {
+		return common.Resource{}, common.ErrResourceNotFound
+	}
+	if !f.arrived[resourceID] {
+		return common.Resource{}, storage.ErrObjectNotFound
+	}
+	f.confirmed[resourceID] = true
+	return common.Resource{ID: resourceID, Provider: "test", ObjectKey: "k", Mime: "image/jpeg"}, nil
+}
+
+func (f *fakeUploads) Resolve(_ context.Context, ids []int64) (map[int64]common.ResourceDTO, error) {
+	out := make(map[int64]common.ResourceDTO, len(ids))
+	for _, one := range ids {
+		if !f.confirmed[one] {
 			continue
 		}
-		out = append(out, common.Resource{
-			ID:   key,
-			Mime: "image/jpeg",
-			URL:  "https://storage.invalid/scans/" + id.Of[id.Resource](key).String(),
-		})
+		out[one] = common.Resource{
+			ID: one, Provider: "test", ObjectKey: "k", Mime: "image/jpeg",
+			URL: "https://store.test/get/" + strconv.FormatInt(one, 10),
+		}.ToDTO()
 	}
 	return out, nil
+}
+
+// confirmedUpload is the shorthand a test uses when it just needs a usable resource id — an
+// avatar or a scan the fake treats as already uploaded and confirmed.
+func (f *fakeUploads) confirmedUpload() int64 {
+	f.nextID++
+	f.slots[f.nextID] = true
+	f.arrived[f.nextID] = true
+	f.confirmed[f.nextID] = true
+	return f.nextID
 }

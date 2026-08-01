@@ -308,12 +308,19 @@ type OpenCheckoutRequest struct {
 // EscrowRequest moves money for one order. IdempotencyKey is the caller's: a retried
 // escrow move reuses it and is refused rather than posted twice.
 type EscrowRequest struct {
-	BuyerID        id.ID[id.Account] `validate:"required"`
-	SellerID       id.ID[id.Account] `validate:"required"`
-	OrderID        id.ID[id.Order]   `validate:"required"`
-	Currency       string            `validate:"required,len=3,uppercase"`
-	Amount         int64             `validate:"required,gt=0"`
-	IdempotencyKey string            `validate:"required,max=200"`
+	BuyerID  id.ID[id.Account] `validate:"required"`
+	SellerID id.ID[id.Account] `validate:"required"`
+	OrderID  id.ID[id.Order]   `validate:"required"`
+	Currency string            `validate:"required,len=3,uppercase"`
+	// Amount is the goods. Only this is ever held for, released to, or refunded from the
+	// seller — it is the sale.
+	Amount int64 `validate:"required,gt=0"`
+	// ShippingFee is what the buyer also paid, and it is not the seller's: the platform owes it
+	// to the carrier. Held with the same movement as the escrow so the pair is one fact, and
+	// left out of the release entirely, or a payout would hand the seller the courier's money.
+	// Zero on a release or a refund, where the only question is the goods.
+	ShippingFee    int64  `validate:"gte=0"`
+	IdempotencyKey string `validate:"required,max=200"`
 }
 
 type Service interface {

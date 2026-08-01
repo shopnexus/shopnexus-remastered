@@ -169,8 +169,4 @@ type Repository interface {
 	InsertDispute(ctx context.Context, d *domain.Dispute) error
 	FindDispute(ctx context.Context, id int64) (domain.Dispute, error)
 	ListOpenDisputes(ctx context.Context, f CursorFilter) ([]domain.Dispute, error)
-
-	// FindResources reads this module's own uploaded evidence — receipt photos, refund
-	// attachments.
-	FindResources(ctx context.Context, ids []int64) ([]common.Resource, error)
 }

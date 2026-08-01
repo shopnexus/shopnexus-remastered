@@ -45,6 +45,10 @@ type Service struct {
 	catalog  catalogapi.Service
 	finance  financeapi.Service
 	chat     chatapi.Service
+	// uploads is this module's own resource table plus the object store. Evidence — receipt
+	// and refund photos — belongs to the module that took it, and resolving it through here is
+	// what puts a live signed link on it rather than a bare id nothing can render.
+	uploads common.Uploads
 	// options is the carrier registry — this module's own `option` rows, so a carrier
 	// nobody enabled cannot be chosen.
 	options port.Options
@@ -62,6 +66,7 @@ func NewService(
 	catalog catalogapi.Service,
 	finance financeapi.Service,
 	chat chatapi.Service,
+	uploads common.Uploads,
 	options port.Options,
 	workflows port.Workflows,
 	bus eventbus.Client,
@@ -70,11 +75,46 @@ func NewService(
 ) *Service {
 	return &Service{
 		repo: repo, accounts: accounts, catalog: catalog, finance: finance, chat: chat,
-		options: options, workflows: workflows, bus: bus, v: v, log: log,
+		uploads: uploads, options: options, workflows: workflows, bus: bus, v: v, log: log,
 	}
 }
 
 var _ orderapi.Service = (*Service)(nil)
+
+// CreateUpload reserves a row and a signed slot for evidence — the unboxing photos a receipt
+// confirmation or a refund carries. The client PUTs the bytes at the store and confirms; until
+// then the resource resolves to nothing, so a half-finished upload cannot be named as evidence.
+func (s *Service) CreateUpload(ctx context.Context, req orderapi.CreateUploadRequest) (orderapi.UploadSlot, error) {
+	if err := s.v.Struct(req); err != nil {
+		return orderapi.UploadSlot{}, err
+	}
+	slot, err := s.uploads.Presign(ctx, req.ActorID.Int64(), "evidence", common.UploadRequest{
+		Filename: req.Filename, Mime: req.Mime, Size: req.Size,
+	})
+	if err != nil {
+		return orderapi.UploadSlot{}, err
+	}
+	return orderapi.UploadSlot{
+		ResourceID: id.Of[id.Resource](slot.ResourceID),
+		URL:        slot.URL,
+		Headers:    slot.Headers,
+		ExpiresAt:  slot.ExpiresAt,
+	}, nil
+}
+
+// ConfirmUpload makes the evidence real, with the size the store reports rather than the one
+// the client declared. Scoped to the uploader: a resource id is guessable, and confirming
+// somebody else's slot would be claiming their upload.
+func (s *Service) ConfirmUpload(ctx context.Context, req orderapi.ConfirmUploadRequest) (common.ResourceDTO, error) {
+	if err := s.v.Struct(req); err != nil {
+		return common.ResourceDTO{}, err
+	}
+	res, err := s.uploads.Confirm(ctx, req.ActorID.Int64(), req.ID.Int64())
+	if err != nil {
+		return common.ResourceDTO{}, err
+	}
+	return res.ToDTO(), nil
+}
 
 // requireModerator asks the account module for the caller's role: it is a row in that
 // module's table. An admin passes every moderator check.
@@ -160,18 +200,7 @@ func (s *Service) requireResources(ctx context.Context, keys []int64) error {
 }
 
 func (s *Service) resources(ctx context.Context, keys []int64) (map[int64]common.ResourceDTO, error) {
-	out := make(map[int64]common.ResourceDTO, len(keys))
-	if len(keys) == 0 {
-		return out, nil
-	}
-	found, err := s.repo.FindResources(ctx, keys)
-	if err != nil {
-		return nil, fmt.Errorf("find resources: %w", err)
-	}
-	for _, res := range found {
-		out[res.ID] = res.ToDTO()
-	}
-	return out, nil
+	return s.uploads.Resolve(ctx, keys)
 }
 
 func (s *Service) summary(ctx context.Context, accountID int64) (accountapi.AccountSummary, error) {

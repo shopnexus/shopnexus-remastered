@@ -158,6 +158,16 @@ func (s *Service) HoldEscrow(ctx context.Context, req financeapi.EscrowRequest) 
 			},
 		},
 	}
+	// The delivery the buyer paid for. A third leg in the same movement rather than a second
+	// call: the buyer was credited the whole session, and a fee collected by a write that could
+	// fail on its own would leave the courier's money sitting in the buyer's wallet.
+	if req.ShippingFee > 0 {
+		legs = append(legs, port.Leg{
+			AccountID: req.BuyerID.Int64(), Currency: req.Currency,
+			Transfer: domain.Debit(domain.WalletKindFee, req.ShippingFee, ref,
+				req.IdempotencyKey+":shipping", "shipping fee"),
+		})
+	}
 	if _, err := s.repo.Move(ctx, legs); err != nil {
 		return fmt.Errorf("hold escrow: %w", err)
 	}

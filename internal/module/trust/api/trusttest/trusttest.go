@@ -8,6 +8,7 @@ package trusttest
 import (
 	"context"
 
+	"shopnexus/internal/module/common"
 	trustapi "shopnexus/internal/module/trust/api"
 	"shopnexus/internal/shared/errx"
 )
@@ -67,6 +68,14 @@ func (Stub) VoteReview(context.Context, trustapi.VoteReviewRequest) (trustapi.Vo
 
 func (Stub) UnvoteReview(context.Context, trustapi.ReviewRequest) (trustapi.VoteTally, error) {
 	return trustapi.VoteTally{}, errx.ErrNotImplemented
+}
+
+func (Stub) CreateUpload(context.Context, trustapi.CreateUploadRequest) (trustapi.UploadSlot, error) {
+	return trustapi.UploadSlot{}, errx.ErrNotImplemented
+}
+
+func (Stub) ConfirmUpload(context.Context, trustapi.ConfirmUploadRequest) (common.ResourceDTO, error) {
+	return common.ResourceDTO{}, errx.ErrNotImplemented
 }
 
 func (Stub) SubmitReport(context.Context, trustapi.SubmitReportRequest) (trustapi.Report, error) {

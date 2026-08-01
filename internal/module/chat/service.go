@@ -25,15 +25,54 @@ type Service struct {
 	repo port.Repository
 	// accounts answers what a counterparty is called, which is what an inbox row shows.
 	accounts accountapi.Service
-	v        *validator.Validate
-	log      *slog.Logger
+	// uploads is this module's own resource table plus the object store. A message
+	// attachment belongs to the module that took the upload, and resolving one through here
+	// is what puts a live link on it rather than an id nothing can render.
+	uploads common.Uploads
+	v       *validator.Validate
+	log     *slog.Logger
 }
 
-func NewService(repo port.Repository, accounts accountapi.Service, v *validator.Validate, log *slog.Logger) *Service {
-	return &Service{repo: repo, accounts: accounts, v: v, log: log}
+func NewService(repo port.Repository, accounts accountapi.Service, uploads common.Uploads, v *validator.Validate, log *slog.Logger) *Service {
+	return &Service{repo: repo, accounts: accounts, uploads: uploads, v: v, log: log}
 }
 
 var _ chatapi.Service = (*Service)(nil)
+
+// CreateUpload reserves a row and a signed slot for a message attachment. The client PUTs
+// the bytes at the store and confirms; until then the resource resolves to nothing, so a
+// half-finished upload cannot be attached to a message.
+func (s *Service) CreateUpload(ctx context.Context, req chatapi.CreateUploadRequest) (chatapi.UploadSlot, error) {
+	if err := s.v.Struct(req); err != nil {
+		return chatapi.UploadSlot{}, err
+	}
+	slot, err := s.uploads.Presign(ctx, req.ActorID.Int64(), "message", common.UploadRequest{
+		Filename: req.Filename, Mime: req.Mime, Size: req.Size,
+	})
+	if err != nil {
+		return chatapi.UploadSlot{}, err
+	}
+	return chatapi.UploadSlot{
+		ResourceID: id.Of[id.Resource](slot.ResourceID),
+		URL:        slot.URL,
+		Headers:    slot.Headers,
+		ExpiresAt:  slot.ExpiresAt,
+	}, nil
+}
+
+// ConfirmUpload makes the attachment real, with the size the store reports rather than the
+// one the client declared. Scoped to the uploader: a resource id is guessable, and
+// confirming somebody else's slot would be claiming their upload.
+func (s *Service) ConfirmUpload(ctx context.Context, req chatapi.ConfirmUploadRequest) (common.ResourceDTO, error) {
+	if err := s.v.Struct(req); err != nil {
+		return common.ResourceDTO{}, err
+	}
+	res, err := s.uploads.Confirm(ctx, req.ActorID.Int64(), req.ID.Int64())
+	if err != nil {
+		return common.ResourceDTO{}, err
+	}
+	return res.ToDTO(), nil
+}
 
 // ListConversations is the inbox, latest activity first. Two extra queries for the whole
 // page — the last message and the unread counts — rather than per row.
@@ -399,18 +438,10 @@ func (s *Service) requireResources(ctx context.Context, keys []int64) error {
 }
 
 func (s *Service) resources(ctx context.Context, keys []int64) (map[int64]common.ResourceDTO, error) {
-	out := make(map[int64]common.ResourceDTO, len(keys))
 	if len(keys) == 0 {
-		return out, nil
+		return map[int64]common.ResourceDTO{}, nil
 	}
-	found, err := s.repo.FindResources(ctx, keys)
-	if err != nil {
-		return nil, fmt.Errorf("find resources: %w", err)
-	}
-	for _, res := range found {
-		out[res.ID] = res.ToDTO()
-	}
-	return out, nil
+	return s.uploads.Resolve(ctx, keys)
 }
 
 // pick keeps the sender's order, which is the only thing the array encodes.

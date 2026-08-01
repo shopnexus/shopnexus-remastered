@@ -91,6 +91,67 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /me/uploads:
+    post:
+      tags: [account]
+      summary: Reserve a slot to upload an avatar or an identity scan into
+      description: >
+        The bytes never pass through this API. The answer is a short-lived signed URL to PUT
+        to, and `POST /me/uploads/{id}/confirmation` makes the row real once the object is
+        there. One store serves both `kind`s — an avatar is a public picture and an identity
+        scan is not — because `kind` only narrows the key prefix; what keeps a scan from ever
+        being world-readable is that it is only ever read back through a freshly presigned
+        link, never a public URL.
+
+
+        `mime` and `size` are checked before a byte moves: a slot signed for anything is a
+        slot for anything.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountCreateUploadRequest' }
+      responses:
+        '201':
+          description: 'Reserved'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/UploadSlot' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { description: 'Larger than this platform accepts', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'That file type is not accepted', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /me/uploads/{id}/confirmation:
+    post:
+      tags: [account]
+      summary: Confirm the bytes are at the store
+      description: >
+        Until this lands the resource resolves to nothing, so a half-finished upload cannot
+        be set as an avatar or submitted as an identity scan. The recorded size is the
+        store's, not the one declared when the slot was reserved.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ResourceID' } }
+      responses:
+        '200':
+          description: 'Confirmed'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Resource' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'No such reserved slot of the caller''s', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Nothing was uploaded to that slot', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
   /accounts/{id}:
     get:
       tags: [account]
@@ -257,6 +318,24 @@ components:
         clear_gender: { type: boolean, example: false }
         clear_date_of_birth: { type: boolean, example: false }
         clear_avatar_resource_id: { type: boolean, example: false }
+
+    AccountCreateUploadRequest:
+      type: object
+      description: >
+        Like `CreateUploadRequest`, plus `kind`: the same store serves an avatar and an
+        identity scan, so the service has to be told which it is presigning.
+      properties:
+        kind: { type: string, enum: [avatar, identity], example: avatar }
+        filename:
+          type: string
+          maxLength: 255
+          example: front.jpg
+          description: >
+            Kept only for its extension. The stored key is generated — a path a client chose
+            is a directory traversal waiting for a backend that resolves one.
+        mime: { type: string, maxLength: 100, example: image/jpeg }
+        size: { type: integer, format: int64, minimum: 1, maximum: 10485760, example: 204800 }
+      required: [kind, filename, mime, size]
 
     OAuthIdentity:
       type: object

@@ -50,7 +50,15 @@ import (
 )
 
 func main() {
-	fx.New(
+	fx.New(appOptions()).Run()
+}
+
+// appOptions is the whole graph, named so a test can validate it without a database. Two
+// duplicate-provide bugs — a bare *pgxpool.Pool and later a bare *uploads.Store, each provided
+// by more than one module — only ever showed up when the process actually started, because
+// nothing else builds the graph. TestAppGraph does now.
+func appOptions() fx.Option {
+	return fx.Options(
 		// Base providers (not domain modules).
 		fx.Provide(
 			validation.Default,
@@ -97,7 +105,7 @@ func main() {
 		fx.WithLogger(func(log *slog.Logger) fxevent.Logger {
 			return &fxevent.SlogLogger{Logger: log}
 		}),
-	).Run()
+	)
 }
 
 func loadConfig(v *validator.Validate) (*config.Config, error) {

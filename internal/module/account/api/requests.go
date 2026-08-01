@@ -131,6 +131,25 @@ type GetPublicAccountRequest struct {
 	ID id.ID[id.Account] `json:"-" validate:"required"`
 }
 
+// CreateUploadRequest asks for a slot to PUT an avatar or an identity scan into. `kind`
+// picks which: the two share one store, but only an avatar may ever resolve to a public
+// link, so the service has to know which it is presigning before the caller uploads
+// anything.
+type CreateUploadRequest struct {
+	ActorID  id.ID[id.Account] `json:"-" validate:"required"`
+	Kind     string            `json:"kind" validate:"required,oneof=avatar identity"`
+	Filename string            `json:"filename" validate:"required,max=255"`
+	Mime     string            `json:"mime" validate:"required,max=100"`
+	Size     int64             `json:"size" validate:"required,gt=0"`
+}
+
+// ConfirmUploadRequest is the second step. The size is read from the store rather than
+// taken from the client, so what it declared cannot become the record.
+type ConfirmUploadRequest struct {
+	ActorID id.ID[id.Account]  `json:"-" validate:"required"`
+	ID      id.ID[id.Resource] `json:"-" validate:"required"`
+}
+
 type ListOAuthIdentitiesRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 }

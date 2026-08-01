@@ -8,6 +8,7 @@ import (
 	"go.uber.org/fx"
 
 	"shopnexus/internal/config"
+	"shopnexus/internal/infra/durable"
 	"shopnexus/internal/infra/postgres"
 	catalogpg "shopnexus/internal/module/catalog/adapter/postgres"
 	catalogapi "shopnexus/internal/module/catalog/api"
@@ -22,12 +23,17 @@ import (
 // listings' photos land in.
 var Module = fx.Module("catalog",
 	// Private, and in a Provide of its own because fx.Private applies to every constructor in
-	// the same call: the pool is this module's own, and two modules each providing a bare
-	// *pgxpool.Pool into the root graph is a conflict rather than two pools.
-	fx.Provide(fx.Private, newPool),
+	// the same call. All three are this module's own: two modules each providing a bare
+	// *pgxpool.Pool, a bare *uploads.Store or a bare common.Uploads into the root graph is a
+	// conflict rather than one of each per module — only this module's own service may see them.
+	fx.Provide(fx.Private,
+		newPool,
+		newUploads,
+		fx.Annotate(func(s *uploads.Store) common.Uploads { return s }),
+	),
 	fx.Provide(
 		fx.Annotate(newRepo, fx.As(new(port.Repository))),
-		fx.Annotate(newUploads, fx.As(new(common.Uploads))),
+		fx.Annotate(newUploadSweep, fx.ResultTags(`group:"sweeps"`)),
 		fx.Annotate(NewService, fx.As(new(catalogapi.Service))),
 	),
 )
@@ -45,6 +51,10 @@ func newRepo(pool *pgxpool.Pool) *catalogpg.Repo { return catalogpg.New(pool) }
 
 // newUploads is this module's own `resource` rows plus the object store. The prefix keeps
 // catalog's objects together, so an operator holding only a key can tell what it belongs to.
-func newUploads(pool *pgxpool.Pool, client storage.Client) *uploads.Store {
-	return uploads.New(dbx.NewResources(pool), client, "catalog")
+func newUploads(pool *pgxpool.Pool, cfg *config.Config, client storage.Client) *uploads.Store {
+	return uploads.New(dbx.NewResources(pool), client, "catalog", cfg.StorageUploadTTL)
 }
+
+// newUploadSweep reaps the slots nobody confirmed. Registered with the shared sweeper, because
+// an abandoned upload is a row and an object that would otherwise accumulate for ever.
+func newUploadSweep(store *uploads.Store) durable.Sweep { return store.Sweep }

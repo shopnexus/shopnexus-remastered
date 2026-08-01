@@ -51,11 +51,6 @@ type NotificationQuery struct {
 }
 
 type Repository interface {
-	// FindResources reads this module's own uploaded resources — avatars and identity scans.
-	// A missing id is absent from the result: a row pointing at a deleted resource is a
-	// picture that does not render, not an error.
-	FindResources(ctx context.Context, ids []int64) ([]common.Resource, error)
-
 	// --- the account aggregate: load it, change it in memory, save it ---
 
 	// Create inserts the account with its profile in one transaction, so an account

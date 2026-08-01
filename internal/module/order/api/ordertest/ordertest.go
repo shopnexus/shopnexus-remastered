@@ -8,6 +8,7 @@ package ordertest
 import (
 	"context"
 
+	"shopnexus/internal/module/common"
 	orderapi "shopnexus/internal/module/order/api"
 	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/id"
@@ -152,6 +153,14 @@ func (Stub) AdminListDisputes(context.Context, orderapi.ListDisputesRequest) (or
 
 func (Stub) AdminRuleDispute(context.Context, orderapi.RuleDisputeRequest) (orderapi.Dispute, error) {
 	return orderapi.Dispute{}, errx.ErrNotImplemented
+}
+
+func (Stub) CreateUpload(context.Context, orderapi.CreateUploadRequest) (orderapi.UploadSlot, error) {
+	return orderapi.UploadSlot{}, errx.ErrNotImplemented
+}
+
+func (Stub) ConfirmUpload(context.Context, orderapi.ConfirmUploadRequest) (common.ResourceDTO, error) {
+	return common.ResourceDTO{}, errx.ErrNotImplemented
 }
 
 func (Stub) SettlePaidSession(context.Context, id.ID[id.PaymentSession]) error {

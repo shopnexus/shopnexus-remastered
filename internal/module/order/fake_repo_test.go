@@ -3,11 +3,13 @@ package order_test
 import (
 	"context"
 	"slices"
+	"strconv"
 	"time"
 
 	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/order/domain"
 	"shopnexus/internal/module/order/port"
+	"shopnexus/internal/provider/storage"
 )
 
 // fakeRepo is an in-memory port.Repository. It enforces the constraints the schema does — one
@@ -24,9 +26,6 @@ type fakeRepo struct {
 	shipments map[int64]domain.Transport
 	refunds   map[int64]domain.Refund
 	disputes  map[int64]domain.Dispute
-	// resources is this module's own evidence table: an id absent from it names no
-	// confirmed upload.
-	resources map[int64]bool
 	options   []common.Option
 }
 
@@ -36,8 +35,7 @@ func newFakeRepo() *fakeRepo {
 		offers: map[int64]domain.Offer{}, items: map[int64]domain.Item{},
 		orders: map[int64]domain.Order{}, shipments: map[int64]domain.Transport{},
 		refunds: map[int64]domain.Refund{}, disputes: map[int64]domain.Dispute{},
-		resources: map[int64]bool{},
-		options:   []common.Option{{ID: "ghn-express", Type: common.OptionTypeTransport, IsEnabled: true}},
+		options: []common.Option{{ID: "ghn-express", Type: common.OptionTypeTransport, IsEnabled: true}},
 	}
 }
 
@@ -675,12 +673,69 @@ func (f *fakeRepo) SaveRefundOutcome(ctx context.Context, r domain.Refund, d *do
 	return nil
 }
 
-func (f *fakeRepo) FindResources(_ context.Context, ids []int64) ([]common.Resource, error) {
-	out := make([]common.Resource, 0, len(ids))
-	for _, key := range ids {
-		if f.resources[key] {
-			out = append(out, common.Resource{ID: key, Mime: "image/jpeg"})
+// fakeUploads is the upload seam a service test needs: it records a slot per resource id and
+// resolves a confirmed one, refusing what the real store refuses — an unconfirmed id, another
+// uploader's slot, and bytes that never arrived. Deliberately duplicated per module (see
+// catalog's own copy): each module owns its own resource table.
+type fakeUploads struct {
+	nextID int64
+	// slots is what Presign handed out, owner is who may confirm it, confirmed is whether it
+	// has been.
+	slots     map[int64]bool
+	owner     map[int64]int64
+	confirmed map[int64]bool
+	// arrived is whether the client actually uploaded. A confirm without it is refused, which
+	// is what stops a row rendering as a broken image.
+	arrived map[int64]bool
+}
+
+func newFakeUploads() *fakeUploads {
+	return &fakeUploads{
+		slots: map[int64]bool{}, owner: map[int64]int64{},
+		confirmed: map[int64]bool{}, arrived: map[int64]bool{},
+	}
+}
+
+func (f *fakeUploads) Presign(_ context.Context, uploaderID int64, _ string, req common.UploadRequest) (common.UploadSlot, error) {
+	f.nextID++
+	f.slots[f.nextID] = true
+	f.owner[f.nextID] = uploaderID
+	return common.UploadSlot{
+		ResourceID: f.nextID,
+		URL:        "https://store.test/put/" + strconv.FormatInt(f.nextID, 10),
+		ExpiresAt:  time.Now().Add(15 * time.Minute),
+	}, nil
+}
+
+func (f *fakeUploads) Confirm(_ context.Context, uploaderID, resourceID int64) (common.Resource, error) {
+	if !f.slots[resourceID] || f.confirmed[resourceID] || f.owner[resourceID] != uploaderID {
+		return common.Resource{}, common.ErrResourceNotFound
+	}
+	if !f.arrived[resourceID] {
+		return common.Resource{}, storage.ErrObjectNotFound
+	}
+	f.confirmed[resourceID] = true
+	return common.Resource{ID: resourceID, Provider: "test", ObjectKey: "k", Mime: "image/jpeg"}, nil
+}
+
+func (f *fakeUploads) Resolve(_ context.Context, ids []int64) (map[int64]common.ResourceDTO, error) {
+	out := make(map[int64]common.ResourceDTO, len(ids))
+	for _, one := range ids {
+		if !f.confirmed[one] {
+			continue
 		}
+		out[one] = common.Resource{
+			ID: one, Provider: "test", ObjectKey: "k", Mime: "image/jpeg",
+			URL: "https://store.test/get/" + strconv.FormatInt(one, 10),
+		}.ToDTO()
 	}
 	return out, nil
+}
+
+// confirm marks a resource id already confirmed, for a test that just needs a usable evidence
+// id rather than to walk the reserve/PUT/confirm flow itself.
+func (f *fakeUploads) confirm(id int64) {
+	f.slots[id] = true
+	f.arrived[id] = true
+	f.confirmed[id] = true
 }

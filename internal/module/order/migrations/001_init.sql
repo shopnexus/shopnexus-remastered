@@ -86,11 +86,16 @@ CREATE TABLE IF NOT EXISTS "transport" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
     "option" VARCHAR(100) NOT NULL, -- References common.option (transport); same kebab-case slug
     "status" "transport_status" NOT NULL DEFAULT 'pending',
+    -- What the buyer paid to have it delivered, quoted from the carrier at checkout and frozen
+    -- here. The buyer pays delivery on every sale — fixed price and negotiated alike — so this
+    -- is part of what the payment session collected, and it is not the seller's to receive.
+    "fee" BIGINT NOT NULL DEFAULT 0,
     "data" JSONB NOT NULL DEFAULT '{}', -- Provider-specific data (tracking number, label URL, webhook events, etc.)
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "transport_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "transport_option_format" CHECK ("option" ~ '^[a-z0-9]+(-[a-z0-9]+)*$')
+    CONSTRAINT "transport_option_format" CHECK ("option" ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+    CONSTRAINT "transport_fee_non_negative" CHECK ("fee" >= 0)
 );
 
 -- A buyer's purchase session for one fixed-price listing: it freezes the terms, so a listing

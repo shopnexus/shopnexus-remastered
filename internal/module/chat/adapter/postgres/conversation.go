@@ -8,7 +8,6 @@ import (
 
 	"shopnexus/internal/module/chat/domain"
 	"shopnexus/internal/module/chat/port"
-	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/common/dbx"
 )
 
@@ -195,10 +194,4 @@ func (r *Repo) UnreadTotal(ctx context.Context, accountID int64) (int64, int64, 
 		return 0, 0, fmt.Errorf("db query unread total: %w", err)
 	}
 	return total, threads, nil
-}
-
-// FindResources reads this module's own uploaded attachments — a photo sent in a thread
-// belongs to chat, and its id only resolves here.
-func (r *Repo) FindResources(ctx context.Context, ids []int64) ([]common.Resource, error) {
-	return dbx.NewResources(r.pool).Find(ctx, ids)
 }

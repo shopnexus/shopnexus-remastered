@@ -140,6 +140,11 @@ type harness struct {
 	orders   *fakeOrders
 	chat     *fakeChat
 	accounts fakeAccounts
+	// uploads is the two-step upload seam; images is its confirmed set. A test that attaches a
+	// photo has to declare it, which is what makes ErrAttachmentNotFound reachable — and an
+	// unconfirmed id resolves to nothing, exactly as the real store leaves it.
+	uploads *fakeUploads
+	images  map[int64]bool
 }
 
 func newHarness(state string) *harness {
@@ -151,9 +156,11 @@ func newHarness(state string) *harness {
 		roles:   map[id.ID[id.Account]]string{moderator: "moderator"},
 		missing: map[id.ID[id.Account]]bool{},
 	}
-	svc := trust.NewService(repo, accounts, catalog, orders, chat,
+	uploads := newFakeUploads()
+	svc := trust.NewService(repo, accounts, catalog, orders, chat, uploads,
 		validation.Default(), slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: repo, catalog: catalog, orders: orders, chat: chat, accounts: accounts}
+	return &harness{svc: svc, repo: repo, catalog: catalog, orders: orders, chat: chat,
+		accounts: accounts, uploads: uploads, images: uploads.confirmed}
 }
 
 func status(t *testing.T, err error) uint16 {
@@ -534,7 +541,7 @@ func TestSubmitReview_RefusesUnknownAttachments(t *testing.T) {
 	}))); got != 404 {
 		t.Fatalf("status = %d, want 404", got)
 	}
-	h.repo.resources[7] = true
+	h.images[7] = true
 	got, err := h.svc.SubmitReview(ctx, trustapi.SubmitReviewRequest{
 		ActorID: buyer, ListingID: listingID, OrderID: orderID, Rating: 4,
 		Attachments: []id.ID[id.Resource]{id.Of[id.Resource](7)},
@@ -829,7 +836,7 @@ func TestUpdateReview_CapsTheAttachmentSet(t *testing.T) {
 	tooMany := make([]id.ID[id.Resource], 0, 11)
 	for i := range 11 {
 		key := int64(100 + i)
-		h.repo.resources[key] = true
+		h.images[key] = true
 		tooMany = append(tooMany, id.Of[id.Resource](key))
 	}
 	invalidField(t, mustErr(h.svc.SubmitReview(ctx, trustapi.SubmitReviewRequest{
@@ -839,6 +846,78 @@ func TestUpdateReview_CapsTheAttachmentSet(t *testing.T) {
 	invalidField(t, mustErr(h.svc.UpdateReview(ctx, trustapi.UpdateReviewRequest{
 		ActorID: buyer, ID: created.ID, Attachments: &tooMany,
 	})), "attachments")
+}
+
+// A slot alone attaches to nothing: it has to be confirmed first, and confirming before the
+// bytes arrive is refused rather than producing a review that renders a broken image. A
+// resource id is guessable, so confirming somebody else's slot is refused too.
+func TestUpload_ConfirmedBeforeItCanBeAttached(t *testing.T) {
+	h := newHarness("completed")
+	ctx := context.Background()
+
+	slot, err := h.svc.CreateUpload(ctx, trustapi.CreateUploadRequest{
+		ActorID: buyer, Filename: "front.jpg", Mime: "image/jpeg", Size: 2048,
+	})
+	if err != nil {
+		t.Fatalf("CreateUpload: %v", err)
+	}
+	if slot.URL == "" || slot.ResourceID == 0 || !slot.ExpiresAt.After(time.Now()) {
+		t.Fatalf("slot = %+v, want somewhere to PUT and a future expiry", slot)
+	}
+
+	// Unconfirmed, so it names no usable upload: attaching it to a review is refused exactly
+	// as a made-up id would be.
+	if got := status(t, mustErr(h.svc.SubmitReview(ctx, trustapi.SubmitReviewRequest{
+		ActorID: buyer, ListingID: listingID, OrderID: orderID, Rating: 4,
+		Attachments: []id.ID[id.Resource]{slot.ResourceID},
+	}))); got != 404 {
+		t.Fatalf("status = %d, want 404 attaching an unconfirmed upload", got)
+	}
+	// And confirming before the bytes are there is refused too, rather than producing a row
+	// that renders as a broken image.
+	if err := mustErr(h.svc.ConfirmUpload(ctx, trustapi.ConfirmUploadRequest{
+		ActorID: buyer, ID: slot.ResourceID,
+	})); err == nil {
+		t.Fatal("an upload was confirmed before anything was uploaded")
+	}
+
+	// The client PUTs, then confirms.
+	h.uploads.arrived[slot.ResourceID.Int64()] = true
+	res, err := h.svc.ConfirmUpload(ctx, trustapi.ConfirmUploadRequest{
+		ActorID: buyer, ID: slot.ResourceID,
+	})
+	if err != nil {
+		t.Fatalf("ConfirmUpload: %v", err)
+	}
+	if res.ID != slot.ResourceID {
+		t.Fatalf("confirmed = %+v, want the slot's own resource", res)
+	}
+
+	// Now it attaches, and the review renders it with a link rather than a bare id.
+	review, err := h.svc.SubmitReview(ctx, trustapi.SubmitReviewRequest{
+		ActorID: buyer, ListingID: listingID, OrderID: orderID, Rating: 4,
+		Attachments: []id.ID[id.Resource]{slot.ResourceID},
+	})
+	if err != nil {
+		t.Fatalf("SubmitReview: %v", err)
+	}
+	if len(review.Attachments) != 1 || review.Attachments[0].URL == "" {
+		t.Fatalf("attachments = %+v, want one with a signed link on it", review.Attachments)
+	}
+
+	// Somebody else's slot is not theirs to confirm.
+	other, err := h.svc.CreateUpload(ctx, trustapi.CreateUploadRequest{
+		ActorID: buyer, Filename: "back.jpg", Mime: "image/jpeg", Size: 1024,
+	})
+	if err != nil {
+		t.Fatalf("CreateUpload: %v", err)
+	}
+	h.uploads.arrived[other.ResourceID.Int64()] = true
+	if err := mustErr(h.svc.ConfirmUpload(ctx, trustapi.ConfirmUploadRequest{
+		ActorID: stranger, ID: other.ResourceID,
+	})); err == nil {
+		t.Fatal("a stranger confirmed somebody else's upload")
+	}
 }
 
 // invalidField asserts a request was refused by validation, naming the field that failed. The

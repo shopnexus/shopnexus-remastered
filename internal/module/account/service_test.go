@@ -56,6 +56,7 @@ type harness struct {
 	svc      *account.Service
 	notes    *fakeNotifier
 	repo     *fakeRepo
+	uploads  *fakeUploads
 	sessions *session.Store
 	tokens   *token.Manager
 	cache    cache.Client
@@ -63,14 +64,15 @@ type harness struct {
 
 func newHarness() *harness {
 	repo := newFakeRepo()
+	uploads := newFakeUploads()
 	c := cache.NewInMemoryClient()
 	sessions := session.New(c, time.Hour)
 	tokens := token.NewManager("0123456789012345678901234567890123", 15*time.Minute)
 	log := slog.New(slog.DiscardHandler)
 	notes := &fakeNotifier{}
 	svc := account.NewService(repo, sessions, tokens, c,
-		notes, oauthmock.NewVerifier(), kycmock.NewClient(), log)
-	return &harness{svc: svc, notes: notes, repo: repo, sessions: sessions, tokens: tokens, cache: c}
+		notes, oauthmock.NewVerifier(), kycmock.NewClient(), uploads, log)
+	return &harness{svc: svc, notes: notes, repo: repo, uploads: uploads, sessions: sessions, tokens: tokens, cache: c}
 }
 
 func registerRequest() accountapi.RegisterRequest {

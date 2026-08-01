@@ -80,6 +80,38 @@ components:
                 - contact_id
                 - transport_option
             type: object
+        AccountCreateUploadRequest:
+            description: |
+                Like `CreateUploadRequest`, plus `kind`: the same store serves an avatar and an identity scan, so the service has to be told which it is presigning.
+            properties:
+                filename:
+                    description: |
+                        Kept only for its extension. The stored key is generated — a path a client chose is a directory traversal waiting for a backend that resolves one.
+                    example: front.jpg
+                    maxLength: 255
+                    type: string
+                kind:
+                    enum:
+                        - avatar
+                        - identity
+                    example: avatar
+                    type: string
+                mime:
+                    example: image/jpeg
+                    maxLength: 100
+                    type: string
+                size:
+                    example: 204800
+                    format: int64
+                    maximum: 10485760
+                    minimum: 1
+                    type: integer
+            required:
+                - kind
+                - filename
+                - mime
+                - size
+            type: object
         AccountID:
             example: acc_62mxefynht57b
             pattern: ^acc_[0-9a-hjkmnp-tv-z]{13}$
@@ -6156,6 +6188,92 @@ paths:
             summary: The unread badge across every thread
             tags:
                 - chat
+    /conversations/uploads:
+        post:
+            description: |
+                The bytes never pass through this API. The answer is a short-lived signed URL to PUT to, and `POST /conversations/uploads/{id}/confirmation` makes the row real once the object is there — so a message can never render a photo whose bytes never arrived.
+
+                `mime` and `size` are checked before a byte moves: a slot signed for anything is a slot for anything.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateUploadRequest'
+                required: true
+            responses:
+                "201":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/UploadSlot'
+                                required:
+                                    - data
+                                type: object
+                    description: Reserved
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "413":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Larger than this platform accepts
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: That file type is not accepted
+            security:
+                - bearerAuth: []
+            summary: Reserve a slot to upload a message attachment into
+            tags:
+                - chat
+    /conversations/uploads/{id}/confirmation:
+        post:
+            description: |
+                Until this lands the resource resolves to nothing, so a half-finished upload cannot be attached to a message. The recorded size is the store's, not the one declared when the slot was reserved.
+            parameters:
+                - in: path
+                  name: id
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/ResourceID'
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Resource'
+                                required:
+                                    - data
+                                type: object
+                    description: Confirmed
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: No such reserved slot of the caller's
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Nothing was uploaded to that slot
+            security:
+                - bearerAuth: []
+            summary: Confirm the bytes are at the store
+            tags:
+                - chat
     /devices:
         put:
             description: |
@@ -7526,6 +7644,92 @@ paths:
             summary: Update the caller's public profile
             tags:
                 - account
+    /me/uploads:
+        post:
+            description: |
+                The bytes never pass through this API. The answer is a short-lived signed URL to PUT to, and `POST /me/uploads/{id}/confirmation` makes the row real once the object is there. One store serves both `kind`s — an avatar is a public picture and an identity scan is not — because `kind` only narrows the key prefix; what keeps a scan from ever being world-readable is that it is only ever read back through a freshly presigned link, never a public URL.
+
+                `mime` and `size` are checked before a byte moves: a slot signed for anything is a slot for anything.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AccountCreateUploadRequest'
+                required: true
+            responses:
+                "201":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/UploadSlot'
+                                required:
+                                    - data
+                                type: object
+                    description: Reserved
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "413":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Larger than this platform accepts
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: That file type is not accepted
+            security:
+                - bearerAuth: []
+            summary: Reserve a slot to upload an avatar or an identity scan into
+            tags:
+                - account
+    /me/uploads/{id}/confirmation:
+        post:
+            description: |
+                Until this lands the resource resolves to nothing, so a half-finished upload cannot be set as an avatar or submitted as an identity scan. The recorded size is the store's, not the one declared when the slot was reserved.
+            parameters:
+                - in: path
+                  name: id
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/ResourceID'
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Resource'
+                                required:
+                                    - data
+                                type: object
+                    description: Confirmed
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: No such reserved slot of the caller's
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Nothing was uploaded to that slot
+            security:
+                - bearerAuth: []
+            summary: Confirm the bytes are at the store
+            tags:
+                - account
     /messages/{id}:
         delete:
             description: |
@@ -8336,6 +8540,92 @@ paths:
             summary: Rate the counterparty of a completed order
             tags:
                 - trust
+    /orders/uploads:
+        post:
+            description: |
+                The bytes never pass through this API. The answer is a short-lived signed URL to PUT to, and `POST /orders/uploads/{id}/confirmation` makes the row real once the object is there — so a receipt confirmation or a refund can never be judged on a photo whose bytes never arrived.
+
+                `mime` and `size` are checked before a byte moves: a slot signed for anything is a slot for anything.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateUploadRequest'
+                required: true
+            responses:
+                "201":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/UploadSlot'
+                                required:
+                                    - data
+                                type: object
+                    description: Reserved
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "413":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Larger than this platform accepts
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: That file type is not accepted
+            security:
+                - bearerAuth: []
+            summary: Reserve a slot to upload evidence into
+            tags:
+                - order
+    /orders/uploads/{id}/confirmation:
+        post:
+            description: |
+                Until this lands the resource resolves to nothing, so a half-finished upload cannot be named as evidence on a receipt confirmation or a refund. The recorded size is the store's, not the one declared when the slot was reserved.
+            parameters:
+                - in: path
+                  name: id
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/ResourceID'
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Resource'
+                                required:
+                                    - data
+                                type: object
+                    description: Confirmed
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: No such reserved slot of the caller's
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Nothing was uploaded to that slot
+            security:
+                - bearerAuth: []
+            summary: Confirm the bytes are at the store
+            tags:
+                - order
     /password:
         put:
             description: Requires the current password even though the caller is already authenticated — a stolen access token must not be enough to take the account.
@@ -9270,6 +9560,92 @@ paths:
             security:
                 - bearerAuth: []
             summary: Vote a review helpful or not
+            tags:
+                - trust
+    /reviews/uploads:
+        post:
+            description: |
+                The bytes never pass through this API. The answer is a short-lived signed URL to PUT to, and `POST /reviews/uploads/{id}/confirmation` makes the row real once the object is there — so a review can never render a photo whose bytes never arrived.
+
+                `mime` and `size` are checked before a byte moves: a slot signed for anything is a slot for anything.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateUploadRequest'
+                required: true
+            responses:
+                "201":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/UploadSlot'
+                                required:
+                                    - data
+                                type: object
+                    description: Reserved
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "413":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Larger than this platform accepts
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: That file type is not accepted
+            security:
+                - bearerAuth: []
+            summary: Reserve a slot to upload a review photo into
+            tags:
+                - trust
+    /reviews/uploads/{id}/confirmation:
+        post:
+            description: |
+                Until this lands the resource resolves to nothing, so a half-finished upload cannot be attached to a review. The recorded size is the store's, not the one declared when the slot was reserved.
+            parameters:
+                - in: path
+                  name: id
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/ResourceID'
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Resource'
+                                required:
+                                    - data
+                                type: object
+                    description: Confirmed
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: No such reserved slot of the caller's
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Nothing was uploaded to that slot
+            security:
+                - bearerAuth: []
+            summary: Confirm the bytes are at the store
             tags:
                 - trust
     /tags:

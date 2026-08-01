@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/google/uuid"
-
 	"shopnexus/internal/provider"
 )
 
@@ -41,7 +39,7 @@ type QuoteParams struct {
 }
 
 type ItemMetadata struct {
-	VariantID      uuid.UUID
+	VariantID      int64
 	Quantity       int64
 	PackageDetails json.RawMessage
 }
@@ -59,7 +57,9 @@ type QuoteResult struct {
 }
 
 type Transport struct {
-	ID     uuid.UUID
+	// ID is the carrier's own reference for the shipment, not a key of ours: a courier hands
+	// back whatever string it uses, and this platform's keys are BIGINT.
+	ID     string
 	Option string
 	Cost   int64
 	Data   json.RawMessage

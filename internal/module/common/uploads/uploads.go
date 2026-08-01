@@ -14,6 +14,7 @@ package uploads
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"shopnexus/internal/module/common"
@@ -28,10 +29,13 @@ type Store struct {
 	resources *dbx.Resources
 	client    storage.Client
 	prefix    string
+	// slotTTL is how long a slot stays writable. Past it the row is dead — nothing can write
+	// to the URL any more — which is what makes it safe for the reaper to take.
+	slotTTL time.Duration
 }
 
-func New(resources *dbx.Resources, client storage.Client, prefix string) *Store {
-	return &Store{resources: resources, client: client, prefix: prefix}
+func New(resources *dbx.Resources, client storage.Client, prefix string, slotTTL time.Duration) *Store {
+	return &Store{resources: resources, client: client, prefix: prefix, slotTTL: slotTTL}
 }
 
 var _ common.Uploads = (*Store)(nil)
@@ -111,6 +115,27 @@ func (s *Store) Resolve(ctx context.Context, ids []int64) (map[int64]common.Reso
 	}
 	return out, nil
 }
+
+// Sweep is the reaper as a periodic pass, shaped for the shared sweeper. A slot nobody confirmed
+// is invisible either way, so this is housekeeping rather than correctness: without it the rows
+// and the objects behind them accumulate for every upload a client started and walked away from.
+//
+// The window is twice the slot's own lifetime, so a client that is still mid-upload when the pass
+// runs is never the one reaped.
+func (s *Store) Sweep(ctx context.Context, log *slog.Logger) {
+	reaped, err := s.Reap(ctx, 2*s.slotTTL, reapBatch)
+	if err != nil {
+		log.Error("reap abandoned uploads", "prefix", s.prefix, "err", err)
+		return
+	}
+	if reaped > 0 {
+		log.Info("swept", "what", "abandoned uploads", "prefix", s.prefix, "count", reaped)
+	}
+}
+
+// reapBatch bounds one pass, so a backlog is worked over several rather than in one transaction
+// nobody can see the end of.
+const reapBatch = 200
 
 // Reap removes the slots nobody confirmed: the row first so nothing new can resolve it, then the
 // object. A failed object delete leaves a soft-deleted row and a stray file, which is a bucket to

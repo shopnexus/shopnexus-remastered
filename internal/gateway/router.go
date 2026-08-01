@@ -82,6 +82,8 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("GET /me", auth(http.HandlerFunc(d.Account.GetMe)))
 	mux.Handle("PATCH /me", auth(http.HandlerFunc(d.Account.UpdateMe)))
 	mux.Handle("PATCH /me/profile", auth(http.HandlerFunc(d.Account.UpdateProfile)))
+	mux.Handle("POST /me/uploads", auth(http.HandlerFunc(d.Account.CreateUpload)))
+	mux.Handle("POST /me/uploads/{id}/confirmation", auth(http.HandlerFunc(d.Account.ConfirmUpload)))
 	mux.Handle("GET /me/oauth-identities", auth(http.HandlerFunc(d.Account.ListOAuthIdentities)))
 	mux.Handle("DELETE /me/oauth-identities/{provider}", auth(http.HandlerFunc(d.Account.UnlinkOAuthIdentity)))
 	mux.Handle("GET /contacts", auth(http.HandlerFunc(d.Account.ListContacts)))
@@ -141,6 +143,8 @@ func NewRouter(d Deps) http.Handler {
 
 	// ---- chat ----
 	// Authenticated
+	mux.Handle("POST /conversations/uploads", auth(http.HandlerFunc(d.Chat.CreateUpload)))
+	mux.Handle("POST /conversations/uploads/{id}/confirmation", auth(http.HandlerFunc(d.Chat.ConfirmUpload)))
 	mux.Handle("GET /conversations", auth(http.HandlerFunc(d.Chat.ListConversations)))
 	mux.Handle("POST /conversations", auth(http.HandlerFunc(d.Chat.OpenConversation)))
 	mux.Handle("GET /conversations/unread-count", auth(http.HandlerFunc(d.Chat.GetUnreadCount)))
@@ -197,6 +201,8 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("GET /items", auth(http.HandlerFunc(d.Order.ListItems)))
 	mux.Handle("POST /items/{id}/cancellation", auth(http.HandlerFunc(d.Order.CancelItem)))
 	mux.Handle("GET /orders", auth(http.HandlerFunc(d.Order.ListOrders)))
+	mux.Handle("POST /orders/uploads", auth(http.HandlerFunc(d.Order.CreateUpload)))
+	mux.Handle("POST /orders/uploads/{id}/confirmation", auth(http.HandlerFunc(d.Order.ConfirmUpload)))
 	mux.Handle("GET /orders/{id}", auth(http.HandlerFunc(d.Order.GetOrder)))
 	mux.Handle("POST /orders/{id}/receipt", auth(http.HandlerFunc(d.Order.ConfirmReceipt)))
 	mux.Handle("POST /orders/{id}/cancellation", auth(http.HandlerFunc(d.Order.CancelOrder)))
@@ -244,6 +250,10 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("DELETE /review-replies/{id}", auth(http.HandlerFunc(d.Trust.DeleteReviewReply)))
 	mux.Handle("PUT /reviews/{id}/vote", auth(http.HandlerFunc(d.Trust.VoteReview)))
 	mux.Handle("DELETE /reviews/{id}/vote", auth(http.HandlerFunc(d.Trust.UnvoteReview)))
+	// A review photo, in two steps — same shape as catalog's listing uploads, and not a
+	// module-agnostic place: the upload belongs to the module that took it.
+	mux.Handle("POST /reviews/uploads", auth(http.HandlerFunc(d.Trust.CreateUpload)))
+	mux.Handle("POST /reviews/uploads/{id}/confirmation", auth(http.HandlerFunc(d.Trust.ConfirmUpload)))
 	mux.Handle("POST /reports", auth(http.HandlerFunc(d.Trust.SubmitReport)))
 	mux.Handle("GET /reports", auth(http.HandlerFunc(d.Trust.ListMyReports)))
 	mux.Handle("GET /admin/reports", auth(http.HandlerFunc(d.Trust.AdminListReports)))

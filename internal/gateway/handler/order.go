@@ -820,6 +820,51 @@ func (h *Order) AdminRuleDispute(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteData(w, http.StatusOK, res)
 }
 
+// --- uploads ---
+
+// CreateUpload handles POST /orders/uploads — a slot to PUT evidence into: the unboxing
+// photos a receipt confirmation or a refund carries.
+func (h *Order) CreateUpload(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.CreateUploadRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID = uid
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.CreateUpload(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, res)
+}
+
+// ConfirmUpload handles POST /orders/uploads/{id}/confirmation — the bytes are at the store.
+func (h *Order) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	resourceID, err := pathID[id.Resource](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := orderapi.ConfirmUploadRequest{ActorID: uid, ID: resourceID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ConfirmUpload(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
 // orderCursor converts the service's cursor info to the envelope's. NextCursor is a pointer
 // there so the last page says null rather than omitting the key.
 func orderCursor(meta orderapi.CursorInfo) httpx.CursorMeta {

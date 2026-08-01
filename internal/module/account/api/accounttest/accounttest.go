@@ -10,6 +10,7 @@ import (
 	"context"
 
 	accountapi "shopnexus/internal/module/account/api"
+	"shopnexus/internal/module/common"
 	"shopnexus/internal/shared/errx"
 )
 
@@ -78,6 +79,14 @@ func (Stub) ListOAuthIdentities(context.Context, accountapi.ListOAuthIdentitiesR
 
 func (Stub) UnlinkOAuthIdentity(context.Context, accountapi.UnlinkOAuthIdentityRequest) error {
 	return errx.ErrNotImplemented
+}
+
+func (Stub) CreateUpload(context.Context, accountapi.CreateUploadRequest) (accountapi.UploadSlot, error) {
+	return accountapi.UploadSlot{}, errx.ErrNotImplemented
+}
+
+func (Stub) ConfirmUpload(context.Context, accountapi.ConfirmUploadRequest) (common.ResourceDTO, error) {
+	return common.ResourceDTO{}, errx.ErrNotImplemented
 }
 
 func (Stub) ListContacts(context.Context, accountapi.ListContactsRequest) ([]accountapi.Contact, error) {

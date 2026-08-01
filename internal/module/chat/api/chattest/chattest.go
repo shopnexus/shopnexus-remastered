@@ -9,6 +9,7 @@ import (
 	"context"
 
 	chatapi "shopnexus/internal/module/chat/api"
+	"shopnexus/internal/module/common"
 	"shopnexus/internal/shared/errx"
 )
 
@@ -16,6 +17,14 @@ import (
 type Stub struct{}
 
 var _ chatapi.Service = Stub{}
+
+func (Stub) CreateUpload(context.Context, chatapi.CreateUploadRequest) (chatapi.UploadSlot, error) {
+	return chatapi.UploadSlot{}, errx.ErrNotImplemented
+}
+
+func (Stub) ConfirmUpload(context.Context, chatapi.ConfirmUploadRequest) (common.ResourceDTO, error) {
+	return common.ResourceDTO{}, errx.ErrNotImplemented
+}
 
 func (Stub) ListConversations(context.Context, chatapi.ListConversationsRequest) (chatapi.ConversationPage, error) {
 	return chatapi.ConversationPage{}, errx.ErrNotImplemented

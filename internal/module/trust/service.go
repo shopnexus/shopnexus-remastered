@@ -40,8 +40,12 @@ type Service struct {
 	catalog  catalogapi.Service
 	orders   orderapi.Service
 	chat     chatapi.Service
-	v        *validator.Validate
-	log      *slog.Logger
+	// uploads is this module's own resource table plus the object store. A review photo
+	// belongs to the module that took the upload, and resolving one through here is what
+	// puts a live link on it rather than an id nothing can render.
+	uploads common.Uploads
+	v       *validator.Validate
+	log     *slog.Logger
 }
 
 func NewService(
@@ -50,11 +54,47 @@ func NewService(
 	catalog catalogapi.Service,
 	orders orderapi.Service,
 	chat chatapi.Service,
+	uploads common.Uploads,
 	v *validator.Validate,
 	log *slog.Logger,
 ) *Service {
 	return &Service{repo: repo, accounts: accounts, catalog: catalog, orders: orders,
-		chat: chat, v: v, log: log}
+		chat: chat, uploads: uploads, v: v, log: log}
+}
+
+// CreateUpload reserves a row and a signed slot for a review photo. The client PUTs the
+// bytes at the store and confirms; until then the resource resolves to nothing, so a
+// half-finished upload cannot be attached to a review.
+func (s *Service) CreateUpload(ctx context.Context, req trustapi.CreateUploadRequest) (trustapi.UploadSlot, error) {
+	if err := s.v.Struct(req); err != nil {
+		return trustapi.UploadSlot{}, err
+	}
+	slot, err := s.uploads.Presign(ctx, req.ActorID.Int64(), "review", common.UploadRequest{
+		Filename: req.Filename, Mime: req.Mime, Size: req.Size,
+	})
+	if err != nil {
+		return trustapi.UploadSlot{}, err
+	}
+	return trustapi.UploadSlot{
+		ResourceID: id.Of[id.Resource](slot.ResourceID),
+		URL:        slot.URL,
+		Headers:    slot.Headers,
+		ExpiresAt:  slot.ExpiresAt,
+	}, nil
+}
+
+// ConfirmUpload makes the photo real, with the size the store reports rather than the one
+// the client declared. Scoped to the uploader: a resource id is guessable, and confirming
+// somebody else's slot would be claiming their upload.
+func (s *Service) ConfirmUpload(ctx context.Context, req trustapi.ConfirmUploadRequest) (common.ResourceDTO, error) {
+	if err := s.v.Struct(req); err != nil {
+		return common.ResourceDTO{}, err
+	}
+	res, err := s.uploads.Confirm(ctx, req.ActorID.Int64(), req.ID.Int64())
+	if err != nil {
+		return common.ResourceDTO{}, err
+	}
+	return res.ToDTO(), nil
 }
 
 var _ trustapi.Service = (*Service)(nil)
@@ -131,18 +171,7 @@ func (s *Service) requireResources(ctx context.Context, keys []int64) error {
 }
 
 func (s *Service) resources(ctx context.Context, keys []int64) (map[int64]common.ResourceDTO, error) {
-	out := make(map[int64]common.ResourceDTO, len(keys))
-	if len(keys) == 0 {
-		return out, nil
-	}
-	found, err := s.repo.FindResources(ctx, keys)
-	if err != nil {
-		return nil, fmt.Errorf("find resources: %w", err)
-	}
-	for _, res := range found {
-		out[res.ID] = res.ToDTO()
-	}
-	return out, nil
+	return s.uploads.Resolve(ctx, keys)
 }
 
 func pick(found map[int64]common.ResourceDTO, keys []int64) []common.ResourceDTO {

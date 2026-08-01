@@ -11,7 +11,11 @@
 // module.
 package accountapi
 
-import "context"
+import (
+	"context"
+
+	"shopnexus/internal/module/common"
+)
 
 // PageInfo is where a page sits in a page-paginated collection. TotalCount is a
 // pointer because null is a real answer for a result the query never counted.
@@ -64,6 +68,12 @@ type Service interface {
 	GetPublicAccount(ctx context.Context, req GetPublicAccountRequest) (PublicAccount, error)
 	ListOAuthIdentities(ctx context.Context, req ListOAuthIdentitiesRequest) ([]OAuthIdentity, error)
 	UnlinkOAuthIdentity(ctx context.Context, req UnlinkOAuthIdentityRequest) error
+
+	// CreateUpload reserves a row and a presigned slot for an avatar or an identity scan;
+	// ConfirmUpload makes it real once the bytes are at the store. Until then the resource
+	// resolves to nothing, so a half-finished upload cannot be attached to anything.
+	CreateUpload(ctx context.Context, req CreateUploadRequest) (UploadSlot, error)
+	ConfirmUpload(ctx context.Context, req ConfirmUploadRequest) (common.ResourceDTO, error)
 
 	// --- saved addresses ---
 	ListContacts(ctx context.Context, req ListContactsRequest) ([]Contact, error)

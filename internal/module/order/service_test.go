@@ -291,6 +291,7 @@ type harness struct {
 	catalog   *fakeCatalog
 	finance   *fakeFinance
 	chat      *fakeChat
+	uploads   *fakeUploads
 	accounts  fakeAccounts
 	workflows *fakeWorkflows
 }
@@ -354,13 +355,14 @@ func newHarness(priceMode string) *harness {
 	}
 	finance := newFakeFinance()
 	chat := &fakeChat{}
+	uploads := newFakeUploads()
 	accounts := fakeAccounts{role: "user"}
 	workflows := &fakeWorkflows{}
-	svc := order.NewService(repo, accounts, catalog, finance, chat, repo, workflows,
+	svc := order.NewService(repo, accounts, catalog, finance, chat, uploads, repo, workflows,
 		eventbus.NewMemory(slog.New(slog.DiscardHandler)), validation.Default(),
 		slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: repo, catalog: catalog, finance: finance, chat: chat,
-		accounts: accounts, workflows: workflows}
+		uploads: uploads, accounts: accounts, workflows: workflows}
 }
 
 // ageItems winds every line back, which is how a test reaches a checkout window the clock would
@@ -375,7 +377,7 @@ func (h *harness) ageItems(by time.Duration) {
 // moderator reuses one harness's repository with a staff caller.
 func (h *harness) moderator() *order.Service {
 	return order.NewService(h.repo, fakeAccounts{role: "moderator"}, h.catalog, h.finance,
-		h.chat, h.repo, h.workflows, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
+		h.chat, h.uploads, h.repo, h.workflows, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
 		validation.Default(), slog.New(slog.DiscardHandler))
 }
 
@@ -614,7 +616,7 @@ func TestOrder_ReceiptThenPayout(t *testing.T) {
 	}))); got != 404 {
 		t.Fatalf("status = %d, want 404 for unknown evidence", got)
 	}
-	h.repo.resources[42] = true
+	h.uploads.confirm(42)
 	confirmed, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
 		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
 	})
@@ -651,12 +653,84 @@ func TestOrder_ReceiptThenPayout(t *testing.T) {
 	}
 }
 
+// The evidence a receipt confirmation carries has to come from this module's own upload seam:
+// reserve a slot, PUT lands the bytes, confirm makes the row real, and only then can it be
+// named — because a dispute is decided on this evidence, and today nothing else can create a
+// confirmed upload for ConfirmReceipt to accept.
+func TestUpload_ConfirmedBeforeItCanBeUsedAsEvidence(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, o := h.checkout(t)
+
+	slot, err := h.svc.CreateUpload(ctx, orderapi.CreateUploadRequest{
+		ActorID: buyer, Filename: "unbox.jpg", Mime: "image/jpeg", Size: 2048,
+	})
+	if err != nil {
+		t.Fatalf("CreateUpload: %v", err)
+	}
+	if slot.URL == "" || slot.ResourceID == 0 || !slot.ExpiresAt.After(time.Now()) {
+		t.Fatalf("slot = %+v, want somewhere to PUT and a future expiry", slot)
+	}
+
+	// Unconfirmed, so it names no usable upload: attaching it is refused exactly as a made-up
+	// id would be.
+	if got := status(t, mustErr(h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
+		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{slot.ResourceID},
+	}))); got != 404 {
+		t.Fatalf("status = %d, want 404 attaching an unconfirmed upload", got)
+	}
+	// And confirming before the bytes are there is refused too, rather than producing a row
+	// that renders as a broken image.
+	if err := mustErr(h.svc.ConfirmUpload(ctx, orderapi.ConfirmUploadRequest{
+		ActorID: buyer, ID: slot.ResourceID,
+	})); err == nil {
+		t.Fatal("an upload was confirmed before anything was uploaded")
+	}
+
+	// The client PUTs, then confirms.
+	h.uploads.arrived[slot.ResourceID.Int64()] = true
+	confirmedUpload, err := h.svc.ConfirmUpload(ctx, orderapi.ConfirmUploadRequest{
+		ActorID: buyer, ID: slot.ResourceID,
+	})
+	if err != nil {
+		t.Fatalf("ConfirmUpload: %v", err)
+	}
+	if confirmedUpload.ID != slot.ResourceID {
+		t.Fatalf("confirmed = %+v, want the slot's own resource", confirmedUpload)
+	}
+
+	// Now it attaches, and the order renders it with a live link rather than a bare id.
+	received, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
+		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{slot.ResourceID},
+	})
+	if err != nil {
+		t.Fatalf("ConfirmReceipt: %v", err)
+	}
+	if len(received.ReceiptAttachments) != 1 || received.ReceiptAttachments[0].URL == "" {
+		t.Fatalf("attachments = %+v, want one with a signed link on it", received.ReceiptAttachments)
+	}
+
+	// Somebody else's slot is not theirs to confirm: a resource id is guessable.
+	other, err := h.svc.CreateUpload(ctx, orderapi.CreateUploadRequest{
+		ActorID: buyer, Filename: "back.jpg", Mime: "image/jpeg", Size: 1024,
+	})
+	if err != nil {
+		t.Fatalf("CreateUpload: %v", err)
+	}
+	h.uploads.arrived[other.ResourceID.Int64()] = true
+	if err := mustErr(h.svc.ConfirmUpload(ctx, orderapi.ConfirmUploadRequest{
+		ActorID: seller, ID: other.ResourceID,
+	})); err == nil {
+		t.Fatal("a stranger confirmed somebody else's upload slot")
+	}
+}
+
 // A refund holds the payout back, and the three windows advance in one pass.
 func TestRefund_BlocksPayoutAndAdvancesOnTime(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
 	_, o := h.checkout(t)
-	h.repo.resources[42] = true
+	h.uploads.confirm(42)
 	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
 		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
 	}); err != nil {
@@ -722,7 +796,7 @@ func TestRefund_AcceptOpensTheReturnLeg(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
 	_, o := h.checkout(t)
-	h.repo.resources[42] = true
+	h.uploads.confirm(42)
 	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
 		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
 	}); err != nil {
@@ -762,7 +836,7 @@ func TestRefund_DisputeRuling(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
 	_, o := h.checkout(t)
-	h.repo.resources[42] = true
+	h.uploads.confirm(42)
 	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
 		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
 	}); err != nil {
@@ -920,7 +994,7 @@ func TestCancelItem_ReleasesStockBeforePayment(t *testing.T) {
 func TestSettlePaidSession_NeedsAPickupAddress(t *testing.T) {
 	h := newHarness("fixed")
 	h.svc = order.NewService(h.repo, fakeAccounts{role: "user", noPickup: true}, h.catalog,
-		h.finance, h.chat, h.repo, h.workflows, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
+		h.finance, h.chat, h.uploads, h.repo, h.workflows, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
 		validation.Default(), slog.New(slog.DiscardHandler))
 	ctx := context.Background()
 	draft, err := h.svc.CreateDraft(ctx, orderapi.CreateDraftRequest{ActorID: buyer, ListingID: listingID})
@@ -1155,7 +1229,7 @@ func TestReleasePayout_LosesToARefundCommittedAfterTheSelect(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
 	_, o := h.checkout(t)
-	h.repo.resources[42] = true
+	h.uploads.confirm(42)
 	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
 		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
 	}); err != nil {
@@ -1196,7 +1270,7 @@ func TestReleasePayout_LosesToARefundCommittedAfterTheSelect(t *testing.T) {
 	// escrow it was about has gone.
 	h2 := newHarness("fixed")
 	_, o2 := h2.checkout(t)
-	h2.repo.resources[42] = true
+	h2.uploads.confirm(42)
 	if _, err := h2.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
 		ActorID: buyer, ID: o2.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
 	}); err != nil {
@@ -1223,7 +1297,7 @@ func TestSettleRefund_MovesTheMoneyBeforeTheRowGoesTerminal(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
 	_, o := h.checkout(t)
-	h.repo.resources[42] = true
+	h.uploads.confirm(42)
 	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
 		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
 	}); err != nil {
@@ -1366,7 +1440,7 @@ func TestWithdrawRefund_IsNotASellerWin(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
 	_, o := h.checkout(t)
-	h.repo.resources[42] = true
+	h.uploads.confirm(42)
 	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
 		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
 	}); err != nil {

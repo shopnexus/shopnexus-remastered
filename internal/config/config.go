@@ -106,6 +106,11 @@ type Config struct {
 	// KYCProvider is "fpt-ai" for the real check, or "mock" to leave every case pending
 	// for a moderator.
 	KYCProvider string `validate:"required,oneof=fpt-ai mock"`
+	// TransportProvider is the courier a shipping fee is quoted from. The buyer pays delivery on
+	// every sale, so this is on the money path: a quote nobody asked for means the platform
+	// silently absorbs the carrier's bill. `mock` prices a flat fee, which is enough to exercise
+	// the whole flow without a courier contract.
+	TransportProvider string `validate:"required,oneof=mock"`
 	// PaymentReturnURLHosts is where a payment gateway may send a payer back. An allowlist
 	// rather than any URL the client sends: a redirect target nobody checked is an open
 	// redirect wearing a payment flow, and the platform's own domain is what lends it
@@ -212,6 +217,7 @@ func Load(v *validator.Validate) (*Config, error) {
 		OAuthVerifier:         os.Getenv("OAUTH_VERIFIER"),
 		KYCProvider:           os.Getenv("KYC_PROVIDER"),
 		PaymentProvider:       os.Getenv("PAYMENT_PROVIDER"),
+		TransportProvider:     os.Getenv("TRANSPORT_PROVIDER"),
 		PaymentReturnURLHosts: listVar("PAYMENT_RETURN_URL_HOSTS"),
 
 		SMTPHost:         os.Getenv("SMTP_HOST"),
