@@ -54,7 +54,7 @@ func newIssuer(t *testing.T) *issuer {
 			"kid": "test-key",
 			"alg": "RS256",
 			"use": "sig",
-			"n":   b64(key.PublicKey.N.Bytes()),
+			"n":   b64(key.N.Bytes()),
 			"e":   b64(big.NewInt(int64(key.PublicKey.E)).Bytes()),
 		}}})
 	})

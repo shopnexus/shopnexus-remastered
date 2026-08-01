@@ -43,7 +43,7 @@ func newClient(t *testing.T, cfg litellm.Config, handler http.HandlerFunc) *lite
 // matters: an HTTP/1 server only notices a disconnect once the body is consumed.
 // The cap keeps a missed cancellation from wedging the stub server on teardown.
 func stall(r *http.Request) {
-	io.Copy(io.Discard, r.Body)
+	_, _ = io.Copy(io.Discard, r.Body)
 	select {
 	case <-r.Context().Done():
 	case <-time.After(2 * time.Second):

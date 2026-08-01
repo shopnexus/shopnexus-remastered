@@ -175,7 +175,7 @@ func TestPublishAfterClose(t *testing.T) {
 	topic := userTopic()
 
 	eventbus.Subscribe(c, topic, "g1", func(_ context.Context, _ userEvent) error { return nil })
-	mem.Close()
+	_ = mem.Close()
 
 	err := eventbus.Publish(context.Background(), c, topic, userEvent{ID: 1, Name: "a"})
 	if !errors.Is(err, eventbus.ErrClosed) {
@@ -200,7 +200,7 @@ func TestCloseDrainsPending(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	mem.Close() // closing the queue flushes the partial batch without waiting for linger
+	_ = mem.Close() // closing the queue flushes the partial batch without waiting for linger
 
 	if handled.Load() != 5 {
 		t.Fatalf("handled = %d, want 5", handled.Load())

@@ -23,6 +23,7 @@ Uber fx.
 ```bash
 go build ./...                                   # build everything
 go vet ./...                                     # vet
+golangci-lint run                                # errcheck + govet + staticcheck + unused (.golangci.yml); must be 0 issues
 go test ./...                                    # unit tests (no DB needed)
 go test -run '^TestName$' ./internal/module/account/...   # a single test
 go test -tags integration ./...                  # adapter/postgres tests (need DBs up + *_DB_DSN set; skip otherwise)

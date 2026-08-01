@@ -50,7 +50,7 @@ func TestObserveOutbound_RecordsCall(t *testing.T) {
 		t.Fatalf("post: %v", err)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if string(body) != `{"ok":true}` {
 		t.Errorf("body = %q: the transport must pass the response through untouched", body)
@@ -147,7 +147,7 @@ func TestObserveOutbound_StreamRecordsTimeToFirstByte(t *testing.T) {
 	}
 
 	body, err := io.ReadAll(resp.Body) // the body must still be fully readable
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}

@@ -347,7 +347,6 @@ CREATE TABLE IF NOT EXISTS "refund" (
     "return_transport_id" BIGINT,
     "returned_at" TIMESTAMPTZ, -- set when the return transport reaches delivered
 
-
     CONSTRAINT "refund_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "refund_return_transport_id_key" UNIQUE ("return_transport_id"),
     -- Each fact needs the one before it. Without these a refund can be delivered back
@@ -357,8 +356,6 @@ CREATE TABLE IF NOT EXISTS "refund" (
     ),
     CONSTRAINT "refund_rejection_needs_decision" CHECK (
         "rejection_reason" IS NULL OR "seller_decided_at" IS NOT NULL
-    ),
-    CONSTRAINT "refund_tx_only_when_accepted" CHECK (
     ),
     -- A live refund always has someone on the clock, and the two states that wait on a
     -- carrier or a moderator never do.

@@ -9,11 +9,78 @@ import (
 	"shopnexus/internal/shared/validation"
 )
 
+// setEnv installs exactly kv and blanks every other var Load reads. Without the blanking, a var
+// left in the developer's shell — RESTATE_INGRESS_URL, say — makes a "selector chosen without its
+// credentials" case pass, which is the one thing these tests exist to catch.
 func setEnv(t *testing.T, kv map[string]string) {
 	t.Helper()
+	for _, name := range readVars {
+		if _, ok := kv[name]; !ok {
+			t.Setenv(name, "")
+		}
+	}
 	for k, v := range kv {
 		t.Setenv(k, v)
 	}
+}
+
+// readVars is every variable config.Load looks at.
+var readVars = []string{
+	"ACCOUNT_DB_DSN",
+	"CATALOG_DB_DSN",
+	"CHAT_DB_DSN",
+	"EMAIL_PROVIDER",
+	"ESMS_API_KEY",
+	"ESMS_BASE_URL",
+	"ESMS_BRANDNAME",
+	"ESMS_CONTENT_TEMPLATE",
+	"ESMS_SANDBOX",
+	"ESMS_SECRET_KEY",
+	"ESMS_SMS_TYPE",
+	"ESMS_TIMEOUT",
+	"ESMS_UNICODE",
+	"FINANCE_DB_DSN",
+	"FPT_AI_API_KEY",
+	"FPT_AI_BASE_URL",
+	"FPT_AI_DOWNLOAD_TIMEOUT",
+	"FPT_AI_REQUEST_TIMEOUT",
+	"GATEWAY_ADDR",
+	"ID_CIPHER_KEY",
+	"INSTANCE_ID",
+	"JWT_SECRET",
+	"KYC_PROVIDER",
+	"LOG_LEVEL",
+	"NATS_URL",
+	"OAUTH_VERIFIER",
+	"OBSERVABILITY_DB_DSN",
+	"OIDC_TIMEOUT",
+	"ORDER_DB_DSN",
+	"PAYMENT_PROVIDER",
+	"REDIS_ADDR",
+	"REDIS_PASSWORD",
+	"RESET_PASSWORD_URL",
+	"RESTATE_INGRESS_URL",
+	"RESTATE_SEND_TIMEOUT",
+	"RESTATE_SERVE_ADDR",
+	"SMS_PROVIDER",
+	"SMTP_FROM",
+	"SMTP_HOST",
+	"SMTP_PASSWORD",
+	"SMTP_PORT",
+	"SMTP_TIMEOUT",
+	"SMTP_USERNAME",
+	"STORAGE_BASE_URL",
+	"STORAGE_DOWNLOAD_TTL",
+	"STORAGE_MAX_UPLOAD_BYTES",
+	"STORAGE_PROVIDER",
+	"STORAGE_ROOT",
+	"STORAGE_SECRET",
+	"STORAGE_UPLOAD_TTL",
+	"SWEEP_INTERVAL",
+	"TRANSPORT_PROVIDER",
+	"TRUST_DB_DSN",
+	"VERIFY_EMAIL_URL",
+	"WORKFLOW_RUNTIME",
 }
 
 // fullEnv is the smallest environment that starts the gateway: every unconditional var,

@@ -51,7 +51,7 @@ func TestNewError_PanicsOnBadStatus(t *testing.T) {
 			t.Fatal("expected panic for non-4xx/5xx status")
 		}
 	}()
-	errx.NewError(200, "ok", "should panic")
+	_ = errx.NewError(200, "ok", "should panic")
 }
 
 type errPlain struct{}

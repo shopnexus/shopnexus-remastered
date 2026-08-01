@@ -48,7 +48,7 @@ func newTestRedis(t *testing.T) (eventbus.Client, eventbus.Topic[userEvent]) {
 	topic := eventbus.NewTopic[userEvent]("test." + uuid.NewString())
 	tr := eventbus.NewRedis(rdb, nil)
 	t.Cleanup(func() {
-		tr.Close()
+		_ = tr.Close()
 		rdb.Do(context.Background(), rdb.B().Del().Key("bus:"+topic.Name).Build())
 		rdb.Close()
 	})

@@ -1,0 +1,25 @@
+# The quality baseline this repo keeps: no dead code, no unused writes, and the vet/staticcheck
+# defaults. `golangci-lint run` must be clean — a finding here is either a fix or an exclusion
+# argued for below, never a warning somebody learns to scroll past.
+version: "2"
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+
+  exclusions:
+    rules:
+      # A deferred Close on a read is the idiomatic spelling; there is nothing a caller could do
+      # with the error, and naming it would only move the noise into every reader.
+      - linters: [errcheck]
+        source: '^\s*defer .*\.Close\(\)$'
+      # A test's own HTTP stub writing its fixture body cannot fail in a way the test cares about.
+      - linters: [errcheck]
+        path: _test\.go
+        source: 'io\.(WriteString|Copy)\('
+      # De Morgan on a character-class check reads worse than the explicit ranges.
+      - linters: [staticcheck]
+        text: 'QF1001'
+
+formatters:
+  enable:
+    - gofmt

@@ -186,7 +186,7 @@ func (c *Client) Write(objectKey string, src io.Reader) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("open object for write: %w", err)
 	}
-	defer os.Remove(dst.Name())
+	defer func() { _ = os.Remove(dst.Name()) }()
 	// One byte more than the limit is how "exactly at the limit" is told from "over it".
 	written, err := io.Copy(dst, io.LimitReader(src, c.cfg.MaxSize+1))
 	if closeErr := dst.Close(); err == nil {
@@ -240,7 +240,7 @@ func (c *Client) signedURL(method, objectKey string, expires time.Time) string {
 // readable link, and one signed for a read must not let anybody overwrite the object.
 func (c *Client) sign(method, objectKey string, expires int64) string {
 	mac := hmac.New(sha256.New, []byte(c.cfg.Secret))
-	fmt.Fprintf(mac, "%s\n%s\n%d", method, objectKey, expires)
+	_, _ = fmt.Fprintf(mac, "%s\n%s\n%d", method, objectKey, expires)
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
