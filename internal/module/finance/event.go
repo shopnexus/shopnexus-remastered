@@ -5,11 +5,17 @@ import (
 	"encoding/json"
 
 	"shopnexus/internal/infra/eventbus"
+	"shopnexus/internal/module/finance/domain"
 )
 
 // SessionPaid is published when a payment session is fully covered. It is the fact
 // the rest of the platform waits on: order creates the order from it, because the
 // money landing is what makes a sale — nobody confirms anything in between.
+// KindBuyerCheckout is re-exported at the level a subscriber imports: order compares
+// SessionPaid.Kind against it, and it may not reach into this module's domain package. One
+// declaration, so renaming the kind cannot quietly stop turning paid sessions into orders.
+const KindBuyerCheckout = domain.KindBuyerCheckout
+
 type SessionPaid struct {
 	// Raw keys: this never leaves the process as a public payload, and the consuming
 	// module wants the database key anyway.

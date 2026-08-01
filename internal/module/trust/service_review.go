@@ -13,11 +13,6 @@ import (
 	"shopnexus/internal/shared/id"
 )
 
-// orderStateCompleted is the one state that earns a review of the goods. Order's own constant
-// is in its domain package, which this module does not import — its api contract publishes the
-// value as a string.
-const orderStateCompleted = "completed"
-
 // The two keys a review page can be ordered and paged by, each paired with its sort.
 func newestKey(v domain.Review) (int64, int64) { return v.CreatedAt.UnixNano(), v.ID }
 
@@ -78,7 +73,7 @@ func (s *Service) SubmitReview(ctx context.Context, req trustapi.SubmitReviewReq
 	if order.Buyer.ID != req.ActorID {
 		return trustapi.Review{}, domain.ErrNotAParty
 	}
-	if order.State != orderStateCompleted {
+	if order.State != orderapi.StateCompleted {
 		return trustapi.Review{}, domain.ErrOrderNotCompleted
 	}
 	if !covers(order, req.ListingID) {

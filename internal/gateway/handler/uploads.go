@@ -72,8 +72,8 @@ func (h *Uploads) Get(w http.ResponseWriter, r *http.Request) {
 // answer the same way on purpose: telling them apart would say whether a key exists.
 func (h *Uploads) verified(r *http.Request, method string) (string, error) {
 	q := r.URL.Query()
-	key := q.Get("key")
-	if err := h.client.Verify(method, key, q.Get("expires"), q.Get("signature")); err != nil {
+	key := q.Get(local.ParamKey)
+	if err := h.client.Verify(method, key, q.Get(local.ParamExpires), q.Get(local.ParamSignature)); err != nil {
 		if errors.Is(err, storage.ErrObjectNotFound) {
 			return "", errx.ErrUnauthorized
 		}

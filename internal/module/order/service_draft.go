@@ -25,7 +25,7 @@ func (s *Service) CreateDraft(ctx context.Context, req orderapi.CreateDraftReque
 	if err != nil {
 		return orderapi.Draft{}, fmt.Errorf("get listing: %w", err)
 	}
-	if listing.PriceMode != "fixed" {
+	if listing.PriceMode != catalogapi.PriceModeFixed {
 		return orderapi.Draft{}, domain.ErrNegotiableNeedsOffer
 	}
 	snapshot := domain.ListingSnapshot{

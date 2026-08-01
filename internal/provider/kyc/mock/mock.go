@@ -21,6 +21,10 @@ import (
 // a client that ignores the expiry is caught in dev.
 const sessionTTL = 15 * time.Minute
 
+// Name is the KYC_PROVIDER value that selects this stub, and what it writes to
+// identity_document.provider.
+const Name = "mock"
+
 var _ kyc.Client = (*Client)(nil)
 
 type Client struct{}

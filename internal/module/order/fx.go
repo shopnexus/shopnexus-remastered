@@ -86,7 +86,7 @@ type workflowDeps struct {
 // deployment that thinks it has durable timers and does not is found at startup rather than by
 // the seller who was never paid.
 func newWorkflows(deps workflowDeps) (port.Workflows, error) {
-	if deps.Config.WorkflowRuntime != "restate" {
+	if deps.Config.WorkflowRuntime != config.WorkflowRestate {
 		return durable.NewOff(deps.Log), nil
 	}
 	if deps.Client == nil {
@@ -98,7 +98,7 @@ func newWorkflows(deps workflowDeps) (port.Workflows, error) {
 // newDefinitions hands the three workflows to whoever serves them. Empty when there is no
 // runtime: serving handlers nobody can invoke would only be a port to get wrong.
 func newDefinitions(cfg *config.Config, l *Lifecycle) []restate.ServiceDefinition {
-	if cfg.WorkflowRuntime != "restate" {
+	if cfg.WorkflowRuntime != config.WorkflowRestate {
 		return nil
 	}
 	return l.Definitions()
@@ -140,7 +140,7 @@ func SubscribePaidSessions(bus eventbus.Client, svc orderapi.Service, log *slog.
 	eventbus.Subscribe(bus, finance.SessionPaidTopic, "order", func(ctx context.Context, event finance.SessionPaid) error {
 		// Only a buyer's checkout becomes an order. A payout or a withdrawal is finance's own
 		// business and has no sale behind it.
-		if event.Kind != "buyer-checkout" {
+		if event.Kind != finance.KindBuyerCheckout {
 			return nil
 		}
 		if err := svc.SettlePaidSession(ctx, id.Of[id.PaymentSession](event.SessionID)); err != nil {

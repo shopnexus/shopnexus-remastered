@@ -149,7 +149,7 @@ func newNotifier(cfg *config.Config, log *slog.Logger, metrics *observability.Si
 	mock := notifymock.NewClient(log)
 
 	var email notify.EmailSender = mock
-	if cfg.EmailProvider == "smtp" {
+	if cfg.EmailProvider == smtpnotify.Name {
 		client, err := smtpnotify.NewClient(smtpnotify.Config{
 			Host:             cfg.SMTPHost,
 			Port:             cfg.SMTPPort,
@@ -167,7 +167,7 @@ func newNotifier(cfg *config.Config, log *slog.Logger, metrics *observability.Si
 	}
 
 	var sms notify.SMSSender = mock
-	if cfg.SMSProvider == "esms" {
+	if cfg.SMSProvider == esms.Name {
 		client, err := esms.NewClient(esms.Config{
 			BaseURL:         cfg.ESMSBaseURL,
 			APIKey:          cfg.ESMSAPIKey,
@@ -189,7 +189,7 @@ func newNotifier(cfg *config.Config, log *slog.Logger, metrics *observability.Si
 }
 
 func newOAuthVerifier(cfg *config.Config, log *slog.Logger, metrics *observability.Sink) (oauth.Verifier, error) {
-	if cfg.OAuthVerifier != "oidc" {
+	if cfg.OAuthVerifier != oidcverify.Name {
 		return oauthmock.NewVerifier(), nil
 	}
 	// A provider with no audience configured is not offered at all: an empty client id
@@ -209,7 +209,7 @@ func newOAuthVerifier(cfg *config.Config, log *slog.Logger, metrics *observabili
 }
 
 func newKYCClient(cfg *config.Config, log *slog.Logger, metrics *observability.Sink) (kyc.Client, error) {
-	if cfg.KYCProvider != "fpt-ai" {
+	if cfg.KYCProvider != fptai.Name {
 		return kycmock.NewClient(), nil
 	}
 	return fptai.NewClient(fptai.Config{
@@ -232,6 +232,11 @@ func newPaymentClient(cfg *config.Config) payment.Client {
 // process. Same rule as the other seams: a selector, because a deployment that thinks its photos
 // are in a bucket and finds them on a pod's disk discovers it when the pod is replaced.
 func newStorageClient(cfg *config.Config) (storage.Client, error) {
+	// The selector is read, not assumed: an unknown value fails at startup rather than silently
+	// writing every upload to this pod's disk.
+	if cfg.StorageProvider != localstorage.Name {
+		return nil, fmt.Errorf("unknown storage provider %q", cfg.StorageProvider)
+	}
 	return localstorage.New(localstorage.Config{
 		Root:         cfg.StorageRoot,
 		BaseURL:      cfg.StorageBaseURL,
@@ -328,7 +333,7 @@ func newCache(lc fx.Lifecycle, cfg *config.Config) (cache.Client, error) {
 // configured, which is why every consumer takes it as an optional dependency: a graph that
 // could not be built without a Restate URL would make the runtime mandatory by accident.
 func newWorkflowClient(cfg *config.Config, log *slog.Logger, metrics *observability.Sink) *durable.Client {
-	if cfg.WorkflowRuntime != "restate" {
+	if cfg.WorkflowRuntime != config.WorkflowRestate {
 		return nil
 	}
 	// The ingress is an outbound call like any provider's, so it goes through the same observed
@@ -340,7 +345,7 @@ func newWorkflowClient(cfg *config.Config, log *slog.Logger, metrics *observabil
 // newWorkflowServer hosts the handlers the runtime invokes. Nil when there are no
 // definitions, which is the same condition as having no runtime.
 func newWorkflowServer(cfg *config.Config, log *slog.Logger, definitions []restate.ServiceDefinition) *durable.Server {
-	if cfg.WorkflowRuntime != "restate" || len(definitions) == 0 {
+	if cfg.WorkflowRuntime != config.WorkflowRestate || len(definitions) == 0 {
 		return nil
 	}
 	return durable.NewServer(cfg.RestateServeAddr, log, definitions...)

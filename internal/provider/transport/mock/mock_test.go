@@ -44,11 +44,13 @@ func TestWireWebhooks_ManualTrigger(t *testing.T) {
 		got = r
 		return nil
 	})
-	if key != "transport/mock" {
+	// The key is the path itself, and it is under the prefix the router mounts this mux at —
+	// a route registered anywhere else is a webhook no carrier can ever reach.
+	if key != "/webhooks/transport/mock" {
 		t.Fatalf("key = %q", key)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/transport/webhook/mock",
+	req := httptest.NewRequest(http.MethodPost, key,
 		strings.NewReader(`{"tracking_id":"MOCKAB12","status":"Delivered"}`))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

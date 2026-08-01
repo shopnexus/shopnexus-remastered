@@ -16,6 +16,23 @@ import (
 	"shopnexus/internal/shared/id"
 )
 
+// The two sides of every order, as the `role` query parameter names them. A list route reads one
+// or the other, and the service branches on this value — named here so the branch and the
+// contract cannot drift apart.
+const (
+	RoleBuyer  = "buyer"
+	RoleSeller = "seller"
+)
+
+// The states Order.State reports, and the `state` filter's values. An order has no status column:
+// these are derived from the outcome facts, and trust gates a rating and a review on them — so
+// they are published rather than left for each reader to spell.
+const (
+	StateOpen      = "open"
+	StateCompleted = "completed"
+	StateCancelled = "cancelled"
+)
+
 // --- responses ---
 
 type CartItem struct {

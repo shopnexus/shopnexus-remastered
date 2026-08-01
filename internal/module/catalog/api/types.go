@@ -8,6 +8,14 @@ import (
 	"shopnexus/internal/shared/id"
 )
 
+// The price modes a listing is sold under, as the published `price_mode` reports them. Order
+// branches on this value to decide which of the two sale paths is legal, so it is named here
+// rather than spelled again by every consumer.
+const (
+	PriceModeFixed      = "fixed"
+	PriceModeNegotiable = "negotiable"
+)
+
 // Category is one node of the browse tree. The client assembles the shape from
 // ParentID, because a tree this small costs less to send flat than to nest.
 type Category struct {

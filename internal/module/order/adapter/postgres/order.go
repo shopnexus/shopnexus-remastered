@@ -212,7 +212,8 @@ func (r *Repo) SaveTransport(ctx context.Context, t domain.Transport, from strin
 // replace the reference of a parcel the carrier has already taken.
 func (r *Repo) BookTransport(ctx context.Context, transportID int64, data []byte) error {
 	const q = `UPDATE transport SET data = @data
-	           WHERE id = @id AND status = 'pending' AND data->>'provider_ref' IS NULL`
+	           WHERE id = @id AND status = '` + domain.TransportPending + `'
+	             AND data->>'provider_ref' IS NULL`
 	args := pgx.NamedArgs{"id": transportID, "data": dbx.JSONObject(rawJSON(data))}
 	tag, err := r.pool.Exec(ctx, q, args)
 	if err != nil {
@@ -246,7 +247,8 @@ func (r *Repo) FindTransportByRef(ctx context.Context, ref string) (domain.Trans
 func (r *Repo) UnbookedTransports(ctx context.Context, before time.Time, limit int) ([]int64, error) {
 	const q = `SELECT o.id FROM "order" o
 	           JOIN transport t ON t.id = o.transport_id
-	           WHERE t.status = 'pending' AND t.data->>'provider_ref' IS NULL
+	           WHERE t.status = '` + domain.TransportPending + `'
+	             AND t.data->>'provider_ref' IS NULL
 	             AND o.cancelled_at IS NULL AND o.completed_at IS NULL
 	             AND t.created_at < @before
 	           ORDER BY t.created_at
@@ -378,9 +380,10 @@ func (r *Repo) ListOrders(ctx context.Context, f port.OrderFilter) ([]domain.Ord
 	           WHERE (@buyer_id = 0 OR buyer_id = @buyer_id)
 	             AND (@seller_id = 0 OR seller_id = @seller_id)
 	             AND (@state::text IS NULL
-	                  OR (@state::text = 'open' AND completed_at IS NULL AND cancelled_at IS NULL)
-	                  OR (@state::text = 'completed' AND completed_at IS NOT NULL)
-	                  OR (@state::text = 'cancelled' AND cancelled_at IS NOT NULL))
+	                  OR (@state::text = '` + domain.StateOpen + `'
+	                      AND completed_at IS NULL AND cancelled_at IS NULL)
+	                  OR (@state::text = '` + domain.StateCompleted + `' AND completed_at IS NOT NULL)
+	                  OR (@state::text = '` + domain.StateCancelled + `' AND cancelled_at IS NOT NULL))
 	             AND (@before::timestamptz IS NULL
 	                  OR (created_at, id) < (@before::timestamptz, @before_id::bigint))
 	           ORDER BY created_at DESC, id DESC
@@ -420,7 +423,8 @@ func (r *Repo) PayoutDue(ctx context.Context, now time.Time, limit int) ([]domai
 // both the candidate list and the locked re-check ask exactly the same question.
 const liveRefund = `SELECT 1 FROM refund
                     WHERE refund.order_id = o.id
-                      AND refund.status NOT IN ('rejected', 'cancelled')`
+                      AND refund.status NOT IN ('` + domain.RefundRejected + `',
+	                                               '` + domain.RefundCancelled + `')`
 
 // orderEscrowLock namespaces the advisory lock this module takes on an order. A constant first
 // key, so it cannot collide with another module's lock on the same id.

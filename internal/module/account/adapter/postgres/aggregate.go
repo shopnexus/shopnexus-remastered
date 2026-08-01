@@ -192,7 +192,7 @@ func saveEvents(ctx context.Context, tx pgx.Tx, a *domain.Account, actor int64) 
 		entry := common.AuditEntry{
 			Table:      "account",
 			RecordID:   a.ID,
-			ChangeType: "update",
+			ChangeType: common.ChangeTypeUpdate,
 			Code:       string(e.Code),
 			ChangedBy:  changedBy,
 			Diff:       e.Payload,

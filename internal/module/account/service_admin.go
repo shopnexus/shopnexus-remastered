@@ -105,7 +105,7 @@ func (s *Service) AdminCreateModerator(ctx context.Context, req accountapi.Creat
 	s.audit(ctx, common.AuditEntry{
 		Table:      "account",
 		RecordID:   acc.ID,
-		ChangeType: "insert",
+		ChangeType: common.ChangeTypeInsert,
 		Code:       string(domain.RoleGranted.Code),
 		ChangedBy:  &admin.ID,
 		Diff:       domain.RoleChange{Role: acc.Role},
@@ -187,7 +187,7 @@ func auditIdentityVerdict(d domain.IdentityDocument, byID int64) common.AuditEnt
 	return common.AuditEntry{
 		Table:      "identity_document",
 		RecordID:   d.ID,
-		ChangeType: "update",
+		ChangeType: common.ChangeTypeUpdate,
 		Code:       string(domain.IdentityVerdict.Code),
 		ChangedBy:  &byID,
 		Diff: domain.Verdict{

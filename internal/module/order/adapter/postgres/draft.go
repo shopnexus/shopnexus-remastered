@@ -170,7 +170,8 @@ func (r *Repo) FindOffer(ctx context.Context, id int64) (domain.Offer, error) {
 
 func (r *Repo) FindActiveOffer(ctx context.Context, buyerID, variantID int64) (domain.Offer, error) {
 	const q = `SELECT ` + offerColumns + ` FROM offer
-	           WHERE buyer_id = @buyer_id AND variant_id = @variant_id AND status = 'active'`
+	           WHERE buyer_id = @buyer_id AND variant_id = @variant_id
+	             AND status = '` + domain.OfferActive + `'`
 	args := pgx.NamedArgs{"buyer_id": buyerID, "variant_id": variantID}
 	return scanOffer(r.pool.QueryRow(ctx, q, args))
 }
@@ -196,7 +197,8 @@ func (r *Repo) ListOffers(ctx context.Context, f port.OfferFilter) ([]domain.Off
 // `checked-out` offer is left alone — its clock is the payment session's.
 func (r *Repo) ExpiredOffers(ctx context.Context, now time.Time, limit int) ([]domain.Offer, error) {
 	const q = `SELECT ` + offerColumns + ` FROM offer
-	           WHERE status IN ('active', 'accepted') AND expires_at < @now
+	           WHERE status IN ('` + domain.OfferActive + `', '` + domain.OfferAccepted + `')
+	             AND expires_at < @now
 	           ORDER BY expires_at
 	           LIMIT @limit`
 	return r.queryOffers(ctx, q, pgx.NamedArgs{"now": now, "limit": limit})
@@ -257,8 +259,8 @@ func (r *Repo) SaveOffer(ctx context.Context, o domain.Offer, from []string) err
 // open a session — and a second paid session on one negotiation is money the escrow cannot
 // account for, because the hold is keyed on the order.
 func (r *Repo) ClaimOfferCheckout(ctx context.Context, offerID int64, now time.Time) error {
-	const q = `UPDATE offer SET status = 'checked-out'
-	           WHERE id = @id AND status = 'accepted' AND expires_at > @now`
+	const q = `UPDATE offer SET status = '` + domain.OfferCheckedOut + `'
+	           WHERE id = @id AND status = '` + domain.OfferAccepted + `' AND expires_at > @now`
 	tag, err := r.pool.Exec(ctx, q, pgx.NamedArgs{"id": offerID, "now": now})
 	if err != nil {
 		return fmt.Errorf("db claim offer checkout: %w", err)
@@ -273,8 +275,9 @@ func (r *Repo) ClaimOfferCheckout(ctx context.Context, offerID int64, now time.T
 // unreachable ledger or a carrier that would not price the parcel. The buyer retries inside the
 // window they still have, rather than having to negotiate the price again.
 func (r *Repo) ReleaseOfferCheckout(ctx context.Context, offerID int64) error {
-	const q = `UPDATE offer SET status = 'accepted'
-	           WHERE id = @id AND status = 'checked-out' AND payment_session_id IS NULL`
+	const q = `UPDATE offer SET status = '` + domain.OfferAccepted + `'
+	           WHERE id = @id AND status = '` + domain.OfferCheckedOut + `'
+	             AND payment_session_id IS NULL`
 	if _, err := r.pool.Exec(ctx, q, pgx.NamedArgs{"id": offerID}); err != nil {
 		return fmt.Errorf("db release offer checkout: %w", err)
 	}
@@ -285,7 +288,8 @@ func (r *Repo) ReleaseOfferCheckout(ctx context.Context, offerID int64) error {
 // write a session onto an offer that was never claimed.
 func (r *Repo) AttachOfferSession(ctx context.Context, offerID, sessionID int64) error {
 	const q = `UPDATE offer SET payment_session_id = @payment_session_id
-	           WHERE id = @id AND status = 'checked-out' AND payment_session_id IS NULL`
+	           WHERE id = @id AND status = '` + domain.OfferCheckedOut + `'
+	             AND payment_session_id IS NULL`
 	args := pgx.NamedArgs{"id": offerID, "payment_session_id": sessionID}
 	tag, err := r.pool.Exec(ctx, q, args)
 	if err != nil {

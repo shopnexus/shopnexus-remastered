@@ -53,7 +53,7 @@ func (s *Service) ListRefunds(ctx context.Context, req orderapi.ListRefundsReque
 	if req.Status != "" {
 		filter.Statuses = []string{req.Status}
 	}
-	if req.Role == "seller" {
+	if req.Role == orderapi.RoleSeller {
 		filter.SellerID = req.ActorID.Int64()
 	} else {
 		filter.BuyerID = req.ActorID.Int64()

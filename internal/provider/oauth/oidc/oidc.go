@@ -21,6 +21,9 @@ import (
 	"shopnexus/internal/provider/oauth"
 )
 
+// Name is the OAUTH_VERIFIER value that selects this verifier.
+const Name = "oidc"
+
 // Issuer describes one provider this deployment accepts.
 type Issuer struct {
 	// URL is the OIDC issuer, e.g. "https://accounts.google.com". Discovery hangs off

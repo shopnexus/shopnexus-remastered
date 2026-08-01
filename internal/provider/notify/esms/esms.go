@@ -22,6 +22,9 @@ import (
 	"shopnexus/internal/provider/notify"
 )
 
+// Name is the SMS_PROVIDER value that selects this vendor.
+const Name = "esms"
+
 const (
 	sendPath = "/MainService.svc/json/SendMultipleMessage_V4_post_json"
 	// codeSuccess is the only CodeResult that means the message was accepted.

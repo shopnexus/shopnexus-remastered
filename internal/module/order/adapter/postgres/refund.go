@@ -85,7 +85,7 @@ func (r *Repo) FindOpenRefundByOrder(ctx context.Context, orderID int64) (domain
 
 // terminalRefund is every status a case can end on. Spelled once, because a transition guard
 // that forgets one lets a settled case move again.
-const terminalRefund = `'accepted', 'rejected', 'cancelled'`
+const terminalRefund = `'` + domain.RefundAccepted + `', '` + domain.RefundRejected + `', '` + domain.RefundCancelled + `'`
 
 func (r *Repo) ListRefunds(ctx context.Context, f port.RefundFilter) ([]domain.Refund, error) {
 	// A seller's refunds are the ones on their orders, which is a join rather than a
@@ -267,7 +267,7 @@ func (r *Repo) FindDispute(ctx context.Context, id int64) (domain.Dispute, error
 // ListOpenDisputes is the moderator queue, oldest first — the order it should be worked.
 func (r *Repo) ListOpenDisputes(ctx context.Context, f port.CursorFilter) ([]domain.Dispute, error) {
 	const q = `SELECT ` + disputeColumns + ` FROM refund_dispute
-	           WHERE status = 'open'
+	           WHERE status = '` + domain.DisputeOpen + `'
 	             AND (@before::timestamptz IS NULL
 	                  OR (created_at, id) > (@before::timestamptz, @before_id::bigint))
 	           ORDER BY created_at, id
@@ -300,7 +300,7 @@ func (r *Repo) ListOpenDisputes(ctx context.Context, f port.CursorFilter) ([]dom
 const saveDispute = `UPDATE refund_dispute
                      SET status = @status, resolved_by_id = @resolved_by,
                          resolved_at = @resolved_at, resolution_note = @note
-                     WHERE id = @id AND status = 'open'`
+                     WHERE id = @id AND status = '` + domain.DisputeOpen + `'`
 
 func disputeArgs(d domain.Dispute) pgx.NamedArgs {
 	return pgx.NamedArgs{

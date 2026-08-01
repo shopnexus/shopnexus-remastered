@@ -21,6 +21,14 @@ import (
 // still not a default: each seam has a selector, and a vendor's credentials are required
 // only when that vendor is the one selected (`required_if`). Without that, running the
 // stack locally would need an SMTP account, an SMS contract and a KYC subscription.
+// The WORKFLOW_RUNTIME values this binary understands. Named here, beside the field that carries
+// them, because the composition root and every module's own selector compare against the same
+// two strings — the `oneof` tag above is the one place a literal is unavoidable.
+const (
+	WorkflowRestate = "restate"
+	WorkflowOff     = "off"
+)
+
 type Config struct {
 	GatewayAddr string `validate:"required,hostname_port"`
 	// InstanceID tags every telemetry row with the pod/host that produced it;

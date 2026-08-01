@@ -1,5 +1,13 @@
 package common
 
+// The three kinds of change an audit row records. The column is a plain string, so the value has
+// to be named somewhere: here, next to the field, rather than at each of the five writers.
+const (
+	ChangeTypeInsert = "insert"
+	ChangeTypeUpdate = "update"
+	ChangeTypeDelete = "delete"
+)
+
 // AuditEntry is one row of a module's audit log. A module's Save writes these itself from the
 // aggregate's events; dbx.InsertAuditLog is the write.
 //
@@ -7,7 +15,7 @@ package common
 type AuditEntry struct {
 	Table      string
 	RecordID   int64
-	ChangeType string
+	ChangeType string // one of the ChangeType* constants above
 	// Code is the business event, e.g. "listing.publish".
 	Code string
 	// ChangedBy is nil for a change no account is responsible for (a scheduled job, a vendor

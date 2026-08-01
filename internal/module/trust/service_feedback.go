@@ -73,7 +73,7 @@ func (s *Service) SubmitFeedback(ctx context.Context, req trustapi.SubmitFeedbac
 	}
 	// Both directions are only meaningful once the sale is over: a rating filed mid-delivery
 	// rates something that has not happened.
-	if order.State == "open" {
+	if order.State == orderapi.StateOpen {
 		return trustapi.Feedback{}, domain.ErrOrderNotFinished
 	}
 	direction, rateeID, err := domain.DirectionFor(req.ActorID.Int64(),

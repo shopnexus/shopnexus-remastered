@@ -105,15 +105,19 @@ func (c *Client) Track(_ context.Context, _ string) (transport.TrackResult, erro
 
 func (c *Client) Cancel(_ context.Context, _ string) error { return nil }
 
-// WireWebhooks captures the deliver hook and mounts a manual-trigger route for
-// dev: POST /api/v1/transport/webhook/mock {"tracking_id":...,"status":...}.
+// webhookPath is where a carrier report arrives. Under `/webhooks/` because that is the prefix the
+// router mounts this mux at — the path it was registered under before matched nothing, so the
+// manual trigger this comment advertises could never be called.
+const webhookPath = "/webhooks/transport/mock"
+
+// WireWebhooks captures the deliver hook and mounts the manual-trigger route dev uses:
+// POST /webhooks/transport/mock {"tracking_id":...,"status":...}.
 func (c *Client) WireWebhooks(mux *http.ServeMux, deliver transport.ResultHandler) string {
-	const key = "transport/mock"
 	hookMu.Lock()
 	deliverHook = deliver
 	hookMu.Unlock()
 
-	mux.HandleFunc("POST /api/v1/transport/webhook/mock", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST "+webhookPath, func(w http.ResponseWriter, r *http.Request) {
 		var p struct {
 			TrackingID string `json:"tracking_id"`
 			Status     string `json:"status"`
@@ -131,7 +135,7 @@ func (c *Client) WireWebhooks(mux *http.ServeMux, deliver transport.ResultHandle
 		}
 		w.WriteHeader(http.StatusOK)
 	})
-	return key
+	return webhookPath
 }
 
 func newTrackingID() string {

@@ -9,6 +9,7 @@ import (
 	"shopnexus/internal/gateway/handler"
 	"shopnexus/internal/gateway/middleware"
 	"shopnexus/internal/module/observability"
+	"shopnexus/internal/provider/storage/local"
 	"shopnexus/internal/shared/session"
 	"shopnexus/internal/shared/token"
 )
@@ -56,8 +57,8 @@ func NewRouter(d Deps) http.Handler {
 	// and an expiry, so it is the authorization — a bearer token here would stop a client
 	// handing the URL to the thing that actually uploads.
 	if d.Uploads != nil {
-		mux.HandleFunc("PUT /uploads/object", d.Uploads.Put)
-		mux.HandleFunc("GET /uploads/object", d.Uploads.Get)
+		mux.HandleFunc("PUT "+local.ObjectPath, d.Uploads.Put)
+		mux.HandleFunc("GET "+local.ObjectPath, d.Uploads.Get)
 	}
 
 	// API docs (OpenAPI spec + Swagger UI)

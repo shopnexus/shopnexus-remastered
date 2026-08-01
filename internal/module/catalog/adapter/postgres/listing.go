@@ -426,7 +426,7 @@ func saveListingEvents(ctx context.Context, tx pgx.Tx, l *domain.Listing, actor 
 		entry := common.AuditEntry{
 			Table:      "listing",
 			RecordID:   l.ID,
-			ChangeType: "update",
+			ChangeType: common.ChangeTypeUpdate,
 			Code:       string(e.Code),
 			ChangedBy:  changedBy,
 			Diff:       e.Payload,
@@ -508,7 +508,7 @@ func (r *Repo) SoftDeleteListing(ctx context.Context, id, sellerID, actor int64)
 			changedBy = &actor
 		}
 		return dbx.InsertAuditLog(ctx, tx, common.AuditEntry{
-			Table: "listing", RecordID: id, ChangeType: "delete",
+			Table: "listing", RecordID: id, ChangeType: common.ChangeTypeDelete,
 			Code: string(domain.Deleted.Code), ChangedBy: changedBy,
 			Diff: domain.NoPayload{}, Snapshot: domain.NoPayload{},
 		})

@@ -21,7 +21,7 @@ func (s *Service) ListItems(ctx context.Context, req orderapi.ListItemsRequest) 
 		return orderapi.ItemPage{}, err
 	}
 	filter := port.ItemFilter{PendingOnly: req.Pending, Cursor: cursor}
-	if req.Role == "seller" {
+	if req.Role == orderapi.RoleSeller {
 		filter.SellerID = req.ActorID.Int64()
 	} else {
 		filter.BuyerID = req.ActorID.Int64()
@@ -136,7 +136,7 @@ func (s *Service) ListOrders(ctx context.Context, req orderapi.ListOrdersRequest
 		return orderapi.OrderPage{}, err
 	}
 	filter := port.OrderFilter{State: req.State, Cursor: cursor}
-	if req.Role == "seller" {
+	if req.Role == orderapi.RoleSeller {
 		filter.SellerID = req.ActorID.Int64()
 	} else {
 		filter.BuyerID = req.ActorID.Int64()

@@ -34,7 +34,9 @@ import (
 )
 
 const (
-	providerName    = "fpt-ai"
+	// Name is the KYC_PROVIDER value that selects this vendor, and the value written to
+	// identity_document.provider. One declaration, so config, wiring and the row agree.
+	Name            = "fpt-ai"
 	idRecognizePath = "/vision/idr/vnm"
 	faceMatchPath   = "/dmp/checkface/v1"
 
@@ -106,7 +108,7 @@ func (c *Client) Check(ctx context.Context, p kyc.CheckParams) (kyc.Result, erro
 	if err != nil {
 		return kyc.Result{}, err
 	}
-	result := kyc.Result{Provider: providerName, Ref: ref}
+	result := kyc.Result{Provider: Name, Ref: ref}
 
 	if p.DocType != nationalID {
 		// Left for a moderator, with no vendor call: guessing at a passport with a card

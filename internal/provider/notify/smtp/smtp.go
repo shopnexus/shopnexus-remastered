@@ -22,6 +22,9 @@ import (
 	"shopnexus/internal/provider/notify"
 )
 
+// Name is the EMAIL_PROVIDER value that selects this sender.
+const Name = "smtp"
+
 // implicitTLSPort is the submission port that expects TLS from the first byte. Every
 // other port negotiates it with STARTTLS.
 const implicitTLSPort = 465

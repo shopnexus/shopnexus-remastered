@@ -71,7 +71,7 @@ func (s *Service) CreateOffer(ctx context.Context, req orderapi.CreateOfferReque
 	if err != nil {
 		return orderapi.Offer{}, err
 	}
-	if listing.PriceMode != "negotiable" {
+	if listing.PriceMode != catalogapi.PriceModeNegotiable {
 		return orderapi.Offer{}, domain.ErrFixedPriceListing
 	}
 	sellerID := listing.Seller.ID

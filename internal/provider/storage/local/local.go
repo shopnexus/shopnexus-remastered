@@ -73,7 +73,21 @@ func New(cfg Config) (*Client, error) {
 
 var _ storage.Client = (*Client)(nil)
 
-func (c *Client) Name() string { return "local" }
+// Name is the STORAGE_PROVIDER value that selects this backend, and the value written to
+// resource.provider.
+const Name = "local"
+
+// The route a signed slot points at, and the three query keys that carry the signature. This
+// backend builds the URL and the gateway serves it, so the strings are declared once: a renamed
+// route on one side is otherwise not a compile error but a 401 on every upload.
+const (
+	ObjectPath     = "/uploads/object"
+	ParamKey       = "key"
+	ParamExpires   = "expires"
+	ParamSignature = "signature"
+)
+
+func (c *Client) Name() string { return Name }
 
 // PresignUpload mints a key and signs a URL to the gateway's upload route. The key is
 // generated, never the client's filename: a path a caller chose is a directory traversal
@@ -215,11 +229,11 @@ func (c *Client) allowed(mime string) bool {
 func (c *Client) signedURL(method, objectKey string, expires time.Time) string {
 	at := expires.Unix()
 	q := url.Values{
-		"key":       {objectKey},
-		"expires":   {strconv.FormatInt(at, 10)},
-		"signature": {c.sign(method, objectKey, at)},
+		ParamKey:       {objectKey},
+		ParamExpires:   {strconv.FormatInt(at, 10)},
+		ParamSignature: {c.sign(method, objectKey, at)},
 	}
-	return strings.TrimSuffix(c.cfg.BaseURL, "/") + "/uploads/object?" + q.Encode()
+	return strings.TrimSuffix(c.cfg.BaseURL, "/") + ObjectPath + "?" + q.Encode()
 }
 
 // sign covers the method as well as the key: a slot signed for a write must not also be a
