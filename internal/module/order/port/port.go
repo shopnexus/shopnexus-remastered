@@ -88,6 +88,9 @@ type Repository interface {
 	FindActiveOffer(ctx context.Context, buyerID, variantID int64) (domain.Offer, error)
 	ListOffers(ctx context.Context, f OfferFilter) ([]domain.Offer, error)
 	SaveOffer(ctx context.Context, o domain.Offer) error
+	// ClaimOfferCheckout is the buyer turning agreed terms into an order. Guarded by the session
+	// column being NULL, so two concurrent presses open one checkout rather than two.
+	ClaimOfferCheckout(ctx context.Context, o domain.Offer) error
 	ExpiredOffers(ctx context.Context, now time.Time, limit int) ([]domain.Offer, error)
 
 	// --- items ---
@@ -106,7 +109,9 @@ type Repository interface {
 	UnpaidItems(ctx context.Context, before time.Time, limit int) ([]domain.Item, error)
 
 	// --- transport ---
-	InsertTransport(ctx context.Context, option string) (int64, error)
+	// InsertTransport opens the shipment with the delivery charge the buyer already paid, frozen
+	// on the row: it is what the courier is owed, and it is not the seller's to receive.
+	InsertTransport(ctx context.Context, option string, fee int64) (int64, error)
 	FindTransport(ctx context.Context, id int64) (domain.Transport, error)
 	// SaveTransport advances a shipment. `from` is the status it moves out of, which is the
 	// conditional write: a shipment has no version, and two carrier reports arriving at once

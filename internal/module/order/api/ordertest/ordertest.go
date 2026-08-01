@@ -83,7 +83,11 @@ func (Stub) CancelOffer(context.Context, orderapi.OfferRequest) error {
 	return errx.ErrNotImplemented
 }
 
-func (Stub) AcceptOffer(context.Context, orderapi.AcceptOfferRequest) (orderapi.CheckoutResult, error) {
+func (Stub) AcceptOffer(context.Context, orderapi.OfferRequest) (orderapi.Offer, error) {
+	return orderapi.Offer{}, errx.ErrNotImplemented
+}
+
+func (Stub) CheckoutOffer(context.Context, orderapi.CheckoutOfferRequest) (orderapi.CheckoutResult, error) {
 	return orderapi.CheckoutResult{}, errx.ErrNotImplemented
 }
 
@@ -197,4 +201,8 @@ func (Stub) ReleasePayout(context.Context, id.ID[id.Order]) error {
 
 func (Stub) AdvanceRefund(context.Context, id.ID[id.Refund]) error {
 	return errx.ErrNotImplemented
+}
+
+func (Stub) ShippingQuotes(context.Context, orderapi.ShippingQuotesRequest) (orderapi.ShippingQuotes, error) {
+	return orderapi.ShippingQuotes{}, errx.ErrNotImplemented
 }

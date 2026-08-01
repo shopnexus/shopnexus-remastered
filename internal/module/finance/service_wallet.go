@@ -215,6 +215,15 @@ func (s *Service) RefundEscrow(ctx context.Context, req financeapi.EscrowRequest
 				req.IdempotencyKey+":buyer", "refund returned"),
 		},
 	}
+	// Carriage the buyer paid for and never got. The caller decides whether that is the case —
+	// it knows whether the parcel moved — and a fee that was earned is simply not sent here.
+	if req.ShippingFee > 0 {
+		legs = append(legs, port.Leg{
+			AccountID: req.BuyerID.Int64(), Currency: req.Currency,
+			Transfer: domain.Credit(domain.WalletKindRefund, req.ShippingFee, ref,
+				req.IdempotencyKey+":shipping", "shipping fee returned"),
+		})
+	}
 	if _, err := s.repo.Move(ctx, legs); err != nil {
 		return fmt.Errorf("refund escrow: %w", err)
 	}

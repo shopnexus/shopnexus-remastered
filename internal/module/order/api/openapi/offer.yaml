@@ -115,17 +115,56 @@ paths:
   /offers/{id}/acceptance:
     post:
       tags: [order]
-      summary: Accept the negotiated terms (buyer)
+      summary: Agree to the terms on the table
       description: >
-        Only the buyer closes a negotiation, whichever side proposed the standing terms — an
-        order may not appear without the buyer's explicit acceptance. Opens the checkout
-        payment session at the agreed total and creates the item, returning both; the order
-        follows when the session completes, with `offer_id` set to this negotiation and no
-        draft.
+        Whoever does *not* own the standing proposal — the two sides alternate, so the price in
+        front of you is always the other party's, and either of them may be the one who says yes.
 
 
-        The seller is not asked again. Accepting is the last decision either party makes about
-        whether the sale happens.
+        Agreeing is not the sale, and nothing is charged. It freezes the price and starts a short
+        window for the buyer to press "create order now"
+        (`POST /offers/{id}/checkout`), where they choose delivery and pay — exactly as they would
+        from a fixed-price listing. That separation is what makes a seller accepting a buyer's
+        price safe: no order exists and no money moves until the buyer checks out.
+
+
+        The window is short on purpose. An agreed price is a frozen price, and a buyer who lets it
+        lapse negotiates again rather than holding yesterday's number open.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OfferID' } }
+      responses:
+        '200':
+          description: 'Agreed; the price is frozen for a short window'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Offer' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'These are your own terms — the other party answers them', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Negotiation is expired, cancelled, or already agreed', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /offers/{id}/checkout:
+    post:
+      tags: [order]
+      summary: Create the order now, on agreed terms (buyer)
+      description: >
+        The buyer turning an agreed price into an order: they pick a carrier and an address here
+        and pay, in exactly the checkout a fixed-price listing uses. Only the buyer, because only
+        the buyer pays — and only once, so a double-clicked button opens one payment session.
+
+
+        The negotiated total covers the goods. Delivery is quoted from the carrier on top of it and
+        is also the buyer's, the same as on a fixed-price sale; `POST /shipping-quotes` is how the
+        options and their fees are listed before choosing.
+
+
+        The order follows when the session completes, with `offer_id` set to this negotiation and
+        no draft.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OfferID' } }
@@ -133,10 +172,10 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/AcceptOfferRequest' }
+            schema: { $ref: '#/components/schemas/CheckoutOfferRequest' }
       responses:
         '201':
-          description: 'Accepted; item created and a payment session opened'
+          description: 'Item created and a payment session opened'
           content:
             application/json:
               schema:
@@ -146,9 +185,47 @@ paths:
                 required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { description: 'Caller is not the buyer of this negotiation', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: 'Only the buyer checks out agreed terms', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: 'Negotiation is expired, cancelled, or already accepted', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Terms are not agreed, have lapsed, or are already checked out', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '502': { description: 'No carrier could price the delivery', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /shipping-quotes:
+    post:
+      tags: [order]
+      summary: What delivery would cost, per carrier
+      description: >
+        One entry per enabled carrier that could price the parcel, so the buyer chooses delivery
+        with the fee in front of them. A carrier that declined is simply absent.
+
+
+        Name exactly one of `draft_id` or `offer_id`: they are the two things that freeze a price,
+        and the parcel is whichever of them is about to be checked out. The same list serves both,
+        because the buyer pays carriage on a fixed-price sale and a negotiated one alike.
+
+
+        An estimate a client renders, not a price it can hold: the fee is quoted again at checkout,
+        so a quote kept past the point it was true does not become the charge.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ShippingQuotesRequest' }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ShippingQuotes' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The draft or the agreed terms are no longer checkout-able', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
 components:
   schemas:
@@ -200,14 +277,57 @@ components:
         reason: { type: string, maxLength: 500 }
       required: [quantity, total]
 
-    AcceptOfferRequest:
+    CheckoutOfferRequest:
       type: object
       description: >
-        Acceptance still needs a delivery address and a carrier — the negotiation only settled
-        price and quantity, and the buyer pays the delivery fee either way, so the carrier is
-        their trade-off to make.
+        The address and the carrier, exactly as a fixed-price checkout takes them. The negotiation
+        settled price and quantity; only delivery is decided here, and the buyer pays it either way,
+        so the carrier is their trade-off to make.
       properties:
         contact_id: { $ref: '#/components/schemas/ContactID' }
-        transport_option: { type: string, maxLength: 100, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        transport_option:
+          type: string
+          maxLength: 100
+          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+          example: ghn-express
+          description: A carrier slug from `POST /shipping-quotes`; one nobody enabled is refused.
         note: { type: string, maxLength: 500 }
       required: [contact_id, transport_option]
+
+    ShippingQuotesRequest:
+      type: object
+      description: >
+        Exactly one of `draft_id` or `offer_id` — they are the two things that freeze a price, and
+        the parcel is whichever of them is about to be checked out.
+      properties:
+        draft_id: { $ref: '#/components/schemas/DraftOrderID' }
+        offer_id: { $ref: '#/components/schemas/OfferID' }
+        contact_id: { $ref: '#/components/schemas/ContactID' }
+        lines:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/CheckoutLine' }
+          description: >
+            The draft's variants and quantities, as a checkout would send them. Ignored for an
+            offer, whose quantity was negotiated.
+      required: [contact_id]
+
+    ShippingQuotes:
+      type: object
+      properties:
+        options: { type: array, items: { $ref: '#/components/schemas/ShippingQuote' } }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+      required: [options, currency]
+
+    ShippingQuote:
+      type: object
+      properties:
+        option: { type: string, example: ghn-express }
+        name: { type: string, example: GHN Express }
+        fee:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 15000
+          description: What the buyer would pay this carrier. Re-quoted at checkout, so it is an estimate a client renders rather than a price it can hold.
+      required: [option, name, fee]

@@ -214,6 +214,21 @@ components:
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
         payment_session_id: { $ref: '#/components/schemas/PaymentSessionID' }
-        total: { type: integer, format: int64, minimum: 0, example: 598000, description: 'What the session asks for, smallest currency unit' }
+        goods_total:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 598000
+          description: The items alone, smallest currency unit.
+        shipping_fee:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 15000
+          description: >
+            What the chosen carrier quoted for this parcel to this address. The buyer pays it on a
+            fixed-price sale and a negotiated one alike, and it is quoted here rather than sent, so
+            a client cannot decide what delivery costs.
+        total: { type: integer, format: int64, minimum: 0, example: 613000, description: 'What the session asks for: goods plus delivery' }
         currency: { $ref: '#/components/schemas/CurrencyCode' }
-      required: [items, payment_session_id, total, currency]
+      required: [items, payment_session_id, goods_total, shipping_fee, total, currency]

@@ -161,12 +161,13 @@ func (r *Repo) SaveItem(ctx context.Context, i domain.Item) error {
 	return nil
 }
 
-const transportColumns = `id, option, status::text, data, created_at`
+const transportColumns = `id, option, status::text, fee, data, created_at`
 
-func (r *Repo) InsertTransport(ctx context.Context, option string) (int64, error) {
-	const q = `INSERT INTO transport (option) VALUES (@option) RETURNING id`
+func (r *Repo) InsertTransport(ctx context.Context, option string, fee int64) (int64, error) {
+	const q = `INSERT INTO transport (option, fee) VALUES (@option, @fee) RETURNING id`
 	var id int64
-	if err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{"option": option}).Scan(&id); err != nil {
+	args := pgx.NamedArgs{"option": option, "fee": fee}
+	if err := r.pool.QueryRow(ctx, q, args).Scan(&id); err != nil {
 		return 0, fmt.Errorf("db insert transport: %w", err)
 	}
 	return id, nil
@@ -176,7 +177,7 @@ func (r *Repo) FindTransport(ctx context.Context, id int64) (domain.Transport, e
 	const q = `SELECT ` + transportColumns + ` FROM transport WHERE id = @id`
 	var t domain.Transport
 	err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id}).
-		Scan(&t.ID, &t.Option, &t.Status, &t.Data, &t.CreatedAt)
+		Scan(&t.ID, &t.Option, &t.Status, &t.Fee, &t.Data, &t.CreatedAt)
 	if dbx.IsNoRows(err) {
 		return domain.Transport{}, domain.ErrOrderNotFound
 	}

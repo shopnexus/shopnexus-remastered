@@ -12,6 +12,7 @@ import (
 	orderapi "shopnexus/internal/module/order/api"
 	"shopnexus/internal/module/order/domain"
 	"shopnexus/internal/module/order/port"
+	"shopnexus/internal/provider/transport"
 	"shopnexus/internal/shared/id"
 )
 
@@ -21,15 +22,31 @@ import (
 type checkoutSource struct {
 	DraftID *int64 `json:"draft_id,omitempty"`
 	OfferID *int64 `json:"offer_id,omitempty"`
+	// ShippingFee is what the buyer agreed to pay for delivery, quoted at checkout and carried
+	// here because the session is the thing they paid against. The settle path needs it to open
+	// the shipment with the right fee and to keep it out of the seller's escrow.
+	ShippingFee int64 `json:"shipping_fee,omitempty"`
 }
 
-func checkoutContext(origin domain.Origin) []byte {
-	raw, err := json.Marshal(checkoutSource{DraftID: origin.DraftID, OfferID: origin.OfferID})
+func checkoutContext(origin domain.Origin, shippingFee int64) []byte {
+	raw, err := json.Marshal(checkoutSource{
+		DraftID: origin.DraftID, OfferID: origin.OfferID, ShippingFee: shippingFee,
+	})
 	if err != nil {
 		// The shape is two optional numbers; there is nothing here that can fail to encode.
 		return []byte("{}")
 	}
 	return raw
+}
+
+// decodeShippingFee reads back what the buyer paid for delivery. Zero when the session predates
+// the fee or carried none, which is the same thing as free delivery to every caller.
+func decodeShippingFee(raw []byte) int64 {
+	var src checkoutSource
+	if len(raw) == 0 || json.Unmarshal(raw, &src) != nil {
+		return 0
+	}
+	return src.ShippingFee
 }
 
 func decodeCheckoutSource(raw []byte) (domain.Origin, error) {
@@ -78,6 +95,9 @@ func (s *Service) CreateOffer(ctx context.Context, req orderapi.CreateOfferReque
 		return orderapi.Offer{}, fmt.Errorf("insert offer: %w", err)
 	}
 	s.postOfferCard(ctx, o, "offer opened")
+	// The standing proposal is on a clock from here; accepting restarts it, and the run re-reads
+	// the row rather than holding the deadline it first saw.
+	s.timer("start offer", s.workflows.StartOffer(ctx, o.ID))
 	return toAPIOffer(o, listing.Currency), nil
 }
 
@@ -186,12 +206,44 @@ func (s *Service) CancelOffer(ctx context.Context, req orderapi.OfferRequest) er
 	return nil
 }
 
-// AcceptOffer is the buyer closing the negotiation, which opens exactly the checkout a
-// fixed-price sale uses. The seller is not asked again: accepting is the last decision
-// either party makes about whether the sale happens.
-func (s *Service) AcceptOffer(ctx context.Context, req orderapi.AcceptOfferRequest) (orderapi.CheckoutResult, error) {
+// AcceptOffer agrees to the terms on the table. Whoever does not own the standing proposal — the
+// two sides alternate, so either of them may be the one who says yes.
+//
+// It is not the sale, and nothing is charged: it freezes the price and starts a short window for
+// the buyer to press "create order now", where they choose delivery and pay exactly as they would
+// from a fixed-price listing. That separation is what makes a seller accepting a buyer's price
+// safe, and it is why a negotiated sale and a fixed-price one end up in the same checkout.
+func (s *Service) AcceptOffer(ctx context.Context, req orderapi.OfferRequest) (orderapi.Offer, error) {
 	o, err := s.party(ctx, req.ActorID, req.ID)
 	if err != nil {
+		return orderapi.Offer{}, err
+	}
+	if err := o.Accept(req.ActorID.Int64(), time.Now(), acceptedWindow); err != nil {
+		return orderapi.Offer{}, err
+	}
+	if err := s.repo.SaveOffer(ctx, o); err != nil {
+		return orderapi.Offer{}, fmt.Errorf("save offer: %w", err)
+	}
+	s.postOfferCard(ctx, o, "offer accepted")
+	// The frozen price is on a clock, and the run that closes it is the same one a standing
+	// proposal had: the row carries its own deadline either way.
+	s.timer("start offer", s.workflows.StartOffer(ctx, o.ID))
+	return toAPIOffer(o, ""), nil
+}
+
+// CheckoutOffer is the buyer's "create order now": the agreed price, plus the delivery they choose
+// here and pay for. The same shape as a fixed-price checkout, deliberately — a negotiated sale
+// differs only in where its price came from, and the buyer pays for delivery on both.
+func (s *Service) CheckoutOffer(ctx context.Context, req orderapi.CheckoutOfferRequest) (orderapi.CheckoutResult, error) {
+	if err := s.v.Struct(req); err != nil {
+		return orderapi.CheckoutResult{}, err
+	}
+	o, err := s.party(ctx, req.ActorID, req.ID)
+	if err != nil {
+		return orderapi.CheckoutResult{}, err
+	}
+	// Buyer only, only once, and only while the agreed price is still good.
+	if err := o.CheckoutBy(req.ActorID.Int64(), time.Now()); err != nil {
 		return orderapi.CheckoutResult{}, err
 	}
 	listing, _, err := s.variantOf(ctx, req.ActorID, id.Of[id.Variant](o.VariantID))
@@ -199,9 +251,6 @@ func (s *Service) AcceptOffer(ctx context.Context, req orderapi.AcceptOfferReque
 		return orderapi.CheckoutResult{}, err
 	}
 	if err := s.transportOption(ctx, req.TransportOption); err != nil {
-		return orderapi.CheckoutResult{}, err
-	}
-	if err := o.Accept(req.ActorID.Int64(), time.Now()); err != nil {
 		return orderapi.CheckoutResult{}, err
 	}
 	address, err := s.contactSnapshot(ctx, req.ActorID, req.ContactID)
@@ -217,7 +266,7 @@ func (s *Service) AcceptOffer(ctx context.Context, req orderapi.AcceptOfferReque
 		if err := s.catalog.ReleaseStock(ctx, catalogapi.StockMovementRequest{
 			VariantID: id.Of[id.Variant](o.VariantID), Units: o.Quantity,
 		}); err != nil {
-			s.log.Error("release stock after failed acceptance", "err", err)
+			s.log.Error("release stock after failed offer checkout", "err", err)
 		}
 	}
 
@@ -228,13 +277,21 @@ func (s *Service) AcceptOffer(ctx context.Context, req orderapi.AcceptOfferReque
 		release()
 		return orderapi.CheckoutResult{}, err
 	}
+	// Delivery, priced from the carrier for this parcel to this address — the negotiated price
+	// covers the goods and nothing else.
+	fee, err := s.quoteShipping(ctx, req.TransportOption, o.SellerID, address,
+		[]transport.ItemMetadata{{VariantID: o.VariantID, Quantity: o.Quantity}})
+	if err != nil {
+		release()
+		return orderapi.CheckoutResult{}, err
+	}
 	session, err := s.finance.OpenCheckout(ctx, financeapi.OpenCheckoutRequest{
 		BuyerID:  id.Of[id.Account](o.BuyerID),
 		SellerID: id.Of[id.Account](o.SellerID),
 		Currency: listing.Currency,
-		Total:    o.Total,
+		Total:    o.Total + fee,
 		Note:     listing.Name,
-		Data:     checkoutContext(domain.FromOffer(o.ID)),
+		Data:     checkoutContext(domain.FromOffer(o.ID), fee),
 	})
 	if err != nil {
 		release()
@@ -248,15 +305,14 @@ func (s *Service) AcceptOffer(ctx context.Context, req orderapi.AcceptOfferReque
 	}
 	sessionID := session.ID.Int64()
 	o.PaymentSessionID = &sessionID
-	// The offer's status already moved to accepted, so this write is the same transition the
-	// WHERE clause guards: a double-clicked acceptance loses here.
-	if err := s.repo.SaveOffer(ctx, o); err != nil {
+	// The session id on the offer is the claim: `WHERE payment_session_id IS NULL` means a
+	// double-clicked "create order now" opens one checkout, not two.
+	if err := s.repo.ClaimOfferCheckout(ctx, o); err != nil {
 		release()
-		return orderapi.CheckoutResult{}, fmt.Errorf("save offer: %w", err)
+		return orderapi.CheckoutResult{}, err
 	}
-	s.postOfferCard(ctx, o, "offer accepted")
 	s.timer("start checkout", s.workflows.StartCheckout(ctx, sessionID))
-	return s.checkoutResult(lines, session), nil
+	return s.checkoutResult(lines, session, fee), nil
 }
 
 // party reads a negotiation the caller is in. Somebody else's is not found rather than

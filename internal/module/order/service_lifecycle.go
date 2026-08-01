@@ -43,6 +43,13 @@ func (s *Service) SettlePaidSession(ctx context.Context, sessionID id.ID[id.Paym
 	}
 	first := paid[0]
 	origin := domain.Origin{DraftID: first.DraftID, OfferID: first.OfferID}
+	// What the buyer paid for delivery, read back from the session they paid against. It is not
+	// the seller's, so it never enters the escrow — and it is not on the item, because one
+	// shipment covers the order however many lines it has.
+	fee, err := s.paidShippingFee(ctx, first.BuyerID, sessionID)
+	if err != nil {
+		return err
+	}
 
 	o, err := s.repo.FindOrderByOrigin(ctx, origin)
 	switch {
@@ -50,25 +57,41 @@ func (s *Service) SettlePaidSession(ctx context.Context, sessionID id.ID[id.Paym
 		// A redelivered webhook, or a retry of an attempt that got the order written and then
 		// failed. Either way the steps after the order are the ones still outstanding.
 	case errors.Is(err, domain.ErrOrderNotFound):
-		o, err = s.createOrder(ctx, origin, first, paid)
+		o, err = s.createOrder(ctx, origin, first, paid, fee)
 		if err != nil {
 			return err
 		}
 	default:
 		return fmt.Errorf("find order by origin: %w", err)
 	}
-	return s.finishSettlement(ctx, o, paid, sessionID)
+	return s.finishSettlement(ctx, o, paid, sessionID, fee)
+}
+
+// paidShippingFee reads the delivery charge out of the session's own context. The session is what
+// the buyer agreed to pay, so it is the only place the figure can be trusted from: an item total
+// is the goods, and a fresh quote would be a different number by the time the money lands.
+func (s *Service) paidShippingFee(ctx context.Context, buyerID int64, sessionID id.ID[id.PaymentSession]) (int64, error) {
+	// Read as the buyer: finance scopes a session read to its parties, and the buyer is the one
+	// who paid it. There is no system actor to borrow and inventing one would be a way past that
+	// scoping for every other read too.
+	session, err := s.finance.GetSession(ctx, financeapi.GetSessionRequest{
+		ActorID: id.Of[id.Account](buyerID), ID: sessionID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("read paid session: %w", err)
+	}
+	return decodeShippingFee(session.Data), nil
 }
 
 // createOrder opens the shipment and writes the order. Losing the origin's unique constraint
 // is not a failure: somebody else wrote the same order, and their row is the one to carry on
 // with.
-func (s *Service) createOrder(ctx context.Context, origin domain.Origin, first *domain.Item, paid []*domain.Item) (domain.Order, error) {
+func (s *Service) createOrder(ctx context.Context, origin domain.Origin, first *domain.Item, paid []*domain.Item, fee int64) (domain.Order, error) {
 	pickup, err := s.pickupSnapshot(ctx, first.SellerID)
 	if err != nil {
 		return domain.Order{}, err
 	}
-	transportID, err := s.repo.InsertTransport(ctx, first.TransportOption)
+	transportID, err := s.repo.InsertTransport(ctx, first.TransportOption, fee)
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("open transport: %w", err)
 	}
@@ -92,7 +115,7 @@ func (s *Service) createOrder(ctx context.Context, origin domain.Origin, first *
 // it, and the reservation becoming a sale. Each is keyed or guarded, so running the lot again
 // against an order that already exists changes nothing — which is what makes a failed hold a
 // retry rather than a buyer who paid for nothing.
-func (s *Service) finishSettlement(ctx context.Context, o domain.Order, paid []*domain.Item, sessionID id.ID[id.PaymentSession]) error {
+func (s *Service) finishSettlement(ctx context.Context, o domain.Order, paid []*domain.Item, sessionID id.ID[id.PaymentSession], fee int64) error {
 	if err := s.repo.LinkItems(ctx, o.ID, itemIDs(paid)); err != nil {
 		return fmt.Errorf("link items: %w", err)
 	}
@@ -108,6 +131,7 @@ func (s *Service) finishSettlement(ctx context.Context, o domain.Order, paid []*
 		OrderID:        id.Of[id.Order](o.ID),
 		Currency:       currency,
 		Amount:         total,
+		ShippingFee:    fee,
 		IdempotencyKey: fmt.Sprintf("order:%d:hold", o.ID),
 	}); err != nil && !errors.Is(err, financeMovementPosted) {
 		return fmt.Errorf("hold escrow: %w", err)
@@ -200,6 +224,32 @@ func (s *Service) ExpireOffers(ctx context.Context, limit int) (int, error) {
 		closed++
 	}
 	return closed, nil
+}
+
+// ExpireOffer closes one negotiation whose deadline has passed — the per-offer version, which is
+// what a run of its own calls. Asking the bulk pass for a limit of one would close whichever
+// negotiation was oldest rather than the one this run is following.
+//
+// Idempotent: Expire refuses a row that is already cancelled or checked out, and the save is
+// guarded by the status it moves from.
+func (s *Service) ExpireOffer(ctx context.Context, offerID int64) error {
+	o, err := s.repo.FindOffer(ctx, offerID)
+	if err != nil {
+		return fmt.Errorf("find offer: %w", err)
+	}
+	if time.Now().Before(o.ExpiresAt) {
+		// The clock moved — an acceptance restarts it — so there is nothing due here yet.
+		return nil
+	}
+	if err := o.Expire(); err != nil {
+		return nil
+	}
+	if err := s.repo.SaveOffer(ctx, o); err != nil {
+		s.log.Debug("offer already settled", "offer_id", o.ID, "err", err)
+		return nil
+	}
+	s.postOfferCard(ctx, o, "offer expired")
+	return nil
 }
 
 // ReleaseDuePayouts pays the seller for every order whose escrow window has passed. The bulk

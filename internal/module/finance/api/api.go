@@ -9,6 +9,7 @@ package financeapi
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"shopnexus/internal/shared/id"
@@ -23,11 +24,16 @@ type Session struct {
 	// Outstanding is the total less what has already settled on a rail: what a further
 	// payment may still tender. Computed, because a stored copy is a second fact to
 	// keep in step with every leg.
-	Outstanding int64      `json:"outstanding"`
-	Note        string     `json:"note,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	PaidAt      *time.Time `json:"paid_at,omitempty"`
-	ExpiredAt   time.Time  `json:"expired_at"`
+	Outstanding int64  `json:"outstanding"`
+	Note        string `json:"note,omitempty"`
+	// Data is the checkout context whoever opened the session wrote — the draft or offer it came
+	// from, and the delivery charge included in the total. Read back rather than kept only by the
+	// opener, because the session is what the buyer paid against and the module that settles it
+	// is handed nothing but the session id.
+	Data      json.RawMessage `json:"data,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
+	PaidAt    *time.Time      `json:"paid_at,omitempty"`
+	ExpiredAt time.Time       `json:"expired_at"`
 }
 
 type SessionPage struct {
@@ -318,7 +324,9 @@ type EscrowRequest struct {
 	// ShippingFee is what the buyer also paid, and it is not the seller's: the platform owes it
 	// to the carrier. Held with the same movement as the escrow so the pair is one fact, and
 	// left out of the release entirely, or a payout would hand the seller the courier's money.
-	// Zero on a release or a refund, where the only question is the goods.
+	// Zero on a release. On a refund it is carriage the buyer paid for and did not get — the
+	// caller sends it only when the parcel never moved, because a delivery that happened was
+	// still bought.
 	ShippingFee    int64  `validate:"gte=0"`
 	IdempotencyKey string `validate:"required,max=200"`
 }

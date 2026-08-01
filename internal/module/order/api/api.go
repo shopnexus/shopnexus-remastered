@@ -146,10 +146,12 @@ type AddressSnapshot struct {
 }
 
 type Transport struct {
-	ID        id.ID[id.Transport] `json:"id"`
-	Option    string              `json:"option"`
-	Status    string              `json:"status"`
-	CreatedAt time.Time           `json:"created_at"`
+	ID     id.ID[id.Transport] `json:"id"`
+	Option string              `json:"option"`
+	Status string              `json:"status"`
+	// Fee is what the buyer paid for delivery, on both a fixed-price and a negotiated sale.
+	Fee       int64     `json:"fee"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Refund always covers the whole order. Every non-terminal status is named for the party it
@@ -194,11 +196,19 @@ type DisputePage struct {
 
 // CheckoutResult is the lines and the single session that pays for them. Nothing is settled
 // yet: the order appears when the session completes.
+// CheckoutResult is the bill, itemised: what the goods cost, what delivery costs, and the total
+// the payment session will collect. Both halves are shown because the buyer pays both — on a
+// fixed-price sale and a negotiated one alike — and a total with no breakdown is a number nobody
+// can check.
 type CheckoutResult struct {
 	Items          []Item                   `json:"items"`
 	PaymentSession id.ID[id.PaymentSession] `json:"payment_session_id"`
-	Total          int64                    `json:"total"`
-	Currency       string                   `json:"currency"`
+	// GoodsTotal is the items; ShippingFee is what the carrier quoted for this parcel to this
+	// address; Total is what will be charged.
+	GoodsTotal  int64  `json:"goods_total"`
+	ShippingFee int64  `json:"shipping_fee"`
+	Total       int64  `json:"total"`
+	Currency    string `json:"currency"`
 }
 
 // CursorInfo is the cursor meta every order list answers with.
@@ -306,9 +316,38 @@ type CounterOfferRequest struct {
 	Reason   string            `json:"reason,omitempty" validate:"max=500"`
 }
 
-// AcceptOfferRequest still needs an address and a carrier: the negotiation settled price
-// and quantity, and the buyer pays delivery either way.
-type AcceptOfferRequest struct {
+// ShippingQuotesRequest asks what delivery would cost for one purchase, so the buyer can choose a
+// carrier with the fee in front of them. Exactly one of DraftID and OfferID: they are the two
+// things that freeze a price, and the parcel is whichever of them is about to be checked out.
+type ShippingQuotesRequest struct {
+	ActorID   id.ID[id.Account]    `json:"-" validate:"required"`
+	DraftID   id.ID[id.DraftOrder] `json:"draft_id,omitempty"`
+	OfferID   id.ID[id.Offer]      `json:"offer_id,omitempty"`
+	ContactID id.ID[id.Contact]    `json:"contact_id" validate:"required"`
+	// Lines are the draft's variants and quantities, as a checkout would send them. Ignored for
+	// an offer, whose quantity is the negotiated one.
+	Lines []CheckoutLine `json:"lines,omitempty" validate:"omitempty,max=50,dive"`
+}
+
+// ShippingQuotes is one entry per carrier that could price the parcel. A carrier that declined is
+// simply absent — the buyer picks from whoever answered.
+type ShippingQuotes struct {
+	Options  []ShippingQuote `json:"options"`
+	Currency string          `json:"currency"`
+}
+
+type ShippingQuote struct {
+	Option string `json:"option"`
+	Name   string `json:"name"`
+	// Fee is what the buyer would pay this carrier for delivery. Re-quoted at checkout, so this
+	// is an estimate a client renders rather than a price it can hold.
+	Fee int64 `json:"fee"`
+}
+
+// CheckoutOfferRequest is the buyer's "create order now" on agreed terms: the address and the
+// carrier, exactly as a fixed-price checkout takes them. The price is the offer's — only delivery
+// is decided here, and the buyer pays it on both kinds of sale.
+type CheckoutOfferRequest struct {
 	ActorID         id.ID[id.Account] `json:"-" validate:"required"`
 	ID              id.ID[id.Offer]   `json:"-" validate:"required"`
 	ContactID       id.ID[id.Contact] `json:"contact_id" validate:"required"`
@@ -455,6 +494,9 @@ type Service interface {
 	ListDrafts(ctx context.Context, req ListDraftsRequest) (DraftPage, error)
 	GetDraft(ctx context.Context, req DraftRequest) (Draft, error)
 	CancelDraft(ctx context.Context, req DraftRequest) error
+	// ShippingQuotes prices every carrier for a draft or agreed terms, which is how a buyer
+	// chooses delivery with the fee visible. They pay it on both kinds of sale.
+	ShippingQuotes(ctx context.Context, req ShippingQuotesRequest) (ShippingQuotes, error)
 	// Checkout writes the lines and opens the payment session. The order follows when that
 	// session completes — there is no route for it.
 	Checkout(ctx context.Context, req CheckoutRequest) (CheckoutResult, error)
@@ -469,9 +511,12 @@ type Service interface {
 	GetOffer(ctx context.Context, req OfferRequest) (Offer, error)
 	CounterOffer(ctx context.Context, req CounterOfferRequest) (Offer, error)
 	CancelOffer(ctx context.Context, req OfferRequest) error
-	// AcceptOffer is the buyer closing it, which opens the same checkout a fixed-price
-	// listing uses.
-	AcceptOffer(ctx context.Context, req AcceptOfferRequest) (CheckoutResult, error)
+	// AcceptOffer agrees to the terms on the table — whoever does not own the standing proposal,
+	// so either side may. It charges nothing: it freezes the price and starts a short window.
+	AcceptOffer(ctx context.Context, req OfferRequest) (Offer, error)
+	// CheckoutOffer is the buyer's "create order now" on those agreed terms: they pick delivery
+	// and pay, in the same checkout a fixed-price listing uses.
+	CheckoutOffer(ctx context.Context, req CheckoutOfferRequest) (CheckoutResult, error)
 
 	// --- orders ---
 	ListOrders(ctx context.Context, req ListOrdersRequest) (OrderPage, error)

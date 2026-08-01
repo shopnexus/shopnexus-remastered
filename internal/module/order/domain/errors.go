@@ -38,7 +38,10 @@ var (
 	ErrOfferAlreadyOpen = errx.NewError(http.StatusConflict, "offer_already_open", "a negotiation on this variant is already open")
 	// ErrNotYourTurn is countering your own standing proposal. The two sides alternate, so
 	// a price on the table is always the other party's to answer.
-	ErrNotYourTurn       = errx.NewError(http.StatusForbidden, "not_your_turn", "the standing proposal is yours; wait for a reply")
+	ErrNotYourTurn = errx.NewError(http.StatusForbidden, "not_your_turn", "the standing proposal is yours; wait for a reply")
+	// ErrOfferNotAccepted is a checkout of terms nobody has agreed to yet. A negotiable listing
+	// cannot be bought until one side says yes to the other's price.
+	ErrOfferNotAccepted  = errx.NewError(http.StatusConflict, "offer_not_accepted", "these terms have not been agreed yet")
 	ErrOnlyBuyerAccepts  = errx.NewError(http.StatusForbidden, "only_buyer_accepts", "only the buyer closes a negotiation")
 	ErrFixedPriceListing = errx.NewError(http.StatusUnprocessableEntity, "fixed_price_listing", "this listing is not negotiable")
 
@@ -84,7 +87,14 @@ var (
 	ErrNotTheSeller      = errx.NewError(http.StatusForbidden, "not_the_seller", "only the seller of this order may do that")
 	ErrModeratorRequired = errx.NewError(http.StatusForbidden, "moderator_required", "moderator role required")
 	ErrCursorInvalid     = errx.NewError(http.StatusBadRequest, "cursor_invalid", "the cursor is not one this endpoint issued")
-	ErrCarrierUnknown    = errx.NewError(http.StatusUnprocessableEntity, "carrier_unknown", "no enabled transport option by that id")
+	// ErrShippingQuoteInvalid is a courier that answered with something that cannot be charged.
+	// ErrQuoteSourceInvalid is a quote for neither a draft nor agreed terms, or for both. The
+	// parcel has to be one purchase.
+	ErrQuoteSourceInvalid = errx.NewError(http.StatusBadRequest, "quote_source_invalid", "name exactly one of a draft or an offer")
+	// ErrCheckoutEmpty is a quote or a checkout with no lines in it.
+	ErrCheckoutEmpty        = errx.NewError(http.StatusBadRequest, "checkout_empty", "there is nothing here to ship")
+	ErrShippingQuoteInvalid = errx.NewError(http.StatusBadGateway, "shipping_quote_invalid", "the carrier did not return a usable delivery price")
+	ErrCarrierUnknown       = errx.NewError(http.StatusUnprocessableEntity, "carrier_unknown", "no enabled transport option by that id")
 
 	// errQuantityPositive is the shape rule the CHECK constraints also hold: a line for
 	// zero of something is not a line.

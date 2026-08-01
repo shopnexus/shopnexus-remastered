@@ -133,5 +133,14 @@ components:
         id: { $ref: '#/components/schemas/TransportID' }
         option: { type: string, example: ghn-express, description: An enabled transport option's slug }
         status: { $ref: '#/components/schemas/TransportStatus' }
+        fee:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 15000
+          description: >
+            What the buyer paid for delivery, quoted from this carrier when the checkout opened.
+            The buyer bears carriage on both a fixed-price and a negotiated sale, so a seller is
+            never charged for it.
         created_at: { type: string, format: date-time }
-      required: [id, option, status, created_at]
+      required: [id, option, status, fee, created_at]

@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ import (
 	orderapi "shopnexus/internal/module/order/api"
 	"shopnexus/internal/module/order/domain"
 	"shopnexus/internal/module/order/port"
+	"shopnexus/internal/provider/transport"
 	"shopnexus/internal/shared/id"
 )
 
@@ -33,7 +35,14 @@ import (
 // negotiation is longer because it waits on a person.
 const (
 	draftWindow = 30 * time.Minute
-	offerWindow = 48 * time.Hour
+	// offerWindow is how long a standing proposal waits for the other side. Short by design: a
+	// price left open for days is a price the market has moved past, and either party can always
+	// open a new negotiation.
+	offerWindow = 12 * time.Hour
+	// acceptedWindow is how long the buyer has to turn agreed terms into an order. The same
+	// half-hour a draft gets, for the same reason: both are a frozen price, and stock nobody has
+	// reserved yet must not be promised at yesterday's number.
+	acceptedWindow = 30 * time.Minute
 )
 
 type Service struct {
@@ -50,8 +59,9 @@ type Service struct {
 	// what puts a live signed link on it rather than a bare id nothing can render.
 	uploads common.Uploads
 	// options is the carrier registry — this module's own `option` rows, so a carrier
-	// nobody enabled cannot be chosen.
-	options port.Options
+	// nobody enabled cannot be chosen; transport is the courier those slugs price with.
+	options   port.Options
+	transport transport.Client
 	// workflows holds the timers: the durable runtime when there is one, nothing when there
 	// is not. Best-effort at every call site — the row is already committed.
 	workflows port.Workflows
@@ -68,6 +78,7 @@ func NewService(
 	chat chatapi.Service,
 	uploads common.Uploads,
 	options port.Options,
+	transport transport.Client,
 	workflows port.Workflows,
 	bus eventbus.Client,
 	v *validator.Validate,
@@ -75,7 +86,8 @@ func NewService(
 ) *Service {
 	return &Service{
 		repo: repo, accounts: accounts, catalog: catalog, finance: finance, chat: chat,
-		uploads: uploads, options: options, workflows: workflows, bus: bus, v: v, log: log,
+		uploads: uploads, options: options, transport: transport, workflows: workflows,
+		bus: bus, v: v, log: log,
 	}
 }
 
@@ -277,4 +289,45 @@ func (s *Service) timer(what string, err error) {
 	if err != nil {
 		s.log.Warn("durable timer not set", "what", what, "err", err)
 	}
+}
+
+// quoteShipping prices delivery for one checkout. The buyer pays it on every sale — a fixed-price
+// purchase and a negotiated one alike — so a quote that is never asked for is a courier bill the
+// platform silently absorbs.
+//
+// Priced server-side from the carrier, never taken from the request: a fee a client can name is a
+// fee a client can set to zero. And it is quoted *before* the money is asked for, which also means
+// a seller with no collection point fails the checkout rather than failing after the buyer has paid.
+func (s *Service) quoteShipping(ctx context.Context, option string, sellerID int64,
+	to domain.AddressSnapshot, lines []transport.ItemMetadata) (int64, error) {
+	pickup, err := s.pickupSnapshot(ctx, sellerID)
+	if err != nil {
+		return 0, err
+	}
+	quote, err := s.transport.Quote(ctx, transport.QuoteParams{
+		Items:       lines,
+		FromAddress: addressLine(pickup),
+		ToAddress:   addressLine(to),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("quote shipping: %w", err)
+	}
+	if quote.Cost < 0 {
+		return 0, domain.ErrShippingQuoteInvalid
+	}
+	return quote.Cost, nil
+}
+
+// addressLine is what a courier is handed: the administrative codes, not the display name. A
+// carrier prices by district, and the name on the parcel does not change the fee.
+func addressLine(a domain.AddressSnapshot) string {
+	parts := []string{a.Country, a.ProvinceCode}
+	if a.DistrictCode != nil {
+		parts = append(parts, *a.DistrictCode)
+	}
+	parts = append(parts, a.WardCode)
+	if a.AddressDetail != nil {
+		parts = append(parts, *a.AddressDetail)
+	}
+	return strings.Join(slices.DeleteFunc(parts, func(p string) bool { return p == "" }), ", ")
 }

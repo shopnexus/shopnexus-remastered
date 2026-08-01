@@ -89,6 +89,13 @@ Each module has its own README with ER diagrams, domain concepts, flows, and end
 | [`trust`](internal/module/trust/)                   | Blind order feedback, product reviews, reputation, abuse reports                    |
 | [`observability`](internal/module/observability/)   | Operational telemetry into TimescaleDB — not a domain module, nothing calls it      |
 
+A sale starts one of two ways and never needs a seller's approval: a `fixed` listing is bought
+straight from its page, while a `negotiable` one has to be negotiated — either side may agree to
+the terms on the table, which charges nothing, and the **buyer** then presses "create order now"
+within a short window and checks out exactly as they would from a fixed-price listing. The buyer
+pays delivery on both, quoted from the carrier at checkout (`POST /shipping-quotes` prices every
+option first), so a seller is never charged for carriage.
+
 Stock lives in `catalog`; there is no separate inventory module. All money lives in
 `finance`, so an escrow move stays one atomic write. Product/web analytics is **not** in this
 backend — it is collected client-side by Rybbit.

@@ -8,6 +8,7 @@ package finance
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -132,6 +133,7 @@ func toAPISession(s domain.Session, outstanding int64) financeapi.Session {
 		TotalAmount: s.TotalAmount,
 		Outstanding: outstanding,
 		Note:        s.Note,
+		Data:        rawOrEmpty(s.Data),
 		CreatedAt:   s.CreatedAt,
 		PaidAt:      s.PaidAt,
 		ExpiredAt:   s.ExpiredAt,
@@ -195,4 +197,13 @@ func toAPIMovement(m domain.Movement) financeapi.WalletMovement {
 		}
 	}
 	return out
+}
+
+// rawOrEmpty is the JSON column as a DTO field: nil rather than the literal "null", so an absent
+// context is an absent field instead of a string a client has to special-case.
+func rawOrEmpty(b []byte) json.RawMessage {
+	if len(b) == 0 {
+		return nil
+	}
+	return json.RawMessage(b)
 }

@@ -200,22 +200,55 @@ func TestOffer_AlternatesAndOnlyBuyerAccepts(t *testing.T) {
 	if o.AuthorID != seller || o.Total != 120_000 {
 		t.Fatalf("offer = %+v, want the seller's terms on the table", o)
 	}
-	// The seller cannot accept their own price into a sale.
-	if err := o.Accept(seller, now); !errors.Is(err, domain.ErrOnlyBuyerAccepts) {
-		t.Fatalf("seller accepting = %v, want ErrOnlyBuyerAccepts", err)
+	// Nobody agrees to their own price: the standing proposal is the seller's, so it is the
+	// buyer's to answer.
+	if err := o.Accept(seller, now, time.Minute); !errors.Is(err, domain.ErrNotYourTurn) {
+		t.Fatalf("seller accepting their own = %v, want ErrNotYourTurn", err)
 	}
-	if err := o.Accept(buyer, now); err != nil {
+	if err := o.Accept(buyer, now, 30*time.Minute); err != nil {
 		t.Fatalf("Accept: %v", err)
 	}
 	if o.Status != domain.OfferAccepted {
 		t.Fatalf("status = %q, want accepted", o.Status)
 	}
+	// Agreeing restarts the clock, short: an agreed price is a frozen price.
+	if !o.ExpiresAt.After(now) || o.ExpiresAt.After(now.Add(31*time.Minute)) {
+		t.Fatalf("expires at %v, want a short window from %v", o.ExpiresAt, now)
+	}
+	// Only the buyer turns it into an order, and only once.
+	if err := o.CheckoutBy(seller, now); !errors.Is(err, domain.ErrOnlyBuyerAccepts) {
+		t.Fatalf("seller checking out = %v, want ErrOnlyBuyerAccepts", err)
+	}
+	if err := o.CheckoutBy(buyer, now); err != nil {
+		t.Fatalf("CheckoutBy: %v", err)
+	}
+	o.PaymentSessionID = new(int64(7))
+	if err := o.CheckoutBy(buyer, now); !errors.Is(err, domain.ErrOfferSettled) {
+		t.Fatalf("second checkout = %v, want ErrOfferSettled", err)
+	}
+
+	// The other direction: a seller may agree to the buyer's price, and it is still the buyer who
+	// pays — which is what makes that safe.
+	fromBuyer, err := domain.NewOffer(1, 2, buyer, buyer, seller, 1, 90_000, "", time.Hour)
+	if err != nil {
+		t.Fatalf("NewOffer: %v", err)
+	}
+	if err := fromBuyer.Accept(seller, now, 30*time.Minute); err != nil {
+		t.Fatalf("seller accepting the buyer's price: %v", err)
+	}
+	if err := fromBuyer.CheckoutBy(seller, now); !errors.Is(err, domain.ErrOnlyBuyerAccepts) {
+		t.Fatalf("seller checking out = %v, want ErrOnlyBuyerAccepts", err)
+	}
+	if err := fromBuyer.CheckoutBy(buyer, now); err != nil {
+		t.Fatalf("buyer checking out agreed terms: %v", err)
+	}
+
 	// And an expired negotiation is not answerable at all.
 	stale, err := domain.NewOffer(1, 2, buyer, buyer, seller, 1, 100_000, "", -time.Hour)
 	if err != nil {
 		t.Fatalf("NewOffer: %v", err)
 	}
-	if err := stale.Accept(buyer, now); !errors.Is(err, domain.ErrOfferExpired) {
+	if err := stale.Accept(seller, now, time.Minute); !errors.Is(err, domain.ErrOfferExpired) {
 		t.Fatalf("accepting an expired offer = %v, want ErrOfferExpired", err)
 	}
 }

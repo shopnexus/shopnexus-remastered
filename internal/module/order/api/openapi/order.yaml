@@ -8,10 +8,15 @@
 # Two shapes recur:
 #   - Checkout is PAY-FIRST, and the money is what creates the order. A fixed-price
 #     listing freezes its terms in a draft; a negotiable one freezes them in the offer
-#     both sides accepted. Either way checkout writes the items plus one buyer-checkout
-#     payment session, and the order appears when that session completes. There is no
-#     endpoint for it and no seller confirmation: a seller can refuse a price, never an
-#     order.
+#     both sides accepted — either party may agree, which charges nothing and starts a
+#     short window for the buyer's "create order now". Either way checkout writes the
+#     items plus one buyer-checkout payment session, and the order appears when that
+#     session completes. There is no endpoint for it and no seller confirmation: a
+#     seller can refuse a price, never an order.
+#   - Delivery is the buyer's on both paths, and it is quoted from the carrier at
+#     checkout rather than sent — the session asks for goods plus that fee, and only the
+#     goods are ever held for or released to the seller. `POST /shipping-quotes` prices
+#     every carrier beforehand, for a draft or for agreed terms.
 #   - A state transition is a POST to a noun sub-resource, never a PATCH of a
 #     status field. "order" has no status column on purpose: the lifecycle lives
 #     in the service and only outcome facts (completed_at, cancelled_at) persist.

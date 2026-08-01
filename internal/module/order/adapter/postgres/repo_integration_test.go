@@ -91,7 +91,7 @@ func placedOrder(t *testing.T, r *orderpg.Repo) (domain.Order, domain.Item) {
 	buyer, seller := party(t)
 	d := draft(t, r, buyer, seller)
 	item := paidItem(t, r, domain.FromDraft(d.ID), buyer, seller, time.Now().UnixNano()%1_000_000_000)
-	transportID, err := r.InsertTransport(ctx, "ghn-express")
+	transportID, err := r.InsertTransport(ctx, "ghn-express", 15_000)
 	if err != nil {
 		t.Fatalf("InsertTransport: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestCreateOrder_OriginIsIdempotent(t *testing.T) {
 		t.Errorf("address = %+v, want it round-tripped with a null district", items[0].Address)
 	}
 
-	transportID, err := r.InsertTransport(ctx, "ghn-express")
+	transportID, err := r.InsertTransport(ctx, "ghn-express", 15_000)
 	if err != nil {
 		t.Fatalf("InsertTransport: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestCreateOrder_SkipsCancelledLines(t *testing.T) {
 		t.Fatalf("paid = %d lines, want both", len(paid))
 	}
 
-	transportID, err := r.InsertTransport(ctx, "ghn-express")
+	transportID, err := r.InsertTransport(ctx, "ghn-express", 15_000)
 	if err != nil {
 		t.Fatalf("InsertTransport: %v", err)
 	}
@@ -581,7 +581,7 @@ func TestListItems_PendingOnly(t *testing.T) {
 		t.Fatalf("items = %+v, want the unordered line", items)
 	}
 
-	transportID, err := r.InsertTransport(ctx, "ghn-express")
+	transportID, err := r.InsertTransport(ctx, "ghn-express", 15_000)
 	if err != nil {
 		t.Fatalf("InsertTransport: %v", err)
 	}
@@ -695,7 +695,7 @@ func TestOrderOrigin_ExactlyOneIsEnforced(t *testing.T) {
 	                                address, pickup_address)
 	           VALUES ($1, $2, 1, 2, $3, '{}'::jsonb, '{}'::jsonb)`
 
-	transportID, err := orderpg.New(pool).InsertTransport(ctx, "ghn-express")
+	transportID, err := orderpg.New(pool).InsertTransport(ctx, "ghn-express", 15_000)
 	if err != nil {
 		t.Fatalf("InsertTransport: %v", err)
 	}
@@ -847,7 +847,7 @@ func TestLinkItems_FinishesAResumedSettlement(t *testing.T) {
 	d := draft(t, r, buyer, seller)
 	session := time.Now().UnixNano() % 1_000_000_000
 	first := paidItem(t, r, domain.FromDraft(d.ID), buyer, seller, session)
-	transportID, err := r.InsertTransport(ctx, "ghn-express")
+	transportID, err := r.InsertTransport(ctx, "ghn-express", 15_000)
 	if err != nil {
 		t.Fatalf("InsertTransport: %v", err)
 	}

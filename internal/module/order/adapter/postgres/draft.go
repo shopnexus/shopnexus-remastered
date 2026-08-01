@@ -228,15 +228,36 @@ func (r *Repo) SaveOffer(ctx context.Context, o domain.Offer) error {
 	           SET status = @status, author_id = @author_id, quantity = @quantity,
 	               total = @total, reason = @reason, expires_at = @expires_at,
 	               payment_session_id = @payment_session_id
-	           WHERE id = @id AND status = 'active'`
+	           WHERE id = @id AND status::text = ANY(@from::text[])`
 	args := pgx.NamedArgs{
 		"id": o.ID, "status": o.Status, "author_id": o.AuthorID, "quantity": o.Quantity,
 		"total": o.Total, "reason": o.Reason, "expires_at": o.ExpiresAt,
 		"payment_session_id": o.PaymentSessionID,
+		// A negotiation moves from `active`, and an accepted one still expires — so the guard is
+		// the pair rather than `active` alone, and the checkout claim above is what stops an
+		// accepted offer being re-agreed.
+		"from": []string{domain.OfferActive, domain.OfferAccepted},
 	}
 	tag, err := r.pool.Exec(ctx, q, args)
 	if err != nil {
 		return fmt.Errorf("db update offer: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrOfferSettled
+	}
+	return nil
+}
+
+// ClaimOfferCheckout is the buyer turning agreed terms into an order, and the write is the claim:
+// `payment_session_id IS NULL` means one of two concurrent "create order now" presses opens a
+// checkout and the other is refused, rather than two sessions for one negotiated price.
+func (r *Repo) ClaimOfferCheckout(ctx context.Context, o domain.Offer) error {
+	const q = `UPDATE offer SET payment_session_id = @payment_session_id
+	           WHERE id = @id AND status = 'accepted' AND payment_session_id IS NULL`
+	args := pgx.NamedArgs{"id": o.ID, "payment_session_id": o.PaymentSessionID}
+	tag, err := r.pool.Exec(ctx, q, args)
+	if err != nil {
+		return fmt.Errorf("db claim offer checkout: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrOfferSettled

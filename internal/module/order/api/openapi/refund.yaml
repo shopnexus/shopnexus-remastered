@@ -337,7 +337,10 @@ components:
       type: object
       description: >
         No item selection and no amount: a refund is for the whole order. Nothing about
-        shipping either — the goods stay with the buyer until the refund is granted.
+        shipping either — the goods stay with the buyer until the refund is granted, and a granted
+        refund returns the goods' money, not the carriage: that parcel was carried. Delivery comes
+        back only where it never happened, which is a cancellation before pickup rather than a
+        refund. Who bears the return leg is the verdict's business.
       properties:
         reason: { type: string, minLength: 1, maxLength: 2000, example: Not as described }
         attachments:

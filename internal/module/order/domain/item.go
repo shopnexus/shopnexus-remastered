@@ -133,9 +133,13 @@ const (
 // Transport is one shipment. The carrier's own view of it lives in Data; this row is what
 // the platform knows.
 type Transport struct {
-	ID        int64
-	Option    string `validate:"required"`
-	Status    string `validate:"required"`
+	ID     int64
+	Option string `validate:"required"`
+	Status string `validate:"required"`
+	// Fee is what the buyer paid to have this delivered, quoted from the carrier at checkout and
+	// frozen here. It is the courier's, not the seller's, which is why the escrow released to a
+	// seller never includes it.
+	Fee       int64 `validate:"gte=0"`
 	Data      []byte
 	CreatedAt time.Time
 }

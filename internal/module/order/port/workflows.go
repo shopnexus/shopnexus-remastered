@@ -10,6 +10,7 @@ const (
 	CheckoutWorkflow = "OrderCheckout"
 	OrderWorkflow    = "OrderLifecycle"
 	RefundWorkflow   = "OrderRefund"
+	OfferWorkflow    = "OrderOffer"
 )
 
 // The three run inputs. Small structs with json tags: a run's input is stored by the runtime,
@@ -20,6 +21,13 @@ type CheckoutParams struct {
 
 type OrderParams struct {
 	OrderID int64 `json:"order_id"`
+}
+
+// OfferParams starts a run per negotiation. The run re-reads the row on every wake, so it does
+// not need to know which of the two waits — unanswered proposal, or agreed terms nobody checked
+// out — it is holding: both are the row's own deadline.
+type OfferParams struct {
+	OfferID int64 `json:"offer_id"`
 }
 
 // RefundParams is one window of one case: the refund, and the status whose clock the run is
@@ -48,6 +56,11 @@ type Workflows interface {
 	// CheckoutPaid and CheckoutCancelled end that wait.
 	CheckoutPaid(ctx context.Context, sessionID int64) error
 	CheckoutCancelled(ctx context.Context, sessionID int64) error
+
+	// StartOffer follows one negotiation to its deadline — a standing proposal nobody answered,
+	// or agreed terms the buyer did not turn into an order. Both are the same wait on the same
+	// row, which is why one run covers them.
+	StartOffer(ctx context.Context, offerID int64) error
 
 	// StartOrder follows one order from creation to payout.
 	StartOrder(ctx context.Context, orderID int64) error

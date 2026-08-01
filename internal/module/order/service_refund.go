@@ -172,7 +172,10 @@ func (s *Service) openReturnLeg(ctx context.Context, r *domain.Refund, o domain.
 	if err != nil {
 		return fmt.Errorf("find transport: %w", err)
 	}
-	returnID, err := s.repo.InsertTransport(ctx, transport.Option)
+	// No fee on the return leg: the buyer paid to have the goods delivered, not to send them
+	// back, and who bears the return carriage is the verdict's business rather than a charge
+	// raised here.
+	returnID, err := s.repo.InsertTransport(ctx, transport.Option, 0)
 	if err != nil {
 		return fmt.Errorf("open return transport: %w", err)
 	}
@@ -363,7 +366,7 @@ func (s *Service) AdminRuleDispute(ctx context.Context, req orderapi.RuleDispute
 // A transfer that landed and a write that did not is the recoverable half: the refund is still
 // live, its window is still overdue, and the sweep calls this again with the same key.
 func (s *Service) settleRefund(ctx context.Context, r domain.Refund, o domain.Order, d *domain.Dispute) error {
-	if err := s.refundEscrow(ctx, o); err != nil {
+	if err := s.refundEscrow(ctx, o, 0); err != nil {
 		return err
 	}
 	// The order goes with it: an order still open under a settled refund is one the payout

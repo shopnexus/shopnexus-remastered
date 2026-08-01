@@ -93,6 +93,41 @@ func (w *Checkout) Cancelled(ctx restate.WorkflowSharedContext) error {
 	return restate.Promise[bool](ctx, promCancelled).Resolve(true)
 }
 
+// Offer follows one negotiation to its deadline: a standing proposal nobody answered, or agreed
+// terms the buyer never turned into an order. One run for both, because both are the same wait on
+// the same row — the run re-reads it on waking rather than being told which state it is holding.
+type Offer struct{ l *Lifecycle }
+
+func (l *Lifecycle) Offer() *Offer { return &Offer{l: l} }
+
+func (w *Offer) ServiceName() string { return port.OfferWorkflow }
+
+func (w *Offer) Run(ctx restate.WorkflowContext, p port.OfferParams) error {
+	for {
+		offer, err := restate.Run(ctx, func(rctx restate.RunContext) (domain.Offer, error) {
+			return w.l.svc.repo.FindOffer(rctx, p.OfferID)
+		}, restate.WithName("readOffer"))
+		if err != nil {
+			return fmt.Errorf("read offer: %w", err)
+		}
+		// Cancelled, or already checked out: the sale is the session's business from there.
+		if offer.Status == domain.OfferCancelled || offer.PaymentSessionID != nil {
+			return nil
+		}
+		if wait := time.Until(offer.ExpiresAt); wait > 0 {
+			if err := restate.Sleep(ctx, wait); err != nil {
+				return fmt.Errorf("wait offer deadline: %w", err)
+			}
+			// Accepting restarts the clock, so the row is re-read rather than acted on: the
+			// deadline this run slept to may not be the one that matters any more.
+			continue
+		}
+		return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+			return w.l.svc.ExpireOffer(rctx, p.OfferID)
+		}, restate.WithName("expireOffer"))
+	}
+}
+
 // Order follows one order from creation to payout: delivery, then the escrow window, with a
 // refund able to interrupt it.
 type Order struct{ l *Lifecycle }
@@ -240,6 +275,7 @@ func (l *Lifecycle) cancelSessionLines(ctx context.Context, sessionID int64) err
 func (l *Lifecycle) Definitions() []restate.ServiceDefinition {
 	return []restate.ServiceDefinition{
 		restate.Reflect(l.Checkout()),
+		restate.Reflect(l.Offer()),
 		restate.Reflect(l.Order()),
 		restate.Reflect(l.Refund()),
 	}

@@ -217,9 +217,10 @@ func (s *Service) CancelOrder(ctx context.Context, req orderapi.CancelOrderReque
 	if err := s.repo.SaveOrder(ctx, o); err != nil {
 		return orderapi.Order{}, fmt.Errorf("save order: %w", err)
 	}
-	// The money goes back and the stock with it. Keyed on the order, so a retried
+	// The money goes back and the stock with it — the delivery too, since the parcel never left
+	// and `Cancel` just refused this route if it had. Keyed on the order, so a retried
 	// cancellation cannot refund twice.
-	if err := s.refundEscrow(ctx, o); err != nil {
+	if err := s.refundEscrow(ctx, o, transport.Fee); err != nil {
 		return orderapi.Order{}, err
 	}
 	s.uncommitOrderStock(ctx, o)
@@ -367,7 +368,12 @@ func (s *Service) orderView(ctx context.Context, o domain.Order) (orderapi.Order
 //
 // A key that has already been posted is success: the money is where the caller wanted it, so a
 // retried settlement carries on to the rows it still has to write.
-func (s *Service) refundEscrow(ctx context.Context, o domain.Order) error {
+//
+// shipping is the carriage to hand back with the goods, and only a cancellation sends it: the
+// parcel had not left, so the buyer paid for a delivery that never happened. A granted refund
+// sends zero — that parcel was carried, and who bears the return leg is the verdict's business,
+// not a fee reversal.
+func (s *Service) refundEscrow(ctx context.Context, o domain.Order, shipping int64) error {
 	total, currency, _, err := s.orderTotal(ctx, o.ID)
 	if err != nil {
 		return err
@@ -381,6 +387,7 @@ func (s *Service) refundEscrow(ctx context.Context, o domain.Order) error {
 		OrderID:        id.Of[id.Order](o.ID),
 		Currency:       currency,
 		Amount:         total,
+		ShippingFee:    shipping,
 		IdempotencyKey: fmt.Sprintf("order:%d:refund", o.ID),
 	})
 	if err != nil && !errors.Is(err, financeMovementPosted) {
@@ -455,6 +462,7 @@ func toAPITransport(t domain.Transport) orderapi.Transport {
 		ID:        id.Of[id.Transport](t.ID),
 		Option:    t.Option,
 		Status:    t.Status,
+		Fee:       t.Fee,
 		CreatedAt: t.CreatedAt,
 	}
 }

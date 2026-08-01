@@ -21,6 +21,8 @@ import (
 	"shopnexus/internal/module/order"
 	orderapi "shopnexus/internal/module/order/api"
 	"shopnexus/internal/module/order/domain"
+	"shopnexus/internal/provider/transport"
+	transportmock "shopnexus/internal/provider/transport/mock"
 	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/id"
 	"shopnexus/internal/shared/id/idtest"
@@ -173,6 +175,10 @@ type fakeFinance struct {
 	held        int64
 	released    int64
 	refunded    int64
+	// fees is the delivery the buyer paid, collected by the platform rather than held for the
+	// seller. Modelled here because a fake that folded it into the escrow would let a payout hand
+	// the seller the courier's money and no test would notice.
+	fees int64
 	// sessions is what each opened checkout looks like now: `paid` is what stops a line that
 	// has been charged for from being cancelled.
 	sessions map[int64]*financeapi.Session
@@ -197,6 +203,10 @@ func (f *fakeFinance) OpenCheckout(_ context.Context, req financeapi.OpenCheckou
 		ID: id.Of[id.PaymentSession](f.nextSession), Kind: "buyer-checkout",
 		Status: "pending", Currency: req.Currency, TotalAmount: req.Total,
 		Outstanding: req.Total,
+		// The checkout context is kept and read back, as the real session does: it carries the
+		// delivery charge, and a fake that dropped it would let the settle path see a fee of
+		// zero and hand the courier's money to the seller.
+		Data: req.Data,
 	}
 	f.sessions[f.nextSession] = &session
 	return session, nil
@@ -224,6 +234,8 @@ func (f *fakeFinance) HoldEscrow(_ context.Context, req financeapi.EscrowRequest
 	}
 	return f.post(req, func() error {
 		f.held += req.Amount
+		// The delivery the buyer paid, collected rather than held: it is the courier's.
+		f.fees += req.ShippingFee
 		return nil
 	})
 }
@@ -247,6 +259,10 @@ func (f *fakeFinance) RefundEscrow(_ context.Context, req financeapi.EscrowReque
 			return err
 		}
 		f.refunded += req.Amount
+		// Carriage the buyer paid for and never got. Counted against what was collected rather
+		// than into `refunded`, which stays the goods — the escrow and the courier's money are
+		// two different pots and a test that summed them could not tell which moved.
+		f.fees -= req.ShippingFee
 		return nil
 	})
 }
@@ -294,6 +310,7 @@ type harness struct {
 	uploads   *fakeUploads
 	accounts  fakeAccounts
 	workflows *fakeWorkflows
+	courier   *fakeCourier
 }
 
 // fakeWorkflows records the durable timers the service asked for. They are best-effort by
@@ -321,6 +338,38 @@ func (f *fakeWorkflows) CheckoutPaid(_ context.Context, sessionID int64) error {
 
 func (f *fakeWorkflows) CheckoutCancelled(_ context.Context, sessionID int64) error {
 	return f.record("checkout-cancelled", sessionID)
+}
+
+// shippingFee is what the fake courier quotes. Named, because several tests assert that the
+// buyer paid the goods *plus* this — on a fixed-price sale and a negotiated one alike.
+const shippingFee int64 = 15_000
+
+// fakeCourier prices delivery. It records what it was asked so a test can check the parcel the
+// quote was for, and it can refuse, which is how "the seller has no collection point" is reached.
+type fakeCourier struct {
+	transportmock.Client
+	fee int64
+	// quotes is one entry per call: the number of lines and the total units in the parcel.
+	quotes []int64
+	// fail makes the carrier refuse, so a checkout that cannot be priced is refused too rather
+	// than charging the buyer for delivery nobody quoted.
+	fail bool
+}
+
+func (f *fakeCourier) Quote(_ context.Context, params transport.QuoteParams) (transport.QuoteResult, error) {
+	if f.fail {
+		return transport.QuoteResult{}, errx.NewError(502, "carrier_down", "the carrier did not answer")
+	}
+	units := int64(0)
+	for _, i := range params.Items {
+		units += i.Quantity
+	}
+	f.quotes = append(f.quotes, units)
+	return transport.QuoteResult{Cost: f.fee}, nil
+}
+
+func (f *fakeWorkflows) StartOffer(_ context.Context, offerID int64) error {
+	return f.record("start-offer", offerID)
 }
 
 func (f *fakeWorkflows) StartOrder(_ context.Context, orderID int64) error {
@@ -358,11 +407,12 @@ func newHarness(priceMode string) *harness {
 	uploads := newFakeUploads()
 	accounts := fakeAccounts{role: "user"}
 	workflows := &fakeWorkflows{}
-	svc := order.NewService(repo, accounts, catalog, finance, chat, uploads, repo, workflows,
+	courier := &fakeCourier{fee: shippingFee}
+	svc := order.NewService(repo, accounts, catalog, finance, chat, uploads, repo, courier, workflows,
 		eventbus.NewMemory(slog.New(slog.DiscardHandler)), validation.Default(),
 		slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: repo, catalog: catalog, finance: finance, chat: chat,
-		uploads: uploads, accounts: accounts, workflows: workflows}
+		uploads: uploads, accounts: accounts, workflows: workflows, courier: courier}
 }
 
 // ageItems winds every line back, which is how a test reaches a checkout window the clock would
@@ -377,7 +427,7 @@ func (h *harness) ageItems(by time.Duration) {
 // moderator reuses one harness's repository with a staff caller.
 func (h *harness) moderator() *order.Service {
 	return order.NewService(h.repo, fakeAccounts{role: "moderator"}, h.catalog, h.finance,
-		h.chat, h.uploads, h.repo, h.workflows, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
+		h.chat, h.uploads, h.repo, h.courier, h.workflows, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
 		validation.Default(), slog.New(slog.DiscardHandler))
 }
 
@@ -434,8 +484,28 @@ func TestCheckout_MoneyCreatesTheOrder(t *testing.T) {
 	h := newHarness("fixed")
 	result, o := h.checkout(t)
 
-	if result.Total != 100_000 || result.Currency != "VND" {
-		t.Fatalf("checkout = %+v, want the frozen price", result)
+	// The bill is itemised, and the buyer pays both halves: the frozen price plus the carriage
+	// the courier quoted for this parcel to this address.
+	if result.GoodsTotal != 100_000 || result.ShippingFee != shippingFee {
+		t.Fatalf("bill = %+v, want the frozen price and the quoted carriage", result)
+	}
+	if result.Total != 100_000+shippingFee || result.Currency != "VND" {
+		t.Fatalf("total = %d, want the buyer to pay delivery", result.Total)
+	}
+	// And the courier was asked about the parcel, not about nothing.
+	if len(h.courier.quotes) != 1 || h.courier.quotes[0] != 1 {
+		t.Fatalf("quotes = %v, want one call for the one unit being shipped", h.courier.quotes)
+	}
+	// The shipment records what was paid for it, so the fee is auditable against the session.
+	if o.Transport == nil || o.Transport.Fee != shippingFee {
+		t.Fatalf("shipment = %+v, want the carriage frozen on it", o.Transport)
+	}
+	// The escrow holds the goods only: the carriage is the courier's, not the seller's.
+	if h.finance.held != 100_000 {
+		t.Fatalf("held = %d, want the goods in escrow and not the delivery", h.finance.held)
+	}
+	if h.finance.fees != shippingFee {
+		t.Fatalf("fees = %d, want the delivery collected as a platform fee", h.finance.fees)
 	}
 	if o.State != domain.StateOpen {
 		t.Fatalf("state = %q, want open", o.State)
@@ -445,9 +515,6 @@ func TestCheckout_MoneyCreatesTheOrder(t *testing.T) {
 	}
 	if o.Transport == nil || o.Transport.Status != domain.TransportPending {
 		t.Fatalf("transport = %+v, want a pending shipment", o.Transport)
-	}
-	if h.finance.held != 100_000 {
-		t.Errorf("held = %d, want the total in escrow", h.finance.held)
 	}
 	// The reservation became a sale: the units are gone, not merely held.
 	if h.catalog.sold != 1 || h.catalog.reserved != 0 {
@@ -515,8 +582,8 @@ func TestCheckout_RefusesAnOversell(t *testing.T) {
 	}
 }
 
-// The negotiation: the two sides alternate, only the buyer closes it, and accepting opens the
-// same checkout a fixed-price sale uses.
+// The negotiation: the two sides alternate, agreeing charges nothing, and the buyer's "create
+// order now" is the same checkout a fixed-price sale uses.
 func TestOffer_NegotiateThenAccept(t *testing.T) {
 	h := newHarness("negotiable")
 	ctx := context.Background()
@@ -558,21 +625,49 @@ func TestOffer_NegotiateThenAccept(t *testing.T) {
 	if read.Currency != "VND" {
 		t.Errorf("currency = %q, want the listing's", read.Currency)
 	}
-	// The seller cannot turn their own price into a sale.
-	if err := mustErr(h.svc.AcceptOffer(ctx, orderapi.AcceptOfferRequest{
-		ActorID: seller, ID: offer.ID, ContactID: contactID, TransportOption: "ghn-express",
-	})); status(t, err) != 403 {
-		t.Error("the seller accepted their own offer")
+	// Nobody agrees to their own price: the standing proposal is the seller's now.
+	if got := status(t, mustErr(h.svc.AcceptOffer(ctx, orderapi.OfferRequest{
+		ActorID: seller, ID: offer.ID,
+	}))); got != 403 {
+		t.Errorf("status = %d, want 403 for the seller accepting their own offer", got)
 	}
-
-	result, err := h.svc.AcceptOffer(ctx, orderapi.AcceptOfferRequest{
-		ActorID: buyer, ID: offer.ID, ContactID: contactID, TransportOption: "ghn-express",
-	})
+	// Agreeing is not the sale: nothing is charged and no checkout exists yet.
+	agreed, err := h.svc.AcceptOffer(ctx, orderapi.OfferRequest{ActorID: buyer, ID: offer.ID})
 	if err != nil {
 		t.Fatalf("AcceptOffer: %v", err)
 	}
-	if result.Total != 90_000 {
-		t.Fatalf("checkout total = %d, want the agreed price", result.Total)
+	if agreed.Status != domain.OfferAccepted {
+		t.Fatalf("status = %q, want accepted", agreed.Status)
+	}
+	if !h.workflows.saw(fmt.Sprintf("start-offer:%d", offer.ID.Int64())) {
+		t.Error("the agreed price has no clock on it")
+	}
+	// A seller has no checkout to perform — the buyer pays.
+	if got := status(t, mustErr(h.svc.CheckoutOffer(ctx, orderapi.CheckoutOfferRequest{
+		ActorID: seller, ID: offer.ID, ContactID: contactID, TransportOption: "ghn-express",
+	}))); got != 403 {
+		t.Errorf("status = %d, want 403 for the seller checking out", got)
+	}
+
+	// "Create order now": the buyer picks delivery and pays the agreed price plus the carriage,
+	// in exactly the checkout a fixed-price listing uses.
+	result, err := h.svc.CheckoutOffer(ctx, orderapi.CheckoutOfferRequest{
+		ActorID: buyer, ID: offer.ID, ContactID: contactID, TransportOption: "ghn-express",
+	})
+	if err != nil {
+		t.Fatalf("CheckoutOffer: %v", err)
+	}
+	if result.GoodsTotal != 90_000 || result.ShippingFee != shippingFee {
+		t.Fatalf("bill = %+v, want the agreed price and the quoted carriage", result)
+	}
+	if result.Total != 90_000+shippingFee {
+		t.Fatalf("total = %d, want the buyer to pay delivery on a negotiated sale too", result.Total)
+	}
+	// And only once: a double-clicked "create order now" opens one checkout.
+	if got := status(t, mustErr(h.svc.CheckoutOffer(ctx, orderapi.CheckoutOfferRequest{
+		ActorID: buyer, ID: offer.ID, ContactID: contactID, TransportOption: "ghn-express",
+	}))); got != 409 {
+		t.Errorf("status = %d, want 409 for a second checkout of one offer", got)
 	}
 	// And the money still creates the order — the seller is not asked again.
 	h.finance.pay(result.PaymentSession)
@@ -585,6 +680,53 @@ func TestOffer_NegotiateThenAccept(t *testing.T) {
 	}
 	if len(page.Data) != 1 || page.Data[0].OfferID == nil || page.Data[0].DraftID != nil {
 		t.Fatalf("order = %+v, want it to name the offer it came from", page.Data)
+	}
+}
+
+// The seller taking the buyer's price is the other half of the same rule: whoever does not own
+// the standing proposal may agree. It is safe because agreeing is not the sale — no order and no
+// money until the buyer chooses delivery and pays, which is the buyer's route alone.
+func TestOffer_SellerMayTakeTheBuyersPrice(t *testing.T) {
+	h := newHarness("negotiable")
+	ctx := context.Background()
+	offer, err := h.svc.CreateOffer(ctx, orderapi.CreateOfferRequest{
+		ActorID: buyer, VariantID: variantID, Quantity: 1, Total: 80_000,
+	})
+	if err != nil {
+		t.Fatalf("CreateOffer: %v", err)
+	}
+	// The buyer proposed, so the buyer cannot be the one who says yes.
+	if got := status(t, mustErr(h.svc.AcceptOffer(ctx, orderapi.OfferRequest{
+		ActorID: buyer, ID: offer.ID,
+	}))); got != 403 {
+		t.Fatalf("status = %d, want 403 for the author agreeing", got)
+	}
+	agreed, err := h.svc.AcceptOffer(ctx, orderapi.OfferRequest{ActorID: seller, ID: offer.ID})
+	if err != nil {
+		t.Fatalf("AcceptOffer: %v", err)
+	}
+	if agreed.Status != domain.OfferAccepted {
+		t.Fatalf("status = %q, want accepted", agreed.Status)
+	}
+	// Nothing was charged and nothing reserved: the seller agreed to a price, not to a sale.
+	if h.finance.held != 0 || h.finance.fees != 0 || h.catalog.reserved != 0 {
+		t.Fatalf("held = %d fees = %d reserved = %d, want an agreement to move nothing",
+			h.finance.held, h.finance.fees, h.catalog.reserved)
+	}
+	// The window is the short one — `acceptedWindow`, minutes rather than the standing
+	// proposal's hours — so an agreed price is not held open for a day.
+	if left := time.Until(agreed.ExpiresAt); left > time.Hour {
+		t.Fatalf("expires in %s, want the short accepted window", left)
+	}
+	// The buyer still has to press "create order now", and that is what takes the money.
+	result, err := h.svc.CheckoutOffer(ctx, orderapi.CheckoutOfferRequest{
+		ActorID: buyer, ID: offer.ID, ContactID: contactID, TransportOption: "ghn-express",
+	})
+	if err != nil {
+		t.Fatalf("CheckoutOffer: %v", err)
+	}
+	if result.Total != 80_000+shippingFee {
+		t.Fatalf("total = %d, want the buyer's own price plus the carriage they pay", result.Total)
 	}
 }
 
@@ -930,6 +1072,12 @@ func TestRefund_DisputeRuling(t *testing.T) {
 		t.Fatalf("refunded = %d held = %d, want the whole escrow back with the buyer",
 			h.finance.refunded, h.finance.held)
 	}
+	// The carriage stays spent. That parcel was carried to the buyer and carried back, so a
+	// refund of the goods is not a refund of the courier — who bears the return leg is the
+	// verdict's business, not a fee reversal.
+	if h.finance.fees != shippingFee {
+		t.Fatalf("fees = %d, want the delivery that happened to stay paid", h.finance.fees)
+	}
 	closed := h.repo.orders[o.ID.Int64()]
 	if closed.State() != domain.StateCancelled {
 		t.Fatalf("order = %q, want it closed with the refund", closed.State())
@@ -989,28 +1137,55 @@ func TestCancelItem_ReleasesStockBeforePayment(t *testing.T) {
 	}
 }
 
-// A seller with no collection point stops the sale rather than shipping from a guessed
-// address — and the money is already taken, so this is the one place it must be loud.
-func TestSettlePaidSession_NeedsAPickupAddress(t *testing.T) {
+// A seller with no collection point stops the sale *before* the money is asked for. Delivery is
+// quoted from their address, so the checkout is where that gap surfaces — it used to surface at
+// settlement, which meant a buyer had already paid for an order that could never ship.
+func TestCheckout_NeedsAPickupAddress(t *testing.T) {
 	h := newHarness("fixed")
 	h.svc = order.NewService(h.repo, fakeAccounts{role: "user", noPickup: true}, h.catalog,
-		h.finance, h.chat, h.uploads, h.repo, h.workflows, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
+		h.finance, h.chat, h.uploads, h.repo, h.courier, h.workflows, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
 		validation.Default(), slog.New(slog.DiscardHandler))
 	ctx := context.Background()
 	draft, err := h.svc.CreateDraft(ctx, orderapi.CreateDraftRequest{ActorID: buyer, ListingID: listingID})
 	if err != nil {
 		t.Fatalf("CreateDraft: %v", err)
 	}
-	result, err := h.svc.Checkout(ctx, orderapi.CheckoutRequest{
+	err = mustErr(h.svc.Checkout(ctx, orderapi.CheckoutRequest{
 		ActorID: buyer, ID: draft.ID, ContactID: contactID, Currency: "VND",
 		TransportOption: "ghn-express",
 		Lines:           []orderapi.CheckoutLine{{VariantID: variantID, Quantity: 1}},
-	})
-	if err != nil {
-		t.Fatalf("Checkout: %v", err)
+	}))
+	if err == nil {
+		t.Fatal("a checkout was opened for a sale that could never ship")
 	}
-	if err := h.svc.SettlePaidSession(ctx, result.PaymentSession); err == nil {
-		t.Fatal("an order shipped from nowhere")
+	// Nothing was charged and nothing stayed reserved: the refusal is before the money.
+	if h.finance.nextSession != 0 {
+		t.Errorf("sessions opened = %d, want none", h.finance.nextSession)
+	}
+	if h.catalog.reserved != 0 {
+		t.Errorf("reserved = %d, want the units back", h.catalog.reserved)
+	}
+}
+
+// A carrier that cannot price the parcel refuses the checkout too. The alternative is charging a
+// buyer for delivery nobody quoted, which is the platform absorbing a bill it never saw.
+func TestCheckout_RefusesWhenDeliveryCannotBePriced(t *testing.T) {
+	h := newHarness("fixed")
+	h.courier.fail = true
+	ctx := context.Background()
+	draft, err := h.svc.CreateDraft(ctx, orderapi.CreateDraftRequest{ActorID: buyer, ListingID: listingID})
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	if err := mustErr(h.svc.Checkout(ctx, orderapi.CheckoutRequest{
+		ActorID: buyer, ID: draft.ID, ContactID: contactID, Currency: "VND",
+		TransportOption: "ghn-express",
+		Lines:           []orderapi.CheckoutLine{{VariantID: variantID, Quantity: 1}},
+	})); err == nil {
+		t.Fatal("a checkout was opened with no delivery price")
+	}
+	if h.catalog.reserved != 0 {
+		t.Errorf("reserved = %d, want the units back", h.catalog.reserved)
 	}
 }
 
@@ -1392,6 +1567,11 @@ func TestCancelOrder_ReversesTheSaleRatherThanAReservation(t *testing.T) {
 		t.Fatalf("refunded = %d held = %d, want the escrow back",
 			h.finance.refunded, h.finance.held)
 	}
+	// The delivery goes back too: the parcel never left, so the buyer paid a courier for
+	// nothing. This is the only route that returns it — see the dispute test for the other side.
+	if h.finance.fees != 0 {
+		t.Fatalf("fees = %d, want the carriage returned with the goods", h.finance.fees)
+	}
 	// The run is parked on the receipt, so that is the wait a cancellation has to end.
 	if !h.workflows.saw(fmt.Sprintf("order-cancelled:%d", o.ID.Int64())) {
 		t.Errorf("a cancelled order left its run waiting; calls = %v", h.workflows.calls)
@@ -1507,5 +1687,93 @@ func TestListItems_PagesThroughRowsSharingATimestamp(t *testing.T) {
 	}
 	if len(seen) != 3 {
 		t.Fatalf("saw %d of 3 lines, want every row reachable: %v", len(seen), seen)
+	}
+}
+
+// The buyer chooses delivery with the fee in front of them, and the same list serves a fixed-price
+// draft and agreed terms — because they pay carriage on both.
+func TestShippingQuotes_OneListForBothKindsOfSale(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	draft, err := h.svc.CreateDraft(ctx, orderapi.CreateDraftRequest{ActorID: buyer, ListingID: listingID})
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	quotes, err := h.svc.ShippingQuotes(ctx, orderapi.ShippingQuotesRequest{
+		ActorID: buyer, DraftID: draft.ID, ContactID: contactID,
+		Lines: []orderapi.CheckoutLine{{VariantID: variantID, Quantity: 1}},
+	})
+	if err != nil {
+		t.Fatalf("ShippingQuotes: %v", err)
+	}
+	// Every enabled carrier, and only those.
+	if len(quotes.Options) != 2 {
+		t.Fatalf("options = %+v, want both enabled carriers and not the retired one", quotes.Options)
+	}
+	for _, option := range quotes.Options {
+		if option.Fee != shippingFee || option.Name == "" {
+			t.Fatalf("quote = %+v, want a priced, named carrier", option)
+		}
+	}
+	if quotes.Currency != "VND" {
+		t.Errorf("currency = %q, want the listing's", quotes.Currency)
+	}
+
+	// Neither source, or both, is not a parcel.
+	if got := status(t, mustErr(h.svc.ShippingQuotes(ctx, orderapi.ShippingQuotesRequest{
+		ActorID: buyer, ContactID: contactID,
+	}))); got != 400 {
+		t.Errorf("status = %d, want 400 for a quote of nothing", got)
+	}
+
+	// And on agreed terms the same call answers, priced for the negotiated quantity.
+	nego := newHarness("negotiable")
+	offer, err := nego.svc.CreateOffer(ctx, orderapi.CreateOfferRequest{
+		ActorID: buyer, VariantID: variantID, Quantity: 2, Total: 150_000,
+	})
+	if err != nil {
+		t.Fatalf("CreateOffer: %v", err)
+	}
+	// Not until it is agreed: there are no terms to ship yet.
+	if got := status(t, mustErr(nego.svc.ShippingQuotes(ctx, orderapi.ShippingQuotesRequest{
+		ActorID: buyer, OfferID: offer.ID, ContactID: contactID,
+	}))); got != 409 {
+		t.Errorf("status = %d, want 409 quoting terms nobody agreed to", got)
+	}
+	if _, err := nego.svc.AcceptOffer(ctx, orderapi.OfferRequest{ActorID: seller, ID: offer.ID}); err != nil {
+		t.Fatalf("AcceptOffer: %v", err)
+	}
+	quotes, err = nego.svc.ShippingQuotes(ctx, orderapi.ShippingQuotesRequest{
+		ActorID: buyer, OfferID: offer.ID, ContactID: contactID,
+	})
+	if err != nil {
+		t.Fatalf("ShippingQuotes: %v", err)
+	}
+	if len(quotes.Options) != 2 {
+		t.Fatalf("options = %+v, want the same list a fixed-price sale gets", quotes.Options)
+	}
+	// Priced for the two units that were negotiated, not for one.
+	if len(nego.courier.quotes) == 0 || nego.courier.quotes[0] != 2 {
+		t.Fatalf("quotes = %v, want the negotiated quantity priced", nego.courier.quotes)
+	}
+}
+
+// A negotiable listing cannot be bought without negotiating, and a fixed-price one cannot be
+// negotiated: the two paths are the whole difference between them.
+func TestPriceMode_DecidesWhichPathIsOpen(t *testing.T) {
+	ctx := context.Background()
+
+	nego := newHarness("negotiable")
+	if got := status(t, mustErr(nego.svc.CreateDraft(ctx, orderapi.CreateDraftRequest{
+		ActorID: buyer, ListingID: listingID,
+	}))); got != 422 {
+		t.Fatalf("status = %d, want 422 buying a negotiable listing outright", got)
+	}
+
+	fixed := newHarness("fixed")
+	if got := status(t, mustErr(fixed.svc.CreateOffer(ctx, orderapi.CreateOfferRequest{
+		ActorID: buyer, VariantID: variantID, Quantity: 1, Total: 50_000,
+	}))); got != 422 {
+		t.Fatalf("status = %d, want 422 negotiating a fixed price", got)
 	}
 }

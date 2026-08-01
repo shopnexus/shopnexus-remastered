@@ -327,11 +327,28 @@ give it its own doc under `docs/` and link it from here.
   buyer checks out a draft, pays the item plus the shipping quote, and the order and its shipment
   exist as soon as that payment session completes. `negotiable` cannot be checked out — the buyer
   opens a negotiation, which is the chat thread the pair already shares, either side revises the
-  terms, and the buyer accepting opens the same checkout. So the only thing a seller can refuse
+  terms, and agreeing opens the same checkout. So the only thing a seller can refuse
   is a price, and there is no route that turns paid items into an order: the payment webhook
   does, which is why `item.order_id` is nullable and `item_seller_pending_idx` is a retry list
   rather than an inbox. The buyer always pays delivery, so a seller is never charged and
   `session_kind` has no `seller-confirmation-fee`.
+- **Agreeing to a price is not the sale; the buyer's checkout is.** Either party may accept the
+  terms on the table — whoever does *not* own the standing proposal, since the two sides
+  alternate — and that charges nothing: it freezes the price for `acceptedWindow` (30 minutes,
+  against `offerWindow`'s 12 hours) and the buyer then presses "create order now", which is the
+  same checkout a fixed-price listing opens. That split is what makes a *seller* accepting safe:
+  no order and no money until the buyer chose a carrier and paid. A lapsed acceptance is
+  `Expire()`'s business like any other, and negotiating again is the remedy.
+- **Delivery is the buyer's on both paths, and it is quoted, never sent.** `quoteShipping` asks
+  the carrier at checkout — from a fixed-price draft and from agreed terms alike — so a client
+  cannot decide what carriage costs, and a seller with no pickup contact fails *before* money is
+  taken. The session is `goods + fee`; `HoldEscrow` holds only the goods and takes the fee as a
+  third `fee` leg in the same movement, because it is the courier's money and a payout must never
+  hand it to the seller. It comes back only when the parcel never left: a cancellation returns it
+  (`Cancel` has just refused the route if the parcel shipped), a granted refund sends zero —
+  carriage that happened was still bought, and who bears the return leg is the verdict's
+  business. `POST /shipping-quotes` prices every enabled carrier for a draft **or** an accepted
+  offer, one list for both kinds of sale.
 - **An order records which of the two it came from.** `order` and `item` each carry a nullable
   `draft_id` and a nullable `offer_id` with `CHECK ((draft_id IS NOT NULL) <> (offer_id IS NOT
   NULL))`, and both are UNIQUE — so a webhook delivered twice or an acceptance double-clicked

@@ -41,6 +41,8 @@ import (
 	paymentmock "shopnexus/internal/provider/payment/mock"
 	"shopnexus/internal/provider/storage"
 	localstorage "shopnexus/internal/provider/storage/local"
+	"shopnexus/internal/provider/transport"
+	transportmock "shopnexus/internal/provider/transport/mock"
 	"shopnexus/internal/shared/httpx"
 	"shopnexus/internal/shared/id"
 	"shopnexus/internal/shared/logger"
@@ -74,6 +76,7 @@ func appOptions() fx.Option {
 			newOAuthVerifier,
 			newKYCClient,
 			newPaymentClient,
+			newTransportClient,
 			// Where an uploaded byte goes. The handler beside it is provided only for the
 			// backend that needs this process to serve the bytes.
 			newStorageClient,
@@ -248,6 +251,14 @@ func newUploadsHandler(client storage.Client, log *slog.Logger) *handler.Uploads
 		return nil
 	}
 	return handler.NewUploads(own, log)
+}
+
+// newTransportClient picks the courier a shipping fee is quoted from. Only the mock exists today;
+// a real carrier is a new case here plus its credentials in config, exactly like the other seams.
+// The fee is on the money path — the buyer pays delivery on every sale — so an unquoted one is a
+// carrier bill the platform silently absorbs.
+func newTransportClient(cfg *config.Config) transport.Client {
+	return transportmock.NewClient(provider.Option{Provider: cfg.TransportProvider})
 }
 
 // observedClient builds the HTTP client a provider uses: metrics when the telemetry sink

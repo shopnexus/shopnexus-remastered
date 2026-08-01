@@ -50,6 +50,12 @@ func (r *Restate) CheckoutCancelled(ctx context.Context, sessionID int64) error 
 	return r.signal(ctx, port.CheckoutWorkflow, sessionID, signalCancelled, nil)
 }
 
+func (r *Restate) StartOffer(ctx context.Context, offerID int64) error {
+	return r.client.Start(ctx, infra.Run{
+		Workflow: port.OfferWorkflow, Key: key(offerID), Input: port.OfferParams{OfferID: offerID},
+	})
+}
+
 func (r *Restate) StartOrder(ctx context.Context, orderID int64) error {
 	return r.client.Start(ctx, infra.Run{
 		Workflow: port.OrderWorkflow, Key: key(orderID), Input: port.OrderParams{OrderID: orderID},
@@ -135,6 +141,10 @@ func (o *Off) RefundRaised(_ context.Context, orderID int64) error {
 
 func (o *Off) RefundResolved(_ context.Context, orderID int64, _ bool) error {
 	return o.skip("refund resolved", orderID)
+}
+
+func (o *Off) StartOffer(_ context.Context, offerID int64) error {
+	return o.skip("offer", offerID)
 }
 
 func (o *Off) StartRefundWindow(_ context.Context, refundID int64, status string) error {

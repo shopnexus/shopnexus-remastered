@@ -391,8 +391,8 @@ func (h *Order) offerRequest(r *http.Request) (orderapi.OfferRequest, error) {
 	return req, check(h.v, req)
 }
 
-// AcceptOffer handles POST /offers/{id}/acceptance — the buyer closing it, which opens the
-// same checkout a fixed-price sale uses.
+// AcceptOffer handles POST /offers/{id}/acceptance — agreeing to the terms on the table. Either
+// party may, whichever of them does not own the standing proposal; nothing is charged.
 func (h *Order) AcceptOffer(w http.ResponseWriter, r *http.Request) {
 	uid, err := actor(r)
 	if failed(w, h.log, err) {
@@ -402,7 +402,52 @@ func (h *Order) AcceptOffer(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	var req orderapi.AcceptOfferRequest
+	req := orderapi.OfferRequest{ActorID: uid, ID: offerID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.AcceptOffer(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
+// ShippingQuotes handles POST /shipping-quotes — what delivery would cost, per carrier, for a
+// draft or for agreed terms. One route for both, because the buyer pays carriage either way and
+// the page they choose from is the same.
+func (h *Order) ShippingQuotes(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.ShippingQuotesRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID = uid
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ShippingQuotes(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
+// CheckoutOffer handles POST /offers/{id}/checkout — the buyer's "create order now" on agreed
+// terms, where they choose delivery and pay, exactly as on a fixed-price listing.
+func (h *Order) CheckoutOffer(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	offerID, err := pathID[id.Offer](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.CheckoutOfferRequest
 	if failed(w, h.log, decodeBody(r, &req)) {
 		return
 	}
@@ -410,7 +455,7 @@ func (h *Order) AcceptOffer(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, check(h.v, req)) {
 		return
 	}
-	res, err := h.svc.AcceptOffer(r.Context(), req)
+	res, err := h.svc.CheckoutOffer(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}

@@ -35,7 +35,12 @@ func newFakeRepo() *fakeRepo {
 		offers: map[int64]domain.Offer{}, items: map[int64]domain.Item{},
 		orders: map[int64]domain.Order{}, shipments: map[int64]domain.Transport{},
 		refunds: map[int64]domain.Refund{}, disputes: map[int64]domain.Dispute{},
-		options: []common.Option{{ID: "ghn-express", Type: common.OptionTypeTransport, IsEnabled: true}},
+		// Two carriers so a quote list is a list, and a disabled one so "enabled" means something.
+		options: []common.Option{
+			{ID: "ghn-express", Name: "GHN Express", Type: common.OptionTypeTransport, IsEnabled: true},
+			{ID: "vtp-standard", Name: "Viettel Post", Type: common.OptionTypeTransport, IsEnabled: true},
+			{ID: "retired-courier", Name: "Retired", Type: common.OptionTypeTransport},
+		},
 	}
 }
 
@@ -236,9 +241,22 @@ func (f *fakeRepo) ListOffers(_ context.Context, filter port.OfferFilter) ([]dom
 
 // SaveOffer only moves an active one, as `WHERE status = 'active'` does: a double-clicked
 // acceptance loses here.
+// SaveOffer moves a negotiation, guarded by the statuses it moves from as the real one is: an
+// accepted offer still expires, so `active` alone would refuse the write that closes one.
 func (f *fakeRepo) SaveOffer(_ context.Context, o domain.Offer) error {
 	stored, ok := f.offers[o.ID]
-	if !ok || stored.Status != domain.OfferActive {
+	if !ok || (stored.Status != domain.OfferActive && stored.Status != domain.OfferAccepted) {
+		return domain.ErrOfferSettled
+	}
+	f.offers[o.ID] = o
+	return nil
+}
+
+// ClaimOfferCheckout is the buyer turning agreed terms into an order, and the guard is the claim:
+// two concurrent presses open one checkout, as the real `payment_session_id IS NULL` does.
+func (f *fakeRepo) ClaimOfferCheckout(_ context.Context, o domain.Offer) error {
+	stored, ok := f.offers[o.ID]
+	if !ok || stored.Status != domain.OfferAccepted || stored.PaymentSessionID != nil {
 		return domain.ErrOfferSettled
 	}
 	f.offers[o.ID] = o
@@ -248,7 +266,8 @@ func (f *fakeRepo) SaveOffer(_ context.Context, o domain.Offer) error {
 func (f *fakeRepo) ExpiredOffers(_ context.Context, now time.Time, limit int) ([]domain.Offer, error) {
 	var out []domain.Offer
 	for _, o := range f.offers {
-		if o.Status == domain.OfferActive && o.ExpiresAt.Before(now) {
+		// An accepted offer nobody checked out expires too: the frozen price had a short window.
+		if o.Status != domain.OfferCancelled && o.PaymentSessionID == nil && o.ExpiresAt.Before(now) {
 			out = append(out, o)
 		}
 	}
@@ -329,9 +348,10 @@ func (f *fakeRepo) UnpaidItems(_ context.Context, before time.Time, limit int) (
 
 // --- transport ---
 
-func (f *fakeRepo) InsertTransport(_ context.Context, option string) (int64, error) {
+func (f *fakeRepo) InsertTransport(_ context.Context, option string, fee int64) (int64, error) {
 	t := domain.Transport{
-		ID: f.id(), Option: option, Status: domain.TransportPending, CreatedAt: time.Now(),
+		ID: f.id(), Option: option, Status: domain.TransportPending, Fee: fee,
+		CreatedAt: time.Now(),
 	}
 	f.shipments[t.ID] = t
 	return t.ID, nil

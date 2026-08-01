@@ -214,7 +214,14 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("GET /offers/{id}", auth(http.HandlerFunc(d.Order.GetOffer)))
 	mux.Handle("PATCH /offers/{id}", auth(http.HandlerFunc(d.Order.CounterOffer)))
 	mux.Handle("DELETE /offers/{id}", auth(http.HandlerFunc(d.Order.CancelOffer)))
+	// What delivery costs, per carrier — for a draft or for agreed terms. One route, because the
+	// buyer pays carriage on both kinds of sale and chooses it the same way.
+	mux.Handle("POST /shipping-quotes", auth(http.HandlerFunc(d.Order.ShippingQuotes)))
+	// Agreeing and buying are two steps: either party may agree to the price on the table, and
+	// then the buyer turns it into an order — choosing delivery and paying — in the same checkout
+	// a fixed-price listing uses.
 	mux.Handle("POST /offers/{id}/acceptance", auth(http.HandlerFunc(d.Order.AcceptOffer)))
+	mux.Handle("POST /offers/{id}/checkout", auth(http.HandlerFunc(d.Order.CheckoutOffer)))
 	mux.Handle("GET /refunds", auth(http.HandlerFunc(d.Order.ListRefunds)))
 	mux.Handle("GET /refunds/{id}", auth(http.HandlerFunc(d.Order.GetRefund)))
 	mux.Handle("DELETE /refunds/{id}", auth(http.HandlerFunc(d.Order.WithdrawRefund)))

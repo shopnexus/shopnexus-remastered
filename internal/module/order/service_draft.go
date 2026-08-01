@@ -2,13 +2,16 @@ package order
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	catalogapi "shopnexus/internal/module/catalog/api"
+	"shopnexus/internal/module/common"
 	financeapi "shopnexus/internal/module/finance/api"
 	orderapi "shopnexus/internal/module/order/api"
 	"shopnexus/internal/module/order/domain"
+	"shopnexus/internal/provider/transport"
 	"shopnexus/internal/shared/id"
 )
 
@@ -174,13 +177,22 @@ func (s *Service) Checkout(ctx context.Context, req orderapi.CheckoutRequest) (o
 		lines = append(lines, &item)
 	}
 
+	// Delivery, priced from the carrier for this parcel to this address. The buyer pays it, so
+	// it is part of what the session collects — and quoting here rather than at settlement means
+	// a seller with no collection point is refused before any money is asked for.
+	fee, err := s.quoteShipping(ctx, req.TransportOption, d.Snapshot.SellerID, address,
+		shippingLines(d, req.Lines))
+	if err != nil {
+		release()
+		return orderapi.CheckoutResult{}, err
+	}
 	session, err := s.finance.OpenCheckout(ctx, financeapi.OpenCheckoutRequest{
 		BuyerID:  req.ActorID,
 		SellerID: id.Of[id.Account](d.Snapshot.SellerID),
 		Currency: req.Currency,
-		Total:    total,
+		Total:    total + fee,
 		Note:     d.Snapshot.Name,
-		Data:     checkoutContext(domain.FromDraft(d.ID)),
+		Data:     checkoutContext(domain.FromDraft(d.ID), fee),
 	})
 	if err != nil {
 		release()
@@ -195,12 +207,47 @@ func (s *Service) Checkout(ctx context.Context, req orderapi.CheckoutRequest) (o
 	}
 	// The reserved stock is now on a clock: a checkout nobody pays has to give it back.
 	s.timer("start checkout", s.workflows.StartCheckout(ctx, session.ID.Int64()))
-	return s.checkoutResult(lines, session), nil
+	return s.checkoutResult(lines, session, fee), nil
 }
 
-func (s *Service) checkoutResult(lines []*domain.Item, session financeapi.Session) orderapi.CheckoutResult {
+// shippingLines is what the courier prices: how many of what, with the package details frozen in
+// the draft. The weights are the snapshot's, not the live listing's — the parcel a buyer is being
+// quoted for is the one they are buying.
+func shippingLines(d domain.Draft, lines []orderapi.CheckoutLine) []transport.ItemMetadata {
+	out := make([]transport.ItemMetadata, 0, len(lines))
+	for _, line := range lines {
+		frozen, err := d.Variant(line.VariantID.Int64())
+		if err != nil {
+			continue
+		}
+		out = append(out, transport.ItemMetadata{
+			VariantID:      line.VariantID.Int64(),
+			Quantity:       line.Quantity,
+			PackageDetails: jsonOf(frozen.PackageDetails),
+		})
+	}
+	return out
+}
+
+// jsonOf is the package details as the courier's client takes them. An unencodable map is an
+// empty object rather than a failed checkout: a carrier that cannot read the dimensions prices
+// by weight, and the alternative is refusing a sale over a JSON error.
+func jsonOf(v map[string]any) json.RawMessage {
+	if len(v) == 0 {
+		return json.RawMessage("{}")
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return json.RawMessage("{}")
+	}
+	return raw
+}
+
+func (s *Service) checkoutResult(lines []*domain.Item, session financeapi.Session, fee int64) orderapi.CheckoutResult {
 	out := orderapi.CheckoutResult{
 		PaymentSession: session.ID,
+		GoodsTotal:     session.TotalAmount - fee,
+		ShippingFee:    fee,
 		Total:          session.TotalAmount,
 		Currency:       session.Currency,
 	}
@@ -230,4 +277,79 @@ func toAPIDraft(d domain.Draft) orderapi.Draft {
 		})
 	}
 	return out
+}
+
+// ShippingQuotes prices every enabled carrier for one purchase, so the buyer can choose delivery
+// with the fee in front of them — the same list on a fixed-price listing and on agreed terms,
+// because the buyer pays carriage on both.
+//
+// A draft or an accepted offer, exactly one: they are the two things that freeze a price, and the
+// parcel being quoted for is whichever of them the buyer is about to check out. The fee is quoted
+// again at checkout rather than carried from here — a quote a client holds is a quote a client can
+// keep past the point it was true.
+func (s *Service) ShippingQuotes(ctx context.Context, req orderapi.ShippingQuotesRequest) (orderapi.ShippingQuotes, error) {
+	if err := s.v.Struct(req); err != nil {
+		return orderapi.ShippingQuotes{}, err
+	}
+	if (req.DraftID == 0) == (req.OfferID == 0) {
+		return orderapi.ShippingQuotes{}, domain.ErrQuoteSourceInvalid
+	}
+	address, err := s.contactSnapshot(ctx, req.ActorID, req.ContactID)
+	if err != nil {
+		return orderapi.ShippingQuotes{}, err
+	}
+
+	var (
+		sellerID int64
+		currency string
+		lines    []transport.ItemMetadata
+	)
+	if req.DraftID != 0 {
+		d, err := s.repo.FindDraft(ctx, req.DraftID.Int64(), req.ActorID.Int64())
+		if err != nil {
+			return orderapi.ShippingQuotes{}, fmt.Errorf("find draft: %w", err)
+		}
+		if !d.Live(time.Now()) {
+			return orderapi.ShippingQuotes{}, domain.ErrDraftExpired
+		}
+		sellerID, currency = d.Snapshot.SellerID, d.Snapshot.Currency
+		lines = shippingLines(d, req.Lines)
+	} else {
+		o, err := s.party(ctx, req.ActorID, req.OfferID)
+		if err != nil {
+			return orderapi.ShippingQuotes{}, err
+		}
+		// Quoted for terms the buyer may actually check out, so the same guard the checkout uses.
+		if err := o.CheckoutBy(req.ActorID.Int64(), time.Now()); err != nil {
+			return orderapi.ShippingQuotes{}, err
+		}
+		listing, _, err := s.variantOf(ctx, req.ActorID, id.Of[id.Variant](o.VariantID))
+		if err != nil {
+			return orderapi.ShippingQuotes{}, err
+		}
+		sellerID, currency = o.SellerID, listing.Currency
+		lines = []transport.ItemMetadata{{VariantID: o.VariantID, Quantity: o.Quantity}}
+	}
+	if len(lines) == 0 {
+		return orderapi.ShippingQuotes{}, domain.ErrCheckoutEmpty
+	}
+
+	carriers, err := s.options.ListEnabled(ctx, common.OptionTypeTransport)
+	if err != nil {
+		return orderapi.ShippingQuotes{}, fmt.Errorf("list transport options: %w", err)
+	}
+	out := orderapi.ShippingQuotes{Currency: currency, Options: make([]orderapi.ShippingQuote, 0, len(carriers))}
+	for _, carrier := range carriers {
+		fee, err := s.quoteShipping(ctx, carrier.ID, sellerID, address, lines)
+		if err != nil {
+			// One carrier that cannot price this parcel is one option missing from the list, not
+			// a page that fails: the buyer picks from whoever answered.
+			s.log.Debug("carrier declined to quote", "option", carrier.ID, "err", err)
+			continue
+		}
+		out.Options = append(out.Options, orderapi.ShippingQuote{
+			Option: carrier.ID, Name: carrier.Name, Fee: fee,
+		})
+	}
+	return out, nil
 }

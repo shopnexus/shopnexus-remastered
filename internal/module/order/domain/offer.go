@@ -91,17 +91,47 @@ func (o *Offer) Counter(actorID, quantity, total int64, reason string, now time.
 	return nil
 }
 
-// Accept closes the negotiation. Only the buyer, whichever side proposed the standing
-// terms — an order may not appear without the buyer's explicit acceptance, and the seller
-// putting a price up is an offer rather than a sale.
-func (o *Offer) Accept(actorID int64, now time.Time) error {
+// Accept agrees to the terms on the table. Whoever does *not* own the standing proposal —
+// because the two sides alternate, so the price in front of you is always the other party's, and
+// either of them may be the one who says yes to it.
+//
+// Agreeing is not the sale. It freezes the price and starts a short window for the buyer to turn
+// it into an order, which is where they choose delivery and pay — exactly as they would from a
+// fixed-price listing. That is why the seller accepting a buyer's price is safe: nothing is
+// charged and no order exists until the buyer checks out.
+func (o *Offer) Accept(actorID int64, now time.Time, window time.Duration) error {
 	if err := o.movable(actorID, now); err != nil {
 		return err
+	}
+	if o.AuthorID == actorID {
+		return ErrNotYourTurn
+	}
+	o.Status = OfferAccepted
+	// The clock restarts, short: an accepted price is a frozen price, and the same reason a
+	// draft expires in half an hour applies here.
+	o.ExpiresAt = now.Add(window)
+	return nil
+}
+
+// CheckoutBy reports the error stopping this account from turning the accepted offer into an
+// order. Only the buyer, and only while the accepted price is still good: they are the one who
+// pays, and a seller has no checkout to perform.
+func (o Offer) CheckoutBy(actorID int64, now time.Time) error {
+	if !o.Involves(actorID) {
+		return ErrOfferNotFound
+	}
+	if o.Status != OfferAccepted {
+		return ErrOfferNotAccepted
 	}
 	if actorID != o.BuyerID {
 		return ErrOnlyBuyerAccepts
 	}
-	o.Status = OfferAccepted
+	if !now.Before(o.ExpiresAt) {
+		return ErrOfferExpired
+	}
+	if o.PaymentSessionID != nil {
+		return ErrOfferSettled
+	}
 	return nil
 }
 
@@ -117,10 +147,17 @@ func (o *Offer) Cancel(actorID int64) error {
 	return nil
 }
 
-// Expire is what the timer does. Separate from Cancel because nobody decided it, and the
-// two read differently to a client counting down.
+// Expire is what the timer does. Separate from Cancel because nobody decided it, and the two
+// read differently to a client counting down.
+//
+// An accepted offer expires too: the price was frozen for a short window, and a buyer who did not
+// check out in it has to negotiate again rather than hold yesterday's price open.
 func (o *Offer) Expire() error {
-	if o.Status != OfferActive {
+	if o.Status == OfferCancelled {
+		return ErrOfferSettled
+	}
+	if o.Status == OfferAccepted && o.PaymentSessionID != nil {
+		// Already checked out: the sale is the session's business now.
 		return ErrOfferSettled
 	}
 	o.Status = OfferCancelled
