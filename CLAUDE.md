@@ -87,7 +87,7 @@ with the right status — it is the only place that maps errors to HTTP. errx
 wraps a Restate terminal error so a failure survives a Restate hop and is not
 retried, while `errors.As` still reaches the code same-process. `errx` holds
 **only** the common cross-cutting errors used across many modules/handlers
-(`ErrValidation`, `ErrBadRequestBody`, `ErrUnauthorized`, `ErrInvalidToken`);
+(`NewValidationError`, `ErrBadRequestBody`, `ErrUnauthorized`, `ErrInvalidToken`, `ErrNotImplemented`);
 every module-specific error — not-found and app-level alike — lives in that
 module's `domain/errors.go` (so the adapter can return it and imports stay one-way).
 
@@ -302,7 +302,7 @@ give it its own doc under `docs/` and link it from here.
   site with `fmt.Errorf("<the operation that failed>: %w", err)` describing the
   *callee's* action (e.g. `"save listing: %w"`, not the caller's job). The only
   exceptions: returning a coded domain/errx error value directly (e.g.
-  `return X, domain.ErrListingNotFound`, `errx.ErrValidation.Fmt(...)`, or the
+  `return X, domain.ErrListingNotFound`, `errx.NewValidationError(...)`, or the
   error from a `domain.NewX` constructor), and re-propagating an error a callee
   already annotated (or a caller-supplied callback's error). `%w` keeps
   `errx.Decompose`/`errors.Is` working through the chain, so HTTP status/code is
@@ -539,6 +539,36 @@ give it its own doc under `docs/` and link it from here.
   exists only because Prism mounts `paths` as written and ignores the relative
   `servers[0].url`, so a mock would otherwise answer `/listings` while the gateway
   answers `/api/v1/listings`.
+
+- **A value that crosses a package boundary is a named constant, published by the side that owns
+  it.** A module's `api` package is where the other modules read it, so that is where it lives:
+  `accountapi.RoleAdmin`, `orderapi.RoleSeller`/`StateOpen`, `catalogapi.PriceModeFixed`,
+  `trustapi.RoleSeller`, `common.ChangeTypeUpdate`, `finance.KindBuyerCheckout` (re-exported from
+  its domain at the level a subscriber imports). Its `domain` twin stays — `domain` may not import
+  `api` — and that is the one duplication the layering forces; five modules each spelling
+  `"moderator"` was not. Same rule below the modules: a provider package names the selector value
+  that picks it (`fptai.Name`, `local.Name`, `esms.Name`) and `internal/config` names the runtimes
+  it validates (`config.WorkflowRestate`), so the composition root compares instead of retyping.
+  A `validate:"oneof=..."` tag is the one place a literal is unavoidable — a struct tag cannot
+  reference a constant.
+- **A guard's SQL is built from the constant that sets the value.** `WHERE status = '` +
+  `domain.OfferAccepted` + `'` stays a compile-time constant string, and a renamed status becomes a
+  build failure instead of an UPDATE that matches nothing. Worth it exactly where the write depends
+  on it: the claims, the expiry lists, the terminal-status sets.
+- **A constructor with more than a few same-typed arguments takes a struct.** `domain.NewItem(NewLine{…})`
+  and `domain.NewOffer(NewTerms{…}, window)`: twelve positional arguments with four ids in a row —
+  or seven consecutive `int64`s — transpose without a compile error and produce a valid-looking sale.
+  Named fields also let a field the caller does not know yet (an item's payment session) simply not
+  be in the constructor.
+- **Three copies is a home; one caller is not a seam.** `dbx.NullText`, `common.FormatCursor`/
+  `ParseCursor`/`ErrCursorInvalid`, one `cursorMeta`, one `page[T]` tail, one `Deps`: each replaced
+  three-to-six identical copies, and the cursor one replaced three separators for the same format.
+  The other direction is just as real — a helper, an interface method or a config hook with a single
+  caller is deleted or inlined (`provider.Option`, `payment.Refund`, `cache.Config`), because a
+  seam nobody has crossed twice is a guess about the future.
+- **A comment says why; the signature already says what.** Cut anything that restates the code, and
+  keep the invariant, the failure it prevents, and the decision behind it. A count in prose ("the
+  three workflows") is a comment that goes stale on the next commit — say what the thing is instead.
 
 ## Commits
 

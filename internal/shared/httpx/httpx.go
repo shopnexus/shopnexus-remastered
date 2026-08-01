@@ -15,7 +15,7 @@ func DecodeJSON(r *http.Request, dst any) error {
 	return dec.Decode(dst)
 }
 
-func WriteJSON(w http.ResponseWriter, status int, v any) {
+func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
@@ -68,17 +68,17 @@ type CursorMeta struct {
 
 // WriteData writes one resource: {"data": …}.
 func WriteData(w http.ResponseWriter, status int, data any) {
-	WriteJSON(w, status, dataEnvelope{Data: data})
+	writeJSON(w, status, dataEnvelope{Data: data})
 }
 
 // WritePage writes a page-paginated collection: {"data": […], "meta": {page, limit, total_count}}.
 func WritePage(w http.ResponseWriter, status int, data any, meta PageMeta) {
-	WriteJSON(w, status, dataEnvelope{Data: data, Meta: meta})
+	writeJSON(w, status, dataEnvelope{Data: data, Meta: meta})
 }
 
 // WriteCursor writes a cursor-paginated collection: {"data": […], "meta": {next_cursor}}.
 func WriteCursor(w http.ResponseWriter, status int, data any, meta CursorMeta) {
-	WriteJSON(w, status, dataEnvelope{Data: data, Meta: meta})
+	writeJSON(w, status, dataEnvelope{Data: data, Meta: meta})
 }
 
 // WriteNoContent answers 204 with no body — a delete, or a state change with nothing to
@@ -91,7 +91,7 @@ func WriteNoContent(w http.ResponseWriter) {
 func WriteError(w http.ResponseWriter, log *slog.Logger, err error) {
 	reqID := w.Header().Get(RequestIDHeader)
 	if status, code, message, ok := errx.Decompose(err); ok {
-		WriteJSON(w, int(status), errEnvelope{Error: errBody{
+		writeJSON(w, int(status), errEnvelope{Error: errBody{
 			Code:      code,
 			Message:   message,
 			RequestID: reqID,
@@ -102,7 +102,7 @@ func WriteError(w http.ResponseWriter, log *slog.Logger, err error) {
 	// An uncoded error is a bug, not a business outcome: log it whole and tell the caller
 	// nothing but the request id, which is the only thing that helps either of us.
 	log.Error("unhandled error", "err", err, "request_id", reqID)
-	WriteJSON(w, http.StatusInternalServerError, errEnvelope{Error: errBody{
+	writeJSON(w, http.StatusInternalServerError, errEnvelope{Error: errBody{
 		Code:      "internal",
 		Message:   "internal error",
 		RequestID: reqID,

@@ -5,7 +5,10 @@
 // authenticated request looks the session up here, which is what makes a logout,
 // a password change or a suspension effective against a token already in
 // circulation. A refresh token is a second key pointing at the same session and
-// is rotated on every exchange, so a stolen one is usable at most once.
+// is rotated on every exchange: the old key is deleted as the new one is issued, so a stolen
+// token stops working as soon as the real client refreshes. The read and the delete are two
+// commands, so two simultaneous presentations can both pass — the window is one round trip, not
+// a guarantee of exactly-once.
 //
 // Revoking every session of an account does not need the list of its sessions:
 // each record carries the account's epoch at the time it was created, and

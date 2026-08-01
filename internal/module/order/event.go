@@ -21,6 +21,8 @@ type OrderPlaced struct {
 }
 
 // OrderPlacedTopic carries OrderPlaced. Declared once here, so nothing else names the string.
+// The name is also mirrored as a literal in observability/events.go, which subscribes without
+// importing this package: change it here and there together.
 var OrderPlacedTopic = eventbus.NewTopic[OrderPlaced]("order.placed")
 
 func publishOrderPlaced(ctx context.Context, bus eventbus.Client, event OrderPlaced) error {

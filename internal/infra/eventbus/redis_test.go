@@ -1,7 +1,10 @@
+//go:build integration
+
 package eventbus_test
 
 import (
 	"context"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -12,20 +15,27 @@ import (
 	"shopnexus/internal/infra/eventbus"
 )
 
-// Matches the dev docker-compose Redis; DB 15 keeps test keys out of dev data.
-const (
-	testRedisAddr     = "localhost:6379"
-	testRedisPassword = "app"
-	testRedisDB       = 15
-)
+// DB 15 keeps test keys out of dev data. The address and the password come from the environment,
+// like every other adapter test's DSN: a credential in a source file is one that ships.
+const testRedisDB = 15
+
+func redisEnv(t *testing.T) (addr, password string) {
+	t.Helper()
+	addr = os.Getenv("REDIS_ADDR")
+	if addr == "" {
+		t.Skip("REDIS_ADDR not set")
+	}
+	return addr, os.Getenv("REDIS_PASSWORD")
+}
 
 // newTestRedis returns a client on a fresh uuid topic. Cleanup deletes only
 // this test's stream (tests share DB 15 in parallel — no FLUSHDB).
 func newTestRedis(t *testing.T) (eventbus.Client, eventbus.Topic[userEvent]) {
 	t.Helper()
+	addr, password := redisEnv(t)
 	rdb, err := rueidis.NewClient(rueidis.ClientOption{
-		InitAddress: []string{testRedisAddr},
-		Password:    testRedisPassword,
+		InitAddress: []string{addr},
+		Password:    password,
 		SelectDB:    testRedisDB,
 	})
 	if err != nil {

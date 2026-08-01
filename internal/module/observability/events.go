@@ -7,9 +7,10 @@ import (
 	"shopnexus/internal/infra/eventbus"
 )
 
-// observedTopics are the bus topics mirrored into business_events. Add a new
-// topic name here to capture it (kept as strings so observability need not
-// import every module's event package).
+// observedTopics are the bus topics mirrored into business_events. Add a new topic name here to
+// capture it. Strings, so observability need not import every module's event package — which
+// means each one has to match that module's own eventbus.NewTopic name (order.OrderPlacedTopic
+// for the first), and nothing checks it for you.
 //
 // Adding one is a disclosure decision, not a config change. The payload is copied
 // verbatim into a table every Grafana user can read, which is a wider audience than
