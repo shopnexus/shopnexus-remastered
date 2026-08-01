@@ -68,7 +68,9 @@ var (
 	// whether an order can still be cancelled — so it is not a fact a later report may undo.
 	ErrTransportSettled       = errx.NewError(http.StatusConflict, "transport_settled", "this shipment is already at or past that point")
 	ErrTransportStatusUnknown = errx.NewError(http.StatusUnprocessableEntity, "transport_status_unknown", "no shipment status by that name")
-	ErrNoReturnLeg            = errx.NewError(http.StatusConflict, "no_return_leg", "this refund has no return shipment yet")
+	// ErrTransportNotFound is a carrier reporting on a reference this platform never booked.
+	ErrTransportNotFound = errx.NewError(http.StatusNotFound, "transport_not_found", "no shipment with that carrier reference")
+	ErrNoReturnLeg       = errx.NewError(http.StatusConflict, "no_return_leg", "this refund has no return shipment yet")
 
 	// --- refunds and disputes ---
 	ErrRefundNotFound = errx.NewError(http.StatusNotFound, "refund_not_found", "refund not found")

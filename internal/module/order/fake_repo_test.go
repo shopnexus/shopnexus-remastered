@@ -2,6 +2,7 @@ package order_test
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
 	"strconv"
 	"time"
@@ -384,6 +385,55 @@ func (f *fakeRepo) FindTransport(_ context.Context, transportID int64) (domain.T
 		return domain.Transport{}, domain.ErrOrderNotFound
 	}
 	return t, nil
+}
+
+// BookTransport records what the courier gave back, guarded on there being no booking yet — as
+// `data->>'provider_ref' IS NULL` is: a retry cannot replace a reference that stands.
+func (f *fakeRepo) BookTransport(_ context.Context, transportID int64, data []byte) error {
+	stored, ok := f.shipments[transportID]
+	if !ok || stored.Status != domain.TransportPending || stored.Booked() {
+		return domain.ErrTransportSettled
+	}
+	stored.Data = data
+	f.shipments[transportID] = stored
+	return nil
+}
+
+// FindTransportByRef is the webhook's lookup: a courier reports on its own id.
+func (f *fakeRepo) FindTransportByRef(_ context.Context, ref string) (domain.Transport, error) {
+	for _, t := range f.shipments {
+		if t.Booked() && bookingRef(t) == ref {
+			return t, nil
+		}
+	}
+	return domain.Transport{}, domain.ErrTransportNotFound
+}
+
+func bookingRef(t domain.Transport) string {
+	var data struct {
+		ProviderRef string `json:"provider_ref"`
+	}
+	if json.Unmarshal(t.Data, &data) != nil {
+		return ""
+	}
+	return data.ProviderRef
+}
+
+// UnbookedTransports is the retry list: the orders whose parcel no carrier has accepted.
+func (f *fakeRepo) UnbookedTransports(_ context.Context, before time.Time, limit int) ([]int64, error) {
+	var out []int64
+	for _, o := range f.orders {
+		if o.Settled() {
+			continue
+		}
+		t, ok := f.shipments[o.TransportID]
+		if !ok || t.Booked() || t.Status != domain.TransportPending || !t.CreatedAt.Before(before) {
+			continue
+		}
+		out = append(out, o.ID)
+	}
+	slices.Sort(out)
+	return out[:min(limit, len(out))], nil
 }
 
 // SaveTransport only applies to the status it read, as `WHERE status = @from` does: two carrier

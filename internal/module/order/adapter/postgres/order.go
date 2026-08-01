@@ -207,6 +207,70 @@ func (r *Repo) SaveTransport(ctx context.Context, t domain.Transport, from strin
 	return nil
 }
 
+// BookTransport records what the courier gave back for a shipment it accepted: its own reference
+// and whatever else it returned. Guarded on there being no booking yet, so a retried pass cannot
+// replace the reference of a parcel the carrier has already taken.
+func (r *Repo) BookTransport(ctx context.Context, transportID int64, data []byte) error {
+	const q = `UPDATE transport SET data = @data
+	           WHERE id = @id AND status = 'pending' AND data->>'provider_ref' IS NULL`
+	args := pgx.NamedArgs{"id": transportID, "data": dbx.JSONObject(rawJSON(data))}
+	tag, err := r.pool.Exec(ctx, q, args)
+	if err != nil {
+		return fmt.Errorf("db book transport: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrTransportSettled
+	}
+	return nil
+}
+
+// FindTransportByRef answers the shipment a carrier's own reference belongs to, which is all a
+// webhook carries: a courier reports on its id, not on ours.
+func (r *Repo) FindTransportByRef(ctx context.Context, ref string) (domain.Transport, error) {
+	const q = `SELECT ` + transportColumns + ` FROM transport WHERE data->>'provider_ref' = @ref`
+	var t domain.Transport
+	err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{"ref": ref}).
+		Scan(&t.ID, &t.Option, &t.Status, &t.Fee, &t.Data, &t.CreatedAt)
+	if dbx.IsNoRows(err) {
+		return domain.Transport{}, domain.ErrTransportNotFound
+	}
+	if err != nil {
+		return domain.Transport{}, fmt.Errorf("db scan transport by ref: %w", err)
+	}
+	return t, nil
+}
+
+// UnbookedTransports is the retry list: shipments of live orders that no carrier has accepted
+// yet. Bounded by age, so a booking that is merely a second old is left to the call that is
+// already making it.
+func (r *Repo) UnbookedTransports(ctx context.Context, before time.Time, limit int) ([]int64, error) {
+	const q = `SELECT o.id FROM "order" o
+	           JOIN transport t ON t.id = o.transport_id
+	           WHERE t.status = 'pending' AND t.data->>'provider_ref' IS NULL
+	             AND o.cancelled_at IS NULL AND o.completed_at IS NULL
+	             AND t.created_at < @before
+	           ORDER BY t.created_at
+	           LIMIT @limit`
+	rows, err := r.pool.Query(ctx, q, pgx.NamedArgs{"before": before, "limit": limit})
+	if err != nil {
+		return nil, fmt.Errorf("db query unbooked transports: %w", err)
+	}
+	defer rows.Close()
+
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("db scan unbooked transport: %w", err)
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db iterate unbooked transports: %w", err)
+	}
+	return out, nil
+}
+
 const orderColumns = `id, draft_id, offer_id, buyer_id, seller_id, transport_id, address,
 	       pickup_address, received_at, receipt_attachments, payout_released_at, created_at,
 	       completed_at, cancelled_at`

@@ -2,12 +2,14 @@ package order
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	financeapi "shopnexus/internal/module/finance/api"
 	"shopnexus/internal/module/order/domain"
+	"shopnexus/internal/provider/transport"
 	"shopnexus/internal/shared/id"
 )
 
@@ -149,7 +151,141 @@ func (s *Service) finishSettlement(ctx context.Context, o domain.Order, paid []*
 	// window. Both signals are best-effort — the row already says the sale happened.
 	s.timer("checkout paid", s.workflows.CheckoutPaid(ctx, sessionID.Int64()))
 	s.timer("start order", s.workflows.StartOrder(ctx, o.ID))
+	// The parcel is handed to the courier the buyer paid for. Best-effort: the sale has happened
+	// and the money has moved, so a carrier that is down is a booking to retry rather than an
+	// order to refuse — `RetryUnbookedShipments` is the net under it.
+	s.bookShipment(ctx, o, deref(paid))
 	return nil
+}
+
+// bookShipment tells the carrier there is a parcel. It is what the delivery fee was collected
+// for, so a shipment nobody booked is money the platform took and did nothing with.
+//
+// Never fatal to the caller: the order exists either way, and the seller can still report the
+// handover. What the courier gives back — its own reference, a label — is written onto the
+// shipment, which is also the marker that says this parcel no longer needs booking.
+func (s *Service) bookShipment(ctx context.Context, o domain.Order, lines []domain.Item) {
+	t, err := s.repo.FindTransport(ctx, o.TransportID)
+	if err != nil {
+		s.log.Error("read shipment to book", "order_id", o.ID, "err", err)
+		return
+	}
+	if t.Booked() {
+		return
+	}
+	items := make([]transport.ItemMetadata, 0, len(lines))
+	for _, i := range lines {
+		items = append(items, transport.ItemMetadata{VariantID: i.VariantID, Quantity: i.Quantity})
+	}
+	booked, err := s.transport.Create(ctx, transport.CreateParams{
+		Items:       items,
+		FromAddress: addressLine(o.PickupAddress),
+		ToAddress:   addressLine(o.Address),
+		Option:      t.Option,
+	})
+	if err != nil {
+		s.log.Error("book shipment with carrier", "order_id", o.ID, "option", t.Option, "err", err)
+		return
+	}
+	data, err := bookingData(booked)
+	if err != nil {
+		s.log.Error("encode carrier booking", "order_id", o.ID, "err", err)
+		return
+	}
+	if err := s.repo.BookTransport(ctx, t.ID, data); err != nil {
+		// Somebody else booked it first, or the parcel has already moved on. Either way this
+		// pass has nothing to add.
+		s.log.Debug("shipment already booked", "order_id", o.ID, "err", err)
+	}
+}
+
+// bookingData is what the carrier said, kept whole: its reference is what a later track or cancel
+// is made with, and the rest is provider-shaped and not published.
+func bookingData(t transport.Transport) ([]byte, error) {
+	out := map[string]any{"provider_ref": t.ID}
+	if len(t.Data) > 0 {
+		out["provider_data"] = json.RawMessage(t.Data)
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("encode booking: %w", err)
+	}
+	return data, nil
+}
+
+// RecordCarrierCheckpoint is the courier's own report, arriving on the provider's webhook rather
+// than from the seller. It carries the carrier's reference, so the shipment is found by that.
+//
+// The provider's vocabulary is translated here and nowhere else: a courier's "processing" is this
+// module's `in-transit`, and a status it does not use is ignored rather than guessed at. The same
+// forward-only rule the seller's route obeys applies, so a checkpoint that arrives late — they do
+// arrive out of order — cannot un-deliver a parcel.
+func (s *Service) RecordCarrierCheckpoint(ctx context.Context, ref, status string) error {
+	t, err := s.repo.FindTransportByRef(ctx, ref)
+	if err != nil {
+		return err
+	}
+	next, ok := carrierCheckpoints[status]
+	if !ok {
+		s.log.Debug("carrier status ignored", "ref", ref, "status", status)
+		return nil
+	}
+	if _, err := s.advanceLeg(ctx, t.ID, next); err != nil {
+		// A report that would move the parcel backwards is not an error the carrier can fix, so
+		// it is accepted and dropped rather than retried for ever.
+		if errors.Is(err, domain.ErrTransportSettled) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// carrierCheckpoints maps a provider's status vocabulary onto this module's. Two are deliberately
+// absent: `pending`, because a parcel the courier has accepted is already past it here, and
+// `cancelled`, because calling off a delivery is this platform's decision to make and arrives
+// through the order rather than from the carrier.
+var carrierCheckpoints = map[string]string{
+	string(transport.StatusProcessing): domain.TransportInTransit,
+	string(transport.StatusSuccess):    domain.TransportDelivered,
+	string(transport.StatusFailed):     domain.TransportFailed,
+}
+
+// RetryUnbookedShipments books the parcels a carrier refused or never heard about. The same
+// method the settlement calls, so there is one definition of "booked" — and it is idempotent, so
+// a parcel the courier did accept is skipped rather than booked twice.
+func (s *Service) RetryUnbookedShipments(ctx context.Context, limit int) (int, error) {
+	orders, err := s.repo.UnbookedTransports(ctx, time.Now().Add(-bookingGrace), limit)
+	if err != nil {
+		return 0, fmt.Errorf("read unbooked shipments: %w", err)
+	}
+	booked := 0
+	for _, orderID := range orders {
+		o, err := s.repo.FindOrder(ctx, orderID)
+		if err != nil {
+			s.log.Error("read order to book", "order_id", orderID, "err", err)
+			continue
+		}
+		lines, err := s.repo.OrderItems(ctx, orderID)
+		if err != nil {
+			s.log.Error("read order lines to book", "order_id", orderID, "err", err)
+			continue
+		}
+		s.bookShipment(ctx, o, lines)
+		if t, err := s.repo.FindTransport(ctx, o.TransportID); err == nil && t.Booked() {
+			booked++
+		}
+	}
+	return booked, nil
+}
+
+// deref is the settlement's lines as values: the booking only reads them.
+func deref(items []*domain.Item) []domain.Item {
+	out := make([]domain.Item, 0, len(items))
+	for _, i := range items {
+		out = append(out, *i)
+	}
+	return out
 }
 
 func itemIDs(items []*domain.Item) []int64 {

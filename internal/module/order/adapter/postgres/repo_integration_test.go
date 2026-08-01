@@ -5,7 +5,9 @@ package postgres_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -617,7 +619,75 @@ func TestClaimOfferCheckout_OnlyOnePressWins(t *testing.T) {
 	}
 }
 
-// The cart is keyed by (account, variant), so adding the same variant twice tops the
+// The booking marker lives in the carrier's own payload, so the retry list is a JSON predicate
+// rather than a column — which is exactly the kind of SQL a fake cannot check.
+func TestBookTransport_MarksTheParcelAndLeavesTheRetryList(t *testing.T) {
+	r, pool := newRepo(t)
+	ctx := context.Background()
+	// The retry list is bounded and oldest-first, so earlier runs' parcels are marked booked
+	// first: without that this order sits behind hundreds of them and the assertion is about the
+	// batch size rather than about the predicate.
+	if _, err := pool.Exec(ctx, `UPDATE transport SET data = '{"provider_ref":"drained"}'
+	                             WHERE status = 'pending' AND data->>'provider_ref' IS NULL`); err != nil {
+		t.Fatalf("drain the retry list: %v", err)
+	}
+	o, _ := placedOrder(t, r)
+
+	// A shipment nobody booked is on the list, once it is past the grace period.
+	unbooked, err := r.UnbookedTransports(ctx, time.Now().Add(time.Minute), 200)
+	if err != nil {
+		t.Fatalf("UnbookedTransports: %v", err)
+	}
+	if !slices.Contains(unbooked, o.ID) {
+		t.Fatalf("unbooked = %v, want the order whose parcel no carrier took", unbooked)
+	}
+	// And not before it: a booking still in flight must not be raced.
+	fresh, err := r.UnbookedTransports(ctx, time.Now().Add(-time.Hour), 200)
+	if err != nil {
+		t.Fatalf("UnbookedTransports before: %v", err)
+	}
+	if slices.Contains(fresh, o.ID) {
+		t.Errorf("a shipment younger than the grace period is already on the retry list")
+	}
+
+	ref := fmt.Sprintf("trk-%d", o.ID)
+	if err := r.BookTransport(ctx, o.TransportID, []byte(`{"provider_ref":"`+ref+`","provider_data":{"label":"x"}}`)); err != nil {
+		t.Fatalf("BookTransport: %v", err)
+	}
+	booked, err := r.FindTransport(ctx, o.TransportID)
+	if err != nil {
+		t.Fatalf("FindTransport: %v", err)
+	}
+	if !booked.Booked() {
+		t.Fatalf("transport = %+v, want it to carry the carrier's reference", booked)
+	}
+	// Off the list, so a retry pass does not book a second parcel for one sale.
+	unbooked, err = r.UnbookedTransports(ctx, time.Now().Add(time.Minute), 200)
+	if err != nil {
+		t.Fatalf("UnbookedTransports after booking: %v", err)
+	}
+	if slices.Contains(unbooked, o.ID) {
+		t.Errorf("a booked parcel is still on the retry list")
+	}
+	// A second booking is refused rather than replacing a reference the carrier is holding.
+	if err := r.BookTransport(ctx, o.TransportID, []byte(`{"provider_ref":"trk-other"}`)); !errors.Is(err, domain.ErrTransportSettled) {
+		t.Fatalf("second BookTransport = %v, want ErrTransportSettled", err)
+	}
+
+	// The webhook finds it by the courier's id, which is the only one a courier knows.
+	found, err := r.FindTransportByRef(ctx, ref)
+	if err != nil {
+		t.Fatalf("FindTransportByRef: %v", err)
+	}
+	if found.ID != o.TransportID {
+		t.Fatalf("found transport %d, want %d", found.ID, o.TransportID)
+	}
+	if _, err := r.FindTransportByRef(ctx, "trk-nobody"); !errors.Is(err, domain.ErrTransportNotFound) {
+		t.Fatalf("unknown ref = %v, want ErrTransportNotFound", err)
+	}
+}
+
+// The cart is keyed by (account, variant), so adding the same variant twice tops the// The cart is keyed by (account, variant), so adding the same variant twice tops the
 // quantity up rather than stacking a second row.
 func TestCart_UpsertTopsUp(t *testing.T) {
 	r, _ := newRepo(t)

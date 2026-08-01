@@ -43,6 +43,9 @@ const (
 	// half-hour a draft gets, for the same reason: both are a frozen price, and stock nobody has
 	// reserved yet must not be promised at yesterday's number.
 	acceptedWindow = 30 * time.Minute
+	// bookingGrace is how long a shipment is left alone before the retry pass tries the carrier
+	// again: long enough that a booking still in flight is never raced by the sweep.
+	bookingGrace = 2 * time.Minute
 )
 
 type Service struct {

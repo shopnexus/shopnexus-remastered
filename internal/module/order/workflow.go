@@ -297,6 +297,7 @@ func (l *Lifecycle) Sweep(ctx context.Context, log *slog.Logger) {
 		{"expired offers", l.svc.ExpireOffers},
 		{"released payouts", l.svc.ReleaseDuePayouts},
 		{"retried payouts", l.svc.RetryClaimedPayouts},
+		{"booked shipments", l.svc.RetryUnbookedShipments},
 		{"advanced refunds", l.svc.AdvanceOverdueRefunds},
 	} {
 		moved, err := pass.run(ctx, sweepBatch)

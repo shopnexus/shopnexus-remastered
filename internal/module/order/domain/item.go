@@ -144,6 +144,22 @@ type Transport struct {
 	CreatedAt time.Time
 }
 
+// Booked reports whether a carrier has accepted this parcel. The carrier's own reference is what
+// says so — a shipment row exists from the moment the money lands, whether or not any courier has
+// heard about it yet.
+func (t Transport) Booked() bool {
+	var data struct {
+		ProviderRef string `json:"provider_ref"`
+	}
+	if len(t.Data) == 0 {
+		return false
+	}
+	if err := json.Unmarshal(t.Data, &data); err != nil {
+		return false
+	}
+	return data.ProviderRef != ""
+}
+
 // Shipped reports whether the parcel has left: after that an order cannot be cancelled,
 // only refunded.
 func (t Transport) Shipped() bool {

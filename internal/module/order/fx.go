@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	restate "github.com/restatedev/sdk-go"
@@ -22,6 +23,7 @@ import (
 	orderapi "shopnexus/internal/module/order/api"
 	"shopnexus/internal/module/order/port"
 	"shopnexus/internal/provider/storage"
+	"shopnexus/internal/provider/transport"
 	"shopnexus/internal/shared/id"
 )
 
@@ -49,10 +51,25 @@ var Module = fx.Module("order",
 		fx.Annotate(newDefinitions, fx.ResultTags(`group:"restate-definitions,flatten"`)),
 		fx.Annotate(newSweep, fx.ResultTags(`group:"sweeps"`)),
 	),
-	// Eager, because nothing else in the graph depends on a subscription: without this the
-	// bus would have no consumer until something happened to ask for the service.
+	// Eager, because nothing else in the graph depends on a subscription or a webhook route:
+	// without these the bus would have no consumer and the carrier no path to report on.
 	fx.Invoke(SubscribePaidSessions),
+	fx.Invoke(WireTransportWebhooks),
 )
+
+// WireTransportWebhooks mounts the carrier's own reporting path and hands it the checkpoint
+// recorder. Without it a booked parcel only ever moves when the seller says so, which is a
+// shipment status that is always behind the parcel.
+func WireTransportWebhooks(mux *http.ServeMux, courier transport.Client, svc orderapi.Service, log *slog.Logger) {
+	recorder, ok := svc.(*Service)
+	if !ok {
+		return
+	}
+	path := courier.WireWebhooks(mux, func(ctx context.Context, r transport.WebhookResult) error {
+		return recorder.RecordCarrierCheckpoint(ctx, r.TransportID, r.Status)
+	})
+	log.Info("transport webhook mounted", "path", path)
+}
 
 // workflowDeps takes the ingress client as optional, because the `off` deployment has none —
 // and a graph that could not be built without a Restate URL would make the runtime mandatory

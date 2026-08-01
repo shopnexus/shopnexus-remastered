@@ -122,6 +122,15 @@ type Repository interface {
 	// on the row: it is what the courier is owed, and it is not the seller's to receive.
 	InsertTransport(ctx context.Context, option string, fee int64) (int64, error)
 	FindTransport(ctx context.Context, id int64) (domain.Transport, error)
+	// BookTransport records the carrier's own reference for a parcel it accepted. Guarded on
+	// there being none yet, so a retry cannot overwrite a booking that stands.
+	BookTransport(ctx context.Context, transportID int64, data []byte) error
+	// FindTransportByRef answers the shipment a carrier's reference belongs to: a webhook
+	// carries the courier's id, never ours.
+	FindTransportByRef(ctx context.Context, ref string) (domain.Transport, error)
+	// UnbookedTransports answers the orders whose parcel no carrier has accepted, which is what
+	// makes a failed booking a slower one rather than a lost one.
+	UnbookedTransports(ctx context.Context, before time.Time, limit int) ([]int64, error)
 	// SaveTransport advances a shipment. `from` is the status it moves out of, which is the
 	// conditional write: a shipment has no version, and two carrier reports arriving at once
 	// must not both land.

@@ -376,6 +376,15 @@ give it its own doc under `docs/` and link it from here.
   metadata and nothing else — copying the price into the message would let a counter-offer leave
   the thread showing terms that are no longer on the table. Chat already has one thread per pair
   of accounts, so there is nothing to create and no id to pass around.
+- **A collected fee has to buy something: the sale books the parcel.** `finishSettlement` calls
+  the carrier (`bookShipment`), stores its reference in `transport.data.provider_ref` and treats a
+  failure as best-effort — the money has moved, so an unreachable courier is a booking to retry
+  (`RetryUnbookedShipments`, on the shared sweeper, guarded by `data->>'provider_ref' IS NULL`)
+  rather than an order to refuse. The reference is also the marker: `Booked()` is what keeps a
+  retry from posting a second parcel for one sale. The carrier then reports on **its own** id, so
+  the provider's webhook is wired in `order/fx.go` and `RecordCarrierCheckpoint` translates that
+  vocabulary once (`processing` → `in-transit`); a status this module does not model is ignored
+  rather than guessed at, and a late checkpoint loses to `Advance`'s forward-only rule.
 - **A timed transition has two drivers and one definition.** Every wait this marketplace
   makes — an unpaid checkout expiring, an escrow window closing, a refund deadline passing, a
   blind rating revealing — is an **idempotent service method**. A Restate run per entity calls

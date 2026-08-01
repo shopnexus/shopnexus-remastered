@@ -362,6 +362,20 @@ type fakeCourier struct {
 	// fail makes the carrier refuse, so a checkout that cannot be priced is refused too rather
 	// than charging the buyer for delivery nobody quoted.
 	fail bool
+	// booked is one entry per parcel the carrier accepted, and bookFails makes it refuse them —
+	// which is how "the money moved but the courier never heard" is reached.
+	booked    []transport.CreateParams
+	bookFails bool
+}
+
+func (f *fakeCourier) Create(_ context.Context, params transport.CreateParams) (transport.Transport, error) {
+	if f.bookFails {
+		return transport.Transport{}, errx.NewError(502, "carrier_down", "the carrier did not answer")
+	}
+	f.booked = append(f.booked, params)
+	return transport.Transport{
+		ID: fmt.Sprintf("trk-%d", len(f.booked)), Option: params.Option, Cost: f.fee,
+	}, nil
 }
 
 // standardDiscount is what the fake's slower service costs less. The two carriers pricing
@@ -1684,7 +1698,86 @@ func TestCancelOrder_ReversesTheSaleRatherThanAReservation(t *testing.T) {
 	}
 }
 
-// A delivered order cannot be cancelled. The guard reads the shipment's status, and until
+// The delivery fee is collected for a parcel somebody actually carries, so the sale books it with
+// the courier — and a carrier that was down when the money landed is a booking to retry rather
+// than a fee the platform kept for nothing.
+func TestBookShipment_RetriedUntilTheCarrierAcceptsTheParcel(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	h.courier.bookFails = true
+	_, o := h.checkout(t)
+
+	// The sale stands even though no courier has heard about it: the money has already moved.
+	if len(h.courier.booked) != 0 {
+		t.Fatalf("booked = %+v, want none while the carrier is down", h.courier.booked)
+	}
+	order := h.repo.orders[o.ID.Int64()]
+	shipment := h.repo.shipments[order.TransportID]
+	if shipment.Booked() {
+		t.Fatal("the shipment claims a carrier reference the carrier never gave")
+	}
+
+	// Too soon for the sweep: a booking still in flight must not be raced by it.
+	if booked, err := h.svc.RetryUnbookedShipments(ctx, 10); err != nil || booked != 0 {
+		t.Fatalf("RetryUnbookedShipments = %d, %v; want the grace period respected", booked, err)
+	}
+
+	// The carrier comes back, and the pass books the parcel it never accepted.
+	h.courier.bookFails = false
+	shipment.CreatedAt = shipment.CreatedAt.Add(-time.Hour)
+	h.repo.shipments[shipment.ID] = shipment
+	booked, err := h.svc.RetryUnbookedShipments(ctx, 10)
+	if err != nil || booked != 1 {
+		t.Fatalf("RetryUnbookedShipments = %d, %v; want the parcel booked", booked, err)
+	}
+	if len(h.courier.booked) != 1 {
+		t.Fatalf("booked = %+v, want exactly one parcel", h.courier.booked)
+	}
+	// Booked with the carrier the buyer paid for, from the seller's pickup to the buyer's address.
+	if h.courier.booked[0].Option != "ghn-express" {
+		t.Errorf("booked with %q, want the carrier the buyer chose", h.courier.booked[0].Option)
+	}
+	if h.courier.booked[0].FromAddress == "" || h.courier.booked[0].ToAddress == "" {
+		t.Errorf("booking = %+v, want both ends of the journey", h.courier.booked[0])
+	}
+	// And it is booked once: a second pass finds nothing, which is what stops a retry becoming
+	// two parcels for one sale.
+	if booked, err := h.svc.RetryUnbookedShipments(ctx, 10); err != nil || booked != 0 {
+		t.Fatalf("RetryUnbookedShipments = %d, %v; want an accepted parcel left alone", booked, err)
+	}
+	if len(h.courier.booked) != 1 {
+		t.Fatalf("booked = %+v, want the carrier asked once", h.courier.booked)
+	}
+
+	// The courier then reports on its own reference — the only id it knows — and the shipment
+	// moves without the seller touching it.
+	if err := h.svc.RecordCarrierCheckpoint(ctx, "trk-1", "processing"); err != nil {
+		t.Fatalf("RecordCarrierCheckpoint: %v", err)
+	}
+	if got := h.repo.shipments[shipment.ID].Status; got != domain.TransportInTransit {
+		t.Fatalf("status = %q, want in-transit from the carrier's report", got)
+	}
+	// A vocabulary this module does not use is ignored rather than guessed at, and a late report
+	// cannot un-deliver a parcel.
+	if err := h.svc.RecordCarrierCheckpoint(ctx, "trk-1", "queued-at-hub"); err != nil {
+		t.Fatalf("an unknown carrier status was an error: %v", err)
+	}
+	if err := h.svc.RecordCarrierCheckpoint(ctx, "trk-1", "success"); err != nil {
+		t.Fatalf("RecordCarrierCheckpoint delivered: %v", err)
+	}
+	if err := h.svc.RecordCarrierCheckpoint(ctx, "trk-1", "processing"); err != nil {
+		t.Fatalf("a late checkpoint was an error: %v", err)
+	}
+	if got := h.repo.shipments[shipment.ID].Status; got != domain.TransportDelivered {
+		t.Fatalf("status = %q, want it to stay delivered", got)
+	}
+	// A reference nobody booked is not this platform's parcel.
+	if got := status(t, h.svc.RecordCarrierCheckpoint(ctx, "trk-nobody", "success")); got != 404 {
+		t.Fatalf("status = %d, want 404 for an unknown carrier reference", got)
+	}
+}
+
+// A delivered order cannot be cancelled.// A delivered order cannot be cancelled. The guard reads the shipment's status, and until
 // something wrote it a buyer could take the whole escrow back and keep the goods.
 func TestCancelOrder_RefusesAShippedOrder(t *testing.T) {
 	h := newHarness("fixed")
