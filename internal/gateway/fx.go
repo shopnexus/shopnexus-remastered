@@ -50,6 +50,9 @@ type routerParams struct {
 	Finance  *handler.Finance
 	Order    *handler.Order
 	Trust    *handler.Trust
+	// Uploads is optional: only a storage backend that needs this process to serve the bytes
+	// provides one, so a graph without it is a deployment whose bucket signs its own URLs.
+	Uploads  *handler.Uploads `optional:"true"`
 	Metrics  *observability.Sink
 	Tokens   *token.Manager
 	Sessions *session.Store
@@ -65,6 +68,7 @@ func newRouter(p routerParams) http.Handler {
 		Finance:  p.Finance,
 		Order:    p.Order,
 		Trust:    p.Trust,
+		Uploads:  p.Uploads,
 		Metrics:  p.Metrics,
 		Tokens:   p.Tokens,
 		Sessions: p.Sessions,

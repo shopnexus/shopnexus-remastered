@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"shopnexus/internal/module/catalog/domain"
-	"shopnexus/internal/module/common"
 )
 
 // TagFilter drives the tag picker: Prefix is matched against the head of the slug, which
@@ -209,10 +208,6 @@ type Repository interface {
 	// GetListingByVariant loads the aggregate a variant belongs to, scoped by owner: the
 	// variant routes address the variant, but the rules live on the root.
 	GetListingByVariant(ctx context.Context, variantID, sellerID int64) (*domain.Listing, error)
-
-	// FindResources reads this module's own uploaded images. A missing id is absent from the
-	// result: a row pointing at a deleted resource is a picture that does not render.
-	FindResources(ctx context.Context, ids []int64) ([]common.Resource, error)
 
 	// --- wishlist reads. The routes that write it are another slice; the product page needs
 	// these two now, and answering them from another module would be a call per card.

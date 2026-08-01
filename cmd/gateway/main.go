@@ -15,6 +15,7 @@ import (
 
 	"shopnexus/internal/config"
 	"shopnexus/internal/gateway"
+	"shopnexus/internal/gateway/handler"
 	"shopnexus/internal/infra/cache"
 	"shopnexus/internal/infra/durable"
 	"shopnexus/internal/infra/eventbus"
@@ -38,6 +39,8 @@ import (
 	oidcverify "shopnexus/internal/provider/oauth/oidc"
 	"shopnexus/internal/provider/payment"
 	paymentmock "shopnexus/internal/provider/payment/mock"
+	"shopnexus/internal/provider/storage"
+	localstorage "shopnexus/internal/provider/storage/local"
 	"shopnexus/internal/shared/httpx"
 	"shopnexus/internal/shared/id"
 	"shopnexus/internal/shared/logger"
@@ -63,6 +66,10 @@ func main() {
 			newOAuthVerifier,
 			newKYCClient,
 			newPaymentClient,
+			// Where an uploaded byte goes. The handler beside it is provided only for the
+			// backend that needs this process to serve the bytes.
+			newStorageClient,
+			newUploadsHandler,
 			// Durable execution: the client modules submit runs through, the server the
 			// runtime invokes, and the sweeper that catches whatever a run missed.
 			newWorkflowClient,
@@ -207,6 +214,32 @@ func newKYCClient(cfg *config.Config, log *slog.Logger, metrics *observability.S
 // case here plus its credentials in config, exactly like the other seams.
 func newPaymentClient(cfg *config.Config) payment.Client {
 	return paymentmock.NewClient(provider.Option{Provider: cfg.PaymentProvider})
+}
+
+// newStorageClient picks the object store. `local` keeps objects on this host and signs URLs
+// back to the gateway's own route; a real store signs its bucket and the bytes never reach this
+// process. Same rule as the other seams: a selector, because a deployment that thinks its photos
+// are in a bucket and finds them on a pod's disk discovers it when the pod is replaced.
+func newStorageClient(cfg *config.Config) (storage.Client, error) {
+	return localstorage.New(localstorage.Config{
+		Root:         cfg.StorageRoot,
+		BaseURL:      cfg.StorageBaseURL,
+		Secret:       cfg.StorageSecret,
+		UploadTTL:    cfg.StorageUploadTTL,
+		DownloadTTL:  cfg.StorageDownloadTTL,
+		MaxSize:      cfg.StorageMaxUploadBytes,
+		AllowedMimes: cfg.StorageAllowedMimes,
+	})
+}
+
+// newUploadsHandler serves the signed PUT and GET the `local` backend points at. Nil for a store
+// that signs its own bucket, which is why the router takes it as an optional dependency.
+func newUploadsHandler(client storage.Client, log *slog.Logger) *handler.Uploads {
+	own, ok := client.(*localstorage.Client)
+	if !ok {
+		return nil
+	}
+	return handler.NewUploads(own, log)
 }
 
 // observedClient builds the HTTP client a provider uses: metrics when the telemetry sink

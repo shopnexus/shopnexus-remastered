@@ -113,21 +113,11 @@ func (s *Service) requireResources(ctx context.Context, l *domain.Listing) error
 	return nil
 }
 
-// resources resolves image ids in one query — a page of variants is not a query each. They come
-// from this module's own resource table: the upload that produced them was catalog's.
+// resources resolves image ids in one query — a page of variants is not a query each — and each
+// one comes back with a short-lived signed link on it. They are this module's own uploads: the
+// upload that produced them was catalog's, and an id from another module resolves to nothing.
 func (s *Service) resources(ctx context.Context, keys []int64) (map[int64]common.ResourceDTO, error) {
-	out := make(map[int64]common.ResourceDTO, len(keys))
-	if len(keys) == 0 {
-		return out, nil
-	}
-	found, err := s.repo.FindResources(ctx, keys)
-	if err != nil {
-		return nil, fmt.Errorf("find resources: %w", err)
-	}
-	for _, res := range found {
-		out[res.ID] = res.ToDTO()
-	}
-	return out, nil
+	return s.uploads.Resolve(ctx, keys)
 }
 
 func resourceKeys(ids []id.ID[id.Resource]) []int64 {

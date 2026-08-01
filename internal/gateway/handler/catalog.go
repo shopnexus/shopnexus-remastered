@@ -583,3 +583,45 @@ func (h *Catalog) AdminTakedownListing(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.WriteData(w, http.StatusOK, res)
 }
+
+// CreateUpload handles POST /listings/uploads — a slot to PUT a listing photo into.
+func (h *Catalog) CreateUpload(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	var req catalogapi.CreateUploadRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID = uid
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.CreateUpload(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, res)
+}
+
+// ConfirmUpload handles POST /listings/uploads/{id}/confirmation — the bytes are at the store.
+func (h *Catalog) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	resourceID, err := pathID[id.Resource](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := catalogapi.ConfirmUploadRequest{ActorID: uid, ID: resourceID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ConfirmUpload(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}

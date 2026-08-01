@@ -9,6 +9,7 @@ import (
 	"context"
 
 	catalogapi "shopnexus/internal/module/catalog/api"
+	"shopnexus/internal/module/common"
 	"shopnexus/internal/shared/errx"
 )
 
@@ -123,4 +124,12 @@ func (Stub) UncommitStock(context.Context, catalogapi.StockCommitRequest) error 
 
 func (Stub) SyncListingRating(context.Context, catalogapi.SyncListingRatingRequest) error {
 	return errx.ErrNotImplemented
+}
+
+func (Stub) CreateUpload(context.Context, catalogapi.CreateUploadRequest) (catalogapi.UploadSlot, error) {
+	return catalogapi.UploadSlot{}, errx.ErrNotImplemented
+}
+
+func (Stub) ConfirmUpload(context.Context, catalogapi.ConfirmUploadRequest) (common.ResourceDTO, error) {
+	return common.ResourceDTO{}, errx.ErrNotImplemented
 }

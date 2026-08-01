@@ -4,7 +4,11 @@
 // are added one slice at a time, matching api/openapi/*.yaml.
 package catalogapi
 
-import "context"
+import (
+	"context"
+
+	"shopnexus/internal/module/common"
+)
 
 type Service interface {
 	// --- categories: the browse tree. Reading is public, writing is admin-only.
@@ -39,6 +43,13 @@ type Service interface {
 	// takedown.
 	PublishListing(ctx context.Context, req PublishListingRequest) (ListingDetail, error)
 	HideListing(ctx context.Context, req HideListingRequest) (ListingDetail, error)
+
+	// --- uploads: a listing photo, in two steps ---
+	// CreateUpload reserves a row and a presigned slot; ConfirmUpload makes it real once the
+	// bytes are at the store. Until then the resource resolves to nothing, so a half-finished
+	// upload cannot be attached to anything.
+	CreateUpload(ctx context.Context, req CreateUploadRequest) (UploadSlot, error)
+	ConfirmUpload(ctx context.Context, req ConfirmUploadRequest) (common.ResourceDTO, error)
 
 	// --- wishlist: both idempotent, so a retry is the state the caller asked for ---
 	AddFavorite(ctx context.Context, req FavoriteRequest) error

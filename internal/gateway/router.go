@@ -24,6 +24,9 @@ type Deps struct {
 	Finance  *handler.Finance
 	Order    *handler.Order
 	Trust    *handler.Trust
+	// Uploads is nil unless the storage backend needs this process to serve the bytes — the
+	// `local` one does, a real bucket does not.
+	Uploads  *handler.Uploads
 	Metrics  *observability.Sink
 	Tokens   *token.Manager
 	Sessions *session.Store
@@ -47,6 +50,15 @@ func NewRouter(d Deps) http.Handler {
 	mux := http.NewServeMux()
 	auth := middleware.Auth(d.Tokens, d.Sessions, d.Log)
 	optionalAuth := middleware.OptionalAuth(d.Tokens, d.Sessions, d.Log)
+
+	// The object route the `local` storage backend signs against. Registered only when that
+	// backend is in use, and deliberately outside auth: the signature names the method, the key
+	// and an expiry, so it is the authorization — a bearer token here would stop a client
+	// handing the URL to the thing that actually uploads.
+	if d.Uploads != nil {
+		mux.HandleFunc("PUT /uploads/object", d.Uploads.Put)
+		mux.HandleFunc("GET /uploads/object", d.Uploads.Get)
+	}
 
 	// API docs (OpenAPI spec + Swagger UI)
 	mux.HandleFunc("GET /openapi.yaml", openapi.SpecHandler)
@@ -207,6 +219,12 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("POST /refunds/{id}/dispute", auth(http.HandlerFunc(d.Order.OpenDispute)))
 	mux.Handle("GET /admin/disputes", auth(http.HandlerFunc(d.Order.AdminListDisputes)))
 	mux.Handle("POST /admin/disputes/{id}/ruling", auth(http.HandlerFunc(d.Order.AdminRuleDispute)))
+
+	// A photo is uploaded in two steps: a slot, then a confirmation once the bytes are at the
+	// store. Both are the seller's, which is why they sit with the listing routes rather than in
+	// a module-agnostic place — the upload belongs to the module that took it.
+	mux.Handle("POST /listings/uploads", auth(http.HandlerFunc(d.Catalog.CreateUpload)))
+	mux.Handle("POST /listings/uploads/{id}/confirmation", auth(http.HandlerFunc(d.Catalog.ConfirmUpload)))
 
 	// ---- trust ----
 	// Public

@@ -146,6 +146,64 @@ paths:
         '409': { description: 'Slug already taken', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '422': { description: 'Identity verification is required before selling', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
+  /listings/uploads:
+    post:
+      tags: [catalog]
+      summary: Reserve a slot to upload a listing photo into
+      description: >
+        The bytes never pass through this API. The answer is a short-lived signed URL to PUT to,
+        and `POST /listings/uploads/{id}/confirmation` makes the row real once the object is
+        there — so a listing can never render a photo whose bytes never arrived.
+
+
+        `mime` and `size` are checked before a byte moves: a slot signed for anything is a slot
+        for anything.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateUploadRequest' }
+      responses:
+        '201':
+          description: 'Reserved'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/UploadSlot' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { description: 'Larger than this platform accepts', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'That file type is not accepted', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /listings/uploads/{id}/confirmation:
+    post:
+      tags: [catalog]
+      summary: Confirm the bytes are at the store
+      description: >
+        Until this lands the resource resolves to nothing, so a half-finished upload cannot be
+        attached to a listing. The recorded size is the store's, not the one declared when the
+        slot was reserved.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ResourceID' } }
+      responses:
+        '200':
+          description: 'Confirmed'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Resource' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'No such reserved slot of the caller''s', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Nothing was uploaded to that slot', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
   /listings/{id}:
     get:
       tags: [catalog]
@@ -308,6 +366,35 @@ paths:
 
 components:
   schemas:
+    CreateUploadRequest:
+      type: object
+      properties:
+        filename:
+          type: string
+          maxLength: 255
+          example: front.jpg
+          description: >
+            Kept only for its extension. The stored key is generated — a path a client chose is
+            a directory traversal waiting for a backend that resolves one.
+        mime: { type: string, maxLength: 100, example: image/jpeg }
+        size: { type: integer, format: int64, minimum: 1, maximum: 10485760, example: 204800 }
+      required: [filename, mime, size]
+
+    UploadSlot:
+      type: object
+      properties:
+        resource_id: { $ref: '#/components/schemas/ResourceID' }
+        url:
+          type: string
+          example: https://store.example/objects/catalog/listing/9f2c?signature=...
+          description: PUT the bytes here. Short-lived, and signed for this key and method only.
+        headers:
+          type: object
+          additionalProperties: { type: string }
+          description: Send these with the PUT verbatim, when the signature covers any.
+        expires_at: { type: string, format: date-time }
+      required: [resource_id, url, expires_at]
+
     SimilarityScore:
       type: number
       format: double

@@ -1,6 +1,10 @@
 package catalogapi
 
-import "shopnexus/internal/shared/id"
+import (
+	"time"
+
+	"shopnexus/internal/shared/id"
+)
 
 // A field tagged `json:"-"` is filled by the gateway from the token or the path, never
 // from the body: a request that could name its own actor is a request that can act as
@@ -73,6 +77,34 @@ type StockCommitRequest struct {
 	VariantID      id.ID[id.Variant] `validate:"required"`
 	Units          int64             `validate:"required,gt=0"`
 	IdempotencyKey string            `validate:"required,max=200"`
+}
+
+// CreateUploadRequest asks for a slot to PUT a listing photo into. The bytes never pass through
+// the API: the answer is a short-lived signed URL, and a second call confirms the row once the
+// object is there — so a listing can never render a photo whose bytes never arrived.
+type CreateUploadRequest struct {
+	ActorID  id.ID[id.Account] `json:"-" validate:"required"`
+	Filename string            `json:"filename" validate:"required,max=255"`
+	// Mime and Size are what the client is about to send. Both are checked before a byte
+	// moves: a slot signed for anything is a slot for anything.
+	Mime string `json:"mime" validate:"required,max=100"`
+	Size int64  `json:"size" validate:"required,gt=0"`
+}
+
+// UploadSlot is where to PUT, what to confirm afterwards, and until when.
+type UploadSlot struct {
+	ResourceID id.ID[id.Resource] `json:"resource_id"`
+	URL        string             `json:"url"`
+	// Headers the client must send with the PUT, when the signature covers any.
+	Headers   map[string]string `json:"headers,omitempty"`
+	ExpiresAt time.Time         `json:"expires_at"`
+}
+
+// ConfirmUploadRequest is the second step. The size is read from the store rather than taken
+// from the client, so what it declared cannot become the record.
+type ConfirmUploadRequest struct {
+	ActorID id.ID[id.Account]  `json:"-" validate:"required"`
+	ID      id.ID[id.Resource] `json:"-" validate:"required"`
 }
 
 // SyncListingRatingRequest is trust pushing a recomputed review average into the cache

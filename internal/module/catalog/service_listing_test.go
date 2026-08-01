@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
@@ -388,5 +389,74 @@ func TestUpdateListing_HeldEditAttachmentsAreChecked(t *testing.T) {
 		ActorID: actor, ID: listing.ID, Attachments: unknown,
 	}))); got != 404 {
 		t.Fatalf("status = %d, want 404 for an edit naming an unknown image", got)
+	}
+}
+
+// The two-step upload, and the reason it is two steps: a slot on its own attaches to nothing, so
+// a listing cannot end up rendering a photo whose bytes never arrived.
+func TestUpload_ConfirmedBeforeItCanBeAttached(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+
+	slot, err := h.svc.CreateUpload(ctx, catalogapi.CreateUploadRequest{
+		ActorID: actor, Filename: "front.jpg", Mime: "image/jpeg", Size: 2048,
+	})
+	if err != nil {
+		t.Fatalf("CreateUpload: %v", err)
+	}
+	if slot.URL == "" || slot.ResourceID == 0 || !slot.ExpiresAt.After(time.Now()) {
+		t.Fatalf("slot = %+v, want somewhere to PUT and a future expiry", slot)
+	}
+
+	// Unconfirmed, so it names no usable upload: attaching it is refused exactly as a made-up
+	// id would be.
+	unconfirmed := createListingRequest(h, t)
+	unconfirmed.Attachments = []id.ID[id.Resource]{slot.ResourceID}
+	if got := status(t, mustErr(h.svc.CreateListing(ctx, unconfirmed))); got != 404 {
+		t.Fatalf("status = %d, want 404 attaching an unconfirmed upload", got)
+	}
+	// And confirming before the bytes are there is refused too, rather than producing a row
+	// that renders as a broken image.
+	if err := mustErr(h.svc.ConfirmUpload(ctx, catalogapi.ConfirmUploadRequest{
+		ActorID: actor, ID: slot.ResourceID,
+	})); err == nil {
+		t.Fatal("an upload was confirmed before anything was uploaded")
+	}
+
+	// The client PUTs, then confirms.
+	h.uploads.arrived[slot.ResourceID.Int64()] = true
+	res, err := h.svc.ConfirmUpload(ctx, catalogapi.ConfirmUploadRequest{
+		ActorID: actor, ID: slot.ResourceID,
+	})
+	if err != nil {
+		t.Fatalf("ConfirmUpload: %v", err)
+	}
+	if res.ID != slot.ResourceID {
+		t.Fatalf("confirmed = %+v, want the slot's own resource", res)
+	}
+
+	// Now it attaches, and the listing renders it with a link rather than a bare id.
+	attached := createListingRequest(h, t)
+	attached.Attachments = []id.ID[id.Resource]{slot.ResourceID}
+	listing, err := h.svc.CreateListing(ctx, attached)
+	if err != nil {
+		t.Fatalf("CreateListing: %v", err)
+	}
+	if len(listing.Images) != 1 || listing.Images[0].URL == "" {
+		t.Fatalf("images = %+v, want one with a signed link on it", listing.Images)
+	}
+
+	// Somebody else's slot is not theirs to confirm: a resource id is guessable.
+	other, err := h.svc.CreateUpload(ctx, catalogapi.CreateUploadRequest{
+		ActorID: actor, Filename: "back.jpg", Mime: "image/jpeg", Size: 1024,
+	})
+	if err != nil {
+		t.Fatalf("CreateUpload: %v", err)
+	}
+	h.uploads.arrived[other.ResourceID.Int64()] = true
+	if err := mustErr(h.svc.ConfirmUpload(ctx, catalogapi.ConfirmUploadRequest{
+		ActorID: id.Of[id.Account](4242), ID: other.ResourceID,
+	})); err == nil {
+		t.Fatal("a stranger confirmed somebody else's upload")
 	}
 }

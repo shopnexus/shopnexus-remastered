@@ -889,6 +889,29 @@ components:
             required:
                 - reason
             type: object
+        CreateUploadRequest:
+            properties:
+                filename:
+                    description: |
+                        Kept only for its extension. The stored key is generated — a path a client chose is a directory traversal waiting for a backend that resolves one.
+                    example: front.jpg
+                    maxLength: 255
+                    type: string
+                mime:
+                    example: image/jpeg
+                    maxLength: 100
+                    type: string
+                size:
+                    example: 204800
+                    format: int64
+                    maximum: 10485760
+                    minimum: 1
+                    type: integer
+            required:
+                - filename
+                - mime
+                - size
+            type: object
         CreateVariantRequest:
             properties:
                 attachments:
@@ -3782,6 +3805,27 @@ components:
                     format: int64
                     minimum: 0
                     type: integer
+            type: object
+        UploadSlot:
+            properties:
+                expires_at:
+                    format: date-time
+                    type: string
+                headers:
+                    additionalProperties:
+                        type: string
+                    description: Send these with the PUT verbatim, when the signature covers any.
+                    type: object
+                resource_id:
+                    $ref: '#/components/schemas/ResourceID'
+                url:
+                    description: PUT the bytes here. Short-lived, and signed for this key and method only.
+                    example: https://store.example/objects/catalog/listing/9f2c?signature=...
+                    type: string
+            required:
+                - resource_id
+                - url
+                - expires_at
             type: object
         UpsertTaxInfoRequest:
             properties:
@@ -7099,6 +7143,92 @@ paths:
             summary: Review a listing you bought
             tags:
                 - trust
+    /listings/uploads:
+        post:
+            description: |
+                The bytes never pass through this API. The answer is a short-lived signed URL to PUT to, and `POST /listings/uploads/{id}/confirmation` makes the row real once the object is there — so a listing can never render a photo whose bytes never arrived.
+
+                `mime` and `size` are checked before a byte moves: a slot signed for anything is a slot for anything.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateUploadRequest'
+                required: true
+            responses:
+                "201":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/UploadSlot'
+                                required:
+                                    - data
+                                type: object
+                    description: Reserved
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "413":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Larger than this platform accepts
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: That file type is not accepted
+            security:
+                - bearerAuth: []
+            summary: Reserve a slot to upload a listing photo into
+            tags:
+                - catalog
+    /listings/uploads/{id}/confirmation:
+        post:
+            description: |
+                Until this lands the resource resolves to nothing, so a half-finished upload cannot be attached to a listing. The recorded size is the store's, not the one declared when the slot was reserved.
+            parameters:
+                - in: path
+                  name: id
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/ResourceID'
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Resource'
+                                required:
+                                    - data
+                                type: object
+                    description: Confirmed
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: No such reserved slot of the caller's
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Nothing was uploaded to that slot
+            security:
+                - bearerAuth: []
+            summary: Confirm the bytes are at the store
+            tags:
+                - catalog
     /login:
         post:
             description: The identifier is an email or a phone or a username. Which one it is does not change the answer and is not reported back.

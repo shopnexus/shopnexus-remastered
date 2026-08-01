@@ -40,9 +40,11 @@ func (f fakeAccounts) GetPublicAccount(_ context.Context, req accountapi.GetPubl
 type harness struct {
 	svc  *catalog.Service
 	repo *fakeRepo
-	// images is the set of resource ids this module's own resource table holds. A test that
-	// attaches one has to declare it, which is what makes ErrAttachmentNotFound reachable.
-	images map[int64]bool
+	// uploads is the two-step upload seam; images is its confirmed set. A test that attaches a
+	// photo has to declare it, which is what makes ErrAttachmentNotFound reachable — and an
+	// unconfirmed id resolves to nothing, exactly as the real store leaves it.
+	uploads *fakeUploads
+	images  map[int64]bool
 }
 
 func newHarness(role string) *harness { return newHarnessWith(role, false) }
@@ -51,24 +53,25 @@ func newHarness(role string) *harness { return newHarnessWith(role, false) }
 // as it was, for the tests that only care about the role.
 func newHarnessWith(role string, identityVerified bool) *harness {
 	repo := newFakeRepo()
+	store := newFakeUploads()
 	svc := catalog.NewService(repo, fakeAccounts{role: role, verified: identityVerified},
-		validation.Default(), slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: repo, images: repo.resources}
+		store, validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: repo, uploads: store, images: store.confirmed}
 }
 
 // newHarnessModerator reuses one harness's repository with a moderator caller.
 func newHarnessModerator(h *harness) *harness {
 	svc := catalog.NewService(h.repo, fakeAccounts{role: "moderator", verified: true},
-		validation.Default(), slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: h.repo, images: h.images}
+		h.uploads, validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images}
 }
 
 // newHarnessAdmin reuses one harness's repository with an admin caller, so a test can seed a
 // category and then act as a plain seller against the same data.
 func newHarnessAdmin(h *harness) *harness {
 	svc := catalog.NewService(h.repo, fakeAccounts{role: "admin", verified: true},
-		validation.Default(), slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: h.repo, images: h.images}
+		h.uploads, validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images}
 }
 
 func status(t *testing.T, err error) uint16 {

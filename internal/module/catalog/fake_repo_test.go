@@ -5,12 +5,14 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
 	"shopnexus/internal/module/common"
+	"shopnexus/internal/provider/storage"
 )
 
 // fakeRepo is an in-memory port.Repository. It enforces the constraints the schema does —
@@ -671,16 +673,6 @@ func auditedDiff[T any](f *fakeRepo, e domain.EventType[T]) (T, bool) {
 	return zero, false
 }
 
-func (f *fakeRepo) FindResources(_ context.Context, ids []int64) ([]common.Resource, error) {
-	out := make([]common.Resource, 0, len(ids))
-	for _, key := range ids {
-		if f.resources[key] {
-			out = append(out, common.Resource{ID: key, Mime: "image/jpeg"})
-		}
-	}
-	return out, nil
-}
-
 // --- the browse feed ---
 
 // ListListings applies the same filters and visibility rules the statement does. It is longer
@@ -843,4 +835,71 @@ func (f *fakeRepo) AddFavorite(_ context.Context, accountID, listingID int64) er
 func (f *fakeRepo) RemoveFavorite(_ context.Context, accountID, listingID int64) error {
 	delete(f.favorites, [2]int64{accountID, listingID})
 	return nil
+}
+
+// fakeUploads is the upload seam a service test needs: it records a slot per resource id and
+// resolves a confirmed one, refusing what the real store refuses — an unconfirmed id, another
+// uploader's slot, and bytes that never arrived.
+type fakeUploads struct {
+	nextID int64
+	// slots is what Presign handed out, pending is whether it has been confirmed, and owner is
+	// who may confirm it.
+	slots     map[int64]bool
+	owner     map[int64]int64
+	confirmed map[int64]bool
+	// arrived is whether the client actually uploaded. A confirm without it is refused, which
+	// is what stops a row rendering as a broken image.
+	arrived map[int64]bool
+}
+
+func newFakeUploads() *fakeUploads {
+	return &fakeUploads{
+		slots: map[int64]bool{}, owner: map[int64]int64{},
+		confirmed: map[int64]bool{}, arrived: map[int64]bool{},
+	}
+}
+
+func (f *fakeUploads) Presign(_ context.Context, uploaderID int64, _ string, req common.UploadRequest) (common.UploadSlot, error) {
+	f.nextID++
+	f.slots[f.nextID] = true
+	f.owner[f.nextID] = uploaderID
+	return common.UploadSlot{
+		ResourceID: f.nextID,
+		URL:        "https://store.test/put/" + strconv.FormatInt(f.nextID, 10),
+		ExpiresAt:  time.Now().Add(15 * time.Minute),
+	}, nil
+}
+
+func (f *fakeUploads) Confirm(_ context.Context, uploaderID, resourceID int64) (common.Resource, error) {
+	if !f.slots[resourceID] || f.confirmed[resourceID] || f.owner[resourceID] != uploaderID {
+		return common.Resource{}, common.ErrResourceNotFound
+	}
+	if !f.arrived[resourceID] {
+		return common.Resource{}, storage.ErrObjectNotFound
+	}
+	f.confirmed[resourceID] = true
+	return common.Resource{ID: resourceID, Provider: "test", ObjectKey: "k", Mime: "image/jpeg"}, nil
+}
+
+func (f *fakeUploads) Resolve(_ context.Context, ids []int64) (map[int64]common.ResourceDTO, error) {
+	out := make(map[int64]common.ResourceDTO, len(ids))
+	for _, one := range ids {
+		if !f.confirmed[one] {
+			continue
+		}
+		out[one] = common.Resource{
+			ID: one, Provider: "test", ObjectKey: "k", Mime: "image/jpeg",
+			URL: "https://store.test/get/" + strconv.FormatInt(one, 10),
+		}.ToDTO()
+	}
+	return out, nil
+}
+
+// confirmedUpload is the shorthand a test uses when it just needs a usable photo id.
+func (f *fakeUploads) confirmedUpload() int64 {
+	f.nextID++
+	f.slots[f.nextID] = true
+	f.arrived[f.nextID] = true
+	f.confirmed[f.nextID] = true
+	return f.nextID
 }
