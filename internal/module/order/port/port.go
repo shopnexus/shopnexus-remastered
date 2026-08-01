@@ -83,9 +83,6 @@ type Repository interface {
 	// --- offers ---
 	InsertOffer(ctx context.Context, o *domain.Offer) error
 	FindOffer(ctx context.Context, id int64) (domain.Offer, error)
-	// FindActiveOffer answers the one active negotiation on a variant, which is what makes
-	// opening a second one a conflict rather than a duplicate.
-	FindActiveOffer(ctx context.Context, buyerID, variantID int64) (domain.Offer, error)
 	ListOffers(ctx context.Context, f OfferFilter) ([]domain.Offer, error)
 	// SaveOffer writes the terms and the status, guarded by `from` — the statuses the write may
 	// replace, i.e. the one the entity moved out of. A stale read then loses instead of
@@ -175,7 +172,6 @@ type Repository interface {
 	// about has to still be there when the row lands.
 	InsertRefund(ctx context.Context, r *domain.Refund) error
 	FindRefund(ctx context.Context, id int64) (domain.Refund, error)
-	FindOpenRefundByOrder(ctx context.Context, orderID int64) (domain.Refund, error)
 	ListRefunds(ctx context.Context, f RefundFilter) ([]domain.Refund, error)
 	SaveRefund(ctx context.Context, r domain.Refund) error
 	// SaveRefundOutcome writes a refund transition together with the rows it decides — the

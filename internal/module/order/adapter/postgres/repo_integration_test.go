@@ -273,12 +273,10 @@ func TestPayoutDue_HeldBackByALiveRefund(t *testing.T) {
 		t.Fatalf("PayoutDue = %v, want it due again once the refund closed", ids(due))
 	}
 
-	// Paying it out takes it off the list for good.
-	if err := o.Complete(); err != nil {
-		t.Fatalf("Complete: %v", err)
-	}
-	if err := r.SaveOrder(ctx, o); err != nil {
-		t.Fatalf("SaveOrder: %v", err)
+	// Paying it out takes it off the list for good, and it is ClaimPayout that writes the
+	// completion — under the advisory lock, because whoever writes it wins the escrow.
+	if err := r.ClaimPayout(ctx, &o); err != nil {
+		t.Fatalf("ClaimPayout: %v", err)
 	}
 	due, err = r.PayoutDue(ctx, time.Now(), 100)
 	if err != nil {
@@ -311,12 +309,13 @@ func TestInsertRefund_OneLivePerOrder(t *testing.T) {
 		t.Fatalf("second InsertRefund = %v, want ErrRefundAlreadyOpen", err)
 	}
 
-	open, err := r.FindOpenRefundByOrder(ctx, o.ID)
+	// The first one is still the live case: the index refused the second rather than replacing it.
+	live, err := r.FindRefund(ctx, first.ID)
 	if err != nil {
-		t.Fatalf("FindOpenRefundByOrder: %v", err)
+		t.Fatalf("FindRefund: %v", err)
 	}
-	if open.ID != first.ID {
-		t.Fatalf("open = %d, want the first %d", open.ID, first.ID)
+	if live.Status != domain.RefundAwaitingSeller {
+		t.Fatalf("refund = %+v, want the first still open", live)
 	}
 }
 
@@ -417,12 +416,12 @@ func TestInsertOffer_OneActivePerBuyerAndVariant(t *testing.T) {
 		t.Fatalf("second InsertOffer = %v, want ErrOfferAlreadyOpen", err)
 	}
 
-	active, err := r.FindActiveOffer(ctx, buyer, 501)
+	active, err := r.FindOffer(ctx, first.ID)
 	if err != nil {
-		t.Fatalf("FindActiveOffer: %v", err)
+		t.Fatalf("FindOffer: %v", err)
 	}
-	if active.ID != first.ID || active.Total != 80_000 {
-		t.Fatalf("active = %+v, want the first offer", active)
+	if active.Status != domain.OfferActive || active.Total != 80_000 {
+		t.Fatalf("active = %+v, want the first offer still on the table", active)
 	}
 
 	// A counter revises the same row, and the terms that come back are the new ones.

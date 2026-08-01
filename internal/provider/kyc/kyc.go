@@ -13,10 +13,7 @@ package kyc
 
 import (
 	"context"
-	"net/http"
 	"time"
-
-	"shopnexus/internal/shared/errx"
 )
 
 // Status is the verdict. It mirrors the account module's identity_status, without
@@ -30,11 +27,6 @@ const (
 	StatusVerified Status = "verified"
 	StatusRejected Status = "rejected"
 )
-
-// ErrScanUnreadable is a scan the vendor could not use: wrong document in frame, glare,
-// a crop that cut off the expiry. 422 rather than 502, because the request was fine and
-// the *photo* is what has to change.
-var ErrScanUnreadable = errx.NewErrorf(http.StatusUnprocessableEntity, "scan_unreadable", "the vendor could not read this scan: %s")
 
 // Image points at bytes the caller has already stored. A URL rather than the bytes
 // themselves so a 5 MB photo is streamed by whoever needs it instead of being buffered

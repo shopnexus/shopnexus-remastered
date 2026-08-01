@@ -57,10 +57,6 @@ var (
 	// because it is a caller the validator should have refused: neither move is recoverable
 	// from the counters, so applying one without a key is applying it an unknown number of times.
 	ErrStockMovementKeyRequired = errx.NewError(http.StatusInternalServerError, "stock_movement_key_required", "a stock commit needs an idempotency key")
-	// ErrFeaturedNotMine is a programmer error rather than a client one: the featured
-	// variant is chosen from the listing's own set, and the schema cannot express any
-	// other kind. 500 because the request was fine.
-	ErrFeaturedNotMine = errx.NewError(http.StatusInternalServerError, "featured_not_mine", "the featured variant does not belong to this listing")
 
 	// ErrIdentityRequired gates selling on the same flag the payout gate reads: finding out
 	// after the first sale is worse than finding out now.

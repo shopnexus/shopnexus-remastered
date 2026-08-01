@@ -46,7 +46,7 @@ func (r *Repo) ListModerationQueue(ctx context.Context, f port.QueueFilter) ([]p
 		var s port.ListingSummary
 		if err := rows.Scan(&s.ID, &s.SellerID, &s.Slug, &s.Name, &s.Status, &s.Condition,
 			&s.PriceMode, &s.Currency, &s.Price, &s.Sold, &s.Rating, &s.ReviewCount, &s.CategoryID,
-			&s.CoverID, &s.HasPendingEdit, &s.CreatedAt, &total); err != nil {
+			&s.CoverID, &s.CreatedAt, &total); err != nil {
 			return nil, 0, fmt.Errorf("db scan queue row: %w", err)
 		}
 		out = append(out, s)
@@ -63,7 +63,7 @@ func (r *Repo) ListModerationQueue(ctx context.Context, f port.QueueFilter) ([]p
 const queueSelect = `SELECT l.id, l.account_id, l.slug, l.name, l.status::text, l.condition::text,
 	                  l.price_mode::text, l.currency, COALESCE(v.price, 0), l.cached_sold,
 	                  l.cached_rating, l.cached_review_count, l.category_id, l.attachments[1],
-	                  l.pending_edit IS NOT NULL, l.created_at,
+	                  l.created_at,
 	                  COUNT(*) OVER () AS total_count
 	           FROM listing l
 	           LEFT JOIN LATERAL (

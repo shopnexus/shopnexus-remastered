@@ -132,7 +132,7 @@ func NewListing(sellerID, categoryID int64, in NewListingInput) (*Listing, error
 	if l.Specifications == nil {
 		l.Specifications = map[string]any{}
 	}
-	l.Slug = Slugify(l.Name)
+	l.Slug = slugify(l.Name)
 	// The create request carries the variants inline, so an empty one is refused here rather
 	// than by Validate — which allows an empty *draft*, reached by deleting them afterwards.
 	if len(in.Variants) == 0 {
@@ -429,9 +429,9 @@ func (l *Listing) Snapshot() ListingSnapshot {
 	}
 }
 
-// Slugify derives the URL-friendly form of a name. Fixed at creation: a slug lives in URLs
+// slugify derives the URL-friendly form of a name. Fixed at creation: a slug lives in URLs
 // and in whatever a buyer bookmarked.
-func Slugify(name string) string {
+func slugify(name string) string {
 	s := slugUnsafe.ReplaceAllString(strings.ToLower(name), "-")
 	s = slugEdges.ReplaceAllString(s, "")
 	if len(s) > 100 {

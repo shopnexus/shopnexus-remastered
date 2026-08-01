@@ -4,29 +4,21 @@ import (
 	"context"
 	"testing"
 
-	"shopnexus/internal/provider"
-	finance "shopnexus/internal/provider/payment"
-	financemock "shopnexus/internal/provider/payment/mock"
+	"shopnexus/internal/provider/payment"
+	paymentmock "shopnexus/internal/provider/payment/mock"
 )
 
+// The rail decides on the spot, which is what makes a local checkout complete without a webhook.
 func TestCharge_Success(t *testing.T) {
-	c := financemock.NewClient(provider.Option{Provider: "mock"})
-	res, err := c.Charge(context.Background(), finance.ChargeParams{RefID: "r1", Amount: 500})
+	c := paymentmock.NewClient()
+	res, err := c.Charge(context.Background(), payment.ChargeParams{RefID: "r1", Amount: 500})
 	if err != nil {
 		t.Fatalf("Charge: %v", err)
 	}
-	if res.Status != finance.StatusSuccess || res.ProviderID == "" {
+	if res.Status != payment.StatusSuccess || res.ProviderID == "" {
 		t.Fatalf("unexpected charge result: %+v", res)
 	}
-}
-
-func TestRefund_Success(t *testing.T) {
-	c := financemock.NewClient(provider.Option{Provider: "mock"})
-	res, err := c.Refund(context.Background(), finance.RefundParams{ProviderChargeID: "p1", Amount: 500})
-	if err != nil {
-		t.Fatalf("Refund: %v", err)
-	}
-	if res.Status != finance.StatusSuccess || res.ProviderRefundID == "" {
-		t.Fatalf("unexpected refund result: %+v", res)
+	if res.RedirectURL != "" {
+		t.Errorf("redirect = %q, want none from a direct-debit rail", res.RedirectURL)
 	}
 }

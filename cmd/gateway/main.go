@@ -26,7 +26,6 @@ import (
 	"shopnexus/internal/module/observability"
 	"shopnexus/internal/module/order"
 	"shopnexus/internal/module/trust"
-	"shopnexus/internal/provider"
 	"shopnexus/internal/provider/kyc"
 	"shopnexus/internal/provider/kyc/fptai"
 	kycmock "shopnexus/internal/provider/kyc/mock"
@@ -224,7 +223,7 @@ func newKYCClient(cfg *config.Config, log *slog.Logger, metrics *observability.S
 // newPaymentClient picks the rail. Only the mock exists today; a real gateway is a new
 // case here plus its credentials in config, exactly like the other seams.
 func newPaymentClient(cfg *config.Config) payment.Client {
-	return paymentmock.NewClient(provider.Option{Provider: cfg.PaymentProvider})
+	return paymentmock.NewClient()
 }
 
 // newStorageClient picks the object store. `local` keeps objects on this host and signs URLs
@@ -263,7 +262,7 @@ func newUploadsHandler(client storage.Client, log *slog.Logger) *handler.Uploads
 // The fee is on the money path — the buyer pays delivery on every sale — so an unquoted one is a
 // carrier bill the platform silently absorbs.
 func newTransportClient(cfg *config.Config) transport.Client {
-	return transportmock.NewClient(provider.Option{Provider: cfg.TransportProvider})
+	return transportmock.NewClient()
 }
 
 // observedClient builds the HTTP client a provider uses: metrics when the telemetry sink

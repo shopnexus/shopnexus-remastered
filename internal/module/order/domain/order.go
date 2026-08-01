@@ -106,21 +106,6 @@ func (o Order) PayoutDue() *time.Time {
 	return new(o.ReceivedAt.Add(PayoutWindow))
 }
 
-// Complete claims the payout: it is the end of the happy path, and the only thing that sets
-// the completion timestamp. It does not record the money as released — MarkPayoutReleased
-// does, once finance says so — because whoever writes the outcome wins the escrow, and that has
-// to be settled before the money moves.
-func (o *Order) Complete() error {
-	if o.Settled() {
-		return ErrOrderSettled
-	}
-	if o.ReceivedAt == nil {
-		return ErrOrderNotCancellable
-	}
-	o.CompletedAt = new(time.Now())
-	return nil
-}
-
 // MarkPayoutReleased records that the escrow reached the seller. Separate from Complete so a
 // release that failed leaves a completed order with no release time — which is exactly the list
 // the retry pass reads, and the reason it does not have to ask finance about every sale that

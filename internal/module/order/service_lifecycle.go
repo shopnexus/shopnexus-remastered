@@ -591,7 +591,7 @@ func (s *Service) advanceRefund(ctx context.Context, r domain.Refund) (bool, err
 		}
 	case domain.RefundReturned:
 		// The seller had the goods back and did not appeal, so the buyer is paid.
-		if err := r.Settle(0); err != nil {
+		if err := r.Settle(); err != nil {
 			return false, nil
 		}
 		if err := s.settleRefund(ctx, r, o, nil); err != nil {

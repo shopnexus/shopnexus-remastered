@@ -213,15 +213,6 @@ func (f *fakeRepo) FindOffer(_ context.Context, offerID int64) (domain.Offer, er
 	return o, nil
 }
 
-func (f *fakeRepo) FindActiveOffer(_ context.Context, buyerID, variantID int64) (domain.Offer, error) {
-	for _, o := range f.offers {
-		if o.BuyerID == buyerID && o.VariantID == variantID && o.Status == domain.OfferActive {
-			return o, nil
-		}
-	}
-	return domain.Offer{}, domain.ErrOfferNotFound
-}
-
 func (f *fakeRepo) ListOffers(_ context.Context, filter port.OfferFilter) ([]domain.Offer, error) {
 	var out []domain.Offer
 	for _, o := range f.offers {
@@ -649,15 +640,6 @@ func (f *fakeRepo) FindRefund(_ context.Context, refundID int64) (domain.Refund,
 		return domain.Refund{}, domain.ErrRefundNotFound
 	}
 	return r, nil
-}
-
-func (f *fakeRepo) FindOpenRefundByOrder(_ context.Context, orderID int64) (domain.Refund, error) {
-	for _, r := range f.refunds {
-		if r.OrderID == orderID && !r.Settled() {
-			return r, nil
-		}
-	}
-	return domain.Refund{}, domain.ErrRefundNotFound
 }
 
 func (f *fakeRepo) ListRefunds(ctx context.Context, filter port.RefundFilter) ([]domain.Refund, error) {

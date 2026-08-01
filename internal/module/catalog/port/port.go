@@ -60,11 +60,10 @@ type ListingSummary struct {
 	// from two hundred are not the same claim.
 	ReviewCount int64
 	// Score is the search's, and only a search sets it: higher is better whichever mode ran.
-	Score          *float64
-	CategoryID     int64
-	CoverID        *int64
-	HasPendingEdit bool
-	CreatedAt      time.Time
+	Score      *float64
+	CategoryID int64
+	CoverID    *int64
+	CreatedAt  time.Time
 	// DeletedAt is set on a listing the seller removed. Only an `ids` lookup returns one — an
 	// order that references it still has to render.
 	DeletedAt *time.Time
@@ -137,7 +136,6 @@ type Repository interface {
 	// --- category: the browse tree. Small and curated, so the whole of it is one read
 	// and a client assembles the shape.
 	ListCategories(ctx context.Context) ([]domain.Category, error)
-	CategoryExists(ctx context.Context, id int64) (bool, error)
 	CreateCategory(ctx context.Context, c *domain.Category) error
 	// UpdateCategory writes the row and, when ParentID changed, moves it — one guarded
 	// statement, because a move is legal only if the new parent is not a descendant and

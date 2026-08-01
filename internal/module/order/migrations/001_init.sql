@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS "cart_item" (
 -- payment_session, transaction, and the transaction_settled view moved to the
 -- payment module (money primitives live together for atomicity). order refers
 -- to them by id only:
--- payment_session_id (item, offer), refund_tx_id (refund) — no cross-schema FK.
+-- payment_session_id (item, offer) — no cross-schema FK.
 
 -- Transport/delivery record
 CREATE TABLE IF NOT EXISTS "transport" (
@@ -347,7 +347,6 @@ CREATE TABLE IF NOT EXISTS "refund" (
     "return_transport_id" BIGINT,
     "returned_at" TIMESTAMPTZ, -- set when the return transport reaches delivered
 
-    "refund_tx_id" BIGINT, -- the negative-amount reversal leg; set only on 'accepted'
 
     CONSTRAINT "refund_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "refund_return_transport_id_key" UNIQUE ("return_transport_id"),
@@ -360,7 +359,6 @@ CREATE TABLE IF NOT EXISTS "refund" (
         "rejection_reason" IS NULL OR "seller_decided_at" IS NOT NULL
     ),
     CONSTRAINT "refund_tx_only_when_accepted" CHECK (
-        "refund_tx_id" IS NULL OR "status" = 'accepted'
     ),
     -- A live refund always has someone on the clock, and the two states that wait on a
     -- carrier or a moderator never do.

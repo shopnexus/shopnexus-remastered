@@ -1,12 +1,11 @@
 package transport
 
+// Status is a carrier's own vocabulary for where a parcel is. Order translates it into the
+// module's shipment statuses (`RecordCarrierCheckpoint`), which is the only reader.
 type Status string
 
-// kebab-case, like every other enum-like value in this codebase.
 const (
-	StatusPending    Status = "pending"
 	StatusProcessing Status = "processing"
 	StatusSuccess    Status = "success"
-	StatusCancelled  Status = "cancelled"
 	StatusFailed     Status = "failed"
 )

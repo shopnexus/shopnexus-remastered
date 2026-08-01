@@ -168,14 +168,6 @@ func (r *Repo) FindOffer(ctx context.Context, id int64) (domain.Offer, error) {
 	return scanOffer(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id}))
 }
 
-func (r *Repo) FindActiveOffer(ctx context.Context, buyerID, variantID int64) (domain.Offer, error) {
-	const q = `SELECT ` + offerColumns + ` FROM offer
-	           WHERE buyer_id = @buyer_id AND variant_id = @variant_id
-	             AND status = '` + domain.OfferActive + `'`
-	args := pgx.NamedArgs{"buyer_id": buyerID, "variant_id": variantID}
-	return scanOffer(r.pool.QueryRow(ctx, q, args))
-}
-
 func (r *Repo) ListOffers(ctx context.Context, f port.OfferFilter) ([]domain.Offer, error) {
 	const q = `SELECT ` + offerColumns + ` FROM offer
 	           WHERE (buyer_id = @account_id OR seller_id = @account_id)

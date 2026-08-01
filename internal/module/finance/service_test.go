@@ -11,7 +11,6 @@ import (
 	"shopnexus/internal/module/finance"
 	financeapi "shopnexus/internal/module/finance/api"
 	"shopnexus/internal/module/finance/domain"
-	"shopnexus/internal/provider"
 	"shopnexus/internal/provider/payment"
 	paymentmock "shopnexus/internal/provider/payment/mock"
 	"shopnexus/internal/shared/errx"
@@ -47,7 +46,7 @@ func newHarness(role string, verified bool) *harness {
 	repo := newFakeRepo()
 	// The mock rail settles synchronously, which is what lets a service test walk a
 	// whole payment without a webhook.
-	gateway := paymentmock.NewClient(provider.Option{Provider: "mock"})
+	gateway := paymentmock.NewClient()
 	svc := finance.NewService(repo, fakeAccounts{role: role, verified: verified}, repo,
 		gateway, finance.ReturnURLHosts{"shopnexus.test"}, eventbus.NewMemory(slog.New(slog.DiscardHandler)), validation.Default(), slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: repo}
@@ -293,7 +292,7 @@ func TestGetSession_StrangerNotFound(t *testing.T) {
 // seed money as an admin and then act as the account it belongs to.
 func newHarnessSharing(h *harness, role string) *harness {
 	svc := finance.NewService(h.repo, fakeAccounts{role: role, verified: true}, h.repo,
-		paymentmock.NewClient(provider.Option{Provider: "mock"}),
+		paymentmock.NewClient(),
 		finance.ReturnURLHosts{"shopnexus.test"}, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
 		validation.Default(), slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: h.repo}

@@ -34,16 +34,6 @@ func (r *Repo) ListCategories(ctx context.Context) ([]domain.Category, error) {
 	return out, nil
 }
 
-func (r *Repo) CategoryExists(ctx context.Context, id int64) (bool, error) {
-	var ok bool
-	err := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM category WHERE id = @id)`,
-		pgx.NamedArgs{"id": id}).Scan(&ok)
-	if err != nil {
-		return false, fmt.Errorf("db query category exists: %w", err)
-	}
-	return ok, nil
-}
-
 func (r *Repo) CreateCategory(ctx context.Context, c *domain.Category) error {
 	const q = `INSERT INTO category (parent_id, name, description)
 	           VALUES (@parent_id, @name, @description)

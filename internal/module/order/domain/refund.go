@@ -60,7 +60,6 @@ type Refund struct {
 
 	ReturnTransportID *int64
 	ReturnedAt        *time.Time
-	RefundTxID        *int64
 }
 
 // NewRefund opens a case. It starts on the seller's clock: they get to accept or refuse
@@ -166,17 +165,14 @@ func (r *Refund) MarkReturned() error {
 	return nil
 }
 
-// Settle pays the buyer back. The reversal leg's id is recorded, which the schema only
-// allows on an accepted refund.
-func (r *Refund) Settle(refundTxID int64) error {
+// Settle pays the buyer back. The ledger movement behind it is keyed on the order
+// (`order:N:refund`), so the leg is found from finance rather than copied onto this row.
+func (r *Refund) Settle() error {
 	if r.Settled() {
 		return ErrRefundSettled
 	}
 	r.Status = RefundAccepted
 	r.DeadlineAt = nil
-	if refundTxID != 0 {
-		r.RefundTxID = &refundTxID
-	}
 	return nil
 }
 
@@ -189,7 +185,7 @@ func (r *Refund) Rule(buyerWins bool) error {
 		// Round one grants the refund and the goods come back; round two is after they
 		// already have, so there is nothing left to ship.
 		if r.ReturnedAt != nil {
-			return r.Settle(0)
+			return r.Settle()
 		}
 		return r.Accept()
 	}

@@ -1,12 +1,11 @@
 package common
 
-// Option types (kebab-case), the high-level grouping of a pluggable integration. Each is
-// owned by the module that acts on it: payment by finance, transport by order, notification
-// by account.
+// Option types (kebab-case), the high-level grouping of a pluggable integration. Each is owned by
+// the module that acts on it: payment by finance, carriers by order. A module that grows its own
+// kind of pluggable adds it here.
 const (
-	OptionTypePayment      = "payment"
-	OptionTypeTransport    = "transport"
-	OptionTypeNotification = "notification"
+	OptionTypePayment   = "payment"
+	OptionTypeTransport = "transport"
 )
 
 // Option is a pluggable service integration selectable at checkout or configuration time (a

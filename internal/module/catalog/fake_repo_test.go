@@ -92,11 +92,6 @@ func (f *fakeRepo) ListCategories(context.Context) ([]domain.Category, error) {
 	return out, nil
 }
 
-func (f *fakeRepo) CategoryExists(_ context.Context, id int64) (bool, error) {
-	_, ok := f.categories[id]
-	return ok, nil
-}
-
 func (f *fakeRepo) CreateCategory(_ context.Context, c *domain.Category) error {
 	if f.nameTaken(c.Name, 0) {
 		return domain.ErrCategoryNameTaken
@@ -644,7 +639,7 @@ func (f *fakeRepo) ListModerationQueue(_ context.Context, filter port.QueueFilte
 			ID: l.ID, SellerID: l.SellerID, Slug: l.Slug, Name: l.Name, Status: l.Status,
 			Condition: l.Condition, PriceMode: l.PriceMode, Currency: l.Currency,
 			Price: price, Sold: l.CachedSold, Rating: l.CachedRating,
-			CategoryID: l.CategoryID, CoverID: coverID, HasPendingEdit: l.PendingEdit != nil,
+			CategoryID: l.CategoryID, CoverID: coverID,
 			CreatedAt: l.CreatedAt,
 		})
 	}
@@ -791,7 +786,7 @@ func (f *fakeRepo) summaryOf(stored storedListing) port.ListingSummary {
 		ID: l.ID, SellerID: l.SellerID, Slug: l.Slug, Name: l.Name, Status: l.Status,
 		Condition: l.Condition, PriceMode: l.PriceMode, Currency: l.Currency, Price: price,
 		Sold: l.CachedSold, Rating: l.CachedRating, CategoryID: l.CategoryID, CoverID: coverID,
-		HasPendingEdit: l.PendingEdit != nil, CreatedAt: l.CreatedAt, DeletedAt: l.DeletedAt,
+		CreatedAt: l.CreatedAt, DeletedAt: l.DeletedAt,
 	}
 }
 

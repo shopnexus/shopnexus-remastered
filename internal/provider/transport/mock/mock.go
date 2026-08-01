@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"shopnexus/internal/provider"
 	"shopnexus/internal/provider/transport"
 )
 
@@ -31,30 +30,15 @@ var (
 	deliverHook transport.ResultHandler
 )
 
-// Data is the provider config carried in provider.Option.Data.
-type Data struct {
-	DelaySeconds int `json:"delay_seconds"` // auto-deliver delay; 0 => 30s
-}
-
 var _ transport.Client = (*Client)(nil)
 
 type Client struct {
-	config provider.Option
-	delay  time.Duration
+	// delay is how long the stub waits before reporting the parcel delivered, so a dev stack
+	// walks the whole shipment lifecycle on its own.
+	delay time.Duration
 }
 
-func NewClient(cfg provider.Option) transport.Client {
-	delay := defaultDelay
-	if len(cfg.Data) > 0 {
-		var d Data
-		if json.Unmarshal(cfg.Data, &d) == nil && d.DelaySeconds > 0 {
-			delay = time.Duration(d.DelaySeconds) * time.Second
-		}
-	}
-	return &Client{config: cfg, delay: delay}
-}
-
-func (c *Client) Config() provider.Option { return c.config }
+func NewClient() transport.Client { return &Client{delay: defaultDelay} }
 
 func (c *Client) Quote(_ context.Context, _ transport.QuoteParams) (transport.QuoteResult, error) {
 	return transport.QuoteResult{Cost: flatCost, Data: json.RawMessage(`{}`)}, nil
@@ -98,12 +82,6 @@ func (c *Client) scheduleDelivery(trackingID string) {
 		}
 	})
 }
-
-func (c *Client) Track(_ context.Context, _ string) (transport.TrackResult, error) {
-	return transport.TrackResult{Status: string(transport.StatusSuccess), Data: json.RawMessage(`{}`)}, nil
-}
-
-func (c *Client) Cancel(_ context.Context, _ string) error { return nil }
 
 // webhookPath is where a carrier report arrives. Under `/webhooks/` because that is the prefix the
 // router mounts this mux at — the path it was registered under before matched nothing, so the

@@ -9,13 +9,12 @@ import (
 	"sync"
 	"testing"
 
-	"shopnexus/internal/provider"
 	"shopnexus/internal/provider/transport"
 	transportmock "shopnexus/internal/provider/transport/mock"
 )
 
 func TestQuoteAndCreate(t *testing.T) {
-	c := transportmock.NewClient(provider.Option{Provider: "mock"})
+	c := transportmock.NewClient()
 
 	q, err := c.Quote(context.Background(), transport.QuoteParams{})
 	if err != nil || q.Cost <= 0 {
@@ -33,7 +32,7 @@ func TestQuoteAndCreate(t *testing.T) {
 }
 
 func TestWireWebhooks_ManualTrigger(t *testing.T) {
-	c := transportmock.NewClient(provider.Option{Provider: "mock"})
+	c := transportmock.NewClient()
 
 	var mu sync.Mutex
 	var got transport.WebhookResult

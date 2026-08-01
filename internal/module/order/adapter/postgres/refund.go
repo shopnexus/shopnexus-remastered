@@ -14,13 +14,13 @@ import (
 
 const refundColumns = `id, buyer_id, order_id, reason, attachments, created_at,
 	       status::text, deadline_at, seller_decided_at, rejection_reason,
-	       return_transport_id, returned_at, refund_tx_id`
+	       return_transport_id, returned_at`
 
 func scanRefund(row pgx.Row) (domain.Refund, error) {
 	var r domain.Refund
 	err := row.Scan(&r.ID, &r.BuyerID, &r.OrderID, &r.Reason, &r.Attachments, &r.CreatedAt,
 		&r.Status, &r.DeadlineAt, &r.SellerDecidedAt, &r.RejectionReason,
-		&r.ReturnTransportID, &r.ReturnedAt, &r.RefundTxID)
+		&r.ReturnTransportID, &r.ReturnedAt)
 	if dbx.IsNoRows(err) {
 		return domain.Refund{}, domain.ErrRefundNotFound
 	}
@@ -75,12 +75,6 @@ func (r *Repo) InsertRefund(ctx context.Context, ref *domain.Refund) error {
 func (r *Repo) FindRefund(ctx context.Context, id int64) (domain.Refund, error) {
 	const q = `SELECT ` + refundColumns + ` FROM refund WHERE id = @id`
 	return scanRefund(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id}))
-}
-
-func (r *Repo) FindOpenRefundByOrder(ctx context.Context, orderID int64) (domain.Refund, error) {
-	const q = `SELECT ` + refundColumns + ` FROM refund
-	           WHERE order_id = @order_id AND status NOT IN (` + terminalRefund + `)`
-	return scanRefund(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"order_id": orderID}))
 }
 
 // terminalRefund is every status a case can end on. Spelled once, because a transition guard
@@ -205,7 +199,7 @@ const saveRefund = `UPDATE refund
                         seller_decided_at = @seller_decided_at,
                         rejection_reason = @rejection_reason,
                         return_transport_id = @return_transport_id,
-                        returned_at = @returned_at, refund_tx_id = @refund_tx_id
+                        returned_at = @returned_at
                     WHERE id = @id AND status NOT IN (` + terminalRefund + `)`
 
 func refundArgs(ref domain.Refund) pgx.NamedArgs {
@@ -214,7 +208,6 @@ func refundArgs(ref domain.Refund) pgx.NamedArgs {
 		"attachments":       dbx.Int64Array(ref.Attachments),
 		"seller_decided_at": ref.SellerDecidedAt, "rejection_reason": ref.RejectionReason,
 		"return_transport_id": ref.ReturnTransportID, "returned_at": ref.ReturnedAt,
-		"refund_tx_id": ref.RefundTxID,
 	}
 }
 

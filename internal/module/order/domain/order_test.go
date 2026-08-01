@@ -43,12 +43,16 @@ func TestOrder_StateIsDerived(t *testing.T) {
 	if o.State() != domain.StateOpen || o.Settled() {
 		t.Fatalf("state = %q, want open", o.State())
 	}
+	// A confirmed receipt starts the payout clock; it does not end the order.
 	if err := o.ConfirmReceipt([]int64{42}); err != nil {
 		t.Fatalf("ConfirmReceipt: %v", err)
 	}
-	if err := o.Complete(); err != nil {
-		t.Fatalf("Complete: %v", err)
+	if o.State() != domain.StateOpen {
+		t.Fatalf("state = %q, want it still open after a receipt", o.State())
 	}
+	// Completion is the payout's own write — the conditional UPDATE that decides the escrow
+	// race — so the state is read back from the timestamp it sets.
+	o.CompletedAt = new(time.Now())
 	if o.State() != domain.StateCompleted || !o.Settled() {
 		t.Fatalf("state = %q, want completed", o.State())
 	}
@@ -92,15 +96,6 @@ func TestOrder_CancelOnlyBeforeShipping(t *testing.T) {
 	}
 	if o.State() != domain.StateCancelled {
 		t.Fatalf("state = %q, want cancelled", o.State())
-	}
-}
-
-// A payout only follows a confirmed receipt: money is released against a delivery, not
-// against a promise.
-func TestOrder_CompleteNeedsAReceipt(t *testing.T) {
-	o := newOrder(t)
-	if err := o.Complete(); !errors.Is(err, domain.ErrOrderNotCancellable) {
-		t.Fatalf("Complete with no receipt = %v, want it refused", err)
 	}
 }
 
@@ -153,13 +148,13 @@ func TestRefund_WindowsAndVerdicts(t *testing.T) {
 	if accepted.Status != domain.RefundReturned || accepted.DeadlineAt == nil {
 		t.Fatalf("refund = %+v, want the seller's appeal window", accepted)
 	}
-	if err := accepted.Settle(7); err != nil {
+	if err := accepted.Settle(); err != nil {
 		t.Fatalf("Settle: %v", err)
 	}
-	if !accepted.Settled() || accepted.RefundTxID == nil {
-		t.Fatalf("refund = %+v, want it settled with a reversal leg", accepted)
+	if !accepted.Settled() || accepted.DeadlineAt != nil {
+		t.Fatalf("refund = %+v, want it settled with nobody on the clock", accepted)
 	}
-	if err := accepted.Settle(8); !errors.Is(err, domain.ErrRefundSettled) {
+	if err := accepted.Settle(); !errors.Is(err, domain.ErrRefundSettled) {
 		t.Fatalf("second Settle = %v, want ErrRefundSettled", err)
 	}
 }

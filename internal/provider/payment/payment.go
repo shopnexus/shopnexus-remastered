@@ -1,27 +1,22 @@
-// Package finance defines the payment provider interface and shared types.
-// Ported from the legacy server; the webhook wiring is adapted to net/http.
+// Package payment defines the payment provider seam: how this platform charges a payer and how
+// that provider reports the outcome back.
+//
+// One method and one webhook. A refund is not here on purpose — a granted refund moves money
+// inside finance's own ledger (the escrow goes back to the buyer's wallet), so no rail is asked
+// to reverse anything; when one is, `Refund` arrives with the flow that needs it.
 package payment
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"net/http"
-
-	"github.com/google/uuid"
-
-	"shopnexus/internal/provider"
 )
 
-var ErrNotSupported = errors.New("operation not supported by this payment provider")
-
+// Status is a payment's outcome as the rail reports it. Kebab-case like every enum-ish value here.
 type Status string
 
 const (
-	StatusPending Status = "pending"
 	StatusSuccess Status = "success"
 	StatusFailed  Status = "failed"
-	StatusExpired Status = "expired"
 )
 
 type ChargeParams struct {
@@ -32,33 +27,15 @@ type ChargeParams struct {
 	Token       string // direct-debit providers only
 }
 
-// Redirect: RedirectURL set, Status=Pending. Direct-debit: URL empty, Status final.
+// ChargeResult is either a redirect to follow or a decided charge: a redirect rail answers with
+// RedirectURL set and no final status, a direct-debit rail with an empty URL and the outcome.
 type ChargeResult struct {
 	ProviderID  string
 	RedirectURL string
 	Status      Status
 }
 
-type RefundParams struct {
-	ProviderChargeID string
-	Amount           int64
-}
-
-type RefundResult struct {
-	ProviderRefundID string
-	Status           Status
-}
-
-type TokenizeParams struct {
-	AccountID uuid.UUID
-	ReturnURL string
-}
-
-type TokenizeResult struct {
-	FormURL      string          `json:"form_url,omitempty"`
-	ClientConfig json.RawMessage `json:"client_config,omitempty"`
-}
-
+// Notification is what a rail's webhook carries, reduced to what finance settles on.
 type Notification struct {
 	RefID        string `json:"ref_id" validate:"required"`
 	Status       Status `json:"status" validate:"required"`
@@ -69,11 +46,8 @@ type Notification struct {
 type NotificationHandler func(ctx context.Context, n Notification) error
 
 type Client interface {
-	Config() provider.Option
 	Charge(ctx context.Context, params ChargeParams) (ChargeResult, error)
-	Refund(ctx context.Context, params RefundParams) (RefundResult, error)
-	Tokenize(ctx context.Context, params TokenizeParams) (TokenizeResult, error)
-
-	// WireWebhooks mounts the provider's IPN routes on mux
+	// WireWebhooks mounts the provider's own IPN route and answers with the path it took, which
+	// is what the composition root logs.
 	WireWebhooks(mux *http.ServeMux, deliver NotificationHandler) string
 }

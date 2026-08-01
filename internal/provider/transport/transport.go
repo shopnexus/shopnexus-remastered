@@ -6,8 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-
-	"shopnexus/internal/provider"
 )
 
 // WebhookResult contains a verified webhook/tracking update from a transport
@@ -22,11 +20,8 @@ type WebhookResult struct {
 type ResultHandler func(ctx context.Context, result WebhookResult) error
 
 type Client interface {
-	Config() provider.Option
 	Quote(ctx context.Context, params QuoteParams) (QuoteResult, error)
 	Create(ctx context.Context, params CreateParams) (Transport, error)
-	Track(ctx context.Context, id string) (TrackResult, error)
-	Cancel(ctx context.Context, id string) error
 
 	// WireWebhooks mounts the provider's webhook route on mux
 	WireWebhooks(mux *http.ServeMux, deliver ResultHandler) string
@@ -67,10 +62,5 @@ type Transport struct {
 	ID     string
 	Option string
 	Cost   int64
-	Data   json.RawMessage
-}
-
-type TrackResult struct {
-	Status string
 	Data   json.RawMessage
 }
