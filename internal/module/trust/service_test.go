@@ -2,7 +2,9 @@ package trust_test
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,11 +66,18 @@ type fakeCatalog struct {
 	catalogtest.Stub
 	// synced is the last average and count handed over, per listing.
 	synced map[int64][2]float64
-	// missing hides the listing, which is what a report against a deleted one hits.
+	// missing hides the listing, which is what a report against a deleted one hits — and what
+	// a listing back in `pending` looks like to its own buyer.
 	missing bool
+	// getErr is the other way a read fails: the module is there but unreachable, which is not
+	// the same answer as "it does not exist".
+	getErr error
 }
 
 func (f *fakeCatalog) GetListing(_ context.Context, req catalogapi.GetListingRequest) (catalogapi.ListingDetail, error) {
+	if f.getErr != nil {
+		return catalogapi.ListingDetail{}, f.getErr
+	}
 	if f.missing {
 		return catalogapi.ListingDetail{}, errx.NewError(404, "listing_not_found", "listing not found")
 	}
@@ -303,6 +312,49 @@ func TestRevealDueFeedback_ClosesTheWindow(t *testing.T) {
 	}
 }
 
+// A ratee's published history pages on (created_at, id) like the rest, so two ratings that
+// landed in the same instant are both reachable.
+func TestListAccountFeedback_PagesWithoutSkipping(t *testing.T) {
+	h := newHarness("completed")
+	ctx := context.Background()
+	at := time.Date(2026, 6, 1, 8, 0, 0, 0, time.UTC)
+	for _, order := range []id.ID[id.Order]{orderID, id.Of[id.Order](11)} {
+		for _, actor := range []id.ID[id.Account]{buyer, seller} {
+			if _, err := h.svc.SubmitFeedback(ctx, trustapi.SubmitFeedbackRequest{
+				ActorID: actor, OrderID: order, Rating: 5,
+			}); err != nil {
+				t.Fatalf("SubmitFeedback: %v", err)
+			}
+		}
+	}
+	// One transaction's rows share created_at exactly.
+	for rowID, row := range h.repo.feedback {
+		row.CreatedAt = at
+		h.repo.feedback[rowID] = row
+	}
+
+	seen := map[id.ID[id.Feedback]]bool{}
+	cursor := ""
+	for range 3 {
+		page, err := h.svc.ListAccountFeedback(ctx, trustapi.ListFeedbackRequest{
+			AccountID: seller, Role: "seller", Cursor: cursor, Limit: 1,
+		})
+		if err != nil {
+			t.Fatalf("ListAccountFeedback: %v", err)
+		}
+		for _, row := range page.Data {
+			seen[row.ID] = true
+		}
+		if !page.Meta.HasMore {
+			break
+		}
+		cursor = page.Meta.NextCursor
+	}
+	if len(seen) != 2 {
+		t.Fatalf("history = %v, want both ratings of the seller across the pages", seen)
+	}
+}
+
 // The two rating pairs stay apart, and the order counters come from order's own event.
 func TestReputation_KeepsTheTwoRatingsApart(t *testing.T) {
 	h := newHarness("completed")
@@ -323,7 +375,7 @@ func TestReputation_KeepsTheTwoRatingsApart(t *testing.T) {
 		t.Fatalf("SubmitReview: %v", err)
 	}
 	if err := h.svc.RecordOrderOutcome(ctx, trustapi.RecordOrderOutcomeRequest{
-		BuyerID: buyer, SellerID: seller, Completed: true,
+		OrderID: orderID, BuyerID: buyer, SellerID: seller, Completed: true,
 	}); err != nil {
 		t.Fatalf("RecordOrderOutcome: %v", err)
 	}
@@ -390,6 +442,84 @@ func TestSubmitReview_NeedsThePurchase(t *testing.T) {
 		ActorID: buyer, ListingID: listingID, OrderID: orderID, Rating: 5,
 	}))); got != 422 {
 		t.Fatalf("status = %d, want 422 for a listing the order did not include", got)
+	}
+}
+
+// A review rates goods the buyer kept. A cancelled sale — one refunded in full — leaves none,
+// and its items keep CancelledAt nil once they belong to an order, so the per-item check cannot
+// see it. Rating the counterparty of that sale is still legitimate, which is feedback's job.
+func TestSubmitReview_NeedsACompletedOrder(t *testing.T) {
+	h := newHarness("cancelled")
+	ctx := context.Background()
+	req := trustapi.SubmitReviewRequest{
+		ActorID: buyer, ListingID: listingID, OrderID: orderID, Rating: 1, Body: "returned it",
+	}
+	if got := status(t, mustErr(h.svc.SubmitReview(ctx, req))); got != 422 {
+		t.Fatalf("status = %d, want 422 for a cancelled sale", got)
+	}
+	// The same order still earns feedback about the seller.
+	if _, err := h.svc.SubmitFeedback(ctx, trustapi.SubmitFeedbackRequest{
+		ActorID: buyer, OrderID: orderID, Rating: 1, Comment: "never shipped",
+	}); err != nil {
+		t.Fatalf("SubmitFeedback on a cancelled order: %v", err)
+	}
+	// And a sale that is still running earns neither.
+	h.orders.state = "open"
+	if got := status(t, mustErr(h.svc.SubmitReview(ctx, req))); got != 422 {
+		t.Fatalf("status = %d, want 422 while the order is open", got)
+	}
+	h.orders.state = "completed"
+	if _, err := h.svc.SubmitReview(ctx, req); err != nil {
+		t.Fatalf("SubmitReview on a completed order: %v", err)
+	}
+}
+
+// The seller a rating counts towards is frozen on the review, so editing or deleting one does
+// not depend on the listing still being readable. It is not: a seller who re-publishes a
+// listing puts it back in `pending`, which answers 404 even to the buyer who bought it — and
+// the old code turned that into a rating filed against account 0.
+func TestReview_CountsTheSellerFrozenAtPurchase(t *testing.T) {
+	h := newHarness("completed")
+	ctx := context.Background()
+	created, err := h.svc.SubmitReview(ctx, trustapi.SubmitReviewRequest{
+		ActorID: buyer, ListingID: listingID, OrderID: orderID, Rating: 5,
+	})
+	if err != nil {
+		t.Fatalf("SubmitReview: %v", err)
+	}
+	h.catalog.missing = true
+
+	edited, err := h.svc.UpdateReview(ctx, trustapi.UpdateReviewRequest{
+		ActorID: buyer, ID: created.ID, Rating: new(int16(1)),
+	})
+	if err != nil {
+		t.Fatalf("UpdateReview with the listing unreadable: %v", err)
+	}
+	if edited.Rating != 1 {
+		t.Fatalf("review = %+v, want the edit applied", edited)
+	}
+	rep, err := h.svc.GetReputation(ctx, trustapi.GetReputationRequest{AccountID: seller, Role: "seller"})
+	if err != nil {
+		t.Fatalf("GetReputation: %v", err)
+	}
+	if rep.ReviewRatingAverage != 1 || rep.ReviewRatingCount != 1 {
+		t.Fatalf("review rating = %v over %d, want the edit on the right seller",
+			rep.ReviewRatingAverage, rep.ReviewRatingCount)
+	}
+	// Nothing was filed against account 0 on the way.
+	if junk := h.repo.reputation[key(0, domain.RoleSeller)]; junk.ReviewRatingCount != 0 {
+		t.Fatalf("reputation of account 0 = %+v, want no such aggregate", junk)
+	}
+
+	if err := h.svc.DeleteReview(ctx, trustapi.ReviewRequest{ActorID: buyer, ID: created.ID}); err != nil {
+		t.Fatalf("DeleteReview with the listing unreadable: %v", err)
+	}
+	rep, err = h.svc.GetReputation(ctx, trustapi.GetReputationRequest{AccountID: seller, Role: "seller"})
+	if err != nil {
+		t.Fatalf("GetReputation: %v", err)
+	}
+	if rep.ReviewRatingCount != 0 || rep.ReviewRatingAverage != 0 {
+		t.Fatalf("review rating = %+v, want the rating taken back out", rep)
 	}
 }
 
@@ -589,6 +719,138 @@ func TestVoteReview_FlippedInPlace(t *testing.T) {
 	}
 }
 
+// seedReview writes a review straight into the fake with the tally and the age a paging test
+// needs: the service will not produce a hundred votes or a six-year-old row on its own.
+func seedReview(h *harness, helpful int64, createdAt time.Time) domain.Review {
+	v := domain.Review{
+		ID: h.repo.next(), ListingID: listingID.Int64(), OrderID: h.repo.next(),
+		AuthorID: buyer.Int64(), SellerID: seller.Int64(), Rating: 5,
+		HelpfulCount: helpful, CreatedAt: createdAt,
+	}
+	h.repo.reviews[v.ID] = v
+	return v
+}
+
+func reviewIDs(page trustapi.ReviewPage) []id.ID[id.Review] {
+	out := make([]id.ID[id.Review], 0, len(page.Data))
+	for _, row := range page.Data {
+		out = append(out, row.ID)
+	}
+	return out
+}
+
+// Each sort pages on the key it orders by. `helpful` bounded by a timestamp used to end page one
+// at an old but much-upvoted review and then make every newer review unreachable, however many
+// pages a client asked for.
+func TestListReviews_HelpfulPagesOnItsOwnKey(t *testing.T) {
+	h := newHarness("completed")
+	ctx := context.Background()
+	popular := seedReview(h, 100, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
+	recent := seedReview(h, 90, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+
+	first, err := h.svc.ListReviews(ctx, trustapi.ListReviewsRequest{
+		ListingID: listingID, Sort: "helpful", Limit: 1,
+	})
+	if err != nil {
+		t.Fatalf("ListReviews: %v", err)
+	}
+	if got := reviewIDs(first); len(got) != 1 || got[0] != id.Of[id.Review](popular.ID) {
+		t.Fatalf("page 1 = %v, want the most helpful review", got)
+	}
+	if !first.Meta.HasMore || first.Meta.NextCursor == "" {
+		t.Fatalf("meta = %+v, want another page", first.Meta)
+	}
+	second, err := h.svc.ListReviews(ctx, trustapi.ListReviewsRequest{
+		ListingID: listingID, Sort: "helpful", Cursor: first.Meta.NextCursor, Limit: 1,
+	})
+	if err != nil {
+		t.Fatalf("ListReviews page 2: %v", err)
+	}
+	if got := reviewIDs(second); len(got) != 1 || got[0] != id.Of[id.Review](recent.ID) {
+		t.Fatalf("page 2 = %v, want the 90-helpful review reachable", got)
+	}
+	if second.Meta.HasMore {
+		t.Errorf("meta = %+v, want the traversal finished", second.Meta)
+	}
+}
+
+// A cursor carries the key *and* the row id, so a tie at the boundary skips nothing.
+// CURRENT_TIMESTAMP is transaction-scoped, so two rows written together share it exactly —
+// which a bare timestamp cursor answered by dropping one of them.
+func TestListReviews_CursorBreaksATieOnTheKey(t *testing.T) {
+	h := newHarness("completed")
+	ctx := context.Background()
+	at := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	first := seedReview(h, 0, at)
+	second := seedReview(h, 0, at)
+
+	var seen []id.ID[id.Review]
+	cursor := ""
+	for range 3 {
+		page, err := h.svc.ListReviews(ctx, trustapi.ListReviewsRequest{
+			ListingID: listingID, Cursor: cursor, Limit: 1,
+		})
+		if err != nil {
+			t.Fatalf("ListReviews: %v", err)
+		}
+		seen = append(seen, reviewIDs(page)...)
+		if !page.Meta.HasMore {
+			break
+		}
+		cursor = page.Meta.NextCursor
+	}
+	want := []id.ID[id.Review]{id.Of[id.Review](second.ID), id.Of[id.Review](first.ID)}
+	if len(seen) != 2 || seen[0] != want[0] || seen[1] != want[1] {
+		t.Fatalf("traversal = %v, want both rows that share a timestamp %v", seen, want)
+	}
+}
+
+// A cursor this API did not issue is refused rather than read as "start again".
+func TestListReviews_RefusesAForgedCursor(t *testing.T) {
+	h := newHarness("completed")
+	if got := status(t, mustErr(h.svc.ListReviews(context.Background(), trustapi.ListReviewsRequest{
+		ListingID: listingID, Cursor: "not-a-cursor", Limit: 10,
+	}))); got != 400 {
+		t.Fatalf("status = %d, want 400", got)
+	}
+}
+
+// The photo set is capped on the way in and on the way through: an edit is not a way around a
+// limit the submission enforces.
+func TestUpdateReview_CapsTheAttachmentSet(t *testing.T) {
+	h := newHarness("completed")
+	ctx := context.Background()
+	created, err := h.svc.SubmitReview(ctx, trustapi.SubmitReviewRequest{
+		ActorID: buyer, ListingID: listingID, OrderID: orderID, Rating: 4,
+	})
+	if err != nil {
+		t.Fatalf("SubmitReview: %v", err)
+	}
+	tooMany := make([]id.ID[id.Resource], 0, 11)
+	for i := range 11 {
+		key := int64(100 + i)
+		h.repo.resources[key] = true
+		tooMany = append(tooMany, id.Of[id.Resource](key))
+	}
+	invalidField(t, mustErr(h.svc.SubmitReview(ctx, trustapi.SubmitReviewRequest{
+		ActorID: buyer, ListingID: listingID, OrderID: id.Of[id.Order](77), Rating: 4,
+		Attachments: tooMany,
+	})), "attachments")
+	invalidField(t, mustErr(h.svc.UpdateReview(ctx, trustapi.UpdateReviewRequest{
+		ActorID: buyer, ID: created.ID, Attachments: &tooMany,
+	})), "attachments")
+}
+
+// invalidField asserts a request was refused by validation, naming the field that failed. The
+// service answers with the validator's own result; the gateway is what renders it as the 400
+// envelope, so there is no coded error to decompose here.
+func invalidField(t *testing.T, err error, field string) {
+	t.Helper()
+	if err == nil || !strings.Contains(err.Error(), field) {
+		t.Fatalf("error = %v, want validation to name %q", err, field)
+	}
+}
+
 // An anonymous reader gets the page with no vote of their own, which is what optionalAuth is
 // for.
 func TestListReviews_AnonymousHasNoVote(t *testing.T) {
@@ -642,6 +904,186 @@ func TestSubmitReport_ChecksTheTarget(t *testing.T) {
 		ActorID: seller, RefType: "listing", RefID: listingID.String(), Reason: "scam",
 	}))); got != 404 {
 		t.Fatalf("status = %d, want 404 for a target that is gone", got)
+	}
+}
+
+// A module that cannot be reached has not said the target is gone. Telling a reporter their
+// target does not exist because catalog was down for a second makes them stop reporting it.
+func TestSubmitReport_PropagatesAnOutage(t *testing.T) {
+	h := newHarness("completed")
+	h.catalog.getErr = errx.NewError(503, "catalog_unavailable", "catalog is unreachable")
+	err := mustErr(h.svc.SubmitReport(context.Background(), trustapi.SubmitReportRequest{
+		ActorID: buyer, RefType: "listing", RefID: listingID.String(), Reason: "scam",
+	}))
+	if got := status(t, err); got != 503 {
+		t.Fatalf("status = %d, want the outage propagated", got)
+	}
+	if errors.Is(err, domain.ErrReportTargetNotFound) {
+		t.Error("an unreachable module was reported as a target that does not exist")
+	}
+}
+
+// A write that simply failed is not "somebody else claimed it": answering 409 to a dropped
+// connection sends a moderator looking for a colleague who was never there.
+func TestAdminClaimReport_PropagatesARealFailure(t *testing.T) {
+	h := newHarness("completed")
+	ctx := context.Background()
+	filed, err := h.svc.SubmitReport(ctx, trustapi.SubmitReportRequest{
+		ActorID: buyer, RefType: "listing", RefID: listingID.String(), Reason: "spam",
+	})
+	if err != nil {
+		t.Fatalf("SubmitReport: %v", err)
+	}
+	h.repo.saveReportErr = errors.New("connection refused")
+	claimErr := mustErr(h.svc.AdminClaimReport(ctx, trustapi.ReportRequest{
+		ActorID: moderator, ID: filed.ID,
+	}))
+	if errors.Is(claimErr, domain.ErrReportNotClaimable) {
+		t.Fatalf("claim error = %v, want the real failure rather than a conflict", claimErr)
+	}
+	if !errors.Is(claimErr, h.repo.saveReportErr) {
+		t.Fatalf("claim error = %v, want it to carry the write failure", claimErr)
+	}
+}
+
+// The queue is a page, so it costs a page's worth of round trips: one count for every target on
+// it and one name per distinct account, not three lookups per row.
+func TestAdminListReports_BatchesThePage(t *testing.T) {
+	h := newHarness("completed")
+	ctx := context.Background()
+	for _, reporter := range []id.ID[id.Account]{buyer, seller, stranger} {
+		if _, err := h.svc.SubmitReport(ctx, trustapi.SubmitReportRequest{
+			ActorID: reporter, RefType: "listing", RefID: listingID.String(), Reason: "counterfeit",
+		}); err != nil {
+			t.Fatalf("SubmitReport by %v: %v", reporter, err)
+		}
+	}
+	h.repo.countCalls = 0
+	queue, err := h.svc.AdminListReports(ctx, trustapi.AdminListReportsRequest{
+		ActorID: moderator, Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("AdminListReports: %v", err)
+	}
+	if len(queue.Data) != 3 {
+		t.Fatalf("queue = %d entries, want the three open reports", len(queue.Data))
+	}
+	if h.repo.countCalls != 1 {
+		t.Errorf("pattern reads = %d, want one for the whole page", h.repo.countCalls)
+	}
+	for _, entry := range queue.Data {
+		if entry.OpenReportsAgainstTarget != 3 {
+			t.Errorf("entry = %+v, want all three reports counted against the target", entry)
+		}
+	}
+}
+
+// The queue is worked oldest first and a reporter's history reads newest first, so the cursor
+// runs in both directions — and neither may drop a row whose timestamp its neighbour shares.
+func TestReports_PageInBothDirections(t *testing.T) {
+	h := newHarness("completed")
+	ctx := context.Background()
+	at := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
+	var filed []id.ID[id.Report]
+	for i, target := range []int64{41, 42, 43} {
+		r, err := h.svc.SubmitReport(ctx, trustapi.SubmitReportRequest{
+			ActorID: buyer, RefType: "listing", RefID: id.Of[id.Listing](target).String(),
+			Reason: "spam",
+		})
+		if err != nil {
+			t.Fatalf("SubmitReport %d: %v", i, err)
+		}
+		// One transaction's rows share created_at exactly, which is what the tuple cursor is for.
+		stored := h.repo.reports[r.ID.Int64()]
+		stored.CreatedAt = at
+		h.repo.reports[r.ID.Int64()] = stored
+		filed = append(filed, r.ID)
+	}
+
+	// The reporter's own history, newest first.
+	var mine []id.ID[id.Report]
+	cursor := ""
+	for range 4 {
+		page, err := h.svc.ListMyReports(ctx, trustapi.ListReportsRequest{
+			ActorID: buyer, Cursor: cursor, Limit: 1,
+		})
+		if err != nil {
+			t.Fatalf("ListMyReports: %v", err)
+		}
+		for _, row := range page.Data {
+			mine = append(mine, row.ID)
+		}
+		if !page.Meta.HasMore {
+			break
+		}
+		cursor = page.Meta.NextCursor
+	}
+	if len(mine) != 3 {
+		t.Fatalf("history = %v, want all three rows across the pages", mine)
+	}
+	if mine[0] != filed[2] || mine[2] != filed[0] {
+		t.Errorf("history = %v, want newest first out of %v", mine, filed)
+	}
+
+	// The moderator queue, oldest first.
+	var queue []id.ID[id.Report]
+	cursor = ""
+	for range 4 {
+		page, err := h.svc.AdminListReports(ctx, trustapi.AdminListReportsRequest{
+			ActorID: moderator, Cursor: cursor, Limit: 1,
+		})
+		if err != nil {
+			t.Fatalf("AdminListReports: %v", err)
+		}
+		for _, entry := range page.Data {
+			queue = append(queue, entry.Report.ID)
+		}
+		if !page.Meta.HasMore {
+			break
+		}
+		cursor = page.Meta.NextCursor
+	}
+	if len(queue) != 3 {
+		t.Fatalf("queue = %v, want all three rows across the pages", queue)
+	}
+	if queue[0] != filed[0] || queue[2] != filed[2] {
+		t.Errorf("queue = %v, want oldest first out of %v", queue, filed)
+	}
+}
+
+// The order counters are a mirror of an at-least-once stream, so the same settlement arriving
+// twice counts once — that is what makes the contract's "idempotent" true.
+func TestRecordOrderOutcome_CountsAnOrderOnce(t *testing.T) {
+	h := newHarness("completed")
+	ctx := context.Background()
+	req := trustapi.RecordOrderOutcomeRequest{
+		OrderID: orderID, BuyerID: buyer, SellerID: seller, Completed: true,
+	}
+	for range 3 {
+		if err := h.svc.RecordOrderOutcome(ctx, req); err != nil {
+			t.Fatalf("RecordOrderOutcome: %v", err)
+		}
+	}
+	rep, err := h.svc.GetReputation(ctx, trustapi.GetReputationRequest{AccountID: seller, Role: "seller"})
+	if err != nil {
+		t.Fatalf("GetReputation: %v", err)
+	}
+	if rep.CompletedOrders != 1 {
+		t.Fatalf("completed orders = %d, want the redeliveries ignored", rep.CompletedOrders)
+	}
+	// A different order is a different fact.
+	second := req
+	second.OrderID = id.Of[id.Order](11)
+	second.Completed = false
+	if err := h.svc.RecordOrderOutcome(ctx, second); err != nil {
+		t.Fatalf("RecordOrderOutcome: %v", err)
+	}
+	rep, err = h.svc.GetReputation(ctx, trustapi.GetReputationRequest{AccountID: seller, Role: "seller"})
+	if err != nil {
+		t.Fatalf("GetReputation: %v", err)
+	}
+	if rep.CompletedOrders != 1 || rep.CancelledOrders != 1 {
+		t.Fatalf("counters = %d/%d, want one of each", rep.CompletedOrders, rep.CancelledOrders)
 	}
 }
 

@@ -153,6 +153,37 @@ func TestAddFavorite_StrangersDraftNotFound(t *testing.T) {
 	}
 }
 
+// A ranked query visits only its top-K, the way the dictionary's `near` ranking does — so
+// its count is not a stable, seekable total and must read as nil, unlike a plain browse.
+func TestListListings_TotalCountNilOnRelevance(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	listing := seedListing(t, h)
+	publish(t, h, listing)
+
+	ranked, err := h.svc.ListListings(ctx, catalogapi.ListListingsRequest{
+		Query: "uniqlo", Sort: "relevance", Page: 1, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListListings(relevance): %v", err)
+	}
+	if len(ranked.Data) != 1 {
+		t.Fatalf("feed = %+v, want the match", ranked.Data)
+	}
+	if ranked.Meta.TotalCount != nil {
+		t.Errorf("total_count = %d, want nil on a ranking", *ranked.Meta.TotalCount)
+	}
+
+	// A plain browse still answers a real, seekable count.
+	browsed, err := h.svc.ListListings(ctx, catalogapi.ListListingsRequest{Page: 1, Limit: 20})
+	if err != nil {
+		t.Fatalf("ListListings: %v", err)
+	}
+	if browsed.Meta.TotalCount == nil || *browsed.Meta.TotalCount != 1 {
+		t.Errorf("total_count = %v, want 1 on a plain browse", browsed.Meta.TotalCount)
+	}
+}
+
 // `ids` resolves a known set and ignores the other filters — how a cart renders its rows.
 func TestListListings_IDsResolveEvenWhenHidden(t *testing.T) {
 	h := newHarnessWith("user", true)
@@ -179,5 +210,36 @@ func TestListListings_IDsResolveEvenWhenHidden(t *testing.T) {
 	}
 	if len(page.Data) != 1 || page.Data[0].ID != listing.ID {
 		t.Fatalf("ids = %+v, want the hidden listing", page.Data)
+	}
+}
+
+// The same rule for the other way a listing leaves the feed: a soft delete. An order that
+// references it still has to render, so `ids` must not carry the feed's `deleted_at IS
+// NULL` guard.
+func TestListListings_IDsResolveEvenWhenDeleted(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	listing := seedListing(t, h)
+	publish(t, h, listing)
+	if err := h.svc.DeleteListing(ctx, catalogapi.DeleteListingRequest{ActorID: actor, ID: listing.ID}); err != nil {
+		t.Fatalf("DeleteListing: %v", err)
+	}
+
+	// Gone from the feed, still resolvable by id.
+	page, err := h.svc.ListListings(ctx, catalogapi.ListListingsRequest{Page: 1, Limit: 20})
+	if err != nil {
+		t.Fatalf("ListListings: %v", err)
+	}
+	if len(page.Data) != 0 {
+		t.Fatalf("feed = %+v, want a deleted listing out of it", page.Data)
+	}
+	page, err = h.svc.ListListings(ctx, catalogapi.ListListingsRequest{
+		IDs: []id.ID[id.Listing]{listing.ID}, Page: 1, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListListings(ids): %v", err)
+	}
+	if len(page.Data) != 1 || page.Data[0].ID != listing.ID {
+		t.Fatalf("ids = %+v, want the deleted listing", page.Data)
 	}
 }

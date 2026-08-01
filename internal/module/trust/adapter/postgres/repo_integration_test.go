@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"shopnexus/internal/infra/postgres"
@@ -124,6 +125,17 @@ func TestInsertFeedback_RevealsThePairAndCounts(t *testing.T) {
 	if len(rows) != 1 || rows[0].ID != first.ID {
 		t.Fatalf("rows = %+v, want the buyer's published rating", rows)
 	}
+	// And the cursor over that list is strict on the pair, so the row it names is behind it.
+	rest, err := r.ListFeedback(ctx, port.FeedbackFilter{
+		RateeID: seller, Role: domain.RoleSeller,
+		Cursor: port.CursorFilter{Before: rows[0].CreatedAt, BeforeID: rows[0].ID, Limit: 50},
+	})
+	if err != nil {
+		t.Fatalf("ListFeedback past the cursor: %v", err)
+	}
+	if containsFeedback(rest, rows[0].ID) {
+		t.Error("the row the cursor names is served on the next page too")
+	}
 	// The seller's own rating of the buyer is not on the seller's list.
 	rows, err = r.ListFeedback(ctx, port.FeedbackFilter{
 		RateeID: seller, Role: domain.RoleBuyer, Cursor: port.CursorFilter{Limit: 50},
@@ -200,16 +212,21 @@ func TestFindReputation_UnratedIsZero(t *testing.T) {
 	}
 }
 
-// The order counters both parties carry, each in the role they played.
+// The order counters both parties carry, each in the role they played — and once per order,
+// because the settled event that drives them is at-least-once.
 func TestAddOrderOutcome_CountsBothParties(t *testing.T) {
 	r, _ := newRepo(t)
 	ctx := context.Background()
-	buyer, seller, _ := party(t)
+	buyer, seller, orderID := party(t)
 
-	if err := r.AddOrderOutcome(ctx, buyer, seller, true); err != nil {
+	if err := r.AddOrderOutcome(ctx, orderID, buyer, seller, true); err != nil {
 		t.Fatalf("AddOrderOutcome: %v", err)
 	}
-	if err := r.AddOrderOutcome(ctx, buyer, seller, false); err != nil {
+	// The same order again is a redelivery, which the key it wrote makes a no-op.
+	if err := r.AddOrderOutcome(ctx, orderID, buyer, seller, true); err != nil {
+		t.Fatalf("second AddOrderOutcome: %v", err)
+	}
+	if err := r.AddOrderOutcome(ctx, orderID+1, buyer, seller, false); err != nil {
 		t.Fatalf("AddOrderOutcome: %v", err)
 	}
 	for _, party := range []struct {
@@ -246,19 +263,19 @@ func TestReview_RatingIsCountedApart(t *testing.T) {
 		t.Fatalf("PublishFeedback: %v", err)
 	}
 
-	v, err := domain.NewReview(listingID, orderID, buyer, 1, "not as described", nil)
+	v, err := domain.NewReview(listingID, orderID, buyer, seller, 1, "not as described", nil)
 	if err != nil {
 		t.Fatalf("NewReview: %v", err)
 	}
-	if err := r.InsertReview(ctx, &v, seller); err != nil {
+	if err := r.InsertReview(ctx, &v); err != nil {
 		t.Fatalf("InsertReview: %v", err)
 	}
 	// One review per (listing, author, order).
-	dup, err := domain.NewReview(listingID, orderID, buyer, 3, "again", nil)
+	dup, err := domain.NewReview(listingID, orderID, buyer, seller, 3, "again", nil)
 	if err != nil {
 		t.Fatalf("NewReview: %v", err)
 	}
-	if err := r.InsertReview(ctx, &dup, seller); !errors.Is(err, domain.ErrReviewExists) {
+	if err := r.InsertReview(ctx, &dup); !errors.Is(err, domain.ErrReviewExists) {
 		t.Fatalf("second InsertReview = %v, want ErrReviewExists", err)
 	}
 
@@ -277,7 +294,7 @@ func TestReview_RatingIsCountedApart(t *testing.T) {
 	if err := v.SetRating(5); err != nil {
 		t.Fatalf("SetRating: %v", err)
 	}
-	if err := r.SaveReview(ctx, v, seller, 4); err != nil {
+	if err := r.SaveReview(ctx, v); err != nil {
 		t.Fatalf("SaveReview: %v", err)
 	}
 	rep, err = r.FindReputation(ctx, seller, domain.RoleSeller)
@@ -305,7 +322,7 @@ func TestReview_RatingIsCountedApart(t *testing.T) {
 	}
 
 	// Removal takes it back out and drops the row.
-	if err := r.DeleteReview(ctx, v.ID, seller, reread.Rating); err != nil {
+	if err := r.DeleteReview(ctx, v.ID); err != nil {
 		t.Fatalf("DeleteReview: %v", err)
 	}
 	rep, err = r.FindReputation(ctx, seller, domain.RoleSeller)
@@ -332,11 +349,11 @@ func TestReplies_CountedAndCappedPerReview(t *testing.T) {
 	buyer, seller, orderID := party(t)
 	listingID := orderID + 100
 
-	v, err := domain.NewReview(listingID, orderID, buyer, 4, "good", nil)
+	v, err := domain.NewReview(listingID, orderID, buyer, seller, 4, "good", nil)
 	if err != nil {
 		t.Fatalf("NewReview: %v", err)
 	}
-	if err := r.InsertReview(ctx, &v, seller); err != nil {
+	if err := r.InsertReview(ctx, &v); err != nil {
 		t.Fatalf("InsertReview: %v", err)
 	}
 	var replyIDs []int64
@@ -390,7 +407,7 @@ func TestReplies_CountedAndCappedPerReview(t *testing.T) {
 	}
 
 	// The review going takes the rest of the thread with it, by cascade.
-	if err := r.DeleteReview(ctx, v.ID, seller, reread.Rating); err != nil {
+	if err := r.DeleteReview(ctx, v.ID); err != nil {
 		t.Fatalf("DeleteReview: %v", err)
 	}
 	if _, err := r.FindReply(ctx, replyIDs[1]); !errors.Is(err, domain.ErrReplyNotFound) {
@@ -407,11 +424,11 @@ func TestVotes_FlipMovesOneUnit(t *testing.T) {
 	listingID := orderID + 100
 	voter := buyer + 500
 
-	v, err := domain.NewReview(listingID, orderID, buyer, 4, "good", nil)
+	v, err := domain.NewReview(listingID, orderID, buyer, seller, 4, "good", nil)
 	if err != nil {
 		t.Fatalf("NewReview: %v", err)
 	}
-	if err := r.InsertReview(ctx, &v, seller); err != nil {
+	if err := r.InsertReview(ctx, &v); err != nil {
 		t.Fatalf("InsertReview: %v", err)
 	}
 
@@ -495,11 +512,12 @@ func TestReports_QueueAndVerdict(t *testing.T) {
 	if err := r.InsertReport(ctx, &second); err != nil {
 		t.Fatalf("InsertReport: %v", err)
 	}
-	count, err := r.CountOpenAgainst(ctx, domain.ReportRefListing, target)
+	listingTarget := port.ReportTarget{RefType: domain.ReportRefListing, RefID: target}
+	counts, err := r.CountOpenAgainst(ctx, []port.ReportTarget{listingTarget})
 	if err != nil {
 		t.Fatalf("CountOpenAgainst: %v", err)
 	}
-	if count != 2 {
+	if count := counts[listingTarget]; count != 2 {
 		t.Fatalf("open against the target = %d, want 2", count)
 	}
 
@@ -514,6 +532,20 @@ func TestReports_QueueAndVerdict(t *testing.T) {
 	}
 	if !containsReport(queue, first.ID) || !containsReport(queue, second.ID) {
 		t.Fatalf("queue is missing one of the open reports")
+	}
+	// The queue runs forward, so its cursor is the row a page ended at and the tuple is strict:
+	// the report it names is not served again, and one that shares its timestamp still is.
+	last := queue[len(queue)-1]
+	rest, err := r.ListReports(ctx, port.ReportFilter{
+		Statuses: []string{domain.ReportStatusOpen, domain.ReportStatusReviewing},
+		RefType:  domain.ReportRefListing,
+		Cursor:   port.CursorFilter{Before: last.CreatedAt, BeforeID: last.ID, Limit: 200},
+	})
+	if err != nil {
+		t.Fatalf("ListReports past the cursor: %v", err)
+	}
+	if containsReport(rest, last.ID) {
+		t.Error("the row the cursor names is served on the next page too")
 	}
 
 	// Claiming is guarded by `open`, so two moderators claiming at once means one wins.
@@ -555,11 +587,11 @@ func TestReports_QueueAndVerdict(t *testing.T) {
 	if containsReport(queue, first.ID) {
 		t.Error("a resolved report is still in the queue")
 	}
-	count, err = r.CountOpenAgainst(ctx, domain.ReportRefListing, target)
+	counts, err = r.CountOpenAgainst(ctx, []port.ReportTarget{listingTarget})
 	if err != nil {
 		t.Fatalf("CountOpenAgainst: %v", err)
 	}
-	if count != 1 {
+	if count := counts[listingTarget]; count != 1 {
 		t.Fatalf("open against the target = %d, want 1", count)
 	}
 	// And the reporter may file again now that the first case is closed.
@@ -569,6 +601,195 @@ func TestReports_QueueAndVerdict(t *testing.T) {
 	}
 	if err := r.InsertReport(ctx, &again); err != nil {
 		t.Fatalf("InsertReport after the verdict: %v", err)
+	}
+}
+
+// Two writers that move one review's rating is write skew unless the row is locked: an edit
+// and a delete that each computed their delta from the same 5 take the aggregate down by 9 for
+// a review worth 5, which the non-negative CHECK then answers with a 500 — or, once the seller
+// has other reviews to absorb it, with a number nobody can reproduce.
+//
+// One attempt is not enough to observe it: the window is between the two statements, and the
+// first pair of goroutines rarely overlaps. Unguarded, this loop leaves a wrong aggregate
+// within a few iterations; guarded, on none.
+func TestSaveAndDeleteReview_CannotBothMoveTheAggregate(t *testing.T) {
+	r, _ := newRepo(t)
+	ctx := context.Background()
+	buyer, seller, orderID := party(t)
+
+	const attempts = 40
+	for i := range attempts {
+		// A seller per attempt, so one iteration's aggregate is not the next one's history.
+		attemptSeller := seller + int64(i)*1_000
+		v, err := domain.NewReview(orderID+100+int64(i), orderID+int64(i), buyer, attemptSeller,
+			5, "as described", nil)
+		if err != nil {
+			t.Fatalf("NewReview: %v", err)
+		}
+		if err := r.InsertReview(ctx, &v); err != nil {
+			t.Fatalf("InsertReview: %v", err)
+		}
+		// Both writers hold the same copy of the review, rated 5.
+		edited := v
+		if err := edited.SetRating(1); err != nil {
+			t.Fatalf("SetRating: %v", err)
+		}
+
+		done := make(chan error, 2)
+		start := make(chan struct{})
+		go func() {
+			<-start
+			done <- r.SaveReview(ctx, edited)
+		}()
+		go func() {
+			<-start
+			done <- r.DeleteReview(ctx, v.ID)
+		}()
+		close(start)
+		for range 2 {
+			// A delete that landed first makes the edit a not-found, which is the honest answer.
+			if err := <-done; err != nil && !errors.Is(err, domain.ErrReviewNotFound) {
+				t.Fatalf("attempt %d: %v", i, err)
+			}
+		}
+
+		rep, err := r.FindReputation(ctx, attemptSeller, domain.RoleSeller)
+		if err != nil {
+			t.Fatalf("FindReputation: %v", err)
+		}
+		// Whichever order they ran in, the review is gone and so is its rating.
+		if rep.ReviewRatingSum != 0 || rep.ReviewRatingCount != 0 {
+			t.Fatalf("attempt %d: review rating = %d over %d, want the deleted review counted for nothing",
+				i, rep.ReviewRatingSum, rep.ReviewRatingCount)
+		}
+	}
+}
+
+// Both sides submitting at the same moment is write skew too: looking for the counterpart is a
+// read, so under READ COMMITTED each transaction misses the other's uncommitted row, neither
+// reveals, and the pair stays blind until the sweep two weeks later. The advisory lock on the
+// order is what makes the second one see the first.
+func TestInsertFeedback_SimultaneousSubmissionsStillReveal(t *testing.T) {
+	r, _ := newRepo(t)
+	ctx := context.Background()
+	buyer, seller, orderID := party(t)
+
+	const attempts = 40
+	for i := range attempts {
+		// A party and an order per attempt: the pair is unique per order, and a reputation
+		// carries across iterations otherwise.
+		b, s, o := buyer+int64(i)*1_000, seller+int64(i)*1_000, orderID+int64(i)*1_000
+		fromBuyer, err := domain.NewFeedback(o, b, s, domain.DirectionBuyerToSeller, 5, "")
+		if err != nil {
+			t.Fatalf("NewFeedback: %v", err)
+		}
+		fromSeller, err := domain.NewFeedback(o, s, b, domain.DirectionSellerToBuyer, 4, "")
+		if err != nil {
+			t.Fatalf("NewFeedback: %v", err)
+		}
+
+		done := make(chan error, 2)
+		start := make(chan struct{})
+		for _, row := range []*domain.Feedback{&fromBuyer, &fromSeller} {
+			go func() {
+				<-start
+				done <- r.InsertFeedback(ctx, row)
+			}()
+		}
+		close(start)
+		for range 2 {
+			if err := <-done; err != nil {
+				t.Fatalf("attempt %d: InsertFeedback: %v", i, err)
+			}
+		}
+
+		for _, direction := range []string{domain.DirectionBuyerToSeller, domain.DirectionSellerToBuyer} {
+			stored, err := r.FindFeedback(ctx, o, direction)
+			if err != nil {
+				t.Fatalf("FindFeedback: %v", err)
+			}
+			if !stored.Published() {
+				t.Fatalf("attempt %d: %s is still blind with both sides in", i, direction)
+			}
+		}
+		// Published is counted, and counted once.
+		rep, err := r.FindReputation(ctx, s, domain.RoleSeller)
+		if err != nil {
+			t.Fatalf("FindReputation: %v", err)
+		}
+		if rep.RatingSum != 5 || rep.RatingCount != 1 {
+			t.Fatalf("attempt %d: seller reputation = %d over %d, want one 5",
+				i, rep.RatingSum, rep.RatingCount)
+		}
+		rep, err = r.FindReputation(ctx, b, domain.RoleBuyer)
+		if err != nil {
+			t.Fatalf("FindReputation: %v", err)
+		}
+		if rep.RatingSum != 4 || rep.RatingCount != 1 {
+			t.Fatalf("attempt %d: buyer reputation = %d over %d, want one 4",
+				i, rep.RatingSum, rep.RatingCount)
+		}
+	}
+}
+
+// Each sort pages on the key it orders by, and the cursor carries the row id beside that key —
+// so a page boundary between two rows that share a timestamp exactly, which one transaction's
+// writes do, reaches both.
+func TestListReviews_PagesEverySortWithoutSkipping(t *testing.T) {
+	r, pool := newRepo(t)
+	ctx := context.Background()
+	buyer, seller, orderID := party(t)
+	listingID := orderID + 100
+
+	var written []int64
+	for i := range 3 {
+		v, err := domain.NewReview(listingID, orderID+int64(i), buyer, seller, 5, "good", nil)
+		if err != nil {
+			t.Fatalf("NewReview: %v", err)
+		}
+		if err := r.InsertReview(ctx, &v); err != nil {
+			t.Fatalf("InsertReview: %v", err)
+		}
+		written = append(written, v.ID)
+	}
+	// One timestamp for all three, as a single transaction would have given them, and a tally
+	// whose order disagrees with the timestamps.
+	if _, err := pool.Exec(ctx, `UPDATE review SET created_at = now(),
+	                             helpful_count = 100 - array_position(@ids::bigint[], id)
+	                             WHERE listing_id = @listing_id`,
+		pgx.NamedArgs{"ids": written, "listing_id": listingID}); err != nil {
+		t.Fatalf("level the timestamps: %v", err)
+	}
+
+	for _, sort := range []string{domain.ReviewSortNewest, domain.ReviewSortHelpful} {
+		seen := map[int64]bool{}
+		cursor := port.CursorFilter{Limit: 2}
+		for range 4 {
+			// Limit 2 is one row plus the extra read the service uses to detect another page.
+			rows, err := r.ListReviews(ctx, port.ReviewFilter{
+				ListingID: listingID, Sort: sort, Cursor: cursor,
+			})
+			if err != nil {
+				t.Fatalf("ListReviews(%s): %v", sort, err)
+			}
+			if len(rows) == 0 {
+				break
+			}
+			last := rows[0]
+			seen[last.ID] = true
+			if len(rows) == 1 {
+				break
+			}
+			cursor = port.CursorFilter{
+				Before: last.CreatedAt, BeforeCount: last.HelpfulCount,
+				BeforeID: last.ID, Limit: 2,
+			}
+		}
+		for _, id := range written {
+			if !seen[id] {
+				t.Fatalf("sort=%s: review %d was unreachable across the pages (saw %v)", sort, id, seen)
+			}
+		}
 	}
 }
 

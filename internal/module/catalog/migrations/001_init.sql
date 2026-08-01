@@ -335,3 +335,24 @@ CREATE TABLE IF NOT EXISTS "stock" (
 -- best-selling does NOT come from here — see listing.cached_sold for why a SUM over
 -- variants cannot be read off this index.
 CREATE INDEX IF NOT EXISTS "stock_sold_idx" ON "stock" ("sold" DESC);
+
+-- Which commits and reversals have already been applied. Reserve and release need no
+-- ledger — a duplicate release is caught by "reserved" running out — but a commit moves
+-- units into "sold", which never goes down on its own, and a reversal moves them back.
+-- Neither is derivable from the counters afterwards, so a retried call would sell the same
+-- units twice or credit them twice. The row is written in the same transaction as the
+-- counter change, so "applied" and "counted" are one fact.
+CREATE TABLE IF NOT EXISTS "stock_movement" (
+    -- The caller's key, e.g. 'order:41:item:88:commit'. A natural key, so it is the PK:
+    -- there is nothing else about this row to address.
+    "key" VARCHAR(200) NOT NULL,
+    "variant_id" BIGINT NOT NULL,
+    "units" BIGINT NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "stock_movement_pkey" PRIMARY KEY ("key"),
+    CONSTRAINT "stock_movement_units_positive" CHECK ("units" > 0),
+
+    CONSTRAINT "stock_movement_variant_id_fkey" FOREIGN KEY ("variant_id")
+        REFERENCES "variant" ("id") ON DELETE CASCADE
+);

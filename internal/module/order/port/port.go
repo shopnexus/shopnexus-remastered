@@ -11,11 +11,14 @@ import (
 	"shopnexus/internal/module/order/domain"
 )
 
-// CursorFilter pages a list newest first on a created_at cursor. Not an offset: these
-// lists move under the reader, and an offset would skip or repeat a row when they do.
+// CursorFilter pages a list newest first on a (created_at, id) cursor. Not an offset: these
+// lists move under the reader, and an offset would skip or repeat a row when they do. Both
+// halves, compared as a tuple: rows written in one transaction share `created_at` to the
+// microsecond, so the timestamp alone puts part of a group out of reach.
 type CursorFilter struct {
-	Before time.Time
-	Limit  int
+	Before   time.Time
+	BeforeID int64
+	Limit    int
 }
 
 // ItemFilter is "my purchases", or a seller's paid-but-unordered lines.
@@ -97,17 +100,29 @@ type Repository interface {
 	// ItemsByPaymentSession is the webhook's first lookup: which lines did this session
 	// pay for.
 	ItemsByPaymentSession(ctx context.Context, sessionID int64) ([]domain.Item, error)
+	// UnpaidItems is the checkout-expiry sweep: lines older than the checkout window that
+	// no order covers. Their reserved units are what would otherwise be lost — nothing else
+	// in the schema ever looks at a reservation again.
+	UnpaidItems(ctx context.Context, before time.Time, limit int) ([]domain.Item, error)
 
 	// --- transport ---
 	InsertTransport(ctx context.Context, option string) (int64, error)
 	FindTransport(ctx context.Context, id int64) (domain.Transport, error)
-	SaveTransport(ctx context.Context, t domain.Transport) error
+	// SaveTransport advances a shipment. `from` is the status it moves out of, which is the
+	// conditional write: a shipment has no version, and two carrier reports arriving at once
+	// must not both land.
+	SaveTransport(ctx context.Context, t domain.Transport, from string) error
 
 	// --- orders ---
 	// CreateOrder writes the order and links the lines to it in one transaction. The
 	// unique origin is what makes a redelivered webhook idempotent rather than a second
 	// order.
 	CreateOrder(ctx context.Context, o *domain.Order, itemIDs []int64) error
+	// LinkItems attaches lines to an order that already exists — the half of settling that
+	// is still outstanding when an earlier attempt wrote the order and then failed. Its own
+	// method rather than a second CreateOrder: that one would re-run the INSERT and lose on
+	// the origin constraint, which rolls back the link it was there to make.
+	LinkItems(ctx context.Context, orderID int64, itemIDs []int64) error
 	FindOrder(ctx context.Context, id int64) (domain.Order, error)
 	FindOrderByOrigin(ctx context.Context, origin domain.Origin) (domain.Order, error)
 	ListOrders(ctx context.Context, f OrderFilter) ([]domain.Order, error)
@@ -117,13 +132,35 @@ type Repository interface {
 	// PayoutDue is the orders whose escrow window has passed with no refund live. A
 	// durable timer per order does this too; the sweep is the safety net.
 	PayoutDue(ctx context.Context, now time.Time, limit int) ([]domain.Order, error)
+	// ClaimPayout takes the order's advisory lock, re-checks under it that nothing is
+	// disputing the money, and completes the order — all in one transaction. PayoutDue's
+	// `NOT EXISTS` is a read, so without the lock a refund committed between the select and
+	// the write is invisible to both sides and the seller is paid what the buyer is owed.
+	// Answers domain.ErrOrderSettled when the order is no longer the payout's to take.
+	ClaimPayout(ctx context.Context, o *domain.Order) error
+	// ClaimedPayouts is the stranded releases: an order whose outcome was written but whose
+	// money never moved. Exactly that set, so a healthy platform reads nothing.
+	ClaimedPayouts(ctx context.Context, limit int) ([]domain.Order, error)
+	// MarkPayoutReleased records that the escrow reached the seller, which is what takes an
+	// order off the stranded list. Its own write rather than part of the claim: the claim has
+	// to commit before the money moves, or two passes could both decide they own the escrow.
+	MarkPayoutReleased(ctx context.Context, o domain.Order) error
 
 	// --- refunds and disputes ---
+	// InsertRefund opens a case under the same advisory lock ClaimPayout takes, and refuses
+	// one on an order that has already been paid out or cancelled: the escrow the refund is
+	// about has to still be there when the row lands.
 	InsertRefund(ctx context.Context, r *domain.Refund) error
 	FindRefund(ctx context.Context, id int64) (domain.Refund, error)
 	FindOpenRefundByOrder(ctx context.Context, orderID int64) (domain.Refund, error)
 	ListRefunds(ctx context.Context, f RefundFilter) ([]domain.Refund, error)
 	SaveRefund(ctx context.Context, r domain.Refund) error
+	// SaveRefundOutcome writes a refund transition together with the rows it decides — the
+	// dispute round that ruled it, the order it closes — in one transaction. Apart, a commit
+	// that failed halfway leaves "accepted refund over an open order", which the payout sweep
+	// reads as money to hand the seller, or "ruled dispute over a disputed refund", which no
+	// path can reach.
+	SaveRefundOutcome(ctx context.Context, r domain.Refund, d *domain.Dispute, o *domain.Order) error
 	// OverdueRefunds is the timeout pass: every live refund whose deadline has passed. One
 	// query advances all three windows, which is what naming a status for the party it
 	// waits on buys.
@@ -132,7 +169,6 @@ type Repository interface {
 	InsertDispute(ctx context.Context, d *domain.Dispute) error
 	FindDispute(ctx context.Context, id int64) (domain.Dispute, error)
 	ListOpenDisputes(ctx context.Context, f CursorFilter) ([]domain.Dispute, error)
-	SaveDispute(ctx context.Context, d domain.Dispute) error
 
 	// FindResources reads this module's own uploaded evidence — receipt photos, refund
 	// attachments.

@@ -79,15 +79,19 @@ Currently I only implement basic Redis lock/unlock, but while working on it I no
 
 Each module has its own README with ER diagrams, domain concepts, flows, and endpoints.
 
-| Module                                       | Description                                                            |
-| -------------------------------------------- | ---------------------------------------------------------------------- |
-| [`account`](internal/module/account/)        | Auth, profiles, contacts, favorites, payment methods, notifications    |
-| [`catalog`](internal/module/catalog/)        | Products, categories, tags, comments, hybrid search                    |
-| [`order`](internal/module/order/)            | Cart, checkout, price negotiation, orders, shipment, refunds           |
-| [`inventory`](internal/module/inventory/)    | Stock management, serial tracking, audit history                       |
-| [`promotion`](internal/module/promotion/)    | Discounts, ship discounts, scheduling, group-based price stacking      |
-| [`analytic`](internal/module/analytic/)      | Interaction tracking, weighted product popularity scoring              |
-| [`chat`](internal/module/chat/)              | Messaging, conversations, read receipts                                |
+| Module                                              | Description                                                                        |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| [`account`](internal/module/account/)               | Auth, sessions, profiles, contacts, devices, identity documents                     |
+| [`catalog`](internal/module/catalog/)               | Listings and variants, categories, tags, stock, hybrid search, wishlist             |
+| [`order`](internal/module/order/)                   | Cart, purchase drafts, price negotiation, orders, shipment, refunds and disputes    |
+| [`finance`](internal/module/finance/)               | Every money primitive: payment sessions, ledger, wallets, bank accounts, withdrawals |
+| [`chat`](internal/module/chat/)                     | One thread per pair of accounts, its messages, read marks, system cards             |
+| [`trust`](internal/module/trust/)                   | Blind order feedback, product reviews, reputation, abuse reports                    |
+| [`observability`](internal/module/observability/)   | Operational telemetry into TimescaleDB — not a domain module, nothing calls it      |
+
+Stock lives in `catalog`; there is no separate inventory module. All money lives in
+`finance`, so an escrow move stays one atomic write. Product/web analytics is **not** in this
+backend — it is collected client-side by Rybbit.
 
 Module boundaries follow DDD bounded contexts: each owns its schema, and cross-module writes go through sagas rather than shared transactions.
 
@@ -100,11 +104,44 @@ same server.
 
 ## Tools
 
-- **[pgx/v5](https://github.com/jackc/pgx)** as the PostgreSQL driver, wrapped in `pgsqlc.Storage[T]` for connection pooling and transaction support.
-- **[SQLC](https://sqlc.dev)** generates type-safe Go structs and query methods from SQL. Config in `sqlc.yaml`. Uses `guregu/null/v6` for nullable types.
-- **pgtempl** (`cmd/pgtempl/`) generates SQLC query templates from migration files, producing CRUD queries automatically.
-- **genrestate** (`cmd/genrestate/`) generates Restate service definitions and proxy interfaces from Go interface definitions.
-- **migrate** (`cmd/migrate/`) manages database migrations. Migration files are in `<module>/db/migrations/` with the format `<version>_<description>.sql`.
+- **[pgx/v5](https://github.com/jackc/pgx)** as the driver, with `pgx.NamedArgs` and hand-written SQL. No ORM and no code generation: a repository owns its queries, and each module's pool sets `search_path` to that module's schema so every statement stays unqualified.
+- **[Uber fx](https://github.com/uber-go/fx)** wires the graph. One `fx.go` per module; cross-module wiring happens by interface type, so a module depends on a peer's published `api.Service` and never on its implementation.
+- **migrate** (`cmd/migrate/`) applies the embedded migrations — `internal/module/<m>/migrations/*.sql`, preceded by the shared DDL in `common/migrations`. Required before the first run; the app never migrates at startup.
+- **specgen** (`cmd/specgen/`, via `go generate ./...`) merges one OpenAPI fragment per aggregate into `api/openapi.gen.yaml`, which is embedded, served at `/api/v1/openapi.yaml`, and mocked by Prism.
+- **[Restate](https://restate.dev)** holds the timers that outlive a request. See below.
+
+## Running it
+
+```bash
+docker compose up -d                       # infra: Postgres, Redis, NATS, Grafana, Loki, Alloy
+go run ./cmd/migrate                       # required before the first run
+go run ./cmd/gateway                       # the API on GATEWAY_ADDR, under /api/v1
+```
+
+Every env var is **required, with no default** (`internal/config`) — a missing one fails at
+startup rather than falling back to something plausible. The full set, with a comment on each,
+is the `x-app-env` block at the top of `docker-compose.yml`; that block is the reference.
+
+Each seam that talks to the outside world is chosen by its own selector (`EMAIL_PROVIDER`,
+`SMS_PROVIDER`, `OAUTH_VERIFIER`, `KYC_PROVIDER`, `PAYMENT_PROVIDER`), and `mock` is always one
+of the choices, so a local stack needs no SMTP account, SMS contract or KYC subscription. A
+vendor's credentials are required only when that vendor is the one selected.
+
+### Durable execution
+
+Every wait this marketplace makes — an unpaid checkout expiring and releasing its stock, an
+escrow window closing into a payout, a refund deadline passing, a blind rating revealing — is an
+**idempotent service method**. Two things drive those methods, and neither is a second
+definition of "due":
+
+- A **Restate run per entity** calls it promptly and survives a restart (`WORKFLOW_RUNTIME=restate`,
+  plus `--profile restate` in compose; the gateway serves the handlers on `RESTATE_SERVE_ADDR`
+  and submits and signals runs through `RESTATE_INGRESS_URL`).
+- A **sweeper** calls the same method every `SWEEP_INTERVAL` as the net under a lost run. It runs
+  either way, which is what makes leaving it on under Restate free: it finds nothing.
+
+`WORKFLOW_RUNTIME=off` is a real deployment — the sweep is then the only clock, and every
+transition still happens, just on a slower one.
 
 ## Roadmap
 

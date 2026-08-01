@@ -126,23 +126,17 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/WalletAdjustmentRequest' }
       responses:
-        '201':
-          description: 'Adjusted'
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data: { $ref: '#/components/schemas/WalletTransaction' }
-                required: [data]
         '200':
-          description: 'This idempotency key was already applied; the existing movement is returned'
+          description: >
+            Adjusted, answering the balances as they now stand. The same response for a key
+            that was already applied: a retried correction is the state the admin asked for,
+            not a second credit.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  data: { $ref: '#/components/schemas/WalletTransaction' }
+                  data: { $ref: '#/components/schemas/Wallet' }
                 required: [data]
         '400': { description: 'Malformed, or both deltas are zero', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -201,14 +195,13 @@ components:
     WithdrawalApprovalRequest:
       type: object
       properties:
-        note: { type: string, maxLength: 2000 }
+        reason: { type: string, maxLength: 500, description: 'A note for the payee, recorded on the request.' }
         provider_ref: { type: string, maxLength: 200, description: The bank's or gateway's reference for the outbound transfer }
-      required: [note]
 
     WithdrawalRejectionRequest:
       type: object
       properties:
-        reason: { type: string, minLength: 1, maxLength: 2000 }
+        reason: { type: string, minLength: 1, maxLength: 500 }
       required: [reason]
 
     TaxVerificationRequest:

@@ -1,10 +1,10 @@
-# order fragment: transport — the carrier leg of an order.
+# order fragment: transport — the carrier leg of an order, and the leg carrying a refund back.
 
 paths:
   /orders/{id}/transport:
     get:
       tags: [order]
-      summary: Read the shipment and its tracking events
+      summary: Read the shipment
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderID' } }
@@ -22,30 +22,116 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /orders/{id}/transport/checkpoints:
+    post:
+      tags: [order]
+      summary: Report a carrier checkpoint on the outbound leg (seller)
+      description: >
+        The seller's route — they are the one who hands the parcel over — and a moderator may
+        correct it; nobody else writes this status.
+
+
+        Forward-only. Carrier reports arrive out of order, and whether the parcel has left is
+        what decides whether the order can still be cancelled and the escrow taken back, so it
+        is not a fact a later report may undo: a checkpoint at or behind where the shipment
+        already is, or one on a leg that has ended, is 409.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransportCheckpointRequest' }
+      responses:
+        '200':
+          description: 'Recorded'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Transport' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Caller is not the seller of this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The shipment is already at or past that point', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /refunds/{id}/return-transport/checkpoints:
+    post:
+      tags: [order]
+      summary: Report a checkpoint on the leg carrying the goods back
+      description: >
+        The return leg exists only from the moment a refund is granted, and `delivered` is what
+        moves the case to `returned` and opens the seller's appeal window. It is the only exit
+        from `returning`.
+
+
+        Either party to the order may report it. The buyer posted the parcel and the seller
+        received it, and requiring the seller alone would let one who simply never confirms
+        strand the escrow with nobody on a clock — which is what having no writer at all did. A
+        buyer who claims a delivery that did not happen is answered by round two of the dispute,
+        which is exactly what that window is for.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundID' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransportCheckpointRequest' }
+      responses:
+        '200':
+          description: 'Recorded; the refund moves to `returned` once the leg is delivered'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Refund' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'No return leg yet, the leg is already past that point, or the order is closed', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
 components:
   schemas:
     TransportStatus:
       type: string
-      description: Shipment lifecycle as the carrier reports it.
+      description: Where the shipment is. `pending` is created but not yet handed over.
       enum: [pending, picked-up, in-transit, delivered, returned, failed, cancelled]
 
-    TransportEvent:
+    TransportCheckpoint:
+      type: string
+      description: >
+        A position a checkpoint may report, so `pending` is not one of them — that is where a
+        shipment starts, not somewhere it can be moved to. The last three are outcomes and are
+        reachable from anywhere: a parcel can fail before it is ever collected.
+      enum: [picked-up, in-transit, delivered, returned, failed]
+
+    TransportCheckpointRequest:
       type: object
-      description: One carrier-reported checkpoint.
+      description: One carrier-reported position. The same shape for the outbound leg and for
+        the leg carrying a refund's goods back.
       properties:
-        status: { $ref: '#/components/schemas/TransportStatus' }
-        note: { type: string }
-        occurred_at: { type: string, format: date-time }
-      required: [status, occurred_at]
+        status: { $ref: '#/components/schemas/TransportCheckpoint' }
+      required: [status]
 
     Transport:
       type: object
+      description: >
+        One shipment as the platform knows it. The carrier's own view — tracking number, label,
+        raw webhook payloads — is held in the row but not published: it is provider-shaped, and
+        nothing a client renders depends on it.
       properties:
         id: { $ref: '#/components/schemas/TransportID' }
-        option: { type: string, description: A transport option slug owned by the common module }
+        option: { type: string, example: ghn-express, description: An enabled transport option's slug }
         status: { $ref: '#/components/schemas/TransportStatus' }
-        tracking_number: { type: string, nullable: true }
-        label_url: { type: string, nullable: true }
-        events: { type: array, items: { $ref: '#/components/schemas/TransportEvent' } }
         created_at: { type: string, format: date-time }
-      required: [id, option, status, events, created_at]
+      required: [id, option, status, created_at]

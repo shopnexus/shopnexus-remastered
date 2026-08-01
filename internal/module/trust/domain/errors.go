@@ -10,12 +10,11 @@ import (
 // return one without importing the module root.
 var (
 	// --- feedback ---
-	ErrFeedbackNotFound   = errx.NewError(http.StatusNotFound, "feedback_not_found", "feedback not found")
-	ErrFeedbackExists     = errx.NewError(http.StatusConflict, "feedback_exists", "this order was already rated in this direction")
-	ErrSelfFeedback       = errx.NewError(http.StatusBadRequest, "self_feedback", "an account cannot rate itself")
-	ErrNotAParty          = errx.NewError(http.StatusForbidden, "not_a_party", "you are not a party to this order")
-	ErrOrderNotFinished   = errx.NewError(http.StatusUnprocessableEntity, "order_not_finished", "this order is not finished yet")
-	ErrReputationNotFound = errx.NewError(http.StatusNotFound, "reputation_not_found", "reputation not found")
+	ErrFeedbackNotFound = errx.NewError(http.StatusNotFound, "feedback_not_found", "feedback not found")
+	ErrFeedbackExists   = errx.NewError(http.StatusConflict, "feedback_exists", "this order was already rated in this direction")
+	ErrSelfFeedback     = errx.NewError(http.StatusBadRequest, "self_feedback", "an account cannot rate itself")
+	ErrNotAParty        = errx.NewError(http.StatusForbidden, "not_a_party", "you are not a party to this order")
+	ErrOrderNotFinished = errx.NewError(http.StatusUnprocessableEntity, "order_not_finished", "this order is not finished yet")
 
 	// --- reviews ---
 	ErrReviewNotFound = errx.NewError(http.StatusNotFound, "review_not_found", "review not found")
@@ -23,6 +22,9 @@ var (
 	// ErrListingNotInOrder is a review of something the order did not carry: no purchase, no
 	// review — and buying one thing does not earn a review of another.
 	ErrListingNotInOrder = errx.NewError(http.StatusUnprocessableEntity, "listing_not_in_order", "this order did not include this listing")
+	// ErrOrderNotCompleted is stricter than ErrOrderNotFinished, which feedback keeps: a
+	// fully refunded order is finished, and its buyer has no goods left to review.
+	ErrOrderNotCompleted = errx.NewError(http.StatusUnprocessableEntity, "order_not_completed", "only a completed order earns a review of its goods")
 	ErrReviewRatingRange = errx.NewError(http.StatusBadRequest, "review_rating_range", "a rating is between 1 and 5")
 	ErrReviewBodyTooLong = errx.NewError(http.StatusBadRequest, "review_body_too_long", "a review body is at most 2000 characters")
 	ErrReviewForbidden   = errx.NewError(http.StatusForbidden, "review_forbidden", "only the author or a moderator may change this review")

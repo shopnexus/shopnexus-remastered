@@ -36,10 +36,14 @@ func (s *Service) ListListings(ctx context.Context, req catalogapi.ListListingsR
 			cards[i].Favorited = saved[cards[i].ID.Int64()]
 		}
 	}
-	return catalogapi.ListingPage{
-		Data: cards,
-		Meta: catalogapi.PageInfo{Page: req.Page, Limit: req.Limit, TotalCount: &total},
-	}, nil
+	meta := catalogapi.PageInfo{Page: req.Page, Limit: req.Limit}
+	// A ranked query — relevance or recommended — visits only its top-K, the way the
+	// dictionary's `near` ranking does; the count behind it is not a stable, seekable
+	// total and would read as one.
+	if filter.Sort != port.SortRelevance && filter.Sort != port.SortRecommended {
+		meta.TotalCount = &total
+	}
+	return catalogapi.ListingPage{Data: cards, Meta: meta}, nil
 }
 
 // feedFilter validates the combination and resolves what the adapter cannot: the search probe,
@@ -96,15 +100,14 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 	if req.MinPrice != nil {
 		filter.MinPrice = *req.MinPrice
 	}
-	if req.MaxPrice != nil {
-		filter.MaxPrice = *req.MaxPrice
-	}
+	filter.MaxPrice = req.MaxPrice
 
-	probe, err := s.probeFor(ctx, req)
+	probe, fromQuery, err := s.probeFor(ctx, req)
 	if err != nil {
 		return port.ListingFilter{}, err
 	}
 	filter.Probe = probe
+	filter.ProbeFromQuery = fromQuery
 	// A recommended feed with nothing computed for the account yet is the newest feed, not an
 	// empty one — the contract says it falls back.
 	if filter.Sort == port.SortRecommended && filter.Probe == nil {
@@ -114,23 +117,25 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 }
 
 // probeFor resolves the dense vector a ranking runs against: the caller's interests for a
-// recommended feed, or the query's embedding for a semantic or hybrid search.
+// recommended feed, or the query's embedding for a semantic or hybrid search. The second
+// return says which one it is — a recommended feed's probe has nothing to do with Query,
+// so the adapter must not treat it as satisfying a lexical filter the caller asked for.
 //
 // The query embedding needs the same model that wrote listing_embedding, and nothing in this
 // module can call it yet — so a semantic search degrades to lexical rather than answering
 // nothing, and a client still gets results while that seam is missing.
-func (s *Service) probeFor(ctx context.Context, req catalogapi.ListListingsRequest) (port.Vector, error) {
+func (s *Service) probeFor(ctx context.Context, req catalogapi.ListListingsRequest) (port.Vector, bool, error) {
 	if req.Sort == port.SortRecommended {
 		vectors, err := s.repo.InterestVectors(ctx, req.ViewerID.Int64())
 		if err != nil {
-			return nil, fmt.Errorf("read interest vectors: %w", err)
+			return nil, false, fmt.Errorf("read interest vectors: %w", err)
 		}
 		if len(vectors) == 0 {
-			return nil, nil
+			return nil, false, nil
 		}
-		return vectors[0], nil
+		return vectors[0], false, nil
 	}
-	return nil, nil
+	return nil, false, nil
 }
 
 // sortOf applies the two defaults the contract names: relevance when a query was given, newest

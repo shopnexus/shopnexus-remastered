@@ -11,11 +11,23 @@ import (
 	"shopnexus/internal/module/trust/domain"
 )
 
-// CursorFilter pages a list on a created_at cursor. Not an offset: these lists move under
-// the reader, and an offset would skip or repeat a row when they do.
+// CursorFilter pages a list on the key its ORDER BY uses plus the row id, compared as a
+// tuple. Not an offset: these lists move under the reader, and an offset would skip or repeat
+// a row when they do.
+//
+// The id is half the key, not decoration: CURRENT_TIMESTAMP is transaction-scoped, so rows
+// written by one statement share a timestamp exactly, and a bare `created_at < @before` drops
+// whichever of them the previous page did not reach. A cursor is present iff BeforeID is set —
+// every row has an id, so that holds for a counter cursor of 0 too.
 type CursorFilter struct {
+	// Before is the timestamp the previous page ended at, for a list ordered by one.
 	Before time.Time
-	Limit  int
+	// BeforeCount is the counter the previous page ended at, for a list ordered by one
+	// (a review page sorted by helpfulness). Zero for the rest.
+	BeforeCount int64
+	// BeforeID is the id of that last row, which is what breaks a tie on the key.
+	BeforeID int64
+	Limit    int
 }
 
 // FeedbackFilter reads the published feedback an account received, optionally in one role.
@@ -28,10 +40,10 @@ type FeedbackFilter struct {
 }
 
 // ReviewFilter is a listing's review page. Sort is the whitelist the adapter switches on,
-// so an ordering a client invents never reaches the SQL.
+// so an ordering a client invents never reaches the SQL — and it also picks which key the
+// cursor compares, because paging on one column while ordering by another skips rows.
 type ReviewFilter struct {
 	ListingID int64
-	AuthorID  int64
 	Rating    int16
 	Sort      string
 	Cursor    CursorFilter
@@ -46,6 +58,13 @@ type ReportFilter struct {
 	RefType    string
 	Reason     string
 	Cursor     CursorFilter
+}
+
+// ReportTarget is one polymorphic target of a report. The pair is what a count is per, and
+// what a page of the queue asks for in one query.
+type ReportTarget struct {
+	RefType string
+	RefID   int64
 }
 
 // VoteTally is a review's two counters plus the caller's own vote, which is what a vote
@@ -77,25 +96,28 @@ type Repository interface {
 	// --- reputation ---
 	FindReputation(ctx context.Context, accountID int64, role string) (domain.Reputation, error)
 	// AddOrderOutcome bumps the completed or cancelled counter of both parties. Driven by
-	// order's settled event.
-	AddOrderOutcome(ctx context.Context, buyerID, sellerID int64, completed bool) error
+	// order's settled event, which is at-least-once, so the order id is recorded in the same
+	// transaction and a redelivery bumps nothing.
+	AddOrderOutcome(ctx context.Context, orderID, buyerID, sellerID int64, completed bool) error
 	// ReviewAverage is a listing's rating over its reviews, which catalog caches. Returned
 	// with the count, because an average with no count cannot be rendered honestly.
 	ReviewAverage(ctx context.Context, listingID int64) (average float64, count int64, err error)
 
 	// --- reviews ---
 	// InsertReview writes the review and folds its rating into the seller's reputation in
-	// one transaction.
-	InsertReview(ctx context.Context, r *domain.Review, sellerID int64) error
+	// one transaction. The seller is the review's own SellerID, frozen from the order.
+	InsertReview(ctx context.Context, r *domain.Review) error
 	FindReview(ctx context.Context, id int64) (domain.Review, error)
 	ListReviews(ctx context.Context, f ReviewFilter) ([]domain.Review, error)
-	// SaveReview writes an edit and moves the seller's review rating by the delta in the
+	// SaveReview writes an edit and moves the seller's review rating by the difference in the
 	// same transaction — a rating changed from 5 to 1 that leaves the aggregate alone is a
-	// number nobody can reproduce.
-	SaveReview(ctx context.Context, r domain.Review, sellerID int64, ratingDelta int64) error
+	// number nobody can reproduce. The difference is derived from the row under its own lock,
+	// never from the caller's copy: two edits that each computed a delta from the same read
+	// move the aggregate twice.
+	SaveReview(ctx context.Context, r domain.Review) error
 	// DeleteReview drops the review, its replies and its votes (by cascade) and takes its
-	// rating back out of the seller's reputation.
-	DeleteReview(ctx context.Context, id int64, sellerID int64, rating int16) error
+	// rating back out of the seller's reputation — again, the rating on the locked row.
+	DeleteReview(ctx context.Context, id int64) error
 
 	// --- replies ---
 	// InsertReply writes the reply and bumps the review's reply_count in one transaction.
@@ -123,9 +145,10 @@ type Repository interface {
 	// SaveReport writes a claim or a verdict, guarded by the status it moves from: a stale
 	// read loses instead of overwriting a decision it never saw.
 	SaveReport(ctx context.Context, r domain.Report, from []string) error
-	// CountOpenAgainst is how many unresolved reports name the same target. A moderator
-	// decides on a pattern rather than on one complaint.
-	CountOpenAgainst(ctx context.Context, refType string, refID int64) (int64, error)
+	// CountOpenAgainst is how many unresolved reports name each target — a moderator decides
+	// on a pattern rather than on one complaint. A whole page of targets in one query, so the
+	// queue does not cost a round trip per row.
+	CountOpenAgainst(ctx context.Context, targets []ReportTarget) (map[ReportTarget]int64, error)
 
 	// FindResources reads this module's own uploads — a review's photos.
 	FindResources(ctx context.Context, ids []int64) ([]common.Resource, error)

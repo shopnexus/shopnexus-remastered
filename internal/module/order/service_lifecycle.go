@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	catalogapi "shopnexus/internal/module/catalog/api"
 	financeapi "shopnexus/internal/module/finance/api"
 	"shopnexus/internal/module/order/domain"
 	"shopnexus/internal/shared/id"
@@ -21,81 +20,107 @@ import (
 // "the money creates the order": the shipment is opened, the escrow is held, and the lines
 // are linked, with no seller step anywhere.
 //
-// Idempotent on the origin's unique constraint: a webhook delivered twice finds the order
-// already there and stops.
+// Resumable, not merely idempotent. The order is the first thing written, so every step after
+// it — linking, the escrow hold, the sale of the reserved units — has to be re-runnable
+// against an order that is already there: a hold that failed once used to leave a paid buyer
+// with no escrow behind their order and nothing that would ever try again.
 func (s *Service) SettlePaidSession(ctx context.Context, sessionID id.ID[id.PaymentSession]) error {
 	items, err := s.repo.ItemsByPaymentSession(ctx, sessionID.Int64())
 	if err != nil {
 		return fmt.Errorf("read paid items: %w", err)
 	}
-	live := make([]*domain.Item, 0, len(items))
+	// Every line the buyer paid for, whether or not a previous attempt already linked it. The
+	// cancelled ones are the only ones left out: they were dropped before the money landed.
+	paid := make([]*domain.Item, 0, len(items))
 	for i := range items {
-		if items[i].Live() && items[i].OrderID == nil {
-			live = append(live, &items[i])
+		if items[i].Live() {
+			paid = append(paid, &items[i])
 		}
 	}
-	if len(live) == 0 {
-		// Nothing to do: either the order exists already or every line was cancelled.
+	if len(paid) == 0 {
+		// Every line was cancelled, so there is no sale to write.
 		return nil
 	}
-	first := live[0]
+	first := paid[0]
 	origin := domain.Origin{DraftID: first.DraftID, OfferID: first.OfferID}
-	if existing, err := s.repo.FindOrderByOrigin(ctx, origin); err == nil {
-		// The order is already there — a redelivered webhook. Linking is what may still be
-		// missing, so it is retried and nothing else is.
-		return s.linkItems(ctx, existing, live)
-	} else if !errors.Is(err, domain.ErrOrderNotFound) {
+
+	o, err := s.repo.FindOrderByOrigin(ctx, origin)
+	switch {
+	case err == nil:
+		// A redelivered webhook, or a retry of an attempt that got the order written and then
+		// failed. Either way the steps after the order are the ones still outstanding.
+	case errors.Is(err, domain.ErrOrderNotFound):
+		o, err = s.createOrder(ctx, origin, first, paid)
+		if err != nil {
+			return err
+		}
+	default:
 		return fmt.Errorf("find order by origin: %w", err)
 	}
+	return s.finishSettlement(ctx, o, paid, sessionID)
+}
 
+// createOrder opens the shipment and writes the order. Losing the origin's unique constraint
+// is not a failure: somebody else wrote the same order, and their row is the one to carry on
+// with.
+func (s *Service) createOrder(ctx context.Context, origin domain.Origin, first *domain.Item, paid []*domain.Item) (domain.Order, error) {
 	pickup, err := s.pickupSnapshot(ctx, first.SellerID)
 	if err != nil {
-		return err
+		return domain.Order{}, err
 	}
 	transportID, err := s.repo.InsertTransport(ctx, first.TransportOption)
 	if err != nil {
-		return fmt.Errorf("open transport: %w", err)
+		return domain.Order{}, fmt.Errorf("open transport: %w", err)
 	}
 	o, err := domain.NewOrder(origin, first.BuyerID, first.SellerID, transportID,
 		first.Address, pickup)
 	if err != nil {
-		return err
+		return domain.Order{}, err
 	}
-	ids := make([]int64, 0, len(live))
-	total := int64(0)
-	for _, i := range live {
-		ids = append(ids, i.ID)
-		total += i.TotalAmount
-	}
-	if err := s.repo.CreateOrder(ctx, &o, ids); err != nil {
-		if errors.Is(err, domain.ErrOrderSettled) {
-			// Lost the race with another delivery of the same webhook; the winner linked
-			// the lines.
-			return nil
+	if err := s.repo.CreateOrder(ctx, &o, itemIDs(paid)); err != nil {
+		if !errors.Is(err, domain.ErrOrderSettled) {
+			return domain.Order{}, fmt.Errorf("create order: %w", err)
 		}
-		return fmt.Errorf("create order: %w", err)
+		if o, err = s.repo.FindOrderByOrigin(ctx, origin); err != nil {
+			return domain.Order{}, fmt.Errorf("find order by origin: %w", err)
+		}
 	}
-	// The money moves after the order exists, so a failure here leaves an order whose
-	// escrow the retry will hold — rather than money held against nothing.
+	return o, nil
+}
+
+// finishSettlement is every step after the order row: the lines it covers, the escrow behind
+// it, and the reservation becoming a sale. Each is keyed or guarded, so running the lot again
+// against an order that already exists changes nothing — which is what makes a failed hold a
+// retry rather than a buyer who paid for nothing.
+func (s *Service) finishSettlement(ctx context.Context, o domain.Order, paid []*domain.Item, sessionID id.ID[id.PaymentSession]) error {
+	if err := s.repo.LinkItems(ctx, o.ID, itemIDs(paid)); err != nil {
+		return fmt.Errorf("link items: %w", err)
+	}
+	total := int64(0)
+	currency := ""
+	for _, i := range paid {
+		total += i.TotalAmount
+		currency = i.Currency
+	}
 	if err := s.finance.HoldEscrow(ctx, financeapi.EscrowRequest{
 		BuyerID:        id.Of[id.Account](o.BuyerID),
 		SellerID:       id.Of[id.Account](o.SellerID),
 		OrderID:        id.Of[id.Order](o.ID),
-		Currency:       first.Currency,
+		Currency:       currency,
 		Amount:         total,
 		IdempotencyKey: fmt.Sprintf("order:%d:hold", o.ID),
 	}); err != nil && !errors.Is(err, financeMovementPosted) {
 		return fmt.Errorf("hold escrow: %w", err)
 	}
-	// The reservation becomes a sale: the units are gone for good now, not merely held.
-	for _, i := range live {
-		if err := s.catalog.CommitStock(ctx, catalogapi.StockMovementRequest{
-			VariantID: id.Of[id.Variant](i.VariantID), Units: i.Quantity,
-		}); err != nil {
-			s.log.Error("commit stock after order", "item_id", i.ID, "err", err)
+	// The reservation becomes a sale: the units are gone for good now, not merely held. Keyed
+	// per line, so a retried settlement does not sell them twice — and an error here is
+	// returned rather than logged, because the retry is the only thing that would fix it.
+	for _, i := range paid {
+		if err := s.commitItemStock(ctx, o.ID, *i); err != nil {
+			return err
 		}
 	}
-	s.publishPlaced(ctx, o, total, first.Currency)
+	s.publishPlaced(ctx, o, total, currency)
 	// The checkout's wait is over, and the order's has begun: delivery, then the escrow
 	// window. Both signals are best-effort — the row already says the sale happened.
 	s.timer("checkout paid", s.workflows.CheckoutPaid(ctx, sessionID.Int64()))
@@ -103,20 +128,12 @@ func (s *Service) SettlePaidSession(ctx context.Context, sessionID id.ID[id.Paym
 	return nil
 }
 
-// linkItems attaches lines to an order that already exists — the half of settling a
-// redelivered webhook that may still be outstanding.
-func (s *Service) linkItems(ctx context.Context, o domain.Order, items []*domain.Item) error {
-	ids := make([]int64, 0, len(items))
+func itemIDs(items []*domain.Item) []int64 {
+	out := make([]int64, 0, len(items))
 	for _, i := range items {
-		ids = append(ids, i.ID)
+		out = append(out, i.ID)
 	}
-	if len(ids) == 0 {
-		return nil
-	}
-	if err := s.repo.CreateOrder(ctx, &o, ids); err != nil && !errors.Is(err, domain.ErrOrderSettled) {
-		return fmt.Errorf("link items: %w", err)
-	}
-	return nil
+	return out
 }
 
 // ExpireDrafts closes the sessions nobody finished. A per-draft durable timer does the same
@@ -141,6 +158,28 @@ func (s *Service) ExpireDrafts(ctx context.Context, limit int) (int, error) {
 	return closed, nil
 }
 
+// ExpireCheckouts releases the stock of checkouts nobody paid for. A per-session durable timer
+// does this promptly; this is the sweep, and without it the `off` deployment loses those units
+// for ever — nothing else ever looks at a reserved-but-unpaid line.
+//
+// A paid line is refused by CancelItem itself, which asks finance rather than trusting the age
+// of the row.
+func (s *Service) ExpireCheckouts(ctx context.Context, limit int) (int, error) {
+	items, err := s.repo.UnpaidItems(ctx, time.Now().Add(-checkoutWindow), limit)
+	if err != nil {
+		return 0, fmt.Errorf("read unpaid items: %w", err)
+	}
+	cancelled := 0
+	for _, i := range items {
+		if err := s.cancelLine(ctx, i, i.BuyerID); err != nil {
+			s.log.Debug("unpaid line not cancellable", "item_id", i.ID, "err", err)
+			continue
+		}
+		cancelled++
+	}
+	return cancelled, nil
+}
+
 // ExpireOffers closes negotiations nobody answered. The units were never reserved — a
 // negotiation holds no stock — so there is nothing to give back.
 func (s *Service) ExpireOffers(ctx context.Context, limit int) (int, error) {
@@ -163,9 +202,10 @@ func (s *Service) ExpireOffers(ctx context.Context, limit int) (int, error) {
 	return closed, nil
 }
 
-// ReleaseDuePayouts pays the seller for orders whose escrow window has passed with no live
-// refund. The order is completed in the same pass, and the completion guard is what stops a
-// second payout: a completed order is no longer due.
+// ReleaseDuePayouts pays the seller for every order whose escrow window has passed. The bulk
+// pass; ReleasePayout is the same work for one order, which is what a per-order run calls —
+// a run that asked for this with a limit of one acted on whichever order was oldest instead
+// of its own.
 func (s *Service) ReleaseDuePayouts(ctx context.Context, limit int) (int, error) {
 	orders, err := s.repo.PayoutDue(ctx, time.Now(), limit)
 	if err != nil {
@@ -173,9 +213,94 @@ func (s *Service) ReleaseDuePayouts(ctx context.Context, limit int) (int, error)
 	}
 	paid := 0
 	for _, o := range orders {
-		total, currency, _, err := s.orderTotal(ctx, o.ID)
+		released, err := s.releasePayout(ctx, o)
 		if err != nil {
 			return paid, err
+		}
+		if released {
+			paid++
+		}
+	}
+	return paid, nil
+}
+
+// ReleasePayout is one order's escrow release, driven by the run that follows that order.
+// Idempotent: an order that is no longer due is left alone.
+func (s *Service) ReleasePayout(ctx context.Context, orderID id.ID[id.Order]) error {
+	o, err := s.repo.FindOrder(ctx, orderID.Int64())
+	if err != nil {
+		return fmt.Errorf("find order: %w", err)
+	}
+	due := o.PayoutDue()
+	if o.Settled() || due == nil || due.After(time.Now()) {
+		return nil
+	}
+	if _, err := s.releasePayout(ctx, o); err != nil {
+		return err
+	}
+	return nil
+}
+
+// releasePayout completes the order and then releases the money. Completing first is the whole
+// guard: `ClaimPayout` takes the order's advisory lock, re-reads whether anything is disputing
+// the money and writes the outcome in one transaction, so a refund committed a moment ago is
+// seen rather than stepped over. Whoever writes the order's outcome wins the escrow.
+func (s *Service) releasePayout(ctx context.Context, o domain.Order) (bool, error) {
+	total, currency, _, err := s.orderTotal(ctx, o.ID)
+	if err != nil {
+		return false, err
+	}
+	if total == 0 {
+		return false, nil
+	}
+	if err := s.repo.ClaimPayout(ctx, &o); err != nil {
+		// A refund got there first, or another pass did. Either way this one is not due.
+		s.log.Debug("payout not claimable", "order_id", o.ID, "err", err)
+		return false, nil
+	}
+	err = s.finance.ReleaseEscrow(ctx, financeapi.EscrowRequest{
+		BuyerID:        id.Of[id.Account](o.BuyerID),
+		SellerID:       id.Of[id.Account](o.SellerID),
+		OrderID:        id.Of[id.Order](o.ID),
+		Currency:       currency,
+		Amount:         total,
+		IdempotencyKey: fmt.Sprintf("order:%d:release", o.ID),
+	})
+	if err != nil && !errors.Is(err, financeMovementPosted) {
+		// The order is claimed, so nobody else will pay this out; the money is still in escrow
+		// and the order stays on the stranded list until a retry gets it out.
+		s.log.Error("release escrow", "order_id", o.ID, "err", err)
+		return false, nil
+	}
+	s.recordRelease(ctx, o)
+	s.publishSettled(ctx, o, true)
+	return true, nil
+}
+
+// recordRelease takes the order off the stranded list. Best-effort: the money has already moved
+// and the release key makes a repeat a no-op, so a failure here costs one extra retry rather
+// than a second payout.
+func (s *Service) recordRelease(ctx context.Context, o domain.Order) {
+	o.MarkPayoutReleased()
+	if err := s.repo.MarkPayoutReleased(ctx, o); err != nil {
+		s.log.Error("record payout release", "order_id", o.ID, "err", err)
+	}
+}
+
+// RetryClaimedPayouts is the second half of a payout that got as far as claiming the order and
+// then could not reach finance. The claim is what stopped a second pass paying it out, so
+// without this the escrow would sit held for ever; the release key makes calling it again for
+// an order that did settle a no-op.
+func (s *Service) RetryClaimedPayouts(ctx context.Context, limit int) (int, error) {
+	orders, err := s.repo.ClaimedPayouts(ctx, limit)
+	if err != nil {
+		return 0, fmt.Errorf("read claimed payouts: %w", err)
+	}
+	retried, stranded := 0, 0
+	for _, o := range orders {
+		total, currency, _, err := s.orderTotal(ctx, o.ID)
+		if err != nil {
+			return retried, err
 		}
 		if total == 0 {
 			continue
@@ -189,20 +314,23 @@ func (s *Service) ReleaseDuePayouts(ctx context.Context, limit int) (int, error)
 			IdempotencyKey: fmt.Sprintf("order:%d:release", o.ID),
 		})
 		if err != nil && !errors.Is(err, financeMovementPosted) {
-			s.log.Error("release escrow", "order_id", o.ID, "err", err)
+			// One line per order per pass at debug, and one summary below: an order that will
+			// never release would otherwise log an error on every tick for ever, which buries
+			// the first occurrence of anything else.
+			s.log.Debug("retry release escrow", "order_id", o.ID, "err", err)
+			stranded++
 			continue
 		}
-		if err := o.Complete(0); err != nil {
-			continue
-		}
-		if err := s.repo.SaveOrder(ctx, o); err != nil {
-			s.log.Debug("order already settled", "order_id", o.ID, "err", err)
-			continue
-		}
-		s.publishSettled(ctx, o, true)
-		paid++
+		s.recordRelease(ctx, o)
+		retried++
 	}
-	return paid, nil
+	if stranded > 0 {
+		// Money the seller is owed and did not get. One line, every pass, until it is fixed —
+		// this is the signal to alert on, and it must not go quiet while the debt stands.
+		s.log.Error("escrow releases stranded", "orders", stranded,
+			"oldest_completed_at", orders[0].CompletedAt)
+	}
+	return retried, nil
 }
 
 // AdvanceOverdueRefunds moves every refund whose deadline has passed — all three windows in
@@ -217,37 +345,75 @@ func (s *Service) AdvanceOverdueRefunds(ctx context.Context, limit int) (int, er
 	}
 	advanced := 0
 	for _, r := range refunds {
-		settled := false
-		switch r.Status {
-		case domain.RefundAwaitingSeller:
-			// The seller said nothing. It lands on the buyer exactly as a rejection does,
-			// and the absent reason is what tells the two apart.
-			err = r.LapseSellerReview()
-		case domain.RefundAwaitingBuyer:
-			// The buyer let the rejection stand.
-			err = r.LapseBuyerAction()
-		case domain.RefundReturned:
-			// The seller had the goods back and did not appeal, so the buyer is paid.
-			err = r.Settle(0)
-			settled = err == nil
-		default:
-			continue
-		}
+		moved, err := s.advanceRefund(ctx, r)
 		if err != nil {
-			continue
+			return advanced, err
 		}
-		if err := s.saveRefund(ctx, r); err != nil {
-			s.log.Debug("refund already moved", "refund_id", r.ID, "err", err)
-			continue
+		if moved {
+			advanced++
 		}
-		if settled {
-			if err := s.payRefund(ctx, r); err != nil {
-				s.log.Error("pay settled refund", "refund_id", r.ID, "err", err)
-			}
-		}
-		advanced++
 	}
 	return advanced, nil
+}
+
+// AdvanceRefund is one case's overdue window, driven by the run that waits on it. The run is
+// keyed by the refund and the status it was started for, but the decision is re-read here:
+// the row is the truth about whose clock is running.
+func (s *Service) AdvanceRefund(ctx context.Context, refundID id.ID[id.Refund]) error {
+	r, err := s.repo.FindRefund(ctx, refundID.Int64())
+	if err != nil {
+		return fmt.Errorf("find refund: %w", err)
+	}
+	if _, err := s.advanceRefund(ctx, r); err != nil {
+		return err
+	}
+	return nil
+}
+
+// advanceRefund applies whichever window ran out. The settle path moves the money *before* the
+// row goes terminal: `accepted` is the end of the case, and writing it first left the payout
+// sweep free to hand the seller money the buyer had been awarded.
+func (s *Service) advanceRefund(ctx context.Context, r domain.Refund) (bool, error) {
+	if r.Settled() || r.DeadlineAt == nil || r.DeadlineAt.After(time.Now()) {
+		return false, nil
+	}
+	o, err := s.repo.FindOrder(ctx, r.OrderID)
+	if err != nil {
+		return false, fmt.Errorf("find order: %w", err)
+	}
+	if o.Settled() {
+		// The order was cancelled or paid out under the case; there is no escrow left to move.
+		return false, nil
+	}
+	switch r.Status {
+	case domain.RefundAwaitingSeller:
+		// The seller said nothing. It lands on the buyer exactly as a rejection does, and the
+		// absent reason is what tells the two apart.
+		if err := r.LapseSellerReview(); err != nil {
+			return false, nil
+		}
+	case domain.RefundAwaitingBuyer:
+		// The buyer let the rejection stand.
+		if err := r.LapseBuyerAction(); err != nil {
+			return false, nil
+		}
+	case domain.RefundReturned:
+		// The seller had the goods back and did not appeal, so the buyer is paid.
+		if err := r.Settle(0); err != nil {
+			return false, nil
+		}
+		if err := s.settleRefund(ctx, r, o, nil); err != nil {
+			return false, err
+		}
+		return true, nil
+	default:
+		return false, nil
+	}
+	if err := s.saveRefund(ctx, r); err != nil {
+		s.log.Debug("refund already moved", "refund_id", r.ID, "err", err)
+		return false, nil
+	}
+	return true, nil
 }
 
 // publishSettled announces an outcome. Best-effort for the same reason publishPlaced is: the

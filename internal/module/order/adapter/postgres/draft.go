@@ -64,11 +64,14 @@ func (r *Repo) FindDraft(ctx context.Context, id, buyerID int64) (domain.Draft, 
 func (r *Repo) ListDrafts(ctx context.Context, buyerID int64, f port.CursorFilter) ([]domain.Draft, error) {
 	const q = `SELECT ` + draftColumns + ` FROM draft_order
 	           WHERE buyer_id = @buyer_id
-	             AND (@before::timestamptz IS NULL OR created_at < @before::timestamptz)
+	             AND (@before::timestamptz IS NULL
+	                  OR (created_at, id) < (@before::timestamptz, @before_id::bigint))
 	           ORDER BY created_at DESC, id DESC
 	           LIMIT @limit`
-	before, limit := cursorBound(f)
-	args := pgx.NamedArgs{"buyer_id": buyerID, "before": before, "limit": limit}
+	before, beforeID, limit := cursorBound(f)
+	args := pgx.NamedArgs{
+		"buyer_id": buyerID, "before": before, "before_id": beforeID, "limit": limit,
+	}
 	return r.queryDrafts(ctx, q, args)
 }
 
@@ -176,13 +179,14 @@ func (r *Repo) ListOffers(ctx context.Context, f port.OfferFilter) ([]domain.Off
 	const q = `SELECT ` + offerColumns + ` FROM offer
 	           WHERE (buyer_id = @account_id OR seller_id = @account_id)
 	             AND (@status::text IS NULL OR status::text = @status::text)
-	             AND (@before::timestamptz IS NULL OR created_at < @before::timestamptz)
+	             AND (@before::timestamptz IS NULL
+	                  OR (created_at, id) < (@before::timestamptz, @before_id::bigint))
 	           ORDER BY created_at DESC, id DESC
 	           LIMIT @limit`
-	before, limit := cursorBound(f.Cursor)
+	before, beforeID, limit := cursorBound(f.Cursor)
 	args := pgx.NamedArgs{
 		"account_id": f.AccountID, "status": nullText(f.Status),
-		"before": before, "limit": limit,
+		"before": before, "before_id": beforeID, "limit": limit,
 	}
 	return r.queryOffers(ctx, q, args)
 }

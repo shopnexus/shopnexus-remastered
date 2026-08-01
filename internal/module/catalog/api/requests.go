@@ -65,6 +65,16 @@ type StockMovementRequest struct {
 	Units     int64             `validate:"required,gt=0"`
 }
 
+// StockCommitRequest turns a reservation into a sale, or puts one back. Its own shape because
+// of the key: a reservation that is released twice runs out of `reserved` and refuses itself,
+// but `sold` carries no such guard, so a commit and its reversal each have to name the move
+// they are — `order:41:item:88:commit` — and be applied once.
+type StockCommitRequest struct {
+	VariantID      id.ID[id.Variant] `validate:"required"`
+	Units          int64             `validate:"required,gt=0"`
+	IdempotencyKey string            `validate:"required,max=200"`
+}
+
 // SyncListingRatingRequest is trust pushing a recomputed review average into the cache
 // catalog keeps. No route and no actor: reviews live in another schema, so the number cannot
 // be joined and has to be handed over.

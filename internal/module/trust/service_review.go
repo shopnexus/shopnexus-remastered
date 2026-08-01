@@ -3,7 +3,6 @@ package trust
 import (
 	"context"
 	"fmt"
-	"time"
 
 	accountapi "shopnexus/internal/module/account/api"
 	catalogapi "shopnexus/internal/module/catalog/api"
@@ -13,6 +12,16 @@ import (
 	"shopnexus/internal/module/trust/port"
 	"shopnexus/internal/shared/id"
 )
+
+// orderStateCompleted is the one state that earns a review of the goods. Order's own constant
+// is in its domain package, which this module does not import — its api contract publishes the
+// value as a string.
+const orderStateCompleted = "completed"
+
+// The two keys a review page can be ordered and paged by, each paired with its sort.
+func newestKey(v domain.Review) (int64, int64) { return v.CreatedAt.UnixNano(), v.ID }
+
+func helpfulKey(v domain.Review) (int64, int64) { return v.HelpfulCount, v.ID }
 
 // ListReviews is the public product page. Reading is anonymous, but a caller who is signed
 // in gets their own vote back on each row, so the page can render the button they pressed.
@@ -26,17 +35,23 @@ func (s *Service) ListReviews(ctx context.Context, req trustapi.ListReviewsReque
 	if err != nil {
 		return trustapi.ReviewPage{}, fmt.Errorf("read listing: %w", err)
 	}
-	cursor, err := cursorFilter(req.Cursor, req.Limit)
+	// The cursor is over whichever key the sort orders by, or a page boundary means nothing:
+	// an old but much-upvoted review ending page one would hide every newer review behind it.
+	cursor, key := timeCursor, newestKey
+	if req.Sort == domain.ReviewSortHelpful {
+		cursor, key = countCursor, helpfulKey
+	}
+	filter, err := cursor(req.Cursor, req.Limit)
 	if err != nil {
 		return trustapi.ReviewPage{}, err
 	}
 	rows, err := s.repo.ListReviews(ctx, port.ReviewFilter{
-		ListingID: req.ListingID.Int64(), Rating: req.Rating, Sort: req.Sort, Cursor: cursor,
+		ListingID: req.ListingID.Int64(), Rating: req.Rating, Sort: req.Sort, Cursor: filter,
 	})
 	if err != nil {
 		return trustapi.ReviewPage{}, fmt.Errorf("list reviews: %w", err)
 	}
-	rows, meta := paginate(rows, req.Limit, func(v domain.Review) time.Time { return v.CreatedAt })
+	rows, meta := paginate(rows, req.Limit, key)
 	data, err := s.reviewViews(ctx, rows, listing.Seller.ID.Int64(), req.ViewerID, repliesOnAPage)
 	if err != nil {
 		return trustapi.ReviewPage{}, err
@@ -55,12 +70,16 @@ func (s *Service) SubmitReview(ctx context.Context, req trustapi.SubmitReviewReq
 	if err != nil {
 		return trustapi.Review{}, fmt.Errorf("read order: %w", err)
 	}
-	// Only the buyer reviews the goods, and only once the sale is over.
+	// Only the buyer reviews the goods, and only once the sale completed. Completed rather
+	// than merely finished: a fully refunded order is cancelled, and its items keep
+	// CancelledAt nil once they belong to an order, so covers() cannot tell that the buyer
+	// returned everything. Feedback keeps the looser rule on purpose — rating the
+	// counterparty of a sale that fell apart is exactly what a reader wants to see.
 	if order.Buyer.ID != req.ActorID {
 		return trustapi.Review{}, domain.ErrNotAParty
 	}
-	if order.State == "open" {
-		return trustapi.Review{}, domain.ErrOrderNotFinished
+	if order.State != orderStateCompleted {
+		return trustapi.Review{}, domain.ErrOrderNotCompleted
 	}
 	if !covers(order, req.ListingID) {
 		return trustapi.Review{}, domain.ErrListingNotInOrder
@@ -69,17 +88,18 @@ func (s *Service) SubmitReview(ctx context.Context, req trustapi.SubmitReviewReq
 	if err := s.requireResources(ctx, attachments); err != nil {
 		return trustapi.Review{}, err
 	}
+	// The seller is frozen here rather than looked up again on every edit: the aggregate this
+	// rating moves must not depend on the listing still being readable.
 	v, err := domain.NewReview(req.ListingID.Int64(), req.OrderID.Int64(), req.ActorID.Int64(),
-		req.Rating, req.Body, attachments)
+		order.Seller.ID.Int64(), req.Rating, req.Body, attachments)
 	if err != nil {
 		return trustapi.Review{}, err
 	}
-	sellerID := order.Seller.ID.Int64()
-	if err := s.repo.InsertReview(ctx, &v, sellerID); err != nil {
+	if err := s.repo.InsertReview(ctx, &v); err != nil {
 		return trustapi.Review{}, fmt.Errorf("insert review: %w", err)
 	}
 	s.syncListingRating(ctx, v.ListingID)
-	return s.reviewView(ctx, v, sellerID, req.ActorID, 0)
+	return s.reviewView(ctx, v, v.SellerID, req.ActorID, 0)
 }
 
 // GetReview carries the whole reply thread, unlike the listing page, which caps it.
@@ -91,11 +111,7 @@ func (s *Service) GetReview(ctx context.Context, req trustapi.GetReviewRequest) 
 	if err != nil {
 		return trustapi.Review{}, fmt.Errorf("find review: %w", err)
 	}
-	sellerID, err := s.listingSeller(ctx, v.ListingID, req.ViewerID)
-	if err != nil {
-		return trustapi.Review{}, err
-	}
-	return s.reviewView(ctx, v, sellerID, req.ViewerID, 0)
+	return s.reviewView(ctx, v, v.SellerID, req.ViewerID, 0)
 }
 
 // UpdateReview is the author's own edit. The rating moves the seller's aggregate by the
@@ -113,7 +129,6 @@ func (s *Service) UpdateReview(ctx context.Context, req trustapi.UpdateReviewReq
 	if !v.MutableBy(req.ActorID.Int64()) {
 		return trustapi.Review{}, domain.ErrReviewForbidden
 	}
-	previousRating := v.Rating
 	if req.Rating != nil {
 		if err := v.SetRating(*req.Rating); err != nil {
 			return trustapi.Review{}, err
@@ -131,18 +146,16 @@ func (s *Service) UpdateReview(ctx context.Context, req trustapi.UpdateReviewReq
 		}
 		v.SetAttachments(attachments)
 	}
-	sellerID, err := s.listingSeller(ctx, v.ListingID, req.ActorID)
-	if err != nil {
-		return trustapi.Review{}, err
-	}
-	delta := int64(v.Rating) - int64(previousRating)
-	if err := s.repo.SaveReview(ctx, v, sellerID, delta); err != nil {
+	// The repository derives the aggregate's move from the row under its own lock, so the
+	// rating this request read cannot be used to compute a delta a concurrent edit invalidated.
+	if err := s.repo.SaveReview(ctx, v); err != nil {
 		return trustapi.Review{}, fmt.Errorf("save review: %w", err)
 	}
-	if delta != 0 {
+	// A rating is the only field the average can follow, so nothing else needs the push.
+	if req.Rating != nil {
 		s.syncListingRating(ctx, v.ListingID)
 	}
-	return s.reviewView(ctx, v, sellerID, req.ActorID, 0)
+	return s.reviewView(ctx, v, v.SellerID, req.ActorID, 0)
 }
 
 // DeleteReview is the author's, or a moderator's acting on an upheld report. Removal drops
@@ -158,11 +171,7 @@ func (s *Service) DeleteReview(ctx context.Context, req trustapi.ReviewRequest) 
 	if !v.MutableBy(req.ActorID.Int64()) && !s.isModerator(ctx, req.ActorID) {
 		return domain.ErrReviewForbidden
 	}
-	sellerID, err := s.listingSeller(ctx, v.ListingID, req.ActorID)
-	if err != nil {
-		return err
-	}
-	if err := s.repo.DeleteReview(ctx, v.ID, sellerID, v.Rating); err != nil {
+	if err := s.repo.DeleteReview(ctx, v.ID); err != nil {
 		return fmt.Errorf("delete review: %w", err)
 	}
 	s.syncListingRating(ctx, v.ListingID)
@@ -186,15 +195,11 @@ func (s *Service) SubmitReply(ctx context.Context, req trustapi.SubmitReplyReque
 	if err := s.repo.InsertReply(ctx, &reply); err != nil {
 		return trustapi.ReviewReply{}, fmt.Errorf("insert reply: %w", err)
 	}
-	sellerID, err := s.listingSeller(ctx, v.ListingID, req.ActorID)
-	if err != nil {
-		return trustapi.ReviewReply{}, err
-	}
 	author, err := s.summary(ctx, reply.AuthorID)
 	if err != nil {
 		return trustapi.ReviewReply{}, err
 	}
-	return toAPIReply(reply, author, sellerID), nil
+	return toAPIReply(reply, author, v.SellerID), nil
 }
 
 // DeleteReply is the author's, or a moderator's acting on an upheld report.
@@ -260,20 +265,6 @@ func covers(order orderapi.Order, listingID id.ID[id.Listing]) bool {
 		}
 	}
 	return false
-}
-
-// listingSeller answers who owns the listing, which is what marks a reply as the seller's.
-// A listing that no longer exists is not an error here: its reviews outlive it, and the
-// answer is only used for decoration.
-func (s *Service) listingSeller(ctx context.Context, listingID int64, viewerID id.ID[id.Account]) (int64, error) {
-	listing, err := s.catalog.GetListing(ctx, catalogapi.GetListingRequest{
-		ID: id.Of[id.Listing](listingID), ViewerID: viewerID,
-	})
-	if err != nil {
-		s.log.Debug("resolve listing seller failed", "listing_id", listingID, "err", err)
-		return 0, nil
-	}
-	return listing.Seller.ID.Int64(), nil
 }
 
 // syncListingRating pushes the recomputed average into catalog's cache. Best-effort: the

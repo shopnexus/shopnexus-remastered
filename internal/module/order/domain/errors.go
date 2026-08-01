@@ -54,6 +54,14 @@ var (
 	ErrOrderNotCancellable = errx.NewError(http.StatusConflict, "order_not_cancellable", "this order has already shipped")
 	ErrAttachmentNotFound  = errx.NewError(http.StatusNotFound, "attachment_not_found", "an attachment id names no confirmed resource")
 
+	// --- transport ---
+	// ErrTransportSettled is a checkpoint that would move a shipment backwards, or one on a
+	// leg that already ended. Carrier reports arrive out of order, and `Shipped()` decides
+	// whether an order can still be cancelled — so it is not a fact a later report may undo.
+	ErrTransportSettled       = errx.NewError(http.StatusConflict, "transport_settled", "this shipment is already at or past that point")
+	ErrTransportStatusUnknown = errx.NewError(http.StatusUnprocessableEntity, "transport_status_unknown", "no shipment status by that name")
+	ErrNoReturnLeg            = errx.NewError(http.StatusConflict, "no_return_leg", "this refund has no return shipment yet")
+
 	// --- refunds and disputes ---
 	ErrRefundNotFound = errx.NewError(http.StatusNotFound, "refund_not_found", "refund not found")
 	ErrRefundSettled  = errx.NewError(http.StatusConflict, "refund_settled", "this refund is already settled")
@@ -64,8 +72,12 @@ var (
 	ErrNotAwaitingSeller    = errx.NewError(http.StatusConflict, "not_awaiting_seller", "this refund is not waiting on the seller")
 	ErrNotAwaitingBuyer     = errx.NewError(http.StatusConflict, "not_awaiting_buyer", "this refund is not waiting on the buyer")
 	ErrRejectionNeedsReason = errx.NewError(http.StatusUnprocessableEntity, "rejection_needs_reason", "a rejected refund needs a reason")
-	ErrDisputeNotFound      = errx.NewError(http.StatusNotFound, "dispute_not_found", "dispute not found")
-	ErrDisputeSettled       = errx.NewError(http.StatusConflict, "dispute_settled", "this dispute round is already ruled")
+	// ErrSessionPaid is cancelling a line the buyer has already paid for. The order follows
+	// from the money, so undoing the sale is a refund the seller gets to see — cancelling here
+	// would release the stock and leave the payment covering nothing.
+	ErrSessionPaid     = errx.NewError(http.StatusConflict, "session_paid", "this line is paid for; a refund is how a paid sale is undone")
+	ErrDisputeNotFound = errx.NewError(http.StatusNotFound, "dispute_not_found", "dispute not found")
+	ErrDisputeSettled  = errx.NewError(http.StatusConflict, "dispute_settled", "this dispute round is already ruled")
 
 	// --- authorization ---
 	ErrNotTheBuyer       = errx.NewError(http.StatusForbidden, "not_the_buyer", "only the buyer of this order may do that")

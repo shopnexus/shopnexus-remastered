@@ -103,7 +103,7 @@ func (s *Service) ListAccountFeedback(ctx context.Context, req trustapi.ListFeed
 	if _, err := s.accounts.GetPublicAccount(ctx, accountapi.GetPublicAccountRequest{ID: req.AccountID}); err != nil {
 		return trustapi.FeedbackPage{}, fmt.Errorf("read account: %w", err)
 	}
-	cursor, err := cursorFilter(req.Cursor, req.Limit)
+	cursor, err := timeCursor(req.Cursor, req.Limit)
 	if err != nil {
 		return trustapi.FeedbackPage{}, err
 	}
@@ -113,7 +113,9 @@ func (s *Service) ListAccountFeedback(ctx context.Context, req trustapi.ListFeed
 	if err != nil {
 		return trustapi.FeedbackPage{}, fmt.Errorf("list feedback: %w", err)
 	}
-	rows, meta := paginate(rows, req.Limit, func(f domain.Feedback) time.Time { return f.CreatedAt })
+	rows, meta := paginate(rows, req.Limit, func(f domain.Feedback) (int64, int64) {
+		return f.CreatedAt.UnixNano(), f.ID
+	})
 
 	raters := make([]int64, 0, len(rows))
 	for _, row := range rows {
@@ -148,13 +150,16 @@ func (s *Service) RevealDueFeedback(ctx context.Context, limit int) (int, error)
 }
 
 // RecordOrderOutcome folds a finished order into both parties' counters. Driven by order's
-// settled event, not by a route — order is the authority and this is a mirror, so a recount
-// repairs it rather than the consumer being clever.
+// settled event, not by a route — order is the authority and this is a mirror.
+//
+// Idempotent per order: the bus is at-least-once, and the repository records the order id in
+// the same transaction as the bump, so a redelivery finds the key and counts nothing.
 func (s *Service) RecordOrderOutcome(ctx context.Context, req trustapi.RecordOrderOutcomeRequest) error {
 	if err := s.v.Struct(req); err != nil {
 		return err
 	}
-	err := s.repo.AddOrderOutcome(ctx, req.BuyerID.Int64(), req.SellerID.Int64(), req.Completed)
+	err := s.repo.AddOrderOutcome(ctx, req.OrderID.Int64(), req.BuyerID.Int64(),
+		req.SellerID.Int64(), req.Completed)
 	if err != nil {
 		return fmt.Errorf("add order outcome: %w", err)
 	}

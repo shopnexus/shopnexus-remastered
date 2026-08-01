@@ -37,7 +37,9 @@ CREATE TABLE IF NOT EXISTS "feedback" (
     CONSTRAINT "feedback_order_direction_key" UNIQUE ("order_id", "direction"),
     CONSTRAINT "feedback_rating_range_chk" CHECK ("rating" BETWEEN 1 AND 5)
 );
-CREATE INDEX IF NOT EXISTS "feedback_ratee_id_idx" ON "feedback" ("ratee_id", "created_at" DESC) WHERE "published_at" IS NOT NULL;
+-- The ratee's published history, newest first. The id trails the timestamp because the
+-- cursor compares the pair: rows written in one transaction share "created_at" exactly.
+CREATE INDEX IF NOT EXISTS "feedback_ratee_id_idx" ON "feedback" ("ratee_id", "created_at" DESC, "id" DESC) WHERE "published_at" IS NOT NULL;
 CREATE INDEX IF NOT EXISTS "feedback_rater_id_idx" ON "feedback" ("rater_id");
 -- The reveal job: blind rows whose window has run out. The partial index above only
 -- covers what is already published, so without this the job scans the whole table
@@ -53,6 +55,11 @@ CREATE TABLE IF NOT EXISTS "review" (
     "listing_id" BIGINT NOT NULL, -- cross-ref catalog.listing; no FK
     "order_id" BIGINT NOT NULL, -- cross-ref order.order; no FK
     "author_id" BIGINT NOT NULL, -- cross-ref account.account; no FK
+    -- Whose reputation this rating counts towards, frozen from the order at submission.
+    -- Asking catalog on every edit made the aggregate depend on a listing still being
+    -- readable: a listing back in "pending" answers 404 to its own buyer, and the reply
+    -- was an account id of 0.
+    "seller_id" BIGINT NOT NULL, -- cross-ref account.account; no FK
     "rating" SMALLINT NOT NULL,
     "body" TEXT NOT NULL DEFAULT '',
     -- Photos of the item as received; resource ids owned by the common module, held
@@ -84,11 +91,10 @@ CREATE TABLE IF NOT EXISTS "review" (
 );
 -- The product page: one SPU's reviews, newest first. Also the source catalog reads to
 -- recompute its cached_rating.
-CREATE INDEX IF NOT EXISTS "review_listing_id_idx" ON "review" ("listing_id", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "review_listing_id_idx" ON "review" ("listing_id", "created_at" DESC, "id" DESC);
 -- The same page sorted by helpfulness, which is why the tally is a column.
-CREATE INDEX IF NOT EXISTS "review_listing_id_helpful_idx" ON "review" ("listing_id", "helpful_count" DESC);
--- "my reviews".
-CREATE INDEX IF NOT EXISTS "review_author_id_idx" ON "review" ("author_id", "created_at" DESC);
+-- The tuple the cursor compares, so paging by helpfulness is still an index scan.
+CREATE INDEX IF NOT EXISTS "review_listing_id_helpful_idx" ON "review" ("listing_id", "helpful_count" DESC, "id" DESC);
 
 -- Flat replies under a review: a seller answering, a buyer following up. No rating
 -- and no order — a reply is not a review.
@@ -153,6 +159,18 @@ CREATE TABLE IF NOT EXISTS "reputation" (
     )
 );
 
+-- Which orders have already been folded into the two order counters above. The settled
+-- event arrives over an at-least-once bus, so a redelivery would bump a counter twice;
+-- this key is written in the same transaction as the bump, which makes the second
+-- attempt a no-op instead of a second effect.
+CREATE TABLE IF NOT EXISTS "order_outcome" (
+    "order_id" BIGINT NOT NULL, -- cross-ref order.order; no FK
+    "completed" BOOLEAN NOT NULL,
+    "recorded_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "order_outcome_pkey" PRIMARY KEY ("order_id")
+);
+
 -- Polymorphic abuse report with admin resolution.
 CREATE TABLE IF NOT EXISTS "report" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
@@ -171,12 +189,12 @@ CREATE TABLE IF NOT EXISTS "report" (
     CONSTRAINT "report_pkey" PRIMARY KEY ("id")
 );
 CREATE INDEX IF NOT EXISTS "report_ref_type_ref_id_idx" ON "report" ("ref_type", "ref_id");
-CREATE INDEX IF NOT EXISTS "report_reporter_id_idx" ON "report" ("reporter_id", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "report_reporter_id_idx" ON "report" ("reporter_id", "created_at" DESC, "id" DESC);
 -- The moderator queue: unresolved reports, oldest first, which is the order they are
 -- worked. Partial on the small hot slice, so a resolved backlog of any size costs
 -- nothing — "status" alone has too few values to lead an index, and on its own it could
 -- not deliver the ordering either.
 CREATE INDEX IF NOT EXISTS "report_queue_idx"
-    ON "report" ("created_at")
+    ON "report" ("created_at", "id")
     WHERE "status" IN ('open', 'reviewing');
 CREATE UNIQUE INDEX IF NOT EXISTS "report_one_open_per_target" ON "report" ("reporter_id", "ref_type", "ref_id") WHERE "status" IN ('open', 'reviewing');

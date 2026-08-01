@@ -41,7 +41,7 @@ func TestRepo_ListListingsAppliesEveryFilter(t *testing.T) {
 		Condition:  domain.ConditionUsed,
 		Tag:        "handmade",
 		MinPrice:   1,
-		MaxPrice:   1_000_000,
+		MaxPrice:   new(int64(1_000_000)),
 		Query:      "ao thun uniqlo",
 		Sort:       port.SortRelevance,
 		Limit:      20,
@@ -101,6 +101,96 @@ func TestRepo_ListListingsAppliesEveryFilter(t *testing.T) {
 	}
 }
 
+// `ids` ignores the feed's own visibility rules for both ways a listing leaves it: hidden
+// and soft-deleted. An order that references a listing has to render it either way, so
+// neither `l.status = 'active'` nor `l.deleted_at IS NULL` may reach the `ids` branch.
+func TestRepo_ListListingsIDsResolveEvenWhenDeleted(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	category := createCategory(t, repo, unique("cat-"), nil)
+	createTag(t, repo, "handmade", nil)
+	l := newListingFor(t, repo, category.ID, unique("Gone "))
+	if err := l.Publish(); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if err := l.Approve(""); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	if err := repo.SaveListing(ctx, l, testSeller); err != nil {
+		t.Fatalf("SaveListing: %v", err)
+	}
+	if err := repo.SoftDeleteListing(ctx, l.ID, testSeller, testSeller); err != nil {
+		t.Fatalf("SoftDeleteListing: %v", err)
+	}
+
+	// Gone from the public feed.
+	public, _, err := repo.ListListings(ctx, port.ListingFilter{Limit: 50})
+	if err != nil {
+		t.Fatalf("ListListings(public): %v", err)
+	}
+	for _, row := range public {
+		if row.ID == l.ID {
+			t.Fatal("a deleted listing is in the public feed")
+		}
+	}
+	// Still resolvable by id.
+	byID, _, err := repo.ListListings(ctx, port.ListingFilter{IDs: []int64{l.ID}, Limit: 5})
+	if err != nil {
+		t.Fatalf("ListListings(ids): %v", err)
+	}
+	if len(byID) != 1 || byID[0].ID != l.ID || byID[0].DeletedAt == nil {
+		t.Fatalf("ids = %+v, want the deleted listing with deleted_at set", byID)
+	}
+}
+
+// A recommended feed's probe comes from the account's interest vectors, which have
+// nothing to do with `q`: `sort=recommended` together with a query must still filter
+// lexically. Only a probe that is the query's own embedding (ProbeFromQuery) may skip
+// the lexical predicate.
+func TestRepo_ListListingsRecommendedProbeDoesNotBypassQueryFilter(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	category := createCategory(t, repo, unique("cat-"), nil)
+	createTag(t, repo, "handmade", nil)
+
+	match := newListingFor(t, repo, category.ID, unique("Ao thun Uniqlo "))
+	if err := match.Publish(); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if err := match.Approve(""); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	if err := repo.SaveListing(ctx, match, testSeller); err != nil {
+		t.Fatalf("SaveListing: %v", err)
+	}
+
+	other := newListingFor(t, repo, category.ID, unique("Random accessory "))
+	if err := other.Publish(); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if err := other.Approve(""); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	if err := repo.SaveListing(ctx, other, testSeller); err != nil {
+		t.Fatalf("SaveListing: %v", err)
+	}
+
+	probe := make(port.Vector, 1024)
+	probe[0] = 1
+	// The full phrase, as the trigram index needs: a short single-word query against a
+	// name padded with a unique timestamp suffix can fall under the similarity threshold.
+	const query = "ao thun uniqlo"
+	rows, _, err := repo.ListListings(ctx, port.ListingFilter{
+		Query: query, Probe: probe, ProbeFromQuery: false, Sort: port.SortRecommended, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListListings: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != match.ID {
+		t.Fatalf("rows = %+v, want only the listing matching %q", rows, query)
+	}
+}
+
 // A semantic probe has to be a legal statement even though nothing embeds a query yet, and the
 // wishlist filter has to work off the favorite table.
 func TestRepo_ListListingsProbeAndWishlist(t *testing.T) {
@@ -122,7 +212,8 @@ func TestRepo_ListListingsProbeAndWishlist(t *testing.T) {
 	probe := make(port.Vector, 1024)
 	probe[0] = 1
 	if _, _, err := repo.ListListings(ctx, port.ListingFilter{
-		Query: "probe", Mode: port.ModeHybrid, Probe: probe, Sort: port.SortRelevance, Limit: 5,
+		Query: "probe", Mode: port.ModeHybrid, Probe: probe, ProbeFromQuery: true,
+		Sort: port.SortRelevance, Limit: 5,
 	}); err != nil {
 		t.Fatalf("ListListings(hybrid): %v", err)
 	}

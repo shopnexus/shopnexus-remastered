@@ -123,8 +123,7 @@ paths:
         required because price and shipping weight live there.
 
 
-        Starts as a draft and is not public until published. The seller also chooses
-        here whether the buyer or the seller carries the shipping fee.
+        Starts as a draft and is not public until published.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true

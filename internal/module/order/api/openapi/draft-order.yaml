@@ -7,9 +7,13 @@ paths:
       summary: Open a purchase session for one listing
       description: >
         Freezes the listing terms so a price the seller edits afterwards cannot be
-        charged. The server snapshots the SPU together with all of its SKUs —
-        price and package_details live on the SKU, and those are exactly what must
+        charged. The server snapshots the listing together with every variant —
+        price and package details live on the variant, and those are exactly what must
         not move under the buyer — and sets `valid_until`.
+
+
+        Only a `fixed` listing has one: a `negotiable` price is agreed in an offer, and the
+        accepted offer is what freezes its terms instead. Asking for one is 422.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -29,14 +33,14 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { description: 'Listing not found, deleted, or not active', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'The listing is priced negotiable; open an offer instead', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     get:
       tags: [order]
       summary: List the caller's purchase sessions
       security: [{ bearerAuth: [] }]
       parameters:
-        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
-        - { name: state, in: query, schema: { type: string, enum: [live, cancelled, expired], default: live } }
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/DraftOrderPage' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -86,9 +90,14 @@ paths:
         a single address is correct.
 
 
-        A SKU whose listing is priced `negotiable` is rejected with 422 unless the
-        caller has an accepted offer for it — a negotiated listing must go through
-        the offer flow.
+        The session is spent before the money is asked for: the claim is what makes two
+        concurrent checkouts of one draft impossible, and the loser is answered 409 rather
+        than handed a second payment session for the same frozen price.
+
+
+        A `negotiable` listing has no draft at all, so there is nothing to check out here —
+        its terms are frozen by the offer both sides accepted, and `POST /offers/{id}/acceptance`
+        opens this same checkout.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/DraftOrderID' } }
@@ -118,49 +127,45 @@ components:
   schemas:
     DraftVariantSnapshot:
       type: object
-      description: One purchasable variant as it stood when the session opened.
+      description: >
+        One purchasable variant at the price this session froze. Package details are held in
+        the row but not published: they are what the shipping quote is computed from, not
+        something a buyer picks.
       properties:
-        id: { $ref: '#/components/schemas/VariantID' }
+        variant_id: { $ref: '#/components/schemas/VariantID' }
         price: { type: integer, format: int64, minimum: 1, example: 299000, description: Smallest currency unit }
         attributes: { type: object, additionalProperties: true }
-        package_details:
-          type: object
-          additionalProperties: true
-          description: Weight and dimensions; the shipping quote is computed from these.
-        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
-      required: [id, price]
-
-    DraftListingSnapshot:
-      type: object
-      description: >
-        The frozen listing terms. Carries the SKUs because price and shipping
-        weight live there, and those are what must not move under the buyer.
-      properties:
-        id: { $ref: '#/components/schemas/ListingID' }
-        name: { type: string }
-        seller_id: { $ref: '#/components/schemas/AccountID' }
-        currency: { $ref: '#/components/schemas/CurrencyCode' }
-        price_mode: { type: string, enum: [fixed, negotiable] }
-        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
-        variants: { type: array, items: { $ref: '#/components/schemas/DraftVariantSnapshot' } }
-      required: [id, name, seller_id, currency, price_mode, variants]
+      required: [variant_id, price]
 
     DraftOrder:
       type: object
+      description: >
+        The frozen terms, flat rather than nested under a `snapshot`: what a buyer needs is
+        the price they were shown, and the listing's own read answers everything else.
       properties:
         id: { $ref: '#/components/schemas/DraftOrderID' }
         listing_id: { $ref: '#/components/schemas/ListingID' }
-        snapshot: { $ref: '#/components/schemas/DraftListingSnapshot' }
+        seller_id: { $ref: '#/components/schemas/AccountID' }
+        name: { type: string, example: Ao thun cotton }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        price_mode: { type: string, enum: [fixed, negotiable], example: fixed }
+        variants: { type: array, items: { $ref: '#/components/schemas/DraftVariantSnapshot' } }
         created_at: { type: string, format: date-time }
         valid_until: { type: string, format: date-time }
-        cancelled_at: { type: string, format: date-time, nullable: true }
-      required: [id, listing_id, snapshot, created_at, valid_until]
+        cancelled_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            Set when the buyer closed it, the expiry did, or a checkout spent it — a session
+            is claimed as it is checked out, so exactly one checkout can succeed.
+      required: [id, listing_id, seller_id, name, currency, price_mode, variants, created_at, valid_until]
 
     DraftOrderPage:
       type: object
       properties:
         data: { type: array, items: { $ref: '#/components/schemas/DraftOrder' } }
-        meta: { $ref: '#/components/schemas/PageMeta' }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
       required: [data, meta]
 
     CreateDraftRequest:
@@ -171,32 +176,44 @@ components:
 
     CheckoutLine:
       type: object
+      description: One variant and how many of it.
       properties:
         variant_id: { $ref: '#/components/schemas/VariantID' }
-        quantity: { type: integer, format: int64, minimum: 1 }
-        transport_option: { type: string, maxLength: 100, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
-        note: { type: string, maxLength: 500 }
-      required: [variant_id, quantity, transport_option]
+        quantity: { type: integer, format: int64, minimum: 1, example: 2 }
+      required: [variant_id, quantity]
 
     CheckoutRequest:
       type: object
+      description: >
+        The carrier and the note are per checkout, not per line: one session covers one
+        listing and therefore one seller and one parcel.
       properties:
         lines:
           type: array
           minItems: 1
           items: { $ref: '#/components/schemas/CheckoutLine' }
         contact_id: { $ref: '#/components/schemas/ContactID' }
+        transport_option:
+          type: string
+          maxLength: 100
+          example: ghn-express
+          description: >
+            An enabled transport option's slug. The buyer pays delivery, so the trade-off
+            between price and speed is theirs.
         currency:
           allOf: [{ $ref: '#/components/schemas/CurrencyCode' }]
           description: Must match the listing's currency.
-      required: [lines, contact_id, currency]
+        note: { type: string, maxLength: 500, example: Please leave at reception }
+      required: [lines, contact_id, transport_option, currency]
 
     CheckoutResult:
       type: object
       description: >
-        The items and the single session that pays for them. Nothing is settled
-        until the session succeeds, and no order exists until the seller confirms.
+        The lines and the single session that pays for them. Nothing is settled yet: the
+        order appears when that session completes, and no seller confirms anything.
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
-        payment_session: { $ref: '#/components/schemas/PaymentSession' }
-      required: [items, payment_session]
+        payment_session_id: { $ref: '#/components/schemas/PaymentSessionID' }
+        total: { type: integer, format: int64, minimum: 0, example: 598000, description: 'What the session asks for, smallest currency unit' }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+      required: [items, payment_session_id, total, currency]

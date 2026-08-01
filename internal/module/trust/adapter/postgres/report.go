@@ -60,18 +60,19 @@ func (r *Repo) ListReports(ctx context.Context, f port.ReportFilter) ([]domain.R
 	             AND (@statuses::text[] IS NULL OR status::text = ANY(@statuses::text[]))
 	             AND (@ref_type::text IS NULL OR ref_type = @ref_type::report_ref_type)
 	             AND (@reason::text IS NULL OR reason = @reason::report_reason)`
-	q := base + ` AND (@before::timestamptz IS NULL OR created_at < @before::timestamptz)
+	q := base + ` AND (@before_id = 0
+	                   OR (created_at, id) < (@before::timestamptz, @before_id))
 	              ORDER BY created_at DESC, id DESC LIMIT @limit`
 	if f.ReporterID == 0 {
-		q = base + ` AND (@before::timestamptz IS NULL OR created_at > @before::timestamptz)
-		              ORDER BY created_at, id LIMIT @limit`
+		q = base + ` AND (@before_id = 0
+		                  OR (created_at, id) > (@before::timestamptz, @before_id))
+		             ORDER BY created_at, id LIMIT @limit`
 	}
-	before, limit := cursorBound(f.Cursor)
 	args := pgx.NamedArgs{
 		"reporter_id": f.ReporterID, "statuses": nullStrings(f.Statuses),
 		"ref_type": nullText(f.RefType), "reason": nullText(f.Reason),
-		"before": before, "limit": limit,
 	}
+	addCursor(args, f.Cursor)
 	rows, err := r.pool.Query(ctx, q, args)
 	if err != nil {
 		return nil, fmt.Errorf("db query reports: %w", err)
@@ -114,18 +115,44 @@ func (r *Repo) SaveReport(ctx context.Context, v domain.Report, from []string) e
 	return nil
 }
 
-// CountOpenAgainst is how many unresolved reports name the same target — the pattern a
-// decision rests on rather than one complaint.
-func (r *Repo) CountOpenAgainst(ctx context.Context, refType string, refID int64) (int64, error) {
-	const q = `SELECT COUNT(*) FROM report
-	           WHERE ref_type = @ref_type AND ref_id = @ref_id
-	             AND status IN ('open', 'reviewing')`
-	var count int64
-	err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{"ref_type": refType, "ref_id": refID}).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("db count open reports: %w", err)
+// CountOpenAgainst is how many unresolved reports name each target — the pattern a decision
+// rests on rather than one complaint. A whole page of targets in one query: the moderator
+// queue asks this per row, and twenty round trips to answer twenty small counts is the shape
+// this replaces. A target nobody else reported is absent from the map, which reads as 0.
+func (r *Repo) CountOpenAgainst(ctx context.Context, targets []port.ReportTarget) (map[port.ReportTarget]int64, error) {
+	out := make(map[port.ReportTarget]int64, len(targets))
+	if len(targets) == 0 {
+		return out, nil
 	}
-	return count, nil
+	refTypes := make([]string, 0, len(targets))
+	refIDs := make([]int64, 0, len(targets))
+	for _, target := range targets {
+		refTypes = append(refTypes, target.RefType)
+		refIDs = append(refIDs, target.RefID)
+	}
+	const q = `SELECT ref_type::text, ref_id, COUNT(*) FROM report
+	           WHERE (ref_type::text, ref_id) IN (
+	                   SELECT * FROM unnest(@ref_types::text[], @ref_ids::bigint[])
+	                 )
+	             AND status IN ('open', 'reviewing')
+	           GROUP BY ref_type, ref_id`
+	rows, err := r.pool.Query(ctx, q, pgx.NamedArgs{"ref_types": refTypes, "ref_ids": refIDs})
+	if err != nil {
+		return nil, fmt.Errorf("db count open reports: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var target port.ReportTarget
+		var count int64
+		if err := rows.Scan(&target.RefType, &target.RefID, &count); err != nil {
+			return nil, fmt.Errorf("db scan open report count: %w", err)
+		}
+		out[target] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db iterate open report counts: %w", err)
+	}
+	return out, nil
 }
 
 func nullStrings(v []string) any {

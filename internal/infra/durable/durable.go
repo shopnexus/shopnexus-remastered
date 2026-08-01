@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 
 	restate "github.com/restatedev/sdk-go"
@@ -49,8 +50,15 @@ type Client struct {
 	log     *slog.Logger
 }
 
-func NewClient(baseURL string, timeout time.Duration, log *slog.Logger) *Client {
-	return &Client{ingress: ingress.NewClient(baseURL), timeout: timeout, log: log}
+// NewClient takes the HTTP client rather than building one: outbound cross-cutting concerns —
+// metrics today, retry or breaking later — live in the transport, and the SDK's default would
+// have used http.DefaultClient with none of them.
+func NewClient(baseURL string, timeout time.Duration, httpClient *http.Client, log *slog.Logger) *Client {
+	return &Client{
+		ingress: ingress.NewClient(baseURL, ingress.WithHttpClient(httpClient)),
+		timeout: timeout,
+		log:     log,
+	}
 }
 
 // Start submits a run. The workflow key is the idempotency: submitting the same key twice

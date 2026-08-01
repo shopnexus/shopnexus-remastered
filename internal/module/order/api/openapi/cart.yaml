@@ -5,18 +5,27 @@ paths:
     get:
       tags: [order]
       summary: List the caller's cart
+      description: >
+        The whole cart, unpaginated. A cart is bounded by what one person means to buy, so
+        there is nothing to page through.
       security: [{ bearerAuth: [] }]
-      parameters:
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/Limit'
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/CartItemPage' } } } }
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/CartItem' } }
+                required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [order]
       summary: Add a SKU to the cart
-      description: One row per (account, SKU). Adding a SKU already in the cart is a
-        conflict — change the quantity instead.
+      description: >
+        One row per (account, SKU). Adding a SKU already in the cart tops that row up rather
+        than stacking a second one — adding twice means wanting more.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -36,7 +45,6 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
 
   /cart-items/{id}:
     parameters:
@@ -89,13 +97,6 @@ components:
         quantity: { type: integer, format: int64, minimum: 1, example: 2 }
         created_at: { type: string, format: date-time }
       required: [id, listing_id, variant_id, quantity, created_at]
-
-    CartItemPage:
-      type: object
-      properties:
-        data: { type: array, items: { $ref: '#/components/schemas/CartItem' } }
-        meta: { $ref: '#/components/schemas/PageMeta' }
-      required: [data, meta]
 
     AddCartItemRequest:
       type: object

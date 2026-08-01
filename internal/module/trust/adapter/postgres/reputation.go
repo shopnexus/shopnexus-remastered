@@ -36,8 +36,23 @@ func (r *Repo) FindReputation(ctx context.Context, accountID int64, role string)
 // AddOrderOutcome bumps the completed or cancelled counter of both parties, each in the role
 // they played. One statement per party rather than a join: they are two rows in the same
 // table and the upsert has to create either.
-func (r *Repo) AddOrderOutcome(ctx context.Context, buyerID, sellerID int64, completed bool) error {
+//
+// The order id is claimed first, in the same transaction: the settled event arrives over an
+// at-least-once bus, so without a key a redelivery would count the same sale twice and a
+// counter has no idempotence of its own. A claim that finds the row already there means this
+// outcome is already in the numbers, so there is nothing left to do.
+func (r *Repo) AddOrderOutcome(ctx context.Context, orderID, buyerID, sellerID int64, completed bool) error {
 	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
+		const claim = `INSERT INTO order_outcome (order_id, completed)
+		               VALUES (@order_id, @completed)
+		               ON CONFLICT (order_id) DO NOTHING`
+		tag, err := tx.Exec(ctx, claim, pgx.NamedArgs{"order_id": orderID, "completed": completed})
+		if err != nil {
+			return fmt.Errorf("db claim order outcome: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return nil
+		}
 		for _, party := range []struct {
 			id   int64
 			role string

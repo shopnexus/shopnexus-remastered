@@ -11,6 +11,11 @@ paths:
         Public, with the first few replies and the vote tally on each one.
 
 
+        A cursor belongs to the sort it was issued under: each ordering pages on its own key,
+        so a cursor from `sort=helpful` is meaningless to `sort=newest` and a client that
+        switches sorts starts the traversal again.
+
+
         `sort=helpful` orders by a counter that other people are changing while a client
         pages: a review that gains votes can move across a page boundary and be seen twice
         or not at all. Cursor paging is exact only over a key that does not move, and
@@ -30,9 +35,10 @@ paths:
       tags: [trust]
       summary: Review a listing you bought
       description: >
-        An order is required — no purchase, no review — and one review per listing per
-        order, so buying twice earns a second review but one purchase does not earn
-        two.
+        A completed order is required — no purchase, no review — and one review per listing
+        per order, so buying twice earns a second review but one purchase does not earn
+        two. An order that was cancelled or fully refunded earns none: there are no goods
+        left to rate. Rating the counterparty of such a sale is what feedback is for.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -54,7 +60,7 @@ paths:
         '403': { description: 'The order does not belong to the caller', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'Already reviewed for this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '422': { description: 'The order did not include this listing or is not finished', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'The order did not include this listing, or did not complete — a cancelled sale leaves no goods to review', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /reviews/{id}:
     parameters:
@@ -274,16 +280,18 @@ components:
         order_id: { $ref: '#/components/schemas/OrderID' }
         rating: { type: integer, minimum: 1, maximum: 5 }
         body: { type: string, maxLength: 2000 }
-        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+        attachments: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/ResourceID' } }
       required: [order_id, rating]
 
     UpdateReviewRequest:
       type: object
-      description: Every field optional.
+      description: >
+        Every field optional. `attachments` replaces the whole set and is capped at the
+        same ten the submission is: an edit is not a way around a limit.
       properties:
         rating: { type: integer, minimum: 1, maximum: 5 }
         body: { type: string, maxLength: 2000 }
-        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+        attachments: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/ResourceID' } }
 
     SubmitReviewReplyRequest:
       type: object

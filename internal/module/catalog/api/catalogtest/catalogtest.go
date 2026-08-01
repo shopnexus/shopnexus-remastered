@@ -113,7 +113,11 @@ func (Stub) ReleaseStock(context.Context, catalogapi.StockMovementRequest) error
 	return errx.ErrNotImplemented
 }
 
-func (Stub) CommitStock(context.Context, catalogapi.StockMovementRequest) error {
+func (Stub) CommitStock(context.Context, catalogapi.StockCommitRequest) error {
+	return errx.ErrNotImplemented
+}
+
+func (Stub) UncommitStock(context.Context, catalogapi.StockCommitRequest) error {
 	return errx.ErrNotImplemented
 }
 

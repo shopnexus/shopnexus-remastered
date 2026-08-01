@@ -85,12 +85,25 @@ func (f *fakeRepo) FindSessionByID(_ context.Context, sessionID int64) (domain.S
 	return s, nil
 }
 
-func (f *fakeRepo) SaveSession(_ context.Context, s domain.Session) error {
-	if _, ok := f.sessions[s.ID]; !ok {
-		return domain.ErrSessionNotFound
+// SaveSession is guarded by the statuses the transition is legal from, as the adapter's WHERE
+// clause is: a fake that wrote unconditionally would let a test pass while two concurrent
+// resolutions both landed against the real database.
+func (f *fakeRepo) SaveSession(_ context.Context, s domain.Session, from []string) error {
+	stored, ok := f.sessions[s.ID]
+	if !ok || !slices.Contains(from, stored.Status) {
+		return domain.ErrSessionSettled
 	}
 	f.sessions[s.ID] = s
 	return nil
+}
+
+// InsertWithdrawal is the atomic open: either the request and its debit are both there or
+// neither is, which is what stops an admin approving a cash-out nobody funded.
+func (f *fakeRepo) InsertWithdrawal(ctx context.Context, s *domain.Session, debit port.Leg) error {
+	if _, err := f.Move(ctx, []port.Leg{debit}); err != nil {
+		return err
+	}
+	return f.InsertSession(ctx, s)
 }
 
 func (f *fakeRepo) ListSessions(_ context.Context, filter port.SessionFilter) ([]domain.Session, int64, error) {
@@ -155,15 +168,6 @@ func (f *fakeRepo) FindTransactionByID(_ context.Context, legID int64) (domain.T
 	return t, nil
 }
 
-func (f *fakeRepo) FindTransactionByProviderRef(_ context.Context, ref string) (domain.Transaction, error) {
-	for _, t := range f.legs {
-		if t.ProviderRef != nil && *t.ProviderRef == ref {
-			return t, nil
-		}
-	}
-	return domain.Transaction{}, domain.ErrTransactionNotFound
-}
-
 // --- wallets ---
 
 func (f *fakeRepo) FindWallet(_ context.Context, accountID int64, currency string) (domain.Wallet, error) {
@@ -209,6 +213,7 @@ func (f *fakeRepo) Move(_ context.Context, legs []port.Leg) ([]domain.Movement, 
 	}
 	// Work on copies so a refusal halfway leaves the wallets untouched.
 	staged := map[walletKey]domain.Wallet{}
+	stagedKeys := map[string]bool{}
 	var out []domain.Movement
 	groupID := f.id()
 	for _, leg := range legs {
@@ -222,8 +227,14 @@ func (f *fakeRepo) Move(_ context.Context, legs []port.Leg) ([]domain.Movement, 
 			}
 			w = stored
 		}
-		if leg.Transfer.IdempotencyKey != nil && f.posted[*leg.Transfer.IdempotencyKey] {
-			return nil, domain.ErrMovementAlreadyPosted
+		// The unique index is global, so a key reused within one call collides too — a fake
+		// that only checked committed keys would let a service post two legs under one key
+		// and only fail against the real database.
+		if leg.Transfer.IdempotencyKey != nil {
+			if f.posted[*leg.Transfer.IdempotencyKey] || stagedKeys[*leg.Transfer.IdempotencyKey] {
+				return nil, domain.ErrMovementAlreadyPosted
+			}
+			stagedKeys[*leg.Transfer.IdempotencyKey] = true
 		}
 		transfer := leg.Transfer
 		if transfer.GroupID == nil {

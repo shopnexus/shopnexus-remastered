@@ -22,10 +22,10 @@ paths:
         — seller payouts and refunds land on that side.'
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: role, in: query, required: true, schema: { type: string, enum: [payer, payee] } }
+        - { name: role, in: query, schema: { type: string, enum: [payer, payee] }, description: 'Omit for both sides.' }
         - { name: kind, in: query, schema: { $ref: '#/components/schemas/PaymentSessionKind' } }
         - { name: status, in: query, schema: { $ref: '#/components/schemas/PaymentSessionStatus' } }
-        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/PaymentSessionPage' } } } }
@@ -37,8 +37,8 @@ paths:
       tags: [finance]
       summary: Read a payment session
       description: >
-        `amount_paid` is the sum of the settled legs, so a client can tell a
-        partly-tendered session from an unpaid one without fetching the legs.
+        `outstanding` is the total less what has already settled on a rail, so a client can
+        tell a partly-tendered session from an unpaid one without fetching the legs.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/PaymentSessionID' } }
@@ -168,16 +168,15 @@ components:
           description: The payee. Null means the platform itself.
         currency: { $ref: '#/components/schemas/CurrencyCode' }
         total_amount: { type: integer, format: int64, minimum: 0, example: 598000, description: 'Amount owed, smallest unit of `currency`' }
-        amount_paid:
+        outstanding:
           type: integer
           format: int64
           minimum: 0
-          example: 598000
+          example: 299000
           description: >
-            Sum of the settled legs, so a partly-tendered session is distinguishable from an
-            unpaid one. Signed, so a reversal brings it back down — after a full refund this
-            reads zero again. It is what the rails currently hold, not a running total of
-            what was ever charged; the ledger has that.
+            The total less what has already settled on a rail: what a further payment may
+            still tender. Computed, because a stored copy would be a second fact to keep in
+            step with every leg.
         note: { type: string }
         created_at: { type: string, format: date-time }
         paid_at: { type: string, format: date-time, nullable: true }
@@ -185,13 +184,13 @@ components:
           type: string
           format: date-time
           description: A session still unsettled past this point is voided by a job.
-      required: [id, kind, status, currency, total_amount, amount_paid, note, created_at, expired_at]
+      required: [id, kind, status, currency, total_amount, outstanding, created_at, expired_at]
 
     PaymentSessionPage:
       type: object
       properties:
         data: { type: array, items: { $ref: '#/components/schemas/PaymentSession' } }
-        meta: { $ref: '#/components/schemas/CursorMeta' }
+        meta: { $ref: '#/components/schemas/PageMeta' }
       required: [data, meta]
 
     Transaction:

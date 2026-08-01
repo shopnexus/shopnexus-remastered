@@ -17,6 +17,10 @@ const (
 	RefundReturned       = "returned"
 	RefundAccepted       = "accepted"
 	RefundRejected       = "rejected"
+	// RefundCancelled is the buyer withdrawing before the seller decided. Its own terminal
+	// value, because filing a withdrawal as a rejection makes it indistinguishable from a
+	// seller who won.
+	RefundCancelled = "cancelled"
 )
 
 // The three windows a refund runs on. Named here rather than in a config file: they are
@@ -74,7 +78,19 @@ func NewRefund(orderID, buyerID int64, reason string, attachments []int64) (Refu
 
 // Settled reports whether the case is closed.
 func (r Refund) Settled() bool {
-	return r.Status == RefundAccepted || r.Status == RefundRejected
+	return r.Status == RefundAccepted || r.Status == RefundRejected ||
+		r.Status == RefundCancelled
+}
+
+// Withdraw is the buyer dropping the case, and only while the seller has not decided: after
+// that there is a verdict on the record and walking away would erase it.
+func (r *Refund) Withdraw() error {
+	if r.Status != RefundAwaitingSeller {
+		return ErrRefundSettled
+	}
+	r.Status = RefundCancelled
+	r.DeadlineAt = nil
+	return nil
 }
 
 // Accept is the seller granting it. The goods come back first: the return leg exists only

@@ -16,9 +16,10 @@
 #     status field. "order" has no status column on purpose: the lifecycle lives
 #     in the service and only outcome facts (completed_at, cancelled_at) persist.
 #
-# Work done by a job has no endpoint. Auto-payout 72h after receipt confirmation, the
-# three refund timeouts (refund.yaml), and draft/offer expiry are all cron; the
-# contract exposes the deadlines so a client can count down.
+# Work done by a clock has no endpoint. The payout 72h after receipt confirmation, the three
+# refund timeouts (refund.yaml), an unpaid checkout releasing its stock, and draft/offer expiry
+# are all driven by a durable run per entity with a periodic sweep behind it; the contract
+# exposes the deadlines so a client can count down.
 
 paths:
   /orders:
@@ -98,15 +99,13 @@ paths:
     post:
       tags: [order]
       summary: Cancel an order
-      description: Either party may cancel while the shipment has not left `pending`.
+      description: >
+        Either party may cancel while the shipment has not left `pending`. The escrow goes back
+        to the buyer and the sale is reversed in the catalog. No body: there is nowhere to
+        record a reason, and a field a client fills in that reaches nobody is worse than none.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderID' } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/CancellationRequest' }
       responses:
         '200':
           description: 'Cancelled'
@@ -132,11 +131,6 @@ components:
         which is also the predicate of the partial indexes behind this filter.
       enum: [open, completed, cancelled]
 
-    OrderPaymentStatus:
-      type: string
-      description: Status of the payment session covering the item; owned by finance.
-      enum: [pending, processing, success, cancelled, failed]
-
     OrderAddressSnapshot:
       type: object
       description: >
@@ -144,23 +138,14 @@ components:
         codes are what a carrier is called with, and the saved contact may have
         changed since the order was placed.
       properties:
-        full_name: { type: string }
-        phone: { type: string, description: E.164 }
-        country: { type: string, minLength: 2, maxLength: 2, description: ISO 3166-1 alpha-2 }
-        province_code: { type: string }
-        province_name: { type: string }
-        district_code: { type: string, nullable: true, description: Null where the country has no district tier }
-        district_name: { type: string, nullable: true }
-        ward_code: { type: string }
-        ward_name: { type: string }
-        postal_code: { type: string, nullable: true }
-        address: { type: string, description: 'Street or house-number line, below ward level' }
-        address_detail: { type: string, nullable: true, description: 'Unit, floor, notes' }
-        provider_codes:
-          type: object
-          additionalProperties: true
-          description: 'Per-carrier territory ids, e.g. {"ghn": {"province_id": 201}}'
-      required: [full_name, phone, country, province_code, ward_code, address]
+        full_name: { type: string, example: Nguyen Van A }
+        phone: { type: string, example: '+84900000001', description: E.164 }
+        country: { type: string, minLength: 2, maxLength: 2, example: VN, description: ISO 3166-1 alpha-2 }
+        province_code: { type: string, example: '79' }
+        district_code: { type: string, nullable: true, example: '760', description: Null where the country has no district tier }
+        ward_code: { type: string, example: '26743' }
+        address_detail: { type: string, nullable: true, example: 'Apt 4B, 12 Nguyen Hue', description: 'The street line and anything below it' }
+      required: [full_name, phone, country]
 
     Order:
       type: object
@@ -177,13 +162,26 @@ components:
           allOf: [{ $ref: '#/components/schemas/OfferID' }]
           nullable: true
           description: The accepted negotiation this came from. Null on a fixed-price sale.
-        buyer_id: { $ref: '#/components/schemas/AccountID' }
-        seller_id: { $ref: '#/components/schemas/AccountID' }
-        transport_id: { $ref: '#/components/schemas/TransportID' }
+        buyer: { $ref: '#/components/schemas/AccountSummary' }
+        seller: { $ref: '#/components/schemas/AccountSummary' }
         address: { $ref: '#/components/schemas/OrderAddressSnapshot' }
         pickup_address: { $ref: '#/components/schemas/OrderAddressSnapshot' }
         items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
         state: { $ref: '#/components/schemas/OrderState' }
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 598000
+          description: >
+            Summed from the live lines rather than stored: the lines are the record of what was
+            paid, and a column would be a second answer to the same question.
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        transport:
+          allOf: [{ $ref: '#/components/schemas/Transport' }]
+          description: >
+            The shipment, carried in full rather than as an id: it has no read of its own
+            outside the order it belongs to.
         received_at:
           type: string
           format: date-time
@@ -191,7 +189,7 @@ components:
           description: When the buyer confirmed receipt. Null means the payout clock has not started.
         receipt_attachments:
           type: array
-          items: { $ref: '#/components/schemas/ResourceID' }
+          items: { $ref: '#/components/schemas/Resource' }
           description: >
             Unboxing evidence, captured with the receipt confirmation and never added to
             afterwards — a refund is judged on what the buyer showed at the moment of
@@ -201,16 +199,20 @@ components:
           format: date-time
           nullable: true
           description: >
-            `received_at` + 72h, computed rather than stored. A job pays the seller out
-            at this point unless a refund is live on the order.
-        payout_session_id:
-          allOf: [{ $ref: '#/components/schemas/PaymentSessionID' }]
+            `received_at` + 72h, computed rather than stored. The seller is paid out at this
+            point unless a refund still has a claim on the escrow.
+        payout_released_at:
+          type: string
+          format: date-time
           nullable: true
-          description: The escrow release to the seller. Set once the payout job has run.
+          description: >
+            When the escrow reached the seller. Null on a completed order means the release has
+            not landed yet — the platform owes the seller and knows it, and a retry pass keeps
+            trying until it does.
         created_at: { type: string, format: date-time }
-        completed_at: { type: string, format: date-time, nullable: true, description: Set by the payout job }
+        completed_at: { type: string, format: date-time, nullable: true, description: Set when the payout is claimed }
         cancelled_at: { type: string, format: date-time, nullable: true }
-      required: [id, buyer_id, seller_id, transport_id, address, pickup_address, state, receipt_attachments, created_at]
+      required: [id, buyer, seller, address, pickup_address, state, total, currency, receipt_attachments, created_at]
 
     OrderPage:
       type: object
@@ -225,15 +227,9 @@ components:
         attachments:
           type: array
           minItems: 1
+          maxItems: 10
           description: >
             Unboxing photos or video. At least one is mandatory — a later refund or
             dispute is judged on this evidence.
           items: { $ref: '#/components/schemas/ResourceID' }
-        note: { type: string, maxLength: 2000 }
       required: [attachments]
-
-    CancellationRequest:
-      type: object
-      properties:
-        reason: { type: string, maxLength: 2000 }
-      required: [reason]

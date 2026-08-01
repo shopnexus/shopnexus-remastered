@@ -8,6 +8,7 @@ import (
 	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/trust/domain"
 	"shopnexus/internal/module/trust/port"
+	"shopnexus/internal/shared/errx"
 )
 
 // fakeRepo is an in-memory port.Repository that keeps the rules the schema keeps: one
@@ -22,12 +23,21 @@ type fakeRepo struct {
 	replies    map[int64]domain.ReviewReply
 	votes      map[[2]int64]int16
 	reports    map[int64]domain.Report
+	// outcomes is the dedupe key AddOrderOutcome writes with the bump: the settled event is
+	// at-least-once, so a second delivery of one order must count nothing.
+	outcomes map[int64]bool
 	// resources is this module's own resource table: an id absent from it names no confirmed
 	// upload, which is what ErrAttachmentNotFound is about.
 	resources map[int64]bool
 	nextID    int64
 	// ratingSync records what was pushed to catalog's cache, per listing.
 	ratingSync map[int64][2]float64
+	// saveReportErr stands in for a database that is simply unreachable, which a service must
+	// not report as "somebody else claimed it".
+	saveReportErr error
+	// countCalls is how many round trips the queue spent on the pattern, which is the N+1 a
+	// page of the moderator queue used to pay per row.
+	countCalls int
 }
 
 func newFakeRepo() *fakeRepo {
@@ -35,9 +45,15 @@ func newFakeRepo() *fakeRepo {
 		feedback: map[int64]domain.Feedback{}, reputation: map[[2]any]domain.Reputation{},
 		reviews: map[int64]domain.Review{}, replies: map[int64]domain.ReviewReply{},
 		votes: map[[2]int64]int16{}, reports: map[int64]domain.Report{},
+		outcomes:  map[int64]bool{},
 		resources: map[int64]bool{}, ratingSync: map[int64][2]float64{},
 	}
 }
+
+// errCountersNegative is the schema's "reputation_counters_non_negative" in the fake. A fake
+// that absorbs a delta the database refuses lets a service ship a 500: that is exactly how a
+// seller id of 0 passed every unit test here.
+var errCountersNegative = errx.NewError(500, "counters_negative", "a reputation counter would go negative")
 
 func (f *fakeRepo) next() int64 { f.nextID++; return f.nextID }
 
@@ -102,12 +118,14 @@ func (f *fakeRepo) ListFeedback(_ context.Context, filter port.FeedbackFilter) (
 		if filter.Role != "" && domain.RoleRated(row.Direction) != filter.Role {
 			continue
 		}
-		if !filter.Cursor.Before.IsZero() && !row.CreatedAt.Before(filter.Cursor.Before) {
+		if filter.Cursor.BeforeID != 0 && !before(timeKey(row.CreatedAt, row.ID), cursorKey(filter.Cursor)) {
 			continue
 		}
 		out = append(out, row)
 	}
-	slices.SortFunc(out, func(a, b domain.Feedback) int { return int(b.ID - a.ID) })
+	slices.SortFunc(out, func(a, b domain.Feedback) int {
+		return descending(timeKey(a.CreatedAt, a.ID), timeKey(b.CreatedAt, b.ID))
+	})
 	return trim(out, filter.Cursor.Limit), nil
 }
 
@@ -155,7 +173,13 @@ func (f *fakeRepo) FindReputation(_ context.Context, accountID int64, role strin
 	return rep, nil
 }
 
-func (f *fakeRepo) AddOrderOutcome(_ context.Context, buyerID, sellerID int64, completed bool) error {
+// AddOrderOutcome claims the order id first, as the adapter does in the same transaction as the
+// bump: the settled event is at-least-once, and a counter has no idempotence of its own.
+func (f *fakeRepo) AddOrderOutcome(_ context.Context, orderID, buyerID, sellerID int64, completed bool) error {
+	if f.outcomes[orderID] {
+		return nil
+	}
+	f.outcomes[orderID] = true
 	for _, party := range []struct {
 		id   int64
 		role string
@@ -189,7 +213,7 @@ func (f *fakeRepo) ReviewAverage(_ context.Context, listingID int64) (float64, i
 
 // --- reviews ---
 
-func (f *fakeRepo) InsertReview(_ context.Context, v *domain.Review, sellerID int64) error {
+func (f *fakeRepo) InsertReview(_ context.Context, v *domain.Review) error {
 	for _, existing := range f.reviews {
 		if existing.ListingID == v.ListingID && existing.AuthorID == v.AuthorID &&
 			existing.OrderID == v.OrderID {
@@ -199,17 +223,22 @@ func (f *fakeRepo) InsertReview(_ context.Context, v *domain.Review, sellerID in
 	v.ID = f.next()
 	v.CreatedAt = time.Now()
 	f.reviews[v.ID] = *v
-	f.addReviewRating(sellerID, int64(v.Rating), 1)
-	return nil
+	return f.addReviewRating(v.SellerID, int64(v.Rating), 1)
 }
 
-func (f *fakeRepo) addReviewRating(sellerID, sum, count int64) {
+// addReviewRating keeps the CHECK the schema keeps: a delta that would take a counter below
+// zero is refused rather than stored.
+func (f *fakeRepo) addReviewRating(sellerID, sum, count int64) error {
 	rep := f.reputation[key(sellerID, domain.RoleSeller)]
+	if rep.ReviewRatingSum+sum < 0 || rep.ReviewRatingCount+count < 0 {
+		return errCountersNegative
+	}
 	rep.AccountID, rep.Role = sellerID, domain.RoleSeller
 	rep.ReviewRatingSum += sum
 	rep.ReviewRatingCount += count
 	rep.UpdatedAt = time.Now()
 	f.reputation[key(sellerID, domain.RoleSeller)] = rep
+	return nil
 }
 
 func (f *fakeRepo) FindReview(_ context.Context, id int64) (domain.Review, error) {
@@ -220,49 +249,64 @@ func (f *fakeRepo) FindReview(_ context.Context, id int64) (domain.Review, error
 	return row, nil
 }
 
+// ListReviews pages on the key it orders by, as the SQL does: the cursor is the pair
+// (key, id), so a boundary tie skips nothing and a helpful-sorted page is not bounded by a
+// timestamp it never ordered on.
 func (f *fakeRepo) ListReviews(_ context.Context, filter port.ReviewFilter) ([]domain.Review, error) {
+	helpful := filter.Sort == domain.ReviewSortHelpful
+	after := func(row domain.Review) bool {
+		if filter.Cursor.BeforeID == 0 {
+			return true
+		}
+		if helpful {
+			return before([2]int64{row.HelpfulCount, row.ID},
+				[2]int64{filter.Cursor.BeforeCount, filter.Cursor.BeforeID})
+		}
+		return before([2]int64{row.CreatedAt.UnixNano(), row.ID},
+			[2]int64{filter.Cursor.Before.UnixNano(), filter.Cursor.BeforeID})
+	}
 	var out []domain.Review
 	for _, row := range f.reviews {
 		if filter.ListingID != 0 && row.ListingID != filter.ListingID {
 			continue
 		}
-		if filter.AuthorID != 0 && row.AuthorID != filter.AuthorID {
-			continue
-		}
 		if filter.Rating != 0 && row.Rating != filter.Rating {
 			continue
 		}
-		if !filter.Cursor.Before.IsZero() && !row.CreatedAt.Before(filter.Cursor.Before) {
+		if !after(row) {
 			continue
 		}
 		out = append(out, row)
 	}
-	if filter.Sort == domain.ReviewSortHelpful {
-		slices.SortFunc(out, func(a, b domain.Review) int {
-			if a.HelpfulCount != b.HelpfulCount {
-				return int(b.HelpfulCount - a.HelpfulCount)
-			}
-			return int(b.ID - a.ID)
-		})
-	} else {
-		slices.SortFunc(out, func(a, b domain.Review) int { return int(b.ID - a.ID) })
-	}
+	slices.SortFunc(out, func(a, b domain.Review) int {
+		if helpful {
+			return descending([2]int64{a.HelpfulCount, a.ID}, [2]int64{b.HelpfulCount, b.ID})
+		}
+		return descending([2]int64{a.CreatedAt.UnixNano(), a.ID},
+			[2]int64{b.CreatedAt.UnixNano(), b.ID})
+	})
 	return trim(out, filter.Cursor.Limit), nil
 }
 
-func (f *fakeRepo) SaveReview(_ context.Context, v domain.Review, sellerID int64, ratingDelta int64) error {
-	if _, ok := f.reviews[v.ID]; !ok {
+// SaveReview and DeleteReview derive the aggregate's move from the stored row, which is what
+// the adapter reads under FOR UPDATE — a delta computed from the caller's older copy is the
+// one that moves a reputation twice.
+func (f *fakeRepo) SaveReview(_ context.Context, v domain.Review) error {
+	stored, ok := f.reviews[v.ID]
+	if !ok {
 		return domain.ErrReviewNotFound
 	}
 	f.reviews[v.ID] = v
-	if ratingDelta != 0 {
-		f.addReviewRating(sellerID, ratingDelta, 0)
+	delta := int64(v.Rating) - int64(stored.Rating)
+	if delta == 0 {
+		return nil
 	}
-	return nil
+	return f.addReviewRating(stored.SellerID, delta, 0)
 }
 
-func (f *fakeRepo) DeleteReview(_ context.Context, id int64, sellerID int64, rating int16) error {
-	if _, ok := f.reviews[id]; !ok {
+func (f *fakeRepo) DeleteReview(_ context.Context, id int64) error {
+	stored, ok := f.reviews[id]
+	if !ok {
 		return domain.ErrReviewNotFound
 	}
 	delete(f.reviews, id)
@@ -277,8 +321,7 @@ func (f *fakeRepo) DeleteReview(_ context.Context, id int64, sellerID int64, rat
 			delete(f.votes, pair)
 		}
 	}
-	f.addReviewRating(sellerID, -int64(rating), -1)
-	return nil
+	return f.addReviewRating(stored.SellerID, -int64(stored.Rating), -1)
 }
 
 // --- replies ---
@@ -403,7 +446,10 @@ func (f *fakeRepo) FindReport(_ context.Context, id int64) (domain.Report, error
 	return row, nil
 }
 
+// ListReports pages both directions the adapter serves: the queue is worked oldest first, a
+// reporter reads their own newest first, and each compares (created_at, id) as a tuple.
 func (f *fakeRepo) ListReports(_ context.Context, filter port.ReportFilter) ([]domain.Report, error) {
+	queue := filter.ReporterID == 0
 	var out []domain.Report
 	for _, row := range f.reports {
 		if filter.ReporterID != 0 && row.ReporterID != filter.ReporterID {
@@ -418,19 +464,35 @@ func (f *fakeRepo) ListReports(_ context.Context, filter port.ReportFilter) ([]d
 		if filter.Reason != "" && row.Reason != filter.Reason {
 			continue
 		}
+		if filter.Cursor.BeforeID != 0 {
+			key, cursor := timeKey(row.CreatedAt, row.ID), cursorKey(filter.Cursor)
+			// Strict in both directions, or the row the cursor names is served twice.
+			past := before(key, cursor)
+			if queue {
+				past = before(cursor, key)
+			}
+			if !past {
+				continue
+			}
+		}
 		out = append(out, row)
 	}
-	// The queue is worked oldest first; a reporter reads their own newest first.
-	if filter.ReporterID == 0 {
-		slices.SortFunc(out, func(a, b domain.Report) int { return int(a.ID - b.ID) })
-	} else {
-		slices.SortFunc(out, func(a, b domain.Report) int { return int(b.ID - a.ID) })
-	}
+	slices.SortFunc(out, func(a, b domain.Report) int {
+		order := descending(timeKey(a.CreatedAt, a.ID), timeKey(b.CreatedAt, b.ID))
+		if queue {
+			return -order
+		}
+		return order
+	})
 	return trim(out, filter.Cursor.Limit), nil
 }
 
-// SaveReport is guarded by the status it moves from, so a stale read loses.
+// SaveReport is guarded by the status it moves from, so a stale read loses. saveReportErr is
+// the other way it can fail: a database that is not there at all.
 func (f *fakeRepo) SaveReport(_ context.Context, r domain.Report, from []string) error {
+	if f.saveReportErr != nil {
+		return f.saveReportErr
+	}
 	stored, ok := f.reports[r.ID]
 	if !ok || !slices.Contains(from, stored.Status) {
 		return domain.ErrReportResolved
@@ -439,14 +501,16 @@ func (f *fakeRepo) SaveReport(_ context.Context, r domain.Report, from []string)
 	return nil
 }
 
-func (f *fakeRepo) CountOpenAgainst(_ context.Context, refType string, refID int64) (int64, error) {
-	var count int64
+func (f *fakeRepo) CountOpenAgainst(_ context.Context, targets []port.ReportTarget) (map[port.ReportTarget]int64, error) {
+	f.countCalls++
+	out := make(map[port.ReportTarget]int64, len(targets))
 	for _, row := range f.reports {
-		if row.RefType == refType && row.RefID == refID && !row.Resolved() {
-			count++
+		target := port.ReportTarget{RefType: row.RefType, RefID: row.RefID}
+		if slices.Contains(targets, target) && !row.Resolved() {
+			out[target]++
 		}
 	}
-	return count, nil
+	return out, nil
 }
 
 func (f *fakeRepo) FindResources(_ context.Context, ids []int64) ([]common.Resource, error) {
@@ -457,6 +521,28 @@ func (f *fakeRepo) FindResources(_ context.Context, ids []int64) ([]common.Resou
 		}
 	}
 	return out, nil
+}
+
+// A cursor here is the pair (ordering key, row id), compared as a tuple — which is what makes
+// a boundary tie skip nothing when two rows share a timestamp exactly.
+func timeKey(at time.Time, rowID int64) [2]int64 { return [2]int64{at.UnixNano(), rowID} }
+
+func cursorKey(c port.CursorFilter) [2]int64 {
+	return [2]int64{c.Before.UnixNano(), c.BeforeID}
+}
+
+func before(a, b [2]int64) bool {
+	return a[0] < b[0] || (a[0] == b[0] && a[1] < b[1])
+}
+
+func descending(a, b [2]int64) int {
+	switch {
+	case before(a, b):
+		return 1
+	case before(b, a):
+		return -1
+	}
+	return 0
 }
 
 func trim[T any](rows []T, limit int) []T {

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"shopnexus/internal/infra/postgres"
 	chatpg "shopnexus/internal/module/chat/adapter/postgres"
 	"shopnexus/internal/module/chat/domain"
@@ -231,5 +233,59 @@ func TestRepo_SystemMessageAndRedaction(t *testing.T) {
 	}
 	if counts[thread.ID] != 1 {
 		t.Fatalf("unread for the sender = %d, want the system card", counts[thread.ID])
+	}
+}
+
+// CURRENT_TIMESTAMP is transaction-scoped, so two messages a real transaction writes can
+// share created_at exactly. The cursor has to be the (created_at, id) tuple, or a page
+// boundary landing on that tie drops whichever row page N did not return.
+func TestRepo_ListMessagesCursorSurvivesATimestampTie(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	alice, bob := pair(t)
+	thread, err := repo.EnsureConversation(ctx, alice, bob)
+	if err != nil {
+		t.Fatalf("EnsureConversation: %v", err)
+	}
+
+	var ids []int64
+	for _, body := range []string{"one", "two"} {
+		m, err := domain.NewMessage(thread.ID, alice, body, nil, nil)
+		if err != nil {
+			t.Fatalf("NewMessage: %v", err)
+		}
+		if err := repo.InsertMessage(ctx, &m); err != nil {
+			t.Fatalf("InsertMessage: %v", err)
+		}
+		ids = append(ids, m.ID)
+	}
+
+	// Force the tie a same-transaction write produces in production: the hypertable
+	// allows moving a row's created_at, which is exactly what this simulates.
+	pool, err := postgres.NewPool(ctx, testDSN(t), "chat")
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	defer pool.Close()
+	const tie = `UPDATE message SET created_at = (SELECT created_at FROM message WHERE id = @first) WHERE id = @second`
+	if _, err := pool.Exec(ctx, tie, pgx.NamedArgs{"first": ids[0], "second": ids[1]}); err != nil {
+		t.Fatalf("force tie: %v", err)
+	}
+
+	page, err := repo.ListMessages(ctx, port.HistoryFilter{ConversationID: thread.ID, Limit: 1})
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if len(page) != 1 {
+		t.Fatalf("page 1 = %+v, want one row", page)
+	}
+	next, err := repo.ListMessages(ctx, port.HistoryFilter{
+		ConversationID: thread.ID, Before: page[0].CreatedAt, BeforeID: page[0].ID, Limit: 1,
+	})
+	if err != nil {
+		t.Fatalf("ListMessages(page 2): %v", err)
+	}
+	if len(next) != 1 || next[0].ID == page[0].ID {
+		t.Fatalf("page 2 = %+v, want the tied message rather than being skipped", next)
 	}
 }

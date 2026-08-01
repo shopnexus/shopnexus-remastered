@@ -10,19 +10,24 @@ import (
 )
 
 // InboxFilter pages a participant's threads, latest activity first. The cursor is a
-// timestamp rather than an offset: an inbox moves under the reader, and an offset would
-// skip or repeat a thread whenever it does.
+// (timestamp, id) tuple rather than an offset: an inbox moves under the reader, and an
+// offset would skip or repeat a thread whenever it does. The id half is what breaks a
+// tie between two threads that share a last_message_at exactly.
 type InboxFilter struct {
 	AccountID int64
 	Before    time.Time
+	BeforeID  int64
 	Limit     int
 }
 
-// HistoryFilter pages one thread, newest first, on a created_at cursor — which is what
-// lets chunk exclusion skip whole chunks of the hypertable instead of scanning them.
+// HistoryFilter pages one thread, newest first, on a (created_at, id) cursor — which is
+// what lets chunk exclusion skip whole chunks of the hypertable instead of scanning them,
+// and the id half is what keeps two messages written in the same transaction (so sharing
+// created_at exactly) from having one of them skipped at the page boundary.
 type HistoryFilter struct {
 	ConversationID int64
 	Before         time.Time
+	BeforeID       int64
 	Limit          int
 }
 
@@ -40,6 +45,10 @@ type Repository interface {
 	// wrongly for as long as the two disagreed.
 	InsertMessage(ctx context.Context, m *domain.Message) error
 	FindMessage(ctx context.Context, id int64) (domain.Message, error)
+	// FindMessageAt is FindMessage's point lookup: the caller already holds the message's
+	// own created_at, so this hits (id, created_at) directly instead of scanning every
+	// chunk of the hypertable.
+	FindMessageAt(ctx context.Context, id int64, createdAt time.Time) (domain.Message, error)
 	SaveMessage(ctx context.Context, m domain.Message) error
 	ListMessages(ctx context.Context, f HistoryFilter) ([]domain.Message, error)
 	// LastMessage is what an inbox row shows. Separate from the page, because a page of

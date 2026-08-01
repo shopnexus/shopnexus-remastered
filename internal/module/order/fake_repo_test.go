@@ -46,6 +46,31 @@ func (f *fakeRepo) id() int64 {
 	return f.nextID
 }
 
+// pastCursor is the bound every newest-first list here applies, as the SQL tuple comparison
+// does: `(created_at, id) < (@before, @before_id)`. The pair, not the timestamp alone — rows
+// written in one transaction share `created_at` exactly, and a bound on that half put the rest
+// of such a group permanently out of reach.
+func pastCursor(f port.CursorFilter, at time.Time, id int64) bool {
+	if f.Before.IsZero() {
+		return true
+	}
+	if at.Before(f.Before) {
+		return true
+	}
+	return at.Equal(f.Before) && id < f.BeforeID
+}
+
+// beyondCursor is the same for a list read oldest first — the moderator queue.
+func beyondCursor(f port.CursorFilter, at time.Time, id int64) bool {
+	if f.Before.IsZero() {
+		return true
+	}
+	if at.After(f.Before) {
+		return true
+	}
+	return at.Equal(f.Before) && id > f.BeforeID
+}
+
 var _ port.Repository = (*fakeRepo)(nil)
 
 // ListEnabled makes the fake its own carrier registry, so a service test needs no second fake.
@@ -133,7 +158,7 @@ func (f *fakeRepo) FindDraft(_ context.Context, draftID, buyerID int64) (domain.
 func (f *fakeRepo) ListDrafts(_ context.Context, buyerID int64, filter port.CursorFilter) ([]domain.Draft, error) {
 	var out []domain.Draft
 	for _, d := range f.drafts {
-		if d.BuyerID == buyerID {
+		if d.BuyerID == buyerID && pastCursor(filter, d.CreatedAt, d.ID) {
 			out = append(out, d)
 		}
 	}
@@ -202,6 +227,9 @@ func (f *fakeRepo) ListOffers(_ context.Context, filter port.OfferFilter) ([]dom
 		if filter.Status != "" && o.Status != filter.Status {
 			continue
 		}
+		if !pastCursor(filter.Cursor, o.CreatedAt, o.ID) {
+			continue
+		}
 		out = append(out, o)
 	}
 	slices.SortFunc(out, func(a, b domain.Offer) int { return int(b.ID - a.ID) })
@@ -260,6 +288,9 @@ func (f *fakeRepo) ListItems(_ context.Context, filter port.ItemFilter) ([]domai
 		if filter.PendingOnly && (i.OrderID != nil || !i.Live()) {
 			continue
 		}
+		if !pastCursor(filter.Cursor, i.CreatedAt, i.ID) {
+			continue
+		}
 		out = append(out, i)
 	}
 	slices.SortFunc(out, func(a, b domain.Item) int { return int(b.ID - a.ID) })
@@ -287,6 +318,17 @@ func (f *fakeRepo) ItemsByPaymentSession(_ context.Context, sessionID int64) ([]
 	return out, nil
 }
 
+func (f *fakeRepo) UnpaidItems(_ context.Context, before time.Time, limit int) ([]domain.Item, error) {
+	var out []domain.Item
+	for _, i := range f.items {
+		if i.OrderID == nil && i.Live() && i.CreatedAt.Before(before) {
+			out = append(out, i)
+		}
+	}
+	slices.SortFunc(out, func(a, b domain.Item) int { return int(a.ID - b.ID) })
+	return out[:min(limit, len(out))], nil
+}
+
 // --- transport ---
 
 func (f *fakeRepo) InsertTransport(_ context.Context, option string) (int64, error) {
@@ -305,32 +347,43 @@ func (f *fakeRepo) FindTransport(_ context.Context, transportID int64) (domain.T
 	return t, nil
 }
 
-func (f *fakeRepo) SaveTransport(_ context.Context, t domain.Transport) error {
+// SaveTransport only applies to the status it read, as `WHERE status = @from` does: two carrier
+// reports arriving at once cannot both land.
+func (f *fakeRepo) SaveTransport(_ context.Context, t domain.Transport, from string) error {
+	stored, ok := f.shipments[t.ID]
+	if !ok || stored.Status != from {
+		return domain.ErrTransportSettled
+	}
 	f.shipments[t.ID] = t
 	return nil
 }
 
 // --- orders ---
 
-// CreateOrder is idempotent on the origin, which is what makes a redelivered webhook a no-op
-// rather than a second order.
+// CreateOrder only ever inserts, and loses on the origin — which is what makes a redelivered
+// webhook a conflict the caller resolves by reading the winner's row, rather than a second order.
+// The real one runs the link inside the same transaction, so a lost origin rolls the link back
+// too: that is why a resumed settlement calls LinkItems instead.
 func (f *fakeRepo) CreateOrder(_ context.Context, o *domain.Order, itemIDs []int64) error {
-	if o.ID == 0 {
-		for _, stored := range f.orders {
-			if sameOrigin(stored, *o) {
-				return domain.ErrOrderSettled
-			}
+	for _, stored := range f.orders {
+		if sameOrigin(stored, *o) {
+			return domain.ErrOrderSettled
 		}
-		o.ID = f.id()
-		o.CreatedAt = time.Now()
-		f.orders[o.ID] = *o
 	}
+	o.ID = f.id()
+	o.CreatedAt = time.Now()
+	f.orders[o.ID] = *o
+	return f.LinkItems(context.Background(), o.ID, itemIDs)
+}
+
+// LinkItems claims only lines no order covers, as the guard does.
+func (f *fakeRepo) LinkItems(_ context.Context, orderID int64, itemIDs []int64) error {
 	for _, itemID := range itemIDs {
 		i, ok := f.items[itemID]
 		if !ok || i.OrderID != nil || !i.Live() {
 			continue
 		}
-		i.OrderID = &o.ID
+		i.OrderID = &orderID
 		f.items[itemID] = i
 	}
 	return nil
@@ -376,6 +429,9 @@ func (f *fakeRepo) ListOrders(_ context.Context, filter port.OrderFilter) ([]dom
 		if filter.State != "" && o.State() != filter.State {
 			continue
 		}
+		if !pastCursor(filter.Cursor, o.CreatedAt, o.ID) {
+			continue
+		}
 		out = append(out, o)
 	}
 	slices.SortFunc(out, func(a, b domain.Order) int { return int(b.ID - a.ID) })
@@ -414,8 +470,7 @@ func (f *fakeRepo) PayoutDue(_ context.Context, now time.Time, limit int) ([]dom
 		if due == nil || due.After(now) {
 			continue
 		}
-		// A live refund stops the payout: the money is still being argued over.
-		if _, err := f.FindOpenRefundByOrder(context.Background(), o.ID); err == nil {
+		if f.refundClaims(o.ID) {
 			continue
 		}
 		out = append(out, o)
@@ -423,10 +478,71 @@ func (f *fakeRepo) PayoutDue(_ context.Context, now time.Time, limit int) ([]dom
 	return out[:min(limit, len(out))], nil
 }
 
+// refundClaims reports whether any refund still has a claim on the order's escrow. Only a
+// rejection and a withdrawal give it up; 'accepted' means the buyer has already been paid, so
+// treating it as settled-and-done is how the sweep used to pay the seller as well.
+func (f *fakeRepo) refundClaims(orderID int64) bool {
+	for _, r := range f.refunds {
+		if r.OrderID != orderID {
+			continue
+		}
+		if r.Status != domain.RefundRejected && r.Status != domain.RefundCancelled {
+			return true
+		}
+	}
+	return false
+}
+
+// ClaimPayout is the locked decision: the same live-refund question, re-read, and the completion
+// written under it. The fake is single-threaded, so what it models is the guard rather than the
+// lock — a claim over an order a refund now covers has to lose.
+func (f *fakeRepo) ClaimPayout(_ context.Context, o *domain.Order) error {
+	stored, ok := f.orders[o.ID]
+	if !ok || stored.Settled() || stored.ReceivedAt == nil || f.refundClaims(o.ID) {
+		return domain.ErrOrderSettled
+	}
+	stored.CompletedAt = new(time.Now())
+	f.orders[o.ID] = stored
+	o.CompletedAt = stored.CompletedAt
+	return nil
+}
+
+// ClaimedPayouts is exactly the stranded set, as the real query is: a completed order whose
+// release never landed. A fake that returned every completed order would hide the whole point of
+// the marker — that a healthy platform reads nothing here.
+func (f *fakeRepo) ClaimedPayouts(_ context.Context, limit int) ([]domain.Order, error) {
+	var out []domain.Order
+	for _, o := range f.orders {
+		if o.CompletedAt == nil || o.PayoutReleasedAt != nil || o.CancelledAt != nil {
+			continue
+		}
+		out = append(out, o)
+	}
+	slices.SortFunc(out, func(a, b domain.Order) int { return int(a.ID - b.ID) })
+	return out[:min(limit, len(out))], nil
+}
+
+// MarkPayoutReleased is guarded by the column being NULL, as the real one is.
+func (f *fakeRepo) MarkPayoutReleased(_ context.Context, o domain.Order) error {
+	stored, ok := f.orders[o.ID]
+	if !ok || stored.PayoutReleasedAt != nil {
+		return nil
+	}
+	stored.PayoutReleasedAt = o.PayoutReleasedAt
+	f.orders[o.ID] = stored
+	return nil
+}
+
 // --- refunds and disputes ---
 
+// InsertRefund holds both guards the real one does: one live refund per order, and an order
+// whose escrow is still there to argue over — the row lands under the same lock the payout claim
+// takes, so a case opened over an order already paid out is refused rather than written.
 func (f *fakeRepo) InsertRefund(_ context.Context, r *domain.Refund) error {
-	// One live refund per order — a refund covers the whole order.
+	o, ok := f.orders[r.OrderID]
+	if !ok || o.Settled() {
+		return domain.ErrRefundNotDue
+	}
 	for _, stored := range f.refunds {
 		if stored.OrderID == r.OrderID && !stored.Settled() {
 			return domain.ErrRefundAlreadyOpen
@@ -468,6 +584,9 @@ func (f *fakeRepo) ListRefunds(ctx context.Context, filter port.RefundFilter) ([
 			}
 		}
 		if len(filter.Statuses) > 0 && !slices.Contains(filter.Statuses, r.Status) {
+			continue
+		}
+		if !pastCursor(filter.Cursor, r.CreatedAt, r.ID) {
 			continue
 		}
 		out = append(out, r)
@@ -520,7 +639,7 @@ func (f *fakeRepo) FindDispute(_ context.Context, disputeID int64) (domain.Dispu
 func (f *fakeRepo) ListOpenDisputes(_ context.Context, filter port.CursorFilter) ([]domain.Dispute, error) {
 	var out []domain.Dispute
 	for _, d := range f.disputes {
-		if d.Status == domain.DisputeOpen {
+		if d.Status == domain.DisputeOpen && beyondCursor(filter, d.CreatedAt, d.ID) {
 			out = append(out, d)
 		}
 	}
@@ -528,12 +647,31 @@ func (f *fakeRepo) ListOpenDisputes(_ context.Context, filter port.CursorFilter)
 	return out[:min(filter.Limit, len(out))], nil
 }
 
-func (f *fakeRepo) SaveDispute(_ context.Context, d domain.Dispute) error {
-	stored, ok := f.disputes[d.ID]
-	if !ok || stored.Status != domain.DisputeOpen {
-		return domain.ErrDisputeSettled
+// SaveRefundOutcome writes all three rows or none, as the transaction does: a ruled round over a
+// still-disputed refund and a settled refund over an open order are both states nothing can get
+// out of, so a half-applied outcome must not be reachable here either.
+func (f *fakeRepo) SaveRefundOutcome(ctx context.Context, r domain.Refund, d *domain.Dispute, o *domain.Order) error {
+	stored, ok := f.refunds[r.ID]
+	if !ok || stored.Settled() {
+		return domain.ErrRefundSettled
 	}
-	f.disputes[d.ID] = d
+	if d != nil {
+		if storedDispute, ok := f.disputes[d.ID]; !ok || storedDispute.Status != domain.DisputeOpen {
+			return domain.ErrDisputeSettled
+		}
+	}
+	if o != nil {
+		if storedOrder, ok := f.orders[o.ID]; !ok || storedOrder.Settled() {
+			return domain.ErrOrderSettled
+		}
+	}
+	f.refunds[r.ID] = r
+	if d != nil {
+		f.disputes[d.ID] = *d
+	}
+	if o != nil {
+		f.orders[o.ID] = *o
+	}
 	return nil
 }
 

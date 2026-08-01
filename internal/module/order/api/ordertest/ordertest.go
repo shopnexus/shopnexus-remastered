@@ -106,6 +106,10 @@ func (Stub) GetOrderTransport(context.Context, orderapi.OrderRequest) (orderapi.
 	return orderapi.Transport{}, errx.ErrNotImplemented
 }
 
+func (Stub) AdvanceShipment(context.Context, orderapi.AdvanceShipmentRequest) (orderapi.Transport, error) {
+	return orderapi.Transport{}, errx.ErrNotImplemented
+}
+
 func (Stub) CreateRefund(context.Context, orderapi.CreateRefundRequest) (orderapi.Refund, error) {
 	return orderapi.Refund{}, errx.ErrNotImplemented
 }
@@ -134,6 +138,10 @@ func (Stub) RejectRefund(context.Context, orderapi.RejectRefundRequest) (orderap
 	return orderapi.Refund{}, errx.ErrNotImplemented
 }
 
+func (Stub) AdvanceReturnShipment(context.Context, orderapi.AdvanceReturnShipmentRequest) (orderapi.Refund, error) {
+	return orderapi.Refund{}, errx.ErrNotImplemented
+}
+
 func (Stub) OpenDispute(context.Context, orderapi.OpenDisputeRequest) (orderapi.Dispute, error) {
 	return orderapi.Dispute{}, errx.ErrNotImplemented
 }
@@ -154,6 +162,10 @@ func (Stub) ExpireDrafts(context.Context, int) (int, error) {
 	return 0, errx.ErrNotImplemented
 }
 
+func (Stub) ExpireCheckouts(context.Context, int) (int, error) {
+	return 0, errx.ErrNotImplemented
+}
+
 func (Stub) ExpireOffers(context.Context, int) (int, error) {
 	return 0, errx.ErrNotImplemented
 }
@@ -162,6 +174,18 @@ func (Stub) ReleaseDuePayouts(context.Context, int) (int, error) {
 	return 0, errx.ErrNotImplemented
 }
 
+func (Stub) RetryClaimedPayouts(context.Context, int) (int, error) {
+	return 0, errx.ErrNotImplemented
+}
+
 func (Stub) AdvanceOverdueRefunds(context.Context, int) (int, error) {
 	return 0, errx.ErrNotImplemented
+}
+
+func (Stub) ReleasePayout(context.Context, id.ID[id.Order]) error {
+	return errx.ErrNotImplemented
+}
+
+func (Stub) AdvanceRefund(context.Context, id.ID[id.Refund]) error {
+	return errx.ErrNotImplemented
 }

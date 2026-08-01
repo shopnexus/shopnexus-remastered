@@ -121,11 +121,13 @@ type Order struct {
 	// added to: a refund is judged on what the buyer showed at that moment.
 	ReceiptAttachments []common.ResourceDTO `json:"receipt_attachments"`
 	// PayoutDeadlineAt is received_at + the escrow window, computed rather than stored.
-	PayoutDeadlineAt *time.Time                `json:"payout_deadline_at"`
-	PayoutSessionID  *id.ID[id.PaymentSession] `json:"payout_session_id"`
-	CreatedAt        time.Time                 `json:"created_at"`
-	CompletedAt      *time.Time                `json:"completed_at"`
-	CancelledAt      *time.Time                `json:"cancelled_at"`
+	PayoutDeadlineAt *time.Time `json:"payout_deadline_at"`
+	// PayoutReleasedAt is when the escrow reached the seller. Null on a completed order means
+	// the release has not landed yet — the platform owes the seller and knows it.
+	PayoutReleasedAt *time.Time `json:"payout_released_at"`
+	CreatedAt        time.Time  `json:"created_at"`
+	CompletedAt      *time.Time `json:"completed_at"`
+	CancelledAt      *time.Time `json:"cancelled_at"`
 }
 
 type OrderPage struct {
@@ -332,13 +334,33 @@ type ConfirmReceiptRequest struct {
 	ID      id.ID[id.Order]   `json:"-" validate:"required"`
 	// At least one is mandatory: a later refund or dispute is judged on this evidence.
 	Attachments []id.ID[id.Resource] `json:"attachments" validate:"required,min=1,max=10"`
-	Note        string               `json:"note,omitempty" validate:"max=2000"`
 }
 
+// CancelOrderRequest carries nothing but who and which. It had a `reason` the service validated
+// and dropped: there is no column for it, and a field a client fills in that reaches nobody is
+// worse than no field.
 type CancelOrderRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	ID      id.ID[id.Order]   `json:"-" validate:"required"`
-	Reason  string            `json:"reason,omitempty" validate:"max=500"`
+}
+
+// AdvanceShipmentRequest is a carrier checkpoint on the outbound leg, reported by the seller or
+// corrected by a moderator. Forward-only, which is what makes "has this shipped" a fact a later
+// report cannot undo.
+type AdvanceShipmentRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	ID      id.ID[id.Order]   `json:"-" validate:"required"`
+	Status  string            `json:"status" validate:"required,oneof=picked-up in-transit delivered returned failed"`
+}
+
+// AdvanceReturnShipmentRequest is the same for the leg carrying the goods back. `delivered` is
+// what opens the seller's inspection window, so either party may report it — a seller who never
+// confirms would otherwise strand the escrow, and round two is their remedy against a buyer who
+// claims a delivery that did not happen.
+type AdvanceReturnShipmentRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	ID      id.ID[id.Refund]  `json:"-" validate:"required"`
+	Status  string            `json:"status" validate:"required,oneof=picked-up in-transit delivered returned failed"`
 }
 
 type CreateRefundRequest struct {
@@ -428,6 +450,10 @@ type Service interface {
 	ConfirmReceipt(ctx context.Context, req ConfirmReceiptRequest) (Order, error)
 	CancelOrder(ctx context.Context, req CancelOrderRequest) (Order, error)
 	GetOrderTransport(ctx context.Context, req OrderRequest) (Transport, error)
+	// AdvanceShipment records a carrier checkpoint on the outbound leg. The seller's route:
+	// nothing else writes that status, and "has this shipped" is what decides whether an order
+	// can still be cancelled and the escrow taken back.
+	AdvanceShipment(ctx context.Context, req AdvanceShipmentRequest) (Transport, error)
 
 	// --- refunds and disputes ---
 	CreateRefund(ctx context.Context, req CreateRefundRequest) (Refund, error)
@@ -437,6 +463,10 @@ type Service interface {
 	AddRefundAttachments(ctx context.Context, req AddRefundAttachmentsRequest) (Refund, error)
 	AcceptRefund(ctx context.Context, req RefundRequest) (Refund, error)
 	RejectRefund(ctx context.Context, req RejectRefundRequest) (Refund, error)
+	// AdvanceReturnShipment is the only exit from `returning`: marking the return delivered is
+	// what opens the seller's appeal window, and without it a granted refund strands the escrow
+	// with nobody on a clock.
+	AdvanceReturnShipment(ctx context.Context, req AdvanceReturnShipmentRequest) (Refund, error)
 	OpenDispute(ctx context.Context, req OpenDisputeRequest) (Dispute, error)
 	AdminListDisputes(ctx context.Context, req ListDisputesRequest) (DisputePage, error)
 	AdminRuleDispute(ctx context.Context, req RuleDisputeRequest) (Dispute, error)
@@ -450,12 +480,23 @@ type Service interface {
 	// SettlePaidSession turns a completed payment session into an order. Called by the
 	// subscriber on finance's event and by the workflow that follows the payment.
 	SettlePaidSession(ctx context.Context, sessionID id.ID[id.PaymentSession]) error
-	// ExpireDrafts and ExpireOffers close what nobody finished.
+	// ExpireDrafts and ExpireOffers close what nobody finished; ExpireCheckouts gives back the
+	// stock a checkout nobody paid for is holding, which nothing else in the schema looks at.
 	ExpireDrafts(ctx context.Context, limit int) (int, error)
+	ExpireCheckouts(ctx context.Context, limit int) (int, error)
 	ExpireOffers(ctx context.Context, limit int) (int, error)
-	// ReleaseDuePayouts pays out orders whose escrow window has passed with no live refund.
+	// ReleaseDuePayouts pays out orders whose escrow window has passed with no live refund;
+	// RetryClaimedPayouts is the second half for one that got as far as claiming the order and
+	// then could not reach finance.
 	ReleaseDuePayouts(ctx context.Context, limit int) (int, error)
+	RetryClaimedPayouts(ctx context.Context, limit int) (int, error)
 	// AdvanceOverdueRefunds moves every refund whose deadline has passed — all three
 	// windows, because each non-terminal status names the party it waits on.
 	AdvanceOverdueRefunds(ctx context.Context, limit int) (int, error)
+
+	// The same two transitions for one entity, which is what a per-entity durable run calls.
+	// A bulk pass with a limit of one acts on whichever row is oldest, so a single stuck head
+	// starves every run there is.
+	ReleasePayout(ctx context.Context, orderID id.ID[id.Order]) error
+	AdvanceRefund(ctx context.Context, refundID id.ID[id.Refund]) error
 }

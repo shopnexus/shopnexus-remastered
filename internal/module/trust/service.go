@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -162,39 +163,67 @@ func rawIDs[K id.Kind](ids []id.ID[K]) []int64 {
 	return out
 }
 
-// The cursor is the timestamp a page ended at, in nanoseconds — opaque to a client, and
-// stable under a list that keeps moving.
-func formatCursor(at time.Time) string { return strconv.FormatInt(at.UnixNano(), 10) }
-
-func parseCursor(cursor string) (time.Time, error) {
-	if cursor == "" {
-		return time.Time{}, nil
-	}
-	nanos, err := strconv.ParseInt(cursor, 10, 64)
-	if err != nil {
-		return time.Time{}, domain.ErrCursorInvalid
-	}
-	return time.Unix(0, nanos), nil
+// The cursor is the sort key the page ended at *and* that row's id — opaque to a client, and
+// stable under a list that keeps moving. Both halves are needed: CURRENT_TIMESTAMP is
+// transaction-scoped, so rows written together share a timestamp exactly, and a key on its own
+// would skip whichever of them the page did not reach.
+func formatCursor(key, rowID int64) string {
+	return strconv.FormatInt(key, 10) + "." + strconv.FormatInt(rowID, 10)
 }
 
-// cursorFilter reads one more row than asked, so "is there another page" is answered without
-// a count.
-func cursorFilter(cursor string, limit int) (port.CursorFilter, error) {
-	before, err := parseCursor(cursor)
+func parseCursor(cursor string) (key, rowID int64, err error) {
+	if cursor == "" {
+		return 0, 0, nil
+	}
+	dot := strings.IndexByte(cursor, '.')
+	if dot < 0 {
+		return 0, 0, domain.ErrCursorInvalid
+	}
+	key, err = strconv.ParseInt(cursor[:dot], 10, 64)
+	if err != nil {
+		return 0, 0, domain.ErrCursorInvalid
+	}
+	rowID, err = strconv.ParseInt(cursor[dot+1:], 10, 64)
+	if err != nil || rowID <= 0 {
+		return 0, 0, domain.ErrCursorInvalid
+	}
+	return key, rowID, nil
+}
+
+// timeCursor and countCursor are the two keys the lists here order by: created_at for nearly
+// all of them, the helpfulness tally for a review page sorted by it. Each reads one more row
+// than asked, so "is there another page" is answered without a count.
+func timeCursor(cursor string, limit int) (port.CursorFilter, error) {
+	key, rowID, err := parseCursor(cursor)
 	if err != nil {
 		return port.CursorFilter{}, err
 	}
-	return port.CursorFilter{Before: before, Limit: limit + 1}, nil
+	f := port.CursorFilter{BeforeID: rowID, Limit: limit + 1}
+	if rowID != 0 {
+		f.Before = time.Unix(0, key)
+	}
+	return f, nil
 }
 
-// paginate trims the extra row and reports the cursor the next page starts from.
-func paginate[T any](rows []T, limit int, at func(T) time.Time) ([]T, trustapi.CursorInfo) {
+func countCursor(cursor string, limit int) (port.CursorFilter, error) {
+	key, rowID, err := parseCursor(cursor)
+	if err != nil {
+		return port.CursorFilter{}, err
+	}
+	return port.CursorFilter{BeforeCount: key, BeforeID: rowID, Limit: limit + 1}, nil
+}
+
+// paginate trims the extra row and reports the cursor the next page starts from. key answers
+// the pair the ORDER BY sorted on, so a caller cannot hand back a cursor over a column the
+// query never ordered by.
+func paginate[T any](rows []T, limit int, key func(T) (int64, int64)) ([]T, trustapi.CursorInfo) {
 	if len(rows) <= limit {
 		return rows, trustapi.CursorInfo{}
 	}
 	rows = rows[:limit]
+	last, rowID := key(rows[len(rows)-1])
 	return rows, trustapi.CursorInfo{
-		NextCursor: formatCursor(at(rows[len(rows)-1])),
+		NextCursor: formatCursor(last, rowID),
 		HasMore:    true,
 	}
 }

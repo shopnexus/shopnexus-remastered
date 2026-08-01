@@ -56,20 +56,26 @@ func (r *Repo) FindConversation(ctx context.Context, id int64) (domain.Conversat
 // ListConversations is the inbox. A participant sits on either side of the stored pair,
 // so this is a UNION ALL of two ordered index scans merged by the outer ORDER BY —
 // conversation_account_a_id_idx and its mirror — rather than one scan that sorts.
+//
+// The cursor is the (last_message_at, id) tuple compared as a row: CURRENT_TIMESTAMP is
+// transaction-scoped, so two threads touched in one transaction can share last_message_at
+// exactly, and a bare-timestamp bound would then drop whichever one page N did not
+// return. The row comparison orders the same way the final ORDER BY does, so a boundary
+// tie cannot be skipped.
 func (r *Repo) ListConversations(ctx context.Context, f port.InboxFilter) ([]domain.Conversation, error) {
 	// Each branch is parenthesised: a branch of a UNION cannot carry its own ORDER BY and
 	// LIMIT otherwise, and those are what keep each side an ordered index scan.
 	const q = `SELECT ` + conversationColumns + ` FROM (
 	             (SELECT ` + conversationColumns + ` FROM conversation
 	              WHERE account_a_id = @account_id
-	                AND (@before::timestamptz IS NULL OR last_message_at < @before::timestamptz)
-	              ORDER BY last_message_at DESC
+	                AND (@before::timestamptz IS NULL OR (last_message_at, id) < (@before::timestamptz, @before_id::bigint))
+	              ORDER BY last_message_at DESC, id DESC
 	              LIMIT @limit)
 	             UNION ALL
 	             (SELECT ` + conversationColumns + ` FROM conversation
 	              WHERE account_b_id = @account_id
-	                AND (@before::timestamptz IS NULL OR last_message_at < @before::timestamptz)
-	              ORDER BY last_message_at DESC
+	                AND (@before::timestamptz IS NULL OR (last_message_at, id) < (@before::timestamptz, @before_id::bigint))
+	              ORDER BY last_message_at DESC, id DESC
 	              LIMIT @limit)
 	           ) threads
 	           ORDER BY last_message_at DESC, id DESC
@@ -77,6 +83,7 @@ func (r *Repo) ListConversations(ctx context.Context, f port.InboxFilter) ([]dom
 	args := pgx.NamedArgs{
 		"account_id": f.AccountID,
 		"before":     dbx.NullTime(f.Before),
+		"before_id":  f.BeforeID,
 		"limit":      f.Limit,
 	}
 	rows, err := r.pool.Query(ctx, q, args)

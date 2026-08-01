@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -201,29 +202,42 @@ func pick(found map[int64]common.ResourceDTO, keys []int64) []common.ResourceDTO
 	return out
 }
 
-// The cursor is the timestamp a page ended at, in nanoseconds — opaque to a client, and
-// stable under a list that keeps moving.
-func formatCursor(at time.Time) string { return strconv.FormatInt(at.UnixNano(), 10) }
+// The cursor is where the page ended: the row's timestamp in nanoseconds *and* its id,
+// compared as a tuple. The timestamp alone skips rows — the three lines of one checkout are
+// written in one transaction and share `created_at` exactly, because CURRENT_TIMESTAMP is
+// transaction-scoped — so a page boundary that landed inside such a group made the rest of it
+// unreachable. Opaque to a client either way.
+func formatCursor(at time.Time, id int64) string {
+	return strconv.FormatInt(at.UnixNano(), 10) + ":" + strconv.FormatInt(id, 10)
+}
 
-func parseCursor(cursor string) (time.Time, error) {
+func parseCursor(cursor string) (time.Time, int64, error) {
 	if cursor == "" {
-		return time.Time{}, nil
+		return time.Time{}, 0, nil
 	}
-	nanos, err := strconv.ParseInt(cursor, 10, 64)
+	nanos, rest, ok := strings.Cut(cursor, ":")
+	if !ok {
+		return time.Time{}, 0, domain.ErrCursorInvalid
+	}
+	at, err := strconv.ParseInt(nanos, 10, 64)
 	if err != nil {
-		return time.Time{}, domain.ErrCursorInvalid
+		return time.Time{}, 0, domain.ErrCursorInvalid
 	}
-	return time.Unix(0, nanos), nil
+	id, err := strconv.ParseInt(rest, 10, 64)
+	if err != nil {
+		return time.Time{}, 0, domain.ErrCursorInvalid
+	}
+	return time.Unix(0, at), id, nil
 }
 
 // cursorFilter reads one more row than asked, so "is there another page" is answered
 // without a count.
 func cursorFilter(cursor string, limit int) (port.CursorFilter, error) {
-	before, err := parseCursor(cursor)
+	before, beforeID, err := parseCursor(cursor)
 	if err != nil {
 		return port.CursorFilter{}, err
 	}
-	return port.CursorFilter{Before: before, Limit: limit + 1}, nil
+	return port.CursorFilter{Before: before, BeforeID: beforeID, Limit: limit + 1}, nil
 }
 
 // timer is every call into the durable runtime: the row is already committed, so a runtime

@@ -105,7 +105,10 @@ func (s *Service) AdminVerifyTaxInfo(ctx context.Context, req financeapi.VerifyT
 	if err != nil {
 		return financeapi.TaxInfo{}, fmt.Errorf("find tax info: %w", err)
 	}
-	if err := t.Verify(req.Verified, req.Source); err != nil {
+	if err := s.v.Struct(req); err != nil {
+		return financeapi.TaxInfo{}, err
+	}
+	if err := t.Verify(req.Status == "verified", req.Source); err != nil {
 		return financeapi.TaxInfo{}, err
 	}
 	if err := s.repo.SaveTaxInfo(ctx, t); err != nil {

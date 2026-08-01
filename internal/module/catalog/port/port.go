@@ -85,6 +85,12 @@ type ListingFilter struct {
 	Query string
 	Mode  string
 	Probe Vector
+	// ProbeFromQuery is true only when Probe is the query's own embedding (a semantic or
+	// hybrid search), which is what lets the adapter skip the lexical predicate without
+	// dropping a filter the caller asked for: a recommended feed's Probe comes from the
+	// account's interest vectors instead and has nothing to do with Query, so
+	// `q=uniqlo&sort=recommended` must still filter on "uniqlo" lexically.
+	ProbeFromQuery bool
 	// ViewerID is the caller, needed for Mine, Favorited and Recommended. Zero is anonymous.
 	ViewerID   int64
 	Mine       bool
@@ -95,10 +101,13 @@ type ListingFilter struct {
 	SellerID   int64
 	Condition  domain.Condition
 	MinPrice   int64
-	MaxPrice   int64
-	Sort       string
-	Offset     int
-	Limit      int
+	// MaxPrice is a pointer because 0 is a legal, meaningful bound ("match nothing":
+	// every price is gte=1) rather than "not filtered" — unlike MinPrice, where 0 really
+	// is a no-op since it excludes no price a listing could have.
+	MaxPrice *int64
+	Sort     string
+	Offset   int
+	Limit    int
 }
 
 // The search modes and the sorts, spelled once so the service and the adapter agree.
@@ -217,11 +226,18 @@ type Repository interface {
 	//
 	// ReserveStock holds units for a checkout that has not completed.
 	ReserveStock(ctx context.Context, variantID, units int64) error
-	// ReleaseStock gives them back — a cancelled or expired session.
+	// ReleaseStock gives them back — a cancelled or expired session. Only before the sale:
+	// once the units are in `sold` the reversal is UncommitStock.
 	ReleaseStock(ctx context.Context, variantID, units int64) error
 	// CommitStock turns a reservation into a sale and bumps listing.cached_sold in the same
-	// transaction, so the badge and the counter cannot drift apart.
-	CommitStock(ctx context.Context, variantID, units int64) error
+	// transaction, so the badge and the counter cannot drift apart. UncommitStock is its
+	// reversal — a cancelled or refunded order.
+	//
+	// Both take a key, and both record it beside the counter change: `sold` never moves on
+	// its own, so neither call is recoverable from the counters and a retry has to be refused
+	// rather than reapplied.
+	CommitStock(ctx context.Context, variantID, units int64, key string) error
+	UncommitStock(ctx context.Context, variantID, units int64, key string) error
 	FindStock(ctx context.Context, variantID int64) (domain.Stock, error)
 	// SetCachedRating writes the review average trust recomputed. Denormalized here because
 	// trust is another schema: the number cannot be joined, so it is handed over.

@@ -171,7 +171,7 @@ type UpdateReviewRequest struct {
 	ID          id.ID[id.Review]      `json:"-" validate:"required"`
 	Rating      *int16                `json:"rating,omitempty" validate:"omitempty,gte=1,lte=5"`
 	Body        *string               `json:"body,omitempty" validate:"omitempty,max=2000"`
-	Attachments *[]id.ID[id.Resource] `json:"attachments,omitempty"`
+	Attachments *[]id.ID[id.Resource] `json:"attachments,omitempty" validate:"omitempty,max=10"`
 }
 
 type ReviewRequest struct {
@@ -283,8 +283,10 @@ type ResolveReportRequest struct {
 	Note        string `json:"note,omitempty" validate:"max=2000"`
 }
 
-// RecordOrderOutcomeRequest is order's settled event in this module's terms.
+// RecordOrderOutcomeRequest is order's settled event in this module's terms. OrderID is what
+// makes a redelivery a no-op, so it is required rather than informational.
 type RecordOrderOutcomeRequest struct {
+	OrderID  id.ID[id.Order]   `validate:"required"`
 	BuyerID  id.ID[id.Account] `validate:"required"`
 	SellerID id.ID[id.Account] `validate:"required"`
 	// Completed tells a payout from a cancellation.
@@ -330,5 +332,6 @@ type Service interface {
 
 	// RecordOrderOutcome folds a finished order into both parties' counters. Driven by
 	// order's settled event: "152 completed, 3 cancelled" says something an average cannot.
+	// Once per order id, recorded with the bump, so a redelivered settlement counts nothing.
 	RecordOrderOutcome(ctx context.Context, req RecordOrderOutcomeRequest) error
 }

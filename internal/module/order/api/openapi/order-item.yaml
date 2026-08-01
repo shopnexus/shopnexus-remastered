@@ -1,16 +1,19 @@
-# order fragment: order item — the per-SKU line and its own lifecycle.
+# order fragment: order item — the per-variant line a checkout writes.
 
 paths:
   /items:
     get:
       tags: [order]
-      summary: List checkout items, as buyer or as seller
-      description: '`role=seller&state=pending` is the seller''s confirmation inbox:
-        paid items that no order covers yet.'
+      summary: List checkout lines, as buyer or as seller
+      description: >
+        `role=seller&pending=true` is the seller's retry list: lines the money has paid for
+        that no order covers yet. Not an inbox — nobody confirms them. The order is written by
+        the payment webhook, so a line sitting here for long is a settlement that has not
+        succeeded yet rather than one waiting on a person.
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: role, in: query, required: true, schema: { type: string, enum: [buyer, seller] } }
-        - { name: state, in: query, schema: { $ref: '#/components/schemas/OrderItemState' } }
+        - { name: role, in: query, schema: { type: string, enum: [buyer, seller], default: buyer } }
+        - { name: pending, in: query, schema: { type: boolean, default: false }, description: 'Only lines no order covers and nobody cancelled.' }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -21,17 +24,20 @@ paths:
   /items/{id}/cancellation:
     post:
       tags: [order]
-      summary: Cancel an unconfirmed item
-      description: Either party may cancel while the item is not yet part of an
-        order. The cancelling account is recorded.
+      summary: Cancel a line the money has not reached
+      description: >
+        Either party may drop a line while it is unpaid — the buyer changed their mind, or the
+        seller cannot fulfil it — and the reserved units go back. The cancelling account is
+        recorded.
+
+
+        A paid line is 409, and that is checked against the payment session rather than against
+        `order_id`: the order is written by the webhook, so a line that has been charged for has
+        a null `order_id` for as long as that write keeps failing. From there the way back is a
+        refund, which the seller gets to see.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderItemID' } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/CancellationRequest' }
       responses:
         '200':
           description: 'Cancelled'
@@ -42,32 +48,25 @@ paths:
                 properties:
                   data: { $ref: '#/components/schemas/OrderItem' }
                 required: [data]
-        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: 'Already confirmed into an order, or already cancelled', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'The session is paid, or the line is already cancelled', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
 components:
   schemas:
-    OrderItemState:
-      type: string
-      description: >
-        Derived, not stored. `pending` = paid but no order covers it yet,
-        `confirmed` = linked to an order, `cancelled` = withdrawn by either party.
-      enum: [pending, confirmed, cancelled]
-
     OrderItem:
       type: object
+      description: >
+        One purchased line. It exists from checkout, before the money lands: that window is the
+        whole of what a null `order_id` means.
       properties:
         id: { $ref: '#/components/schemas/OrderItemID' }
-        draft_id: { $ref: '#/components/schemas/DraftOrderID' }
         order_id:
           allOf: [{ $ref: '#/components/schemas/OrderID' }]
           nullable: true
-          description: Null until the seller confirms.
-        buyer_id: { $ref: '#/components/schemas/AccountID' }
-        seller_id: { $ref: '#/components/schemas/AccountID' }
+          description: >
+            Null until the payment session completes and the webhook writes the order. Nobody
+            confirms it — a seller can refuse a price, never a sale.
         listing_id:
           allOf: [{ $ref: '#/components/schemas/ListingID' }]
           description: >
@@ -75,21 +74,18 @@ components:
             is, so order history can resolve it through `GET /listings?ids=` — which
             answers for a listing the seller has since hidden or deleted.
         variant_id: { $ref: '#/components/schemas/VariantID' }
+        seller_id: { $ref: '#/components/schemas/AccountID' }
         quantity: { type: integer, format: int64, minimum: 1, example: 2 }
         currency: { $ref: '#/components/schemas/CurrencyCode' }
         total_amount: { type: integer, format: int64, minimum: 0, example: 598000, description: 'Paid amount in the smallest unit of `currency`' }
-        transport_option: { type: string, description: A transport option slug owned by the common module }
-        address: { $ref: '#/components/schemas/OrderAddressSnapshot' }
-        note: { type: string, nullable: true, description: Buyer note }
-        state: { $ref: '#/components/schemas/OrderItemState' }
-        payment_status: { $ref: '#/components/schemas/OrderPaymentStatus' }
+        transport_option: { type: string, example: ghn-express, description: An enabled transport option's slug }
+        payment_session_id:
+          allOf: [{ $ref: '#/components/schemas/PaymentSessionID' }]
+          description: The single session covering every line of this checkout.
+        note: { type: string, example: Please leave at reception, description: 'Buyer note, per checkout' }
         cancelled_at: { type: string, format: date-time, nullable: true }
-        cancelled_by_id:
-          allOf: [{ $ref: '#/components/schemas/AccountID' }]
-          nullable: true
-          description: Null means the system cancelled it.
         created_at: { type: string, format: date-time }
-      required: [id, draft_id, buyer_id, seller_id, listing_id, variant_id, quantity, currency, total_amount, transport_option, address, state, payment_status, created_at]
+      required: [id, listing_id, variant_id, seller_id, quantity, currency, total_amount, transport_option, payment_session_id, created_at]
 
     OrderItemPage:
       type: object

@@ -29,11 +29,10 @@ paths:
                 properties:
                   data: { $ref: '#/components/schemas/Report' }
                 required: [data]
-        '400': { $ref: '#/components/responses/BadRequest' }
+        '400': { description: 'The body is invalid, or `ref_id` does not decode as the declared `ref_type`', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { description: 'The reported thing does not exist', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '409': { description: 'You already have an open report against this target', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '422': { description: 'The id does not match the declared target type', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     get:
       tags: [trust]
       summary: Reports the caller filed

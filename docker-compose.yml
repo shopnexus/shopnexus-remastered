@@ -52,6 +52,22 @@ x-app-env: &app-env
   OAUTH_VERIFIER: "mock"
   KYC_PROVIDER: "mock"
   PAYMENT_PROVIDER: "mock"
+  # Where a payment gateway may send a payer back. An allowlist, because a redirect target
+  # nobody checked is an open redirect that borrows this platform's credibility.
+  PAYMENT_RETURN_URL_HOSTS: "localhost:5000,localhost:3000"
+
+  # Storage. `local` keeps uploaded objects on the container's disk and signs URLs back to
+  # the gateway's own upload route, which is what makes a photo uploaded in dev actually
+  # render. A real store signs the bucket directly and the bytes never touch this process —
+  # that is a new implementation behind internal/provider/storage plus a selector value.
+  STORAGE_PROVIDER: "local"
+  STORAGE_ROOT: "/data/objects"
+  STORAGE_BASE_URL: "http://localhost:5000/api/v1"
+  STORAGE_SECRET: "0123456789abcdef0123456789abcdef"
+  STORAGE_UPLOAD_TTL: "15m"
+  STORAGE_DOWNLOAD_TTL: "1h"
+  STORAGE_MAX_UPLOAD_BYTES: "10485760"
+  STORAGE_ALLOWED_MIMES: "image/jpeg,image/png,image/webp,application/pdf"
 
   # Durable execution. `off` leaves every timed transition — an unpaid checkout
   # expiring, an escrow window closing, a refund deadline passing, a blind rating
@@ -154,6 +170,10 @@ services:
     profiles: ["app"]
     build: .
     environment: *app-env
+    volumes:
+      # STORAGE_PROVIDER=local keeps objects here, so they outlive the container. With a real
+      # store this volume goes away and the bytes never reach the process at all.
+      - object-data:/data/objects
     ports:
       - "5000:8080"
     depends_on:
@@ -184,6 +204,7 @@ services:
       # Caches outside the bind mount, so a rebuild does not start from scratch.
       - go-mod-cache:/go/pkg/mod
       - go-build-cache:/root/.cache/go-build
+      - object-data:/data/objects
     depends_on:
       db:
         condition: service_healthy
@@ -204,7 +225,9 @@ services:
   # serves no handlers and this container would have nothing to invoke.
   restate:
     profiles: ["restate"]
-    image: restatedev/restate:1.1
+    # Pinned at 1.7: sdk-go 1.0 refuses to talk to a server older than 1.3, so a "latest
+    # stable-looking" tag below that fails at discovery rather than at startup.
+    image: restatedev/restate:1.7
     volumes:
       - restate-data:/restate-data
 
@@ -246,6 +269,7 @@ services:
         condition: service_completed_successfully
 
 volumes:
+  object-data:
   restate-data:
   db-data:
   nats-data:

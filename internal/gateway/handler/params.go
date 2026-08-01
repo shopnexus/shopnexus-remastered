@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"shopnexus/internal/gateway/gwctx"
 	"shopnexus/internal/shared/errx"
@@ -119,6 +120,25 @@ func int64Param(r *http.Request, name string) (*int64, error) {
 		})
 	}
 	return &v, nil
+}
+
+// timeParam reads a required RFC 3339 timestamp query parameter — the shape a route uses
+// when the value has to be passed straight back into a point lookup (a hypertable's
+// primary key includes its partitioning column, so an id alone is not enough).
+func timeParam(r *http.Request, name string) (time.Time, error) {
+	raw := r.URL.Query().Get(name)
+	if raw == "" {
+		return time.Time{}, errx.NewValidationError("missing field: "+name, errx.Field{
+			Field: name, Rule: "required", Message: "is required",
+		})
+	}
+	t, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return time.Time{}, errx.NewValidationError("invalid field: "+name, errx.Field{
+			Field: name, Rule: "datetime", Message: "must be an RFC 3339 timestamp",
+		})
+	}
+	return t, nil
 }
 
 // splitList reads a comma-separated query parameter — the `style: form, explode: false` shape

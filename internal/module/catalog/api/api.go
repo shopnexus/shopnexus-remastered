@@ -55,9 +55,14 @@ type Service interface {
 	// ReserveStock holds units for a checkout that has not completed. Answers
 	// 409 insufficient_stock when there is no room, which the caller acts on.
 	ReserveStock(ctx context.Context, req StockMovementRequest) error
+	// ReleaseStock gives a reservation back. Only before the sale: after CommitStock the
+	// units are in `sold`, and the reversal is UncommitStock.
 	ReleaseStock(ctx context.Context, req StockMovementRequest) error
-	// CommitStock turns a reservation into a sale.
-	CommitStock(ctx context.Context, req StockMovementRequest) error
+	// CommitStock turns a reservation into a sale; UncommitStock puts one back on the shelf
+	// when the order is cancelled or refunded. Both carry an idempotency key, because neither
+	// is recoverable from the counters afterwards.
+	CommitStock(ctx context.Context, req StockCommitRequest) error
+	UncommitStock(ctx context.Context, req StockCommitRequest) error
 
 	// --- the review cache: called by trust, not by a route ---
 	// SyncListingRating writes the average and the count trust recomputed. Best-effort by

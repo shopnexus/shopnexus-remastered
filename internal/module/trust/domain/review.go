@@ -32,8 +32,12 @@ type Review struct {
 	ListingID int64 `validate:"required"`
 	OrderID   int64 `validate:"required"`
 	AuthorID  int64 `validate:"required"`
-	Rating    int16 `validate:"required,gte=1,lte=5"`
-	Body      string
+	// SellerID is whose reputation this rating counts towards, frozen from the order at
+	// submission. Asking catalog for it again would tie the aggregate to a listing still
+	// being readable — a listing back in "pending" answers 404 even to its own buyer.
+	SellerID int64 `validate:"required"`
+	Rating   int16 `validate:"required,gte=1,lte=5"`
+	Body     string
 	// Attachments are photos of the item as received — resource ids of this module's own
 	// uploads, held inline for the same reason catalog and chat do it.
 	Attachments     []int64
@@ -46,9 +50,9 @@ type Review struct {
 	UpdatedAt *time.Time
 }
 
-func NewReview(listingID, orderID, authorID int64, rating int16, body string, attachments []int64) (Review, error) {
+func NewReview(listingID, orderID, authorID, sellerID int64, rating int16, body string, attachments []int64) (Review, error) {
 	r := Review{
-		ListingID: listingID, OrderID: orderID, AuthorID: authorID,
+		ListingID: listingID, OrderID: orderID, AuthorID: authorID, SellerID: sellerID,
 		Rating: rating, Body: body, Attachments: attachments,
 	}
 	if err := validation.Default().Struct(r); err != nil {

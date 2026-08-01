@@ -11,12 +11,12 @@ import (
 	"shopnexus/internal/module/trust/port"
 )
 
-const reviewColumns = `id, listing_id, order_id, author_id, rating, body, attachments,
+const reviewColumns = `id, listing_id, order_id, author_id, seller_id, rating, body, attachments,
 	       helpful_count, not_helpful_count, reply_count, created_at, updated_at`
 
 func scanReview(row pgx.Row) (domain.Review, error) {
 	var v domain.Review
-	err := row.Scan(&v.ID, &v.ListingID, &v.OrderID, &v.AuthorID, &v.Rating, &v.Body,
+	err := row.Scan(&v.ID, &v.ListingID, &v.OrderID, &v.AuthorID, &v.SellerID, &v.Rating, &v.Body,
 		&v.Attachments, &v.HelpfulCount, &v.NotHelpfulCount, &v.ReplyCount,
 		&v.CreatedAt, &v.UpdatedAt)
 	if dbx.IsNoRows(err) {
@@ -31,14 +31,14 @@ func scanReview(row pgx.Row) (domain.Review, error) {
 // InsertReview writes the review and folds its rating into the seller's reputation in one
 // transaction: a review that counts towards a rating only after a second write is a rating
 // that can be wrong for as long as that write is missing.
-func (r *Repo) InsertReview(ctx context.Context, v *domain.Review, sellerID int64) error {
+func (r *Repo) InsertReview(ctx context.Context, v *domain.Review) error {
 	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
-		const q = `INSERT INTO review (listing_id, order_id, author_id, rating, body, attachments)
-		           VALUES (@listing_id, @order_id, @author_id, @rating, @body, @attachments)
+		const q = `INSERT INTO review (listing_id, order_id, author_id, seller_id, rating, body, attachments)
+		           VALUES (@listing_id, @order_id, @author_id, @seller_id, @rating, @body, @attachments)
 		           RETURNING id, created_at`
 		args := pgx.NamedArgs{
 			"listing_id": v.ListingID, "order_id": v.OrderID, "author_id": v.AuthorID,
-			"rating": v.Rating, "body": v.Body,
+			"seller_id": v.SellerID, "rating": v.Rating, "body": v.Body,
 			"attachments": dbx.Int64Array(v.Attachments),
 		}
 		if err := tx.QueryRow(ctx, q, args).Scan(&v.ID, &v.CreatedAt); err != nil {
@@ -47,7 +47,7 @@ func (r *Repo) InsertReview(ctx context.Context, v *domain.Review, sellerID int6
 			}
 			return fmt.Errorf("db insert review: %w", err)
 		}
-		return addReviewRating(ctx, tx, sellerID, int64(v.Rating), 1)
+		return addReviewRating(ctx, tx, v.SellerID, int64(v.Rating), 1)
 	})
 }
 
@@ -56,35 +56,47 @@ func (r *Repo) FindReview(ctx context.Context, id int64) (domain.Review, error) 
 	return scanReview(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id}))
 }
 
-// ListReviews is a listing's review page, or one author's reviews. The sort is a whitelist
-// switch rather than a parameter: an ordering a client invents never reaches the SQL.
+// ListReviews is a listing's review page. The sort is a whitelist switch rather than a
+// parameter: an ordering a client invents never reaches the SQL.
 //
-// `helpful` pages a counter other people are changing, so a review that gains votes can
-// cross a page boundary. That drift is accepted — seeing a review twice costs the reader
-// nothing — and `newest` is the key that does not move.
+// Each sort pages on the key it orders by — `newest` on (created_at, id), `helpful` on
+// (helpful_count, id) — because a cursor over a different column than the ORDER BY makes a
+// page boundary meaningless: an old but much-upvoted review would end page one and every
+// review newer than it would then be unreachable.
+//
+// `helpful` still pages a counter other people are changing, so a review that gains votes can
+// cross a boundary and be seen twice or not at all. That drift is accepted — seeing a review
+// twice costs the reader nothing — and `newest` is the key that does not move.
 func (r *Repo) ListReviews(ctx context.Context, f port.ReviewFilter) ([]domain.Review, error) {
 	const base = `SELECT ` + reviewColumns + ` FROM review
 	           WHERE (@listing_id = 0 OR listing_id = @listing_id)
-	             AND (@author_id = 0 OR author_id = @author_id)
-	             AND (@rating = 0 OR rating = @rating)
-	             AND (@before::timestamptz IS NULL OR created_at < @before::timestamptz)`
-	q := base + ` ORDER BY created_at DESC, id DESC LIMIT @limit`
+	             AND (@rating = 0 OR rating = @rating)`
+	q := base + ` AND (@before_id = 0
+	                   OR (created_at, id) < (@before::timestamptz, @before_id))
+	              ORDER BY created_at DESC, id DESC LIMIT @limit`
 	if f.Sort == domain.ReviewSortHelpful {
-		q = base + ` ORDER BY helpful_count DESC, id DESC LIMIT @limit`
+		q = base + ` AND (@before_id = 0
+		                  OR (helpful_count, id) < (@before_count, @before_id))
+		             ORDER BY helpful_count DESC, id DESC LIMIT @limit`
 	}
-	before, limit := cursorBound(f.Cursor)
-	args := pgx.NamedArgs{
-		"listing_id": f.ListingID, "author_id": f.AuthorID, "rating": f.Rating,
-		"before": before, "limit": limit,
-	}
+	args := pgx.NamedArgs{"listing_id": f.ListingID, "rating": f.Rating}
+	addCursor(args, f.Cursor)
 	return r.queryReviews(ctx, q, args)
 }
 
-// SaveReview writes an edit and moves the seller's review rating by the delta in the same
-// transaction. A rating changed from 5 to 1 that leaves the aggregate alone is a number
-// nobody can reproduce.
-func (r *Repo) SaveReview(ctx context.Context, v domain.Review, sellerID int64, ratingDelta int64) error {
+// SaveReview writes an edit and moves the seller's review rating by the difference in the same
+// transaction. A rating changed from 5 to 1 that leaves the aggregate alone is a number nobody
+// can reproduce.
+//
+// The difference comes from the locked row, not from the rating the caller read before the
+// transaction started: an edit and a concurrent delete that both computed their delta from the
+// same 5 move the aggregate by -9 for a review worth 5.
+func (r *Repo) SaveReview(ctx context.Context, v domain.Review) error {
 	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
+		previous, sellerID, err := lockReview(ctx, tx, v.ID)
+		if err != nil {
+			return err
+		}
 		const q = `UPDATE review
 		           SET rating = @rating, body = @body, attachments = @attachments,
 		               updated_at = @updated_at
@@ -93,33 +105,45 @@ func (r *Repo) SaveReview(ctx context.Context, v domain.Review, sellerID int64, 
 			"id": v.ID, "rating": v.Rating, "body": v.Body,
 			"attachments": dbx.Int64Array(v.Attachments), "updated_at": v.UpdatedAt,
 		}
-		tag, err := tx.Exec(ctx, q, args)
-		if err != nil {
+		if _, err := tx.Exec(ctx, q, args); err != nil {
 			return fmt.Errorf("db update review: %w", err)
 		}
-		if tag.RowsAffected() == 0 {
-			return domain.ErrReviewNotFound
-		}
-		if ratingDelta == 0 {
+		delta := int64(v.Rating) - int64(previous)
+		if delta == 0 {
 			return nil
 		}
-		return addReviewRating(ctx, tx, sellerID, ratingDelta, 0)
+		return addReviewRating(ctx, tx, sellerID, delta, 0)
 	})
 }
 
-// DeleteReview drops the review — its replies and votes go with it by cascade — and takes
-// its rating back out of the seller's reputation.
-func (r *Repo) DeleteReview(ctx context.Context, id int64, sellerID int64, rating int16) error {
+// DeleteReview drops the review — its replies and votes go with it by cascade — and takes the
+// rating on the locked row back out of the seller's reputation.
+func (r *Repo) DeleteReview(ctx context.Context, id int64) error {
 	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `DELETE FROM review WHERE id = @id`, pgx.NamedArgs{"id": id})
+		rating, sellerID, err := lockReview(ctx, tx, id)
 		if err != nil {
-			return fmt.Errorf("db delete review: %w", err)
+			return err
 		}
-		if tag.RowsAffected() == 0 {
-			return domain.ErrReviewNotFound
+		if _, err := tx.Exec(ctx, `DELETE FROM review WHERE id = @id`, pgx.NamedArgs{"id": id}); err != nil {
+			return fmt.Errorf("db delete review: %w", err)
 		}
 		return addReviewRating(ctx, tx, sellerID, -int64(rating), -1)
 	})
+}
+
+// lockReview takes the review's row lock and answers what the aggregate is currently carrying
+// for it. Both writers that move a rating take it first, so the second one computes its delta
+// from what the first left rather than from its own earlier read.
+func lockReview(ctx context.Context, tx pgx.Tx, id int64) (rating int16, sellerID int64, err error) {
+	const q = `SELECT rating, seller_id FROM review WHERE id = @id FOR UPDATE`
+	err = tx.QueryRow(ctx, q, pgx.NamedArgs{"id": id}).Scan(&rating, &sellerID)
+	if dbx.IsNoRows(err) {
+		return 0, 0, domain.ErrReviewNotFound
+	}
+	if err != nil {
+		return 0, 0, fmt.Errorf("db lock review: %w", err)
+	}
+	return rating, sellerID, nil
 }
 
 func (r *Repo) queryReviews(ctx context.Context, q string, args pgx.NamedArgs) ([]domain.Review, error) {

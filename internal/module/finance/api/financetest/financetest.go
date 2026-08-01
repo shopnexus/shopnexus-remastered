@@ -120,3 +120,7 @@ func (Stub) ReleaseEscrow(context.Context, financeapi.EscrowRequest) error {
 func (Stub) RefundEscrow(context.Context, financeapi.EscrowRequest) error {
 	return errx.ErrNotImplemented
 }
+
+func (Stub) AdminListWallets(context.Context, financeapi.AdminListWalletsRequest) ([]financeapi.Wallet, error) {
+	return nil, errx.ErrNotImplemented
+}

@@ -44,7 +44,10 @@ type Transaction struct {
 	PaymentOption string                   `json:"payment_option"`
 	Amount        int64                    `json:"amount"`
 	Currency      string                   `json:"currency"`
-	ReversesID    *id.ID[id.Transaction]   `json:"reverses_id,omitempty"`
+	// Note is whatever the rail or the platform recorded about this leg — the failure the
+	// provider gave, the reason a reversal was made.
+	Note       string                 `json:"note"`
+	ReversesID *id.ID[id.Transaction] `json:"reverses_id,omitempty"`
 	// CheckoutURL is the gateway's redirect, present only while the leg is pending and
 	// only for a rail that redirects. Not a receipt: the webhook settles the leg.
 	CheckoutURL string     `json:"checkout_url,omitempty"`
@@ -59,6 +62,9 @@ type Wallet struct {
 	Currency         string            `json:"currency"`
 	AvailableBalance int64             `json:"available_balance"`
 	HeldBalance      int64             `json:"held_balance"`
+	// CreatedAt is when the account first held this currency. A wallet is not registered:
+	// it exists from the first movement, so this is that movement's moment.
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // WalletMovement is one row of the ledger, with the balances it produced — which is
@@ -134,7 +140,10 @@ type ListSessionsRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	// Admin lists every account's sessions. The service refuses it for a caller without
 	// the role rather than quietly filtering it away.
-	Admin  bool   `json:"-"`
+	Admin bool `json:"-"`
+	// Role is which side of the money the caller is asking about: `payer` is owed or sent,
+	// `payee` is received — a seller payout and a refund land on that side. Absent is both.
+	Role   string `json:"-" validate:"omitempty,oneof=payer payee"`
 	Kind   string `json:"-" validate:"omitempty,oneof=buyer-checkout seller-payout withdrawal"`
 	Status string `json:"-" validate:"omitempty,oneof=pending processing success cancelled failed"`
 	Page   int    `json:"-" validate:"required,min=1"`
@@ -160,32 +169,46 @@ type ListWalletsRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 }
 
+// AdminListWalletsRequest is every currency another account holds. Its own request rather
+// than GetWallet with an empty currency, so "all of them" is not a missing field.
+type AdminListWalletsRequest struct {
+	ActorID   id.ID[id.Account] `json:"-" validate:"required"`
+	AccountID id.ID[id.Account] `json:"-" validate:"required"`
+}
+
 type GetWalletRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	// AccountID is whose wallet to read. An admin may name another account; anybody
 	// else reading somebody else's balance is refused.
 	AccountID id.ID[id.Account] `json:"-" validate:"required"`
-	Currency  string            `json:"-" validate:"required,len=3"`
+	Currency  string            `json:"-" validate:"required,len=3,uppercase"`
 }
 
 type ListMovementsRequest struct {
 	ActorID  id.ID[id.Account] `json:"-" validate:"required"`
-	Currency string            `json:"-" validate:"required,len=3"`
-	Page     int               `json:"-" validate:"required,min=1"`
-	Limit    int               `json:"-" validate:"required,min=1,max=100"`
+	Currency string            `json:"-" validate:"required,len=3,uppercase"`
+	// Kind narrows the ledger to one movement type, which is how "where did my payouts go"
+	// is asked without reading every row.
+	Kind  string `json:"-" validate:"omitempty,oneof=topup escrow-hold escrow-release payout refund withdrawal fee adjustment"`
+	Page  int    `json:"-" validate:"required,min=1"`
+	Limit int    `json:"-" validate:"required,min=1,max=100"`
 }
 
 type AdjustWalletRequest struct {
 	ActorID   id.ID[id.Account] `json:"-" validate:"required"`
 	AccountID id.ID[id.Account] `json:"-" validate:"required"`
-	Currency  string            `json:"currency" validate:"required,len=3"`
+	Currency  string            `json:"currency" validate:"required,len=3,uppercase"`
 	// The deltas are signed and at least one must move, which is what makes a
 	// correction in either direction one request rather than two endpoints.
 	AvailableDelta int64 `json:"available_delta"`
 	HeldDelta      int64 `json:"held_delta"`
 	// Reason is mandatory: an adjustment is the only movement with no order behind it,
 	// so the note is the whole explanation an audit will ever have.
-	Reason string `json:"reason" validate:"required,min=1,max=500"`
+	Reason string `json:"reason" validate:"required,min=1,max=2000"`
+	// IdempotencyKey is mandatory for the same reason: this is the one balance change with
+	// nothing else to lose a replay to, so a double-clicked correction would credit twice.
+	// Sending the same key again answers the wallet as it stands rather than posting again.
+	IdempotencyKey string `json:"idempotency_key" validate:"required,max=200"`
 }
 
 type CreateBankAccountRequest struct {
@@ -216,7 +239,7 @@ type ListBankAccountsRequest struct {
 type CreateWithdrawalRequest struct {
 	ActorID       id.ID[id.Account]     `json:"-" validate:"required"`
 	BankAccountID id.ID[id.BankAccount] `json:"bank_account_id" validate:"required"`
-	Currency      string                `json:"currency" validate:"required,len=3"`
+	Currency      string                `json:"currency" validate:"required,len=3,uppercase"`
 	Amount        int64                 `json:"amount" validate:"required,gt=0"`
 }
 
@@ -258,8 +281,13 @@ type PutTaxInfoRequest struct {
 type VerifyTaxInfoRequest struct {
 	ActorID   id.ID[id.Account] `json:"-" validate:"required"`
 	AccountID id.ID[id.Account] `json:"-" validate:"required"`
-	Verified  bool              `json:"verified"`
-	Source    string            `json:"source,omitempty" validate:"max=200"`
+	// Status is a verdict, so `pending` is not a choice. A named status rather than a bool
+	// because a rejection is a different fact from "not verified yet".
+	Status string `json:"status" validate:"required,oneof=verified rejected"`
+	// Source is what the verdict was based on — the registry that answered, the document
+	// that was read. Mandatory: a verdict nobody can trace is one nobody can revisit.
+	Source string `json:"source" validate:"required,max=200"`
+	Note   string `json:"note,omitempty" validate:"max=2000"`
 }
 
 // --- service-to-service: what order calls, with no route of its own ---
@@ -269,7 +297,7 @@ type VerifyTaxInfoRequest struct {
 type OpenCheckoutRequest struct {
 	BuyerID  id.ID[id.Account] `validate:"required"`
 	SellerID id.ID[id.Account] `validate:"required"`
-	Currency string            `validate:"required,len=3"`
+	Currency string            `validate:"required,len=3,uppercase"`
 	Total    int64             `validate:"required,gt=0"`
 	Note     string            `validate:"max=500"`
 	// Data is the checkout context order wants back when the money lands — the draft or
@@ -283,7 +311,7 @@ type EscrowRequest struct {
 	BuyerID        id.ID[id.Account] `validate:"required"`
 	SellerID       id.ID[id.Account] `validate:"required"`
 	OrderID        id.ID[id.Order]   `validate:"required"`
-	Currency       string            `validate:"required,len=3"`
+	Currency       string            `validate:"required,len=3,uppercase"`
 	Amount         int64             `validate:"required,gt=0"`
 	IdempotencyKey string            `validate:"required,max=200"`
 }
@@ -304,6 +332,9 @@ type Service interface {
 	ListWalletMovements(ctx context.Context, req ListMovementsRequest) (WalletMovementPage, error)
 	// AdminAdjustWallet is the correction of last resort, and the only movement with no
 	// order or session behind it.
+	// AdminListWallets is every currency an account holds: a support agent looking at a
+	// balance dispute does not know which one it is in.
+	AdminListWallets(ctx context.Context, req AdminListWalletsRequest) ([]Wallet, error)
 	AdminAdjustWallet(ctx context.Context, req AdjustWalletRequest) (Wallet, error)
 
 	// --- bank accounts ---

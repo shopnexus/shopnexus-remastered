@@ -2,6 +2,7 @@ package finance
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	financeapi "shopnexus/internal/module/finance/api"
@@ -45,6 +46,7 @@ func (s *Service) ListWalletMovements(ctx context.Context, req financeapi.ListMo
 	rows, total, err := s.repo.ListMovements(ctx, port.MovementFilter{
 		AccountID: req.ActorID.Int64(),
 		Currency:  req.Currency,
+		Kind:      req.Kind,
 		Offset:    offsetOf(req.Page, req.Limit),
 		Limit:     req.Limit,
 	})
@@ -61,6 +63,23 @@ func (s *Service) ListWalletMovements(ctx context.Context, req financeapi.ListMo
 	}, nil
 }
 
+// AdminListWallets is every currency an account holds. An admin surface: a support agent
+// looking at a balance dispute does not know which currency it is in.
+func (s *Service) AdminListWallets(ctx context.Context, req financeapi.AdminListWalletsRequest) ([]financeapi.Wallet, error) {
+	if err := s.requireAdmin(ctx, req.ActorID); err != nil {
+		return nil, err
+	}
+	rows, err := s.repo.ListWallets(ctx, req.AccountID.Int64())
+	if err != nil {
+		return nil, fmt.Errorf("list wallets: %w", err)
+	}
+	out := make([]financeapi.Wallet, 0, len(rows))
+	for _, w := range rows {
+		out = append(out, toAPIWallet(w))
+	}
+	return out, nil
+}
+
 // AdminAdjustWallet is the correction of last resort — a support credit, a mistake
 // being unwound. The only movement with no order or session behind it, which is why
 // the reason is mandatory: the ledger note is the entire explanation an audit gets.
@@ -68,10 +87,19 @@ func (s *Service) AdminAdjustWallet(ctx context.Context, req financeapi.AdjustWa
 	if err := s.requireAdmin(ctx, req.ActorID); err != nil {
 		return financeapi.Wallet{}, err
 	}
-	transfer := domain.Adjust(req.AvailableDelta, req.HeldDelta, req.Reason)
-	if _, err := s.repo.Move(ctx, []port.Leg{{
+	// Validated here and not only at the handler: the idempotency key is what stops a second
+	// credit, so a caller that omits it must be refused wherever it came from.
+	if err := s.v.Struct(req); err != nil {
+		return financeapi.Wallet{}, err
+	}
+	transfer := domain.Adjust(req.AvailableDelta, req.HeldDelta,
+		"adjustment:"+req.IdempotencyKey, req.Reason)
+	_, err := s.repo.Move(ctx, []port.Leg{{
 		AccountID: req.AccountID.Int64(), Currency: req.Currency, Transfer: transfer,
-	}}); err != nil {
+	}})
+	// A key used before is the correction already applied, so this answers the wallet as it
+	// stands: a retried request is the state the admin asked for, not a second credit.
+	if err != nil && !errors.Is(err, domain.ErrMovementAlreadyPosted) {
 		return financeapi.Wallet{}, fmt.Errorf("adjust wallet: %w", err)
 	}
 	w, err := s.repo.FindWallet(ctx, req.AccountID.Int64(), req.Currency)

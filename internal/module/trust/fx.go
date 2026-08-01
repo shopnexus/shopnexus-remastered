@@ -44,12 +44,14 @@ func newRepo(lc fx.Lifecycle, cfg *config.Config) (*trustpg.Repo, error) {
 // SubscribeSettledOrders keeps the completed and cancelled counters on a reputation —
 // "152 completed, 3 cancelled" says something an average cannot.
 //
-// Order is the authority and this is a mirror, so a redelivered message double-counts and a
-// lost one under-counts. Both are repaired by a recount rather than by making the consumer
-// clever, which is why these are counters and not decisions.
+// Order is the authority and this is a mirror. Delivery is at-least-once, so the order id
+// travels with the outcome and the service records it in the same transaction as the bump: a
+// redelivery counts nothing, and a message that never arrived is still the one gap a recount
+// has to close.
 func SubscribeSettledOrders(bus eventbus.Client, svc trustapi.Service, log *slog.Logger) {
 	eventbus.Subscribe(bus, order.OrderSettledTopic, "trust", func(ctx context.Context, event order.OrderSettled) error {
 		req := trustapi.RecordOrderOutcomeRequest{
+			OrderID:   id.Of[id.Order](event.OrderID),
 			BuyerID:   id.Of[id.Account](event.BuyerID),
 			SellerID:  id.Of[id.Account](event.SellerID),
 			Completed: event.Completed,

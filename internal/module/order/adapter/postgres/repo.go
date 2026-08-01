@@ -29,8 +29,9 @@ func (r *Repo) FindResources(ctx context.Context, ids []int64) ([]common.Resourc
 	return dbx.NewResources(r.pool).Find(ctx, ids)
 }
 
-// cursorBound is the shared shape of every list here: newest first, bounded by a
-// timestamp the previous page ended at.
-func cursorBound(f port.CursorFilter) (any, int) {
-	return dbx.NullTime(f.Before), f.Limit
+// cursorBound is the shared shape of every list here: bounded by the (created_at, id) pair
+// the previous page ended at. Both, because a tuple comparison is the only bound that does not
+// skip the rest of a group of rows sharing one transaction's timestamp.
+func cursorBound(f port.CursorFilter) (before, beforeID any, limit int) {
+	return dbx.NullTime(f.Before), dbx.NullID(f.BeforeID), f.Limit
 }

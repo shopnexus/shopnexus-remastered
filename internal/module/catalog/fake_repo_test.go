@@ -34,7 +34,11 @@ type fakeRepo struct {
 	stock    map[int64]domain.Stock
 	// variantListing is the join CommitStock walks to bump the listing's counter.
 	variantListing map[int64]int64
-	favorites      map[[2]int64]bool
+	// movements is CommitStock/UncommitStock's idempotency key set, mirroring the
+	// adapter's stock_movement table: a key already claimed makes the call a no-op
+	// instead of moving the counters again.
+	movements map[string]bool
+	favorites map[[2]int64]bool
 	// interests are the account's slots, which is what sort=recommended ranks against.
 	interests map[int64][]port.Vector
 	// resources is this module's own resource table: an id absent from it names no confirmed
@@ -63,6 +67,7 @@ func newFakeRepo() *fakeRepo {
 
 		stock:          map[int64]domain.Stock{},
 		variantListing: map[int64]int64{},
+		movements:      map[string]bool{},
 		favorites:      map[[2]int64]bool{},
 		interests:      map[int64][]port.Vector{},
 		resources:      map[int64]bool{},
@@ -305,18 +310,57 @@ func (f *fakeRepo) ReleaseStock(_ context.Context, variantID, units int64) error
 	return nil
 }
 
-func (f *fakeRepo) CommitStock(_ context.Context, variantID, units int64) error {
+func (f *fakeRepo) CommitStock(_ context.Context, variantID, units int64, key string) error {
+	if units <= 0 {
+		return domain.ErrInsufficientStock
+	}
+	if key == "" {
+		return domain.ErrStockMovementKeyRequired
+	}
+	if f.movements[key] {
+		// Already applied — the caller asked for the same effect, and it is there.
+		return nil
+	}
 	s, ok := f.stock[variantID]
-	if !ok || units <= 0 || s.Reserved < units {
+	if !ok || s.Reserved < units {
 		return domain.ErrInsufficientStock
 	}
 	s.Reserved -= units
 	s.Sold += units
 	f.stock[variantID] = s
+	f.movements[key] = true
 	// The listing's counter moves with the sale, as the adapter does in one transaction.
 	if listingID, ok := f.variantListing[variantID]; ok {
 		if at := f.listingAt(listingID); at >= 0 {
 			f.listings[at].listing.CachedSold += units
+		}
+	}
+	return nil
+}
+
+// UncommitStock is CommitStock's reversal — a cancelled or refunded order putting sold
+// units back on the shelf. Never ReleaseStock: by the time a sale exists, `reserved`
+// holds none of these units anymore.
+func (f *fakeRepo) UncommitStock(_ context.Context, variantID, units int64, key string) error {
+	if units <= 0 {
+		return domain.ErrInsufficientStock
+	}
+	if key == "" {
+		return domain.ErrStockMovementKeyRequired
+	}
+	if f.movements[key] {
+		return nil
+	}
+	s, ok := f.stock[variantID]
+	if !ok || s.Sold < units {
+		return domain.ErrInsufficientStock
+	}
+	s.Sold -= units
+	f.stock[variantID] = s
+	f.movements[key] = true
+	if listingID, ok := f.variantListing[variantID]; ok {
+		if at := f.listingAt(listingID); at >= 0 {
+			f.listings[at].listing.CachedSold = max(0, f.listings[at].listing.CachedSold-units)
 		}
 	}
 	return nil
@@ -717,11 +761,13 @@ func (f *fakeRepo) ListListings(_ context.Context, filter port.ListingFilter) ([
 }
 
 // priceInRange is satisfied by any one live variant, as the EXISTS subqueries are.
+// MaxPrice is a pointer: nil is "not filtered", but a set 0 is a legal bound that no
+// price (gte=1) can ever satisfy — unlike MinPrice, where 0 really is a no-op.
 func priceInRange(stored storedListing, filter port.ListingFilter) bool {
-	if filter.MinPrice == 0 && filter.MaxPrice == 0 {
+	if filter.MinPrice == 0 && filter.MaxPrice == nil {
 		return true
 	}
-	okMin, okMax := filter.MinPrice == 0, filter.MaxPrice == 0
+	okMin, okMax := filter.MinPrice == 0, filter.MaxPrice == nil
 	for _, v := range stored.variants {
 		if v.DeletedAt != nil {
 			continue
@@ -729,7 +775,7 @@ func priceInRange(stored storedListing, filter port.ListingFilter) bool {
 		if filter.MinPrice != 0 && v.Price >= filter.MinPrice {
 			okMin = true
 		}
-		if filter.MaxPrice != 0 && v.Price <= filter.MaxPrice {
+		if filter.MaxPrice != nil && v.Price <= *filter.MaxPrice {
 			okMax = true
 		}
 	}

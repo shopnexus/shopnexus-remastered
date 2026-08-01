@@ -65,7 +65,7 @@ func (f *fakeRepo) ListConversations(_ context.Context, filter port.InboxFilter)
 		if !c.Involves(filter.AccountID) {
 			continue
 		}
-		if !filter.Before.IsZero() && !c.LastMessageAt.Before(filter.Before) {
+		if !filter.Before.IsZero() && !beforeCursor(c.LastMessageAt, c.ID, filter.Before, filter.BeforeID) {
 			continue
 		}
 		matched = append(matched, c)
@@ -124,6 +124,15 @@ func (f *fakeRepo) FindMessage(_ context.Context, messageID int64) (domain.Messa
 	return domain.Message{}, domain.ErrMessageNotFound
 }
 
+func (f *fakeRepo) FindMessageAt(_ context.Context, messageID int64, createdAt time.Time) (domain.Message, error) {
+	for _, m := range f.messages {
+		if m.ID == messageID && m.CreatedAt.Equal(createdAt) {
+			return m, nil
+		}
+	}
+	return domain.Message{}, domain.ErrMessageNotFound
+}
+
 func (f *fakeRepo) SaveMessage(_ context.Context, m domain.Message) error {
 	for i, stored := range f.messages {
 		if stored.ID == m.ID {
@@ -140,13 +149,24 @@ func (f *fakeRepo) ListMessages(_ context.Context, filter port.HistoryFilter) ([
 		if m.ConversationID != filter.ConversationID {
 			continue
 		}
-		if !filter.Before.IsZero() && !m.CreatedAt.Before(filter.Before) {
+		if !filter.Before.IsZero() && !beforeCursor(m.CreatedAt, m.ID, filter.Before, filter.BeforeID) {
 			continue
 		}
 		matched = append(matched, m)
 	}
 	slices.SortFunc(matched, func(a, b domain.Message) int { return int(b.ID - a.ID) })
 	return matched[:min(filter.Limit, len(matched))], nil
+}
+
+// beforeCursor is the fake's version of the adapter's row-comparison cursor: it decides
+// pagination by (at, id) as a tuple, matching CURRENT_TIMESTAMP's transaction scoping —
+// two rows can share `at` exactly, and the id half is what keeps that tie from silently
+// dropping one of them at a page boundary.
+func beforeCursor(at time.Time, id int64, cursorAt time.Time, cursorID int64) bool {
+	if at.Before(cursorAt) {
+		return true
+	}
+	return at.Equal(cursorAt) && id < cursorID
 }
 
 func (f *fakeRepo) LastMessages(_ context.Context, conversationIDs []int64) (map[int64]domain.Message, error) {

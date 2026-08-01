@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -94,6 +95,15 @@ func (r *Repo) FindMessage(ctx context.Context, id int64) (domain.Message, error
 	return scanMessage(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id}))
 }
 
+// FindMessageAt is the point lookup FindMessage's own comment describes: id and
+// created_at together are the hypertable's primary key, so this hits one chunk instead of
+// scanning all of them. The route behind an edit or a redaction always has created_at, so
+// this is what they use.
+func (r *Repo) FindMessageAt(ctx context.Context, id int64, createdAt time.Time) (domain.Message, error) {
+	const q = `SELECT ` + messageColumns + ` FROM message WHERE id = @id AND created_at = @created_at`
+	return scanMessage(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id, "created_at": createdAt}))
+}
+
 // SaveMessage writes an edit or a redaction. Keyed by id and created_at, which the caller
 // read: a hypertable's primary key includes its partitioning column.
 func (r *Repo) SaveMessage(ctx context.Context, m domain.Message) error {
@@ -120,18 +130,21 @@ func (r *Repo) SaveMessage(ctx context.Context, m domain.Message) error {
 	return nil
 }
 
-// ListMessages pages a thread newest first on a created_at cursor rather than an offset,
-// so chunk exclusion can skip chunks instead of scanning all of them — and so a message
-// arriving mid-read cannot shift the page.
+// ListMessages pages a thread newest first on a (created_at, id) cursor rather than an
+// offset, so chunk exclusion can skip chunks instead of scanning all of them — and so a
+// message arriving mid-read cannot shift the page. The tuple comparison is what keeps two
+// messages sharing created_at exactly (the same transaction wrote them) from having one
+// silently skipped at the page boundary.
 func (r *Repo) ListMessages(ctx context.Context, f port.HistoryFilter) ([]domain.Message, error) {
 	const q = `SELECT ` + messageColumns + ` FROM message
 	           WHERE conversation_id = @conversation_id
-	             AND (@before::timestamptz IS NULL OR created_at < @before::timestamptz)
+	             AND (@before::timestamptz IS NULL OR (created_at, id) < (@before::timestamptz, @before_id::bigint))
 	           ORDER BY created_at DESC, id DESC
 	           LIMIT @limit`
 	args := pgx.NamedArgs{
 		"conversation_id": f.ConversationID,
 		"before":          dbx.NullTime(f.Before),
+		"before_id":       f.BeforeID,
 		"limit":           f.Limit,
 	}
 	rows, err := r.pool.Query(ctx, q, args)

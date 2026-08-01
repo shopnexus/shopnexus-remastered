@@ -22,8 +22,13 @@ type OrderParams struct {
 	OrderID int64 `json:"order_id"`
 }
 
+// RefundParams is one window of one case: the refund, and the status whose clock the run is
+// holding. The status is what makes the run safe to wake up — it advances the case only if it
+// is still the state the run was started for, so a case that moved on has a run that returns
+// rather than one that acts on somebody else's window.
 type RefundParams struct {
-	RefundID int64 `json:"refund_id"`
+	RefundID int64  `json:"refund_id"`
+	Status   string `json:"status"`
 }
 
 // Workflows is the durable-timer side of this module: the waits nobody can hold in memory —
@@ -48,12 +53,15 @@ type Workflows interface {
 	StartOrder(ctx context.Context, orderID int64) error
 	// OrderReceived is the buyer confirming the goods arrived, which starts the escrow
 	// window; RefundRaised interrupts it and RefundResolved says whether the buyer was paid.
+	// OrderCancelled ends the run before any of that — the wait it is parked on is the receipt.
 	OrderReceived(ctx context.Context, orderID int64) error
+	OrderCancelled(ctx context.Context, orderID int64) error
 	RefundRaised(ctx context.Context, orderID int64) error
 	RefundResolved(ctx context.Context, orderID int64, buyerPaid bool) error
 
-	// StartRefund follows one case through its three windows; RefundMoved is any party
-	// acting on it, so the run re-reads the row rather than being told what changed.
-	StartRefund(ctx context.Context, refundID int64) error
-	RefundMoved(ctx context.Context, refundID int64) error
+	// StartRefundWindow holds one window of one case, keyed by the refund and the status it
+	// waits on. One run per window rather than one per case: a durable promise is
+	// single-assignment per name, so a run that tried to reuse one wait for all three windows
+	// spun instead of sleeping through the second.
+	StartRefundWindow(ctx context.Context, refundID int64, status string) error
 }

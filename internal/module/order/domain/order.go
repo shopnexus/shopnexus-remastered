@@ -40,10 +40,13 @@ type Order struct {
 	// unboxing, so a growable list would weaken the record it exists to be.
 	ReceivedAt         *time.Time
 	ReceiptAttachments []int64
-	PayoutSessionID    *int64
-	CreatedAt          time.Time
-	CompletedAt        *time.Time
-	CancelledAt        *time.Time
+	// PayoutReleasedAt is when the escrow reached the seller. Nil on a completed order means
+	// the outcome was written but the money never moved — a stranded release, which is a state
+	// somebody has to see rather than one to forget.
+	PayoutReleasedAt *time.Time
+	CreatedAt        time.Time
+	CompletedAt      *time.Time
+	CancelledAt      *time.Time
 }
 
 func NewOrder(origin Origin, buyerID, sellerID, transportID int64, address, pickup AddressSnapshot) (Order, error) {
@@ -103,20 +106,29 @@ func (o Order) PayoutDue() *time.Time {
 	return new(o.ReceivedAt.Add(PayoutWindow))
 }
 
-// Complete is the payout landing. It is the end of the happy path, and the only thing that
-// sets the completion timestamp.
-func (o *Order) Complete(payoutSessionID int64) error {
+// Complete claims the payout: it is the end of the happy path, and the only thing that sets
+// the completion timestamp. It does not record the money as released — MarkPayoutReleased
+// does, once finance says so — because whoever writes the outcome wins the escrow, and that has
+// to be settled before the money moves.
+func (o *Order) Complete() error {
 	if o.Settled() {
 		return ErrOrderSettled
 	}
 	if o.ReceivedAt == nil {
 		return ErrOrderNotCancellable
 	}
-	if payoutSessionID != 0 {
-		o.PayoutSessionID = &payoutSessionID
-	}
 	o.CompletedAt = new(time.Now())
 	return nil
+}
+
+// MarkPayoutReleased records that the escrow reached the seller. Separate from Complete so a
+// release that failed leaves a completed order with no release time — which is exactly the list
+// the retry pass reads, and the reason it does not have to ask finance about every sale that
+// ever completed.
+func (o *Order) MarkPayoutReleased() {
+	if o.PayoutReleasedAt == nil {
+		o.PayoutReleasedAt = new(time.Now())
+	}
 }
 
 // Cancel voids an order before it ships. After that the buyer asks for a refund: a parcel

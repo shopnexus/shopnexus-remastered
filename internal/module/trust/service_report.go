@@ -2,8 +2,9 @@ package trust
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"time"
+	"net/http"
 
 	accountapi "shopnexus/internal/module/account/api"
 	catalogapi "shopnexus/internal/module/catalog/api"
@@ -73,7 +74,7 @@ func (s *Service) ListMyReports(ctx context.Context, req trustapi.ListReportsReq
 	if err := s.v.Struct(req); err != nil {
 		return trustapi.ReportPage{}, err
 	}
-	cursor, err := cursorFilter(req.Cursor, req.Limit)
+	cursor, err := timeCursor(req.Cursor, req.Limit)
 	if err != nil {
 		return trustapi.ReportPage{}, err
 	}
@@ -83,7 +84,7 @@ func (s *Service) ListMyReports(ctx context.Context, req trustapi.ListReportsReq
 	if err != nil {
 		return trustapi.ReportPage{}, fmt.Errorf("list reports: %w", err)
 	}
-	rows, meta := paginate(rows, req.Limit, func(r domain.Report) time.Time { return r.CreatedAt })
+	rows, meta := paginate(rows, req.Limit, reportKey)
 	data := make([]trustapi.Report, 0, len(rows))
 	for _, row := range rows {
 		prefix, _ := prefixFor(row.RefType)
@@ -101,7 +102,7 @@ func (s *Service) AdminListReports(ctx context.Context, req trustapi.AdminListRe
 	if err := s.requireModerator(ctx, req.ActorID); err != nil {
 		return trustapi.AdminReportPage{}, err
 	}
-	cursor, err := cursorFilter(req.Cursor, req.Limit)
+	cursor, err := timeCursor(req.Cursor, req.Limit)
 	if err != nil {
 		return trustapi.AdminReportPage{}, err
 	}
@@ -115,16 +116,12 @@ func (s *Service) AdminListReports(ctx context.Context, req trustapi.AdminListRe
 	if err != nil {
 		return trustapi.AdminReportPage{}, fmt.Errorf("list reports: %w", err)
 	}
-	rows, meta := paginate(rows, req.Limit, func(r domain.Report) time.Time { return r.CreatedAt })
-	data := make([]trustapi.AdminReport, 0, len(rows))
-	for _, row := range rows {
-		// The queue is a work list: it carries the reporter and the pattern, not the
-		// reported content, which the single-report read fetches.
-		entry, err := s.adminView(ctx, req.ActorID, row, false)
-		if err != nil {
-			return trustapi.AdminReportPage{}, err
-		}
-		data = append(data, entry)
+	rows, meta := paginate(rows, req.Limit, reportKey)
+	// The queue is a work list: it carries the reporter and the pattern, not the reported
+	// content, which the single-report read fetches.
+	data, err := s.adminViews(ctx, req.ActorID, rows, false)
+	if err != nil {
+		return trustapi.AdminReportPage{}, err
 	}
 	return trustapi.AdminReportPage{Data: data, Meta: meta}, nil
 }
@@ -142,7 +139,11 @@ func (s *Service) AdminGetReport(ctx context.Context, req trustapi.ReportRequest
 	if err != nil {
 		return trustapi.AdminReport{}, fmt.Errorf("find report: %w", err)
 	}
-	return s.adminView(ctx, req.ActorID, r, true)
+	entries, err := s.adminViews(ctx, req.ActorID, []domain.Report{r}, true)
+	if err != nil {
+		return trustapi.AdminReport{}, err
+	}
+	return entries[0], nil
 }
 
 // AdminClaimReport takes an open case for review, so two moderators do not work the same one.
@@ -161,8 +162,13 @@ func (s *Service) AdminClaimReport(ctx context.Context, req trustapi.ReportReque
 		return trustapi.Report{}, err
 	}
 	// Guarded by the status it moves from, so two moderators claiming at once means one wins.
+	// Only that refusal is a conflict: a connection that dropped is not "already claimed", and
+	// answering 409 to it sends a moderator looking for a colleague who was never there.
 	if err := s.repo.SaveReport(ctx, r, []string{domain.ReportStatusOpen}); err != nil {
-		return trustapi.Report{}, domain.ErrReportNotClaimable
+		if errors.Is(err, domain.ErrReportResolved) {
+			return trustapi.Report{}, domain.ErrReportNotClaimable
+		}
+		return trustapi.Report{}, fmt.Errorf("save report: %w", err)
 	}
 	prefix, _ := prefixFor(r.RefType)
 	return toAPIReport(r, prefix), nil
@@ -215,10 +221,15 @@ func (s *Service) requireTarget(ctx context.Context, actorID id.ID[id.Account], 
 	case domain.ReportRefReviewReply:
 		_, err = s.repo.FindReply(ctx, refID)
 	}
-	if err != nil {
+	if err == nil {
+		return nil
+	}
+	// Only a not-found means the target is not there. Telling a reporter their target does not
+	// exist because chat was briefly unreachable makes them stop reporting it.
+	if status, _, _, ok := errx.Decompose(err); ok && status == http.StatusNotFound {
 		return domain.ErrReportTargetNotFound
 	}
-	return nil
+	return fmt.Errorf("read report target: %w", err)
 }
 
 // target is the reported content, fetched from the module that owns it. Best-effort: a
@@ -280,34 +291,53 @@ func (s *Service) target(ctx context.Context, actorID id.ID[id.Account], r domai
 	return nil
 }
 
-func (s *Service) adminView(ctx context.Context, actorID id.ID[id.Account], r domain.Report,
-	withTarget bool) (trustapi.AdminReport, error) {
-	reporter, err := s.summary(ctx, r.ReporterID)
-	if err != nil {
-		return trustapi.AdminReport{}, err
+// adminViews renders a page of the queue: the names, the patterns, each resolved once for the
+// whole page rather than per row. A page of twenty used to cost about sixty round trips — two
+// account reads and a count per entry — which is the same N+1 the review page already avoids.
+func (s *Service) adminViews(ctx context.Context, actorID id.ID[id.Account], rows []domain.Report,
+	withTarget bool) ([]trustapi.AdminReport, error) {
+	if len(rows) == 0 {
+		return []trustapi.AdminReport{}, nil
 	}
-	count, err := s.repo.CountOpenAgainst(ctx, r.RefType, r.RefID)
-	if err != nil {
-		return trustapi.AdminReport{}, fmt.Errorf("count open reports: %w", err)
-	}
-	prefix, _ := prefixFor(r.RefType)
-	entry := trustapi.AdminReport{
-		Report:                   toAPIReport(r, prefix),
-		Reporter:                 reporter,
-		OpenReportsAgainstTarget: count,
-	}
-	if r.ResolvedByID != nil {
-		resolver, err := s.summary(ctx, *r.ResolvedByID)
-		if err != nil {
-			return trustapi.AdminReport{}, err
+	accountIDs := make([]int64, 0, 2*len(rows))
+	targets := make([]port.ReportTarget, 0, len(rows))
+	for _, row := range rows {
+		accountIDs = append(accountIDs, row.ReporterID)
+		if row.ResolvedByID != nil {
+			accountIDs = append(accountIDs, *row.ResolvedByID)
 		}
-		entry.ResolvedBy = &resolver
+		targets = append(targets, port.ReportTarget{RefType: row.RefType, RefID: row.RefID})
 	}
-	if withTarget {
-		entry.Target = s.target(ctx, actorID, r)
+	counts, err := s.repo.CountOpenAgainst(ctx, targets)
+	if err != nil {
+		return nil, fmt.Errorf("count open reports: %w", err)
 	}
-	return entry, nil
+	names := s.summaries(ctx, accountIDs)
+
+	out := make([]trustapi.AdminReport, 0, len(rows))
+	for _, row := range rows {
+		prefix, _ := prefixFor(row.RefType)
+		entry := trustapi.AdminReport{
+			Report:   toAPIReport(row, prefix),
+			Reporter: names[row.ReporterID],
+			OpenReportsAgainstTarget: counts[port.ReportTarget{
+				RefType: row.RefType, RefID: row.RefID,
+			}],
+		}
+		if row.ResolvedByID != nil {
+			resolver := names[*row.ResolvedByID]
+			entry.ResolvedBy = &resolver
+		}
+		if withTarget {
+			entry.Target = s.target(ctx, actorID, row)
+		}
+		out = append(out, entry)
+	}
+	return out, nil
 }
+
+// reportKey is the pair the queue and the reporter's history both order by.
+func reportKey(r domain.Report) (int64, int64) { return r.CreatedAt.UnixNano(), r.ID }
 
 func toAPIReport(r domain.Report, prefix string) trustapi.Report {
 	return trustapi.Report{

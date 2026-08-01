@@ -180,7 +180,7 @@ func TestPostSystemMessage_IsNotAUsers(t *testing.T) {
 	}
 
 	if err := mustErr(h.svc.UpdateMessage(ctx, chatapi.UpdateMessageRequest{
-		ActorID: alice, ID: card.ID, Body: "forged",
+		ActorID: alice, ID: card.ID, Body: "forged", CreatedAt: card.CreatedAt,
 	})); status(t, err) != 403 {
 		t.Error("a user edited a system message")
 	}
@@ -203,12 +203,12 @@ func TestMessage_EditAndRedact(t *testing.T) {
 	}
 
 	if err := mustErr(h.svc.UpdateMessage(ctx, chatapi.UpdateMessageRequest{
-		ActorID: bob, ID: sent.ID, Body: "not mine",
+		ActorID: bob, ID: sent.ID, Body: "not mine", CreatedAt: sent.CreatedAt,
 	})); status(t, err) != 403 {
 		t.Error("somebody else edited the message")
 	}
 	edited, err := h.svc.UpdateMessage(ctx, chatapi.UpdateMessageRequest{
-		ActorID: alice, ID: sent.ID, Body: "hello again",
+		ActorID: alice, ID: sent.ID, Body: "hello again", CreatedAt: sent.CreatedAt,
 	})
 	if err != nil {
 		t.Fatalf("UpdateMessage: %v", err)
@@ -217,7 +217,9 @@ func TestMessage_EditAndRedact(t *testing.T) {
 		t.Fatalf("message = %+v, want it edited and marked", edited)
 	}
 
-	if err := h.svc.RedactMessage(ctx, chatapi.RedactMessageRequest{ActorID: alice, ID: sent.ID}); err != nil {
+	if err := h.svc.RedactMessage(ctx, chatapi.RedactMessageRequest{
+		ActorID: alice, ID: sent.ID, CreatedAt: sent.CreatedAt,
+	}); err != nil {
 		t.Fatalf("RedactMessage: %v", err)
 	}
 	page, err := h.svc.ListMessages(ctx, chatapi.ListMessagesRequest{
@@ -239,6 +241,53 @@ func TestMessage_EditAndRedact(t *testing.T) {
 	}
 	if badge.Unread != 0 {
 		t.Fatalf("badge = %+v, want a redacted message not to count", badge)
+	}
+}
+
+// CURRENT_TIMESTAMP is transaction-scoped, so two messages written in one transaction can
+// share created_at exactly. A bare-timestamp cursor would then exclude whichever one page
+// N did not return; the (created_at, id) tuple cursor must not.
+func TestListMessages_CursorDoesNotSkipATimestampTie(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	thread, err := h.svc.StartConversation(ctx, chatapi.StartConversationRequest{ActorID: alice, AccountID: bob})
+	if err != nil {
+		t.Fatalf("StartConversation: %v", err)
+	}
+	first, err := h.svc.SendMessage(ctx, chatapi.SendMessageRequest{
+		ActorID: alice, ConversationID: thread.ID, Body: "one",
+	})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	second, err := h.svc.SendMessage(ctx, chatapi.SendMessageRequest{
+		ActorID: alice, ConversationID: thread.ID, Body: "two",
+	})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	// Force the tie the real database produces for a same-transaction write.
+	for i := range h.repo.messages {
+		if h.repo.messages[i].ID == second.ID.Int64() {
+			h.repo.messages[i].CreatedAt = first.CreatedAt
+		}
+	}
+
+	page, err := h.svc.ListMessages(ctx, chatapi.ListMessagesRequest{ActorID: alice, ID: thread.ID, Limit: 1})
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if len(page.Data) != 1 || !page.Meta.HasMore {
+		t.Fatalf("page 1 = %+v, want one row and another page", page)
+	}
+	next, err := h.svc.ListMessages(ctx, chatapi.ListMessagesRequest{
+		ActorID: alice, ID: thread.ID, Cursor: page.Meta.NextCursor, Limit: 1,
+	})
+	if err != nil {
+		t.Fatalf("ListMessages(page 2): %v", err)
+	}
+	if len(next.Data) != 1 {
+		t.Fatalf("page 2 = %+v, want the tied message rather than being skipped", next.Data)
 	}
 }
 

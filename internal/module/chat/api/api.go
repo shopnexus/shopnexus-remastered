@@ -98,7 +98,7 @@ type ListMessagesRequest struct {
 	ActorID id.ID[id.Account]      `json:"-" validate:"required"`
 	ID      id.ID[id.Conversation] `json:"-" validate:"required"`
 	Cursor  string                 `json:"-"`
-	Limit   int                    `json:"-" validate:"required,min=1,max=200"`
+	Limit   int                    `json:"-" validate:"required,min=1,max=100"`
 }
 
 type SendMessageRequest struct {
@@ -112,20 +112,28 @@ type SendMessageRequest struct {
 type MarkConversationReadRequest struct {
 	ActorID id.ID[id.Account]      `json:"-" validate:"required"`
 	ID      id.ID[id.Conversation] `json:"-" validate:"required"`
-	// At is how far the caller has read. Absent means "everything so far", which is what
-	// opening a thread does; a value is what a client that tracks its own scroll sends.
-	At *time.Time `json:"at,omitempty"`
+	// Before is how far the caller has read. Absent means "everything so far", which is
+	// what opening a thread does; a value is what a client that tracks its own scroll
+	// sends. Named to match the spec's field, since the wire body is what a client codes
+	// against.
+	Before *time.Time `json:"before,omitempty"`
 }
 
 type UpdateMessageRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	ID      id.ID[id.Message] `json:"-" validate:"required"`
 	Body    string            `json:"body" validate:"required,max=4000"`
+	// CreatedAt is the message's own, off the query string: message is a hypertable whose
+	// primary key is (id, created_at), so this is what turns the lookup into a point
+	// lookup instead of a scan of every chunk.
+	CreatedAt time.Time `json:"-" validate:"required"`
 }
 
 type RedactMessageRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	ID      id.ID[id.Message] `json:"-" validate:"required"`
+	// CreatedAt is the message's own, off the query string — see UpdateMessageRequest.
+	CreatedAt time.Time `json:"-" validate:"required"`
 }
 
 // GetMessageRequest reads one message. A participant may read their own thread's; a

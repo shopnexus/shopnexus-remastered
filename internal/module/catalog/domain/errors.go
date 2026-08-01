@@ -53,6 +53,10 @@ var (
 	ErrTooManyFeatured        = errx.NewError(http.StatusConflict, "too_many_featured", "only one variant can be featured")
 	ErrQuantityBelowCommitted = errx.NewError(http.StatusUnprocessableEntity, "quantity_below_committed", "quantity is below what is already reserved or sold")
 	ErrInsufficientStock      = errx.NewError(http.StatusConflict, "insufficient_stock", "not enough stock for this variant")
+	// ErrStockMovementKeyRequired is a commit or a reversal with no idempotency key. 500
+	// because it is a caller the validator should have refused: neither move is recoverable
+	// from the counters, so applying one without a key is applying it an unknown number of times.
+	ErrStockMovementKeyRequired = errx.NewError(http.StatusInternalServerError, "stock_movement_key_required", "a stock commit needs an idempotency key")
 	// ErrFeaturedNotMine is a programmer error rather than a client one: the featured
 	// variant is chosen from the listing's own set, and the schema cannot express any
 	// other kind. 500 because the request was fine.

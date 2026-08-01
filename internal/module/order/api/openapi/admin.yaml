@@ -6,13 +6,10 @@ paths:
       tags: [admin]
       summary: The moderator's dispute queue
       description: >
-        Open rounds, oldest first, which is the order they should be worked. Round 2
-        entries are appeals on a refund a moderator has already ruled on once, so the
-        previous verdict comes with them.
+        Open rounds, oldest first, which is the order they should be worked. A round names the
+        refund it is about; the case itself is read through `GET /refunds/{id}`.
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: status, in: query, schema: { $ref: '#/components/schemas/DisputeStatus' }, description: Defaults to open. }
-        - { name: round, in: query, schema: { type: integer, enum: [1, 2] } }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -30,14 +27,18 @@ paths:
         moderator picks:
 
 
-        Round 1 — `buyer-wins` grants the refund and books the return shipment, so the
-        money is not released yet; `seller-wins` ends the refund and lets the payout
-        stand.
+        Round 1 — `buyer_wins: true` grants the refund and books the return shipment, so the
+        money is not released yet; `false` ends the refund and lets the payout stand.
 
 
-        Round 2, the seller's appeal on what arrived — `seller-wins` upholds it, ends
-        the refund and pays the seller out; `buyer-wins` denies it and releases the
-        money to the buyer.
+        Round 2, the seller's appeal on what arrived — `buyer_wins: false` upholds it, ends the
+        refund and lets the payout stand; `true` denies it, so the escrow goes back to the buyer
+        and the order closes with it.
+
+
+        The money moves before either row is written, and the verdict and the refund it moved are
+        written together: a ruled round over a case still `disputed` is a state nothing can get
+        out of, and a settled refund over an order the payout can still see is money paid twice.
 
 
         There is no third round. Round 2 is where an appeal already lives, so a ruling
@@ -58,7 +59,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: { $ref: '#/components/schemas/Refund' }
+                  data: { $ref: '#/components/schemas/RefundDispute' }
                 required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -68,26 +69,11 @@ paths:
 
 components:
   schemas:
-    AdminDisputeQueueEntry:
-      type: object
-      description: >
-        A queue row is the open round plus the refund it belongs to, since a moderator
-        decides on the case and not on the round in isolation.
-      properties:
-        round: { $ref: '#/components/schemas/DisputeRound' }
-        refund: { $ref: '#/components/schemas/Refund' }
-      required: [round, refund]
-
-    RefundDisputePage:
-      type: object
-      properties:
-        data: { type: array, items: { $ref: '#/components/schemas/AdminDisputeQueueEntry' } }
-        meta: { $ref: '#/components/schemas/CursorMeta' }
-      required: [data, meta]
-
     DisputeRulingRequest:
       type: object
+      description: A ruling, so there is no "still open" choice — which is why the verdict is a
+        boolean rather than the status enum.
       properties:
-        outcome: { $ref: '#/components/schemas/DisputeOutcome' }
-        note: { type: string, maxLength: 2000, description: 'Recorded for audit; the ruling is final' }
-      required: [outcome, note]
+        buyer_wins: { type: boolean, example: true, description: 'What that does depends on the round; see the endpoint.' }
+        note: { type: string, maxLength: 2000, example: Evidence is clear, description: 'Recorded with the verdict; the ruling is final' }
+      required: [buyer_wins]

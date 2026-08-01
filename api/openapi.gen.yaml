@@ -80,25 +80,6 @@ components:
                 - contact_id
                 - transport_option
             type: object
-        AcceptRefundRequest:
-            description: |
-                Accepting books the return, so the seller says here where it goes and by which carrier. `pickup_contact_id` defaults to the seller's default pickup address.
-            properties:
-                note:
-                    maxLength: 2000
-                    type: string
-                pickup_contact_id:
-                    allOf:
-                        - $ref: '#/components/schemas/ContactID'
-                    description: Where the return is delivered. Defaults to the seller's pickup address.
-                transport_option:
-                    description: A transport option slug owned by the common module.
-                    maxLength: 100
-                    pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
-                    type: string
-            required:
-                - transport_option
-            type: object
         AccountID:
             example: acc_62mxefynht57b
             pattern: ^acc_[0-9a-hjkmnp-tv-z]{13}$
@@ -149,6 +130,7 @@ components:
                 attachments:
                     items:
                         $ref: '#/components/schemas/ResourceID'
+                    maxItems: 10
                     minItems: 1
                     type: array
             required:
@@ -223,18 +205,6 @@ components:
             required:
                 - data
                 - meta
-            type: object
-        AdminDisputeQueueEntry:
-            description: |
-                A queue row is the open round plus the refund it belongs to, since a moderator decides on the case and not on the round in isolation.
-            properties:
-                refund:
-                    $ref: '#/components/schemas/Refund'
-                round:
-                    $ref: '#/components/schemas/DisputeRound'
-            required:
-                - round
-                - refund
             type: object
         AdminIdentityDocument:
             description: A queue entry, which needs the subject alongside the document.
@@ -344,14 +314,6 @@ components:
             required:
                 - data
             type: object
-        CancellationRequest:
-            properties:
-                reason:
-                    maxLength: 2000
-                    type: string
-            required:
-                - reason
-            type: object
         CartItem:
             description: |
                 Carries the listing id as well as the variant's, because a variant has no read of its own in the catalog: rendering the cart is one `GET /listings?ids=` over the `listing_id`s, and the row would otherwise be unresolvable.
@@ -381,18 +343,6 @@ components:
             example: crt_3n8kvq1wd6ptz
             pattern: ^crt_[0-9a-hjkmnp-tv-z]{13}$
             type: string
-        CartItemPage:
-            properties:
-                data:
-                    items:
-                        $ref: '#/components/schemas/CartItem'
-                    type: array
-                meta:
-                    $ref: '#/components/schemas/PageMeta'
-            required:
-                - data
-                - meta
-            type: object
         Category:
             properties:
                 description:
@@ -458,26 +408,22 @@ components:
                 - conversations
             type: object
         CheckoutLine:
+            description: One variant and how many of it.
             properties:
-                note:
-                    maxLength: 500
-                    type: string
                 quantity:
+                    example: 2
                     format: int64
                     minimum: 1
                     type: integer
-                transport_option:
-                    maxLength: 100
-                    pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
-                    type: string
                 variant_id:
                     $ref: '#/components/schemas/VariantID'
             required:
                 - variant_id
                 - quantity
-                - transport_option
             type: object
         CheckoutRequest:
+            description: |
+                The carrier and the note are per checkout, not per line: one session covers one listing and therefore one seller and one parcel.
             properties:
                 contact_id:
                     $ref: '#/components/schemas/ContactID'
@@ -490,24 +436,45 @@ components:
                         $ref: '#/components/schemas/CheckoutLine'
                     minItems: 1
                     type: array
+                note:
+                    example: Please leave at reception
+                    maxLength: 500
+                    type: string
+                transport_option:
+                    description: |
+                        An enabled transport option's slug. The buyer pays delivery, so the trade-off between price and speed is theirs.
+                    example: ghn-express
+                    maxLength: 100
+                    type: string
             required:
                 - lines
                 - contact_id
+                - transport_option
                 - currency
             type: object
         CheckoutResult:
             description: |
-                The items and the single session that pays for them. Nothing is settled until the session succeeds, and no order exists until the seller confirms.
+                The lines and the single session that pays for them. Nothing is settled yet: the order appears when that session completes, and no seller confirms anything.
             properties:
+                currency:
+                    $ref: '#/components/schemas/CurrencyCode'
                 items:
                     items:
                         $ref: '#/components/schemas/OrderItem'
                     type: array
-                payment_session:
-                    $ref: '#/components/schemas/PaymentSession'
+                payment_session_id:
+                    $ref: '#/components/schemas/PaymentSessionID'
+                total:
+                    description: What the session asks for, smallest currency unit
+                    example: 598000
+                    format: int64
+                    minimum: 0
+                    type: integer
             required:
                 - items
-                - payment_session
+                - payment_session_id
+                - total
+                - currency
             type: object
         ConfirmReceiptRequest:
             properties:
@@ -516,11 +483,9 @@ components:
                         Unboxing photos or video. At least one is mandatory — a later refund or dispute is judged on this evidence.
                     items:
                         $ref: '#/components/schemas/ResourceID'
+                    maxItems: 10
                     minItems: 1
                     type: array
-                note:
-                    maxLength: 2000
-                    type: string
             required:
                 - attachments
             type: object
@@ -911,17 +876,18 @@ components:
                 No item selection and no amount: a refund is for the whole order. Nothing about shipping either — the goods stay with the buyer until the refund is granted.
             properties:
                 attachments:
-                    description: Evidence is mandatory.
+                    description: Evidence, and it can be topped up until the case closes.
                     items:
                         $ref: '#/components/schemas/ResourceID'
-                    minItems: 1
+                    maxItems: 10
                     type: array
                 reason:
+                    example: Not as described
                     maxLength: 2000
+                    minLength: 1
                     type: string
             required:
                 - reason
-                - attachments
             type: object
         CreateVariantRequest:
             properties:
@@ -1028,69 +994,20 @@ components:
                 - android
                 - web
             type: string
-        DisputeOutcome:
-            description: A ruling, so `open` is not one of the choices.
-            enum:
-                - seller-wins
-                - buyer-wins
-            type: string
-        DisputeRound:
-            properties:
-                attachments:
-                    description: This round's opener's evidence. The buyer's original evidence stays on the refund.
-                    items:
-                        $ref: '#/components/schemas/ResourceID'
-                    type: array
-                created_at:
-                    format: date-time
-                    type: string
-                id:
-                    $ref: '#/components/schemas/RefundDisputeID'
-                opened_by_id:
-                    $ref: '#/components/schemas/AccountID'
-                reason:
-                    description: The grounds of whoever opened this round.
-                    type: string
-                resolution_note:
-                    nullable: true
-                    type: string
-                resolved_at:
-                    format: date-time
-                    nullable: true
-                    type: string
-                resolved_by_id:
-                    allOf:
-                        - $ref: '#/components/schemas/AccountID'
-                    description: The moderator who ruled.
-                    nullable: true
-                round:
-                    description: 1 = the buyer escalating, 2 = the seller appealing the return.
-                    enum:
-                        - 1
-                        - 2
-                    type: integer
-                status:
-                    $ref: '#/components/schemas/DisputeStatus'
-            required:
-                - id
-                - round
-                - opened_by_id
-                - status
-                - reason
-                - attachments
-                - created_at
-            type: object
         DisputeRulingRequest:
+            description: A ruling, so there is no "still open" choice — which is why the verdict is a boolean rather than the status enum.
             properties:
+                buyer_wins:
+                    description: What that does depends on the round; see the endpoint.
+                    example: true
+                    type: boolean
                 note:
-                    description: Recorded for audit; the ruling is final
+                    description: Recorded with the verdict; the ruling is final
+                    example: Evidence is clear
                     maxLength: 2000
                     type: string
-                outcome:
-                    $ref: '#/components/schemas/DisputeOutcome'
             required:
-                - outcome
-                - note
+                - buyer_wins
             type: object
         DisputeStatus:
             description: |
@@ -1100,61 +1017,51 @@ components:
                 - seller-wins
                 - buyer-wins
             type: string
-        DraftListingSnapshot:
-            description: |
-                The frozen listing terms. Carries the SKUs because price and shipping weight live there, and those are what must not move under the buyer.
-            properties:
-                attachments:
-                    items:
-                        $ref: '#/components/schemas/ResourceID'
-                    type: array
-                currency:
-                    $ref: '#/components/schemas/CurrencyCode'
-                id:
-                    $ref: '#/components/schemas/ListingID'
-                name:
-                    type: string
-                price_mode:
-                    enum:
-                        - fixed
-                        - negotiable
-                    type: string
-                seller_id:
-                    $ref: '#/components/schemas/AccountID'
-                variants:
-                    items:
-                        $ref: '#/components/schemas/DraftVariantSnapshot'
-                    type: array
-            required:
-                - id
-                - name
-                - seller_id
-                - currency
-                - price_mode
-                - variants
-            type: object
         DraftOrder:
+            description: |
+                The frozen terms, flat rather than nested under a `snapshot`: what a buyer needs is the price they were shown, and the listing's own read answers everything else.
             properties:
                 cancelled_at:
+                    description: |
+                        Set when the buyer closed it, the expiry did, or a checkout spent it — a session is claimed as it is checked out, so exactly one checkout can succeed.
                     format: date-time
                     nullable: true
                     type: string
                 created_at:
                     format: date-time
                     type: string
+                currency:
+                    $ref: '#/components/schemas/CurrencyCode'
                 id:
                     $ref: '#/components/schemas/DraftOrderID'
                 listing_id:
                     $ref: '#/components/schemas/ListingID'
-                snapshot:
-                    $ref: '#/components/schemas/DraftListingSnapshot'
+                name:
+                    example: Ao thun cotton
+                    type: string
+                price_mode:
+                    enum:
+                        - fixed
+                        - negotiable
+                    example: fixed
+                    type: string
+                seller_id:
+                    $ref: '#/components/schemas/AccountID'
                 valid_until:
                     format: date-time
                     type: string
+                variants:
+                    items:
+                        $ref: '#/components/schemas/DraftVariantSnapshot'
+                    type: array
             required:
                 - id
                 - listing_id
-                - snapshot
+                - seller_id
+                - name
+                - currency
+                - price_mode
+                - variants
                 - created_at
                 - valid_until
             type: object
@@ -1169,26 +1076,17 @@ components:
                         $ref: '#/components/schemas/DraftOrder'
                     type: array
                 meta:
-                    $ref: '#/components/schemas/PageMeta'
+                    $ref: '#/components/schemas/CursorMeta'
             required:
                 - data
                 - meta
             type: object
         DraftVariantSnapshot:
-            description: One purchasable variant as it stood when the session opened.
+            description: |
+                One purchasable variant at the price this session froze. Package details are held in the row but not published: they are what the shipping quote is computed from, not something a buyer picks.
             properties:
-                attachments:
-                    items:
-                        $ref: '#/components/schemas/ResourceID'
-                    type: array
                 attributes:
                     additionalProperties: true
-                    type: object
-                id:
-                    $ref: '#/components/schemas/VariantID'
-                package_details:
-                    additionalProperties: true
-                    description: Weight and dimensions; the shipping quote is computed from these.
                     type: object
                 price:
                     description: Smallest currency unit
@@ -1196,8 +1094,10 @@ components:
                     format: int64
                     minimum: 1
                     type: integer
+                variant_id:
+                    $ref: '#/components/schemas/VariantID'
             required:
-                - id
+                - variant_id
                 - price
             type: object
         EmailVerificationRequest:
@@ -2018,39 +1918,36 @@ components:
             type: string
         OpenDisputeRequest:
             description: |
-                Grounds and evidence for the round being opened — the buyer's objection to a refusal, or the seller's account of what actually arrived. Both are mandatory: a moderator rules on evidence, and a round opened without any is one they cannot decide.
+                The grounds for the round being opened — the buyer's objection to a refusal, or the seller's account of what actually arrived. Supporting files go on the case through `POST /refunds/{id}/attachments`, which is where all of a party's evidence lives.
             properties:
-                attachments:
-                    items:
-                        $ref: '#/components/schemas/ResourceID'
-                    minItems: 1
-                    type: array
                 reason:
+                    example: The photos show a different item
                     maxLength: 2000
                     minLength: 1
                     type: string
             required:
                 - reason
-                - attachments
             type: object
         Order:
             properties:
                 address:
                     $ref: '#/components/schemas/OrderAddressSnapshot'
-                buyer_id:
-                    $ref: '#/components/schemas/AccountID'
+                buyer:
+                    $ref: '#/components/schemas/AccountSummary'
                 cancelled_at:
                     format: date-time
                     nullable: true
                     type: string
                 completed_at:
-                    description: Set by the payout job
+                    description: Set when the payout is claimed
                     format: date-time
                     nullable: true
                     type: string
                 created_at:
                     format: date-time
                     type: string
+                currency:
+                    $ref: '#/components/schemas/CurrencyCode'
                 draft_id:
                     allOf:
                         - $ref: '#/components/schemas/DraftOrderID'
@@ -2070,42 +1967,54 @@ components:
                     nullable: true
                 payout_deadline_at:
                     description: |
-                        `received_at` + 72h, computed rather than stored. A job pays the seller out at this point unless a refund is live on the order.
+                        `received_at` + 72h, computed rather than stored. The seller is paid out at this point unless a refund still has a claim on the escrow.
                     format: date-time
                     nullable: true
                     type: string
-                payout_session_id:
-                    allOf:
-                        - $ref: '#/components/schemas/PaymentSessionID'
-                    description: The escrow release to the seller. Set once the payout job has run.
+                payout_released_at:
+                    description: |
+                        When the escrow reached the seller. Null on a completed order means the release has not landed yet — the platform owes the seller and knows it, and a retry pass keeps trying until it does.
+                    format: date-time
                     nullable: true
+                    type: string
                 pickup_address:
                     $ref: '#/components/schemas/OrderAddressSnapshot'
                 receipt_attachments:
                     description: |
                         Unboxing evidence, captured with the receipt confirmation and never added to afterwards — a refund is judged on what the buyer showed at the moment of unboxing.
                     items:
-                        $ref: '#/components/schemas/ResourceID'
+                        $ref: '#/components/schemas/Resource'
                     type: array
                 received_at:
                     description: When the buyer confirmed receipt. Null means the payout clock has not started.
                     format: date-time
                     nullable: true
                     type: string
-                seller_id:
-                    $ref: '#/components/schemas/AccountID'
+                seller:
+                    $ref: '#/components/schemas/AccountSummary'
                 state:
                     $ref: '#/components/schemas/OrderState'
-                transport_id:
-                    $ref: '#/components/schemas/TransportID'
+                total:
+                    description: |
+                        Summed from the live lines rather than stored: the lines are the record of what was paid, and a column would be a second answer to the same question.
+                    example: 598000
+                    format: int64
+                    minimum: 0
+                    type: integer
+                transport:
+                    allOf:
+                        - $ref: '#/components/schemas/Transport'
+                    description: |
+                        The shipment, carried in full rather than as an id: it has no read of its own outside the order it belongs to.
             required:
                 - id
-                - buyer_id
-                - seller_id
-                - transport_id
+                - buyer
+                - seller
                 - address
                 - pickup_address
                 - state
+                - total
+                - currency
                 - receipt_attachments
                 - created_at
             type: object
@@ -2113,52 +2022,39 @@ components:
             description: |
                 A contact copied into the row, not a pointer to one. The administrative codes are what a carrier is called with, and the saved contact may have changed since the order was placed.
             properties:
-                address:
-                    description: Street or house-number line, below ward level
-                    type: string
                 address_detail:
-                    description: Unit, floor, notes
+                    description: The street line and anything below it
+                    example: Apt 4B, 12 Nguyen Hue
                     nullable: true
                     type: string
                 country:
                     description: ISO 3166-1 alpha-2
+                    example: VN
                     maxLength: 2
                     minLength: 2
                     type: string
                 district_code:
                     description: Null where the country has no district tier
-                    nullable: true
-                    type: string
-                district_name:
+                    example: "760"
                     nullable: true
                     type: string
                 full_name:
+                    example: Nguyen Van A
                     type: string
                 phone:
                     description: E.164
+                    example: "+84900000001"
                     type: string
-                postal_code:
-                    nullable: true
-                    type: string
-                provider_codes:
-                    additionalProperties: true
-                    description: 'Per-carrier territory ids, e.g. {"ghn": {"province_id": 201}}'
-                    type: object
                 province_code:
-                    type: string
-                province_name:
+                    example: "79"
                     type: string
                 ward_code:
-                    type: string
-                ward_name:
+                    example: "26743"
                     type: string
             required:
                 - full_name
                 - phone
                 - country
-                - province_code
-                - ward_code
-                - address
             type: object
         OrderFeedback:
             description: |
@@ -2191,27 +2087,18 @@ components:
             pattern: ^ord_[0-9a-hjkmnp-tv-z]{13}$
             type: string
         OrderItem:
+            description: |
+                One purchased line. It exists from checkout, before the money lands: that window is the whole of what a null `order_id` means.
             properties:
-                address:
-                    $ref: '#/components/schemas/OrderAddressSnapshot'
-                buyer_id:
-                    $ref: '#/components/schemas/AccountID'
                 cancelled_at:
                     format: date-time
                     nullable: true
                     type: string
-                cancelled_by_id:
-                    allOf:
-                        - $ref: '#/components/schemas/AccountID'
-                    description: Null means the system cancelled it.
-                    nullable: true
                 created_at:
                     format: date-time
                     type: string
                 currency:
                     $ref: '#/components/schemas/CurrencyCode'
-                draft_id:
-                    $ref: '#/components/schemas/DraftOrderID'
                 id:
                     $ref: '#/components/schemas/OrderItemID'
                 listing_id:
@@ -2220,16 +2107,19 @@ components:
                     description: |
                         The listing the variant belongs to, denormalized the same way `seller_id` is, so order history can resolve it through `GET /listings?ids=` — which answers for a listing the seller has since hidden or deleted.
                 note:
-                    description: Buyer note
-                    nullable: true
+                    description: Buyer note, per checkout
+                    example: Please leave at reception
                     type: string
                 order_id:
                     allOf:
                         - $ref: '#/components/schemas/OrderID'
-                    description: Null until the seller confirms.
+                    description: |
+                        Null until the payment session completes and the webhook writes the order. Nobody confirms it — a seller can refuse a price, never a sale.
                     nullable: true
-                payment_status:
-                    $ref: '#/components/schemas/OrderPaymentStatus'
+                payment_session_id:
+                    allOf:
+                        - $ref: '#/components/schemas/PaymentSessionID'
+                    description: The single session covering every line of this checkout.
                 quantity:
                     example: 2
                     format: int64
@@ -2237,8 +2127,6 @@ components:
                     type: integer
                 seller_id:
                     $ref: '#/components/schemas/AccountID'
-                state:
-                    $ref: '#/components/schemas/OrderItemState'
                 total_amount:
                     description: Paid amount in the smallest unit of `currency`
                     example: 598000
@@ -2246,24 +2134,21 @@ components:
                     minimum: 0
                     type: integer
                 transport_option:
-                    description: A transport option slug owned by the common module
+                    description: An enabled transport option's slug
+                    example: ghn-express
                     type: string
                 variant_id:
                     $ref: '#/components/schemas/VariantID'
             required:
                 - id
-                - draft_id
-                - buyer_id
-                - seller_id
                 - listing_id
                 - variant_id
+                - seller_id
                 - quantity
                 - currency
                 - total_amount
                 - transport_option
-                - address
-                - state
-                - payment_status
+                - payment_session_id
                 - created_at
             type: object
         OrderItemID:
@@ -2282,14 +2167,6 @@ components:
                 - data
                 - meta
             type: object
-        OrderItemState:
-            description: |
-                Derived, not stored. `pending` = paid but no order covers it yet, `confirmed` = linked to an order, `cancelled` = withdrawn by either party.
-            enum:
-                - pending
-                - confirmed
-                - cancelled
-            type: string
         OrderPage:
             properties:
                 data:
@@ -2302,15 +2179,6 @@ components:
                 - data
                 - meta
             type: object
-        OrderPaymentStatus:
-            description: Status of the payment session covering the item; owned by finance.
-            enum:
-                - pending
-                - processing
-                - success
-                - cancelled
-                - failed
-            type: string
         OrderState:
             description: |
                 Derived from the two outcome timestamps: `open` means neither is set, which is also the predicate of the partial indexes behind this filter.
@@ -2369,13 +2237,6 @@ components:
             type: object
         PaymentSession:
             properties:
-                amount_paid:
-                    description: |
-                        Sum of the settled legs, so a partly-tendered session is distinguishable from an unpaid one. Signed, so a reversal brings it back down — after a full refund this reads zero again. It is what the rails currently hold, not a running total of what was ever charged; the ledger has that.
-                    example: 598000
-                    format: int64
-                    minimum: 0
-                    type: integer
                 created_at:
                     format: date-time
                     type: string
@@ -2396,6 +2257,13 @@ components:
                     $ref: '#/components/schemas/PaymentSessionKind'
                 note:
                     type: string
+                outstanding:
+                    description: |
+                        The total less what has already settled on a rail: what a further payment may still tender. Computed, because a stored copy would be a second fact to keep in step with every leg.
+                    example: 299000
+                    format: int64
+                    minimum: 0
+                    type: integer
                 paid_at:
                     format: date-time
                     nullable: true
@@ -2419,8 +2287,7 @@ components:
                 - status
                 - currency
                 - total_amount
-                - amount_paid
-                - note
+                - outstanding
                 - created_at
                 - expired_at
             type: object
@@ -2443,7 +2310,7 @@ components:
                         $ref: '#/components/schemas/PaymentSession'
                     type: array
                 meta:
-                    $ref: '#/components/schemas/CursorMeta'
+                    $ref: '#/components/schemas/PageMeta'
             required:
                 - data
                 - meta
@@ -2595,12 +2462,12 @@ components:
             type: object
         Refund:
             description: |
-                The whole case. Always for one entire order, so it carries no amount of its own — what is owed is the order's checkout total.
+                The case. Always for one entire order, so it carries no amount of its own — what is owed is the order's checkout total.
             properties:
                 attachments:
                     description: The buyer's evidence. Each dispute round holds its opener's.
                     items:
-                        $ref: '#/components/schemas/ResourceID'
+                        $ref: '#/components/schemas/Resource'
                     type: array
                 buyer_id:
                     $ref: '#/components/schemas/AccountID'
@@ -2613,29 +2480,18 @@ components:
                     format: date-time
                     nullable: true
                     type: string
-                dispute:
-                    allOf:
-                        - $ref: '#/components/schemas/RefundDispute'
-                    description: |
-                        The moderation case, with every round it has been through. Null until somebody escalates.
-                    nullable: true
                 id:
                     $ref: '#/components/schemas/RefundID'
                 order_id:
                     $ref: '#/components/schemas/OrderID'
                 reason:
+                    example: Not as described
                     type: string
                 rejection_reason:
                     description: |
                         The seller's grounds for refusing. Null in `awaiting-buyer-action` when the seller never answered at all, which is how the two paths into that state are told apart.
                     nullable: true
                     type: string
-                return_transport:
-                    allOf:
-                        - $ref: '#/components/schemas/Transport'
-                    description: |
-                        The leg carrying the goods back, booked when the refund is granted and not before. Carried in full rather than as an id: the buyer was told to send this parcel, so they have to be able to track it, and a shipment has no read of its own outside the thing it belongs to.
-                    nullable: true
                 returned_at:
                     description: When the return reached the seller and the inspection window opened.
                     format: date-time
@@ -2658,30 +2514,45 @@ components:
             type: object
         RefundDispute:
             description: |
-                One moderation case on one refund, as the rounds it has been through. Read inside the refund; there is no separate dispute resource, because a dispute never exists apart from the refund it is about.
+                One round of moderation on one refund. A second round rather than a second verdict on the first, so ruling for the buyer and then for the seller stays legible as two decisions instead of one that changed its mind.
             properties:
-                buyer_id:
+                created_at:
+                    format: date-time
+                    type: string
+                id:
+                    $ref: '#/components/schemas/RefundDisputeID'
+                note:
+                    description: The moderator's, recorded with the verdict
+                    example: Evidence is clear
+                    type: string
+                opened_by:
                     $ref: '#/components/schemas/AccountID'
-                order_id:
-                    $ref: '#/components/schemas/OrderID'
+                reason:
+                    description: The grounds of whoever opened this round.
+                    example: The photos show a different item
+                    type: string
                 refund_id:
                     $ref: '#/components/schemas/RefundID'
-                rounds:
-                    description: |
-                        Oldest first. Round 1 is the buyer's escalation, round 2 the seller's appeal on what came back. Both are kept: ruling for the buyer and then for the seller is two decisions, not one that changed its mind.
-                    items:
-                        $ref: '#/components/schemas/DisputeRound'
-                    maxItems: 2
-                    minItems: 1
-                    type: array
-                seller_id:
-                    $ref: '#/components/schemas/AccountID'
+                round:
+                    description: 1 = the buyer escalating, 2 = the seller appealing the return.
+                    enum:
+                        - 1
+                        - 2
+                    type: integer
+                ruled_at:
+                    format: date-time
+                    nullable: true
+                    type: string
+                status:
+                    $ref: '#/components/schemas/DisputeStatus'
             required:
+                - id
                 - refund_id
-                - order_id
-                - buyer_id
-                - seller_id
-                - rounds
+                - round
+                - opened_by
+                - status
+                - reason
+                - created_at
             type: object
         RefundDisputeID:
             example: dsp_n8kvq1wd6ptz3
@@ -2691,7 +2562,7 @@ components:
             properties:
                 data:
                     items:
-                        $ref: '#/components/schemas/AdminDisputeQueueEntry'
+                        $ref: '#/components/schemas/RefundDispute'
                     type: array
                 meta:
                     $ref: '#/components/schemas/CursorMeta'
@@ -2721,7 +2592,7 @@ components:
 
                 `awaiting-seller-review` — the seller accepts or rejects. Missing it hands the case to the buyer. `awaiting-buyer-action` — the buyer escalates to a moderator or lets the refund lapse; `rejection_reason` says whether the seller refused or just went quiet. `disputed` — a moderator has an open round. `returning` — the goods are on their way back; only a granted refund ever reaches here. `returned` — the seller inspects and may appeal until the window closes.
 
-                Then three terminals: `accepted` is money back to the buyer, `rejected` is no refund and the payout stands, `cancelled` is the buyer withdrawing before the seller decided.
+                Then three terminals: `accepted` is money back to the buyer and the order closed with it, `rejected` is no refund and the payout stands, `cancelled` is the buyer withdrawing before the seller decided. Only the last two give the escrow up — `accepted` keeps its claim, because that money has already gone to the buyer.
             enum:
                 - awaiting-seller-review
                 - awaiting-buyer-action
@@ -3153,6 +3024,7 @@ components:
                 attachments:
                     items:
                         $ref: '#/components/schemas/ResourceID'
+                    maxItems: 10
                     type: array
                 body:
                     maxLength: 4000
@@ -3305,6 +3177,7 @@ components:
                 attachments:
                     items:
                         $ref: '#/components/schemas/ResourceID'
+                    maxItems: 10
                     type: array
                 body:
                     maxLength: 2000
@@ -3515,54 +3388,50 @@ components:
                 - failed
             type: string
         Transport:
+            description: |
+                One shipment as the platform knows it. The carrier's own view — tracking number, label, raw webhook payloads — is held in the row but not published: it is provider-shaped, and nothing a client renders depends on it.
             properties:
                 created_at:
                     format: date-time
                     type: string
-                events:
-                    items:
-                        $ref: '#/components/schemas/TransportEvent'
-                    type: array
                 id:
                     $ref: '#/components/schemas/TransportID'
-                label_url:
-                    nullable: true
-                    type: string
                 option:
-                    description: A transport option slug owned by the common module
+                    description: An enabled transport option's slug
+                    example: ghn-express
                     type: string
                 status:
                     $ref: '#/components/schemas/TransportStatus'
-                tracking_number:
-                    nullable: true
-                    type: string
             required:
                 - id
                 - option
                 - status
-                - events
                 - created_at
             type: object
-        TransportEvent:
-            description: One carrier-reported checkpoint.
+        TransportCheckpoint:
+            description: |
+                A position a checkpoint may report, so `pending` is not one of them — that is where a shipment starts, not somewhere it can be moved to. The last three are outcomes and are reachable from anywhere: a parcel can fail before it is ever collected.
+            enum:
+                - picked-up
+                - in-transit
+                - delivered
+                - returned
+                - failed
+            type: string
+        TransportCheckpointRequest:
+            description: One carrier-reported position. The same shape for the outbound leg and for the leg carrying a refund's goods back.
             properties:
-                note:
-                    type: string
-                occurred_at:
-                    format: date-time
-                    type: string
                 status:
-                    $ref: '#/components/schemas/TransportStatus'
+                    $ref: '#/components/schemas/TransportCheckpoint'
             required:
                 - status
-                - occurred_at
             type: object
         TransportID:
             example: trp_d6ptz3n8kvq1w
             pattern: ^trp_[0-9a-hjkmnp-tv-z]{13}$
             type: string
         TransportStatus:
-            description: Shipment lifecycle as the carrier reports it.
+            description: Where the shipment is. `pending` is created but not yet handed over.
             enum:
                 - pending
                 - picked-up
@@ -3868,11 +3737,13 @@ components:
                     type: string
             type: object
         UpdateReviewRequest:
-            description: Every field optional.
+            description: |
+                Every field optional. `attachments` replaces the whole set and is capped at the same ten the submission is: an edit is not a way around a limit.
             properties:
                 attachments:
                     items:
                         $ref: '#/components/schemas/ResourceID'
+                    maxItems: 10
                     type: array
                 body:
                     maxLength: 2000
@@ -4148,7 +4019,7 @@ components:
                         $ref: '#/components/schemas/WalletTransaction'
                     type: array
                 meta:
-                    $ref: '#/components/schemas/CursorMeta'
+                    $ref: '#/components/schemas/PageMeta'
             required:
                 - data
                 - meta
@@ -4200,15 +4071,14 @@ components:
             type: object
         WithdrawalApprovalRequest:
             properties:
-                note:
-                    maxLength: 2000
-                    type: string
                 provider_ref:
                     description: The bank's or gateway's reference for the outbound transfer
                     maxLength: 200
                     type: string
-            required:
-                - note
+                reason:
+                    description: A note for the payee, recorded on the request.
+                    maxLength: 500
+                    type: string
             type: object
         WithdrawalOutcome:
             description: |
@@ -4234,7 +4104,7 @@ components:
         WithdrawalRejectionRequest:
             properties:
                 reason:
-                    maxLength: 2000
+                    maxLength: 500
                     minLength: 1
                     type: string
             required:
@@ -4615,20 +4485,8 @@ paths:
     /admin/disputes:
         get:
             description: |
-                Open rounds, oldest first, which is the order they should be worked. Round 2 entries are appeals on a refund a moderator has already ruled on once, so the previous verdict comes with them.
+                Open rounds, oldest first, which is the order they should be worked. A round names the refund it is about; the case itself is read through `GET /refunds/{id}`.
             parameters:
-                - description: Defaults to open.
-                  in: query
-                  name: status
-                  schema:
-                    $ref: '#/components/schemas/DisputeStatus'
-                - in: query
-                  name: round
-                  schema:
-                    enum:
-                        - 1
-                        - 2
-                    type: integer
                 - $ref: '#/components/parameters/Cursor'
                 - $ref: '#/components/parameters/Limit'
             responses:
@@ -4656,9 +4514,11 @@ paths:
             description: |
                 Decided on whose evidence is more convincing. What a verdict does depends on the round, and the round is a property of the case rather than something the moderator picks:
 
-                Round 1 — `buyer-wins` grants the refund and books the return shipment, so the money is not released yet; `seller-wins` ends the refund and lets the payout stand.
+                Round 1 — `buyer_wins: true` grants the refund and books the return shipment, so the money is not released yet; `false` ends the refund and lets the payout stand.
 
-                Round 2, the seller's appeal on what arrived — `seller-wins` upholds it, ends the refund and pays the seller out; `buyer-wins` denies it and releases the money to the buyer.
+                Round 2, the seller's appeal on what arrived — `buyer_wins: false` upholds it, ends the refund and lets the payout stand; `true` denies it, so the escrow goes back to the buyer and the order closes with it.
+
+                The money moves before either row is written, and the verdict and the refund it moved are written together: a ruled round over a case still `disputed` is a state nothing can get out of, and a settled refund over an order the payout can still see is money paid twice.
 
                 There is no third round. Round 2 is where an appeal already lives, so a ruling on it is final.
             parameters:
@@ -4680,7 +4540,7 @@ paths:
                             schema:
                                 properties:
                                     data:
-                                        $ref: '#/components/schemas/Refund'
+                                        $ref: '#/components/schemas/RefundDispute'
                                 required:
                                     - data
                                 type: object
@@ -5393,22 +5253,12 @@ paths:
                             schema:
                                 properties:
                                     data:
-                                        $ref: '#/components/schemas/WalletTransaction'
+                                        $ref: '#/components/schemas/Wallet'
                                 required:
                                     - data
                                 type: object
-                    description: This idempotency key was already applied; the existing movement is returned
-                "201":
-                    content:
-                        application/json:
-                            schema:
-                                properties:
-                                    data:
-                                        $ref: '#/components/schemas/WalletTransaction'
-                                required:
-                                    - data
-                                type: object
-                    description: Adjusted
+                    description: |
+                        Adjusted, answering the balances as they now stand. The same response for a key that was already applied: a retried correction is the state the admin asked for, not a second credit.
                 "400":
                     content:
                         application/json:
@@ -5681,15 +5531,21 @@ paths:
                 - finance
     /cart-items:
         get:
-            parameters:
-                - $ref: '#/components/parameters/Page'
-                - $ref: '#/components/parameters/Limit'
+            description: |
+                The whole cart, unpaginated. A cart is bounded by what one person means to buy, so there is nothing to page through.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/CartItemPage'
+                                properties:
+                                    data:
+                                        items:
+                                            $ref: '#/components/schemas/CartItem'
+                                        type: array
+                                required:
+                                    - data
+                                type: object
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -5699,7 +5555,8 @@ paths:
             tags:
                 - order
         post:
-            description: One row per (account, SKU). Adding a SKU already in the cart is a conflict — change the quantity instead.
+            description: |
+                One row per (account, SKU). Adding a SKU already in the cart tops that row up rather than stacking a second one — adding twice means wanting more.
             requestBody:
                 content:
                     application/json:
@@ -5724,8 +5581,6 @@ paths:
                     $ref: '#/components/responses/Unauthorized'
                 "404":
                     $ref: '#/components/responses/NotFound'
-                "409":
-                    $ref: '#/components/responses/Conflict'
             security:
                 - bearerAuth: []
             summary: Add a SKU to the cart
@@ -6195,6 +6050,8 @@ paths:
         post:
             description: |
                 Moves the caller's read mark on the thread — one UPDATE of one row, whatever it covers. Omit `before` to mark the whole thread read. A mark never moves backwards: passing an earlier instant than the current one is a no-op, because un-reading is not a thing a client should be able to do to its own badge.
+
+                Answers the updated thread rather than just the badge, so a client that marked it read can repaint the row from one response instead of a second GET.
             parameters:
                 - in: path
                   name: id
@@ -6214,7 +6071,7 @@ paths:
                             schema:
                                 properties:
                                     data:
-                                        $ref: '#/components/schemas/ChatUnreadCount'
+                                        $ref: '#/components/schemas/Conversation'
                                 required:
                                     - data
                                 type: object
@@ -6311,17 +6168,8 @@ paths:
     /drafts:
         get:
             parameters:
-                - $ref: '#/components/parameters/Page'
+                - $ref: '#/components/parameters/Cursor'
                 - $ref: '#/components/parameters/Limit'
-                - in: query
-                  name: state
-                  schema:
-                    default: live
-                    enum:
-                        - live
-                        - cancelled
-                        - expired
-                    type: string
             responses:
                 "200":
                     content:
@@ -6338,7 +6186,9 @@ paths:
                 - order
         post:
             description: |
-                Freezes the listing terms so a price the seller edits afterwards cannot be charged. The server snapshots the SPU together with all of its SKUs — price and package_details live on the SKU, and those are exactly what must not move under the buyer — and sets `valid_until`.
+                Freezes the listing terms so a price the seller edits afterwards cannot be charged. The server snapshots the listing together with every variant — price and package details live on the variant, and those are exactly what must not move under the buyer — and sets `valid_until`.
+
+                Only a `fixed` listing has one: a `negotiable` price is agreed in an offer, and the accepted offer is what freezes its terms instead. Asking for one is 422.
             requestBody:
                 content:
                     application/json:
@@ -6367,6 +6217,12 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/Error'
                     description: Listing not found, deleted, or not active
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: The listing is priced negotiable; open an offer instead
             security:
                 - bearerAuth: []
             summary: Open a purchase session for one listing
@@ -6426,7 +6282,9 @@ paths:
             description: |
                 Creates one `item` per line plus a single buyer-checkout payment session, and returns both. Line prices come from the session's frozen snapshot, never from the live catalog. `contact_id` is snapshotted into every line's delivery address: one session covers one SPU and therefore one seller, so a single address is correct.
 
-                A SKU whose listing is priced `negotiable` is rejected with 422 unless the caller has an accepted offer for it — a negotiated listing must go through the offer flow.
+                The session is spent before the money is asked for: the claim is what makes two concurrent checkouts of one draft impossible, and the loser is answered 409 rather than handed a second payment session for the same frozen price.
+
+                A `negotiable` listing has no draft at all, so there is nothing to check out here — its terms are frozen by the offer both sides accepted, and `POST /offers/{id}/acceptance` opens this same checkout.
             parameters:
                 - in: path
                   name: id
@@ -6640,20 +6498,23 @@ paths:
                 - account
     /items:
         get:
-            description: '`role=seller&state=pending` is the seller''s confirmation inbox: paid items that no order covers yet.'
+            description: |
+                `role=seller&pending=true` is the seller's retry list: lines the money has paid for that no order covers yet. Not an inbox — nobody confirms them. The order is written by the payment webhook, so a line sitting here for long is a settlement that has not succeeded yet rather than one waiting on a person.
             parameters:
                 - in: query
                   name: role
-                  required: true
                   schema:
+                    default: buyer
                     enum:
                         - buyer
                         - seller
                     type: string
-                - in: query
-                  name: state
+                - description: Only lines no order covers and nobody cancelled.
+                  in: query
+                  name: pending
                   schema:
-                    $ref: '#/components/schemas/OrderItemState'
+                    default: false
+                    type: boolean
                 - $ref: '#/components/parameters/Cursor'
                 - $ref: '#/components/parameters/Limit'
             responses:
@@ -6669,24 +6530,21 @@ paths:
                     $ref: '#/components/responses/Unauthorized'
             security:
                 - bearerAuth: []
-            summary: List checkout items, as buyer or as seller
+            summary: List checkout lines, as buyer or as seller
             tags:
                 - order
     /items/{id}/cancellation:
         post:
-            description: Either party may cancel while the item is not yet part of an order. The cancelling account is recorded.
+            description: |
+                Either party may drop a line while it is unpaid — the buyer changed their mind, or the seller cannot fulfil it — and the reserved units go back. The cancelling account is recorded.
+
+                A paid line is 409, and that is checked against the payment session rather than against `order_id`: the order is written by the webhook, so a line that has been charged for has a null `order_id` for as long as that write keeps failing. From there the way back is a refund, which the seller gets to see.
             parameters:
                 - in: path
                   name: id
                   required: true
                   schema:
                     $ref: '#/components/schemas/OrderItemID'
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/CancellationRequest'
-                required: true
             responses:
                 "200":
                     content:
@@ -6699,12 +6557,8 @@ paths:
                                     - data
                                 type: object
                     description: Cancelled
-                "400":
-                    $ref: '#/components/responses/BadRequest'
                 "401":
                     $ref: '#/components/responses/Unauthorized'
-                "403":
-                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "409":
@@ -6712,10 +6566,10 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Error'
-                    description: Already confirmed into an order, or already cancelled
+                    description: The session is paid, or the line is already cancelled
             security:
                 - bearerAuth: []
-            summary: Cancel an unconfirmed item
+            summary: Cancel a line the money has not reached
             tags:
                 - order
     /listings:
@@ -6852,7 +6706,7 @@ paths:
             description: |
                 Creates the listing and its variants together. At least one variant is required because price and shipping weight live there.
 
-                Starts as a draft and is not public until published. The seller also chooses here whether the buyer or the seller carries the shipping fee.
+                Starts as a draft and is not public until published.
             requestBody:
                 content:
                     application/json:
@@ -7153,6 +7007,8 @@ paths:
             description: |
                 Public, with the first few replies and the vote tally on each one.
 
+                A cursor belongs to the sort it was issued under: each ordering pages on its own key, so a cursor from `sort=helpful` is meaningless to `sort=newest` and a client that switches sorts starts the traversal again.
+
                 `sort=helpful` orders by a counter that other people are changing while a client pages: a review that gains votes can move across a page boundary and be seen twice or not at all. Cursor paging is exact only over a key that does not move, and `newest` is that key. The drift is accepted rather than designed away — a review appearing twice in a list costs the reader nothing — but a caller that needs a stable traversal should page by `newest`.
             parameters:
                 - description: Restrict to one star rating.
@@ -7195,7 +7051,7 @@ paths:
                 $ref: '#/components/schemas/ListingID'
         post:
             description: |
-                An order is required — no purchase, no review — and one review per listing per order, so buying twice earns a second review but one purchase does not earn two.
+                A completed order is required — no purchase, no review — and one review per listing per order, so buying twice earns a second review but one purchase does not earn two. An order that was cancelled or fully refunded earns none: there are no goods left to rate. Rating the counterparty of such a sale is what feedback is for.
             requestBody:
                 content:
                     application/json:
@@ -7237,7 +7093,7 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Error'
-                    description: The order did not include this listing or is not finished
+                    description: The order did not include this listing, or did not complete — a cancelled sale leaves no goods to review
             security:
                 - bearerAuth: []
             summary: Review a listing you bought
@@ -8034,19 +7890,14 @@ paths:
                 - order
     /orders/{id}/cancellation:
         post:
-            description: Either party may cancel while the shipment has not left `pending`.
+            description: |
+                Either party may cancel while the shipment has not left `pending`. The escrow goes back to the buyer and the sale is reversed in the catalog. No body: there is nowhere to record a reason, and a field a client fills in that reaches nobody is worse than none.
             parameters:
                 - in: path
                   name: id
                   required: true
                   schema:
                     $ref: '#/components/schemas/OrderID'
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/CancellationRequest'
-                required: true
             responses:
                 "200":
                     content:
@@ -8134,7 +7985,7 @@ paths:
     /orders/{id}/refunds:
         post:
             description: |
-                Covers the whole order; there is no way to refund part of one. Evidence is mandatory, and one live refund per order.
+                Covers the whole order; there is no way to refund part of one, and one live refund per order. Evidence is optional here and can be added until the case closes.
 
                 Nothing ships yet — the buyer keeps the goods until the refund is granted. The seller has until `deadline_at` to accept or reject, and letting that pass hands the next move to the buyer rather than settling anything.
             parameters:
@@ -8178,13 +8029,7 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Error'
-                    description: A refund is already open on this order
-                "422":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: Order is not in a refundable state
+                    description: A refund is already open on this order, or its escrow has already been paid out or returned
             security:
                 - bearerAuth: []
             summary: Open a refund request (buyer)
@@ -8218,7 +8063,62 @@ paths:
                     $ref: '#/components/responses/NotFound'
             security:
                 - bearerAuth: []
-            summary: Read the shipment and its tracking events
+            summary: Read the shipment
+            tags:
+                - order
+    /orders/{id}/transport/checkpoints:
+        post:
+            description: |
+                The seller's route — they are the one who hands the parcel over — and a moderator may correct it; nobody else writes this status.
+
+                Forward-only. Carrier reports arrive out of order, and whether the parcel has left is what decides whether the order can still be cancelled and the escrow taken back, so it is not a fact a later report may undo: a checkpoint at or behind where the shipment already is, or one on a leg that has ended, is 409.
+            parameters:
+                - in: path
+                  name: id
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/OrderID'
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/TransportCheckpointRequest'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Transport'
+                                required:
+                                    - data
+                                type: object
+                    description: Recorded
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Caller is not the seller of this order
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: The shipment is already at or past that point
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+            security:
+                - bearerAuth: []
+            summary: Report a carrier checkpoint on the outbound leg (seller)
             tags:
                 - order
     /orders/{orderID}/feedback:
@@ -8387,9 +8287,9 @@ paths:
         get:
             description: '`role=payer` is money owed or sent, `role=payee` is money received — seller payouts and refunds land on that side.'
             parameters:
-                - in: query
+                - description: Omit for both sides.
+                  in: query
                   name: role
-                  required: true
                   schema:
                     enum:
                         - payer
@@ -8403,7 +8303,7 @@ paths:
                   name: status
                   schema:
                     $ref: '#/components/schemas/PaymentSessionStatus'
-                - $ref: '#/components/parameters/Cursor'
+                - $ref: '#/components/parameters/Page'
                 - $ref: '#/components/parameters/Limit'
             responses:
                 "200":
@@ -8424,7 +8324,7 @@ paths:
     /payment-sessions/{id}:
         get:
             description: |
-                `amount_paid` is the sum of the settled legs, so a client can tell a partly-tendered session from an unpaid one without fetching the legs.
+                `outstanding` is the total less what has already settled on a rail, so a client can tell a partly-tendered session from an unpaid one without fetching the legs.
             parameters:
                 - in: path
                   name: id
@@ -8618,7 +8518,10 @@ paths:
                 - order
     /refunds/{id}:
         delete:
-            description: Only while the seller has not decided. Once anything has moved — a decision, a moderator, a parcel — the case is closed by ruling, not by walking away from it.
+            description: |
+                Only while the seller has not decided. Once anything has moved — a decision, a moderator, a parcel — the case is closed by ruling, not by walking away from it.
+
+                The case ends as `cancelled`, which gives the escrow back up: the payout becomes the seller's again.
             responses:
                 "204":
                     description: Withdrawn
@@ -8641,7 +8544,7 @@ paths:
                 - order
         get:
             description: |
-                The whole case in one object: `deadline_at` for whoever is on the clock, the return shipment once one exists, and `dispute` with every round a moderator has seen. A dispute has no read of its own — it is not a thing that happens apart from the refund it is about.
+                The case: `deadline_at` for whoever is on the clock, and the facts each stage recorded. The rounds a moderator has seen are the queue's to list — a party sees the verdict in the status the case ended up in.
             responses:
                 "200":
                     content:
@@ -8680,13 +8583,7 @@ paths:
                 $ref: '#/components/schemas/RefundID'
         post:
             description: |
-                Grants it without a moderator. The goods have to come back first, so this creates the return shipment and moves the refund to `returning`; the money is released once the return is delivered and the seller has not appealed it.
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/AcceptRefundRequest'
-                required: true
+                Grants it without a moderator. The goods have to come back first, so this books the return shipment on the same carrier as the outbound leg and moves the refund to `returning`; the money goes back once that leg is delivered and the seller has not appealed it. No body — there is nothing left to choose.
             responses:
                 "200":
                     content:
@@ -8730,8 +8627,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/RefundID'
         post:
-            description: |
-                Either party, up to the moderator's ruling. Which side the caller is on decides where the evidence lands — the buyer's on the refund, the seller's on the dispute round they opened — so a moderator can always tell who submitted what. One endpoint because "add my evidence to this case" is one intent.
+            description: Either party to the order, while the case is open. A closed one is the record a verdict was reached on, so nothing is added to it afterwards.
             requestBody:
                 content:
                     application/json:
@@ -8796,7 +8692,7 @@ paths:
                             schema:
                                 properties:
                                     data:
-                                        $ref: '#/components/schemas/Refund'
+                                        $ref: '#/components/schemas/RefundDispute'
                                 required:
                                     - data
                                 type: object
@@ -8873,6 +8769,57 @@ paths:
             security:
                 - bearerAuth: []
             summary: Reject a refund (seller)
+            tags:
+                - order
+    /refunds/{id}/return-transport/checkpoints:
+        post:
+            description: |
+                The return leg exists only from the moment a refund is granted, and `delivered` is what moves the case to `returned` and opens the seller's appeal window. It is the only exit from `returning`.
+
+                Either party to the order may report it. The buyer posted the parcel and the seller received it, and requiring the seller alone would let one who simply never confirms strand the escrow with nobody on a clock — which is what having no writer at all did. A buyer who claims a delivery that did not happen is answered by round two of the dispute, which is exactly what that window is for.
+            parameters:
+                - in: path
+                  name: id
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/RefundID'
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/TransportCheckpointRequest'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Refund'
+                                required:
+                                    - data
+                                type: object
+                    description: Recorded; the refund moves to `returned` once the leg is delivered
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: No return leg yet, the leg is already past that point, or the order is closed
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+            security:
+                - bearerAuth: []
+            summary: Report a checkpoint on the leg carrying the goods back
             tags:
                 - order
     /register:
@@ -8966,7 +8913,11 @@ paths:
                                 type: object
                     description: Filed
                 "400":
-                    $ref: '#/components/responses/BadRequest'
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: The body is invalid, or `ref_id` does not decode as the declared `ref_type`
                 "401":
                     $ref: '#/components/responses/Unauthorized'
                 "404":
@@ -8981,12 +8932,6 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/Error'
                     description: You already have an open report against this target
-                "422":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: The id does not match the declared target type
             security:
                 - bearerAuth: []
             summary: Report something

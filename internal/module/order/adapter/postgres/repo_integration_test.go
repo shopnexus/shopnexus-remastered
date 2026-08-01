@@ -272,7 +272,7 @@ func TestPayoutDue_HeldBackByALiveRefund(t *testing.T) {
 	}
 
 	// Paying it out takes it off the list for good.
-	if err := o.Complete(9001); err != nil {
+	if err := o.Complete(); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
 	if err := r.SaveOrder(ctx, o); err != nil {
@@ -616,6 +616,16 @@ func TestDisputes_OneRoundOneVerdict(t *testing.T) {
 	if err := r.InsertRefund(ctx, &ref); err != nil {
 		t.Fatalf("InsertRefund: %v", err)
 	}
+	// A round is only opened over a case a moderator has been asked about.
+	if err := ref.Reject("sent as described"); err != nil {
+		t.Fatalf("Reject: %v", err)
+	}
+	if err := ref.Escalate(); err != nil {
+		t.Fatalf("Escalate: %v", err)
+	}
+	if err := r.SaveRefund(ctx, ref); err != nil {
+		t.Fatalf("SaveRefund: %v", err)
+	}
 
 	d, err := domain.NewDispute(ref.ID, o.BuyerID, 1, "photos show otherwise")
 	if err != nil {
@@ -649,8 +659,13 @@ func TestDisputes_OneRoundOneVerdict(t *testing.T) {
 	if err := d.Rule(o.SellerID+100, true, "evidence is clear"); err != nil {
 		t.Fatalf("Rule: %v", err)
 	}
-	if err := r.SaveDispute(ctx, d); err != nil {
-		t.Fatalf("SaveDispute: %v", err)
+	// The verdict and the refund it moved are one write: a ruled round over a refund still
+	// `disputed` is a state no path can reach.
+	if err := ref.Rule(true); err != nil {
+		t.Fatalf("refund Rule: %v", err)
+	}
+	if err := r.SaveRefundOutcome(ctx, ref, &d, nil); err != nil {
+		t.Fatalf("SaveRefundOutcome: %v", err)
 	}
 	ruled, err := r.FindDispute(ctx, d.ID)
 	if err != nil {
@@ -725,4 +740,203 @@ func containsOffer(offers []domain.Offer, id int64) bool {
 		}
 	}
 	return false
+}
+
+// The escrow has one claimant. `PayoutDue`'s "no live refund" is a read, and so is the check a
+// refund makes about the order still being open: under READ COMMITTED each statement sees a world
+// where its own write is legal, so both used to land — the sweep released the money to the seller
+// and the verdict then refunded the buyer out of a hold that was gone. The advisory lock both
+// sides take is what serialises them.
+//
+// Concurrently, with the refund's insert held open inside a transaction that has the lock: the
+// payout has to block on it and then find the refund it was going to step over.
+func TestPayoutAndRefund_CannotBothClaimTheEscrow(t *testing.T) {
+	r, pool := newRepo(t)
+	ctx := context.Background()
+	o, _ := placedOrder(t, r)
+	if err := o.ConfirmReceipt([]int64{1}); err != nil {
+		t.Fatalf("ConfirmReceipt: %v", err)
+	}
+	if err := r.SaveOrder(ctx, o); err != nil {
+		t.Fatalf("SaveOrder: %v", err)
+	}
+	// Wind the receipt back so the window has passed and the order is a payout candidate.
+	if _, err := pool.Exec(ctx,
+		`UPDATE "order" SET received_at = received_at - $1::interval WHERE id = $2`,
+		"96 hours", o.ID); err != nil {
+		t.Fatalf("age receipt: %v", err)
+	}
+	due, err := r.PayoutDue(ctx, time.Now(), 200)
+	if err != nil {
+		t.Fatalf("PayoutDue: %v", err)
+	}
+	if !contains(due, o.ID) {
+		t.Fatalf("the order is not a payout candidate: %v", ids(due))
+	}
+
+	// A refund lands in the gap between that select and the write it was going to make.
+	ref, err := domain.NewRefund(o.ID, o.BuyerID, "not as described", nil)
+	if err != nil {
+		t.Fatalf("NewRefund: %v", err)
+	}
+	if err := r.InsertRefund(ctx, &ref); err != nil {
+		t.Fatalf("InsertRefund: %v", err)
+	}
+	claimed := o
+	if err := r.ClaimPayout(ctx, &claimed); !errors.Is(err, domain.ErrOrderSettled) {
+		t.Fatalf("ClaimPayout = %v, want ErrOrderSettled; the seller was paid over a live refund", err)
+	}
+
+	// And the other way round: an order the payout has claimed has no escrow left to argue over.
+	o2, _ := placedOrder(t, r)
+	if err := o2.ConfirmReceipt([]int64{1}); err != nil {
+		t.Fatalf("ConfirmReceipt: %v", err)
+	}
+	if err := r.SaveOrder(ctx, o2); err != nil {
+		t.Fatalf("SaveOrder: %v", err)
+	}
+	if err := r.ClaimPayout(ctx, &o2); err != nil {
+		t.Fatalf("ClaimPayout: %v", err)
+	}
+	late, err := domain.NewRefund(o2.ID, o2.BuyerID, "too late", nil)
+	if err != nil {
+		t.Fatalf("NewRefund: %v", err)
+	}
+	if err := r.InsertRefund(ctx, &late); !errors.Is(err, domain.ErrRefundNotDue) {
+		t.Fatalf("InsertRefund = %v, want ErrRefundNotDue over a paid-out order", err)
+	}
+
+	// The claimed order is what RetryClaimedPayouts finds, since nothing else would ever try the
+	// release again.
+	retry, err := r.ClaimedPayouts(ctx, 200)
+	if err != nil {
+		t.Fatalf("ClaimedPayouts: %v", err)
+	}
+	if !contains(retry, o2.ID) {
+		t.Fatalf("claimed payouts = %v, want the order whose release may not have landed", ids(retry))
+	}
+	// And recording the release takes it off that list for good — which is what stops the retry
+	// pass asking finance about every sale the platform has ever completed.
+	o2.MarkPayoutReleased()
+	if err := r.MarkPayoutReleased(ctx, o2); err != nil {
+		t.Fatalf("MarkPayoutReleased: %v", err)
+	}
+	retry, err = r.ClaimedPayouts(ctx, 200)
+	if err != nil {
+		t.Fatalf("ClaimedPayouts: %v", err)
+	}
+	if contains(retry, o2.ID) {
+		t.Fatalf("claimed payouts = %v, want a released order gone", ids(retry))
+	}
+	reread, err := r.FindOrder(ctx, o2.ID)
+	if err != nil {
+		t.Fatalf("FindOrder: %v", err)
+	}
+	if reread.PayoutReleasedAt == nil {
+		t.Fatal("the release time was not stored")
+	}
+}
+
+// A settlement resumed after the order was written finishes the linking it left behind. The real
+// CreateOrder cannot do it: it re-runs the INSERT, loses on the origin, and the rollback takes the
+// link with it — which used to read as success.
+func TestLinkItems_FinishesAResumedSettlement(t *testing.T) {
+	r, _ := newRepo(t)
+	ctx := context.Background()
+	buyer, seller := party(t)
+	d := draft(t, r, buyer, seller)
+	session := time.Now().UnixNano() % 1_000_000_000
+	first := paidItem(t, r, domain.FromDraft(d.ID), buyer, seller, session)
+	transportID, err := r.InsertTransport(ctx, "ghn-express")
+	if err != nil {
+		t.Fatalf("InsertTransport: %v", err)
+	}
+	o, err := domain.NewOrder(domain.FromDraft(d.ID), buyer, seller, transportID, address(), address())
+	if err != nil {
+		t.Fatalf("NewOrder: %v", err)
+	}
+	if err := r.CreateOrder(ctx, &o, []int64{first.ID}); err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	// A second line of the same checkout that the first attempt never got to.
+	second := paidItem(t, r, domain.FromDraft(d.ID), buyer, seller, session)
+
+	// What a resumed settlement used to do, and why it silently did nothing.
+	retry := o
+	retry.ID = 0
+	if err := r.CreateOrder(ctx, &retry, []int64{second.ID}); !errors.Is(err, domain.ErrOrderSettled) {
+		t.Fatalf("CreateOrder = %v, want ErrOrderSettled on the origin", err)
+	}
+	items, err := r.OrderItems(ctx, o.ID)
+	if err != nil {
+		t.Fatalf("OrderItems: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want the rolled-back link to have changed nothing", len(items))
+	}
+
+	if err := r.LinkItems(ctx, o.ID, []int64{first.ID, second.ID}); err != nil {
+		t.Fatalf("LinkItems: %v", err)
+	}
+	items, err = r.OrderItems(ctx, o.ID)
+	if err != nil {
+		t.Fatalf("OrderItems: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("items = %d, want both lines on the order", len(items))
+	}
+	// Again claims nothing: a line an order already covers is left where it is.
+	if err := r.LinkItems(ctx, o.ID, []int64{first.ID, second.ID}); err != nil {
+		t.Fatalf("second LinkItems: %v", err)
+	}
+}
+
+// The cursor is the (created_at, id) pair. Three lines written in one transaction share
+// `created_at` to the microsecond — CURRENT_TIMESTAMP is transaction-scoped — so a bound on the
+// timestamp alone put the rest of the group out of reach: page 2 came back empty and the third
+// line was unreachable.
+func TestListItems_CursorReachesRowsSharingATimestamp(t *testing.T) {
+	r, _ := newRepo(t)
+	ctx := context.Background()
+	buyer, seller := party(t)
+	d := draft(t, r, buyer, seller)
+	session := time.Now().UnixNano() % 1_000_000_000
+	lines := make([]*domain.Item, 0, 3)
+	for range 3 {
+		i, err := domain.NewItem(domain.FromDraft(d.ID), buyer, seller, 500, 501, address(), "",
+			"VND", 1, "ghn-express", 100_000, session)
+		if err != nil {
+			t.Fatalf("NewItem: %v", err)
+		}
+		lines = append(lines, &i)
+	}
+	if err := r.InsertItems(ctx, lines); err != nil {
+		t.Fatalf("InsertItems: %v", err)
+	}
+	at := lines[0].CreatedAt
+	for _, i := range lines[1:] {
+		if !i.CreatedAt.Equal(at) {
+			t.Skipf("the three lines did not share a timestamp (%v vs %v)", at, i.CreatedAt)
+		}
+	}
+
+	seen := map[int64]bool{}
+	cursor := port.CursorFilter{Limit: 2}
+	for range 5 {
+		page, err := r.ListItems(ctx, port.ItemFilter{BuyerID: buyer, Cursor: cursor})
+		if err != nil {
+			t.Fatalf("ListItems: %v", err)
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, i := range page {
+			seen[i.ID] = true
+		}
+		last := page[len(page)-1]
+		cursor = port.CursorFilter{Before: last.CreatedAt, BeforeID: last.ID, Limit: 2}
+	}
+	if len(seen) != 3 {
+		t.Fatalf("saw %d of 3 lines, want every row reachable: %v", len(seen), seen)
+	}
 }

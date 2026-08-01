@@ -52,6 +52,7 @@ func (h *Finance) listSessions(w http.ResponseWriter, r *http.Request, admin boo
 	req := financeapi.ListSessionsRequest{
 		ActorID: uid,
 		Admin:   admin,
+		Role:    r.URL.Query().Get("role"),
 		Kind:    r.URL.Query().Get("kind"),
 		Status:  r.URL.Query().Get("status"),
 		Page:    page,
@@ -192,15 +193,13 @@ func (h *Finance) AdminGetWallets(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	req := financeapi.GetWalletRequest{
-		ActorID:   uid,
-		AccountID: accountID,
-		Currency:  r.URL.Query().Get("currency"),
-	}
+	// Every currency the account holds: a support agent looking at a balance dispute does
+	// not know which one it is in, so this takes no currency at all.
+	req := financeapi.AdminListWalletsRequest{ActorID: uid, AccountID: accountID}
 	if failed(w, h.log, check(h.v, req)) {
 		return
 	}
-	res, err := h.svc.GetWallet(r.Context(), req)
+	res, err := h.svc.AdminListWallets(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}
@@ -220,6 +219,7 @@ func (h *Finance) ListWalletTransactions(w http.ResponseWriter, r *http.Request)
 	req := financeapi.ListMovementsRequest{
 		ActorID:  uid,
 		Currency: r.PathValue("currency"),
+		Kind:     r.URL.Query().Get("kind"),
 		Page:     page,
 		Limit:    limit,
 	}

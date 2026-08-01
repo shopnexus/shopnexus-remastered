@@ -28,23 +28,27 @@ func scanSession(row pgx.Row) (domain.Session, error) {
 	return s, nil
 }
 
-// SaveSession writes the status, the settlement time and the data. The WHERE clause
-// carries the transition: a session moves from the status the caller read, so two
-// concurrent settlements cannot both land and there is no version column to keep.
-func (r *Repo) SaveSession(ctx context.Context, s domain.Session) error {
+// SaveSession writes the status, the settlement time and the data. The WHERE clause carries
+// the transition: a session moves only from a status the caller named, so two concurrent
+// resolutions cannot both land and there is no version column to keep. Without that guard an
+// approval and a rejection racing on one withdrawal would both succeed — the money returned to
+// the wallet and the payout recorded as sent.
+func (r *Repo) SaveSession(ctx context.Context, s domain.Session, from []string) error {
 	const q = `UPDATE payment_session
 	           SET status = @status, paid_at = @paid_at, data = @data, note = @note
-	           WHERE id = @id`
+	           WHERE id = @id AND status::text = ANY(@from::text[])`
 	args := pgx.NamedArgs{
 		"id": s.ID, "status": s.Status, "paid_at": s.PaidAt,
-		"data": dbx.JSONObject(rawJSON(s.Data)), "note": s.Note,
+		"data": dbx.JSONObject(rawJSON(s.Data)), "note": s.Note, "from": from,
 	}
 	tag, err := r.pool.Exec(ctx, q, args)
 	if err != nil {
 		return fmt.Errorf("db update payment session: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return domain.ErrSessionNotFound
+		// Either the row is gone or it has already moved on. The second is what a retried
+		// webhook or a lost race looks like, and it is the answer callers act on.
+		return domain.ErrSessionSettled
 	}
 	return nil
 }
@@ -55,12 +59,16 @@ func (r *Repo) ListSessions(ctx context.Context, f port.SessionFilter) ([]domain
 	const q = `SELECT ` + sessionColumns + `, COUNT(*) OVER () AS total_count
 	           FROM payment_session
 	           WHERE (@account_id = 0 OR from_id = @account_id OR to_id = @account_id)
+	             AND (@payer_id = 0 OR from_id = @payer_id)
+	             AND (@payee_id = 0 OR to_id = @payee_id)
 	             AND (@kind::text IS NULL OR kind::text = @kind::text)
 	             AND (@status::text IS NULL OR status::text = @status::text)
 	           ORDER BY created_at DESC, id DESC
 	           LIMIT @limit OFFSET @offset`
 	args := pgx.NamedArgs{
 		"account_id": f.AccountID,
+		"payer_id":   f.PayerID,
+		"payee_id":   f.PayeeID,
 		"kind":       nullString(f.Kind),
 		"status":     nullString(f.Status),
 		"limit":      f.Limit,
@@ -132,7 +140,7 @@ func (r *Repo) InsertTransaction(ctx context.Context, t *domain.Transaction) err
 	}
 	if err := r.pool.QueryRow(ctx, q, args).Scan(&t.CreatedAt); err != nil {
 		if dbx.IsUniqueViolation(err) {
-			return domain.ErrMovementAlreadyPosted
+			return domain.ErrLegAlreadyBooked
 		}
 		return fmt.Errorf("db insert transaction: %w", err)
 	}

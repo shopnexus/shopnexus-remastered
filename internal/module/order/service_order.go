@@ -2,7 +2,9 @@ package order
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	catalogapi "shopnexus/internal/module/catalog/api"
 	financeapi "shopnexus/internal/module/finance/api"
@@ -39,7 +41,8 @@ func (s *Service) ListItems(ctx context.Context, req orderapi.ListItemsRequest) 
 	}
 	page := orderapi.ItemPage{Data: out, Meta: orderapi.CursorInfo{HasMore: hasMore}}
 	if hasMore && len(rows) > 0 {
-		page.Meta.NextCursor = formatCursor(rows[len(rows)-1].CreatedAt)
+		last := rows[len(rows)-1]
+		page.Meta.NextCursor = formatCursor(last.CreatedAt, last.ID)
 	}
 	return page, nil
 }
@@ -56,17 +59,35 @@ func (s *Service) CancelItem(ctx context.Context, req orderapi.ItemRequest) (ord
 	if i.BuyerID != req.ActorID.Int64() && i.SellerID != req.ActorID.Int64() {
 		return orderapi.Item{}, domain.ErrItemNotFound
 	}
-	if err := i.Cancel(req.ActorID.Int64()); err != nil {
+	if err := s.cancelLine(ctx, i, req.ActorID.Int64()); err != nil {
 		return orderapi.Item{}, err
 	}
+	i.CancelledAt = new(time.Now())
+	return toAPIItem(i), nil
+}
+
+// cancelLine drops one unpaid line and gives its reservation back.
+//
+// `order_id IS NULL` is not the guard it looks like: the order is written by the payment
+// webhook, so between the money landing and that write — and for as long as the write keeps
+// failing, which is what the pending list is for — a paid line still has a null order. Without
+// asking finance, a seller could cancel a line the buyer had paid for, release the stock and
+// leave the capture covering nothing.
+func (s *Service) cancelLine(ctx context.Context, i domain.Item, actorID int64) error {
+	if err := s.requireUnpaid(ctx, i, actorID); err != nil {
+		return err
+	}
+	if err := i.Cancel(actorID); err != nil {
+		return err
+	}
 	if err := s.repo.SaveItem(ctx, i); err != nil {
-		return orderapi.Item{}, fmt.Errorf("save item: %w", err)
+		return fmt.Errorf("save item: %w", err)
 	}
 	if err := s.catalog.ReleaseStock(ctx, catalogapi.StockMovementRequest{
 		VariantID: id.Of[id.Variant](i.VariantID), Units: i.Quantity,
 	}); err != nil {
-		// The line is already cancelled; a stock release that failed is a reservation that
-		// expires on its own rather than a reason to un-cancel.
+		// The line is already cancelled; a stock release that failed is a reservation the
+		// expiry sweep picks up rather than a reason to un-cancel.
 		s.log.Error("release stock after cancelled item", "item_id", i.ID, "err", err)
 	}
 	// With every line of the session gone there is nothing left to pay for, so the run
@@ -74,7 +95,24 @@ func (s *Service) CancelItem(ctx context.Context, req orderapi.ItemRequest) (ord
 	if s.sessionAbandoned(ctx, i.PaymentSessionID) {
 		s.timer("checkout cancelled", s.workflows.CheckoutCancelled(ctx, i.PaymentSessionID))
 	}
-	return toAPIItem(i), nil
+	return nil
+}
+
+// requireUnpaid asks finance whether the session behind a line has been covered. Fails closed:
+// a session it cannot read is treated as paid, because releasing the stock under a capture is
+// the expensive way to be wrong.
+func (s *Service) requireUnpaid(ctx context.Context, i domain.Item, actorID int64) error {
+	session, err := s.finance.GetSession(ctx, financeapi.GetSessionRequest{
+		ActorID: id.Of[id.Account](actorID),
+		ID:      id.Of[id.PaymentSession](i.PaymentSessionID),
+	})
+	if err != nil {
+		return fmt.Errorf("read payment session: %w", err)
+	}
+	if session.PaidAt != nil || session.Status == financePaid {
+		return domain.ErrSessionPaid
+	}
+	return nil
 }
 
 // sessionAbandoned reports whether a payment session has no live line left. Read after the
@@ -123,7 +161,8 @@ func (s *Service) ListOrders(ctx context.Context, req orderapi.ListOrdersRequest
 	}
 	page := orderapi.OrderPage{Data: out, Meta: orderapi.CursorInfo{HasMore: hasMore}}
 	if hasMore && len(rows) > 0 {
-		page.Meta.NextCursor = formatCursor(rows[len(rows)-1].CreatedAt)
+		last := rows[len(rows)-1]
+		page.Meta.NextCursor = formatCursor(last.CreatedAt, last.ID)
 	}
 	return page, nil
 }
@@ -180,14 +219,53 @@ func (s *Service) CancelOrder(ctx context.Context, req orderapi.CancelOrderReque
 	}
 	// The money goes back and the stock with it. Keyed on the order, so a retried
 	// cancellation cannot refund twice.
-	if err := s.refundEscrow(ctx, o, "cancel"); err != nil {
+	if err := s.refundEscrow(ctx, o); err != nil {
 		return orderapi.Order{}, err
 	}
-	s.releaseOrderStock(ctx, o)
+	s.uncommitOrderStock(ctx, o)
 	s.publishSettled(ctx, o, false)
-	// Nothing is left to wait for: the money went back, so the escrow window must not fire.
-	s.timer("refund resolved", s.workflows.RefundResolved(ctx, o.ID, true))
+	// Nothing is left to wait for. A cancellation always beats the receipt, so the run is
+	// parked on that promise — telling it the refund resolved would resolve one nobody reads
+	// and leave the invocation suspended for good.
+	s.timer("order cancelled", s.workflows.OrderCancelled(ctx, o.ID))
 	return s.orderView(ctx, o)
+}
+
+// AdvanceShipment records a carrier checkpoint on the outbound leg. The seller's, because they
+// are the one who hands the parcel over; a moderator may correct it. Nothing else writes this
+// row, which is why `Shipped()` — the guard that stops a delivered order being cancelled and
+// the escrow taken back — used to be false for ever.
+func (s *Service) AdvanceShipment(ctx context.Context, req orderapi.AdvanceShipmentRequest) (orderapi.Transport, error) {
+	o, err := s.repo.FindOrder(ctx, req.ID.Int64())
+	if err != nil {
+		return orderapi.Transport{}, fmt.Errorf("find order: %w", err)
+	}
+	if o.SellerID != req.ActorID.Int64() {
+		if err := s.requireModerator(ctx, req.ActorID); err != nil {
+			return orderapi.Transport{}, domain.ErrNotTheSeller
+		}
+	}
+	t, err := s.advanceLeg(ctx, o.TransportID, req.Status)
+	if err != nil {
+		return orderapi.Transport{}, err
+	}
+	return toAPITransport(t), nil
+}
+
+// advanceLeg moves one shipment and writes it, guarded on the status it moved out of.
+func (s *Service) advanceLeg(ctx context.Context, transportID int64, status string) (domain.Transport, error) {
+	t, err := s.repo.FindTransport(ctx, transportID)
+	if err != nil {
+		return domain.Transport{}, fmt.Errorf("find transport: %w", err)
+	}
+	from := t.Status
+	if err := t.Advance(status); err != nil {
+		return domain.Transport{}, err
+	}
+	if err := s.repo.SaveTransport(ctx, t, from); err != nil {
+		return domain.Transport{}, fmt.Errorf("save transport: %w", err)
+	}
+	return t, nil
 }
 
 func (s *Service) GetOrderTransport(ctx context.Context, req orderapi.OrderRequest) (orderapi.Transport, error) {
@@ -266,14 +344,12 @@ func (s *Service) orderView(ctx context.Context, o domain.Order) (orderapi.Order
 		CompletedAt:        o.CompletedAt,
 		CancelledAt:        o.CancelledAt,
 	}
+	out.PayoutReleasedAt = o.PayoutReleasedAt
 	if o.DraftID != nil {
 		out.DraftID = new(id.Of[id.DraftOrder](*o.DraftID))
 	}
 	if o.OfferID != nil {
 		out.OfferID = new(id.Of[id.Offer](*o.OfferID))
-	}
-	if o.PayoutSessionID != nil {
-		out.PayoutSessionID = new(id.Of[id.PaymentSession](*o.PayoutSessionID))
 	}
 	for _, i := range items {
 		out.Items = append(out.Items, toAPIItem(i))
@@ -285,9 +361,13 @@ func (s *Service) orderView(ctx context.Context, o domain.Order) (orderapi.Order
 	return out, nil
 }
 
-// refundEscrow sends the held money back to the buyer. The key carries the order and the
-// reason, so a cancellation and a refund cannot each pay the buyer once for the same sale.
-func (s *Service) refundEscrow(ctx context.Context, o domain.Order, reason string) error {
+// refundEscrow sends the held money back to the buyer. One key per order, deliberately shared
+// by every route that does this — a cancellation and a granted refund are the same fact about
+// the same escrow, and a key per reason would let each of them pay the buyer once.
+//
+// A key that has already been posted is success: the money is where the caller wanted it, so a
+// retried settlement carries on to the rows it still has to write.
+func (s *Service) refundEscrow(ctx context.Context, o domain.Order) error {
 	total, currency, _, err := s.orderTotal(ctx, o.ID)
 	if err != nil {
 		return err
@@ -303,28 +383,48 @@ func (s *Service) refundEscrow(ctx context.Context, o domain.Order, reason strin
 		Amount:         total,
 		IdempotencyKey: fmt.Sprintf("order:%d:refund", o.ID),
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, financeMovementPosted) {
 		return fmt.Errorf("refund escrow: %w", err)
 	}
 	return nil
 }
 
-// releaseOrderStock gives the units back. Best-effort: the order is already cancelled, and a
-// reservation nobody released expires on its own.
-func (s *Service) releaseOrderStock(ctx context.Context, o domain.Order) {
+// commitItemStock turns one line's reservation into a sale, keyed by the line so a retried
+// settlement does not sell the same units twice.
+func (s *Service) commitItemStock(ctx context.Context, orderID int64, i domain.Item) error {
+	if err := s.catalog.CommitStock(ctx, catalogapi.StockCommitRequest{
+		VariantID:      id.Of[id.Variant](i.VariantID),
+		Units:          i.Quantity,
+		IdempotencyKey: fmt.Sprintf("order:%d:item:%d:commit", orderID, i.ID),
+	}); err != nil {
+		return fmt.Errorf("commit stock: %w", err)
+	}
+	return nil
+}
+
+// uncommitOrderStock puts the units back on the shelf after the sale is undone — a cancelled
+// order or a granted refund. Uncommit rather than release: by this point the units are in
+// `sold`, and decrementing `reserved` would either affect nothing or eat another buyer's
+// reservation and oversell.
+//
+// Best-effort: the order is already closed and the money already back, and the reversal is
+// keyed, so re-running it is what a repair would do.
+func (s *Service) uncommitOrderStock(ctx context.Context, o domain.Order) {
 	items, err := s.repo.OrderItems(ctx, o.ID)
 	if err != nil {
-		s.log.Error("read items to release stock", "order_id", o.ID, "err", err)
+		s.log.Error("read items to uncommit stock", "order_id", o.ID, "err", err)
 		return
 	}
 	for _, i := range items {
 		if !i.Live() {
 			continue
 		}
-		if err := s.catalog.ReleaseStock(ctx, catalogapi.StockMovementRequest{
-			VariantID: id.Of[id.Variant](i.VariantID), Units: i.Quantity,
+		if err := s.catalog.UncommitStock(ctx, catalogapi.StockCommitRequest{
+			VariantID:      id.Of[id.Variant](i.VariantID),
+			Units:          i.Quantity,
+			IdempotencyKey: fmt.Sprintf("order:%d:item:%d:uncommit", o.ID, i.ID),
 		}); err != nil {
-			s.log.Error("release stock", "item_id", i.ID, "err", err)
+			s.log.Error("uncommit stock", "item_id", i.ID, "err", err)
 		}
 	}
 }

@@ -34,7 +34,24 @@ func (r *Repo) NextSessionID(ctx context.Context) (int64, error) {
 }
 
 func (r *Repo) InsertSession(ctx context.Context, s *domain.Session) error {
-	const q = `INSERT INTO payment_session
+	return insertSession(ctx, r.pool, s)
+}
+
+// InsertWithdrawal opens the request and debits the balance in one transaction. Two writes
+// leave a window where a crash strands a pending cash-out with no debit behind it — and an
+// admin approving that one sends real money for a balance that was never reduced.
+func (r *Repo) InsertWithdrawal(ctx context.Context, s *domain.Session, debit port.Leg) error {
+	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
+		if err := insertSession(ctx, tx, s); err != nil {
+			return err
+		}
+		_, err := move(ctx, tx, []port.Leg{debit})
+		return err
+	})
+}
+
+func insertSession(ctx context.Context, q dbx.Querier, s *domain.Session) error {
+	const stmt = `INSERT INTO payment_session
 	               (id, kind, status, from_id, to_id, note, currency, total_amount, fx_snapshot, data, expired_at)
 	           VALUES (@id, @kind, @status, @from_id, @to_id, @note, @currency, @total_amount, @fx_snapshot, @data, @expired_at)
 	           RETURNING created_at`
@@ -51,7 +68,7 @@ func (r *Repo) InsertSession(ctx context.Context, s *domain.Session) error {
 		"data":         s.Data,
 		"expired_at":   s.ExpiredAt,
 	}
-	if err := r.pool.QueryRow(ctx, q, args).Scan(&s.CreatedAt); err != nil {
+	if err := q.QueryRow(ctx, stmt, args).Scan(&s.CreatedAt); err != nil {
 		return fmt.Errorf("db insert payment_session: %w", err)
 	}
 	return nil

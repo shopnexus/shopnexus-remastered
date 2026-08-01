@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS "cart_item" (
 
 -- payment_session, transaction, and the transaction_settled view moved to the
 -- payment module (money primitives live together for atomicity). order refers
--- to them by id only: payout_session_id (order),
+-- to them by id only:
 -- payment_session_id (item, offer), refund_tx_id (refund) — no cross-schema FK.
 
 -- Transport/delivery record
@@ -177,9 +177,11 @@ CREATE TABLE IF NOT EXISTS "order" (
     -- moment of unboxing, so a growable list would weaken the record it exists to be.
     "received_at" TIMESTAMPTZ,
     "receipt_attachments" BIGINT[] NOT NULL DEFAULT '{}', -- resource ids from common
-    -- The escrow release to the seller, 72h after receipt unless a refund intervenes.
-    -- Set by the payout job; its presence is what stops the job paying twice.
-    "payout_session_id" BIGINT,
+    -- When the escrow reached the seller, 72h after receipt unless a refund intervened.
+    -- A timestamp and not a session id: the release is a wallet movement, so there is no
+    -- session to name — and its presence is what both stops the job paying twice and tells a
+    -- completed order whose money arrived from one whose release is still stranded.
+    "payout_released_at" TIMESTAMPTZ,
 
     -- Denormalized
     "seller_id" BIGINT NOT NULL, -- Denormalized from order items for easier querying;
@@ -205,7 +207,7 @@ CREATE TABLE IF NOT EXISTS "order" (
     ),
     -- Money is only released against a confirmed delivery.
     CONSTRAINT "order_payout_needs_receipt" CHECK (
-        "payout_session_id" IS NULL OR "received_at" IS NOT NULL
+        "payout_released_at" IS NULL OR "received_at" IS NOT NULL
     ),
 
     CONSTRAINT "order_transport_id_fkey" FOREIGN KEY ("transport_id")
@@ -232,7 +234,7 @@ CREATE INDEX IF NOT EXISTS "order_seller_id_idx" ON "order" ("seller_id", "creat
 -- refund, which "refund_one_active_per_order" answers.
 CREATE INDEX IF NOT EXISTS "order_payout_due_idx"
     ON "order" ("received_at")
-    WHERE "payout_session_id" IS NULL AND "received_at" IS NOT NULL AND "cancelled_at" IS NULL;
+    WHERE "payout_released_at" IS NULL AND "received_at" IS NOT NULL AND "cancelled_at" IS NULL;
 
 -- One purchased line. It exists from checkout, before the money lands, which is what
 -- "order_id" being NULL means: paid-for lines become an order as soon as the payment

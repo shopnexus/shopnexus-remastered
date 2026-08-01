@@ -18,18 +18,24 @@ type SessionFilter struct {
 	// AccountID restricts to sessions the account is a party to. Zero is the admin
 	// view: every session, whoever it belongs to.
 	AccountID int64
-	Kind      string
-	Status    string
-	Offset    int
-	Limit     int
+	// PayerID and PayeeID narrow to one side of the money. Two fields rather than a role
+	// string, because the adapter is the wrong place to know which column a role names.
+	PayerID int64
+	PayeeID int64
+	Kind    string
+	Status  string
+	Offset  int
+	Limit   int
 }
 
 // MovementFilter pages one wallet's ledger, newest first.
 type MovementFilter struct {
 	AccountID int64
 	Currency  string
-	Offset    int
-	Limit     int
+	// Kind narrows to one movement type; empty is every kind.
+	Kind   string
+	Offset int
+	Limit  int
 }
 
 type Repository interface {
@@ -40,19 +46,26 @@ type Repository interface {
 	NextSessionID(ctx context.Context) (int64, error)
 	NextTransactionID(ctx context.Context) (int64, error)
 	InsertSession(ctx context.Context, s *domain.Session) error
+	// InsertWithdrawal opens a cash-out and takes the money out of reach in one transaction.
+	// Two writes would leave a crash window with a pending request nobody funded — which an
+	// admin would then approve, sending real money for a balance that was never reduced.
+	InsertWithdrawal(ctx context.Context, s *domain.Session, debit Leg) error
 	FindSessionByID(ctx context.Context, id int64) (domain.Session, error)
-	// SaveSession writes the status and the data. A session has no version: every
-	// transition is guarded by the status it moves from, checked in the WHERE clause.
-	SaveSession(ctx context.Context, s domain.Session) error
+	// SaveSession writes the status and the data, guarded by the statuses the transition is
+	// legal from — a session has no version, so that WHERE clause is the only thing stopping
+	// two concurrent resolutions from both landing. It answers ErrSessionSettled when the row
+	// has moved on, which is what makes a redelivered webhook a no-op rather than a rewrite.
+	SaveSession(ctx context.Context, s domain.Session, from []string) error
 	ListSessions(ctx context.Context, f SessionFilter) ([]domain.Session, int64, error)
 
 	InsertTransaction(ctx context.Context, t *domain.Transaction) error
 	SaveTransaction(ctx context.Context, t domain.Transaction) error
 	ListTransactions(ctx context.Context, sessionID int64) ([]domain.Transaction, error)
+	// FindTransactionByID is how a webhook finds the leg it is about: the reference the
+	// gateway was handed is this id, so it is always in the notification. The provider's own
+	// ref is not a lookup key — it is only unique per payment_option, so a shared string
+	// across two rails would settle the wrong leg.
 	FindTransactionByID(ctx context.Context, id int64) (domain.Transaction, error)
-	// FindTransactionByProviderRef is how a webhook finds the leg it is about, and
-	// how a redelivery is recognised as one it has already booked.
-	FindTransactionByProviderRef(ctx context.Context, ref string) (domain.Transaction, error)
 
 	// --- wallets ---
 

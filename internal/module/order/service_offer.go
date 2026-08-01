@@ -96,13 +96,18 @@ func (s *Service) ListOffers(ctx context.Context, req orderapi.ListOffersRequest
 	if hasMore {
 		rows = rows[:req.Limit]
 	}
+	currencies, err := s.listingCurrencies(ctx, req.ActorID, rows)
+	if err != nil {
+		return orderapi.OfferPage{}, err
+	}
 	out := make([]orderapi.Offer, 0, len(rows))
 	for _, o := range rows {
-		out = append(out, toAPIOffer(o, ""))
+		out = append(out, toAPIOffer(o, currencies[o.ListingID]))
 	}
 	page := orderapi.OfferPage{Data: out, Meta: orderapi.CursorInfo{HasMore: hasMore}}
 	if hasMore && len(rows) > 0 {
-		page.Meta.NextCursor = formatCursor(rows[len(rows)-1].CreatedAt)
+		last := rows[len(rows)-1]
+		page.Meta.NextCursor = formatCursor(last.CreatedAt, last.ID)
 	}
 	return page, nil
 }
@@ -112,7 +117,40 @@ func (s *Service) GetOffer(ctx context.Context, req orderapi.OfferRequest) (orde
 	if err != nil {
 		return orderapi.Offer{}, err
 	}
-	return toAPIOffer(o, ""), nil
+	currencies, err := s.listingCurrencies(ctx, req.ActorID, []domain.Offer{o})
+	if err != nil {
+		return orderapi.Offer{}, err
+	}
+	return toAPIOffer(o, currencies[o.ListingID]), nil
+}
+
+// listingCurrencies resolves the currency each offer's total is in. The offer row does not carry
+// one — the listing decides it and cannot change it — so it is read here rather than copied at
+// every revision. One catalog call for the whole page: a total with no currency beside it is not
+// a price anybody can render.
+func (s *Service) listingCurrencies(ctx context.Context, viewerID id.ID[id.Account], offers []domain.Offer) (map[int64]string, error) {
+	out := make(map[int64]string, len(offers))
+	if len(offers) == 0 {
+		return out, nil
+	}
+	ids := make([]id.ID[id.Listing], 0, len(offers))
+	for _, o := range offers {
+		if _, ok := out[o.ListingID]; ok {
+			continue
+		}
+		out[o.ListingID] = ""
+		ids = append(ids, id.Of[id.Listing](o.ListingID))
+	}
+	page, err := s.catalog.ListListings(ctx, catalogapi.ListListingsRequest{
+		ViewerID: viewerID, IDs: ids, Page: 1, Limit: len(ids),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("resolve offer listings: %w", err)
+	}
+	for _, listing := range page.Data {
+		out[listing.ID.Int64()] = listing.Currency
+	}
+	return out, nil
 }
 
 // CounterOffer revises the terms and hands the turn over. Only the side that does not own

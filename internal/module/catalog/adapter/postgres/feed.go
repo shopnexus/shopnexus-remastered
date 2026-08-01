@@ -20,22 +20,23 @@ import (
 // no user input reaches either.
 func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.ListingSummary, int64, error) {
 	args := pgx.NamedArgs{
-		"ids":         nullInt64Array(f.IDs),
-		"variant_ids": nullInt64Array(f.VariantIDs),
-		"query":       nullText(f.Query),
-		"viewer_id":   f.ViewerID,
-		"mine":        f.Mine,
-		"favorited":   f.Favorited,
-		"status":      nullText(string(f.Status)),
-		"category_id": nullInt64(f.CategoryID),
-		"tag":         nullText(f.Tag),
-		"seller_id":   nullInt64(f.SellerID),
-		"condition":   nullText(string(f.Condition)),
-		"min_price":   nullInt64(f.MinPrice),
-		"max_price":   nullInt64(f.MaxPrice),
-		"probe":       nullText(vectorLiteralOrEmpty(f.Probe)),
-		"limit":       f.Limit,
-		"offset":      f.Offset,
+		"ids":              nullInt64Array(f.IDs),
+		"variant_ids":      nullInt64Array(f.VariantIDs),
+		"query":            nullText(f.Query),
+		"viewer_id":        f.ViewerID,
+		"mine":             f.Mine,
+		"favorited":        f.Favorited,
+		"status":           nullText(string(f.Status)),
+		"category_id":      nullInt64(f.CategoryID),
+		"tag":              nullText(f.Tag),
+		"seller_id":        nullInt64(f.SellerID),
+		"condition":        nullText(string(f.Condition)),
+		"min_price":        nullInt64(f.MinPrice),
+		"max_price":        nullInt64Ptr(f.MaxPrice),
+		"probe":            nullText(vectorLiteralOrEmpty(f.Probe)),
+		"probe_from_query": f.ProbeFromQuery,
+		"limit":            f.Limit,
+		"offset":           f.Offset,
 	}
 	q := feedSelect + scoreExpr(f) + feedFrom + feedWhere + orderBy(f) + feedPage
 	rows, err := r.pool.Query(ctx, q, args)
@@ -117,6 +118,8 @@ const feedWhere = `
 	                     SELECT 1 FROM listing_tag lt
 	                     WHERE lt.listing_id = l.id AND lt.tag = @tag::text))
 	               -- A price bound is about the variants, so it is satisfied by any one of them.
+	               -- min_price stays a plain int64: 0 excludes no price a listing could have
+	               -- (every price is gte=1), so it is a genuine no-op and needs no pointer.
 	               AND (@min_price::bigint IS NULL OR EXISTS (
 	                     SELECT 1 FROM variant mv
 	                     WHERE mv.listing_id = l.id AND mv.deleted_at IS NULL
@@ -126,9 +129,13 @@ const feedWhere = `
 	                     WHERE xv.listing_id = l.id AND xv.deleted_at IS NULL
 	                       AND xv.price <= @max_price::bigint))
 	               -- The lexical half of a search, diacritic-insensitive through
-	               -- listing_name_unaccent_trgm_idx. A semantic query filters on nothing: the
-	               -- ranking is the answer, and an ANN scan has no threshold to apply here.
-	               AND (@query::text IS NULL OR @probe::text IS NOT NULL
+	               -- listing_name_unaccent_trgm_idx. Skipped only when the probe is the
+	               -- query's own embedding (a real semantic or hybrid search, where the
+	               -- ranking is the answer and an ANN scan has no threshold to apply) —
+	               -- never for a recommended feed's probe, which comes from the account's
+	               -- interest vectors and has nothing to do with @query.
+	               AND (@query::text IS NULL
+	                    OR (@probe::text IS NOT NULL AND @probe_from_query::boolean)
 	                    OR f_unaccent(l.name) % f_unaccent(@query::text))
 	             END
 	           )`
@@ -276,6 +283,16 @@ func nullInt64(n int64) any {
 		return nil
 	}
 	return n
+}
+
+// nullInt64Ptr is nullInt64's pointer half: absence is nil, not zero, so a genuine
+// `max_price=0` — a valid bound that matches nothing, since every price is gte=1 — is not
+// silently read as "not filtered".
+func nullInt64Ptr(n *int64) any {
+	if n == nil {
+		return nil
+	}
+	return *n
 }
 
 func nullText(s string) any {

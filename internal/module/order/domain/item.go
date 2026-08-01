@@ -148,3 +148,40 @@ func (t Transport) Shipped() bool {
 
 // Delivered reports whether it arrived — which for a return leg is what closes the leg.
 func (t Transport) Delivered() bool { return t.Status == TransportDelivered }
+
+// Settled reports whether the leg has reached an outcome nothing follows.
+func (t Transport) Settled() bool {
+	return t.Status == TransportDelivered || t.Status == TransportReturned ||
+		t.Status == TransportFailed
+}
+
+// transportOrder is how far along each status is. Only the legs a parcel passes through are
+// ranked; the three outcomes are ends rather than places on the way.
+var transportOrder = map[string]int{
+	TransportPending:   0,
+	TransportPickedUp:  1,
+	TransportInTransit: 2,
+}
+
+// Advance moves the shipment forward. Forward-only: a carrier's reports can arrive out of
+// order, and a parcel that was delivered did not go back to in-transit — nor is `Shipped()`,
+// which decides whether an order can still be cancelled, something a later report may undo.
+func (t *Transport) Advance(status string) error {
+	if t.Settled() {
+		return ErrTransportSettled
+	}
+	switch status {
+	case TransportDelivered, TransportReturned, TransportFailed:
+		// An outcome is reachable from anywhere: a parcel can fail before it is collected.
+		t.Status = status
+		return nil
+	case TransportPickedUp, TransportInTransit:
+		if transportOrder[status] <= transportOrder[t.Status] {
+			return ErrTransportSettled
+		}
+		t.Status = status
+		return nil
+	default:
+		return ErrTransportStatusUnknown
+	}
+}

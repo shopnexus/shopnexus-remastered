@@ -54,26 +54,18 @@ func (s *Service) CreateWithdrawal(ctx context.Context, req financeapi.CreateWit
 	if err != nil {
 		return financeapi.Withdrawal{}, err
 	}
-	if err := s.repo.InsertSession(ctx, &session); err != nil {
-		return financeapi.Withdrawal{}, fmt.Errorf("insert withdrawal session: %w", err)
-	}
-	// The debit is what makes the request real. It carries the session as its
-	// idempotency key, so a retried create cannot debit twice.
+	// The request and the debit are one fact, written in one transaction. Apart, a crash
+	// between them strands a pending cash-out with no debit behind it — and an admin
+	// approving that one sends real money for a balance that was never reduced. The debit
+	// carries the session as its idempotency key, so a retried create cannot debit twice.
 	ref := domain.SessionRef(session.ID)
-	legs := []port.Leg{{
+	debit := port.Leg{
 		AccountID: req.ActorID.Int64(), Currency: req.Currency,
 		Transfer: domain.Debit(domain.WalletKindWithdrawal, req.Amount, ref,
 			fmt.Sprintf("withdrawal:%d", session.ID), "withdrawal requested"),
-	}}
-	if _, err := s.repo.Move(ctx, legs); err != nil {
-		// The balance was not there. Void the session rather than leaving a pending
-		// cash-out nobody funded.
-		if cancelErr := session.Cancel(); cancelErr == nil {
-			if saveErr := s.repo.SaveSession(ctx, session); saveErr != nil {
-				s.log.Error("void unfunded withdrawal failed", "session_id", session.ID, "err", saveErr)
-			}
-		}
-		return financeapi.Withdrawal{}, fmt.Errorf("debit withdrawal: %w", err)
+	}
+	if err := s.repo.InsertWithdrawal(ctx, &session, debit); err != nil {
+		return financeapi.Withdrawal{}, fmt.Errorf("open withdrawal: %w", err)
 	}
 	return toAPIWithdrawal(session)
 }
@@ -129,7 +121,9 @@ func (s *Service) CancelWithdrawal(ctx context.Context, req financeapi.Withdrawa
 	if err := session.Cancel(); err != nil {
 		return err
 	}
-	if err := s.repo.SaveSession(ctx, session); err != nil {
+	// Guarded by the status it moves from: a cancellation racing an admin's decision must
+	// lose rather than both landing, or the money would be returned and the payout recorded.
+	if err := s.repo.SaveSession(ctx, session, liveWithdrawal); err != nil {
 		return fmt.Errorf("save withdrawal: %w", err)
 	}
 	return s.returnWithdrawal(ctx, session, "withdrawal cancelled")
@@ -230,11 +224,16 @@ func (s *Service) saveWithdrawalData(ctx context.Context, session *domain.Sessio
 		return fmt.Errorf("encode withdrawal data: %w", err)
 	}
 	session.Data = encoded
-	if err := s.repo.SaveSession(ctx, *session); err != nil {
+	if err := s.repo.SaveSession(ctx, *session, liveWithdrawal); err != nil {
 		return fmt.Errorf("save withdrawal: %w", err)
 	}
 	return nil
 }
+
+// liveWithdrawal is the set a cash-out can still be resolved from. Every write here names it,
+// so an approval and a rejection racing on one request cannot both land — which would return
+// the money to the wallet and record the payout as sent.
+var liveWithdrawal = []string{domain.StatusPending, domain.StatusProcessing}
 
 func decodeWithdrawal(session domain.Session) (withdrawalData, error) {
 	var data withdrawalData

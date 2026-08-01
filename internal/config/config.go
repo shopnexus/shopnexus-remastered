@@ -49,6 +49,31 @@ type Config struct {
 	IDCipherKey string `validate:"required"`
 	LogLevel    string `validate:"required,oneof=debug info warn error"`
 
+	// StorageProvider is where an uploaded byte goes. `local` keeps objects on this host's
+	// disk and signs URLs back to the gateway's own upload route — a real store signs the
+	// bucket directly and the bytes never touch this process. Same rule as the other seams: a
+	// selector, not a default, because a deployment that thinks photos are in a bucket and
+	// finds them on a pod's disk discovers it the first time the pod is replaced.
+	StorageProvider string `validate:"required,oneof=local"`
+	// StorageRoot is the directory `local` stores objects under.
+	StorageRoot string `validate:"required_if=StorageProvider local"`
+	// StorageBaseURL is where this gateway answers the upload and download routes as a client
+	// sees them — behind a proxy that is not the address the server binds.
+	StorageBaseURL string `validate:"required_if=StorageProvider local,omitempty,url"`
+	// StorageSecret keys the signature on an upload slot. Its own secret, not the JWT's: this
+	// one signs a URL that sits in a client's memory, and rotating it invalidates only the
+	// slots still in flight.
+	StorageSecret string `validate:"required_if=StorageProvider local,omitempty,min=32"`
+	// StorageUploadTTL is how long a slot stays writable, StorageDownloadTTL how long a read
+	// link lives. Both short: a link that outlives the page it was rendered for is a hole.
+	StorageUploadTTL   time.Duration `validate:"required"`
+	StorageDownloadTTL time.Duration `validate:"required"`
+	// StorageMaxUploadBytes is the largest object accepted, refused before a byte moves.
+	StorageMaxUploadBytes int64 `validate:"required,gt=0"`
+	// StorageAllowedMimes is what may be stored at all. An allowlist: a store that accepts
+	// anything serves anything back, and `text/html` from your own domain is a stored script.
+	StorageAllowedMimes []string `validate:"required,min=1"`
+
 	// --- durable execution ---
 
 	// WorkflowRuntime picks who holds the timers this marketplace waits on — an unpaid
@@ -81,6 +106,11 @@ type Config struct {
 	// KYCProvider is "fpt-ai" for the real check, or "mock" to leave every case pending
 	// for a moderator.
 	KYCProvider string `validate:"required,oneof=fpt-ai mock"`
+	// PaymentReturnURLHosts is where a payment gateway may send a payer back. An allowlist
+	// rather than any URL the client sends: a redirect target nobody checked is an open
+	// redirect wearing a payment flow, and the platform's own domain is what lends it
+	// credibility. Comma-separated hosts, no scheme.
+	PaymentReturnURLHosts []string `validate:"required,min=1,dive,required,hostname_port|hostname"`
 	// PaymentProvider picks the rail money actually moves on. `mock` settles
 	// synchronously with no gateway, which is what dev and the tests use.
 	PaymentProvider string `validate:"required,oneof=mock"`
@@ -162,17 +192,27 @@ func Load(v *validator.Validate) (*Config, error) {
 		IDCipherKey:        os.Getenv("ID_CIPHER_KEY"),
 		LogLevel:           os.Getenv("LOG_LEVEL"),
 
+		StorageProvider:       os.Getenv("STORAGE_PROVIDER"),
+		StorageRoot:           os.Getenv("STORAGE_ROOT"),
+		StorageBaseURL:        os.Getenv("STORAGE_BASE_URL"),
+		StorageSecret:         os.Getenv("STORAGE_SECRET"),
+		StorageUploadTTL:      p.durationVar("STORAGE_UPLOAD_TTL"),
+		StorageDownloadTTL:    p.durationVar("STORAGE_DOWNLOAD_TTL"),
+		StorageMaxUploadBytes: p.int64Var("STORAGE_MAX_UPLOAD_BYTES"),
+		StorageAllowedMimes:   listVar("STORAGE_ALLOWED_MIMES"),
+
 		WorkflowRuntime:    os.Getenv("WORKFLOW_RUNTIME"),
 		RestateServeAddr:   os.Getenv("RESTATE_SERVE_ADDR"),
 		RestateIngressURL:  os.Getenv("RESTATE_INGRESS_URL"),
 		RestateSendTimeout: p.durationVar("RESTATE_SEND_TIMEOUT"),
 		SweepInterval:      p.durationVar("SWEEP_INTERVAL"),
 
-		EmailProvider:   os.Getenv("EMAIL_PROVIDER"),
-		SMSProvider:     os.Getenv("SMS_PROVIDER"),
-		OAuthVerifier:   os.Getenv("OAUTH_VERIFIER"),
-		KYCProvider:     os.Getenv("KYC_PROVIDER"),
-		PaymentProvider: os.Getenv("PAYMENT_PROVIDER"),
+		EmailProvider:         os.Getenv("EMAIL_PROVIDER"),
+		SMSProvider:           os.Getenv("SMS_PROVIDER"),
+		OAuthVerifier:         os.Getenv("OAUTH_VERIFIER"),
+		KYCProvider:           os.Getenv("KYC_PROVIDER"),
+		PaymentProvider:       os.Getenv("PAYMENT_PROVIDER"),
+		PaymentReturnURLHosts: listVar("PAYMENT_RETURN_URL_HOSTS"),
 
 		SMTPHost:         os.Getenv("SMTP_HOST"),
 		SMTPPort:         p.intVar("SMTP_PORT"),
@@ -224,6 +264,21 @@ func (p *parser) intVar(name string) int {
 		return 0
 	}
 	v, err := strconv.Atoi(raw)
+	if err != nil {
+		p.problems = append(p.problems, fmt.Sprintf("%s must be an integer, got %q", name, raw))
+		return 0
+	}
+	return v
+}
+
+// int64Var is intVar for a value that is a size rather than a count — a byte limit outgrows an
+// int on a 32-bit build, and a truncated one is a limit nobody set.
+func (p *parser) int64Var(name string) int64 {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return 0
+	}
+	v, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
 		p.problems = append(p.problems, fmt.Sprintf("%s must be an integer, got %q", name, raw))
 		return 0

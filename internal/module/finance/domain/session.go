@@ -84,10 +84,19 @@ func (s Session) Settled() bool {
 	return s.Status == StatusSuccess || s.Status == StatusCancelled || s.Status == StatusFailed
 }
 
+// RailPayable reports whether a payer tenders this kind on a payment rail. Only a
+// checkout: a payout and a withdrawal move money the other way, and they are resolved by
+// the payout process rather than by the account on the receiving end tendering against
+// them. Without this a requester could drive their own cash-out to `success`.
+func (s Session) RailPayable() bool { return s.Kind == KindBuyerCheckout }
+
 // Charge is the session accepting a payment attempt. Only a pending session is
 // payable — a processing one already has a leg in flight, and paying twice is what
 // the status is there to prevent.
 func (s *Session) Charge(now time.Time) error {
+	if !s.RailPayable() {
+		return ErrSessionKindNotPayable
+	}
 	if s.Status != StatusPending {
 		return ErrSessionNotPayable
 	}
@@ -117,6 +126,21 @@ func (s *Session) MarkFailed() error {
 		return ErrSessionSettled
 	}
 	s.Status = StatusFailed
+	return nil
+}
+
+// ReopenForRetry puts a session that had a rail refuse it back on the shelf, so the payer
+// can tender another. Without this a failed leg strands the session in `processing`, where
+// Charge refuses it and nothing else moves it — the split-tender flow the contract
+// describes would be unreachable.
+func (s *Session) ReopenForRetry(now time.Time) error {
+	if s.Settled() {
+		return ErrSessionSettled
+	}
+	if s.Expired(now) {
+		return ErrSessionExpired
+	}
+	s.Status = StatusPending
 	return nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"slices"
 	"testing"
+	"time"
 
 	"shopnexus/internal/infra/eventbus"
 	accountapi "shopnexus/internal/module/account/api"
@@ -16,6 +17,7 @@ import (
 	"shopnexus/internal/module/chat/api/chattest"
 	financeapi "shopnexus/internal/module/finance/api"
 	"shopnexus/internal/module/finance/api/financetest"
+	financedomain "shopnexus/internal/module/finance/domain"
 	"shopnexus/internal/module/order"
 	orderapi "shopnexus/internal/module/order/api"
 	"shopnexus/internal/module/order/domain"
@@ -66,8 +68,9 @@ func (f fakeAccounts) GetPickupContact(_ context.Context, req accountapi.GetPick
 	return accountapi.Contact{FullName: "Seller", Phone: "+84900000002", Country: "VN"}, nil
 }
 
-// fakeCatalog answers what a listing costs and holds its stock. The counters are real, so a
-// test can see a reservation happen and come back.
+// fakeCatalog answers what a listing costs and holds its stock. The counters are real and so are
+// their guards: a fake that subtracted whatever it was handed made every wrong-counter bug in
+// this module invisible, because `reserved` was allowed to go negative.
 type fakeCatalog struct {
 	catalogtest.Stub
 	priceMode string
@@ -78,14 +81,22 @@ type fakeCatalog struct {
 	sold     int64
 	// available bounds a reservation, so an oversell is refusable.
 	available int64
+	// movements is the idempotency ledger the real commit writes beside the counter, so a
+	// retried settlement is a no-op here too.
+	movements map[string]bool
 }
 
 func (f *fakeCatalog) GetListing(_ context.Context, req catalogapi.GetListingRequest) (catalogapi.ListingDetail, error) {
 	return f.listing(), nil
 }
 
+// ListListings answers the card, currency and all: an offer's total is rendered against it, and a
+// fake that left it blank would make the contract's claim untestable.
 func (f *fakeCatalog) ListListings(context.Context, catalogapi.ListListingsRequest) (catalogapi.ListingPage, error) {
-	return catalogapi.ListingPage{Data: []catalogapi.Listing{{ID: listingID}}}, nil
+	return catalogapi.ListingPage{Data: []catalogapi.Listing{{
+		ID: listingID, Name: "Ao thun", Currency: "VND", PriceMode: f.priceMode,
+		Seller: accountapi.AccountSummary{ID: seller},
+	}}}, nil
 }
 
 func (f *fakeCatalog) listing() catalogapi.ListingDetail {
@@ -104,66 +115,162 @@ func (f *fakeCatalog) ReserveStock(_ context.Context, req catalogapi.StockMoveme
 	return nil
 }
 
+// ReleaseStock refuses what the real `WHERE reserved >= @units` refuses. That guard is the whole
+// point of the fake: releasing units that are in `sold` has to fail here, or using the wrong
+// reversal reads as success.
 func (f *fakeCatalog) ReleaseStock(_ context.Context, req catalogapi.StockMovementRequest) error {
+	if f.reserved < req.Units {
+		return errx.NewError(409, "insufficient_stock", "nothing reserved to release")
+	}
 	f.reserved -= req.Units
 	return nil
 }
 
-func (f *fakeCatalog) CommitStock(_ context.Context, req catalogapi.StockMovementRequest) error {
-	f.reserved -= req.Units
-	f.sold += req.Units
+func (f *fakeCatalog) CommitStock(_ context.Context, req catalogapi.StockCommitRequest) error {
+	return f.move(req, func() error {
+		if f.reserved < req.Units {
+			return errx.NewError(409, "insufficient_stock", "nothing reserved to commit")
+		}
+		f.reserved -= req.Units
+		f.sold += req.Units
+		return nil
+	})
+}
+
+func (f *fakeCatalog) UncommitStock(_ context.Context, req catalogapi.StockCommitRequest) error {
+	return f.move(req, func() error {
+		if f.sold < req.Units {
+			return errx.NewError(409, "insufficient_stock", "nothing sold to reverse")
+		}
+		f.sold -= req.Units
+		return nil
+	})
+}
+
+// move applies a keyed movement once, as the real one does by writing the key in the same
+// transaction as the counter.
+func (f *fakeCatalog) move(req catalogapi.StockCommitRequest, apply func() error) error {
+	if req.IdempotencyKey == "" {
+		return errx.NewError(500, "stock_movement_key_required", "no key")
+	}
+	if f.movements[req.IdempotencyKey] {
+		return nil
+	}
+	if err := apply(); err != nil {
+		return err
+	}
+	f.movements[req.IdempotencyKey] = true
 	return nil
 }
 
-// fakeFinance is the money. It records what was held, released and refunded, which is what a
-// test asserts about — the amounts, not the ledger.
+// fakeFinance is the money. It records what was held, released and refunded, and — the part that
+// matters — refuses to move out more than is being held: `wallet_held_balance_non_negative` is a
+// real constraint, and without it releasing an escrow that has already gone back to the buyer
+// just incremented a counter, so paying both parties looked like success.
 type fakeFinance struct {
 	financetest.Stub
 	nextSession int64
 	held        int64
 	released    int64
 	refunded    int64
+	// sessions is what each opened checkout looks like now: `paid` is what stops a line that
+	// has been charged for from being cancelled.
+	sessions map[int64]*financeapi.Session
 	// posted is the idempotency index: a key used twice is refused, as the real one does.
 	posted map[string]bool
+	// holdFails and refundFails make the money unreachable for one attempt, which is the only
+	// way to see whether a half-finished write is recoverable.
+	holdFails   bool
+	refundFails bool
 }
 
 func newFakeFinance() *fakeFinance {
-	return &fakeFinance{posted: map[string]bool{}}
+	return &fakeFinance{
+		sessions: map[int64]*financeapi.Session{},
+		posted:   map[string]bool{},
+	}
 }
 
 func (f *fakeFinance) OpenCheckout(_ context.Context, req financeapi.OpenCheckoutRequest) (financeapi.Session, error) {
 	f.nextSession++
-	return financeapi.Session{
+	session := financeapi.Session{
 		ID: id.Of[id.PaymentSession](f.nextSession), Kind: "buyer-checkout",
 		Status: "pending", Currency: req.Currency, TotalAmount: req.Total,
 		Outstanding: req.Total,
-	}, nil
+	}
+	f.sessions[f.nextSession] = &session
+	return session, nil
+}
+
+func (f *fakeFinance) GetSession(_ context.Context, req financeapi.GetSessionRequest) (financeapi.Session, error) {
+	session, ok := f.sessions[req.ID.Int64()]
+	if !ok {
+		return financeapi.Session{}, errx.NewError(404, "session_not_found", "no such session")
+	}
+	return *session, nil
+}
+
+// pay marks a session covered, which is what the webhook does before order settles it.
+func (f *fakeFinance) pay(sessionID id.ID[id.PaymentSession]) {
+	if session, ok := f.sessions[sessionID.Int64()]; ok {
+		session.Status = "success"
+		session.PaidAt = new(time.Now())
+	}
 }
 
 func (f *fakeFinance) HoldEscrow(_ context.Context, req financeapi.EscrowRequest) error {
-	if f.posted[req.IdempotencyKey] {
-		return errx.NewError(409, "movement_already_posted", "already posted")
+	if f.holdFails {
+		return errx.NewError(503, "finance_unreachable", "the ledger is down")
 	}
-	f.posted[req.IdempotencyKey] = true
-	f.held += req.Amount
-	return nil
+	return f.post(req, func() error {
+		f.held += req.Amount
+		return nil
+	})
 }
 
 func (f *fakeFinance) ReleaseEscrow(_ context.Context, req financeapi.EscrowRequest) error {
-	if f.posted[req.IdempotencyKey] {
-		return errx.NewError(409, "movement_already_posted", "already posted")
-	}
-	f.posted[req.IdempotencyKey] = true
-	f.released += req.Amount
-	return nil
+	return f.post(req, func() error {
+		if err := f.debitHeld(req.Amount); err != nil {
+			return err
+		}
+		f.released += req.Amount
+		return nil
+	})
 }
 
 func (f *fakeFinance) RefundEscrow(_ context.Context, req financeapi.EscrowRequest) error {
+	if f.refundFails {
+		return errx.NewError(503, "finance_unreachable", "the ledger is down")
+	}
+	return f.post(req, func() error {
+		if err := f.debitHeld(req.Amount); err != nil {
+			return err
+		}
+		f.refunded += req.Amount
+		return nil
+	})
+}
+
+// debitHeld is wallet_held_balance_non_negative: money can only leave escrow once, so a second
+// party being paid out of the same hold is refused rather than counted.
+func (f *fakeFinance) debitHeld(amount int64) error {
+	if f.held < amount {
+		return errx.NewError(409, "held_balance_negative", "escrow does not hold that much")
+	}
+	f.held -= amount
+	return nil
+}
+
+func (f *fakeFinance) post(req financeapi.EscrowRequest, apply func() error) error {
 	if f.posted[req.IdempotencyKey] {
-		return errx.NewError(409, "movement_already_posted", "already posted")
+		// The real sentinel, not a lookalike: order treats this one as success, and a coded
+		// error that merely reads the same would make every resumed settlement fail.
+		return financedomain.ErrMovementAlreadyPosted
+	}
+	if err := apply(); err != nil {
+		return err
 	}
 	f.posted[req.IdempotencyKey] = true
-	f.refunded += req.Amount
 	return nil
 }
 
@@ -223,6 +330,10 @@ func (f *fakeWorkflows) OrderReceived(_ context.Context, orderID int64) error {
 	return f.record("order-received", orderID)
 }
 
+func (f *fakeWorkflows) OrderCancelled(_ context.Context, orderID int64) error {
+	return f.record("order-cancelled", orderID)
+}
+
 func (f *fakeWorkflows) RefundRaised(_ context.Context, orderID int64) error {
 	return f.record("refund-raised", orderID)
 }
@@ -231,17 +342,16 @@ func (f *fakeWorkflows) RefundResolved(_ context.Context, orderID int64, buyerPa
 	return f.record(fmt.Sprintf("refund-resolved(%t)", buyerPaid), orderID)
 }
 
-func (f *fakeWorkflows) StartRefund(_ context.Context, refundID int64) error {
-	return f.record("start-refund", refundID)
-}
-
-func (f *fakeWorkflows) RefundMoved(_ context.Context, refundID int64) error {
-	return f.record("refund-moved", refundID)
+func (f *fakeWorkflows) StartRefundWindow(_ context.Context, refundID int64, status string) error {
+	return f.record("refund-window:"+status, refundID)
 }
 
 func newHarness(priceMode string) *harness {
 	repo := newFakeRepo()
-	catalog := &fakeCatalog{priceMode: priceMode, price: 100_000, available: 5}
+	catalog := &fakeCatalog{
+		priceMode: priceMode, price: 100_000, available: 5,
+		movements: map[string]bool{},
+	}
 	finance := newFakeFinance()
 	chat := &fakeChat{}
 	accounts := fakeAccounts{role: "user"}
@@ -251,6 +361,15 @@ func newHarness(priceMode string) *harness {
 		slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: repo, catalog: catalog, finance: finance, chat: chat,
 		accounts: accounts, workflows: workflows}
+}
+
+// ageItems winds every line back, which is how a test reaches a checkout window the clock would
+// otherwise have to wait out.
+func (h *harness) ageItems(by time.Duration) {
+	for key, i := range h.repo.items {
+		i.CreatedAt = i.CreatedAt.Add(by)
+		h.repo.items[key] = i
+	}
 }
 
 // moderator reuses one harness's repository with a staff caller.
@@ -291,6 +410,7 @@ func (h *harness) checkout(t *testing.T) (orderapi.CheckoutResult, orderapi.Orde
 		t.Fatalf("Checkout: %v", err)
 	}
 	// The money is what creates the order — no seller step in between.
+	h.finance.pay(result.PaymentSession)
 	if err := h.svc.SettlePaidSession(ctx, result.PaymentSession); err != nil {
 		t.Fatalf("SettlePaidSession: %v", err)
 	}
@@ -427,6 +547,15 @@ func TestOffer_NegotiateThenAccept(t *testing.T) {
 	if countered.AuthorID != seller || countered.Total != 90_000 {
 		t.Fatalf("offer = %+v, want the seller's terms", countered)
 	}
+	// A total is not a price without the currency beside it, and the offer row carries none —
+	// the listing decides it, so a read resolves it rather than every revision copying it.
+	read, err := h.svc.GetOffer(ctx, orderapi.OfferRequest{ActorID: buyer, ID: offer.ID})
+	if err != nil {
+		t.Fatalf("GetOffer: %v", err)
+	}
+	if read.Currency != "VND" {
+		t.Errorf("currency = %q, want the listing's", read.Currency)
+	}
 	// The seller cannot turn their own price into a sale.
 	if err := mustErr(h.svc.AcceptOffer(ctx, orderapi.AcceptOfferRequest{
 		ActorID: seller, ID: offer.ID, ContactID: contactID, TransportOption: "ghn-express",
@@ -444,6 +573,7 @@ func TestOffer_NegotiateThenAccept(t *testing.T) {
 		t.Fatalf("checkout total = %d, want the agreed price", result.Total)
 	}
 	// And the money still creates the order — the seller is not asked again.
+	h.finance.pay(result.PaymentSession)
 	if err := h.svc.SettlePaidSession(ctx, result.PaymentSession); err != nil {
 		t.Fatalf("SettlePaidSession: %v", err)
 	}
@@ -543,7 +673,7 @@ func TestRefund_BlocksPayoutAndAdvancesOnTime(t *testing.T) {
 	}
 	// The case has its own clock, and the escrow window is told to stop counting down.
 	for _, want := range []string{
-		fmt.Sprintf("start-refund:%d", refund.ID.Int64()),
+		fmt.Sprintf("refund-window:%s:%d", domain.RefundAwaitingSeller, refund.ID.Int64()),
 		fmt.Sprintf("refund-raised:%d", o.ID.Int64()),
 	} {
 		if !h.workflows.saw(want) {
@@ -623,8 +753,11 @@ func TestRefund_AcceptOpensTheReturnLeg(t *testing.T) {
 	}
 }
 
-// A rejection puts the buyer on the clock, escalating puts a moderator in, and the verdict
-// pays the buyer and closes the order.
+// A rejection puts the buyer on the clock, escalating puts a moderator in, and a verdict for the
+// buyer in round one books the return leg — the state has no other exit, so a ruling that only
+// set the status stranded the escrow with nobody on a clock. The money then follows the goods
+// back: the return is delivered, the seller does not appeal, and the window lapsing pays the
+// buyer and closes the order.
 func TestRefund_DisputeRuling(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
@@ -684,6 +817,59 @@ func TestRefund_DisputeRuling(t *testing.T) {
 		ActorID: admin, ID: dispute.ID, BuyerWins: false,
 	}))); got != 409 {
 		t.Fatalf("status = %d, want 409", got)
+	}
+
+	// The verdict moved the case to `returning` *and* booked the leg, which is the only way out
+	// of that state. Nothing has been paid yet: the goods come back first.
+	granted := h.repo.refunds[refund.ID.Int64()]
+	if granted.Status != domain.RefundReturning || granted.ReturnTransportID == nil {
+		t.Fatalf("refund = %+v, want it returning with a leg to track", granted)
+	}
+	if h.finance.refunded != 0 {
+		t.Errorf("refunded = %d, want nothing paid before the return", h.finance.refunded)
+	}
+
+	// The parcel arrives. That is what opens the seller's inspection window — and it has a
+	// writer now, so the case is no longer stuck.
+	returned, err := h.svc.AdvanceReturnShipment(ctx, orderapi.AdvanceReturnShipmentRequest{
+		ActorID: buyer, ID: refund.ID, Status: domain.TransportDelivered,
+	})
+	if err != nil {
+		t.Fatalf("AdvanceReturnShipment: %v", err)
+	}
+	if returned.Status != domain.RefundReturned || returned.DeadlineAt == nil {
+		t.Fatalf("refund = %+v, want the seller's appeal window open", returned)
+	}
+
+	// The seller says nothing, so the window lapsing pays the buyer and closes the order.
+	live := h.repo.refunds[refund.ID.Int64()]
+	live.DeadlineAt = new(live.CreatedAt.Add(-1))
+	h.repo.refunds[refund.ID.Int64()] = live
+	if moved, err := h.svc.AdvanceOverdueRefunds(ctx, 10); err != nil || moved != 1 {
+		t.Fatalf("AdvanceOverdueRefunds = %d, %v; want the appeal window to lapse", moved, err)
+	}
+	settled := h.repo.refunds[refund.ID.Int64()]
+	if settled.Status != domain.RefundAccepted {
+		t.Fatalf("refund = %+v, want it accepted", settled)
+	}
+	if h.finance.refunded != 100_000 || h.finance.held != 0 {
+		t.Fatalf("refunded = %d held = %d, want the whole escrow back with the buyer",
+			h.finance.refunded, h.finance.held)
+	}
+	closed := h.repo.orders[o.ID.Int64()]
+	if closed.State() != domain.StateCancelled {
+		t.Fatalf("order = %q, want it closed with the refund", closed.State())
+	}
+	// The units are back on the shelf, off `sold` rather than out of somebody else's
+	// reservation — which is what releasing instead of uncommitting would have done.
+	if h.catalog.sold != 0 || h.catalog.reserved != 0 {
+		t.Fatalf("stock = reserved %d sold %d, want the sale reversed",
+			h.catalog.reserved, h.catalog.sold)
+	}
+	// And nothing pays the seller afterwards: an accepted refund keeps its claim on the escrow.
+	if paid, err := h.svc.ReleaseDuePayouts(ctx, 10); err != nil || paid != 0 {
+		t.Fatalf("ReleaseDuePayouts = %d, %v; want the refunded order to be nobody's payout",
+			paid, err)
 	}
 }
 
@@ -779,5 +965,473 @@ func TestExpiry_ClosesWhatNobodyFinished(t *testing.T) {
 	// Again closes nothing: the row already moved.
 	if closed, err := h.svc.ExpireOffers(ctx, 10); err != nil || closed != 0 {
 		t.Fatalf("second pass = %d, %v; want nothing left", closed, err)
+	}
+}
+
+// startCheckout takes a fixed-price listing as far as an open payment session, which is where
+// the tests about the unpaid half of the flow start.
+func (h *harness) startCheckout(t *testing.T, quantity int64) orderapi.CheckoutResult {
+	t.Helper()
+	ctx := context.Background()
+	draft, err := h.svc.CreateDraft(ctx, orderapi.CreateDraftRequest{
+		ActorID: buyer, ListingID: listingID,
+	})
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	result, err := h.svc.Checkout(ctx, orderapi.CheckoutRequest{
+		ActorID: buyer, ID: draft.ID, ContactID: contactID, Currency: "VND",
+		TransportOption: "ghn-express",
+		Lines:           []orderapi.CheckoutLine{{VariantID: variantID, Quantity: quantity}},
+	})
+	if err != nil {
+		t.Fatalf("Checkout: %v", err)
+	}
+	return result
+}
+
+// Settling is resumable, not merely idempotent. The escrow hold fails once, so the order exists
+// with no money behind it and no stock committed; the retry has to finish the job. It used to
+// return nil for ever, because every pass re-applied the "lines with no order" filter and found
+// none — a buyer who had paid, an order nobody held escrow for, and a payout 72h later out of
+// somebody else's balance.
+func TestSettlePaidSession_ResumesAfterAFailedHold(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	result := h.startCheckout(t, 1)
+	h.finance.pay(result.PaymentSession)
+
+	// The hold fails. The order is written by then, which is the whole difficulty.
+	h.finance.holdFails = true
+	if err := h.svc.SettlePaidSession(ctx, result.PaymentSession); err == nil {
+		t.Fatal("a failed escrow hold reported success")
+	}
+	if h.finance.held != 0 || h.catalog.sold != 0 {
+		t.Fatalf("held = %d sold = %d, want nothing past the order to have happened",
+			h.finance.held, h.catalog.sold)
+	}
+
+	h.finance.holdFails = false
+	if err := h.svc.SettlePaidSession(ctx, result.PaymentSession); err != nil {
+		t.Fatalf("resumed SettlePaidSession: %v", err)
+	}
+	if h.finance.held != 100_000 {
+		t.Fatalf("held = %d, want the retry to hold the escrow", h.finance.held)
+	}
+	if h.catalog.sold != 1 || h.catalog.reserved != 0 {
+		t.Fatalf("stock = reserved %d sold %d, want the retry to commit the sale",
+			h.catalog.reserved, h.catalog.sold)
+	}
+	// Once more changes nothing: the hold is keyed on the order, the sale on the line.
+	if err := h.svc.SettlePaidSession(ctx, result.PaymentSession); err != nil {
+		t.Fatalf("third SettlePaidSession: %v", err)
+	}
+	if h.finance.held != 100_000 || h.catalog.sold != 1 {
+		t.Fatalf("held = %d sold = %d, want each effect applied once",
+			h.finance.held, h.catalog.sold)
+	}
+	// One order, and every line of the session is on it.
+	if len(h.repo.orders) != 1 {
+		t.Fatalf("orders = %d, want the retries to mint none", len(h.repo.orders))
+	}
+	for _, i := range h.repo.items {
+		if i.OrderID == nil {
+			t.Fatalf("item %d is still unlinked after a resumed settlement", i.ID)
+		}
+	}
+}
+
+// A paid line is not the seller's to cancel. Not even a race is needed: when settling fails
+// because the seller has no pickup address the paid lines sit on the retry list, and cancelling
+// one there released the stock and made every later settlement a no-op — the buyer's money
+// captured against nothing.
+func TestCancelItem_RefusesAPaidLine(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	result := h.startCheckout(t, 1)
+	h.finance.pay(result.PaymentSession)
+
+	if got := status(t, mustErr(h.svc.CancelItem(ctx, orderapi.ItemRequest{
+		ActorID: seller, ID: result.Items[0].ID,
+	}))); got != 409 {
+		t.Fatalf("status = %d, want 409 cancelling a line the money reached", got)
+	}
+	// The buyer cannot either: from here the sale is undone by a refund, which the seller sees.
+	if got := status(t, mustErr(h.svc.CancelItem(ctx, orderapi.ItemRequest{
+		ActorID: buyer, ID: result.Items[0].ID,
+	}))); got != 409 {
+		t.Fatalf("status = %d, want 409 for the buyer too", got)
+	}
+	if h.catalog.reserved != 1 {
+		t.Fatalf("reserved = %d, want the units still held for the sale", h.catalog.reserved)
+	}
+	// And settling still works, because nothing was cancelled out from under it.
+	if err := h.svc.SettlePaidSession(ctx, result.PaymentSession); err != nil {
+		t.Fatalf("SettlePaidSession: %v", err)
+	}
+	if h.finance.held != 100_000 || h.catalog.sold != 1 {
+		t.Fatalf("held = %d sold = %d, want the sale to have gone through",
+			h.finance.held, h.catalog.sold)
+	}
+}
+
+// The draft is claimed before the money is asked for, so two checkouts of one purchase session
+// cannot both open a payment session for the same frozen price. The loser is refused rather than
+// noted in a log line nobody reads.
+func TestCheckout_ClaimsTheDraftBeforeCharging(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	draft, err := h.svc.CreateDraft(ctx, orderapi.CreateDraftRequest{
+		ActorID: buyer, ListingID: listingID,
+	})
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	req := orderapi.CheckoutRequest{
+		ActorID: buyer, ID: draft.ID, ContactID: contactID, Currency: "VND",
+		TransportOption: "ghn-express",
+		Lines:           []orderapi.CheckoutLine{{VariantID: variantID, Quantity: 1}},
+	}
+	if _, err := h.svc.Checkout(ctx, req); err != nil {
+		t.Fatalf("Checkout: %v", err)
+	}
+	if got := status(t, mustErr(h.svc.Checkout(ctx, req))); got != 409 {
+		t.Fatalf("status = %d, want 409 for the second checkout of one draft", got)
+	}
+	// One session, and the loser reserved nothing.
+	if h.finance.nextSession != 1 {
+		t.Fatalf("sessions = %d, want one charge for one frozen price", h.finance.nextSession)
+	}
+	if h.catalog.reserved != 1 {
+		t.Fatalf("reserved = %d, want only the winner's units held", h.catalog.reserved)
+	}
+}
+
+// A checkout nobody pays gives its stock back on the sweep, not only on a durable timer. With
+// WORKFLOW_RUNTIME=off the timer does not exist, and nothing else in the schema ever looks at a
+// reservation again — the units were lost for good.
+func TestExpireCheckouts_ReleasesUnpaidReservations(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	result := h.startCheckout(t, 2)
+	if h.catalog.reserved != 2 {
+		t.Fatalf("reserved = %d, want the checkout to hold them", h.catalog.reserved)
+	}
+	// Not yet: the buyer is still inside the window.
+	if closed, err := h.svc.ExpireCheckouts(ctx, 10); err != nil || closed != 0 {
+		t.Fatalf("ExpireCheckouts = %d, %v; want nothing expired yet", closed, err)
+	}
+	h.ageItems(-time.Hour)
+
+	closed, err := h.svc.ExpireCheckouts(ctx, 10)
+	if err != nil {
+		t.Fatalf("ExpireCheckouts: %v", err)
+	}
+	if closed != 1 || h.catalog.reserved != 0 {
+		t.Fatalf("closed = %d reserved = %d, want the units back", closed, h.catalog.reserved)
+	}
+	// Again finds nothing, and a line the money did reach is never in the list at all.
+	if closed, err := h.svc.ExpireCheckouts(ctx, 10); err != nil || closed != 0 {
+		t.Fatalf("second pass = %d, %v; want nothing left", closed, err)
+	}
+
+	h2 := newHarness("fixed")
+	paid := h2.startCheckout(t, 1)
+	h2.finance.pay(paid.PaymentSession)
+	h2.ageItems(-time.Hour)
+	if closed, err := h2.svc.ExpireCheckouts(ctx, 10); err != nil || closed != 0 {
+		t.Fatalf("ExpireCheckouts = %d, %v; want a paid line left alone", closed, err)
+	}
+	if h2.catalog.reserved != 1 {
+		t.Fatalf("reserved = %d, want a paid checkout's units still held", h2.catalog.reserved)
+	}
+	_ = result
+}
+
+// The payout re-reads the refund guard when it writes, not only when it selects. Interleaved, the
+// old code released the escrow to the seller and the verdict then refunded the buyer out of a
+// hold that was gone — which the ledger answers for by consuming another order's balance.
+func TestReleasePayout_LosesToARefundCommittedAfterTheSelect(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, o := h.checkout(t)
+	h.repo.resources[42] = true
+	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
+		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
+	}); err != nil {
+		t.Fatalf("ConfirmReceipt: %v", err)
+	}
+	stored := h.repo.orders[o.ID.Int64()]
+	stored.ReceivedAt = new(stored.ReceivedAt.Add(-domain.PayoutWindow - 1))
+	h.repo.orders[o.ID.Int64()] = stored
+
+	// The sweep's candidate list, read before the refund exists.
+	due, err := h.repo.PayoutDue(ctx, time.Now(), 10)
+	if err != nil {
+		t.Fatalf("PayoutDue: %v", err)
+	}
+	if len(due) != 1 {
+		t.Fatalf("due = %+v, want the order the window has passed on", due)
+	}
+	// The buyer commits a refund in the gap the old code read across.
+	if _, err := h.svc.CreateRefund(ctx, orderapi.CreateRefundRequest{
+		ActorID: buyer, OrderID: o.ID, Reason: "not as described",
+	}); err != nil {
+		t.Fatalf("CreateRefund: %v", err)
+	}
+	// The claim re-asks the question under the order's lock, so this one is no longer the
+	// payout's to take.
+	claimed := due[0]
+	if err := h.repo.ClaimPayout(ctx, &claimed); err == nil {
+		t.Fatal("the payout claimed an order a refund had already taken")
+	}
+	if err := h.svc.ReleasePayout(ctx, o.ID); err != nil {
+		t.Fatalf("ReleasePayout: %v", err)
+	}
+	if h.finance.released != 0 || h.finance.held != 100_000 {
+		t.Fatalf("released = %d held = %d, want the escrow untouched",
+			h.finance.released, h.finance.held)
+	}
+	// And a refund cannot be opened the other way round either: once the order is claimed the
+	// escrow it was about has gone.
+	h2 := newHarness("fixed")
+	_, o2 := h2.checkout(t)
+	h2.repo.resources[42] = true
+	if _, err := h2.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
+		ActorID: buyer, ID: o2.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
+	}); err != nil {
+		t.Fatalf("ConfirmReceipt: %v", err)
+	}
+	paid := h2.repo.orders[o2.ID.Int64()]
+	paid.ReceivedAt = new(paid.ReceivedAt.Add(-domain.PayoutWindow - 1))
+	h2.repo.orders[o2.ID.Int64()] = paid
+	if n, err := h2.svc.ReleaseDuePayouts(ctx, 10); err != nil || n != 1 {
+		t.Fatalf("ReleaseDuePayouts = %d, %v; want the payout to go through", n, err)
+	}
+	if got := status(t, mustErr(h2.svc.CreateRefund(ctx, orderapi.CreateRefundRequest{
+		ActorID: buyer, OrderID: o2.ID, Reason: "too late",
+	}))); got != 409 {
+		t.Fatalf("status = %d, want 409 refunding an order already paid out", got)
+	}
+}
+
+// A settled refund is one the money has already reached: the transfer comes first, and the row
+// going terminal is what records that it did. Written the other way round, a transfer that failed
+// left `accepted` on the row, nothing retried it, and the payout sweep handed the seller the
+// money the buyer had been awarded.
+func TestSettleRefund_MovesTheMoneyBeforeTheRowGoesTerminal(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, o := h.checkout(t)
+	h.repo.resources[42] = true
+	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
+		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
+	}); err != nil {
+		t.Fatalf("ConfirmReceipt: %v", err)
+	}
+	refund, err := h.svc.CreateRefund(ctx, orderapi.CreateRefundRequest{
+		ActorID: buyer, OrderID: o.ID, Reason: "not as described",
+	})
+	if err != nil {
+		t.Fatalf("CreateRefund: %v", err)
+	}
+	if _, err := h.svc.AcceptRefund(ctx, orderapi.RefundRequest{
+		ActorID: seller, ID: refund.ID,
+	}); err != nil {
+		t.Fatalf("AcceptRefund: %v", err)
+	}
+	if _, err := h.svc.AdvanceReturnShipment(ctx, orderapi.AdvanceReturnShipmentRequest{
+		ActorID: seller, ID: refund.ID, Status: domain.TransportDelivered,
+	}); err != nil {
+		t.Fatalf("AdvanceReturnShipment: %v", err)
+	}
+
+	// The transfer fails on the first attempt. The refund must not be `accepted` afterwards, or
+	// nothing will ever try again.
+	overdue := h.repo.refunds[refund.ID.Int64()]
+	overdue.DeadlineAt = new(overdue.CreatedAt.Add(-1))
+	h.repo.refunds[refund.ID.Int64()] = overdue
+	h.finance.refundFails = true
+	if _, err := h.svc.AdvanceOverdueRefunds(ctx, 10); err == nil {
+		t.Fatal("a failed refund transfer reported success")
+	}
+	stalled := h.repo.refunds[refund.ID.Int64()]
+	if stalled.Settled() {
+		t.Fatalf("refund = %q, want a case the money never reached to stay live", stalled.Status)
+	}
+	// Still live, so it still blocks the payout — the seller is not paid in the meantime.
+	if paid, err := h.svc.ReleaseDuePayouts(ctx, 10); err != nil || paid != 0 {
+		t.Fatalf("ReleaseDuePayouts = %d, %v; want the unpaid refund to hold it", paid, err)
+	}
+
+	// And the sweep is what retries it: the window is still overdue.
+	h.finance.refundFails = false
+	if moved, err := h.svc.AdvanceOverdueRefunds(ctx, 10); err != nil || moved != 1 {
+		t.Fatalf("AdvanceOverdueRefunds = %d, %v; want the sweep to finish it", moved, err)
+	}
+	settled := h.repo.refunds[refund.ID.Int64()]
+	if settled.Status != domain.RefundAccepted {
+		t.Fatalf("refund = %q, want it accepted once the money moved", settled.Status)
+	}
+	if h.finance.refunded != 100_000 || h.finance.held != 0 {
+		t.Fatalf("refunded = %d held = %d, want the escrow back with the buyer once",
+			h.finance.refunded, h.finance.held)
+	}
+	if h.repo.orders[o.ID.Int64()].State() != domain.StateCancelled {
+		t.Fatal("the order stayed open under a settled refund")
+	}
+}
+
+// A cancelled order puts its units back with the reversal of a sale, not with the reversal of a
+// reservation: by then they are in `sold`, and decrementing `reserved` either fails or eats
+// another buyer's hold and oversells.
+func TestCancelOrder_ReversesTheSaleRatherThanAReservation(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, o := h.checkout(t)
+	if h.catalog.sold != 1 || h.catalog.reserved != 0 {
+		t.Fatalf("stock = reserved %d sold %d, want the sale committed",
+			h.catalog.reserved, h.catalog.sold)
+	}
+	// Somebody else is mid-checkout on the same variant. Releasing instead of uncommitting would
+	// take their reservation.
+	if err := h.catalog.ReserveStock(ctx, catalogapi.StockMovementRequest{
+		VariantID: variantID, Units: 1,
+	}); err != nil {
+		t.Fatalf("ReserveStock: %v", err)
+	}
+
+	cancelled, err := h.svc.CancelOrder(ctx, orderapi.CancelOrderRequest{ActorID: buyer, ID: o.ID})
+	if err != nil {
+		t.Fatalf("CancelOrder: %v", err)
+	}
+	if cancelled.State != domain.StateCancelled {
+		t.Fatalf("state = %q, want cancelled", cancelled.State)
+	}
+	if h.catalog.sold != 0 {
+		t.Fatalf("sold = %d, want the sale reversed", h.catalog.sold)
+	}
+	if h.catalog.reserved != 1 {
+		t.Fatalf("reserved = %d, want the other buyer's hold untouched", h.catalog.reserved)
+	}
+	if h.finance.refunded != 100_000 || h.finance.held != 0 {
+		t.Fatalf("refunded = %d held = %d, want the escrow back",
+			h.finance.refunded, h.finance.held)
+	}
+	// The run is parked on the receipt, so that is the wait a cancellation has to end.
+	if !h.workflows.saw(fmt.Sprintf("order-cancelled:%d", o.ID.Int64())) {
+		t.Errorf("a cancelled order left its run waiting; calls = %v", h.workflows.calls)
+	}
+}
+
+// A delivered order cannot be cancelled. The guard reads the shipment's status, and until
+// something wrote it a buyer could take the whole escrow back and keep the goods.
+func TestCancelOrder_RefusesAShippedOrder(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, o := h.checkout(t)
+
+	// Only the seller reports the outbound leg; a buyer marking their own parcel shipped would
+	// be deciding whether they may still cancel.
+	if got := status(t, mustErr(h.svc.AdvanceShipment(ctx, orderapi.AdvanceShipmentRequest{
+		ActorID: buyer, ID: o.ID, Status: domain.TransportPickedUp,
+	}))); got != 403 {
+		t.Fatalf("status = %d, want 403 for the buyer", got)
+	}
+	if _, err := h.svc.AdvanceShipment(ctx, orderapi.AdvanceShipmentRequest{
+		ActorID: seller, ID: o.ID, Status: domain.TransportPickedUp,
+	}); err != nil {
+		t.Fatalf("AdvanceShipment: %v", err)
+	}
+	if got := status(t, mustErr(h.svc.CancelOrder(ctx, orderapi.CancelOrderRequest{
+		ActorID: buyer, ID: o.ID,
+	}))); got != 409 {
+		t.Fatalf("status = %d, want 409 cancelling a parcel that has left", got)
+	}
+	if h.finance.refunded != 0 || h.finance.held != 100_000 {
+		t.Fatalf("refunded = %d held = %d, want the escrow where it was",
+			h.finance.refunded, h.finance.held)
+	}
+	// Forward-only: a late report cannot un-ship it.
+	if got := status(t, mustErr(h.svc.AdvanceShipment(ctx, orderapi.AdvanceShipmentRequest{
+		ActorID: seller, ID: o.ID, Status: domain.TransportPickedUp,
+	}))); got != 409 {
+		t.Fatalf("status = %d, want 409 for a checkpoint already passed", got)
+	}
+}
+
+// Withdrawing is its own outcome. Stored as a rejection it was indistinguishable from a seller
+// who won the case, and the schema has had a label for it all along.
+func TestWithdrawRefund_IsNotASellerWin(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, o := h.checkout(t)
+	h.repo.resources[42] = true
+	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
+		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
+	}); err != nil {
+		t.Fatalf("ConfirmReceipt: %v", err)
+	}
+	refund, err := h.svc.CreateRefund(ctx, orderapi.CreateRefundRequest{
+		ActorID: buyer, OrderID: o.ID, Reason: "changed my mind",
+	})
+	if err != nil {
+		t.Fatalf("CreateRefund: %v", err)
+	}
+	if err := h.svc.WithdrawRefund(ctx, orderapi.RefundRequest{
+		ActorID: buyer, ID: refund.ID,
+	}); err != nil {
+		t.Fatalf("WithdrawRefund: %v", err)
+	}
+	withdrawn := h.repo.refunds[refund.ID.Int64()]
+	if withdrawn.Status != domain.RefundCancelled || withdrawn.DeadlineAt != nil {
+		t.Fatalf("refund = %+v, want it cancelled with nobody on a clock", withdrawn)
+	}
+	// A withdrawal gives the escrow up, so the payout is the seller's again.
+	stored := h.repo.orders[o.ID.Int64()]
+	stored.ReceivedAt = new(stored.ReceivedAt.Add(-domain.PayoutWindow - 1))
+	h.repo.orders[o.ID.Int64()] = stored
+	if paid, err := h.svc.ReleaseDuePayouts(ctx, 10); err != nil || paid != 1 {
+		t.Fatalf("ReleaseDuePayouts = %d, %v; want the seller paid", paid, err)
+	}
+	if h.finance.released != 100_000 {
+		t.Fatalf("released = %d, want the escrow out", h.finance.released)
+	}
+}
+
+// A page boundary inside a group of rows sharing one transaction's timestamp used to make the
+// rest of that group unreachable: the cursor carried `created_at` alone while the ordering added
+// `id`. Three lines of one checkout are exactly that group.
+func TestListItems_PagesThroughRowsSharingATimestamp(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	at := time.Now()
+	for i := range 3 {
+		h.repo.items[int64(i+1)] = domain.Item{
+			ID: int64(i + 1), BuyerID: buyer.Int64(), SellerID: seller.Int64(),
+			ListingID: listingID.Int64(), VariantID: variantID.Int64(), Currency: "VND",
+			Quantity: 1, TransportOption: "ghn-express", TotalAmount: 100_000,
+			PaymentSessionID: 1, CreatedAt: at,
+		}
+	}
+	seen := map[int64]bool{}
+	cursor := ""
+	for range 5 {
+		page, err := h.svc.ListItems(ctx, orderapi.ListItemsRequest{
+			ActorID: buyer, Role: "buyer", Limit: 2, Cursor: cursor,
+		})
+		if err != nil {
+			t.Fatalf("ListItems: %v", err)
+		}
+		for _, i := range page.Data {
+			seen[i.ID.Int64()] = true
+		}
+		if !page.Meta.HasMore {
+			break
+		}
+		cursor = page.Meta.NextCursor
+	}
+	if len(seen) != 3 {
+		t.Fatalf("saw %d of 3 lines, want every row reachable: %v", len(seen), seen)
 	}
 }

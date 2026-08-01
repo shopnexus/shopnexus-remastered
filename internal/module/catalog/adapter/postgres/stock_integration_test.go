@@ -31,7 +31,7 @@ func TestRepo_StockLifecycle(t *testing.T) {
 		t.Fatalf("stock = %+v", got)
 	}
 
-	if err := repo.CommitStock(ctx, variantID, 1); err != nil {
+	if err := repo.CommitStock(ctx, variantID, 1, unique("commit-")); err != nil {
 		t.Fatalf("CommitStock: %v", err)
 	}
 	if err := repo.ReleaseStock(ctx, variantID, 1); err != nil {
@@ -77,7 +77,7 @@ func TestRepo_ReserveStockRefusesAnOversell(t *testing.T) {
 	if err := repo.ReserveStock(ctx, variantID, 2); err != nil {
 		t.Fatalf("ReserveStock: %v", err)
 	}
-	if err := repo.CommitStock(ctx, variantID, 3); !errors.Is(err, domain.ErrInsufficientStock) {
+	if err := repo.CommitStock(ctx, variantID, 3, unique("commit-")); !errors.Is(err, domain.ErrInsufficientStock) {
 		t.Fatalf("CommitStock = %v, want ErrInsufficientStock", err)
 	}
 	if err := repo.ReleaseStock(ctx, variantID, 3); !errors.Is(err, domain.ErrInsufficientStock) {
@@ -95,5 +95,66 @@ func TestRepo_StockUnknownVariant(t *testing.T) {
 	}
 	if err := repo.ReserveStock(context.Background(), 0, 1); !errors.Is(err, domain.ErrInsufficientStock) {
 		t.Fatalf("ReserveStock = %v, want ErrInsufficientStock", err)
+	}
+}
+
+// A commit and its reversal are each applied once, and the key is what says so: `sold` never
+// comes back down on its own, so neither call is recoverable from the counters and a retry has to
+// be refused rather than reapplied. The ledger row lands in the same transaction as the counter,
+// so "applied" and "counted" cannot come apart.
+func TestRepo_CommitAndUncommitApplyOnce(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	category := createCategory(t, repo, unique("cat-"), nil)
+	createTag(t, repo, "handmade", nil)
+	l := newListingFor(t, repo, category.ID, unique("Listing "))
+	variantID := l.Variants[0].ID // quantity 5
+
+	if err := repo.ReserveStock(ctx, variantID, 2); err != nil {
+		t.Fatalf("ReserveStock: %v", err)
+	}
+	commitKey := unique("commit-")
+	for range 3 {
+		if err := repo.CommitStock(ctx, variantID, 2, commitKey); err != nil {
+			t.Fatalf("CommitStock: %v", err)
+		}
+	}
+	got, err := repo.FindStock(ctx, variantID)
+	if err != nil {
+		t.Fatalf("FindStock: %v", err)
+	}
+	if got.Reserved != 0 || got.Sold != 2 {
+		t.Fatalf("stock = %+v, want the sale counted once", got)
+	}
+
+	// A different key for the reversal, or the retried commit would swallow it.
+	reverseKey := unique("uncommit-")
+	for range 3 {
+		if err := repo.UncommitStock(ctx, variantID, 2, reverseKey); err != nil {
+			t.Fatalf("UncommitStock: %v", err)
+		}
+	}
+	got, err = repo.FindStock(ctx, variantID)
+	if err != nil {
+		t.Fatalf("FindStock: %v", err)
+	}
+	if got.Reserved != 0 || got.Sold != 0 || got.Available() != 5 {
+		t.Fatalf("stock = %+v, want every unit back on the shelf once", got)
+	}
+	var cachedSold int64
+	if err := poolOf(t).QueryRow(ctx, `SELECT cached_sold FROM listing WHERE id = $1`, l.ID).
+		Scan(&cachedSold); err != nil {
+		t.Fatalf("read cached_sold: %v", err)
+	}
+	if cachedSold != 0 {
+		t.Fatalf("cached_sold = %d, want the badge to follow the reversal", cachedSold)
+	}
+	// Nothing is sold, so there is nothing left to reverse.
+	if err := repo.UncommitStock(ctx, variantID, 1, unique("uncommit-")); !errors.Is(err, domain.ErrInsufficientStock) {
+		t.Fatalf("UncommitStock = %v, want ErrInsufficientStock", err)
+	}
+	// And a commit with no key is refused rather than applied an unknown number of times.
+	if err := repo.CommitStock(ctx, variantID, 1, ""); !errors.Is(err, domain.ErrStockMovementKeyRequired) {
+		t.Fatalf("CommitStock = %v, want ErrStockMovementKeyRequired", err)
 	}
 }

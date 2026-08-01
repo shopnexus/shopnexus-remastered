@@ -202,11 +202,15 @@ func (h *Chat) UpdateMessage(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
+	createdAt, err := timeParam(r, "created_at")
+	if failed(w, h.log, err) {
+		return
+	}
 	var req chatapi.UpdateMessageRequest
 	if failed(w, h.log, decodeBody(r, &req)) {
 		return
 	}
-	req.ActorID, req.ID = uid, messageID
+	req.ActorID, req.ID, req.CreatedAt = uid, messageID, createdAt
 	if failed(w, h.log, check(h.v, req)) {
 		return
 	}
@@ -228,7 +232,11 @@ func (h *Chat) RedactMessage(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	req := chatapi.RedactMessageRequest{ActorID: uid, ID: messageID}
+	createdAt, err := timeParam(r, "created_at")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := chatapi.RedactMessageRequest{ActorID: uid, ID: messageID, CreatedAt: createdAt}
 	if failed(w, h.log, check(h.v, req)) {
 		return
 	}

@@ -69,7 +69,8 @@ func (s *Service) ListDrafts(ctx context.Context, req orderapi.ListDraftsRequest
 	}
 	page := orderapi.DraftPage{Data: out, Meta: orderapi.CursorInfo{HasMore: hasMore}}
 	if hasMore && len(rows) > 0 {
-		page.Meta.NextCursor = formatCursor(rows[len(rows)-1].CreatedAt)
+		last := rows[len(rows)-1]
+		page.Meta.NextCursor = formatCursor(last.CreatedAt, last.ID)
 	}
 	return page, nil
 }
@@ -120,6 +121,17 @@ func (s *Service) Checkout(ctx context.Context, req orderapi.CheckoutRequest) (o
 	}
 	address, err := s.contactSnapshot(ctx, req.ActorID, req.ContactID)
 	if err != nil {
+		return orderapi.CheckoutResult{}, err
+	}
+
+	// The draft is spent before anything is reserved or charged, and the write is the claim:
+	// `WHERE cancelled_at IS NULL` means exactly one of two concurrent checkouts of one draft
+	// gets through, and the loser is refused rather than handed a second payment session for
+	// the same frozen price.
+	if err := d.Cancel(); err != nil {
+		return orderapi.CheckoutResult{}, err
+	}
+	if err := s.repo.SaveDraft(ctx, d); err != nil {
 		return orderapi.CheckoutResult{}, err
 	}
 
@@ -180,13 +192,6 @@ func (s *Service) Checkout(ctx context.Context, req orderapi.CheckoutRequest) (o
 	if err := s.repo.InsertItems(ctx, lines); err != nil {
 		release()
 		return orderapi.CheckoutResult{}, fmt.Errorf("insert items: %w", err)
-	}
-	// The draft is spent: its terms are now the lines', and a second checkout of the same
-	// session would charge twice for one frozen price.
-	if err := d.Cancel(); err == nil {
-		if err := s.repo.SaveDraft(ctx, d); err != nil {
-			s.log.Error("close checked-out draft", "draft_id", d.ID, "err", err)
-		}
 	}
 	// The reserved stock is now on a clock: a checkout nobody pays has to give it back.
 	s.timer("start checkout", s.workflows.StartCheckout(ctx, session.ID.Int64()))

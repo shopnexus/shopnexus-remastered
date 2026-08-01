@@ -1,8 +1,10 @@
 package postgres
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 
@@ -57,10 +59,11 @@ func (r *Repo) ListMovements(ctx context.Context, f port.MovementFilter) ([]doma
 	                  idempotency_key, note, created_at, COUNT(*) OVER () AS total_count
 	           FROM wallet_transaction
 	           WHERE account_id = @account_id AND currency = @currency
+	             AND (@kind::text IS NULL OR kind::text = @kind::text)
 	           ORDER BY seq DESC
 	           LIMIT @limit OFFSET @offset`
 	args := pgx.NamedArgs{
-		"account_id": f.AccountID, "currency": f.Currency,
+		"account_id": f.AccountID, "currency": f.Currency, "kind": nullString(f.Kind),
 		"limit": f.Limit, "offset": f.Offset,
 	}
 	rows, err := r.pool.Query(ctx, q, args)
@@ -103,41 +106,64 @@ func (r *Repo) Move(ctx context.Context, legs []port.Leg) ([]domain.Movement, er
 	}
 	var out []domain.Movement
 	err := dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
-		// One group id for the whole call, so the legs of a checkout can be pulled back
-		// out together. Drawn from a sequence the schema owns rather than invented here.
-		groupID, err := nextGroupID(ctx, tx)
-		if err != nil {
-			return err
-		}
-		for _, leg := range legs {
-			w, err := lockWallet(ctx, tx, leg.AccountID, leg.Currency)
-			if err != nil {
-				return err
-			}
-			seq, err := nextSeq(ctx, tx, leg.AccountID, leg.Currency)
-			if err != nil {
-				return err
-			}
-			transfer := leg.Transfer
-			if transfer.GroupID == nil {
-				transfer.GroupID = &groupID
-			}
-			m, err := w.Apply(transfer, seq)
-			if err != nil {
-				return err
-			}
-			if err := insertMovement(ctx, tx, m); err != nil {
-				return err
-			}
-			if err := saveBalances(ctx, tx, w); err != nil {
-				return err
-			}
-			out = append(out, m)
-		}
-		return nil
+		var err error
+		out, err = move(ctx, tx, legs)
+		return err
 	})
 	if err != nil {
 		return nil, err
+	}
+	return out, nil
+}
+
+// move is Move's body, so a caller that already has a transaction — opening a withdrawal,
+// where the debit and the request are one fact — gets the same arithmetic rather than a
+// second copy of it.
+//
+// The legs are locked in a fixed order (account, then currency) rather than the order the
+// caller listed them. Two movements naming the same pair of wallets in opposite orders — a
+// hold on one order while a refund on another runs the other way — would otherwise each hold
+// one row and wait for the other, and Postgres would abort one as a deadlock.
+func move(ctx context.Context, tx pgx.Tx, legs []port.Leg) ([]domain.Movement, error) {
+	// One group id for the whole call, so the legs of a checkout can be pulled back
+	// out together. Drawn from a sequence the schema owns rather than invented here.
+	groupID, err := nextGroupID(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	ordered := make([]port.Leg, len(legs))
+	copy(ordered, legs)
+	slices.SortStableFunc(ordered, func(a, b port.Leg) int {
+		if a.AccountID != b.AccountID {
+			return cmp.Compare(a.AccountID, b.AccountID)
+		}
+		return cmp.Compare(a.Currency, b.Currency)
+	})
+	out := make([]domain.Movement, 0, len(ordered))
+	for _, leg := range ordered {
+		w, err := lockWallet(ctx, tx, leg.AccountID, leg.Currency)
+		if err != nil {
+			return nil, err
+		}
+		seq, err := nextSeq(ctx, tx, leg.AccountID, leg.Currency)
+		if err != nil {
+			return nil, err
+		}
+		transfer := leg.Transfer
+		if transfer.GroupID == nil {
+			transfer.GroupID = &groupID
+		}
+		m, err := w.Apply(transfer, seq)
+		if err != nil {
+			return nil, err
+		}
+		if err := insertMovement(ctx, tx, m); err != nil {
+			return nil, err
+		}
+		if err := saveBalances(ctx, tx, w); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
 	}
 	return out, nil
 }

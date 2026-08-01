@@ -3,6 +3,7 @@ package finance
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -22,6 +23,14 @@ func (s *Service) ListSessions(ctx context.Context, req financeapi.ListSessionsR
 		Status:    req.Status,
 		Offset:    offsetOf(req.Page, req.Limit),
 		Limit:     req.Limit,
+	}
+	// One side of the money, when asked for: a payout and a refund are received, so they
+	// answer to `payee` and not to the same list as a checkout.
+	switch req.Role {
+	case "payer":
+		filter.PayerID = req.ActorID.Int64()
+	case "payee":
+		filter.PayeeID = req.ActorID.Int64()
 	}
 	if req.Admin {
 		if err := s.requireAdmin(ctx, req.ActorID); err != nil {
@@ -94,6 +103,9 @@ func (s *Service) StartPayment(ctx context.Context, req financeapi.StartPaymentR
 	if _, err := s.paymentOption(ctx, req.PaymentOption); err != nil {
 		return financeapi.Transaction{}, err
 	}
+	if err := s.checkReturnURL(req.ReturnURL); err != nil {
+		return financeapi.Transaction{}, err
+	}
 	outstanding, err := s.outstanding(ctx, session)
 	if err != nil {
 		return financeapi.Transaction{}, err
@@ -134,7 +146,7 @@ func (s *Service) StartPayment(ctx context.Context, req financeapi.StartPaymentR
 	if err := s.repo.InsertTransaction(ctx, &leg); err != nil {
 		return financeapi.Transaction{}, fmt.Errorf("insert transaction: %w", err)
 	}
-	if err := s.repo.SaveSession(ctx, session); err != nil {
+	if err := s.repo.SaveSession(ctx, session, []string{domain.StatusPending}); err != nil {
 		return financeapi.Transaction{}, fmt.Errorf("save payment session: %w", err)
 	}
 	// A direct-debit rail answers final on the spot, with no webhook to wait for.
@@ -160,10 +172,16 @@ func (s *Service) CancelSession(ctx context.Context, req financeapi.GetSessionRe
 	if session.FromID != req.ActorID.Int64() {
 		return financeapi.Session{}, domain.ErrSessionNotPayable
 	}
+	// A withdrawal names its requester as the payer, so without this it could be cancelled
+	// here — where nothing returns the debit — instead of through the route that does.
+	if !session.RailPayable() {
+		return financeapi.Session{}, domain.ErrSessionKindNotCancellable
+	}
 	if err := session.Cancel(); err != nil {
 		return financeapi.Session{}, err
 	}
-	if err := s.repo.SaveSession(ctx, session); err != nil {
+	from := []string{domain.StatusPending, domain.StatusProcessing}
+	if err := s.repo.SaveSession(ctx, session, from); err != nil {
 		return financeapi.Session{}, fmt.Errorf("save payment session: %w", err)
 	}
 	return toAPISession(session, 0), nil
@@ -180,9 +198,12 @@ func (s *Service) Settle(ctx context.Context, notification payment.Notification)
 	if err != nil {
 		return fmt.Errorf("parse notification reference: %w", err)
 	}
-	leg, err := s.legByProviderOrID(ctx, notification.ProviderTxID, legID.Int64())
+	// By id, not by the provider's own reference: that ref is unique only per rail, so a
+	// string two providers both use would settle the wrong leg. The id is ours, and it is the
+	// reference the gateway was handed, so a notification always carries it.
+	leg, err := s.repo.FindTransactionByID(ctx, legID.Int64())
 	if err != nil {
-		return err
+		return fmt.Errorf("find transaction: %w", err)
 	}
 	status := payment.StatusFailed
 	if notification.Status == payment.StatusSuccess {
@@ -202,13 +223,13 @@ func (s *Service) settle(ctx context.Context, leg domain.Transaction, status pay
 	if err := leg.Settle(domainStatus, providerRef, note); err != nil {
 		// Already settled: a provider retries until it gets a 200, so a redelivery is
 		// expected and is not an error to the caller.
-		if err == domain.ErrTransactionSettled {
+		if errors.Is(err, domain.ErrTransactionSettled) {
 			return nil
 		}
 		return err
 	}
 	if err := s.repo.SaveTransaction(ctx, leg); err != nil {
-		if err == domain.ErrTransactionSettled {
+		if errors.Is(err, domain.ErrTransactionSettled) {
 			return nil
 		}
 		return fmt.Errorf("save transaction: %w", err)
@@ -219,7 +240,17 @@ func (s *Service) settle(ctx context.Context, leg domain.Transaction, status pay
 		return fmt.Errorf("find payment session: %w", err)
 	}
 	if domainStatus == domain.StatusFailed {
-		// One failed rail does not fail the session: the payer may tender another.
+		// One failed rail does not fail the session: the payer may tender another, which
+		// needs the session back on the shelf — Charge refuses a processing one, so without
+		// this the split-tender the contract describes would be unreachable.
+		if err := session.ReopenForRetry(time.Now()); err != nil {
+			// Already settled or expired: there is nothing to tender against.
+			return nil
+		}
+		from := []string{domain.StatusProcessing}
+		if err := s.repo.SaveSession(ctx, session, from); err != nil && !errors.Is(err, domain.ErrSessionSettled) {
+			return fmt.Errorf("reopen payment session: %w", err)
+		}
 		return nil
 	}
 	outstanding, err := s.outstanding(ctx, session)
@@ -229,16 +260,51 @@ func (s *Service) settle(ctx context.Context, leg domain.Transaction, status pay
 	if outstanding > 0 {
 		return nil
 	}
+	// The rail money becomes a balance before the session is called paid. Without this the
+	// money is collected and recorded nowhere: order's escrow hold debits the buyer's wallet,
+	// which would be empty, so the hold would be refused and the sale would have no escrow
+	// behind it. Keyed on the session, so a redelivered webhook credits once.
+	if err := s.creditRail(ctx, session); err != nil {
+		return err
+	}
 	if err := session.MarkPaid(time.Now()); err != nil {
-		if err == domain.ErrSessionSettled {
+		if errors.Is(err, domain.ErrSessionSettled) {
 			return nil
 		}
 		return err
 	}
-	if err := s.repo.SaveSession(ctx, session); err != nil {
+	from := []string{domain.StatusPending, domain.StatusProcessing}
+	if err := s.repo.SaveSession(ctx, session, from); err != nil {
+		if errors.Is(err, domain.ErrSessionSettled) {
+			// Another delivery of the same notification got there first.
+			return nil
+		}
 		return fmt.Errorf("save payment session: %w", err)
 	}
 	s.publishPaid(ctx, session)
+	return nil
+}
+
+// creditRail turns collected rail money into a spendable balance for whoever paid it. Only a
+// checkout: a payout or a withdrawal moves money the other way and was already debited when it
+// was asked for.
+func (s *Service) creditRail(ctx context.Context, session domain.Session) error {
+	if !session.RailPayable() || session.FromID == 0 {
+		return nil
+	}
+	ref := domain.SessionRef(session.ID)
+	legs := []port.Leg{{
+		AccountID: session.FromID, Currency: session.Currency,
+		Transfer: domain.Credit(domain.WalletKindTopup, session.TotalAmount, ref,
+			fmt.Sprintf("session:%d:topup", session.ID), session.Note),
+	}}
+	if _, err := s.repo.Move(ctx, legs); err != nil {
+		if errors.Is(err, domain.ErrMovementAlreadyPosted) {
+			// A redelivered notification: the balance is already there.
+			return nil
+		}
+		return fmt.Errorf("credit rail payment: %w", err)
+	}
 	return nil
 }
 
@@ -292,24 +358,4 @@ func (s *Service) party(ctx context.Context, actorID id.ID[id.Account], sessionI
 		return domain.Session{}, domain.ErrSessionNotFound
 	}
 	return session, nil
-}
-
-// legByProviderOrID finds the leg a notification is about. The provider's own
-// reference comes first, because that is the handle a redelivery carries; the id we
-// gave it is the fallback for a rail that echoes only that.
-func (s *Service) legByProviderOrID(ctx context.Context, providerRef string, legID int64) (domain.Transaction, error) {
-	if providerRef != "" {
-		leg, err := s.repo.FindTransactionByProviderRef(ctx, providerRef)
-		if err == nil {
-			return leg, nil
-		}
-		if err != domain.ErrTransactionNotFound {
-			return domain.Transaction{}, err
-		}
-	}
-	leg, err := s.repo.FindTransactionByID(ctx, legID)
-	if err != nil {
-		return domain.Transaction{}, fmt.Errorf("find transaction: %w", err)
-	}
-	return leg, nil
 }

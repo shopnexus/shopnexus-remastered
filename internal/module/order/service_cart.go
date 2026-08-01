@@ -29,11 +29,10 @@ func (s *Service) ListCartItems(ctx context.Context, req orderapi.ListCartReques
 // The listing is resolved here rather than trusted: a cart row has to name its listing to
 // be renderable at all, and only catalog knows which listing a variant belongs to.
 func (s *Service) AddCartItem(ctx context.Context, req orderapi.AddCartItemRequest) (orderapi.CartItem, error) {
-	listing, variant, err := s.variantOf(ctx, req.ActorID, req.VariantID)
+	listing, _, err := s.variantOf(ctx, req.ActorID, req.VariantID)
 	if err != nil {
 		return orderapi.CartItem{}, err
 	}
-	_ = variant
 	c, err := domain.NewCartItem(req.ActorID.Int64(), listing.ID.Int64(), req.VariantID.Int64(), req.Quantity)
 	if err != nil {
 		return orderapi.CartItem{}, err

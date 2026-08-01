@@ -275,11 +275,14 @@ func newCache(lc fx.Lifecycle, cfg *config.Config) (cache.Client, error) {
 // newWorkflowClient is what modules submit and signal runs through. Nil when no runtime is
 // configured, which is why every consumer takes it as an optional dependency: a graph that
 // could not be built without a Restate URL would make the runtime mandatory by accident.
-func newWorkflowClient(cfg *config.Config, log *slog.Logger) *durable.Client {
+func newWorkflowClient(cfg *config.Config, log *slog.Logger, metrics *observability.Sink) *durable.Client {
 	if cfg.WorkflowRuntime != "restate" {
 		return nil
 	}
-	return durable.NewClient(cfg.RestateIngressURL, cfg.RestateSendTimeout, log)
+	// The ingress is an outbound call like any provider's, so it goes through the same observed
+	// transport rather than the SDK's default http.DefaultClient.
+	return durable.NewClient(cfg.RestateIngressURL, cfg.RestateSendTimeout,
+		observedClient("restate", log, metrics), log)
 }
 
 // newWorkflowServer hosts the handlers the runtime invokes. Nil when there are no
@@ -298,7 +301,11 @@ func newSweeper(cfg *config.Config, log *slog.Logger, sweeps []durable.Sweep) *d
 
 // startDurable runs both on the process's own lifetime. The context is cancelled on shutdown,
 // which is what stops the sweeper's ticker and the handler server.
-func startDurable(lc fx.Lifecycle, server *durable.Server, sweeper *durable.Sweeper, log *slog.Logger) {
+//
+// A handler server that cannot listen takes the process down. It only exists under
+// WORKFLOW_RUNTIME=restate, so a deployment that keeps serving without it has silently fallen
+// back to the sweep for every timer — slower by minutes, and nothing but this line would say so.
+func startDurable(lc fx.Lifecycle, sd fx.Shutdowner, server *durable.Server, sweeper *durable.Sweeper, log *slog.Logger) {
 	ctx, stop := context.WithCancel(context.Background())
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
@@ -306,6 +313,9 @@ func startDurable(lc fx.Lifecycle, server *durable.Server, sweeper *durable.Swee
 				go func() {
 					if err := server.Serve(ctx); err != nil && ctx.Err() == nil {
 						log.Error("restate handler server stopped", "err", err)
+						if err := sd.Shutdown(fx.ExitCode(1)); err != nil {
+							log.Error("shutdown after restate server failure", "err", err)
+						}
 					}
 				}()
 			}

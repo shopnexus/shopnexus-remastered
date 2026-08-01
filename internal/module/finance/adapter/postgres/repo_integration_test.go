@@ -105,9 +105,20 @@ func TestRepo_MoveRefusesOverdraft(t *testing.T) {
 	if !errors.Is(err, domain.ErrInsufficientBalance) {
 		t.Fatalf("Move = %v, want ErrInsufficientBalance", err)
 	}
-	// And nothing was written: a refused movement leaves no ledger row behind.
-	if _, err := repo.FindWallet(ctx, holder, "VND"); err != nil && !errors.Is(err, domain.ErrWalletNotFound) {
-		t.Fatalf("FindWallet: %v", err)
+	// And nothing was written: a refused movement leaves no ledger row behind, which is what
+	// makes the refusal safe to retry. Read the ledger rather than only the wallet — the
+	// balance being absent says nothing about a row that names it.
+	movements, _, err := repo.ListMovements(ctx, port.MovementFilter{
+		AccountID: holder, Currency: "VND", Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("ListMovements: %v", err)
+	}
+	if len(movements) != 0 {
+		t.Fatalf("ledger = %+v, want a refused movement to leave nothing", movements)
+	}
+	if _, err := repo.FindWallet(ctx, holder, "VND"); !errors.Is(err, domain.ErrWalletNotFound) {
+		t.Fatalf("FindWallet = %v, want no wallet opened by a refused movement", err)
 	}
 }
 
@@ -282,7 +293,7 @@ func TestRepo_SessionAndLegLifecycle(t *testing.T) {
 
 	session.Status = domain.StatusSuccess
 	session.PaidAt = new(time.Now())
-	if err := repo.SaveSession(ctx, session); err != nil {
+	if err := repo.SaveSession(ctx, session, []string{domain.StatusPending, domain.StatusProcessing}); err != nil {
 		t.Fatalf("SaveSession: %v", err)
 	}
 	stored, err := repo.FindSessionByID(ctx, session.ID)
@@ -391,5 +402,85 @@ func TestRepo_TaxInfo(t *testing.T) {
 	}
 	if after.VerificationStatus != domain.VerificationPending || after.VerifiedAt != nil {
 		t.Fatalf("tax info = %+v, want the verdict reset", after)
+	}
+}
+
+// The status guard on a session write, which is the only thing standing between two
+// concurrent resolutions of one withdrawal: an approval and a rejection both landing would
+// return the money to the wallet and record the payout as sent.
+func TestSaveSession_GuardedByTheStatusItMovesFrom(t *testing.T) {
+	repo, _ := newRepo(t)
+	ctx := context.Background()
+
+	sessionID, err := repo.NextSessionID(ctx)
+	if err != nil {
+		t.Fatalf("NextSessionID: %v", err)
+	}
+	session, err := domain.NewSession(sessionID, domain.KindWithdrawal, account(t), 0,
+		"withdrawal", "VND", 200_000, nil, time.Hour)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if err := repo.InsertSession(ctx, &session); err != nil {
+		t.Fatalf("InsertSession: %v", err)
+	}
+
+	live := []string{domain.StatusPending, domain.StatusProcessing}
+	// The admin who approves reads `pending` and wins.
+	approved := session
+	if err := approved.MarkPaid(time.Now()); err != nil {
+		t.Fatalf("MarkPaid: %v", err)
+	}
+	if err := repo.SaveSession(ctx, approved, live); err != nil {
+		t.Fatalf("SaveSession: %v", err)
+	}
+	// The one who rejects read the same `pending` and loses, rather than overwriting a
+	// payout that has already been recorded as sent.
+	rejected := session
+	if err := rejected.MarkFailed(); err != nil {
+		t.Fatalf("MarkFailed: %v", err)
+	}
+	if err := repo.SaveSession(ctx, rejected, live); !errors.Is(err, domain.ErrSessionSettled) {
+		t.Fatalf("second SaveSession = %v, want ErrSessionSettled", err)
+	}
+	stored, err := repo.FindSessionByID(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("FindSessionByID: %v", err)
+	}
+	if stored.Status != domain.StatusSuccess {
+		t.Fatalf("status = %q, want the first decision to stand", stored.Status)
+	}
+}
+
+// A withdrawal's request and its debit are one write. Apart, a crash between them strands a
+// pending cash-out with no debit behind it — and an admin approving that one sends real money
+// for a balance that was never reduced.
+func TestInsertWithdrawal_IsAtomic(t *testing.T) {
+	repo, _ := newRepo(t)
+	ctx := context.Background()
+	holder := account(t)
+
+	// Nothing in the wallet, so the debit cannot succeed.
+	sessionID, err := repo.NextSessionID(ctx)
+	if err != nil {
+		t.Fatalf("NextSessionID: %v", err)
+	}
+	session, err := domain.NewSession(sessionID, domain.KindWithdrawal, holder, 0,
+		"withdrawal", "VND", 200_000, nil, time.Hour)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	debit := port.Leg{
+		AccountID: holder, Currency: "VND",
+		Transfer: domain.Debit(domain.WalletKindWithdrawal, 200_000, domain.SessionRef(session.ID),
+			fmt.Sprintf("withdrawal:%d", session.ID), "withdrawal requested"),
+	}
+	if err := repo.InsertWithdrawal(ctx, &session, debit); !errors.Is(err, domain.ErrInsufficientBalance) {
+		t.Fatalf("InsertWithdrawal = %v, want ErrInsufficientBalance", err)
+	}
+	// And the request is not there either: an unfunded cash-out an admin could approve is
+	// exactly what the one transaction exists to prevent.
+	if _, err := repo.FindSessionByID(ctx, session.ID); !errors.Is(err, domain.ErrSessionNotFound) {
+		t.Fatalf("FindSessionByID = %v, want the session rolled back with the debit", err)
 	}
 }

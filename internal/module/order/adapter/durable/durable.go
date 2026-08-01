@@ -24,7 +24,6 @@ const (
 	signalReceived     = "Received"
 	signalRefundRaised = "RefundRaised"
 	signalRefundDone   = "RefundResolved"
-	signalRefundMoved  = "Moved"
 )
 
 // Restate starts and signals runs through the ingress.
@@ -61,6 +60,10 @@ func (r *Restate) OrderReceived(ctx context.Context, orderID int64) error {
 	return r.signal(ctx, port.OrderWorkflow, orderID, signalReceived, nil)
 }
 
+func (r *Restate) OrderCancelled(ctx context.Context, orderID int64) error {
+	return r.signal(ctx, port.OrderWorkflow, orderID, signalCancelled, nil)
+}
+
 func (r *Restate) RefundRaised(ctx context.Context, orderID int64) error {
 	return r.signal(ctx, port.OrderWorkflow, orderID, signalRefundRaised, nil)
 }
@@ -69,14 +72,15 @@ func (r *Restate) RefundResolved(ctx context.Context, orderID int64, buyerPaid b
 	return r.signal(ctx, port.OrderWorkflow, orderID, signalRefundDone, buyerPaid)
 }
 
-func (r *Restate) StartRefund(ctx context.Context, refundID int64) error {
+// StartRefundWindow keys the run by the refund *and* the status it waits on, so entering the
+// next state starts a run of its own rather than re-attaching to a journal that has already
+// resolved its wait.
+func (r *Restate) StartRefundWindow(ctx context.Context, refundID int64, status string) error {
 	return r.client.Start(ctx, infra.Run{
-		Workflow: port.RefundWorkflow, Key: key(refundID), Input: port.RefundParams{RefundID: refundID},
+		Workflow: port.RefundWorkflow,
+		Key:      key(refundID) + ":" + status,
+		Input:    port.RefundParams{RefundID: refundID, Status: status},
 	})
-}
-
-func (r *Restate) RefundMoved(ctx context.Context, refundID int64) error {
-	return r.signal(ctx, port.RefundWorkflow, refundID, signalRefundMoved, nil)
 }
 
 func (r *Restate) signal(ctx context.Context, workflow string, id int64, handler string, input any) error {
@@ -121,6 +125,10 @@ func (o *Off) OrderReceived(_ context.Context, orderID int64) error {
 	return o.skip("order received", orderID)
 }
 
+func (o *Off) OrderCancelled(_ context.Context, orderID int64) error {
+	return o.skip("order cancelled", orderID)
+}
+
 func (o *Off) RefundRaised(_ context.Context, orderID int64) error {
 	return o.skip("refund raised", orderID)
 }
@@ -129,12 +137,8 @@ func (o *Off) RefundResolved(_ context.Context, orderID int64, _ bool) error {
 	return o.skip("refund resolved", orderID)
 }
 
-func (o *Off) StartRefund(_ context.Context, refundID int64) error {
-	return o.skip("refund", refundID)
-}
-
-func (o *Off) RefundMoved(_ context.Context, refundID int64) error {
-	return o.skip("refund moved", refundID)
+func (o *Off) StartRefundWindow(_ context.Context, refundID int64, status string) error {
+	return o.skip("refund window "+status, refundID)
 }
 
 func (o *Off) skip(what string, id int64) error {

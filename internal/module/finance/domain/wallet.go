@@ -160,10 +160,10 @@ func Debit(kind string, amount int64, ref Ref, key, note string) Transfer {
 // Adjust is the admin's correction, in whichever direction. It is the only movement
 // with no order or session behind it, which is why its note carries the reason: a
 // balance change nobody can explain later is the one thing an audit cannot survive.
-func Adjust(availableDelta, heldDelta int64, note string) Transfer {
+func Adjust(availableDelta, heldDelta int64, key, note string) Transfer {
 	return Transfer{
 		Kind: WalletKindAdjustment, AvailableDelta: availableDelta, HeldDelta: heldDelta,
-		Note: note,
+		IdempotencyKey: keyOf(key), Note: note,
 	}
 }
 

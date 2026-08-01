@@ -28,6 +28,7 @@ var Module = fx.Module("finance",
 	fx.Provide(
 		fx.Annotate(newRepo, fx.As(new(port.Repository))),
 		fx.Annotate(newOptions, fx.As(new(port.Options))),
+		newReturnURLHosts,
 		fx.Annotate(NewService, fx.As(new(financeapi.Service))),
 	),
 	// The service is built eagerly and its webhook mounted, because nothing else in the
@@ -48,6 +49,13 @@ func newPool(lc fx.Lifecycle, cfg *config.Config) (*pgxpool.Pool, error) {
 }
 
 func newRepo(pool *pgxpool.Pool) *financepg.Repo { return financepg.New(pool) }
+
+// newReturnURLHosts is the allowlist a payer's redirect target has to be in. Configuration
+// rather than code: the hosts differ per deployment, and an unchecked target is an open
+// redirect wearing a payment flow.
+func newReturnURLHosts(cfg *config.Config) ReturnURLHosts {
+	return ReturnURLHosts(cfg.PaymentReturnURLHosts)
+}
 
 func newOptions(pool *pgxpool.Pool) *dbx.Options { return dbx.NewOptions(pool) }
 

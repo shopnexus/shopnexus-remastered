@@ -46,7 +46,7 @@ func TestOrder_StateIsDerived(t *testing.T) {
 	if err := o.ConfirmReceipt([]int64{42}); err != nil {
 		t.Fatalf("ConfirmReceipt: %v", err)
 	}
-	if err := o.Complete(11); err != nil {
+	if err := o.Complete(); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
 	if o.State() != domain.StateCompleted || !o.Settled() {
@@ -99,7 +99,7 @@ func TestOrder_CancelOnlyBeforeShipping(t *testing.T) {
 // against a promise.
 func TestOrder_CompleteNeedsAReceipt(t *testing.T) {
 	o := newOrder(t)
-	if err := o.Complete(11); !errors.Is(err, domain.ErrOrderNotCancellable) {
+	if err := o.Complete(); !errors.Is(err, domain.ErrOrderNotCancellable) {
 		t.Fatalf("Complete with no receipt = %v, want it refused", err)
 	}
 }

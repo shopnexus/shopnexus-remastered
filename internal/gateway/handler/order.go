@@ -472,6 +472,32 @@ func (h *Order) GetOrderTransport(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteData(w, http.StatusOK, res)
 }
 
+// AdvanceShipment handles POST /orders/{id}/transport/checkpoints — a carrier checkpoint on the
+// outbound leg, reported by the seller.
+func (h *Order) AdvanceShipment(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	orderID, err := pathID[id.Order](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.AdvanceShipmentRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, orderID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.AdvanceShipment(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
 func (h *Order) orderRequest(r *http.Request) (orderapi.OrderRequest, error) {
 	uid, err := actor(r)
 	if err != nil {
@@ -688,6 +714,32 @@ func (h *Order) RejectRefund(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.svc.RejectRefund(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
+// AdvanceReturnShipment handles POST /refunds/{id}/return-transport/checkpoints. Marking it
+// delivered is what opens the seller's inspection window — the only exit from `returning`.
+func (h *Order) AdvanceReturnShipment(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	refundID, err := pathID[id.Refund](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.AdvanceReturnShipmentRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, refundID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.AdvanceReturnShipment(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}

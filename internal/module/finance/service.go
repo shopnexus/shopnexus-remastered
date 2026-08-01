@@ -10,6 +10,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
+	"slices"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -43,9 +45,11 @@ type Service struct {
 	// gateway is the rail. One client for now; a per-option client is what the
 	// registry's `provider` column is for once there is a second.
 	gateway payment.Client
-	bus     eventbus.Client
-	v       *validator.Validate
-	log     *slog.Logger
+	// returnURLHosts is the allowlist a payer's redirect target has to be in.
+	returnURLHosts ReturnURLHosts
+	bus            eventbus.Client
+	v              *validator.Validate
+	log            *slog.Logger
 }
 
 func NewService(
@@ -53,14 +57,36 @@ func NewService(
 	accounts accountapi.Service,
 	options port.Options,
 	gateway payment.Client,
+	returnURLHosts ReturnURLHosts,
 	bus eventbus.Client,
 	v *validator.Validate,
 	log *slog.Logger,
 ) *Service {
 	return &Service{
 		repo: repo, accounts: accounts, options: options, gateway: gateway,
-		bus: bus, v: v, log: log,
+		returnURLHosts: returnURLHosts, bus: bus, v: v, log: log,
 	}
+}
+
+// ReturnURLHosts is where a gateway may send a payer back. Its own type, not a bare []string:
+// the fx graph is keyed by type, and "the list of strings" is not a thing to inject.
+type ReturnURLHosts []string
+
+// checkReturnURL refuses a redirect target that is not the platform's. A payer supplies this
+// and a gateway sends them to it, so an unchecked one turns the checkout into an open redirect
+// somebody else's phishing page can borrow this domain's credibility from.
+func (s *Service) checkReturnURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return domain.ErrReturnURLNotAllowed
+	}
+	if slices.Contains(s.returnURLHosts, parsed.Host) {
+		return nil
+	}
+	return domain.ErrReturnURLNotAllowed
 }
 
 var _ financeapi.Service = (*Service)(nil)
@@ -118,6 +144,7 @@ func toAPIWallet(w domain.Wallet) financeapi.Wallet {
 		Currency:         w.Currency,
 		AvailableBalance: w.AvailableBalance,
 		HeldBalance:      w.HeldBalance,
+		CreatedAt:        w.CreatedAt,
 	}
 }
 
@@ -129,6 +156,7 @@ func toAPITransaction(t domain.Transaction, checkoutURL string) financeapi.Trans
 		PaymentOption: t.PaymentOption,
 		Amount:        t.Amount,
 		Currency:      t.Currency,
+		Note:          t.Note,
 		CheckoutURL:   checkoutURL,
 		CreatedAt:     t.CreatedAt,
 		SettledAt:     t.SettledAt,

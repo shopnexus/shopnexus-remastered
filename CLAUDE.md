@@ -365,6 +365,14 @@ give it its own doc under `docs/` and link it from here.
   (`review_rating_*`) are separate column pairs on the same row: one order can produce both,
   and summing them would count that order twice. A `reputation` row is **zeroes, not
   not-found**, for an account nobody has rated.
+- **An operation retried by a sweep needs a marker for "done", not a time window.** The escrow
+  release records `order.payout_released_at` when it lands, so `ClaimedPayouts` is *exactly* the
+  stranded set: a healthy platform reads nothing, rather than re-asking finance about every sale
+  it ever completed. A window instead of a marker is worse than useless — it makes the retry
+  cost scale with history and then goes quiet while the debt stands. And a pass that can fail
+  for ever logs **one summary line per pass**, not one per row: `escrow releases stranded,
+  orders: N` is the thing to alert on, and 1200 identical errors an hour bury whatever else
+  happened.
 - **A counter that can go down is written with UPDATE-then-INSERT, not an upsert.** Postgres
   checks a constraint against the *proposed* row before it detects the conflict, so
   `INSERT ... ON CONFLICT DO UPDATE` carrying the negative delta of a deleted review fails

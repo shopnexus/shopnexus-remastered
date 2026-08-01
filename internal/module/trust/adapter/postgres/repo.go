@@ -8,6 +8,7 @@ package postgres
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"shopnexus/internal/module/common"
@@ -29,10 +30,14 @@ func (r *Repo) FindResources(ctx context.Context, ids []int64) ([]common.Resourc
 	return dbx.NewResources(r.pool).Find(ctx, ids)
 }
 
-// cursorBound is the shared shape of every list here: bounded by the timestamp the previous
-// page ended at.
-func cursorBound(f port.CursorFilter) (any, int) {
-	return dbx.NullTime(f.Before), f.Limit
+// addCursor fills in the bound every list here shares: the key the previous page ended at and
+// that row's id, compared as a tuple. `@before_id = 0` is how a first page says "no bound",
+// which is why no statement needs a second version of itself.
+func addCursor(args pgx.NamedArgs, f port.CursorFilter) {
+	args["before"] = dbx.NullTime(f.Before)
+	args["before_count"] = f.BeforeCount
+	args["before_id"] = f.BeforeID
+	args["limit"] = f.Limit
 }
 
 // nullText is an optional filter: an empty string means "no filter", not "match the empty

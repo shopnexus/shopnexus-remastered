@@ -29,11 +29,27 @@ func scanFeedback(row pgx.Row) (domain.Feedback, error) {
 	return f, nil
 }
 
+// feedbackPairLockClass namespaces this module's use of the advisory lock space; the second
+// key is the order, so the lock serialises the two directions of one sale and nothing else.
+// The order id is folded into 31 bits because the two-key form takes int4 — a collision costs
+// two unrelated pairs a short wait, which is all the lock is ever held for.
+const feedbackPairLockClass = 8_070_201
+
 // InsertFeedback writes one direction's rating, and reveals the pair when this submission
 // completes it — both rows and both reputations in one transaction, because a reveal that
 // lands half-applied shows one side a rating the other cannot see yet.
+//
+// Under the order's advisory lock, because looking for the counterpart and then publishing
+// both is a read followed by a write: two simultaneous submissions would each miss the other's
+// uncommitted row and neither would reveal, leaving the pair blind until the sweep.
 func (r *Repo) InsertFeedback(ctx context.Context, f *domain.Feedback) error {
 	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
+		const lock = `SELECT pg_advisory_xact_lock(@class::int, (@order_id % 2147483647)::int)`
+		if _, err := tx.Exec(ctx, lock, pgx.NamedArgs{
+			"class": feedbackPairLockClass, "order_id": f.OrderID,
+		}); err != nil {
+			return fmt.Errorf("db lock feedback pair: %w", err)
+		}
 		const q = `INSERT INTO feedback (order_id, rater_id, ratee_id, direction, rating, comment)
 		           VALUES (@order_id, @rater_id, @ratee_id, @direction, @rating, @comment)
 		           RETURNING id, created_at`
@@ -92,10 +108,10 @@ func (r *Repo) ListFeedback(ctx context.Context, f port.FeedbackFilter) ([]domai
 	const q = `SELECT ` + feedbackColumns + ` FROM feedback
 	           WHERE ratee_id = @ratee_id AND published_at IS NOT NULL
 	             AND (@direction::text IS NULL OR direction = @direction::feedback_direction)
-	             AND (@before::timestamptz IS NULL OR created_at < @before::timestamptz)
+	             AND (@before_id = 0
+	                  OR (created_at, id) < (@before::timestamptz, @before_id))
 	           ORDER BY created_at DESC, id DESC
 	           LIMIT @limit`
-	before, limit := cursorBound(f.Cursor)
 	// The role is which side the ratee was on, which is the direction that rated them.
 	direction := ""
 	switch f.Role {
@@ -104,10 +120,8 @@ func (r *Repo) ListFeedback(ctx context.Context, f port.FeedbackFilter) ([]domai
 	case domain.RoleBuyer:
 		direction = domain.DirectionSellerToBuyer
 	}
-	args := pgx.NamedArgs{
-		"ratee_id": f.RateeID, "direction": nullText(direction),
-		"before": before, "limit": limit,
-	}
+	args := pgx.NamedArgs{"ratee_id": f.RateeID, "direction": nullText(direction)}
+	addCursor(args, f.Cursor)
 	return r.queryFeedback(ctx, q, args)
 }
 

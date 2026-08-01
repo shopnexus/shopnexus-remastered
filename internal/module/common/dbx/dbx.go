@@ -124,6 +124,7 @@ func NullJSON(b []byte) any {
 // transaction that changed the record; a standalone insert has no transaction to join.
 type Querier interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
 // InsertAuditLog derives the record's next version inside the same transaction as the change,

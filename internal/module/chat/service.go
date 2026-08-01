@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -17,6 +18,7 @@ import (
 	"shopnexus/internal/module/chat/port"
 	"shopnexus/internal/module/common"
 	"shopnexus/internal/shared/id"
+	"shopnexus/internal/shared/validation"
 )
 
 type Service struct {
@@ -36,7 +38,7 @@ var _ chatapi.Service = (*Service)(nil)
 // ListConversations is the inbox, latest activity first. Two extra queries for the whole
 // page — the last message and the unread counts — rather than per row.
 func (s *Service) ListConversations(ctx context.Context, req chatapi.ListConversationsRequest) (chatapi.ConversationPage, error) {
-	before, err := parseCursor(req.Cursor)
+	before, beforeID, err := parseCursor(req.Cursor)
 	if err != nil {
 		return chatapi.ConversationPage{}, err
 	}
@@ -44,6 +46,7 @@ func (s *Service) ListConversations(ctx context.Context, req chatapi.ListConvers
 	threads, err := s.repo.ListConversations(ctx, port.InboxFilter{
 		AccountID: req.ActorID.Int64(),
 		Before:    before,
+		BeforeID:  beforeID,
 		Limit:     req.Limit + 1,
 	})
 	if err != nil {
@@ -59,7 +62,8 @@ func (s *Service) ListConversations(ctx context.Context, req chatapi.ListConvers
 	}
 	page := chatapi.ConversationPage{Data: out, Meta: chatapi.CursorInfo{HasMore: hasMore}}
 	if hasMore && len(threads) > 0 {
-		page.Meta.NextCursor = formatCursor(threads[len(threads)-1].LastMessageAt)
+		last := threads[len(threads)-1]
+		page.Meta.NextCursor = formatCursor(last.LastMessageAt, last.ID)
 	}
 	return page, nil
 }
@@ -102,13 +106,14 @@ func (s *Service) ListMessages(ctx context.Context, req chatapi.ListMessagesRequ
 	if _, err := s.participant(ctx, req.ActorID, req.ID); err != nil {
 		return chatapi.MessagePage{}, err
 	}
-	before, err := parseCursor(req.Cursor)
+	before, beforeID, err := parseCursor(req.Cursor)
 	if err != nil {
 		return chatapi.MessagePage{}, err
 	}
 	messages, err := s.repo.ListMessages(ctx, port.HistoryFilter{
 		ConversationID: req.ID.Int64(),
 		Before:         before,
+		BeforeID:       beforeID,
 		Limit:          req.Limit + 1,
 	})
 	if err != nil {
@@ -124,7 +129,8 @@ func (s *Service) ListMessages(ctx context.Context, req chatapi.ListMessagesRequ
 	}
 	page := chatapi.MessagePage{Data: out, Meta: chatapi.CursorInfo{HasMore: hasMore}}
 	if hasMore && len(messages) > 0 {
-		page.Meta.NextCursor = formatCursor(messages[len(messages)-1].CreatedAt)
+		last := messages[len(messages)-1]
+		page.Meta.NextCursor = formatCursor(last.CreatedAt, last.ID)
 	}
 	return page, nil
 }
@@ -159,8 +165,8 @@ func (s *Service) MarkConversationRead(ctx context.Context, req chatapi.MarkConv
 		return chatapi.Conversation{}, err
 	}
 	at := time.Now()
-	if req.At != nil {
-		at = *req.At
+	if req.Before != nil {
+		at = *req.Before
 	}
 	if err := thread.MarkRead(req.ActorID.Int64(), at); err != nil {
 		return chatapi.Conversation{}, err
@@ -178,7 +184,7 @@ func (s *Service) MarkConversationRead(ctx context.Context, req chatapi.MarkConv
 // UpdateMessage rewrites a body. Only the sender's own, and never a system message or one
 // already unsent.
 func (s *Service) UpdateMessage(ctx context.Context, req chatapi.UpdateMessageRequest) (chatapi.Message, error) {
-	m, err := s.repo.FindMessage(ctx, req.ID.Int64())
+	m, err := s.repo.FindMessageAt(ctx, req.ID.Int64(), req.CreatedAt)
 	if err != nil {
 		return chatapi.Message{}, fmt.Errorf("find message: %w", err)
 	}
@@ -194,7 +200,7 @@ func (s *Service) UpdateMessage(ctx context.Context, req chatapi.UpdateMessageRe
 // RedactMessage is unsending: the content goes, the row stays so the thread has no
 // unexplained gaps.
 func (s *Service) RedactMessage(ctx context.Context, req chatapi.RedactMessageRequest) error {
-	m, err := s.repo.FindMessage(ctx, req.ID.Int64())
+	m, err := s.repo.FindMessageAt(ctx, req.ID.Int64(), req.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("find message: %w", err)
 	}
@@ -211,8 +217,8 @@ func (s *Service) RedactMessage(ctx context.Context, req chatapi.RedactMessageRe
 // order update. It opens the thread if they have never spoken, so a caller never has to
 // know whether one exists.
 func (s *Service) PostSystemMessage(ctx context.Context, req chatapi.PostSystemMessageRequest) (chatapi.Message, error) {
-	if err := s.v.Struct(req); err != nil {
-		return chatapi.Message{}, fmt.Errorf("validate system message: %w", err)
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return chatapi.Message{}, err
 	}
 	thread, err := s.repo.EnsureConversation(ctx, req.AccountAID.Int64(), req.AccountBID.Int64())
 	if err != nil {
@@ -426,19 +432,30 @@ func resourceKeys(ids []id.ID[id.Resource]) []int64 {
 	return out
 }
 
-// The cursor is the timestamp a page ended at, in nanoseconds — opaque to a client, and
-// stable under a thread that keeps moving.
-func formatCursor(at time.Time) string {
-	return strconv.FormatInt(at.UnixNano(), 10)
+// The cursor is the (timestamp, id) a page ended at — opaque to a client, and a tuple
+// because CURRENT_TIMESTAMP is transaction-scoped: two rows written in the same
+// transaction share a timestamp exactly, and a bare-timestamp cursor would then drop
+// whichever of them page N did not return. Ordering by the tuple, matching every
+// ORDER BY's own tiebreak, is what keeps a boundary tie from skipping a row.
+func formatCursor(at time.Time, id int64) string {
+	return strconv.FormatInt(at.UnixNano(), 10) + "_" + strconv.FormatInt(id, 10)
 }
 
-func parseCursor(cursor string) (time.Time, error) {
+func parseCursor(cursor string) (time.Time, int64, error) {
 	if cursor == "" {
-		return time.Time{}, nil
+		return time.Time{}, 0, nil
 	}
-	nanos, err := strconv.ParseInt(cursor, 10, 64)
+	nanos, rest, ok := strings.Cut(cursor, "_")
+	if !ok {
+		return time.Time{}, 0, domain.ErrCursorInvalid
+	}
+	at, err := strconv.ParseInt(nanos, 10, 64)
 	if err != nil {
-		return time.Time{}, domain.ErrCursorInvalid
+		return time.Time{}, 0, domain.ErrCursorInvalid
 	}
-	return time.Unix(0, nanos), nil
+	id, err := strconv.ParseInt(rest, 10, 64)
+	if err != nil {
+		return time.Time{}, 0, domain.ErrCursorInvalid
+	}
+	return time.Unix(0, at), id, nil
 }

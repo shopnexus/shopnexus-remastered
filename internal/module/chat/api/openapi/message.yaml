@@ -180,7 +180,7 @@ components:
       description: A body or at least one attachment is required.
       properties:
         body: { type: string, maxLength: 4000 }
-        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
+        attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' }, maxItems: 10 }
         refs:
           type: object
           additionalProperties: true

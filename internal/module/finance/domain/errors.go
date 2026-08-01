@@ -15,15 +15,30 @@ var (
 	ErrInsufficientBalance  = errx.NewError(http.StatusConflict, "insufficient_balance", "wallet balance is too low")
 
 	// --- the wallet ledger ---
-	// ErrEmptyMovement is a ledger row that moves nothing. 500 rather than 400: no route
+	// ErrEmptyMovement is a ledger movement with both deltas zero. 400: an admin
+	// adjustment route accepts the numbers, so a caller can ask for one.
 	// accepts a zero movement, so reaching this means a service built one.
-	ErrEmptyMovement         = errx.NewError(http.StatusInternalServerError, "empty_movement", "a ledger movement has to move something")
+	ErrEmptyMovement         = errx.NewError(http.StatusBadRequest, "empty_movement", "a ledger movement has to move something")
 	ErrMovementAlreadyPosted = errx.NewError(http.StatusConflict, "movement_already_posted", "this movement was already posted")
 
 	// --- sessions and their legs ---
-	ErrSessionSettled           = errx.NewError(http.StatusConflict, "payment_session_settled", "this payment session is already settled")
-	ErrSessionExpired           = errx.NewError(http.StatusConflict, "payment_session_expired", "this payment session has expired")
-	ErrSessionNotPayable        = errx.NewError(http.StatusConflict, "payment_session_not_payable", "only a pending session can be paid")
+	ErrSessionSettled    = errx.NewError(http.StatusConflict, "payment_session_settled", "this payment session is already settled")
+	ErrSessionExpired    = errx.NewError(http.StatusConflict, "payment_session_expired", "this payment session has expired")
+	ErrSessionNotPayable = errx.NewError(http.StatusConflict, "payment_session_not_payable", "only a pending session can be paid")
+	// ErrSessionKindNotPayable and ErrSessionKindNotCancellable keep the payment-session
+	// routes to the one kind a payer actually tenders. A withdrawal shares the id space and
+	// names its requester as the payer, so without these it could be driven to `success`
+	// through the checkout route, or cancelled without the debit being returned.
+	ErrSessionKindNotPayable     = errx.NewError(http.StatusConflict, "payment_session_kind_not_payable", "this session is not tendered on a payment rail")
+	ErrSessionKindNotCancellable = errx.NewError(http.StatusConflict, "payment_session_kind_not_cancellable", "cancel a withdrawal through the withdrawal route, so the money is returned")
+	// ErrReturnURLNotAllowed is a redirect target that is not the platform's. Unchecked it
+	// would be an open redirect wearing a payment flow.
+	ErrReturnURLNotAllowed = errx.NewError(http.StatusBadRequest, "return_url_not_allowed", "that return URL is not one this platform redirects to")
+	// ErrLegAlreadyBooked is a rail leg the ledger already has — a provider reference reused,
+	// or a reversal of one already reversed. Its own error rather than the wallet ledger's: a
+	// rail leg and a wallet movement are different rows with different keys, and a code that
+	// names the wrong one sends a reader to the wrong table.
+	ErrLegAlreadyBooked         = errx.NewError(http.StatusConflict, "transaction_already_booked", "this rail leg is already recorded")
 	ErrTransactionNotFound      = errx.NewError(http.StatusNotFound, "transaction_not_found", "transaction not found")
 	ErrTransactionSettled       = errx.NewError(http.StatusConflict, "transaction_settled", "this leg is already settled")
 	ErrTransactionStatusInvalid = errx.NewError(http.StatusUnprocessableEntity, "transaction_status_invalid", "a leg settles as success or failed")
@@ -40,7 +55,6 @@ var (
 	// --- withdrawals ---
 	ErrWithdrawalNotFound = errx.NewError(http.StatusNotFound, "withdrawal_not_found", "withdrawal not found")
 	ErrWithdrawalSettled  = errx.NewError(http.StatusConflict, "withdrawal_settled", "this withdrawal has already been decided")
-	ErrWithdrawalNotOwned = errx.NewError(http.StatusNotFound, "withdrawal_not_found", "withdrawal not found")
 	// ErrPayeeUnverified gates real money leaving the platform on the same identity flag
 	// that gates selling: a payout to somebody unidentified is the one mistake that
 	// cannot be undone.

@@ -51,3 +51,7 @@ func publishOrderSettled(ctx context.Context, bus eventbus.Client, event OrderSe
 // been used. Named here because the lifecycle treats it as success: a movement that was
 // already posted is the state the caller wanted.
 var financeMovementPosted = financedomain.ErrMovementAlreadyPosted
+
+// financePaid is the session status that means the money is in. Named here because cancelling
+// a line turns on it: from that point the sale is undone by a refund, not by a cancellation.
+const financePaid = financedomain.StatusSuccess
