@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -250,32 +249,17 @@ func pick(found map[int64]common.ResourceDTO, keys []int64) []common.ResourceDTO
 	return out
 }
 
-// The cursor is where the page ended: the row's timestamp in nanoseconds *and* its id,
-// compared as a tuple. The timestamp alone skips rows — the three lines of one checkout are
-// written in one transaction and share `created_at` exactly, because CURRENT_TIMESTAMP is
-// transaction-scoped — so a page boundary that landed inside such a group made the rest of it
-// unreachable. Opaque to a client either way.
+// The cursor is a (timestamp, id) tuple; common owns the format, and the reason it is a tuple.
 func formatCursor(at time.Time, id int64) string {
-	return strconv.FormatInt(at.UnixNano(), 10) + ":" + strconv.FormatInt(id, 10)
+	return common.FormatCursor(at.UnixNano(), id)
 }
 
 func parseCursor(cursor string) (time.Time, int64, error) {
-	if cursor == "" {
-		return time.Time{}, 0, nil
+	nanos, id, err := common.ParseCursor(cursor)
+	if err != nil || id == 0 {
+		return time.Time{}, 0, err
 	}
-	nanos, rest, ok := strings.Cut(cursor, ":")
-	if !ok {
-		return time.Time{}, 0, domain.ErrCursorInvalid
-	}
-	at, err := strconv.ParseInt(nanos, 10, 64)
-	if err != nil {
-		return time.Time{}, 0, domain.ErrCursorInvalid
-	}
-	id, err := strconv.ParseInt(rest, 10, 64)
-	if err != nil {
-		return time.Time{}, 0, domain.ErrCursorInvalid
-	}
-	return time.Unix(0, at), id, nil
+	return time.Unix(0, nanos), id, nil
 }
 
 // page cuts the extra row every list reads and turns the last one into the next cursor. Six routes

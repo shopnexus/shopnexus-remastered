@@ -6,8 +6,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -463,30 +461,15 @@ func resourceKeys(ids []id.ID[id.Resource]) []int64 {
 	return out
 }
 
-// The cursor is the (timestamp, id) a page ended at — opaque to a client, and a tuple
-// because CURRENT_TIMESTAMP is transaction-scoped: two rows written in the same
-// transaction share a timestamp exactly, and a bare-timestamp cursor would then drop
-// whichever of them page N did not return. Ordering by the tuple, matching every
-// ORDER BY's own tiebreak, is what keeps a boundary tie from skipping a row.
+// The cursor is a (timestamp, id) tuple; common owns the format, and the reason it is a tuple.
 func formatCursor(at time.Time, id int64) string {
-	return strconv.FormatInt(at.UnixNano(), 10) + "_" + strconv.FormatInt(id, 10)
+	return common.FormatCursor(at.UnixNano(), id)
 }
 
 func parseCursor(cursor string) (time.Time, int64, error) {
-	if cursor == "" {
-		return time.Time{}, 0, nil
+	nanos, id, err := common.ParseCursor(cursor)
+	if err != nil || id == 0 {
+		return time.Time{}, 0, err
 	}
-	nanos, rest, ok := strings.Cut(cursor, "_")
-	if !ok {
-		return time.Time{}, 0, domain.ErrCursorInvalid
-	}
-	at, err := strconv.ParseInt(nanos, 10, 64)
-	if err != nil {
-		return time.Time{}, 0, domain.ErrCursorInvalid
-	}
-	id, err := strconv.ParseInt(rest, 10, 64)
-	if err != nil {
-		return time.Time{}, 0, domain.ErrCursorInvalid
-	}
-	return time.Unix(0, at), id, nil
+	return time.Unix(0, nanos), id, nil
 }

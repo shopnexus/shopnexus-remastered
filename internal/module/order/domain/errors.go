@@ -96,7 +96,6 @@ var (
 	ErrNotTheBuyer       = errx.NewError(http.StatusForbidden, "not_the_buyer", "only the buyer of this order may do that")
 	ErrNotTheSeller      = errx.NewError(http.StatusForbidden, "not_the_seller", "only the seller of this order may do that")
 	ErrModeratorRequired = errx.NewError(http.StatusForbidden, "moderator_required", "moderator role required")
-	ErrCursorInvalid     = errx.NewError(http.StatusBadRequest, "cursor_invalid", "the cursor is not one this endpoint issued")
 	// ErrQuoteSourceInvalid is a quote for neither a draft nor agreed terms, or for both. The
 	// parcel has to be one purchase.
 	ErrQuoteSourceInvalid = errx.NewError(http.StatusBadRequest, "quote_source_invalid", "name exactly one of a draft or an offer")

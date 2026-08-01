@@ -9,8 +9,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -192,38 +190,11 @@ func rawIDs[K id.Kind](ids []id.ID[K]) []int64 {
 	return out
 }
 
-// The cursor is the sort key the page ended at *and* that row's id — opaque to a client, and
-// stable under a list that keeps moving. Both halves are needed: CURRENT_TIMESTAMP is
-// transaction-scoped, so rows written together share a timestamp exactly, and a key on its own
-// would skip whichever of them the page did not reach.
-func formatCursor(key, rowID int64) string {
-	return strconv.FormatInt(key, 10) + "." + strconv.FormatInt(rowID, 10)
-}
-
-func parseCursor(cursor string) (key, rowID int64, err error) {
-	if cursor == "" {
-		return 0, 0, nil
-	}
-	dot := strings.IndexByte(cursor, '.')
-	if dot < 0 {
-		return 0, 0, domain.ErrCursorInvalid
-	}
-	key, err = strconv.ParseInt(cursor[:dot], 10, 64)
-	if err != nil {
-		return 0, 0, domain.ErrCursorInvalid
-	}
-	rowID, err = strconv.ParseInt(cursor[dot+1:], 10, 64)
-	if err != nil || rowID <= 0 {
-		return 0, 0, domain.ErrCursorInvalid
-	}
-	return key, rowID, nil
-}
-
 // timeCursor and countCursor are the two keys the lists here order by: created_at for nearly
 // all of them, the helpfulness tally for a review page sorted by it. Each reads one more row
 // than asked, so "is there another page" is answered without a count.
 func timeCursor(cursor string, limit int) (port.CursorFilter, error) {
-	key, rowID, err := parseCursor(cursor)
+	key, rowID, err := common.ParseCursor(cursor)
 	if err != nil {
 		return port.CursorFilter{}, err
 	}
@@ -235,7 +206,7 @@ func timeCursor(cursor string, limit int) (port.CursorFilter, error) {
 }
 
 func countCursor(cursor string, limit int) (port.CursorFilter, error) {
-	key, rowID, err := parseCursor(cursor)
+	key, rowID, err := common.ParseCursor(cursor)
 	if err != nil {
 		return port.CursorFilter{}, err
 	}
@@ -252,7 +223,7 @@ func paginate[T any](rows []T, limit int, key func(T) (int64, int64)) ([]T, trus
 	rows = rows[:limit]
 	last, rowID := key(rows[len(rows)-1])
 	return rows, trustapi.CursorInfo{
-		NextCursor: formatCursor(last, rowID),
+		NextCursor: common.FormatCursor(last, rowID),
 		HasMore:    true,
 	}
 }

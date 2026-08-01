@@ -28,5 +28,4 @@ var (
 	ErrSystemMessage      = errx.NewError(http.StatusForbidden, "system_message", "a system message is not yours to write or change")
 	ErrEmptyMessage       = errx.NewError(http.StatusUnprocessableEntity, "empty_message", "a message needs a body or an attachment")
 	ErrAttachmentNotFound = errx.NewError(http.StatusNotFound, "attachment_not_found", "an attachment id names no confirmed resource")
-	ErrCursorInvalid      = errx.NewError(http.StatusBadRequest, "cursor_invalid", "the cursor is not one this endpoint issued")
 )

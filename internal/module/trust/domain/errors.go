@@ -50,5 +50,4 @@ var (
 	// --- cross-cutting ---
 	ErrModeratorRequired  = errx.NewError(http.StatusForbidden, "moderator_required", "moderator role required")
 	ErrAttachmentNotFound = errx.NewError(http.StatusNotFound, "attachment_not_found", "an attachment names no confirmed upload")
-	ErrCursorInvalid      = errx.NewError(http.StatusBadRequest, "cursor_invalid", "cursor is not a value this API issued")
 )
