@@ -170,7 +170,7 @@ func (c *InMemoryCache) removeExpiredItems() {
 // copyValue copies source value to destination using reflection.
 func (c *InMemoryCache) copyValue(src, dest any) error {
 	destVal := reflect.ValueOf(dest)
-	if destVal.Kind() != reflect.Ptr {
+	if destVal.Kind() != reflect.Pointer {
 		return errors.New("destination must be a pointer")
 	}
 

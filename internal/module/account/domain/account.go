@@ -76,13 +76,13 @@ func NewAccount(role Role, email, phone, username, passwordHash string, profile 
 	a := &Account{Version: 1, Status: StatusActive, Role: role, Profile: profile}
 	// An identifier that arrives empty is not set at all: nil is the one way to spell
 	// absent, so the UNIQUE columns keep working and no reader has to test for "".
-	if s := NormalizeEmail(email); s != "" {
+	if s := NormalizeIdentifier(email); s != "" {
 		a.Email = &s
 	}
 	if s := strings.TrimSpace(phone); s != "" {
 		a.Phone = &s
 	}
-	if s := NormalizeUsername(username); s != "" {
+	if s := NormalizeIdentifier(username); s != "" {
 		a.Username = &s
 	}
 	if passwordHash != "" {
@@ -109,10 +109,10 @@ func NewOAuthAccount(email, username string, profile Profile, provider, uid stri
 		Profile:    profile,
 		Identities: []*OAuthIdentity{link},
 	}
-	if s := NormalizeEmail(email); s != "" {
+	if s := NormalizeIdentifier(email); s != "" {
 		a.Email = &s
 	}
-	if s := NormalizeUsername(username); s != "" {
+	if s := NormalizeIdentifier(username); s != "" {
 		a.Username = &s
 	}
 	record(a, IdentityLinked, ProviderLink{Provider: provider})
@@ -188,7 +188,7 @@ func (a *Account) IsSuspended(now time.Time) bool {
 // SetEmail takes the address itself; an empty one means the same as ClearEmail, so there
 // stays exactly one way to spell absent. A new address is unverified by definition.
 func (a *Account) SetEmail(email string) {
-	next := NormalizeEmail(email)
+	next := NormalizeIdentifier(email)
 	if next == "" {
 		a.ClearEmail()
 		return
@@ -231,7 +231,7 @@ func (a *Account) ClearPhone() {
 }
 
 func (a *Account) SetUsername(username string) {
-	next := NormalizeUsername(username)
+	next := NormalizeIdentifier(username)
 	if next == "" {
 		a.ClearUsername()
 		return
@@ -369,10 +369,11 @@ func (a *Account) Snapshot() AccountSnapshot {
 	}
 }
 
-// NormalizeEmail and NormalizeUsername are the stored form: lowercase and
-// trimmed, which is what makes a plain UNIQUE index enough and a lookup exact.
-func NormalizeEmail(s string) string    { return strings.ToLower(strings.TrimSpace(s)) }
-func NormalizeUsername(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+// NormalizeIdentifier is the stored form of anything an account is looked up by — an email, a
+// username, or the identifier a login sent before anyone knows which of the two it is: lowercase
+// and trimmed, which is what makes a plain UNIQUE index enough and a lookup exact. One function
+// because one rule; a second name for the same body only tells a reader they differ.
+func NormalizeIdentifier(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 
 // GenerateUsername invents one for an account that arrived with no email and no
 // username — Apple's "hide my email". The suffix is random rather than derived

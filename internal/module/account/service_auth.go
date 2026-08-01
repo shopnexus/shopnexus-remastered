@@ -47,7 +47,7 @@ func (s *Service) Register(ctx context.Context, req accountapi.RegisterRequest) 
 // unknown account as for a wrong password: the endpoint must not be usable to find out
 // who is registered.
 func (s *Service) Login(ctx context.Context, req accountapi.LoginRequest) (accountapi.AuthResult, error) {
-	acc, err := s.repo.GetByIdentifier(ctx, domain.NormalizeEmail(req.Identifier))
+	acc, err := s.repo.GetByIdentifier(ctx, domain.NormalizeIdentifier(req.Identifier))
 	if err != nil {
 		if errors.Is(err, domain.ErrAccountNotFound) {
 			return accountapi.AuthResult{}, domain.ErrInvalidCredentials
@@ -112,7 +112,7 @@ func (s *Service) resolveOAuthAccount(ctx context.Context, req accountapi.OAuthL
 	// provider-*verified* address may merge — an unverified one is a claim, and honouring
 	// it would let anyone take an account by signing up at a provider with its address.
 	if identity.Email != "" && identity.EmailVerified {
-		acc, err := s.repo.GetByEmail(ctx, domain.NormalizeEmail(identity.Email))
+		acc, err := s.repo.GetByEmail(ctx, domain.NormalizeIdentifier(identity.Email))
 		switch {
 		case err == nil:
 			if err := s.linkIdentity(ctx, acc, identity); err != nil {
@@ -262,7 +262,7 @@ func (s *Service) ChangePassword(ctx context.Context, req accountapi.ChangePassw
 // that an address is unknown turns this endpoint into a way to enumerate accounts. The
 // throttle is applied first, for the same reason.
 func (s *Service) RequestPasswordReset(ctx context.Context, req accountapi.PasswordResetRequest) error {
-	identifier := domain.NormalizeEmail(req.Identifier)
+	identifier := domain.NormalizeIdentifier(req.Identifier)
 	if err := s.throttle(ctx, "password-reset", identifier); err != nil {
 		return err
 	}

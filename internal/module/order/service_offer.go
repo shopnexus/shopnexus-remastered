@@ -49,20 +49,15 @@ func decodeShippingFee(raw []byte) int64 {
 	return src.ShippingFee
 }
 
-func decodeCheckoutSource(raw []byte) (domain.Origin, error) {
-	var src checkoutSource
-	if len(raw) == 0 {
-		return domain.Origin{}, domain.ErrOrderNotFound
-	}
-	if err := json.Unmarshal(raw, &src); err != nil {
-		return domain.Origin{}, fmt.Errorf("decode checkout context: %w", err)
-	}
-	origin := domain.Origin{DraftID: src.DraftID, OfferID: src.OfferID}
-	if !origin.Valid() {
-		return domain.Origin{}, domain.ErrOrderNotFound
-	}
-	return origin, nil
-}
+// The chat cards a negotiation posts. A closed set, named because the expiry posts the same body
+// from two places and a card whose wording drifts reads as a different event.
+const (
+	cardOfferOpened    = "offer opened"
+	cardOfferRevised   = "offer revised"
+	cardOfferWithdrawn = "offer withdrawn"
+	cardOfferAccepted  = "offer accepted"
+	cardOfferExpired   = "offer expired"
+)
 
 // CreateOffer opens a negotiation on a variant of a `negotiable` listing. Either side may
 // start it — the buyer from the listing page, the seller from a thread — and whoever does
@@ -94,7 +89,7 @@ func (s *Service) CreateOffer(ctx context.Context, req orderapi.CreateOfferReque
 	if err := s.repo.InsertOffer(ctx, &o); err != nil {
 		return orderapi.Offer{}, fmt.Errorf("insert offer: %w", err)
 	}
-	s.postOfferCard(ctx, o, "offer opened")
+	s.postOfferCard(ctx, o, cardOfferOpened)
 	// The standing proposal is on a clock from here; accepting restarts it, and the run re-reads
 	// the row rather than holding the deadline it first saw.
 	s.timer("start offer", s.workflows.StartOffer(ctx, o.ID))
@@ -189,8 +184,14 @@ func (s *Service) CounterOffer(ctx context.Context, req orderapi.CounterOfferReq
 	if err := s.repo.SaveOffer(ctx, o, []string{domain.OfferActive}); err != nil {
 		return orderapi.Offer{}, fmt.Errorf("save offer: %w", err)
 	}
-	s.postOfferCard(ctx, o, "offer revised")
-	return toAPIOffer(o, ""), nil
+	s.postOfferCard(ctx, o, cardOfferRevised)
+	// The currency is the listing's, resolved like every other offer answer: a total with nothing
+	// beside it is not a price, and `required` in the contract means this route cannot skip it.
+	currencies, err := s.listingCurrencies(ctx, req.ActorID, []domain.Offer{o})
+	if err != nil {
+		return orderapi.Offer{}, err
+	}
+	return toAPIOffer(o, currencies[o.ListingID]), nil
 }
 
 func (s *Service) CancelOffer(ctx context.Context, req orderapi.OfferRequest) error {
@@ -204,7 +205,7 @@ func (s *Service) CancelOffer(ctx context.Context, req orderapi.OfferRequest) er
 	if err := s.repo.SaveOffer(ctx, o, []string{domain.OfferActive}); err != nil {
 		return fmt.Errorf("save offer: %w", err)
 	}
-	s.postOfferCard(ctx, o, "offer withdrawn")
+	s.postOfferCard(ctx, o, cardOfferWithdrawn)
 	return nil
 }
 
@@ -226,7 +227,7 @@ func (s *Service) AcceptOffer(ctx context.Context, req orderapi.OfferRequest) (o
 	if err := s.repo.SaveOffer(ctx, o, []string{domain.OfferActive}); err != nil {
 		return orderapi.Offer{}, fmt.Errorf("save offer: %w", err)
 	}
-	s.postOfferCard(ctx, o, "offer accepted")
+	s.postOfferCard(ctx, o, cardOfferAccepted)
 	// The frozen price is on a clock, and the run that closes it is the same one a standing
 	// proposal had: the row carries its own deadline either way.
 	s.timer("start offer", s.workflows.StartOffer(ctx, o.ID))

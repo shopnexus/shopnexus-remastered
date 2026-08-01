@@ -103,6 +103,15 @@ func NullTime(t time.Time) any {
 	return t
 }
 
+// NullText is the same for an optional filter or an optional TEXT column: an empty string means
+// "no value" rather than "match the empty string".
+func NullText(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
 // NullID is the same for a key: a zero id is not a row anybody has, so it is NULL rather than 0.
 func NullID(n int64) any {
 	if n == 0 {

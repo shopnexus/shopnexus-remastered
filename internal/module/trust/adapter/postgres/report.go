@@ -70,7 +70,7 @@ func (r *Repo) ListReports(ctx context.Context, f port.ReportFilter) ([]domain.R
 	}
 	args := pgx.NamedArgs{
 		"reporter_id": f.ReporterID, "statuses": nullStrings(f.Statuses),
-		"ref_type": nullText(f.RefType), "reason": nullText(f.Reason),
+		"ref_type": dbx.NullText(f.RefType), "reason": dbx.NullText(f.Reason),
 	}
 	addCursor(args, f.Cursor)
 	rows, err := r.pool.Query(ctx, q, args)

@@ -15,11 +15,6 @@ import (
 // text-only reader, and is not worth the machinery for two mails whose whole content
 // is one sentence and one link.
 
-type mail struct {
-	Subject string
-	Body    *template.Template
-}
-
 // body is the shared frame, so a new mail is a title and a paragraph rather than a
 // copy of the layout.
 const bodyFrame = `<!doctype html>

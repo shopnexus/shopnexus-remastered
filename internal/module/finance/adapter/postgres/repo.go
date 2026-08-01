@@ -92,17 +92,11 @@ func (r *Repo) FindSessionByID(ctx context.Context, id int64) (domain.Session, e
 }
 
 func (r *Repo) FindWallet(ctx context.Context, accountID int64, currency string) (domain.Wallet, error) {
-	// Both key columns: account_id alone selects every currency the account holds.
-	const q = `SELECT account_id, currency, available_balance, held_balance
-	           FROM wallet WHERE account_id = @account_id AND currency = @currency`
-	var w domain.Wallet
-	err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{"account_id": accountID, "currency": currency}).
-		Scan(&w.AccountID, &w.Currency, &w.AvailableBalance, &w.HeldBalance)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.Wallet{}, domain.ErrWalletNotFound
-	}
-	if err != nil {
-		return domain.Wallet{}, fmt.Errorf("db scan wallet: %w", err)
-	}
-	return w, nil
+	// Both key columns: account_id alone selects every currency the account holds. The projection
+	// and the scan are wallet.go's, so a column added there reaches this read too — its own copy
+	// had already fallen a column behind and answered every wallet with a zero created_at.
+	const q = `SELECT ` + walletColumns + ` FROM wallet
+	           WHERE account_id = @account_id AND currency = @currency`
+	args := pgx.NamedArgs{"account_id": accountID, "currency": currency}
+	return scanWallet(r.pool.QueryRow(ctx, q, args))
 }

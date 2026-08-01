@@ -14,20 +14,6 @@ import (
 const sessionColumns = `id, kind::text, status::text, from_id, to_id, note, currency,
 	       total_amount, fx_snapshot, data, created_at, paid_at, expired_at`
 
-func scanSession(row pgx.Row) (domain.Session, error) {
-	var s domain.Session
-	err := row.Scan(&s.ID, &s.Kind, &s.Status, &nullableInt64{&s.FromID}, &nullableInt64{&s.ToID},
-		&s.Note, &s.Currency, &s.TotalAmount, &s.FXSnapshot, &s.Data, &s.CreatedAt,
-		&s.PaidAt, &s.ExpiredAt)
-	if dbx.IsNoRows(err) {
-		return domain.Session{}, domain.ErrSessionNotFound
-	}
-	if err != nil {
-		return domain.Session{}, fmt.Errorf("db scan payment session: %w", err)
-	}
-	return s, nil
-}
-
 // SaveSession writes the status, the settlement time and the data. The WHERE clause carries
 // the transition: a session moves only from a status the caller named, so two concurrent
 // resolutions cannot both land and there is no version column to keep. Without that guard an

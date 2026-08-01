@@ -102,11 +102,12 @@ func (r *Repo) FindProfiles(ctx context.Context, accountIDs []int64) (map[int64]
 func (r *Repo) HasLiveVerifiedDocument(ctx context.Context, accountID int64) (bool, error) {
 	const q = `SELECT EXISTS (
 	               SELECT 1 FROM identity_document
-	               WHERE account_id = @account_id AND status = 'verified'
+	               WHERE account_id = @account_id AND status::text = @status
 	                 AND (expires_at IS NULL OR expires_at > now())
 	           )`
 	var ok bool
-	if err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{"account_id": accountID}).Scan(&ok); err != nil {
+	args := pgx.NamedArgs{"account_id": accountID, "status": string(domain.IdentityVerified)}
+	if err := r.pool.QueryRow(ctx, q, args).Scan(&ok); err != nil {
 		return false, fmt.Errorf("db query live verified document: %w", err)
 	}
 	return ok, nil
@@ -118,9 +119,10 @@ func (r *Repo) LiveVerifiedDocuments(ctx context.Context, accountIDs []int64) (m
 		return out, nil
 	}
 	const q = `SELECT account_id FROM identity_document
-	           WHERE account_id = ANY(@ids) AND status = 'verified'
+	           WHERE account_id = ANY(@ids) AND status::text = @status
 	             AND (expires_at IS NULL OR expires_at > now())`
-	rows, err := r.pool.Query(ctx, q, pgx.NamedArgs{"ids": accountIDs})
+	args := pgx.NamedArgs{"ids": accountIDs, "status": string(domain.IdentityVerified)}
+	rows, err := r.pool.Query(ctx, q, args)
 	if err != nil {
 		return nil, fmt.Errorf("db query live verified documents: %w", err)
 	}

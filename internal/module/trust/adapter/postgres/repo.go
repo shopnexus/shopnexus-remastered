@@ -30,12 +30,3 @@ func addCursor(args pgx.NamedArgs, f port.CursorFilter) {
 	args["before_id"] = f.BeforeID
 	args["limit"] = f.Limit
 }
-
-// nullText is an optional filter: an empty string means "no filter", not "match the empty
-// string".
-func nullText(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
-}

@@ -7,6 +7,16 @@ import (
 	"shopnexus/internal/shared/id"
 )
 
+// The roles Me.Role reports, as every other module has to compare them. Published here rather
+// than left to each caller's own literal: five modules gate a moderator route on this value, and
+// a typo in one of them is a gate that silently opens. The account module's domain holds the same
+// three values — its own vocabulary, which a `domain` package cannot publish.
+const (
+	RoleUser      = "user"
+	RoleModerator = "moderator"
+	RoleAdmin     = "admin"
+)
+
 // --- authentication ---
 
 // AuthResult is what every successful sign-in returns: the two tokens, the access

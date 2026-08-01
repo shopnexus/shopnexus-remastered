@@ -19,7 +19,7 @@ func (s *Service) AdminListAccounts(ctx context.Context, req accountapi.AdminLis
 		return accountapi.Page[accountapi.AdminAccount]{}, err
 	}
 	rows, total, err := s.repo.SearchAccounts(ctx, port.AccountFilter{
-		Query:  domain.NormalizeEmail(req.Query),
+		Query:  domain.NormalizeIdentifier(req.Query),
 		Status: domain.Status(req.Status),
 		Role:   domain.Role(req.Role),
 		Offset: offsetOf(req.Page, req.Limit),

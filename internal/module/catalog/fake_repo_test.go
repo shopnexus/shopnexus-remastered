@@ -894,12 +894,3 @@ func (f *fakeUploads) Resolve(_ context.Context, ids []int64) (map[int64]common.
 	}
 	return out, nil
 }
-
-// confirmedUpload is the shorthand a test uses when it just needs a usable photo id.
-func (f *fakeUploads) confirmedUpload() int64 {
-	f.nextID++
-	f.slots[f.nextID] = true
-	f.arrived[f.nextID] = true
-	f.confirmed[f.nextID] = true
-	return f.nextID
-}

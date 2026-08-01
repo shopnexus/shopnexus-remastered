@@ -65,7 +65,7 @@ func (r *Repo) InsertItems(ctx context.Context, items []*domain.Item) error {
 			args := pgx.NamedArgs{
 				"draft_id": i.DraftID, "offer_id": i.OfferID, "buyer_id": i.BuyerID,
 				"seller_id": i.SellerID, "listing_id": i.ListingID, "variant_id": i.VariantID,
-				"address": address, "note": nullText(i.Note), "currency": i.Currency,
+				"address": address, "note": dbx.NullText(i.Note), "currency": i.Currency,
 				"quantity": i.Quantity, "transport_option": i.TransportOption,
 				"total_amount": i.TotalAmount, "payment_session_id": i.PaymentSessionID,
 			}
@@ -179,7 +179,7 @@ func (r *Repo) FindTransport(ctx context.Context, id int64) (domain.Transport, e
 	err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id}).
 		Scan(&t.ID, &t.Option, &t.Status, &t.Fee, &t.Data, &t.CreatedAt)
 	if dbx.IsNoRows(err) {
-		return domain.Transport{}, domain.ErrOrderNotFound
+		return domain.Transport{}, domain.ErrTransportNotFound
 	}
 	if err != nil {
 		return domain.Transport{}, fmt.Errorf("db scan transport: %w", err)
@@ -387,7 +387,7 @@ func (r *Repo) ListOrders(ctx context.Context, f port.OrderFilter) ([]domain.Ord
 	           LIMIT @limit`
 	before, beforeID, limit := cursorBound(f.Cursor)
 	args := pgx.NamedArgs{
-		"buyer_id": f.BuyerID, "seller_id": f.SellerID, "state": nullText(f.State),
+		"buyer_id": f.BuyerID, "seller_id": f.SellerID, "state": dbx.NullText(f.State),
 		"before": before, "before_id": beforeID, "limit": limit,
 	}
 	return r.queryOrders(ctx, q, args)

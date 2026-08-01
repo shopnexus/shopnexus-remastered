@@ -22,18 +22,18 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 	args := pgx.NamedArgs{
 		"ids":              nullInt64Array(f.IDs),
 		"variant_ids":      nullInt64Array(f.VariantIDs),
-		"query":            nullText(f.Query),
+		"query":            dbx.NullText(f.Query),
 		"viewer_id":        f.ViewerID,
 		"mine":             f.Mine,
 		"favorited":        f.Favorited,
-		"status":           nullText(string(f.Status)),
+		"status":           dbx.NullText(string(f.Status)),
 		"category_id":      nullInt64(f.CategoryID),
-		"tag":              nullText(f.Tag),
+		"tag":              dbx.NullText(f.Tag),
 		"seller_id":        nullInt64(f.SellerID),
-		"condition":        nullText(string(f.Condition)),
+		"condition":        dbx.NullText(string(f.Condition)),
 		"min_price":        nullInt64(f.MinPrice),
 		"max_price":        nullInt64Ptr(f.MaxPrice),
-		"probe":            nullText(vectorLiteralOrEmpty(f.Probe)),
+		"probe":            dbx.NullText(vectorLiteralOrEmpty(f.Probe)),
 		"probe_from_query": f.ProbeFromQuery,
 		"limit":            f.Limit,
 		"offset":           f.Offset,
@@ -293,13 +293,6 @@ func nullInt64Ptr(n *int64) any {
 		return nil
 	}
 	return *n
-}
-
-func nullText(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
 }
 
 func nullInt64Array(v []int64) any {

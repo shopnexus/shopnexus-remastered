@@ -99,7 +99,7 @@ func (s *Service) requireAdmin(ctx context.Context, actorID id.ID[id.Account]) e
 	if err != nil {
 		return fmt.Errorf("read caller role: %w", err)
 	}
-	if me.Role != "admin" {
+	if me.Role != accountapi.RoleAdmin {
 		return domain.ErrAdminRequired
 	}
 	return nil

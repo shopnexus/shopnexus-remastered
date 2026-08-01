@@ -168,6 +168,9 @@ func (h *Account) RequestEmailVerification(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	req := accountapi.RequestEmailVerificationRequest{ActorID: uid}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
 	if failed(w, h.log, h.svc.RequestEmailVerification(r.Context(), req)) {
 		return
 	}
@@ -194,7 +197,11 @@ func (h *Account) GetMe(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	res, err := h.svc.GetMe(r.Context(), accountapi.GetMeRequest{ActorID: uid})
+	req := accountapi.GetMeRequest{ActorID: uid}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.GetMe(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}
@@ -249,7 +256,11 @@ func (h *Account) GetPublicAccount(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	res, err := h.svc.GetPublicAccount(r.Context(), accountapi.GetPublicAccountRequest{ID: accountID})
+	req := accountapi.GetPublicAccountRequest{ID: accountID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.GetPublicAccount(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}
@@ -262,7 +273,11 @@ func (h *Account) ListOAuthIdentities(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	res, err := h.svc.ListOAuthIdentities(r.Context(), accountapi.ListOAuthIdentitiesRequest{ActorID: uid})
+	req := accountapi.ListOAuthIdentitiesRequest{ActorID: uid}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListOAuthIdentities(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}
@@ -335,7 +350,11 @@ func (h *Account) ListContacts(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	res, err := h.svc.ListContacts(r.Context(), accountapi.ListContactsRequest{ActorID: uid})
+	req := accountapi.ListContactsRequest{ActorID: uid}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListContacts(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}
@@ -399,6 +418,9 @@ func (h *Account) DeleteContact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := accountapi.DeleteContactRequest{ActorID: uid, ID: contactID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
 	if failed(w, h.log, h.svc.DeleteContact(r.Context(), req)) {
 		return
 	}
@@ -416,6 +438,9 @@ func (h *Account) RequestContactPhoneVerification(w http.ResponseWriter, r *http
 		return
 	}
 	req := accountapi.RequestContactPhoneVerificationRequest{ActorID: uid, ID: contactID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
 	if failed(w, h.log, h.svc.RequestContactPhoneVerification(r.Context(), req)) {
 		return
 	}
@@ -478,7 +503,11 @@ func (h *Account) ListDevices(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	res, err := h.svc.ListDevices(r.Context(), accountapi.ListDevicesRequest{ActorID: uid})
+	req := accountapi.ListDevicesRequest{ActorID: uid}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListDevices(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}
@@ -496,6 +525,9 @@ func (h *Account) DeleteDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := accountapi.DeleteDeviceRequest{ActorID: uid, ID: deviceID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
 	if failed(w, h.log, h.svc.DeleteDevice(r.Context(), req)) {
 		return
 	}
@@ -541,7 +573,11 @@ func (h *Account) GetNotificationUnreadCount(w http.ResponseWriter, r *http.Requ
 	if failed(w, h.log, err) {
 		return
 	}
-	res, err := h.svc.GetUnreadCount(r.Context(), accountapi.GetUnreadCountRequest{ActorID: uid})
+	req := accountapi.GetUnreadCountRequest{ActorID: uid}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.GetUnreadCount(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}
@@ -575,7 +611,11 @@ func (h *Account) GetNotificationPreferences(w http.ResponseWriter, r *http.Requ
 	if failed(w, h.log, err) {
 		return
 	}
-	res, err := h.svc.GetNotificationPreferences(r.Context(), accountapi.GetNotificationPreferencesRequest{ActorID: uid})
+	req := accountapi.GetNotificationPreferencesRequest{ActorID: uid}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.GetNotificationPreferences(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}
@@ -658,6 +698,9 @@ func (h *Account) Follow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := accountapi.FollowRequest{ActorID: uid, TargetID: targetID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
 	if failed(w, h.log, h.svc.Follow(r.Context(), req)) {
 		return
 	}
@@ -675,6 +718,9 @@ func (h *Account) Unfollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := accountapi.UnfollowRequest{ActorID: uid, TargetID: targetID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
 	if failed(w, h.log, h.svc.Unfollow(r.Context(), req)) {
 		return
 	}
@@ -710,7 +756,11 @@ func (h *Account) ListIdentityDocuments(w http.ResponseWriter, r *http.Request) 
 	if failed(w, h.log, err) {
 		return
 	}
-	res, err := h.svc.ListIdentityDocuments(r.Context(), accountapi.ListIdentityDocumentsRequest{ActorID: uid})
+	req := accountapi.ListIdentityDocumentsRequest{ActorID: uid}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListIdentityDocuments(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}
@@ -783,6 +833,9 @@ func (h *Account) AdminLiftSuspension(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := accountapi.LiftSuspensionRequest{ActorID: uid, AccountID: accountID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
 	res, err := h.svc.AdminLiftSuspension(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
@@ -822,6 +875,9 @@ func (h *Account) AdminRevokeModerator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := accountapi.RevokeModeratorRequest{ActorID: uid, AccountID: accountID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
 	if failed(w, h.log, h.svc.AdminRevokeModerator(r.Context(), req)) {
 		return
 	}

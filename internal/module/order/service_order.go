@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	catalogapi "shopnexus/internal/module/catalog/api"
 	financeapi "shopnexus/internal/module/finance/api"
@@ -59,10 +58,9 @@ func (s *Service) CancelItem(ctx context.Context, req orderapi.ItemRequest) (ord
 	if i.BuyerID != req.ActorID.Int64() && i.SellerID != req.ActorID.Int64() {
 		return orderapi.Item{}, domain.ErrItemNotFound
 	}
-	if err := s.cancelLine(ctx, i, req.ActorID.Int64()); err != nil {
+	if err := s.cancelLine(ctx, &i, req.ActorID.Int64()); err != nil {
 		return orderapi.Item{}, err
 	}
-	i.CancelledAt = new(time.Now())
 	return toAPIItem(i), nil
 }
 
@@ -73,14 +71,14 @@ func (s *Service) CancelItem(ctx context.Context, req orderapi.ItemRequest) (ord
 // failing, which is what the pending list is for — a paid line still has a null order. Without
 // asking finance, a seller could cancel a line the buyer had paid for, release the stock and
 // leave the capture covering nothing.
-func (s *Service) cancelLine(ctx context.Context, i domain.Item, actorID int64) error {
-	if err := s.requireUnpaid(ctx, i, actorID); err != nil {
+func (s *Service) cancelLine(ctx context.Context, i *domain.Item, actorID int64) error {
+	if err := s.requireUnpaid(ctx, *i, actorID); err != nil {
 		return err
 	}
 	if err := i.Cancel(actorID); err != nil {
 		return err
 	}
-	if err := s.repo.SaveItem(ctx, i); err != nil {
+	if err := s.repo.SaveItem(ctx, *i); err != nil {
 		return fmt.Errorf("save item: %w", err)
 	}
 	if err := s.catalog.ReleaseStock(ctx, catalogapi.StockMovementRequest{
@@ -242,8 +240,14 @@ func (s *Service) AdvanceShipment(ctx context.Context, req orderapi.AdvanceShipm
 		return orderapi.Transport{}, fmt.Errorf("find order: %w", err)
 	}
 	if o.SellerID != req.ActorID.Int64() {
+		// A moderator may correct a checkpoint. Only their *refusal* becomes "not the seller" —
+		// an account module that could not be read is reported as itself, or an outage reads to
+		// the seller as a permissions problem with their own order.
 		if err := s.requireModerator(ctx, req.ActorID); err != nil {
-			return orderapi.Transport{}, domain.ErrNotTheSeller
+			if errors.Is(err, domain.ErrModeratorRequired) {
+				return orderapi.Transport{}, domain.ErrNotTheSeller
+			}
+			return orderapi.Transport{}, err
 		}
 	}
 	t, err := s.advanceLeg(ctx, o.TransportID, req.Status)

@@ -301,7 +301,7 @@ func (s *Service) isModerator(ctx context.Context, actorID id.ID[id.Account]) bo
 	if err != nil {
 		return false
 	}
-	return me.Role == "moderator" || me.Role == "admin"
+	return me.Role == accountapi.RoleModerator || me.Role == accountapi.RoleAdmin
 }
 
 // participant reads a thread the caller is in. Not found rather than forbidden: a thread

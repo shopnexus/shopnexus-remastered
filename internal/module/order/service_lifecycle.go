@@ -331,7 +331,7 @@ func (s *Service) ExpireCheckouts(ctx context.Context, limit int) (int, error) {
 	}
 	cancelled := 0
 	for _, i := range items {
-		if err := s.cancelLine(ctx, i, i.BuyerID); err != nil {
+		if err := s.cancelLine(ctx, &i, i.BuyerID); err != nil {
 			s.log.Debug("unpaid line not cancellable", "item_id", i.ID, "err", err)
 			continue
 		}
@@ -362,7 +362,7 @@ func (s *Service) ExpireOffers(ctx context.Context, limit int) (int, error) {
 			s.log.Debug("offer already settled", "offer_id", o.ID, "err", err)
 			continue
 		}
-		s.postOfferCard(ctx, o, "offer expired")
+		s.postOfferCard(ctx, o, cardOfferExpired)
 		closed++
 	}
 	return closed, nil
@@ -390,7 +390,7 @@ func (s *Service) ExpireOffer(ctx context.Context, offerID int64) error {
 		s.log.Debug("offer already settled", "offer_id", o.ID, "err", err)
 		return nil
 	}
-	s.postOfferCard(ctx, o, "offer expired")
+	s.postOfferCard(ctx, o, cardOfferExpired)
 	return nil
 }
 

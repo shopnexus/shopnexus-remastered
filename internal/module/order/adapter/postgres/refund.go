@@ -305,7 +305,7 @@ const saveDispute = `UPDATE refund_dispute
 func disputeArgs(d domain.Dispute) pgx.NamedArgs {
 	return pgx.NamedArgs{
 		"id": d.ID, "status": d.Status, "resolved_by": d.RuledBy,
-		"resolved_at": d.RuledAt, "note": nullText(d.Note),
+		"resolved_at": d.RuledAt, "note": dbx.NullText(d.Note),
 	}
 }
 

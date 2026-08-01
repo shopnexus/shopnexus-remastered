@@ -120,7 +120,7 @@ func (r *Repo) ListFeedback(ctx context.Context, f port.FeedbackFilter) ([]domai
 	case domain.RoleBuyer:
 		direction = domain.DirectionSellerToBuyer
 	}
-	args := pgx.NamedArgs{"ratee_id": f.RateeID, "direction": nullText(direction)}
+	args := pgx.NamedArgs{"ratee_id": f.RateeID, "direction": dbx.NullText(direction)}
 	addCursor(args, f.Cursor)
 	return r.queryFeedback(ctx, q, args)
 }

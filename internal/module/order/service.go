@@ -138,7 +138,7 @@ func (s *Service) requireModerator(ctx context.Context, actorID id.ID[id.Account
 	if err != nil {
 		return fmt.Errorf("read caller role: %w", err)
 	}
-	if me.Role != "moderator" && me.Role != "admin" {
+	if me.Role != accountapi.RoleModerator && me.Role != accountapi.RoleAdmin {
 		return domain.ErrModeratorRequired
 	}
 	return nil

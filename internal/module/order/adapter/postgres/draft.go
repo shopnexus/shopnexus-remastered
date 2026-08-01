@@ -185,7 +185,7 @@ func (r *Repo) ListOffers(ctx context.Context, f port.OfferFilter) ([]domain.Off
 	           LIMIT @limit`
 	before, beforeID, limit := cursorBound(f.Cursor)
 	args := pgx.NamedArgs{
-		"account_id": f.AccountID, "status": nullText(f.Status),
+		"account_id": f.AccountID, "status": dbx.NullText(f.Status),
 		"before": before, "before_id": beforeID, "limit": limit,
 	}
 	return r.queryOffers(ctx, q, args)
@@ -295,11 +295,4 @@ func (r *Repo) AttachOfferSession(ctx context.Context, offerID, sessionID int64)
 		return domain.ErrOfferSettled
 	}
 	return nil
-}
-
-func nullText(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
 }
