@@ -45,10 +45,13 @@ func InTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx) error) error 
 	return nil
 }
 
+// sqlState is the driver's error code, e.g. 23505. The assertion names pgconn's own method, so
+// only this function is package-private — renaming the interface method would match nothing and
+// silently stop every unique violation being recognised as one.
 func sqlState(err error) string {
-	var pgErr interface{ sqlState() string }
+	var pgErr interface{ SQLState() string }
 	if errors.As(err, &pgErr) {
-		return pgErr.sqlState()
+		return pgErr.SQLState()
 	}
 	return ""
 }
