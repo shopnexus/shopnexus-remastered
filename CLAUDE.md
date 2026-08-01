@@ -332,6 +332,22 @@ give it its own doc under `docs/` and link it from here.
   does, which is why `item.order_id` is nullable and `item_seller_pending_idx` is a retry list
   rather than an inbox. The buyer always pays delivery, so a seller is never charged and
   `session_kind` has no `seller-confirmation-fee`.
+- **A claim is taken before the money, and the write is the claim.** A draft is spent
+  (`WHERE cancelled_at IS NULL`) and an accepted offer moves to `checked-out`
+  (`WHERE status = 'accepted'`) *before* anything is reserved or a payment session is opened, so a
+  double-clicked checkout opens one session and the loser is refused. Claiming afterwards is the
+  bug that shape hides: both presses open a session, only the last write loses, and a second paid
+  session on one sale is money the escrow cannot account for — the hold is keyed on the order, so
+  the second payment is never held and the payout then fails for ever on a negative balance.
+  Whatever fails after the claim hands it back (`ReleaseOfferCheckout`), because a buyer whose
+  ledger blinked should retry rather than renegotiate. `item.offer_id` and `item.draft_id` are
+  UNIQUE behind all of it, since a constraint holds when a service is wrong.
+- **A guarded write names the statuses it moves out of.** `SaveOffer(ctx, o, from)` — `active` for
+  a counter, an acceptance or a withdrawal; `active|accepted` for an expiry. A fixed `from` covering
+  every status is a lost update wearing a guard: a counter that read the row before somebody else's
+  acceptance landed would put terms back on a table that was already agreed, and the buyer holding
+  a 200 "agreed" would then be told their checkout has nothing to check out. Same rule as
+  `Version` on an aggregate — a stale read has to lose.
 - **Agreeing to a price is not the sale; the buyer's checkout is.** Either party may accept the
   terms on the table — whoever does *not* own the standing proposal, since the two sides
   alternate — and that charges nothing: it freezes the price for `acceptedWindow` (30 minutes,

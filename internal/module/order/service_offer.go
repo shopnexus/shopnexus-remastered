@@ -184,7 +184,9 @@ func (s *Service) CounterOffer(ctx context.Context, req orderapi.CounterOfferReq
 	if err := o.Counter(req.ActorID.Int64(), req.Quantity, req.Total, req.Reason, time.Now(), offerWindow); err != nil {
 		return orderapi.Offer{}, err
 	}
-	if err := s.repo.SaveOffer(ctx, o); err != nil {
+	// From `active` only: a counter that read the row before somebody else's acceptance landed
+	// loses, rather than putting terms back on a table that was already agreed.
+	if err := s.repo.SaveOffer(ctx, o, []string{domain.OfferActive}); err != nil {
 		return orderapi.Offer{}, fmt.Errorf("save offer: %w", err)
 	}
 	s.postOfferCard(ctx, o, "offer revised")
@@ -199,7 +201,7 @@ func (s *Service) CancelOffer(ctx context.Context, req orderapi.OfferRequest) er
 	if err := o.Cancel(req.ActorID.Int64()); err != nil {
 		return err
 	}
-	if err := s.repo.SaveOffer(ctx, o); err != nil {
+	if err := s.repo.SaveOffer(ctx, o, []string{domain.OfferActive}); err != nil {
 		return fmt.Errorf("save offer: %w", err)
 	}
 	s.postOfferCard(ctx, o, "offer withdrawn")
@@ -221,7 +223,7 @@ func (s *Service) AcceptOffer(ctx context.Context, req orderapi.OfferRequest) (o
 	if err := o.Accept(req.ActorID.Int64(), time.Now(), acceptedWindow); err != nil {
 		return orderapi.Offer{}, err
 	}
-	if err := s.repo.SaveOffer(ctx, o); err != nil {
+	if err := s.repo.SaveOffer(ctx, o, []string{domain.OfferActive}); err != nil {
 		return orderapi.Offer{}, fmt.Errorf("save offer: %w", err)
 	}
 	s.postOfferCard(ctx, o, "offer accepted")
@@ -249,7 +251,8 @@ func (s *Service) CheckoutOffer(ctx context.Context, req orderapi.CheckoutOfferR
 		return orderapi.CheckoutResult{}, err
 	}
 	// Buyer only, only once, and only while the agreed price is still good.
-	if err := o.CheckoutBy(req.ActorID.Int64(), time.Now()); err != nil {
+	now := time.Now()
+	if err := o.CheckoutBy(req.ActorID.Int64(), now); err != nil {
 		return orderapi.CheckoutResult{}, err
 	}
 	listing, _, err := s.variantOf(ctx, req.ActorID, id.Of[id.Variant](o.VariantID))
@@ -263,12 +266,31 @@ func (s *Service) CheckoutOffer(ctx context.Context, req orderapi.CheckoutOfferR
 	if err != nil {
 		return orderapi.CheckoutResult{}, err
 	}
+
+	// The terms are claimed before anything is reserved or charged, exactly as a draft is spent
+	// before its checkout: the write is the claim, so a double-clicked "create order now" opens
+	// one payment session and the loser is refused. Claiming afterwards would let both presses
+	// open one and only the last write lose — and two paid sessions on one negotiation is money
+	// the escrow cannot account for.
+	if err := s.repo.ClaimOfferCheckout(ctx, o.ID, now); err != nil {
+		return orderapi.CheckoutResult{}, err
+	}
+	o.CheckOut()
+	// Whatever fails from here hands the claim back, so the buyer retries inside the window they
+	// still have instead of having to negotiate the price again.
+	unclaim := func() {
+		if err := s.repo.ReleaseOfferCheckout(ctx, o.ID); err != nil {
+			s.log.Error("release offer claim after failed checkout", "offer_id", o.ID, "err", err)
+		}
+	}
 	if err := s.catalog.ReserveStock(ctx, catalogapi.StockMovementRequest{
 		VariantID: id.Of[id.Variant](o.VariantID), Units: o.Quantity,
 	}); err != nil {
+		unclaim()
 		return orderapi.CheckoutResult{}, fmt.Errorf("reserve stock: %w", err)
 	}
 	release := func() {
+		unclaim()
 		if err := s.catalog.ReleaseStock(ctx, catalogapi.StockMovementRequest{
 			VariantID: id.Of[id.Variant](o.VariantID), Units: o.Quantity,
 		}); err != nil {
@@ -303,18 +325,17 @@ func (s *Service) CheckoutOffer(ctx context.Context, req orderapi.CheckoutOfferR
 		release()
 		return orderapi.CheckoutResult{}, fmt.Errorf("open checkout: %w", err)
 	}
-	item.PaymentSessionID = session.ID.Int64()
+	sessionID := session.ID.Int64()
+	item.PaymentSessionID = sessionID
 	lines := []*domain.Item{&item}
 	if err := s.repo.InsertItems(ctx, lines); err != nil {
 		release()
 		return orderapi.CheckoutResult{}, fmt.Errorf("insert items: %w", err)
 	}
-	sessionID := session.ID.Int64()
+	// Which checkout the claim became. Recorded after it exists rather than as the claim, so the
+	// session the buyer is paying is never guessed.
 	o.PaymentSessionID = &sessionID
-	// The session id on the offer is the claim: `WHERE payment_session_id IS NULL` means a
-	// double-clicked "create order now" opens one checkout, not two.
-	if err := s.repo.ClaimOfferCheckout(ctx, o); err != nil {
-		release()
+	if err := s.repo.AttachOfferSession(ctx, o.ID, sessionID); err != nil {
 		return orderapi.CheckoutResult{}, err
 	}
 	s.timer("start checkout", s.workflows.StartCheckout(ctx, sessionID))

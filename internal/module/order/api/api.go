@@ -298,7 +298,7 @@ type CreateOfferRequest struct {
 
 type ListOffersRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
-	Status  string            `json:"-" validate:"omitempty,oneof=active accepted cancelled"`
+	Status  string            `json:"-" validate:"omitempty,oneof=active accepted checked-out cancelled"`
 	Cursor  string            `json:"-"`
 	Limit   int               `json:"-" validate:"required,min=1,max=100"`
 }

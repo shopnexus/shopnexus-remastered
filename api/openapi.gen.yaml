@@ -1982,10 +1982,14 @@ components:
                 - meta
             type: object
         OfferStatus:
+            description: |
+                `active` — a proposal waiting for the other side. `accepted` — agreed, the price frozen for a short window while the buyer creates the order. `checked-out` — the buyer's payment session is open, so these terms are off the table. `cancelled` — withdrawn or lapsed.
             enum:
                 - active
                 - accepted
+                - checked-out
                 - cancelled
+            example: accepted
             type: string
         OpenDisputeRequest:
             description: |
@@ -8221,7 +8225,7 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Error'
-                    description: Negotiation is expired, cancelled, or already agreed
+                    description: Negotiation is expired, cancelled, already agreed, or being paid for
             security:
                 - bearerAuth: []
             summary: Agree to the terms on the table

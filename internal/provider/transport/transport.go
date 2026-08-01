@@ -36,6 +36,11 @@ type QuoteParams struct {
 	Items       []ItemMetadata
 	FromAddress string
 	ToAddress   string
+	// Option is the carrier slug being priced — the same value a Create would book with. A
+	// provider that offers several services prices the one asked for; one that offers a single
+	// service ignores it. Without it a per-carrier price list is the same number relabelled, and
+	// the buyer's choice never reaches the courier.
+	Option string
 }
 
 type ItemMetadata struct {

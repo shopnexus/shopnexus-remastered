@@ -304,10 +304,18 @@ func (s *Service) quoteShipping(ctx context.Context, option string, sellerID int
 	if err != nil {
 		return 0, err
 	}
+	return s.quoteCarrier(ctx, option, pickup, to, lines)
+}
+
+// quoteCarrier is the call itself, with the pickup already read — so a page that prices every
+// carrier reads the seller's collection point once instead of once per option.
+func (s *Service) quoteCarrier(ctx context.Context, option string, from, to domain.AddressSnapshot,
+	lines []transport.ItemMetadata) (int64, error) {
 	quote, err := s.transport.Quote(ctx, transport.QuoteParams{
 		Items:       lines,
-		FromAddress: addressLine(pickup),
+		FromAddress: addressLine(from),
 		ToAddress:   addressLine(to),
+		Option:      option,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("quote shipping: %w", err)

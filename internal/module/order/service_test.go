@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -184,10 +185,11 @@ type fakeFinance struct {
 	sessions map[int64]*financeapi.Session
 	// posted is the idempotency index: a key used twice is refused, as the real one does.
 	posted map[string]bool
-	// holdFails and refundFails make the money unreachable for one attempt, which is the only
-	// way to see whether a half-finished write is recoverable.
+	// holdFails, refundFails and openFails make the money unreachable for one attempt, which is
+	// the only way to see whether a half-finished write is recoverable.
 	holdFails   bool
 	refundFails bool
+	openFails   bool
 }
 
 func newFakeFinance() *fakeFinance {
@@ -198,6 +200,9 @@ func newFakeFinance() *fakeFinance {
 }
 
 func (f *fakeFinance) OpenCheckout(_ context.Context, req financeapi.OpenCheckoutRequest) (financeapi.Session, error) {
+	if f.openFails {
+		return financeapi.Session{}, errx.NewError(503, "finance_unreachable", "the ledger is down")
+	}
 	f.nextSession++
 	session := financeapi.Session{
 		ID: id.Of[id.PaymentSession](f.nextSession), Kind: "buyer-checkout",
@@ -351,10 +356,18 @@ type fakeCourier struct {
 	fee int64
 	// quotes is one entry per call: the number of lines and the total units in the parcel.
 	quotes []int64
+	// asked is the carrier slug of each call. A courier that is never told which service it is
+	// pricing answers one number for every option, which is a price list that is not one.
+	asked []string
 	// fail makes the carrier refuse, so a checkout that cannot be priced is refused too rather
 	// than charging the buyer for delivery nobody quoted.
 	fail bool
 }
+
+// standardDiscount is what the fake's slower service costs less. The two carriers pricing
+// differently is how a test can tell whether the buyer's chosen one reached the courier at all —
+// a provider that is never told answers one number for every option.
+const standardDiscount int64 = 5_000
 
 func (f *fakeCourier) Quote(_ context.Context, params transport.QuoteParams) (transport.QuoteResult, error) {
 	if f.fail {
@@ -365,7 +378,12 @@ func (f *fakeCourier) Quote(_ context.Context, params transport.QuoteParams) (tr
 		units += i.Quantity
 	}
 	f.quotes = append(f.quotes, units)
-	return transport.QuoteResult{Cost: f.fee}, nil
+	f.asked = append(f.asked, params.Option)
+	cost := f.fee
+	if strings.Contains(params.Option, "standard") {
+		cost -= standardDiscount
+	}
+	return transport.QuoteResult{Cost: cost}, nil
 }
 
 func (f *fakeWorkflows) StartOffer(_ context.Context, offerID int64) error {
@@ -727,6 +745,94 @@ func TestOffer_SellerMayTakeTheBuyersPrice(t *testing.T) {
 	}
 	if result.Total != 80_000+shippingFee {
 		t.Fatalf("total = %d, want the buyer's own price plus the carriage they pay", result.Total)
+	}
+}
+
+// The claim comes before the money, as it does on a fixed-price draft: whatever fails after it is
+// taken hands it back, so nothing is charged and the buyer retries rather than renegotiates. The
+// order the other way round — claim last — is what lets a double-clicked "create order now" open
+// two payment sessions on one negotiation, and two paid sessions is money the escrow cannot
+// account for.
+func TestCheckoutOffer_ClaimsTheTermsBeforeCharging(t *testing.T) {
+	h := newHarness("negotiable")
+	ctx := context.Background()
+	offer, err := h.svc.CreateOffer(ctx, orderapi.CreateOfferRequest{
+		ActorID: buyer, VariantID: variantID, Quantity: 1, Total: 80_000,
+	})
+	if err != nil {
+		t.Fatalf("CreateOffer: %v", err)
+	}
+	if _, err := h.svc.AcceptOffer(ctx, orderapi.OfferRequest{ActorID: seller, ID: offer.ID}); err != nil {
+		t.Fatalf("AcceptOffer: %v", err)
+	}
+
+	// The ledger is down at the moment the session would open.
+	h.finance.openFails = true
+	req := orderapi.CheckoutOfferRequest{
+		ActorID: buyer, ID: offer.ID, ContactID: contactID, TransportOption: "ghn-express",
+	}
+	if _, err := h.svc.CheckoutOffer(ctx, req); err == nil {
+		t.Fatal("CheckoutOffer succeeded with no ledger to open a session on")
+	}
+	if len(h.finance.sessions) != 0 {
+		t.Fatalf("sessions = %d, want none opened", len(h.finance.sessions))
+	}
+	// The claim went back and the reservation with it, so the terms are still agreed.
+	stored := h.repo.offers[offer.ID.Int64()]
+	if stored.Status != domain.OfferAccepted || stored.PaymentSessionID != nil {
+		t.Fatalf("offer = %+v, want the claim handed back", stored)
+	}
+	if h.catalog.reserved != 0 {
+		t.Fatalf("reserved = %d, want the units back on the shelf", h.catalog.reserved)
+	}
+
+	// The buyer retries and it works, which is the point of handing the claim back.
+	h.finance.openFails = false
+	result, err := h.svc.CheckoutOffer(ctx, req)
+	if err != nil {
+		t.Fatalf("CheckoutOffer retry: %v", err)
+	}
+	claimed := h.repo.offers[offer.ID.Int64()]
+	if claimed.Status != domain.OfferCheckedOut || claimed.PaymentSessionID == nil {
+		t.Fatalf("offer = %+v, want it claimed and naming its checkout", claimed)
+	}
+	if *claimed.PaymentSessionID != result.PaymentSession.Int64() {
+		t.Fatalf("offer names session %d, want %d", *claimed.PaymentSessionID, result.PaymentSession.Int64())
+	}
+	// And a second press is refused on the claim, not on a session id it would have had to open
+	// first: the terms are no longer accepted.
+	if got := status(t, mustErr(h.svc.CheckoutOffer(ctx, req))); got != 409 {
+		t.Fatalf("status = %d, want 409 for a second checkout", got)
+	}
+	if len(h.finance.sessions) != 1 {
+		t.Fatalf("sessions = %d, want exactly one for one negotiation", len(h.finance.sessions))
+	}
+}
+
+// A counter that read the row before somebody else's acceptance landed loses. Without the guard it
+// would put terms back on a table that was already agreed, and the buyer holding a 200 "agreed"
+// would then be told their checkout has nothing to check out.
+func TestCounterOffer_LosesToAnAcceptanceItDidNotSee(t *testing.T) {
+	h := newHarness("negotiable")
+	ctx := context.Background()
+	offer, err := h.svc.CreateOffer(ctx, orderapi.CreateOfferRequest{
+		ActorID: buyer, VariantID: variantID, Quantity: 1, Total: 80_000,
+	})
+	if err != nil {
+		t.Fatalf("CreateOffer: %v", err)
+	}
+	// The seller agrees. Their counter is now a write from a read that predates it.
+	if _, err := h.svc.AcceptOffer(ctx, orderapi.OfferRequest{ActorID: seller, ID: offer.ID}); err != nil {
+		t.Fatalf("AcceptOffer: %v", err)
+	}
+	if got := status(t, mustErr(h.svc.CounterOffer(ctx, orderapi.CounterOfferRequest{
+		ActorID: seller, ID: offer.ID, Quantity: 1, Total: 95_000,
+	}))); got != 409 {
+		t.Fatalf("status = %d, want 409 countering agreed terms", got)
+	}
+	stored := h.repo.offers[offer.ID.Int64()]
+	if stored.Status != domain.OfferAccepted || stored.Total != 80_000 {
+		t.Fatalf("offer = %+v, want the agreed terms untouched", stored)
 	}
 }
 
@@ -1710,10 +1816,20 @@ func TestShippingQuotes_OneListForBothKindsOfSale(t *testing.T) {
 	if len(quotes.Options) != 2 {
 		t.Fatalf("options = %+v, want both enabled carriers and not the retired one", quotes.Options)
 	}
+	priced := map[string]int64{}
 	for _, option := range quotes.Options {
-		if option.Fee != shippingFee || option.Name == "" {
-			t.Fatalf("quote = %+v, want a priced, named carrier", option)
+		if option.Name == "" {
+			t.Fatalf("quote = %+v, want a named carrier", option)
 		}
+		priced[option.Option] = option.Fee
+	}
+	// Each carrier priced its own service. One number relabelled per row is what happens when the
+	// chosen option never reaches the courier, and it is a price list a buyer cannot choose from.
+	if priced["ghn-express"] != shippingFee || priced["vtp-standard"] != shippingFee-standardDiscount {
+		t.Fatalf("quotes = %v, want each carrier to price its own service", priced)
+	}
+	if !slices.Contains(h.courier.asked, "vtp-standard") {
+		t.Fatalf("carriers asked = %v, want the option passed to the courier", h.courier.asked)
 	}
 	if quotes.Currency != "VND" {
 		t.Errorf("currency = %q, want the listing's", quotes.Currency)

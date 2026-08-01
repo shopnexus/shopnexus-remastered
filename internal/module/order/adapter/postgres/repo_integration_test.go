@@ -427,7 +427,7 @@ func TestInsertOffer_OneActivePerBuyerAndVariant(t *testing.T) {
 	if err := active.Counter(seller, 1, 90_000, "firm", time.Now(), 48*time.Hour); err != nil {
 		t.Fatalf("Counter: %v", err)
 	}
-	if err := r.SaveOffer(ctx, active); err != nil {
+	if err := r.SaveOffer(ctx, active, []string{domain.OfferActive}); err != nil {
 		t.Fatalf("SaveOffer: %v", err)
 	}
 	reread, err := r.FindOffer(ctx, first.ID)
@@ -442,7 +442,7 @@ func TestInsertOffer_OneActivePerBuyerAndVariant(t *testing.T) {
 	if err := reread.Cancel(buyer); err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}
-	if err := r.SaveOffer(ctx, reread); err != nil {
+	if err := r.SaveOffer(ctx, reread, []string{domain.OfferActive}); err != nil {
 		t.Fatalf("SaveOffer: %v", err)
 	}
 	again, err := domain.NewOffer(500, 501, buyer, buyer, seller, 1, 75_000, "retry", 48*time.Hour)
@@ -503,7 +503,7 @@ func TestExpiryLists(t *testing.T) {
 	if err := o.Expire(); err != nil {
 		t.Fatalf("Expire offer: %v", err)
 	}
-	if err := r.SaveOffer(ctx, o); err != nil {
+	if err := r.SaveOffer(ctx, o, []string{domain.OfferActive, domain.OfferAccepted}); err != nil {
 		t.Fatalf("SaveOffer: %v", err)
 	}
 	drafts, err = r.ExpiredDrafts(ctx, time.Now(), 200)
@@ -519,6 +519,101 @@ func TestExpiryLists(t *testing.T) {
 	}
 	if containsOffer(offers, o.ID) {
 		t.Errorf("an expired offer is still on the expiry list")
+	}
+}
+
+// The checkout claim, which is the one guard standing between a double-clicked "create order now"
+// and two payment sessions on one negotiation. Taken before the session exists, so it is a status
+// rather than the session id: the second press has to find the terms already gone.
+func TestClaimOfferCheckout_OnlyOnePressWins(t *testing.T) {
+	r, _ := newRepo(t)
+	ctx := context.Background()
+	buyer, seller := party(t)
+
+	o, err := domain.NewOffer(500, 503, buyer, buyer, seller, 1, 80_000, "bundle", time.Hour)
+	if err != nil {
+		t.Fatalf("NewOffer: %v", err)
+	}
+	if err := r.InsertOffer(ctx, &o); err != nil {
+		t.Fatalf("InsertOffer: %v", err)
+	}
+	// Nothing to claim until the other side has agreed.
+	now := time.Now()
+	if err := r.ClaimOfferCheckout(ctx, o.ID, now); !errors.Is(err, domain.ErrOfferSettled) {
+		t.Fatalf("claiming an active offer = %v, want ErrOfferSettled", err)
+	}
+	if err := o.Accept(seller, now, 30*time.Minute); err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	if err := r.SaveOffer(ctx, o, []string{domain.OfferActive}); err != nil {
+		t.Fatalf("SaveOffer: %v", err)
+	}
+
+	if err := r.ClaimOfferCheckout(ctx, o.ID, now); err != nil {
+		t.Fatalf("ClaimOfferCheckout: %v", err)
+	}
+	// The second press finds the terms off the table, before it has opened anything.
+	if err := r.ClaimOfferCheckout(ctx, o.ID, now); !errors.Is(err, domain.ErrOfferSettled) {
+		t.Fatalf("second claim = %v, want ErrOfferSettled", err)
+	}
+	claimed, err := r.FindOffer(ctx, o.ID)
+	if err != nil {
+		t.Fatalf("FindOffer: %v", err)
+	}
+	if claimed.Status != domain.OfferCheckedOut || claimed.PaymentSessionID != nil {
+		t.Fatalf("offer = %+v, want it claimed with no session yet", claimed)
+	}
+	// A checked-out offer is the session's business, so the expiry sweep leaves it alone even
+	// once its own deadline has passed.
+	offers, err := r.ExpiredOffers(ctx, now.Add(time.Hour), 200)
+	if err != nil {
+		t.Fatalf("ExpiredOffers: %v", err)
+	}
+	if containsOffer(offers, o.ID) {
+		t.Errorf("the sweep would expire an offer the buyer is paying for")
+	}
+
+	// The claim can be handed back when the checkout could not be opened, and then retried.
+	if err := r.ReleaseOfferCheckout(ctx, o.ID); err != nil {
+		t.Fatalf("ReleaseOfferCheckout: %v", err)
+	}
+	if err := r.ClaimOfferCheckout(ctx, o.ID, now); err != nil {
+		t.Fatalf("re-claim after release: %v", err)
+	}
+	if err := r.AttachOfferSession(ctx, o.ID, 90_001); err != nil {
+		t.Fatalf("AttachOfferSession: %v", err)
+	}
+	// Once a session is named the claim is no longer releasable: that money is being paid.
+	if err := r.ReleaseOfferCheckout(ctx, o.ID); err != nil {
+		t.Fatalf("ReleaseOfferCheckout after attach: %v", err)
+	}
+	settled, err := r.FindOffer(ctx, o.ID)
+	if err != nil {
+		t.Fatalf("FindOffer: %v", err)
+	}
+	if settled.Status != domain.OfferCheckedOut || settled.PaymentSessionID == nil || *settled.PaymentSessionID != 90_001 {
+		t.Fatalf("offer = %+v, want it naming its checkout", settled)
+	}
+	// And an accepted price nobody checked out does lapse — the other half of the same sweep.
+	other, err := domain.NewOffer(500, 504, buyer, buyer, seller, 1, 60_000, "", time.Hour)
+	if err != nil {
+		t.Fatalf("NewOffer: %v", err)
+	}
+	if err := r.InsertOffer(ctx, &other); err != nil {
+		t.Fatalf("InsertOffer: %v", err)
+	}
+	if err := other.Accept(seller, now, 30*time.Minute); err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	if err := r.SaveOffer(ctx, other, []string{domain.OfferActive}); err != nil {
+		t.Fatalf("SaveOffer: %v", err)
+	}
+	offers, err = r.ExpiredOffers(ctx, now.Add(time.Hour), 200)
+	if err != nil {
+		t.Fatalf("ExpiredOffers: %v", err)
+	}
+	if !containsOffer(offers, other.ID) {
+		t.Errorf("an agreed price nobody checked out never lapses")
 	}
 }
 

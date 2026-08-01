@@ -148,7 +148,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'These are your own terms — the other party answers them', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: 'Negotiation is expired, cancelled, or already agreed', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Negotiation is expired, cancelled, already agreed, or being paid for', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /offers/{id}/checkout:
     post:
@@ -236,7 +236,12 @@ components:
   schemas:
     OfferStatus:
       type: string
-      enum: [active, accepted, cancelled]
+      enum: [active, accepted, checked-out, cancelled]
+      example: accepted
+      description: >
+        `active` — a proposal waiting for the other side. `accepted` — agreed, the price frozen for
+        a short window while the buyer creates the order. `checked-out` — the buyer's payment
+        session is open, so these terms are off the table. `cancelled` — withdrawn or lapsed.
 
     Offer:
       type: object

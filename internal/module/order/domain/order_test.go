@@ -222,9 +222,18 @@ func TestOffer_AlternatesAndOnlyBuyerAccepts(t *testing.T) {
 	if err := o.CheckoutBy(buyer, now); err != nil {
 		t.Fatalf("CheckoutBy: %v", err)
 	}
-	o.PaymentSessionID = new(int64(7))
+	// The claim is the status, taken before the session exists — so a second press finds the
+	// terms already off the table rather than finding a session id.
+	o.CheckOut()
+	if o.Status != domain.OfferCheckedOut {
+		t.Fatalf("status = %q, want checked-out", o.Status)
+	}
 	if err := o.CheckoutBy(buyer, now); !errors.Is(err, domain.ErrOfferSettled) {
 		t.Fatalf("second checkout = %v, want ErrOfferSettled", err)
+	}
+	// And the expiry leaves a paying buyer alone: that clock is the payment session's.
+	if err := o.Expire(); !errors.Is(err, domain.ErrOfferSettled) {
+		t.Fatalf("expiring a checked-out offer = %v, want ErrOfferSettled", err)
 	}
 
 	// The other direction: a seller may agree to the buyer's price, and it is still the buyer who

@@ -191,10 +191,12 @@ func (r *Repo) ListOffers(ctx context.Context, f port.OfferFilter) ([]domain.Off
 	return r.queryOffers(ctx, q, args)
 }
 
-// ExpiredOffers is the sweep behind the per-offer timer.
+// ExpiredOffers is the sweep behind the per-offer timer. Both waits, because both are the same
+// fact: a standing proposal nobody answered and an agreed price nobody checked out. A
+// `checked-out` offer is left alone — its clock is the payment session's.
 func (r *Repo) ExpiredOffers(ctx context.Context, now time.Time, limit int) ([]domain.Offer, error) {
 	const q = `SELECT ` + offerColumns + ` FROM offer
-	           WHERE status = 'active' AND expires_at < @now
+	           WHERE status IN ('active', 'accepted') AND expires_at < @now
 	           ORDER BY expires_at
 	           LIMIT @limit`
 	return r.queryOffers(ctx, q, pgx.NamedArgs{"now": now, "limit": limit})
@@ -221,22 +223,21 @@ func (r *Repo) queryOffers(ctx context.Context, q string, args pgx.NamedArgs) ([
 	return out, nil
 }
 
-// SaveOffer writes the terms and the status. `WHERE status = 'active'` is the transition:
-// two people accepting or countering at once cannot both land.
-func (r *Repo) SaveOffer(ctx context.Context, o domain.Offer) error {
+// SaveOffer writes the terms and the status. `from` is the status the entity moved out of, and
+// the guard is what makes a stale read lose: a counter that read `active` cannot land on a row
+// somebody has since had accepted, so an acceptance is never silently overwritten.
+//
+// It does not write `payment_session_id`. That column belongs to the checkout, and a write from a
+// read taken before the claim would blank it — which would let a second checkout open.
+func (r *Repo) SaveOffer(ctx context.Context, o domain.Offer, from []string) error {
 	const q = `UPDATE offer
 	           SET status = @status, author_id = @author_id, quantity = @quantity,
-	               total = @total, reason = @reason, expires_at = @expires_at,
-	               payment_session_id = @payment_session_id
+	               total = @total, reason = @reason, expires_at = @expires_at
 	           WHERE id = @id AND status::text = ANY(@from::text[])`
 	args := pgx.NamedArgs{
 		"id": o.ID, "status": o.Status, "author_id": o.AuthorID, "quantity": o.Quantity,
 		"total": o.Total, "reason": o.Reason, "expires_at": o.ExpiresAt,
-		"payment_session_id": o.PaymentSessionID,
-		// A negotiation moves from `active`, and an accepted one still expires — so the guard is
-		// the pair rather than `active` alone, and the checkout claim above is what stops an
-		// accepted offer being re-agreed.
-		"from": []string{domain.OfferActive, domain.OfferAccepted},
+		"from": from,
 	}
 	tag, err := r.pool.Exec(ctx, q, args)
 	if err != nil {
@@ -248,16 +249,47 @@ func (r *Repo) SaveOffer(ctx context.Context, o domain.Offer) error {
 	return nil
 }
 
-// ClaimOfferCheckout is the buyer turning agreed terms into an order, and the write is the claim:
-// `payment_session_id IS NULL` means one of two concurrent "create order now" presses opens a
-// checkout and the other is refused, rather than two sessions for one negotiated price.
-func (r *Repo) ClaimOfferCheckout(ctx context.Context, o domain.Offer) error {
-	const q = `UPDATE offer SET payment_session_id = @payment_session_id
-	           WHERE id = @id AND status = 'accepted' AND payment_session_id IS NULL`
-	args := pgx.NamedArgs{"id": o.ID, "payment_session_id": o.PaymentSessionID}
-	tag, err := r.pool.Exec(ctx, q, args)
+// ClaimOfferCheckout is the buyer taking agreed terms off the table to pay for them, and the
+// status *is* the claim: `WHERE status = 'accepted'` means one of two concurrent "create order
+// now" presses proceeds and the other is refused.
+//
+// Taken before the payment session is opened, not after. Claiming last would let both presses
+// open a session — and a second paid session on one negotiation is money the escrow cannot
+// account for, because the hold is keyed on the order.
+func (r *Repo) ClaimOfferCheckout(ctx context.Context, offerID int64, now time.Time) error {
+	const q = `UPDATE offer SET status = 'checked-out'
+	           WHERE id = @id AND status = 'accepted' AND expires_at > @now`
+	tag, err := r.pool.Exec(ctx, q, pgx.NamedArgs{"id": offerID, "now": now})
 	if err != nil {
 		return fmt.Errorf("db claim offer checkout: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrOfferSettled
+	}
+	return nil
+}
+
+// ReleaseOfferCheckout hands the claim back when the checkout could not be opened — an
+// unreachable ledger or a carrier that would not price the parcel. The buyer retries inside the
+// window they still have, rather than having to negotiate the price again.
+func (r *Repo) ReleaseOfferCheckout(ctx context.Context, offerID int64) error {
+	const q = `UPDATE offer SET status = 'accepted'
+	           WHERE id = @id AND status = 'checked-out' AND payment_session_id IS NULL`
+	if _, err := r.pool.Exec(ctx, q, pgx.NamedArgs{"id": offerID}); err != nil {
+		return fmt.Errorf("db release offer checkout: %w", err)
+	}
+	return nil
+}
+
+// AttachOfferSession records which checkout the claim became. Guarded on the claim, so it cannot
+// write a session onto an offer that was never claimed.
+func (r *Repo) AttachOfferSession(ctx context.Context, offerID, sessionID int64) error {
+	const q = `UPDATE offer SET payment_session_id = @payment_session_id
+	           WHERE id = @id AND status = 'checked-out' AND payment_session_id IS NULL`
+	args := pgx.NamedArgs{"id": offerID, "payment_session_id": sessionID}
+	tag, err := r.pool.Exec(ctx, q, args)
+	if err != nil {
+		return fmt.Errorf("db attach offer session: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrOfferSettled

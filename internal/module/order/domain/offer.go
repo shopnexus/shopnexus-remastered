@@ -8,9 +8,14 @@ import (
 
 // Offer statuses (kebab-case, mirrors the offer_status enum).
 const (
-	OfferActive    = "active"
-	OfferAccepted  = "accepted"
-	OfferCancelled = "cancelled"
+	OfferActive   = "active"
+	OfferAccepted = "accepted"
+	// OfferCheckedOut is the buyer paying: the claim is a status rather than the session id,
+	// because it has to be taken *before* the session exists. Otherwise two presses of "create
+	// order now" both open a checkout and only the last write loses — and a second paid session
+	// on one offer is money the escrow can never account for.
+	OfferCheckedOut = "checked-out"
+	OfferCancelled  = "cancelled"
 )
 
 // Offer is a negotiation on one variant: the terms currently on the table, revised in
@@ -28,11 +33,13 @@ type Offer struct {
 	AuthorID int64  `validate:"required"`
 	BuyerID  int64  `validate:"required"`
 	SellerID int64  `validate:"required"`
-	Status   string `validate:"required,oneof=active accepted cancelled"`
+	Status   string `validate:"required,oneof=active accepted checked-out cancelled"`
 	Quantity int64  `validate:"required,gt=0"`
 	Total    int64  `validate:"required,gt=0"`
 	Reason   string
-	// PaymentSessionID is set when the buyer accepts and the checkout opens.
+	// PaymentSessionID is filled in once the buyer's checkout has opened. The claim is the
+	// `checked-out` status, taken before that: this is what the session was, not whether one
+	// may be opened.
 	PaymentSessionID *int64
 	CreatedAt        time.Time
 	ExpiresAt        time.Time `validate:"required"`
@@ -115,10 +122,16 @@ func (o *Offer) Accept(actorID int64, now time.Time, window time.Duration) error
 
 // CheckoutBy reports the error stopping this account from turning the accepted offer into an
 // order. Only the buyer, and only while the accepted price is still good: they are the one who
-// pays, and a seller has no checkout to perform.
+// pays, and a seller has no checkout to perform. A second press finds the offer `checked-out`
+// rather than `accepted`, so it is refused here.
 func (o Offer) CheckoutBy(actorID int64, now time.Time) error {
 	if !o.Involves(actorID) {
 		return ErrOfferNotFound
+	}
+	// A second press finds the terms claimed, which is a different answer from terms nobody has
+	// agreed to yet — the buyer already has a checkout open and should be sent to it.
+	if o.Status == OfferCheckedOut {
+		return ErrOfferSettled
 	}
 	if o.Status != OfferAccepted {
 		return ErrOfferNotAccepted
@@ -128,9 +141,6 @@ func (o Offer) CheckoutBy(actorID int64, now time.Time) error {
 	}
 	if !now.Before(o.ExpiresAt) {
 		return ErrOfferExpired
-	}
-	if o.PaymentSessionID != nil {
-		return ErrOfferSettled
 	}
 	return nil
 }
@@ -153,16 +163,17 @@ func (o *Offer) Cancel(actorID int64) error {
 // An accepted offer expires too: the price was frozen for a short window, and a buyer who did not
 // check out in it has to negotiate again rather than hold yesterday's price open.
 func (o *Offer) Expire() error {
-	if o.Status == OfferCancelled {
-		return ErrOfferSettled
-	}
-	if o.Status == OfferAccepted && o.PaymentSessionID != nil {
-		// Already checked out: the sale is the session's business now.
+	// A checked-out offer is the session's business now, and a cancelled one is over.
+	if o.Status == OfferCancelled || o.Status == OfferCheckedOut {
 		return ErrOfferSettled
 	}
 	o.Status = OfferCancelled
 	return nil
 }
+
+// CheckOut is the claim: the buyer is paying, so nobody else may open a second checkout on these
+// terms. Taken before the payment session exists, and released again if opening it fails.
+func (o *Offer) CheckOut() { o.Status = OfferCheckedOut }
 
 func (o Offer) movable(actorID int64, now time.Time) error {
 	if !o.Involves(actorID) {

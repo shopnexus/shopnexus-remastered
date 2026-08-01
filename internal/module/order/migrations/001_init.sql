@@ -56,7 +56,9 @@ CREATE TYPE "dispute_status" AS ENUM (
     'buyer-wins'
 );
 
-CREATE TYPE "offer_status" AS ENUM ('active', 'accepted', 'cancelled');
+-- 'checked-out' is the buyer paying: the claim on agreed terms, taken before the payment
+-- session exists so that two presses of "create order now" cannot both open one.
+CREATE TYPE "offer_status" AS ENUM ('active', 'accepted', 'checked-out', 'cancelled');
 
 
 -- Flat shopping cart: one row per (account, SKU) pair.
@@ -140,7 +142,7 @@ CREATE TABLE IF NOT EXISTS "offer" (
     "quantity" BIGINT NOT NULL,
     "total" BIGINT NOT NULL, -- current proposed price (the agreed terms once accepted)
     "reason" TEXT NOT NULL DEFAULT '', -- offer-card note (e.g. discount reason)
-    "payment_session_id" BIGINT, -- set on accept (auto-created checkout)
+    "payment_session_id" BIGINT, -- the buyer's checkout, filled in once it has opened
 
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "expires_at" TIMESTAMPTZ NOT NULL,
@@ -150,10 +152,12 @@ CREATE TABLE IF NOT EXISTS "offer" (
     CONSTRAINT "offer_quantity_positive" CHECK ("quantity" > 0)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "offer_one_active_per_buyer_sku" ON "offer" ("buyer_id", "variant_id") WHERE "status" = 'active';
--- The expiry job: live offers past their deadline.
+-- The expiry job: offers past their deadline that nobody has taken further. An accepted one
+-- expires too — a frozen price is frozen for a short window — while a checked-out one is the
+-- payment session's business and is left alone.
 CREATE INDEX IF NOT EXISTS "offer_expiring_idx"
     ON "offer" ("expires_at")
-    WHERE "status" = 'active';
+    WHERE "status" IN ('active', 'accepted');
 CREATE INDEX IF NOT EXISTS "offer_seller_id_status_idx" ON "offer" ("seller_id", "status");
 CREATE INDEX IF NOT EXISTS "offer_buyer_id_status_idx" ON "offer" ("buyer_id", "status");
 CREATE INDEX IF NOT EXISTS "offer_variant_id_idx" ON "offer" ("variant_id");
@@ -294,6 +298,9 @@ CREATE TABLE IF NOT EXISTS "item" (
 CREATE INDEX IF NOT EXISTS "item_order_id_idx" ON "item" ("order_id");
 CREATE INDEX IF NOT EXISTS "item_variant_id_idx" ON "item" ("variant_id");
 CREATE INDEX IF NOT EXISTS "item_draft_id_idx" ON "item" ("draft_id");
+-- One line per negotiation, ever: the offer's `checked-out` claim is what stops a second
+-- checkout, and this is the constraint that holds even when a service is wrong.
+CREATE UNIQUE INDEX IF NOT EXISTS "item_offer_id_key" ON "item" ("offer_id") WHERE "offer_id" IS NOT NULL;
 -- The payment webhook's first lookup: which items did this session pay for.
 CREATE INDEX IF NOT EXISTS "item_payment_session_id_idx" ON "item" ("payment_session_id");
 -- "My purchases", newest first.

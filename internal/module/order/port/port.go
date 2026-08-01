@@ -87,10 +87,19 @@ type Repository interface {
 	// opening a second one a conflict rather than a duplicate.
 	FindActiveOffer(ctx context.Context, buyerID, variantID int64) (domain.Offer, error)
 	ListOffers(ctx context.Context, f OfferFilter) ([]domain.Offer, error)
-	SaveOffer(ctx context.Context, o domain.Offer) error
-	// ClaimOfferCheckout is the buyer turning agreed terms into an order. Guarded by the session
-	// column being NULL, so two concurrent presses open one checkout rather than two.
-	ClaimOfferCheckout(ctx context.Context, o domain.Offer) error
+	// SaveOffer writes the terms and the status, guarded by `from` — the statuses the write may
+	// replace, i.e. the one the entity moved out of. A stale read then loses instead of
+	// overwriting an acceptance somebody else already recorded.
+	SaveOffer(ctx context.Context, o domain.Offer, from []string) error
+	// ClaimOfferCheckout takes agreed terms off the table so the buyer can pay for them, before
+	// the payment session exists: `WHERE status = 'accepted'` is what makes two concurrent
+	// presses of "create order now" open one checkout rather than two.
+	ClaimOfferCheckout(ctx context.Context, offerID int64, now time.Time) error
+	// ReleaseOfferCheckout hands the claim back when the checkout could not be opened, so the
+	// buyer retries rather than renegotiates.
+	ReleaseOfferCheckout(ctx context.Context, offerID int64) error
+	// AttachOfferSession records which checkout the claim became.
+	AttachOfferSession(ctx context.Context, offerID, sessionID int64) error
 	ExpiredOffers(ctx context.Context, now time.Time, limit int) ([]domain.Offer, error)
 
 	// --- items ---

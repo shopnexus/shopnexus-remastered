@@ -204,6 +204,10 @@ func (s *Service) ExpireCheckouts(ctx context.Context, limit int) (int, error) {
 	return cancelled, nil
 }
 
+// expirableOffer is what an expiry may overwrite: a standing proposal nobody answered and an
+// agreed price nobody checked out. Never `checked-out` — that clock is the payment session's.
+var expirableOffer = []string{domain.OfferActive, domain.OfferAccepted}
+
 // ExpireOffers closes negotiations nobody answered. The units were never reserved — a
 // negotiation holds no stock — so there is nothing to give back.
 func (s *Service) ExpireOffers(ctx context.Context, limit int) (int, error) {
@@ -216,7 +220,9 @@ func (s *Service) ExpireOffers(ctx context.Context, limit int) (int, error) {
 		if err := o.Expire(); err != nil {
 			continue
 		}
-		if err := s.repo.SaveOffer(ctx, o); err != nil {
+		// Either wait may be the one that lapsed, so both statuses are writable here — and
+		// `checked-out` is not, which is what keeps a paying buyer's offer out of the sweep.
+		if err := s.repo.SaveOffer(ctx, o, expirableOffer); err != nil {
 			s.log.Debug("offer already settled", "offer_id", o.ID, "err", err)
 			continue
 		}
@@ -244,7 +250,7 @@ func (s *Service) ExpireOffer(ctx context.Context, offerID int64) error {
 	if err := o.Expire(); err != nil {
 		return nil
 	}
-	if err := s.repo.SaveOffer(ctx, o); err != nil {
+	if err := s.repo.SaveOffer(ctx, o, expirableOffer); err != nil {
 		s.log.Debug("offer already settled", "offer_id", o.ID, "err", err)
 		return nil
 	}

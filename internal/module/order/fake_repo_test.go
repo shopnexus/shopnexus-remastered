@@ -239,27 +239,47 @@ func (f *fakeRepo) ListOffers(_ context.Context, filter port.OfferFilter) ([]dom
 	return out[:min(filter.Cursor.Limit, len(out))], nil
 }
 
-// SaveOffer only moves an active one, as `WHERE status = 'active'` does: a double-clicked
-// acceptance loses here.
-// SaveOffer moves a negotiation, guarded by the statuses it moves from as the real one is: an
-// accepted offer still expires, so `active` alone would refuse the write that closes one.
-func (f *fakeRepo) SaveOffer(_ context.Context, o domain.Offer) error {
+// SaveOffer moves a negotiation, guarded by the statuses the caller says it moves out of, exactly
+// as `status = ANY(@from)` does: a write from a stale read loses instead of overwriting somebody
+// else's acceptance.
+func (f *fakeRepo) SaveOffer(_ context.Context, o domain.Offer, from []string) error {
 	stored, ok := f.offers[o.ID]
-	if !ok || (stored.Status != domain.OfferActive && stored.Status != domain.OfferAccepted) {
+	if !ok || !slices.Contains(from, stored.Status) {
 		return domain.ErrOfferSettled
 	}
 	f.offers[o.ID] = o
 	return nil
 }
 
-// ClaimOfferCheckout is the buyer turning agreed terms into an order, and the guard is the claim:
-// two concurrent presses open one checkout, as the real `payment_session_id IS NULL` does.
-func (f *fakeRepo) ClaimOfferCheckout(_ context.Context, o domain.Offer) error {
-	stored, ok := f.offers[o.ID]
-	if !ok || stored.Status != domain.OfferAccepted || stored.PaymentSessionID != nil {
+// ClaimOfferCheckout takes the terms off the table before the money is asked for, and the status
+// is the claim: the second of two concurrent presses finds it gone.
+func (f *fakeRepo) ClaimOfferCheckout(_ context.Context, offerID int64, now time.Time) error {
+	stored, ok := f.offers[offerID]
+	if !ok || stored.Status != domain.OfferAccepted || !now.Before(stored.ExpiresAt) {
 		return domain.ErrOfferSettled
 	}
-	f.offers[o.ID] = o
+	stored.Status = domain.OfferCheckedOut
+	f.offers[offerID] = stored
+	return nil
+}
+
+func (f *fakeRepo) ReleaseOfferCheckout(_ context.Context, offerID int64) error {
+	stored, ok := f.offers[offerID]
+	if !ok || stored.Status != domain.OfferCheckedOut || stored.PaymentSessionID != nil {
+		return nil
+	}
+	stored.Status = domain.OfferAccepted
+	f.offers[offerID] = stored
+	return nil
+}
+
+func (f *fakeRepo) AttachOfferSession(_ context.Context, offerID, sessionID int64) error {
+	stored, ok := f.offers[offerID]
+	if !ok || stored.Status != domain.OfferCheckedOut || stored.PaymentSessionID != nil {
+		return domain.ErrOfferSettled
+	}
+	stored.PaymentSessionID = &sessionID
+	f.offers[offerID] = stored
 	return nil
 }
 
@@ -267,7 +287,8 @@ func (f *fakeRepo) ExpiredOffers(_ context.Context, now time.Time, limit int) ([
 	var out []domain.Offer
 	for _, o := range f.offers {
 		// An accepted offer nobody checked out expires too: the frozen price had a short window.
-		if o.Status != domain.OfferCancelled && o.PaymentSessionID == nil && o.ExpiresAt.Before(now) {
+		// A checked-out one does not — its clock is the payment session's.
+		if (o.Status == domain.OfferActive || o.Status == domain.OfferAccepted) && o.ExpiresAt.Before(now) {
 			out = append(out, o)
 		}
 	}

@@ -338,9 +338,15 @@ func (s *Service) ShippingQuotes(ctx context.Context, req orderapi.ShippingQuote
 	if err != nil {
 		return orderapi.ShippingQuotes{}, fmt.Errorf("list transport options: %w", err)
 	}
+	// The seller's collection point is the same for every carrier, so it is read once — a
+	// per-option lookup here is one account round trip per row on a page-load route.
+	pickup, err := s.pickupSnapshot(ctx, sellerID)
+	if err != nil {
+		return orderapi.ShippingQuotes{}, err
+	}
 	out := orderapi.ShippingQuotes{Currency: currency, Options: make([]orderapi.ShippingQuote, 0, len(carriers))}
 	for _, carrier := range carriers {
-		fee, err := s.quoteShipping(ctx, carrier.ID, sellerID, address, lines)
+		fee, err := s.quoteCarrier(ctx, carrier.ID, pickup, address, lines)
 		if err != nil {
 			// One carrier that cannot price this parcel is one option missing from the list, not
 			// a page that fails: the buyer picks from whoever answered.

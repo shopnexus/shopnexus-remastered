@@ -92,12 +92,12 @@ var (
 	ErrNotTheSeller      = errx.NewError(http.StatusForbidden, "not_the_seller", "only the seller of this order may do that")
 	ErrModeratorRequired = errx.NewError(http.StatusForbidden, "moderator_required", "moderator role required")
 	ErrCursorInvalid     = errx.NewError(http.StatusBadRequest, "cursor_invalid", "the cursor is not one this endpoint issued")
-	// ErrShippingQuoteInvalid is a courier that answered with something that cannot be charged.
 	// ErrQuoteSourceInvalid is a quote for neither a draft nor agreed terms, or for both. The
 	// parcel has to be one purchase.
 	ErrQuoteSourceInvalid = errx.NewError(http.StatusBadRequest, "quote_source_invalid", "name exactly one of a draft or an offer")
 	// ErrCheckoutEmpty is a quote or a checkout with no lines in it.
-	ErrCheckoutEmpty        = errx.NewError(http.StatusBadRequest, "checkout_empty", "there is nothing here to ship")
+	ErrCheckoutEmpty = errx.NewError(http.StatusBadRequest, "checkout_empty", "there is nothing here to ship")
+	// ErrShippingQuoteInvalid is a courier that answered with something that cannot be charged.
 	ErrShippingQuoteInvalid = errx.NewError(http.StatusBadGateway, "shipping_quote_invalid", "the carrier did not return a usable delivery price")
 	ErrCarrierUnknown       = errx.NewError(http.StatusUnprocessableEntity, "carrier_unknown", "no enabled transport option by that id")
 
