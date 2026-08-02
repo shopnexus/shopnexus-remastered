@@ -175,6 +175,24 @@ func (s *Service) contactSnapshot(ctx context.Context, actorID id.ID[id.Account]
 	return snapshotOf(contact), nil
 }
 
+// deliverySnapshot is where a quote goes when the caller named no address: their default. A
+// checkout still names one — it is snapshotted onto the order, so the buyer has to have chosen
+// it — but a listing page asking "what would delivery cost" should not need a form first.
+func (s *Service) deliverySnapshot(ctx context.Context, actorID id.ID[id.Account],
+	contactID id.ID[id.Contact]) (domain.AddressSnapshot, id.ID[id.Contact], error) {
+	if contactID != 0 {
+		address, err := s.contactSnapshot(ctx, actorID, contactID)
+		return address, contactID, err
+	}
+	contact, err := s.accounts.GetDeliveryContact(ctx, accountapi.GetDeliveryContactRequest{
+		ActorID: actorID,
+	})
+	if err != nil {
+		return domain.AddressSnapshot{}, 0, fmt.Errorf("read default delivery contact: %w", err)
+	}
+	return snapshotOf(contact), contact.ID, nil
+}
+
 // pickupSnapshot is the seller's collection point, read while they are not present: the
 // money landing is what creates the shipment, and nobody asks them then.
 func (s *Service) pickupSnapshot(ctx context.Context, sellerID int64) (domain.AddressSnapshot, error) {

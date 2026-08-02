@@ -74,4 +74,7 @@ var (
 	// rather than guessing an address: a parcel collected from the wrong place is worse
 	// than a checkout that says why it cannot proceed.
 	ErrNoPickupContact = errx.NewError(http.StatusUnprocessableEntity, "no_pickup_contact", "the seller has no pickup address on file")
+	// ErrNoDeliveryContact is a buyer with no default delivery address. A quote cannot be made
+	// without one, and the client's answer is to ask for an address rather than to show a zero.
+	ErrNoDeliveryContact = errx.NewError(http.StatusUnprocessableEntity, "no_delivery_contact", "you have no default delivery address on file")
 )

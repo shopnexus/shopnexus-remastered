@@ -50,6 +50,8 @@ type fakeAccounts struct {
 	// noPickup is a seller who never set a collection point, which stops a sale rather than
 	// guessing an address.
 	noPickup bool
+	// noDelivery is a buyer with no default address, so a quote that named none has nowhere to go.
+	noDelivery bool
 }
 
 func (f fakeAccounts) GetMe(context.Context, accountapi.GetMeRequest) (accountapi.Me, error) {
@@ -62,6 +64,17 @@ func (f fakeAccounts) GetPublicAccount(_ context.Context, req accountapi.GetPubl
 
 func (f fakeAccounts) GetContact(_ context.Context, req accountapi.GetContactRequest) (accountapi.Contact, error) {
 	return accountapi.Contact{ID: req.ID, FullName: "Buyer", Phone: "+84900000001", Country: "VN"}, nil
+}
+
+// GetDeliveryContact is the buyer's default address, which a quote falls back to.
+func (f fakeAccounts) GetDeliveryContact(_ context.Context, _ accountapi.GetDeliveryContactRequest) (accountapi.Contact, error) {
+	if f.noDelivery {
+		return accountapi.Contact{}, errx.NewError(422, "no_delivery_contact", "no default delivery address")
+	}
+	return accountapi.Contact{
+		ID: contactID, FullName: "Buyer", Phone: "+84900000001", Country: "VN",
+		IsDefaultDelivery: true,
+	}, nil
 }
 
 func (f fakeAccounts) GetPickupContact(_ context.Context, req accountapi.GetPickupContactRequest) (accountapi.Contact, error) {
@@ -847,6 +860,69 @@ func TestCounterOffer_LosesToAnAcceptanceItDidNotSee(t *testing.T) {
 	stored := h.repo.offers[offer.ID.Int64()]
 	if stored.Status != domain.OfferAccepted || stored.Total != 80_000 {
 		t.Fatalf("offer = %+v, want the agreed terms untouched", stored)
+	}
+}
+
+// The listing page's question: what would delivery cost, before anything is frozen. No draft, no
+// address form — the variant is the parcel and the buyer's default address is where it goes, which
+// is what lets a product page show "delivery ₫15.000 to District 1" beside the price.
+func TestShippingQuotes_EstimatesFromAListingPage(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+
+	quotes, err := h.svc.ShippingQuotes(ctx, orderapi.ShippingQuotesRequest{
+		ActorID: buyer, VariantID: variantID,
+	})
+	if err != nil {
+		t.Fatalf("ShippingQuotes: %v", err)
+	}
+	if len(quotes.Options) != 2 {
+		t.Fatalf("options = %+v, want every enabled carrier", quotes.Options)
+	}
+	// The address is echoed, because the request never named one: a fee with no address beside it
+	// is not something a client can render or offer to change.
+	if quotes.ContactID != contactID {
+		t.Fatalf("contact = %v, want the default delivery address", quotes.ContactID)
+	}
+	if quotes.Currency != "VND" {
+		t.Errorf("currency = %q, want the listing's", quotes.Currency)
+	}
+
+	// One unit unless the buyer says otherwise, and the courier is told the quantity — a parcel of
+	// three is not priced as one.
+	h.courier.quotes = nil
+	if _, err := h.svc.ShippingQuotes(ctx, orderapi.ShippingQuotesRequest{
+		ActorID: buyer, VariantID: variantID, Quantity: 3,
+	}); err != nil {
+		t.Fatalf("ShippingQuotes for three: %v", err)
+	}
+	for _, units := range h.courier.quotes {
+		if units != 3 {
+			t.Fatalf("quoted for %d units, want the 3 asked for", units)
+		}
+	}
+
+	// Two sources at once is not a parcel, and neither is none.
+	for _, req := range []orderapi.ShippingQuotesRequest{
+		{ActorID: buyer},
+		{ActorID: buyer, VariantID: variantID, DraftID: id.Of[id.DraftOrder](1)},
+	} {
+		if got := status(t, mustErr(h.svc.ShippingQuotes(ctx, req))); got != 400 {
+			t.Fatalf("status = %d, want 400 for %+v", got, req)
+		}
+	}
+
+	// A buyer with no address on file is told so, rather than quoted to nowhere: the client's
+	// answer is to ask for an address.
+	noAddress := newHarness("fixed")
+	noAddress.svc = order.NewService(noAddress.repo, fakeAccounts{role: "user", noDelivery: true},
+		noAddress.catalog, noAddress.finance, noAddress.chat, noAddress.uploads, noAddress.repo,
+		noAddress.courier, noAddress.workflows, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
+		validation.Default(), slog.New(slog.DiscardHandler))
+	if got := status(t, mustErr(noAddress.svc.ShippingQuotes(ctx, orderapi.ShippingQuotesRequest{
+		ActorID: buyer, VariantID: variantID,
+	}))); got != 422 {
+		t.Fatalf("status = %d, want 422 with no default address", got)
 	}
 }
 

@@ -416,6 +416,13 @@ type GetContactRequest struct {
 	ID      id.ID[id.Contact] `json:"-" validate:"required"`
 }
 
+// GetDeliveryContactRequest reads an account's default delivery address. No contact id, because
+// the caller is asking "where do my parcels go" — the buyer's own route, so the actor is the
+// account. It is what lets a listing page quote delivery before anybody has picked an address.
+type GetDeliveryContactRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+}
+
 // GetPickupContactRequest reads a seller's collection point. Cross-account on purpose and
 // with no actor: order needs it to create a shipment, and the seller is not present when
 // the money lands. Only the pickup default is exposed, never the rest of their addresses.

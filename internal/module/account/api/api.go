@@ -81,6 +81,9 @@ type Service interface {
 	// GetPickupContact answers a seller's collection point, which the order module needs to
 	// create a shipment while the seller is not present. Pickup only.
 	GetPickupContact(ctx context.Context, req GetPickupContactRequest) (Contact, error)
+	// GetDeliveryContact answers the caller's default delivery address, so a quote can be made
+	// without asking them to pick one first.
+	GetDeliveryContact(ctx context.Context, req GetDeliveryContactRequest) (Contact, error)
 	CreateContact(ctx context.Context, req CreateContactRequest) (Contact, error)
 	UpdateContact(ctx context.Context, req UpdateContactRequest) (Contact, error)
 	DeleteContact(ctx context.Context, req DeleteContactRequest) error

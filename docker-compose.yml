@@ -57,7 +57,7 @@ x-app-env: &app-env
   TRANSPORT_PROVIDER: "mock"
   # Where a payment gateway may send a payer back. An allowlist, because a redirect target
   # nobody checked is an open redirect that borrows this platform's credibility.
-  PAYMENT_RETURN_URL_HOSTS: "localhost:5000,localhost:3000"
+  PAYMENT_RETURN_URL_HOSTS: "shopnexus.hopto.org"
 
   # Storage. `local` keeps uploaded objects on the container's disk and signs URLs back to
   # the gateway's own upload route, which is what makes a photo uploaded in dev actually
@@ -65,7 +65,7 @@ x-app-env: &app-env
   # that is a new implementation behind internal/provider/storage plus a selector value.
   STORAGE_PROVIDER: "local"
   STORAGE_ROOT: "/data/objects"
-  STORAGE_BASE_URL: "http://localhost:5000/api/v1"
+  STORAGE_BASE_URL: "https://shopnexus.hopto.org/api/v1"
   STORAGE_SECRET: "0123456789abcdef0123456789abcdef"
   STORAGE_UPLOAD_TTL: "15m"
   STORAGE_DOWNLOAD_TTL: "1h"

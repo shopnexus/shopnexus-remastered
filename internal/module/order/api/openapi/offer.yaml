@@ -200,17 +200,22 @@ paths:
       tags: [order]
       summary: What delivery would cost, per carrier
       description: >
-        One entry per enabled carrier that could price the parcel, so the buyer chooses delivery
-        with the fee in front of them. A carrier that declined is simply absent.
+        One entry per enabled carrier that could price the parcel, so the buyer sees delivery before
+        they pay for it. A carrier that declined is simply absent.
 
 
-        Name exactly one of `draft_id` or `offer_id`: they are the two things that freeze a price,
-        and the parcel is whichever of them is about to be checked out. The same list serves both,
-        because the buyer pays carriage on a fixed-price sale and a negotiated one alike.
+        Name exactly one source. `variant_id` is the listing page's question — what would this cost
+        to send — answered before any draft exists, with `quantity` defaulting to one and the
+        caller's default address used when `contact_id` is omitted. `draft_id` and `offer_id` are
+        the two things that freeze a price, and the parcel is whichever of them is about to be
+        checked out. The same list serves all three, because the buyer pays carriage on a
+        fixed-price sale and a negotiated one alike.
 
 
         An estimate a client renders, not a price it can hold: the fee is quoted again at checkout,
-        so a quote kept past the point it was true does not become the charge.
+        so a quote kept past the point it was true does not become the charge. Show it as its own
+        line beside the price rather than folded into it — the total a buyer is charged is the
+        checkout's, itemised.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -232,7 +237,7 @@ paths:
         '403': { description: 'Only the buyer prices delivery on agreed terms', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'The draft or the agreed terms are no longer checkout-able', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '422': { description: 'A variant that is not on this purchase', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'A variant that is not on this purchase, or a caller with no default delivery address', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
 components:
   schemas:

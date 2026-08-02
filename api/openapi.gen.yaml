@@ -3131,6 +3131,11 @@ components:
             type: object
         ShippingQuotes:
             properties:
+                contact_id:
+                    allOf:
+                        - $ref: '#/components/schemas/ContactID'
+                    description: |
+                        The address these fees are for, echoed because the request may not have named one — a fee with no address beside it is not one a client can render or offer to change.
                 currency:
                     $ref: '#/components/schemas/CurrencyCode'
                 options:
@@ -3140,13 +3145,17 @@ components:
             required:
                 - options
                 - currency
+                - contact_id
             type: object
         ShippingQuotesRequest:
             description: |
-                Exactly one of `draft_id` or `offer_id` — they are the two things that freeze a price, and the parcel is whichever of them is about to be checked out.
+                Exactly one of `variant_id`, `draft_id` or `offer_id`. A variant is an estimate for a listing page, before anything is frozen; a draft and an accepted offer are the two things that freeze a price, and the parcel is whichever of them is about to be checked out.
             properties:
                 contact_id:
-                    $ref: '#/components/schemas/ContactID'
+                    allOf:
+                        - $ref: '#/components/schemas/ContactID'
+                    description: |
+                        Where the parcel goes. Omit it and the caller's default delivery address is used, which is what lets a listing page quote with no form; 422 when they have none on file.
                 draft_id:
                     $ref: '#/components/schemas/DraftOrderID'
                 lines:
@@ -3158,8 +3167,18 @@ components:
                     type: array
                 offer_id:
                     $ref: '#/components/schemas/OfferID'
-            required:
-                - contact_id
+                quantity:
+                    description: |
+                        How many of `variant_id`. Omitted means one, since a listing page quotes the single unit in front of the buyer. Ignored by the other two sources, which carry their own.
+                    example: 1
+                    format: int64
+                    minimum: 1
+                    type: integer
+                variant_id:
+                    allOf:
+                        - $ref: '#/components/schemas/VariantID'
+                    description: |
+                        The variant being looked at. Delivery is priced from the *variant's* package details, not the listing's: one listing can hold an 80 g charger and a 2 kg one.
             type: object
         SimilarityScore:
             description: |
@@ -9797,11 +9816,11 @@ paths:
     /shipping-quotes:
         post:
             description: |
-                One entry per enabled carrier that could price the parcel, so the buyer chooses delivery with the fee in front of them. A carrier that declined is simply absent.
+                One entry per enabled carrier that could price the parcel, so the buyer sees delivery before they pay for it. A carrier that declined is simply absent.
 
-                Name exactly one of `draft_id` or `offer_id`: they are the two things that freeze a price, and the parcel is whichever of them is about to be checked out. The same list serves both, because the buyer pays carriage on a fixed-price sale and a negotiated one alike.
+                Name exactly one source. `variant_id` is the listing page's question — what would this cost to send — answered before any draft exists, with `quantity` defaulting to one and the caller's default address used when `contact_id` is omitted. `draft_id` and `offer_id` are the two things that freeze a price, and the parcel is whichever of them is about to be checked out. The same list serves all three, because the buyer pays carriage on a fixed-price sale and a negotiated one alike.
 
-                An estimate a client renders, not a price it can hold: the fee is quoted again at checkout, so a quote kept past the point it was true does not become the charge.
+                An estimate a client renders, not a price it can hold: the fee is quoted again at checkout, so a quote kept past the point it was true does not become the charge. Show it as its own line beside the price rather than folded into it — the total a buyer is charged is the checkout's, itemised.
             requestBody:
                 content:
                     application/json:
@@ -9843,7 +9862,7 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Error'
-                    description: A variant that is not on this purchase
+                    description: A variant that is not on this purchase, or a caller with no default delivery address
             security:
                 - bearerAuth: []
             summary: What delivery would cost, per carrier

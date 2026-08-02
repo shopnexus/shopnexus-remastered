@@ -283,22 +283,28 @@ func toAPIDraft(d domain.Draft) orderapi.Draft {
 	return out
 }
 
-// ShippingQuotes prices every enabled carrier for one purchase, so the buyer can choose delivery
-// with the fee in front of them — the same list on a fixed-price listing and on agreed terms,
-// because the buyer pays carriage on both.
+// ShippingQuotes prices every enabled carrier for one purchase, so the buyer sees delivery before
+// they pay for it — the same list on a fixed-price listing and on agreed terms, because the buyer
+// pays carriage on both.
 //
-// A draft or an accepted offer, exactly one: they are the two things that freeze a price, and the
-// parcel being quoted for is whichever of them the buyer is about to check out. The fee is quoted
-// again at checkout rather than carried from here — a quote a client holds is a quote a client can
-// keep past the point it was true.
+// Three sources, exactly one of them: a variant is an estimate for a listing page, a draft and an
+// accepted offer are the two things that freeze a price. The fee is quoted again at checkout
+// rather than carried from here — a quote a client holds is a quote it can keep past the point it
+// was true, which is why this answers an estimate and the session answers the charge.
 func (s *Service) ShippingQuotes(ctx context.Context, req orderapi.ShippingQuotesRequest) (orderapi.ShippingQuotes, error) {
 	if err := s.v.Struct(req); err != nil {
 		return orderapi.ShippingQuotes{}, err
 	}
-	if (req.DraftID == 0) == (req.OfferID == 0) {
+	named := 0
+	for _, set := range []bool{req.VariantID != 0, req.DraftID != 0, req.OfferID != 0} {
+		if set {
+			named++
+		}
+	}
+	if named != 1 {
 		return orderapi.ShippingQuotes{}, domain.ErrQuoteSourceInvalid
 	}
-	address, err := s.contactSnapshot(ctx, req.ActorID, req.ContactID)
+	address, contactID, err := s.deliverySnapshot(ctx, req.ActorID, req.ContactID)
 	if err != nil {
 		return orderapi.ShippingQuotes{}, err
 	}
@@ -308,7 +314,21 @@ func (s *Service) ShippingQuotes(ctx context.Context, req orderapi.ShippingQuote
 		currency string
 		lines    []transport.ItemMetadata
 	)
-	if req.DraftID != 0 {
+	switch {
+	case req.VariantID != 0:
+		// A listing page, before anything is frozen: the parcel is the variant the buyer is
+		// looking at, one of it unless they said otherwise.
+		listing, _, err := s.variantOf(ctx, req.ActorID, req.VariantID)
+		if err != nil {
+			return orderapi.ShippingQuotes{}, err
+		}
+		quantity := req.Quantity
+		if quantity == 0 {
+			quantity = 1
+		}
+		sellerID, currency = listing.Seller.ID.Int64(), listing.Currency
+		lines = []transport.ItemMetadata{{VariantID: req.VariantID.Int64(), Quantity: quantity}}
+	case req.DraftID != 0:
 		d, err := s.repo.FindDraft(ctx, req.DraftID.Int64(), req.ActorID.Int64())
 		if err != nil {
 			return orderapi.ShippingQuotes{}, fmt.Errorf("find draft: %w", err)
@@ -318,7 +338,7 @@ func (s *Service) ShippingQuotes(ctx context.Context, req orderapi.ShippingQuote
 		}
 		sellerID, currency = d.Snapshot.SellerID, d.Snapshot.Currency
 		lines = shippingLines(d, req.Lines)
-	} else {
+	default:
 		o, err := s.party(ctx, req.ActorID, req.OfferID)
 		if err != nil {
 			return orderapi.ShippingQuotes{}, err
@@ -348,7 +368,11 @@ func (s *Service) ShippingQuotes(ctx context.Context, req orderapi.ShippingQuote
 	if err != nil {
 		return orderapi.ShippingQuotes{}, err
 	}
-	out := orderapi.ShippingQuotes{Currency: currency, Options: make([]orderapi.ShippingQuote, 0, len(carriers))}
+	out := orderapi.ShippingQuotes{
+		Currency:  currency,
+		ContactID: contactID,
+		Options:   make([]orderapi.ShippingQuote, 0, len(carriers)),
+	}
 	for _, carrier := range carriers {
 		fee, err := s.quoteCarrier(ctx, carrier.ID, pickup, address, lines)
 		if err != nil {

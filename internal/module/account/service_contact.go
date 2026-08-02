@@ -52,6 +52,21 @@ func (s *Service) GetPickupContact(ctx context.Context, req accountapi.GetPickup
 	return accountapi.Contact{}, domain.ErrNoPickupContact
 }
 
+// GetDeliveryContact is the buyer's side of GetPickupContact: the one address their parcels go to
+// unless they choose another, which is what a quote uses when no contact was named.
+func (s *Service) GetDeliveryContact(ctx context.Context, req accountapi.GetDeliveryContactRequest) (accountapi.Contact, error) {
+	rows, err := s.repo.ListContacts(ctx, req.ActorID.Int64())
+	if err != nil {
+		return accountapi.Contact{}, fmt.Errorf("list contacts: %w", err)
+	}
+	for _, c := range rows {
+		if c.IsDefaultDelivery {
+			return toAPIContact(c), nil
+		}
+	}
+	return accountapi.Contact{}, domain.ErrNoDeliveryContact
+}
+
 func (s *Service) CreateContact(ctx context.Context, req accountapi.CreateContactRequest) (accountapi.Contact, error) {
 	c := domain.Contact{
 		AccountID:         req.ActorID.Int64(),

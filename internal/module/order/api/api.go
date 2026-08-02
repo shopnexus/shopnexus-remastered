@@ -331,14 +331,25 @@ type CounterOfferRequest struct {
 	Reason   string            `json:"reason,omitempty" validate:"max=500"`
 }
 
-// ShippingQuotesRequest asks what delivery would cost for one purchase, so the buyer can choose a
-// carrier with the fee in front of them. Exactly one of DraftID and OfferID: they are the two
-// things that freeze a price, and the parcel is whichever of them is about to be checked out.
+// ShippingQuotesRequest asks what delivery would cost, so the buyer sees the fee before they
+// commit to anything. Exactly one source, because the parcel has to be one purchase:
+//
+//   - VariantID — an estimate for a listing page, before any draft exists. Delivery is priced from
+//     the *variant's* package details, not the listing's: one listing can hold an 80 g charger and
+//     a 2 kg one, and they do not cost the same to send.
+//   - DraftID — the frozen terms of a fixed-price sale, with Lines as the checkout would send them.
+//   - OfferID — agreed terms, whose quantity was negotiated.
 type ShippingQuotesRequest struct {
 	ActorID   id.ID[id.Account]    `json:"-" validate:"required"`
+	VariantID id.ID[id.Variant]    `json:"variant_id,omitempty"`
 	DraftID   id.ID[id.DraftOrder] `json:"draft_id,omitempty"`
 	OfferID   id.ID[id.Offer]      `json:"offer_id,omitempty"`
-	ContactID id.ID[id.Contact]    `json:"contact_id" validate:"required"`
+	// Quantity is how many of VariantID. Zero means one, since a listing page is quoting the
+	// single unit a buyer is looking at. Ignored by the other two sources, which carry their own.
+	Quantity int64 `json:"quantity,omitempty" validate:"omitempty,gt=0"`
+	// ContactID is where the parcel goes. Optional: with none, the caller's default delivery
+	// address is used, which is what lets a listing page quote without a form.
+	ContactID id.ID[id.Contact] `json:"contact_id,omitempty"`
 	// Lines are the draft's variants and quantities, as a checkout would send them. Ignored for
 	// an offer, whose quantity is the negotiated one.
 	Lines []CheckoutLine `json:"lines,omitempty" validate:"omitempty,max=50,dive"`
@@ -349,6 +360,10 @@ type ShippingQuotesRequest struct {
 type ShippingQuotes struct {
 	Options  []ShippingQuote `json:"options"`
 	Currency string          `json:"currency"`
+	// ContactID is the address these fees are for, echoed because the request may not have named
+	// one: a fee with no address beside it is not a fee, and the client has to be able to show
+	// which one it quoted and offer to change it.
+	ContactID id.ID[id.Contact] `json:"contact_id"`
 }
 
 type ShippingQuote struct {
@@ -509,8 +524,8 @@ type Service interface {
 	ListDrafts(ctx context.Context, req ListDraftsRequest) (DraftPage, error)
 	GetDraft(ctx context.Context, req DraftRequest) (Draft, error)
 	CancelDraft(ctx context.Context, req DraftRequest) error
-	// ShippingQuotes prices every carrier for a draft or agreed terms, which is how a buyer
-	// chooses delivery with the fee visible. They pay it on both kinds of sale.
+	// ShippingQuotes prices every carrier for a variant, a draft or agreed terms, which is how a
+	// buyer sees delivery before they pay for it. They pay it on both kinds of sale.
 	ShippingQuotes(ctx context.Context, req ShippingQuotesRequest) (ShippingQuotes, error)
 	// Checkout writes the lines and opens the payment session. The order follows when that
 	// session completes — there is no route for it.

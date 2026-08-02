@@ -101,6 +101,10 @@ func (Stub) GetPickupContact(context.Context, accountapi.GetPickupContactRequest
 	return accountapi.Contact{}, errx.ErrNotImplemented
 }
 
+func (Stub) GetDeliveryContact(context.Context, accountapi.GetDeliveryContactRequest) (accountapi.Contact, error) {
+	return accountapi.Contact{}, errx.ErrNotImplemented
+}
+
 func (Stub) CreateContact(context.Context, accountapi.CreateContactRequest) (accountapi.Contact, error) {
 	return accountapi.Contact{}, errx.ErrNotImplemented
 }

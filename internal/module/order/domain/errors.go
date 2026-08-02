@@ -96,9 +96,9 @@ var (
 	ErrNotTheBuyer       = errx.NewError(http.StatusForbidden, "not_the_buyer", "only the buyer of this order may do that")
 	ErrNotTheSeller      = errx.NewError(http.StatusForbidden, "not_the_seller", "only the seller of this order may do that")
 	ErrModeratorRequired = errx.NewError(http.StatusForbidden, "moderator_required", "moderator role required")
-	// ErrQuoteSourceInvalid is a quote for neither a draft nor agreed terms, or for both. The
-	// parcel has to be one purchase.
-	ErrQuoteSourceInvalid = errx.NewError(http.StatusBadRequest, "quote_source_invalid", "name exactly one of a draft or an offer")
+	// ErrQuoteSourceInvalid is a quote naming no source or more than one. The parcel has to be
+	// one purchase: a variant to estimate, or the draft or agreed terms about to be checked out.
+	ErrQuoteSourceInvalid = errx.NewError(http.StatusBadRequest, "quote_source_invalid", "name exactly one of a variant, a draft or an offer")
 	// ErrCheckoutEmpty is a quote or a checkout with no lines in it.
 	ErrCheckoutEmpty = errx.NewError(http.StatusBadRequest, "checkout_empty", "there is nothing here to ship")
 	// ErrShippingQuoteInvalid is a courier that answered with something that cannot be charged.
