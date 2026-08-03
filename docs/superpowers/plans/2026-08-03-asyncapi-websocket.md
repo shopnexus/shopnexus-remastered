@@ -4709,4 +4709,421 @@ git commit -m "feat: push notification feed events"
 
 ---
 
-I'll continue with Tasks 16 through 18 (website) in the next pass.
+## Phase B5 — Website
+
+All paths below are relative to `/home/beanbocchi/Desktop/shopnexus/website`, a **separate git repository**. Commit there, not in `server`.
+
+### Task 16: Fix the spec drift, then generate the event types
+
+**Files:**
+- Modify: `openapi-ts.config.ts:8`
+- Delete: `openapi.yaml`
+- Modify: `.gitignore`
+- Create: `scripts/gen-ws-events.mjs`
+- Modify: `package.json`
+
+**Interfaces:**
+- Consumes: `../server/api/asyncapi.gen.yaml` (Task 15 output)
+- Produces: `src/api/generated/ws-events.ts` exporting `RealtimeEvent`, `RealtimeCode`, `REALTIME_CODES`
+
+- [ ] **Step 1: Confirm the drift before touching anything**
+
+```bash
+diff <(wc -c < openapi.yaml) <(wc -c < ../server/api/openapi.gen.yaml)
+diff openapi.yaml ../server/api/openapi.gen.yaml | head -40
+```
+
+Expected: they differ. `website/openapi.yaml` is a tracked copy of a generated file, and `openapi-ts.config.ts:3-6` already documents this exact failure — "the copy that used to live at website/openapi.yaml had drifted 18 paths behind, which is how the frontend ended up calling two routes that do not exist" — while `input: "./openapi.yaml"` points at that copy. The comment describes the fix; the config never made it.
+
+Note what the diff shows: those are routes or fields the generated client currently has wrong.
+
+- [ ] **Step 2: Point the generator at the source**
+
+In `openapi-ts.config.ts`, change the input and correct the comment so it stops describing something untrue:
+
+```ts
+export default defineConfig({
+	// Read straight from the sibling checkout. The copy that used to live at
+	// website/openapi.yaml drifted twice — 18 paths behind the first time, which is how
+	// the frontend ended up calling two routes that do not exist. A path here cannot
+	// drift, because there is only one file.
+	input: "../server/api/openapi.gen.yaml",
+```
+
+- [ ] **Step 3: Delete the copy and regenerate**
+
+```bash
+git rm openapi.yaml
+npm run gen:api
+git diff --stat src/api/generated/
+```
+
+Expected: the generated client changes. **Read that diff** — it is the accumulated drift, and it may break call sites. If `npm run typecheck` fails afterwards, those failures are real bugs the copy was hiding, and fixing them belongs in this task.
+
+Run: `npm run typecheck`
+Expected: clean. Fix any breakage before continuing.
+
+- [ ] **Step 4: Add the AsyncAPI generator**
+
+```bash
+npm install --save-dev yaml
+```
+
+Create `scripts/gen-ws-events.mjs`:
+
+```js
+// Generates src/api/generated/ws-events.ts from the server's AsyncAPI document.
+//
+// Generated rather than hand-written so there is no drift to guard: the union's members
+// are the document's messages by construction. The payload `data` types are not emitted
+// here — every one of them is a schema the OpenAPI document also publishes (the server's
+// merger enforces that), so they already exist in types.gen.ts and are imported.
+
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs"
+import { dirname } from "node:path"
+import { parse } from "yaml"
+
+const INPUT = "../server/api/asyncapi.gen.yaml"
+const OUTPUT = "src/api/generated/ws-events.ts"
+
+const doc = parse(readFileSync(INPUT, "utf8"))
+const messages = doc?.components?.messages
+if (!messages || Object.keys(messages).length === 0) {
+	throw new Error(`${INPUT} defines no components.messages`)
+}
+
+/** Reads the `data` $ref off one message payload and returns the schema name. */
+function dataTypeOf(name, message) {
+	const properties = message?.payload?.properties
+	const ref = properties?.data?.$ref
+	if (!ref) {
+		throw new Error(`message ${name}: payload.properties.data has no $ref`)
+	}
+	const prefix = "#/components/schemas/"
+	if (!ref.startsWith(prefix)) {
+		throw new Error(`message ${name}: data $ref ${ref} is not a component schema`)
+	}
+	return ref.slice(prefix.length)
+}
+
+/** The wire code is the message's `name`, and the payload asserts it as a const. */
+function codeOf(name, message) {
+	const code = message?.name
+	if (!code) {
+		throw new Error(`message ${name}: no name, so it has no wire code`)
+	}
+	const asserted = message?.payload?.properties?.code?.const
+	if (asserted !== code) {
+		throw new Error(`message ${name}: payload code const ${asserted} does not match name ${code}`)
+	}
+	return code
+}
+
+const events = Object.entries(messages)
+	.map(([name, message]) => ({
+		code: codeOf(name, message),
+		dataType: dataTypeOf(name, message),
+		summary: message.summary ?? "",
+	}))
+	.sort((a, b) => a.code.localeCompare(b.code))
+
+const imports = [...new Set(events.map((e) => e.dataType))].sort()
+
+const members = events
+	.map((e) => {
+		const comment = e.summary ? `\t/** ${e.summary} */\n` : ""
+		return `${comment}\t| { code: "${e.code}"; at: string; data: ${e.dataType} }`
+	})
+	.join("\n")
+
+const codes = events.map((e) => `\t"${e.code}",`).join("\n")
+
+const out = `// Generated by scripts/gen-ws-events.mjs from ${INPUT}. Do not edit.
+//
+// The realtime events the backend may push over the WebSocket. Discriminated on \`code\`,
+// so a handler switch is exhaustive and adding an event server-side turns every
+// incomplete switch into a type error.
+
+import type {
+${imports.map((t) => `\t${t},`).join("\n")}
+} from "./types.gen"
+
+export type RealtimeEvent =
+${members}
+
+export type RealtimeCode = RealtimeEvent["code"]
+
+/** Every code, for runtime validation of a message off the wire. */
+export const REALTIME_CODES: readonly RealtimeCode[] = [
+${codes}
+] as const
+`
+
+mkdirSync(dirname(OUTPUT), { recursive: true })
+writeFileSync(OUTPUT, out)
+console.log(`gen-ws-events: wrote ${OUTPUT} (${events.length} events)`)
+```
+
+- [ ] **Step 5: Add the script**
+
+In `package.json`, beside `gen:api`:
+
+```json
+		"gen:api": "openapi-ts",
+		"gen:ws": "node scripts/gen-ws-events.mjs",
+```
+
+- [ ] **Step 6: Generate and inspect**
+
+```bash
+npm run gen:ws
+cat src/api/generated/ws-events.ts
+```
+
+Expected: eight union members, `REALTIME_CODES` with eight entries, imports of `Message`, `DeletedMessageRef`, `ConversationReadMark`, `Offer`, `OrderRef`, `Notification`.
+
+- [ ] **Step 7: Confirm it is gitignored like its siblings**
+
+```bash
+git check-ignore -v src/api/generated/ws-events.ts
+```
+
+Expected: a match on the `src/api/generated` rule. If `.gitignore` covers the directory, nothing to do. If it lists files individually, add `src/api/generated/ws-events.ts`.
+
+- [ ] **Step 8: Typecheck**
+
+Run: `npm run typecheck`
+Expected: clean. A failure here means a `data` type name in the AsyncAPI document does not match the TypeScript name hey-api generated — check how `openapi-ts` cased it and fix the server-side schema name, not the generated file.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add openapi-ts.config.ts package.json package-lock.json scripts/gen-ws-events.mjs .gitignore
+git commit -m "fix: read the openapi spec from source and generate ws event types"
+```
+
+Note the `fix:` prefix — deleting the drifted copy is the substance of this commit.
+
+---
+
+### Task 17: The connection
+
+**Files:**
+- Create: `src/realtime/client.ts`
+- Modify: `.env.local` / `.env.example`
+
+**Interfaces:**
+- Consumes: `postWsTickets` from `@/api/generated/sdk.gen` (generated in Task 16 from the OpenAPI route added in Task 12 Step 7); `RealtimeEvent`, `REALTIME_CODES` (Task 16)
+- Produces: `createRealtimeClient(options: RealtimeClientOptions): RealtimeClient`; types `RealtimeClient`, `RealtimeClientOptions`, `RealtimeStatus`
+
+- [ ] **Step 1: Add the env var**
+
+In `.env.example` and your `.env.local`:
+
+```
+NEXT_PUBLIC_WS_URL=ws://localhost:5000/api/v1/ws
+```
+
+Its own variable rather than `http`→`ws` surgery on the API base: real deployments split the host, and a missing variable that fails loudly beats a wrong host debugged through CORS errors.
+
+- [ ] **Step 2: Write the client**
+
+Create `src/realtime/client.ts`:
+
+```ts
+import { postWsTickets } from "@/api/generated/sdk.gen"
+import { REALTIME_CODES, type RealtimeEvent } from "@/api/generated/ws-events"
+
+/**
+ * The realtime socket.
+ *
+ * Receive-only: the client changes state over REST and learns about other people's
+ * changes here. Nothing is ever sent, so there is no send queue and no state machine.
+ *
+ * Delivery is at-most-once and the server replays nothing, so a reconnect must assume
+ * events were missed — which is why `onOpen` fires on every connect, not just the first.
+ * The caller uses it to invalidate what the socket feeds.
+ */
+
+export type RealtimeStatus = "idle" | "connecting" | "open" | "reconnecting" | "closed"
+
+export interface RealtimeClientOptions {
+	/** Called for every event. Runs on the socket's message handler — keep it cheap. */
+	onEvent: (event: RealtimeEvent) => void
+	/**
+	 * Called after every successful connect, including reconnects. This is where the gap
+	 * left by a disconnect gets repaired.
+	 */
+	onOpen?: () => void
+	onStatusChange?: (status: RealtimeStatus) => void
+}
+
+export interface RealtimeClient {
+	/** Idempotent: calling it while already connected does nothing. */
+	connect: () => void
+	/** Stops reconnecting and closes. The client cannot be reused afterwards. */
+	close: () => void
+	status: () => RealtimeStatus
+}
+
+/** Backoff schedule in ms, capped — a flapping server must not be hammered. */
+const BACKOFF_MS = [500, 1_000, 2_000, 5_000, 10_000, 30_000] as const
+
+/** Full jitter: without it every tab in every browser retries in lockstep. */
+function delayFor(attempt: number): number {
+	const base = BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)]
+	return Math.random() * base
+}
+
+function isRealtimeEvent(value: unknown): value is RealtimeEvent {
+	if (typeof value !== "object" || value === null) return false
+	const candidate = value as { code?: unknown }
+	return (
+		typeof candidate.code === "string" &&
+		(REALTIME_CODES as readonly string[]).includes(candidate.code)
+	)
+}
+
+export function createRealtimeClient(options: RealtimeClientOptions): RealtimeClient {
+	const url = process.env.NEXT_PUBLIC_WS_URL
+	if (!url) {
+		throw new Error("NEXT_PUBLIC_WS_URL is not set")
+	}
+
+	let socket: WebSocket | null = null
+	let status: RealtimeStatus = "idle"
+	let attempt = 0
+	let retryTimer: ReturnType<typeof setTimeout> | undefined
+	let stopped = false
+	// Guards against two connect() calls racing a ticket request. A ticket is
+	// single-use, so a duplicate connect would burn one and open a second socket.
+	let connecting = false
+
+	function setStatus(next: RealtimeStatus): void {
+		if (status === next) return
+		status = next
+		options.onStatusChange?.(next)
+	}
+
+	function scheduleRetry(): void {
+		if (stopped) return
+		setStatus("reconnecting")
+		clearTimeout(retryTimer)
+		retryTimer = setTimeout(() => void open(), delayFor(attempt))
+		attempt += 1
+	}
+
+	async function open(): Promise<void> {
+		if (stopped || connecting || socket) return
+		connecting = true
+		setStatus(status === "idle" ? "connecting" : status)
+
+		let ticket: string
+		try {
+			// Every reconnect needs a fresh ticket: they are single-use by design, so the
+			// one that opened the previous socket is already spent.
+			const { data } = await postWsTickets({ throwOnError: true })
+			ticket = data.data.ticket
+		} catch {
+			connecting = false
+			// A failure here is usually an expired session, and the API layer's 401 refresh
+			// has already had its chance. Retrying is still right: the token may refresh on
+			// the next attempt, and giving up would need a manual reload to recover.
+			scheduleRetry()
+			return
+		}
+
+		if (stopped) {
+			connecting = false
+			return
+		}
+
+		const ws = new WebSocket(`${url}?ticket=${encodeURIComponent(ticket)}`)
+		socket = ws
+		connecting = false
+
+		ws.onopen = () => {
+			attempt = 0
+			setStatus("open")
+			options.onOpen?.()
+		}
+
+		ws.onmessage = (message) => {
+			if (typeof message.data !== "string") return
+			let parsed: unknown
+			try {
+				parsed = JSON.parse(message.data)
+			} catch {
+				return
+			}
+			// An unknown code is a server ahead of this bundle, not an error: ignoring it
+			// is how a deploy rolls out without breaking open tabs.
+			if (isRealtimeEvent(parsed)) {
+				options.onEvent(parsed)
+			}
+		}
+
+		ws.onclose = () => {
+			socket = null
+			if (stopped) {
+				setStatus("closed")
+				return
+			}
+			scheduleRetry()
+		}
+
+		// onerror is always followed by onclose, so reconnection is handled there and this
+		// only exists to stop the browser logging an unhandled error event.
+		ws.onerror = () => {}
+	}
+
+	function onOnline(): void {
+		// Reconnect immediately rather than waiting out a backoff that may have minutes
+		// left on it — coming back online is exactly the moment to retry.
+		if (stopped || socket) return
+		attempt = 0
+		clearTimeout(retryTimer)
+		void open()
+	}
+
+	return {
+		connect: () => {
+			if (stopped) return
+			window.addEventListener("online", onOnline)
+			void open()
+		},
+		close: () => {
+			stopped = true
+			clearTimeout(retryTimer)
+			window.removeEventListener("online", onOnline)
+			socket?.close()
+			socket = null
+			setStatus("closed")
+		},
+		status: () => status,
+	}
+}
+```
+
+The generated function may not be called `postWsTickets` — check the real name after Task 16's regeneration: `grep -n "WsTickets\|wsTickets" src/api/generated/sdk.gen.ts`. It derives from the `operationId` (`createWebSocketTicket`) or the path, depending on hey-api's configuration.
+
+- [ ] **Step 3: Typecheck**
+
+Run: `npm run typecheck`
+Expected: clean
+
+- [ ] **Step 4: Lint**
+
+Run: `npm run lint`
+Expected: clean
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/realtime/client.ts .env.example
+git commit -m "feat: realtime websocket client with ticket handshake"
+```
+
+---
+
+I'll finish with Task 18 in the next pass.
