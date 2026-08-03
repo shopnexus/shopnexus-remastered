@@ -3342,12 +3342,9 @@ func (h *Hub) remove(c *Client) func() {
 	delete(h.subs, c.accountID)
 	return sub.cancel
 }
-
-// errTooMany keeps errors.Is working for callers that only import this package.
-var _ = errors.Is
 ```
 
-Delete that last `var _ = errors.Is` line — it is only there to remind you that `errors` must actually be used; if the file does not use it, remove the import. `golangci-lint`'s `unused` check will tell you.
+Drop the `"errors"` import — the file above does not use it. `ErrTooManySockets` is an `errx` value and `errors.Is` works on it from the caller's side without this package importing `errors`.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -3669,7 +3666,44 @@ In `internal/module/observability/sink.go`, in `Middleware`, skip the socket pat
 
 with `const wsPath = "/ws"` beside the topics at the top of the file. The router mounts paths unprefixed and mounts the mux under `api.BasePath`, so the middleware sees `/ws` — verify by logging once if unsure.
 
-- [ ] **Step 6: Provide everything to fx**
+- [ ] **Step 6: Sample the connection count**
+
+Excluding `/ws` from RED metrics leaves the sockets unobserved, and "how many connections are open" is the number that matters for this feature. Feed `Hub.Count()` into the runtime sampler, which already reports on an interval.
+
+Find the sampler (`grep -rn "runtime_metrics\|RuntimeSample" internal/module/observability/`) and add a field to `domain.RuntimeSample`:
+
+```go
+	// WebSocketConns is open realtime sockets on this instance. Zero on an instance
+	// nobody has connected to, which is a real reading rather than a missing one.
+	WebSocketConns int `json:"websocket_conns"`
+```
+
+The sampler lives in `observability` and must not import the gateway, so it takes a function rather than the hub:
+
+```go
+// ConnCounter reports open realtime sockets. A func rather than the hub itself,
+// because observability is driven by the middleware and the sampler and must not
+// depend on transport packages.
+type ConnCounter func() int
+```
+
+Provide it in `internal/gateway/fx.go`, where both types are already in scope:
+
+```go
+func newConnCounter(hub *ws.Hub) observability.ConnCounter { return hub.Count }
+```
+
+Add the column to `internal/module/observability/migrations/` — a new migration file, never an edit to an applied one — and to the adapter's `COPY` column list:
+
+```sql
+ALTER TABLE "runtime_metrics" ADD COLUMN "websocket_conns" INTEGER NOT NULL DEFAULT 0;
+```
+
+Then `go run ./cmd/migrate`.
+
+If the sampler's constructor already takes several optional collectors, follow that shape instead of adding a bare parameter.
+
+- [ ] **Step 7: Provide everything to fx**
 
 In `internal/gateway/fx.go`, add providers:
 
@@ -3697,7 +3731,7 @@ func newTickets(c cache.Client, cfg *config.Config) *session.Tickets {
 }
 ```
 
-- [ ] **Step 7: Document the ticket route in OpenAPI**
+- [ ] **Step 8: Document the ticket route in OpenAPI**
 
 The ticket endpoint is REST, so it belongs in the OpenAPI document. Add to `internal/module/account/api/openapi/auth.yaml`:
 
@@ -3754,12 +3788,12 @@ and under that file's `components.schemas`:
 
 Both `minimum`/`maximum` and `example` are required by the mock rule: the spec is also the Prism mock, and an unbounded integer mocks as `-9007199254740991`.
 
-- [ ] **Step 8: Regenerate and verify the whole thing builds**
+- [ ] **Step 9: Regenerate and verify the whole thing builds**
 
 Run: `go generate ./... && go build ./... && go vet ./... && go test ./... && golangci-lint run`
 Expected: all clean
 
-- [ ] **Step 9: Exercise it by hand**
+- [ ] **Step 10: Exercise it by hand**
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
@@ -3789,7 +3823,7 @@ npx -y wscat -c "ws://localhost:5000/api/v1/ws?ticket=$TICKET"
 
 Expected: rejected with `invalid_ticket`. That single check is the security property of the whole design; do not skip it.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
 git add go.mod go.sum internal/ api/ cmd/ docker-compose.yml README.md
@@ -5126,4 +5160,300 @@ git commit -m "feat: realtime websocket client with ticket handshake"
 
 ---
 
-I'll finish with Task 18 in the next pass.
+### Task 18: Wire it into the query cache and drop the polls
+
+**Files:**
+- Modify: `src/api/invalidate.ts`
+- Create: `src/realtime/handlers.ts`
+- Create: `src/realtime/RealtimeProvider.tsx`
+- Modify: `src/app/layout.tsx` (wherever `QueryProvider` is mounted)
+- Modify: `src/hooks/api/useChat.ts:60`
+- Modify: `src/hooks/api/useNotifications.ts:68`
+
+**Interfaces:**
+- Consumes: `createRealtimeClient` (Task 17), `RealtimeEvent` (Task 16), `invalidate`/`OPERATIONS` (`src/api/invalidate.ts`)
+- Produces: `applyRealtimeEvent(client: QueryClient, event: RealtimeEvent): void`; `REALTIME_FED_OPERATIONS`; `RealtimeProvider`
+
+- [ ] **Step 1: Add the missing operation ids**
+
+`OPERATIONS` has no chat entries. Add them, keeping the file's existing order and style:
+
+```ts
+	conversations: "getConversations",
+	conversation: "getConversationsById",
+	messages: "getConversationsByIdMessages",
+	conversationsUnread: "getConversationsUnreadCount",
+	offers: "getOffers",
+```
+
+Verify each against the generated SDK before committing to the string — `grep -o 'getConversations[A-Za-z]*' src/api/generated/@tanstack/react-query.gen.ts | sort -u` — because an operation id that matches nothing invalidates nothing, silently.
+
+- [ ] **Step 2: Write the handlers**
+
+Create `src/realtime/handlers.ts`:
+
+```ts
+import type { InfiniteData, QueryClient } from "@tanstack/react-query"
+
+import { OPERATIONS, invalidate, type Operation } from "@/api/invalidate"
+import type { RealtimeEvent } from "@/api/generated/ws-events"
+import type { Message, MessagePage } from "@/api/generated/types.gen"
+
+/**
+ * Turning a pushed event into a cache change.
+ *
+ * Invalidating is the default: it cannot desynchronise anything, and every event here
+ * except one is low-frequency enough that a refetch costs nothing. `chat.message_created`
+ * is the exception — `useMessages` pages fifty rows, so invalidating per message refetches
+ * fifty to show one, and a busy thread would refetch on every keystroke of the other side.
+ */
+
+/**
+ * Everything the socket feeds. Invalidated wholesale on every (re)connect, because a
+ * disconnect is precisely when events are lost and nothing replays them.
+ */
+export const REALTIME_FED_OPERATIONS: readonly Operation[] = [
+	OPERATIONS.conversations,
+	OPERATIONS.messages,
+	OPERATIONS.conversationsUnread,
+	OPERATIONS.notifications,
+	OPERATIONS.notificationsUnread,
+	OPERATIONS.orders,
+	OPERATIONS.offers,
+] as const
+
+export function applyRealtimeEvent(client: QueryClient, event: RealtimeEvent): void {
+	switch (event.code) {
+		case "chat.message_created":
+			prependMessage(client, event.data)
+			// The list shows the last message and its timestamp, and the badge counts it.
+			void invalidate(client, OPERATIONS.conversations, OPERATIONS.conversationsUnread)
+			return
+
+		case "chat.message_updated":
+		case "chat.message_deleted":
+			// An edit or a delete rewrites a row that may be on any page, so there is no
+			// cheap surgical update — and neither is frequent enough to be worth one.
+			void invalidate(client, OPERATIONS.messages, OPERATIONS.conversations)
+			return
+
+		case "chat.conversation_read":
+			void invalidate(client, OPERATIONS.conversations)
+			return
+
+		case "order.offer_updated":
+			void invalidate(client, OPERATIONS.offers, OPERATIONS.conversations)
+			return
+
+		case "order.placed":
+		case "order.settled":
+			void invalidate(client, OPERATIONS.orders, OPERATIONS.order)
+			return
+
+		case "account.notification_created":
+			void invalidate(client, OPERATIONS.notifications, OPERATIONS.notificationsUnread)
+			return
+	}
+}
+
+/**
+ * Insert a new message into an open thread without refetching.
+ *
+ * Prepended to page 0, not appended to the last page: the cursor walks newest-first, and
+ * `useMessages` reverses the flattened result for rendering. Appending would put the new
+ * message at the top of the screen.
+ *
+ * Only touches threads already in the cache. A message for a conversation the user has
+ * not opened needs no cache entry — the invalidation of the conversation list is what
+ * surfaces it.
+ */
+function prependMessage(client: QueryClient, message: Message): void {
+	client.setQueriesData<InfiniteData<{ data: MessagePage }>>(
+		{ queryKey: [{ _id: OPERATIONS.messages }] },
+		(existing) => {
+			if (!existing || existing.pages.length === 0) return existing
+
+			const [first, ...rest] = existing.pages
+			if (first.data.data.some((m) => m.id === message.id)) {
+				// Already here: the sender's own optimistic insert, or a duplicate delivery.
+				// The bus is at-least-once, so this is a case that happens.
+				return existing
+			}
+			if (first.data.data.some((m) => m.conversation_id !== message.conversation_id)) {
+				// A different thread's cache entry. setQueriesData matches every cached
+				// messages query, so the payload has to be checked against each one.
+				return existing
+			}
+
+			return {
+				...existing,
+				pages: [
+					{ ...first, data: { ...first.data, data: [message, ...first.data.data] } },
+					...rest,
+				],
+			}
+		},
+	)
+}
+```
+
+The generated envelope shape may not be `{ data: MessagePage }` — the server wraps responses in `{"data": …}`, so check what `getConversationsByIdMessagesInfiniteOptions` actually caches by logging one page in the browser before finalising this. If the shape differs, adjust `prependMessage` and nothing else; the rest of the file does not care.
+
+- [ ] **Step 3: Write the provider**
+
+Create `src/realtime/RealtimeProvider.tsx`:
+
+```tsx
+"use client"
+
+import { useEffect } from "react"
+import { useQueryClient } from "@tanstack/react-query"
+
+import { invalidate } from "@/api/invalidate"
+import { useAuthStore } from "@/stores/use-auth-store"
+
+import { createRealtimeClient } from "./client"
+import { REALTIME_FED_OPERATIONS, applyRealtimeEvent } from "./handlers"
+
+/**
+ * Holds the one WebSocket for the app.
+ *
+ * Renders nothing. It lives inside QueryProvider because it needs that client, and it
+ * connects only while signed in: the socket's credential is a ticket minted from an
+ * access token, so there is nothing to connect with otherwise.
+ */
+export default function RealtimeProvider({ children }: { children: React.ReactNode }) {
+	const queryClient = useQueryClient()
+	const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
+
+	useEffect(() => {
+		if (!isAuthenticated) return
+
+		const client = createRealtimeClient({
+			onEvent: (event) => applyRealtimeEvent(queryClient, event),
+			// Every connect, not just the first. A disconnect is when events go missing —
+			// nothing replays them — so reconnecting means re-reading what the socket feeds.
+			// This is what makes removing the polls safe rather than merely cheaper.
+			onOpen: () => void invalidate(queryClient, ...REALTIME_FED_OPERATIONS),
+		})
+		client.connect()
+
+		return () => client.close()
+	}, [isAuthenticated, queryClient])
+
+	return <>{children}</>
+}
+```
+
+`useAuthStore` is the real export name from `src/stores/use-auth-store.ts` — confirm the selector field is `isAuthenticated` (it is, per that file's `AuthState`).
+
+- [ ] **Step 4: Mount it**
+
+Find `QueryProvider` (`grep -rn "QueryProvider" src/app/`) and wrap its children — inside, so `useQueryClient` resolves:
+
+```tsx
+			<QueryProvider>
+				<RealtimeProvider>{children}</RealtimeProvider>
+			</QueryProvider>
+```
+
+- [ ] **Step 5: Drop the notification poll**
+
+In `src/hooks/api/useNotifications.ts`, `useUnreadCount` currently polls. Replace the polling with the push, and rewrite the comment, which currently justifies the poll:
+
+```ts
+/**
+ * The unread badge.
+ *
+ * Pushed, not polled: `account.notification_created` updates it, and every reconnect
+ * invalidates it, which covers the events a disconnect lost. Still `silent` — a failed
+ * background read is not worth interrupting the user over.
+ */
+export function useUnreadCount(options: { enabled?: boolean } = {}) {
+	const { enabled = true } = options
+
+	return useQuery({
+		...getNotificationsUnreadCountOptions(),
+		select: (envelope) => unwrapData(envelope).unread,
+		enabled,
+		meta: { silent: true },
+	})
+}
+```
+
+Removing the `pollMs` parameter changes the signature. Find the callers (`grep -rn "useUnreadCount" src/`) and drop the argument — `src/components/notifications/NotificationDropdown.tsx` is the likely one.
+
+- [ ] **Step 6: Drop the chat poll**
+
+In `src/hooks/api/useChat.ts`, `useChatUnreadCount`:
+
+```ts
+export function useChatUnreadCount(enabled = true) {
+	return useQuery({
+		...getConversationsUnreadCountOptions(),
+		select: unwrapData,
+		enabled,
+		meta: { silent: true },
+	})
+}
+```
+
+- [ ] **Step 7: Typecheck and lint**
+
+Run: `npm run typecheck && npm run lint`
+Expected: clean
+
+- [ ] **Step 8: Verify by hand — this is the task's real test**
+
+Start the backend (`go run ./cmd/gateway`) and `npm run dev`. Sign in as two different accounts in two browser profiles.
+
+1. **Chat push.** Open the same conversation in both. Send from A. Expected: it appears in B **without a network refetch of the message list** — check the Network tab shows only the WebSocket frame, not a `GET .../messages`. The conversation list and badge do refetch; that is intended.
+2. **No echo.** A must not see its own message arrive twice.
+3. **Badge without polling.** With B on an unrelated page, send from A. Expected: B's chat badge increments. Then confirm the Network tab shows **no** periodic `unread-count` requests any more.
+4. **Reconnect repair.** With B's socket open, stop the gateway. Send nothing. Restart the gateway. Expected: B reconnects after a backoff, and on connect the fed queries refetch — visible as a burst of requests. Now do it again but send a message from A *while the gateway is down for B* (from a second gateway, or just edit a row directly); on reconnect B must converge.
+5. **Ticket single-use.** In the Network tab, confirm each reconnect issues a **new** `POST /ws/tickets`.
+6. **Sign out.** Log B out. Expected: the socket closes and no reconnect attempts follow (the effect's cleanup runs because `isAuthenticated` flipped).
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add src/api/invalidate.ts src/realtime/ src/app/layout.tsx src/hooks/api/useChat.ts src/hooks/api/useNotifications.ts src/components/notifications/NotificationDropdown.tsx
+git commit -m "feat: consume realtime events and drop the unread polls"
+```
+
+---
+
+## Done
+
+Both repositories build and lint clean; eight events flow from Go through NATS to a typed TypeScript union; the AsyncAPI document describes them and a contract test fails if the two lists disagree. The 60-second polls are gone.
+
+## Verification checklist
+
+Run these before calling the feature finished:
+
+```bash
+# server
+cd server
+go generate ./... && git diff --exit-code api/          # the committed specs are current
+go build ./... && go vet ./... && golangci-lint run     # 0 issues
+go test ./...                                            # unit
+go test -race -count=4 ./internal/gateway/ws/            # the concurrent part
+go test -tags integration ./...                          # needs Postgres, Redis, NATS
+npx -y @asyncapi/cli@latest validate api/asyncapi.gen.yaml
+
+# website
+cd ../website
+npm run gen:api && npm run gen:ws
+npm run typecheck && npm run lint
+```
+
+`git diff --exit-code api/` is the one worth explaining: a generated document that differs from the committed one means somebody edited a fragment and never ran `go generate`, so the served spec and the source disagree — the same class of bug as the website's drifted copy, which is what Task 16 exists to fix.
+
+## Known deferrals
+
+Named here so they are decisions rather than oversights:
+
+- **Push, email and SMS notification channels.** Only `in-app` is produced. `domain/notification.go:18` records the other three as a Restate workflow's problem; that stays true.
+- **No client→server messages.** Typing indicators and read-receipt-on-scroll would each need one `action: send` message and an inbound validation path. The socket is `CloseRead` today.
+- **Nothing replays.** Core NATS fan-out drops a message with no listener, and invalidate-on-connect is the repair. If a client ever needs guaranteed delivery, that is a different transport decision, not a tuning change.
+- **`docs/` is gitignored** in `server/.gitignore:5`, while `CLAUDE.md:155` says topic docs belong under `docs/` and `CLAUDE.md:183` links a spec there that no longer exists. The spec and this plan were committed with `git add -f`. Worth resolving.
