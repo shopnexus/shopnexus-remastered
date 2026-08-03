@@ -107,6 +107,10 @@ type Repository interface {
 	// --- notifications ---
 	ListNotifications(ctx context.Context, q NotificationQuery) ([]domain.Notification, error)
 	CountUnreadNotifications(ctx context.Context, accountID int64) (int64, error)
+	// InsertNotification writes one feed row and answers its generated id. The
+	// caller has already decided the account wants it in-app: preference is a
+	// service rule, not a storage one.
+	InsertNotification(ctx context.Context, n domain.Notification) (int64, error)
 	MarkNotificationsRead(ctx context.Context, accountID int64, before *time.Time) error
 	ListPreferences(ctx context.Context, accountID int64) ([]domain.Preference, error)
 	// SavePreferences applies one change set: store the deviations, delete the pairs

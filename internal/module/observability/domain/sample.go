@@ -64,4 +64,7 @@ type RuntimeSample struct {
 	HeapInuseBytes int64     `json:"heap_inuse_bytes"`
 	GCPauseMs      float64   `json:"gc_pause_ms"`
 	NumGC          int64     `json:"num_gc"`
+	// WebSocketConns is open realtime sockets on this instance. Zero on an instance
+	// nobody has connected to, which is a real reading rather than a missing one.
+	WebSocketConns int `json:"websocket_conns"`
 }

@@ -188,6 +188,16 @@ paths:
 
 components:
   schemas:
+    OrderRef:
+      type: object
+      description: >
+        An order's id alone, as carried by a realtime event: the two sides of a sale see
+        different projections of an order, so pushing the entity would mean choosing whose
+        view to send — each client re-reads its own over REST.
+      properties:
+        id: { $ref: '#/components/schemas/OrderID' }
+      required: [id]
+
     OrderState:
       type: string
       description: >

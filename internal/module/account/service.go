@@ -22,6 +22,7 @@ import (
 	"shopnexus/internal/provider/oauth"
 	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/id"
+	"shopnexus/internal/shared/realtime"
 	"shopnexus/internal/shared/session"
 	"shopnexus/internal/shared/token"
 )
@@ -69,6 +70,9 @@ type Service struct {
 	// a public link, unlike the avatar it sits beside.
 	uploads common.Uploads
 	log     *slog.Logger
+	// fanout pushes the realtime facts in event.go to the socket the owning account may
+	// have open. Best-effort: a write always commits whether or not anybody is listening.
+	fanout realtime.Fanout
 }
 
 func NewService(
@@ -81,6 +85,7 @@ func NewService(
 	kycClient kyc.Client,
 	uploads common.Uploads,
 	log *slog.Logger,
+	fanout realtime.Fanout,
 ) *Service {
 	return &Service{
 		repo:     repo,
@@ -92,6 +97,20 @@ func NewService(
 		kyc:      kycClient,
 		uploads:  uploads,
 		log:      log,
+		fanout:   fanout,
+	}
+}
+
+// notifyRealtime pushes a fact to one account, best-effort. Named apart from the
+// notify.Client field this package already has of that name — this one is the socket,
+// not email/SMS.
+//
+// A realtime failure never fails the command: the row is committed by the time this runs,
+// so the alternative is answering 500 for a write that happened. The client re-reads on
+// reconnect, which is what covers a dropped event.
+func notifyRealtime[T any](ctx context.Context, s *Service, accountID int64, e realtime.Event[T], data T) {
+	if err := realtime.Notify(ctx, s.fanout, accountID, e, data); err != nil {
+		s.log.Warn("realtime notify failed", "code", e.Code, "account_id", accountID, "err", err)
 	}
 }
 

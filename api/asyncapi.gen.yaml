@@ -1,0 +1,541 @@
+asyncapi: 3.0.0
+channels:
+    userStream:
+        address: /api/v1/ws
+        bindings:
+            ws:
+                method: GET
+                query:
+                    properties:
+                        ticket:
+                            description: |
+                                Single-use ticket from POST /api/v1/ws/tickets, valid 30 seconds.
+                                Redeemed at handshake and immediately destroyed, so every reconnect
+                                needs a fresh one. The access token is never put in the URL.
+                            example: wst_9f3c1d7b4a2e8065f1a9c3d5e7b20418
+                            type: string
+                    required:
+                        - ticket
+                    type: object
+        description: |
+            Every fact the signed-in account is entitled to see. The account is established
+            by the ticket at handshake time and is never named in a message: a socket only
+            ever carries one account's events.
+        messages:
+            ConversationRead:
+                $ref: '#/components/messages/ConversationRead'
+            MessageCreated:
+                $ref: '#/components/messages/MessageCreated'
+            MessageDeleted:
+                $ref: '#/components/messages/MessageDeleted'
+            MessageUpdated:
+                $ref: '#/components/messages/MessageUpdated'
+            NotificationCreated:
+                $ref: '#/components/messages/NotificationCreated'
+            OfferUpdated:
+                $ref: '#/components/messages/OfferUpdated'
+            OrderPlaced:
+                $ref: '#/components/messages/OrderPlaced'
+            OrderSettled:
+                $ref: '#/components/messages/OrderSettled'
+        title: Per-account event stream
+components:
+    messages:
+        ConversationRead:
+            contentType: application/json
+            name: chat.conversation_read
+            payload:
+                properties:
+                    at:
+                        example: "2026-08-03T11:17:04Z"
+                        format: date-time
+                        type: string
+                    code:
+                        const: chat.conversation_read
+                        type: string
+                    data:
+                        $ref: '#/components/schemas/ConversationReadMark'
+                required:
+                    - code
+                    - at
+                    - data
+                type: object
+            summary: The other participant read the thread up to an instant.
+            title: Conversation read
+        MessageCreated:
+            contentType: application/json
+            name: chat.message_created
+            payload:
+                properties:
+                    at:
+                        description: When the backend published the event, not when the row was written.
+                        example: "2026-08-03T11:17:04Z"
+                        format: date-time
+                        type: string
+                    code:
+                        const: chat.message_created
+                        type: string
+                    data:
+                        $ref: '#/components/schemas/Message'
+                required:
+                    - code
+                    - at
+                    - data
+                type: object
+            summary: Somebody sent a message in a conversation you are part of.
+            title: Message created
+        MessageDeleted:
+            contentType: application/json
+            name: chat.message_deleted
+            payload:
+                properties:
+                    at:
+                        example: "2026-08-03T11:17:04Z"
+                        format: date-time
+                        type: string
+                    code:
+                        const: chat.message_deleted
+                        type: string
+                    data:
+                        $ref: '#/components/schemas/DeletedMessageRef'
+                required:
+                    - code
+                    - at
+                    - data
+                type: object
+            summary: The other participant deleted a message.
+            title: Message deleted
+        MessageUpdated:
+            contentType: application/json
+            name: chat.message_updated
+            payload:
+                properties:
+                    at:
+                        example: "2026-08-03T11:17:04Z"
+                        format: date-time
+                        type: string
+                    code:
+                        const: chat.message_updated
+                        type: string
+                    data:
+                        $ref: '#/components/schemas/Message'
+                required:
+                    - code
+                    - at
+                    - data
+                type: object
+            summary: The other participant edited a message; body and edited_at changed.
+            title: Message edited
+        NotificationCreated:
+            contentType: application/json
+            description: |
+                Only the in-app channel produces this. Push, email and SMS are dispatched
+                elsewhere and are not observable on the socket.
+
+                Carries the whole notification, so a client can render the feed entry and
+                increment its unread badge without a round trip.
+            name: account.notification_created
+            payload:
+                properties:
+                    at:
+                        example: "2026-08-03T11:17:04Z"
+                        format: date-time
+                        type: string
+                    code:
+                        const: account.notification_created
+                        type: string
+                    data:
+                        $ref: '#/components/schemas/Notification'
+                required:
+                    - code
+                    - at
+                    - data
+                type: object
+            summary: A new row in your notification feed.
+            title: Notification created
+        OfferUpdated:
+            contentType: application/json
+            description: |
+                One message for every transition rather than one per kind: a client renders the
+                offer's current state and does not branch on how it got there.
+            name: order.offer_updated
+            payload:
+                properties:
+                    at:
+                        example: "2026-08-03T11:17:04Z"
+                        format: date-time
+                        type: string
+                    code:
+                        const: order.offer_updated
+                        type: string
+                    data:
+                        $ref: '#/components/schemas/Offer'
+                required:
+                    - code
+                    - at
+                    - data
+                type: object
+            summary: A negotiation's standing terms changed — countered, accepted, withdrawn or expired.
+            title: Offer updated
+        OrderPlaced:
+            contentType: application/json
+            description: |
+                Carries the order's id and nothing else. The two sides see different projections
+                of an order, so pushing the entity would mean choosing whose view to send; each
+                client re-reads its own over REST.
+            name: order.placed
+            payload:
+                properties:
+                    at:
+                        example: "2026-08-03T11:17:04Z"
+                        format: date-time
+                        type: string
+                    code:
+                        const: order.placed
+                        type: string
+                    data:
+                        $ref: '#/components/schemas/OrderRef'
+                required:
+                    - code
+                    - at
+                    - data
+                type: object
+            summary: A paid checkout became an order. Sent to buyer and seller.
+            title: Order placed
+        OrderSettled:
+            contentType: application/json
+            name: order.settled
+            payload:
+                properties:
+                    at:
+                        example: "2026-08-03T11:17:04Z"
+                        format: date-time
+                        type: string
+                    code:
+                        const: order.settled
+                        type: string
+                    data:
+                        $ref: '#/components/schemas/OrderRef'
+                required:
+                    - code
+                    - at
+                    - data
+                type: object
+            summary: Escrow closed and the payout was released. Sent to buyer and seller.
+            title: Order settled
+    schemas:
+        AccountID:
+            example: acc_62mxefynht57b
+            pattern: ^acc_[0-9a-hjkmnp-tv-z]{13}$
+            type: string
+        ConversationID:
+            example: cnv_6ptz3n8kvq1wd
+            pattern: ^cnv_[0-9a-hjkmnp-tv-z]{13}$
+            type: string
+        ConversationReadMark:
+            description: How far one participant has read a thread.
+            properties:
+                conversation_id:
+                    example: cnv_7bd32h9qk4mfx
+                    type: string
+                read_at:
+                    example: "2026-08-03T11:17:04Z"
+                    format: date-time
+                    type: string
+                reader_id:
+                    description: Who read it — always the other participant, never the recipient.
+                    example: acc_4mfx7bd32h9qk
+                    type: string
+            required:
+                - conversation_id
+                - reader_id
+                - read_at
+            type: object
+        CurrencyCode:
+            description: |
+                ISO 4217. Never inferred from the account's country — one currency spans many countries, and a seller may want a balance in a foreign one.
+            example: VND
+            maxLength: 3
+            minLength: 3
+            pattern: ^[A-Z]{3}$
+            type: string
+        DeletedMessageRef:
+            description: |
+                Enough to find and drop a message from a rendered thread. Not the whole
+                Message: a deleted row's body is gone, and sending an emptied entity would
+                read as an edit.
+            properties:
+                conversation_id:
+                    example: cnv_7bd32h9qk4mfx
+                    type: string
+                created_at:
+                    description: The message's own instant — the hypertable needs it to locate the row.
+                    example: "2026-08-03T11:16:02Z"
+                    format: date-time
+                    type: string
+                id:
+                    description: Opaque message id.
+                    example: msg_2h9qk4mfx7bd3
+                    type: string
+            required:
+                - id
+                - conversation_id
+                - created_at
+            type: object
+        ListingID:
+            example: lst_5y5w68r4918v8
+            pattern: ^lst_[0-9a-hjkmnp-tv-z]{13}$
+            type: string
+        Message:
+            properties:
+                attachments:
+                    description: Empty on a redacted message.
+                    items:
+                        $ref: '#/components/schemas/Resource'
+                    type: array
+                body:
+                    description: Empty on a redacted message.
+                    type: string
+                card:
+                    additionalProperties: true
+                    description: |
+                        What a system message renders, and for a price negotiation that is `{"offer_id": "ofr_…"}` and nothing else — the terms are read from the offer, so a counter-offer cannot leave an old price on screen. Written only by the backend and rejected on a `user` message, otherwise anyone could send a card that looks like an offer the seller accepted.
+                    nullable: true
+                    type: object
+                conversation_id:
+                    $ref: '#/components/schemas/ConversationID'
+                created_at:
+                    format: date-time
+                    type: string
+                deleted_at:
+                    description: Set on a redacted message. The row stays so a thread has no unexplained gaps.
+                    format: date-time
+                    nullable: true
+                    type: string
+                edited_at:
+                    format: date-time
+                    nullable: true
+                    type: string
+                id:
+                    $ref: '#/components/schemas/MessageID'
+                refs:
+                    additionalProperties: true
+                    description: |
+                        What the sender pointed at — a listing, a variant, an order. Client-supplied and validated against the caller's own access to each id, so it can carry a reference but never assert anything about it.
+                    type: object
+                sender_id:
+                    allOf:
+                        - $ref: '#/components/schemas/AccountID'
+                    description: Null on a system message.
+                    nullable: true
+                type:
+                    $ref: '#/components/schemas/MessageType'
+            required:
+                - id
+                - conversation_id
+                - type
+                - body
+                - attachments
+                - refs
+                - created_at
+            type: object
+        MessageID:
+            example: msg_agnc1pe4pjb4k
+            pattern: ^msg_[0-9a-hjkmnp-tv-z]{13}$
+            type: string
+        MessageType:
+            description: |
+                A `system` message is produced by the backend — an offer was accepted, an order shipped — and belongs to no participant, which is why it has no sender.
+            enum:
+                - user
+                - system
+            type: string
+        Notification:
+            properties:
+                category:
+                    $ref: '#/components/schemas/NotificationCategory'
+                created_at:
+                    description: |
+                        Identifies the row together with the feed order, and it is what `POST /notifications/read` is given a bound against.
+                    format: date-time
+                    type: string
+                payload:
+                    additionalProperties: true
+                    description: Structured content such as deep links and images.
+                    type: object
+                read_at:
+                    format: date-time
+                    nullable: true
+                    type: string
+                title:
+                    type: string
+            required:
+                - category
+                - title
+                - payload
+                - created_at
+            type: object
+        NotificationCategory:
+            description: Also the preference key, which is why it is an enum — a typo would read as no preference and quietly send anyway.
+            enum:
+                - order
+                - promotion
+                - system
+                - chat
+                - social
+            type: string
+        Offer:
+            properties:
+                author_id:
+                    $ref: '#/components/schemas/AccountID'
+                buyer_id:
+                    $ref: '#/components/schemas/AccountID'
+                created_at:
+                    format: date-time
+                    type: string
+                currency:
+                    $ref: '#/components/schemas/CurrencyCode'
+                expires_at:
+                    format: date-time
+                    type: string
+                id:
+                    $ref: '#/components/schemas/OfferID'
+                listing_id:
+                    allOf:
+                        - $ref: '#/components/schemas/ListingID'
+                    description: The listing whose card the offer is shown on.
+                quantity:
+                    example: 2
+                    format: int64
+                    minimum: 1
+                    type: integer
+                reason:
+                    description: Shown on the offer card beside the proposed price
+                    type: string
+                seller_id:
+                    $ref: '#/components/schemas/AccountID'
+                status:
+                    $ref: '#/components/schemas/OfferStatus'
+                total:
+                    description: Currently proposed total, smallest currency unit
+                    example: 598000
+                    format: int64
+                    minimum: 1
+                    type: integer
+                variant_id:
+                    $ref: '#/components/schemas/VariantID'
+            required:
+                - id
+                - listing_id
+                - variant_id
+                - buyer_id
+                - seller_id
+                - author_id
+                - status
+                - quantity
+                - total
+                - currency
+                - created_at
+                - expires_at
+            type: object
+        OfferID:
+            example: ofr_ptz3n8kvq1wd6
+            pattern: ^ofr_[0-9a-hjkmnp-tv-z]{13}$
+            type: string
+        OfferStatus:
+            description: |
+                `active` — a proposal waiting for the other side. `accepted` — agreed, the price frozen for a short window while the buyer creates the order. `checked-out` — the buyer's payment session is open, so these terms are off the table. `cancelled` — withdrawn or lapsed.
+            enum:
+                - active
+                - accepted
+                - checked-out
+                - cancelled
+            example: accepted
+            type: string
+        OrderID:
+            example: ord_fv2cpg50vkrfp
+            pattern: ^ord_[0-9a-hjkmnp-tv-z]{13}$
+            type: string
+        OrderRef:
+            description: |
+                An order's id alone, as carried by a realtime event: the two sides of a sale see different projections of an order, so pushing the entity would mean choosing whose view to send — each client re-reads its own over REST.
+            properties:
+                id:
+                    $ref: '#/components/schemas/OrderID'
+            required:
+                - id
+            type: object
+        Resource:
+            properties:
+                checksum:
+                    description: Content hash, read back from storage at completion.
+                    example: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+                    type: string
+                id:
+                    $ref: '#/components/schemas/ResourceID'
+                mime:
+                    example: image/jpeg
+                    type: string
+                object_key:
+                    description: Provider-specific path to the bytes.
+                    example: listings/2026/07/9f86d081.jpg
+                    type: string
+                provider:
+                    description: Storage backend, kebab-case — `s3`, `minio`, `local`.
+                    example: minio
+                    type: string
+                size:
+                    description: Bytes, as read back from storage rather than as declared.
+                    example: 248132
+                    format: int64
+                    minimum: 0
+                    type: integer
+                url:
+                    description: |
+                        Short-lived URL to fetch the bytes. Absent until a module can presign one, so a consumer that needs the bytes has to treat it as "not available yet" rather than as an empty object. Not a stable address: store the id, not this.
+                    example: https://cdn.shopnexus.test/o/9f86d081?expires=1785000000
+                    format: uri
+                    type: string
+                url_expires_at:
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - provider
+                - object_key
+                - mime
+                - size
+            type: object
+        ResourceID:
+            example: res_4mx8jd2qr5wtc
+            pattern: ^res_[0-9a-hjkmnp-tv-z]{13}$
+            type: string
+        VariantID:
+            example: vrn_vq1wd6ptz3n8k
+            pattern: ^vrn_[0-9a-hjkmnp-tv-z]{13}$
+            type: string
+info:
+    description: |
+        The push half of the ShopNexus API. One WebSocket per signed-in account carries
+        every module's facts; the REST surface is described separately in openapi.yaml.
+
+        The socket is receive-only. There is no client-to-server message: the client
+        changes state through REST and learns about other people's changes here.
+
+        Delivery is at-most-once and nothing is replayed. A client that reconnects has
+        to assume it missed events, so it re-reads what it cares about over REST — which
+        is why there is no cursor, no acknowledgement and no subscribe message.
+    title: ShopNexus realtime
+    version: 1.0.0
+operations:
+    receiveUserEvents:
+        action: receive
+        channel:
+            $ref: '#/channels/userStream'
+        title: Receive account events
+servers:
+    production:
+        description: Production. Obtain a ticket from POST /api/v1/ws/tickets first.
+        host: api.shopnexus.com
+        pathname: /api/v1/ws
+        protocol: wss

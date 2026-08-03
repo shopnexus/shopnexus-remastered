@@ -110,7 +110,7 @@ func TestSink_CountsDroppedSamples(t *testing.T) {
 
 	s := NewSink(bus, slog.Default(), "test-instance")
 	s.RecordHTTP("GET", "/x", 200, time.Millisecond)
-	s.RecordRuntime(1, 2, 3, 0.5, 4)
+	s.RecordRuntime(1, 2, 3, 0.5, 4, 0)
 
 	if got := s.dropped.Load(); got != 2 {
 		t.Fatalf("dropped = %d, want 2", got)

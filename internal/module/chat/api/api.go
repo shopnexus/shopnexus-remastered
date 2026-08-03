@@ -83,6 +83,24 @@ type UnreadCount struct {
 	Conversations int64 `json:"conversations"`
 }
 
+// DeletedMessageRef is enough to find and drop a message from a rendered thread. Not the
+// whole Message: a deleted row's body is gone, and sending an emptied entity would read as
+// an edit.
+type DeletedMessageRef struct {
+	ID             id.ID[id.Message]      `json:"id"`
+	ConversationID id.ID[id.Conversation] `json:"conversation_id"`
+	// CreatedAt is the message's own instant — the hypertable needs it to locate the row.
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// ConversationReadMark is how far one participant has read a thread.
+type ConversationReadMark struct {
+	ConversationID id.ID[id.Conversation] `json:"conversation_id"`
+	// ReaderID is who read it — always the other participant, never the recipient.
+	ReaderID id.ID[id.Account] `json:"reader_id"`
+	ReadAt   time.Time         `json:"read_at"`
+}
+
 // --- requests ---
 
 // CreateUploadRequest asks for a slot to PUT a message attachment into. The bytes never

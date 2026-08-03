@@ -1,0 +1,46 @@
+# Order's own lifecycle events, bridged from the durable Redis bus by
+# internal/gateway/bridge.go rather than published directly: order.placed and
+# order.settled already exist as bus topics with live producers this task must not touch.
+components:
+  messages:
+    OrderPlaced:
+      name: order.placed
+      title: Order placed
+      summary: A paid checkout became an order. Sent to buyer and seller.
+      description: |
+        Carries the order's id and nothing else. The two sides see different projections
+        of an order, so pushing the entity would mean choosing whose view to send; each
+        client re-reads its own over REST.
+      contentType: application/json
+      payload:
+        type: object
+        required: [code, at, data]
+        properties:
+          code:
+            type: string
+            const: order.placed
+          at:
+            type: string
+            format: date-time
+            example: '2026-08-03T11:17:04Z'
+          data:
+            $ref: '#/components/schemas/OrderRef'
+
+    OrderSettled:
+      name: order.settled
+      title: Order settled
+      summary: Escrow closed and the payout was released. Sent to buyer and seller.
+      contentType: application/json
+      payload:
+        type: object
+        required: [code, at, data]
+        properties:
+          code:
+            type: string
+            const: order.settled
+          at:
+            type: string
+            format: date-time
+            example: '2026-08-03T11:17:04Z'
+          data:
+            $ref: '#/components/schemas/OrderRef'

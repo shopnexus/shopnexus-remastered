@@ -27,6 +27,7 @@ import (
 	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/id"
 	"shopnexus/internal/shared/id/idtest"
+	"shopnexus/internal/shared/realtime"
 	"shopnexus/internal/shared/validation"
 )
 
@@ -442,6 +443,12 @@ func (f *fakeWorkflows) StartRefundWindow(_ context.Context, refundID int64, sta
 }
 
 func newHarness(priceMode string) *harness {
+	return newHarnessWithFanout(priceMode, noopFanout{})
+}
+
+// newHarnessWithFanout is newHarness with the fanout a test wants to assert on, instead of
+// one that drops every push.
+func newHarnessWithFanout(priceMode string, fanout realtime.Fanout) *harness {
 	repo := newFakeRepo()
 	catalog := &fakeCatalog{
 		priceMode: priceMode, price: 100_000, available: 5,
@@ -455,10 +462,17 @@ func newHarness(priceMode string) *harness {
 	courier := &fakeCourier{fee: shippingFee}
 	svc := order.NewService(repo, accounts, catalog, finance, chat, uploads, repo, courier, workflows,
 		eventbus.NewMemory(slog.New(slog.DiscardHandler)), validation.Default(),
-		slog.New(slog.DiscardHandler))
+		slog.New(slog.DiscardHandler), fanout)
 	return &harness{svc: svc, repo: repo, catalog: catalog, finance: finance, chat: chat,
 		uploads: uploads, accounts: accounts, workflows: workflows, courier: courier}
 }
+
+// noopFanout is the fanout for tests that are not about realtime: it accepts every push
+// and drops it, so a command's happy path does not need a bus to run.
+type noopFanout struct{}
+
+func (noopFanout) Broadcast(string, []byte) error                   { return nil }
+func (noopFanout) OnBroadcast(string, func([]byte)) (func(), error) { return func() {}, nil }
 
 // ageItems winds every line back, which is how a test reaches a checkout window the clock would
 // otherwise have to wait out.
@@ -473,7 +487,7 @@ func (h *harness) ageItems(by time.Duration) {
 func (h *harness) moderator() *order.Service {
 	return order.NewService(h.repo, fakeAccounts{role: "moderator"}, h.catalog, h.finance,
 		h.chat, h.uploads, h.repo, h.courier, h.workflows, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
-		validation.Default(), slog.New(slog.DiscardHandler))
+		validation.Default(), slog.New(slog.DiscardHandler), noopFanout{})
 }
 
 func status(t *testing.T, err error) uint16 {
@@ -918,7 +932,7 @@ func TestShippingQuotes_EstimatesFromAListingPage(t *testing.T) {
 	noAddress.svc = order.NewService(noAddress.repo, fakeAccounts{role: "user", noDelivery: true},
 		noAddress.catalog, noAddress.finance, noAddress.chat, noAddress.uploads, noAddress.repo,
 		noAddress.courier, noAddress.workflows, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
-		validation.Default(), slog.New(slog.DiscardHandler))
+		validation.Default(), slog.New(slog.DiscardHandler), noopFanout{})
 	if got := status(t, mustErr(noAddress.svc.ShippingQuotes(ctx, orderapi.ShippingQuotesRequest{
 		ActorID: buyer, VariantID: variantID,
 	}))); got != 422 {
@@ -1340,7 +1354,7 @@ func TestCheckout_NeedsAPickupAddress(t *testing.T) {
 	h := newHarness("fixed")
 	h.svc = order.NewService(h.repo, fakeAccounts{role: "user", noPickup: true}, h.catalog,
 		h.finance, h.chat, h.uploads, h.repo, h.courier, h.workflows, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
-		validation.Default(), slog.New(slog.DiscardHandler))
+		validation.Default(), slog.New(slog.DiscardHandler), noopFanout{})
 	ctx := context.Background()
 	draft, err := h.svc.CreateDraft(ctx, orderapi.CreateDraftRequest{ActorID: buyer, ListingID: listingID})
 	if err != nil {

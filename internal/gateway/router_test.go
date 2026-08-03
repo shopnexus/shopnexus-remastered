@@ -14,6 +14,7 @@ import (
 	openapi "shopnexus/api"
 	"shopnexus/internal/gateway"
 	"shopnexus/internal/gateway/handler"
+	"shopnexus/internal/gateway/ws"
 	"shopnexus/internal/infra/cache"
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/api/accounttest"
@@ -120,11 +121,23 @@ func (stubTrust) SubmitReport(context.Context, trustapi.SubmitReportRequest) (tr
 	return trustapi.Report{ID: id.Of[id.Report](1)}, nil
 }
 
+// noopFanout satisfies realtime.Fanout with no subscribers and no delivery — enough for
+// the hub to construct and Join/Leave, which is all these router tests need.
+type noopFanout struct{}
+
+func (noopFanout) Broadcast(string, []byte) error { return nil }
+func (noopFanout) OnBroadcast(string, func([]byte)) (func(), error) {
+	return func() {}, nil
+}
+
 func newRouter() (http.Handler, *token.Manager, *session.Store) {
 	v := validation.Default()
 	log := slog.Default()
 	tm := token.NewManager("0123456789012345678901234567890123", time.Hour)
-	sessions := session.New(cache.NewInMemoryClient(), time.Hour)
+	c := cache.NewInMemoryClient()
+	sessions := session.New(c, time.Hour)
+	tickets := session.NewTickets(c, time.Minute)
+	hub := ws.NewHub(noopFanout{}, log, ws.Config{SendBuffer: 4, MaxPerAccount: 5})
 	return gateway.NewRouter(gateway.Deps{
 		Account:  handler.NewAccount(stubAccount{}, v, log),
 		Catalog:  handler.NewCatalog(stubCat{}, v, log),
@@ -132,6 +145,7 @@ func newRouter() (http.Handler, *token.Manager, *session.Store) {
 		Chat:     handler.NewChat(stubChat{}, v, log),
 		Finance:  handler.NewFinance(stubPayment{}, v, log),
 		Trust:    handler.NewTrust(stubTrust{}, v, log),
+		WS:       handler.NewWS(hub, tickets, sessions, log, time.Second, time.Minute, []string{"localhost"}),
 		Tokens:   tm,
 		Sessions: sessions,
 		Log:      log,

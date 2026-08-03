@@ -21,10 +21,20 @@ var specYAML []byte
 // SpecYAML is the raw OpenAPI document, exposed for contract tests.
 var SpecYAML = specYAML
 
+//go:embed asyncapi.gen.yaml
+var asyncAPISpec []byte
+
 // SpecHandler serves the raw OpenAPI document at <BasePath>/openapi.yaml.
 func SpecHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/yaml")
 	_, _ = w.Write(specYAML)
+}
+
+// AsyncAPISpecHandler serves the merged AsyncAPI document. Same reasoning as the
+// OpenAPI one: the running server is the only authority on what it actually speaks.
+func AsyncAPISpecHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/yaml")
+	_, _ = w.Write(asyncAPISpec)
 }
 
 // DocsHandler serves a Swagger UI page (dev docs) that loads the spec from

@@ -298,6 +298,16 @@ type UpdateNotificationPreferencesRequest struct {
 	Items   []PreferenceInput `json:"items" validate:"required,min=1,dive"`
 }
 
+// CreateNotificationRequest is backend-to-backend: no route exposes it, because a
+// client must not be able to write another account's feed. It reaches the service
+// from a bus subscriber.
+type CreateNotificationRequest struct {
+	AccountID id.ID[id.Account] `json:"account_id" validate:"required"`
+	Category  string            `json:"category" validate:"required,oneof=order promotion system chat social"`
+	Title     string            `json:"title" validate:"required,max=200"`
+	Payload   map[string]any    `json:"payload,omitempty"`
+}
+
 // --- follow graph ---
 
 type ListFollowingRequest struct {

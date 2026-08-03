@@ -698,6 +698,25 @@ components:
                 - data
                 - meta
             type: object
+        ConversationReadMark:
+            description: How far one participant has read a thread.
+            properties:
+                conversation_id:
+                    example: cnv_7bd32h9qk4mfx
+                    type: string
+                read_at:
+                    example: "2026-08-03T11:17:04Z"
+                    format: date-time
+                    type: string
+                reader_id:
+                    description: Who read it — always the other participant, never the recipient.
+                    example: acc_4mfx7bd32h9qk
+                    type: string
+            required:
+                - conversation_id
+                - reader_id
+                - read_at
+            type: object
         CreateBankAccountRequest:
             properties:
                 account_holder:
@@ -1022,6 +1041,29 @@ components:
                     type: string
             required:
                 - next_cursor
+            type: object
+        DeletedMessageRef:
+            description: |
+                Enough to find and drop a message from a rendered thread. Not the whole
+                Message: a deleted row's body is gone, and sending an emptied entity would
+                read as an edit.
+            properties:
+                conversation_id:
+                    example: cnv_7bd32h9qk4mfx
+                    type: string
+                created_at:
+                    description: The message's own instant — the hypertable needs it to locate the row.
+                    example: "2026-08-03T11:16:02Z"
+                    format: date-time
+                    type: string
+                id:
+                    description: Opaque message id.
+                    example: msg_2h9qk4mfx7bd3
+                    type: string
+            required:
+                - id
+                - conversation_id
+                - created_at
             type: object
         Device:
             properties:
@@ -2253,6 +2295,15 @@ components:
             required:
                 - data
                 - meta
+            type: object
+        OrderRef:
+            description: |
+                An order's id alone, as carried by a realtime event: the two sides of a sale see different projections of an order, so pushing the entity would mean choosing whose view to send — each client re-reads its own over REST.
+            properties:
+                id:
+                    $ref: '#/components/schemas/OrderID'
+            required:
+                - id
             type: object
         OrderState:
             description: |
@@ -4197,6 +4248,22 @@ components:
             required:
                 - data
                 - meta
+            type: object
+        WebSocketTicket:
+            properties:
+                expires_in:
+                    description: Seconds until the ticket expires.
+                    example: 30
+                    maximum: 300
+                    minimum: 1
+                    type: integer
+                ticket:
+                    description: Pass as the `ticket` query parameter when opening the socket.
+                    example: wst_9f3c1d7b4a2e8065f1a9c3d5e7b20418
+                    type: string
+            required:
+                - ticket
+                - expires_in
             type: object
         Withdrawal:
             description: A payment session of kind `withdrawal`, projected with its destination and the admin's resolution.
@@ -10315,6 +10382,37 @@ paths:
               required: true
               schema:
                 $ref: '#/components/schemas/PaymentSessionID'
+    /ws/tickets:
+        post:
+            description: |
+                Returns a single-use ticket for `GET /ws`. Valid for 30 seconds and destroyed
+                on redemption, so every reconnect needs a fresh one.
+
+                This exists because a browser cannot set an Authorization header on
+                `new WebSocket()`. Putting the access token in the query string instead would
+                write a live credential into proxy logs and browser history.
+
+                The realtime surface itself is described in asyncapi.yaml.
+            operationId: createWebSocketTicket
+            responses:
+                "201":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/WebSocketTicket'
+                                required:
+                                    - data
+                                type: object
+                    description: Ticket issued
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+            security:
+                - bearerAuth: []
+            summary: Mint a WebSocket handshake ticket
+            tags:
+                - account
 servers:
     - description: Gateway (relative to host)
       url: /api/v1

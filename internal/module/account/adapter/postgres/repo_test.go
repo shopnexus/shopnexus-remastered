@@ -336,3 +336,132 @@ func TestRepo_SaveSyncsLinksAndWritesTheTrail(t *testing.T) {
 		t.Error("Save left the events on the aggregate")
 	}
 }
+
+func TestRepo_InsertNotificationLandsInTheFeed(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	acc := createAccount(t, repo)
+
+	n, err := domain.NewNotification(domain.NewNotificationParams{
+		AccountID: acc.ID,
+		Category:  domain.CategoryOrder,
+		Title:     "Your order shipped",
+		Payload:   map[string]any{"order_id": "ord_x"},
+	})
+	if err != nil {
+		t.Fatalf("NewNotification: %v", err)
+	}
+
+	id, err := repo.InsertNotification(ctx, n)
+	if err != nil {
+		t.Fatalf("InsertNotification: %v", err)
+	}
+	if id == 0 {
+		t.Fatal("InsertNotification returned id 0")
+	}
+
+	rows, err := repo.ListNotifications(ctx, port.NotificationQuery{AccountID: acc.ID, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListNotifications: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if rows[0].Title != "Your order shipped" {
+		t.Errorf("Title = %q", rows[0].Title)
+	}
+	// The payload survives the JSONB round trip, which is what makes it worth storing.
+	if rows[0].Payload["order_id"] != "ord_x" {
+		t.Errorf("Payload = %v, want order_id=ord_x", rows[0].Payload)
+	}
+	if rows[0].ReadAt != nil {
+		t.Error("a fresh row must be unread")
+	}
+
+	unread, err := repo.CountUnreadNotifications(ctx, acc.ID)
+	if err != nil {
+		t.Fatalf("CountUnreadNotifications: %v", err)
+	}
+	if unread != 1 {
+		t.Errorf("unread = %d, want 1", unread)
+	}
+}
+
+// A scheduled notification is stored with its dispatch time rather than dropped.
+// A dispatch time that has passed is stored and read back, so the column is mapped
+// rather than silently dropped. Scheduled in the past deliberately: ListNotifications
+// filters on `scheduled_at IS NULL OR scheduled_at <= now()`, so a future one is not
+// visible to this query at all — which the next test pins down.
+func TestRepo_InsertNotificationKeepsScheduledAt(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	acc := createAccount(t, repo)
+
+	at := time.Now().Add(-time.Hour).UTC().Truncate(time.Millisecond)
+	n, err := domain.NewNotification(domain.NewNotificationParams{
+		AccountID:   acc.ID,
+		Category:    domain.CategorySystem,
+		Title:       "Maintenance",
+		ScheduledAt: &at,
+	})
+	if err != nil {
+		t.Fatalf("NewNotification: %v", err)
+	}
+	if _, err := repo.InsertNotification(ctx, n); err != nil {
+		t.Fatalf("InsertNotification: %v", err)
+	}
+
+	rows, err := repo.ListNotifications(ctx, port.NotificationQuery{AccountID: acc.ID, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListNotifications: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if rows[0].ScheduledAt == nil {
+		t.Fatal("ScheduledAt came back nil")
+	}
+	if !rows[0].ScheduledAt.Equal(at) {
+		t.Errorf("ScheduledAt = %v, want %v", rows[0].ScheduledAt, at)
+	}
+}
+
+// A notification scheduled for later is not in the feed yet. Worth pinning: the feed
+// query is the only thing enforcing that, so a rewritten WHERE clause would otherwise
+// start showing people announcements before they were meant to go out.
+func TestRepo_ScheduledNotificationIsNotVisibleYet(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	acc := createAccount(t, repo)
+
+	at := time.Now().Add(time.Hour).UTC()
+	n, err := domain.NewNotification(domain.NewNotificationParams{
+		AccountID:   acc.ID,
+		Category:    domain.CategorySystem,
+		Title:       "Scheduled maintenance",
+		ScheduledAt: &at,
+	})
+	if err != nil {
+		t.Fatalf("NewNotification: %v", err)
+	}
+	if _, err := repo.InsertNotification(ctx, n); err != nil {
+		t.Fatalf("InsertNotification: %v", err)
+	}
+
+	rows, err := repo.ListNotifications(ctx, port.NotificationQuery{AccountID: acc.ID, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListNotifications: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("got %d rows, want 0 — a future notification is not in the feed", len(rows))
+	}
+
+	// Nor does it count as unread, or the badge would advertise something unreadable.
+	unread, err := repo.CountUnreadNotifications(ctx, acc.ID)
+	if err != nil {
+		t.Fatalf("CountUnreadNotifications: %v", err)
+	}
+	if unread != 0 {
+		t.Errorf("unread = %d, want 0", unread)
+	}
+}

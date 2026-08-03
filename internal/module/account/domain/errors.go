@@ -77,4 +77,9 @@ var (
 	// ErrNoDeliveryContact is a buyer with no default delivery address. A quote cannot be made
 	// without one, and the client's answer is to ask for an address rather than to show a zero.
 	ErrNoDeliveryContact = errx.NewError(http.StatusUnprocessableEntity, "no_delivery_contact", "you have no default delivery address on file")
+
+	// ErrNotificationInvalid covers every way a notification fails its own rules. The
+	// producer is backend code, never a client, so the reasons are not worth
+	// distinguishing on the wire.
+	ErrNotificationInvalid = errx.NewError(http.StatusBadRequest, "notification_invalid", "notification is not valid")
 )

@@ -88,6 +88,12 @@ var readVars = []string{
 	"TRUST_DB_DSN",
 	"VERIFY_EMAIL_URL",
 	"WORKFLOW_RUNTIME",
+	"WS_TICKET_TTL",
+	"WS_WRITE_TIMEOUT",
+	"WS_PING_INTERVAL",
+	"WS_SEND_BUFFER",
+	"WS_MAX_PER_ACCOUNT",
+	"WS_ALLOWED_ORIGINS",
 }
 
 // fullEnv is the smallest environment that starts the gateway: every unconditional var,
@@ -137,6 +143,13 @@ func fullEnv() map[string]string {
 
 		"WORKFLOW_RUNTIME": "off",
 		"SWEEP_INTERVAL":   "1m",
+
+		"WS_TICKET_TTL":      "30s",
+		"WS_WRITE_TIMEOUT":   "10s",
+		"WS_PING_INTERVAL":   "30s",
+		"WS_SEND_BUFFER":     "64",
+		"WS_MAX_PER_ACCOUNT": "5",
+		"WS_ALLOWED_ORIGINS": "localhost:3000",
 	}
 }
 
@@ -151,6 +164,8 @@ var requiredVars = []string{
 	"STORAGE_MAX_UPLOAD_BYTES", "STORAGE_ALLOWED_MIMES",
 	"EMBEDDING_PROVIDER", "EMBEDDING_DIMENSIONS", "EMBEDDING_INTERVAL",
 	"EMBEDDING_BATCH_SIZE", "EMBEDDING_MAX_TEXT_CHARS",
+	"WS_TICKET_TTL", "WS_WRITE_TIMEOUT", "WS_PING_INTERVAL",
+	"WS_SEND_BUFFER", "WS_MAX_PER_ACCOUNT", "WS_ALLOWED_ORIGINS",
 }
 
 func TestLoad_MissingAnyRequiredFails(t *testing.T) {

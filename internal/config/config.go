@@ -214,6 +214,26 @@ type Config struct {
 	// from storage. Separate because they are different dependencies.
 	FPTAIRequestTimeout  time.Duration `validate:"required_if=KYCProvider fpt-ai"`
 	FPTAIDownloadTimeout time.Duration `validate:"required_if=KYCProvider fpt-ai"`
+
+	// --- WebSocket realtime ---
+
+	// WSTicketTTL is how long a handshake ticket lives before it is useless — short,
+	// because it only has to survive the moment between minting it and opening the socket.
+	WSTicketTTL time.Duration `validate:"required"`
+	// WSWriteTimeout bounds one write and one ping, same rule as every other outbound
+	// deadline here: a socket write that never completes must not hang the pump forever.
+	WSWriteTimeout time.Duration `validate:"required"`
+	// WSPingInterval is how often an idle socket is probed, so a peer that vanished
+	// without a FIN is found by a failed pong instead of an accumulating goroutine.
+	WSPingInterval time.Duration `validate:"required"`
+	// WSSendBuffer is how many envelopes a socket may fall behind before the hub drops it.
+	WSSendBuffer int `validate:"required,gt=0"`
+	// WSMaxPerAccount caps concurrent sockets per account, so a tab-spammer cannot exhaust
+	// the process's file descriptors.
+	WSMaxPerAccount int `validate:"required,gt=0"`
+	// WSAllowedOrigins is matched against the Origin header's host, not a full URL —
+	// that is what coder/websocket's OriginPatterns compares against.
+	WSAllowedOrigins []string `validate:"required,min=1"`
 }
 
 func Load(v *validator.Validate) (*Config, error) {
@@ -295,6 +315,13 @@ func Load(v *validator.Validate) (*Config, error) {
 		FPTAIAPIKey:          os.Getenv("FPT_AI_API_KEY"),
 		FPTAIRequestTimeout:  p.durationVar("FPT_AI_REQUEST_TIMEOUT"),
 		FPTAIDownloadTimeout: p.durationVar("FPT_AI_DOWNLOAD_TIMEOUT"),
+
+		WSTicketTTL:      p.durationVar("WS_TICKET_TTL"),
+		WSWriteTimeout:   p.durationVar("WS_WRITE_TIMEOUT"),
+		WSPingInterval:   p.durationVar("WS_PING_INTERVAL"),
+		WSSendBuffer:     p.intVar("WS_SEND_BUFFER"),
+		WSMaxPerAccount:  p.intVar("WS_MAX_PER_ACCOUNT"),
+		WSAllowedOrigins: listVar("WS_ALLOWED_ORIGINS"),
 	}
 	if err := p.err(); err != nil {
 		return nil, err

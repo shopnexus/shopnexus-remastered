@@ -213,6 +213,33 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { description: 'Token is unknown or already used or expired', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
+  /ws/tickets:
+    post:
+      tags: [account]
+      operationId: createWebSocketTicket
+      summary: Mint a WebSocket handshake ticket
+      description: |
+        Returns a single-use ticket for `GET /ws`. Valid for 30 seconds and destroyed
+        on redemption, so every reconnect needs a fresh one.
+
+        This exists because a browser cannot set an Authorization header on
+        `new WebSocket()`. Putting the access token in the query string instead would
+        write a live credential into proxy logs and browser history.
+
+        The realtime surface itself is described in asyncapi.yaml.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201':
+          description: 'Ticket issued'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/WebSocketTicket' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
 components:
   schemas:
     AuthResult:
@@ -294,3 +321,10 @@ components:
       properties:
         token: { type: string }
       required: [token]
+
+    WebSocketTicket:
+      type: object
+      properties:
+        ticket: { type: string, description: 'Pass as the `ticket` query parameter when opening the socket.', example: wst_9f3c1d7b4a2e8065f1a9c3d5e7b20418 }
+        expires_in: { type: integer, minimum: 1, maximum: 300, example: 30, description: Seconds until the ticket expires. }
+      required: [ticket, expires_in]

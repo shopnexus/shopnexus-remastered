@@ -101,6 +101,7 @@ type Service interface {
 	MarkNotificationsRead(ctx context.Context, req MarkNotificationsReadRequest) (UnreadCount, error)
 	GetNotificationPreferences(ctx context.Context, req GetNotificationPreferencesRequest) ([]NotificationPreference, error)
 	UpdateNotificationPreferences(ctx context.Context, req UpdateNotificationPreferencesRequest) ([]NotificationPreference, error)
+	CreateNotification(ctx context.Context, req CreateNotificationRequest) (Notification, error)
 
 	// --- follow graph ---
 	ListFollowing(ctx context.Context, req ListFollowingRequest) (Page[AccountSummary], error)

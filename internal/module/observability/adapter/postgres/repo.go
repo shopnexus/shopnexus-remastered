@@ -50,10 +50,10 @@ func (r *Repo) InsertBusinessEvents(ctx context.Context, samples []domain.Busine
 }
 
 func (r *Repo) InsertRuntimeMetrics(ctx context.Context, samples []domain.RuntimeSample) error {
-	cols := []string{"ts", "instance", "goroutines", "heap_alloc_bytes", "heap_inuse_bytes", "gc_pause_ms", "num_gc"}
+	cols := []string{"ts", "instance", "goroutines", "heap_alloc_bytes", "heap_inuse_bytes", "gc_pause_ms", "num_gc", "websocket_conns"}
 	rows := make([][]any, len(samples))
 	for i, s := range samples {
-		rows[i] = []any{s.TS, s.Instance, s.Goroutines, s.HeapAllocBytes, s.HeapInuseBytes, s.GCPauseMs, s.NumGC}
+		rows[i] = []any{s.TS, s.Instance, s.Goroutines, s.HeapAllocBytes, s.HeapInuseBytes, s.GCPauseMs, s.NumGC, s.WebSocketConns}
 	}
 	return r.copy(ctx, "runtime_metrics", cols, rows)
 }

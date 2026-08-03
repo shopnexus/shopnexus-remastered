@@ -1,0 +1,25 @@
+# Order's negotiation events. Both parties receive every one: the two sides of a
+# negotiation alternate, so either may have caused the change the other is watching for.
+components:
+  messages:
+    OfferUpdated:
+      name: order.offer_updated
+      title: Offer updated
+      summary: A negotiation's standing terms changed — countered, accepted, withdrawn or expired.
+      description: |
+        One message for every transition rather than one per kind: a client renders the
+        offer's current state and does not branch on how it got there.
+      contentType: application/json
+      payload:
+        type: object
+        required: [code, at, data]
+        properties:
+          code:
+            type: string
+            const: order.offer_updated
+          at:
+            type: string
+            format: date-time
+            example: '2026-08-03T11:17:04Z'
+          data:
+            $ref: '#/components/schemas/Offer'

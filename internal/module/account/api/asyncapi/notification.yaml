@@ -1,0 +1,28 @@
+# Account's realtime surface: the notification feed. One recipient by construction —
+# a notification row belongs to exactly one account.
+components:
+  messages:
+    NotificationCreated:
+      name: account.notification_created
+      title: Notification created
+      summary: A new row in your notification feed.
+      description: |
+        Only the in-app channel produces this. Push, email and SMS are dispatched
+        elsewhere and are not observable on the socket.
+
+        Carries the whole notification, so a client can render the feed entry and
+        increment its unread badge without a round trip.
+      contentType: application/json
+      payload:
+        type: object
+        required: [code, at, data]
+        properties:
+          code:
+            type: string
+            const: account.notification_created
+          at:
+            type: string
+            format: date-time
+            example: '2026-08-03T11:17:04Z'
+          data:
+            $ref: '#/components/schemas/Notification'

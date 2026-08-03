@@ -358,6 +358,7 @@ func (s *Service) ExpireOffers(ctx context.Context, limit int) (int, error) {
 			continue
 		}
 		s.postOfferCard(ctx, o, cardOfferExpired)
+		s.notifyOfferExpired(ctx, o)
 		closed++
 	}
 	return closed, nil
@@ -386,7 +387,20 @@ func (s *Service) ExpireOffer(ctx context.Context, offerID int64) error {
 		return nil
 	}
 	s.postOfferCard(ctx, o, cardOfferExpired)
+	s.notifyOfferExpired(ctx, o)
 	return nil
+}
+
+// notifyOfferExpired pushes the closed negotiation to both parties. There is no caller
+// here to resolve the currency as — a sweep or a durable run, not a request — so it is
+// resolved from the buyer's side, who can always see their own negotiation's listing.
+func (s *Service) notifyOfferExpired(ctx context.Context, o domain.Offer) {
+	dto, err := s.offerDTO(ctx, id.Of[id.Account](o.BuyerID), o)
+	if err != nil {
+		s.log.Warn("resolve offer currency for notify failed", "offer_id", o.ID, "err", err)
+		return
+	}
+	s.notifyOfferUpdated(ctx, o, dto)
 }
 
 // ReleaseDuePayouts pays the seller for every order whose escrow window has passed. The bulk

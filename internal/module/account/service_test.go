@@ -18,6 +18,7 @@ import (
 	oauthmock "shopnexus/internal/provider/oauth/mock"
 	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/id/idtest"
+	"shopnexus/internal/shared/realtime"
 	"shopnexus/internal/shared/session"
 	"shopnexus/internal/shared/token"
 )
@@ -71,9 +72,37 @@ func newHarness() *harness {
 	log := slog.New(slog.DiscardHandler)
 	notes := &fakeNotifier{}
 	svc := account.NewService(repo, sessions, tokens, c,
-		notes, oauthmock.NewVerifier(), kycmock.NewClient(), uploads, log)
+		notes, oauthmock.NewVerifier(), kycmock.NewClient(), uploads, log, noopFanout{})
 	return &harness{svc: svc, notes: notes, repo: repo, uploads: uploads, sessions: sessions, tokens: tokens, cache: c}
 }
+
+// newTestService is for a test that wants to seed or inspect a repo it built itself, rather
+// than the fresh one newHarness hides inside it.
+func newTestService(t *testing.T, repo *fakeRepo) *account.Service {
+	t.Helper()
+	return newTestServiceWithFanout(t, repo, noopFanout{})
+}
+
+// newTestServiceWithFanout is newTestService plus the one dependency a realtime test
+// wants to assert on, instead of the noop every other test gets.
+func newTestServiceWithFanout(t *testing.T, repo *fakeRepo, fanout realtime.Fanout) *account.Service {
+	t.Helper()
+	uploads := newFakeUploads()
+	c := cache.NewInMemoryClient()
+	sessions := session.New(c, time.Hour)
+	tokens := token.NewManager("0123456789012345678901234567890123", 15*time.Minute)
+	log := slog.New(slog.DiscardHandler)
+	notes := &fakeNotifier{}
+	return account.NewService(repo, sessions, tokens, c,
+		notes, oauthmock.NewVerifier(), kycmock.NewClient(), uploads, log, fanout)
+}
+
+// noopFanout is the fanout for tests that are not about realtime: it accepts every push
+// and drops it, so a command's happy path does not need a bus to run.
+type noopFanout struct{}
+
+func (noopFanout) Broadcast(string, []byte) error                   { return nil }
+func (noopFanout) OnBroadcast(string, func([]byte)) (func(), error) { return func() {}, nil }
 
 func registerRequest() accountapi.RegisterRequest {
 	return accountapi.RegisterRequest{

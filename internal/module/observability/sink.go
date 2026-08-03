@@ -21,6 +21,13 @@ var (
 	runtimeTopic  = eventbus.NewTopic[domain.RuntimeSample]("telemetry.runtime_metrics")
 )
 
+// wsPath is the realtime socket's route, seen here without the API base path — the
+// router mounts paths unprefixed and strips the prefix before this middleware runs. A
+// socket held for minutes would otherwise enter http_requests_1m as a minutes-long
+// request and make approx_percentile(0.95, "latency") meaningless; Middleware excludes
+// it and the connection count is sampled separately (see ConnCounter).
+const wsPath = "/ws"
+
 // Sink records telemetry by publishing samples to the event bus; the writer
 // batches them into TimescaleDB. Publishing is asynchronous and best-effort, so
 // the request path never waits on the bus or the database — and because
@@ -81,7 +88,7 @@ func (s *Sink) RecordEvent(topic string, payload []byte) {
 }
 
 // RecordRuntime publishes one Go runtime sample.
-func (s *Sink) RecordRuntime(goroutines int, heapAlloc, heapInuse uint64, gcPauseMs float64, numGC uint64) {
+func (s *Sink) RecordRuntime(goroutines int, heapAlloc, heapInuse uint64, gcPauseMs float64, numGC uint64, wsConns int) {
 	publish(s, runtimeTopic, domain.RuntimeSample{
 		TS:             time.Now(),
 		Instance:       s.instance,
@@ -90,6 +97,7 @@ func (s *Sink) RecordRuntime(goroutines int, heapAlloc, heapInuse uint64, gcPaus
 		HeapInuseBytes: int64(heapInuse),
 		GCPauseMs:      gcPauseMs,
 		NumGC:          int64(numGC),
+		WebSocketConns: wsConns,
 	})
 }
 

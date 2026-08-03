@@ -55,6 +55,17 @@ func (c Conversation) Counterparty(accountID int64) int64 {
 	return c.AccountAID
 }
 
+// Other is the participant who is not actorID, or 0 when actorID is not in this
+// conversation at all — a moderator acting on a report, say. Realtime addressing needs
+// that distinction Counterparty does not make: sending to AccountAID for an outsider would
+// notify a bystander of nothing they did.
+func (c Conversation) Other(actorID int64) int64 {
+	if !c.Involves(actorID) {
+		return 0
+	}
+	return c.Counterparty(actorID)
+}
+
 // ReadMark is the caller's own mark, and CounterpartyReadMark the other side's — which is
 // what a read receipt compares a message's time against.
 func (c Conversation) ReadMark(accountID int64) *time.Time {

@@ -9,6 +9,7 @@ import (
 
 	"shopnexus/internal/config"
 	"shopnexus/internal/infra/durable"
+	"shopnexus/internal/infra/eventbus"
 	"shopnexus/internal/infra/postgres"
 	accountpg "shopnexus/internal/module/account/adapter/postgres"
 	accountapi "shopnexus/internal/module/account/api"
@@ -17,6 +18,7 @@ import (
 	"shopnexus/internal/module/common/dbx"
 	"shopnexus/internal/module/common/uploads"
 	"shopnexus/internal/provider/storage"
+	"shopnexus/internal/shared/realtime"
 )
 
 // Module wires the account service, its Postgres-backed repository, and the uploads an
@@ -34,12 +36,19 @@ var Module = fx.Module("account",
 		newPool,
 		newUploads,
 		fx.Annotate(func(s *uploads.Store) common.Uploads { return s }),
+		// NewService takes the realtime.Fanout interface, so it can be tested without a
+		// bus; wiring it needs the concrete *eventbus.NATS, never eventbus.Client — that
+		// interface is the Redis domain-event bus and has no Broadcast at all.
+		fx.Annotate(func(bus *eventbus.NATS) realtime.Fanout { return bus }),
 	),
 	fx.Provide(
 		fx.Annotate(newRepo, fx.As(new(port.Repository))),
 		fx.Annotate(newUploadSweep, fx.ResultTags(`group:"sweeps"`)),
 		fx.Annotate(NewService, fx.As(new(accountapi.Service))),
 	),
+	// Eager, because nothing else in the graph depends on a subscription: without it the bus
+	// would have no consumer and an order fact would never become a feed row.
+	fx.Invoke(SubscribeOrderEvents),
 )
 
 func newPool(lc fx.Lifecycle, cfg *config.Config) (*pgxpool.Pool, error) {

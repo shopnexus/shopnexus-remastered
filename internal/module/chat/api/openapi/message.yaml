@@ -194,3 +194,41 @@ components:
       properties:
         body: { type: string, minLength: 1, maxLength: 4000 }
       required: [body]
+
+    DeletedMessageRef:
+      type: object
+      description: |
+        Enough to find and drop a message from a rendered thread. Not the whole
+        Message: a deleted row's body is gone, and sending an emptied entity would
+        read as an edit.
+      required: [id, conversation_id, created_at]
+      properties:
+        id:
+          type: string
+          description: Opaque message id.
+          example: msg_2h9qk4mfx7bd3
+        conversation_id:
+          type: string
+          example: cnv_7bd32h9qk4mfx
+        created_at:
+          type: string
+          format: date-time
+          description: The message's own instant — the hypertable needs it to locate the row.
+          example: '2026-08-03T11:16:02Z'
+
+    ConversationReadMark:
+      type: object
+      description: How far one participant has read a thread.
+      required: [conversation_id, reader_id, read_at]
+      properties:
+        conversation_id:
+          type: string
+          example: cnv_7bd32h9qk4mfx
+        reader_id:
+          type: string
+          description: Who read it — always the other participant, never the recipient.
+          example: acc_4mfx7bd32h9qk
+        read_at:
+          type: string
+          format: date-time
+          example: '2026-08-03T11:17:04Z'

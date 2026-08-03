@@ -62,6 +62,32 @@ func (c *InMemoryCache) Get(ctx context.Context, key string, dest any) error {
 	return c.copyValue(item.value, dest)
 }
 
+func (c *InMemoryCache) GetDel(ctx context.Context, key string, dest any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	item, exists := c.items[key]
+	if !exists {
+		return ErrCacheMiss
+	}
+
+	if item.isExpired() {
+		delete(c.items, key)
+		return ErrCacheMiss
+	}
+
+	// One critical section covering both halves — the point of the method.
+	if err := c.copyValue(item.value, dest); err != nil {
+		return err
+	}
+	delete(c.items, key)
+	return nil
+}
+
 func (c *InMemoryCache) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
 	if err := ctx.Err(); err != nil {
 		return err

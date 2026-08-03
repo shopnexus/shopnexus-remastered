@@ -109,6 +109,17 @@ func ResolvePreferences(stored []Preference) []EffectivePreference {
 	return out
 }
 
+// Enabled answers whether one category/channel pair is on, given the sparse stored
+// rows: no row means the product default.
+func Enabled(stored []Preference, c Category, ch Channel) bool {
+	for _, p := range stored {
+		if p.Category == c && p.Channel == ch {
+			return p.IsEnabled
+		}
+	}
+	return DefaultPreference(c, ch)
+}
+
 // SplitPreferences sorts a requested change into rows to store and rows to delete:
 // a pair set back to its default deletes the row rather than storing the default
 // again, which is what keeps the table sparse and the defaults changeable.
@@ -121,4 +132,39 @@ func SplitPreferences(want []Preference) (store, remove []Preference) {
 		store = append(store, p)
 	}
 	return store, remove
+}
+
+// NewNotificationParams is a struct rather than positional arguments: four of the
+// fields are strings or maps and would transpose without a compile error.
+type NewNotificationParams struct {
+	AccountID int64
+	Category  Category
+	Title     string
+	Payload   map[string]any
+	// ScheduledAt is a future dispatch time; nil means it goes out now.
+	ScheduledAt *time.Time
+}
+
+// NewNotification validates a notification and stamps its creation instant.
+func NewNotification(p NewNotificationParams) (Notification, error) {
+	if p.AccountID == 0 || p.Title == "" || !validCategory(p.Category) {
+		return Notification{}, ErrNotificationInvalid
+	}
+	return Notification{
+		AccountID:   p.AccountID,
+		Category:    p.Category,
+		Title:       p.Title,
+		Payload:     p.Payload,
+		CreatedAt:   time.Now(),
+		ScheduledAt: p.ScheduledAt,
+	}, nil
+}
+
+func validCategory(c Category) bool {
+	for _, known := range Categories {
+		if known == c {
+			return true
+		}
+	}
+	return false
 }

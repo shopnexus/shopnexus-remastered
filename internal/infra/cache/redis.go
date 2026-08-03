@@ -58,6 +58,27 @@ func (r *RedisClient) Get(ctx context.Context, key string, dest any) error {
 	return nil
 }
 
+func (r *RedisClient) GetDel(ctx context.Context, key string, dest any) error {
+	resp := r.Client.Do(ctx, r.Client.B().Getdel().Key(key).Build())
+	if err := resp.Error(); err != nil {
+		if errors.Is(err, rueidis.Nil) {
+			return ErrCacheMiss
+		}
+		return fmt.Errorf("getdel redis key %s: %w", key, err)
+	}
+
+	str, err := resp.ToString()
+	if err != nil {
+		return fmt.Errorf("read redis value for %s: %w", key, err)
+	}
+
+	if err = json.Unmarshal([]byte(str), dest); err != nil {
+		return fmt.Errorf("decode cache value for %s: %w", key, err)
+	}
+
+	return nil
+}
+
 func (r *RedisClient) Delete(ctx context.Context, key string) error {
 	if err := r.Client.Do(ctx, r.Client.B().Del().Key(key).Build()).Error(); err != nil {
 		return fmt.Errorf("delete redis key %s: %w", key, err)

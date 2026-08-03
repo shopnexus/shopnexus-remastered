@@ -41,13 +41,7 @@ func (s *Service) ListNotifications(ctx context.Context, req accountapi.ListNoti
 	}
 	out := make([]accountapi.Notification, 0, len(rows))
 	for _, n := range rows {
-		out = append(out, accountapi.Notification{
-			Category:  string(n.Category),
-			Title:     n.Title,
-			Payload:   n.Payload,
-			ReadAt:    n.ReadAt,
-			CreatedAt: n.CreatedAt,
-		})
+		out = append(out, toAPINotification(n))
 	}
 	return accountapi.Cursor[accountapi.Notification]{Data: out, NextCursor: next}, nil
 }
@@ -97,6 +91,57 @@ func (s *Service) UpdateNotificationPreferences(ctx context.Context, req account
 		return nil, fmt.Errorf("save notification preferences: %w", err)
 	}
 	return s.GetNotificationPreferences(ctx, accountapi.GetNotificationPreferencesRequest{ActorID: req.ActorID})
+}
+
+// CreateNotification records one in-app notification, if the account wants it there.
+//
+// Only the in-app channel is written: it is the one this module owns a table for.
+// Push, email and SMS are a workflow's problem, and a row that stood for "we tried
+// to email you" would be a second, weaker definition of the feed.
+func (s *Service) CreateNotification(ctx context.Context, req accountapi.CreateNotificationRequest) (accountapi.Notification, error) {
+	accountID := req.AccountID.Int64()
+	category := domain.Category(req.Category)
+
+	// Validated before the preference lookup: an unknown category must answer
+	// ErrNotificationInvalid, not silently read as "off" the way DefaultPreference
+	// treats any pair it does not recognise.
+	n, err := domain.NewNotification(domain.NewNotificationParams{
+		AccountID: accountID,
+		Category:  category,
+		Title:     req.Title,
+		Payload:   req.Payload,
+	})
+	if err != nil {
+		return accountapi.Notification{}, err
+	}
+
+	stored, err := s.repo.ListPreferences(ctx, accountID)
+	if err != nil {
+		return accountapi.Notification{}, fmt.Errorf("read notification preferences: %w", err)
+	}
+	if !domain.Enabled(stored, category, domain.ChannelInApp) {
+		return accountapi.Notification{}, nil
+	}
+
+	insertedID, err := s.repo.InsertNotification(ctx, n)
+	if err != nil {
+		return accountapi.Notification{}, fmt.Errorf("insert notification: %w", err)
+	}
+	n.ID = insertedID
+
+	dto := toAPINotification(n)
+	notifyRealtime(ctx, s, accountID, NotificationCreated, dto)
+	return dto, nil
+}
+
+func toAPINotification(n domain.Notification) accountapi.Notification {
+	return accountapi.Notification{
+		Category:  string(n.Category),
+		Title:     n.Title,
+		Payload:   n.Payload,
+		ReadAt:    n.ReadAt,
+		CreatedAt: n.CreatedAt,
+	}
 }
 
 func toAPIPreferences(rows []domain.EffectivePreference) []accountapi.NotificationPreference {

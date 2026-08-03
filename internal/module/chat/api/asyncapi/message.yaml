@@ -1,0 +1,81 @@
+# Chat's realtime surface. A message event goes to the conversation's *other*
+# participant only: the sender already holds the row from the mutation response, and
+# echoing it back would race their optimistic update.
+components:
+  messages:
+    MessageCreated:
+      name: chat.message_created
+      title: Message created
+      summary: Somebody sent a message in a conversation you are part of.
+      contentType: application/json
+      payload:
+        type: object
+        required: [code, at, data]
+        properties:
+          code:
+            type: string
+            const: chat.message_created
+          at:
+            type: string
+            format: date-time
+            description: When the backend published the event, not when the row was written.
+            example: '2026-08-03T11:17:04Z'
+          data:
+            $ref: '#/components/schemas/Message'
+
+    MessageUpdated:
+      name: chat.message_updated
+      title: Message edited
+      summary: The other participant edited a message; body and edited_at changed.
+      contentType: application/json
+      payload:
+        type: object
+        required: [code, at, data]
+        properties:
+          code:
+            type: string
+            const: chat.message_updated
+          at:
+            type: string
+            format: date-time
+            example: '2026-08-03T11:17:04Z'
+          data:
+            $ref: '#/components/schemas/Message'
+
+    MessageDeleted:
+      name: chat.message_deleted
+      title: Message deleted
+      summary: The other participant deleted a message.
+      contentType: application/json
+      payload:
+        type: object
+        required: [code, at, data]
+        properties:
+          code:
+            type: string
+            const: chat.message_deleted
+          at:
+            type: string
+            format: date-time
+            example: '2026-08-03T11:17:04Z'
+          data:
+            $ref: '#/components/schemas/DeletedMessageRef'
+
+    ConversationRead:
+      name: chat.conversation_read
+      title: Conversation read
+      summary: The other participant read the thread up to an instant.
+      contentType: application/json
+      payload:
+        type: object
+        required: [code, at, data]
+        properties:
+          code:
+            type: string
+            const: chat.conversation_read
+          at:
+            type: string
+            format: date-time
+            example: '2026-08-03T11:17:04Z'
+          data:
+            $ref: '#/components/schemas/ConversationReadMark'

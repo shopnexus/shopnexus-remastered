@@ -33,6 +33,7 @@ type Deps struct {
 	Finance  *handler.Finance
 	Order    *handler.Order
 	Trust    *handler.Trust
+	WS       *handler.WS
 	// Uploads is nil unless the storage backend needs this process to serve the bytes — the
 	// `local` one does, a real bucket does not.
 	Uploads  *handler.Uploads `optional:"true"`
@@ -72,6 +73,7 @@ func NewRouter(d Deps) http.Handler {
 	// API docs (OpenAPI spec + Swagger UI)
 	mux.HandleFunc("GET /openapi.yaml", openapi.SpecHandler)
 	mux.HandleFunc("GET /docs", openapi.DocsHandler)
+	mux.HandleFunc("GET /asyncapi.yaml", openapi.AsyncAPISpecHandler)
 
 	// ---- account ----
 	// Public
@@ -121,6 +123,12 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("DELETE /admin/moderators/{id}", auth(http.HandlerFunc(d.Account.AdminRevokeModerator)))
 	mux.Handle("GET /admin/identity-documents", auth(http.HandlerFunc(d.Account.AdminListIdentityDocuments)))
 	mux.Handle("POST /admin/identity-documents/{id}/verdict", auth(http.HandlerFunc(d.Account.AdminRecordIdentityVerdict)))
+
+	// ---- realtime ----
+	mux.Handle("POST /ws/tickets", auth(http.HandlerFunc(d.WS.CreateTicket)))
+	// Deliberately not wrapped in auth: the credential is a ticket in the query string,
+	// because a browser cannot set a header on new WebSocket().
+	mux.HandleFunc("GET /ws", d.WS.Connect)
 
 	// ---- catalog ----
 	// Public
