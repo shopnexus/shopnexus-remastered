@@ -157,6 +157,10 @@ func (Stub) UpdateNotificationPreferences(context.Context, accountapi.UpdateNoti
 	return nil, errx.ErrNotImplemented
 }
 
+func (Stub) CreateNotification(context.Context, accountapi.CreateNotificationRequest) (accountapi.Notification, error) {
+	return accountapi.Notification{}, errx.ErrNotImplemented
+}
+
 func (Stub) ListFollowing(context.Context, accountapi.ListFollowingRequest) (accountapi.Page[accountapi.AccountSummary], error) {
 	return accountapi.Page[accountapi.AccountSummary]{}, errx.ErrNotImplemented
 }

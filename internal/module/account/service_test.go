@@ -75,6 +75,20 @@ func newHarness() *harness {
 	return &harness{svc: svc, notes: notes, repo: repo, uploads: uploads, sessions: sessions, tokens: tokens, cache: c}
 }
 
+// newTestService is for a test that wants to seed or inspect a repo it built itself, rather
+// than the fresh one newHarness hides inside it.
+func newTestService(t *testing.T, repo *fakeRepo) *account.Service {
+	t.Helper()
+	uploads := newFakeUploads()
+	c := cache.NewInMemoryClient()
+	sessions := session.New(c, time.Hour)
+	tokens := token.NewManager("0123456789012345678901234567890123", 15*time.Minute)
+	log := slog.New(slog.DiscardHandler)
+	notes := &fakeNotifier{}
+	return account.NewService(repo, sessions, tokens, c,
+		notes, oauthmock.NewVerifier(), kycmock.NewClient(), uploads, log)
+}
+
 func registerRequest() accountapi.RegisterRequest {
 	return accountapi.RegisterRequest{
 		Email:    "alice@example.com",

@@ -109,6 +109,17 @@ func ResolvePreferences(stored []Preference) []EffectivePreference {
 	return out
 }
 
+// Enabled answers whether one category/channel pair is on, given the sparse stored
+// rows: no row means the product default.
+func Enabled(stored []Preference, c Category, ch Channel) bool {
+	for _, p := range stored {
+		if p.Category == c && p.Channel == ch {
+			return p.IsEnabled
+		}
+	}
+	return DefaultPreference(c, ch)
+}
+
 // SplitPreferences sorts a requested change into rows to store and rows to delete:
 // a pair set back to its default deletes the row rather than storing the default
 // again, which is what keeps the table sparse and the defaults changeable.
