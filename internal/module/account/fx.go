@@ -40,6 +40,9 @@ var Module = fx.Module("account",
 		fx.Annotate(newUploadSweep, fx.ResultTags(`group:"sweeps"`)),
 		fx.Annotate(NewService, fx.As(new(accountapi.Service))),
 	),
+	// Eager, because nothing else in the graph depends on a subscription: without it the bus
+	// would have no consumer and an order fact would never become a feed row.
+	fx.Invoke(SubscribeOrderEvents),
 )
 
 func newPool(lc fx.Lifecycle, cfg *config.Config) (*pgxpool.Pool, error) {
