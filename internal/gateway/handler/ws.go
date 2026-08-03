@@ -122,11 +122,19 @@ func (h *WS) Connect(w http.ResponseWriter, r *http.Request) {
 	// over REST.
 	ctx := conn.CloseRead(r.Context())
 
-	h.pump(ctx, conn, client, accountID)
+	h.pump(ctx, conn, client, accountID, sessionID)
 }
 
-// pump writes envelopes and keeps the connection alive.
-func (h *WS) pump(ctx context.Context, conn *websocket.Conn, client *ws.Client, accountID int64) {
+// pump writes envelopes, keeps the connection alive, and keeps checking that the session
+// behind it is still valid.
+//
+// The session check is the reason sessionID travels this far. Checking it only at the
+// handshake would make the socket the one authenticated surface a revocation cannot reach:
+// a 15-minute token buys a connection that outlives a logout, a password change or a
+// suspension for as long as the tab stays open, still delivering message bodies and offer
+// terms. One Redis GET per socket per ping interval is strictly cheaper than the one
+// middleware.Auth already pays on every request, and it buys the same guarantee.
+func (h *WS) pump(ctx context.Context, conn *websocket.Conn, client *ws.Client, accountID int64, sessionID string) {
 	ping := time.NewTicker(h.pingInterval)
 	defer ping.Stop()
 
@@ -136,15 +144,17 @@ func (h *WS) pump(ctx context.Context, conn *websocket.Conn, client *ws.Client, 
 			return
 
 		case <-client.Done():
-			// The hub dropped us — almost always because this socket fell behind. Say so
-			// rather than vanishing, so a client can log it and reconnect knowingly.
-			_ = conn.Close(websocket.StatusPolicyViolation, "client too slow")
+			// The hub dropped us for falling behind. CloseNow rather than a graceful close:
+			// Close waits out a close handshake, and a peer that overflowed its buffer is by
+			// definition not reading, so the reason would not arrive and this goroutine and
+			// its descriptor would park for seconds. The client notices the severed socket
+			// and reconnects, which is the outcome either way.
+			if err := conn.CloseNow(); err != nil && !isClosed(err) {
+				h.log.Debug("closing slow websocket", "account_id", accountID, "err", err)
+			}
 			return
 
-		case payload, ok := <-client.Out():
-			if !ok {
-				return
-			}
+		case payload := <-client.Out():
 			if err := h.write(ctx, conn, payload); err != nil {
 				if !isClosed(err) {
 					h.log.Debug("websocket write failed", "account_id", accountID, "err", err)
@@ -159,6 +169,19 @@ func (h *WS) pump(ctx context.Context, conn *websocket.Conn, client *ws.Client, 
 			err := conn.Ping(pingCtx)
 			cancel()
 			if err != nil {
+				return
+			}
+
+			// Revoked, expired, or superseded by an epoch bump — the reasons are
+			// deliberately indistinguishable, and all of them end the stream.
+			//
+			// A graceful Close here, unlike the slow-consumer path: this peer is reading
+			// fine, so it gets the reason promptly and can stop retrying with a credential
+			// that will not work.
+			if _, err := h.sessions.Lookup(ctx, sessionID); err != nil {
+				h.log.Info("closing websocket: session no longer valid",
+					"account_id", accountID, "err", err)
+				_ = conn.Close(websocket.StatusPolicyViolation, "session ended")
 				return
 			}
 		}

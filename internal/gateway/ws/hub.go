@@ -34,18 +34,23 @@ type Client struct {
 	closeOnce sync.Once
 }
 
-// Out yields envelopes to write to the socket. It is closed when the client is
-// dropped, so a write pump can range over it.
+// Out yields envelopes to write to the socket. It is never closed — Done is the single
+// signal that this client is finished, so a pump selecting on both cannot be handed two
+// ready cases at once and pick the uninformative one at random.
 func (c *Client) Out() <-chan []byte { return c.out }
 
 // Done is closed when the hub drops this client — because it fell behind, or because
 // Leave was called. A write pump selects on it to stop promptly.
 func (c *Client) Done() <-chan struct{} { return c.done }
 
+// close marks the client finished. It closes only done: closing out as well would make a
+// dropped client's pump take either branch with equal probability, so the close frame
+// explaining why it was dropped would be sent only about half the time. Nothing ranges
+// over out, and no send can follow — removal from the account's set and the non-blocking
+// send both happen under the hub's mutex.
 func (c *Client) close() {
 	c.closeOnce.Do(func() {
 		close(c.done)
-		close(c.out)
 	})
 }
 
