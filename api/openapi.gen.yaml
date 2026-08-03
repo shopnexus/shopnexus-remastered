@@ -698,6 +698,25 @@ components:
                 - data
                 - meta
             type: object
+        ConversationReadMark:
+            description: How far one participant has read a thread.
+            properties:
+                conversation_id:
+                    example: cnv_7bd32h9qk4mfx
+                    type: string
+                read_at:
+                    example: "2026-08-03T11:17:04Z"
+                    format: date-time
+                    type: string
+                reader_id:
+                    description: Who read it — always the other participant, never the recipient.
+                    example: acc_4mfx7bd32h9qk
+                    type: string
+            required:
+                - conversation_id
+                - reader_id
+                - read_at
+            type: object
         CreateBankAccountRequest:
             properties:
                 account_holder:
@@ -1022,6 +1041,29 @@ components:
                     type: string
             required:
                 - next_cursor
+            type: object
+        DeletedMessageRef:
+            description: |
+                Enough to find and drop a message from a rendered thread. Not the whole
+                Message: a deleted row's body is gone, and sending an emptied entity would
+                read as an edit.
+            properties:
+                conversation_id:
+                    example: cnv_7bd32h9qk4mfx
+                    type: string
+                created_at:
+                    description: The message's own instant — the hypertable needs it to locate the row.
+                    example: "2026-08-03T11:16:02Z"
+                    format: date-time
+                    type: string
+                id:
+                    description: Opaque message id.
+                    example: msg_2h9qk4mfx7bd3
+                    type: string
+            required:
+                - id
+                - conversation_id
+                - created_at
             type: object
         Device:
             properties:

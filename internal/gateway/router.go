@@ -72,6 +72,7 @@ func NewRouter(d Deps) http.Handler {
 	// API docs (OpenAPI spec + Swagger UI)
 	mux.HandleFunc("GET /openapi.yaml", openapi.SpecHandler)
 	mux.HandleFunc("GET /docs", openapi.DocsHandler)
+	mux.HandleFunc("GET /asyncapi.yaml", openapi.AsyncAPISpecHandler)
 
 	// ---- account ----
 	// Public
