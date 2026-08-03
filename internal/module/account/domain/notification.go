@@ -122,3 +122,38 @@ func SplitPreferences(want []Preference) (store, remove []Preference) {
 	}
 	return store, remove
 }
+
+// NewNotificationParams is a struct rather than positional arguments: four of the
+// fields are strings or maps and would transpose without a compile error.
+type NewNotificationParams struct {
+	AccountID int64
+	Category  Category
+	Title     string
+	Payload   map[string]any
+	// ScheduledAt is a future dispatch time; nil means it goes out now.
+	ScheduledAt *time.Time
+}
+
+// NewNotification validates a notification and stamps its creation instant.
+func NewNotification(p NewNotificationParams) (Notification, error) {
+	if p.AccountID == 0 || p.Title == "" || !validCategory(p.Category) {
+		return Notification{}, ErrNotificationInvalid
+	}
+	return Notification{
+		AccountID:   p.AccountID,
+		Category:    p.Category,
+		Title:       p.Title,
+		Payload:     p.Payload,
+		CreatedAt:   time.Now(),
+		ScheduledAt: p.ScheduledAt,
+	}, nil
+}
+
+func validCategory(c Category) bool {
+	for _, known := range Categories {
+		if known == c {
+			return true
+		}
+	}
+	return false
+}
