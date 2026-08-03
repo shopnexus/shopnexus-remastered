@@ -30,6 +30,12 @@ channels:
                 $ref: '#/components/messages/MessageDeleted'
             MessageUpdated:
                 $ref: '#/components/messages/MessageUpdated'
+            OfferUpdated:
+                $ref: '#/components/messages/OfferUpdated'
+            OrderPlaced:
+                $ref: '#/components/messages/OrderPlaced'
+            OrderSettled:
+                $ref: '#/components/messages/OrderSettled'
         title: Per-account event stream
 components:
     messages:
@@ -118,6 +124,76 @@ components:
                 type: object
             summary: The other participant edited a message; body and edited_at changed.
             title: Message edited
+        OfferUpdated:
+            contentType: application/json
+            description: |
+                One message for every transition rather than one per kind: a client renders the
+                offer's current state and does not branch on how it got there.
+            name: order.offer_updated
+            payload:
+                properties:
+                    at:
+                        example: "2026-08-03T11:17:04Z"
+                        format: date-time
+                        type: string
+                    code:
+                        const: order.offer_updated
+                        type: string
+                    data:
+                        $ref: '#/components/schemas/Offer'
+                required:
+                    - code
+                    - at
+                    - data
+                type: object
+            summary: A negotiation's standing terms changed — countered, accepted, withdrawn or expired.
+            title: Offer updated
+        OrderPlaced:
+            contentType: application/json
+            description: |
+                Carries the order's id and nothing else. The two sides see different projections
+                of an order, so pushing the entity would mean choosing whose view to send; each
+                client re-reads its own over REST.
+            name: order.placed
+            payload:
+                properties:
+                    at:
+                        example: "2026-08-03T11:17:04Z"
+                        format: date-time
+                        type: string
+                    code:
+                        const: order.placed
+                        type: string
+                    data:
+                        $ref: '#/components/schemas/OrderRef'
+                required:
+                    - code
+                    - at
+                    - data
+                type: object
+            summary: A paid checkout became an order. Sent to buyer and seller.
+            title: Order placed
+        OrderSettled:
+            contentType: application/json
+            name: order.settled
+            payload:
+                properties:
+                    at:
+                        example: "2026-08-03T11:17:04Z"
+                        format: date-time
+                        type: string
+                    code:
+                        const: order.settled
+                        type: string
+                    data:
+                        $ref: '#/components/schemas/OrderRef'
+                required:
+                    - code
+                    - at
+                    - data
+                type: object
+            summary: Escrow closed and the payout was released. Sent to buyer and seller.
+            title: Order settled
     schemas:
         AccountID:
             example: acc_62mxefynht57b
@@ -146,6 +222,14 @@ components:
                 - reader_id
                 - read_at
             type: object
+        CurrencyCode:
+            description: |
+                ISO 4217. Never inferred from the account's country — one currency spans many countries, and a seller may want a balance in a foreign one.
+            example: VND
+            maxLength: 3
+            minLength: 3
+            pattern: ^[A-Z]{3}$
+            type: string
         DeletedMessageRef:
             description: |
                 Enough to find and drop a message from a rendered thread. Not the whole
@@ -169,6 +253,10 @@ components:
                 - conversation_id
                 - created_at
             type: object
+        ListingID:
+            example: lst_5y5w68r4918v8
+            pattern: ^lst_[0-9a-hjkmnp-tv-z]{13}$
+            type: string
         Message:
             properties:
                 attachments:
@@ -233,6 +321,87 @@ components:
                 - user
                 - system
             type: string
+        Offer:
+            properties:
+                author_id:
+                    $ref: '#/components/schemas/AccountID'
+                buyer_id:
+                    $ref: '#/components/schemas/AccountID'
+                created_at:
+                    format: date-time
+                    type: string
+                currency:
+                    $ref: '#/components/schemas/CurrencyCode'
+                expires_at:
+                    format: date-time
+                    type: string
+                id:
+                    $ref: '#/components/schemas/OfferID'
+                listing_id:
+                    allOf:
+                        - $ref: '#/components/schemas/ListingID'
+                    description: The listing whose card the offer is shown on.
+                quantity:
+                    example: 2
+                    format: int64
+                    minimum: 1
+                    type: integer
+                reason:
+                    description: Shown on the offer card beside the proposed price
+                    type: string
+                seller_id:
+                    $ref: '#/components/schemas/AccountID'
+                status:
+                    $ref: '#/components/schemas/OfferStatus'
+                total:
+                    description: Currently proposed total, smallest currency unit
+                    example: 598000
+                    format: int64
+                    minimum: 1
+                    type: integer
+                variant_id:
+                    $ref: '#/components/schemas/VariantID'
+            required:
+                - id
+                - listing_id
+                - variant_id
+                - buyer_id
+                - seller_id
+                - author_id
+                - status
+                - quantity
+                - total
+                - currency
+                - created_at
+                - expires_at
+            type: object
+        OfferID:
+            example: ofr_ptz3n8kvq1wd6
+            pattern: ^ofr_[0-9a-hjkmnp-tv-z]{13}$
+            type: string
+        OfferStatus:
+            description: |
+                `active` — a proposal waiting for the other side. `accepted` — agreed, the price frozen for a short window while the buyer creates the order. `checked-out` — the buyer's payment session is open, so these terms are off the table. `cancelled` — withdrawn or lapsed.
+            enum:
+                - active
+                - accepted
+                - checked-out
+                - cancelled
+            example: accepted
+            type: string
+        OrderID:
+            example: ord_fv2cpg50vkrfp
+            pattern: ^ord_[0-9a-hjkmnp-tv-z]{13}$
+            type: string
+        OrderRef:
+            description: |
+                An order's id alone, as carried by a realtime event: the two sides of a sale see different projections of an order, so pushing the entity would mean choosing whose view to send — each client re-reads its own over REST.
+            properties:
+                id:
+                    $ref: '#/components/schemas/OrderID'
+            required:
+                - id
+            type: object
         Resource:
             properties:
                 checksum:
@@ -277,6 +446,10 @@ components:
         ResourceID:
             example: res_4mx8jd2qr5wtc
             pattern: ^res_[0-9a-hjkmnp-tv-z]{13}$
+            type: string
+        VariantID:
+            example: vrn_vq1wd6ptz3n8k
+            pattern: ^vrn_[0-9a-hjkmnp-tv-z]{13}$
             type: string
 info:
     description: |

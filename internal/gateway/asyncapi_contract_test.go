@@ -18,6 +18,9 @@ var wantCodes = []string{
 	"chat.message_created",
 	"chat.message_deleted",
 	"chat.message_updated",
+	"order.offer_updated",
+	"order.placed",
+	"order.settled",
 }
 
 func TestAsyncAPIMessageCodes(t *testing.T) {

@@ -2296,6 +2296,15 @@ components:
                 - data
                 - meta
             type: object
+        OrderRef:
+            description: |
+                An order's id alone, as carried by a realtime event: the two sides of a sale see different projections of an order, so pushing the entity would mean choosing whose view to send — each client re-reads its own over REST.
+            properties:
+                id:
+                    $ref: '#/components/schemas/OrderID'
+            required:
+                - id
+            type: object
         OrderState:
             description: |
                 Derived from the two outcome timestamps: `open` means neither is set, which is also the predicate of the partial indexes behind this filter.

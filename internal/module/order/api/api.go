@@ -152,6 +152,13 @@ type OrderPage struct {
 	Meta CursorInfo `json:"meta"`
 }
 
+// OrderRef names an order without its contents. It is what a realtime event carries: the
+// two sides of a sale see different projections of an order, so pushing the entity would
+// mean deciding whose view to send — the id lets each client fetch its own.
+type OrderRef struct {
+	ID id.ID[id.Order] `json:"id"`
+}
+
 type AddressSnapshot struct {
 	FullName      string  `json:"full_name"`
 	Phone         string  `json:"phone"`

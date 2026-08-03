@@ -14,6 +14,7 @@ import (
 	"shopnexus/internal/gateway/ws"
 	"shopnexus/internal/infra/eventbus"
 	"shopnexus/internal/module/observability"
+	"shopnexus/internal/shared/realtime"
 	"shopnexus/internal/shared/session"
 )
 
@@ -38,8 +39,10 @@ var Module = fx.Module("gateway",
 		// because several of them mount on it and the router mounts the result.
 		newWebhookMux,
 		newRouter,
+		newFanout,
 	),
 	fx.Invoke(startServer),
+	fx.Invoke(BridgeOrderEvents),
 )
 
 // newHub takes the concrete *eventbus.NATS, not eventbus.Client. Both buses satisfy
@@ -57,6 +60,11 @@ func newWSHandler(hub *ws.Hub, tickets *session.Tickets, sessions *session.Store
 	return handler.NewWS(hub, tickets, sessions, log,
 		cfg.WSWriteTimeout, cfg.WSPingInterval, cfg.WSAllowedOrigins)
 }
+
+// newFanout is the socket's transport, the concrete NATS bus. Providing the interface
+// separately is what lets BridgeOrderEvents and the hub both take it without either
+// naming infra.
+func newFanout(bus *eventbus.NATS) realtime.Fanout { return bus }
 
 // newConnCounter feeds the hub's live socket count into the runtime sampler.
 func newConnCounter(hub *ws.Hub) observability.ConnCounter { return hub.Count }
