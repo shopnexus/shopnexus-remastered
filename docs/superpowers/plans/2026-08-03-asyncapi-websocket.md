@@ -5082,13 +5082,14 @@ cat src/api/generated/ws-events.ts
 
 Expected: eight union members, `REALTIME_CODES` with eight entries, imports of `Message`, `DeletedMessageRef`, `ConversationReadMark`, `Offer`, `OrderRef`, `Notification`.
 
-- [ ] **Step 7: Confirm it is gitignored like its siblings**
+- [ ] **Step 7: Commit it, because the generated client is tracked here**
 
 ```bash
-git check-ignore -v src/api/generated/ws-events.ts
+git ls-files src/api/generated | wc -l   # 17 — the generated client IS tracked
+git check-ignore -v src/api/generated/ws-events.ts || echo "not ignored, so commit it"
 ```
 
-Expected: a match on the `src/api/generated` rule. If `.gitignore` covers the directory, nothing to do. If it lists files individually, add `src/api/generated/ws-events.ts`.
+`.gitignore` has no `generated` entry, so every file under `src/api/generated/` is committed and `ws-events.ts` must be too. Note that `openapi-ts.config.ts:9`'s comment claims the output "is gitignored" — that is false and predates this work; correct it while you are editing that file.
 
 - [ ] **Step 8: Typecheck**
 
