@@ -7,6 +7,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -o /out/gateway ./cmd/gateway \
  && CGO_ENABLED=0 go build -o /out/migrate ./cmd/migrate \
+ && CGO_ENABLED=0 go build -o /out/embedder ./cmd/embedder \
  && CGO_ENABLED=0 go build -o /out/mockspec ./cmd/mockspec
 
 # Hot reload for `docker compose --profile dev up`. Deliberately NOT derived from
@@ -16,9 +17,12 @@ WORKDIR /src
 RUN go install github.com/air-verse/air@latest
 CMD ["air"]
 
-# Binaries the compose `gateway`/`migrate`/`mockspec` services pick between.
+# Binaries the compose `gateway`/`migrate`/`embedder`/`mockspec` services pick between.
+# cmd/seed is deliberately absent: it reads assets/data.json from disk, and a production image
+# has no business carrying four megabytes of development data.
 FROM gcr.io/distroless/static-debian12:nonroot AS runtime
 COPY --from=build /out/gateway /gateway
 COPY --from=build /out/migrate /migrate
+COPY --from=build /out/embedder /embedder
 COPY --from=build /out/mockspec /mockspec
 ENTRYPOINT ["/gateway"]

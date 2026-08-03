@@ -59,10 +59,13 @@ x-app-env: &app-env
   # nobody checked is an open redirect that borrows this platform's credibility.
   PAYMENT_RETURN_URL_HOSTS: "shopnexus.hopto.org"
 
-  # Storage. `local` keeps uploaded objects on the container's disk and signs URLs back to
-  # the gateway's own upload route, which is what makes a photo uploaded in dev actually
-  # render. A real store signs the bucket directly and the bytes never touch this process —
-  # that is a new implementation behind internal/provider/storage plus a selector value.
+  # Storage. This selects where a *new* upload goes, not what can be read: every resource row
+  # names the store holding it and all of them stay reachable, so switching this does not
+  # strand the objects that predate the switch. `local` keeps uploaded objects on the
+  # container's disk and signs URLs back to the gateway's own upload route, which is what
+  # makes a photo uploaded in dev actually render. A real store signs the bucket directly and
+  # the bytes never touch this process — that is a new implementation behind
+  # internal/provider/storage plus a selector value.
   STORAGE_PROVIDER: "local"
   STORAGE_ROOT: "/data/objects"
   STORAGE_BASE_URL: "https://shopnexus.hopto.org/api/v1"
@@ -71,6 +74,24 @@ x-app-env: &app-env
   STORAGE_DOWNLOAD_TTL: "1h"
   STORAGE_MAX_UPLOAD_BYTES: "10485760"
   STORAGE_ALLOWED_MIMES: "image/jpeg,image/png,image/webp,application/pdf"
+
+  # Embedding (cmd/embedder). `mock` hashes the words instead of running the model, which
+  # exercises the queue and both vector columns without a multi-gigabyte download — semantic
+  # search then returns nonsense, which is the trade a laptop makes. Point it at the real
+  # service to get real vectors:
+  #
+  #   EMBEDDING_PROVIDER: "bge-m3"  -> EMBEDDING_BASE_URL, EMBEDDING_TIMEOUT
+  #
+  # EMBEDDING_DIMENSIONS must equal the width `catalog.listing_embedding.dense` was declared
+  # with. The model service lives in another repository, so nothing but that check couples the
+  # two — and changing the model means a migration, not just this number.
+  EMBEDDING_PROVIDER: "mock"
+  EMBEDDING_BASE_URL: "http://embedding:5007"
+  EMBEDDING_TIMEOUT: "2m"
+  EMBEDDING_DIMENSIONS: "1024"
+  EMBEDDING_INTERVAL: "1m"
+  EMBEDDING_BATCH_SIZE: "32"
+  EMBEDDING_MAX_TEXT_CHARS: "2000"
 
   # Durable execution. `off` leaves every timed transition — an unpaid checkout
   # expiring, an escrow window closing, a refund deadline passing, a blind rating
@@ -157,9 +178,9 @@ services:
       - loki
 
   # --- App (opt-in: `--profile app`), so its logs reach Loki via Alloy ---
-  # Also runs under `--profile dev`, since gateway-dev needs a migrated database.
+  # Also runs under `--profile dev` and `--profile embed`, since both need a migrated database.
   migrate:
-    profiles: ["app", "dev"]
+    profiles: ["app", "dev", "embed"]
     build: .
     # entrypoint, not command: the image's ENTRYPOINT is /gateway, so a command
     # would be passed to the gateway as arguments instead of replacing it.
@@ -188,6 +209,26 @@ services:
         condition: service_started
       migrate:
         condition: service_completed_successfully
+
+  # --- Embedding worker (opt-in: `--profile embed`) ---
+  # Drains catalog's three stale queues into their vector tables. Its own service and not a
+  # goroutine in the gateway: a pass is a batch of model inferences, and the process serving
+  # requests should not be holding that. Skipping it entirely is a supported deployment —
+  # search falls back to trigram, which is what an unembedded row already gets.
+  #
+  # With EMBEDDING_PROVIDER=mock (the default here) it needs nothing else running. Point it at
+  # the real BGE-M3 service and set the provider to get vectors that mean something.
+  embedder:
+    profiles: ["embed"]
+    build: .
+    entrypoint: ["/embedder"]
+    environment: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
   # --- Hot reload (opt-in: `--profile dev`) ---
   # air rebuilds on save inside the container, so logs still reach Loki via Alloy —

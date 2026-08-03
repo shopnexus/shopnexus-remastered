@@ -1,0 +1,212 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"shopnexus/internal/module/common/dbx"
+)
+
+// catalogIDs is what the sales step needs back: the ids Postgres assigned, in plan order.
+type catalogIDs struct {
+	listings []int64
+	variants [][]int64
+}
+
+// writeCatalog lands the whole catalog in one transaction: the category tree, one resource
+// row per distinct photo, and every listing with its variants, stock and tags.
+//
+// Categories, listings and tags are written with "embedding_stale_at" set, which is how the
+// sync cron is told there is work. Nothing here writes a vector — that is the embedding
+// job's, and it needs a model this command does not have.
+func writeCatalog(ctx context.Context, pool *pgxpool.Pool, p *plan, sellers []seller) (catalogIDs, error) {
+	var out catalogIDs
+	now := time.Now()
+
+	err := dbx.InTx(ctx, pool, func(tx pgx.Tx) error {
+		categoryID := map[string]int64{}
+		for _, c := range p.categories {
+			const q = `INSERT INTO category (name, description, embedding_stale_at)
+			           VALUES (@name, @description, @now)
+			           RETURNING id`
+			var id int64
+			args := pgx.NamedArgs{"name": c.Name, "description": c.Description, "now": now}
+			if err := tx.QueryRow(ctx, q, args).Scan(&id); err != nil {
+				return fmt.Errorf("insert category %q: %w", c.Name, err)
+			}
+			categoryID[c.Name] = id
+		}
+
+		resourceID, err := writeResources(ctx, tx, p.images, now)
+		if err != nil {
+			return err
+		}
+
+		out.listings = make([]int64, len(p.listings))
+		out.variants = make([][]int64, len(p.listings))
+		stock := &pgx.Batch{}
+		listingTags := &pgx.Batch{}
+		tagSet := map[string]bool{}
+
+		for i, l := range p.listings {
+			attachments := make([]int64, 0, len(l.images))
+			for _, at := range l.images {
+				attachments = append(attachments, resourceID[p.images[at]])
+			}
+			const insertListing = `
+				INSERT INTO listing (slug, account_id, category_id, status, name, description,
+				                     specifications, attachments, price_mode, condition, currency,
+				                     cached_rating, cached_review_count, cached_sold,
+				                     created_at, embedding_stale_at)
+				VALUES (@slug, @account_id, @category_id, 'active', @name, @description,
+				        @specifications, @attachments, 'fixed', @condition, @currency,
+				        @cached_rating, @cached_review_count, @cached_sold,
+				        @created_at, @now)
+				RETURNING id`
+			args := pgx.NamedArgs{
+				"slug":                l.slug,
+				"account_id":          sellers[l.seller].id,
+				"category_id":         categoryID[l.category],
+				"name":                l.name,
+				"description":         l.description,
+				"specifications":      dbx.JSONObject(l.specs),
+				"attachments":         dbx.Int64Array(attachments),
+				"condition":           l.condition,
+				"currency":            l.currency,
+				"cached_rating":       l.cachedRating,
+				"cached_review_count": l.cachedReviewCount,
+				"cached_sold":         l.cachedSold,
+				"created_at":          l.createdAt,
+				"now":                 now,
+			}
+			if err := tx.QueryRow(ctx, insertListing, args).Scan(&out.listings[i]); err != nil {
+				return fmt.Errorf("insert listing %q: %w", l.slug, err)
+			}
+
+			out.variants[i] = make([]int64, len(l.variants))
+			for j, v := range l.variants {
+				const insertVariant = `
+					INSERT INTO variant (listing_id, price, attributes, package_details,
+					                     is_featured, created_at)
+					VALUES (@listing_id, @price, @attributes, @package_details,
+					        @is_featured, @created_at)
+					RETURNING id`
+				args := pgx.NamedArgs{
+					"listing_id":      out.listings[i],
+					"price":           v.price,
+					"attributes":      dbx.JSONObject(v.attributes),
+					"package_details": dbx.JSONObject(v.pkg),
+					"is_featured":     v.featured,
+					"created_at":      l.createdAt,
+				}
+				if err := tx.QueryRow(ctx, insertVariant, args).Scan(&out.variants[i][j]); err != nil {
+					return fmt.Errorf("insert variant of %q: %w", l.slug, err)
+				}
+				stock.Queue(
+					`INSERT INTO stock (variant_id, quantity, sold, created_at)
+					 VALUES (@variant_id, @quantity, @sold, @created_at)`,
+					pgx.NamedArgs{
+						"variant_id": out.variants[i][j],
+						"quantity":   v.quantity,
+						"sold":       v.sold,
+						"created_at": l.createdAt,
+					})
+			}
+
+			for _, tag := range l.tags {
+				tagSet[tag] = true
+				listingTags.Queue(
+					`INSERT INTO listing_tag (listing_id, tag) VALUES (@listing_id, @tag)`,
+					pgx.NamedArgs{"listing_id": out.listings[i], "tag": tag})
+			}
+		}
+
+		if err := tx.SendBatch(ctx, stock).Close(); err != nil {
+			return fmt.Errorf("insert stock: %w", err)
+		}
+		// Tags before the join rows: "listing_tag"."tag" has a foreign key onto them.
+		if err := writeTags(ctx, tx, tagSet, now); err != nil {
+			return err
+		}
+		if err := tx.SendBatch(ctx, listingTags).Close(); err != nil {
+			return fmt.Errorf("insert listing tags: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return catalogIDs{}, err
+	}
+	return out, nil
+}
+
+// writeResources records each photo URL as a resource of the "remote" provider. The bytes
+// stay where the scrape found them: there is nothing to upload, so the row is a pointer and
+// its size is 0. "uploaded_by_id" is NULL because nobody here uploaded anything, which is
+// exactly what the column's NULL means.
+//
+// One statement, because there are thousands of them and they carry no id anybody needs
+// until the mapping comes back.
+func writeResources(ctx context.Context, tx pgx.Tx, urls []string, now time.Time) (map[string]int64, error) {
+	mimes := make([]string, len(urls))
+	for i, u := range urls {
+		mimes[i] = mimeOf(u)
+	}
+	const q = `
+		INSERT INTO resource (uploaded_by_id, provider, object_key, mime, size,
+		                      metadata, created_at, completed_at)
+		SELECT NULL, 'remote', r.key, r.mime, 0, '{}', @now, @now
+		FROM unnest(@keys::text[], @mimes::text[]) AS r(key, mime)
+		RETURNING id, object_key`
+	rows, err := tx.Query(ctx, q, pgx.NamedArgs{"keys": urls, "mimes": mimes, "now": now})
+	if err != nil {
+		return nil, fmt.Errorf("insert resources: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[string]int64, len(urls))
+	for rows.Next() {
+		var id int64
+		var key string
+		if err := rows.Scan(&id, &key); err != nil {
+			return nil, fmt.Errorf("scan resource: %w", err)
+		}
+		out[key] = id
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("insert resources: %w", err)
+	}
+	return out, nil
+}
+
+// The scrape's URLs mostly carry no extension at all, so JPEG is the fallback rather than a
+// guess of last resort.
+func mimeOf(url string) string {
+	switch {
+	case strings.Contains(url, ".png"):
+		return "image/png"
+	case strings.Contains(url, ".webp"):
+		return "image/webp"
+	default:
+		return "image/jpeg"
+	}
+}
+
+func writeTags(ctx context.Context, tx pgx.Tx, tags map[string]bool, now time.Time) error {
+	ids := make([]string, 0, len(tags))
+	for tag := range tags {
+		ids = append(ids, tag)
+	}
+	const q = `
+		INSERT INTO tag (id, description, embedding_stale_at)
+		SELECT t.id, t.id, @now FROM unnest(@ids::text[]) AS t(id)
+		ON CONFLICT (id) DO NOTHING`
+	if _, err := tx.Exec(ctx, q, pgx.NamedArgs{"ids": ids, "now": now}); err != nil {
+		return fmt.Errorf("insert tags: %w", err)
+	}
+	return nil
+}

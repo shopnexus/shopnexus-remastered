@@ -51,8 +51,8 @@ func newRepo(pool *pgxpool.Pool) *chatpg.Repo { return chatpg.New(pool) }
 
 // newUploads is this module's own `resource` rows plus the object store. The prefix keeps
 // chat's objects together, so an operator holding only a key can tell what it belongs to.
-func newUploads(pool *pgxpool.Pool, cfg *config.Config, client storage.Client) *uploads.Store {
-	return uploads.New(dbx.NewResources(pool), client, "chat", cfg.StorageUploadTTL)
+func newUploads(pool *pgxpool.Pool, cfg *config.Config, stores *storage.Registry) *uploads.Store {
+	return uploads.New(dbx.NewResources(pool), stores, "chat", cfg.StorageUploadTTL)
 }
 
 // newUploadSweep reaps the slots nobody confirmed, so an abandoned upload is not a row and an

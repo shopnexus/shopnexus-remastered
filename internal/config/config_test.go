@@ -62,6 +62,13 @@ var readVars = []string{
 	"RESTATE_INGRESS_URL",
 	"RESTATE_SEND_TIMEOUT",
 	"RESTATE_SERVE_ADDR",
+	"EMBEDDING_BASE_URL",
+	"EMBEDDING_BATCH_SIZE",
+	"EMBEDDING_DIMENSIONS",
+	"EMBEDDING_INTERVAL",
+	"EMBEDDING_MAX_TEXT_CHARS",
+	"EMBEDDING_PROVIDER",
+	"EMBEDDING_TIMEOUT",
 	"SMS_PROVIDER",
 	"SMTP_FROM",
 	"SMTP_HOST",
@@ -120,6 +127,14 @@ func fullEnv() map[string]string {
 		"STORAGE_MAX_UPLOAD_BYTES": "10485760",
 		"STORAGE_ALLOWED_MIMES":    "image/jpeg,image/png",
 
+		// The mock model, for the same reason as the other seams: the base env must not need
+		// a multi-gigabyte download to be valid.
+		"EMBEDDING_PROVIDER":       "mock",
+		"EMBEDDING_DIMENSIONS":     "1024",
+		"EMBEDDING_INTERVAL":       "1m",
+		"EMBEDDING_BATCH_SIZE":     "32",
+		"EMBEDDING_MAX_TEXT_CHARS": "2000",
+
 		"WORKFLOW_RUNTIME": "off",
 		"SWEEP_INTERVAL":   "1m",
 	}
@@ -134,6 +149,8 @@ var requiredVars = []string{
 	"WORKFLOW_RUNTIME", "SWEEP_INTERVAL", "PAYMENT_RETURN_URL_HOSTS", "TRANSPORT_PROVIDER",
 	"STORAGE_PROVIDER", "STORAGE_UPLOAD_TTL", "STORAGE_DOWNLOAD_TTL",
 	"STORAGE_MAX_UPLOAD_BYTES", "STORAGE_ALLOWED_MIMES",
+	"EMBEDDING_PROVIDER", "EMBEDDING_DIMENSIONS", "EMBEDDING_INTERVAL",
+	"EMBEDDING_BATCH_SIZE", "EMBEDDING_MAX_TEXT_CHARS",
 }
 
 func TestLoad_MissingAnyRequiredFails(t *testing.T) {

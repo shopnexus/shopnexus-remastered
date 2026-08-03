@@ -22,20 +22,24 @@ import (
 	"shopnexus/internal/provider/storage"
 )
 
-// Store is one module's uploads: its own `resource` table, the object store, and the key prefix
-// its objects live under. A module holds one, so an upload belongs to the module that took it
-// and travels with that module if it moves to its own database.
+// Store is one module's uploads: its own `resource` table, the stores its objects live in, and
+// the key prefix under which it writes. A module holds one, so an upload belongs to the module
+// that took it and travels with that module if it moves to its own database.
+//
+// `stores` is a registry and not a single client because a row records which store holds it:
+// new uploads go to the preferred one, while a read reaches whichever store the row names. See
+// storage.Registry for why the two cannot be the same question.
 type Store struct {
 	resources *dbx.Resources
-	client    storage.Client
+	stores    *storage.Registry
 	prefix    string
 	// slotTTL is how long a slot stays writable. Past it the row is dead — nothing can write
 	// to the URL any more — which is what makes it safe for the reaper to take.
 	slotTTL time.Duration
 }
 
-func New(resources *dbx.Resources, client storage.Client, prefix string, slotTTL time.Duration) *Store {
-	return &Store{resources: resources, client: client, prefix: prefix, slotTTL: slotTTL}
+func New(resources *dbx.Resources, stores *storage.Registry, prefix string, slotTTL time.Duration) *Store {
+	return &Store{resources: resources, stores: stores, prefix: prefix, slotTTL: slotTTL}
 }
 
 var _ common.Uploads = (*Store)(nil)
@@ -46,7 +50,10 @@ var _ common.Uploads = (*Store)(nil)
 // `kind` narrows the prefix — "listing", "review", "receipt" — so an operator holding only a key
 // can tell what it belongs to.
 func (s *Store) Presign(ctx context.Context, uploaderID int64, kind string, req common.UploadRequest) (common.UploadSlot, error) {
-	upload, err := s.client.PresignUpload(ctx, storage.NewUpload{
+	// The preferred store, and its name goes on the row: that is what lets a later deployment
+	// that has moved on to another store still serve this object.
+	write := s.stores.Write()
+	upload, err := write.PresignUpload(ctx, storage.NewUpload{
 		Prefix:   s.prefix + "/" + kind,
 		Filename: req.Filename,
 		Mime:     req.Mime,
@@ -55,7 +62,7 @@ func (s *Store) Presign(ctx context.Context, uploaderID int64, kind string, req 
 	if err != nil {
 		return common.UploadSlot{}, err
 	}
-	res, err := common.NewResource(uploader(uploaderID), s.client.Name(), upload.ObjectKey,
+	res, err := common.NewResource(uploader(uploaderID), write.Name(), upload.ObjectKey,
 		req.Mime, req.Size, nil, nil)
 	if err != nil {
 		return common.UploadSlot{}, err
@@ -79,7 +86,13 @@ func (s *Store) Confirm(ctx context.Context, uploaderID, resourceID int64) (comm
 	if err != nil {
 		return common.Resource{}, err
 	}
-	object, err := s.client.Stat(ctx, pending.ObjectKey)
+	// The store the slot was issued against, not today's preferred one: a deployment that
+	// switched stores mid-upload must still confirm against the bucket the bytes went to.
+	client, err := s.stores.For(pending.Provider)
+	if err != nil {
+		return common.Resource{}, err
+	}
+	object, err := client.Stat(ctx, pending.ObjectKey)
 	if err != nil {
 		return common.Resource{}, err
 	}
@@ -103,14 +116,28 @@ func (s *Store) Resolve(ctx context.Context, ids []int64) (map[int64]common.Reso
 		return nil, fmt.Errorf("find resources: %w", err)
 	}
 	for _, res := range found {
-		url, expires, err := s.client.PresignDownload(ctx, res.ObjectKey, 0)
+		// Signed by the store that actually holds it. Using the preferred store for every row
+		// is the one thing this must not do: a store signs any key it is handed, so an object
+		// it has never held comes back as a well-formed link that serves nothing, and the
+		// error branch below never fires to say so.
+		client, err := s.stores.For(res.Provider)
 		if err != nil {
-			// A link that could not be signed is a picture that does not render, not a page
+			// A link that could not be produced is a picture that does not render, not a page
 			// that fails: the row is still what the caller asked about.
 			out[res.ID] = res.ToDTO()
 			continue
 		}
-		res.URL, res.URLExpiresAt = url, &expires
+		url, expires, err := client.PresignDownload(ctx, res.ObjectKey, 0)
+		if err != nil {
+			out[res.ID] = res.ToDTO()
+			continue
+		}
+		res.URL = url
+		// A zero expiry means the link has none of this platform's making — a public URL at
+		// somebody else's origin. Reporting a deadline we do not set would be inventing one.
+		if !expires.IsZero() {
+			res.URLExpiresAt = &expires
+		}
 		out[res.ID] = res.ToDTO()
 	}
 	return out, nil
@@ -150,7 +177,12 @@ func (s *Store) Reap(ctx context.Context, olderThan time.Duration, limit int) (i
 		if err := s.resources.Delete(ctx, res.ID); err != nil {
 			return reaped, err
 		}
-		if err := s.client.Remove(ctx, res.ObjectKey); err != nil {
+		client, err := s.stores.For(res.Provider)
+		if err != nil {
+			// Same as a failed delete below: the row is gone either way.
+			continue
+		}
+		if err := client.Remove(ctx, res.ObjectKey); err != nil {
 			// The row is gone, so nothing renders it; the object is a byte to sweep later.
 			continue
 		}

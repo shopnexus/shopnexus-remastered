@@ -19,4 +19,12 @@ var (
 	ErrMimeNotAllowed = errx.NewError(http.StatusUnprocessableEntity, "mime_not_allowed", "that file type is not accepted here")
 	// ErrTooLarge is a declared size over the limit, refused before a byte moves.
 	ErrTooLarge = errx.NewError(http.StatusRequestEntityTooLarge, "upload_too_large", "that file is larger than this platform accepts")
+	// ErrProviderUnknown is a resource naming a store this deployment has not wired. 500,
+	// because no request caused it: the row was written by a deployment that could reach that
+	// store and this one cannot, which is an operator's problem and not the caller's.
+	ErrProviderUnknown = errx.NewError(http.StatusInternalServerError, "storage_provider_unknown", "that file is held by a store this deployment cannot reach")
+	// ErrProviderReadOnly is a write aimed at a store that only serves. Unreachable through
+	// any route — an upload goes to Registry.Write, which is a writable store by definition —
+	// so it exists to make the wrong wiring fail loudly rather than quietly.
+	ErrProviderReadOnly = errx.NewError(http.StatusInternalServerError, "storage_read_only", "that store does not accept uploads")
 )

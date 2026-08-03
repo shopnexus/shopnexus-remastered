@@ -123,8 +123,8 @@ func newOptions(pool *pgxpool.Pool) *dbx.Options { return dbx.NewOptions(pool) }
 
 // newUploads is this module's own `resource` rows plus the object store. The prefix keeps
 // order's objects together, so an operator holding only a key can tell what it belongs to.
-func newUploads(pool *pgxpool.Pool, cfg *config.Config, client storage.Client) *uploads.Store {
-	return uploads.New(dbx.NewResources(pool), client, "order", cfg.StorageUploadTTL)
+func newUploads(pool *pgxpool.Pool, cfg *config.Config, stores *storage.Registry) *uploads.Store {
+	return uploads.New(dbx.NewResources(pool), stores, "order", cfg.StorageUploadTTL)
 }
 
 // newUploadSweep reaps the slots nobody confirmed. Registered with the shared sweeper, because

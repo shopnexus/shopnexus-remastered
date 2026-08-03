@@ -34,7 +34,11 @@ docker compose --profile dev up -d --build       # + gateway with hot reload (ai
 docker compose --profile app up -d --build       # + gateway from the real production image, no hot reload
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d   # + publish infra ports to the host (host-run gateway, psql, Grafana UI)
 docker compose --profile mock up -d --build      # mock API from the spec on :4010 (Prism) — no DB, no Redis, no migrations
+docker compose --profile embed up -d --build     # + the embedding worker (EMBEDDING_PROVIDER=mock by default)
 go run ./cmd/migrate                             # apply migrations — REQUIRED before first run; app never migrates at startup
+go run ./cmd/seed                                # optional dev data from assets/data.json; host-only, refuses to run twice
+go run ./cmd/embedder                            # the embedding worker: drains catalog's stale queues on EMBEDDING_INTERVAL
+go run ./cmd/embedder -once                      # ... one pass then exit (backfill after a seed/import; non-zero on failure)
 go run ./cmd/gateway                             # run the gateway (needs all env vars — see README.md)
 
 go run ./cmd/mockspec /tmp/mock.yaml && npx -y @stoplight/prism-cli@5 mock -p 4010 /tmp/mock.yaml   # the same mock without Docker
@@ -517,6 +521,28 @@ give it its own doc under `docs/` and link it from here.
   verification (`coreos/go-oidc`) for federated sign-in, FPT.AI eKYC for identity.
   Every real client is built with `httpx.ObserveOutbound` and no
   `http.Client.Timeout`.
+- **The stale mark is the embedding queue, and only the worker clears it.** Three catalog tables
+  carry `embedding_stale_at` — listing, category, tag — set by whatever write changed what the row
+  *says*; `cmd/embedder` drains them into `*_embedding` and clears the mark. A work list that is a
+  property of the data rather than a message somebody has to not lose: a row edited during a
+  deploy is still stale afterwards, and a pass that already ran finds nothing. The clear is
+  `WHERE embedding_stale_at = @the_value_that_was_read`, the same guarded-write idiom as a
+  versioned aggregate, so a row re-marked while the model was working stays queued instead of
+  being silently declared fresh. Both halves land in one transaction with the vector, so a row
+  that left the queue always has one. Its own binary, not a `durable.Sweep`: a pass is a batch of
+  model inferences and the process serving requests should not hold that — and not running it at
+  all is a supported deployment, since search falls back to trigram. `EMBEDDING_DIMENSIONS` is
+  checked against every answer because the model service lives in another repository: a model of
+  the wrong width does not degrade, every row fails until a migration changes the column.
+- **A store's selector picks where the next write goes, not what can be read.** Storage is the
+  one seam whose past choices outlive the current one: a `resource` row records the provider
+  holding it, so `STORAGE_PROVIDER` names only `storage.Registry`'s **write** store while every
+  store ever used stays readable, resolved per row. Reading through the preferred store instead
+  is worse than an error — a store signs whatever key it is handed, so an object it has never
+  held still comes back as a well-formed link and the failure surfaces in the browser. `remote`
+  is a real provider on that list (the object key *is* an https URL, so there is nothing to sign
+  and no credential to configure, which is why it needs no selector); it is what `cmd/seed`'s
+  imported photos are, and it refuses every write, since only `Registry.Write()` ever takes one.
 - **Vendor-shaped differences stay behind the seam.** `kyc.Client.Check` covers
   both a vendor that reads the scans and answers now (FPT.AI: a decided `Result`)
   and one that runs its own web flow (Sumsub-style: pending plus a session URL);

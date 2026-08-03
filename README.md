@@ -114,6 +114,8 @@ same server.
 - **[pgx/v5](https://github.com/jackc/pgx)** as the driver, with `pgx.NamedArgs` and hand-written SQL. No ORM and no code generation: a repository owns its queries, and each module's pool sets `search_path` to that module's schema so every statement stays unqualified.
 - **[Uber fx](https://github.com/uber-go/fx)** wires the graph. One `fx.go` per module; cross-module wiring happens by interface type, so a module depends on a peer's published `api.Service` and never on its implementation.
 - **migrate** (`cmd/migrate/`) applies the embedded migrations — `internal/module/<m>/migrations/*.sql`, preceded by the shared DDL in `common/migrations`. Required before the first run; the app never migrates at startup.
+- **seed** (`cmd/seed/`) fills a migrated database with development data: five accounts that each sell and buy, the category tree, the thousand listings in `assets/data.json` with their variants, stock, photos and tags, and the completed orders that back the product reviews. Optional, host-only (it reads the dump from disk, which is why it is not in the image), and it refuses to run twice.
+- **embedder** (`cmd/embedder/`) drains catalog's three stale queues — listing, category, tag — into their pgvector tables. The `embedding_stale_at` mark *is* the queue, so the work list survives a restart and a pass that already ran finds nothing. Runs on `EMBEDDING_INTERVAL`, or `-once` for a backfill. Optional: skip it and search falls back to trigram.
 - **specgen** (`cmd/specgen/`, via `go generate ./...`) merges one OpenAPI fragment per aggregate into `api/openapi.gen.yaml`, which is embedded, served at `/api/v1/openapi.yaml`, and mocked by Prism.
 - **[Restate](https://restate.dev)** holds the timers that outlive a request. See below.
 
@@ -122,8 +124,16 @@ same server.
 ```bash
 docker compose up -d                       # infra: Postgres, Redis, NATS, Grafana, Loki, Alloy
 go run ./cmd/migrate                       # required before the first run
+go run ./cmd/seed                          # optional: development data (see below)
+go run ./cmd/embedder -once                # optional: embed what the seed left stale
 go run ./cmd/gateway                       # the API on GATEWAY_ADDR, under /api/v1
 ```
+
+`cmd/seed` gives you something to browse: 1000 listings across 28 categories, ~5000 variants
+with stock, and 1242 completed orders whose reviews are what the cached ratings are computed
+from. Sign in as `alice@shopnexus.test` / `Alice@123` (the run prints all five). It writes
+**no finance rows** — a seeded order has no payment session, no escrow movement and no wallet
+entry, so catalog, order and trust agree with each other while the ledger behind them is empty.
 
 Every env var is **required, with no default** (`internal/config`) — a missing one fails at
 startup rather than falling back to something plausible. The full set, with a comment on each,

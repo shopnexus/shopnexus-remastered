@@ -35,8 +35,10 @@ func (r *Repo) ListCategories(ctx context.Context) ([]domain.Category, error) {
 }
 
 func (r *Repo) CreateCategory(ctx context.Context, c *domain.Category) error {
-	const q = `INSERT INTO category (parent_id, name, description)
-	           VALUES (@parent_id, @name, @description)
+	// Marked stale on the way in: the name and the description are what its vector is built
+	// from, and cmd/embedder's queue is exactly the set of rows carrying that mark.
+	const q = `INSERT INTO category (parent_id, name, description, embedding_stale_at)
+	           VALUES (@parent_id, @name, @description, now())
 	           RETURNING id`
 	args := pgx.NamedArgs{"parent_id": c.ParentID, "name": c.Name, "description": c.Description}
 	if err := r.pool.QueryRow(ctx, q, args).Scan(&c.ID); err != nil {
@@ -81,7 +83,8 @@ func (r *Repo) UpdateCategory(ctx context.Context, c domain.Category) error {
 			return domain.ErrCategoryNotFound
 		}
 		const q = `UPDATE category
-		           SET parent_id = @parent_id, name = @name, description = @description
+		           SET parent_id = @parent_id, name = @name, description = @description,
+		               embedding_stale_at = now()
 		           WHERE id = @id
 		             AND (@parent_id::bigint IS NULL OR @parent_id::bigint <> @id)
 		             AND NOT EXISTS (

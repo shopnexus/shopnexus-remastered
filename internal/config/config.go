@@ -57,11 +57,15 @@ type Config struct {
 	IDCipherKey string `validate:"required"`
 	LogLevel    string `validate:"required,oneof=debug info warn error"`
 
-	// StorageProvider is where an uploaded byte goes. `local` keeps objects on this host's
+	// StorageProvider is where a *new* uploaded byte goes. `local` keeps objects on this host's
 	// disk and signs URLs back to the gateway's own upload route — a real store signs the
 	// bucket directly and the bytes never touch this process. Same rule as the other seams: a
 	// selector, not a default, because a deployment that thinks photos are in a bucket and
 	// finds them on a pod's disk discovers it the first time the pod is replaced.
+	//
+	// It does not decide what can be *read*. Every `resource` row records the store holding it,
+	// and storage.Registry keeps them all reachable, so changing this moves where the next
+	// upload lands without stranding a single object that predates the change.
 	StorageProvider string `validate:"required,oneof=local"`
 	// StorageRoot is the directory `local` stores objects under.
 	StorageRoot string `validate:"required_if=StorageProvider local"`
@@ -81,6 +85,34 @@ type Config struct {
 	// StorageAllowedMimes is what may be stored at all. An allowlist: a store that accepts
 	// anything serves anything back, and `text/html` from your own domain is a stored script.
 	StorageAllowedMimes []string `validate:"required,min=1"`
+
+	// --- embedding (cmd/embedder) ---
+
+	// EmbeddingProvider picks the model behind the vectors search ranks on. `mock` hashes the
+	// words instead, which exercises the whole queue-to-column path without the multi-gigabyte
+	// download — a stack that cannot run without a GPU is a stack nobody runs locally. Same
+	// rule as the other seams: a selector, not a default.
+	EmbeddingProvider string `validate:"required,oneof=bge-m3 mock"`
+	EmbeddingBaseURL  string `validate:"required_if=EmbeddingProvider bge-m3,omitempty,url"`
+	// EmbeddingTimeout bounds one batch. Generous next to the other providers: this is a
+	// transformer over a batch of documents, often on a CPU.
+	EmbeddingTimeout time.Duration `validate:"required_if=EmbeddingProvider bge-m3"`
+	// EmbeddingDimensions is the dense width, and it must equal what
+	// `catalog.listing_embedding.dense` was declared with — the model service lives in another
+	// repository, so nothing but this check couples the two. Every answer is measured against
+	// it, because a model of the wrong size does not degrade: every row fails until one of the
+	// two changes, and a migration is the other half of changing it.
+	EmbeddingDimensions int `validate:"required,gt=0"`
+	// EmbeddingInterval is how often the queues are drained. One pass empties them, so this is
+	// how long a new listing waits to become searchable, not how fast a backlog is worked off.
+	EmbeddingInterval time.Duration `validate:"required"`
+	// EmbeddingBatchSize is rows per model call, which also bounds the write transaction and
+	// how much a crash repeats.
+	EmbeddingBatchSize int `validate:"required,gt=0"`
+	// EmbeddingMaxTextChars clips what the model reads. The sparse vector has one non-zero per
+	// distinct token and the HNSW index refuses more than a thousand, so an unbounded
+	// description is a failed write rather than a poor result.
+	EmbeddingMaxTextChars int `validate:"required,gt=0"`
 
 	// --- durable execution ---
 
@@ -213,6 +245,14 @@ func Load(v *validator.Validate) (*Config, error) {
 		StorageDownloadTTL:    p.durationVar("STORAGE_DOWNLOAD_TTL"),
 		StorageMaxUploadBytes: p.int64Var("STORAGE_MAX_UPLOAD_BYTES"),
 		StorageAllowedMimes:   listVar("STORAGE_ALLOWED_MIMES"),
+
+		EmbeddingProvider:     os.Getenv("EMBEDDING_PROVIDER"),
+		EmbeddingBaseURL:      os.Getenv("EMBEDDING_BASE_URL"),
+		EmbeddingTimeout:      p.durationVar("EMBEDDING_TIMEOUT"),
+		EmbeddingDimensions:   p.intVar("EMBEDDING_DIMENSIONS"),
+		EmbeddingInterval:     p.durationVar("EMBEDDING_INTERVAL"),
+		EmbeddingBatchSize:    p.intVar("EMBEDDING_BATCH_SIZE"),
+		EmbeddingMaxTextChars: p.intVar("EMBEDDING_MAX_TEXT_CHARS"),
 
 		WorkflowRuntime:    os.Getenv("WORKFLOW_RUNTIME"),
 		RestateServeAddr:   os.Getenv("RESTATE_SERVE_ADDR"),

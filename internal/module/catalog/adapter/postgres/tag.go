@@ -63,8 +63,12 @@ func escapeLike(s string) string {
 
 // PutTag is an upsert on the natural key, which is what makes PUT idempotent.
 func (r *Repo) PutTag(ctx context.Context, t domain.Tag) error {
-	const q = `INSERT INTO tag (id, description) VALUES (@id, @description)
-	           ON CONFLICT (id) DO UPDATE SET description = @description`
+	// Stale on either path: the slug and the description are the tag's whole text, so a new
+	// one has no vector yet and a re-described one has the wrong vector.
+	const q = `INSERT INTO tag (id, description, embedding_stale_at)
+	           VALUES (@id, @description, now())
+	           ON CONFLICT (id) DO UPDATE
+	             SET description = @description, embedding_stale_at = now()`
 	args := pgx.NamedArgs{"id": t.Slug, "description": t.Description}
 	if _, err := r.pool.Exec(ctx, q, args); err != nil {
 		return fmt.Errorf("db upsert tag: %w", err)

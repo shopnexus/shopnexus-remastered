@@ -40,6 +40,7 @@ import (
 	paymentmock "shopnexus/internal/provider/payment/mock"
 	"shopnexus/internal/provider/storage"
 	localstorage "shopnexus/internal/provider/storage/local"
+	remotestorage "shopnexus/internal/provider/storage/remote"
 	"shopnexus/internal/provider/transport"
 	transportmock "shopnexus/internal/provider/transport/mock"
 	"shopnexus/internal/shared/httpx"
@@ -78,7 +79,7 @@ func appOptions() fx.Option {
 			newTransportClient,
 			// Where an uploaded byte goes. The handler beside it is provided only for the
 			// backend that needs this process to serve the bytes.
-			newStorageClient,
+			newStorageRegistry,
 			newUploadsHandler,
 			// Durable execution: the client modules submit runs through, the server the
 			// runtime invokes, and the sweeper that catches whatever a run missed.
@@ -226,17 +227,21 @@ func newPaymentClient(cfg *config.Config) payment.Client {
 	return paymentmock.NewClient()
 }
 
-// newStorageClient picks the object store. `local` keeps objects on this host and signs URLs
-// back to the gateway's own route; a real store signs its bucket and the bytes never reach this
-// process. Same rule as the other seams: a selector, because a deployment that thinks its photos
-// are in a bucket and finds them on a pod's disk discovers it when the pod is replaced.
-func newStorageClient(cfg *config.Config) (storage.Client, error) {
+// newStorageRegistry builds the stores this deployment can serve from. STORAGE_PROVIDER picks
+// only the one new uploads go to: every store that still holds objects has to stay readable, or
+// switching stores turns every photo taken before the switch into a dead link. Same rule as the
+// other seams for the writable one — a selector, because a deployment that thinks its photos are
+// in a bucket and finds them on a pod's disk discovers it when the pod is replaced.
+//
+// A second writable store (S3, MinIO) is a new case here plus its credentials in config, added
+// as the write store while the old one stays in the readable list until nothing names it.
+func newStorageRegistry(cfg *config.Config) (*storage.Registry, error) {
 	// The selector is read, not assumed: an unknown value fails at startup rather than silently
 	// writing every upload to this pod's disk.
 	if cfg.StorageProvider != localstorage.Name {
 		return nil, fmt.Errorf("unknown storage provider %q", cfg.StorageProvider)
 	}
-	return localstorage.New(localstorage.Config{
+	write, err := localstorage.New(localstorage.Config{
 		Root:         cfg.StorageRoot,
 		BaseURL:      cfg.StorageBaseURL,
 		Secret:       cfg.StorageSecret,
@@ -245,11 +250,23 @@ func newStorageClient(cfg *config.Config) (storage.Client, error) {
 		MaxSize:      cfg.StorageMaxUploadBytes,
 		AllowedMimes: cfg.StorageAllowedMimes,
 	})
+	if err != nil {
+		return nil, err
+	}
+	// `remote` is wired unconditionally and has no selector, because there is nothing to
+	// select: it holds no credential and no bucket — the object key is the whole address — so
+	// it cannot be misconfigured. It serves rows imported from another origin (cmd/seed), and
+	// no route can create one, since an upload always goes to the write store.
+	return storage.NewRegistry(write, remotestorage.New())
 }
 
-// newUploadsHandler serves the signed PUT and GET the `local` backend points at. Nil for a store
-// that signs its own bucket, which is why the router takes it as an optional dependency.
-func newUploadsHandler(client storage.Client, log *slog.Logger) *handler.Uploads {
+// newUploadsHandler serves the signed PUT and GET the `local` backend points at. Nil when that
+// backend is not wired, which is why the router takes it as an optional dependency.
+func newUploadsHandler(stores *storage.Registry, log *slog.Logger) *handler.Uploads {
+	client, ok := stores.Lookup(localstorage.Name)
+	if !ok {
+		return nil
+	}
 	own, ok := client.(*localstorage.Client)
 	if !ok {
 		return nil

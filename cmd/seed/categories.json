@@ -1,0 +1,162 @@
+[
+  {
+    "id": "electronics",
+    "name": "Electronics",
+    "description": "Televisions, cameras, audio speakers, headphones, home theater systems, drones, wearable devices, electronic accessories, chargers, cables, and consumer electronic gadgets"
+  },
+  {
+    "id": "computers_networking",
+    "name": "Computers & Networking",
+    "description": "Desktop computers, laptops, monitors, keyboards, mice, storage drives, RAM, graphics cards, networking routers, switches, printers, and computing components"
+  },
+  {
+    "id": "mobile_phones_tablets",
+    "name": "Mobile Phones & Tablets",
+    "description": "Smartphones, feature phones, tablets, e-readers, phone cases, screen protectors, power banks, SIM cards, and mobile device accessories"
+  },
+  {
+    "id": "fashion_clothing",
+    "name": "Fashion & Clothing",
+    "description": "Apparel and garments including tops, pants, dresses, skirts, suits, jackets, outerwear, underwear, activewear, uniforms, and clothing for men women and children"
+  },
+  {
+    "id": "shoes_footwear",
+    "name": "Shoes & Footwear",
+    "description": "Sneakers, boots, sandals, heels, loafers, slippers, sports shoes, formal shoes, shoe care products, insoles, and laces for men women and children"
+  },
+  {
+    "id": "bags_luggage",
+    "name": "Bags & Luggage",
+    "description": "Backpacks, handbags, suitcases, travel bags, laptop bags, messenger bags, duffel bags, trolley cases, wallets, clutches, and packing organizers"
+  },
+  {
+    "id": "watches",
+    "name": "Watches",
+    "description": "Wristwatches, luxury watches, digital watches, smartwatches, watch bands, watch tools, and watch storage boxes"
+  },
+  {
+    "id": "jewelry",
+    "name": "Jewelry",
+    "description": "Rings, necklaces, bracelets, earrings, brooches, anklets, gemstones, gold and silver jewelry, costume jewelry, and fine jewelry pieces"
+  },
+  {
+    "id": "fashion_accessories",
+    "name": "Fashion Accessories",
+    "description": "Sunglasses, hats, caps, scarves, gloves, belts, ties, keychains, hair clips, and wearable fashion accessories not classified as clothing or jewelry"
+  },
+  {
+    "id": "beauty_personal_care",
+    "name": "Beauty & Personal Care",
+    "description": "Skincare, makeup, cosmetics, hair care, fragrances, perfumes, oral care, bath and body products, shaving tools, grooming kits, and beauty devices"
+  },
+  {
+    "id": "health_wellness",
+    "name": "Health & Wellness",
+    "description": "Vitamins, dietary supplements, medical devices, first aid kits, health monitors, massage equipment, personal protective equipment, and wellness products"
+  },
+  {
+    "id": "sports_outdoors",
+    "name": "Sports & Outdoors",
+    "description": "Gym equipment, fitness gear, camping gear, hiking equipment, bicycles, fishing rods, yoga mats, sports balls, swimming goggles, and outdoor recreation products"
+  },
+  {
+    "id": "home_furniture",
+    "name": "Home Furniture",
+    "description": "Sofas, beds, tables, chairs, wardrobes, bookshelves, desks, cabinets, mattresses, shelving units, and indoor household furniture"
+  },
+  {
+    "id": "home_decor_lighting",
+    "name": "Home Decor & Lighting",
+    "description": "Wall art, picture frames, vases, candles, mirrors, rugs, curtains, throw pillows, ceiling lights, table lamps, floor lamps, and decorative items"
+  },
+  {
+    "id": "kitchen_dining",
+    "name": "Kitchen & Dining",
+    "description": "Cookware, pots, pans, knives, cutting boards, dinnerware, glassware, utensils, food storage containers, bakeware, and kitchen gadgets"
+  },
+  {
+    "id": "bedding_bath",
+    "name": "Bedding & Bath",
+    "description": "Bed sheets, pillows, blankets, comforters, duvet covers, towels, bathrobes, shower curtains, bath mats, and bathroom accessories"
+  },
+  {
+    "id": "large_appliances",
+    "name": "Large Appliances",
+    "description": "Refrigerators, washing machines, dryers, air conditioners, dishwashers, ovens, stoves, water heaters, and large household appliances"
+  },
+  {
+    "id": "small_appliances",
+    "name": "Small Appliances",
+    "description": "Blenders, coffee makers, toasters, microwaves, electric kettles, rice cookers, vacuum cleaners, irons, air fryers, and portable household appliances"
+  },
+  {
+    "id": "grocery_food",
+    "name": "Grocery & Food",
+    "description": "Packaged food, fresh produce, frozen food, snacks, beverages, cooking ingredients, spices, condiments, dairy, meat, seafood, and pantry staples"
+  },
+  {
+    "id": "baby_maternity",
+    "name": "Baby & Maternity",
+    "description": "Diapers, baby formula, feeding bottles, pacifiers, baby clothing, strollers, car seats, cribs, baby monitors, maternity wear, and infant care essentials"
+  },
+  {
+    "id": "toys_games",
+    "name": "Toys & Games",
+    "description": "Children's toys, board games, puzzles, action figures, dolls, building blocks, remote control vehicles, educational toys, stuffed animals, and play sets"
+  },
+  {
+    "id": "books_media",
+    "name": "Books & Media",
+    "description": "Physical books, novels, textbooks, comic books, manga, magazines, music CDs, vinyl records, movie DVDs, Blu-ray discs, and printed publications"
+  },
+  {
+    "id": "stationery_office_supplies",
+    "name": "Stationery & Office Supplies",
+    "description": "Pens, pencils, notebooks, paper, folders, staplers, desk organizers, calculators, whiteboards, and general office and school supplies"
+  },
+  {
+    "id": "pet_supplies",
+    "name": "Pet Supplies",
+    "description": "Pet food, treats, toys, grooming products, leashes, collars, pet beds, aquariums, cages, litter, and healthcare products for pets"
+  },
+  {
+    "id": "automotive_motorcycle",
+    "name": "Automotive & Motorcycle",
+    "description": "Car parts, motorcycle parts, tires, car electronics, dash cams, engine oil, car care products, seat covers, and vehicle maintenance tools"
+  },
+  {
+    "id": "tools_hardware",
+    "name": "Tools & Hardware",
+    "description": "Hand tools, power tools, drills, saws, screwdrivers, wrenches, fasteners, plumbing supplies, electrical supplies, and construction hardware"
+  },
+  {
+    "id": "garden_outdoor_living",
+    "name": "Garden & Outdoor Living",
+    "description": "Plants, seeds, gardening tools, pots, planters, lawn mowers, outdoor furniture, grills, barbecue accessories, and irrigation equipment"
+  },
+  {
+    "id": "musical_instruments",
+    "name": "Musical Instruments",
+    "description": "Guitars, pianos, keyboards, drums, violins, wind instruments, instrument strings, picks, amplifiers, and music recording equipment"
+  },
+  {
+    "id": "video_games_gaming",
+    "name": "Video Games & Gaming",
+    "description": "Gaming consoles, video games, gaming controllers, gaming headsets, gaming chairs, and gaming accessories designed specifically for video gaming"
+  },
+  {
+    "id": "software_digital_goods",
+    "name": "Software & Digital Goods",
+    "description": "Computer software, antivirus programs, operating systems, digital gift cards, e-books, online courses, and downloadable digital content"
+  },
+  {
+    "id": "arts_crafts",
+    "name": "Arts & Crafts",
+    "description": "Painting supplies, canvas, brushes, sewing kits, knitting yarn, scrapbooking materials, craft paper, glue guns, DIY project kits, and creative hobby materials"
+  },
+  {
+    "id": "industrial_commercial",
+    "name": "Industrial & Commercial",
+    "description": "Laboratory equipment, industrial machinery, safety gear, commercial supplies, packaging materials, janitorial products, and professional-grade tools"
+  }
+]

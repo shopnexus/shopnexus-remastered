@@ -14,7 +14,9 @@ import (
 	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/common/dbx"
 	"shopnexus/internal/module/common/uploads"
+	"shopnexus/internal/provider/storage"
 	"shopnexus/internal/provider/storage/local"
+	"shopnexus/internal/provider/storage/remote"
 )
 
 // newStore builds the real thing: one module's `resource` table plus a filesystem store. Any
@@ -43,8 +45,13 @@ func newStore(t *testing.T, slotTTL time.Duration) (*uploads.Store, *dbx.Resourc
 	if err != nil {
 		t.Fatalf("local storage: %v", err)
 	}
+	// The same registry the gateway builds: local writes, remote is readable beside it.
+	stores, err := storage.NewRegistry(client, remote.New())
+	if err != nil {
+		t.Fatalf("storage registry: %v", err)
+	}
 	resources := dbx.NewResources(pool)
-	return uploads.New(resources, client, "trust", slotTTL), resources, client
+	return uploads.New(resources, stores, "trust", slotTTL), resources, client
 }
 
 func uploaderID() int64 { return time.Now().UnixNano() % 1_000_000_000 }
@@ -168,6 +175,73 @@ func TestReap_StopsAtTheBatchLimit(t *testing.T) {
 	}
 	if left != 1 {
 		t.Fatalf("%d slots left, want the third waiting for the next pass", left)
+	}
+}
+
+// Resolve has to reach the store each row names, not the one this deployment happens to write
+// to. Resolving everything through the write store does not fail loudly — a store signs any key
+// it is handed — so the wrong link is well-formed and only dies in the browser. This is that
+// case: two rows, two stores, one call.
+func TestResolveUsesTheStoreEachRowNames(t *testing.T) {
+	store, resources, client := newStore(t, time.Minute)
+	ctx := context.Background()
+	who := uploaderID()
+
+	// One upload through the write store, confirmed the ordinary way.
+	slot, err := store.Presign(ctx, who, "review", common.UploadRequest{
+		Filename: "mine.jpg", Mime: "image/jpeg", Size: 4,
+	})
+	if err != nil {
+		t.Fatalf("Presign: %v", err)
+	}
+	if _, err := client.Write(objectKey(t, resources, slot.ResourceID, who), strings.NewReader("data")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := store.Confirm(ctx, who, slot.ResourceID); err != nil {
+		t.Fatalf("Confirm: %v", err)
+	}
+
+	// One imported row, held at another origin — what cmd/seed writes. Inserted directly
+	// because no route can create one: an upload always goes to the write store.
+	const cdnURL = "https://cdn.example.com/file/imported_tn"
+	imported, err := common.NewResource(&who, remote.Name, cdnURL, "image/jpeg", 0, nil, nil)
+	if err != nil {
+		t.Fatalf("NewResource: %v", err)
+	}
+	if err := resources.Insert(ctx, &imported); err != nil {
+		t.Fatalf("insert imported: %v", err)
+	}
+	if _, err := resources.Confirm(ctx, imported.ID, &who, 0, nil); err != nil {
+		t.Fatalf("confirm imported: %v", err)
+	}
+
+	got, err := store.Resolve(ctx, []int64{slot.ResourceID, imported.ID})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	mine, ok := got[slot.ResourceID]
+	if !ok {
+		t.Fatal("the uploaded resource did not resolve")
+	}
+	if !strings.HasPrefix(mine.URL, "http://127.0.0.1:5000/api/v1") {
+		t.Errorf("uploaded url = %q, want a link signed by the local store", mine.URL)
+	}
+	if mine.URLExpiresAt == nil {
+		t.Error("a signed link with no expiry: the caller cannot tell a stale URL from a wrong one")
+	}
+
+	other, ok := got[imported.ID]
+	if !ok {
+		t.Fatal("the imported resource did not resolve")
+	}
+	if other.URL != cdnURL {
+		t.Errorf("imported url = %q, want the origin's own %q", other.URL, cdnURL)
+	}
+	// Before the registry this was a local signature over a CDN URL: a link that verified and
+	// then answered 409, with an expiry this platform had invented for somebody else's object.
+	if other.URLExpiresAt != nil {
+		t.Errorf("imported url_expires_at = %v, want none on a link this platform does not sign", *other.URLExpiresAt)
 	}
 }
 

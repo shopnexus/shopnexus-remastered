@@ -61,8 +61,8 @@ func newRepo(pool *pgxpool.Pool) *trustpg.Repo { return trustpg.New(pool) }
 
 // newUploads is this module's own `resource` rows plus the object store. The prefix keeps
 // trust's objects together, so an operator holding only a key can tell what it belongs to.
-func newUploads(pool *pgxpool.Pool, cfg *config.Config, client storage.Client) *uploads.Store {
-	return uploads.New(dbx.NewResources(pool), client, "trust", cfg.StorageUploadTTL)
+func newUploads(pool *pgxpool.Pool, cfg *config.Config, stores *storage.Registry) *uploads.Store {
+	return uploads.New(dbx.NewResources(pool), stores, "trust", cfg.StorageUploadTTL)
 }
 
 // newUploadSweep reaps the slots nobody confirmed, so an abandoned review photo is not a row and

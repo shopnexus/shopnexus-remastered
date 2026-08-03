@@ -57,8 +57,8 @@ func newRepo(pool *pgxpool.Pool) *accountpg.Repo { return accountpg.New(pool) }
 // both an avatar and an identity scan — the kind only narrows the key prefix, and what keeps
 // a scan from being world-readable is that Resolve always signs a fresh, short-lived link
 // rather than handing back a public URL.
-func newUploads(pool *pgxpool.Pool, cfg *config.Config, client storage.Client) *uploads.Store {
-	return uploads.New(dbx.NewResources(pool), client, "account", cfg.StorageUploadTTL)
+func newUploads(pool *pgxpool.Pool, cfg *config.Config, stores *storage.Registry) *uploads.Store {
+	return uploads.New(dbx.NewResources(pool), stores, "account", cfg.StorageUploadTTL)
 }
 
 // newUploadSweep reaps the slots nobody confirmed, so an abandoned upload is not a row and an
