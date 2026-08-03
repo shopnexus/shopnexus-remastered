@@ -37,6 +37,14 @@ func (s *statusRecorder) Flush() {
 // as the low-cardinality route label.
 func (s *Sink) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A socket is held for minutes; recorded as a request it would enter
+		// http_requests_1m as a minutes-long one and make approx_percentile(0.95,
+		// "latency") meaningless. Connection count is sampled separately.
+		if r.URL.Path == wsPath {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)

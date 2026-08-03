@@ -65,10 +65,10 @@ func newSink(bus *eventbus.NATS, log *slog.Logger, cfg *config.Config) *Sink {
 	return NewSink(bus, log, cfg.InstanceID)
 }
 
-func startSampler(lc fx.Lifecycle, s *Sink) {
+func startSampler(lc fx.Lifecycle, s *Sink, conns ConnCounter) {
 	ctx, cancel := context.WithCancel(context.Background())
 	lc.Append(fx.Hook{
-		OnStart: func(context.Context) error { go s.SampleLoop(ctx); return nil },
+		OnStart: func(context.Context) error { go s.SampleLoop(ctx, conns); return nil },
 		OnStop:  func(context.Context) error { cancel(); return nil },
 	})
 }
