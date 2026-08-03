@@ -4768,7 +4768,7 @@ func TestCreateNotificationPushesToTheOwner(t *testing.T) {
 // the feed will never show.
 func TestCreateNotificationDoesNotPushWhenSuppressed(t *testing.T) {
 	repo := newFakeRepo()
-	repo.preferences = []domain.Preference{{
+	repo.prefs[42] = []domain.Preference{{
 		AccountID: 42,
 		Category:  domain.CategoryPromotion,
 		Channel:   domain.ChannelInApp,
@@ -4792,6 +4792,12 @@ func TestCreateNotificationDoesNotPushWhenSuppressed(t *testing.T) {
 ```
 
 Copy the `recorder` type from Task 13 Step 3 into this package's test file — it is a test double, and two packages sharing one through an exported test helper is worse than eight duplicated lines.
+
+Real names in this package, verified — use these, not invented ones:
+- `newTestService(t *testing.T, repo *fakeRepo) *account.Service` exists in `service_test.go` (added by Task 3). `newTestServiceWithFanout` is `newTestService` plus one argument — extend it rather than writing a parallel constructor.
+- `fakeRepo`'s fields are `notifs []domain.Notification` and `prefs map[int64][]domain.Preference` (keyed by account), **not** `notifications`/`preferences`.
+- The `api` stub type is `accounttest.Stub`, not `accounttest.Service`.
+- `eventbus.NewMemory` takes a logger: `eventbus.NewMemory(slog.New(slog.DiscardHandler))`.
 
 - [ ] **Step 3: Run the tests to verify they fail**
 
