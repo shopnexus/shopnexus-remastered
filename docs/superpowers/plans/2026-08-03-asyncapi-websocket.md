@@ -2883,6 +2883,9 @@ type fakeFanout struct {
 	handler map[string]func([]byte)
 	subs    map[string]int // net subscriptions per subject
 	err     error
+	// beforeSubscribe runs before OnBroadcast takes the lock, so a test can hold a Join
+	// inside the subscribe window and race a second one against it.
+	beforeSubscribe func()
 }
 
 func newFakeFanout() *fakeFanout {
@@ -2892,6 +2895,9 @@ func newFakeFanout() *fakeFanout {
 func (f *fakeFanout) Broadcast(string, []byte) error { return nil }
 
 func (f *fakeFanout) OnBroadcast(subject string, h func([]byte)) (func(), error) {
+	if f.beforeSubscribe != nil {
+		f.beforeSubscribe()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.err != nil {
@@ -3088,6 +3094,58 @@ func TestJoinSurfacesASubscribeFailure(t *testing.T) {
 	}
 }
 
+// A socket that attached behind a first joiner whose subscription then failed must be
+// closed, not left holding a connection that receives nothing for ever.
+func TestFailedSubscribeStrandsNobody(t *testing.T) {
+	f := newFakeFanout()
+	// blockSubscribe lets the test hold the first Join inside OnBroadcast, which is the
+	// window a second Join slips through — it sees the slot claimed and attaches.
+	release := make(chan struct{})
+	f.beforeSubscribe = func() { <-release }
+	f.err = errors.New("nats down")
+	hub := newHub(f)
+
+	type result struct {
+		client *ws.Client
+		err    error
+	}
+	firstDone := make(chan result, 1)
+	go func() {
+		c, err := hub.Join(42)
+		firstDone <- result{client: c, err: err}
+	}()
+
+	// Wait until the first Join has claimed the slot and is inside OnBroadcast.
+	var second *ws.Client
+	for range 100 {
+		time.Sleep(5 * time.Millisecond)
+		c, err := hub.Join(42)
+		if err == nil && c != nil {
+			second = c
+			break
+		}
+	}
+	if second == nil {
+		t.Fatal("could not attach a second socket while the first was subscribing")
+	}
+
+	close(release)
+
+	got := <-firstDone
+	if got.err == nil {
+		t.Fatal("first Join succeeded while the bus was refusing subscriptions")
+	}
+
+	select {
+	case <-second.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("the second socket was stranded: subscription failed but it stayed open")
+	}
+	if n := hub.Count(); n != 0 {
+		t.Errorf("Count = %d, want 0", n)
+	}
+}
+
 // Events for one account never reach another's socket.
 func TestDeliveryIsIsolatedPerAccount(t *testing.T) {
 	f := newFakeFanout()
@@ -3245,19 +3303,36 @@ func (h *Hub) Join(accountID int64) (*Client, error) {
 	})
 	if err != nil {
 		h.mu.Lock()
-		// Only withdraw the claim if nobody joined behind us; they would have their own
-		// working subscription only if they also failed, so this is the honest cleanup.
+		var stranded []*Client
 		if current, ok := h.subs[accountID]; ok && current == sub {
+			// Everyone who joined behind us was relying on this subscription, so they are
+			// stranded too. Close them: a socket attached to a subscription that never
+			// opened stays up and silently receives nothing for ever, and its Leave finds
+			// no entry to clean up. A refused connect is far better — the client retries.
+			for other := range sub.clients {
+				stranded = append(stranded, other)
+			}
 			delete(h.subs, accountID)
 		}
 		h.mu.Unlock()
-		c.close()
+		for _, other := range stranded {
+			other.close()
+		}
 		return nil, err
 	}
 
 	h.mu.Lock()
-	sub.cancel = cancel
+	current, ok := h.subs[accountID]
+	if ok && current == sub {
+		sub.cancel = cancel
+		h.mu.Unlock()
+		return c, nil
+	}
+	// Every socket for this account left while we were subscribing — including ours,
+	// since we were one of them. Nothing will ever call this cancel, so call it now
+	// rather than leaking the subscription for the life of the process.
 	h.mu.Unlock()
+	cancel()
 	return c, nil
 }
 
@@ -3349,7 +3424,7 @@ Drop the `"errors"` import — the file above does not use it. `ErrTooManySocket
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `go test ./internal/gateway/ws/`
-Expected: PASS (7 tests)
+Expected: PASS (8 tests)
 
 - [ ] **Step 5: Run them under the race detector**
 
