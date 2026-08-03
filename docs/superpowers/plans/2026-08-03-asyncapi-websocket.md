@@ -3798,4 +3798,915 @@ git commit -m "feat: websocket route with ticket handshake"
 
 ---
 
-I'll continue with Tasks 13 through 18 in the next pass.
+## Phase B4 — Producers
+
+### Task 13: Chat publishes
+
+**Files:**
+- Create: `internal/module/chat/event.go`
+- Modify: `internal/module/chat/service.go`
+- Modify: `internal/module/chat/fx.go`
+- Modify: `internal/module/chat/port/port.go`
+- Test: `internal/module/chat/service_realtime_test.go`
+
+**Interfaces:**
+- Consumes: `realtime.Event`, `realtime.Notify`, `realtime.Fanout` (Task 10); `chatapi.Message`
+- Produces: `chat.MessageCreated`, `chat.MessageUpdated`, `chat.MessageDeleted`, `chat.ConversationRead`; `chatapi.DeletedMessageRef`, `chatapi.ConversationReadMark`
+
+- [ ] **Step 1: Add the two DTOs the events carry**
+
+In `internal/module/chat/api/api.go`, matching the OpenAPI schemas added in Task 6 Step 2 field for field:
+
+```go
+// DeletedMessageRef is enough to drop a message from a rendered thread. Not a whole
+// Message: a deleted row has no body, and sending an emptied entity would read as an
+// edit.
+type DeletedMessageRef struct {
+	ID             id.ID[id.Message]      `json:"id"`
+	ConversationID id.ID[id.Conversation] `json:"conversation_id"`
+	// CreatedAt locates the row: message is a hypertable and needs a time bound.
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// ConversationReadMark is how far one participant has read a thread.
+type ConversationReadMark struct {
+	ConversationID id.ID[id.Conversation] `json:"conversation_id"`
+	// ReaderID is who read it — always the other participant, never the recipient.
+	ReaderID id.ID[id.Account] `json:"reader_id"`
+	ReadAt   time.Time         `json:"read_at"`
+}
+```
+
+- [ ] **Step 2: Declare the events**
+
+Create `internal/module/chat/event.go`:
+
+```go
+package chat
+
+import (
+	chatapi "shopnexus/internal/module/chat/api"
+	"shopnexus/internal/shared/realtime"
+)
+
+// The realtime facts chat publishes. Each goes to the conversation's *other*
+// participant: the actor already holds the row from their own mutation response, and
+// echoing it back would race their optimistic update.
+//
+// The codes are also the AsyncAPI message names in api/asyncapi/message.yaml, and
+// internal/gateway/asyncapi_contract_test.go fails if the two lists disagree.
+var (
+	MessageCreated   = realtime.NewEvent[chatapi.Message]("chat.message_created")
+	MessageUpdated   = realtime.NewEvent[chatapi.Message]("chat.message_updated")
+	MessageDeleted   = realtime.NewEvent[chatapi.DeletedMessageRef]("chat.message_deleted")
+	ConversationRead = realtime.NewEvent[chatapi.ConversationReadMark]("chat.conversation_read")
+)
+```
+
+- [ ] **Step 3: Write the failing test**
+
+Create `internal/module/chat/service_realtime_test.go`:
+
+```go
+package chat_test
+
+import (
+	"encoding/json"
+	"sync"
+	"testing"
+
+	"shopnexus/internal/module/chat"
+	chatapi "shopnexus/internal/module/chat/api"
+	"shopnexus/internal/shared/realtime"
+)
+
+// recorder captures what the service pushed, so a test asserts on recipients and
+// codes without a bus.
+type recorder struct {
+	mu   sync.Mutex
+	sent []recorded
+}
+
+type recorded struct {
+	subject string
+	env     realtime.Envelope
+}
+
+func (r *recorder) Broadcast(subject string, b []byte) error {
+	var env realtime.Envelope
+	if err := json.Unmarshal(b, &env); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sent = append(r.sent, recorded{subject: subject, env: env})
+	return nil
+}
+
+func (r *recorder) OnBroadcast(string, func([]byte)) (func(), error) { return func() {}, nil }
+
+func (r *recorder) codes() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, 0, len(r.sent))
+	for _, s := range r.sent {
+		out = append(out, s.env.Code)
+	}
+	return out
+}
+
+// The sender must not receive their own message: they already have it, and a second
+// copy arriving asynchronously duplicates the optimistic row.
+func TestSendMessageNotifiesOnlyTheOtherParticipant(t *testing.T) {
+	const sender, recipient int64 = 42, 77
+
+	rec := &recorder{}
+	svc := newTestServiceWithFanout(t, rec, conversationBetween(sender, recipient))
+
+	_, err := svc.SendMessage(t.Context(), sendMessageRequest(sender, "hello"))
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+
+	if got := rec.codes(); len(got) != 1 || got[0] != "chat.message_created" {
+		t.Fatalf("codes = %v, want [chat.message_created]", got)
+	}
+	if got, want := rec.sent[0].subject, realtime.AccountSubject(recipient); got != want {
+		t.Errorf("subject = %q, want %q — the recipient, not the sender", got, want)
+	}
+
+	var msg chatapi.Message
+	if err := json.Unmarshal(rec.sent[0].env.Data, &msg); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if msg.Body != "hello" {
+		t.Errorf("body = %q, want hello", msg.Body)
+	}
+}
+
+// A push that fails must not fail the write: the row is already committed, so the
+// caller gets their 201 and the interface is briefly stale.
+func TestSendMessageSucceedsWhenTheBusIsDown(t *testing.T) {
+	rec := &failingFanout{}
+	svc := newTestServiceWithFanout(t, rec, conversationBetween(42, 77))
+
+	if _, err := svc.SendMessage(t.Context(), sendMessageRequest(42, "hello")); err != nil {
+		t.Fatalf("SendMessage: %v — a realtime failure must not fail the write", err)
+	}
+}
+
+type failingFanout struct{}
+
+func (failingFanout) Broadcast(string, []byte) error {
+	return errors.New("nats down")
+}
+func (failingFanout) OnBroadcast(string, func([]byte)) (func(), error) {
+	return func() {}, nil
+}
+
+func TestMarkReadNotifiesTheOtherParticipant(t *testing.T) {
+	const reader, other int64 = 42, 77
+
+	rec := &recorder{}
+	svc := newTestServiceWithFanout(t, rec, conversationBetween(reader, other))
+
+	if err := svc.MarkRead(t.Context(), markReadRequest(reader)); err != nil {
+		t.Fatalf("MarkRead: %v", err)
+	}
+
+	if got := rec.codes(); len(got) != 1 || got[0] != "chat.conversation_read" {
+		t.Fatalf("codes = %v, want [chat.conversation_read]", got)
+	}
+	if got, want := rec.sent[0].subject, realtime.AccountSubject(other); got != want {
+		t.Errorf("subject = %q, want %q", got, want)
+	}
+
+	var mark chatapi.ConversationReadMark
+	if err := json.Unmarshal(rec.sent[0].env.Data, &mark); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if mark.ReaderID.Int64() != reader {
+		t.Errorf("reader_id = %d, want %d", mark.ReaderID.Int64(), reader)
+	}
+}
+
+func TestDeleteMessageNotifiesWithARef(t *testing.T) {
+	const sender, recipient int64 = 42, 77
+
+	rec := &recorder{}
+	svc := newTestServiceWithFanout(t, rec, conversationBetween(sender, recipient))
+
+	if err := svc.DeleteMessage(t.Context(), deleteMessageRequest(sender)); err != nil {
+		t.Fatalf("DeleteMessage: %v", err)
+	}
+
+	if got := rec.codes(); len(got) != 1 || got[0] != "chat.message_deleted" {
+		t.Fatalf("codes = %v, want [chat.message_deleted]", got)
+	}
+	var ref chatapi.DeletedMessageRef
+	if err := json.Unmarshal(rec.sent[0].env.Data, &ref); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if ref.CreatedAt.IsZero() {
+		t.Error("created_at is zero; the client cannot locate the row without it")
+	}
+}
+```
+
+The helpers (`newTestServiceWithFanout`, `conversationBetween`, `sendMessageRequest`, `markReadRequest`, `deleteMessageRequest`) are extensions of what `internal/module/chat/service_test.go` already has. **Read that file first** and build on its existing fake repo and constructor rather than inventing a parallel set — `newTestServiceWithFanout` should be its `newTestService` plus one argument. The real method names on `chatapi.Service` may differ from `SendMessage`/`MarkRead`/`DeleteMessage`; check `internal/module/chat/api/api.go` and use the real ones.
+
+- [ ] **Step 4: Run the tests to verify they fail**
+
+Run: `go test -run '^TestSendMessage|^TestMarkRead|^TestDeleteMessage' ./internal/module/chat/`
+Expected: FAIL — the service takes no fanout
+
+- [ ] **Step 5: Add the dependency to the service**
+
+In `internal/module/chat/service.go`, add a `fanout realtime.Fanout` field to `Service` and a parameter to its constructor. Then add the helper and the calls:
+
+```go
+// notify pushes a fact to one account, best-effort.
+//
+// A realtime failure never fails the command: the row is committed by the time this
+// runs, so the alternative is answering 500 for a write that happened. The client
+// re-reads on reconnect, which is what covers a dropped event.
+func notify[T any](ctx context.Context, s *Service, accountID int64, e realtime.Event[T], data T) {
+	if err := realtime.Notify(ctx, s.fanout, accountID, e, data); err != nil {
+		s.log.Warn("realtime notify failed", "code", e.Code, "account_id", accountID, "err", err)
+	}
+}
+```
+
+`notify` is a free function because Go has no generic methods — the same reason `record` in `account/domain/events.go` is one.
+
+Then, at the end of each successful command, after the write and before the return:
+
+```go
+// SendMessage, after the message is persisted and mapped to dto:
+	if other := conv.Other(actorID); other != 0 {
+		notify(ctx, s, other, MessageCreated, dto)
+	}
+```
+
+```go
+// EditMessage, after the update:
+	if other := conv.Other(actorID); other != 0 {
+		notify(ctx, s, other, MessageUpdated, dto)
+	}
+```
+
+```go
+// DeleteMessage, after the delete:
+	if other := conv.Other(actorID); other != 0 {
+		notify(ctx, s, other, MessageDeleted, chatapi.DeletedMessageRef{
+			ID:             id.Of[id.Message](msg.ID),
+			ConversationID: id.Of[id.Conversation](msg.ConversationID),
+			CreatedAt:      msg.CreatedAt,
+		})
+	}
+```
+
+```go
+// MarkRead, after the read mark is stored:
+	if other := conv.Other(actorID); other != 0 {
+		notify(ctx, s, other, ConversationRead, chatapi.ConversationReadMark{
+			ConversationID: id.Of[id.Conversation](conv.ID),
+			ReaderID:       id.Of[id.Account](actorID),
+			ReadAt:         readAt,
+		})
+	}
+```
+
+Add `Other` to `internal/module/chat/domain/conversation.go` if the aggregate has no such method:
+
+```go
+// Other is the participant who is not actorID, or 0 when actorID is not in this
+// conversation. Chat has exactly one thread per pair of accounts, so "the other side"
+// is a property of the row rather than a query.
+func (c *Conversation) Other(actorID int64) int64 {
+	switch actorID {
+	case c.AccountAID:
+		return c.AccountBID
+	case c.AccountBID:
+		return c.AccountAID
+	default:
+		return 0
+	}
+}
+```
+
+Use the real participant field names — check `internal/module/chat/domain/conversation.go`. Each command needs the conversation loaded; several of these methods already load it for authorisation, so reuse that value rather than adding a second read.
+
+- [ ] **Step 6: Run the tests to verify they pass**
+
+Run: `go test -run '^TestSendMessage|^TestMarkRead|^TestDeleteMessage' ./internal/module/chat/`
+Expected: PASS (4 tests)
+
+- [ ] **Step 7: Wire the fanout in fx**
+
+In `internal/module/chat/fx.go`, the service constructor now needs `*eventbus.NATS`. Add it to the provider's parameters — **concrete type, not `eventbus.Client`**, for the reason in Task 12 Step 6.
+
+- [ ] **Step 8: Full verification**
+
+Run: `go build ./... && go test ./... && golangci-lint run`
+Expected: all clean. The contract test from Task 6 should still pass: the four codes were already in `wantCodes`.
+
+- [ ] **Step 9: End-to-end check**
+
+With the gateway running and two accounts seeded, open a socket as account B (Task 12 Step 9) and send a message from account A:
+
+```bash
+curl -sX POST localhost:5000/api/v1/conversations/$CONV/messages \
+  -H "authorization: Bearer $TOKEN_A" \
+  -H 'content-type: application/json' \
+  -d '{"body":"hello over the wire"}'
+```
+
+Expected: B's `wscat` prints `{"code":"chat.message_created","at":"…","data":{…"body":"hello over the wire"…}}`. Then open a socket as **A** as well and repeat: A must **not** receive its own message.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add internal/module/chat/
+git commit -m "feat: chat publishes realtime message events"
+```
+
+---
+
+### Task 14: Offer and order events
+
+**Files:**
+- Modify: `internal/module/order/event.go`
+- Modify: `internal/module/order/service*.go` (whichever file owns the offer commands)
+- Modify: `internal/module/order/fx.go`
+- Create: `internal/gateway/bridge.go`
+- Create: `internal/module/order/api/asyncapi/offer.yaml`
+- Create: `internal/module/order/api/asyncapi/order.yaml`
+- Test: `internal/gateway/bridge_test.go`
+
+**Interfaces:**
+- Consumes: `realtime.Notify` (Task 10), `order.OrderPlacedTopic` / `OrderSettledTopic` (`order/event.go:26`, `:46`), `eventbus.Client`
+- Produces: `order.OfferUpdated`; `gateway.BridgeOrderEvents(bus eventbus.Client, f realtime.Fanout, log *slog.Logger)`
+
+- [ ] **Step 1: Declare the offer event**
+
+Append to `internal/module/order/event.go`:
+
+```go
+// OfferUpdated is every change to a negotiation's standing terms: a counter, an
+// acceptance, a withdrawal, an expiry.
+//
+// One event for all of them rather than one per transition, because a client renders
+// the offer's current state and does not branch on how it got there — and the two
+// sides alternate, so either party may be the one who caused it.
+var OfferUpdated = realtime.NewEvent[orderapi.Offer]("order.offer_updated")
+```
+
+Check the DTO's real name with `grep -n "type Offer" internal/module/order/api/*.go`.
+
+- [ ] **Step 2: Publish it from the offer commands**
+
+`SaveOffer(ctx, o, from)` is the guarded write every offer transition goes through. Find its callers (`grep -n "SaveOffer" internal/module/order/`) and after each successful one, notify **both** parties — either side may hold the standing proposal, so both are watching:
+
+```go
+	for _, accountID := range [...]int64{offer.BuyerID, offer.SellerID} {
+		notify(ctx, s, accountID, OfferUpdated, dto)
+	}
+```
+
+Add the same `notify` helper as Task 13 Step 5 to the order service (it is a free generic function per package; there is no shared home for it because `realtime.Notify` already *is* the shared home — this wrapper only adds the module's logger).
+
+- [ ] **Step 3: Write the bridge test**
+
+`order.placed` and `order.settled` already publish to the Redis bus and their producers must not change. The bridge reads them there and re-publishes to the NATS fan-out.
+
+Create `internal/gateway/bridge_test.go`:
+
+```go
+package gateway_test
+
+import (
+	"encoding/json"
+	"log/slog"
+	"sync"
+	"testing"
+	"time"
+
+	"shopnexus/internal/gateway"
+	"shopnexus/internal/infra/eventbus"
+	"shopnexus/internal/module/order"
+	"shopnexus/internal/shared/realtime"
+)
+
+type bridgeSpy struct {
+	mu   sync.Mutex
+	sent map[string][]string // subject → codes
+	done chan struct{}
+}
+
+func newBridgeSpy() *bridgeSpy {
+	return &bridgeSpy{sent: map[string][]string{}, done: make(chan struct{}, 8)}
+}
+
+func (b *bridgeSpy) Broadcast(subject string, payload []byte) error {
+	var env realtime.Envelope
+	if err := json.Unmarshal(payload, &env); err != nil {
+		return err
+	}
+	b.mu.Lock()
+	b.sent[subject] = append(b.sent[subject], env.Code)
+	b.mu.Unlock()
+	b.done <- struct{}{}
+	return nil
+}
+
+func (b *bridgeSpy) OnBroadcast(string, func([]byte)) (func(), error) { return func() {}, nil }
+
+func (b *bridgeSpy) wait(t *testing.T, n int) {
+	t.Helper()
+	for range n {
+		select {
+		case <-b.done:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for %d broadcasts", n)
+		}
+	}
+}
+
+// Both sides of a sale watch it, so one Redis event becomes two pushes.
+func TestBridgeOrderPlacedReachesBuyerAndSeller(t *testing.T) {
+	bus := eventbus.NewMemory()
+	t.Cleanup(func() {
+		if err := bus.Close(); err != nil {
+			t.Errorf("close bus: %v", err)
+		}
+	})
+
+	spy := newBridgeSpy()
+	gateway.BridgeOrderEvents(bus, spy, slog.New(slog.DiscardHandler))
+
+	err := eventbus.Publish(t.Context(), bus, order.OrderPlacedTopic, order.OrderPlaced{
+		OrderID:  9,
+		BuyerID:  42,
+		SellerID: 77,
+	})
+	if err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	spy.wait(t, 2)
+
+	spy.mu.Lock()
+	defer spy.mu.Unlock()
+	for _, accountID := range []int64{42, 77} {
+		subject := realtime.AccountSubject(accountID)
+		codes := spy.sent[subject]
+		if len(codes) != 1 || codes[0] != "order.placed" {
+			t.Errorf("subject %s got %v, want [order.placed]", subject, codes)
+		}
+	}
+}
+
+func TestBridgeOrderSettled(t *testing.T) {
+	bus := eventbus.NewMemory()
+	t.Cleanup(func() {
+		if err := bus.Close(); err != nil {
+			t.Errorf("close bus: %v", err)
+		}
+	})
+
+	spy := newBridgeSpy()
+	gateway.BridgeOrderEvents(bus, spy, slog.New(slog.DiscardHandler))
+
+	err := eventbus.Publish(t.Context(), bus, order.OrderSettledTopic, order.OrderSettled{
+		OrderID:  9,
+		BuyerID:  42,
+		SellerID: 77,
+	})
+	if err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	spy.wait(t, 2)
+
+	spy.mu.Lock()
+	defer spy.mu.Unlock()
+	if codes := spy.sent[realtime.AccountSubject(42)]; len(codes) != 1 || codes[0] != "order.settled" {
+		t.Errorf("buyer got %v, want [order.settled]", codes)
+	}
+}
+```
+
+- [ ] **Step 4: Run the tests to verify they fail**
+
+Run: `go test -run '^TestBridge' ./internal/gateway/`
+Expected: FAIL — `undefined: gateway.BridgeOrderEvents`
+
+- [ ] **Step 5: Write the bridge**
+
+Create `internal/gateway/bridge.go`:
+
+```go
+package gateway
+
+import (
+	"context"
+	"log/slog"
+
+	"shopnexus/internal/infra/eventbus"
+	"shopnexus/internal/module/order"
+	orderapi "shopnexus/internal/module/order/api"
+	"shopnexus/internal/shared/id"
+	"shopnexus/internal/shared/realtime"
+)
+
+// The realtime codes for facts that already travel on the durable bus. Declared here
+// rather than in order, because order publishes the Redis topic and knows nothing
+// about sockets — this file is the only thing that translates between the two.
+var (
+	orderPlaced  = realtime.NewEvent[orderapi.OrderRef]("order.placed")
+	orderSettled = realtime.NewEvent[orderapi.OrderRef]("order.settled")
+)
+
+// BridgeOrderEvents pushes order facts to the sockets of everyone involved.
+//
+// order.placed and order.settled already exist on the Redis bus, so their producers
+// are untouched: this reads them there and re-publishes to the NATS fan-out. The
+// consumer group is a single shared "ws-bridge" — whichever replica receives the
+// Redis message broadcasts it, and every replica gets it from NATS. Making the group
+// per-replica would broadcast the same fact once per replica.
+func BridgeOrderEvents(bus eventbus.Client, f realtime.Fanout, log *slog.Logger) {
+	eventbus.Subscribe(bus, order.OrderPlacedTopic, "ws-bridge", func(ctx context.Context, e order.OrderPlaced) error {
+		push(ctx, f, log, orderPlaced, e.OrderID, e.BuyerID, e.SellerID)
+		return nil
+	})
+
+	eventbus.Subscribe(bus, order.OrderSettledTopic, "ws-bridge", func(ctx context.Context, e order.OrderSettled) error {
+		push(ctx, f, log, orderSettled, e.OrderID, e.BuyerID, e.SellerID)
+		return nil
+	})
+}
+
+// push notifies both sides of a sale and always reports success to the bus.
+//
+// Returning an error would nack the Redis message and redeliver it, which for a
+// best-effort push means re-broadcasting a fact the sockets that were connected have
+// already seen. A lost push is repaired when the client reconnects and re-reads.
+func push(ctx context.Context, f realtime.Fanout, log *slog.Logger, e realtime.Event[orderapi.OrderRef], orderID, buyerID, sellerID int64) {
+	ref := orderapi.OrderRef{ID: id.Of[id.Order](orderID)}
+	for _, accountID := range [...]int64{buyerID, sellerID} {
+		if accountID == 0 {
+			continue
+		}
+		if err := realtime.Notify(ctx, f, accountID, e, ref); err != nil {
+			log.Warn("bridge realtime notify failed", "code", e.Code, "account_id", accountID, "err", err)
+		}
+	}
+}
+```
+
+Add `OrderRef` to `internal/module/order/api/api.go`:
+
+```go
+// OrderRef names an order without its contents. It is what a realtime event carries:
+// the two sides of a sale see different projections of an order, so pushing the
+// entity would mean deciding whose view to send — the id lets each client fetch its
+// own.
+type OrderRef struct {
+	ID id.ID[id.Order] `json:"id"`
+}
+```
+
+That choice is worth being explicit about: `order.placed` deliberately carries **only the id**, unlike the chat events which carry the whole message. A message reads the same to both participants; an order does not.
+
+- [ ] **Step 6: Run the tests to verify they pass**
+
+Run: `go test -run '^TestBridge' ./internal/gateway/`
+Expected: PASS (2 tests)
+
+- [ ] **Step 7: Write the AsyncAPI fragments**
+
+Create `internal/module/order/api/asyncapi/offer.yaml`:
+
+```yaml
+# Order's realtime surface. Both parties receive every event: the two sides of a
+# negotiation alternate, so either may have caused the change the other is watching for.
+components:
+  messages:
+    OfferUpdated:
+      name: order.offer_updated
+      title: Offer updated
+      summary: A negotiation's standing terms changed — countered, accepted, withdrawn or expired.
+      description: |
+        One message for every transition rather than one per kind: a client renders the
+        offer's current state and does not branch on how it got there.
+      contentType: application/json
+      payload:
+        type: object
+        required: [code, at, data]
+        properties:
+          code:
+            type: string
+            const: order.offer_updated
+          at:
+            type: string
+            format: date-time
+            example: '2026-08-03T11:17:04Z'
+          data:
+            $ref: '#/components/schemas/Offer'
+```
+
+Create `internal/module/order/api/asyncapi/order.yaml`:
+
+```yaml
+components:
+  messages:
+    OrderPlaced:
+      name: order.placed
+      title: Order placed
+      summary: A paid checkout became an order. Sent to buyer and seller.
+      description: |
+        Carries the order's id and nothing else. The two sides see different
+        projections of an order, so pushing the entity would mean choosing whose view
+        to send; each client re-reads its own over REST.
+      contentType: application/json
+      payload:
+        type: object
+        required: [code, at, data]
+        properties:
+          code:
+            type: string
+            const: order.placed
+          at:
+            type: string
+            format: date-time
+            example: '2026-08-03T11:17:04Z'
+          data:
+            $ref: '#/components/schemas/OrderRef'
+
+    OrderSettled:
+      name: order.settled
+      title: Order settled
+      summary: Escrow closed and the payout was released. Sent to buyer and seller.
+      contentType: application/json
+      payload:
+        type: object
+        required: [code, at, data]
+        properties:
+          code:
+            type: string
+            const: order.settled
+          at:
+            type: string
+            format: date-time
+            example: '2026-08-03T11:17:04Z'
+          data:
+            $ref: '#/components/schemas/OrderRef'
+```
+
+Add `OrderRef` to the OpenAPI side too — `internal/module/order/api/openapi/order.yaml`, under `components.schemas`, or Task 5's closure check refuses it:
+
+```yaml
+    OrderRef:
+      type: object
+      description: An order's id alone, as carried by a realtime event.
+      required: [id]
+      properties:
+        id:
+          type: string
+          example: ord_2h9qk4mfx7bd3
+```
+
+- [ ] **Step 8: Extend the contract test's list**
+
+In `internal/gateway/asyncapi_contract_test.go`, `wantCodes` becomes (still sorted):
+
+```go
+var wantCodes = []string{
+	"chat.conversation_read",
+	"chat.message_created",
+	"chat.message_deleted",
+	"chat.message_updated",
+	"order.offer_updated",
+	"order.placed",
+	"order.settled",
+}
+```
+
+- [ ] **Step 9: Wire the bridge in fx**
+
+In `internal/gateway/fx.go`, add `fx.Invoke(BridgeOrderEvents)`. Its `realtime.Fanout` parameter needs a provider, since fx wires by exact type and `*eventbus.NATS` is what exists:
+
+```go
+// The socket's transport is the concrete NATS bus. Providing the interface separately
+// is what lets BridgeOrderEvents and the hub both take it without either naming infra.
+func newFanout(bus *eventbus.NATS) realtime.Fanout { return bus }
+```
+
+- [ ] **Step 10: Full verification**
+
+Run: `go generate ./... && go build ./... && go test ./... && golangci-lint run`
+Expected: all clean, and `npx -y @asyncapi/cli@latest validate api/asyncapi.gen.yaml` still reports valid.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add internal/module/order/ internal/gateway/ api/
+git commit -m "feat: offer and order realtime events"
+```
+
+---
+
+### Task 15: Notification events
+
+**Files:**
+- Modify: `internal/module/account/service_notification.go`
+- Modify: `internal/module/account/fx.go`
+- Create: `internal/module/account/event.go`
+- Create: `internal/module/account/api/asyncapi/notification.yaml`
+- Modify: `internal/gateway/asyncapi_contract_test.go`
+- Test: `internal/module/account/service_notification_test.go`
+
+**Interfaces:**
+- Consumes: `accountapi.Service.CreateNotification` (Task 3), `realtime.Notify` (Task 10)
+- Produces: `account.NotificationCreated`
+
+- [ ] **Step 1: Declare the event**
+
+Create `internal/module/account/event.go`:
+
+```go
+package account
+
+import (
+	accountapi "shopnexus/internal/module/account/api"
+	"shopnexus/internal/shared/realtime"
+)
+
+// NotificationCreated is a feed row appearing. It goes to the account the row belongs
+// to and to nobody else — unlike an order fact, a notification has exactly one
+// interested party by construction.
+var NotificationCreated = realtime.NewEvent[accountapi.Notification]("account.notification_created")
+```
+
+- [ ] **Step 2: Write the failing test**
+
+Append to `internal/module/account/service_notification_test.go`:
+
+```go
+func TestCreateNotificationPushesToTheOwner(t *testing.T) {
+	repo := newFakeRepo()
+	rec := &recorder{}
+	svc := newTestServiceWithFanout(t, repo, rec)
+
+	_, err := svc.CreateNotification(t.Context(), accountapi.CreateNotificationRequest{
+		AccountID: id.Of[id.Account](42),
+		Category:  string(domain.CategoryOrder),
+		Title:     "Your order shipped",
+	})
+	if err != nil {
+		t.Fatalf("CreateNotification: %v", err)
+	}
+
+	if len(rec.sent) != 1 {
+		t.Fatalf("pushed %d events, want 1", len(rec.sent))
+	}
+	if got, want := rec.sent[0].subject, realtime.AccountSubject(42); got != want {
+		t.Errorf("subject = %q, want %q", got, want)
+	}
+	if rec.sent[0].env.Code != "account.notification_created" {
+		t.Errorf("code = %q", rec.sent[0].env.Code)
+	}
+}
+
+// No row means no event: a disabled in-app preference must not push a notification
+// the feed will never show.
+func TestCreateNotificationDoesNotPushWhenSuppressed(t *testing.T) {
+	repo := newFakeRepo()
+	repo.preferences = []domain.Preference{{
+		AccountID: 42,
+		Category:  domain.CategoryPromotion,
+		Channel:   domain.ChannelInApp,
+		IsEnabled: false,
+	}}
+	rec := &recorder{}
+	svc := newTestServiceWithFanout(t, repo, rec)
+
+	_, err := svc.CreateNotification(t.Context(), accountapi.CreateNotificationRequest{
+		AccountID: id.Of[id.Account](42),
+		Category:  string(domain.CategoryPromotion),
+		Title:     "50% off",
+	})
+	if err != nil {
+		t.Fatalf("CreateNotification: %v", err)
+	}
+	if len(rec.sent) != 0 {
+		t.Fatalf("pushed %d events, want 0", len(rec.sent))
+	}
+}
+```
+
+Copy the `recorder` type from Task 13 Step 3 into this package's test file — it is a test double, and two packages sharing one through an exported test helper is worse than eight duplicated lines.
+
+- [ ] **Step 3: Run the tests to verify they fail**
+
+Run: `go test -run '^TestCreateNotification' ./internal/module/account/`
+Expected: FAIL — the service takes no fanout
+
+- [ ] **Step 4: Publish from the service**
+
+Add `fanout realtime.Fanout` to `account.Service` and its constructor, plus the same `notify` helper as Task 13 Step 5. Then in `CreateNotification`, after the insert and the DTO mapping, before the return:
+
+```go
+	dto := toAPINotification(n)
+	notify(ctx, s, accountID, NotificationCreated, dto)
+	return dto, nil
+```
+
+The early return for a suppressed preference already skips this, which is what the second test asserts.
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `go test -run '^TestCreateNotification' ./internal/module/account/`
+Expected: PASS (5 tests — the three from Task 3 plus these two)
+
+- [ ] **Step 6: Write the fragment**
+
+Create `internal/module/account/api/asyncapi/notification.yaml`:
+
+```yaml
+# Account's realtime surface: the notification feed. One recipient by construction —
+# a notification row belongs to exactly one account.
+components:
+  messages:
+    NotificationCreated:
+      name: account.notification_created
+      title: Notification created
+      summary: A new row in your notification feed.
+      description: |
+        Only the in-app channel produces this. Push, email and SMS are dispatched
+        elsewhere and are not observable on the socket.
+
+        Carries the whole notification, so a client can render the feed entry and
+        increment its unread badge without a round trip.
+      contentType: application/json
+      payload:
+        type: object
+        required: [code, at, data]
+        properties:
+          code:
+            type: string
+            const: account.notification_created
+          at:
+            type: string
+            format: date-time
+            example: '2026-08-03T11:17:04Z'
+          data:
+            $ref: '#/components/schemas/Notification'
+```
+
+Confirm the OpenAPI schema is called `Notification`: `grep -n "    Notification:" internal/module/account/api/openapi/notification.yaml`.
+
+- [ ] **Step 7: Complete the contract list**
+
+`wantCodes` in `internal/gateway/asyncapi_contract_test.go` reaches its final form — all eight events from the spec's catalogue:
+
+```go
+var wantCodes = []string{
+	"account.notification_created",
+	"chat.conversation_read",
+	"chat.message_created",
+	"chat.message_deleted",
+	"chat.message_updated",
+	"order.offer_updated",
+	"order.placed",
+	"order.settled",
+}
+```
+
+- [ ] **Step 8: Wire fx and verify**
+
+Add `*eventbus.NATS` to account's service provider in `internal/module/account/fx.go`, then:
+
+Run: `go generate ./... && go build ./... && go test ./... && golangci-lint run`
+Expected: all clean
+
+Run: `npx -y @asyncapi/cli@latest validate api/asyncapi.gen.yaml`
+Expected: valid
+
+- [ ] **Step 9: End-to-end check**
+
+With a socket open as the buyer, complete a payment so `order.placed` fires. Expected on the socket: `order.placed` from the bridge **and** `account.notification_created` from the subscriber — two events for one fact, which is correct: one updates the order view, the other the feed.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add internal/module/account/ internal/gateway/ api/
+git commit -m "feat: push notification feed events"
+```
+
+---
+
+**The backend is complete here.** All eight events publish, the document describes them, and the contract test guards the pair. The website still polls.
+
+---
+
+I'll continue with Tasks 16 through 18 (website) in the next pass.
