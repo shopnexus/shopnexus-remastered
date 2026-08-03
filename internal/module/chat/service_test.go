@@ -35,9 +35,16 @@ type harness struct {
 func newHarness() *harness {
 	repo := newFakeRepo()
 	uploads := newFakeUploads()
-	svc := chat.NewService(repo, fakeAccounts{}, uploads, validation.Default(), slog.New(slog.DiscardHandler))
+	svc := chat.NewService(repo, fakeAccounts{}, uploads, validation.Default(), slog.New(slog.DiscardHandler), noopFanout{})
 	return &harness{svc: svc, repo: repo, uploads: uploads}
 }
+
+// noopFanout is the fanout for tests that are not about realtime: it accepts every push
+// and drops it, so a command's happy path does not need a bus to run.
+type noopFanout struct{}
+
+func (noopFanout) Broadcast(string, []byte) error                   { return nil }
+func (noopFanout) OnBroadcast(string, func([]byte)) (func(), error) { return func() {}, nil }
 
 func status(t *testing.T, err error) uint16 {
 	t.Helper()

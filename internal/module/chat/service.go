@@ -16,6 +16,7 @@ import (
 	"shopnexus/internal/module/chat/port"
 	"shopnexus/internal/module/common"
 	"shopnexus/internal/shared/id"
+	"shopnexus/internal/shared/realtime"
 	"shopnexus/internal/shared/validation"
 )
 
@@ -29,10 +30,24 @@ type Service struct {
 	uploads common.Uploads
 	v       *validator.Validate
 	log     *slog.Logger
+	// fanout pushes the realtime facts in event.go to the socket a participant may have
+	// open. Best-effort: a write always commits whether or not anybody is listening.
+	fanout realtime.Fanout
 }
 
-func NewService(repo port.Repository, accounts accountapi.Service, uploads common.Uploads, v *validator.Validate, log *slog.Logger) *Service {
-	return &Service{repo: repo, accounts: accounts, uploads: uploads, v: v, log: log}
+func NewService(repo port.Repository, accounts accountapi.Service, uploads common.Uploads, v *validator.Validate, log *slog.Logger, fanout realtime.Fanout) *Service {
+	return &Service{repo: repo, accounts: accounts, uploads: uploads, v: v, log: log, fanout: fanout}
+}
+
+// notify pushes a fact to one account, best-effort.
+//
+// A realtime failure never fails the command: the row is committed by the time this runs,
+// so the alternative is answering 500 for a write that happened. The client re-reads on
+// reconnect, which is what covers a dropped event.
+func notify[T any](ctx context.Context, s *Service, accountID int64, e realtime.Event[T], data T) {
+	if err := realtime.Notify(ctx, s.fanout, accountID, e, data); err != nil {
+		s.log.Warn("realtime notify failed", "code", e.Code, "account_id", accountID, "err", err)
+	}
 }
 
 var _ chatapi.Service = (*Service)(nil)
@@ -176,7 +191,8 @@ func (s *Service) ListMessages(ctx context.Context, req chatapi.ListMessagesRequ
 // module's own confirmed uploads: a message pointing at nothing is a photo that never
 // renders.
 func (s *Service) SendMessage(ctx context.Context, req chatapi.SendMessageRequest) (chatapi.Message, error) {
-	if _, err := s.participant(ctx, req.ActorID, req.ConversationID); err != nil {
+	thread, err := s.participant(ctx, req.ActorID, req.ConversationID)
+	if err != nil {
 		return chatapi.Message{}, err
 	}
 	attachments := resourceKeys(req.Attachments)
@@ -191,7 +207,16 @@ func (s *Service) SendMessage(ctx context.Context, req chatapi.SendMessageReques
 	if err := s.repo.InsertMessage(ctx, &m); err != nil {
 		return chatapi.Message{}, fmt.Errorf("insert message: %w", err)
 	}
-	return s.toAPIMessage(ctx, m)
+	dto, err := s.toAPIMessage(ctx, m)
+	if err != nil {
+		return chatapi.Message{}, err
+	}
+	// The other side, never the sender: they already hold this row from the response
+	// they are about to get, and echoing it back would race their optimistic update.
+	if other := thread.Other(req.ActorID.Int64()); other != 0 {
+		notify(ctx, s, other, MessageCreated, dto)
+	}
+	return dto, nil
 }
 
 // MarkConversationRead moves the caller's own mark. Absent means "everything so far",
@@ -210,6 +235,15 @@ func (s *Service) MarkConversationRead(ctx context.Context, req chatapi.MarkConv
 	}
 	if err := s.repo.SaveConversation(ctx, thread); err != nil {
 		return chatapi.Conversation{}, fmt.Errorf("save conversation: %w", err)
+	}
+	// The other side, never the reader: this is their own read mark advancing, which is
+	// nothing new to them.
+	if other := thread.Other(req.ActorID.Int64()); other != 0 {
+		notify(ctx, s, other, ConversationRead, chatapi.ConversationReadMark{
+			ConversationID: id.Of[id.Conversation](thread.ID),
+			ReaderID:       req.ActorID,
+			ReadAt:         at,
+		})
 	}
 	rows, err := s.inboxRows(ctx, req.ActorID.Int64(), []domain.Conversation{thread})
 	if err != nil {
@@ -231,7 +265,14 @@ func (s *Service) UpdateMessage(ctx context.Context, req chatapi.UpdateMessageRe
 	if err := s.repo.SaveMessage(ctx, m); err != nil {
 		return chatapi.Message{}, fmt.Errorf("save message: %w", err)
 	}
-	return s.toAPIMessage(ctx, m)
+	dto, err := s.toAPIMessage(ctx, m)
+	if err != nil {
+		return chatapi.Message{}, err
+	}
+	if other := s.findOther(ctx, m.ConversationID, req.ActorID.Int64()); other != 0 {
+		notify(ctx, s, other, MessageUpdated, dto)
+	}
+	return dto, nil
 }
 
 // RedactMessage is unsending: the content goes, the row stays so the thread has no
@@ -246,6 +287,13 @@ func (s *Service) RedactMessage(ctx context.Context, req chatapi.RedactMessageRe
 	}
 	if err := s.repo.SaveMessage(ctx, m); err != nil {
 		return fmt.Errorf("save message: %w", err)
+	}
+	if other := s.findOther(ctx, m.ConversationID, req.ActorID.Int64()); other != 0 {
+		notify(ctx, s, other, MessageDeleted, chatapi.DeletedMessageRef{
+			ID:             id.Of[id.Message](m.ID),
+			ConversationID: id.Of[id.Conversation](m.ConversationID),
+			CreatedAt:      m.CreatedAt,
+		})
 	}
 	return nil
 }
@@ -313,6 +361,19 @@ func (s *Service) participant(ctx context.Context, actorID id.ID[id.Account], co
 		return domain.Conversation{}, domain.ErrConversationNotFound
 	}
 	return thread, nil
+}
+
+// findOther loads the thread only to learn who is not the actor. UpdateMessage and
+// RedactMessage authorise off the message itself, so — unlike SendMessage and
+// MarkConversationRead — they hold no conversation to reuse; the lookup is as best-effort
+// as the notify it feeds, since the message write it follows already committed.
+func (s *Service) findOther(ctx context.Context, conversationID, actorID int64) int64 {
+	thread, err := s.repo.FindConversation(ctx, conversationID)
+	if err != nil {
+		s.log.Warn("realtime: find conversation for notify failed", "conversation_id", conversationID, "err", err)
+		return 0
+	}
+	return thread.Other(actorID)
 }
 
 // inboxRows fills a page: the last message and the unread count for every thread at once,
