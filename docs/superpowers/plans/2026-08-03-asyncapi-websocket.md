@@ -2847,4 +2847,955 @@ git commit -m "feat: realtime event envelope and subject scheme"
 
 ---
 
-I'll continue with Tasks 11 through 18 in the next pass.
+## Phase B3 — The Gateway
+
+### Task 11: The Hub
+
+**Files:**
+- Create: `internal/gateway/ws/hub.go`
+- Test: `internal/gateway/ws/hub_test.go`
+
+**Interfaces:**
+- Consumes: `realtime.Fanout`, `realtime.AccountSubject` (Task 10)
+- Produces: `ws.Config`; `ws.NewHub(f realtime.Fanout, log *slog.Logger, cfg Config) *Hub`; `(*Hub).Join(accountID int64) (*Client, error)`; `(*Hub).Leave(c *Client)`; `(*Hub).Count() int`; `(*Client).Out() <-chan []byte`; `ws.ErrTooManySockets`
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `internal/gateway/ws/hub_test.go`. The fake is the same shape as Task 10's but records subscriptions, because subject lifecycle is half of what this task must get right:
+
+```go
+package ws_test
+
+import (
+	"errors"
+	"log/slog"
+	"sync"
+	"testing"
+	"time"
+
+	"shopnexus/internal/gateway/ws"
+	"shopnexus/internal/shared/realtime"
+)
+
+// fakeFanout lets a test deliver to a subject and observe subscribe/unsubscribe.
+type fakeFanout struct {
+	mu      sync.Mutex
+	handler map[string]func([]byte)
+	subs    map[string]int // net subscriptions per subject
+	err     error
+}
+
+func newFakeFanout() *fakeFanout {
+	return &fakeFanout{handler: map[string]func([]byte){}, subs: map[string]int{}}
+}
+
+func (f *fakeFanout) Broadcast(string, []byte) error { return nil }
+
+func (f *fakeFanout) OnBroadcast(subject string, h func([]byte)) (func(), error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return nil, f.err
+	}
+	f.handler[subject] = h
+	f.subs[subject]++
+	return func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.subs[subject]--
+		delete(f.handler, subject)
+	}, nil
+}
+
+// deliver simulates NATS pushing a message on subject.
+func (f *fakeFanout) deliver(t *testing.T, subject string, b []byte) {
+	t.Helper()
+	f.mu.Lock()
+	h := f.handler[subject]
+	f.mu.Unlock()
+	if h == nil {
+		t.Fatalf("nothing subscribed to %s", subject)
+	}
+	h(b)
+}
+
+func (f *fakeFanout) subCount(subject string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.subs[subject]
+}
+
+func testConfig() ws.Config {
+	return ws.Config{SendBuffer: 4, MaxPerAccount: 3}
+}
+
+func newHub(f realtime.Fanout) *ws.Hub {
+	return ws.NewHub(f, slog.New(slog.DiscardHandler), testConfig())
+}
+
+func TestJoinDeliversToEverySocketOfTheAccount(t *testing.T) {
+	f := newFakeFanout()
+	hub := newHub(f)
+
+	first, err := hub.Join(42)
+	if err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	defer hub.Leave(first)
+
+	second, err := hub.Join(42)
+	if err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	defer hub.Leave(second)
+
+	f.deliver(t, realtime.AccountSubject(42), []byte("event"))
+
+	for i, c := range []*ws.Client{first, second} {
+		select {
+		case got := <-c.Out():
+			if string(got) != "event" {
+				t.Errorf("socket %d got %q", i, got)
+			}
+		case <-time.After(time.Second):
+			t.Errorf("socket %d received nothing", i)
+		}
+	}
+}
+
+// One subscription per account, not per socket: three tabs must not triple the traffic.
+func TestJoinSubscribesOncePerAccount(t *testing.T) {
+	f := newFakeFanout()
+	hub := newHub(f)
+	subject := realtime.AccountSubject(42)
+
+	first, err := hub.Join(42)
+	if err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	if got := f.subCount(subject); got != 1 {
+		t.Fatalf("subscriptions = %d, want 1", got)
+	}
+
+	second, err := hub.Join(42)
+	if err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	if got := f.subCount(subject); got != 1 {
+		t.Fatalf("subscriptions after second join = %d, want 1", got)
+	}
+
+	// The subject survives while any socket remains.
+	hub.Leave(first)
+	if got := f.subCount(subject); got != 1 {
+		t.Fatalf("subscriptions after one leave = %d, want 1", got)
+	}
+
+	// The last one out cancels it, or a replica keeps paying for an account it no
+	// longer serves.
+	hub.Leave(second)
+	if got := f.subCount(subject); got != 0 {
+		t.Fatalf("subscriptions after last leave = %d, want 0", got)
+	}
+}
+
+func TestLeaveIsIdempotent(t *testing.T) {
+	f := newFakeFanout()
+	hub := newHub(f)
+
+	c, err := hub.Join(42)
+	if err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	hub.Leave(c)
+	hub.Leave(c) // a write pump and a read loop can both notice a dead socket
+
+	if got := f.subCount(realtime.AccountSubject(42)); got != 0 {
+		t.Errorf("subscriptions = %d, want 0", got)
+	}
+	if got := hub.Count(); got != 0 {
+		t.Errorf("Count = %d, want 0", got)
+	}
+}
+
+// A slow consumer is dropped, never waited for: the handler runs on the NATS dispatch
+// goroutine, so blocking there stalls every subject on the connection.
+func TestSlowConsumerIsClosedNotBlocking(t *testing.T) {
+	f := newFakeFanout()
+	hub := newHub(f)
+	subject := realtime.AccountSubject(42)
+
+	c, err := hub.Join(42)
+	if err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+
+	// SendBuffer is 4 and nothing is reading, so the fifth delivery overflows.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 5 {
+			f.deliver(t, subject, []byte("event"))
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("delivery blocked on a full buffer")
+	}
+
+	select {
+	case <-c.Done():
+	case <-time.After(time.Second):
+		t.Fatal("overflowing socket was not closed")
+	}
+
+	if got := f.subCount(subject); got != 0 {
+		t.Errorf("subscriptions = %d, want 0 — dropping the last socket unsubscribes", got)
+	}
+}
+
+func TestJoinRefusesTooManySockets(t *testing.T) {
+	f := newFakeFanout()
+	hub := newHub(f) // MaxPerAccount is 3
+
+	for i := range 3 {
+		if _, err := hub.Join(42); err != nil {
+			t.Fatalf("Join %d: %v", i, err)
+		}
+	}
+
+	if _, err := hub.Join(42); !errors.Is(err, ws.ErrTooManySockets) {
+		t.Fatalf("err = %v, want ErrTooManySockets", err)
+	}
+
+	// A different account is unaffected: the cap is per account, not global.
+	if _, err := hub.Join(43); err != nil {
+		t.Fatalf("Join for another account: %v", err)
+	}
+}
+
+func TestJoinSurfacesASubscribeFailure(t *testing.T) {
+	f := newFakeFanout()
+	f.err = errors.New("nats down")
+	hub := newHub(f)
+
+	if _, err := hub.Join(42); err == nil {
+		t.Fatal("Join succeeded while the bus was refusing subscriptions")
+	}
+	if got := hub.Count(); got != 0 {
+		t.Errorf("Count = %d, want 0 — a failed join must leave nothing behind", got)
+	}
+}
+
+// Events for one account never reach another's socket.
+func TestDeliveryIsIsolatedPerAccount(t *testing.T) {
+	f := newFakeFanout()
+	hub := newHub(f)
+
+	mine, err := hub.Join(42)
+	if err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	defer hub.Leave(mine)
+
+	theirs, err := hub.Join(43)
+	if err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	defer hub.Leave(theirs)
+
+	f.deliver(t, realtime.AccountSubject(43), []byte("theirs"))
+
+	select {
+	case got := <-mine.Out():
+		t.Fatalf("account 42 received %q", got)
+	case <-time.After(200 * time.Millisecond):
+	}
+	select {
+	case got := <-theirs.Out():
+		if string(got) != "theirs" {
+			t.Errorf("got %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Error("account 43 received nothing")
+	}
+}
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `go test ./internal/gateway/ws/`
+Expected: FAIL — the package does not exist
+
+- [ ] **Step 3: Write the Hub**
+
+Create `internal/gateway/ws/hub.go`:
+
+```go
+// Package ws holds the WebSocket fan-out state for one gateway process: which
+// accounts have sockets here, and the subject subscription each one needs.
+package ws
+
+import (
+	"errors"
+	"log/slog"
+	"net/http"
+	"sync"
+
+	"shopnexus/internal/shared/errx"
+	"shopnexus/internal/shared/realtime"
+)
+
+// ErrTooManySockets refuses a connection past an account's cap. 429 rather than 503:
+// it is the caller's own doing and retrying later is the right advice.
+var ErrTooManySockets = errx.NewError(http.StatusTooManyRequests, "too_many_sockets", "too many open connections for this account")
+
+// Config is the hub's operational tuning. Every field is required — the values come
+// from env config, which has no defaults.
+type Config struct {
+	// SendBuffer is how many envelopes a socket may fall behind before it is dropped.
+	SendBuffer int
+	// MaxPerAccount caps concurrent sockets for one account, so a tab-spammer cannot
+	// exhaust the process's descriptors.
+	MaxPerAccount int
+}
+
+// Client is one socket's end of the hub. The handler owns the reading; the hub only
+// ever writes to out and closes done.
+type Client struct {
+	accountID int64
+	out       chan []byte
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+// Out yields envelopes to write to the socket. It is closed when the client is
+// dropped, so a write pump can range over it.
+func (c *Client) Out() <-chan []byte { return c.out }
+
+// Done is closed when the hub drops this client — because it fell behind, or because
+// Leave was called. A write pump selects on it to stop promptly.
+func (c *Client) Done() <-chan struct{} { return c.done }
+
+func (c *Client) close() {
+	c.closeOnce.Do(func() {
+		close(c.done)
+		close(c.out)
+	})
+}
+
+// accountSub is every socket one account has on this replica, plus the fan-out
+// subscription feeding them.
+type accountSub struct {
+	clients map[*Client]struct{}
+	cancel  func()
+}
+
+// Hub routes fan-out messages to the sockets this process holds.
+//
+// It subscribes an account's subject when that account's first socket arrives and
+// cancels it when the last one leaves, so a replica receives bytes only for accounts
+// it is actually serving — the filtering happens in NATS rather than here.
+type Hub struct {
+	fanout realtime.Fanout
+	log    *slog.Logger
+	cfg    Config
+
+	mu   sync.Mutex
+	subs map[int64]*accountSub
+}
+
+func NewHub(f realtime.Fanout, log *slog.Logger, cfg Config) *Hub {
+	return &Hub{
+		fanout: f,
+		log:    log,
+		cfg:    cfg,
+		subs:   map[int64]*accountSub{},
+	}
+}
+
+// Join registers a socket and starts delivering the account's events to it.
+func (h *Hub) Join(accountID int64) (*Client, error) {
+	c := &Client{
+		accountID: accountID,
+		out:       make(chan []byte, h.cfg.SendBuffer),
+		done:      make(chan struct{}),
+	}
+
+	h.mu.Lock()
+	sub, existing := h.subs[accountID]
+	if existing {
+		if len(sub.clients) >= h.cfg.MaxPerAccount {
+			h.mu.Unlock()
+			return nil, ErrTooManySockets
+		}
+		sub.clients[c] = struct{}{}
+		h.mu.Unlock()
+		return c, nil
+	}
+	// Claim the slot before subscribing so two concurrent joins cannot both decide
+	// they are the first and open two subscriptions.
+	sub = &accountSub{clients: map[*Client]struct{}{c: {}}}
+	h.subs[accountID] = sub
+	h.mu.Unlock()
+
+	cancel, err := h.fanout.OnBroadcast(realtime.AccountSubject(accountID), func(b []byte) {
+		h.dispatch(accountID, b)
+	})
+	if err != nil {
+		h.mu.Lock()
+		// Only withdraw the claim if nobody joined behind us; they would have their own
+		// working subscription only if they also failed, so this is the honest cleanup.
+		if current, ok := h.subs[accountID]; ok && current == sub {
+			delete(h.subs, accountID)
+		}
+		h.mu.Unlock()
+		c.close()
+		return nil, err
+	}
+
+	h.mu.Lock()
+	sub.cancel = cancel
+	h.mu.Unlock()
+	return c, nil
+}
+
+// Leave drops a socket, cancelling the account's subscription if it was the last one.
+// Calling it twice is safe: a read loop and a write pump both notice a dead socket.
+func (h *Hub) Leave(c *Client) {
+	h.mu.Lock()
+	cancel := h.remove(c)
+	h.mu.Unlock()
+
+	c.close()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// Count reports open sockets. It is what the connection gauge samples.
+func (h *Hub) Count() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var n int
+	for _, sub := range h.subs {
+		n += len(sub.clients)
+	}
+	return n
+}
+
+// dispatch hands one message to every socket of an account.
+//
+// It runs on the bus's dispatch goroutine, so it must never block: a socket whose
+// buffer is full is dropped instead of waited for. Waiting would stall delivery for
+// every account this process serves in order to accommodate one slow reader.
+func (h *Hub) dispatch(accountID int64, payload []byte) {
+	h.mu.Lock()
+	sub, ok := h.subs[accountID]
+	if !ok {
+		h.mu.Unlock()
+		return
+	}
+	var (
+		dropped []*Client
+		cancels []func()
+	)
+	for c := range sub.clients {
+		select {
+		case c.out <- payload:
+		default:
+			dropped = append(dropped, c)
+		}
+	}
+	for _, c := range dropped {
+		if cancel := h.remove(c); cancel != nil {
+			cancels = append(cancels, cancel)
+		}
+	}
+	h.mu.Unlock()
+
+	for _, c := range dropped {
+		h.log.Warn("dropped a websocket that fell behind",
+			"account_id", c.accountID, "buffer", h.cfg.SendBuffer)
+		c.close()
+	}
+	for _, cancel := range cancels {
+		cancel()
+	}
+}
+
+// remove unregisters c and returns the subscription's cancel when c was the last
+// socket for its account. Callers must hold h.mu.
+func (h *Hub) remove(c *Client) func() {
+	sub, ok := h.subs[c.accountID]
+	if !ok {
+		return nil
+	}
+	if _, member := sub.clients[c]; !member {
+		return nil
+	}
+	delete(sub.clients, c)
+	if len(sub.clients) > 0 {
+		return nil
+	}
+	delete(h.subs, c.accountID)
+	return sub.cancel
+}
+
+// errTooMany keeps errors.Is working for callers that only import this package.
+var _ = errors.Is
+```
+
+Delete that last `var _ = errors.Is` line — it is only there to remind you that `errors` must actually be used; if the file does not use it, remove the import. `golangci-lint`'s `unused` check will tell you.
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `go test ./internal/gateway/ws/`
+Expected: PASS (7 tests)
+
+- [ ] **Step 5: Run them under the race detector**
+
+Run: `go test -race -count=4 ./internal/gateway/ws/`
+Expected: PASS, no race reports. This is the check that matters for this task — the hub is the only genuinely concurrent thing in the feature, and `dispatch` runs on a foreign goroutine.
+
+- [ ] **Step 6: Lint**
+
+Run: `go vet ./internal/gateway/... && golangci-lint run ./internal/gateway/...`
+Expected: no output
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add internal/gateway/ws/
+git commit -m "feat: websocket hub with per-account subject lifecycle"
+```
+
+---
+
+### Task 12: The handler, the routes and the config
+
+**Files:**
+- Create: `internal/gateway/handler/ws.go`
+- Modify: `internal/config/config.go`
+- Modify: `internal/gateway/router.go`
+- Modify: `internal/gateway/fx.go`
+- Modify: `cmd/gateway/main.go`
+- Modify: `internal/module/observability/sink.go`
+- Modify: `docker-compose.yml`, `README.md`, `internal/config/config.example.yml`
+- Modify: `internal/module/account/api/openapi/auth.yaml` (the ticket route's REST documentation)
+
+**Interfaces:**
+- Consumes: `ws.Hub` (Task 11), `session.Tickets` (Task 8), `session.Store.Lookup`, `token.Manager`
+- Produces: `handler.WS`; `POST /api/v1/ws/tickets`; `GET /api/v1/ws`
+
+- [ ] **Step 1: Add the dependency**
+
+```bash
+go get github.com/coder/websocket@latest
+go mod tidy
+```
+
+Confirm it pulled nothing else: `grep -A2 'coder/websocket' go.mod` — it is a zero-dependency library, so `go.sum` should gain only its own entries.
+
+- [ ] **Step 2: Add the config fields**
+
+In `internal/config/config.go`, in the struct, matching the existing tag style exactly (check a neighbouring duration field first):
+
+```go
+	// WebSocket realtime. Every field required, like all config here.
+	WSTicketTTL         time.Duration `env:"WS_TICKET_TTL,required"`
+	WSWriteTimeout      time.Duration `env:"WS_WRITE_TIMEOUT,required"`
+	WSPingInterval      time.Duration `env:"WS_PING_INTERVAL,required"`
+	WSSendBuffer        int           `env:"WS_SEND_BUFFER,required"`
+	WSMaxPerAccount     int           `env:"WS_MAX_PER_ACCOUNT,required"`
+	WSAllowedOrigins    []string      `env:"WS_ALLOWED_ORIGINS,required"`
+```
+
+Add to `docker-compose.yml` under the gateway service's `environment`, to `internal/config/config.example.yml`, and to the env table in `README.md`:
+
+```
+WS_TICKET_TTL=30s
+WS_WRITE_TIMEOUT=10s
+WS_PING_INTERVAL=30s
+WS_SEND_BUFFER=64
+WS_MAX_PER_ACCOUNT=5
+WS_ALLOWED_ORIGINS=localhost:3000
+```
+
+`WS_ALLOWED_ORIGINS` feeds `AcceptOptions.OriginPatterns`, which is host-matching, not full URLs — `coder/websocket` compares against the `Origin` header's host.
+
+- [ ] **Step 3: Write the handler**
+
+Create `internal/gateway/handler/ws.go`:
+
+```go
+package handler
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/coder/websocket"
+
+	"shopnexus/internal/gateway/gwctx"
+	"shopnexus/internal/gateway/ws"
+	"shopnexus/internal/shared/errx"
+	"shopnexus/internal/shared/httpx"
+	"shopnexus/internal/shared/session"
+)
+
+// WS serves the realtime socket and the ticket that opens it.
+type WS struct {
+	hub      *ws.Hub
+	tickets  *session.Tickets
+	sessions *session.Store
+	log      *slog.Logger
+
+	writeTimeout   time.Duration
+	pingInterval   time.Duration
+	allowedOrigins []string
+}
+
+func NewWS(
+	hub *ws.Hub,
+	tickets *session.Tickets,
+	sessions *session.Store,
+	log *slog.Logger,
+	writeTimeout, pingInterval time.Duration,
+	allowedOrigins []string,
+) *WS {
+	return &WS{
+		hub:            hub,
+		tickets:        tickets,
+		sessions:       sessions,
+		log:            log,
+		writeTimeout:   writeTimeout,
+		pingInterval:   pingInterval,
+		allowedOrigins: allowedOrigins,
+	}
+}
+
+// ticketResponse is deliberately not an id: it is a bearer secret with a TTL.
+type ticketResponse struct {
+	Ticket    string `json:"ticket"`
+	ExpiresIn int    `json:"expires_in"`
+}
+
+// CreateTicket mints a handshake ticket for the authenticated caller.
+//
+// This route carries the Bearer token, so it goes through the normal auth middleware
+// and the socket route does not have to: a browser cannot set a header on
+// new WebSocket(), and that is the whole reason this endpoint exists.
+func (h *WS) CreateTicket(w http.ResponseWriter, r *http.Request) {
+	userID, ok := gwctx.UserID(r.Context())
+	if !ok {
+		httpx.WriteError(w, h.log, errx.ErrUnauthorized)
+		return
+	}
+	sessionID, ok := gwctx.SessionID(r.Context())
+	if !ok {
+		httpx.WriteError(w, h.log, errx.ErrUnauthorized)
+		return
+	}
+
+	tok, err := h.tickets.Issue(r.Context(), userID.Int64(), sessionID)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	httpx.WriteJSON(w, h.log, http.StatusCreated, ticketResponse{
+		Ticket:    tok,
+		ExpiresIn: int(h.ticketTTL().Seconds()),
+	})
+}
+
+// Connect upgrades to a WebSocket and streams the account's events until the client
+// goes away.
+//
+// It authenticates itself rather than sitting behind middleware.Auth, because the
+// credential arrives in the query string as a ticket instead of in a header.
+func (h *WS) Connect(w http.ResponseWriter, r *http.Request) {
+	accountID, sessionID, err := h.tickets.Redeem(r.Context(), r.URL.Query().Get("ticket"))
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	// A ticket issued a moment before a logout is a valid ticket for a dead session.
+	// Without this the socket would outlive the revocation that was supposed to end it.
+	if _, err := h.sessions.Lookup(r.Context(), sessionID); err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+
+	client, err := h.hub.Join(accountID)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	// Join before Accept: refusing with a JSON 429 is more useful to a client than a
+	// socket that opens and immediately closes with an opaque code.
+
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		OriginPatterns: h.allowedOrigins,
+	})
+	if err != nil {
+		h.hub.Leave(client)
+		// Accept has already written its own response.
+		h.log.Warn("websocket accept failed", "account_id", accountID, "err", err)
+		return
+	}
+	defer func() {
+		h.hub.Leave(client)
+		// CloseNow, not Close: the pump below has already tried a graceful close where
+		// one was possible, and this must not block a shutdown.
+		if err := conn.CloseNow(); err != nil && !isClosed(err) {
+			h.log.Debug("websocket close failed", "account_id", accountID, "err", err)
+		}
+	}()
+
+	// CloseRead discards anything the client sends and gives a context that is
+	// cancelled when it disconnects. The socket is receive-only by design: the client
+	// changes state over REST.
+	ctx := conn.CloseRead(r.Context())
+
+	h.pump(ctx, conn, client, accountID)
+}
+
+// pump writes envelopes and keeps the connection alive.
+func (h *WS) pump(ctx context.Context, conn *websocket.Conn, client *ws.Client, accountID int64) {
+	ping := time.NewTicker(h.pingInterval)
+	defer ping.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case <-client.Done():
+			// The hub dropped us — almost always because this socket fell behind. Say so
+			// rather than vanishing, so a client can log it and reconnect knowingly.
+			_ = conn.Close(websocket.StatusPolicyViolation, "client too slow")
+			return
+
+		case payload, ok := <-client.Out():
+			if !ok {
+				return
+			}
+			if err := h.write(ctx, conn, payload); err != nil {
+				if !isClosed(err) {
+					h.log.Debug("websocket write failed", "account_id", accountID, "err", err)
+				}
+				return
+			}
+
+		case <-ping.C:
+			// Ping waits for the pong, so a peer that is gone but has not sent a FIN is
+			// discovered here rather than by an accumulating goroutine.
+			pingCtx, cancel := context.WithTimeout(ctx, h.writeTimeout)
+			err := conn.Ping(pingCtx)
+			cancel()
+			if err != nil {
+				return
+			}
+		}
+	}
+}
+
+// write sends one envelope under its own deadline. The bytes are already the JSON the
+// AsyncAPI document describes, so this writes them rather than re-encoding.
+func (h *WS) write(ctx context.Context, conn *websocket.Conn, payload []byte) error {
+	ctx, cancel := context.WithTimeout(ctx, h.writeTimeout)
+	defer cancel()
+	return conn.Write(ctx, websocket.MessageText, payload)
+}
+
+func (h *WS) ticketTTL() time.Duration { return h.tickets.TTL() }
+
+// isClosed reports the ordinary end of a connection, which is not worth a log line.
+func isClosed(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	switch websocket.CloseStatus(err) {
+	case websocket.StatusNormalClosure, websocket.StatusGoingAway, websocket.StatusAbnormalClosure:
+		return true
+	}
+	return false
+}
+```
+
+Three things to reconcile against the real codebase before this compiles:
+
+1. `gwctx.UserID` / `gwctx.SessionID` — check the actual names and signatures with `grep -n "func " internal/gateway/gwctx/*.go`. `internal/gateway/handler/params.go` has an `actor` helper that probably already does this; prefer it.
+2. `httpx.WriteJSON` — confirm the name and argument order with `grep -n "func Write" internal/shared/httpx/*.go`.
+3. Add `TTL()` to `session.Tickets` (`internal/shared/session/ticket.go`), since the handler reports it to the client:
+   ```go
+   // TTL is how long an issued ticket lives — the client needs it to know whether to
+   // ask for a fresh one before reconnecting.
+   func (t *Tickets) TTL() time.Duration { return t.ttl }
+   ```
+4. Add `"net"` to the imports for `net.ErrClosed`.
+
+- [ ] **Step 4: Wire the routes**
+
+In `internal/gateway/router.go`, beside the other authenticated routes:
+
+```go
+	mux.Handle("POST /ws/tickets", auth(http.HandlerFunc(d.WS.CreateTicket)))
+	// Deliberately not wrapped in auth: the credential is a ticket in the query
+	// string, because a browser cannot set a header on new WebSocket().
+	mux.HandleFunc("GET /ws", d.WS.Connect)
+```
+
+Add `WS *handler.WS` to the router's `Deps` struct in the same file.
+
+- [ ] **Step 5: Exclude the socket from RED metrics**
+
+In `internal/module/observability/sink.go`, in `Middleware`, skip the socket path. Find the method (`grep -n "func (s \*Sink) Middleware" -A 20 internal/module/observability/sink.go`) and add at the top of the handler func:
+
+```go
+		// A socket is held for minutes; recorded as a request it would enter
+		// http_requests_1m as a minutes-long one and make approx_percentile(0.95,
+		// "latency") meaningless. Connection count is sampled separately.
+		if r.URL.Path == wsPath {
+			next.ServeHTTP(w, r)
+			return
+		}
+```
+
+with `const wsPath = "/ws"` beside the topics at the top of the file. The router mounts paths unprefixed and mounts the mux under `api.BasePath`, so the middleware sees `/ws` — verify by logging once if unsure.
+
+- [ ] **Step 6: Provide everything to fx**
+
+In `internal/gateway/fx.go`, add providers:
+
+```go
+func newHub(f *eventbus.NATS, log *slog.Logger, cfg *config.Config) *ws.Hub {
+	return ws.NewHub(f, log, ws.Config{
+		SendBuffer:    cfg.WSSendBuffer,
+		MaxPerAccount: cfg.WSMaxPerAccount,
+	})
+}
+
+func newWSHandler(hub *ws.Hub, tickets *session.Tickets, sessions *session.Store, log *slog.Logger, cfg *config.Config) *handler.WS {
+	return handler.NewWS(hub, tickets, sessions, log,
+		cfg.WSWriteTimeout, cfg.WSPingInterval, cfg.WSAllowedOrigins)
+}
+```
+
+`newHub` takes the **concrete `*eventbus.NATS`**, not `eventbus.Client`. Both buses satisfy `Client`, so asking for the interface silently wires the socket to the Redis bus, which has no `Broadcast` at all and would not compile — but the same mistake in reverse (telemetry on Redis) is the trap CLAUDE.md already warns about. Keep the concrete type.
+
+In `cmd/gateway/main.go`, provide the ticket store beside the session store:
+
+```go
+func newTickets(c cache.Client, cfg *config.Config) *session.Tickets {
+	return session.NewTickets(c, cfg.WSTicketTTL)
+}
+```
+
+- [ ] **Step 7: Document the ticket route in OpenAPI**
+
+The ticket endpoint is REST, so it belongs in the OpenAPI document. Add to `internal/module/account/api/openapi/auth.yaml`:
+
+```yaml
+  /ws/tickets:
+    post:
+      operationId: createWebSocketTicket
+      summary: Mint a WebSocket handshake ticket
+      description: |
+        Returns a single-use ticket for `GET /ws`. Valid for 30 seconds and destroyed
+        on redemption, so every reconnect needs a fresh one.
+
+        This exists because a browser cannot set an Authorization header on
+        `new WebSocket()`. Putting the access token in the query string instead would
+        write a live credential into proxy logs and browser history.
+
+        The realtime surface itself is described in asyncapi.yaml.
+      tags: [auth]
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Ticket issued.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/WebSocketTicket'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+```
+
+and under that file's `components.schemas`:
+
+```yaml
+    WebSocketTicket:
+      type: object
+      required: [ticket, expires_in]
+      properties:
+        ticket:
+          type: string
+          description: Pass as the `ticket` query parameter when opening the socket.
+          example: wst_9f3c1d7b4a2e8065f1a9c3d5e7b20418
+        expires_in:
+          type: integer
+          description: Seconds until the ticket expires.
+          minimum: 1
+          maximum: 300
+          example: 30
+```
+
+Both `minimum`/`maximum` and `example` are required by the mock rule: the spec is also the Prism mock, and an unbounded integer mocks as `-9007199254740991`.
+
+- [ ] **Step 8: Regenerate and verify the whole thing builds**
+
+Run: `go generate ./... && go build ./... && go vet ./... && go test ./... && golangci-lint run`
+Expected: all clean
+
+- [ ] **Step 9: Exercise it by hand**
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+go run ./cmd/migrate
+# export every env var, including the six new ones
+go run ./cmd/gateway
+```
+
+In another shell:
+
+```bash
+TOKEN=$(curl -sX POST localhost:5000/api/v1/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"seed@example.com","password":"password"}' | jq -r .data.access_token)
+
+TICKET=$(curl -sX POST localhost:5000/api/v1/ws/tickets \
+  -H "authorization: Bearer $TOKEN" | jq -r .data.ticket)
+
+npx -y wscat -c "ws://localhost:5000/api/v1/ws?ticket=$TICKET"
+```
+
+Expected: the socket stays open (no events yet — producers land in Task 13). Then check the ticket is spent:
+
+```bash
+npx -y wscat -c "ws://localhost:5000/api/v1/ws?ticket=$TICKET"
+```
+
+Expected: rejected with `invalid_ticket`. That single check is the security property of the whole design; do not skip it.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add go.mod go.sum internal/ api/ cmd/ docker-compose.yml README.md
+git commit -m "feat: websocket route with ticket handshake"
+```
+
+---
+
+I'll continue with Tasks 13 through 18 in the next pass.
