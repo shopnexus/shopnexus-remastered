@@ -16,13 +16,20 @@ import (
 
 // newTestCache connects to REDIS_ADDR, skipping when it is unset — the same contract
 // every integration test here follows.
+//
+// REDIS_PASSWORD is read too, because the dev container runs with `--requirepass` and a
+// client that omits it fails the handshake with NOAUTH rather than skipping. Same pair of
+// variables cmd/gateway builds its client from.
 func newTestCache(t *testing.T) cache.Client {
 	t.Helper()
 	addr := os.Getenv("REDIS_ADDR")
 	if addr == "" {
 		t.Skip("REDIS_ADDR not set")
 	}
-	rdb, err := rueidis.NewClient(rueidis.ClientOption{InitAddress: []string{addr}})
+	rdb, err := rueidis.NewClient(rueidis.ClientOption{
+		InitAddress: []string{addr},
+		Password:    os.Getenv("REDIS_PASSWORD"),
+	})
 	if err != nil {
 		t.Fatalf("connect redis: %v", err)
 	}
