@@ -110,6 +110,17 @@ x-app-env: &app-env
   # watch it; longer in production, where the runtime is the prompt path.
   SWEEP_INTERVAL: "1m"
 
+  # WebSocket realtime. A browser cannot set Authorization on `new WebSocket()`, so
+  # POST /ws/tickets mints a short-lived, single-use ticket over the normal Bearer route
+  # and GET /ws?ticket=... redeems it. WS_ALLOWED_ORIGINS is matched against the Origin
+  # header's host, not a full URL.
+  WS_TICKET_TTL: "30s"
+  WS_WRITE_TIMEOUT: "10s"
+  WS_PING_INTERVAL: "30s"
+  WS_SEND_BUFFER: "64"
+  WS_MAX_PER_ACCOUNT: "5"
+  WS_ALLOWED_ORIGINS: "localhost:3000"
+
 services:
   db:
     image: timescale/timescaledb-ha:pg18

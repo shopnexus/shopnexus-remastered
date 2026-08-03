@@ -167,6 +167,22 @@ turned into a read link. A real S3-compatible store is a second implementation b
 `internal/provider/storage` plus a selector value; there the bytes never reach this process at
 all.
 
+### Realtime
+
+`GET /ws` streams an account's events over a WebSocket, receive-only — the client changes
+state over REST, the socket only pushes. A browser cannot set `Authorization` on
+`new WebSocket()`, so the credential is a single-use ticket instead of the access token:
+
+```
+POST /ws/tickets                    (normal Bearer auth) -> { ticket, expires_in }
+GET  /ws?ticket=<ticket>            opens the socket, ticket is spent on redemption
+```
+
+A ticket also carries the session it was issued for, so a ticket minted a moment before a
+logout still opens to a dead session and is refused — the same check `middleware.Auth` pays a
+Redis lookup per request to make. The surface itself (subjects, envelope shape, event catalog)
+is described in `api/asyncapi.yaml`, not the REST spec.
+
 ### Durable execution
 
 Every wait this marketplace makes — an unpaid checkout expiring and releasing its stock, an

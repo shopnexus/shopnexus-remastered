@@ -11,6 +11,10 @@ import (
 
 	"shopnexus/internal/config"
 	"shopnexus/internal/gateway/handler"
+	"shopnexus/internal/gateway/ws"
+	"shopnexus/internal/infra/eventbus"
+	"shopnexus/internal/module/observability"
+	"shopnexus/internal/shared/session"
 )
 
 // Module wires the HTTP handlers, the router, and the HTTP server lifecycle.
@@ -24,6 +28,12 @@ var Module = fx.Module("gateway",
 		handler.NewFinance,
 		handler.NewOrder,
 		handler.NewTrust,
+		newHub,
+		newWSHandler,
+		// observability must not import this package, so the connection count crosses
+		// through a func rather than the hub itself; provided here where both types are
+		// in scope.
+		newConnCounter,
 		// One mux for every provider callback. Provided here rather than by a provider,
 		// because several of them mount on it and the router mounts the result.
 		newWebhookMux,
@@ -31,6 +41,25 @@ var Module = fx.Module("gateway",
 	),
 	fx.Invoke(startServer),
 )
+
+// newHub takes the concrete *eventbus.NATS, not eventbus.Client. Both buses satisfy
+// Client, so asking for the interface would silently wire the socket to the Redis bus,
+// which has no Broadcast at all — the same mix-up telemetry's newSink guards against in
+// reverse.
+func newHub(f *eventbus.NATS, log *slog.Logger, cfg *config.Config) *ws.Hub {
+	return ws.NewHub(f, log, ws.Config{
+		SendBuffer:    cfg.WSSendBuffer,
+		MaxPerAccount: cfg.WSMaxPerAccount,
+	})
+}
+
+func newWSHandler(hub *ws.Hub, tickets *session.Tickets, sessions *session.Store, log *slog.Logger, cfg *config.Config) *handler.WS {
+	return handler.NewWS(hub, tickets, sessions, log,
+		cfg.WSWriteTimeout, cfg.WSPingInterval, cfg.WSAllowedOrigins)
+}
+
+// newConnCounter feeds the hub's live socket count into the runtime sampler.
+func newConnCounter(hub *ws.Hub) observability.ConnCounter { return hub.Count }
 
 // newWebhookMux is where a provider's IPN routes land. Outside the versioned API and
 // outside auth: a gateway calls the URL it was configured with and has no token.

@@ -68,6 +68,7 @@ func appOptions() fx.Option {
 			newLogger,
 			newTokens,
 			newSessions,
+			newTickets,
 			newBus,
 			newCache,
 			// Outbound seams the account module needs. Which vendor each one talks to is
@@ -134,6 +135,13 @@ func newTokens(cfg *config.Config) *token.Manager {
 
 func newSessions(c cache.Client) *session.Store {
 	return session.New(c, sessionTTL)
+}
+
+// newTickets is the ticket store the WebSocket handshake redeems: a single-use secret
+// with the TTL config gives it, beside the session store like every other cache-backed
+// primitive here.
+func newTickets(c cache.Client, cfg *config.Config) *session.Tickets {
+	return session.NewTickets(c, cfg.WSTicketTTL)
 }
 
 // The outbound seams. Each is selected by a required env var, so a deployment says out
