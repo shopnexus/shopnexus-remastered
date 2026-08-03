@@ -14,6 +14,7 @@ import (
 // here and in a fragment; the two lists disagreeing is the drift this test exists to
 // catch. Keep it sorted.
 var wantCodes = []string{
+	"account.notification_created",
 	"chat.conversation_read",
 	"chat.message_created",
 	"chat.message_deleted",

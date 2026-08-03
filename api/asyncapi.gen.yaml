@@ -30,6 +30,8 @@ channels:
                 $ref: '#/components/messages/MessageDeleted'
             MessageUpdated:
                 $ref: '#/components/messages/MessageUpdated'
+            NotificationCreated:
+                $ref: '#/components/messages/NotificationCreated'
             OfferUpdated:
                 $ref: '#/components/messages/OfferUpdated'
             OrderPlaced:
@@ -124,6 +126,33 @@ components:
                 type: object
             summary: The other participant edited a message; body and edited_at changed.
             title: Message edited
+        NotificationCreated:
+            contentType: application/json
+            description: |
+                Only the in-app channel produces this. Push, email and SMS are dispatched
+                elsewhere and are not observable on the socket.
+
+                Carries the whole notification, so a client can render the feed entry and
+                increment its unread badge without a round trip.
+            name: account.notification_created
+            payload:
+                properties:
+                    at:
+                        example: "2026-08-03T11:17:04Z"
+                        format: date-time
+                        type: string
+                    code:
+                        const: account.notification_created
+                        type: string
+                    data:
+                        $ref: '#/components/schemas/Notification'
+                required:
+                    - code
+                    - at
+                    - data
+                type: object
+            summary: A new row in your notification feed.
+            title: Notification created
         OfferUpdated:
             contentType: application/json
             description: |
@@ -320,6 +349,40 @@ components:
             enum:
                 - user
                 - system
+            type: string
+        Notification:
+            properties:
+                category:
+                    $ref: '#/components/schemas/NotificationCategory'
+                created_at:
+                    description: |
+                        Identifies the row together with the feed order, and it is what `POST /notifications/read` is given a bound against.
+                    format: date-time
+                    type: string
+                payload:
+                    additionalProperties: true
+                    description: Structured content such as deep links and images.
+                    type: object
+                read_at:
+                    format: date-time
+                    nullable: true
+                    type: string
+                title:
+                    type: string
+            required:
+                - category
+                - title
+                - payload
+                - created_at
+            type: object
+        NotificationCategory:
+            description: Also the preference key, which is why it is an enum — a typo would read as no preference and quietly send anyway.
+            enum:
+                - order
+                - promotion
+                - system
+                - chat
+                - social
             type: string
         Offer:
             properties:

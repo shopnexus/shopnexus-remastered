@@ -123,12 +123,15 @@ func (s *Service) CreateNotification(ctx context.Context, req accountapi.CreateN
 		return accountapi.Notification{}, nil
 	}
 
-	id, err := s.repo.InsertNotification(ctx, n)
+	insertedID, err := s.repo.InsertNotification(ctx, n)
 	if err != nil {
 		return accountapi.Notification{}, fmt.Errorf("insert notification: %w", err)
 	}
-	n.ID = id
-	return toAPINotification(n), nil
+	n.ID = insertedID
+
+	dto := toAPINotification(n)
+	notifyRealtime(ctx, s, accountID, NotificationCreated, dto)
+	return dto, nil
 }
 
 func toAPINotification(n domain.Notification) accountapi.Notification {

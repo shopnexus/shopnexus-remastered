@@ -1,12 +1,15 @@
 package account_test
 
 import (
+	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/shared/id"
+	"shopnexus/internal/shared/realtime"
 )
 
 func TestCreateNotificationWritesInApp(t *testing.T) {
@@ -72,5 +75,82 @@ func TestCreateNotificationRejectsUnknownCategory(t *testing.T) {
 	}
 	if len(repo.notifs) != 0 {
 		t.Errorf("wrote %d rows, want 0", len(repo.notifs))
+	}
+}
+
+// recorder captures what the service pushed, so a test asserts on recipients and codes
+// without a bus. Copied from chat's service_realtime_test.go: a test double shared
+// across packages via an exported helper is worse than a few duplicated lines.
+type recorder struct {
+	mu   sync.Mutex
+	sent []recorded
+}
+
+type recorded struct {
+	subject string
+	env     realtime.Envelope
+}
+
+func (r *recorder) Broadcast(subject string, b []byte) error {
+	var env realtime.Envelope
+	if err := json.Unmarshal(b, &env); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sent = append(r.sent, recorded{subject: subject, env: env})
+	return nil
+}
+
+func (r *recorder) OnBroadcast(string, func([]byte)) (func(), error) { return func() {}, nil }
+
+func TestCreateNotificationPushesToTheOwner(t *testing.T) {
+	repo := newFakeRepo()
+	rec := &recorder{}
+	svc := newTestServiceWithFanout(t, repo, rec)
+
+	_, err := svc.CreateNotification(t.Context(), accountapi.CreateNotificationRequest{
+		AccountID: id.Of[id.Account](42),
+		Category:  string(domain.CategoryOrder),
+		Title:     "Your order shipped",
+	})
+	if err != nil {
+		t.Fatalf("CreateNotification: %v", err)
+	}
+
+	if len(rec.sent) != 1 {
+		t.Fatalf("pushed %d events, want 1", len(rec.sent))
+	}
+	if got, want := rec.sent[0].subject, realtime.AccountSubject(42); got != want {
+		t.Errorf("subject = %q, want %q", got, want)
+	}
+	if rec.sent[0].env.Code != "account.notification_created" {
+		t.Errorf("code = %q", rec.sent[0].env.Code)
+	}
+}
+
+// No row means no event: a disabled in-app preference must not push a notification
+// the feed will never show.
+func TestCreateNotificationDoesNotPushWhenSuppressed(t *testing.T) {
+	repo := newFakeRepo()
+	repo.prefs[42] = []domain.Preference{{
+		AccountID: 42,
+		Category:  domain.CategoryPromotion,
+		Channel:   domain.ChannelInApp,
+		IsEnabled: false,
+	}}
+	rec := &recorder{}
+	svc := newTestServiceWithFanout(t, repo, rec)
+
+	_, err := svc.CreateNotification(t.Context(), accountapi.CreateNotificationRequest{
+		AccountID: id.Of[id.Account](42),
+		Category:  string(domain.CategoryPromotion),
+		Title:     "50% off",
+	})
+	if err != nil {
+		t.Fatalf("CreateNotification: %v", err)
+	}
+	if len(rec.sent) != 0 {
+		t.Fatalf("pushed %d events, want 0", len(rec.sent))
 	}
 }
