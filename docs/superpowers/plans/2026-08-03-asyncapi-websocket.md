@@ -289,11 +289,19 @@ git commit -m "feat: notification constructor with validation"
 **Files:**
 - Modify: `internal/module/account/port/port.go:108-110`
 - Modify: `internal/module/account/adapter/postgres/notification.go`
-- Test: `internal/module/account/adapter/postgres/repo_integration_test.go`
+- Test: `internal/module/account/adapter/postgres/repo_test.go` — **APPEND ONLY.** This file exists and holds several integration tests plus the shared helpers. Read it in full before touching it, and never overwrite it.
 
 **Interfaces:**
 - Consumes: `domain.NewNotification` (Task 1)
 - Produces: `port.Repository.InsertNotification(ctx context.Context, n domain.Notification) (int64, error)` — returns the generated id
+
+**What the existing test file already gives you** (verified — use these, do not write your own):
+- `newRepo(t *testing.T) *pgadapter.Repo` — skips on unset `ACCOUNT_DB_DSN`, opens the pool with `search_path = account`, closes it via `t.Cleanup`
+- `createAccount(t *testing.T, repo *pgadapter.Repo) *domain.Account` — builds a profile and account and `repo.Create`s it
+- `unique(prefix string) string` — keeps repeated runs apart
+- The file carries `//go:build integration` and is package `postgres_test`; the adapter is imported as `pgadapter`
+
+The adapter type is `*Repo` (`repo.go:20`), not `Repository`, and its pool field is `r.pool`.
 
 - [ ] **Step 1: Add the port method**
 
@@ -308,14 +316,16 @@ In `internal/module/account/port/port.go`, beside the three existing notificatio
 
 - [ ] **Step 2: Write the failing integration test**
 
-Append to `internal/module/account/adapter/postgres/repo_integration_test.go` (the file already carries `//go:build integration` and a `newTestRepo` helper — reuse them):
+**Append** this to the end of `internal/module/account/adapter/postgres/repo_test.go`. Do not create the file and do not rewrite it — it already holds other tests and the helpers this one uses:
 
 ```go
-func TestInsertNotification(t *testing.T) {
-	repo, accountID := newTestRepo(t), seedAccount(t)
+func TestRepo_InsertNotificationLandsInTheFeed(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	acc := createAccount(t, repo)
 
 	n, err := domain.NewNotification(domain.NewNotificationParams{
-		AccountID: accountID,
+		AccountID: acc.ID,
 		Category:  domain.CategoryOrder,
 		Title:     "Your order shipped",
 		Payload:   map[string]any{"order_id": "ord_x"},
@@ -324,7 +334,7 @@ func TestInsertNotification(t *testing.T) {
 		t.Fatalf("NewNotification: %v", err)
 	}
 
-	id, err := repo.InsertNotification(t.Context(), n)
+	id, err := repo.InsertNotification(ctx, n)
 	if err != nil {
 		t.Fatalf("InsertNotification: %v", err)
 	}
@@ -332,7 +342,7 @@ func TestInsertNotification(t *testing.T) {
 		t.Fatal("InsertNotification returned id 0")
 	}
 
-	rows, err := repo.ListNotifications(t.Context(), port.NotificationQuery{AccountID: accountID, Limit: 10})
+	rows, err := repo.ListNotifications(ctx, port.NotificationQuery{AccountID: acc.ID, Limit: 10})
 	if err != nil {
 		t.Fatalf("ListNotifications: %v", err)
 	}
@@ -342,6 +352,7 @@ func TestInsertNotification(t *testing.T) {
 	if rows[0].Title != "Your order shipped" {
 		t.Errorf("Title = %q", rows[0].Title)
 	}
+	// The payload survives the JSONB round trip, which is what makes it worth storing.
 	if rows[0].Payload["order_id"] != "ord_x" {
 		t.Errorf("Payload = %v, want order_id=ord_x", rows[0].Payload)
 	}
@@ -349,7 +360,7 @@ func TestInsertNotification(t *testing.T) {
 		t.Error("a fresh row must be unread")
 	}
 
-	unread, err := repo.CountUnreadNotifications(t.Context(), accountID)
+	unread, err := repo.CountUnreadNotifications(ctx, acc.ID)
 	if err != nil {
 		t.Fatalf("CountUnreadNotifications: %v", err)
 	}
@@ -357,26 +368,46 @@ func TestInsertNotification(t *testing.T) {
 		t.Errorf("unread = %d, want 1", unread)
 	}
 }
-```
 
-If `seedAccount` does not already exist in that file, add it next to `newTestRepo`:
+// A scheduled notification is stored with its dispatch time rather than dropped.
+func TestRepo_InsertNotificationKeepsScheduledAt(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	acc := createAccount(t, repo)
 
-```go
-// seedAccount inserts the minimum account a foreign key will accept and returns its id.
-func seedAccount(t *testing.T) int64 {
-	t.Helper()
-	var id int64
-	err := testPool.QueryRow(t.Context(),
-		`INSERT INTO account (email, password_hash, name) VALUES (@email, 'x', 'Test')
-		 RETURNING id`,
-		pgx.NamedArgs{"email": "ws-" + uuid.NewString() + "@example.test"},
-	).Scan(&id)
+	at := time.Now().Add(time.Hour).UTC().Truncate(time.Millisecond)
+	n, err := domain.NewNotification(domain.NewNotificationParams{
+		AccountID:   acc.ID,
+		Category:    domain.CategorySystem,
+		Title:       "Maintenance",
+		ScheduledAt: &at,
+	})
 	if err != nil {
-		t.Fatalf("seed account: %v", err)
+		t.Fatalf("NewNotification: %v", err)
 	}
-	return id
+	if _, err := repo.InsertNotification(ctx, n); err != nil {
+		t.Fatalf("InsertNotification: %v", err)
+	}
+
+	rows, err := repo.ListNotifications(ctx, port.NotificationQuery{AccountID: acc.ID, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListNotifications: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if rows[0].ScheduledAt == nil {
+		t.Fatal("ScheduledAt came back nil")
+	}
+	if !rows[0].ScheduledAt.Equal(at) {
+		t.Errorf("ScheduledAt = %v, want %v", rows[0].ScheduledAt, at)
+	}
 }
 ```
+
+`acc.ID` is the account's raw `int64` — `domain` works in raw keys and only the DTO edge uses opaque ids.
+
+If `ListNotifications` does not select `scheduled_at` into the domain struct, the second test fails on unchanged code. That is a real gap in the existing adapter, not something to paper over: fix the SELECT in the same commit and say so in your report.
 
 - [ ] **Step 3: Run the test to verify it fails**
 
