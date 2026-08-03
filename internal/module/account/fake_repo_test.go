@@ -423,6 +423,12 @@ func (f *fakeRepo) ListNotifications(_ context.Context, q port.NotificationQuery
 	return out, nil
 }
 
+func (f *fakeRepo) InsertNotification(_ context.Context, n domain.Notification) (int64, error) {
+	n.ID = f.id()
+	f.notifs = append(f.notifs, n)
+	return n.ID, nil
+}
+
 func (f *fakeRepo) CountUnreadNotifications(_ context.Context, accountID int64) (int64, error) {
 	var n int64
 	for _, x := range f.notifs {

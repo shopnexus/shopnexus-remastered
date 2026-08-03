@@ -58,6 +58,28 @@ func (r *Repo) ListNotifications(ctx context.Context, q port.NotificationQuery) 
 	return out, nil
 }
 
+// InsertNotification writes one feed row and answers its generated id.
+func (r *Repo) InsertNotification(ctx context.Context, n domain.Notification) (int64, error) {
+	const q = `
+		INSERT INTO notification (account_id, category, title, payload, created_at, scheduled_at)
+		VALUES (@account_id, @category, @title, @payload, @created_at, @scheduled_at)
+		RETURNING id`
+
+	var id int64
+	err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{
+		"account_id":   n.AccountID,
+		"category":     string(n.Category),
+		"title":        n.Title,
+		"payload":      dbx.JSONObject(n.Payload),
+		"created_at":   n.CreatedAt,
+		"scheduled_at": n.ScheduledAt,
+	}).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("db insert notification: %w", err)
+	}
+	return id, nil
+}
+
 // CountUnreadNotifications answers the badge, which is read far more often than the
 // feed itself. The partial index on unread rows is what keeps it cheap.
 func (r *Repo) CountUnreadNotifications(ctx context.Context, accountID int64) (int64, error) {

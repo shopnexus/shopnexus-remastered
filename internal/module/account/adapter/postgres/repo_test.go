@@ -336,3 +336,88 @@ func TestRepo_SaveSyncsLinksAndWritesTheTrail(t *testing.T) {
 		t.Error("Save left the events on the aggregate")
 	}
 }
+
+func TestRepo_InsertNotificationLandsInTheFeed(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	acc := createAccount(t, repo)
+
+	n, err := domain.NewNotification(domain.NewNotificationParams{
+		AccountID: acc.ID,
+		Category:  domain.CategoryOrder,
+		Title:     "Your order shipped",
+		Payload:   map[string]any{"order_id": "ord_x"},
+	})
+	if err != nil {
+		t.Fatalf("NewNotification: %v", err)
+	}
+
+	id, err := repo.InsertNotification(ctx, n)
+	if err != nil {
+		t.Fatalf("InsertNotification: %v", err)
+	}
+	if id == 0 {
+		t.Fatal("InsertNotification returned id 0")
+	}
+
+	rows, err := repo.ListNotifications(ctx, port.NotificationQuery{AccountID: acc.ID, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListNotifications: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if rows[0].Title != "Your order shipped" {
+		t.Errorf("Title = %q", rows[0].Title)
+	}
+	// The payload survives the JSONB round trip, which is what makes it worth storing.
+	if rows[0].Payload["order_id"] != "ord_x" {
+		t.Errorf("Payload = %v, want order_id=ord_x", rows[0].Payload)
+	}
+	if rows[0].ReadAt != nil {
+		t.Error("a fresh row must be unread")
+	}
+
+	unread, err := repo.CountUnreadNotifications(ctx, acc.ID)
+	if err != nil {
+		t.Fatalf("CountUnreadNotifications: %v", err)
+	}
+	if unread != 1 {
+		t.Errorf("unread = %d, want 1", unread)
+	}
+}
+
+// A scheduled notification is stored with its dispatch time rather than dropped.
+func TestRepo_InsertNotificationKeepsScheduledAt(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	acc := createAccount(t, repo)
+
+	at := time.Now().Add(time.Hour).UTC().Truncate(time.Millisecond)
+	n, err := domain.NewNotification(domain.NewNotificationParams{
+		AccountID:   acc.ID,
+		Category:    domain.CategorySystem,
+		Title:       "Maintenance",
+		ScheduledAt: &at,
+	})
+	if err != nil {
+		t.Fatalf("NewNotification: %v", err)
+	}
+	if _, err := repo.InsertNotification(ctx, n); err != nil {
+		t.Fatalf("InsertNotification: %v", err)
+	}
+
+	rows, err := repo.ListNotifications(ctx, port.NotificationQuery{AccountID: acc.ID, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListNotifications: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if rows[0].ScheduledAt == nil {
+		t.Fatal("ScheduledAt came back nil")
+	}
+	if !rows[0].ScheduledAt.Equal(at) {
+		t.Errorf("ScheduledAt = %v, want %v", rows[0].ScheduledAt, at)
+	}
+}
