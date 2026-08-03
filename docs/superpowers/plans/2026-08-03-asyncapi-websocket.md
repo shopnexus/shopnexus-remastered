@@ -369,13 +369,16 @@ func TestRepo_InsertNotificationLandsInTheFeed(t *testing.T) {
 	}
 }
 
-// A scheduled notification is stored with its dispatch time rather than dropped.
+// A dispatch time that has passed is stored and read back, so the column is mapped
+// rather than silently dropped. Scheduled in the past deliberately: ListNotifications
+// filters on `scheduled_at IS NULL OR scheduled_at <= now()`, so a future one is not
+// visible to this query at all.
 func TestRepo_InsertNotificationKeepsScheduledAt(t *testing.T) {
 	repo := newRepo(t)
 	ctx := context.Background()
 	acc := createAccount(t, repo)
 
-	at := time.Now().Add(time.Hour).UTC().Truncate(time.Millisecond)
+	at := time.Now().Add(-time.Hour).UTC().Truncate(time.Millisecond)
 	n, err := domain.NewNotification(domain.NewNotificationParams{
 		AccountID:   acc.ID,
 		Category:    domain.CategorySystem,
@@ -405,9 +408,53 @@ func TestRepo_InsertNotificationKeepsScheduledAt(t *testing.T) {
 }
 ```
 
+Also add a third test pinning the filter, since the feed query is the only thing enforcing it:
+
+```go
+// A notification scheduled for later is not in the feed yet. Worth pinning: a rewritten
+// WHERE clause would otherwise start showing people announcements before they were
+// meant to go out.
+func TestRepo_ScheduledNotificationIsNotVisibleYet(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	acc := createAccount(t, repo)
+
+	at := time.Now().Add(time.Hour).UTC()
+	n, err := domain.NewNotification(domain.NewNotificationParams{
+		AccountID:   acc.ID,
+		Category:    domain.CategorySystem,
+		Title:       "Scheduled maintenance",
+		ScheduledAt: &at,
+	})
+	if err != nil {
+		t.Fatalf("NewNotification: %v", err)
+	}
+	if _, err := repo.InsertNotification(ctx, n); err != nil {
+		t.Fatalf("InsertNotification: %v", err)
+	}
+
+	rows, err := repo.ListNotifications(ctx, port.NotificationQuery{AccountID: acc.ID, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListNotifications: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("got %d rows, want 0 — a future notification is not in the feed", len(rows))
+	}
+
+	// Nor does it count as unread, or the badge would advertise something unreadable.
+	unread, err := repo.CountUnreadNotifications(ctx, acc.ID)
+	if err != nil {
+		t.Fatalf("CountUnreadNotifications: %v", err)
+	}
+	if unread != 0 {
+		t.Errorf("unread = %d, want 0", unread)
+	}
+}
+```
+
 `acc.ID` is the account's raw `int64` — `domain` works in raw keys and only the DTO edge uses opaque ids.
 
-If `ListNotifications` does not select `scheduled_at` into the domain struct, the second test fails on unchanged code. That is a real gap in the existing adapter, not something to paper over: fix the SELECT in the same commit and say so in your report.
+Both `ListNotifications` and `CountUnreadNotifications` already carry `AND (scheduled_at IS NULL OR scheduled_at <= now())` and both already select/scan the column, so no adapter change is needed for these tests — only the insert is new.
 
 - [ ] **Step 3: Run the test to verify it fails**
 
