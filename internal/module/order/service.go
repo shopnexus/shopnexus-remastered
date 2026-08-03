@@ -28,6 +28,7 @@ import (
 	"shopnexus/internal/module/order/port"
 	"shopnexus/internal/provider/transport"
 	"shopnexus/internal/shared/id"
+	"shopnexus/internal/shared/realtime"
 )
 
 // Every wait this module makes. A draft is short because it freezes a price; a standing proposal
@@ -74,6 +75,9 @@ type Service struct {
 	bus       eventbus.Client
 	v         *validator.Validate
 	log       *slog.Logger
+	// fanout pushes the realtime facts in event.go to the socket a party may have open.
+	// Best-effort: a write always commits whether or not anybody is listening.
+	fanout realtime.Fanout
 }
 
 func NewService(
@@ -89,15 +93,27 @@ func NewService(
 	bus eventbus.Client,
 	v *validator.Validate,
 	log *slog.Logger,
+	fanout realtime.Fanout,
 ) *Service {
 	return &Service{
 		repo: repo, accounts: accounts, catalog: catalog, finance: finance, chat: chat,
 		uploads: uploads, options: options, transport: transport, workflows: workflows,
-		bus: bus, v: v, log: log,
+		bus: bus, v: v, log: log, fanout: fanout,
 	}
 }
 
 var _ orderapi.Service = (*Service)(nil)
+
+// notify pushes a fact to one account, best-effort.
+//
+// A realtime failure never fails the command: the row is committed by the time this runs,
+// so the alternative is answering 500 for a write that happened. The client re-reads on
+// reconnect, which is what covers a dropped event.
+func notify[T any](ctx context.Context, s *Service, accountID int64, e realtime.Event[T], data T) {
+	if err := realtime.Notify(ctx, s.fanout, accountID, e, data); err != nil {
+		s.log.Warn("realtime notify failed", "code", e.Code, "account_id", accountID, "err", err)
+	}
+}
 
 // CreateUpload reserves a row and a signed slot for evidence — the unboxing photos a receipt
 // confirmation or a refund carries. The client PUTs the bytes at the store and confirms; until

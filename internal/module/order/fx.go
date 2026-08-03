@@ -25,6 +25,7 @@ import (
 	"shopnexus/internal/provider/storage"
 	"shopnexus/internal/provider/transport"
 	"shopnexus/internal/shared/id"
+	"shopnexus/internal/shared/realtime"
 )
 
 // Module wires the order service, its repository, the carrier registry it reads from its own
@@ -40,6 +41,10 @@ var Module = fx.Module("order",
 		newPool,
 		newUploads,
 		fx.Annotate(func(s *uploads.Store) common.Uploads { return s }),
+		// NewService takes the realtime.Fanout interface, so it can be tested without a
+		// bus; wiring it needs the concrete *eventbus.NATS, never eventbus.Client — that
+		// interface is the Redis domain-event bus and has no Broadcast at all.
+		fx.Annotate(func(bus *eventbus.NATS) realtime.Fanout { return bus }),
 	),
 	fx.Provide(
 		fx.Annotate(newRepo, fx.As(new(port.Repository))),

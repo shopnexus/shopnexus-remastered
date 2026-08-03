@@ -186,11 +186,12 @@ func (s *Service) CounterOffer(ctx context.Context, req orderapi.CounterOfferReq
 	s.postOfferCard(ctx, o, cardOfferRevised)
 	// The currency is the listing's, resolved like every other offer answer: a total with nothing
 	// beside it is not a price, and `required` in the contract means this route cannot skip it.
-	currencies, err := s.listingCurrencies(ctx, req.ActorID, []domain.Offer{o})
+	dto, err := s.offerDTO(ctx, req.ActorID, o)
 	if err != nil {
 		return orderapi.Offer{}, err
 	}
-	return toAPIOffer(o, currencies[o.ListingID]), nil
+	s.notifyOfferUpdated(ctx, o, dto)
+	return dto, nil
 }
 
 func (s *Service) CancelOffer(ctx context.Context, req orderapi.OfferRequest) error {
@@ -205,6 +206,12 @@ func (s *Service) CancelOffer(ctx context.Context, req orderapi.OfferRequest) er
 		return fmt.Errorf("save offer: %w", err)
 	}
 	s.postOfferCard(ctx, o, cardOfferWithdrawn)
+	// Either side may be the one who withdrew, so both are watching for it.
+	if dto, err := s.offerDTO(ctx, req.ActorID, o); err != nil {
+		s.log.Warn("resolve offer currency for notify failed", "offer_id", o.ID, "err", err)
+	} else {
+		s.notifyOfferUpdated(ctx, o, dto)
+	}
 	return nil
 }
 
@@ -232,11 +239,12 @@ func (s *Service) AcceptOffer(ctx context.Context, req orderapi.OfferRequest) (o
 	s.timer("start offer", s.workflows.StartOffer(ctx, o.ID))
 	// The currency is the listing's, resolved for the same reason a read resolves it: a total
 	// with nothing beside it is not a price, and this answer is the agreed one.
-	currencies, err := s.listingCurrencies(ctx, req.ActorID, []domain.Offer{o})
+	dto, err := s.offerDTO(ctx, req.ActorID, o)
 	if err != nil {
 		return orderapi.Offer{}, err
 	}
-	return toAPIOffer(o, currencies[o.ListingID]), nil
+	s.notifyOfferUpdated(ctx, o, dto)
+	return dto, nil
 }
 
 // CheckoutOffer is the buyer's "create order now": the agreed price, plus the delivery they choose
@@ -396,5 +404,25 @@ func toAPIOffer(o domain.Offer, currency string) orderapi.Offer {
 		Reason:    o.Reason,
 		CreatedAt: o.CreatedAt,
 		ExpiresAt: o.ExpiresAt,
+	}
+}
+
+// offerDTO resolves the listing's currency and builds the DTO a response and a realtime
+// notification share, so a total that crosses either boundary always carries the price it
+// belongs to.
+func (s *Service) offerDTO(ctx context.Context, viewerID id.ID[id.Account], o domain.Offer) (orderapi.Offer, error) {
+	currencies, err := s.listingCurrencies(ctx, viewerID, []domain.Offer{o})
+	if err != nil {
+		return orderapi.Offer{}, err
+	}
+	return toAPIOffer(o, currencies[o.ListingID]), nil
+}
+
+// notifyOfferUpdated pushes a negotiation's current terms to both parties. Unlike chat,
+// where the actor is excluded because they already hold the row, either side of a
+// negotiation may have caused the change the other is watching for, so both get it.
+func (s *Service) notifyOfferUpdated(ctx context.Context, o domain.Offer, dto orderapi.Offer) {
+	for _, accountID := range [...]int64{o.BuyerID, o.SellerID} {
+		notify(ctx, s, accountID, OfferUpdated, dto)
 	}
 }

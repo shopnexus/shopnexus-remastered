@@ -5,6 +5,8 @@ import (
 
 	"shopnexus/internal/infra/eventbus"
 	financedomain "shopnexus/internal/module/finance/domain"
+	orderapi "shopnexus/internal/module/order/api"
+	"shopnexus/internal/shared/realtime"
 )
 
 // OrderPlaced is published after an order is written and its escrow held. A fact, not an
@@ -48,6 +50,17 @@ var OrderSettledTopic = eventbus.NewTopic[OrderSettled]("order.settled")
 func publishOrderSettled(ctx context.Context, bus eventbus.Client, event OrderSettled) error {
 	return eventbus.Publish(ctx, bus, OrderSettledTopic, event)
 }
+
+// OfferUpdated is every change to a negotiation's standing terms: a counter, an
+// acceptance, a withdrawal, an expiry.
+//
+// One event for all of them rather than one per transition, because a client renders the
+// offer's current state and does not branch on how it got there — and the two sides
+// alternate, so either party may be the one who caused it.
+//
+// The code is also the AsyncAPI message name in api/asyncapi.gen.yaml, and
+// internal/gateway/asyncapi_contract_test.go fails if the two lists disagree.
+var OfferUpdated = realtime.NewEvent[orderapi.Offer]("order.offer_updated")
 
 // financeMovementPosted is the error finance answers when an idempotency key has already
 // been used. Named here because the lifecycle treats it as success: a movement that was
