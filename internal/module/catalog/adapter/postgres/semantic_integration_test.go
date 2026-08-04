@@ -66,10 +66,10 @@ func TestRepo_NearestRanksOnceEmbedded(t *testing.T) {
 			if i > 0 {
 				out = append(out, ',')
 			}
-			switch {
-			case i == 0:
+			switch i {
+			case 0:
 				out = append(out, []byte(formatFloat(first))...)
-			case i == 1:
+			case 1:
 				out = append(out, []byte(formatFloat(1-first))...)
 			default:
 				out = append(out, '0')

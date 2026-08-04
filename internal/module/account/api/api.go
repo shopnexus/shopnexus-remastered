@@ -81,6 +81,10 @@ type Service interface {
 	// GetPickupContact answers a seller's collection point, which the order module needs to
 	// create a shipment while the seller is not present. Pickup only.
 	GetPickupContact(ctx context.Context, req GetPickupContactRequest) (Contact, error)
+	// GetSupportAccount answers the support desk's own account: the second side of every ticket
+	// thread. Its own method rather than a config value, because an id in configuration is one a
+	// deployment can get wrong in a way nothing checks.
+	GetSupportAccount(ctx context.Context) (AccountSummary, error)
 	// GetDeliveryContact answers the caller's default delivery address, so a quote can be made
 	// without asking them to pick one first.
 	GetDeliveryContact(ctx context.Context, req GetDeliveryContactRequest) (Contact, error)

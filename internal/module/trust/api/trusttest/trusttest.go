@@ -78,28 +78,36 @@ func (Stub) ConfirmUpload(context.Context, trustapi.ConfirmUploadRequest) (commo
 	return common.ResourceDTO{}, errx.ErrNotImplemented
 }
 
-func (Stub) SubmitReport(context.Context, trustapi.SubmitReportRequest) (trustapi.Report, error) {
-	return trustapi.Report{}, errx.ErrNotImplemented
+func (Stub) OpenTicket(context.Context, trustapi.OpenTicketRequest) (trustapi.Ticket, error) {
+	return trustapi.Ticket{}, errx.ErrNotImplemented
 }
 
-func (Stub) ListMyReports(context.Context, trustapi.ListReportsRequest) (trustapi.ReportPage, error) {
-	return trustapi.ReportPage{}, errx.ErrNotImplemented
+func (Stub) ListMyTickets(context.Context, trustapi.ListTicketsRequest) (trustapi.TicketPage, error) {
+	return trustapi.TicketPage{}, errx.ErrNotImplemented
 }
 
-func (Stub) AdminListReports(context.Context, trustapi.AdminListReportsRequest) (trustapi.AdminReportPage, error) {
-	return trustapi.AdminReportPage{}, errx.ErrNotImplemented
+func (Stub) GetTicket(context.Context, trustapi.TicketRequest) (trustapi.Ticket, error) {
+	return trustapi.Ticket{}, errx.ErrNotImplemented
 }
 
-func (Stub) AdminGetReport(context.Context, trustapi.ReportRequest) (trustapi.AdminReport, error) {
-	return trustapi.AdminReport{}, errx.ErrNotImplemented
+func (Stub) AdminListTickets(context.Context, trustapi.AdminListTicketsRequest) (trustapi.AdminTicketPage, error) {
+	return trustapi.AdminTicketPage{}, errx.ErrNotImplemented
 }
 
-func (Stub) AdminClaimReport(context.Context, trustapi.ReportRequest) (trustapi.Report, error) {
-	return trustapi.Report{}, errx.ErrNotImplemented
+func (Stub) AdminGetTicket(context.Context, trustapi.TicketRequest) (trustapi.AdminTicket, error) {
+	return trustapi.AdminTicket{}, errx.ErrNotImplemented
 }
 
-func (Stub) AdminResolveReport(context.Context, trustapi.ResolveReportRequest) (trustapi.Report, error) {
-	return trustapi.Report{}, errx.ErrNotImplemented
+func (Stub) AdminClaimTicket(context.Context, trustapi.TicketRequest) (trustapi.Ticket, error) {
+	return trustapi.Ticket{}, errx.ErrNotImplemented
+}
+
+func (Stub) RecordRefundVerdict(context.Context, trustapi.RecordRefundVerdictRequest) error {
+	return errx.ErrNotImplemented
+}
+
+func (Stub) AdminResolveTicket(context.Context, trustapi.ResolveTicketRequest) (trustapi.Ticket, error) {
+	return trustapi.Ticket{}, errx.ErrNotImplemented
 }
 
 func (Stub) RevealDueFeedback(context.Context, int) (int, error) {

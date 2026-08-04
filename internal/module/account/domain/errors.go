@@ -18,6 +18,8 @@ var (
 	// ErrNoIdentifier covers both directions: a new account with nothing to be addressed
 	// by, and a PATCH that would clear the last one. Validate sees the resulting account
 	// rather than the request, so there is one rule and one code.
+	// ErrUsernameReserved is a registration claiming a name the platform speaks with.
+	ErrUsernameReserved   = errx.NewError(http.StatusConflict, "username_reserved", "that username is reserved")
 	ErrNoIdentifier       = errx.NewError(http.StatusUnprocessableEntity, "no_identifier", "an account needs at least one of email, phone or username")
 	ErrInvalidCredentials = errx.NewError(http.StatusUnauthorized, "invalid_credentials", "wrong credentials")
 	ErrAccountSuspended   = errx.NewError(http.StatusForbidden, "account_suspended", "this account is suspended")

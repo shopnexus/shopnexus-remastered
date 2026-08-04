@@ -1,0 +1,213 @@
+# trust fragment: ticket — everything a user raises and somebody answers.
+#
+# One shape for all of them, because they are one thing: a report about a listing, a refund the
+# buyer wants staff to decide, a payment that went wrong, a feature they wish existed. `kind` is
+# what differs, and it decides whether the ticket is about something (`ref_id`) and whether it
+# carries a report's `reason`.
+#
+# The requester's own words and photos are NOT fields here: they become the first message of the
+# conversation the ticket opens, so raising one needs no upload path of its own and the requester's
+# view of a ticket is an ordinary chat thread — `conversation_id`, read through `/conversations`.
+# Support answers as the desk, never under a moderator's name.
+#
+# A refund dispute is the one kind whose verdict is not written here: the money is decided by
+# `POST /admin/refunds/{id}/verdict` in the order module, and that closes this ticket on its way
+# out. `POST /admin/tickets/{id}/resolution` answers 409 for one.
+
+paths:
+  /tickets:
+    post:
+      tags: [trust]
+      summary: Raise a ticket
+      description: >
+        `ref_id` is required exactly for the kinds that are about something — the report kinds,
+        `refund-dispute`, `order-issue` — and its prefix has to agree with the kind. `reason`
+        belongs to the report kinds and to no other.
+
+
+        `body` and `attachments` open the thread: they are posted as the first message, and
+        everything said afterwards is ordinary chat.
+
+
+        One open ticket per target per requester, so raising the same complaint twice while the
+        first is still open is a conflict rather than a second row. A `refund-dispute` also moves
+        the refund into staff's hands first, so order's own guards — the right party, the right
+        moment — are what answer 403 and 409 here.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenTicketRequest' }
+      responses:
+        '201':
+          description: 'Raised'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Ticket' }
+                required: [data]
+        '400': { description: 'The body is invalid, or `ref_id` does not decode as the kind requires', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'The refund being disputed is not the caller''s', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: 'What the ticket is about does not exist', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'You already have an open ticket about this, or the refund cannot be escalated now', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+    get:
+      tags: [trust]
+      summary: Tickets the caller raised
+      description: Their own, newest first. A requester never sees who else reported the same
+        target, nor which moderator is working theirs.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/TicketStatus' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/TicketPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /tickets/{id}:
+    get:
+      tags: [trust]
+      summary: Read a ticket the caller raised
+      description: >
+        Somebody else's is 404 rather than 403: a ticket id is guessable, and confirming one
+        exists already says something.
+
+
+        This also repairs a missing `conversation_id`. The row and the thread live in different
+        schemas, so one lands first — a ticket whose thread was never written is answerable on the
+        next read rather than mute.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/TicketID' } }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Ticket' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  schemas:
+    TicketKind:
+      type: string
+      description: >
+        What was raised. The five `report-*` kinds and `refund-dispute`/`order-issue` are about
+        something and carry a `ref_id`; the rest are about nothing in particular.
+      enum:
+        - report-listing
+        - report-account
+        - report-message
+        - report-review
+        - report-review-reply
+        - refund-dispute
+        - order-issue
+        - payment
+        - account
+        - feature-request
+        - other
+
+    TicketRefType:
+      type: string
+      description: What kind of thing `ref_id` names. Follows from `kind`, never sent by a client.
+      enum: [listing, account, message, review, review-reply, order, refund]
+
+    TicketReason:
+      type: string
+      description: A report's grounds. Null on every other kind.
+      enum: [scam, counterfeit, prohibited, harassment, spam, inappropriate, other]
+
+    TicketStatus:
+      type: string
+      description: >
+        `reviewing` is claimed by a moderator; `resolved` carries `action_taken`, which is where
+        a turn-down lives as the value `none`.
+      enum: [open, reviewing, resolved]
+
+    TicketAction:
+      type: string
+      description: >
+        What was done about it. `none` is a ticket read and answered with nothing done — the
+        turn-down, which is why it is a value here and not a second status. The two `refund-*`
+        ones are written by order's verdict route, never by hand.
+      enum: [none, listing-removed, message-removed, account-suspended, warning, refund-granted, refund-refused]
+
+    Ticket:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/TicketID' }
+        kind: { $ref: '#/components/schemas/TicketKind' }
+        subject: { type: string, example: Hàng không đúng mô tả }
+        ref_type:
+          allOf: [{ $ref: '#/components/schemas/TicketRefType' }]
+          nullable: true
+        ref_id:
+          type: string
+          nullable: true
+          pattern: '^[a-z]{3}_[0-9a-hjkmnp-tv-z]{13}$'
+          description: >
+            Opaque id of what the ticket is about, kinded by `ref_type`. Null on a ticket about
+            nothing in particular.
+          example: lst_1ryaj8117v2p4
+        reason:
+          allOf: [{ $ref: '#/components/schemas/TicketReason' }]
+          nullable: true
+        status: { $ref: '#/components/schemas/TicketStatus' }
+        conversation_id:
+          allOf: [{ $ref: '#/components/schemas/ConversationID' }]
+          nullable: true
+          description: >
+            The thread this ticket is discussed in — where the requester's own words went and
+            where support answers. Null only between the row being written and the thread being
+            opened; reading the ticket repairs it.
+        action_taken:
+          allOf: [{ $ref: '#/components/schemas/TicketAction' }]
+          nullable: true
+          description: Null until the ticket is resolved.
+        resolved_at: { type: string, format: date-time, nullable: true }
+        resolution_note: { type: string, nullable: true, example: đã xác nhận hàng giả }
+        created_at: { type: string, format: date-time }
+      required: [id, kind, subject, status, created_at]
+
+    TicketPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Ticket' } }
+        meta: { $ref: '#/components/schemas/CursorMeta' }
+      required: [data, meta]
+
+    OpenTicketRequest:
+      type: object
+      properties:
+        kind: { $ref: '#/components/schemas/TicketKind' }
+        subject: { type: string, minLength: 1, maxLength: 200, example: Hàng không đúng mô tả }
+        ref_id:
+          type: string
+          pattern: '^[a-z]{3}_[0-9a-hjkmnp-tv-z]{13}$'
+          description: Required for the kinds that are about something, refused for the others.
+          example: lst_1ryaj8117v2p4
+        reason:
+          allOf: [{ $ref: '#/components/schemas/TicketReason' }]
+          description: Report kinds only.
+        body:
+          type: string
+          maxLength: 4000
+          description: The first message of the thread, not a column on the ticket.
+          example: ảnh mở hộp đây, sản phẩm bị xước
+        attachments:
+          type: array
+          maxItems: 10
+          description: Confirmed uploads, posted as the opening message's images.
+          items: { $ref: '#/components/schemas/ResourceID' }
+      required: [kind, subject]

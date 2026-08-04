@@ -537,8 +537,8 @@ func (s *Service) RetryClaimedPayouts(ctx context.Context, limit int) (int, erro
 // AdvanceOverdueRefunds moves every refund whose deadline has passed — all three windows in
 // one pass, which is what naming each non-terminal status for the party it waits on buys.
 //
-// The two states that wait on a carrier or a moderator carry no deadline, so they are never
-// in this list: a human or a parcel decides those, not a clock.
+// The two states that wait on a carrier or on staff carry no deadline, so they are never in
+// this list: a human or a parcel decides those, not a clock.
 func (s *Service) AdvanceOverdueRefunds(ctx context.Context, limit int) (int, error) {
 	refunds, err := s.repo.OverdueRefunds(ctx, time.Now(), limit)
 	if err != nil {
@@ -599,11 +599,11 @@ func (s *Service) advanceRefund(ctx context.Context, r domain.Refund) (bool, err
 			return false, nil
 		}
 	case domain.RefundReturned:
-		// The seller had the goods back and did not appeal, so the buyer is paid.
+		// The seller had the goods back and did not escalate, so the buyer is paid.
 		if err := r.Settle(); err != nil {
 			return false, nil
 		}
-		if err := s.settleRefund(ctx, r, o, nil); err != nil {
+		if err := s.settleRefund(ctx, r, o); err != nil {
 			return false, err
 		}
 		return true, nil

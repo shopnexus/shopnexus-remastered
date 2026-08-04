@@ -30,6 +30,10 @@ func (Stub) ListConversations(context.Context, chatapi.ListConversationsRequest)
 	return chatapi.ConversationPage{}, errx.ErrNotImplemented
 }
 
+func (Stub) OpenTicketThread(context.Context, chatapi.OpenTicketThreadRequest) (chatapi.Conversation, error) {
+	return chatapi.Conversation{}, errx.ErrNotImplemented
+}
+
 func (Stub) StartConversation(context.Context, chatapi.StartConversationRequest) (chatapi.Conversation, error) {
 	return chatapi.Conversation{}, errx.ErrNotImplemented
 }
@@ -63,6 +67,10 @@ func (Stub) RedactMessage(context.Context, chatapi.RedactMessageRequest) error {
 }
 
 func (Stub) PostSystemMessage(context.Context, chatapi.PostSystemMessageRequest) (chatapi.Message, error) {
+	return chatapi.Message{}, errx.ErrNotImplemented
+}
+
+func (Stub) PostTicketMessage(context.Context, chatapi.PostTicketMessageRequest) (chatapi.Message, error) {
 	return chatapi.Message{}, errx.ErrNotImplemented
 }
 

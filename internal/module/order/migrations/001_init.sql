@@ -1,7 +1,7 @@
 -- Module: order — canonical schema
 -- Description: Shopping cart, checkout items, payments, transport/delivery,
---              orders, refunds, and refund disputes. Any account can be
---              buyer (buyer_id) or seller (seller_id) within a single order.
+--              orders and refunds. Any account can be buyer (buyer_id) or
+--              seller (seller_id) within a single order.
 
 -- Enums
 
@@ -26,16 +26,16 @@ CREATE TYPE "transport_status" AS ENUM (
 -- reading the service.
 --
 --   awaiting-seller-review  the seller accepts or rejects
---   awaiting-buyer-action   the buyer escalates to a moderator, or lets it lapse.
---                           Entered by a rejection, or by the seller letting the
---                           review window pass; "rejection_reason" tells them apart.
---   disputed                a moderator rules on the open round of "refund_dispute"
+--   awaiting-buyer-action   the buyer escalates to staff, or lets it lapse. Entered
+--                           by a rejection, or by the seller letting the review
+--                           window pass; "rejection_reason" tells them apart.
+--   disputed                staff are looking at it. The ticket lives in trust; this
+--                           value is only "no party is on the clock, a verdict is".
 --   returning               the carrier delivers the goods back to the seller. The
 --                           return leg exists only from here — a refund that never
 --                           gets granted never ships anything.
---   returned                the seller inspects what arrived and may appeal, which is
---                           round 2 of the same dispute; letting the window pass
---                           settles the refund for the buyer.
+--   returned                the seller inspects what arrived and may escalate;
+--                           letting the window pass settles the refund for the buyer.
 CREATE TYPE "refund_status" AS ENUM (
     'awaiting-seller-review',
     'awaiting-buyer-action',
@@ -45,15 +45,6 @@ CREATE TYPE "refund_status" AS ENUM (
     'accepted',  -- terminal: the money went back to the buyer
     'rejected',  -- terminal: no refund, and the payout to the seller stands
     'cancelled'  -- terminal: the buyer withdrew before the seller decided
-);
-
--- The winner of one dispute round, whichever round it is: in round 1 'buyer-wins'
--- grants the refund and starts the return, in round 2 it denies the seller's appeal
--- and settles. 'seller-wins' ends the refund in both.
-CREATE TYPE "dispute_status" AS ENUM (
-    'open',
-    'seller-wins',
-    'buyer-wins'
 );
 
 -- 'checked-out' is the buyer paying: the claim on agreed terms, taken before the payment
@@ -316,7 +307,7 @@ CREATE INDEX IF NOT EXISTS "item_seller_pending_idx"
 -- would let the two disagree about how much is owed.
 --
 -- Nothing ships at creation. The buyer keeps the goods until the refund is actually
--- granted — by the seller accepting or by a moderator ruling for the buyer — because
+-- granted — by the seller accepting or by a staff verdict for the buyer — because
 -- most requests are settled or refused without a parcel ever moving, and a return
 -- posted up front would have to be un-posted every time.
 CREATE TABLE IF NOT EXISTS "refund" (
@@ -325,13 +316,13 @@ CREATE TABLE IF NOT EXISTS "refund" (
     "order_id" BIGINT NOT NULL,
     "reason" TEXT NOT NULL,
     -- The buyer's evidence, added at creation and topped up until the case closes.
-    -- Resource ids from common. A dispute is decided on these, so they outlive the flow.
+    -- Resource ids from common. A verdict is reached on these, so they outlive the flow.
     "attachments" BIGINT[] NOT NULL DEFAULT '{}',
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     "status" "refund_status" NOT NULL DEFAULT 'awaiting-seller-review',
     -- When the party named by "status" runs out of time. NULL in the states nobody is
-    -- on the clock for: 'disputed' waits on a moderator and 'returning' on a carrier,
+    -- on the clock for: 'disputed' waits on staff and 'returning' on a carrier,
     -- neither of which a timer should decide, and the terminal states wait on nothing.
     "deadline_at" TIMESTAMPTZ,
 
@@ -342,8 +333,8 @@ CREATE TABLE IF NOT EXISTS "refund" (
     "rejection_reason" TEXT,
 
     -- Return leg: buyer → seller, created when the refund is granted, never before.
-    -- No leg back to the buyer: a seller who wins round 1 was never sent anything, and
-    -- one who wins round 2 is holding goods a moderator has just called not-as-sent.
+    -- No leg back to the buyer: a seller who wins was either never sent anything, or
+    -- is holding goods staff have just called not-as-sent.
     "return_transport_id" BIGINT,
     "returned_at" TIMESTAMPTZ, -- set when the return transport reaches delivered
 
@@ -358,7 +349,7 @@ CREATE TABLE IF NOT EXISTS "refund" (
         "rejection_reason" IS NULL OR "seller_decided_at" IS NOT NULL
     ),
     -- A live refund always has someone on the clock, and the two states that wait on a
-    -- carrier or a moderator never do.
+    -- carrier or on staff never do.
     CONSTRAINT "refund_deadline_matches_status" CHECK (
         ("deadline_at" IS NOT NULL) =
         ("status" IN ('awaiting-seller-review', 'awaiting-buyer-action', 'returned'))
@@ -383,52 +374,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS "refund_one_active_per_order"
 CREATE INDEX IF NOT EXISTS "refund_overdue_idx"
     ON "refund" ("deadline_at")
     WHERE "deadline_at" IS NOT NULL;
-
--- One round of moderation on a refund. Two are possible and both are kept:
---   round 1  the buyer escalating, after a rejection or an ignored review
---   round 2  the seller appealing what came back — a counterfeit, or the wrong item
--- A second row rather than a second verdict on the first, so that ruling for the buyer
--- and then for the seller stays legible as two decisions instead of one that changed
--- its mind. "opened_by_id" says whose round it is, and the round's "attachments" hold
--- that side's evidence, kept apart from the buyer's on "refund" so a moderator can
--- always tell who submitted what.
-CREATE TABLE IF NOT EXISTS "refund_dispute" (
-    "id" BIGINT GENERATED ALWAYS AS IDENTITY,
-    "refund_id" BIGINT NOT NULL,
-    "round" SMALLINT NOT NULL,
-    "opened_by_id" BIGINT NOT NULL, -- the buyer in round 1, the seller in round 2
-    "reason" TEXT NOT NULL,
-    "attachments" BIGINT[] NOT NULL DEFAULT '{}',
-    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    "status" "dispute_status" NOT NULL DEFAULT 'open',
-
-    "resolved_by_id" BIGINT, -- the moderator
-    "resolved_at" TIMESTAMPTZ,
-    "resolution_note" TEXT,
-
-    CONSTRAINT "refund_dispute_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "refund_dispute_refund_id_round_key" UNIQUE ("refund_id", "round"),
-    CONSTRAINT "refund_dispute_round_range" CHECK ("round" IN (1, 2)),
-    -- Being open and being unresolved are the same fact, and a verdict always has an
-    -- author.
-    CONSTRAINT "refund_dispute_resolution_together" CHECK (
-        (("status" = 'open') = ("resolved_at" IS NULL))
-        AND (("resolved_at" IS NULL) = ("resolved_by_id" IS NULL))
-    ),
-
-    CONSTRAINT "refund_dispute_refund_id_fkey" FOREIGN KEY ("refund_id")
-        REFERENCES "refund" ("id") ON DELETE NO ACTION
-);
--- At most one round open at a time: round 2 cannot be filed until round 1 is ruled.
-CREATE UNIQUE INDEX IF NOT EXISTS "refund_dispute_one_open_per_refund"
-    ON "refund_dispute" ("refund_id")
-    WHERE "status" = 'open';
-CREATE INDEX IF NOT EXISTS "refund_dispute_opened_by_id_idx" ON "refund_dispute" ("opened_by_id");
--- The moderator queue: open rounds, oldest first, which is the order they are worked.
-CREATE INDEX IF NOT EXISTS "refund_dispute_queue_idx"
-    ON "refund_dispute" ("created_at")
-    WHERE "status" = 'open';
 
 -- Order cancellation is derived in the order service (was a DB function; moved to domain).
 

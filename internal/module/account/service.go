@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"sync/atomic"
 	"time"
 
 	"shopnexus/internal/infra/cache"
@@ -73,6 +74,9 @@ type Service struct {
 	// fanout pushes the realtime facts in event.go to the socket the owning account may
 	// have open. Best-effort: a write always commits whether or not anybody is listening.
 	fanout realtime.Fanout
+	// support memoises the desk account. Seeded by a migration and never edited, so one lookup
+	// answers every ticket thread this process opens.
+	support atomic.Value
 }
 
 func NewService(
@@ -267,6 +271,22 @@ func toIdentityDocument(d domain.IdentityDocument) accountapi.IdentityDocument {
 }
 
 // summariesByID is the keyed form, for a caller that pairs a row with its subject by
+// GetSupportAccount answers the desk's own account, looked up by its reserved username. Cached in
+// memory after the first call: the row is seeded by a migration and never changes, and a ticket
+// thread should not pay a query for it on every message.
+func (s *Service) GetSupportAccount(ctx context.Context) (accountapi.AccountSummary, error) {
+	if cached, ok := s.support.Load().(accountapi.AccountSummary); ok {
+		return cached, nil
+	}
+	acc, err := s.repo.GetByIdentifier(ctx, accountapi.SupportUsername)
+	if err != nil {
+		return accountapi.AccountSummary{}, fmt.Errorf("read support account: %w", err)
+	}
+	out := accountapi.AccountSummary{ID: id.Of[id.Account](acc.ID), Name: acc.Profile.Name}
+	s.support.Store(out)
+	return out, nil
+}
+
 // account id. A profile that did not come back is simply absent, which the caller answers
 // for explicitly instead of reading a zero id back out of a slice.
 func (s *Service) summariesByID(ctx context.Context, profiles map[int64]domain.Profile) map[int64]accountapi.AccountSummary {

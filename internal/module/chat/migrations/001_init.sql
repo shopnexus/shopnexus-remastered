@@ -13,6 +13,7 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 --
 -- There is no per-message delivery status. Read state is two timestamps on
 -- "conversation" instead: see the comment there.
+CREATE TYPE "conversation_kind" AS ENUM ('direct', 'ticket');
 CREATE TYPE "message_type" AS ENUM ('user', 'system');
 
 -- Tables
@@ -23,6 +24,13 @@ CREATE TYPE "message_type" AS ENUM ('user', 'system');
 -- out a thread with oneself. Not listing-scoped: products are referenced per message.
 CREATE TABLE IF NOT EXISTS "conversation" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
+    -- What this thread is. `direct` is two accounts talking, one thread per pair. `ticket` is a
+    -- support thread: side B is the support desk's own account rather than a person, so the
+    -- moderator who answers stays anonymous and the next one inherits the same thread.
+    "kind" "conversation_kind" NOT NULL DEFAULT 'direct',
+    -- The ticket this thread belongs to (trust.ticket; no FK, another schema). NULL on a direct
+    -- thread, and what makes creating a ticket's thread idempotent: a retry finds the same row.
+    "ticket_id" BIGINT,
     "account_a_id" BIGINT NOT NULL, -- cross-ref account.account; no FK
     "account_b_id" BIGINT NOT NULL, -- cross-ref account.account; no FK
     -- Denormalized for inbox ordering, maintained by the service. Starts at
@@ -47,9 +55,20 @@ CREATE TABLE IF NOT EXISTS "conversation" (
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "conversation_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "conversation_pair_key" UNIQUE ("account_a_id", "account_b_id"),
-    CONSTRAINT "conversation_pair_ordered" CHECK ("account_a_id" < "account_b_id")
+    CONSTRAINT "conversation_pair_ordered" CHECK ("account_a_id" < "account_b_id"),
+    -- A ticket thread has a ticket and a direct one does not.
+    CONSTRAINT "conversation_ticket_matches_kind" CHECK (("kind" = 'ticket') = ("ticket_id" IS NOT NULL))
 );
+-- One thread per pair — but only for direct threads: a user raises many tickets, and every one of
+-- them pairs the same two accounts (them and the desk). Partial, so the rule that matters for a
+-- 1-1 chat still cannot be sidestepped by swapping sides.
+CREATE UNIQUE INDEX IF NOT EXISTS "conversation_pair_key"
+    ON "conversation" ("account_a_id", "account_b_id")
+    WHERE "kind" = 'direct';
+-- One thread per ticket, which is what makes creating it a retry rather than a duplicate.
+CREATE UNIQUE INDEX IF NOT EXISTS "conversation_ticket_id_key"
+    ON "conversation" ("ticket_id")
+    WHERE "ticket_id" IS NOT NULL;
 -- The inbox: "my threads, latest activity first". Two indexes because a participant
 -- sits on either side; run the query as a UNION ALL of the two branches so each side
 -- stays an ordered index scan instead of collapsing into a sort.

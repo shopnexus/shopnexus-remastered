@@ -122,6 +122,11 @@ func NewOAuthAccount(email, username string, profile Profile, provider, uid stri
 	return a, nil
 }
 
+// SupportUsername is the reserved username of the support desk's account, which every ticket thread
+// pairs with. Declared here and re-declared in `api` for the reason every crossing value is: domain
+// may not import api, and api may not import errx.
+const SupportUsername = "support"
+
 // Validate checks the whole aggregate — what makes exported children safe: a caller that
 // breaks an invariant by hand is refused at the write rather than stored.
 func (a *Account) Validate() error {
@@ -134,6 +139,11 @@ func (a *Account) Validate() error {
 			Rule:    "pattern",
 			Message: "must contain only lowercase letters, digits, dot, dash or underscore",
 		})
+	}
+	// The support desk's username is the platform's own: an account able to sign in as it could
+	// read every ticket thread, since it is the second side of all of them.
+	if a.ID == 0 && a.Username != nil && *a.Username == SupportUsername {
+		return ErrUsernameReserved
 	}
 	if !a.HasIdentifier() {
 		return ErrNoIdentifier

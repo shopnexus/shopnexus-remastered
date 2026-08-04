@@ -147,16 +147,12 @@ func (Stub) AdvanceReturnShipment(context.Context, orderapi.AdvanceReturnShipmen
 	return orderapi.Refund{}, errx.ErrNotImplemented
 }
 
-func (Stub) OpenDispute(context.Context, orderapi.OpenDisputeRequest) (orderapi.Dispute, error) {
-	return orderapi.Dispute{}, errx.ErrNotImplemented
+func (Stub) EscalateRefund(context.Context, orderapi.EscalateRefundRequest) (orderapi.Refund, error) {
+	return orderapi.Refund{}, errx.ErrNotImplemented
 }
 
-func (Stub) AdminListDisputes(context.Context, orderapi.ListDisputesRequest) (orderapi.DisputePage, error) {
-	return orderapi.DisputePage{}, errx.ErrNotImplemented
-}
-
-func (Stub) AdminRuleDispute(context.Context, orderapi.RuleDisputeRequest) (orderapi.Dispute, error) {
-	return orderapi.Dispute{}, errx.ErrNotImplemented
+func (Stub) AdminResolveRefund(context.Context, orderapi.ResolveRefundRequest) (orderapi.Refund, error) {
+	return orderapi.Refund{}, errx.ErrNotImplemented
 }
 
 func (Stub) CreateUpload(context.Context, orderapi.CreateUploadRequest) (orderapi.UploadSlot, error) {

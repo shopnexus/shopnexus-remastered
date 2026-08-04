@@ -201,23 +201,6 @@ type RefundPage struct {
 	Meta CursorInfo `json:"meta"`
 }
 
-type Dispute struct {
-	ID        id.ID[id.RefundDispute] `json:"id"`
-	RefundID  id.ID[id.Refund]        `json:"refund_id"`
-	Round     int16                   `json:"round"`
-	OpenedBy  id.ID[id.Account]       `json:"opened_by"`
-	Status    string                  `json:"status"`
-	Reason    string                  `json:"reason"`
-	Note      string                  `json:"note,omitempty"`
-	CreatedAt time.Time               `json:"created_at"`
-	RuledAt   *time.Time              `json:"ruled_at"`
-}
-
-type DisputePage struct {
-	Data []Dispute  `json:"data"`
-	Meta CursorInfo `json:"meta"`
-}
-
 // CheckoutResult is the bill, itemised: what the goods cost, what delivery costs, and the total
 // the payment session will collect. Both halves are shown because the buyer pays both — on a
 // fixed-price sale and a negotiated one alike — and a total with no breakdown is a number nobody
@@ -431,8 +414,8 @@ type AdvanceShipmentRequest struct {
 
 // AdvanceReturnShipmentRequest is the same for the leg carrying the goods back. `delivered` is
 // what opens the seller's inspection window, so either party may report it — a seller who never
-// confirms would otherwise strand the escrow, and round two is their remedy against a buyer who
-// claims a delivery that did not happen.
+// confirms would otherwise strand the escrow, and escalating what arrived is their remedy against
+// a buyer who claims a delivery that did not happen.
 type AdvanceReturnShipmentRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	ID      id.ID[id.Refund]  `json:"-" validate:"required"`
@@ -471,23 +454,21 @@ type RejectRefundRequest struct {
 	Reason  string            `json:"reason" validate:"required,min=1,max=2000"`
 }
 
-type OpenDisputeRequest struct {
+// EscalateRefundRequest has no reason field: trust's ticket carries what the escalating party
+// said, so a second copy here could disagree with it.
+type EscalateRefundRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	ID      id.ID[id.Refund]  `json:"-" validate:"required"`
-	Reason  string            `json:"reason" validate:"required,min=1,max=2000"`
 }
 
-type ListDisputesRequest struct {
-	ActorID id.ID[id.Account] `json:"-" validate:"required"`
-	Cursor  string            `json:"-"`
-	Limit   int               `json:"-" validate:"required,min=1,max=100"`
-}
-
-type RuleDisputeRequest struct {
-	ActorID   id.ID[id.Account]       `json:"-" validate:"required"`
-	ID        id.ID[id.RefundDispute] `json:"-" validate:"required"`
-	BuyerWins bool                    `json:"buyer_wins"`
-	Note      string                  `json:"note,omitempty" validate:"max=2000"`
+// ResolveRefundRequest is the verdict. A boolean rather than a status, because there is no
+// "still deciding" outcome to record — and the Note travels on the published fact, which is
+// what closes the ticket the escalation opened.
+type ResolveRefundRequest struct {
+	ActorID   id.ID[id.Account] `json:"-" validate:"required"`
+	ID        id.ID[id.Refund]  `json:"-" validate:"required"`
+	BuyerWins bool              `json:"buyer_wins"`
+	Note      string            `json:"note,omitempty" validate:"max=2000"`
 }
 
 // CreateUploadRequest asks for a slot to PUT evidence into — the unboxing photos a buyer
@@ -566,7 +547,7 @@ type Service interface {
 	// can still be cancelled and the escrow taken back.
 	AdvanceShipment(ctx context.Context, req AdvanceShipmentRequest) (Transport, error)
 
-	// --- refunds and disputes ---
+	// --- refunds ---
 	CreateRefund(ctx context.Context, req CreateRefundRequest) (Refund, error)
 	ListRefunds(ctx context.Context, req ListRefundsRequest) (RefundPage, error)
 	GetRefund(ctx context.Context, req RefundRequest) (Refund, error)
@@ -575,12 +556,15 @@ type Service interface {
 	AcceptRefund(ctx context.Context, req RefundRequest) (Refund, error)
 	RejectRefund(ctx context.Context, req RejectRefundRequest) (Refund, error)
 	// AdvanceReturnShipment is the only exit from `returning`: marking the return delivered is
-	// what opens the seller's appeal window, and without it a granted refund strands the escrow
-	// with nobody on a clock.
+	// what opens the seller's inspection window, and without it a granted refund strands the
+	// escrow with nobody on a clock.
 	AdvanceReturnShipment(ctx context.Context, req AdvanceReturnShipmentRequest) (Refund, error)
-	OpenDispute(ctx context.Context, req OpenDisputeRequest) (Dispute, error)
-	AdminListDisputes(ctx context.Context, req ListDisputesRequest) (DisputePage, error)
-	AdminRuleDispute(ctx context.Context, req RuleDisputeRequest) (Dispute, error)
+	// EscalateRefund records that staff have been asked to decide. Called by trust when the
+	// ticket is opened — not by a route — so a refund's status and its ticket cannot disagree.
+	EscalateRefund(ctx context.Context, req EscalateRefundRequest) (Refund, error)
+	// AdminResolveRefund is the verdict, and the only thing staff decide here: order owns the
+	// money, so it owns the outcome the money follows.
+	AdminResolveRefund(ctx context.Context, req ResolveRefundRequest) (Refund, error)
 
 	// --- uploads ---
 	// CreateUpload reserves a slot for evidence: the unboxing photos a receipt confirmation

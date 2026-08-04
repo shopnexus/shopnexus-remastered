@@ -73,7 +73,7 @@ paths:
         Either party to the order may report it. The buyer posted the parcel and the seller
         received it, and requiring the seller alone would let one who simply never confirms
         strand the escrow with nobody on a clock — which is what having no writer at all did. A
-        buyer who claims a delivery that did not happen is answered by round two of the dispute,
+        buyer who claims a delivery that did not happen is answered by the seller escalating,
         which is exactly what that window is for.
       security: [{ bearerAuth: [] }]
       parameters:

@@ -232,18 +232,21 @@ components:
                 - document
                 - account
             type: object
-        AdminReport:
-            description: A queue entry. A moderator needs the reporter and the target beside the report itself.
+        AdminTicket:
+            description: A queue entry. A moderator needs the requester and the target beside the ticket itself.
             properties:
-                open_reports_against_target:
+                assignee:
+                    allOf:
+                        - $ref: '#/components/schemas/AccountSummary'
+                    description: The moderator working it. Staff-only, and null until it is claimed.
+                    nullable: true
+                open_tickets_against_target:
                     description: |
-                        How many other unresolved reports name the same target. A pattern is what a decision rests on rather than a single complaint.
+                        How many other unresolved tickets name the same target. A pattern is what a decision rests on rather than a single complaint.
                     format: int64
                     minimum: 0
                     type: integer
-                report:
-                    $ref: '#/components/schemas/Report'
-                reporter:
+                requester:
                     $ref: '#/components/schemas/AccountSummary'
                 resolved_by:
                     allOf:
@@ -252,18 +255,20 @@ components:
                 target:
                     additionalProperties: true
                     description: |
-                        The reported content, shaped by `ref_type`. Fetched from the module that owns it.
+                        What the ticket is about, shaped by `ref_type`. Fetched from the module that owns it, and absent once that module no longer has it — a listing already taken down.
                     type: object
+                ticket:
+                    $ref: '#/components/schemas/Ticket'
             required:
-                - report
-                - reporter
-                - open_reports_against_target
+                - ticket
+                - requester
+                - open_tickets_against_target
             type: object
-        AdminReportPage:
+        AdminTicketPage:
             properties:
                 data:
                     items:
-                        $ref: '#/components/schemas/AdminReport'
+                        $ref: '#/components/schemas/AdminTicket'
                     type: array
                 meta:
                     $ref: '#/components/schemas/CursorMeta'
@@ -528,7 +533,7 @@ components:
             properties:
                 attachments:
                     description: |
-                        Unboxing photos or video. At least one is mandatory — a later refund or dispute is judged on this evidence.
+                        Unboxing photos or video. At least one is mandatory — a later refund is judged on this evidence.
                     items:
                         $ref: '#/components/schemas/ResourceID'
                     maxItems: 10
@@ -1106,29 +1111,6 @@ components:
                 - ios
                 - android
                 - web
-            type: string
-        DisputeRulingRequest:
-            description: A ruling, so there is no "still open" choice — which is why the verdict is a boolean rather than the status enum.
-            properties:
-                buyer_wins:
-                    description: What that does depends on the round; see the endpoint.
-                    example: true
-                    type: boolean
-                note:
-                    description: Recorded with the verdict; the ruling is final
-                    example: Evidence is clear
-                    maxLength: 2000
-                    type: string
-            required:
-                - buyer_wins
-            type: object
-        DisputeStatus:
-            description: |
-                The winner of one round, or `open` while it is still with a moderator. What winning does depends on the round — see the ruling endpoint.
-            enum:
-                - open
-                - seller-wins
-                - buyer-wins
             type: string
         DraftOrder:
             description: |
@@ -2148,17 +2130,38 @@ components:
                 - cancelled
             example: accepted
             type: string
-        OpenDisputeRequest:
-            description: |
-                The grounds for the round being opened — the buyer's objection to a refusal, or the seller's account of what actually arrived. Supporting files go on the case through `POST /refunds/{id}/attachments`, which is where all of a party's evidence lives.
+        OpenTicketRequest:
             properties:
+                attachments:
+                    description: Confirmed uploads, posted as the opening message's images.
+                    items:
+                        $ref: '#/components/schemas/ResourceID'
+                    maxItems: 10
+                    type: array
+                body:
+                    description: The first message of the thread, not a column on the ticket.
+                    example: ảnh mở hộp đây, sản phẩm bị xước
+                    maxLength: 4000
+                    type: string
+                kind:
+                    $ref: '#/components/schemas/TicketKind'
                 reason:
-                    example: The photos show a different item
-                    maxLength: 2000
+                    allOf:
+                        - $ref: '#/components/schemas/TicketReason'
+                    description: Report kinds only.
+                ref_id:
+                    description: Required for the kinds that are about something, refused for the others.
+                    example: lst_1ryaj8117v2p4
+                    pattern: ^[a-z]{3}_[0-9a-hjkmnp-tv-z]{13}$
+                    type: string
+                subject:
+                    example: Hàng không đúng mô tả
+                    maxLength: 200
                     minLength: 1
                     type: string
             required:
-                - reason
+                - kind
+                - subject
             type: object
         Order:
             properties:
@@ -2713,7 +2716,7 @@ components:
                 The case. Always for one entire order, so it carries no amount of its own — what is owed is the order's checkout total.
             properties:
                 attachments:
-                    description: The buyer's evidence. Each dispute round holds its opener's.
+                    description: The buyer's evidence, topped up until the case closes.
                     items:
                         $ref: '#/components/schemas/Resource'
                     type: array
@@ -2724,7 +2727,7 @@ components:
                     type: string
                 deadline_at:
                     description: |
-                        When the party named by `status` runs out of time, and missing it is itself a move. Null while the case waits on a moderator or a carrier, and in the terminal states.
+                        When the party named by `status` runs out of time, and missing it is itself a move. Null while the case waits on staff or a carrier, and in the terminal states.
                     format: date-time
                     nullable: true
                     type: string
@@ -2760,64 +2763,6 @@ components:
                 - attachments
                 - created_at
             type: object
-        RefundDispute:
-            description: |
-                One round of moderation on one refund. A second round rather than a second verdict on the first, so ruling for the buyer and then for the seller stays legible as two decisions instead of one that changed its mind.
-            properties:
-                created_at:
-                    format: date-time
-                    type: string
-                id:
-                    $ref: '#/components/schemas/RefundDisputeID'
-                note:
-                    description: The moderator's, recorded with the verdict
-                    example: Evidence is clear
-                    type: string
-                opened_by:
-                    $ref: '#/components/schemas/AccountID'
-                reason:
-                    description: The grounds of whoever opened this round.
-                    example: The photos show a different item
-                    type: string
-                refund_id:
-                    $ref: '#/components/schemas/RefundID'
-                round:
-                    description: 1 = the buyer escalating, 2 = the seller appealing the return.
-                    enum:
-                        - 1
-                        - 2
-                    type: integer
-                ruled_at:
-                    format: date-time
-                    nullable: true
-                    type: string
-                status:
-                    $ref: '#/components/schemas/DisputeStatus'
-            required:
-                - id
-                - refund_id
-                - round
-                - opened_by
-                - status
-                - reason
-                - created_at
-            type: object
-        RefundDisputeID:
-            example: dsp_n8kvq1wd6ptz3
-            pattern: ^dsp_[0-9a-hjkmnp-tv-z]{13}$
-            type: string
-        RefundDisputePage:
-            properties:
-                data:
-                    items:
-                        $ref: '#/components/schemas/RefundDispute'
-                    type: array
-                meta:
-                    $ref: '#/components/schemas/CursorMeta'
-            required:
-                - data
-                - meta
-            type: object
         RefundID:
             example: rfd_z3n8kvq1wd6pt
             pattern: ^rfd_[0-9a-hjkmnp-tv-z]{13}$
@@ -2838,7 +2783,7 @@ components:
             description: |
                 Every live value names the party whose move the refund is waiting on, and each of those carries a `deadline_at` that the party can miss:
 
-                `awaiting-seller-review` — the seller accepts or rejects. Missing it hands the case to the buyer. `awaiting-buyer-action` — the buyer escalates to a moderator or lets the refund lapse; `rejection_reason` says whether the seller refused or just went quiet. `disputed` — a moderator has an open round. `returning` — the goods are on their way back; only a granted refund ever reaches here. `returned` — the seller inspects and may appeal until the window closes.
+                `awaiting-seller-review` — the seller accepts or rejects. Missing it hands the case to the buyer. `awaiting-buyer-action` — the buyer escalates to staff or lets the refund lapse; `rejection_reason` says whether the seller refused or just went quiet. `disputed` — staff are looking at it. `returning` — the goods are on their way back; only a granted refund ever reaches here. `returned` — the seller inspects and may escalate until the window closes.
 
                 Then three terminals: `accepted` is money back to the buyer and the order closed with it, `rejected` is no refund and the payout stands, `cancelled` is the buyer withdrawing before the seller decided. Only the last two give the escrow up — `accepted` keeps its claim, because that money has already gone to the buyer.
             enum:
@@ -2851,6 +2796,21 @@ components:
                 - rejected
                 - cancelled
             type: string
+        RefundVerdictRequest:
+            description: A decision, so there is no "still deciding" choice — which is why the verdict is a boolean rather than a status enum.
+            properties:
+                buyer_wins:
+                    description: What it does to the money depends on whether the goods have come back; see the endpoint.
+                    example: true
+                    type: boolean
+                note:
+                    description: The reasoning, carried to the ticket this closes
+                    example: Evidence is clear
+                    maxLength: 2000
+                    type: string
+            required:
+                - buyer_wins
+            type: object
         RegisterDeviceRequest:
             properties:
                 platform:
@@ -2920,98 +2880,6 @@ components:
             required:
                 - reason
             type: object
-        Report:
-            properties:
-                action_taken:
-                    allOf:
-                        - $ref: '#/components/schemas/ReportAction'
-                    description: Null until the report is resolved.
-                    nullable: true
-                created_at:
-                    format: date-time
-                    type: string
-                detail:
-                    type: string
-                id:
-                    $ref: '#/components/schemas/ReportID'
-                reason:
-                    $ref: '#/components/schemas/ReportReason'
-                ref_id:
-                    description: |
-                        Opaque id of the reported thing. Which prefix is valid follows from `ref_type`, which is why the two are validated together.
-                    example: lst_1ryaj8117v2p4
-                    pattern: ^[a-z]{3}_[0-9a-hjkmnp-tv-z]{13}$
-                    type: string
-                ref_type:
-                    $ref: '#/components/schemas/ReportRefType'
-                resolution_note:
-                    nullable: true
-                    type: string
-                resolved_at:
-                    format: date-time
-                    nullable: true
-                    type: string
-                status:
-                    $ref: '#/components/schemas/ReportStatus'
-            required:
-                - id
-                - ref_type
-                - ref_id
-                - reason
-                - detail
-                - status
-                - created_at
-            type: object
-        ReportAction:
-            description: What a moderator did about an upheld report. `none` goes with a dismissal.
-            enum:
-                - none
-                - listing-removed
-                - message-removed
-                - account-suspended
-                - warning
-            type: string
-        ReportID:
-            example: rpt_9c4vt6bkn1pzs
-            pattern: ^rpt_[0-9a-hjkmnp-tv-z]{13}$
-            type: string
-        ReportPage:
-            properties:
-                data:
-                    items:
-                        $ref: '#/components/schemas/Report'
-                    type: array
-                meta:
-                    $ref: '#/components/schemas/CursorMeta'
-            required:
-                - data
-                - meta
-            type: object
-        ReportReason:
-            enum:
-                - scam
-                - counterfeit
-                - prohibited
-                - harassment
-                - spam
-                - inappropriate
-                - other
-            type: string
-        ReportRefType:
-            enum:
-                - listing
-                - account
-                - message
-                - review
-                - review-reply
-            type: string
-        ReportStatus:
-            enum:
-                - open
-                - reviewing
-                - actioned
-                - dismissed
-            type: string
         Reputation:
             description: |
                 Recomputed, never written directly. Transaction ratings and product-review ratings stay apart: one order can produce both and summing them would count it twice.
@@ -3074,24 +2942,18 @@ components:
                 - seller
                 - buyer
             type: string
-        ResolveReportRequest:
+        ResolveTicketRequest:
             properties:
                 action_taken:
                     allOf:
-                        - $ref: '#/components/schemas/ReportAction'
+                        - $ref: '#/components/schemas/TicketAction'
                     description: |
-                        Required. `none` goes with a dismissal; upholding the report names what was done.
+                        Required. `none` is the turn-down; anything else names what was done. The two `refund-*` values are what order's verdict records on the ticket it closes.
                 note:
+                    example: đã xác nhận hàng giả
                     maxLength: 2000
                     type: string
-                status:
-                    description: A verdict so open and reviewing are not choices.
-                    enum:
-                        - actioned
-                        - dismissed
-                    type: string
             required:
-                - status
                 - action_taken
             type: object
         Resource:
@@ -3464,23 +3326,6 @@ components:
             required:
                 - rating
             type: object
-        SubmitReportRequest:
-            properties:
-                detail:
-                    maxLength: 2000
-                    type: string
-                reason:
-                    $ref: '#/components/schemas/ReportReason'
-                ref_id:
-                    pattern: ^[a-z]{3}_[0-9a-hjkmnp-tv-z]{13}$
-                    type: string
-                ref_type:
-                    $ref: '#/components/schemas/ReportRefType'
-            required:
-                - ref_type
-                - ref_id
-                - reason
-            type: object
         SubmitReviewReplyRequest:
             properties:
                 body:
@@ -3656,6 +3501,135 @@ components:
                 - pending
                 - verified
                 - rejected
+            type: string
+        Ticket:
+            properties:
+                action_taken:
+                    allOf:
+                        - $ref: '#/components/schemas/TicketAction'
+                    description: Null until the ticket is resolved.
+                    nullable: true
+                conversation_id:
+                    allOf:
+                        - $ref: '#/components/schemas/ConversationID'
+                    description: |
+                        The thread this ticket is discussed in — where the requester's own words went and where support answers. Null only between the row being written and the thread being opened; reading the ticket repairs it.
+                    nullable: true
+                created_at:
+                    format: date-time
+                    type: string
+                id:
+                    $ref: '#/components/schemas/TicketID'
+                kind:
+                    $ref: '#/components/schemas/TicketKind'
+                reason:
+                    allOf:
+                        - $ref: '#/components/schemas/TicketReason'
+                    nullable: true
+                ref_id:
+                    description: |
+                        Opaque id of what the ticket is about, kinded by `ref_type`. Null on a ticket about nothing in particular.
+                    example: lst_1ryaj8117v2p4
+                    nullable: true
+                    pattern: ^[a-z]{3}_[0-9a-hjkmnp-tv-z]{13}$
+                    type: string
+                ref_type:
+                    allOf:
+                        - $ref: '#/components/schemas/TicketRefType'
+                    nullable: true
+                resolution_note:
+                    example: đã xác nhận hàng giả
+                    nullable: true
+                    type: string
+                resolved_at:
+                    format: date-time
+                    nullable: true
+                    type: string
+                status:
+                    $ref: '#/components/schemas/TicketStatus'
+                subject:
+                    example: Hàng không đúng mô tả
+                    type: string
+            required:
+                - id
+                - kind
+                - subject
+                - status
+                - created_at
+            type: object
+        TicketAction:
+            description: |
+                What was done about it. `none` is a ticket read and answered with nothing done — the turn-down, which is why it is a value here and not a second status. The two `refund-*` ones are written by order's verdict route, never by hand.
+            enum:
+                - none
+                - listing-removed
+                - message-removed
+                - account-suspended
+                - warning
+                - refund-granted
+                - refund-refused
+            type: string
+        TicketID:
+            example: tkt_9c4vt6bkn1pzs
+            pattern: ^tkt_[0-9a-hjkmnp-tv-z]{13}$
+            type: string
+        TicketKind:
+            description: |
+                What was raised. The five `report-*` kinds and `refund-dispute`/`order-issue` are about something and carry a `ref_id`; the rest are about nothing in particular.
+            enum:
+                - report-listing
+                - report-account
+                - report-message
+                - report-review
+                - report-review-reply
+                - refund-dispute
+                - order-issue
+                - payment
+                - account
+                - feature-request
+                - other
+            type: string
+        TicketPage:
+            properties:
+                data:
+                    items:
+                        $ref: '#/components/schemas/Ticket'
+                    type: array
+                meta:
+                    $ref: '#/components/schemas/CursorMeta'
+            required:
+                - data
+                - meta
+            type: object
+        TicketReason:
+            description: A report's grounds. Null on every other kind.
+            enum:
+                - scam
+                - counterfeit
+                - prohibited
+                - harassment
+                - spam
+                - inappropriate
+                - other
+            type: string
+        TicketRefType:
+            description: What kind of thing `ref_id` names. Follows from `kind`, never sent by a client.
+            enum:
+                - listing
+                - account
+                - message
+                - review
+                - review-reply
+                - order
+                - refund
+            type: string
+        TicketStatus:
+            description: |
+                `reviewing` is claimed by a moderator; `resolved` carries `action_taken`, which is where a turn-down lives as the value `none`.
+            enum:
+                - open
+                - reviewing
+                - resolved
             type: string
         Transaction:
             description: One movement on an external rail. Append-only.
@@ -4875,92 +4849,6 @@ paths:
             summary: Update a category
             tags:
                 - admin
-    /admin/disputes:
-        get:
-            description: |
-                Open rounds, oldest first, which is the order they should be worked. A round names the refund it is about; the case itself is read through `GET /refunds/{id}`.
-            parameters:
-                - $ref: '#/components/parameters/Cursor'
-                - $ref: '#/components/parameters/Limit'
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/RefundDisputePage'
-                    description: OK
-                "401":
-                    $ref: '#/components/responses/Unauthorized'
-                "403":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: Moderator role required
-            security:
-                - bearerAuth: []
-            summary: The moderator's dispute queue
-            tags:
-                - admin
-    /admin/disputes/{id}/ruling:
-        post:
-            description: |
-                Decided on whose evidence is more convincing. What a verdict does depends on the round, and the round is a property of the case rather than something the moderator picks:
-
-                Round 1 — `buyer_wins: true` grants the refund and books the return shipment, so the money is not released yet; `false` ends the refund and lets the payout stand.
-
-                Round 2, the seller's appeal on what arrived — `buyer_wins: false` upholds it, ends the refund and lets the payout stand; `true` denies it, so the escrow goes back to the buyer and the order closes with it.
-
-                The money moves before either row is written, and the verdict and the refund it moved are written together: a ruled round over a case still `disputed` is a state nothing can get out of, and a settled refund over an order the payout can still see is money paid twice.
-
-                There is no third round. Round 2 is where an appeal already lives, so a ruling on it is final.
-            parameters:
-                - in: path
-                  name: id
-                  required: true
-                  schema:
-                    $ref: '#/components/schemas/RefundDisputeID'
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/DisputeRulingRequest'
-                required: true
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                properties:
-                                    data:
-                                        $ref: '#/components/schemas/RefundDispute'
-                                required:
-                                    - data
-                                type: object
-                    description: Ruled
-                "400":
-                    $ref: '#/components/responses/BadRequest'
-                "401":
-                    $ref: '#/components/responses/Unauthorized'
-                "403":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: Moderator role required
-                "404":
-                    $ref: '#/components/responses/NotFound'
-                "409":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: Dispute is already resolved
-            security:
-                - bearerAuth: []
-            summary: Rule on the open round of a dispute (moderator)
-            tags:
-                - admin
     /admin/identity-documents:
         get:
             parameters:
@@ -5307,144 +5195,25 @@ paths:
             summary: Reconciliation view over all payment sessions
             tags:
                 - admin
-    /admin/reports:
-        get:
-            description: |
-                Defaults to the open and under-review ones, oldest first — that is the small hot slice the queue is worked from, and the index behind it covers exactly that predicate.
-            parameters:
-                - description: Defaults to open and reviewing.
-                  in: query
-                  name: status
-                  schema:
-                    $ref: '#/components/schemas/ReportStatus'
-                - in: query
-                  name: ref_type
-                  schema:
-                    $ref: '#/components/schemas/ReportRefType'
-                - in: query
-                  name: reason
-                  schema:
-                    $ref: '#/components/schemas/ReportReason'
-                - $ref: '#/components/parameters/Cursor'
-                - $ref: '#/components/parameters/Limit'
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/AdminReportPage'
-                    description: OK
-                "400":
-                    $ref: '#/components/responses/BadRequest'
-                "401":
-                    $ref: '#/components/responses/Unauthorized'
-                "403":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: Moderator role required
-            security:
-                - bearerAuth: []
-            summary: The report queue
-            tags:
-                - admin
-    /admin/reports/{id}:
-        get:
-            description: |
-                Includes the reported content itself and how many other open reports name the same target, since a moderator decides on the pattern and not one complaint.
-            parameters:
-                - in: path
-                  name: id
-                  required: true
-                  schema:
-                    $ref: '#/components/schemas/ReportID'
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                properties:
-                                    data:
-                                        $ref: '#/components/schemas/AdminReport'
-                                required:
-                                    - data
-                                type: object
-                    description: OK
-                "401":
-                    $ref: '#/components/responses/Unauthorized'
-                "403":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: Moderator role required
-                "404":
-                    $ref: '#/components/responses/NotFound'
-            security:
-                - bearerAuth: []
-            summary: Read a report with its target
-            tags:
-                - admin
-    /admin/reports/{id}/claim:
-        post:
-            description: Moves it out of the open queue so two moderators do not work the same case.
-            parameters:
-                - in: path
-                  name: id
-                  required: true
-                  schema:
-                    $ref: '#/components/schemas/ReportID'
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                properties:
-                                    data:
-                                        $ref: '#/components/schemas/Report'
-                                required:
-                                    - data
-                                type: object
-                    description: Claimed
-                "401":
-                    $ref: '#/components/responses/Unauthorized'
-                "403":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: Moderator role required
-                "404":
-                    $ref: '#/components/responses/NotFound'
-                "409":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: Already claimed or resolved
-            security:
-                - bearerAuth: []
-            summary: Take a report for review
-            tags:
-                - admin
-    /admin/reports/{id}/resolution:
+    /admin/refunds/{id}/verdict:
         post:
             description: |
-                Records the verdict and what was done about it. `dismissed` takes the action `none`; upholding it names the action instead — the listing was removed, the message was removed, the account was suspended, a warning was issued.
+                The refund has to be `disputed`, which is what a party escalating through trust set it to. There are no rounds: whether the goods have already come back is what a verdict reads to know which of the two situations it is in.
 
-                Recording the action here does not carry it out. Taking a listing down and suspending a seller are separate calls to the modules that own them, so the decision and its effects each stay where they can be audited.
+                `buyer_wins: true` with the goods still at the buyer's grants the refund and books the return shipment, so the money is not released yet. `buyer_wins: true` once the return has been delivered sends the escrow back to the buyer and closes the order with it. `buyer_wins: false` ends the refund either way, and the payout to the seller stands.
+
+                The money moves before the refund goes terminal, and the refund and the order it closes are written together: a settled refund over an order the payout can still see is money paid twice.
             parameters:
                 - in: path
                   name: id
                   required: true
                   schema:
-                    $ref: '#/components/schemas/ReportID'
+                    $ref: '#/components/schemas/RefundID'
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/ResolveReportRequest'
+                            $ref: '#/components/schemas/RefundVerdictRequest'
                 required: true
             responses:
                 "200":
@@ -5453,11 +5222,11 @@ paths:
                             schema:
                                 properties:
                                     data:
-                                        $ref: '#/components/schemas/Report'
+                                        $ref: '#/components/schemas/Refund'
                                 required:
                                     - data
                                 type: object
-                    description: Resolved
+                    description: Decided
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -5475,10 +5244,10 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Error'
-                    description: Already resolved
+                    description: This refund is not with staff for a decision, or its order has already settled
             security:
                 - bearerAuth: []
-            summary: Resolve a report
+            summary: Decide a refund staff were asked about (moderator)
             tags:
                 - admin
     /admin/tags/{slug}:
@@ -5591,6 +5360,179 @@ paths:
             security:
                 - bearerAuth: []
             summary: Record the verdict on a tax registration
+            tags:
+                - admin
+    /admin/tickets:
+        get:
+            description: |
+                Defaults to the open and under-review ones, oldest first — that is the small hot slice the queue is worked from, and the index behind it covers exactly that predicate.
+            parameters:
+                - description: Defaults to open and reviewing.
+                  in: query
+                  name: status
+                  schema:
+                    $ref: '#/components/schemas/TicketStatus'
+                - in: query
+                  name: kind
+                  schema:
+                    $ref: '#/components/schemas/TicketKind'
+                - $ref: '#/components/parameters/Cursor'
+                - $ref: '#/components/parameters/Limit'
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AdminTicketPage'
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Moderator role required
+            security:
+                - bearerAuth: []
+            summary: The ticket queue
+            tags:
+                - admin
+    /admin/tickets/{id}:
+        get:
+            description: |
+                Includes the thing itself and how many other open tickets name the same target, since a moderator decides on the pattern and not one complaint.
+            parameters:
+                - in: path
+                  name: id
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/TicketID'
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/AdminTicket'
+                                required:
+                                    - data
+                                type: object
+                    description: OK
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Moderator role required
+                "404":
+                    $ref: '#/components/responses/NotFound'
+            security:
+                - bearerAuth: []
+            summary: Read a ticket with what it is about
+            tags:
+                - admin
+    /admin/tickets/{id}/claim:
+        post:
+            description: |
+                Moves it out of the open queue so two moderators do not work the same case. The requester is never told who claimed it: support answers as the desk, so a decision is the platform's and not a named person's to be argued with afterwards.
+            parameters:
+                - in: path
+                  name: id
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/TicketID'
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Ticket'
+                                required:
+                                    - data
+                                type: object
+                    description: Claimed
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Moderator role required
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Already claimed or resolved
+            security:
+                - bearerAuth: []
+            summary: Take a ticket for review
+            tags:
+                - admin
+    /admin/tickets/{id}/resolution:
+        post:
+            description: |
+                Records the verdict and what was done about it. `none` is the turn-down — read, answered, nothing done — which is why it is an action rather than a second status.
+
+                Recording the action here does not carry it out. Taking a listing down and suspending a seller are separate calls to the modules that own them, so the decision and its effects each stay where they can be audited. A `refund-dispute` is the case where that separation is absolute: its verdict moves money, so it is made by `POST /admin/refunds/{id}/verdict` and this route answers 409 for one — closing it by hand would mark a case settled with the escrow untouched.
+
+                Whatever staff want the requester to read goes in the ticket's thread as an ordinary message. `note` is the record kept beside the verdict.
+            parameters:
+                - in: path
+                  name: id
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/TicketID'
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ResolveTicketRequest'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Ticket'
+                                required:
+                                    - data
+                                type: object
+                    description: Resolved
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Moderator role required
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Already resolved, or a refund dispute whose verdict belongs to the order module
+            security:
+                - bearerAuth: []
+            summary: Resolve a ticket
             tags:
                 - admin
     /admin/wallets/{accountID}:
@@ -8763,7 +8705,7 @@ paths:
     /orders/{id}/receipt:
         post:
             description: |
-                The buyer confirms delivery and attaches unboxing evidence — at least one photo or video is mandatory, because this evidence is what a later refund or dispute is judged on. Sets `received_at` and starts the 72-hour payout countdown in `payout_deadline_at`.
+                The buyer confirms delivery and attaches unboxing evidence — at least one photo or video is mandatory, because this evidence is what a later refund is judged on. Sets `received_at` and starts the 72-hour payout countdown in `payout_deadline_at`.
 
                 Confirming twice is a conflict rather than a no-op: a retried upload must not be able to restart the clock and move the payout date.
             parameters:
@@ -9436,7 +9378,7 @@ paths:
     /refunds/{id}:
         delete:
             description: |
-                Only while the seller has not decided. Once anything has moved — a decision, a moderator, a parcel — the case is closed by ruling, not by walking away from it.
+                Only while the seller has not decided. Once anything has moved — a decision, an escalation, a parcel — the case is closed by a verdict, not by walking away from it.
 
                 The case ends as `cancelled`, which gives the escrow back up: the payout becomes the seller's again.
             responses:
@@ -9461,7 +9403,7 @@ paths:
                 - order
         get:
             description: |
-                The case: `deadline_at` for whoever is on the clock, and the facts each stage recorded. The rounds a moderator has seen are the queue's to list — a party sees the verdict in the status the case ended up in.
+                The case: `deadline_at` for whoever is on the clock, and the facts each stage recorded. A party sees a staff verdict in the status the case ended up in.
             responses:
                 "200":
                     content:
@@ -9500,7 +9442,7 @@ paths:
                 $ref: '#/components/schemas/RefundID'
         post:
             description: |
-                Grants it without a moderator. The goods have to come back first, so this books the return shipment on the same carrier as the outbound leg and moves the refund to `returning`; the money goes back once that leg is delivered and the seller has not appealed it. No body — there is nothing left to choose.
+                Grants it without staff. The goods have to come back first, so this books the return shipment on the same carrier as the outbound leg and moves the refund to `returning`; the money goes back once that leg is delivered and the seller has not escalated it. No body — there is nothing left to choose.
             responses:
                 "200":
                     content:
@@ -9576,65 +9518,10 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Error'
-                    description: The case is closed, or the caller has no open round to attach to
+                    description: The case is closed
             security:
                 - bearerAuth: []
             summary: Add evidence to a refund case
-            tags:
-                - order
-    /refunds/{id}/dispute:
-        parameters:
-            - in: path
-              name: id
-              required: true
-              schema:
-                $ref: '#/components/schemas/RefundID'
-        post:
-            description: |
-                Both escalations are this one call, because both are the same act — asking a moderator to decide — and which round it opens follows from who the caller is and where the refund stands.
-
-                The **buyer** may escalate once the seller has rejected the request or has let the review window pass. That is round 1: ruling for the buyer grants the refund and books the return, ruling for the seller ends it.
-
-                The **seller** may escalate what came back, while the refund is `returned` and the inspection window is open — a counterfeit, the wrong item, an empty box. That is round 2 on the same case: upholding the appeal ends the refund and pays the seller out, denying it releases the money to the buyer.
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/OpenDisputeRequest'
-                required: true
-            responses:
-                "201":
-                    content:
-                        application/json:
-                            schema:
-                                properties:
-                                    data:
-                                        $ref: '#/components/schemas/RefundDispute'
-                                required:
-                                    - data
-                                type: object
-                    description: A round was opened
-                "400":
-                    $ref: '#/components/responses/BadRequest'
-                "401":
-                    $ref: '#/components/responses/Unauthorized'
-                "403":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: Caller is not a party to this order, or not the party whose move it is
-                "404":
-                    $ref: '#/components/responses/NotFound'
-                "409":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: Not escalatable from this state, a round is already open, or the window has closed
-            security:
-                - bearerAuth: []
-            summary: Escalate the case to a moderator
             tags:
                 - order
     /refunds/{id}/rejection:
@@ -9646,7 +9533,7 @@ paths:
                 $ref: '#/components/schemas/RefundID'
         post:
             description: |
-                Refusing costs a reason, and it does not close the case: the next move is the buyer's, who may escalate to a moderator until the refund lapses. A seller who simply lets the review window pass ends up in the same place without one.
+                Refusing costs a reason, and it does not close the case: the next move is the buyer's, who may escalate to staff until the refund lapses. A seller who simply lets the review window pass ends up in the same place without one.
             requestBody:
                 content:
                     application/json:
@@ -9693,7 +9580,7 @@ paths:
             description: |
                 The return leg exists only from the moment a refund is granted, and `delivered` is what moves the case to `returned` and opens the seller's appeal window. It is the only exit from `returning`.
 
-                Either party to the order may report it. The buyer posted the parcel and the seller received it, and requiring the seller alone would let one who simply never confirms strand the escrow with nobody on a clock — which is what having no writer at all did. A buyer who claims a delivery that did not happen is answered by round two of the dispute, which is exactly what that window is for.
+                Either party to the order may report it. The buyer posted the parcel and the seller received it, and requiring the seller alone would let one who simply never confirms strand the escrow with nobody on a clock — which is what having no writer at all did. A buyer who claims a delivery that did not happen is answered by the seller escalating, which is exactly what that window is for.
             parameters:
                 - in: path
                   name: id
@@ -9780,80 +9667,6 @@ paths:
             summary: Create an account
             tags:
                 - account
-    /reports:
-        get:
-            description: A reporter sees the status of their own reports but not who else reported the same target.
-            parameters:
-                - in: query
-                  name: status
-                  schema:
-                    $ref: '#/components/schemas/ReportStatus'
-                - $ref: '#/components/parameters/Cursor'
-                - $ref: '#/components/parameters/Limit'
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ReportPage'
-                    description: OK
-                "400":
-                    $ref: '#/components/responses/BadRequest'
-                "401":
-                    $ref: '#/components/responses/Unauthorized'
-            security:
-                - bearerAuth: []
-            summary: Reports the caller filed
-            tags:
-                - trust
-        post:
-            description: |
-                A listing, an account, a message, a review or a reply. `ref_id` is the opaque id of that thing and its prefix has to agree with `ref_type`.
-
-                One open report per target per reporter, so re-reporting while the first is still being looked at is a conflict rather than a second row. Enough distinct reports against one listing move it into the moderation queue on their own.
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/SubmitReportRequest'
-                required: true
-            responses:
-                "201":
-                    content:
-                        application/json:
-                            schema:
-                                properties:
-                                    data:
-                                        $ref: '#/components/schemas/Report'
-                                required:
-                                    - data
-                                type: object
-                    description: Filed
-                "400":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: The body is invalid, or `ref_id` does not decode as the declared `ref_type`
-                "401":
-                    $ref: '#/components/responses/Unauthorized'
-                "404":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: The reported thing does not exist
-                "409":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: You already have an open report against this target
-            security:
-                - bearerAuth: []
-            summary: Report something
-            tags:
-                - trust
     /review-replies/{id}:
         delete:
             description: The author, or a moderator acting on an upheld report.
@@ -10315,6 +10128,123 @@ paths:
             summary: Register or replace the caller's tax registration
             tags:
                 - finance
+    /tickets:
+        get:
+            description: Their own, newest first. A requester never sees who else reported the same target, nor which moderator is working theirs.
+            parameters:
+                - in: query
+                  name: status
+                  schema:
+                    $ref: '#/components/schemas/TicketStatus'
+                - $ref: '#/components/parameters/Cursor'
+                - $ref: '#/components/parameters/Limit'
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TicketPage'
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+            security:
+                - bearerAuth: []
+            summary: Tickets the caller raised
+            tags:
+                - trust
+        post:
+            description: |
+                `ref_id` is required exactly for the kinds that are about something — the report kinds, `refund-dispute`, `order-issue` — and its prefix has to agree with the kind. `reason` belongs to the report kinds and to no other.
+
+                `body` and `attachments` open the thread: they are posted as the first message, and everything said afterwards is ordinary chat.
+
+                One open ticket per target per requester, so raising the same complaint twice while the first is still open is a conflict rather than a second row. A `refund-dispute` also moves the refund into staff's hands first, so order's own guards — the right party, the right moment — are what answer 403 and 409 here.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/OpenTicketRequest'
+                required: true
+            responses:
+                "201":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Ticket'
+                                required:
+                                    - data
+                                type: object
+                    description: Raised
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: The body is invalid, or `ref_id` does not decode as the kind requires
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: The refund being disputed is not the caller's
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: What the ticket is about does not exist
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: You already have an open ticket about this, or the refund cannot be escalated now
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+            security:
+                - bearerAuth: []
+            summary: Raise a ticket
+            tags:
+                - trust
+    /tickets/{id}:
+        get:
+            description: |
+                Somebody else's is 404 rather than 403: a ticket id is guessable, and confirming one exists already says something.
+
+                This also repairs a missing `conversation_id`. The row and the thread live in different schemas, so one lands first — a ticket whose thread was never written is answerable on the next read rather than mute.
+            parameters:
+                - in: path
+                  name: id
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/TicketID'
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Ticket'
+                                required:
+                                    - data
+                                type: object
+                    description: OK
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+            security:
+                - bearerAuth: []
+            summary: Read a ticket the caller raised
+            tags:
+                - trust
     /token/refresh:
         post:
             description: The refresh token is a Redis key. One that has been revoked or has expired is indistinguishable from one that never existed.

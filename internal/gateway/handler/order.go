@@ -607,7 +607,7 @@ func (h *Order) CancelOrder(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// --- refunds and disputes ---
+// --- refunds ---
 
 // CreateRefund handles POST /orders/{id}/refunds.
 func (h *Order) CreateRefund(w http.ResponseWriter, r *http.Request) {
@@ -791,9 +791,9 @@ func (h *Order) AdvanceReturnShipment(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// OpenDispute handles POST /refunds/{id}/dispute — the buyer after a rejection, or the seller
-// after the goods came back.
-func (h *Order) OpenDispute(w http.ResponseWriter, r *http.Request) {
+// AdminResolveRefund handles POST /admin/refunds/{id}/verdict. The only staff decision on a
+// refund: escalating is trust's, because that is where the ticket lives.
+func (h *Order) AdminResolveRefund(w http.ResponseWriter, r *http.Request) {
 	uid, err := actor(r)
 	if failed(w, h.log, err) {
 		return
@@ -802,7 +802,7 @@ func (h *Order) OpenDispute(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	var req orderapi.OpenDisputeRequest
+	var req orderapi.ResolveRefundRequest
 	if failed(w, h.log, decodeBody(r, &req)) {
 		return
 	}
@@ -810,55 +810,7 @@ func (h *Order) OpenDispute(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, check(h.v, req)) {
 		return
 	}
-	res, err := h.svc.OpenDispute(r.Context(), req)
-	if failed(w, h.log, err) {
-		return
-	}
-	httpx.WriteData(w, http.StatusCreated, res)
-}
-
-// AdminListDisputes handles GET /admin/disputes — the moderator queue.
-func (h *Order) AdminListDisputes(w http.ResponseWriter, r *http.Request) {
-	uid, err := actor(r)
-	if failed(w, h.log, err) {
-		return
-	}
-	limit, err := limitParam(r)
-	if failed(w, h.log, err) {
-		return
-	}
-	req := orderapi.ListDisputesRequest{
-		ActorID: uid, Cursor: cursorParam(r), Limit: limit,
-	}
-	if failed(w, h.log, check(h.v, req)) {
-		return
-	}
-	res, err := h.svc.AdminListDisputes(r.Context(), req)
-	if failed(w, h.log, err) {
-		return
-	}
-	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta.NextCursor))
-}
-
-// AdminRuleDispute handles POST /admin/disputes/{id}/ruling.
-func (h *Order) AdminRuleDispute(w http.ResponseWriter, r *http.Request) {
-	uid, err := actor(r)
-	if failed(w, h.log, err) {
-		return
-	}
-	disputeID, err := pathID[id.RefundDispute](r, "id")
-	if failed(w, h.log, err) {
-		return
-	}
-	var req orderapi.RuleDisputeRequest
-	if failed(w, h.log, decodeBody(r, &req)) {
-		return
-	}
-	req.ActorID, req.ID = uid, disputeID
-	if failed(w, h.log, check(h.v, req)) {
-		return
-	}
-	res, err := h.svc.AdminRuleDispute(r.Context(), req)
+	res, err := h.svc.AdminResolveRefund(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}

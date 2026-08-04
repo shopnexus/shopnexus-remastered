@@ -13,7 +13,14 @@ import (
 // Not scoped to a listing: a product is referenced per message instead, which is how an
 // offer card appears in a thread the two already had.
 type Conversation struct {
-	ID            int64
+	ID int64
+	// Kind is what this thread is: two accounts talking, or a ticket's. A ticket thread pairs the
+	// requester with the support desk's own account, so the moderator answering stays anonymous
+	// and the next one inherits the thread rather than starting another.
+	Kind string `validate:"required,oneof=direct ticket"`
+	// TicketID is the ticket this thread belongs to, and nil on a direct one. It is also what makes
+	// creating a ticket's thread idempotent — a retry finds the same row.
+	TicketID      *int64
 	AccountAID    int64 `validate:"required"`
 	AccountBID    int64 `validate:"required"`
 	LastMessageAt time.Time
@@ -23,6 +30,12 @@ type Conversation struct {
 	AccountBReadAt *time.Time
 	CreatedAt      time.Time
 }
+
+// The two kinds of thread (kebab-case, mirrors the conversation_kind enum).
+const (
+	KindDirect = "direct"
+	KindTicket = "ticket"
+)
 
 // NewConversation orders the pair, so the same two accounts always produce the same row
 // whichever of them starts it.
@@ -34,12 +47,33 @@ func NewConversation(one, other int64) (Conversation, error) {
 	if a > b {
 		a, b = b, a
 	}
-	c := Conversation{AccountAID: a, AccountBID: b, LastMessageAt: time.Now()}
+	c := Conversation{Kind: KindDirect, AccountAID: a, AccountBID: b, LastMessageAt: time.Now()}
 	if err := validation.Default().Struct(c); err != nil {
 		return Conversation{}, validation.AsError(err)
 	}
 	return c, nil
 }
+
+// NewTicketThread is the thread behind a ticket: the requester and the support desk's own account.
+// Ordered like any pair, because nothing downstream cares which side is which — Involves, the read
+// marks and the counterparty all work off the two columns, which is the whole reason a ticket reuses
+// this table instead of growing a nullable side.
+func NewTicketThread(requesterID, deskID, ticketID int64) (Conversation, error) {
+	c, err := NewConversation(requesterID, deskID)
+	if err != nil {
+		return Conversation{}, err
+	}
+	c.Kind = KindTicket
+	c.TicketID = &ticketID
+	if err := validation.Default().Struct(c); err != nil {
+		return Conversation{}, validation.AsError(err)
+	}
+	return c, nil
+}
+
+// Ticket reports whether this is a support thread, which is what makes the other side answer as the
+// desk rather than as whoever is on shift.
+func (c Conversation) Ticket() bool { return c.Kind == KindTicket }
 
 // Involves reports whether the account is one of the two sides — which is the whole of
 // "may they read this thread".

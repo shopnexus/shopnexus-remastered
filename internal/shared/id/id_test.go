@@ -264,10 +264,10 @@ func TestPrefixesAreUniqueAndWellFormed(t *testing.T) {
 	prefixes := []string{
 		id.Prefix[id.Account](), id.Prefix[id.Contact](), id.Prefix[id.Category](),
 		id.Prefix[id.Listing](), id.Prefix[id.Variant](), id.Prefix[id.Order](),
-		id.Prefix[id.Item](), id.Prefix[id.Refund](), id.Prefix[id.RefundDispute](),
+		id.Prefix[id.Item](), id.Prefix[id.Refund](),
 		id.Prefix[id.Offer](), id.Prefix[id.PaymentSession](), id.Prefix[id.Transaction](),
 		id.Prefix[id.BankAccount](), id.Prefix[id.Feedback](), id.Prefix[id.Review](),
-		id.Prefix[id.ReviewReply](), id.Prefix[id.Report](),
+		id.Prefix[id.ReviewReply](), id.Prefix[id.Ticket](),
 		id.Prefix[id.Conversation](), id.Prefix[id.Message](), id.Prefix[id.Resource](),
 	}
 	seen := map[string]bool{}

@@ -27,7 +27,12 @@ type UploadSlot struct {
 // Conversation is one inbox row: who it is with, what was said last, and how much of it
 // the caller has not read.
 type Conversation struct {
-	ID           id.ID[id.Conversation]    `json:"id"`
+	ID id.ID[id.Conversation] `json:"id"`
+	// TicketID is set on a support thread, and null on an ordinary one. It is what lets a client
+	// render the ticket's own header above the same message list.
+	TicketID *id.ID[id.Ticket] `json:"ticket_id"`
+	// Counterparty is the other side. On a ticket thread that is the support desk itself, never the
+	// moderator on shift: a verdict is the platform's, not a named person's to be argued with.
 	Counterparty accountapi.AccountSummary `json:"counterparty"`
 	LastMessage  *Message                  `json:"last_message"`
 	// LastMessageAt starts at the creation time, so an empty thread still sorts
@@ -49,11 +54,16 @@ type ConversationPage struct {
 type Message struct {
 	ID             id.ID[id.Message]      `json:"id"`
 	ConversationID id.ID[id.Conversation] `json:"conversation_id"`
-	// SenderID is null on a system message: that one is the backend's word.
-	SenderID *id.ID[id.Account]   `json:"sender_id"`
-	Type     string               `json:"type"`
-	Body     string               `json:"body"`
-	Images   []common.ResourceDTO `json:"attachments"`
+	// SenderID is null on a system message: that one is the backend's word. It is also null on a
+	// support reply seen by the requester — see FromSupport.
+	SenderID *id.ID[id.Account] `json:"sender_id"`
+	// FromSupport marks a reply the desk wrote. The requester is told that much and no more; staff
+	// reading their own queue see the real sender, because a colleague's name is what makes a
+	// thread reviewable.
+	FromSupport bool                 `json:"from_support,omitempty"`
+	Type        string               `json:"type"`
+	Body        string               `json:"body"`
+	Images      []common.ResourceDTO `json:"attachments"`
 	// Refs is what the sender pointed at — a listing, a variant, an order.
 	Refs map[string]any `json:"refs,omitempty"`
 	// Card is what a system message renders. For a price negotiation it is the offer's
@@ -129,6 +139,15 @@ type ListConversationsRequest struct {
 
 // StartConversationRequest opens the thread with one account, or answers the one that
 // already exists: there is one per pair, so this is idempotent by construction.
+// OpenTicketThreadRequest is trust's call. Body and Attachments are what the requester submitted:
+// they become the thread's first message, which is why the ticket keeps neither.
+type OpenTicketThreadRequest struct {
+	RequesterID id.ID[id.Account]    `json:"-" validate:"required"`
+	TicketID    id.ID[id.Ticket]     `json:"-" validate:"required"`
+	Body        string               `json:"-" validate:"max=4000"`
+	Attachments []id.ID[id.Resource] `json:"-" validate:"max=10"`
+}
+
 type StartConversationRequest struct {
 	ActorID   id.ID[id.Account] `json:"-" validate:"required"`
 	AccountID id.ID[id.Account] `json:"account_id" validate:"required"`
@@ -204,6 +223,17 @@ type PostSystemMessageRequest struct {
 	Card map[string]any
 }
 
+// PostTicketMessageRequest is a fact posted into a ticket's thread by the module that decided it —
+// a refund verdict. The requester travels with it because this opens the thread if it is not there
+// yet: a decision has to reach the person who asked for it even when the earlier open failed.
+type PostTicketMessageRequest struct {
+	RequesterID id.ID[id.Account] `validate:"required"`
+	TicketID    id.ID[id.Ticket]  `validate:"required"`
+	Body        string            `validate:"max=4000"`
+	// Card is what the client renders — for a refund verdict, the refund's id.
+	Card map[string]any
+}
+
 type Service interface {
 	// CreateUpload reserves a row and a presigned slot for a message attachment;
 	// ConfirmUpload makes it real once the bytes are at the store. Until then the resource
@@ -213,6 +243,11 @@ type Service interface {
 
 	ListConversations(ctx context.Context, req ListConversationsRequest) (ConversationPage, error)
 	StartConversation(ctx context.Context, req StartConversationRequest) (Conversation, error)
+	// OpenTicketThread is the conversation behind a ticket, with the requester's own words as its
+	// first message and their photos as its attachments — so a ticket needs no body column and no
+	// second upload path. Idempotent on TicketID: the ticket row is written first in another
+	// schema, and this is the half that may have to be retried or repaired later.
+	OpenTicketThread(ctx context.Context, req OpenTicketThreadRequest) (Conversation, error)
 	GetConversation(ctx context.Context, req GetConversationRequest) (Conversation, error)
 	GetUnreadCount(ctx context.Context, req UnreadCountRequest) (UnreadCount, error)
 
@@ -227,6 +262,10 @@ type Service interface {
 	// PostSystemMessage puts a card into the pair's thread, opening it if they have never
 	// spoken. Order calls it when a negotiation moves.
 	PostSystemMessage(ctx context.Context, req PostSystemMessageRequest) (Message, error)
+
+	// PostTicketMessage puts a card into a ticket's thread. Trust calls it when a verdict was
+	// decided elsewhere — the requester reads the outcome where they raised it.
+	PostTicketMessage(ctx context.Context, req PostTicketMessageRequest) (Message, error)
 
 	// GetMessage reads one message: a participant's own, or any of them for a moderator.
 	// Trust calls it to check a reported message exists and to show it in the queue.

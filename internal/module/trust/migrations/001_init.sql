@@ -4,7 +4,7 @@
 -- Schema: trust
 -- Description: Two-way transaction feedback, product reviews with their replies
 --              and helpfulness votes, per-account reputation aggregates
---              (as-seller / as-buyer), and polymorphic abuse reports with an
+--              (as-seller / as-buyer), and the ticket queue — abuse reports, refund
 --              admin resolution workflow. Every rating in this module is on the
 --              same 1..5 scale. Cross-module refs (account_id, order_id, listing_id,
 --              reported ref_id) carry no FK.
@@ -13,10 +13,23 @@
 -- Enums
 CREATE TYPE "feedback_direction" AS ENUM ('buyer-to-seller', 'seller-to-buyer');
 CREATE TYPE "reputation_role" AS ENUM ('seller', 'buyer');
-CREATE TYPE "report_ref_type" AS ENUM ('listing', 'account', 'message', 'review', 'review-reply');
-CREATE TYPE "report_reason" AS ENUM ('scam', 'counterfeit', 'prohibited', 'harassment', 'spam', 'inappropriate', 'other');
-CREATE TYPE "report_status" AS ENUM ('open', 'reviewing', 'actioned', 'dismissed');
-CREATE TYPE "report_action" AS ENUM ('none', 'listing-removed', 'message-removed', 'account-suspended', 'warning');
+-- What a ticket is about. One list, because every one of these is the same shape: somebody
+-- submitted something and somebody — a moderator, or the platform itself — answers in a thread.
+-- The `report-*` kinds are the abuse reports this table replaced.
+CREATE TYPE "ticket_kind" AS ENUM (
+    'report-listing', 'report-account', 'report-message', 'report-review', 'report-review-reply',
+    'refund-dispute', 'order-issue', 'payment', 'account', 'feature-request', 'other'
+);
+-- The thing a ticket is about, when it is about something. NULL for a feature request.
+CREATE TYPE "ticket_ref_type" AS ENUM (
+    'listing', 'account', 'message', 'review', 'review-reply', 'order', 'refund'
+);
+-- Only the report kinds carry one: what the reporter says is wrong.
+CREATE TYPE "ticket_reason" AS ENUM ('scam', 'counterfeit', 'prohibited', 'harassment', 'spam', 'inappropriate', 'other');
+-- `reviewing` is claimed by a moderator. There is no separate `actioned`/`dismissed`: a resolved
+-- ticket's "action_taken" already says which, and two enums for one fact drift.
+CREATE TYPE "ticket_status" AS ENUM ('open', 'reviewing', 'resolved');
+CREATE TYPE "ticket_action" AS ENUM ('none', 'listing-removed', 'message-removed', 'account-suspended', 'warning', 'refund-granted', 'refund-refused');
 
 -- Tables
 
@@ -171,30 +184,67 @@ CREATE TABLE IF NOT EXISTS "order_outcome" (
     CONSTRAINT "order_outcome_pkey" PRIMARY KEY ("order_id")
 );
 
--- Polymorphic abuse report with admin resolution.
-CREATE TABLE IF NOT EXISTS "report" (
+-- A ticket: one thing a user raised, and the conversation about it.
+--
+-- It replaced the abuse-report table and the order module's refund_dispute, because all three were
+-- the same row with a different name: a requester, what it is about, a moderator who takes it, and
+-- a verdict. Keeping them apart meant a user had three places to look and this platform had three
+-- queues to staff.
+--
+-- The discussion itself is not here. `conversation_id` points at chat's thread, whose first message
+-- is what the requester wrote and whose attachments are the photos they sent — so a ticket needs no
+-- body column, no attachment array and no second upload path. Nullable because the thread is
+-- written in another schema: the row lands first and the thread is created right after, or repaired
+-- on the next read.
+CREATE TABLE IF NOT EXISTS "ticket" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
-    "reporter_id" BIGINT NOT NULL,
-    "ref_type" "report_ref_type" NOT NULL,
-    "ref_id" BIGINT NOT NULL, -- polymorphic target, kinded by "ref_type"
-    "reason" "report_reason" NOT NULL,
-    "detail" TEXT NOT NULL DEFAULT '',
-    "status" "report_status" NOT NULL DEFAULT 'open',
-    "action_taken" "report_action", -- NULL until resolved
-    "resolved_by_id" BIGINT, -- admin account
+    "requester_id" BIGINT NOT NULL, -- cross-ref account.account; no FK
+    "kind" "ticket_kind" NOT NULL,
+    "subject" TEXT NOT NULL,
+    -- The polymorphic target, kinded by "ref_type". Both NULL together: a feature request is about
+    -- nothing in particular.
+    "ref_type" "ticket_ref_type",
+    "ref_id" BIGINT,
+    "reason" "ticket_reason", -- report kinds only
+    "status" "ticket_status" NOT NULL DEFAULT 'open',
+    -- The moderator who claimed it. Never published to the requester: support answers as the desk,
+    -- so a decision is the platform's and not a named person's to be argued with afterwards.
+    "assignee_id" BIGINT,
+    "conversation_id" BIGINT, -- cross-ref chat.conversation; no FK
+
+    -- The verdict. "action_taken" = 'none' is a ticket looked at and turned down, which is what the
+    -- old report table spelled as its own status.
+    "action_taken" "ticket_action",
+    "resolved_by_id" BIGINT,
     "resolved_at" TIMESTAMPTZ,
     "resolution_note" TEXT,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "report_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "ticket_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "ticket_subject_present" CHECK (length(btrim("subject")) > 0),
+    -- A target is a type and an id or neither.
+    CONSTRAINT "ticket_ref_together" CHECK (("ref_type" IS NULL) = ("ref_id" IS NULL)),
+    -- Being resolved and having a verdict are the same fact, and a verdict has an author.
+    CONSTRAINT "ticket_resolution_together" CHECK (
+        (("status" = 'resolved') = ("resolved_at" IS NOT NULL))
+        AND (("resolved_at" IS NULL) = ("resolved_by_id" IS NULL))
+        AND (("resolved_at" IS NULL) = ("action_taken" IS NULL))
+    ),
+    -- Claimed is a state with an owner.
+    CONSTRAINT "ticket_assignee_when_reviewing" CHECK (
+        "status" <> 'reviewing' OR "assignee_id" IS NOT NULL
+    ),
+    CONSTRAINT "ticket_conversation_id_key" UNIQUE ("conversation_id")
 );
-CREATE INDEX IF NOT EXISTS "report_ref_type_ref_id_idx" ON "report" ("ref_type", "ref_id");
-CREATE INDEX IF NOT EXISTS "report_reporter_id_idx" ON "report" ("reporter_id", "created_at" DESC, "id" DESC);
--- The moderator queue: unresolved reports, oldest first, which is the order they are
--- worked. Partial on the small hot slice, so a resolved backlog of any size costs
--- nothing — "status" alone has too few values to lead an index, and on its own it could
--- not deliver the ordering either.
-CREATE INDEX IF NOT EXISTS "report_queue_idx"
-    ON "report" ("created_at", "id")
+CREATE INDEX IF NOT EXISTS "ticket_ref_idx" ON "ticket" ("ref_type", "ref_id");
+-- "My tickets", newest first: the one list a user checks for everything they raised.
+CREATE INDEX IF NOT EXISTS "ticket_requester_idx" ON "ticket" ("requester_id", "created_at" DESC, "id" DESC);
+-- The moderator queue: what nobody has resolved, oldest first, which is the order it is worked.
+CREATE INDEX IF NOT EXISTS "ticket_queue_idx"
+    ON "ticket" ("created_at", "id")
     WHERE "status" IN ('open', 'reviewing');
-CREATE UNIQUE INDEX IF NOT EXISTS "report_one_open_per_target" ON "report" ("reporter_id", "ref_type", "ref_id") WHERE "status" IN ('open', 'reviewing');
+-- One open ticket per requester per target, which is the rule the report table held: a second
+-- complaint about the same listing is the same complaint.
+CREATE UNIQUE INDEX IF NOT EXISTS "ticket_one_open_per_target"
+    ON "ticket" ("requester_id", "ref_type", "ref_id")
+    WHERE "status" IN ('open', 'reviewing') AND "ref_type" IS NOT NULL;

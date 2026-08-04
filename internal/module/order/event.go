@@ -51,6 +51,31 @@ func publishOrderSettled(ctx context.Context, bus eventbus.Client, event OrderSe
 	return eventbus.Publish(ctx, bus, OrderSettledTopic, event)
 }
 
+// RefundResolved is the staff verdict on a refund. Trust opened the ticket that asked for it and
+// closes it on this, which is why the Note travels here: there is no column for a moderator's
+// reasoning on the refund row, and the ticket is where that decision is read.
+type RefundResolved struct {
+	RefundID int64 `json:"refund_id"`
+	OrderID  int64 `json:"order_id"`
+	BuyerID  int64 `json:"buyer_id"`
+	SellerID int64 `json:"seller_id"`
+	// ModeratorID is who decided. The ticket trust closes on this records an author, and a verdict
+	// nobody signed is one nobody can be asked about.
+	ModeratorID int64 `json:"moderator_id"`
+	// BuyerWins is the verdict. What it did to the money depends on whether the goods had
+	// already come back, which is the refund's own status to report.
+	BuyerWins bool   `json:"buyer_wins"`
+	Note      string `json:"note,omitempty"`
+}
+
+// RefundResolvedTopic carries RefundResolved. Declared once here, so nothing else names the
+// string.
+var RefundResolvedTopic = eventbus.NewTopic[RefundResolved]("order.refund_resolved")
+
+func publishRefundResolved(ctx context.Context, bus eventbus.Client, event RefundResolved) error {
+	return eventbus.Publish(ctx, bus, RefundResolvedTopic, event)
+}
+
 // OfferUpdated is every change to a negotiation's standing terms: a counter, an
 // acceptance, a withdrawal, an expiry.
 //

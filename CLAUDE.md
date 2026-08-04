@@ -8,7 +8,7 @@ telemetry module. `common` is not a module and has no service: it is the shared
 DDL every module's schema gets (audit_log, resource, option) plus the pgx
 helpers their adapters share (`common/dbx`). The `finance` module owns all money primitives
 (payment sessions, transaction ledger, wallets, bank accounts, withdrawals) so
-escrow moves stay atomic; `trust` owns feedback/reputation/report plus product
+escrow moves stay atomic; `trust` owns feedback/reputation/ticket plus product
 reviews (review, review_reply, review_vote) and pushes each listing's recomputed average
 into catalog's `cached_rating`/`cached_review_count`, because the two live in different schemas
 and cannot be joined. Stock lives in `catalog` — there is no
@@ -413,6 +413,34 @@ give it its own doc under `docs/` and link it from here.
   (`review_rating_*`) are separate column pairs on the same row: one order can produce both,
   and summing them would count that order twice. A `reputation` row is **zeroes, not
   not-found**, for an account nobody has rated.
+- **Everything a user raises is a ticket, and one table holds all of them.** `trust.ticket` covers an
+  abuse report, a refund dispute, an order issue, a payment problem and a feature request, because
+  they are one thing: somebody submitted something and somebody answers. `kind` is the only
+  difference — it decides whether the ticket is about something (`RefKindOf`, so `ref_type` follows
+  from the kind and is never sent) and whether a report's `reason` is allowed. There is no `report`
+  table and no `dispute` table: seven statuses across three tables were one lifecycle written three
+  times, and a user asking "where are my requests" had three places to look.
+- **A ticket's requester-side view is a conversation, so it stores no body and takes no uploads.**
+  `POST /tickets`'s `body` and `attachments` become the **first message** of a `kind = 'ticket'`
+  thread (`chat.conversation.ticket_id`, UNIQUE), and everything after that is ordinary chat — the
+  attachment path, the realtime push and the unread badge already exist. Side B of the thread is the
+  **support desk's own account** (`account.username = 'support'`, seeded by a migration, memoised by
+  `GetSupportAccount`): that keeps whoever answers anonymous to the requester (`sender_id` blanked
+  plus `from_support`), lets the next moderator inherit the thread, and needs no nullable
+  participant — the `CHECK a < b` and the read marks hold unchanged. A moderator is let into a
+  ticket thread without being a side of it; a direct thread never is.
+- **The two rows are in different schemas, so the thread is opened best-effort and repaired on
+  read.** The ticket lands first and `OpenTicketThread` is idempotent on `ticket_id`, so a chat
+  outage leaves a mute ticket rather than a lost complaint, and `GetTicket` opens the thread the
+  next time it is read. Losing the conversation must never lose the ticket.
+- **A verdict that moves money is decided where the money is, and it closes the ticket itself.**
+  Opening a `refund-dispute` ticket escalates the refund in order **before** the row is written (so a
+  refund order will not escalate produces no queue entry with no possible answer), and staff then
+  decide it at `POST /admin/refunds/{id}/verdict`. `POST /admin/tickets/{id}/resolution` answers 409
+  for that kind: marking the case settled by hand would leave the escrow where it was. Order
+  publishes `RefundResolved` — carrying the deciding moderator, because a verdict has an author —
+  and trust records it on the ticket and posts it into the thread, idempotently and quietly for a
+  refund nobody raised a ticket about.
 - **An operation retried by a sweep needs a marker for "done", not a time window.** The escrow
   release records `order.payout_released_at` when it lands, so `ClaimedPayouts` is *exactly* the
   stranded set: a healthy platform reads nothing, rather than re-asking finance about every sale

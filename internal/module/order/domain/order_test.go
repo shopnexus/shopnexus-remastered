@@ -144,9 +144,9 @@ func TestRefund_WindowsAndVerdicts(t *testing.T) {
 	if err := accepted.MarkReturned(); err != nil {
 		t.Fatalf("MarkReturned: %v", err)
 	}
-	// The goods are back and the seller may appeal — round two — with their own window.
+	// The goods are back and the seller may escalate, with their own window.
 	if accepted.Status != domain.RefundReturned || accepted.DeadlineAt == nil {
-		t.Fatalf("refund = %+v, want the seller's appeal window", accepted)
+		t.Fatalf("refund = %+v, want the seller's inspection window", accepted)
 	}
 	if err := accepted.Settle(); err != nil {
 		t.Fatalf("Settle: %v", err)
@@ -159,20 +159,83 @@ func TestRefund_WindowsAndVerdicts(t *testing.T) {
 	}
 }
 
-// A dispute is ruled once: a later round is argued against what the earlier one decided.
-func TestDispute_RuledOnce(t *testing.T) {
-	d, err := domain.NewDispute(1, 7, 1, "seller refused")
+// A verdict reads `ReturnedAt` rather than a round: the same "buyer wins" grants the refund
+// while the goods are still with the buyer, and pays it once they are back.
+func TestRefund_VerdictReadsWhetherTheGoodsCameBack(t *testing.T) {
+	granted, err := domain.NewRefund(1, 7, "not as described", nil)
 	if err != nil {
-		t.Fatalf("NewDispute: %v", err)
+		t.Fatalf("NewRefund: %v", err)
 	}
-	if err := d.Rule(99, true, "photos match the claim"); err != nil {
-		t.Fatalf("Rule: %v", err)
+	// Only staff decide, and only a case they were asked about.
+	if err := granted.Resolve(true); !errors.Is(err, domain.ErrRefundNotDisputed) {
+		t.Fatalf("Resolve before escalation = %v, want ErrRefundNotDisputed", err)
 	}
-	if d.Status != domain.DisputeBuyerWins || d.RuledAt == nil || d.RuledBy == nil {
-		t.Fatalf("dispute = %+v, want a recorded verdict", d)
+	if err := granted.Reject("sent as described"); err != nil {
+		t.Fatalf("Reject: %v", err)
 	}
-	if err := d.Rule(99, false, "changed my mind"); !errors.Is(err, domain.ErrDisputeSettled) {
-		t.Fatalf("second Rule = %v, want ErrDisputeSettled", err)
+	if err := granted.Escalate(); err != nil {
+		t.Fatalf("Escalate: %v", err)
+	}
+	if granted.Status != domain.RefundDisputed || granted.DeadlineAt != nil {
+		t.Fatalf("refund = %+v, want it with staff and nobody on the clock", granted)
+	}
+	// Nothing has come back yet, so the buyer winning grants the refund and the goods travel.
+	if err := granted.Resolve(true); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if granted.Status != domain.RefundReturning || granted.DeadlineAt != nil {
+		t.Fatalf("refund = %+v, want the goods on their way back", granted)
+	}
+
+	// The same verdict after the return arrived pays the buyer instead: there is nothing to ship.
+	paid := granted
+	if err := paid.StartReturn(99); err != nil {
+		t.Fatalf("StartReturn: %v", err)
+	}
+	if err := paid.MarkReturned(); err != nil {
+		t.Fatalf("MarkReturned: %v", err)
+	}
+	if err := paid.Escalate(); err != nil {
+		t.Fatalf("seller Escalate: %v", err)
+	}
+	if err := paid.Resolve(true); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if paid.Status != domain.RefundAccepted {
+		t.Fatalf("refund = %+v, want the buyer paid back", paid)
+	}
+
+	// A verdict for the seller is terminal, whichever situation it was in.
+	refused := granted
+	refused.Status = domain.RefundDisputed
+	if err := refused.Resolve(false); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if refused.Status != domain.RefundRejected || refused.DeadlineAt != nil {
+		t.Fatalf("refund = %+v, want it rejected with nobody on the clock", refused)
+	}
+	if err := refused.Resolve(true); !errors.Is(err, domain.ErrRefundNotDisputed) {
+		t.Fatalf("second Resolve = %v, want ErrRefundNotDisputed", err)
+	}
+}
+
+// Only two states can be escalated, because they are the only two a party can disagree with.
+func TestRefund_EscalatableStates(t *testing.T) {
+	r, err := domain.NewRefund(1, 7, "not as described", nil)
+	if err != nil {
+		t.Fatalf("NewRefund: %v", err)
+	}
+	// The seller has not answered yet: there is nothing to disagree with.
+	if err := r.Escalate(); !errors.Is(err, domain.ErrRefundNotEscalatable) {
+		t.Fatalf("Escalate awaiting the seller = %v, want ErrRefundNotEscalatable", err)
+	}
+	returning := r
+	if err := returning.Accept(); err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	// A carrier has it; the seller's turn comes when the parcel arrives.
+	if err := returning.Escalate(); !errors.Is(err, domain.ErrRefundNotEscalatable) {
+		t.Fatalf("Escalate while returning = %v, want ErrRefundNotEscalatable", err)
 	}
 }
 

@@ -1,37 +1,36 @@
-# trust fragment: the moderator surface over reports.
+# trust fragment: the moderator surface over tickets.
 
 paths:
-  /admin/reports:
+  /admin/tickets:
     get:
       tags: [admin]
-      summary: The report queue
+      summary: The ticket queue
       description: >
         Defaults to the open and under-review ones, oldest first — that is the small
         hot slice the queue is worked from, and the index behind it covers exactly
         that predicate.
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: status, in: query, schema: { $ref: '#/components/schemas/ReportStatus' }, description: Defaults to open and reviewing. }
-        - { name: ref_type, in: query, schema: { $ref: '#/components/schemas/ReportRefType' } }
-        - { name: reason, in: query, schema: { $ref: '#/components/schemas/ReportReason' } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/TicketStatus' }, description: Defaults to open and reviewing. }
+        - { name: kind, in: query, schema: { $ref: '#/components/schemas/TicketKind' } }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/AdminReportPage' } } } }
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/AdminTicketPage' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
-  /admin/reports/{id}:
+  /admin/tickets/{id}:
     get:
       tags: [admin]
-      summary: Read a report with its target
+      summary: Read a ticket with what it is about
       description: >
-        Includes the reported content itself and how many other open reports name the
-        same target, since a moderator decides on the pattern and not one complaint.
+        Includes the thing itself and how many other open tickets name the same
+        target, since a moderator decides on the pattern and not one complaint.
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ReportID' } }
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/TicketID' } }
       responses:
         '200':
           description: 'OK'
@@ -40,21 +39,23 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: { $ref: '#/components/schemas/AdminReport' }
+                  data: { $ref: '#/components/schemas/AdminTicket' }
                 required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  /admin/reports/{id}/claim:
+  /admin/tickets/{id}/claim:
     post:
       tags: [admin]
-      summary: Take a report for review
-      description: Moves it out of the open queue so two moderators do not work the
-        same case.
+      summary: Take a ticket for review
+      description: >
+        Moves it out of the open queue so two moderators do not work the same case. The requester
+        is never told who claimed it: support answers as the desk, so a decision is the platform's
+        and not a named person's to be argued with afterwards.
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ReportID' } }
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/TicketID' } }
       responses:
         '200':
           description: 'Claimed'
@@ -63,34 +64,40 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: { $ref: '#/components/schemas/Report' }
+                  data: { $ref: '#/components/schemas/Ticket' }
                 required: [data]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'Already claimed or resolved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
-  /admin/reports/{id}/resolution:
+  /admin/tickets/{id}/resolution:
     post:
       tags: [admin]
-      summary: Resolve a report
+      summary: Resolve a ticket
       description: >
-        Records the verdict and what was done about it. `dismissed` takes the action
-        `none`; upholding it names the action instead — the listing was removed, the
-        message was removed, the account was suspended, a warning was issued.
+        Records the verdict and what was done about it. `none` is the turn-down — read, answered,
+        nothing done — which is why it is an action rather than a second status.
 
 
         Recording the action here does not carry it out. Taking a listing down and
         suspending a seller are separate calls to the modules that own them, so the
-        decision and its effects each stay where they can be audited.
+        decision and its effects each stay where they can be audited. A
+        `refund-dispute` is the case where that separation is absolute: its verdict moves money,
+        so it is made by `POST /admin/refunds/{id}/verdict` and this route answers 409 for one —
+        closing it by hand would mark a case settled with the escrow untouched.
+
+
+        Whatever staff want the requester to read goes in the ticket's thread as an ordinary
+        message. `note` is the record kept beside the verdict.
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ReportID' } }
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/TicketID' } }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ResolveReportRequest' }
+            schema: { $ref: '#/components/schemas/ResolveTicketRequest' }
       responses:
         '200':
           description: 'Resolved'
@@ -99,54 +106,58 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: { $ref: '#/components/schemas/Report' }
+                  data: { $ref: '#/components/schemas/Ticket' }
                 required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: 'Already resolved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Already resolved, or a refund dispute whose verdict belongs to the order module', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
 components:
   schemas:
-    AdminReport:
+    AdminTicket:
       type: object
-      description: A queue entry. A moderator needs the reporter and the target beside
-        the report itself.
+      description: A queue entry. A moderator needs the requester and the target beside
+        the ticket itself.
       properties:
-        report: { $ref: '#/components/schemas/Report' }
-        reporter: { $ref: '#/components/schemas/AccountSummary' }
+        ticket: { $ref: '#/components/schemas/Ticket' }
+        requester: { $ref: '#/components/schemas/AccountSummary' }
+        assignee:
+          allOf: [{ $ref: '#/components/schemas/AccountSummary' }]
+          nullable: true
+          description: The moderator working it. Staff-only, and null until it is claimed.
         resolved_by: { allOf: [{ $ref: '#/components/schemas/AccountSummary' }], nullable: true }
-        open_reports_against_target:
+        open_tickets_against_target:
           type: integer
           format: int64
           minimum: 0
           description: >
-            How many other unresolved reports name the same target. A pattern is
+            How many other unresolved tickets name the same target. A pattern is
             what a decision rests on rather than a single complaint.
         target:
           type: object
           additionalProperties: true
           description: >
-            The reported content, shaped by `ref_type`. Fetched from the module that
-            owns it.
-      required: [report, reporter, open_reports_against_target]
+            What the ticket is about, shaped by `ref_type`. Fetched from the module that
+            owns it, and absent once that module no longer has it — a listing already
+            taken down.
+      required: [ticket, requester, open_tickets_against_target]
 
-    AdminReportPage:
+    AdminTicketPage:
       type: object
       properties:
-        data: { type: array, items: { $ref: '#/components/schemas/AdminReport' } }
+        data: { type: array, items: { $ref: '#/components/schemas/AdminTicket' } }
         meta: { $ref: '#/components/schemas/CursorMeta' }
       required: [data, meta]
 
-    ResolveReportRequest:
+    ResolveTicketRequest:
       type: object
       properties:
-        status: { type: string, enum: [actioned, dismissed], description: A verdict so open and reviewing are not choices. }
         action_taken:
-          allOf: [{ $ref: '#/components/schemas/ReportAction' }]
+          allOf: [{ $ref: '#/components/schemas/TicketAction' }]
           description: >
-            Required. `none` goes with a dismissal; upholding the report names what
-            was done.
-        note: { type: string, maxLength: 2000 }
-      required: [status, action_taken]
+            Required. `none` is the turn-down; anything else names what was done. The two
+            `refund-*` values are what order's verdict records on the ticket it closes.
+        note: { type: string, maxLength: 2000, example: đã xác nhận hàng giả }
+      required: [action_taken]

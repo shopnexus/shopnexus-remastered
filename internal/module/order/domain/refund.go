@@ -31,25 +31,18 @@ const (
 	SellerAppealWindow = 48 * time.Hour
 )
 
-// Dispute rulings (kebab-case, mirrors the dispute_status enum).
-const (
-	DisputeOpen       = "open"
-	DisputeSellerWins = "seller-wins"
-	DisputeBuyerWins  = "buyer-wins"
-)
-
 // Refund always covers the whole order, so there is no partial amount anywhere in the flow.
 //
 // The status is the state machine and the deadline is who is on the clock: 'disputed' waits
-// on a moderator and 'returning' on a carrier, and neither is something a timer should
-// decide, which is why those two carry no deadline.
+// on staff and 'returning' on a carrier, and neither is something a timer should decide,
+// which is why those two carry no deadline.
 type Refund struct {
 	ID      int64
 	BuyerID int64  `validate:"required"`
 	OrderID int64  `validate:"required"`
 	Reason  string `validate:"required,max=2000"`
 	// Attachments are the buyer's evidence, added at creation and topped up until the case
-	// closes: a dispute is decided on these, so they outlive the flow.
+	// closes: a verdict is reached on these, so they outlive the flow.
 	Attachments []int64
 	CreatedAt   time.Time
 	Status      string `validate:"required"`
@@ -105,8 +98,8 @@ func (r *Refund) Accept() error {
 	return nil
 }
 
-// Reject refuses it, with a reason. The buyer's move next: escalate to a moderator, or let
-// the window lapse.
+// Reject refuses it, with a reason. The buyer's move next: escalate to staff, or let the
+// window lapse.
 func (r *Refund) Reject(reason string) error {
 	if r.Status != RefundAwaitingSeller {
 		return ErrNotAwaitingSeller
@@ -132,11 +125,11 @@ func (r *Refund) LapseSellerReview() error {
 	return nil
 }
 
-// Escalate is the buyer asking a moderator. A moderator has no deadline: a human decides
-// when they decide.
+// Escalate hands the case to staff: the buyer after a refusal, the seller after the goods
+// came back. No deadline while they hold it — a human decides when they decide.
 func (r *Refund) Escalate() error {
 	if r.Status != RefundAwaitingBuyer && r.Status != RefundReturned {
-		return ErrNotAwaitingBuyer
+		return ErrRefundNotEscalatable
 	}
 	r.Status = RefundDisputed
 	r.DeadlineAt = nil
@@ -153,8 +146,8 @@ func (r *Refund) LapseBuyerAction() error {
 	return nil
 }
 
-// MarkReturned is the return leg arriving. The seller may then appeal — round two of the
-// same dispute — and letting that window pass settles for the buyer.
+// MarkReturned is the return leg arriving. The seller may then escalate what they received,
+// and letting that window pass settles for the buyer.
 func (r *Refund) MarkReturned() error {
 	if r.Status != RefundReturning {
 		return ErrRefundSettled
@@ -176,14 +169,14 @@ func (r *Refund) Settle() error {
 	return nil
 }
 
-// Rule applies a moderator's verdict, whichever round it is.
-func (r *Refund) Rule(buyerWins bool) error {
+// Resolve applies the staff verdict. There are no rounds: `ReturnedAt IS NULL` is what tells
+// the two situations apart — a buyer who wins before the goods came back is granted the refund
+// and they travel, and one who wins after has nothing left to ship, so the money moves.
+func (r *Refund) Resolve(buyerWins bool) error {
 	if r.Status != RefundDisputed {
-		return ErrDisputeSettled
+		return ErrRefundNotDisputed
 	}
 	if buyerWins {
-		// Round one grants the refund and the goods come back; round two is after they
-		// already have, so there is nothing left to ship.
 		if r.ReturnedAt != nil {
 			return r.Settle()
 		}
@@ -195,7 +188,7 @@ func (r *Refund) Rule(buyerWins bool) error {
 }
 
 // StartReturn attaches the return leg. Buyer to seller, and there is no leg back: a seller
-// who wins round one was never sent anything.
+// who wins was never sent anything.
 func (r *Refund) StartReturn(transportID int64) error {
 	if r.Status != RefundReturning {
 		return ErrRefundSettled
@@ -211,48 +204,5 @@ func (r *Refund) AddAttachments(attachments []int64) error {
 		return ErrRefundSettled
 	}
 	r.Attachments = append(r.Attachments, attachments...)
-	return nil
-}
-
-// Dispute is one round of moderation on a refund. Round two exists because a seller who
-// receives goods back may say they are not what was sent.
-type Dispute struct {
-	ID        int64
-	RefundID  int64  `validate:"required"`
-	Round     int16  `validate:"required,gte=1"`
-	OpenedBy  int64  `validate:"required"`
-	Status    string `validate:"required,oneof=open seller-wins buyer-wins"`
-	Reason    string
-	RuledBy   *int64
-	RuledAt   *time.Time
-	Note      string
-	CreatedAt time.Time
-}
-
-func NewDispute(refundID, openedBy int64, round int16, reason string) (Dispute, error) {
-	d := Dispute{
-		RefundID: refundID, Round: round, OpenedBy: openedBy,
-		Status: DisputeOpen, Reason: reason,
-	}
-	if err := validation.Default().Struct(d); err != nil {
-		return Dispute{}, validation.AsError(err)
-	}
-	return d, nil
-}
-
-// Rule records the verdict. A round is ruled once: re-deciding would rewrite the history a
-// later round is argued against.
-func (d *Dispute) Rule(moderatorID int64, buyerWins bool, note string) error {
-	if d.Status != DisputeOpen {
-		return ErrDisputeSettled
-	}
-	if buyerWins {
-		d.Status = DisputeBuyerWins
-	} else {
-		d.Status = DisputeSellerWins
-	}
-	d.RuledBy = &moderatorID
-	d.RuledAt = new(time.Now())
-	d.Note = note
 	return nil
 }

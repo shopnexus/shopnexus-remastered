@@ -11,12 +11,12 @@ import (
 	"shopnexus/internal/module/common/dbx"
 )
 
-const conversationColumns = `id, account_a_id, account_b_id, last_message_at,
+const conversationColumns = `id, kind::text, ticket_id, account_a_id, account_b_id, last_message_at,
 	       account_a_read_at, account_b_read_at, created_at`
 
 func scanConversation(row pgx.Row) (domain.Conversation, error) {
 	var c domain.Conversation
-	err := row.Scan(&c.ID, &c.AccountAID, &c.AccountBID, &c.LastMessageAt,
+	err := row.Scan(&c.ID, &c.Kind, &c.TicketID, &c.AccountAID, &c.AccountBID, &c.LastMessageAt,
 		&c.AccountAReadAt, &c.AccountBReadAt, &c.CreatedAt)
 	if dbx.IsNoRows(err) {
 		return domain.Conversation{}, domain.ErrConversationNotFound
@@ -37,14 +37,33 @@ func (r *Repo) EnsureConversation(ctx context.Context, one, other int64) (domain
 	}
 	const q = `INSERT INTO conversation (account_a_id, account_b_id)
 	           VALUES (@a, @b)
-	           ON CONFLICT (account_a_id, account_b_id) DO NOTHING`
+	           ON CONFLICT (account_a_id, account_b_id) WHERE kind = 'direct' DO NOTHING`
 	args := pgx.NamedArgs{"a": c.AccountAID, "b": c.AccountBID}
 	if _, err := r.pool.Exec(ctx, q, args); err != nil {
 		return domain.Conversation{}, fmt.Errorf("db open conversation: %w", err)
 	}
 	const read = `SELECT ` + conversationColumns + ` FROM conversation
-	              WHERE account_a_id = @a AND account_b_id = @b`
+	              WHERE account_a_id = @a AND account_b_id = @b AND kind = '` + domain.KindDirect + `'`
 	return scanConversation(r.pool.QueryRow(ctx, read, args))
+}
+
+// EnsureTicketThread is the same upsert keyed on the ticket instead of the pair: the ticket row is
+// written in another schema first, so this call is the second half of a two-schema write and has to
+// be safe to repeat. A retry — or a repair on the next read — finds the thread it already made.
+func (r *Repo) EnsureTicketThread(ctx context.Context, requesterID, deskID, ticketID int64) (domain.Conversation, error) {
+	c, err := domain.NewTicketThread(requesterID, deskID, ticketID)
+	if err != nil {
+		return domain.Conversation{}, err
+	}
+	const q = `INSERT INTO conversation (kind, ticket_id, account_a_id, account_b_id)
+	           VALUES ('` + domain.KindTicket + `', @ticket_id, @a, @b)
+	           ON CONFLICT (ticket_id) WHERE ticket_id IS NOT NULL DO NOTHING`
+	args := pgx.NamedArgs{"ticket_id": ticketID, "a": c.AccountAID, "b": c.AccountBID}
+	if _, err := r.pool.Exec(ctx, q, args); err != nil {
+		return domain.Conversation{}, fmt.Errorf("db open ticket thread: %w", err)
+	}
+	const read = `SELECT ` + conversationColumns + ` FROM conversation WHERE ticket_id = @ticket_id`
+	return scanConversation(r.pool.QueryRow(ctx, read, pgx.NamedArgs{"ticket_id": ticketID}))
 }
 
 func (r *Repo) FindConversation(ctx context.Context, id int64) (domain.Conversation, error) {

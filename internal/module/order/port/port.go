@@ -166,7 +166,7 @@ type Repository interface {
 	// to commit before the money moves, or two passes could both decide they own the escrow.
 	MarkPayoutReleased(ctx context.Context, o domain.Order) error
 
-	// --- refunds and disputes ---
+	// --- refunds ---
 	// InsertRefund opens a case under the same advisory lock ClaimPayout takes, and refuses
 	// one on an order that has already been paid out or cancelled: the escrow the refund is
 	// about has to still be there when the row lands.
@@ -174,18 +174,12 @@ type Repository interface {
 	FindRefund(ctx context.Context, id int64) (domain.Refund, error)
 	ListRefunds(ctx context.Context, f RefundFilter) ([]domain.Refund, error)
 	SaveRefund(ctx context.Context, r domain.Refund) error
-	// SaveRefundOutcome writes a refund transition together with the rows it decides — the
-	// dispute round that ruled it, the order it closes — in one transaction. Apart, a commit
-	// that failed halfway leaves "accepted refund over an open order", which the payout sweep
-	// reads as money to hand the seller, or "ruled dispute over a disputed refund", which no
-	// path can reach.
-	SaveRefundOutcome(ctx context.Context, r domain.Refund, d *domain.Dispute, o *domain.Order) error
+	// SaveRefundOutcome writes a refund transition together with the order it closes, in one
+	// transaction. Apart, a commit that failed halfway leaves "accepted refund over an open
+	// order", which the payout sweep reads as money to hand the seller.
+	SaveRefundOutcome(ctx context.Context, r domain.Refund, o *domain.Order) error
 	// OverdueRefunds is the timeout pass: every live refund whose deadline has passed. One
 	// query advances all three windows, which is what naming a status for the party it
 	// waits on buys.
 	OverdueRefunds(ctx context.Context, now time.Time, limit int) ([]domain.Refund, error)
-
-	InsertDispute(ctx context.Context, d *domain.Dispute) error
-	FindDispute(ctx context.Context, id int64) (domain.Dispute, error)
-	ListOpenDisputes(ctx context.Context, f CursorFilter) ([]domain.Dispute, error)
 }

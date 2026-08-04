@@ -154,10 +154,10 @@ func (s *Service) AcceptRefund(ctx context.Context, req orderapi.RefundRequest) 
 }
 
 // openReturnLeg books the parcel back, buyer to seller. There is no leg the other way: a seller
-// who wins round one was never sent anything.
+// who wins was never sent anything.
 //
-// Both ways into `returning` come through here — the seller accepting, and a moderator ruling
-// for the buyer in round one — because the leg is the only exit from that state, and one
+// Both ways into `returning` come through here — the seller accepting, and a staff verdict for
+// the buyer before the goods moved — because the leg is the only exit from that state, and one
 // without it strands the escrow with nobody on a clock.
 func (s *Service) openReturnLeg(ctx context.Context, r *domain.Refund, o domain.Order) error {
 	if r.ReturnTransportID != nil {
@@ -184,8 +184,8 @@ func (s *Service) openReturnLeg(ctx context.Context, r *domain.Refund, o domain.
 // delivered is what opens the seller's inspection window. Either party may report it: the buyer
 // posted the parcel and the seller received it, and requiring the seller alone would let one who
 // simply never confirms strand the escrow — which is exactly what having no writer at all did.
-// A buyer who claims a delivery that did not happen is answered by round two, which is what that
-// window is for.
+// A buyer who claims a delivery that did not happen is answered by the seller escalating, which
+// is what that window is for.
 func (s *Service) AdvanceReturnShipment(ctx context.Context, req orderapi.AdvanceReturnShipmentRequest) (orderapi.Refund, error) {
 	r, o, err := s.refundParty(ctx, req.ActorID, req.ID)
 	if err != nil {
@@ -213,8 +213,8 @@ func (s *Service) AdvanceReturnShipment(ctx context.Context, req orderapi.Advanc
 	return s.refundView(ctx, r)
 }
 
-// RejectRefund refuses it, with a reason. The buyer's move next: escalate to a moderator, or
-// let the window lapse.
+// RejectRefund refuses it, with a reason. The buyer's move next: escalate to staff, or let the
+// window lapse.
 func (s *Service) RejectRefund(ctx context.Context, req orderapi.RejectRefundRequest) (orderapi.Refund, error) {
 	r, o, err := s.refundParty(ctx, req.ActorID, req.ID)
 	if err != nil {
@@ -235,116 +235,99 @@ func (s *Service) RejectRefund(ctx context.Context, req orderapi.RejectRefundReq
 	return s.refundView(ctx, r)
 }
 
-// OpenDispute escalates to a moderator. Round one is the buyer after a rejection; round two
-// is the seller after the goods came back and are not what they were told to expect.
-func (s *Service) OpenDispute(ctx context.Context, req orderapi.OpenDisputeRequest) (orderapi.Dispute, error) {
+// EscalateRefund records that staff have been asked to decide: the buyer after a refusal, the
+// seller after the goods came back and are not what they were told to expect. Trust calls this
+// when it opens the ticket, so the refund's status and the ticket cannot disagree — there is no
+// route, because an escalation with no ticket behind it is a case nobody would ever work.
+//
+// Idempotent: a refund already with staff is answered rather than refused, since trust retries.
+func (s *Service) EscalateRefund(ctx context.Context, req orderapi.EscalateRefundRequest) (orderapi.Refund, error) {
 	r, o, err := s.refundParty(ctx, req.ActorID, req.ID)
 	if err != nil {
-		return orderapi.Dispute{}, err
+		return orderapi.Refund{}, err
 	}
-	round := int16(1)
+	// Which party may escalate follows from the state: a refusal is the buyer's to contest, and
+	// what arrived back is the seller's.
 	switch r.Status {
+	case domain.RefundDisputed:
+		return s.refundView(ctx, r)
 	case domain.RefundAwaitingBuyer:
 		if r.BuyerID != req.ActorID.Int64() {
-			return orderapi.Dispute{}, domain.ErrNotTheBuyer
+			return orderapi.Refund{}, domain.ErrNotTheBuyer
 		}
 	case domain.RefundReturned:
 		if o.SellerID != req.ActorID.Int64() {
-			return orderapi.Dispute{}, domain.ErrNotTheSeller
+			return orderapi.Refund{}, domain.ErrNotTheSeller
 		}
-		round = 2
 	default:
-		return orderapi.Dispute{}, domain.ErrNotAwaitingBuyer
+		return orderapi.Refund{}, domain.ErrRefundNotEscalatable
 	}
 	if err := r.Escalate(); err != nil {
-		return orderapi.Dispute{}, err
-	}
-	d, err := domain.NewDispute(r.ID, req.ActorID.Int64(), round, req.Reason)
-	if err != nil {
-		return orderapi.Dispute{}, err
-	}
-	if err := s.repo.InsertDispute(ctx, &d); err != nil {
-		return orderapi.Dispute{}, fmt.Errorf("insert dispute: %w", err)
+		return orderapi.Refund{}, err
 	}
 	if err := s.saveRefund(ctx, r); err != nil {
-		return orderapi.Dispute{}, err
+		return orderapi.Refund{}, err
 	}
-	return toAPIDispute(d), nil
+	return s.refundView(ctx, r)
 }
 
-// AdminListDisputes is the moderator queue, oldest first — the order it should be worked.
-func (s *Service) AdminListDisputes(ctx context.Context, req orderapi.ListDisputesRequest) (orderapi.DisputePage, error) {
+// AdminResolveRefund is the verdict. The money moves before the row goes terminal, and the refund
+// and the order it closes are written together: an accepted refund over an order the payout sweep
+// can still see is money paid to both parties.
+func (s *Service) AdminResolveRefund(ctx context.Context, req orderapi.ResolveRefundRequest) (orderapi.Refund, error) {
 	if err := s.requireModerator(ctx, req.ActorID); err != nil {
-		return orderapi.DisputePage{}, err
+		return orderapi.Refund{}, err
 	}
-	cursor, err := cursorFilter(req.Cursor, req.Limit)
+	r, err := s.repo.FindRefund(ctx, req.ID.Int64())
 	if err != nil {
-		return orderapi.DisputePage{}, err
-	}
-	rows, err := s.repo.ListOpenDisputes(ctx, cursor)
-	if err != nil {
-		return orderapi.DisputePage{}, fmt.Errorf("list disputes: %w", err)
-	}
-	rows, meta := page(rows, req.Limit, func(d domain.Dispute) (time.Time, int64) {
-		return d.CreatedAt, d.ID
-	})
-	out := make([]orderapi.Dispute, 0, len(rows))
-	for _, d := range rows {
-		out = append(out, toAPIDispute(d))
-	}
-	return orderapi.DisputePage{Data: out, Meta: meta}, nil
-}
-
-// AdminRuleDispute applies the verdict to the round and to the refund behind it. A buyer who
-// wins round one gets the goods collected and then the money; one who wins round two gets
-// the money, because the goods are already back.
-//
-// The money moves before either row is written, and the two rows are written together: a ruled
-// round over a still-disputed refund is a state no path can reach, and an accepted refund over
-// an order the payout sweep can still see is money paid to both parties.
-func (s *Service) AdminRuleDispute(ctx context.Context, req orderapi.RuleDisputeRequest) (orderapi.Dispute, error) {
-	if err := s.requireModerator(ctx, req.ActorID); err != nil {
-		return orderapi.Dispute{}, err
-	}
-	d, err := s.repo.FindDispute(ctx, req.ID.Int64())
-	if err != nil {
-		return orderapi.Dispute{}, fmt.Errorf("find dispute: %w", err)
-	}
-	if err := d.Rule(req.ActorID.Int64(), req.BuyerWins, req.Note); err != nil {
-		return orderapi.Dispute{}, err
-	}
-	r, err := s.repo.FindRefund(ctx, d.RefundID)
-	if err != nil {
-		return orderapi.Dispute{}, fmt.Errorf("find refund: %w", err)
+		return orderapi.Refund{}, fmt.Errorf("find refund: %w", err)
 	}
 	o, err := s.repo.FindOrder(ctx, r.OrderID)
 	if err != nil {
-		return orderapi.Dispute{}, fmt.Errorf("find order: %w", err)
+		return orderapi.Refund{}, fmt.Errorf("find order: %w", err)
 	}
 	if o.Settled() {
-		return orderapi.Dispute{}, domain.ErrOrderSettled
+		return orderapi.Refund{}, domain.ErrOrderSettled
 	}
-	if err := r.Rule(req.BuyerWins); err != nil {
-		return orderapi.Dispute{}, err
+	// There are no rounds: `ReturnedAt IS NULL` is what tells the two situations apart. A buyer
+	// who wins before the goods came back is granted the refund and they travel first; one who
+	// wins after has nothing left to ship, so the escrow goes back and the order closes.
+	if err := r.Resolve(req.BuyerWins); err != nil {
+		return orderapi.Refund{}, err
 	}
 	if r.Status == domain.RefundReturning {
-		// Round one for the buyer grants the refund, and a granted refund is one whose goods
-		// come back. Without the leg the case would sit in `returning` with nobody on a clock.
+		// A granted refund is one whose goods come back. Without the leg the case would sit in
+		// `returning` with nobody on a clock.
 		if err := s.openReturnLeg(ctx, &r, o); err != nil {
-			return orderapi.Dispute{}, err
+			return orderapi.Refund{}, err
 		}
 	}
 	if r.Status == domain.RefundAccepted {
-		if err := s.settleRefund(ctx, r, o, &d); err != nil {
-			return orderapi.Dispute{}, err
+		if err := s.settleRefund(ctx, r, o); err != nil {
+			return orderapi.Refund{}, err
 		}
-		return toAPIDispute(d), nil
+	} else {
+		if err := s.repo.SaveRefundOutcome(ctx, r, nil); err != nil {
+			return orderapi.Refund{}, fmt.Errorf("save refund verdict: %w", err)
+		}
+		s.refundTimers(ctx, r)
 	}
-	if err := s.repo.SaveRefundOutcome(ctx, r, &d, nil); err != nil {
-		return orderapi.Dispute{}, fmt.Errorf("save dispute ruling: %w", err)
+	s.publishResolved(ctx, r, o, req)
+	return s.refundView(ctx, r)
+}
+
+// publishResolved announces the verdict, so trust can close the ticket that asked for it.
+// Best-effort like the module's other publishes: the money has moved and the rows are written, so
+// a bus that is down must not turn a decided case into a retried one.
+func (s *Service) publishResolved(ctx context.Context, r domain.Refund, o domain.Order,
+	req orderapi.ResolveRefundRequest) {
+	event := RefundResolved{
+		RefundID: r.ID, OrderID: o.ID, BuyerID: o.BuyerID, SellerID: o.SellerID,
+		ModeratorID: req.ActorID.Int64(), BuyerWins: req.BuyerWins, Note: req.Note,
 	}
-	s.refundTimers(ctx, r)
-	return toAPIDispute(d), nil
+	if err := publishRefundResolved(ctx, s.bus, event); err != nil {
+		s.log.Error("publish refund resolved failed", "refund_id", r.ID, "err", err)
+	}
 }
 
 // settleRefund pays the buyer back and closes the case and the order it covers.
@@ -354,7 +337,7 @@ func (s *Service) AdminRuleDispute(ctx context.Context, req orderapi.RuleDispute
 // end of the case, and the payout sweep then hands the seller the money the buyer was awarded.
 // A transfer that landed and a write that did not is the recoverable half: the refund is still
 // live, its window is still overdue, and the sweep calls this again with the same key.
-func (s *Service) settleRefund(ctx context.Context, r domain.Refund, o domain.Order, d *domain.Dispute) error {
+func (s *Service) settleRefund(ctx context.Context, r domain.Refund, o domain.Order) error {
 	if err := s.refundEscrow(ctx, o, 0); err != nil {
 		return err
 	}
@@ -364,7 +347,7 @@ func (s *Service) settleRefund(ctx context.Context, r domain.Refund, o domain.Or
 	if err := closed.Cancel(false); err != nil {
 		return err
 	}
-	if err := s.repo.SaveRefundOutcome(ctx, r, d, &closed); err != nil {
+	if err := s.repo.SaveRefundOutcome(ctx, r, &closed); err != nil {
 		return fmt.Errorf("save refund settlement: %w", err)
 	}
 	s.publishSettled(ctx, closed, false)
@@ -408,20 +391,6 @@ func (s *Service) refundView(ctx context.Context, r domain.Refund) (orderapi.Ref
 		ReturnedAt:      r.ReturnedAt,
 		CreatedAt:       r.CreatedAt,
 	}, nil
-}
-
-func toAPIDispute(d domain.Dispute) orderapi.Dispute {
-	return orderapi.Dispute{
-		ID:        id.Of[id.RefundDispute](d.ID),
-		RefundID:  id.Of[id.Refund](d.RefundID),
-		Round:     d.Round,
-		OpenedBy:  id.Of[id.Account](d.OpenedBy),
-		Status:    d.Status,
-		Reason:    d.Reason,
-		Note:      d.Note,
-		CreatedAt: d.CreatedAt,
-		RuledAt:   d.RuledAt,
-	}
 }
 
 // saveRefund writes a non-terminal transition and starts the clock the new status carries.

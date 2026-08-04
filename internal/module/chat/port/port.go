@@ -35,6 +35,9 @@ type Repository interface {
 	// message. One thread per pair, so this is an upsert rather than a create: two
 	// people who start writing at the same moment must not end up with two threads.
 	EnsureConversation(ctx context.Context, one, other int64) (domain.Conversation, error)
+	// EnsureTicketThread is the same, keyed on the ticket rather than on the pair: the ticket row
+	// lives in another schema and is written first, so this half has to be safe to repeat.
+	EnsureTicketThread(ctx context.Context, requesterID, deskID, ticketID int64) (domain.Conversation, error)
 	FindConversation(ctx context.Context, id int64) (domain.Conversation, error)
 	ListConversations(ctx context.Context, f InboxFilter) ([]domain.Conversation, error)
 	SaveConversation(ctx context.Context, c domain.Conversation) error

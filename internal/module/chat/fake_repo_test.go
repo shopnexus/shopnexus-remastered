@@ -39,10 +39,30 @@ func (f *fakeRepo) EnsureConversation(_ context.Context, one, other int64) (doma
 	if err != nil {
 		return domain.Conversation{}, err
 	}
+	// One thread per pair — and only among direct ones, as the partial unique index is: a user
+	// raises many tickets, and every one of them pairs them with the same desk account.
 	for _, stored := range f.threads {
-		if stored.AccountAID == c.AccountAID && stored.AccountBID == c.AccountBID {
+		if stored.Kind == domain.KindDirect && stored.AccountAID == c.AccountAID && stored.AccountBID == c.AccountBID {
 			return stored, nil
 		}
+	}
+	c.ID = f.id()
+	c.CreatedAt = time.Now()
+	f.threads[c.ID] = c
+	return c, nil
+}
+
+// EnsureTicketThread is keyed on the ticket, which is what makes the call idempotent: trust's row is
+// written in another schema first, so a retry has to find this thread rather than make a second.
+func (f *fakeRepo) EnsureTicketThread(_ context.Context, requesterID, deskID, ticketID int64) (domain.Conversation, error) {
+	for _, stored := range f.threads {
+		if stored.TicketID != nil && *stored.TicketID == ticketID {
+			return stored, nil
+		}
+	}
+	c, err := domain.NewTicketThread(requesterID, deskID, ticketID)
+	if err != nil {
+		return domain.Conversation{}, err
 	}
 	c.ID = f.id()
 	c.CreatedAt = time.Now()

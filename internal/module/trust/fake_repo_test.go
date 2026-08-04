@@ -24,16 +24,16 @@ type fakeRepo struct {
 	reviews    map[int64]domain.Review
 	replies    map[int64]domain.ReviewReply
 	votes      map[[2]int64]int16
-	reports    map[int64]domain.Report
+	tickets    map[int64]domain.Ticket
 	// outcomes is the dedupe key AddOrderOutcome writes with the bump: the settled event is
 	// at-least-once, so a second delivery of one order must count nothing.
 	outcomes map[int64]bool
 	nextID   int64
 	// ratingSync records what was pushed to catalog's cache, per listing.
 	ratingSync map[int64][2]float64
-	// saveReportErr stands in for a database that is simply unreachable, which a service must
+	// saveTicketErr stands in for a database that is simply unreachable, which a service must
 	// not report as "somebody else claimed it".
-	saveReportErr error
+	saveTicketErr error
 	// countCalls is how many round trips the queue spent on the pattern, which is the N+1 a
 	// page of the moderator queue used to pay per row.
 	countCalls int
@@ -43,7 +43,7 @@ func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
 		feedback: map[int64]domain.Feedback{}, reputation: map[[2]any]domain.Reputation{},
 		reviews: map[int64]domain.Review{}, replies: map[int64]domain.ReviewReply{},
-		votes: map[[2]int64]int16{}, reports: map[int64]domain.Report{},
+		votes: map[[2]int64]int16{}, tickets: map[int64]domain.Ticket{},
 		outcomes:   map[int64]bool{},
 		ratingSync: map[int64][2]float64{},
 	}
@@ -422,45 +422,66 @@ func (f *fakeRepo) MyVotes(_ context.Context, accountID int64, reviewIDs []int64
 	return out, nil
 }
 
-// --- reports ---
+// --- tickets ---
 
-func (f *fakeRepo) InsertReport(_ context.Context, r *domain.Report) error {
-	for _, existing := range f.reports {
-		if existing.ReporterID == r.ReporterID && existing.RefType == r.RefType &&
-			existing.RefID == r.RefID && !existing.Resolved() {
-			return domain.ErrReportExists
+// InsertTicket holds the rule the partial unique index does: one open ticket per requester per
+// target, because a second complaint about the same listing is the same complaint.
+func (f *fakeRepo) InsertTicket(_ context.Context, t *domain.Ticket) error {
+	for _, existing := range f.tickets {
+		if existing.RequesterID != t.RequesterID || existing.Resolved() {
+			continue
+		}
+		if t.RefType == nil || existing.RefType == nil || t.RefID == nil || existing.RefID == nil {
+			continue
+		}
+		if *existing.RefType == *t.RefType && *existing.RefID == *t.RefID {
+			return domain.ErrTicketExists
 		}
 	}
-	r.ID = f.next()
-	r.CreatedAt = time.Now()
-	f.reports[r.ID] = *r
+	t.ID = f.next()
+	t.CreatedAt = time.Now()
+	f.tickets[t.ID] = *t
 	return nil
 }
 
-func (f *fakeRepo) FindReport(_ context.Context, id int64) (domain.Report, error) {
-	row, ok := f.reports[id]
+func (f *fakeRepo) FindTicket(_ context.Context, id int64) (domain.Ticket, error) {
+	row, ok := f.tickets[id]
 	if !ok {
-		return domain.Report{}, domain.ErrReportNotFound
+		return domain.Ticket{}, domain.ErrTicketNotFound
 	}
 	return row, nil
 }
 
-// ListReports pages both directions the adapter serves: the queue is worked oldest first, a
-// reporter reads their own newest first, and each compares (created_at, id) as a tuple.
-func (f *fakeRepo) ListReports(_ context.Context, filter port.ReportFilter) ([]domain.Report, error) {
-	queue := filter.ReporterID == 0
-	var out []domain.Report
-	for _, row := range f.reports {
-		if filter.ReporterID != 0 && row.ReporterID != filter.ReporterID {
+// FindTicketByRef is how a module holding the target — order, with a refund it just decided —
+// finds the open ticket to close.
+func (f *fakeRepo) FindTicketByRef(_ context.Context, refType string, refID int64) (domain.Ticket, error) {
+	for _, row := range f.tickets {
+		if row.Resolved() || row.RefType == nil || row.RefID == nil {
+			continue
+		}
+		if *row.RefType == refType && *row.RefID == refID {
+			return row, nil
+		}
+	}
+	return domain.Ticket{}, domain.ErrTicketNotFound
+}
+
+// ListTickets pages both directions the adapter serves: the queue is worked oldest first, a
+// requester reads their own newest first, and each compares (created_at, id) as a tuple.
+func (f *fakeRepo) ListTickets(_ context.Context, filter port.TicketFilter) ([]domain.Ticket, error) {
+	queue := filter.RequesterID == 0
+	var out []domain.Ticket
+	for _, row := range f.tickets {
+		if filter.RequesterID != 0 && row.RequesterID != filter.RequesterID {
 			continue
 		}
 		if len(filter.Statuses) > 0 && !slices.Contains(filter.Statuses, row.Status) {
 			continue
 		}
-		if filter.RefType != "" && row.RefType != filter.RefType {
+		if filter.Kind != "" && row.Kind != filter.Kind {
 			continue
 		}
-		if filter.Reason != "" && row.Reason != filter.Reason {
+		if filter.RefType != "" && (row.RefType == nil || *row.RefType != filter.RefType) {
 			continue
 		}
 		if filter.Cursor.BeforeID != 0 {
@@ -476,7 +497,7 @@ func (f *fakeRepo) ListReports(_ context.Context, filter port.ReportFilter) ([]d
 		}
 		out = append(out, row)
 	}
-	slices.SortFunc(out, func(a, b domain.Report) int {
+	slices.SortFunc(out, func(a, b domain.Ticket) int {
 		order := descending(timeKey(a.CreatedAt, a.ID), timeKey(b.CreatedAt, b.ID))
 		if queue {
 			return -order
@@ -486,25 +507,28 @@ func (f *fakeRepo) ListReports(_ context.Context, filter port.ReportFilter) ([]d
 	return trim(out, filter.Cursor.Limit), nil
 }
 
-// SaveReport is guarded by the status it moves from, so a stale read loses. saveReportErr is
-// the other way it can fail: a database that is not there at all.
-func (f *fakeRepo) SaveReport(_ context.Context, r domain.Report, from []string) error {
-	if f.saveReportErr != nil {
-		return f.saveReportErr
+// SaveTicket is guarded by the status it moves from, so a stale read loses. saveTicketErr is the
+// other way it can fail: a database that is not there at all.
+func (f *fakeRepo) SaveTicket(_ context.Context, t domain.Ticket, from []string) error {
+	if f.saveTicketErr != nil {
+		return f.saveTicketErr
 	}
-	stored, ok := f.reports[r.ID]
+	stored, ok := f.tickets[t.ID]
 	if !ok || !slices.Contains(from, stored.Status) {
-		return domain.ErrReportResolved
+		return domain.ErrTicketResolved
 	}
-	f.reports[r.ID] = r
+	f.tickets[t.ID] = t
 	return nil
 }
 
-func (f *fakeRepo) CountOpenAgainst(_ context.Context, targets []port.ReportTarget) (map[port.ReportTarget]int64, error) {
+func (f *fakeRepo) CountOpenAgainst(_ context.Context, targets []port.TicketTarget) (map[port.TicketTarget]int64, error) {
 	f.countCalls++
-	out := make(map[port.ReportTarget]int64, len(targets))
-	for _, row := range f.reports {
-		target := port.ReportTarget{RefType: row.RefType, RefID: row.RefID}
+	out := make(map[port.TicketTarget]int64, len(targets))
+	for _, row := range f.tickets {
+		if row.RefType == nil || row.RefID == nil {
+			continue
+		}
+		target := port.TicketTarget{RefType: *row.RefType, RefID: *row.RefID}
 		if slices.Contains(targets, target) && !row.Resolved() {
 			out[target]++
 		}

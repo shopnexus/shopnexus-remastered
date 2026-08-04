@@ -26,7 +26,6 @@ type fakeRepo struct {
 	orders    map[int64]domain.Order
 	shipments map[int64]domain.Transport
 	refunds   map[int64]domain.Refund
-	disputes  map[int64]domain.Dispute
 	options   []common.Option
 }
 
@@ -35,7 +34,7 @@ func newFakeRepo() *fakeRepo {
 		carts: map[int64]domain.CartItem{}, drafts: map[int64]domain.Draft{},
 		offers: map[int64]domain.Offer{}, items: map[int64]domain.Item{},
 		orders: map[int64]domain.Order{}, shipments: map[int64]domain.Transport{},
-		refunds: map[int64]domain.Refund{}, disputes: map[int64]domain.Dispute{},
+		refunds: map[int64]domain.Refund{},
 		// Two carriers so a quote list is a list, and a disabled one so "enabled" means something.
 		options: []common.Option{
 			{ID: "ghn-express", Name: "GHN Express", Type: common.OptionTypeTransport, IsEnabled: true},
@@ -62,17 +61,6 @@ func pastCursor(f port.CursorFilter, at time.Time, id int64) bool {
 		return true
 	}
 	return at.Equal(f.Before) && id < f.BeforeID
-}
-
-// beyondCursor is the same for a list read oldest first — the moderator queue.
-func beyondCursor(f port.CursorFilter, at time.Time, id int64) bool {
-	if f.Before.IsZero() {
-		return true
-	}
-	if at.After(f.Before) {
-		return true
-	}
-	return at.Equal(f.Before) && id > f.BeforeID
 }
 
 var _ port.Repository = (*fakeRepo)(nil)
@@ -613,7 +601,7 @@ func (f *fakeRepo) MarkPayoutReleased(_ context.Context, o domain.Order) error {
 	return nil
 }
 
-// --- refunds and disputes ---
+// --- refunds ---
 
 // InsertRefund holds both guards the real one does: one live refund per order, and an order
 // whose escrow is still there to argue over — the row lands under the same lock the payout claim
@@ -687,49 +675,13 @@ func (f *fakeRepo) OverdueRefunds(_ context.Context, now time.Time, limit int) (
 	return out[:min(limit, len(out))], nil
 }
 
-func (f *fakeRepo) InsertDispute(_ context.Context, d *domain.Dispute) error {
-	for _, stored := range f.disputes {
-		if stored.RefundID == d.RefundID && stored.Round == d.Round {
-			return domain.ErrDisputeSettled
-		}
-	}
-	d.ID = f.id()
-	d.CreatedAt = time.Now()
-	f.disputes[d.ID] = *d
-	return nil
-}
-
-func (f *fakeRepo) FindDispute(_ context.Context, disputeID int64) (domain.Dispute, error) {
-	d, ok := f.disputes[disputeID]
-	if !ok {
-		return domain.Dispute{}, domain.ErrDisputeNotFound
-	}
-	return d, nil
-}
-
-func (f *fakeRepo) ListOpenDisputes(_ context.Context, filter port.CursorFilter) ([]domain.Dispute, error) {
-	var out []domain.Dispute
-	for _, d := range f.disputes {
-		if d.Status == domain.DisputeOpen && beyondCursor(filter, d.CreatedAt, d.ID) {
-			out = append(out, d)
-		}
-	}
-	slices.SortFunc(out, func(a, b domain.Dispute) int { return int(a.ID - b.ID) })
-	return out[:min(filter.Limit, len(out))], nil
-}
-
-// SaveRefundOutcome writes all three rows or none, as the transaction does: a ruled round over a
-// still-disputed refund and a settled refund over an open order are both states nothing can get
-// out of, so a half-applied outcome must not be reachable here either.
-func (f *fakeRepo) SaveRefundOutcome(ctx context.Context, r domain.Refund, d *domain.Dispute, o *domain.Order) error {
+// SaveRefundOutcome writes both rows or neither, as the transaction does: a settled refund over
+// an open order is money the payout sweep would hand the seller after the buyer was paid, so a
+// half-applied outcome must not be reachable here either.
+func (f *fakeRepo) SaveRefundOutcome(_ context.Context, r domain.Refund, o *domain.Order) error {
 	stored, ok := f.refunds[r.ID]
 	if !ok || stored.Settled() {
 		return domain.ErrRefundSettled
-	}
-	if d != nil {
-		if storedDispute, ok := f.disputes[d.ID]; !ok || storedDispute.Status != domain.DisputeOpen {
-			return domain.ErrDisputeSettled
-		}
 	}
 	if o != nil {
 		if storedOrder, ok := f.orders[o.ID]; !ok || storedOrder.Settled() {
@@ -737,9 +689,6 @@ func (f *fakeRepo) SaveRefundOutcome(ctx context.Context, r domain.Refund, d *do
 		}
 	}
 	f.refunds[r.ID] = r
-	if d != nil {
-		f.disputes[d.ID] = *d
-	}
 	if o != nil {
 		f.orders[o.ID] = *o
 	}

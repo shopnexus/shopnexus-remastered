@@ -1,79 +1,57 @@
-# order fragment: the moderator surface over refund disputes.
+# order fragment: the staff verdict on a refund. Only the verdict — the ticket that asked
+# for one is trust's, and so is the queue it is worked from.
 
 paths:
-  /admin/disputes:
-    get:
-      tags: [admin]
-      summary: The moderator's dispute queue
-      description: >
-        Open rounds, oldest first, which is the order they should be worked. A round names the
-        refund it is about; the case itself is read through `GET /refunds/{id}`.
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - $ref: '#/components/parameters/Cursor'
-        - $ref: '#/components/parameters/Limit'
-      responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/RefundDisputePage' } } } }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-
-  /admin/disputes/{id}/ruling:
+  /admin/refunds/{id}/verdict:
     post:
       tags: [admin]
-      summary: Rule on the open round of a dispute (moderator)
+      summary: Decide a refund staff were asked about (moderator)
       description: >
-        Decided on whose evidence is more convincing. What a verdict does depends on
-        the round, and the round is a property of the case rather than something the
-        moderator picks:
+        The refund has to be `disputed`, which is what a party escalating through trust set it
+        to. There are no rounds: whether the goods have already come back is what a verdict
+        reads to know which of the two situations it is in.
 
 
-        Round 1 — `buyer_wins: true` grants the refund and books the return shipment, so the
-        money is not released yet; `false` ends the refund and lets the payout stand.
+        `buyer_wins: true` with the goods still at the buyer's grants the refund and books the
+        return shipment, so the money is not released yet. `buyer_wins: true` once the return
+        has been delivered sends the escrow back to the buyer and closes the order with it.
+        `buyer_wins: false` ends the refund either way, and the payout to the seller stands.
 
 
-        Round 2, the seller's appeal on what arrived — `buyer_wins: false` upholds it, ends the
-        refund and lets the payout stand; `true` denies it, so the escrow goes back to the buyer
-        and the order closes with it.
-
-
-        The money moves before either row is written, and the verdict and the refund it moved are
-        written together: a ruled round over a case still `disputed` is a state nothing can get
-        out of, and a settled refund over an order the payout can still see is money paid twice.
-
-
-        There is no third round. Round 2 is where an appeal already lives, so a ruling
-        on it is final.
+        The money moves before the refund goes terminal, and the refund and the order it closes
+        are written together: a settled refund over an order the payout can still see is money
+        paid twice.
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundDisputeID' } }
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundID' } }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/DisputeRulingRequest' }
+            schema: { $ref: '#/components/schemas/RefundVerdictRequest' }
       responses:
         '200':
-          description: 'Ruled'
+          description: 'Decided'
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  data: { $ref: '#/components/schemas/RefundDispute' }
+                  data: { $ref: '#/components/schemas/Refund' }
                 required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: 'Dispute is already resolved', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'This refund is not with staff for a decision, or its order has already settled', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
 components:
   schemas:
-    DisputeRulingRequest:
+    RefundVerdictRequest:
       type: object
-      description: A ruling, so there is no "still open" choice — which is why the verdict is a
-        boolean rather than the status enum.
+      description: A decision, so there is no "still deciding" choice — which is why the verdict
+        is a boolean rather than a status enum.
       properties:
-        buyer_wins: { type: boolean, example: true, description: 'What that does depends on the round; see the endpoint.' }
-        note: { type: string, maxLength: 2000, example: Evidence is clear, description: 'Recorded with the verdict; the ruling is final' }
+        buyer_wins: { type: boolean, example: true, description: 'What it does to the money depends on whether the goods have come back; see the endpoint.' }
+        note: { type: string, maxLength: 2000, example: Evidence is clear, description: 'The reasoning, carried to the ticket this closes' }
       required: [buyer_wins]

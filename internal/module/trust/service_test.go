@@ -99,9 +99,27 @@ type fakeOrders struct {
 	state string
 	// listing is what the order's single line bought; zero means it bought something else.
 	listing id.ID[id.Listing]
+	// escalateErr is order refusing the escalation — the wrong party, or a refund past the point
+	// where staff can still decide it.
+	escalateErr error
+	// escalated counts the refunds handed to staff, which is what says the ticket did not open one
+	// order knows nothing about.
+	escalated []id.ID[id.Refund]
 }
 
-func (f fakeOrders) GetOrder(_ context.Context, req orderapi.OrderRequest) (orderapi.Order, error) {
+func (f *fakeOrders) GetRefund(_ context.Context, req orderapi.RefundRequest) (orderapi.Refund, error) {
+	return orderapi.Refund{ID: req.ID, OrderID: orderID, BuyerID: buyer}, nil
+}
+
+func (f *fakeOrders) EscalateRefund(_ context.Context, req orderapi.EscalateRefundRequest) (orderapi.Refund, error) {
+	if f.escalateErr != nil {
+		return orderapi.Refund{}, f.escalateErr
+	}
+	f.escalated = append(f.escalated, req.ID)
+	return orderapi.Refund{ID: req.ID, OrderID: orderID, BuyerID: buyer}, nil
+}
+
+func (f *fakeOrders) GetOrder(_ context.Context, req orderapi.OrderRequest) (orderapi.Order, error) {
 	// The order module answers 404 for somebody who is not a party, so a stranger never
 	// reaches the direction check.
 	if req.ActorID != buyer && req.ActorID != seller {
@@ -124,9 +142,36 @@ type fakeChat struct {
 	chattest.Stub
 	// missing hides the message, which is what a report against a deleted one hits.
 	missing bool
+	// threads is one conversation per ticket, so opening the same one twice answers the same id —
+	// the idempotence trust relies on when it repairs a ticket whose thread never landed.
+	threads map[id.ID[id.Ticket]]id.ID[id.Conversation]
+	// openErr is chat being unreachable at the moment a ticket is filed.
+	openErr error
+	// opened is what the requester wrote, so a test can see the body became the first message.
+	opened []chatapi.OpenTicketThreadRequest
+	// posted is what another module put into a ticket thread — a refund verdict.
+	posted []chatapi.PostTicketMessageRequest
 }
 
-func (f fakeChat) GetMessage(_ context.Context, req chatapi.GetMessageRequest) (chatapi.Message, error) {
+func (f *fakeChat) PostTicketMessage(_ context.Context, req chatapi.PostTicketMessageRequest) (chatapi.Message, error) {
+	f.posted = append(f.posted, req)
+	return chatapi.Message{ConversationID: f.threads[req.TicketID]}, nil
+}
+
+func (f *fakeChat) OpenTicketThread(_ context.Context, req chatapi.OpenTicketThreadRequest) (chatapi.Conversation, error) {
+	if f.openErr != nil {
+		return chatapi.Conversation{}, f.openErr
+	}
+	f.opened = append(f.opened, req)
+	if got, ok := f.threads[req.TicketID]; ok {
+		return chatapi.Conversation{ID: got, TicketID: &req.TicketID}, nil
+	}
+	next := id.ID[id.Conversation](int64(len(f.threads) + 1))
+	f.threads[req.TicketID] = next
+	return chatapi.Conversation{ID: next, TicketID: &req.TicketID}, nil
+}
+
+func (f *fakeChat) GetMessage(_ context.Context, req chatapi.GetMessageRequest) (chatapi.Message, error) {
 	if f.missing {
 		return chatapi.Message{}, errx.NewError(404, "message_not_found", "message not found")
 	}
@@ -151,7 +196,7 @@ func newHarness(state string) *harness {
 	repo := newFakeRepo()
 	catalog := &fakeCatalog{synced: map[int64][2]float64{}}
 	orders := &fakeOrders{state: state}
-	chat := &fakeChat{}
+	chat := &fakeChat{threads: map[id.ID[id.Ticket]]id.ID[id.Conversation]{}}
 	accounts := fakeAccounts{
 		roles:   map[id.ID[id.Account]]string{moderator: "moderator"},
 		missing: map[id.ID[id.Account]]bool{},
@@ -949,38 +994,46 @@ func TestListReviews_AnonymousHasNoVote(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------- reports ---
+// ----------------------------------------------------------------- tickets ---
 
 // A report names a target that exists, one open one per reporter per target, and the id has to
 // agree with the declared type.
-func TestSubmitReport_ChecksTheTarget(t *testing.T) {
+func TestOpenTicket_ChecksTheTarget(t *testing.T) {
 	h := newHarness("completed")
 	ctx := context.Background()
-	req := trustapi.SubmitReportRequest{
-		ActorID: buyer, RefType: "listing", RefID: listingID.String(), Reason: "counterfeit",
-		Detail: "same photos as the brand store",
+	req := trustapi.OpenTicketRequest{
+		ActorID: buyer, Kind: domain.KindReportListing, Subject: "Hàng giả",
+		RefID: listingID.String(), Reason: "counterfeit",
+		Body: "same photos as the brand store",
 	}
-	got, err := h.svc.SubmitReport(ctx, req)
+	got, err := h.svc.OpenTicket(ctx, req)
 	if err != nil {
-		t.Fatalf("SubmitReport: %v", err)
+		t.Fatalf("OpenTicket: %v", err)
 	}
-	if got.RefID != listingID.String() || got.Status != domain.ReportStatusOpen {
-		t.Fatalf("report = %+v, want it open against the listing", got)
+	if got.RefID == nil || *got.RefID != listingID.String() || got.Status != domain.StatusOpen {
+		t.Fatalf("ticket = %+v, want it open against the listing", got)
 	}
-	// One open report per target.
-	if got := status(t, mustErr(h.svc.SubmitReport(ctx, req))); got != 409 {
+	// The requester's own words are the thread's first message, so a ticket always has one to
+	// answer in.
+	if got.ConversationID == nil {
+		t.Fatalf("ticket = %+v, want a conversation attached", got)
+	}
+	// One open ticket per target.
+	if got := status(t, mustErr(h.svc.OpenTicket(ctx, req))); got != 409 {
 		t.Fatalf("status = %d, want 409", got)
 	}
-	// An id whose prefix disagrees with the type is refused before anything is written.
-	if got := status(t, mustErr(h.svc.SubmitReport(ctx, trustapi.SubmitReportRequest{
-		ActorID: buyer, RefType: "account", RefID: listingID.String(), Reason: "scam",
+	// An id whose prefix disagrees with the kind is refused before anything is written.
+	if got := status(t, mustErr(h.svc.OpenTicket(ctx, trustapi.OpenTicketRequest{
+		ActorID: buyer, Kind: domain.KindReportAccount, Subject: "Kẻ lừa đảo",
+		RefID: listingID.String(), Reason: "scam",
 	}))); got != 400 {
 		t.Fatalf("status = %d, want 400 for a mismatched prefix", got)
 	}
 	// And a target that does not exist cannot fill the queue.
 	h.catalog.missing = true
-	if got := status(t, mustErr(h.svc.SubmitReport(ctx, trustapi.SubmitReportRequest{
-		ActorID: seller, RefType: "listing", RefID: listingID.String(), Reason: "scam",
+	if got := status(t, mustErr(h.svc.OpenTicket(ctx, trustapi.OpenTicketRequest{
+		ActorID: seller, Kind: domain.KindReportListing, Subject: "Tin giả",
+		RefID: listingID.String(), Reason: "scam",
 	}))); got != 404 {
 		t.Fatalf("status = %d, want 404 for a target that is gone", got)
 	}
@@ -988,61 +1041,183 @@ func TestSubmitReport_ChecksTheTarget(t *testing.T) {
 
 // A module that cannot be reached has not said the target is gone. Telling a reporter their
 // target does not exist because catalog was down for a second makes them stop reporting it.
-func TestSubmitReport_PropagatesAnOutage(t *testing.T) {
+func TestOpenTicket_PropagatesAnOutage(t *testing.T) {
 	h := newHarness("completed")
 	h.catalog.getErr = errx.NewError(503, "catalog_unavailable", "catalog is unreachable")
-	err := mustErr(h.svc.SubmitReport(context.Background(), trustapi.SubmitReportRequest{
-		ActorID: buyer, RefType: "listing", RefID: listingID.String(), Reason: "scam",
+	err := mustErr(h.svc.OpenTicket(context.Background(), trustapi.OpenTicketRequest{
+		ActorID: buyer, Kind: domain.KindReportListing, Subject: "Lừa đảo",
+		RefID: listingID.String(), Reason: "scam",
 	}))
 	if got := status(t, err); got != 503 {
 		t.Fatalf("status = %d, want the outage propagated", got)
 	}
-	if errors.Is(err, domain.ErrReportTargetNotFound) {
+	if errors.Is(err, domain.ErrTicketTargetMissing) {
 		t.Error("an unreachable module was reported as a target that does not exist")
+	}
+}
+
+// What the requester wrote is the thread's first message, not a column here — so a support request
+// needs no body of its own and no second upload path. A thread that could not be opened is repaired
+// on the next read, because the row is the ticket and losing the conversation must not lose it.
+func TestOpenTicket_TheRequestersWordsAreTheThread(t *testing.T) {
+	h := newHarness("completed")
+	ctx := context.Background()
+	photo := id.ID[id.Resource](77)
+	filed, err := h.svc.OpenTicket(ctx, trustapi.OpenTicketRequest{
+		ActorID: buyer, Kind: domain.KindFeatureRequest, Subject: "Cho phép lọc theo tỉnh",
+		Body: "tôi muốn tìm hàng gần nhà", Attachments: []id.ID[id.Resource]{photo},
+	})
+	if err != nil {
+		t.Fatalf("OpenTicket: %v", err)
+	}
+	if len(h.chat.opened) != 1 || h.chat.opened[0].Body != "tôi muốn tìm hàng gần nhà" ||
+		len(h.chat.opened[0].Attachments) != 1 || h.chat.opened[0].Attachments[0] != photo {
+		t.Fatalf("opened = %+v, want the body and the photo handed to chat", h.chat.opened)
+	}
+	// A feature request is about nothing, so it carries no target and no reason.
+	if filed.RefID != nil || filed.Reason != nil {
+		t.Fatalf("ticket = %+v, want no target and no reason on a feature request", filed)
+	}
+
+	// Chat unreachable: the ticket still exists, mute.
+	h.chat.openErr = errx.NewError(503, "chat_unavailable", "chat is unreachable")
+	mute, err := h.svc.OpenTicket(ctx, trustapi.OpenTicketRequest{
+		ActorID: seller, Kind: domain.KindPayment, Subject: "Chưa nhận được tiền",
+	})
+	if err != nil {
+		t.Fatalf("OpenTicket while chat was down: %v", err)
+	}
+	if mute.ConversationID != nil {
+		t.Fatalf("ticket = %+v, want no thread while chat was down", mute)
+	}
+	// And the read repairs it, so staff have somewhere to answer.
+	h.chat.openErr = nil
+	repaired, err := h.svc.GetTicket(ctx, trustapi.TicketRequest{ActorID: seller, ID: mute.ID})
+	if err != nil {
+		t.Fatalf("GetTicket: %v", err)
+	}
+	if repaired.ConversationID == nil {
+		t.Fatalf("ticket = %+v, want the thread repaired on read", repaired)
+	}
+}
+
+// A refund dispute is order's status first and a ticket second: staff cannot be asked to decide a
+// refund that order says is not theirs to decide, and a ticket about one would be a queue entry with
+// no possible answer.
+func TestOpenTicket_RefundDisputeEscalatesInOrderFirst(t *testing.T) {
+	h := newHarness("completed")
+	ctx := context.Background()
+	refundID := id.ID[id.Refund](55)
+	req := trustapi.OpenTicketRequest{
+		ActorID: buyer, Kind: domain.KindRefundDispute, Subject: "Hàng không đúng mô tả",
+		RefID: refundID.String(), Body: "ảnh mở hộp đây",
+	}
+
+	// Order refuses: nothing is written here either.
+	h.orders.escalateErr = errx.NewError(409, "refund_not_escalatable", "refund cannot be escalated")
+	if got := status(t, mustErr(h.svc.OpenTicket(ctx, req))); got != 409 {
+		t.Fatalf("status = %d, want order's refusal propagated", got)
+	}
+	if len(h.repo.tickets) != 0 {
+		t.Fatalf("tickets = %+v, want none for a refund order would not escalate", h.repo.tickets)
+	}
+
+	h.orders.escalateErr = nil
+	filed, err := h.svc.OpenTicket(ctx, req)
+	if err != nil {
+		t.Fatalf("OpenTicket: %v", err)
+	}
+	if len(h.orders.escalated) != 1 || h.orders.escalated[0] != refundID {
+		t.Fatalf("escalated = %v, want the refund handed to order", h.orders.escalated)
+	}
+	if filed.RefType == nil || *filed.RefType != domain.RefRefund || filed.ConversationID == nil {
+		t.Fatalf("ticket = %+v, want it about the refund with a thread", filed)
+	}
+
+	// Staff cannot close it by hand: the verdict is the money moving, and a ticket marked settled
+	// with the escrow untouched is the one outcome nobody can undo from here.
+	if _, err := h.svc.AdminClaimTicket(ctx, trustapi.TicketRequest{ActorID: moderator, ID: filed.ID}); err != nil {
+		t.Fatalf("AdminClaimTicket: %v", err)
+	}
+	if got := status(t, mustErr(h.svc.AdminResolveTicket(ctx, trustapi.ResolveTicketRequest{
+		ActorID: moderator, ID: filed.ID, ActionTaken: domain.ActionRefundGranted,
+	}))); got != 409 {
+		t.Fatalf("status = %d, want 409 for a verdict that belongs to order", got)
+	}
+
+	// Order's verdict is what closes it, and the requester reads it in the thread. Delivered twice
+	// counts once: the bus is at-least-once and a second Resolve would argue with a recorded one.
+	verdict := trustapi.RecordRefundVerdictRequest{
+		RefundID: refundID, ModeratorID: moderator, BuyerWins: true, Note: "ảnh mở hộp rõ ràng",
+	}
+	for range 2 {
+		if err := h.svc.RecordRefundVerdict(ctx, verdict); err != nil {
+			t.Fatalf("RecordRefundVerdict: %v", err)
+		}
+	}
+	closed, err := h.svc.GetTicket(ctx, trustapi.TicketRequest{ActorID: buyer, ID: filed.ID})
+	if err != nil {
+		t.Fatalf("GetTicket: %v", err)
+	}
+	if closed.Status != domain.StatusResolved || closed.ActionTaken == nil ||
+		*closed.ActionTaken != domain.ActionRefundGranted {
+		t.Fatalf("ticket = %+v, want it closed as granted", closed)
+	}
+	if len(h.chat.posted) != 1 || h.chat.posted[0].Body != verdict.Note {
+		t.Fatalf("posted = %+v, want the verdict in the thread once", h.chat.posted)
+	}
+
+	// A verdict on a refund nobody raised a ticket about is nothing to do, not a redelivery loop.
+	if err := h.svc.RecordRefundVerdict(ctx, trustapi.RecordRefundVerdictRequest{
+		RefundID: id.ID[id.Refund](999), ModeratorID: moderator,
+	}); err != nil {
+		t.Fatalf("RecordRefundVerdict for an unknown refund: %v", err)
 	}
 }
 
 // A write that simply failed is not "somebody else claimed it": answering 409 to a dropped
 // connection sends a moderator looking for a colleague who was never there.
-func TestAdminClaimReport_PropagatesARealFailure(t *testing.T) {
+func TestAdminClaimTicket_PropagatesARealFailure(t *testing.T) {
 	h := newHarness("completed")
 	ctx := context.Background()
-	filed, err := h.svc.SubmitReport(ctx, trustapi.SubmitReportRequest{
-		ActorID: buyer, RefType: "listing", RefID: listingID.String(), Reason: "spam",
+	filed, err := h.svc.OpenTicket(ctx, trustapi.OpenTicketRequest{
+		ActorID: buyer, Kind: domain.KindReportListing, Subject: "Spam",
+		RefID: listingID.String(), Reason: "spam",
 	})
 	if err != nil {
-		t.Fatalf("SubmitReport: %v", err)
+		t.Fatalf("OpenTicket: %v", err)
 	}
-	h.repo.saveReportErr = errors.New("connection refused")
-	claimErr := mustErr(h.svc.AdminClaimReport(ctx, trustapi.ReportRequest{
+	h.repo.saveTicketErr = errors.New("connection refused")
+	claimErr := mustErr(h.svc.AdminClaimTicket(ctx, trustapi.TicketRequest{
 		ActorID: moderator, ID: filed.ID,
 	}))
-	if errors.Is(claimErr, domain.ErrReportNotClaimable) {
+	if errors.Is(claimErr, domain.ErrTicketNotClaimable) {
 		t.Fatalf("claim error = %v, want the real failure rather than a conflict", claimErr)
 	}
-	if !errors.Is(claimErr, h.repo.saveReportErr) {
+	if !errors.Is(claimErr, h.repo.saveTicketErr) {
 		t.Fatalf("claim error = %v, want it to carry the write failure", claimErr)
 	}
 }
 
 // The queue is a page, so it costs a page's worth of round trips: one count for every target on
 // it and one name per distinct account, not three lookups per row.
-func TestAdminListReports_BatchesThePage(t *testing.T) {
+func TestAdminListTickets_BatchesThePage(t *testing.T) {
 	h := newHarness("completed")
 	ctx := context.Background()
 	for _, reporter := range []id.ID[id.Account]{buyer, seller, stranger} {
-		if _, err := h.svc.SubmitReport(ctx, trustapi.SubmitReportRequest{
-			ActorID: reporter, RefType: "listing", RefID: listingID.String(), Reason: "counterfeit",
+		if _, err := h.svc.OpenTicket(ctx, trustapi.OpenTicketRequest{
+			ActorID: reporter, Kind: domain.KindReportListing, Subject: "Hàng giả",
+			RefID: listingID.String(), Reason: "counterfeit",
 		}); err != nil {
-			t.Fatalf("SubmitReport by %v: %v", reporter, err)
+			t.Fatalf("OpenTicket by %v: %v", reporter, err)
 		}
 	}
 	h.repo.countCalls = 0
-	queue, err := h.svc.AdminListReports(ctx, trustapi.AdminListReportsRequest{
+	queue, err := h.svc.AdminListTickets(ctx, trustapi.AdminListTicketsRequest{
 		ActorID: moderator, Limit: 10,
 	})
 	if err != nil {
-		t.Fatalf("AdminListReports: %v", err)
+		t.Fatalf("AdminListTickets: %v", err)
 	}
 	if len(queue.Data) != 3 {
 		t.Fatalf("queue = %d entries, want the three open reports", len(queue.Data))
@@ -1051,7 +1226,7 @@ func TestAdminListReports_BatchesThePage(t *testing.T) {
 		t.Errorf("pattern reads = %d, want one for the whole page", h.repo.countCalls)
 	}
 	for _, entry := range queue.Data {
-		if entry.OpenReportsAgainstTarget != 3 {
+		if entry.OpenTicketsAgainstTarget != 3 {
 			t.Errorf("entry = %+v, want all three reports counted against the target", entry)
 		}
 	}
@@ -1059,35 +1234,35 @@ func TestAdminListReports_BatchesThePage(t *testing.T) {
 
 // The queue is worked oldest first and a reporter's history reads newest first, so the cursor
 // runs in both directions — and neither may drop a row whose timestamp its neighbour shares.
-func TestReports_PageInBothDirections(t *testing.T) {
+func TestTickets_PageInBothDirections(t *testing.T) {
 	h := newHarness("completed")
 	ctx := context.Background()
 	at := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
-	var filed []id.ID[id.Report]
+	var filed []id.ID[id.Ticket]
 	for i, target := range []int64{41, 42, 43} {
-		r, err := h.svc.SubmitReport(ctx, trustapi.SubmitReportRequest{
-			ActorID: buyer, RefType: "listing", RefID: id.Of[id.Listing](target).String(),
-			Reason: "spam",
+		r, err := h.svc.OpenTicket(ctx, trustapi.OpenTicketRequest{
+			ActorID: buyer, Kind: domain.KindReportListing, Subject: "Spam",
+			RefID: id.Of[id.Listing](target).String(), Reason: "spam",
 		})
 		if err != nil {
-			t.Fatalf("SubmitReport %d: %v", i, err)
+			t.Fatalf("OpenTicket %d: %v", i, err)
 		}
 		// One transaction's rows share created_at exactly, which is what the tuple cursor is for.
-		stored := h.repo.reports[r.ID.Int64()]
+		stored := h.repo.tickets[r.ID.Int64()]
 		stored.CreatedAt = at
-		h.repo.reports[r.ID.Int64()] = stored
+		h.repo.tickets[r.ID.Int64()] = stored
 		filed = append(filed, r.ID)
 	}
 
 	// The reporter's own history, newest first.
-	var mine []id.ID[id.Report]
+	var mine []id.ID[id.Ticket]
 	cursor := ""
 	for range 4 {
-		page, err := h.svc.ListMyReports(ctx, trustapi.ListReportsRequest{
+		page, err := h.svc.ListMyTickets(ctx, trustapi.ListTicketsRequest{
 			ActorID: buyer, Cursor: cursor, Limit: 1,
 		})
 		if err != nil {
-			t.Fatalf("ListMyReports: %v", err)
+			t.Fatalf("ListMyTickets: %v", err)
 		}
 		for _, row := range page.Data {
 			mine = append(mine, row.ID)
@@ -1105,17 +1280,17 @@ func TestReports_PageInBothDirections(t *testing.T) {
 	}
 
 	// The moderator queue, oldest first.
-	var queue []id.ID[id.Report]
+	var queue []id.ID[id.Ticket]
 	cursor = ""
 	for range 4 {
-		page, err := h.svc.AdminListReports(ctx, trustapi.AdminListReportsRequest{
+		page, err := h.svc.AdminListTickets(ctx, trustapi.AdminListTicketsRequest{
 			ActorID: moderator, Cursor: cursor, Limit: 1,
 		})
 		if err != nil {
-			t.Fatalf("AdminListReports: %v", err)
+			t.Fatalf("AdminListTickets: %v", err)
 		}
 		for _, entry := range page.Data {
-			queue = append(queue, entry.Report.ID)
+			queue = append(queue, entry.Ticket.ID)
 		}
 		if !page.Meta.HasMore {
 			break
@@ -1168,87 +1343,89 @@ func TestRecordOrderOutcome_CountsAnOrderOnce(t *testing.T) {
 
 // The moderator surface: the queue is staff-only, claiming is once, and a verdict names what
 // was done about it.
-func TestReportQueue_ClaimThenResolve(t *testing.T) {
+func TestTicketQueue_ClaimThenResolve(t *testing.T) {
 	h := newHarness("completed")
 	ctx := context.Background()
-	filed, err := h.svc.SubmitReport(ctx, trustapi.SubmitReportRequest{
-		ActorID: buyer, RefType: "listing", RefID: listingID.String(), Reason: "counterfeit",
+	filed, err := h.svc.OpenTicket(ctx, trustapi.OpenTicketRequest{
+		ActorID: buyer, Kind: domain.KindReportListing, Subject: "Hàng giả",
+		RefID: listingID.String(), Reason: "counterfeit",
 	})
 	if err != nil {
-		t.Fatalf("SubmitReport: %v", err)
+		t.Fatalf("OpenTicket: %v", err)
 	}
-	if got := status(t, mustErr(h.svc.AdminListReports(ctx, trustapi.AdminListReportsRequest{
+	if got := status(t, mustErr(h.svc.AdminListTickets(ctx, trustapi.AdminListTicketsRequest{
 		ActorID: buyer, Limit: 10,
 	}))); got != 403 {
 		t.Fatalf("status = %d, want 403 for an ordinary caller", got)
 	}
-	queue, err := h.svc.AdminListReports(ctx, trustapi.AdminListReportsRequest{ActorID: moderator, Limit: 10})
+	queue, err := h.svc.AdminListTickets(ctx, trustapi.AdminListTicketsRequest{ActorID: moderator, Limit: 10})
 	if err != nil {
-		t.Fatalf("AdminListReports: %v", err)
+		t.Fatalf("AdminListTickets: %v", err)
 	}
-	if len(queue.Data) != 1 || queue.Data[0].OpenReportsAgainstTarget != 1 {
-		t.Fatalf("queue = %+v, want the open report and its pattern", queue.Data)
+	if len(queue.Data) != 1 || queue.Data[0].OpenTicketsAgainstTarget != 1 {
+		t.Fatalf("queue = %+v, want the open ticket and its pattern", queue.Data)
 	}
-	// The single read carries the reported content beside the report.
-	entry, err := h.svc.AdminGetReport(ctx, trustapi.ReportRequest{ActorID: moderator, ID: filed.ID})
+	// The single read carries the reported content beside the ticket.
+	entry, err := h.svc.AdminGetTicket(ctx, trustapi.TicketRequest{ActorID: moderator, ID: filed.ID})
 	if err != nil {
-		t.Fatalf("AdminGetReport: %v", err)
+		t.Fatalf("AdminGetTicket: %v", err)
 	}
-	if entry.Target == nil || entry.Reporter.ID != buyer {
-		t.Fatalf("entry = %+v, want the target and the reporter", entry)
+	if entry.Target == nil || entry.Requester.ID != buyer {
+		t.Fatalf("entry = %+v, want the target and the requester", entry)
 	}
 
-	claimed, err := h.svc.AdminClaimReport(ctx, trustapi.ReportRequest{ActorID: moderator, ID: filed.ID})
+	claimed, err := h.svc.AdminClaimTicket(ctx, trustapi.TicketRequest{ActorID: moderator, ID: filed.ID})
 	if err != nil {
-		t.Fatalf("AdminClaimReport: %v", err)
+		t.Fatalf("AdminClaimTicket: %v", err)
 	}
-	if claimed.Status != domain.ReportStatusReviewing {
+	if claimed.Status != domain.StatusReviewing {
 		t.Fatalf("status = %q, want reviewing", claimed.Status)
 	}
 	// Claiming twice loses, so two moderators do not work the same case.
-	if got := status(t, mustErr(h.svc.AdminClaimReport(ctx, trustapi.ReportRequest{
+	if got := status(t, mustErr(h.svc.AdminClaimTicket(ctx, trustapi.TicketRequest{
 		ActorID: moderator, ID: filed.ID,
 	}))); got != 409 {
 		t.Fatalf("status = %d, want 409", got)
 	}
 
-	// A dismissal takes the action `none`; upholding one names what was done.
-	if got := status(t, mustErr(h.svc.AdminResolveReport(ctx, trustapi.ResolveReportRequest{
-		ActorID: moderator, ID: filed.ID, Status: "dismissed", ActionTaken: "listing-removed",
-	}))); got != 400 {
-		t.Fatalf("status = %d, want 400 for a dismissal that did something", got)
+	// An action nobody defined is refused rather than stored as free text a report reader has to
+	// interpret.
+	if err := mustErr(h.svc.AdminResolveTicket(ctx, trustapi.ResolveTicketRequest{
+		ActorID: moderator, ID: filed.ID, ActionTaken: "listing-deleted-maybe",
+	})); err == nil {
+		t.Fatal("an action that is not one was accepted")
 	}
-	resolved, err := h.svc.AdminResolveReport(ctx, trustapi.ResolveReportRequest{
-		ActorID: moderator, ID: filed.ID, Status: "actioned", ActionTaken: "listing-removed",
+	resolved, err := h.svc.AdminResolveTicket(ctx, trustapi.ResolveTicketRequest{
+		ActorID: moderator, ID: filed.ID, ActionTaken: domain.ActionListingRemoved,
 		Note: "counterfeit confirmed",
 	})
 	if err != nil {
-		t.Fatalf("AdminResolveReport: %v", err)
+		t.Fatalf("AdminResolveTicket: %v", err)
 	}
-	if resolved.Status != domain.ReportStatusActioned || resolved.ActionTaken == nil ||
-		*resolved.ActionTaken != "listing-removed" || resolved.ResolvedAt == nil {
-		t.Fatalf("report = %+v, want a recorded verdict", resolved)
+	if resolved.Status != domain.StatusResolved || resolved.ActionTaken == nil ||
+		*resolved.ActionTaken != domain.ActionListingRemoved || resolved.ResolvedAt == nil {
+		t.Fatalf("ticket = %+v, want a recorded verdict", resolved)
 	}
 	// Resolved once: a second verdict argues against a decision already recorded.
-	if got := status(t, mustErr(h.svc.AdminResolveReport(ctx, trustapi.ResolveReportRequest{
-		ActorID: moderator, ID: filed.ID, Status: "dismissed", ActionTaken: "none",
+	if got := status(t, mustErr(h.svc.AdminResolveTicket(ctx, trustapi.ResolveTicketRequest{
+		ActorID: moderator, ID: filed.ID, ActionTaken: domain.ActionNone,
 	}))); got != 409 {
 		t.Fatalf("status = %d, want 409", got)
 	}
 	// And it leaves the queue, so nobody works it twice.
-	queue, err = h.svc.AdminListReports(ctx, trustapi.AdminListReportsRequest{ActorID: moderator, Limit: 10})
+	queue, err = h.svc.AdminListTickets(ctx, trustapi.AdminListTicketsRequest{ActorID: moderator, Limit: 10})
 	if err != nil {
-		t.Fatalf("AdminListReports: %v", err)
+		t.Fatalf("AdminListTickets: %v", err)
 	}
 	if len(queue.Data) != 0 {
 		t.Fatalf("queue = %+v, want the resolved case gone", queue.Data)
 	}
 	// The reporter still sees their own history, whatever its status.
-	mine, err := h.svc.ListMyReports(ctx, trustapi.ListReportsRequest{ActorID: buyer, Limit: 10})
+	mine, err := h.svc.ListMyTickets(ctx, trustapi.ListTicketsRequest{ActorID: buyer, Limit: 10})
 	if err != nil {
-		t.Fatalf("ListMyReports: %v", err)
+		t.Fatalf("ListMyTickets: %v", err)
 	}
-	if len(mine.Data) != 1 || mine.Data[0].Status != domain.ReportStatusActioned {
-		t.Fatalf("my reports = %+v, want the resolved one", mine.Data)
+	if len(mine.Data) != 1 || mine.Data[0].Status != domain.StatusResolved {
+		t.Fatalf("my tickets = %+v, want the resolved one", mine.Data)
 	}
 }

@@ -368,13 +368,15 @@ func (h *Trust) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 
 // ----------------------------------------------------------------- reports ---
 
-// SubmitReport handles POST /reports.
-func (h *Trust) SubmitReport(w http.ResponseWriter, r *http.Request) {
+// OpenTicket handles POST /tickets — the one route for everything a user raises: an abuse report, a
+// refund they want staff to decide, a payment that went wrong, a feature request. The body carries
+// their first message and its photos, which become the ticket's conversation.
+func (h *Trust) OpenTicket(w http.ResponseWriter, r *http.Request) {
 	uid, err := actor(r)
 	if failed(w, h.log, err) {
 		return
 	}
-	var req trustapi.SubmitReportRequest
+	var req trustapi.OpenTicketRequest
 	if failed(w, h.log, decodeBody(r, &req)) {
 		return
 	}
@@ -382,15 +384,15 @@ func (h *Trust) SubmitReport(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, check(h.v, req)) {
 		return
 	}
-	res, err := h.svc.SubmitReport(r.Context(), req)
+	res, err := h.svc.OpenTicket(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}
 	httpx.WriteData(w, http.StatusCreated, res)
 }
 
-// ListMyReports handles GET /reports.
-func (h *Trust) ListMyReports(w http.ResponseWriter, r *http.Request) {
+// ListMyTickets handles GET /tickets.
+func (h *Trust) ListMyTickets(w http.ResponseWriter, r *http.Request) {
 	uid, err := actor(r)
 	if failed(w, h.log, err) {
 		return
@@ -399,7 +401,7 @@ func (h *Trust) ListMyReports(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	req := trustapi.ListReportsRequest{
+	req := trustapi.ListTicketsRequest{
 		ActorID: uid,
 		Status:  r.URL.Query().Get("status"),
 		Cursor:  cursorParam(r),
@@ -408,15 +410,28 @@ func (h *Trust) ListMyReports(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, check(h.v, req)) {
 		return
 	}
-	res, err := h.svc.ListMyReports(r.Context(), req)
+	res, err := h.svc.ListMyTickets(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}
 	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta.NextCursor))
 }
 
-// AdminListReports handles GET /admin/reports.
-func (h *Trust) AdminListReports(w http.ResponseWriter, r *http.Request) {
+// GetTicket handles GET /tickets/{id}.
+func (h *Trust) GetTicket(w http.ResponseWriter, r *http.Request) {
+	req, ok := h.ticketRequest(w, r)
+	if !ok {
+		return
+	}
+	res, err := h.svc.GetTicket(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
+// AdminListTickets handles GET /admin/tickets.
+func (h *Trust) AdminListTickets(w http.ResponseWriter, r *http.Request) {
 	uid, err := actor(r)
 	if failed(w, h.log, err) {
 		return
@@ -425,76 +440,75 @@ func (h *Trust) AdminListReports(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	req := trustapi.AdminListReportsRequest{
+	req := trustapi.AdminListTicketsRequest{
 		ActorID: uid,
 		Status:  r.URL.Query().Get("status"),
-		RefType: r.URL.Query().Get("ref_type"),
-		Reason:  r.URL.Query().Get("reason"),
+		Kind:    r.URL.Query().Get("kind"),
 		Cursor:  cursorParam(r),
 		Limit:   limit,
 	}
 	if failed(w, h.log, check(h.v, req)) {
 		return
 	}
-	res, err := h.svc.AdminListReports(r.Context(), req)
+	res, err := h.svc.AdminListTickets(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}
 	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta.NextCursor))
 }
 
-// AdminGetReport handles GET /admin/reports/{id}.
-func (h *Trust) AdminGetReport(w http.ResponseWriter, r *http.Request) {
-	req, ok := h.reportRequest(w, r)
+// AdminGetTicket handles GET /admin/tickets/{id}.
+func (h *Trust) AdminGetTicket(w http.ResponseWriter, r *http.Request) {
+	req, ok := h.ticketRequest(w, r)
 	if !ok {
 		return
 	}
-	res, err := h.svc.AdminGetReport(r.Context(), req)
+	res, err := h.svc.AdminGetTicket(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}
 	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// AdminClaimReport handles POST /admin/reports/{id}/claim.
-func (h *Trust) AdminClaimReport(w http.ResponseWriter, r *http.Request) {
-	req, ok := h.reportRequest(w, r)
+// AdminClaimTicket handles POST /admin/tickets/{id}/claim.
+func (h *Trust) AdminClaimTicket(w http.ResponseWriter, r *http.Request) {
+	req, ok := h.ticketRequest(w, r)
 	if !ok {
 		return
 	}
-	res, err := h.svc.AdminClaimReport(r.Context(), req)
+	res, err := h.svc.AdminClaimTicket(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}
 	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// AdminResolveReport handles POST /admin/reports/{id}/resolution.
-func (h *Trust) AdminResolveReport(w http.ResponseWriter, r *http.Request) {
+// AdminResolveTicket handles POST /admin/tickets/{id}/resolution.
+func (h *Trust) AdminResolveTicket(w http.ResponseWriter, r *http.Request) {
 	uid, err := actor(r)
 	if failed(w, h.log, err) {
 		return
 	}
-	reportID, err := pathID[id.Report](r, "id")
+	ticketID, err := pathID[id.Ticket](r, "id")
 	if failed(w, h.log, err) {
 		return
 	}
-	var req trustapi.ResolveReportRequest
+	var req trustapi.ResolveTicketRequest
 	if failed(w, h.log, decodeBody(r, &req)) {
 		return
 	}
-	req.ActorID, req.ID = uid, reportID
+	req.ActorID, req.ID = uid, ticketID
 	if failed(w, h.log, check(h.v, req)) {
 		return
 	}
-	res, err := h.svc.AdminResolveReport(r.Context(), req)
+	res, err := h.svc.AdminResolveTicket(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}
 	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// reviewRequest and reportRequest are the actor-plus-id shape several routes share.
+// reviewRequest and ticketRequest are the actor-plus-id shape several routes share.
 func (h *Trust) reviewRequest(w http.ResponseWriter, r *http.Request) (trustapi.ReviewRequest, bool) {
 	uid, err := actor(r)
 	if failed(w, h.log, err) {
@@ -511,18 +525,18 @@ func (h *Trust) reviewRequest(w http.ResponseWriter, r *http.Request) (trustapi.
 	return req, true
 }
 
-func (h *Trust) reportRequest(w http.ResponseWriter, r *http.Request) (trustapi.ReportRequest, bool) {
+func (h *Trust) ticketRequest(w http.ResponseWriter, r *http.Request) (trustapi.TicketRequest, bool) {
 	uid, err := actor(r)
 	if failed(w, h.log, err) {
-		return trustapi.ReportRequest{}, false
+		return trustapi.TicketRequest{}, false
 	}
-	reportID, err := pathID[id.Report](r, "id")
+	ticketID, err := pathID[id.Ticket](r, "id")
 	if failed(w, h.log, err) {
-		return trustapi.ReportRequest{}, false
+		return trustapi.TicketRequest{}, false
 	}
-	req := trustapi.ReportRequest{ActorID: uid, ID: reportID}
+	req := trustapi.TicketRequest{ActorID: uid, ID: ticketID}
 	if failed(w, h.log, check(h.v, req)) {
-		return trustapi.ReportRequest{}, false
+		return trustapi.TicketRequest{}, false
 	}
 	return req, true
 }

@@ -46,6 +46,7 @@ var Module = fx.Module("trust",
 	// Eager, because nothing else in the graph depends on a subscription: without this the
 	// bus would have no consumer until something happened to ask for the service.
 	fx.Invoke(SubscribeSettledOrders),
+	fx.Invoke(SubscribeResolvedRefunds),
 )
 
 func newPool(lc fx.Lifecycle, cfg *config.Config) (*pgxpool.Pool, error) {
@@ -86,6 +87,24 @@ func SubscribeSettledOrders(bus eventbus.Client, svc trustapi.Service, log *slog
 		}
 		if err := svc.RecordOrderOutcome(ctx, req); err != nil {
 			log.Error("record order outcome failed", "order_id", event.OrderID, "err", err)
+			return err
+		}
+		return nil
+	})
+}
+
+// SubscribeResolvedRefunds closes the ticket a refund dispute opened, once order has decided it.
+// The verdict moves money, so order is where it is made; this is the requester's half of it.
+func SubscribeResolvedRefunds(bus eventbus.Client, svc trustapi.Service, log *slog.Logger) {
+	eventbus.Subscribe(bus, order.RefundResolvedTopic, "trust", func(ctx context.Context, event order.RefundResolved) error {
+		req := trustapi.RecordRefundVerdictRequest{
+			RefundID:    id.Of[id.Refund](event.RefundID),
+			ModeratorID: id.Of[id.Account](event.ModeratorID),
+			BuyerWins:   event.BuyerWins,
+			Note:        event.Note,
+		}
+		if err := svc.RecordRefundVerdict(ctx, req); err != nil {
+			log.Error("record refund verdict failed", "refund_id", event.RefundID, "err", err)
 			return err
 		}
 		return nil

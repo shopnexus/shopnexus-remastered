@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -130,6 +131,69 @@ func (s *Service) StartConversation(ctx context.Context, req chatapi.StartConver
 	return s.inboxRow(ctx, req.ActorID.Int64(), thread, nil, 0)
 }
 
+// OpenTicketThread is the thread behind a ticket: the requester on one side, the support desk's own
+// account on the other. The desk rather than a moderator, so whoever answers stays anonymous and the
+// next one inherits the thread instead of starting another.
+//
+// Idempotent, because it is the second half of a two-schema write: trust's ticket row lands first,
+// and a retry — or a repair on the next read — has to find the thread this call already made rather
+// than a second one.
+func (s *Service) OpenTicketThread(ctx context.Context, req chatapi.OpenTicketThreadRequest) (chatapi.Conversation, error) {
+	if err := s.v.Struct(req); err != nil {
+		return chatapi.Conversation{}, err
+	}
+	desk, err := s.desk(ctx)
+	if err != nil {
+		return chatapi.Conversation{}, err
+	}
+	thread, err := s.repo.EnsureTicketThread(ctx, req.RequesterID.Int64(), desk, req.TicketID.Int64())
+	if err != nil {
+		return chatapi.Conversation{}, err
+	}
+	// The requester's own words, as the first message. Only on a thread that has none: a repair
+	// pass must not post the opening line twice.
+	if err := s.openingMessage(ctx, thread, req); err != nil {
+		return chatapi.Conversation{}, err
+	}
+	return s.inboxRow(ctx, req.RequesterID.Int64(), thread, nil, 0)
+}
+
+// openingMessage writes the ticket's first message, and does nothing when the thread already has
+// one — which is what makes the whole call safe to repeat.
+func (s *Service) openingMessage(ctx context.Context, thread domain.Conversation, req chatapi.OpenTicketThreadRequest) error {
+	existing, err := s.repo.LastMessages(ctx, []int64{thread.ID})
+	if err != nil {
+		return fmt.Errorf("read last messages: %w", err)
+	}
+	if _, ok := existing[thread.ID]; ok {
+		return nil
+	}
+	if strings.TrimSpace(req.Body) == "" && len(req.Attachments) == 0 {
+		return nil
+	}
+	attachments := resourceKeys(req.Attachments)
+	if err := s.requireResources(ctx, attachments); err != nil {
+		return err
+	}
+	m, err := domain.NewMessage(thread.ID, req.RequesterID.Int64(), req.Body, attachments, nil)
+	if err != nil {
+		return err
+	}
+	if err := s.repo.InsertMessage(ctx, &m); err != nil {
+		return fmt.Errorf("insert message: %w", err)
+	}
+	return nil
+}
+
+// desk is the support account's id, memoised by the account module itself.
+func (s *Service) desk(ctx context.Context) (int64, error) {
+	support, err := s.accounts.GetSupportAccount(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("read support account: %w", err)
+	}
+	return support.ID.Int64(), nil
+}
+
 func (s *Service) GetConversation(ctx context.Context, req chatapi.GetConversationRequest) (chatapi.Conversation, error) {
 	thread, err := s.participant(ctx, req.ActorID, req.ID)
 	if err != nil {
@@ -155,7 +219,8 @@ func (s *Service) GetUnreadCount(ctx context.Context, req chatapi.UnreadCountReq
 // ListMessages pages a thread newest first. A thread the caller is not in is not found
 // rather than forbidden — it is not theirs to know about.
 func (s *Service) ListMessages(ctx context.Context, req chatapi.ListMessagesRequest) (chatapi.MessagePage, error) {
-	if _, err := s.participant(ctx, req.ActorID, req.ID); err != nil {
+	thread, err := s.participant(ctx, req.ActorID, req.ID)
+	if err != nil {
 		return chatapi.MessagePage{}, err
 	}
 	before, beforeID, err := parseCursor(req.Cursor)
@@ -179,7 +244,10 @@ func (s *Service) ListMessages(ctx context.Context, req chatapi.ListMessagesRequ
 	if err != nil {
 		return chatapi.MessagePage{}, err
 	}
-	page := chatapi.MessagePage{Data: out, Meta: chatapi.CursorInfo{HasMore: hasMore}}
+	page := chatapi.MessagePage{
+		Data: hideSupport(thread, req.ActorID.Int64(), out),
+		Meta: chatapi.CursorInfo{HasMore: hasMore},
+	}
 	if hasMore && len(messages) > 0 {
 		last := messages[len(messages)-1]
 		page.Meta.NextCursor = formatCursor(last.CreatedAt, last.ID)
@@ -211,12 +279,31 @@ func (s *Service) SendMessage(ctx context.Context, req chatapi.SendMessageReques
 	if err != nil {
 		return chatapi.Message{}, err
 	}
-	// The other side, never the sender: they already hold this row from the response
-	// they are about to get, and echoing it back would race their optimistic update.
-	if other := thread.Other(req.ActorID.Int64()); other != 0 {
-		notify(ctx, s, other, MessageCreated, dto)
+	// The other side, never the sender: they already hold this row from the response they are about
+	// to get, and echoing it back would race their optimistic update.
+	if recipient := s.recipient(ctx, thread, req.ActorID.Int64()); recipient != 0 {
+		notify(ctx, s, recipient, MessageCreated, hideSupport(thread, recipient, []chatapi.Message{dto})[0])
 	}
 	return dto, nil
+}
+
+// recipient is who a new message is pushed to, and 0 when nobody should be. On a direct thread that
+// is the counterparty. On a ticket thread it is always the requester: the other side of the row is
+// the desk's account, which nobody is signed in as, and staff learn about a new ticket from their
+// queue rather than from a socket — so a requester writing pushes to nobody.
+func (s *Service) recipient(ctx context.Context, thread domain.Conversation, writerID int64) int64 {
+	if !thread.Ticket() {
+		return thread.Other(writerID)
+	}
+	desk, err := s.desk(ctx)
+	if err != nil {
+		s.log.Error("read support account for push", "err", err)
+		return 0
+	}
+	if requester := thread.Counterparty(desk); requester != writerID {
+		return requester
+	}
+	return 0
 }
 
 // MarkConversationRead moves the caller's own mark. Absent means "everything so far",
@@ -301,6 +388,38 @@ func (s *Service) RedactMessage(ctx context.Context, req chatapi.RedactMessageRe
 // PostSystemMessage is another module speaking into the pair's thread — an offer card, an
 // order update. It opens the thread if they have never spoken, so a caller never has to
 // know whether one exists.
+// PostTicketMessage posts a system message into a ticket's thread. It ensures the thread rather
+// than reading it, so a ticket whose thread never opened still receives the verdict — the same
+// idempotent call OpenTicketThread makes.
+func (s *Service) PostTicketMessage(ctx context.Context, req chatapi.PostTicketMessageRequest) (chatapi.Message, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return chatapi.Message{}, err
+	}
+	desk, err := s.desk(ctx)
+	if err != nil {
+		return chatapi.Message{}, err
+	}
+	thread, err := s.repo.EnsureTicketThread(ctx, req.RequesterID.Int64(), desk, req.TicketID.Int64())
+	if err != nil {
+		return chatapi.Message{}, err
+	}
+	m, err := domain.NewSystemMessage(thread.ID, req.Body, req.Card)
+	if err != nil {
+		return chatapi.Message{}, err
+	}
+	if err := s.repo.InsertMessage(ctx, &m); err != nil {
+		return chatapi.Message{}, fmt.Errorf("insert message: %w", err)
+	}
+	dto, err := s.toAPIMessage(ctx, m)
+	if err != nil {
+		return chatapi.Message{}, err
+	}
+	// Pushed, unlike an offer card — that one has its own bridged event. A verdict the requester
+	// only sees when they refresh is the thing they are waiting for.
+	notify(ctx, s, req.RequesterID.Int64(), MessageCreated, dto)
+	return dto, nil
+}
+
 func (s *Service) PostSystemMessage(ctx context.Context, req chatapi.PostSystemMessageRequest) (chatapi.Message, error) {
 	if err := validation.AsError(s.v.Struct(req)); err != nil {
 		return chatapi.Message{}, err
@@ -340,6 +459,27 @@ func (s *Service) GetMessage(ctx context.Context, req chatapi.GetMessageRequest)
 	return s.toAPIMessage(ctx, m)
 }
 
+// hideSupport blanks the sender on a ticket thread's replies, for the requester only.
+//
+// The two participants of a ticket thread are the requester and the desk's own account; a moderator
+// answers without being either, so "the reader is a side of this thread" is exactly "the reader is
+// the requester" and needs no lookup. Staff reading their own queue keep the real sender, because a
+// colleague's name is what makes a thread reviewable — the anonymity is towards the requester, whose
+// complaint should be answered by the platform rather than by somebody they can go after.
+func hideSupport(thread domain.Conversation, viewerID int64, messages []chatapi.Message) []chatapi.Message {
+	if !thread.Ticket() || !thread.Involves(viewerID) {
+		return messages
+	}
+	for i, m := range messages {
+		if m.SenderID == nil || m.SenderID.Int64() == viewerID {
+			continue
+		}
+		messages[i].SenderID = nil
+		messages[i].FromSupport = true
+	}
+	return messages
+}
+
 // isModerator asks the account module for the caller's role: it is a row in that module's
 // table. An admin passes every moderator check.
 func (s *Service) isModerator(ctx context.Context, actorID id.ID[id.Account]) bool {
@@ -358,7 +498,12 @@ func (s *Service) participant(ctx context.Context, actorID id.ID[id.Account], co
 		return domain.Conversation{}, fmt.Errorf("find conversation: %w", err)
 	}
 	if !thread.Involves(actorID.Int64()) {
-		return domain.Conversation{}, domain.ErrConversationNotFound
+		// A ticket thread is answered by whichever moderator picks it up, so staff are let in
+		// without being a side of it. A direct thread never is: two people talking is nobody
+		// else's to read.
+		if !thread.Ticket() || !s.isModerator(ctx, actorID) {
+			return domain.Conversation{}, domain.ErrConversationNotFound
+		}
 	}
 	return thread, nil
 }
@@ -423,6 +568,11 @@ func (s *Service) inboxRow(ctx context.Context, viewerID int64, t domain.Convers
 		ReadAt:             t.ReadMark(viewerID),
 		CounterpartyReadAt: t.CounterpartyReadMark(viewerID),
 		CreatedAt:          t.CreatedAt,
+	}
+	// A ticket thread is answered in the support screen rather than the inbox, so the client has to
+	// be able to tell them apart from the row alone.
+	if t.TicketID != nil {
+		row.TicketID = new(id.Of[id.Ticket](*t.TicketID))
 	}
 	if last != nil {
 		message, err := s.toAPIMessage(ctx, *last)

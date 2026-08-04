@@ -18,12 +18,28 @@ import (
 
 func TestMain(m *testing.M) { idtest.Install(); m.Run() }
 
-// fakeAccounts answers the one question chat asks of the account module: what the
-// counterparty is called, which is what an inbox row shows.
-type fakeAccounts struct{ accounttest.Stub }
+// fakeAccounts answers what chat asks of the account module: what a counterparty is called,
+// which account is the support desk, and whether the caller is staff.
+type fakeAccounts struct {
+	accounttest.Stub
+	// roles is per account, so one harness serves a moderator and an ordinary user.
+	roles map[id.ID[id.Account]]string
+}
 
 func (fakeAccounts) GetPublicAccount(_ context.Context, req accountapi.GetPublicAccountRequest) (accountapi.PublicAccount, error) {
 	return accountapi.PublicAccount{ID: req.ID, Name: "Somebody"}, nil
+}
+
+func (f fakeAccounts) GetMe(_ context.Context, req accountapi.GetMeRequest) (accountapi.Me, error) {
+	role := f.roles[req.ActorID]
+	if role == "" {
+		role = "user"
+	}
+	return accountapi.Me{Role: role}, nil
+}
+
+func (fakeAccounts) GetSupportAccount(context.Context) (accountapi.AccountSummary, error) {
+	return accountapi.AccountSummary{ID: desk, Name: "Hỗ trợ ShopNexus"}, nil
 }
 
 type harness struct {
@@ -35,7 +51,8 @@ type harness struct {
 func newHarness() *harness {
 	repo := newFakeRepo()
 	uploads := newFakeUploads()
-	svc := chat.NewService(repo, fakeAccounts{}, uploads, validation.Default(), slog.New(slog.DiscardHandler), noopFanout{})
+	accounts := fakeAccounts{roles: map[id.ID[id.Account]]string{moderator: "moderator"}}
+	svc := chat.NewService(repo, accounts, uploads, validation.Default(), slog.New(slog.DiscardHandler), noopFanout{})
 	return &harness{svc: svc, repo: repo, uploads: uploads}
 }
 
@@ -58,9 +75,12 @@ func status(t *testing.T, err error) uint16 {
 func mustErr[T any](_ T, err error) error { return err }
 
 const (
-	alice = id.ID[id.Account](1)
-	bob   = id.ID[id.Account](2)
-	carol = id.ID[id.Account](3)
+	alice     = id.ID[id.Account](1)
+	bob       = id.ID[id.Account](2)
+	carol     = id.ID[id.Account](3)
+	moderator = id.ID[id.Account](4)
+	desk      = id.ID[id.Account](5)
+	ticketID  = id.ID[id.Ticket](60)
 )
 
 // One thread per pair, whoever opens it: the second call answers the first's thread
@@ -341,5 +361,78 @@ func TestSendMessage_NeedsSomethingToSay(t *testing.T) {
 	}))
 	if got := status(t, err); got != 422 {
 		t.Fatalf("status = %d, want 422", got)
+	}
+}
+
+// A ticket's thread: the requester on one side and the desk's own account on the other, which is
+// what makes support anonymous and lets the next moderator inherit the thread. Opening it twice is
+// the repair path trust relies on, so it answers the same thread and posts the opening line once.
+func TestTicketThread_AnonymousDeskAndOneOpeningMessage(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	open := chatapi.OpenTicketThreadRequest{RequesterID: alice, TicketID: ticketID, Body: "đơn của tôi bị lỗi"}
+	thread, err := h.svc.OpenTicketThread(ctx, open)
+	if err != nil {
+		t.Fatalf("OpenTicketThread: %v", err)
+	}
+	if thread.TicketID == nil || *thread.TicketID != ticketID {
+		t.Fatalf("thread = %+v, want it marked as the ticket's", thread)
+	}
+	again, err := h.svc.OpenTicketThread(ctx, open)
+	if err != nil {
+		t.Fatalf("second OpenTicketThread: %v", err)
+	}
+	if again.ID != thread.ID {
+		t.Fatalf("threads differ: %v vs %v", thread.ID, again.ID)
+	}
+
+	// A moderator is let in without being a side of the row — that is how staff answer at all —
+	// and writes as themselves.
+	if _, err := h.svc.SendMessage(ctx, chatapi.SendMessageRequest{
+		ActorID: moderator, ConversationID: thread.ID, Body: "chúng tôi đang kiểm tra",
+	}); err != nil {
+		t.Fatalf("moderator SendMessage: %v", err)
+	}
+	// A stranger still is not: a ticket id being guessable must not make the thread readable.
+	if got := status(t, mustErr(h.svc.ListMessages(ctx, chatapi.ListMessagesRequest{
+		ActorID: carol, ID: thread.ID, Limit: 10,
+	}))); got != 404 {
+		t.Fatalf("status = %d, want 404 for somebody else's ticket thread", got)
+	}
+
+	mine, err := h.svc.ListMessages(ctx, chatapi.ListMessagesRequest{
+		ActorID: alice, ID: thread.ID, Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if len(mine.Data) != 2 {
+		t.Fatalf("messages = %d, want the opening line once plus the reply", len(mine.Data))
+	}
+	for _, m := range mine.Data {
+		switch m.Body {
+		case open.Body:
+			if m.SenderID == nil || *m.SenderID != alice {
+				t.Errorf("own message = %+v, want it attributed to the requester", m)
+			}
+		default:
+			// The requester is told a reply came from support and nothing more: a decision is the
+			// platform's, not a named person's to be argued with afterwards.
+			if m.SenderID != nil || !m.FromSupport {
+				t.Errorf("reply = %+v, want it anonymous to the requester", m)
+			}
+		}
+	}
+	// Staff read their own queue, where a colleague's name is what makes a thread reviewable.
+	staff, err := h.svc.ListMessages(ctx, chatapi.ListMessagesRequest{
+		ActorID: moderator, ID: thread.ID, Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("ListMessages as staff: %v", err)
+	}
+	for _, m := range staff.Data {
+		if m.FromSupport {
+			t.Errorf("message = %+v, want the real sender for staff", m)
+		}
 	}
 }

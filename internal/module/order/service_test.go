@@ -330,6 +330,9 @@ type harness struct {
 	accounts  fakeAccounts
 	workflows *fakeWorkflows
 	courier   *fakeCourier
+	// bus is shared with the moderator's service, so a test can subscribe to a fact one
+	// publishes and the other reads.
+	bus *eventbus.Memory
 }
 
 // fakeWorkflows records the durable timers the service asked for. They are best-effort by
@@ -460,11 +463,11 @@ func newHarnessWithFanout(priceMode string, fanout realtime.Fanout) *harness {
 	accounts := fakeAccounts{role: "user"}
 	workflows := &fakeWorkflows{}
 	courier := &fakeCourier{fee: shippingFee}
+	bus := eventbus.NewMemory(slog.New(slog.DiscardHandler))
 	svc := order.NewService(repo, accounts, catalog, finance, chat, uploads, repo, courier, workflows,
-		eventbus.NewMemory(slog.New(slog.DiscardHandler)), validation.Default(),
-		slog.New(slog.DiscardHandler), fanout)
+		bus, validation.Default(), slog.New(slog.DiscardHandler), fanout)
 	return &harness{svc: svc, repo: repo, catalog: catalog, finance: finance, chat: chat,
-		uploads: uploads, accounts: accounts, workflows: workflows, courier: courier}
+		uploads: uploads, accounts: accounts, workflows: workflows, courier: courier, bus: bus}
 }
 
 // noopFanout is the fanout for tests that are not about realtime: it accepts every push
@@ -486,7 +489,7 @@ func (h *harness) ageItems(by time.Duration) {
 // moderator reuses one harness's repository with a staff caller.
 func (h *harness) moderator() *order.Service {
 	return order.NewService(h.repo, fakeAccounts{role: "moderator"}, h.catalog, h.finance,
-		h.chat, h.uploads, h.repo, h.courier, h.workflows, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
+		h.chat, h.uploads, h.repo, h.courier, h.workflows, h.bus,
 		validation.Default(), slog.New(slog.DiscardHandler), noopFanout{})
 }
 
@@ -1216,12 +1219,12 @@ func TestRefund_AcceptOpensTheReturnLeg(t *testing.T) {
 	}
 }
 
-// A rejection puts the buyer on the clock, escalating puts a moderator in, and a verdict for the
-// buyer in round one books the return leg — the state has no other exit, so a ruling that only
-// set the status stranded the escrow with nobody on a clock. The money then follows the goods
-// back: the return is delivered, the seller does not appeal, and the window lapsing pays the
-// buyer and closes the order.
-func TestRefund_DisputeRuling(t *testing.T) {
+// A rejection puts the buyer on the clock, escalating hands the case to staff, and a verdict for
+// the buyer before the goods moved books the return leg — the state has no other exit, so a
+// verdict that only set the status stranded the escrow with nobody on a clock. The money then
+// follows the goods back: the return is delivered, the seller escalates what arrived, and the
+// same verdict now pays the buyer and closes the order, because there is nothing left to ship.
+func TestRefund_VerdictBooksTheReturnThenPaysTheBuyer(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
 	_, o := h.checkout(t)
@@ -1237,63 +1240,78 @@ func TestRefund_DisputeRuling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateRefund: %v", err)
 	}
+	// Nobody has disagreed yet, so there is nothing for staff to decide.
+	if got := status(t, mustErr(h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
+		ActorID: buyer, ID: refund.ID,
+	}))); got != 409 {
+		t.Fatalf("status = %d, want 409 escalating a refund the seller has not answered", got)
+	}
 	if _, err := h.svc.RejectRefund(ctx, orderapi.RejectRefundRequest{
 		ActorID: seller, ID: refund.ID, Reason: "sent as described",
 	}); err != nil {
 		t.Fatalf("RejectRefund: %v", err)
 	}
-	dispute, err := h.svc.OpenDispute(ctx, orderapi.OpenDisputeRequest{
-		ActorID: buyer, ID: refund.ID, Reason: "photos show otherwise",
+	// A refusal is the buyer's to contest, not the seller's.
+	if got := status(t, mustErr(h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
+		ActorID: seller, ID: refund.ID,
+	}))); got != 403 {
+		t.Fatalf("status = %d, want 403 for the seller escalating their own refusal", got)
+	}
+	escalated, err := h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
+		ActorID: buyer, ID: refund.ID,
 	})
 	if err != nil {
-		t.Fatalf("OpenDispute: %v", err)
+		t.Fatalf("EscalateRefund: %v", err)
 	}
-	if dispute.Round != 1 {
-		t.Fatalf("round = %d, want the buyer's first", dispute.Round)
+	if escalated.Status != domain.RefundDisputed || escalated.DeadlineAt != nil {
+		t.Fatalf("refund = %+v, want it with staff and nobody on the clock", escalated)
+	}
+	// Trust retries, so escalating again answers the refund rather than a conflict.
+	if again, err := h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
+		ActorID: buyer, ID: refund.ID,
+	}); err != nil || again.Status != domain.RefundDisputed {
+		t.Fatalf("second EscalateRefund = %+v, %v; want the same refund back", again, err)
 	}
 
-	// The queue is staff-only.
-	if got := status(t, mustErr(h.svc.AdminListDisputes(ctx, orderapi.ListDisputesRequest{
-		ActorID: buyer, Limit: 10,
+	// The verdict is staff-only.
+	if got := status(t, mustErr(h.svc.AdminResolveRefund(ctx, orderapi.ResolveRefundRequest{
+		ActorID: buyer, ID: refund.ID, BuyerWins: true,
 	}))); got != 403 {
 		t.Fatalf("status = %d, want 403", got)
 	}
 	mod := h.moderator()
-	queue, err := mod.AdminListDisputes(ctx, orderapi.ListDisputesRequest{ActorID: admin, Limit: 10})
-	if err != nil {
-		t.Fatalf("AdminListDisputes: %v", err)
-	}
-	if len(queue.Data) != 1 {
-		t.Fatalf("queue = %+v, want the open dispute", queue.Data)
-	}
-	ruled, err := mod.AdminRuleDispute(ctx, orderapi.RuleDisputeRequest{
-		ActorID: admin, ID: dispute.ID, BuyerWins: true, Note: "evidence is clear",
+	// Trust closes its ticket on the published fact, so the verdict has to reach the bus.
+	var resolved []order.RefundResolved
+	eventbus.Subscribe(h.bus, order.RefundResolvedTopic, "test",
+		func(_ context.Context, e order.RefundResolved) error {
+			resolved = append(resolved, e)
+			return nil
+		})
+	granted, err := mod.AdminResolveRefund(ctx, orderapi.ResolveRefundRequest{
+		ActorID: admin, ID: refund.ID, BuyerWins: true, Note: "evidence is clear",
 	})
 	if err != nil {
-		t.Fatalf("AdminRuleDispute: %v", err)
+		t.Fatalf("AdminResolveRefund: %v", err)
 	}
-	if ruled.Status != domain.DisputeBuyerWins || ruled.RuledAt == nil {
-		t.Fatalf("dispute = %+v, want a recorded verdict", ruled)
-	}
-	// A round is ruled once: a later round argues against what this one decided.
-	if got := status(t, mustErr(mod.AdminRuleDispute(ctx, orderapi.RuleDisputeRequest{
-		ActorID: admin, ID: dispute.ID, BuyerWins: false,
-	}))); got != 409 {
-		t.Fatalf("status = %d, want 409", got)
-	}
-
 	// The verdict moved the case to `returning` *and* booked the leg, which is the only way out
 	// of that state. Nothing has been paid yet: the goods come back first.
-	granted := h.repo.refunds[refund.ID.Int64()]
-	if granted.Status != domain.RefundReturning || granted.ReturnTransportID == nil {
-		t.Fatalf("refund = %+v, want it returning with a leg to track", granted)
+	if granted.Status != domain.RefundReturning {
+		t.Fatalf("refund = %+v, want it returning", granted)
+	}
+	if stored := h.repo.refunds[refund.ID.Int64()]; stored.ReturnTransportID == nil {
+		t.Fatalf("refund = %+v, want a leg to track", stored)
 	}
 	if h.finance.refunded != 0 {
 		t.Errorf("refunded = %d, want nothing paid before the return", h.finance.refunded)
 	}
+	// A case staff have already decided is not theirs to decide again.
+	if got := status(t, mustErr(mod.AdminResolveRefund(ctx, orderapi.ResolveRefundRequest{
+		ActorID: admin, ID: refund.ID, BuyerWins: false,
+	}))); got != 409 {
+		t.Fatalf("status = %d, want 409", got)
+	}
 
-	// The parcel arrives. That is what opens the seller's inspection window — and it has a
-	// writer now, so the case is no longer stuck.
+	// The parcel arrives, which opens the seller's inspection window.
 	returned, err := h.svc.AdvanceReturnShipment(ctx, orderapi.AdvanceReturnShipmentRequest{
 		ActorID: buyer, ID: refund.ID, Status: domain.TransportDelivered,
 	})
@@ -1301,17 +1319,27 @@ func TestRefund_DisputeRuling(t *testing.T) {
 		t.Fatalf("AdvanceReturnShipment: %v", err)
 	}
 	if returned.Status != domain.RefundReturned || returned.DeadlineAt == nil {
-		t.Fatalf("refund = %+v, want the seller's appeal window open", returned)
+		t.Fatalf("refund = %+v, want the seller's inspection window open", returned)
 	}
-
-	// The seller says nothing, so the window lapsing pays the buyer and closes the order.
-	live := h.repo.refunds[refund.ID.Int64()]
-	live.DeadlineAt = new(live.CreatedAt.Add(-1))
-	h.repo.refunds[refund.ID.Int64()] = live
-	if moved, err := h.svc.AdvanceOverdueRefunds(ctx, 10); err != nil || moved != 1 {
-		t.Fatalf("AdvanceOverdueRefunds = %d, %v; want the appeal window to lapse", moved, err)
+	// What came back is the seller's to contest, and the buyer has nothing left to escalate.
+	if got := status(t, mustErr(h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
+		ActorID: buyer, ID: refund.ID,
+	}))); got != 403 {
+		t.Fatalf("status = %d, want 403 for the buyer escalating the return", got)
 	}
-	settled := h.repo.refunds[refund.ID.Int64()]
+	if _, err := h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
+		ActorID: seller, ID: refund.ID,
+	}); err != nil {
+		t.Fatalf("seller EscalateRefund: %v", err)
+	}
+	// The same verdict, and no round said so: the goods are back, so the money moves instead of
+	// a second parcel.
+	settled, err := mod.AdminResolveRefund(ctx, orderapi.ResolveRefundRequest{
+		ActorID: admin, ID: refund.ID, BuyerWins: true,
+	})
+	if err != nil {
+		t.Fatalf("AdminResolveRefund: %v", err)
+	}
 	if settled.Status != domain.RefundAccepted {
 		t.Fatalf("refund = %+v, want it accepted", settled)
 	}
@@ -1339,6 +1367,68 @@ func TestRefund_DisputeRuling(t *testing.T) {
 	if paid, err := h.svc.ReleaseDuePayouts(ctx, 10); err != nil || paid != 0 {
 		t.Fatalf("ReleaseDuePayouts = %d, %v; want the refunded order to be nobody's payout",
 			paid, err)
+	}
+
+	h.bus.Wait()
+	if len(resolved) != 2 {
+		t.Fatalf("published = %+v, want both verdicts on the bus", resolved)
+	}
+	first := resolved[0]
+	if !first.BuyerWins || first.RefundID != refund.ID.Int64() || first.OrderID != o.ID.Int64() ||
+		first.Note != "evidence is clear" {
+		t.Fatalf("published = %+v, want the verdict trust closes its ticket on", first)
+	}
+}
+
+// A verdict for the seller ends the case and leaves the payout theirs. Nothing ships and no money
+// moves: the buyer is holding goods staff have just said were as described.
+func TestRefund_VerdictForTheSellerEndsIt(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, o := h.checkout(t)
+	h.uploads.confirm(42)
+	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
+		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
+	}); err != nil {
+		t.Fatalf("ConfirmReceipt: %v", err)
+	}
+	refund, err := h.svc.CreateRefund(ctx, orderapi.CreateRefundRequest{
+		ActorID: buyer, OrderID: o.ID, Reason: "not as described",
+	})
+	if err != nil {
+		t.Fatalf("CreateRefund: %v", err)
+	}
+	if _, err := h.svc.RejectRefund(ctx, orderapi.RejectRefundRequest{
+		ActorID: seller, ID: refund.ID, Reason: "sent as described",
+	}); err != nil {
+		t.Fatalf("RejectRefund: %v", err)
+	}
+	if _, err := h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
+		ActorID: buyer, ID: refund.ID,
+	}); err != nil {
+		t.Fatalf("EscalateRefund: %v", err)
+	}
+	refused, err := h.moderator().AdminResolveRefund(ctx, orderapi.ResolveRefundRequest{
+		ActorID: admin, ID: refund.ID, BuyerWins: false, Note: "photos match the listing",
+	})
+	if err != nil {
+		t.Fatalf("AdminResolveRefund: %v", err)
+	}
+	if refused.Status != domain.RefundRejected || refused.DeadlineAt != nil {
+		t.Fatalf("refund = %+v, want it rejected with nobody on the clock", refused)
+	}
+	if h.finance.refunded != 0 {
+		t.Fatalf("refunded = %d, want the money to stay in escrow", h.finance.refunded)
+	}
+	// The order is still open, so the escrow is the seller's once the window passes.
+	stored := h.repo.orders[o.ID.Int64()]
+	if stored.Settled() {
+		t.Fatalf("order = %q, want it still open under a refused refund", stored.State())
+	}
+	stored.ReceivedAt = new(stored.ReceivedAt.Add(-domain.PayoutWindow - 1))
+	h.repo.orders[o.ID.Int64()] = stored
+	if paid, err := h.svc.ReleaseDuePayouts(ctx, 10); err != nil || paid != 1 {
+		t.Fatalf("ReleaseDuePayouts = %d, %v; want the payout to be the seller's again", paid, err)
 	}
 }
 

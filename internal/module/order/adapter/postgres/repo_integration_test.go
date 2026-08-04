@@ -200,7 +200,7 @@ func TestCreateOrder_SkipsCancelledLines(t *testing.T) {
 }
 
 // The escrow window: an order is due once its receipt is old enough, and a live refund
-// holds it back — which is the guard that stops paying a seller money under dispute.
+// holds it back — which is the guard that stops paying a seller money that is being argued over.
 func TestPayoutDue_HeldBackByALiveRefund(t *testing.T) {
 	r, pool := newRepo(t)
 	ctx := context.Background()
@@ -336,7 +336,7 @@ func TestOverdueRefunds_AllThreeWindowsOnePass(t *testing.T) {
 	buyerSilent := overdue(t, r, pool, second(t, r), past, func(ref *domain.Refund) error {
 		return ref.Reject("sent as described")
 	})
-	// A dispute waits on a moderator, so it carries no deadline and no timer can touch it.
+	// An escalated refund waits on staff, so it carries no deadline and no timer can touch it.
 	disputed := overdue(t, r, pool, second(t, r), past, func(ref *domain.Refund) error {
 		if err := ref.Reject("sent as described"); err != nil {
 			return err
@@ -359,7 +359,7 @@ func TestOverdueRefunds_AllThreeWindowsOnePass(t *testing.T) {
 		t.Errorf("buyer window = %q, want it overdue", got[buyerSilent])
 	}
 	if _, ok := got[disputed]; ok {
-		t.Errorf("a disputed refund is on the timer's list; it waits on a moderator")
+		t.Errorf("a disputed refund is on the timer's list; it waits on staff")
 	}
 }
 
@@ -771,9 +771,9 @@ func TestListItems_PendingOnly(t *testing.T) {
 	}
 }
 
-// The dispute queue, and one round ruled once: the unique index on (refund, round) is what
-// stops a second verdict on the same argument.
-func TestDisputes_OneRoundOneVerdict(t *testing.T) {
+// A verdict and the refund it moved are one write, and the guard is the refund's own status:
+// a case staff were never asked about cannot be decided, and a decided one cannot be re-decided.
+func TestSaveRefundOutcome_VerdictNeedsALiveCase(t *testing.T) {
 	r, _ := newRepo(t)
 	ctx := context.Background()
 	o, _ := placedOrder(t, r)
@@ -784,7 +784,10 @@ func TestDisputes_OneRoundOneVerdict(t *testing.T) {
 	if err := r.InsertRefund(ctx, &ref); err != nil {
 		t.Fatalf("InsertRefund: %v", err)
 	}
-	// A round is only opened over a case a moderator has been asked about.
+	// A verdict is only reached on a case somebody escalated.
+	if err := ref.Resolve(true); !errors.Is(err, domain.ErrRefundNotDisputed) {
+		t.Fatalf("Resolve before escalation = %v, want ErrRefundNotDisputed", err)
+	}
 	if err := ref.Reject("sent as described"); err != nil {
 		t.Fatalf("Reject: %v", err)
 	}
@@ -795,62 +798,55 @@ func TestDisputes_OneRoundOneVerdict(t *testing.T) {
 		t.Fatalf("SaveRefund: %v", err)
 	}
 
-	d, err := domain.NewDispute(ref.ID, o.BuyerID, 1, "photos show otherwise")
+	// The buyer wins with the goods still theirs, so the refund is granted and the parcel is
+	// what settles it later — the return leg has to exist before the write.
+	if err := ref.Resolve(true); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	legID, err := r.InsertTransport(ctx, "ghn-express", 0)
 	if err != nil {
-		t.Fatalf("NewDispute: %v", err)
+		t.Fatalf("InsertTransport: %v", err)
 	}
-	if err := r.InsertDispute(ctx, &d); err != nil {
-		t.Fatalf("InsertDispute: %v", err)
+	if err := ref.StartReturn(legID); err != nil {
+		t.Fatalf("StartReturn: %v", err)
 	}
-	dup, err := domain.NewDispute(ref.ID, o.BuyerID, 1, "again")
-	if err != nil {
-		t.Fatalf("NewDispute: %v", err)
-	}
-	if err := r.InsertDispute(ctx, &dup); !errors.Is(err, domain.ErrDisputeSettled) {
-		t.Fatalf("second InsertDispute = %v, want ErrDisputeSettled", err)
-	}
-
-	queue, err := r.ListOpenDisputes(ctx, port.CursorFilter{Limit: 200})
-	if err != nil {
-		t.Fatalf("ListOpenDisputes: %v", err)
-	}
-	found := false
-	for _, q := range queue {
-		if q.ID == d.ID {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("queue is missing the open dispute %d", d.ID)
-	}
-
-	if err := d.Rule(o.SellerID+100, true, "evidence is clear"); err != nil {
-		t.Fatalf("Rule: %v", err)
-	}
-	// The verdict and the refund it moved are one write: a ruled round over a refund still
-	// `disputed` is a state no path can reach.
-	if err := ref.Rule(true); err != nil {
-		t.Fatalf("refund Rule: %v", err)
-	}
-	if err := r.SaveRefundOutcome(ctx, ref, &d, nil); err != nil {
+	if err := r.SaveRefundOutcome(ctx, ref, nil); err != nil {
 		t.Fatalf("SaveRefundOutcome: %v", err)
 	}
-	ruled, err := r.FindDispute(ctx, d.ID)
+	granted, err := r.FindRefund(ctx, ref.ID)
 	if err != nil {
-		t.Fatalf("FindDispute: %v", err)
+		t.Fatalf("FindRefund: %v", err)
 	}
-	if ruled.Status != domain.DisputeBuyerWins || ruled.RuledAt == nil {
-		t.Fatalf("dispute = %+v, want a recorded verdict", ruled)
+	if granted.Status != domain.RefundReturning || granted.ReturnTransportID == nil ||
+		granted.DeadlineAt != nil {
+		t.Fatalf("refund = %+v, want it returning with a leg and no clock", granted)
 	}
-	// A ruled round leaves the queue, so a moderator never sees it twice.
-	queue, err = r.ListOpenDisputes(ctx, port.CursorFilter{Limit: 200})
+
+	// The goods arrive and nobody contests them, so the money goes back and the order closes with
+	// it: an accepted refund over an order the payout sweep can still see is money paid twice.
+	if err := granted.MarkReturned(); err != nil {
+		t.Fatalf("MarkReturned: %v", err)
+	}
+	if err := granted.Settle(); err != nil {
+		t.Fatalf("Settle: %v", err)
+	}
+	closed := o
+	if err := closed.Cancel(false); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if err := r.SaveRefundOutcome(ctx, granted, &closed); err != nil {
+		t.Fatalf("SaveRefundOutcome: %v", err)
+	}
+	// A settled case is not movable again, which is the status guard in the UPDATE.
+	if err := r.SaveRefundOutcome(ctx, granted, nil); !errors.Is(err, domain.ErrRefundSettled) {
+		t.Fatalf("second SaveRefundOutcome = %v, want ErrRefundSettled", err)
+	}
+	settledOrder, err := r.FindOrder(ctx, o.ID)
 	if err != nil {
-		t.Fatalf("ListOpenDisputes: %v", err)
+		t.Fatalf("FindOrder: %v", err)
 	}
-	for _, q := range queue {
-		if q.ID == d.ID {
-			t.Fatalf("a ruled dispute is still in the queue")
-		}
+	if !settledOrder.Settled() {
+		t.Fatalf("order = %q, want it closed with the refund", settledOrder.State())
 	}
 }
 

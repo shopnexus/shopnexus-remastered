@@ -9,6 +9,23 @@ import (
 // Trust errors — not-found and app-level alike. They live here so the postgres adapter can
 // return one without importing the module root.
 var (
+	// The ticket queue's refusals. One vocabulary for reports, refund disputes and support
+	// requests, because they are one table.
+	// ErrTicketTargetMissing is a ticket about something that is not there.
+	ErrTicketTargetMissing = errx.NewError(http.StatusNotFound, "ticket_target_not_found", "what this ticket is about does not exist")
+	ErrTicketNotFound      = errx.NewError(http.StatusNotFound, "ticket_not_found", "ticket not found")
+	ErrTicketNotClaimable  = errx.NewError(http.StatusConflict, "ticket_not_claimable", "this ticket is already claimed or resolved")
+	ErrTicketResolved      = errx.NewError(http.StatusConflict, "ticket_resolved", "this ticket is already resolved")
+	ErrTicketActionInvalid = errx.NewError(http.StatusUnprocessableEntity, "ticket_action_invalid", "no such resolution action")
+	// ErrTicketExists is a second open ticket about the same target: the same complaint twice.
+	ErrTicketExists         = errx.NewError(http.StatusConflict, "ticket_exists", "you already have an open ticket about this")
+	ErrTicketRefRequired    = errx.NewError(http.StatusUnprocessableEntity, "ticket_ref_required", "that kind of ticket has to name what it is about")
+	ErrTicketRefUnexpected  = errx.NewError(http.StatusUnprocessableEntity, "ticket_ref_unexpected", "that kind of ticket is not about a particular thing")
+	ErrTicketReasonMismatch = errx.NewError(http.StatusUnprocessableEntity, "ticket_reason_mismatch", "a reason belongs to a report and only to a report")
+	// ErrTicketDecidedElsewhere is a refund dispute: the verdict moves money, so it is order's
+	// route, and closing the ticket by hand here would leave the escrow where it was.
+	ErrTicketDecidedElsewhere = errx.NewError(http.StatusConflict, "ticket_decided_elsewhere", "this ticket is resolved by deciding the refund it is about")
+
 	// --- feedback ---
 	ErrFeedbackNotFound = errx.NewError(http.StatusNotFound, "feedback_not_found", "feedback not found")
 	ErrFeedbackExists   = errx.NewError(http.StatusConflict, "feedback_exists", "this order was already rated in this direction")
@@ -35,17 +52,6 @@ var (
 	ErrVoteValue    = errx.NewError(http.StatusBadRequest, "vote_value", "a vote is 1 (helpful) or -1 (not helpful)")
 	ErrSelfVote     = errx.NewError(http.StatusUnprocessableEntity, "self_vote", "an account cannot vote on its own review")
 	ErrVoteNotFound = errx.NewError(http.StatusNotFound, "vote_not_found", "you have not voted on this review")
-
-	// --- reports ---
-	ErrReportNotFound = errx.NewError(http.StatusNotFound, "report_not_found", "report not found")
-	ErrReportExists   = errx.NewError(http.StatusConflict, "report_exists", "you already have an unresolved report for this target")
-	// ErrReportTargetNotFound is a report against something that does not exist, checked
-	// against the module that owns the target so a typo'd id cannot fill the queue.
-	ErrReportTargetNotFound = errx.NewError(http.StatusNotFound, "report_target_not_found", "the reported thing does not exist")
-	ErrReportNotClaimable   = errx.NewError(http.StatusConflict, "report_not_claimable", "this report is already claimed or resolved")
-	ErrReportResolved       = errx.NewError(http.StatusConflict, "report_resolved", "this report is already resolved")
-	ErrReportVerdictInvalid = errx.NewError(http.StatusBadRequest, "report_verdict_invalid", "a verdict is actioned or dismissed")
-	ErrReportActionMismatch = errx.NewError(http.StatusBadRequest, "report_action_mismatch", "a dismissal takes the action none, and upholding a report names what was done")
 
 	// --- cross-cutting ---
 	ErrModeratorRequired  = errx.NewError(http.StatusForbidden, "moderator_required", "moderator role required")

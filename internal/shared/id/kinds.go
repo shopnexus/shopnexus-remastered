@@ -20,7 +20,6 @@ type (
 	Order            struct{} // order.order
 	Item             struct{} // order.item
 	Refund           struct{} // order.refund
-	RefundDispute    struct{} // order.refund_dispute
 	Offer            struct{} // order.offer
 	PaymentSession   struct{} // finance.payment_session
 	Transaction      struct{} // finance.transaction
@@ -28,7 +27,7 @@ type (
 	Feedback         struct{} // trust.feedback
 	Review           struct{} // trust.review
 	ReviewReply      struct{} // trust.review_reply
-	Report           struct{} // trust.report
+	Ticket           struct{} // trust.ticket
 	Conversation     struct{} // chat.conversation
 	Message          struct{} // chat.message
 	Resource         struct{} // common.resource
@@ -47,7 +46,6 @@ func (Transport) Prefix() string        { return "trp" }
 func (Order) Prefix() string            { return "ord" }
 func (Item) Prefix() string             { return "itm" }
 func (Refund) Prefix() string           { return "rfd" }
-func (RefundDispute) Prefix() string    { return "dsp" }
 func (Offer) Prefix() string            { return "ofr" }
 func (PaymentSession) Prefix() string   { return "pay" }
 func (Transaction) Prefix() string      { return "txn" }
@@ -55,7 +53,7 @@ func (BankAccount) Prefix() string      { return "bnk" }
 func (Feedback) Prefix() string         { return "fbk" }
 func (Review) Prefix() string           { return "rvw" }
 func (ReviewReply) Prefix() string      { return "rpl" }
-func (Report) Prefix() string           { return "rpt" }
+func (Ticket) Prefix() string           { return "tkt" }
 func (Conversation) Prefix() string     { return "cnv" }
 func (Message) Prefix() string          { return "msg" }
 func (Resource) Prefix() string         { return "res" }

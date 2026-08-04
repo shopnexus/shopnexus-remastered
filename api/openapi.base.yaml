@@ -224,14 +224,13 @@ components:
     TransportID: { type: string, pattern: '^trp_[0-9a-hjkmnp-tv-z]{13}$', example: trp_d6ptz3n8kvq1w }
     OfferID: { type: string, pattern: '^ofr_[0-9a-hjkmnp-tv-z]{13}$', example: ofr_ptz3n8kvq1wd6 }
     RefundID: { type: string, pattern: '^rfd_[0-9a-hjkmnp-tv-z]{13}$', example: rfd_z3n8kvq1wd6pt }
-    RefundDisputeID: { type: string, pattern: '^dsp_[0-9a-hjkmnp-tv-z]{13}$', example: dsp_n8kvq1wd6ptz3 }
     PaymentSessionID: { type: string, pattern: '^pay_[0-9a-hjkmnp-tv-z]{13}$', example: pay_7bq2xn4tw9yef }
     TransactionID: { type: string, pattern: '^txn_[0-9a-hjkmnp-tv-z]{13}$', example: txn_5wtc4mx8jd2qr }
     BankAccountID: { type: string, pattern: '^bnk_[0-9a-hjkmnp-tv-z]{13}$', example: bnk_2qr5wtc4mx8jd }
     FeedbackID: { type: string, pattern: '^fbk_[0-9a-hjkmnp-tv-z]{13}$', example: fbk_2h9qk4mfx7bd3 }
     ReviewID: { type: string, pattern: '^rvw_[0-9a-hjkmnp-tv-z]{13}$', example: rvw_qk4mfx7bd32h9 }
     ReviewReplyID: { type: string, pattern: '^rpl_[0-9a-hjkmnp-tv-z]{13}$', example: rpl_mfx7bd32h9qk4 }
-    ReportID: { type: string, pattern: '^rpt_[0-9a-hjkmnp-tv-z]{13}$', example: rpt_9c4vt6bkn1pzs }
+    TicketID: { type: string, pattern: '^tkt_[0-9a-hjkmnp-tv-z]{13}$', example: tkt_9c4vt6bkn1pzs }
     ConversationID: { type: string, pattern: '^cnv_[0-9a-hjkmnp-tv-z]{13}$', example: cnv_6ptz3n8kvq1wd }
     MessageID: { type: string, pattern: '^msg_[0-9a-hjkmnp-tv-z]{13}$', example: msg_agnc1pe4pjb4k }
     ResourceID: { type: string, pattern: '^res_[0-9a-hjkmnp-tv-z]{13}$', example: res_4mx8jd2qr5wtc }

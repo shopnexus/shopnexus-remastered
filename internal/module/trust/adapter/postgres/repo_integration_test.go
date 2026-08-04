@@ -483,124 +483,166 @@ func TestVotes_FlipMovesOneUnit(t *testing.T) {
 	}
 }
 
-// The report queue: one open report per reporter per target, the queue is the unresolved
+// The ticket queue: one open ticket per requester per target, the queue is the unresolved
 // slice, and the status a transition moves from is what stops two verdicts.
-func TestReports_QueueAndVerdict(t *testing.T) {
+func TestTickets_QueueAndVerdict(t *testing.T) {
 	r, _ := newRepo(t)
 	ctx := context.Background()
-	reporter, other, target := party(t)
+	requester, other, target := party(t)
+	refListing, refID := domain.RefListing, target
+	reason := "counterfeit"
 
-	first, err := domain.NewReport(reporter, domain.ReportRefListing, target, "counterfeit", "same photos")
+	first, err := domain.NewTicket(requester, domain.KindReportListing, "Hang gia", &refListing, &refID, &reason)
 	if err != nil {
-		t.Fatalf("NewReport: %v", err)
+		t.Fatalf("NewTicket: %v", err)
 	}
-	if err := r.InsertReport(ctx, &first); err != nil {
-		t.Fatalf("InsertReport: %v", err)
+	if err := r.InsertTicket(ctx, &first); err != nil {
+		t.Fatalf("InsertTicket: %v", err)
 	}
-	dup, err := domain.NewReport(reporter, domain.ReportRefListing, target, "scam", "")
+	dup, err := domain.NewTicket(requester, domain.KindReportListing, "Hang gia lan hai", &refListing, &refID, &reason)
 	if err != nil {
-		t.Fatalf("NewReport: %v", err)
+		t.Fatalf("NewTicket: %v", err)
 	}
-	if err := r.InsertReport(ctx, &dup); !errors.Is(err, domain.ErrReportExists) {
-		t.Fatalf("second InsertReport = %v, want ErrReportExists", err)
+	if err := r.InsertTicket(ctx, &dup); !errors.Is(err, domain.ErrTicketExists) {
+		t.Fatalf("second InsertTicket = %v, want ErrTicketExists", err)
 	}
-	// A different reporter naming the same target is the pattern, not a duplicate.
-	second, err := domain.NewReport(other, domain.ReportRefListing, target, "counterfeit", "")
+	// A different requester naming the same target is the pattern, not a duplicate.
+	second, err := domain.NewTicket(other, domain.KindReportListing, "Hang gia", &refListing, &refID, &reason)
 	if err != nil {
-		t.Fatalf("NewReport: %v", err)
+		t.Fatalf("NewTicket: %v", err)
 	}
-	if err := r.InsertReport(ctx, &second); err != nil {
-		t.Fatalf("InsertReport: %v", err)
+	if err := r.InsertTicket(ctx, &second); err != nil {
+		t.Fatalf("InsertTicket: %v", err)
 	}
-	listingTarget := port.ReportTarget{RefType: domain.ReportRefListing, RefID: target}
-	counts, err := r.CountOpenAgainst(ctx, []port.ReportTarget{listingTarget})
+	listingTarget := port.TicketTarget{RefType: domain.RefListing, RefID: target}
+	counts, err := r.CountOpenAgainst(ctx, []port.TicketTarget{listingTarget})
 	if err != nil {
 		t.Fatalf("CountOpenAgainst: %v", err)
 	}
 	if count := counts[listingTarget]; count != 2 {
 		t.Fatalf("open against the target = %d, want 2", count)
 	}
+	// A ticket is found by what it is about — that is how order's verdict closes the one a refund
+	// dispute opened. A refund has one buyer, so the newest open one is the only one.
+	found, err := r.FindTicketByRef(ctx, domain.RefListing, target)
+	if err != nil {
+		t.Fatalf("FindTicketByRef: %v", err)
+	}
+	if found.ID != second.ID {
+		t.Fatalf("by ref = %d, want the newest open one (%d)", found.ID, second.ID)
+	}
 
 	// The queue's default slice, oldest first: the order it is worked.
-	queue, err := r.ListReports(ctx, port.ReportFilter{
-		Statuses: []string{domain.ReportStatusOpen, domain.ReportStatusReviewing},
-		RefType:  domain.ReportRefListing,
+	queue, err := r.ListTickets(ctx, port.TicketFilter{
+		Statuses: []string{domain.StatusOpen, domain.StatusReviewing},
+		RefType:  domain.RefListing,
 		Cursor:   port.CursorFilter{Limit: 200},
 	})
 	if err != nil {
-		t.Fatalf("ListReports: %v", err)
+		t.Fatalf("ListTickets: %v", err)
 	}
-	if !containsReport(queue, first.ID) || !containsReport(queue, second.ID) {
-		t.Fatalf("queue is missing one of the open reports")
+	if !containsTicket(queue, first.ID) || !containsTicket(queue, second.ID) {
+		t.Fatalf("queue is missing one of the open tickets")
 	}
 	// The queue runs forward, so its cursor is the row a page ended at and the tuple is strict:
-	// the report it names is not served again, and one that shares its timestamp still is.
+	// the ticket it names is not served again, and one that shares its timestamp still is.
 	last := queue[len(queue)-1]
-	rest, err := r.ListReports(ctx, port.ReportFilter{
-		Statuses: []string{domain.ReportStatusOpen, domain.ReportStatusReviewing},
-		RefType:  domain.ReportRefListing,
+	rest, err := r.ListTickets(ctx, port.TicketFilter{
+		Statuses: []string{domain.StatusOpen, domain.StatusReviewing},
+		RefType:  domain.RefListing,
 		Cursor:   port.CursorFilter{Before: last.CreatedAt, BeforeID: last.ID, Limit: 200},
 	})
 	if err != nil {
-		t.Fatalf("ListReports past the cursor: %v", err)
+		t.Fatalf("ListTickets past the cursor: %v", err)
 	}
-	if containsReport(rest, last.ID) {
+	if containsTicket(rest, last.ID) {
 		t.Error("the row the cursor names is served on the next page too")
 	}
 
+	moderator := requester + 900
 	// Claiming is guarded by `open`, so two moderators claiming at once means one wins.
-	if err := first.Claim(); err != nil {
+	if err := first.Claim(moderator); err != nil {
 		t.Fatalf("Claim: %v", err)
 	}
-	if err := r.SaveReport(ctx, first, []string{domain.ReportStatusOpen}); err != nil {
-		t.Fatalf("SaveReport: %v", err)
+	if err := r.SaveTicket(ctx, first, []string{domain.StatusOpen}); err != nil {
+		t.Fatalf("SaveTicket: %v", err)
 	}
-	if err := r.SaveReport(ctx, first, []string{domain.ReportStatusOpen}); !errors.Is(err, domain.ErrReportResolved) {
+	if err := r.SaveTicket(ctx, first, []string{domain.StatusOpen}); !errors.Is(err, domain.ErrTicketResolved) {
 		t.Fatalf("second claim = %v, want the guard to refuse it", err)
 	}
 
-	moderator := reporter + 900
-	if err := first.Resolve(moderator, domain.ReportStatusActioned, domain.ActionListingRemoved, "confirmed"); err != nil {
+	if err := first.Resolve(moderator, domain.ActionListingRemoved, "confirmed"); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	from := []string{domain.ReportStatusOpen, domain.ReportStatusReviewing}
-	if err := r.SaveReport(ctx, first, from); err != nil {
-		t.Fatalf("SaveReport: %v", err)
+	from := []string{domain.StatusOpen, domain.StatusReviewing}
+	if err := r.SaveTicket(ctx, first, from); err != nil {
+		t.Fatalf("SaveTicket: %v", err)
 	}
-	stored, err := r.FindReport(ctx, first.ID)
+	stored, err := r.FindTicket(ctx, first.ID)
 	if err != nil {
-		t.Fatalf("FindReport: %v", err)
+		t.Fatalf("FindTicket: %v", err)
 	}
 	if !stored.Resolved() || stored.ActionTaken == nil || *stored.ActionTaken != domain.ActionListingRemoved {
-		t.Fatalf("report = %+v, want a recorded verdict", stored)
+		t.Fatalf("ticket = %+v, want a recorded verdict", stored)
 	}
 	if stored.ResolvedByID == nil || *stored.ResolvedByID != moderator || stored.ResolvedAt == nil {
-		t.Fatalf("report = %+v, want the moderator recorded", stored)
+		t.Fatalf("ticket = %+v, want the moderator recorded", stored)
 	}
-	// A resolved report leaves the queue and stops counting towards the pattern.
-	queue, err = r.ListReports(ctx, port.ReportFilter{
-		Statuses: from, RefType: domain.ReportRefListing, Cursor: port.CursorFilter{Limit: 200},
+	// A resolved ticket leaves the queue and stops counting towards the pattern.
+	queue, err = r.ListTickets(ctx, port.TicketFilter{
+		Statuses: from, RefType: domain.RefListing, Cursor: port.CursorFilter{Limit: 200},
 	})
 	if err != nil {
-		t.Fatalf("ListReports: %v", err)
+		t.Fatalf("ListTickets: %v", err)
 	}
-	if containsReport(queue, first.ID) {
-		t.Error("a resolved report is still in the queue")
+	if containsTicket(queue, first.ID) {
+		t.Error("a resolved ticket is still in the queue")
 	}
-	counts, err = r.CountOpenAgainst(ctx, []port.ReportTarget{listingTarget})
+	counts, err = r.CountOpenAgainst(ctx, []port.TicketTarget{listingTarget})
 	if err != nil {
 		t.Fatalf("CountOpenAgainst: %v", err)
 	}
 	if count := counts[listingTarget]; count != 1 {
 		t.Fatalf("open against the target = %d, want 1", count)
 	}
-	// And the reporter may file again now that the first case is closed.
-	again, err := domain.NewReport(reporter, domain.ReportRefListing, target, "scam", "")
+	// And the requester may raise it again now that the first case is closed.
+	scam := "scam"
+	again, err := domain.NewTicket(requester, domain.KindReportListing, "Hang gia", &refListing, &refID, &scam)
 	if err != nil {
-		t.Fatalf("NewReport: %v", err)
+		t.Fatalf("NewTicket: %v", err)
 	}
-	if err := r.InsertReport(ctx, &again); err != nil {
-		t.Fatalf("InsertReport after the verdict: %v", err)
+	if err := r.InsertTicket(ctx, &again); err != nil {
+		t.Fatalf("InsertTicket after the verdict: %v", err)
+	}
+
+	// A ticket about nothing in particular is one the target index does not hold: two support
+	// requests from the same person are two tickets.
+	for range 2 {
+		ask, err := domain.NewTicket(requester, domain.KindFeatureRequest, "Loc theo tinh", nil, nil, nil)
+		if err != nil {
+			t.Fatalf("NewTicket: %v", err)
+		}
+		if err := r.InsertTicket(ctx, &ask); err != nil {
+			t.Fatalf("InsertTicket for a feature request: %v", err)
+		}
+	}
+
+	// The thread's id is recorded by a second write, so it lands without touching the rest of the
+	// row — that is the repair path for a ticket whose conversation was not written.
+	live, err := r.FindTicket(ctx, again.ID)
+	if err != nil {
+		t.Fatalf("FindTicket: %v", err)
+	}
+	live.AttachThread(again.ID + 7000)
+	if err := r.SaveTicket(ctx, live, []string{domain.StatusOpen}); err != nil {
+		t.Fatalf("SaveTicket with a thread: %v", err)
+	}
+	withThread, err := r.FindTicket(ctx, again.ID)
+	if err != nil {
+		t.Fatalf("FindTicket: %v", err)
+	}
+	if withThread.ConversationID == nil || *withThread.ConversationID != again.ID+7000 {
+		t.Fatalf("ticket = %+v, want the conversation recorded", withThread)
 	}
 }
 
@@ -810,7 +852,7 @@ func containsFeedback(rows []domain.Feedback, id int64) bool {
 	return false
 }
 
-func containsReport(rows []domain.Report, id int64) bool {
+func containsTicket(rows []domain.Ticket, id int64) bool {
 	for _, row := range rows {
 		if row.ID == id {
 			return true

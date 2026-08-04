@@ -117,8 +117,8 @@ func (stubTrust) SubmitFeedback(context.Context, trustapi.SubmitFeedbackRequest)
 func (stubTrust) GetReputation(context.Context, trustapi.GetReputationRequest) (trustapi.Reputation, error) {
 	return trustapi.Reputation{Role: "seller"}, nil
 }
-func (stubTrust) SubmitReport(context.Context, trustapi.SubmitReportRequest) (trustapi.Report, error) {
-	return trustapi.Report{ID: id.Of[id.Report](1)}, nil
+func (stubTrust) OpenTicket(context.Context, trustapi.OpenTicketRequest) (trustapi.Ticket, error) {
+	return trustapi.Ticket{ID: id.Of[id.Ticket](1)}, nil
 }
 
 // noopFanout satisfies realtime.Fanout with no subscribers and no delivery — enough for
@@ -228,7 +228,7 @@ func TestRouter_CheckoutRequiresAuth(t *testing.T) {
 func TestRouter_AdminRouteRequiresAuth(t *testing.T) {
 	r, _, _ := newRouter()
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, openapi.BasePath+"/admin/reports", nil))
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, openapi.BasePath+"/admin/tickets", nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}

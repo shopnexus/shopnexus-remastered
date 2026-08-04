@@ -105,7 +105,7 @@ func (r *Repo) ListRefunds(ctx context.Context, f port.RefundFilter) ([]domain.R
 
 // OverdueRefunds advances all three windows with one query — which is what naming every
 // non-terminal status for the party it waits on buys. The two states that wait on a carrier
-// or a moderator carry no deadline, so they are excluded by the column being NULL.
+// or on staff carry no deadline, so they are excluded by the column being NULL.
 func (r *Repo) OverdueRefunds(ctx context.Context, now time.Time, limit int) ([]domain.Refund, error) {
 	const q = `SELECT ` + refundColumns + ` FROM refund
 	           WHERE status NOT IN (` + terminalRefund + `)
@@ -149,12 +149,10 @@ func (r *Repo) SaveRefund(ctx context.Context, ref domain.Refund) error {
 	return nil
 }
 
-// SaveRefundOutcome writes a refund transition with the rows that transition decides: the
-// dispute round whose verdict it is, and the order it closes. One transaction, because the two
-// halves apart are each a state nothing can get out of — a ruled round over a still-disputed
-// refund is a dead end, and a settled refund over an order still open is money the payout sweep
-// would hand the seller after the buyer has already been paid.
-func (r *Repo) SaveRefundOutcome(ctx context.Context, ref domain.Refund, d *domain.Dispute, o *domain.Order) error {
+// SaveRefundOutcome writes a refund transition with the order it closes. One transaction: a
+// settled refund over an order still open is money the payout sweep would hand the seller after
+// the buyer has already been paid.
+func (r *Repo) SaveRefundOutcome(ctx context.Context, ref domain.Refund, o *domain.Order) error {
 	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, saveRefund, refundArgs(ref))
 		if err != nil {
@@ -162,15 +160,6 @@ func (r *Repo) SaveRefundOutcome(ctx context.Context, ref domain.Refund, d *doma
 		}
 		if tag.RowsAffected() == 0 {
 			return domain.ErrRefundSettled
-		}
-		if d != nil {
-			tag, err := tx.Exec(ctx, saveDispute, disputeArgs(*d))
-			if err != nil {
-				return fmt.Errorf("db update dispute: %w", err)
-			}
-			if tag.RowsAffected() == 0 {
-				return domain.ErrDisputeSettled
-			}
 		}
 		if o != nil {
 			// The order's lock, so the close is serialised against the payout claim exactly as
@@ -208,97 +197,6 @@ func refundArgs(ref domain.Refund) pgx.NamedArgs {
 		"attachments":       dbx.Int64Array(ref.Attachments),
 		"seller_decided_at": ref.SellerDecidedAt, "rejection_reason": ref.RejectionReason,
 		"return_transport_id": ref.ReturnTransportID, "returned_at": ref.ReturnedAt,
-	}
-}
-
-const disputeColumns = `id, refund_id, round, opened_by_id, reason, status::text,
-	       resolved_by_id, resolved_at, resolution_note, created_at`
-
-func scanDispute(row pgx.Row) (domain.Dispute, error) {
-	var (
-		d    domain.Dispute
-		note *string
-	)
-	err := row.Scan(&d.ID, &d.RefundID, &d.Round, &d.OpenedBy, &d.Reason, &d.Status,
-		&d.RuledBy, &d.RuledAt, &note, &d.CreatedAt)
-	if dbx.IsNoRows(err) {
-		return domain.Dispute{}, domain.ErrDisputeNotFound
-	}
-	if err != nil {
-		return domain.Dispute{}, fmt.Errorf("db scan dispute: %w", err)
-	}
-	if note != nil {
-		d.Note = *note
-	}
-	return d, nil
-}
-
-// InsertDispute opens a round. One row per (refund, round), so escalating twice in the same
-// round is a conflict rather than two cases.
-func (r *Repo) InsertDispute(ctx context.Context, d *domain.Dispute) error {
-	const q = `INSERT INTO refund_dispute (refund_id, round, opened_by_id, reason, status)
-	           VALUES (@refund_id, @round, @opened_by, @reason, @status)
-	           RETURNING id, created_at`
-	args := pgx.NamedArgs{
-		"refund_id": d.RefundID, "round": d.Round, "opened_by": d.OpenedBy,
-		"reason": d.Reason, "status": d.Status,
-	}
-	if err := r.pool.QueryRow(ctx, q, args).Scan(&d.ID, &d.CreatedAt); err != nil {
-		if dbx.IsUniqueViolation(err) {
-			return domain.ErrDisputeSettled
-		}
-		return fmt.Errorf("db insert dispute: %w", err)
-	}
-	return nil
-}
-
-func (r *Repo) FindDispute(ctx context.Context, id int64) (domain.Dispute, error) {
-	const q = `SELECT ` + disputeColumns + ` FROM refund_dispute WHERE id = @id`
-	return scanDispute(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id}))
-}
-
-// ListOpenDisputes is the moderator queue, oldest first — the order it should be worked.
-func (r *Repo) ListOpenDisputes(ctx context.Context, f port.CursorFilter) ([]domain.Dispute, error) {
-	const q = `SELECT ` + disputeColumns + ` FROM refund_dispute
-	           WHERE status = '` + domain.DisputeOpen + `'
-	             AND (@before::timestamptz IS NULL
-	                  OR (created_at, id) > (@before::timestamptz, @before_id::bigint))
-	           ORDER BY created_at, id
-	           LIMIT @limit`
-	before, beforeID, limit := cursorBound(f)
-	args := pgx.NamedArgs{"before": before, "before_id": beforeID, "limit": limit}
-	rows, err := r.pool.Query(ctx, q, args)
-	if err != nil {
-		return nil, fmt.Errorf("db query disputes: %w", err)
-	}
-	defer rows.Close()
-
-	var out []domain.Dispute
-	for rows.Next() {
-		d, err := scanDispute(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, d)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("db iterate disputes: %w", err)
-	}
-	return out, nil
-}
-
-// saveDispute records the verdict. `WHERE status = 'open'` is the transition: a round is ruled
-// once, because a later round is argued against what the earlier one decided. Only ever run
-// beside the refund it moved — see SaveRefundOutcome.
-const saveDispute = `UPDATE refund_dispute
-                     SET status = @status, resolved_by_id = @resolved_by,
-                         resolved_at = @resolved_at, resolution_note = @note
-                     WHERE id = @id AND status = '` + domain.DisputeOpen + `'`
-
-func disputeArgs(d domain.Dispute) pgx.NamedArgs {
-	return pgx.NamedArgs{
-		"id": d.ID, "status": d.Status, "resolved_by": d.RuledBy,
-		"resolved_at": d.RuledAt, "note": dbx.NullText(d.Note),
 	}
 }
 

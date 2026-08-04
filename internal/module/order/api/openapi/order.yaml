@@ -1,9 +1,8 @@
 # The order module's root aggregate — the purchase — plus the module's own boundary
 # notes. Merged by cmd/specgen with every other file in this directory.
 #
-# The module covers the whole purchase lifecycle across eight tables: cart_item,
-# draft_order, item, order, transport, offer, refund, refund_dispute — one file each,
-# next to this one.
+# The module covers the whole purchase lifecycle across cart_item, draft_order, item,
+# order, transport, offer and refund — one file each, next to this one.
 #
 # Two shapes recur:
 #   - Checkout is PAY-FIRST, and the money is what creates the order. A draft freezes the
@@ -70,8 +69,8 @@ paths:
       description: >
         The buyer confirms delivery and attaches unboxing evidence — at least one
         photo or video is mandatory, because this evidence is what a later refund
-        or dispute is judged on. Sets `received_at` and starts the 72-hour payout
-        countdown in `payout_deadline_at`.
+        is judged on. Sets `received_at` and starts the 72-hour payout countdown in
+        `payout_deadline_at`.
 
 
         Confirming twice is a conflict rather than a no-op: a retried upload must
@@ -303,7 +302,7 @@ components:
           minItems: 1
           maxItems: 10
           description: >
-            Unboxing photos or video. At least one is mandatory — a later refund or
-            dispute is judged on this evidence.
+            Unboxing photos or video. At least one is mandatory — a later refund is
+            judged on this evidence.
           items: { $ref: '#/components/schemas/ResourceID' }
       required: [attachments]

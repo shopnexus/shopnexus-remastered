@@ -247,9 +247,8 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("POST /refunds/{id}/acceptance", auth(http.HandlerFunc(d.Order.AcceptRefund)))
 	mux.Handle("POST /refunds/{id}/rejection", auth(http.HandlerFunc(d.Order.RejectRefund)))
 	mux.Handle("POST /refunds/{id}/return-transport/checkpoints", auth(http.HandlerFunc(d.Order.AdvanceReturnShipment)))
-	mux.Handle("POST /refunds/{id}/dispute", auth(http.HandlerFunc(d.Order.OpenDispute)))
-	mux.Handle("GET /admin/disputes", auth(http.HandlerFunc(d.Order.AdminListDisputes)))
-	mux.Handle("POST /admin/disputes/{id}/ruling", auth(http.HandlerFunc(d.Order.AdminRuleDispute)))
+	// Staff decide the money; escalating is trust's route, because the ticket lives there.
+	mux.Handle("POST /admin/refunds/{id}/verdict", auth(http.HandlerFunc(d.Order.AdminResolveRefund)))
 
 	// A photo is uploaded in two steps: a slot, then a confirmation once the bytes are at the
 	// store. Both are the seller's, which is why they sit with the listing routes rather than in
@@ -279,12 +278,19 @@ func NewRouter(d Deps) http.Handler {
 	// module-agnostic place: the upload belongs to the module that took it.
 	mux.Handle("POST /reviews/uploads", auth(http.HandlerFunc(d.Trust.CreateUpload)))
 	mux.Handle("POST /reviews/uploads/{id}/confirmation", auth(http.HandlerFunc(d.Trust.ConfirmUpload)))
-	mux.Handle("POST /reports", auth(http.HandlerFunc(d.Trust.SubmitReport)))
-	mux.Handle("GET /reports", auth(http.HandlerFunc(d.Trust.ListMyReports)))
-	mux.Handle("GET /admin/reports", auth(http.HandlerFunc(d.Trust.AdminListReports)))
-	mux.Handle("GET /admin/reports/{id}", auth(http.HandlerFunc(d.Trust.AdminGetReport)))
-	mux.Handle("POST /admin/reports/{id}/claim", auth(http.HandlerFunc(d.Trust.AdminClaimReport)))
-	mux.Handle("POST /admin/reports/{id}/resolution", auth(http.HandlerFunc(d.Trust.AdminResolveReport)))
+	// ---- tickets: everything a user raises, in one place ----
+	//
+	// An abuse report, a refund they want staff to decide, a payment that went wrong, a feature
+	// request — one row, one queue, one list for the requester. The conversation about it is an
+	// ordinary chat thread, so replies go through `POST /conversations/{id}/messages` and the photos
+	// come from chat's own upload routes: a ticket needs neither of its own.
+	mux.Handle("POST /tickets", auth(http.HandlerFunc(d.Trust.OpenTicket)))
+	mux.Handle("GET /tickets", auth(http.HandlerFunc(d.Trust.ListMyTickets)))
+	mux.Handle("GET /tickets/{id}", auth(http.HandlerFunc(d.Trust.GetTicket)))
+	mux.Handle("GET /admin/tickets", auth(http.HandlerFunc(d.Trust.AdminListTickets)))
+	mux.Handle("GET /admin/tickets/{id}", auth(http.HandlerFunc(d.Trust.AdminGetTicket)))
+	mux.Handle("POST /admin/tickets/{id}/claim", auth(http.HandlerFunc(d.Trust.AdminClaimTicket)))
+	mux.Handle("POST /admin/tickets/{id}/resolution", auth(http.HandlerFunc(d.Trust.AdminResolveTicket)))
 
 	// Metrics wraps the mux so it can read the matched route.
 	// Metrics is optional (nil in tests that don't wire observability).

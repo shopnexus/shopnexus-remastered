@@ -72,7 +72,7 @@ var (
 	ErrTransportNotFound = errx.NewError(http.StatusNotFound, "transport_not_found", "no shipment with that carrier reference")
 	ErrNoReturnLeg       = errx.NewError(http.StatusConflict, "no_return_leg", "this refund has no return shipment yet")
 
-	// --- refunds and disputes ---
+	// --- refunds ---
 	ErrRefundNotFound = errx.NewError(http.StatusNotFound, "refund_not_found", "refund not found")
 	ErrRefundSettled  = errx.NewError(http.StatusConflict, "refund_settled", "this refund is already settled")
 	// ErrRefundAlreadyOpen is a second refund on one order. A refund covers the whole
@@ -85,9 +85,12 @@ var (
 	// ErrSessionPaid is cancelling a line the buyer has already paid for. The order follows
 	// from the money, so undoing the sale is a refund the seller gets to see — cancelling here
 	// would release the stock and leave the payment covering nothing.
-	ErrSessionPaid     = errx.NewError(http.StatusConflict, "session_paid", "this line is paid for; a refund is how a paid sale is undone")
-	ErrDisputeNotFound = errx.NewError(http.StatusNotFound, "dispute_not_found", "dispute not found")
-	ErrDisputeSettled  = errx.NewError(http.StatusConflict, "dispute_settled", "this dispute round is already ruled")
+	ErrSessionPaid = errx.NewError(http.StatusConflict, "session_paid", "this line is paid for; a refund is how a paid sale is undone")
+	// ErrRefundNotEscalatable is asking staff to look at a case nobody is waiting on: only a
+	// refused refund and a delivered return are states a party can disagree with.
+	ErrRefundNotEscalatable = errx.NewError(http.StatusConflict, "refund_not_escalatable", "this refund cannot be escalated from its current state")
+	// ErrRefundNotDisputed is a verdict on a case staff were never asked about.
+	ErrRefundNotDisputed = errx.NewError(http.StatusConflict, "refund_not_disputed", "this refund is not with staff for a decision")
 
 	// --- authorization ---
 	ErrNotTheBuyer       = errx.NewError(http.StatusForbidden, "not_the_buyer", "only the buyer of this order may do that")
