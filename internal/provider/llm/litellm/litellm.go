@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -18,10 +19,14 @@ import (
 	"shopnexus/internal/provider/llm"
 )
 
+// Name is the LLM_PROVIDER value that selects this proxy.
+const Name = "litellm"
+
 const (
-	chatPath   = "/v1/chat/completions"
-	embedPath  = "/v1/embeddings"
-	rerankPath = "/v1/rerank"
+	chatPath       = "/v1/chat/completions"
+	embedPath      = "/v1/embeddings"
+	rerankPath     = "/v1/rerank"
+	transcribePath = "/v1/audio/transcriptions"
 )
 
 // Config configures the proxy connection and the default model per capability.
@@ -32,9 +37,10 @@ type Config struct {
 	// APIKey is a LiteLLM virtual key, sent as a bearer token.
 	APIKey string
 
-	ChatModel   string // default for Complete and Stream
-	EmbedModel  string // default for Embed
-	RerankModel string // default for Rerank
+	ChatModel       string // default for Complete and Stream
+	EmbedModel      string // default for Embed
+	RerankModel     string // default for Rerank
+	TranscribeModel string // default for Transcribe
 
 	// RequestTimeout bounds one non-streaming call (Complete, Embed, Rerank).
 	// Required: a call with no deadline pins a goroutine and a connection for as
@@ -59,9 +65,10 @@ type Client struct {
 	apiKey  string
 	http    *http.Client
 
-	chatModel   string
-	embedModel  string
-	rerankModel string
+	chatModel       string
+	embedModel      string
+	rerankModel     string
+	transcribeModel string
 
 	requestTimeout time.Duration
 	streamTimeout  time.Duration
@@ -85,14 +92,15 @@ func NewClient(cfg Config) (*Client, error) {
 		httpClient = &http.Client{}
 	}
 	return &Client{
-		baseURL:        strings.TrimRight(cfg.BaseURL, "/"),
-		apiKey:         cfg.APIKey,
-		http:           httpClient,
-		chatModel:      cfg.ChatModel,
-		embedModel:     cfg.EmbedModel,
-		rerankModel:    cfg.RerankModel,
-		requestTimeout: cfg.RequestTimeout,
-		streamTimeout:  cfg.StreamTimeout,
+		baseURL:         strings.TrimRight(cfg.BaseURL, "/"),
+		apiKey:          cfg.APIKey,
+		http:            httpClient,
+		chatModel:       cfg.ChatModel,
+		embedModel:      cfg.EmbedModel,
+		rerankModel:     cfg.RerankModel,
+		transcribeModel: cfg.TranscribeModel,
+		requestTimeout:  cfg.RequestTimeout,
+		streamTimeout:   cfg.StreamTimeout,
 	}, nil
 }
 
@@ -118,6 +126,89 @@ func (c *Client) Complete(ctx context.Context, params llm.CompleteParams) (llm.C
 		FinishReason: toFinishReason(choice.FinishReason),
 		Usage:        out.Usage.toUsage(),
 	}, nil
+}
+
+// Transcribe posts the audio as multipart, which is what the audio endpoint takes — the only call
+// here that is not JSON. Bounded by the same request timeout: a voice note is seconds long, and a
+// transcription that outlives that budget is one the seller has already given up on.
+func (c *Client) Transcribe(ctx context.Context, params llm.TranscribeParams) (llm.TranscribeResult, error) {
+	if len(params.Audio) == 0 {
+		return llm.TranscribeResult{}, errors.New("transcribe: no audio")
+	}
+	ctx, cancel := context.WithTimeout(ctx, c.requestTimeout)
+	defer cancel()
+
+	body, contentType, err := transcribeBody(c.model(params.Model, c.transcribeModel), params)
+	if err != nil {
+		return llm.TranscribeResult{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+transcribePath, body)
+	if err != nil {
+		return llm.TranscribeResult{}, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return llm.TranscribeResult{}, fmt.Errorf("call litellm %s: %w", transcribePath, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return llm.TranscribeResult{}, apiError(resp)
+	}
+	var out llm.TranscribeResult
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return llm.TranscribeResult{}, fmt.Errorf("decode response: %w", err)
+	}
+	return out, nil
+}
+
+// transcribeBody builds the multipart form. The filename carries the extension because that is how
+// the endpoint learns the container — the part's own content type is not enough for every backend.
+func transcribeBody(model string, params llm.TranscribeParams) (io.Reader, string, error) {
+	var buf bytes.Buffer
+	form := multipart.NewWriter(&buf)
+	fields := [][2]string{{"model", model}, {"language", params.Language}, {"prompt", params.Prompt}}
+	for _, f := range fields {
+		if f[1] == "" {
+			continue
+		}
+		if err := form.WriteField(f[0], f[1]); err != nil {
+			return nil, "", fmt.Errorf("write field %s: %w", f[0], err)
+		}
+	}
+	part, err := form.CreateFormFile("file", "voice-note"+audioExtension(params.Mime))
+	if err != nil {
+		return nil, "", fmt.Errorf("create audio part: %w", err)
+	}
+	if _, err := part.Write(params.Audio); err != nil {
+		return nil, "", fmt.Errorf("write audio: %w", err)
+	}
+	if err := form.Close(); err != nil {
+		return nil, "", fmt.Errorf("close form: %w", err)
+	}
+	return &buf, form.FormDataContentType(), nil
+}
+
+// audioExtension maps a container's mime to the suffix the endpoint recognises. Unknown types keep
+// .bin, which lets the backend sniff rather than be told something wrong.
+func audioExtension(mime string) string {
+	switch strings.TrimSpace(strings.SplitN(mime, ";", 2)[0]) {
+	case "audio/mp4", "audio/m4a", "audio/x-m4a":
+		return ".m4a"
+	case "audio/mpeg", "audio/mp3":
+		return ".mp3"
+	case "audio/webm":
+		return ".webm"
+	case "audio/ogg", "audio/opus":
+		return ".ogg"
+	case "audio/wav", "audio/x-wav", "audio/wave":
+		return ".wav"
+	default:
+		return ".bin"
+	}
 }
 
 func (c *Client) Embed(ctx context.Context, params llm.EmbedParams) (llm.EmbedResult, error) {

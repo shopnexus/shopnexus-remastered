@@ -14,6 +14,7 @@ import (
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
 	"shopnexus/internal/module/common"
+	"shopnexus/internal/provider/llm"
 	"shopnexus/internal/shared/id"
 )
 
@@ -26,18 +27,23 @@ type Service struct {
 	// the module that took the upload, and resolving one through here is what puts a live
 	// link on it rather than an id nothing can render.
 	uploads common.Uploads
-	v       *validator.Validate
-	log     *slog.Logger
+	// llm reads a seller's photo and voice note into a filled-in listing form. Only the
+	// suggestion route uses it, and `mock` answers without a model so a local stack still walks
+	// the flow.
+	llm llm.Client
+	v   *validator.Validate
+	log *slog.Logger
 }
 
 func NewService(
 	repo port.Repository,
 	accounts accountapi.Service,
 	uploads common.Uploads,
+	models llm.Client,
 	v *validator.Validate,
 	log *slog.Logger,
 ) *Service {
-	return &Service{repo: repo, accounts: accounts, uploads: uploads, v: v, log: log}
+	return &Service{repo: repo, accounts: accounts, uploads: uploads, llm: models, v: v, log: log}
 }
 
 // CreateUpload reserves a row and a signed slot for a listing photo. The client PUTs the bytes

@@ -2,6 +2,7 @@ package catalog_test
 
 import (
 	"context"
+	"iter"
 	"log/slog"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
+	"shopnexus/internal/provider/llm"
 	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/id"
 	"shopnexus/internal/shared/id/idtest"
@@ -92,6 +94,10 @@ type harness struct {
 	// unconfirmed id resolves to nothing, exactly as the real store leaves it.
 	uploads *fakeUploads
 	images  map[int64]bool
+	// models is the LLM seam the suggestion route reads a photo through. It records what it was
+	// asked, which is the only way to check that the prompt carried the category list and that the
+	// photos reached the model at all.
+	models *fakeLLM
 }
 
 func newHarness(role string) *harness { return newHarnessWith(role, false) }
@@ -101,32 +107,33 @@ func newHarness(role string) *harness { return newHarnessWith(role, false) }
 func newHarnessWith(role string, identityVerified bool) *harness {
 	repo := newFakeRepo()
 	store := newFakeUploads()
+	models := &fakeLLM{}
 	svc := catalog.NewService(repo, fakeAccounts{role: role, verified: identityVerified},
-		store, validation.Default(), slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: repo, uploads: store, images: store.confirmed}
+		store, models, validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: repo, uploads: store, images: store.confirmed, models: models}
 }
 
 // newHarnessModerator reuses one harness's repository with a moderator caller.
 func newHarnessModerator(h *harness) *harness {
 	svc := catalog.NewService(h.repo, fakeAccounts{role: "moderator", verified: true},
-		h.uploads, validation.Default(), slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images}
+		h.uploads, h.models, validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models}
 }
 
 // newHarnessUngeocoded reuses one harness's data with a seller whose address has no coordinates,
 // which is what makes "near me" refusable rather than silently empty.
 func newHarnessUngeocoded(h *harness) *harness {
 	svc := catalog.NewService(h.repo, fakeAccounts{role: "user", verified: true, ungeocoded: true},
-		h.uploads, validation.Default(), slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images}
+		h.uploads, h.models, validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models}
 }
 
 // newHarnessAdmin reuses one harness's repository with an admin caller, so a test can seed a
 // category and then act as a plain seller against the same data.
 func newHarnessAdmin(h *harness) *harness {
 	svc := catalog.NewService(h.repo, fakeAccounts{role: "admin", verified: true},
-		h.uploads, validation.Default(), slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images}
+		h.uploads, h.models, validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models}
 }
 
 func status(t *testing.T, err error) uint16 {
@@ -571,4 +578,53 @@ func TestListTags_NearNamesTheUnembeddedSeed(t *testing.T) {
 	if !strings.Contains(err.Error(), missing) {
 		t.Errorf("error = %q, want it to name %q", err.Error(), missing)
 	}
+}
+
+// fakeLLM is the model. It records the request and answers whatever a test set, because what the
+// suggestion route has to get right is everything around the model: the prompt it built, the photos
+// it sent, and which of the answers it is willing to put on a form.
+type fakeLLM struct {
+	// answer is the JSON the completion returns. A test sets it to the shape it wants tested.
+	answer string
+	// transcript is what the voice note is heard as.
+	transcript string
+	// completeErr and transcribeErr make the model unreachable, which is how a route that must not
+	// lose the seller's photos is checked.
+	completeErr   error
+	transcribeErr error
+
+	// asked is the last completion, and audio the last voice note.
+	asked llm.CompleteParams
+	audio llm.TranscribeParams
+}
+
+func (f *fakeLLM) Complete(_ context.Context, params llm.CompleteParams) (llm.CompleteResult, error) {
+	f.asked = params
+	if f.completeErr != nil {
+		return llm.CompleteResult{}, f.completeErr
+	}
+	return llm.CompleteResult{
+		Message:      llm.Message{Role: llm.RoleAssistant, Content: f.answer},
+		FinishReason: llm.FinishReasonStop,
+	}, nil
+}
+
+func (f *fakeLLM) Transcribe(_ context.Context, params llm.TranscribeParams) (llm.TranscribeResult, error) {
+	f.audio = params
+	if f.transcribeErr != nil {
+		return llm.TranscribeResult{}, f.transcribeErr
+	}
+	return llm.TranscribeResult{Text: f.transcript}, nil
+}
+
+func (f *fakeLLM) Stream(context.Context, llm.CompleteParams) iter.Seq2[llm.Chunk, error] {
+	return func(func(llm.Chunk, error) bool) {}
+}
+
+func (f *fakeLLM) Embed(context.Context, llm.EmbedParams) (llm.EmbedResult, error) {
+	return llm.EmbedResult{}, llm.ErrNotSupported
+}
+
+func (f *fakeLLM) Rerank(context.Context, llm.RerankParams) (llm.RerankResult, error) {
+	return llm.RerankResult{}, llm.ErrNotSupported
 }

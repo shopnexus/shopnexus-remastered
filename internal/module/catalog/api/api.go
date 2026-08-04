@@ -27,6 +27,10 @@ type Service interface {
 	// ListListings is the feed, the search, the wishlist page and the id lookup. Cards, not
 	// aggregates: a page of twenty must not be twenty loads.
 	ListListings(ctx context.Context, req ListListingsRequest) (ListingPage, error)
+	// SuggestListing fills in a listing form from the seller's photos and what they said about
+	// them. It writes nothing: the answer is a suggestion the seller edits and then posts through
+	// CreateListing, so no model's guess reaches a buyer without a human between.
+	SuggestListing(ctx context.Context, req SuggestListingRequest) (ListingSuggestion, error)
 	CreateListing(ctx context.Context, req CreateListingRequest) (ListingDetail, error)
 	GetListing(ctx context.Context, req GetListingRequest) (ListingDetail, error)
 

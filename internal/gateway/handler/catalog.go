@@ -124,6 +124,29 @@ func (h *Catalog) ListListings(w http.ResponseWriter, r *http.Request) {
 	httpx.WritePage(w, http.StatusOK, res.Data, httpx.PageMeta(res.Meta))
 }
 
+// SuggestListing handles POST /listings/suggestions — "photo in, listing out". One synchronous
+// call: the client shows a skeleton form while a vision model reads the photos, and fills it in
+// from the answer. Nothing is stored, so an abandoned attempt leaves nothing behind.
+func (h *Catalog) SuggestListing(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	var req catalogapi.SuggestListingRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID = uid
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.SuggestListing(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
 // CreateListing handles POST /listings — the listing and its variants in one call.
 func (h *Catalog) CreateListing(w http.ResponseWriter, r *http.Request) {
 	uid, err := actor(r)

@@ -29,6 +29,9 @@ import (
 	"shopnexus/internal/provider/kyc"
 	"shopnexus/internal/provider/kyc/fptai"
 	kycmock "shopnexus/internal/provider/kyc/mock"
+	"shopnexus/internal/provider/llm"
+	"shopnexus/internal/provider/llm/litellm"
+	llmmock "shopnexus/internal/provider/llm/mock"
 	"shopnexus/internal/provider/notify"
 	"shopnexus/internal/provider/notify/esms"
 	notifymock "shopnexus/internal/provider/notify/mock"
@@ -78,6 +81,7 @@ func appOptions() fx.Option {
 			newKYCClient,
 			newPaymentClient,
 			newTransportClient,
+			newLLMClient,
 			// Where an uploaded byte goes. The handler beside it is provided only for the
 			// backend that needs this process to serve the bytes.
 			newStorageRegistry,
@@ -213,6 +217,24 @@ func newOAuthVerifier(cfg *config.Config, log *slog.Logger, metrics *observabili
 		Issuers:    issuers,
 		Timeout:    cfg.OIDCTimeout,
 		HTTPClient: observedClient("oidc", log, metrics),
+	})
+}
+
+// newLLMClient picks who reads a seller's photo and voice note into a listing form. `mock` answers
+// without a model or a key, so a local stack walks the whole route — the same rule as every other
+// seam here, and the reason the selector is required rather than defaulted.
+func newLLMClient(cfg *config.Config, log *slog.Logger, metrics *observability.Sink) (llm.Client, error) {
+	if cfg.LLMProvider != litellm.Name {
+		return llmmock.NewClient(), nil
+	}
+	return litellm.NewClient(litellm.Config{
+		BaseURL:         cfg.LiteLLMBaseURL,
+		APIKey:          cfg.LiteLLMAPIKey,
+		ChatModel:       cfg.LiteLLMChatModel,
+		TranscribeModel: cfg.LiteLLMTranscribeModel,
+		RequestTimeout:  cfg.LiteLLMRequestTimeout,
+		StreamTimeout:   cfg.LiteLLMStreamTimeout,
+		HTTPClient:      observedClient("litellm", log, metrics),
 	})
 }
 

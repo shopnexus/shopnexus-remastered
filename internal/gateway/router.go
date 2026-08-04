@@ -139,6 +139,7 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("GET /listings", optionalAuth(http.HandlerFunc(d.Catalog.ListListings)))
 	mux.Handle("GET /listings/{id}", optionalAuth(http.HandlerFunc(d.Catalog.GetListing)))
 	// Authenticated
+	mux.Handle("POST /listings/suggestions", auth(http.HandlerFunc(d.Catalog.SuggestListing)))
 	mux.Handle("POST /listings", auth(http.HandlerFunc(d.Catalog.CreateListing)))
 	mux.Handle("PATCH /listings/{id}", auth(http.HandlerFunc(d.Catalog.UpdateListing)))
 	mux.Handle("DELETE /listings/{id}", auth(http.HandlerFunc(d.Catalog.DeleteListing)))

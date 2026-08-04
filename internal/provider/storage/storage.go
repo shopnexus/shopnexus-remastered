@@ -40,6 +40,14 @@ type NewUpload struct {
 	Size int64
 }
 
+// Blob is an object's bytes with the type they are. Held whole rather than streamed: the one
+// caller reads a photo to send it somewhere, and a store that has to buffer anyway gains nothing
+// from a reader it would only drain.
+type Blob struct {
+	Mime string
+	Data []byte
+}
+
 // Object is what the store knows about a key, which is how a confirm step checks that the
 // bytes actually arrived rather than trusting the client that says they did.
 type Object struct {
@@ -66,6 +74,10 @@ type Client interface {
 	// public, because an identity scan and a product photo live in the same bucket and only
 	// one of them may be world-readable.
 	PresignDownload(ctx context.Context, objectKey string, ttl time.Duration) (string, time.Time, error)
+	// Fetch reads the bytes back. Needed where this process itself has to look at an object
+	// rather than hand a link to somebody who will — a model reading a listing photo, say. A
+	// store that only serves other people's origins answers ErrNotReadable.
+	Fetch(ctx context.Context, objectKey string) (Blob, error)
 	// Remove deletes the object. Called by the reaper after a row is soft-deleted, so the
 	// bytes go once nothing can still be pointing at them.
 	Remove(ctx context.Context, objectKey string) error

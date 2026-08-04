@@ -198,6 +198,25 @@ type DeleteListingRequest struct {
 // PublishListingRequest sends a listing for review. PickupContactID is where a carrier collects
 // this listing's goods — the seller picks one of their own saved addresses, which is also what the
 // listing is filtered and measured by once it is live. Omitted means their default pickup address.
+// SuggestListingRequest is the "photo in, listing out" input: the photos the seller already
+// uploaded, and what they said about them — typed, spoken, or both. Nothing here is stored; the
+// answer is a form the seller edits and posts through CreateListing.
+type SuggestListingRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	// Attachments are confirmed uploads. The first three are what the model reads: past that a
+	// phone's photos are the same object again, at real cost per image.
+	Attachments []id.ID[id.Resource] `json:"attachments,omitempty" validate:"max=10"`
+	// Note is what the seller typed. Optional, like everything else — but at least one of the
+	// three has to be there, or there is nothing to look at.
+	Note string `json:"note,omitempty" validate:"max=2000"`
+	// VoiceNote is the recording itself, base64 in JSON. Inline rather than an upload because it
+	// is input and not content: nothing keeps it, so nothing has to reap it.
+	VoiceNote     []byte `json:"voice_note,omitempty"`
+	VoiceNoteMime string `json:"voice_note_mime,omitempty" validate:"max=100"`
+	// Language is an ISO-639-1 hint for the transcription, empty to let the model detect.
+	Language string `json:"language,omitempty" validate:"omitempty,len=2"`
+}
+
 type PublishListingRequest struct {
 	ActorID         id.ID[id.Account]  `json:"-" validate:"required"`
 	ID              id.ID[id.Listing]  `json:"-" validate:"required"`

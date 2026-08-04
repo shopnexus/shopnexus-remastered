@@ -20,6 +20,9 @@ func (f fake) Stat(context.Context, string) (storage.Object, error) { return sto
 func (f fake) PresignDownload(context.Context, string, time.Duration) (string, time.Time, error) {
 	return f.name + "-url", time.Time{}, nil
 }
+func (f fake) Fetch(context.Context, string) (storage.Blob, error) {
+	return storage.Blob{Mime: "image/jpeg", Data: []byte(f.name)}, nil
+}
 func (f fake) Remove(context.Context, string) error { return nil }
 
 func TestRegistry(t *testing.T) {

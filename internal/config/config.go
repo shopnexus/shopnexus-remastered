@@ -114,6 +114,27 @@ type Config struct {
 	// description is a failed write rather than a poor result.
 	EmbeddingMaxTextChars int `validate:"required,gt=0"`
 
+	// --- listing suggestions (the "photo in, listing out" route) ---
+
+	// LLMProvider picks who reads a seller's photo and voice note. `mock` answers a plausible
+	// filled form with no model, no key and no network call, so a local stack walks the whole
+	// flow — same rule as the other seams: a selector, not a default, because a deployment that
+	// thinks it has a model and does not is discovered by the seller whose form stayed empty.
+	LLMProvider string `validate:"required,oneof=litellm mock"`
+	// The proxy every model is reached through. One base URL and one key, because chat and
+	// transcription are the same vendor account.
+	LiteLLMBaseURL string `validate:"required_if=LLMProvider litellm,omitempty,url"`
+	LiteLLMAPIKey  string `validate:"required_if=LLMProvider litellm"`
+	// LiteLLMChatModel has to be one that reads images: the photo is the input a seller cares
+	// about, and a text-only model answers a form filled from the note alone.
+	LiteLLMChatModel       string        `validate:"required_if=LLMProvider litellm"`
+	LiteLLMTranscribeModel string        `validate:"required_if=LLMProvider litellm"`
+	LiteLLMRequestTimeout  time.Duration `validate:"required_if=LLMProvider litellm"`
+	// LiteLLMStreamTimeout covers a whole streamed generation. Nothing streams today; it is
+	// required because the client refuses to be built without one, for the reason its own
+	// comment gives.
+	LiteLLMStreamTimeout time.Duration `validate:"required_if=LLMProvider litellm"`
+
 	// --- durable execution ---
 
 	// WorkflowRuntime picks who holds the timers this marketplace waits on — an unpaid
@@ -265,6 +286,14 @@ func Load(v *validator.Validate) (*Config, error) {
 		StorageDownloadTTL:    p.durationVar("STORAGE_DOWNLOAD_TTL"),
 		StorageMaxUploadBytes: p.int64Var("STORAGE_MAX_UPLOAD_BYTES"),
 		StorageAllowedMimes:   listVar("STORAGE_ALLOWED_MIMES"),
+
+		LLMProvider:            os.Getenv("LLM_PROVIDER"),
+		LiteLLMBaseURL:         os.Getenv("LITELLM_BASE_URL"),
+		LiteLLMAPIKey:          os.Getenv("LITELLM_API_KEY"),
+		LiteLLMChatModel:       os.Getenv("LITELLM_CHAT_MODEL"),
+		LiteLLMTranscribeModel: os.Getenv("LITELLM_TRANSCRIBE_MODEL"),
+		LiteLLMRequestTimeout:  p.durationVar("LITELLM_REQUEST_TIMEOUT"),
+		LiteLLMStreamTimeout:   p.durationVar("LITELLM_STREAM_TIMEOUT"),
 
 		EmbeddingProvider:     os.Getenv("EMBEDDING_PROVIDER"),
 		EmbeddingBaseURL:      os.Getenv("EMBEDDING_BASE_URL"),

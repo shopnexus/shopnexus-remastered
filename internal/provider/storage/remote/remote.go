@@ -59,6 +59,12 @@ func (c *Client) PresignDownload(ctx context.Context, objectKey string, ttl time
 // Remove succeeds without doing anything. These bytes belong to whoever serves them, so there
 // is nothing here to delete — and an error would put the reaper in a loop over a row it can
 // never finish, for an object it was never allowed to touch.
+// Fetch is refused: the bytes are at somebody else's origin. This platform serves a link to them
+// and does not proxy them, so anything that needs to *read* an object needs one we hold.
+func (c *Client) Fetch(context.Context, string) (storage.Blob, error) {
+	return storage.Blob{}, storage.ErrNotReadable
+}
+
 func (c *Client) Remove(ctx context.Context, objectKey string) error { return nil }
 
 // servableURL is the check that keeps this store from becoming an open redirect in a DTO. The

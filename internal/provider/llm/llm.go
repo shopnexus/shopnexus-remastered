@@ -54,10 +54,36 @@ const (
 // set on assistant turns that call tools, and ToolCallID on RoleTool turns that
 // answer one (both are ignored for the other roles).
 type Message struct {
-	Role       Role       `json:"role"`
-	Content    string     `json:"content"`
+	Role    Role   `json:"role"`
+	Content string `json:"content"`
+	// Images are what the model looks at, on a user turn. Bytes rather than a URL: an object this
+	// platform holds is behind a signed link only its own gateway can serve, which a hosted model
+	// cannot follow — so the picture travels with the request.
+	Images     []Image    `json:"images,omitempty"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
+}
+
+// Image is one picture in a message, as the bytes and the type they are.
+type Image struct {
+	Mime string `json:"mime"`
+	Data []byte `json:"data"`
+}
+
+// TranscribeParams is a voice note to turn into text. Language is a hint, not a filter: an ISO-639-1
+// code where the caller knows it ("vi"), empty to let the model detect.
+type TranscribeParams struct {
+	Model    string
+	Audio    []byte
+	Mime     string
+	Language string
+	// Prompt is optional context that biases the decoding — a domain's vocabulary, so a
+	// marketplace's brand names come back spelled the way its catalogue spells them.
+	Prompt string
+}
+
+type TranscribeResult struct {
+	Text string `json:"text"`
 }
 
 // ToolCall is a model request to invoke a tool with JSON arguments.
@@ -184,6 +210,11 @@ type Client interface {
 	// The underlying connection is released when iteration ends, so breaking
 	// out of the loop early is safe.
 	Stream(ctx context.Context, params CompleteParams) iter.Seq2[Chunk, error]
+
+	// Transcribe turns a voice note into text. Its own method rather than a Message part: audio
+	// goes to a different endpoint with a different model, and a caller that wants the words —
+	// to show the seller what was heard — needs them before the completion runs.
+	Transcribe(ctx context.Context, params TranscribeParams) (TranscribeResult, error)
 
 	// Embed turns text into dense vectors.
 	Embed(ctx context.Context, params EmbedParams) (EmbedResult, error)

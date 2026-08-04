@@ -42,4 +42,17 @@ type Uploads interface {
 	// unconfirmed, deleted or other module's upload is simply absent — a row pointing at one is
 	// a picture that does not render, not a page that fails.
 	Resolve(ctx context.Context, ids []int64) (map[int64]ResourceDTO, error)
+	// Bytes reads the objects themselves, for the caller that has to look at them rather than
+	// hand out a link — a model reading a listing photo. Same scoping as Resolve, and in the
+	// order asked; an id that resolves to nothing is absent rather than an error, and a row held
+	// at another origin answers storage.ErrNotReadable.
+	Bytes(ctx context.Context, ids []int64) ([]Blob, error)
+}
+
+// Blob is one resource's bytes, with the id they belong to so a caller can tell which photo it is
+// looking at when it asked for several.
+type Blob struct {
+	ResourceID int64
+	Mime       string
+	Data       []byte
 }

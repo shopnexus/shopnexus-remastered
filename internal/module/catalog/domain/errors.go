@@ -45,6 +45,15 @@ var (
 	// ErrAddressNotGeocoded is a "near me" browse from an address with no coordinates. Answered
 	// rather than silently dropped: the client's move is to ask for the device's position.
 	ErrAddressNotGeocoded = errx.NewError(http.StatusUnprocessableEntity, "address_not_geocoded", "that address has no coordinates, so it cannot measure distance")
+	// ErrSuggestionEmpty is a suggestion asked for with no photo, no note and no voice note: there
+	// is nothing to look at, and a form filled from nothing is a form of invention.
+	ErrSuggestionEmpty = errx.NewError(http.StatusUnprocessableEntity, "suggestion_empty", "send at least a photo, a note or a voice note")
+	// ErrVoiceNoteTooLarge is a recording that was left running. A seller describes an item in a
+	// sentence or two.
+	ErrVoiceNoteTooLarge = errx.NewError(http.StatusRequestEntityTooLarge, "voice_note_too_large", "that voice note is longer than this route accepts")
+	// ErrSuggestionUnusable is a model answer that cannot fill a form — malformed, or with no name
+	// in it. 502, because nothing the caller sent is at fault and retrying is the fix.
+	ErrSuggestionUnusable = errx.NewError(http.StatusBadGateway, "suggestion_unusable", "the model did not return a usable suggestion")
 	ErrNoPickupAddress    = errx.NewError(http.StatusUnprocessableEntity, "no_pickup_address", "set a pickup address before publishing: it is where carriers collect and how buyers find you")
 	ErrNoVariant          = errx.NewError(http.StatusUnprocessableEntity, "no_variant", "a listing needs at least one variant with a price")
 	ErrTooManyTags        = errx.NewError(http.StatusUnprocessableEntity, "too_many_tags", "a listing carries at most 10 tags")

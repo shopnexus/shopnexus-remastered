@@ -1723,6 +1723,69 @@ components:
                 - active
                 - hidden
             type: string
+        ListingSuggestion:
+            description: |
+                A filled-in form. Every field is the model's proposal and the seller is expected to correct it; the optional ones are absent where it had nothing it could stand behind.
+            properties:
+                category_id:
+                    allOf:
+                        - $ref: '#/components/schemas/CategoryID'
+                    description: |
+                        Resolved against this marketplace's own tree, so it is always a category that exists. Null when nothing in the tree fits what it saw.
+                    nullable: true
+                condition:
+                    description: Empty when it could not tell.
+                    enum:
+                        - new
+                        - used
+                        - damaged
+                        - ""
+                    example: used
+                    type: string
+                description:
+                    example: Máy đã qua sử dụng, pin 89%. Có vết xước nhỏ ở viền dưới.
+                    type: string
+                name:
+                    example: iPhone 12 64GB xanh
+                    type: string
+                price:
+                    description: |
+                        Only what the seller said out loud, in the smallest currency unit. Null when they did not say — this never estimates a price.
+                    example: 5000000
+                    format: int64
+                    minimum: 1
+                    nullable: true
+                    type: integer
+                specifications:
+                    additionalProperties: true
+                    description: Attributes it could read off the photos, as plain strings.
+                    type: object
+                tags:
+                    description: Already slugified, at most four. Empty rather than guessed.
+                    items:
+                        $ref: '#/components/schemas/TagSlug'
+                    type: array
+                transcript:
+                    description: |
+                        What the voice note was heard as, echoed so the seller can see why a field is wrong rather than guess. Absent when they sent no recording.
+                    example: bán iphone 12 64gb pin 89 phần trăm, năm triệu
+                    type: string
+                weight_g:
+                    description: Estimated parcel weight, which is what a shipping quote needs.
+                    example: 350
+                    format: int64
+                    minimum: 1
+                    nullable: true
+                    type: integer
+            required:
+                - name
+                - description
+                - category_id
+                - condition
+                - tags
+                - price
+                - weight_g
+            type: object
         LoginRequest:
             properties:
                 identifier:
@@ -3446,6 +3509,36 @@ components:
             required:
                 - order_id
                 - rating
+            type: object
+        SuggestListingRequest:
+            description: At least one of `attachments`, `note` or `voice_note`.
+            properties:
+                attachments:
+                    description: Confirmed uploads. The first three are what the model reads.
+                    items:
+                        $ref: '#/components/schemas/ResourceID'
+                    maxItems: 10
+                    type: array
+                language:
+                    description: ISO-639-1 hint for the transcription. Omit to let the model detect.
+                    example: vi
+                    maxLength: 2
+                    minLength: 2
+                    type: string
+                note:
+                    description: What the seller typed. A phone's own dictation key fills this in just as well.
+                    example: bán iphone 12 64gb pin 89%, còn bảo hành, 5 triệu
+                    maxLength: 2000
+                    type: string
+                voice_note:
+                    description: |
+                        The recording, base64. Inline rather than an upload because it is input and not content: nothing keeps it, so nothing has to reap it. Around a megabyte at most — a seller describes an item in a sentence or two.
+                    format: byte
+                    type: string
+                voice_note_mime:
+                    example: audio/ogg
+                    maxLength: 100
+                    type: string
             type: object
         SuspendAccountRequest:
             properties:
@@ -7545,6 +7638,59 @@ paths:
             summary: Review a listing you bought
             tags:
                 - trust
+    /listings/suggestions:
+        post:
+            description: |
+                "Photo in, listing out": the seller snaps the item, says a sentence about it, and gets a filled-in form back. One synchronous call — the client shows the form as a skeleton and fills it from the answer.
+
+                Nothing is stored. This route writes no listing and no draft: the answer is a *suggestion*, the seller corrects what they disagree with, and `POST /listings` is still how a listing comes into existence. That is deliberate — a route that posted for them would make a model the author of claims about somebody else's goods, its condition and its price, and there is no version of that a marketplace can stand behind. An abandoned attempt leaves nothing behind either.
+
+                Send at least one of `attachments`, `note` or `voice_note`. Photos are ordinary confirmed uploads (`POST /listings/uploads`), so the client can be uploading them while the seller is still talking; the first three are what the model reads. The voice note travels inline rather than as an upload because it is input and not content — nothing keeps it. Every field of the answer is optional except `name`: one the model could not stand behind comes back empty, and a blank box the seller fills beats a wrong value they have to notice. `price` is only ever a number the seller said out loud, never an estimate.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SuggestListingRequest'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ListingSuggestion'
+                                required:
+                                    - data
+                                type: object
+                    description: A form to review, not a listing
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "413":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: That voice note is longer than this route accepts
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Nothing to look at, or the seller has no verified identity
+                "502":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: The model did not return a usable suggestion
+            security:
+                - bearerAuth: []
+            summary: Fill in a listing from photos and what the seller said
+            tags:
+                - catalog
     /listings/uploads:
         post:
             description: |

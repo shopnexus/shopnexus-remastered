@@ -4,44 +4,15 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode"
 
-	"golang.org/x/text/unicode/norm"
+	catalogdomain "shopnexus/internal/module/catalog/domain"
 )
 
-// Letters NFD leaves alone because they are not a base plus a combining mark. The source
-// is Spanish, Portuguese and Vietnamese listings, so đ is the one that actually shows up;
-// the rest are here so a stray Nordic or German title does not lose a character.
-var foldPairs = strings.NewReplacer(
-	"đ", "d", "Đ", "d",
-	"ø", "o", "Ø", "o",
-	"ß", "ss",
-	"æ", "ae", "Æ", "ae",
-	"œ", "oe", "Œ", "oe",
-	"ł", "l", "Ł", "l",
-)
-
-// slugify produces the ASCII kebab-case both "listing"."slug" and "tag"."id" are CHECKed
-// against: `^[a-z0-9]+(-[a-z0-9]+)*$`. A script that folds to nothing — Thai, Chinese —
-// yields "", and the caller drops that rather than inventing a name for it.
-func slugify(s string) string {
-	var b strings.Builder
-	pendingDash := false
-	for _, r := range norm.NFD.String(foldPairs.Replace(strings.ToLower(s))) {
-		switch {
-		case unicode.Is(unicode.Mn, r): // the accent NFD split off
-		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
-			if pendingDash && b.Len() > 0 {
-				b.WriteByte('-')
-			}
-			pendingDash = false
-			b.WriteRune(r)
-		default:
-			pendingDash = true
-		}
-	}
-	return b.String()
-}
+// slugify is catalog's own rule, not a copy of it: `listing.slug` and `tag.id` are CHECKed against
+// `^[a-z0-9]+(-[a-z0-9]+)*$`, and the module that owns those columns owns what satisfies them. A
+// script that folds to nothing — Thai, Chinese — yields "", and the caller drops that rather than
+// inventing a name for it.
+func slugify(s string) string { return catalogdomain.SlugifyName(s) }
 
 // clipSlug cuts a slug to n bytes on a dash boundary, so the result is still a slug and not
 // a word sawn in half. A cut that already lands on one keeps the last word.

@@ -1,6 +1,7 @@
 package litellm
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"strings"
 
@@ -28,11 +29,27 @@ type streamOptions struct {
 	IncludeUsage bool `json:"include_usage"`
 }
 
+// chatMessage's Content is `any` because the OpenAI schema has two shapes for it: a plain string,
+// and an array of parts once a turn carries pictures. Decoding only ever sees the string form — a
+// model answers text — so toMessage asserts it rather than handling both.
 type chatMessage struct {
 	Role       string         `json:"role"`
-	Content    string         `json:"content"`
+	Content    any            `json:"content"`
 	ToolCalls  []wireToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string         `json:"tool_call_id,omitempty"`
+}
+
+// contentPart is one element of the array form: text, or an image as a data URI. A data URI rather
+// than a link, because the objects this platform holds are behind signed URLs only its own gateway
+// serves and a hosted model cannot follow one.
+type contentPart struct {
+	Type     string    `json:"type"`
+	Text     string    `json:"text,omitempty"`
+	ImageURL *imageURL `json:"image_url,omitempty"`
+}
+
+type imageURL struct {
+	URL string `json:"url"`
 }
 
 type wireToolCall struct {
@@ -191,6 +208,19 @@ func toWireMessages(msgs []llm.Message) []chatMessage {
 	out := make([]chatMessage, 0, len(msgs))
 	for _, m := range msgs {
 		wm := chatMessage{Role: string(m.Role), Content: m.Content, ToolCallID: m.ToolCallID}
+		if len(m.Images) > 0 {
+			parts := make([]contentPart, 0, len(m.Images)+1)
+			if m.Content != "" {
+				parts = append(parts, contentPart{Type: "text", Text: m.Content})
+			}
+			for _, img := range m.Images {
+				parts = append(parts, contentPart{
+					Type:     "image_url",
+					ImageURL: &imageURL{URL: dataURI(img)},
+				})
+			}
+			wm.Content = parts
+		}
 		for _, tc := range m.ToolCalls {
 			wm.ToolCalls = append(wm.ToolCalls, wireToolCall{
 				ID:       tc.ID,
@@ -203,8 +233,18 @@ func toWireMessages(msgs []llm.Message) []chatMessage {
 	return out
 }
 
+// dataURI is how a picture travels inside a JSON request.
+func dataURI(img llm.Image) string {
+	mime := img.Mime
+	if mime == "" {
+		mime = "image/jpeg"
+	}
+	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(img.Data)
+}
+
 func (m chatMessage) toMessage() llm.Message {
-	msg := llm.Message{Role: llm.Role(m.Role), Content: m.Content, ToolCallID: m.ToolCallID}
+	text, _ := m.Content.(string)
+	msg := llm.Message{Role: llm.Role(m.Role), Content: text, ToolCallID: m.ToolCallID}
 	for _, tc := range m.ToolCalls {
 		msg.ToolCalls = append(msg.ToolCalls, llm.ToolCall{
 			ID:        tc.ID,

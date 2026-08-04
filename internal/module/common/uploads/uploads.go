@@ -143,6 +143,49 @@ func (s *Store) Resolve(ctx context.Context, ids []int64) (map[int64]common.Reso
 	return out, nil
 }
 
+// Bytes reads the objects behind the ids, in the order asked. Each through the store its own row
+// names, for the same reason Resolve is: a store hands back whatever key it is given, so reading
+// everything through the preferred one would answer another store's object with silence or, worse,
+// with somebody else's bytes.
+//
+// An id that resolves to nothing is simply absent — the caller asked about photos, and one that was
+// never confirmed is not a photo yet. A store that cannot be read at all is an error, because that
+// is a request the caller has to change rather than a gap they can render around.
+func (s *Store) Bytes(ctx context.Context, ids []int64) ([]common.Blob, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	found, err := s.resources.Find(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("find resources: %w", err)
+	}
+	byID := make(map[int64]common.Resource, len(found))
+	for _, res := range found {
+		byID[res.ID] = res
+	}
+	out := make([]common.Blob, 0, len(ids))
+	for _, id := range ids {
+		res, ok := byID[id]
+		if !ok {
+			continue
+		}
+		client, err := s.stores.For(res.Provider)
+		if err != nil {
+			return nil, err
+		}
+		blob, err := client.Fetch(ctx, res.ObjectKey)
+		if err != nil {
+			return nil, fmt.Errorf("read object %d: %w", id, err)
+		}
+		mime := blob.Mime
+		if mime == "" {
+			mime = res.Mime
+		}
+		out = append(out, common.Blob{ResourceID: id, Mime: mime, Data: blob.Data})
+	}
+	return out, nil
+}
+
 // Sweep is the reaper as a periodic pass, shaped for the shared sweeper. A slot nobody confirmed
 // is invisible either way, so this is housekeeping rather than correctness: without it the rows
 // and the objects behind them accumulate for every upload a client started and walked away from.

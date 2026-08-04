@@ -220,6 +220,24 @@ func (c *Client) Open(objectKey string) (io.ReadSeekCloser, string, error) {
 	return f, mimeOf(objectKey), nil
 }
 
+// Fetch reads an object back, bounded by the same MaxSize a presign is: a file that grew past the
+// limit on disk is not one this process should pull into memory either.
+func (c *Client) Fetch(_ context.Context, objectKey string) (storage.Blob, error) {
+	body, mime, err := c.Open(objectKey)
+	if err != nil {
+		return storage.Blob{}, err
+	}
+	defer func() { _ = body.Close() }()
+	data, err := io.ReadAll(io.LimitReader(body, c.cfg.MaxSize+1))
+	if err != nil {
+		return storage.Blob{}, fmt.Errorf("read object: %w", err)
+	}
+	if int64(len(data)) > c.cfg.MaxSize {
+		return storage.Blob{}, storage.ErrTooLarge
+	}
+	return storage.Blob{Mime: mime, Data: data}, nil
+}
+
 // --- internals ---
 
 func (c *Client) allowed(mime string) bool {

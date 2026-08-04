@@ -812,3 +812,19 @@ func (f *fakeUploads) confirm(id int64) {
 	f.arrived[id] = true
 	f.confirmed[id] = true
 }
+
+// Bytes is what the suggestion route reads a photo through: only a confirmed upload has any, and the
+// content is a stand-in — what a test checks is which ids reached the model, not the pixels.
+func (f *fakeUploads) Bytes(_ context.Context, ids []int64) ([]common.Blob, error) {
+	out := make([]common.Blob, 0, len(ids))
+	for _, id := range ids {
+		if !f.confirmed[id] {
+			continue
+		}
+		out = append(out, common.Blob{
+			ResourceID: id, Mime: "image/jpeg",
+			Data: []byte("photo-" + strconv.FormatInt(id, 10)),
+		})
+	}
+	return out, nil
+}

@@ -93,6 +93,22 @@ x-app-env: &app-env
   EMBEDDING_BATCH_SIZE: "32"
   EMBEDDING_MAX_TEXT_CHARS: "2000"
 
+  # The model behind "photo in, listing out" (POST /listings/suggestions). `mock` answers a
+  # plausible filled form with no model, no key and no network call, so a local stack walks the
+  # whole route. A real one needs a *vision* chat model — the photo is the input a seller cares
+  # about — plus a transcription model for the voice note, both through one LiteLLM proxy:
+  #
+  #   LLM_PROVIDER: "litellm"  -> LITELLM_BASE_URL/API_KEY, LITELLM_CHAT_MODEL,
+  #                               LITELLM_TRANSCRIBE_MODEL, LITELLM_REQUEST_TIMEOUT,
+  #                               LITELLM_STREAM_TIMEOUT
+  LLM_PROVIDER: "mock"
+  LITELLM_BASE_URL: "http://litellm:4000"
+  LITELLM_API_KEY: ""
+  LITELLM_CHAT_MODEL: "gpt-4o-mini"
+  LITELLM_TRANSCRIBE_MODEL: "whisper-1"
+  LITELLM_REQUEST_TIMEOUT: "45s"
+  LITELLM_STREAM_TIMEOUT: "5m"
+
   # Durable execution. `off` leaves every timed transition — an unpaid checkout
   # expiring, an escrow window closing, a refund deadline passing, a blind rating
   # revealing — to the sweep below, which is the same code on a slower clock. Switch to

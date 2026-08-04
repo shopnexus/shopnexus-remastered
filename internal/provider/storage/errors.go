@@ -23,6 +23,10 @@ var (
 	// because no request caused it: the row was written by a deployment that could reach that
 	// store and this one cannot, which is an operator's problem and not the caller's.
 	ErrProviderUnknown = errx.NewError(http.StatusInternalServerError, "storage_provider_unknown", "that file is held by a store this deployment cannot reach")
+	// ErrNotReadable is a Fetch from a store that holds nothing itself — the `remote` one, whose
+	// keys are somebody else's URLs. 422, because the fix is to use an object this platform
+	// actually holds rather than to retry.
+	ErrNotReadable = errx.NewError(http.StatusUnprocessableEntity, "storage_not_readable", "that file is held at another origin, so this platform cannot read it")
 	// ErrProviderReadOnly is a write aimed at a store that only serves. Unreachable through
 	// any route — an upload goes to Registry.Write, which is a writable store by definition —
 	// so it exists to make the wrong wiring fail loudly rather than quietly.

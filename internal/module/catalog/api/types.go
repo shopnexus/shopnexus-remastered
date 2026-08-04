@@ -148,6 +148,28 @@ type Listing struct {
 // ListingLocation is the seller's pickup address as the listing snapshotted it: the names a card
 // shows and the codes a filter matches. A snapshot rather than a reference, because the address
 // lives in another module and a listing has to keep saying where it was sold from.
+// ListingSuggestion is a filled-in form, not a listing: every field is the model's proposal and the
+// seller is expected to correct it. The optional ones are absent when it had nothing it could stand
+// behind — an empty box the seller fills is better than a wrong value they have to notice.
+type ListingSuggestion struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// CategoryID is null when nothing in this marketplace's tree fits what it saw.
+	CategoryID *id.ID[id.Category] `json:"category_id"`
+	// Condition is one of the listing conditions, or empty when it could not tell.
+	Condition string   `json:"condition"`
+	Tags      []string `json:"tags"`
+	// Price is what the seller said, in the smallest currency unit — never an estimate. Null when
+	// they did not say.
+	Price *int64 `json:"price"`
+	// WeightG is the parcel's estimated weight, which is what a shipping quote needs.
+	WeightG        *int64         `json:"weight_g"`
+	Specifications map[string]any `json:"specifications,omitempty"`
+	// Transcript is what the voice note was heard as, echoed so the seller can see why a field is
+	// wrong rather than guess.
+	Transcript string `json:"transcript,omitempty"`
+}
+
 type ListingLocation struct {
 	ProvinceCode string `json:"province_code"`
 	ProvinceName string `json:"province_name"`

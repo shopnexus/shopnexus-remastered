@@ -6,7 +6,11 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
+
 	"time"
+
+	"golang.org/x/text/unicode/norm"
 
 	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/validation"
@@ -40,8 +44,6 @@ const (
 const maxTags = 10
 
 var (
-	slugUnsafe = regexp.MustCompile(`[^a-z0-9]+`)
-	slugEdges  = regexp.MustCompile(`(^-+)|(-+$)`)
 	currencyRe = regexp.MustCompile(`^[A-Z]{3}$`)
 )
 
@@ -440,14 +442,60 @@ func (l *Listing) Snapshot() ListingSnapshot {
 
 // slugify derives the URL-friendly form of a name. Fixed at creation: a slug lives in URLs
 // and in whatever a buyer bookmarked.
+// SlugifyName is the slug a listing gets from its name: ASCII kebab-case, diacritics folded. Named
+// here because `listing.slug` and `tag.id` are CHECKed against the same shape, and the module that
+// owns those columns owns what satisfies them.
+func SlugifyName(name string) string { return slugify(name) }
+
+// SlugifyTag is slugify with the tag rule applied: a word a model proposed becomes a usable tag
+// slug, or "" when nothing survives. Exported because a suggestion arrives as free text and the tag
+// vocabulary is this package's.
+func SlugifyTag(word string) string {
+	slug := slugify(word)
+	if ValidateTagSlug(slug) != nil {
+		return ""
+	}
+	return slug
+}
+
 func slugify(name string) string {
-	s := slugUnsafe.ReplaceAllString(strings.ToLower(name), "-")
-	s = slugEdges.ReplaceAllString(s, "")
+	var b strings.Builder
+	pendingDash := false
+	// NFD splits an accented letter into a base plus a combining mark, which is what lets a
+	// Vietnamese title keep its letters instead of losing them: "Áo thun" is `ao-thun`, not
+	// `o-thun`. Stripping non-ASCII outright is what it used to do, and every listing here is
+	// Vietnamese.
+	for _, r := range norm.NFD.String(foldPairs.Replace(strings.ToLower(name))) {
+		switch {
+		case unicode.Is(unicode.Mn, r): // the accent NFD just split off
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			if pendingDash && b.Len() > 0 {
+				b.WriteByte('-')
+			}
+			pendingDash = false
+			b.WriteRune(r)
+		default:
+			pendingDash = true
+		}
+	}
+	s := b.String()
 	if len(s) > 100 {
 		s = strings.TrimRight(s[:100], "-")
 	}
 	return s
 }
+
+// foldPairs are the letters NFD leaves alone because they are one character rather than a base plus
+// a mark. đ is the one a Vietnamese catalogue actually hits; the rest keep a stray Nordic or German
+// title from losing a letter.
+var foldPairs = strings.NewReplacer(
+	"đ", "d", "Đ", "d",
+	"ø", "o", "Ø", "o",
+	"ß", "ss",
+	"æ", "ae", "Æ", "ae",
+	"œ", "oe", "Œ", "oe",
+	"ł", "l", "Ł", "l",
+)
 
 // dedupe keeps the order a client sent: a tag twice meant it once, and the join has a
 // unique key that would refuse the second.

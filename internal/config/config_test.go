@@ -135,6 +135,7 @@ func fullEnv() map[string]string {
 
 		// The mock model, for the same reason as the other seams: the base env must not need
 		// a multi-gigabyte download to be valid.
+		"LLM_PROVIDER":             "mock",
 		"EMBEDDING_PROVIDER":       "mock",
 		"EMBEDDING_DIMENSIONS":     "1024",
 		"EMBEDDING_INTERVAL":       "1m",

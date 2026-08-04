@@ -598,6 +598,22 @@ give it its own doc under `docs/` and link it from here.
   keep the invariant, the failure it prevents, and the decision behind it. A count in prose ("the
   three workflows") is a comment that goes stale on the next commit — say what the thing is instead.
 
+- **The AI fills a form; the seller posts it.** `POST /listings/suggestions` reads the photos a seller
+  just uploaded plus what they said — typed, or a voice note transcribed server-side — and answers a
+  filled-in `CreateListingRequest`-shaped suggestion. It **writes nothing**: no listing, no draft, no
+  row for an attempt that was abandoned, and `POST /listings` is still the only way a listing comes
+  into existence. A route that posted for them would make a model the author of claims about somebody
+  else's goods — its condition, its price — which is not a claim this marketplace can stand behind.
+  So: one synchronous call (the client shows a skeleton form), every field optional except `name`,
+  a value the route cannot stand behind comes back **empty** rather than guessed, `price` is only ever
+  a number the seller said out loud, and the `category` the model answers is a *name copied from the
+  list in the prompt* — resolved against the real tree, because an id is a token a model invents.
+  The transcript is echoed so a seller can see why a field is wrong instead of guessing.
+- **A model reads bytes, not links.** `storage.Client.Fetch` exists because the objects here are
+  behind signed URLs only this gateway serves, which a hosted model cannot follow — so a photo travels
+  inside the request as a data URI (`llm.Message.Images`). `remote` refuses to be read: its keys are
+  somebody else's origin and this platform does not proxy them.
+
 ## Commits
 
 Conventional style, lowercase, one line, no body, no trailers:
