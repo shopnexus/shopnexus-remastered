@@ -26,7 +26,39 @@ func newListing(t *testing.T) *domain.Listing {
 	if err != nil {
 		t.Fatalf("NewListing: %v", err)
 	}
+	// The service attaches this from the seller's pickup address before it publishes. Set here so
+	// every lifecycle test starts from a listing that *can* go live; the rule itself has its own
+	// test below.
+	l.Location = sellerLocation()
 	return l
+}
+
+// sellerLocation is where the goods are: Ben Nghe ward, District 1, Ho Chi Minh City.
+func sellerLocation() *domain.Location {
+	return &domain.Location{
+		ProvinceCode: "79", ProvinceName: "Ho Chi Minh",
+		DistrictCode: new("760"), DistrictName: new("District 1"),
+		WardCode: "26734", WardName: "Ben Nghe",
+		Latitude: new(10.7769), Longitude: new(106.7009),
+	}
+}
+
+// A listing goes live with an address or not at all: it is where a carrier collects, so a live
+// listing without one is browsable and impossible to buy — which is where it used to surface, at
+// the buyer's checkout.
+func TestPublish_NeedsAPickupAddress(t *testing.T) {
+	l := newListing(t)
+	l.Location = nil
+	if err := l.Publish(); !errors.Is(err, domain.ErrNoPickupAddress) {
+		t.Fatalf("Publish with no address = %v, want ErrNoPickupAddress", err)
+	}
+	if l.Status != domain.StatusDraft {
+		t.Fatalf("status = %q, want it left in draft", l.Status)
+	}
+	l.Location = sellerLocation()
+	if err := l.Publish(); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
 }
 
 // A listing is born in draft with at least one variant: the create request carries them

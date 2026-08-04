@@ -195,9 +195,13 @@ type DeleteListingRequest struct {
 	ID      id.ID[id.Listing] `json:"-" validate:"required"`
 }
 
+// PublishListingRequest sends a listing for review. PickupContactID is where a carrier collects
+// this listing's goods — the seller picks one of their own saved addresses, which is also what the
+// listing is filtered and measured by once it is live. Omitted means their default pickup address.
 type PublishListingRequest struct {
-	ActorID id.ID[id.Account] `json:"-" validate:"required"`
-	ID      id.ID[id.Listing] `json:"-" validate:"required"`
+	ActorID         id.ID[id.Account]  `json:"-" validate:"required"`
+	ID              id.ID[id.Listing]  `json:"-" validate:"required"`
+	PickupContactID *id.ID[id.Contact] `json:"pickup_contact_id,omitempty"`
 }
 
 type HideListingRequest struct {
@@ -251,9 +255,22 @@ type ListListingsRequest struct {
 	Condition  string              `json:"-" validate:"omitempty,oneof=new used damaged"`
 	MinPrice   *int64              `json:"-" validate:"omitempty,gte=0"`
 	MaxPrice   *int64              `json:"-" validate:"omitempty,gte=0"`
-	Sort       string              `json:"-" validate:"omitempty,oneof=newest rating price-asc price-desc best-selling relevance recommended"`
-	Page       int                 `json:"-" validate:"required,min=1"`
-	Limit      int                 `json:"-" validate:"required,min=1,max=100"`
+	// Where to look. The narrowest level the caller names is the filter — a ward is already
+	// inside its province — and it is matched against the seller's pickup address as the listing
+	// snapshotted it.
+	ProvinceCode string `json:"-" validate:"max=20"`
+	DistrictCode string `json:"-" validate:"max=20"`
+	WardCode     string `json:"-" validate:"max=20"`
+	// Where the buyer is, for a "near me" browse: either coordinates from the device, or one of
+	// their own saved addresses. With a position every card carries its distance; RadiusKM bounds
+	// the result to a circle, and `sort=distance` orders by it.
+	Latitude      *float64           `json:"-" validate:"omitempty,gte=-90,lte=90"`
+	Longitude     *float64           `json:"-" validate:"omitempty,gte=-180,lte=180"`
+	NearContactID *id.ID[id.Contact] `json:"-"`
+	RadiusKM      *float64           `json:"-" validate:"omitempty,gt=0,lte=500"`
+	Sort          string             `json:"-" validate:"omitempty,oneof=newest rating price-asc price-desc best-selling relevance recommended distance"`
+	Page          int                `json:"-" validate:"required,min=1"`
+	Limit         int                `json:"-" validate:"required,min=1,max=100"`
 }
 
 // FavoriteRequest is one wishlist write. PUT and DELETE are both idempotent, so neither needs

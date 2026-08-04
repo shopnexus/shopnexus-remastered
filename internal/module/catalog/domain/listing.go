@@ -81,7 +81,10 @@ type Listing struct {
 	Specifications map[string]any
 	Attachments    []int64
 	// PendingEdit is an edit held for moderation; nil means none.
-	PendingEdit  *PendingEdit
+	PendingEdit *PendingEdit
+	// Location is where the goods are, snapshotted from the seller's pickup address when the
+	// listing was published. nil on a draft — the address is only required to go live.
+	Location     *Location
 	CachedRating float64
 	// CachedReviewCount is how many reviews the rating averages.
 	CachedReviewCount int64
@@ -223,6 +226,12 @@ func (l *Listing) Publish() error {
 	}
 	if len(l.LiveVariants()) == 0 {
 		return ErrNoVariant
+	}
+	// A live listing has a location. It is what a buyer filters by, and it is also the address a
+	// carrier collects from — without it every checkout of this listing fails after the buyer has
+	// chosen it, which is a gap the seller should hear about here instead.
+	if l.Location == nil || l.Location.ProvinceCode == "" {
+		return ErrNoPickupAddress
 	}
 	l.Status = StatusPending
 	record(l, Published, StatusChange{Status: l.Status})
@@ -464,3 +473,24 @@ func attributeKey(attributes map[string]any) string {
 	}
 	return string(encoded)
 }
+
+// Location is where a listing's goods are: the administrative levels a buyer filters by, and the
+// point "near me" measures from. A snapshot of the seller's pickup address rather than a reference
+// to it — the address lives in another schema, and a listing that was sold from Hanoi should keep
+// saying so after the seller moves.
+type Location struct {
+	ProvinceCode string `validate:"required,max=20"`
+	ProvinceName string `validate:"required,max=100"`
+	// DistrictCode is nil where the country has no district tier. Name and code travel together.
+	DistrictCode *string `validate:"omitempty,max=20"`
+	DistrictName *string `validate:"omitempty,max=100"`
+	WardCode     string  `validate:"required,max=20"`
+	WardName     string  `validate:"required,max=100"`
+	// Latitude and Longitude are nil when the address was never geocoded: the listing still
+	// filters by province, it just cannot answer a radius.
+	Latitude  *float64 `validate:"omitempty,gte=-90,lte=90"`
+	Longitude *float64 `validate:"omitempty,gte=-180,lte=180"`
+}
+
+// Geocoded reports whether the location can answer a distance.
+func (l Location) Geocoded() bool { return l.Latitude != nil && l.Longitude != nil }

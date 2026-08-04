@@ -27,6 +27,11 @@ type fakeAccounts struct {
 	accounttest.Stub
 	role     string
 	verified bool
+	// noPickup is a seller who never said where a carrier collects, which is what stops a listing
+	// going live; ungeocoded is one whose address has no coordinates, so it filters by province
+	// but answers no radius.
+	noPickup   bool
+	ungeocoded bool
 }
 
 func (f fakeAccounts) GetMe(context.Context, accountapi.GetMeRequest) (accountapi.Me, error) {
@@ -35,6 +40,48 @@ func (f fakeAccounts) GetMe(context.Context, accountapi.GetMeRequest) (accountap
 
 func (f fakeAccounts) GetPublicAccount(_ context.Context, req accountapi.GetPublicAccountRequest) (accountapi.PublicAccount, error) {
 	return accountapi.PublicAccount{ID: req.ID, Name: "Seller", IdentityVerified: f.verified}, nil
+}
+
+// The seller's address, and the coordinates every distance in these tests is measured against:
+// Ben Nghe ward, District 1, Ho Chi Minh City.
+const (
+	sellerProvinceCode = "79"
+	sellerDistrictCode = "760"
+	sellerWardCode     = "26734"
+	sellerLat          = 10.7769
+	sellerLon          = 106.7009
+)
+
+// GetPickupContact is where a listing's location comes from: the seller's default collection point.
+func (f fakeAccounts) GetPickupContact(_ context.Context, _ accountapi.GetPickupContactRequest) (accountapi.Contact, error) {
+	if f.noPickup {
+		return accountapi.Contact{}, errx.NewError(422, accountapi.CodeNoPickupContact, "no pickup address")
+	}
+	return f.pickup(id.ID[id.Contact](500)), nil
+}
+
+// GetContact answers the address a seller picked from their own book, or a buyer's "near me".
+func (f fakeAccounts) GetContact(_ context.Context, req accountapi.GetContactRequest) (accountapi.Contact, error) {
+	return f.pickup(req.ID), nil
+}
+
+func (f fakeAccounts) pickup(contactID id.ID[id.Contact]) accountapi.Contact {
+	c := accountapi.Contact{
+		ID:           contactID,
+		FullName:     "Seller",
+		Phone:        "+84900000001",
+		Country:      "VN",
+		ProvinceCode: sellerProvinceCode,
+		ProvinceName: "Ho Chi Minh",
+		DistrictCode: new(sellerDistrictCode),
+		DistrictName: new("District 1"),
+		WardCode:     sellerWardCode,
+		WardName:     "Ben Nghe",
+	}
+	if !f.ungeocoded {
+		c.Latitude, c.Longitude = new(sellerLat), new(sellerLon)
+	}
+	return c
 }
 
 type harness struct {
@@ -62,6 +109,14 @@ func newHarnessWith(role string, identityVerified bool) *harness {
 // newHarnessModerator reuses one harness's repository with a moderator caller.
 func newHarnessModerator(h *harness) *harness {
 	svc := catalog.NewService(h.repo, fakeAccounts{role: "moderator", verified: true},
+		h.uploads, validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images}
+}
+
+// newHarnessUngeocoded reuses one harness's data with a seller whose address has no coordinates,
+// which is what makes "near me" refusable rather than silently empty.
+func newHarnessUngeocoded(h *harness) *harness {
+	svc := catalog.NewService(h.repo, fakeAccounts{role: "user", verified: true, ungeocoded: true},
 		h.uploads, validation.Default(), slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images}
 }

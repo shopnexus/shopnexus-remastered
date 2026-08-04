@@ -1467,6 +1467,12 @@ components:
                     type: boolean
                 id:
                     $ref: '#/components/schemas/ListingID'
+                location:
+                    allOf:
+                        - $ref: '#/components/schemas/ListingLocation'
+                    description: |
+                        Where the goods are. Null on a listing that was never published — the address is taken when the seller publishes, because that is when it becomes something a buyer can find.
+                    nullable: true
                 name:
                     example: Áo thun Uniqlo cổ tròn xanh navy
                     type: string
@@ -1574,6 +1580,12 @@ components:
                     items:
                         $ref: '#/components/schemas/Resource'
                     type: array
+                location:
+                    allOf:
+                        - $ref: '#/components/schemas/ListingLocation'
+                    description: |
+                        Where the goods are. Null on a listing that was never published — the address is taken when the seller publishes, because that is when it becomes something a buyer can find.
+                    nullable: true
                 name:
                     example: Áo thun Uniqlo cổ tròn xanh navy
                     type: string
@@ -1648,6 +1660,46 @@ components:
             example: lst_5y5w68r4918v8
             pattern: ^lst_[0-9a-hjkmnp-tv-z]{13}$
             type: string
+        ListingLocation:
+            description: |
+                Where a listing's goods are: the seller's pickup address as the listing snapshotted it when it was published. A snapshot rather than a reference to the address — the address belongs to another module and a seller who moves does not move the listings they already sold.
+            properties:
+                distance_km:
+                    description: |
+                        How far the goods are from where the buyer said they are. Absent unless the browse sent a position, and absent for an address that was never geocoded.
+                    example: 2.4
+                    format: double
+                    minimum: 0
+                    type: number
+                district_code:
+                    description: Null where the country has no district tier. Code and name travel together.
+                    example: "760"
+                    nullable: true
+                    type: string
+                district_name:
+                    example: District 1
+                    nullable: true
+                    type: string
+                province_code:
+                    example: "79"
+                    type: string
+                province_name:
+                    example: Ho Chi Minh City
+                    type: string
+                ward_code:
+                    example: "26734"
+                    type: string
+                ward_name:
+                    example: Bến Nghé
+                    type: string
+            required:
+                - province_code
+                - province_name
+                - district_code
+                - district_name
+                - ward_code
+                - ward_name
+            type: object
         ListingPage:
             description: |
                 One page shape for every listing query, ranked or not. Page-paginated, because a catalog is browsed with a pager and a relevance order has no stored column to seek into; `total` is null for a ranked query, where the top-K is all the search ever visited.
@@ -2570,6 +2622,13 @@ components:
                 - identity_verified
                 - follower_count
                 - created_at
+            type: object
+        PublishListingRequest:
+            description: |
+                Optional. Names the address a carrier collects this listing's goods from — one of the seller's own — which is also the location buyers filter and measure by. Omitted means their default pickup address.
+            properties:
+                pickup_contact_id:
+                    $ref: '#/components/schemas/ContactID'
             type: object
         PutTagRequest:
             description: The slug is in the path, so this carries only what can change.
@@ -6914,6 +6973,8 @@ paths:
 
                 `ids` resolves a known set, which is how a cart or an order list renders the listings behind its rows. It ignores every other filter and answers for hidden and soft-deleted listings too, because an order that references one still has to display it; `deleted_at` says which. Listings that were never public (`draft`, `pending`) stay out unless they are the caller's own.
 
+                Location is a C2C buyer's first filter — collecting in person, or just trusting a seller two districts away over one across the country. It is the seller's pickup address as the listing snapshotted it when they published, so it is the same address a carrier collects from, and it never moves under a listing that has already sold. `province_code`/`district_code`/ `ward_code` filter on it; `lat`+`lon` or `near_contact_id` measure from where the buyer is, `radius_km` bounds the result and `sort=distance` orders by it.
+
                 `price-asc` and `price-desc` are answered through the SKU price index rather than a value cached on the listing, so `price` is the cheapest matching variant's. `best-selling` is the one that cannot work that way — it orders by a sum over the variants, and a sum has no per-SKU index to scan in order — so it reads `cached_sold` on the listing, maintained with the sales it counts.
             parameters:
                 - description: Resolve exactly these listings, ignoring the other filters.
@@ -6988,7 +7049,62 @@ paths:
                     format: int64
                     minimum: 0
                     type: integer
-                - description: Defaults to `relevance` when a query is given and `newest` otherwise.
+                - description: |
+                    Where to look, matched against the listing's own snapshot of the seller's pickup address. Send the narrowest level you mean — a ward is already inside its province.
+                  in: query
+                  name: province_code
+                  schema:
+                    example: "79"
+                    maxLength: 20
+                    type: string
+                - in: query
+                  name: district_code
+                  schema:
+                    example: "760"
+                    maxLength: 20
+                    type: string
+                - in: query
+                  name: ward_code
+                  schema:
+                    example: "26734"
+                    maxLength: 20
+                    type: string
+                - description: |
+                    Where the buyer is, for a "near me" browse — from the device, and always together with `lon`. With a position every card carries `location.distance_km`.
+                  in: query
+                  name: lat
+                  schema:
+                    example: 10.7769
+                    format: double
+                    maximum: 90
+                    minimum: -90
+                    type: number
+                - in: query
+                  name: lon
+                  schema:
+                    example: 106.7009
+                    format: double
+                    maximum: 180
+                    minimum: -180
+                    type: number
+                - description: |
+                    One of the caller's own saved addresses, as an alternative to `lat`/`lon` — the usual case, since a buyer's address is already on file. 422 if it was never geocoded.
+                  in: query
+                  name: near_contact_id
+                  schema:
+                    $ref: '#/components/schemas/ContactID'
+                - description: |
+                    Bound the result to a circle around that position. Without it a position still ranks and reports distance, it just does not exclude anything.
+                  in: query
+                  name: radius_km
+                  schema:
+                    example: 5
+                    exclusiveMinimum: 0
+                    format: double
+                    maximum: 500
+                    type: number
+                - description: |
+                    Defaults to `relevance` when a query is given and `newest` otherwise. `distance` needs a position, like `radius_km` does.
                   in: query
                   name: sort
                   schema:
@@ -7000,6 +7116,7 @@ paths:
                         - best-selling
                         - relevance
                         - recommended
+                        - distance
                     type: string
                 - $ref: '#/components/parameters/Page'
                 - $ref: '#/components/parameters/Limit'
@@ -7253,6 +7370,14 @@ paths:
                 Publication always goes through moderation: this queues the listing and it stays invisible until a moderator clears it. There is no path that makes a listing live without a human, which is also why re-publishing something a moderator took down cannot undo the takedown.
 
                 An automatic prohibited-goods scan still runs — it orders the queue and flags what to look at first, it does not clear anything.
+
+                This is also where the listing gets its location: `pickup_contact_id` names which of the seller's own saved addresses a carrier collects from, and omitting it means their default pickup address. A seller with neither is refused with 422 rather than left with a live listing every checkout fails on — the address is both where a carrier goes and how buyers find the listing, so it is taken now and frozen onto the row.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/PublishListingRequest'
+                required: false
             responses:
                 "202":
                     content:

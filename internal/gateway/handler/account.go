@@ -484,6 +484,7 @@ func (h *Account) RegisterDevice(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
+
 	httpx.WriteData(w, http.StatusOK, res)
 }
 

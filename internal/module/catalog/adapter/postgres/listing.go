@@ -19,16 +19,21 @@ import (
 const listingColumns = `id, version, account_id, slug, status::text, name, description,
 	       category_id, condition::text, price_mode::text, currency,
 	       specifications, attachments, pending_edit, cached_rating, cached_review_count, cached_sold,
+	       province_code, province_name, district_code, district_name, ward_code, ward_name,
+	       ST_Y(location::geometry), ST_X(location::geometry),
 	       created_at, deleted_at, embedding_stale_at`
 
 func scanListing(row pgx.Row) (*domain.Listing, error) {
 	var (
 		l       domain.Listing
 		pending []byte
+		area    nullableLocation
 	)
 	err := row.Scan(&l.ID, &l.Version, &l.SellerID, &l.Slug, &l.Status, &l.Name, &l.Description,
 		&l.CategoryID, &l.Condition, &l.PriceMode, &l.Currency,
 		&l.Specifications, &l.Attachments, &pending, &l.CachedRating, &l.CachedReviewCount, &l.CachedSold,
+		&area.provinceCode, &area.provinceName, &area.districtCode, &area.districtName,
+		&area.wardCode, &area.wardName, &area.latitude, &area.longitude,
 		&l.CreatedAt, &l.DeletedAt, &l.EmbeddingStaleAt)
 	if dbx.IsNoRows(err) {
 		return nil, domain.ErrListingNotFound
@@ -36,6 +41,7 @@ func scanListing(row pgx.Row) (*domain.Listing, error) {
 	if err != nil {
 		return nil, fmt.Errorf("db scan listing: %w", err)
 	}
+	l.Location = area.location()
 	// NULL means no edit is held — one representation of absent, which is why the column is
 	// nullable rather than defaulting to an empty object.
 	if len(pending) > 0 {
@@ -49,10 +55,29 @@ func scanListing(row pgx.Row) (*domain.Listing, error) {
 }
 
 // listingArgs is the whole row, so an insert and an update name the same values.
+// locationPoint is the SQL that turns the two coordinates into the geography column. NULL when the
+// address was never geocoded, which is a listing that filters by province and answers no radius.
+const locationPoint = `CASE WHEN @latitude::double precision IS NULL THEN NULL
+	                        ELSE ST_SetSRID(ST_MakePoint(@longitude::double precision,
+	                                                     @latitude::double precision), 4326)::geography
+	                   END`
+
 func listingArgs(l *domain.Listing) pgx.NamedArgs {
 	var pending any
 	if l.PendingEdit != nil {
 		pending = l.PendingEdit
+	}
+	// An unpublished listing has no location; the columns are then NULL rather than empty strings,
+	// so "has a location" is one question in SQL too.
+	var area domain.Location
+	if l.Location != nil {
+		area = *l.Location
+	}
+	nullArea := func(v string) any {
+		if v == "" {
+			return nil
+		}
+		return v
 	}
 	return pgx.NamedArgs{
 		"id":                  l.ID,
@@ -73,6 +98,14 @@ func listingArgs(l *domain.Listing) pgx.NamedArgs {
 		"cached_review_count": l.CachedReviewCount,
 		"cached_sold":         l.CachedSold,
 		"embedding_stale_at":  l.EmbeddingStaleAt,
+		"province_code":       nullArea(area.ProvinceCode),
+		"province_name":       nullArea(area.ProvinceName),
+		"district_code":       area.DistrictCode,
+		"district_name":       area.DistrictName,
+		"ward_code":           nullArea(area.WardCode),
+		"ward_name":           nullArea(area.WardName),
+		"latitude":            area.Latitude,
+		"longitude":           area.Longitude,
 	}
 }
 
@@ -186,10 +219,14 @@ func (r *Repo) CreateListing(ctx context.Context, l *domain.Listing, actor int64
 	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
 		const q = `INSERT INTO listing (account_id, slug, status, name, description, category_id,
 		                       condition, price_mode, currency, specifications,
-		                       attachments, pending_edit, embedding_stale_at)
+		                       attachments, pending_edit, embedding_stale_at,
+		                       province_code, province_name, district_code, district_name,
+		                       ward_code, ward_name, location)
 		           VALUES (@account_id, @slug, @status, @name, @description, @category_id,
 		                   @condition, @price_mode, @currency, @specifications,
-		                   @attachments, @pending_edit, @embedding_stale_at)
+		                   @attachments, @pending_edit, @embedding_stale_at,
+		                   @province_code, @province_name, @district_code, @district_name,
+		                   @ward_code, @ward_name, ` + locationPoint + `)
 		           RETURNING id, version, created_at`
 		err := tx.QueryRow(ctx, q, listingArgs(l)).Scan(&l.ID, &l.Version, &l.CreatedAt)
 		if err != nil {
@@ -228,7 +265,11 @@ func (r *Repo) SaveListing(ctx context.Context, l *domain.Listing, actor int64) 
 		               price_mode = @price_mode, currency = @currency,
 		               specifications = @specifications,
 		               attachments = @attachments, pending_edit = @pending_edit,
-		               embedding_stale_at = @embedding_stale_at, version = version + 1
+		               embedding_stale_at = @embedding_stale_at,
+		               province_code = @province_code, province_name = @province_name,
+		               district_code = @district_code, district_name = @district_name,
+		               ward_code = @ward_code, ward_name = @ward_name,
+		               location = ` + locationPoint + `, version = version + 1
 		           WHERE id = @id AND version = @version AND deleted_at IS NULL`
 		tag, err := tx.Exec(ctx, q, listingArgs(l))
 		if err != nil {

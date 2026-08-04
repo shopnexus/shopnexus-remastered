@@ -742,3 +742,13 @@ func TestSave_StaleAggregateIsAConflict(t *testing.T) {
 		t.Fatalf("status = %d, want 409", got)
 	}
 }
+
+// The code catalog branches on has to be the code this module returns. Two declarations, because
+// `api` may not import `errx` and `domain` may not import `api` — so a test is what keeps them
+// equal, and a rename that misses one is a publish that quietly stops recognising "no pickup
+// address" and reports an outage instead.
+func TestPickupContactCodeIsPublished(t *testing.T) {
+	if got := errx.CodeOf(domain.ErrNoPickupContact); got != accountapi.CodeNoPickupContact {
+		t.Fatalf("code = %q, want the published %q", got, accountapi.CodeNoPickupContact)
+	}
+}

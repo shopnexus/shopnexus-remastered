@@ -94,6 +94,26 @@ func (h *Catalog) ListListings(w http.ResponseWriter, r *http.Request) {
 	if req.MaxPrice, err = int64Param(r, "max_price"); failed(w, h.log, err) {
 		return
 	}
+	// Where to look, and where the buyer is looking from.
+	req.ProvinceCode = query.Get("province_code")
+	req.DistrictCode = query.Get("district_code")
+	req.WardCode = query.Get("ward_code")
+	if req.Latitude, err = floatParam(r, "lat"); failed(w, h.log, err) {
+		return
+	}
+	if req.Longitude, err = floatParam(r, "lon"); failed(w, h.log, err) {
+		return
+	}
+	if req.RadiusKM, err = floatParam(r, "radius_km"); failed(w, h.log, err) {
+		return
+	}
+	if raw := query.Get("near_contact_id"); raw != "" {
+		contactID, err := id.Parse[id.Contact](raw)
+		if failed(w, h.log, err) {
+			return
+		}
+		req.NearContactID = &contactID
+	}
 	if failed(w, h.log, check(h.v, req)) {
 		return
 	}
@@ -210,7 +230,13 @@ func (h *Catalog) PublishListing(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	req := catalogapi.PublishListingRequest{ActorID: uid, ID: listingID}
+	// The body is optional: it names which of the seller's addresses a carrier collects from, and
+	// leaving it out means their default.
+	var req catalogapi.PublishListingRequest
+	if failed(w, h.log, decodeOptionalBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, listingID
 	if failed(w, h.log, check(h.v, req)) {
 		return
 	}

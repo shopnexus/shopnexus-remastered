@@ -243,3 +243,106 @@ func TestListListings_IDsResolveEvenWhenDeleted(t *testing.T) {
 		t.Fatalf("ids = %+v, want the deleted listing", page.Data)
 	}
 }
+
+// Where the goods are is the C2C buyer's first filter, and "near me" is the browse they use most.
+// Both read the listing's own snapshot of the seller's pickup address, so the feed answers them
+// without reaching into the account module row by row.
+func TestListListings_FiltersByAreaAndDistance(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	live := seedListing(t, h)
+	publish(t, h, live)
+
+	// The address the harness's seller collects from — its province, district and ward all match.
+	area := catalogapi.ListListingsRequest{
+		ProvinceCode: sellerProvinceCode, DistrictCode: sellerDistrictCode,
+		WardCode: sellerWardCode, Page: 1, Limit: 20,
+	}
+	page, err := h.svc.ListListings(ctx, area)
+	if err != nil {
+		t.Fatalf("ListListings by area: %v", err)
+	}
+	if len(page.Data) != 1 || page.Data[0].ID != live.ID {
+		t.Fatalf("feed = %+v, want the listing in that ward", page.Data)
+	}
+	// The card carries the names a client renders, not just the codes it filtered on.
+	got := page.Data[0].Location
+	if got == nil || got.ProvinceName != "Ho Chi Minh" || got.WardName != "Ben Nghe" {
+		t.Fatalf("location = %+v, want the seller's address on the card", got)
+	}
+	if got.DistanceKM != nil {
+		t.Errorf("distance = %v, want none until the buyer says where they are", *got.DistanceKM)
+	}
+
+	// Another province is another market: the listing is not in it.
+	elsewhere := area
+	elsewhere.ProvinceCode = "01" // Hanoi
+	elsewhere.DistrictCode, elsewhere.WardCode = "", ""
+	if page, err = h.svc.ListListings(ctx, elsewhere); err != nil {
+		t.Fatalf("ListListings elsewhere: %v", err)
+	}
+	if len(page.Data) != 0 {
+		t.Fatalf("feed = %+v, want nothing in another province", page.Data)
+	}
+
+	// Near me: a buyer a few streets away sees it and is told how far, one ~50 km out does not.
+	near := catalogapi.ListListingsRequest{
+		Latitude: new(sellerLat + 0.01), Longitude: new(sellerLon + 0.01),
+		RadiusKM: new(5.0), Sort: "distance", Page: 1, Limit: 20,
+	}
+	if page, err = h.svc.ListListings(ctx, near); err != nil {
+		t.Fatalf("ListListings near: %v", err)
+	}
+	if len(page.Data) != 1 {
+		t.Fatalf("feed = %+v, want the listing a couple of km away", page.Data)
+	}
+	if d := page.Data[0].Location.DistanceKM; d == nil || *d <= 0 || *d > 5 {
+		t.Fatalf("distance = %v, want a couple of km", d)
+	}
+	far := near
+	far.Latitude, far.Longitude = new(sellerLat+0.5), new(sellerLon+0.5)
+	if page, err = h.svc.ListListings(ctx, far); err != nil {
+		t.Fatalf("ListListings far: %v", err)
+	}
+	if len(page.Data) != 0 {
+		t.Fatalf("feed = %+v, want nothing within 5 km of somewhere else", page.Data)
+	}
+}
+
+// A distance needs somewhere to measure from. Answering the whole feed in creation order instead
+// would be a different question than the one asked, so it is refused.
+func TestListListings_DistanceNeedsAPosition(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+
+	for _, req := range []catalogapi.ListListingsRequest{
+		{Sort: "distance", Page: 1, Limit: 20},
+		{RadiusKM: new(5.0), Page: 1, Limit: 20},
+		// Half a position is not one.
+		{Latitude: new(sellerLat), Sort: "distance", Page: 1, Limit: 20},
+	} {
+		if got := status(t, mustErr(h.svc.ListListings(ctx, req))); got != 400 {
+			t.Fatalf("status = %d for %+v, want 400", got, req)
+		}
+	}
+
+	// A saved address of the buyer's works too — and one that was never geocoded is told so
+	// rather than quietly answering nothing.
+	viewer := catalogapi.ListListingsRequest{
+		ViewerID: actor, NearContactID: new(id.ID[id.Contact](500)), Sort: "distance",
+		Page: 1, Limit: 20,
+	}
+	if _, err := h.svc.ListListings(ctx, viewer); err != nil {
+		t.Fatalf("ListListings near a saved address: %v", err)
+	}
+	ungeocoded := newHarnessUngeocoded(h)
+	if got := status(t, mustErr(ungeocoded.svc.ListListings(ctx, viewer))); got != 422 {
+		t.Fatalf("status = %d, want 422 for an address with no coordinates", got)
+	}
+	// And an anonymous browse cannot name one of "my" addresses.
+	anon := viewer
+	anon.ViewerID = 0
+	if got := status(t, mustErr(h.svc.ListListings(ctx, anon))); got != 401 {
+		t.Fatalf("status = %d, want 401 naming an address with no session", got)
+	}
+}

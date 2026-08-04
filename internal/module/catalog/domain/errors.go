@@ -39,8 +39,15 @@ var (
 	ErrInvalidTransition     = errx.NewError(http.StatusConflict, "invalid_transition", "already live or already under moderation")
 	ErrNotAwaitingModeration = errx.NewError(http.StatusConflict, "not_awaiting_moderation", "this listing has nothing awaiting moderation")
 	ErrListingInUse          = errx.NewError(http.StatusConflict, "listing_in_use", "an open order still covers this listing")
-	ErrNoVariant             = errx.NewError(http.StatusUnprocessableEntity, "no_variant", "a listing needs at least one variant with a price")
-	ErrTooManyTags           = errx.NewError(http.StatusUnprocessableEntity, "too_many_tags", "a listing carries at most 10 tags")
+	// ErrNoPickupAddress is a seller publishing before they have said where a carrier collects.
+	// Refused here rather than at the buyer's checkout, which is where it used to surface: the
+	// listing was live, browsable and impossible to buy.
+	// ErrAddressNotGeocoded is a "near me" browse from an address with no coordinates. Answered
+	// rather than silently dropped: the client's move is to ask for the device's position.
+	ErrAddressNotGeocoded = errx.NewError(http.StatusUnprocessableEntity, "address_not_geocoded", "that address has no coordinates, so it cannot measure distance")
+	ErrNoPickupAddress    = errx.NewError(http.StatusUnprocessableEntity, "no_pickup_address", "set a pickup address before publishing: it is where carriers collect and how buyers find you")
+	ErrNoVariant          = errx.NewError(http.StatusUnprocessableEntity, "no_variant", "a listing needs at least one variant with a price")
+	ErrTooManyTags        = errx.NewError(http.StatusUnprocessableEntity, "too_many_tags", "a listing carries at most 10 tags")
 
 	// --- variants ---
 	ErrVariantNotFound = errx.NewError(http.StatusNotFound, "variant_not_found", "variant not found")

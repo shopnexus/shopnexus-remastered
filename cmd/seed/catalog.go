@@ -62,15 +62,23 @@ func writeCatalog(ctx context.Context, pool *pgxpool.Pool, p *plan, sellers []se
 				INSERT INTO listing (slug, account_id, category_id, status, name, description,
 				                     specifications, attachments, price_mode, condition, currency,
 				                     cached_rating, cached_review_count, cached_sold,
+				                     province_code, province_name, ward_code, ward_name,
 				                     created_at, embedding_stale_at)
 				VALUES (@slug, @account_id, @category_id, 'active', @name, @description,
 				        @specifications, @attachments, 'fixed', @condition, @currency,
 				        @cached_rating, @cached_review_count, @cached_sold,
+				        @province_code, @province_name, @ward_code, @ward_name,
 				        @created_at, @now)
 				RETURNING id`
 			args := pgx.NamedArgs{
-				"slug":                l.slug,
-				"account_id":          sellers[l.seller].id,
+				"slug":       l.slug,
+				"account_id": sellers[l.seller].id,
+				// Where the goods are, copied from the seller's pickup contact exactly as
+				// PublishListing does — a live listing always has one.
+				"province_code":       sellers[l.seller].area.provinceCode,
+				"province_name":       sellers[l.seller].area.provinceName,
+				"ward_code":           sellers[l.seller].area.wardCode,
+				"ward_name":           sellers[l.seller].area.wardName,
 				"category_id":         categoryID[l.category],
 				"name":                l.name,
 				"description":         l.description,

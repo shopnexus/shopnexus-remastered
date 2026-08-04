@@ -67,6 +67,10 @@ type ListingSummary struct {
 	// DeletedAt is set on a listing the seller removed. Only an `ids` lookup returns one — an
 	// order that references it still has to render.
 	DeletedAt *time.Time
+	// Location is where the goods are, and nil for a listing that was never published. DistanceKM
+	// is set only when the browse named a position.
+	Location   *domain.Location
+	DistanceKM *float64
 }
 
 // ListingFilter is the browse feed: one query narrowed by parameters rather than a family of
@@ -103,9 +107,24 @@ type ListingFilter struct {
 	// every price is gte=1) rather than "not filtered" — unlike MinPrice, where 0 really
 	// is a no-op since it excludes no price a listing could have.
 	MaxPrice *int64
+	// The administrative filter, narrowest level wins: a ward implies its district and province,
+	// so a caller sends the one they mean. Matched against the listing's own snapshot.
+	ProvinceCode string
+	DistrictCode string
+	WardCode     string
+	// Near is where the buyer is. With it, every row carries its distance and a radius may bound
+	// the result; without it, `distance` is not a sort that can be answered.
+	Near     *Point
+	RadiusKM float64
 	Sort     string
 	Offset   int
 	Limit    int
+}
+
+// Point is a WGS84 coordinate — the buyer's position for a "near me" browse.
+type Point struct {
+	Latitude  float64 `validate:"gte=-90,lte=90"`
+	Longitude float64 `validate:"gte=-180,lte=180"`
 }
 
 // The search modes and the sorts, spelled once so the service and the adapter agree.
@@ -121,6 +140,7 @@ const (
 	SortBestSelling = "best-selling"
 	SortRelevance   = "relevance"
 	SortRecommended = "recommended"
+	SortDistance    = "distance"
 )
 
 // QueueFilter drives the queue. Status empty means both halves of it: a listing waiting for

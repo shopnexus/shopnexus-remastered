@@ -8,6 +8,7 @@ import (
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/common"
+	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/id"
 )
 
@@ -69,6 +70,45 @@ func (s *Service) GetListing(ctx context.Context, req catalogapi.GetListingReque
 		privileged = true
 	}
 	return s.detailFor(ctx, l, req.ViewerID.Int64(), privileged)
+}
+
+// attachLocation copies a pickup address onto the listing: the one the seller chose from their own
+// address book, or their default. A seller who has neither is refused by Publish, which is the
+// point — a live listing with nowhere to collect from is one every checkout fails on, after the
+// buyer has already chosen it.
+//
+// The address is read through the *actor*, so a seller can only ever name one of their own.
+func (s *Service) attachLocation(ctx context.Context, l *domain.Listing, pickup *id.ID[id.Contact]) error {
+	contact, err := s.pickupContact(ctx, l.SellerID, pickup)
+	if err != nil {
+		// No pickup address is this module's own refusal, with the wording a seller needs; a
+		// contact read that failed for any other reason is the account module's to report.
+		if errx.CodeOf(err) == accountapi.CodeNoPickupContact {
+			return domain.ErrNoPickupAddress
+		}
+		return fmt.Errorf("read pickup contact: %w", err)
+	}
+	l.Location = &domain.Location{
+		ProvinceCode: contact.ProvinceCode,
+		ProvinceName: contact.ProvinceName,
+		DistrictCode: contact.DistrictCode,
+		DistrictName: contact.DistrictName,
+		WardCode:     contact.WardCode,
+		WardName:     contact.WardName,
+		Latitude:     contact.Latitude,
+		Longitude:    contact.Longitude,
+	}
+	return nil
+}
+
+// pickupContact is the chosen address or the default one. Named separately because the two reads
+// are different questions of the account module — "this address of mine" and "my default".
+func (s *Service) pickupContact(ctx context.Context, sellerID int64, pickup *id.ID[id.Contact]) (accountapi.Contact, error) {
+	seller := id.Of[id.Account](sellerID)
+	if pickup != nil {
+		return s.accounts.GetContact(ctx, accountapi.GetContactRequest{ActorID: seller, ID: *pickup})
+	}
+	return s.accounts.GetPickupContact(ctx, accountapi.GetPickupContactRequest{AccountID: seller})
 }
 
 // requireSeller refuses a seller with no live verified identity document. The flag lives in
@@ -166,6 +206,7 @@ func (s *Service) detailFor(ctx context.Context, l *domain.Listing, viewerID int
 	}
 
 	out := catalogapi.ListingDetail{
+		Location:       toAPILocation(l.Location, nil),
 		ID:             id.Of[id.Listing](l.ID),
 		Slug:           l.Slug,
 		Name:           l.Name,
@@ -224,6 +265,23 @@ func pick(found map[int64]common.ResourceDTO, keys []int64) []common.ResourceDTO
 		}
 	}
 	return out
+}
+
+// toAPILocation is the snapshot as a client reads it. nil in, nil out: a listing that was never
+// published has no location, and a card renders that as "no area" rather than as empty strings.
+func toAPILocation(area *domain.Location, distanceKM *float64) *catalogapi.ListingLocation {
+	if area == nil {
+		return nil
+	}
+	return &catalogapi.ListingLocation{
+		ProvinceCode: area.ProvinceCode,
+		ProvinceName: area.ProvinceName,
+		DistrictCode: area.DistrictCode,
+		DistrictName: area.DistrictName,
+		WardCode:     area.WardCode,
+		WardName:     area.WardName,
+		DistanceKM:   distanceKM,
+	}
 }
 
 func toAPIPendingEdit(e domain.PendingEdit) *catalogapi.PendingEdit {
@@ -320,6 +378,12 @@ func (s *Service) PublishListing(ctx context.Context, req catalogapi.PublishList
 	l, err := s.repo.GetListingForSeller(ctx, req.ID.Int64(), req.ActorID.Int64())
 	if err != nil {
 		return catalogapi.ListingDetail{}, fmt.Errorf("get listing: %w", err)
+	}
+	// Where the goods are, taken from the seller's pickup address as it stands now. Snapshotted
+	// at publish rather than referenced: the address is in another schema, and a listing sold from
+	// Hanoi should keep saying so after the seller moves. Re-publishing refreshes it.
+	if err := s.attachLocation(ctx, l, req.PickupContactID); err != nil {
+		return catalogapi.ListingDetail{}, err
 	}
 	if err := l.Publish(); err != nil {
 		return catalogapi.ListingDetail{}, err

@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/jackc/pgx/v5"
 
@@ -35,6 +36,12 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 		"max_price":        nullInt64Ptr(f.MaxPrice),
 		"probe":            dbx.NullText(vectorLiteralOrEmpty(f.Probe)),
 		"probe_from_query": f.ProbeFromQuery,
+		"province_code":    dbx.NullText(f.ProvinceCode),
+		"district_code":    dbx.NullText(f.DistrictCode),
+		"ward_code":        dbx.NullText(f.WardCode),
+		"near_lat":         nullFloat(near(f, func(p port.Point) float64 { return p.Latitude })),
+		"near_lon":         nullFloat(near(f, func(p port.Point) float64 { return p.Longitude })),
+		"radius_m":         nullFloat(radiusMetres(f)),
 		"limit":            f.Limit,
 		"offset":           f.Offset,
 	}
@@ -51,12 +58,19 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 	)
 	for rows.Next() {
 		var s port.ListingSummary
+		// An unpublished listing has no location at all, so every one of its columns is NULL —
+		// scanned into pointers and only then assembled, because the destination strings are not
+		// nullable and a card for a draft still has to render.
+		var area nullableLocation
 		if err := rows.Scan(&s.ID, &s.SellerID, &s.Slug, &s.Name, &s.Status, &s.Condition,
 			&s.PriceMode, &s.Currency, &s.Price, &s.Sold, &s.Rating, &s.ReviewCount, &s.CategoryID,
-			&s.CoverID, &s.CreatedAt, &s.DeletedAt, &s.Score,
+			&s.CoverID, &area.provinceCode, &area.provinceName, &area.districtCode,
+			&area.districtName, &area.wardCode, &area.wardName, &area.latitude, &area.longitude,
+			&s.DistanceKM, &s.CreatedAt, &s.DeletedAt, &s.Score,
 			&total); err != nil {
 			return nil, 0, fmt.Errorf("db scan listing card: %w", err)
 		}
+		s.Location = area.location()
 		out = append(out, s)
 	}
 	if err := rows.Err(); err != nil {
@@ -71,8 +85,22 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 const feedSelect = `SELECT l.id, l.account_id, l.slug, l.name, l.status::text, l.condition::text,
 	                  l.price_mode::text, l.currency, COALESCE(v.price, 0), l.cached_sold,
 	                  l.cached_rating, l.cached_review_count, l.category_id, l.attachments[1],
+	                  l.province_code, l.province_name, l.district_code, l.district_name,
+	                  l.ward_code, l.ward_name,
+	                  ST_Y(l.location::geometry), ST_X(l.location::geometry),
+	                  ` + distanceExpr + ` AS distance_km,
 	                  l.created_at, l.deleted_at,
 	                  `
+
+// distanceExpr is the kilometres between the buyer and the goods, NULL when either end has no
+// point: a browse that named no position, or a listing whose address was never geocoded. Computed
+// on the geography, so it is metres on the spheroid rather than degrees on a flat map.
+const distanceExpr = `CASE WHEN @near_lat::double precision IS NULL OR l.location IS NULL THEN NULL
+	                       ELSE ST_Distance(l.location,
+	                              ST_SetSRID(ST_MakePoint(@near_lon::double precision,
+	                                                      @near_lat::double precision),
+	                                         4326)::geography) / 1000
+	                  END`
 
 const feedFrom = ` AS score,
 	                  COUNT(*) OVER () AS total_count
@@ -114,6 +142,22 @@ const feedWhere = `
 	               AND (@category_id::bigint IS NULL OR l.category_id = @category_id::bigint)
 	               AND (@seller_id::bigint IS NULL OR l.account_id = @seller_id::bigint)
 	               AND (@condition::text IS NULL OR l.condition::text = @condition::text)
+	               -- Where the goods are. One level, the one the caller named: a ward code is
+	               -- already inside its province, so narrowing by both would be the same filter
+	               -- twice.
+	               AND (@province_code::text IS NULL OR l.province_code = @province_code::text)
+	               AND (@district_code::text IS NULL OR l.district_code = @district_code::text)
+	               AND (@ward_code::text IS NULL OR l.ward_code = @ward_code::text)
+	               -- Near me, through listing_location_gist. A listing with no point is out of a
+	               -- radius rather than treated as nearby: it cannot claim a distance it has no
+	               -- way to know.
+	               AND (@radius_m::double precision IS NULL
+	                    OR (l.location IS NOT NULL
+	                        AND ST_DWithin(l.location,
+	                              ST_SetSRID(ST_MakePoint(@near_lon::double precision,
+	                                                      @near_lat::double precision),
+	                                         4326)::geography,
+	                              @radius_m::double precision)))
 	               AND (@tag::text IS NULL OR EXISTS (
 	                     SELECT 1 FROM listing_tag lt
 	                     WHERE lt.listing_id = l.id AND lt.tag = @tag::text))
@@ -187,9 +231,80 @@ func orderBy(f port.ListingFilter) string {
 		return head + `l.cached_sold DESC` + tail
 	case port.SortRelevance, port.SortRecommended:
 		return head + `score DESC NULLS LAST` + tail
+	case port.SortDistance:
+		// Nearest first, and a listing with no point last rather than first — NULLS LAST, because
+		// "distance unknown" is not "distance zero".
+		return head + distanceColumn + ` ASC NULLS LAST` + tail
 	default:
 		return head + `l.created_at DESC` + tail
 	}
+}
+
+// nullableLocation is the location columns as they come back: all NULL for a listing that was
+// never published, all set for one that was.
+type nullableLocation struct {
+	provinceCode *string
+	provinceName *string
+	districtCode *string
+	districtName *string
+	wardCode     *string
+	wardName     *string
+	latitude     *float64
+	longitude    *float64
+}
+
+// location assembles the domain value, or nil when there is none. The province code is what says
+// which: the column is written together with the rest or not at all.
+func (n nullableLocation) location() *domain.Location {
+	if n.provinceCode == nil {
+		return nil
+	}
+	area := domain.Location{
+		ProvinceCode: *n.provinceCode,
+		DistrictCode: n.districtCode,
+		DistrictName: n.districtName,
+		Latitude:     n.latitude,
+		Longitude:    n.longitude,
+	}
+	if n.provinceName != nil {
+		area.ProvinceName = *n.provinceName
+	}
+	if n.wardCode != nil {
+		area.WardCode = *n.wardCode
+	}
+	if n.wardName != nil {
+		area.WardName = *n.wardName
+	}
+	return &area
+}
+
+// distanceColumn is the alias the ORDER BY sorts on, so the expression is written once.
+const distanceColumn = `distance_km`
+
+// near reads one coordinate of the browse position, or NaN when there is none.
+func near(f port.ListingFilter, pick func(port.Point) float64) float64 {
+	if f.Near == nil {
+		return math.NaN()
+	}
+	return pick(*f.Near)
+}
+
+// radiusMetres is the bound in metres, NaN when the caller wants every distance ranked rather than
+// a circle: a radius without a position is not a filter, so both have to be there.
+func radiusMetres(f port.ListingFilter) float64 {
+	if f.Near == nil || f.RadiusKM <= 0 {
+		return math.NaN()
+	}
+	return f.RadiusKM * 1000
+}
+
+// nullFloat keeps a NaN out of the query as SQL NULL, which is how every other optional filter
+// arrives — a NaN reaching Postgres is a comparison that is neither true nor false.
+func nullFloat(v float64) any {
+	if math.IsNaN(v) {
+		return nil
+	}
+	return v
 }
 
 // InterestVectors reads the account's slots. A handful of rows by primary key: the ANN search

@@ -20,6 +20,17 @@ import (
 // seller owns, and t.Cleanup does not run when a run is killed.
 var testSeller = time.Now().UnixNano() % 1_000_000
 
+// testLocation is Ben Nghe ward, District 1, Ho Chi Minh City — the address every listing in these
+// tests is collected from, and the point "near me" measures against.
+func testLocation() *domain.Location {
+	return &domain.Location{
+		ProvinceCode: "79", ProvinceName: "Ho Chi Minh",
+		DistrictCode: new("760"), DistrictName: new("District 1"),
+		WardCode: "26734", WardName: "Ben Nghe",
+		Latitude: new(10.7769), Longitude: new(106.7009),
+	}
+}
+
 func newListingFor(t *testing.T, repo *pgadapter.Repo, categoryID int64, name string) *domain.Listing {
 	t.Helper()
 	l, err := domain.NewListing(testSeller, categoryID, domain.NewListingInput{
@@ -37,6 +48,9 @@ func newListingFor(t *testing.T, repo *pgadapter.Repo, categoryID int64, name st
 	if err != nil {
 		t.Fatalf("NewListing: %v", err)
 	}
+	// The service attaches this from the seller's pickup address before publishing, so a listing
+	// that is going live in a test has to carry it too.
+	l.Location = testLocation()
 	if err := repo.CreateListing(context.Background(), l, testSeller); err != nil {
 		t.Fatalf("CreateListing: %v", err)
 	}

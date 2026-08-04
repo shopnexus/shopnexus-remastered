@@ -25,6 +25,12 @@ const (
 	IdentityStatusRejected = "rejected"
 )
 
+// The error codes another module branches on. A coded refusal crosses the boundary as a string, so
+// the name lives here beside the method that returns it — catalog refuses a publish differently
+// when the reason is "this seller has no pickup address" than when the account module is simply
+// unreachable.
+const CodeNoPickupContact = "no_pickup_contact"
+
 // --- authentication ---
 
 // AuthResult is what every successful sign-in returns: the two tokens, the access

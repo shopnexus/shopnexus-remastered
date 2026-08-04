@@ -251,3 +251,102 @@ func TestRepo_ListListingsProbeAndWishlist(t *testing.T) {
 		t.Error("saving a listing that does not exist was accepted")
 	}
 }
+
+// Where the goods are, in the one query the feed already is: the administrative filter is a plain
+// column match, but "near me" is PostGIS — ST_DWithin against a geography, ordered by a distance
+// the same statement computes. A fake can imitate the arithmetic; only Postgres can say whether the
+// SQL, the index and the geography cast are right.
+func TestRepo_ListListingsFiltersByAreaAndDistance(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	category := createCategory(t, repo, unique("cat-"), nil)
+	createTag(t, repo, "handmade", nil)
+
+	live := newListingFor(t, repo, category.ID, unique("Ao khoac "))
+	if err := live.Publish(); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if err := live.Approve(""); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	if err := repo.SaveListing(ctx, live, testSeller); err != nil {
+		t.Fatalf("SaveListing: %v", err)
+	}
+	area := testLocation()
+
+	// The location survived the write, coordinates and all — it is read back through ST_Y/ST_X.
+	stored, err := repo.GetListing(ctx, live.ID)
+	if err != nil {
+		t.Fatalf("GetListing: %v", err)
+	}
+	if stored.Location == nil || !stored.Location.Geocoded() {
+		t.Fatalf("location = %+v, want it round-tripped with its point", stored.Location)
+	}
+	if stored.Location.WardName != area.WardName {
+		t.Fatalf("ward = %q, want %q", stored.Location.WardName, area.WardName)
+	}
+
+	base := port.ListingFilter{ViewerID: testSeller, SellerID: testSeller, Limit: 20}
+	held := func(t *testing.T, f port.ListingFilter) bool {
+		t.Helper()
+		rows, _, err := repo.ListListings(ctx, f)
+		if err != nil {
+			t.Fatalf("ListListings: %v", err)
+		}
+		for _, row := range rows {
+			if row.ID == live.ID {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Its own ward, and another province.
+	byWard := base
+	byWard.ProvinceCode, byWard.DistrictCode, byWard.WardCode = area.ProvinceCode, *area.DistrictCode, area.WardCode
+	if !held(t, byWard) {
+		t.Error("the listing is missing from its own ward")
+	}
+	elsewhere := base
+	elsewhere.ProvinceCode = "01"
+	if held(t, elsewhere) {
+		t.Error("the listing showed up in another province")
+	}
+
+	// Near me: a couple of streets away, then ~50 km out.
+	near := base
+	near.Near = &port.Point{Latitude: *area.Latitude + 0.01, Longitude: *area.Longitude + 0.01}
+	near.RadiusKM = 5
+	near.Sort = port.SortDistance
+	rows, _, err := repo.ListListings(ctx, near)
+	if err != nil {
+		t.Fatalf("ListListings near: %v", err)
+	}
+	var found *port.ListingSummary
+	for i := range rows {
+		if rows[i].ID == live.ID {
+			found = &rows[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("the listing is missing from a 5 km radius around it")
+	}
+	// ST_Distance answers metres on the spheroid; 0.01° is about 1.5 km here.
+	if found.DistanceKM == nil || *found.DistanceKM <= 0 || *found.DistanceKM > 5 {
+		t.Fatalf("distance = %v, want a couple of km", found.DistanceKM)
+	}
+	far := near
+	far.Near = &port.Point{Latitude: *area.Latitude + 0.5, Longitude: *area.Longitude + 0.5}
+	if held(t, far) {
+		t.Error("the listing showed up within 5 km of somewhere 50 km away")
+	}
+
+	// A position with no radius ranks every distance instead of bounding it, which is what the
+	// "nearest first" browse does.
+	ranked := base
+	ranked.Near = near.Near
+	ranked.Sort = port.SortDistance
+	if !held(t, ranked) {
+		t.Error("a distance sort with no radius dropped a listing")
+	}
+}

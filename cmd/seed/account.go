@@ -40,6 +40,17 @@ var seedAccounts = []struct {
 type seller struct {
 	id      int64
 	address map[string]any
+	// area is where this seller collects from, as catalog.listing snapshots it: a seeded listing
+	// has to carry it or the browse feed's area filter and "near me" see nothing at all.
+	area listingArea
+}
+
+// listingArea is the subset of a contact catalog keeps on a listing.
+type listingArea struct {
+	provinceCode string
+	provinceName string
+	wardCode     string
+	wardName     string
 }
 
 // writeAccounts creates the cast and gives each one a contact that is both its delivery
@@ -97,14 +108,21 @@ func writeAccounts(ctx context.Context, pool *pgxpool.Pool) ([]seller, error) {
 
 			// Shaped like order/domain.AddressSnapshot, which is itself shaped like the
 			// contact row it is copied from.
-			out = append(out, seller{id: accountID, address: map[string]any{
-				"full_name":      a.Name,
-				"phone":          a.Phone,
-				"country":        "VN",
-				"province_code":  a.Province,
-				"ward_code":      a.Ward,
-				"address_detail": address,
-			}})
+			out = append(out, seller{
+				id: accountID,
+				address: map[string]any{
+					"full_name":      a.Name,
+					"phone":          a.Phone,
+					"country":        "VN",
+					"province_code":  a.Province,
+					"ward_code":      a.Ward,
+					"address_detail": address,
+				},
+				area: listingArea{
+					provinceCode: a.Province, provinceName: a.City,
+					wardCode: a.Ward, wardName: a.WardName,
+				},
+			})
 		}
 		return nil
 	})

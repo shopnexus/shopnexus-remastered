@@ -63,6 +63,17 @@ func Decompose(err error) (status uint16, code, message string, ok bool) {
 	return ce.httpStatus, ce.code, ce.err.Error(), true
 }
 
+// CodeOf is the stable code alone, and "" for an error that carries none. Decompose answers four
+// values because httpx renders all of them; a caller that only wants to know *which* refusal it is
+// looking at — one module recognising another's — reads this instead.
+func CodeOf(err error) string {
+	var ce *codedError
+	if !errors.As(err, &ce) {
+		return ""
+	}
+	return ce.code
+}
+
 // FieldsOf returns the per-field detail of a validation error, or nil for any other
 // error. Separate from Decompose so the common path — every error that is not a
 // validation failure — does not carry a slice it never uses.

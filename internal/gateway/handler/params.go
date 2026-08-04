@@ -151,6 +151,22 @@ func int64Param(r *http.Request, name string) (*int64, error) {
 	return &v, nil
 }
 
+// floatParam is int64Param for a coordinate or a radius: absent stays absent, so the service can
+// tell "the buyer sent no position" from "the buyer is at the equator".
+func floatParam(r *http.Request, name string) (*float64, error) {
+	raw := r.URL.Query().Get(name)
+	if raw == "" {
+		return nil, nil
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return nil, errx.NewValidationError("invalid field: "+name, errx.Field{
+			Field: name, Rule: "numeric", Message: "must be a number",
+		})
+	}
+	return &v, nil
+}
+
 // timeParam reads a required RFC 3339 timestamp query parameter — the shape a route uses
 // when the value has to be passed straight back into a point lookup (a hypertable's
 // primary key includes its partitioning column, so an id alone is not enough).

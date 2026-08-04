@@ -113,8 +113,11 @@ type ListingDetail struct {
 	Favorited         bool                      `json:"favorited"`
 	FavoriteCount     int64                     `json:"favorite_count"`
 	PendingEdit       *PendingEdit              `json:"pending_edit"`
-	CreatedAt         time.Time                 `json:"created_at"`
-	DeletedAt         *time.Time                `json:"deleted_at"`
+	// Location is where the goods are, and nil on a listing that was never published: it is the
+	// seller's pickup address, taken when they published.
+	Location  *ListingLocation `json:"location"`
+	CreatedAt time.Time        `json:"created_at"`
+	DeletedAt *time.Time       `json:"deleted_at"`
 }
 
 // Listing is the card a feed shows. Price is the featured variant's, or the cheapest one
@@ -136,8 +139,26 @@ type Listing struct {
 	Seller      accountapi.AccountSummary `json:"seller"`
 	Favorited   bool                      `json:"favorited"`
 	Score       *float64                  `json:"score,omitempty"`
-	DeletedAt   *time.Time                `json:"deleted_at"`
-	CreatedAt   time.Time                 `json:"created_at"`
+	// Location is where the goods are, and nil on a listing that was never published.
+	Location  *ListingLocation `json:"location"`
+	DeletedAt *time.Time       `json:"deleted_at"`
+	CreatedAt time.Time        `json:"created_at"`
+}
+
+// ListingLocation is the seller's pickup address as the listing snapshotted it: the names a card
+// shows and the codes a filter matches. A snapshot rather than a reference, because the address
+// lives in another module and a listing has to keep saying where it was sold from.
+type ListingLocation struct {
+	ProvinceCode string `json:"province_code"`
+	ProvinceName string `json:"province_name"`
+	// DistrictCode is null where the country has no district tier.
+	DistrictCode *string `json:"district_code"`
+	DistrictName *string `json:"district_name"`
+	WardCode     string  `json:"ward_code"`
+	WardName     string  `json:"ward_name"`
+	// DistanceKM is how far the goods are from where the buyer said they are, and null unless they
+	// said — or unless this address was never geocoded.
+	DistanceKM *float64 `json:"distance_km,omitempty"`
 }
 
 type ListingPage struct {

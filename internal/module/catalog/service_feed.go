@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	accountapi "shopnexus/internal/module/account/api"
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
@@ -48,6 +49,32 @@ func (s *Service) ListListings(ctx context.Context, req catalogapi.ListListingsR
 
 // feedFilter validates the combination and resolves what the adapter cannot: the search probe,
 // and the interest vectors a recommended feed ranks against.
+// browsePosition is where the buyer is browsing from: the coordinates the device sent, or the
+// coordinates of one of their own saved addresses. Nil when they named neither, and an error when
+// the address they named has never been geocoded — a distance nobody can compute is not an empty
+// result.
+func (s *Service) browsePosition(ctx context.Context, req catalogapi.ListListingsRequest) (*port.Point, error) {
+	if req.Latitude != nil && req.Longitude != nil {
+		return &port.Point{Latitude: *req.Latitude, Longitude: *req.Longitude}, nil
+	}
+	if req.NearContactID == nil {
+		return nil, nil
+	}
+	if req.ViewerID == 0 {
+		return nil, domain.ErrAuthenticationRequired
+	}
+	contact, err := s.accounts.GetContact(ctx, accountapi.GetContactRequest{
+		ActorID: req.ViewerID, ID: *req.NearContactID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read contact: %w", err)
+	}
+	if contact.Latitude == nil || contact.Longitude == nil {
+		return nil, domain.ErrAddressNotGeocoded
+	}
+	return &port.Point{Latitude: *contact.Latitude, Longitude: *contact.Longitude}, nil
+}
+
 func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsRequest) (port.ListingFilter, error) {
 	// The three filters that are about the caller need to know who that is. An empty page would
 	// answer a different question than the one asked.
@@ -72,6 +99,19 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 		})
 	}
 
+	if (req.Latitude == nil) != (req.Longitude == nil) {
+		return port.ListingFilter{}, errx.NewValidationError("invalid field: lat", errx.Field{
+			Field: "lat", Rule: "required_with",
+			Message: "a position needs both lat and lon",
+		})
+	}
+	if req.NearContactID != nil && req.Latitude != nil {
+		return port.ListingFilter{}, errx.NewValidationError("invalid field: near_contact_id", errx.Field{
+			Field: "near_contact_id", Rule: "excluded_with",
+			Message: "name a position or an address of yours, not both",
+		})
+	}
+
 	filter := port.ListingFilter{
 		Query:     req.Query,
 		Mode:      req.Mode,
@@ -81,9 +121,13 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 		Status:    domain.Status(req.Status),
 		Tag:       req.Tag,
 		Condition: domain.Condition(req.Condition),
-		Sort:      sortOf(req),
-		Offset:    offsetOf(req.Page, req.Limit),
-		Limit:     req.Limit,
+
+		ProvinceCode: req.ProvinceCode,
+		DistrictCode: req.DistrictCode,
+		WardCode:     req.WardCode,
+		Sort:         sortOf(req),
+		Offset:       offsetOf(req.Page, req.Limit),
+		Limit:        req.Limit,
 	}
 	for _, listingID := range req.IDs {
 		filter.IDs = append(filter.IDs, listingID.Int64())
@@ -101,6 +145,22 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 		filter.MinPrice = *req.MinPrice
 	}
 	filter.MaxPrice = req.MaxPrice
+	if req.RadiusKM != nil {
+		filter.RadiusKM = *req.RadiusKM
+	}
+	near, err := s.browsePosition(ctx, req)
+	if err != nil {
+		return port.ListingFilter{}, err
+	}
+	filter.Near = near
+	// A radius or a distance sort with nowhere to measure from would silently answer a different
+	// question — every listing, in creation order — so it is refused instead.
+	if near == nil && (filter.RadiusKM > 0 || filter.Sort == port.SortDistance) {
+		return port.ListingFilter{}, errx.NewValidationError("invalid field: lat", errx.Field{
+			Field: "lat", Rule: "required",
+			Message: "a distance needs a position: send lat and lon, or near_contact_id",
+		})
+	}
 
 	probe, fromQuery, err := s.probeFor(ctx, req)
 	if err != nil {

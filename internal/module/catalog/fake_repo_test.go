@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -736,8 +737,20 @@ func (f *fakeRepo) ListListings(_ context.Context, filter port.ListingFilter) ([
 			if !priceInRange(stored, filter) {
 				continue
 			}
+			if !inArea(l.Location, filter) {
+				continue
+			}
+			if !withinRadius(l.Location, filter) {
+				continue
+			}
 		}
-		matched = append(matched, f.summaryOf(stored))
+		card := f.summaryOf(stored)
+		// Every card carries its distance once the browse said where the buyer is, which is what
+		// lets a client render "2 km away" without asking for it.
+		if filter.Near != nil && l.Location != nil && l.Location.Geocoded() {
+			card.DistanceKM = new(distanceKM(*filter.Near, *l.Location))
+		}
+		matched = append(matched, card)
 	}
 	sortFeed(matched, filter.Sort)
 	total := int64(len(matched))
@@ -769,6 +782,47 @@ func priceInRange(stored storedListing, filter port.ListingFilter) bool {
 	return okMin && okMax
 }
 
+// inArea matches the administrative filter against the listing's snapshot, as the SQL does. A
+// listing with no location is out of any area filter: it was never published.
+func inArea(area *domain.Location, filter port.ListingFilter) bool {
+	if filter.ProvinceCode == "" && filter.DistrictCode == "" && filter.WardCode == "" {
+		return true
+	}
+	if area == nil {
+		return false
+	}
+	if filter.ProvinceCode != "" && area.ProvinceCode != filter.ProvinceCode {
+		return false
+	}
+	if filter.DistrictCode != "" && (area.DistrictCode == nil || *area.DistrictCode != filter.DistrictCode) {
+		return false
+	}
+	return filter.WardCode == "" || area.WardCode == filter.WardCode
+}
+
+// withinRadius is ST_DWithin's answer. A listing with no point is outside every circle rather than
+// at its centre: it cannot claim a distance it has no way to know.
+func withinRadius(area *domain.Location, filter port.ListingFilter) bool {
+	if filter.Near == nil || filter.RadiusKM <= 0 {
+		return true
+	}
+	if area == nil || !area.Geocoded() {
+		return false
+	}
+	return distanceKM(*filter.Near, *area) <= filter.RadiusKM
+}
+
+// distanceKM is the great-circle distance, which is what ST_Distance on a geography answers to
+// within the precision any of these tests cares about.
+func distanceKM(from port.Point, area domain.Location) float64 {
+	const earthKM = 6371.0
+	lat1, lon1 := from.Latitude*math.Pi/180, from.Longitude*math.Pi/180
+	lat2, lon2 := *area.Latitude*math.Pi/180, *area.Longitude*math.Pi/180
+	h := math.Sin((lat2-lat1)/2)*math.Sin((lat2-lat1)/2) +
+		math.Cos(lat1)*math.Cos(lat2)*math.Sin((lon2-lon1)/2)*math.Sin((lon2-lon1)/2)
+	return 2 * earthKM * math.Asin(math.Sqrt(h))
+}
+
 func (f *fakeRepo) summaryOf(stored storedListing) port.ListingSummary {
 	l := stored.listing
 	// The cheapest live variant, as the lateral join reads it.
@@ -786,12 +840,25 @@ func (f *fakeRepo) summaryOf(stored storedListing) port.ListingSummary {
 		ID: l.ID, SellerID: l.SellerID, Slug: l.Slug, Name: l.Name, Status: l.Status,
 		Condition: l.Condition, PriceMode: l.PriceMode, Currency: l.Currency, Price: price,
 		Sold: l.CachedSold, Rating: l.CachedRating, CategoryID: l.CategoryID, CoverID: coverID,
-		CreatedAt: l.CreatedAt, DeletedAt: l.DeletedAt,
+		Location: l.Location, CreatedAt: l.CreatedAt, DeletedAt: l.DeletedAt,
 	}
 }
 
 func sortFeed(rows []port.ListingSummary, order string) {
 	switch order {
+	case port.SortDistance:
+		// Nearest first, and an unknown distance last rather than first.
+		slices.SortFunc(rows, func(a, b port.ListingSummary) int {
+			switch {
+			case a.DistanceKM == nil && b.DistanceKM == nil:
+				return 0
+			case a.DistanceKM == nil:
+				return 1
+			case b.DistanceKM == nil:
+				return -1
+			}
+			return cmp.Compare(*a.DistanceKM, *b.DistanceKM)
+		})
 	case port.SortRating:
 		slices.SortFunc(rows, func(a, b port.ListingSummary) int { return cmp.Compare(b.Rating, a.Rating) })
 	case port.SortPriceAsc:

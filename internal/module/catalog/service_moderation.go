@@ -66,6 +66,7 @@ func (s *Service) cards(ctx context.Context, rows []port.ListingSummary) ([]cata
 			ReviewCount: row.ReviewCount,
 			CategoryID:  id.Of[id.Category](row.CategoryID),
 			Score:       row.Score,
+			Location:    toAPILocation(row.Location, row.DistanceKM),
 			DeletedAt:   row.DeletedAt,
 			CreatedAt:   row.CreatedAt,
 		}
