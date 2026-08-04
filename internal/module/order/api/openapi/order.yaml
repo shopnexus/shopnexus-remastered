@@ -6,13 +6,13 @@
 # next to this one.
 #
 # Two shapes recur:
-#   - Checkout is PAY-FIRST, and the money is what creates the order. A fixed-price
-#     listing freezes its terms in a draft; a negotiable one freezes them in the offer
-#     both sides accepted — either party may agree, which charges nothing and starts a
-#     short window for the buyer's "create order now". Either way checkout writes the
-#     items plus one buyer-checkout payment session, and the order appears when that
-#     session completes. There is no endpoint for it and no seller confirmation: a
-#     seller can refuse a price, never an order.
+#   - Checkout is PAY-FIRST, and the money is what creates the order. A draft freezes the
+#     seller's asking price, which every listing has however it is priced; a negotiation
+#     freezes agreed terms in the offer instead — either party may agree, which charges
+#     nothing and starts a short window for the buyer's "create order now". Either way
+#     checkout writes the items plus one buyer-checkout payment session, and the order
+#     appears when that session completes. It has no endpoint of its own and no seller
+#     confirmation anywhere: a seller can refuse a price, never an order.
 #   - Delivery is the buyer's on both paths, and it is quoted from the carrier at
 #     checkout rather than sent — the session asks for goods plus that fee, and only the
 #     goods are ever held for or released to the seller. `POST /shipping-quotes` prices

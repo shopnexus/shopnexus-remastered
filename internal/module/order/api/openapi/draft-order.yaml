@@ -12,8 +12,10 @@ paths:
         not move under the buyer — and sets `valid_until`.
 
 
-        Only a `fixed` listing has one: a `negotiable` price is agreed in an offer, and the
-        accepted offer is what freezes its terms instead. Asking for one is 422.
+        Every listing has one, whichever way it is priced. A `negotiable` listing carries the
+        seller's asking price like any other, and a buyer who does not want to haggle takes it: the
+        listing page offers both, and this is the "buy now" half. Negotiating instead freezes the
+        agreed terms in the offer, and `POST /offers/{id}/checkout` is the same checkout from there.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -33,7 +35,6 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { description: 'Listing not found, deleted, or not active', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '422': { description: 'The listing is priced negotiable; open an offer instead', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     get:
       tags: [order]
       summary: List the caller's purchase sessions
@@ -95,9 +96,10 @@ paths:
         than handed a second payment session for the same frozen price.
 
 
-        A `negotiable` listing has no draft at all, so there is nothing to check out here — its
-        terms are frozen by the offer both sides agreed on, and `POST /offers/{id}/checkout` is the
-        same checkout from there. The buyer pays delivery either way.
+        This is the checkout for terms a draft froze — the seller's own price, whether the listing
+        is `fixed` or `negotiable`. Terms that were *negotiated* are checked out at
+        `POST /offers/{id}/checkout` instead, which is the same flow against the agreed price. The
+        buyer pays delivery either way.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/DraftOrderID' } }

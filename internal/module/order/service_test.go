@@ -608,14 +608,51 @@ func TestCheckout_MoneyCreatesTheOrder(t *testing.T) {
 	}
 }
 
-// A negotiable listing cannot be bought from the listing page: its price is agreed first.
-func TestCreateDraft_RefusesANegotiableListing(t *testing.T) {
+// A negotiable listing can be bought outright, at the asking price the seller published. The
+// listing page offers both: take it now, or negotiate — so the draft freezes the same snapshot a
+// fixed-price sale does, and the checkout that follows is the same one.
+func TestCreateDraft_BuysANegotiableListingOutright(t *testing.T) {
 	h := newHarness("negotiable")
-	err := mustErr(h.svc.CreateDraft(context.Background(), orderapi.CreateDraftRequest{
+	ctx := context.Background()
+	draft, err := h.svc.CreateDraft(ctx, orderapi.CreateDraftRequest{
 		ActorID: buyer, ListingID: listingID,
-	}))
-	if got := status(t, err); got != 422 {
-		t.Fatalf("status = %d, want 422", got)
+	})
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	if draft.PriceMode != "negotiable" {
+		t.Fatalf("price mode = %q, want the listing's own", draft.PriceMode)
+	}
+	// The asking price is what was frozen, not something the buyer named.
+	if len(draft.Variants) != 1 || draft.Variants[0].Price != 100_000 {
+		t.Fatalf("variants = %+v, want the seller's asking price", draft.Variants)
+	}
+
+	result, err := h.svc.Checkout(ctx, orderapi.CheckoutRequest{
+		ActorID: buyer, ID: draft.ID, Currency: "VND", ContactID: contactID,
+		TransportOption: "ghn-express",
+		Lines:           []orderapi.CheckoutLine{{VariantID: variantID, Quantity: 1}},
+	})
+	if err != nil {
+		t.Fatalf("Checkout: %v", err)
+	}
+	if result.GoodsTotal != 100_000 || result.ShippingFee != shippingFee {
+		t.Fatalf("bill = %+v, want the asking price plus the carriage the buyer pays", result)
+	}
+	// And the money creates the order from the draft, not from an offer: the two ways a
+	// negotiable listing sells are told apart by which of them the row names.
+	h.finance.pay(result.PaymentSession)
+	if err := h.svc.SettlePaidSession(ctx, result.PaymentSession); err != nil {
+		t.Fatalf("SettlePaidSession: %v", err)
+	}
+	page, err := h.svc.ListOrders(ctx, orderapi.ListOrdersRequest{
+		ActorID: buyer, Role: orderapi.RoleBuyer, Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("ListOrders: %v", err)
+	}
+	if len(page.Data) != 1 || page.Data[0].DraftID == nil || page.Data[0].OfferID != nil {
+		t.Fatalf("order = %+v, want it to name the draft it came from", page.Data)
 	}
 }
 
@@ -2057,22 +2094,30 @@ func TestShippingQuotes_OneListForBothKindsOfSale(t *testing.T) {
 	}
 }
 
-// A negotiable listing cannot be bought without negotiating, and a fixed-price one cannot be
-// negotiated: the two paths are the whole difference between them.
-func TestPriceMode_DecidesWhichPathIsOpen(t *testing.T) {
+// A fixed price is not negotiable: that is the whole of what `price_mode` decides now. The other
+// direction is open — a negotiable listing carries an asking price, and a buyer who does not want
+// to haggle just takes it.
+func TestPriceMode_OnlyNegotiableCanBeNegotiated(t *testing.T) {
 	ctx := context.Background()
-
-	nego := newHarness("negotiable")
-	if got := status(t, mustErr(nego.svc.CreateDraft(ctx, orderapi.CreateDraftRequest{
-		ActorID: buyer, ListingID: listingID,
-	}))); got != 422 {
-		t.Fatalf("status = %d, want 422 buying a negotiable listing outright", got)
-	}
 
 	fixed := newHarness("fixed")
 	if got := status(t, mustErr(fixed.svc.CreateOffer(ctx, orderapi.CreateOfferRequest{
 		ActorID: buyer, VariantID: variantID, Quantity: 1, Total: 50_000,
 	}))); got != 422 {
 		t.Fatalf("status = %d, want 422 negotiating a fixed price", got)
+	}
+
+	// Both paths are open on a negotiable listing, and opening one does not close the other: a
+	// buyer may be mid-negotiation and still decide to pay the asking price.
+	nego := newHarness("negotiable")
+	if _, err := nego.svc.CreateOffer(ctx, orderapi.CreateOfferRequest{
+		ActorID: buyer, VariantID: variantID, Quantity: 1, Total: 80_000,
+	}); err != nil {
+		t.Fatalf("CreateOffer: %v", err)
+	}
+	if _, err := nego.svc.CreateDraft(ctx, orderapi.CreateDraftRequest{
+		ActorID: buyer, ListingID: listingID,
+	}); err != nil {
+		t.Fatalf("CreateDraft while negotiating: %v", err)
 	}
 }

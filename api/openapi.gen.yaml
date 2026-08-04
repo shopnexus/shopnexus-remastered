@@ -2537,7 +2537,7 @@ components:
 
                 `fixed` is bought straight from the listing page: the buyer checks out, pays the item plus the shipping quote, and the order and its shipment exist as soon as the money lands. The seller confirms nothing.
 
-                `negotiable` cannot be checked out. The buyer opens a negotiation, which is a thread in chat where either side revises the terms, and accepting them is what starts the same checkout. Either way the seller never approves an order — the only thing they can refuse is a price.
+                `negotiable` adds a second way to buy without removing the first: the asking price is still a price a buyer can take outright, and the listing page asks which they want. If they haggle, the negotiation is a thread in chat where either side revises the terms, and agreeing freezes them for the same checkout. Either way the seller never approves an order — the only thing they can refuse is a price.
             enum:
                 - fixed
                 - negotiable
@@ -6574,7 +6574,7 @@ paths:
             description: |
                 Freezes the listing terms so a price the seller edits afterwards cannot be charged. The server snapshots the listing together with every variant — price and package details live on the variant, and those are exactly what must not move under the buyer — and sets `valid_until`.
 
-                Only a `fixed` listing has one: a `negotiable` price is agreed in an offer, and the accepted offer is what freezes its terms instead. Asking for one is 422.
+                Every listing has one, whichever way it is priced. A `negotiable` listing carries the seller's asking price like any other, and a buyer who does not want to haggle takes it: the listing page offers both, and this is the "buy now" half. Negotiating instead freezes the agreed terms in the offer, and `POST /offers/{id}/checkout` is the same checkout from there.
             requestBody:
                 content:
                     application/json:
@@ -6603,12 +6603,6 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/Error'
                     description: Listing not found, deleted, or not active
-                "422":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: The listing is priced negotiable; open an offer instead
             security:
                 - bearerAuth: []
             summary: Open a purchase session for one listing
@@ -6670,7 +6664,7 @@ paths:
 
                 The session is spent before the money is asked for: the claim is what makes two concurrent checkouts of one draft impossible, and the loser is answered 409 rather than handed a second payment session for the same frozen price.
 
-                A `negotiable` listing has no draft at all, so there is nothing to check out here — its terms are frozen by the offer both sides agreed on, and `POST /offers/{id}/checkout` is the same checkout from there. The buyer pays delivery either way.
+                This is the checkout for terms a draft froze — the seller's own price, whether the listing is `fixed` or `negotiable`. Terms that were *negotiated* are checked out at `POST /offers/{id}/checkout` instead, which is the same flow against the agreed price. The buyer pays delivery either way.
             parameters:
                 - in: path
                   name: id

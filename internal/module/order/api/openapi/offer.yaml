@@ -1,4 +1,4 @@
-# order fragment: offer — the negotiation a `negotiable` listing has to go through.
+# order fragment: offer — the negotiation a `negotiable` listing offers instead of its asking price.
 #
 # It is conducted in the chat thread the two accounts already share (chat has one thread per
 # pair, so there is nothing to create and nothing to address it by): every route here also

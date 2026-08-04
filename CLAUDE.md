@@ -327,16 +327,16 @@ give it its own doc under `docs/` and link it from here.
   *identifiers* (schema/table/column/type/constraint names) stay `snake_case`;
   only the stored value strings are kebab. Multi-word: `product-spu`,
   `awaiting-buyer-action`, `awaiting-seller-review`.
-- **A seller never approves an order; the money creates it.** `price_mode` is the only thing
-  that differs between the two ways a sale starts. `fixed` is bought from the listing page: the
-  buyer checks out a draft, pays the item plus the shipping quote, and the order and its shipment
-  exist as soon as that payment session completes. `negotiable` cannot be checked out — the buyer
-  opens a negotiation, which is the chat thread the pair already shares, either side revises the
-  terms, and agreeing opens the same checkout. So the only thing a seller can refuse
-  is a price, and there is no route that turns paid items into an order: the payment webhook
-  does, which is why `item.order_id` is nullable and `item_seller_pending_idx` is a retry list
-  rather than an inbox. The buyer always pays delivery, so a seller is never charged and
-  `session_kind` has no `seller-confirmation-fee`.
+- **A seller never approves an order; the money creates it.** Every listing is buyable from its
+  page: the buyer checks out a draft that froze the seller's asking price, pays the item plus the
+  shipping quote, and the order and its shipment exist as soon as that payment session completes.
+  `price_mode` adds a path rather than replacing one — `negotiable` also lets the buyer open a
+  negotiation (the chat thread the pair already shares), either side revises the terms, and agreeing
+  freezes them for the same checkout; `fixed` refuses to be negotiated, which is now the only thing
+  the mode decides. So the only thing a seller can refuse is a price, and there is no route that
+  turns paid items into an order: the payment webhook does, which is why `item.order_id` is nullable
+  and `item_seller_pending_idx` is a retry list rather than an inbox. The buyer always pays
+  delivery, so a seller is never charged and `session_kind` has no `seller-confirmation-fee`.
 - **A claim is taken before the money, and the write is the claim.** A draft is spent
   (`WHERE cancelled_at IS NULL`) and an accepted offer moves to `checked-out`
   (`WHERE status = 'accepted'`) *before* anything is reserved or a payment session is opened, so a
@@ -353,8 +353,9 @@ give it its own doc under `docs/` and link it from here.
   acceptance landed would put terms back on a table that was already agreed, and the buyer holding
   a 200 "agreed" would then be told their checkout has nothing to check out. Same rule as
   `Version` on an aggregate — a stale read has to lose.
-- **Agreeing to a price is not the sale; the buyer's checkout is.** Either party may accept the
-  terms on the table — whoever does *not* own the standing proposal, since the two sides
+- **Agreeing to a price is not the sale; the buyer's checkout is.** (Nor is negotiating the only
+  way to buy a `negotiable` listing — the asking price is takeable, see above.) Either party may
+  accept the terms on the table — whoever does *not* own the standing proposal, since the two sides
   alternate — and that charges nothing: it freezes the price for `acceptedWindow` (30 minutes,
   against `offerWindow`'s 12 hours) and the buyer then presses "create order now", which is the
   same checkout a fixed-price listing opens. That split is what makes a *seller* accepting safe:

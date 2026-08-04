@@ -5,6 +5,7 @@ package uploads_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -202,8 +203,10 @@ func TestResolveUsesTheStoreEachRowNames(t *testing.T) {
 	}
 
 	// One imported row, held at another origin — what cmd/seed writes. Inserted directly
-	// because no route can create one: an upload always goes to the write store.
-	const cdnURL = "https://cdn.example.com/file/imported_tn"
+	// because no route can create one: an upload always goes to the write store. The key is unique
+	// per run, since `resource` has one row per (provider, object_key) and these rows outlive a
+	// test — a fixed key passes once and then collides for ever.
+	cdnURL := fmt.Sprintf("https://cdn.example.com/file/imported_%d", who)
 	imported, err := common.NewResource(&who, remote.Name, cdnURL, "image/jpeg", 0, nil, nil)
 	if err != nil {
 		t.Fatalf("NewResource: %v", err)

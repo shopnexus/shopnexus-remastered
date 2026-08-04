@@ -13,15 +13,12 @@ var (
 	ErrCartItemNotFound = errx.NewError(http.StatusNotFound, "cart_item_not_found", "cart item not found")
 
 	// --- drafts and checkout ---
-	ErrDraftNotFound = errx.NewError(http.StatusNotFound, "draft_not_found", "purchase session not found")
-	ErrDraftExpired  = errx.NewError(http.StatusConflict, "draft_expired", "this purchase session has expired")
-	ErrDraftSettled  = errx.NewError(http.StatusConflict, "draft_settled", "this purchase session is already cancelled or checked out")
-	// ErrNegotiableNeedsOffer is a checkout of a listing priced `negotiable`. It cannot be
-	// bought from the listing page: the price is agreed in a negotiation first.
-	ErrNegotiableNeedsOffer = errx.NewError(http.StatusUnprocessableEntity, "negotiable_needs_offer", "a negotiable listing is bought through an accepted offer")
-	ErrPriceMoved           = errx.NewError(http.StatusConflict, "price_moved", "the frozen terms no longer match the listing")
-	ErrCurrencyMismatch     = errx.NewError(http.StatusUnprocessableEntity, "currency_mismatch", "the currency does not match the listing's")
-	ErrVariantNotInDraft    = errx.NewError(http.StatusUnprocessableEntity, "variant_not_in_draft", "that variant is not in this purchase session")
+	ErrDraftNotFound     = errx.NewError(http.StatusNotFound, "draft_not_found", "purchase session not found")
+	ErrDraftExpired      = errx.NewError(http.StatusConflict, "draft_expired", "this purchase session has expired")
+	ErrDraftSettled      = errx.NewError(http.StatusConflict, "draft_settled", "this purchase session is already cancelled or checked out")
+	ErrPriceMoved        = errx.NewError(http.StatusConflict, "price_moved", "the frozen terms no longer match the listing")
+	ErrCurrencyMismatch  = errx.NewError(http.StatusUnprocessableEntity, "currency_mismatch", "the currency does not match the listing's")
+	ErrVariantNotInDraft = errx.NewError(http.StatusUnprocessableEntity, "variant_not_in_draft", "that variant is not in this purchase session")
 
 	// --- items ---
 	ErrItemNotFound = errx.NewError(http.StatusNotFound, "item_not_found", "item not found")

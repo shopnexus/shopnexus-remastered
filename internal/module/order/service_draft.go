@@ -15,18 +15,16 @@ import (
 	"shopnexus/internal/shared/id"
 )
 
-// CreateDraft opens a purchase session by freezing the listing's terms. A listing priced
-// `negotiable` has no draft: its price is agreed in a negotiation, and there is nothing to
-// freeze until somebody accepts.
+// CreateDraft opens a purchase session by freezing the listing's terms — for any listing, however
+// it is priced. A `negotiable` one carries an asking price like any other, and a buyer who does not
+// want to haggle takes it: the listing page asks which they want, and this is the "buy now" half.
+// Negotiating instead freezes the agreed terms in the offer, and its own checkout spends those.
 func (s *Service) CreateDraft(ctx context.Context, req orderapi.CreateDraftRequest) (orderapi.Draft, error) {
 	listing, err := s.catalog.GetListing(ctx, catalogapi.GetListingRequest{
 		ID: req.ListingID, ViewerID: req.ActorID,
 	})
 	if err != nil {
 		return orderapi.Draft{}, fmt.Errorf("get listing: %w", err)
-	}
-	if listing.PriceMode != catalogapi.PriceModeFixed {
-		return orderapi.Draft{}, domain.ErrNegotiableNeedsOffer
 	}
 	snapshot := domain.ListingSnapshot{
 		ListingID: listing.ID.Int64(),

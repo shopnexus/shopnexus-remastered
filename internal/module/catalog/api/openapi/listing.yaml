@@ -497,10 +497,11 @@ components:
         money lands. The seller confirms nothing.
 
 
-        `negotiable` cannot be checked out. The buyer opens a negotiation, which is a
-        thread in chat where either side revises the terms, and accepting them is what
-        starts the same checkout. Either way the seller never approves an order — the only
-        thing they can refuse is a price.
+        `negotiable` adds a second way to buy without removing the first: the asking price is
+        still a price a buyer can take outright, and the listing page asks which they want. If they
+        haggle, the negotiation is a thread in chat where either side revises the terms, and
+        agreeing freezes them for the same checkout. Either way the seller never approves an order —
+        the only thing they can refuse is a price.
       enum: [fixed, negotiable]
 
     PublishListingRequest:
