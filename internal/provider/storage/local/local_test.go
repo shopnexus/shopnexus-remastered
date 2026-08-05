@@ -1,6 +1,8 @@
 package local_test
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"net/url"
 	"strings"
@@ -20,7 +22,8 @@ func newClient(t *testing.T) *local.Client {
 		UploadTTL:    15 * time.Minute,
 		DownloadTTL:  time.Hour,
 		MaxSize:      64,
-		AllowedMimes: []string{"image/jpeg", "image/png"},
+		MaxVideoSize: 512,
+		AllowedMimes: []string{"image/jpeg", "image/png", "video/mp4"},
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -130,7 +133,7 @@ func TestVerify_RefusesAnythingButTheSlotItSigned(t *testing.T) {
 		Root: t.TempDir(), BaseURL: "http://localhost:5000/api/v1",
 		Secret: "0123456789abcdef0123456789abcdef",
 		// A one-nanosecond slot is how "already expired" is produced without sleeping.
-		UploadTTL: time.Nanosecond, DownloadTTL: time.Hour, MaxSize: 64,
+		UploadTTL: time.Nanosecond, DownloadTTL: time.Hour, MaxSize: 64, MaxVideoSize: 512,
 		AllowedMimes: []string{"image/png"},
 	})
 	if err != nil {
@@ -197,5 +200,54 @@ func TestWrite_RefusesMoreThanTheLimit(t *testing.T) {
 	// once it is known to be within the limit.
 	if _, err := c.Stat(t.Context(), up.ObjectKey); !errors.Is(err, storage.ErrObjectNotFound) {
 		t.Fatalf("Stat = %v, want the refused upload to leave no object", err)
+	}
+}
+
+// A video is an order of magnitude bigger than a photo, so it has its own limit. One limit for both
+// would have to be the video's, and a slot signed for a 512-byte "avatar" is then what a photo route
+// hands out.
+func TestPresignUpload_VideoHasItsOwnLimit(t *testing.T) {
+	c := newClient(t)
+
+	if _, err := c.PresignUpload(context.Background(), storage.NewUpload{
+		Prefix: "order/receipt", Filename: "unboxing.mp4", Mime: "video/mp4", Size: 300,
+	}); err != nil {
+		t.Fatalf("PresignUpload(video under its limit): %v", err)
+	}
+	if _, err := c.PresignUpload(context.Background(), storage.NewUpload{
+		Prefix: "order/receipt", Filename: "film.mp4", Mime: "video/mp4", Size: 513,
+	}); !errors.Is(err, storage.ErrTooLarge) {
+		t.Fatalf("PresignUpload(video over its limit) = %v, want ErrTooLarge", err)
+	}
+	// The image limit does not move with it.
+	if _, err := c.PresignUpload(context.Background(), storage.NewUpload{
+		Prefix: "listing", Filename: "big.png", Mime: "image/png", Size: 300,
+	}); !errors.Is(err, storage.ErrTooLarge) {
+		t.Fatalf("PresignUpload(image over its limit) = %v, want ErrTooLarge", err)
+	}
+	// A type nobody allowed is refused on the type, whatever its size: answering "too large" to a
+	// stored script would tell the caller to try a smaller one.
+	if _, err := c.PresignUpload(context.Background(), storage.NewUpload{
+		Prefix: "listing", Filename: "x.html", Mime: "text/html", Size: 1,
+	}); !errors.Is(err, storage.ErrMimeNotAllowed) {
+		t.Fatalf("PresignUpload(html) = %v, want ErrMimeNotAllowed", err)
+	}
+}
+
+// The write path holds the bytes to the same limit the presign promised, keyed off what the object
+// actually is — otherwise a slot signed for a photo receives a film.
+func TestWrite_HoldsEachTypeToItsOwnLimit(t *testing.T) {
+	c := newClient(t)
+	slot, err := c.PresignUpload(context.Background(), storage.NewUpload{
+		Prefix: "order/receipt", Filename: "unboxing.mp4", Mime: "video/mp4", Size: 300,
+	})
+	if err != nil {
+		t.Fatalf("PresignUpload: %v", err)
+	}
+	if _, err := c.Write(slot.ObjectKey, bytes.NewReader(make([]byte, 300))); err != nil {
+		t.Fatalf("Write(300 bytes of video): %v", err)
+	}
+	if _, err := c.Write(slot.ObjectKey, bytes.NewReader(make([]byte, 513))); !errors.Is(err, storage.ErrTooLarge) {
+		t.Fatalf("Write(over the video limit) = %v, want ErrTooLarge", err)
 	}
 }

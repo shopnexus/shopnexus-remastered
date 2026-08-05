@@ -108,8 +108,15 @@ func (s *Service) transcribe(ctx context.Context, req catalogapi.SuggestListingR
 
 // suggestionImages reads the photos the seller already uploaded. Only confirmed ones resolve, so a
 // slot whose bytes never arrived is simply not among them — and the model reads at most three.
+//
+// Attachments may now be video, which this route must not touch: a clip is tens of megabytes, the
+// model cannot read one, and pulling it into a request body to find that out costs the seller the
+// wait. Filtered before the read rather than after.
 func (s *Service) suggestionImages(ctx context.Context, attachments []id.ID[id.Resource]) ([]llm.Image, error) {
-	keys := resourceKeys(attachments)
+	keys, err := s.imageKeys(ctx, attachments)
+	if err != nil {
+		return nil, err
+	}
 	if len(keys) > suggestionMaxImages {
 		keys = keys[:suggestionMaxImages]
 	}
@@ -120,6 +127,27 @@ func (s *Service) suggestionImages(ctx context.Context, attachments []id.ID[id.R
 	out := make([]llm.Image, 0, len(blobs))
 	for _, blob := range blobs {
 		out = append(out, llm.Image{Mime: blob.Mime, Data: blob.Data})
+	}
+	return out, nil
+}
+
+// imageKeys keeps the attachments that are pictures, in the order the seller sent them.
+func (s *Service) imageKeys(ctx context.Context, attachments []id.ID[id.Resource]) ([]int64, error) {
+	keys := resourceKeys(attachments)
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	// Resolve rather than a read of its own: it is the module's existing view of an attachment and
+	// it carries the mime, which is the only field this needs.
+	found, err := s.uploads.Resolve(ctx, keys)
+	if err != nil {
+		return nil, fmt.Errorf("read listing photos: %w", err)
+	}
+	out := make([]int64, 0, len(keys))
+	for _, key := range keys {
+		if strings.HasPrefix(found[key].Mime, "image/") {
+			out = append(out, key)
+		}
 	}
 	return out, nil
 }

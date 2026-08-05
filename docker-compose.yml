@@ -73,7 +73,11 @@ x-app-env: &app-env
   STORAGE_UPLOAD_TTL: "15m"
   STORAGE_DOWNLOAD_TTL: "1h"
   STORAGE_MAX_UPLOAD_BYTES: "10485760"
-  STORAGE_ALLOWED_MIMES: "image/jpeg,image/png,image/webp,application/pdf"
+  # Video is an order of magnitude bigger than a photo, so it gets its own limit — one limit for both
+  # would have to be this one, and a 100 MB avatar is then a slot the platform signs.
+  STORAGE_MAX_VIDEO_BYTES: "104857600"
+  # An unboxing clip is evidence a refund is judged on, so quicktime is here for an iPhone's .mov.
+  STORAGE_ALLOWED_MIMES: "image/jpeg,image/png,image/webp,application/pdf,video/mp4,video/quicktime,video/webm"
 
   # Embedding (cmd/embedder). `mock` hashes the words instead of running the model, which
   # exercises the queue and both vector columns without a multi-gigabyte download — semantic

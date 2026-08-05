@@ -45,8 +45,10 @@ type Config struct {
 	UploadTTL   time.Duration
 	DownloadTTL time.Duration
 	// MaxSize is the largest object accepted, refused at the presign rather than after the
-	// bytes have already been sent.
-	MaxSize int64
+	// bytes have already been sent. MaxVideoSize is the same for a `video/*` type: one limit for
+	// both would have to be the video's, and a 100 MB avatar or PDF is then a slot somebody signs.
+	MaxSize      int64
+	MaxVideoSize int64
 	// AllowedMimes is what may be stored at all. An allowlist: a store that accepts anything
 	// is a store that serves anything back, and `text/html` from your own domain is a stored
 	// cross-site script.
@@ -62,8 +64,8 @@ func New(cfg Config) (*Client, error) {
 	if cfg.Root == "" || cfg.BaseURL == "" || cfg.Secret == "" {
 		return nil, fmt.Errorf("local storage needs a root, a base URL and a secret")
 	}
-	if cfg.UploadTTL <= 0 || cfg.DownloadTTL <= 0 || cfg.MaxSize <= 0 {
-		return nil, fmt.Errorf("local storage needs a positive upload TTL, download TTL and max size")
+	if cfg.UploadTTL <= 0 || cfg.DownloadTTL <= 0 || cfg.MaxSize <= 0 || cfg.MaxVideoSize <= 0 {
+		return nil, fmt.Errorf("local storage needs a positive upload TTL, download TTL and both max sizes")
 	}
 	if err := os.MkdirAll(cfg.Root, 0o750); err != nil {
 		return nil, fmt.Errorf("create storage root: %w", err)
@@ -93,11 +95,13 @@ func (c *Client) Name() string { return Name }
 // generated, never the client's filename: a path a caller chose is a directory traversal
 // waiting for a backend that resolves one.
 func (c *Client) PresignUpload(ctx context.Context, req storage.NewUpload) (storage.Upload, error) {
-	if req.Size > c.cfg.MaxSize {
-		return storage.Upload{}, storage.ErrTooLarge
-	}
+	// The allowlist first: an unsupported type is a 422 whatever its size, and answering 413 to a
+	// `text/html` upload tells the caller to try a smaller script.
 	if !c.allowed(req.Mime) {
 		return storage.Upload{}, storage.ErrMimeNotAllowed
+	}
+	if req.Size > c.maxFor(req.Mime) {
+		return storage.Upload{}, storage.ErrTooLarge
 	}
 	key := objectKey(req.Prefix, req.Filename)
 	expires := time.Now().Add(c.cfg.UploadTTL)
@@ -187,15 +191,17 @@ func (c *Client) Write(objectKey string, src io.Reader) (int64, error) {
 		return 0, fmt.Errorf("open object for write: %w", err)
 	}
 	defer func() { _ = os.Remove(dst.Name()) }()
+	// The limit the declared type is held to, so a slot signed for a photo cannot receive a film.
+	max := c.maxFor(mimeOf(objectKey))
 	// One byte more than the limit is how "exactly at the limit" is told from "over it".
-	written, err := io.Copy(dst, io.LimitReader(src, c.cfg.MaxSize+1))
+	written, err := io.Copy(dst, io.LimitReader(src, max+1))
 	if closeErr := dst.Close(); err == nil {
 		err = closeErr
 	}
 	if err != nil {
 		return 0, fmt.Errorf("write object: %w", err)
 	}
-	if written > c.cfg.MaxSize {
+	if written > max {
 		return 0, storage.ErrTooLarge
 	}
 	if err := os.Rename(dst.Name(), full); err != nil {
@@ -220,8 +226,10 @@ func (c *Client) Open(objectKey string) (io.ReadSeekCloser, string, error) {
 	return f, mimeOf(objectKey), nil
 }
 
-// Fetch reads an object back, bounded by the same MaxSize a presign is: a file that grew past the
-// limit on disk is not one this process should pull into memory either.
+// Fetch reads an object back for a caller that needs the bytes in memory — today the model that
+// reads a seller's photos. Bounded by the *image* limit whatever the object is, because that is what
+// such a caller is for: a video belongs in a player, not in a request body, and the one caller skips
+// them before it gets here.
 func (c *Client) Fetch(_ context.Context, objectKey string) (storage.Blob, error) {
 	body, mime, err := c.Open(objectKey)
 	if err != nil {
@@ -243,6 +251,20 @@ func (c *Client) Fetch(_ context.Context, objectKey string) (storage.Blob, error
 func (c *Client) allowed(mime string) bool {
 	return slices.Contains(c.cfg.AllowedMimes, mime)
 }
+
+// maxFor is the limit this type is held to. Two limits rather than one, because a video is an order
+// of magnitude bigger than a photo and a single cap would have to be the video's — which then also
+// signs a slot for a 100 MB avatar.
+func (c *Client) maxFor(mime string) int64 {
+	if strings.HasPrefix(mime, videoPrefix) {
+		return c.cfg.MaxVideoSize
+	}
+	return c.cfg.MaxSize
+}
+
+// videoPrefix is the class the video limit follows. A prefix and not a list, because the allowlist
+// already decided which video types exist here.
+const videoPrefix = "video/"
 
 func (c *Client) signedURL(method, objectKey string, expires time.Time) string {
 	at := expires.Unix()
@@ -329,6 +351,10 @@ func mimeOf(objectKey string) string {
 		return "image/webp"
 	case ".mp4":
 		return "video/mp4"
+	case ".mov":
+		return "video/quicktime"
+	case ".webm":
+		return "video/webm"
 	case ".pdf":
 		return "application/pdf"
 	}

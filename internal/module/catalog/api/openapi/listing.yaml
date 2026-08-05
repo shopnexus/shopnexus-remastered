@@ -213,8 +213,8 @@ paths:
                 required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '413': { description: 'Larger than this platform accepts', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '422': { description: 'That file type is not accepted', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '413': { description: 'Larger than the limit for that type — 100 MB for video, 10 MB otherwise', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'That file type is not one the platform stores', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /listings/uploads/{id}/confirmation:
     post:
@@ -472,8 +472,26 @@ components:
           description: >
             Kept only for its extension. The stored key is generated — a path a client chose is
             a directory traversal waiting for a backend that resolves one.
-        mime: { type: string, maxLength: 100, example: image/jpeg }
-        size: { type: integer, format: int64, minimum: 1, maximum: 10485760, example: 204800 }
+        mime:
+          type: string
+          maxLength: 100
+          example: image/jpeg
+          description: >
+            One of the types this platform stores: `image/jpeg`, `image/png`, `image/webp`,
+            `application/pdf`, `video/mp4`, `video/quicktime` (an iPhone's `.mov`), `video/webm`.
+            Anything else is 422 whatever its size. The allowlist is the store's, so every upload
+            route accepts the same set — which of them a client offers is its own choice.
+        size:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 104857600
+          example: 204800
+          description: >
+            Declared up front and refused before a byte moves. The bound here is the video one: a
+            `video/*` upload may reach 100 MB, everything else is held to 10 MB, and a limit that
+            depends on the type cannot be written as one number. The confirmed row records the size
+            the *store* measured, not this.
       required: [filename, mime, size]
 
     UploadSlot:

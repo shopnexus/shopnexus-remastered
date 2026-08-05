@@ -278,6 +278,7 @@ func newStorageRegistry(cfg *config.Config) (*storage.Registry, error) {
 		UploadTTL:    cfg.StorageUploadTTL,
 		DownloadTTL:  cfg.StorageDownloadTTL,
 		MaxSize:      cfg.StorageMaxUploadBytes,
+		MaxVideoSize: cfg.StorageMaxVideoBytes,
 		AllowedMimes: cfg.StorageAllowedMimes,
 	})
 	if err != nil {

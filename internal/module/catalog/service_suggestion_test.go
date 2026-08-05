@@ -199,3 +199,34 @@ func TestSuggestListing_RefusesWhatItCannotAnswer(t *testing.T) {
 		t.Fatalf("err = %v, want an uncoded failure so it surfaces as a 500", err)
 	}
 }
+
+// A seller may now attach a clip, and this route must not touch one: a video is tens of megabytes,
+// the model cannot read it, and pulling it into a request body to discover that costs the seller the
+// wait. The photos beside it are still read, in the order they were sent.
+func TestSuggestListing_ReadsThePhotosAndSkipsTheVideo(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	const (
+		clip  = id.ID[id.Resource](80)
+		photo = id.ID[id.Resource](81)
+	)
+	h.images[int64(clip)] = true
+	h.images[int64(photo)] = true
+	h.uploads.videos[int64(clip)] = true
+	h.models.answer = suggestionJSON
+
+	if _, err := h.svc.SuggestListing(ctx, catalogapi.SuggestListingRequest{
+		ActorID:     actor,
+		Attachments: []id.ID[id.Resource]{clip, photo},
+		Note:        "iphone 12 cũ",
+	}); err != nil {
+		t.Fatalf("SuggestListing: %v", err)
+	}
+	sent := h.models.asked.Messages[len(h.models.asked.Messages)-1].Images
+	if len(sent) != 1 {
+		t.Fatalf("images = %d, want only the photo", len(sent))
+	}
+	if sent[0].Mime != "image/jpeg" {
+		t.Fatalf("image = %q, want the picture rather than the clip", sent[0].Mime)
+	}
+}

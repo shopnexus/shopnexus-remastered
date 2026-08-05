@@ -912,12 +912,15 @@ type fakeUploads struct {
 	// arrived is whether the client actually uploaded. A confirm without it is refused, which
 	// is what stops a row rendering as a broken image.
 	arrived map[int64]bool
+	// videos are the resources stored as a clip rather than a picture, so a test can hand the
+	// suggestion route an unboxing video the way a seller now can.
+	videos map[int64]bool
 }
 
 func newFakeUploads() *fakeUploads {
 	return &fakeUploads{
 		slots: map[int64]bool{}, owner: map[int64]int64{},
-		confirmed: map[int64]bool{}, arrived: map[int64]bool{},
+		confirmed: map[int64]bool{}, arrived: map[int64]bool{}, videos: map[int64]bool{},
 	}
 }
 
@@ -950,7 +953,7 @@ func (f *fakeUploads) Resolve(_ context.Context, ids []int64) (map[int64]common.
 			continue
 		}
 		out[one] = common.Resource{
-			ID: one, Provider: "test", ObjectKey: "k", Mime: "image/jpeg",
+			ID: one, Provider: "test", ObjectKey: "k", Mime: f.mimeOf(one),
 			URL: "https://store.test/get/" + strconv.FormatInt(one, 10),
 		}.ToDTO()
 	}
@@ -959,6 +962,15 @@ func (f *fakeUploads) Resolve(_ context.Context, ids []int64) (map[int64]common.
 
 // Bytes is what the suggestion route reads a photo through: only a confirmed upload has any, and the
 // content is a stand-in — what a test checks is which ids reached the model, not the pixels.
+// mimeOf is what the row says it holds, which is the only thing the suggestion route reads before
+// deciding whether to pull the bytes at all.
+func (f *fakeUploads) mimeOf(id int64) string {
+	if f.videos[id] {
+		return "video/mp4"
+	}
+	return "image/jpeg"
+}
+
 func (f *fakeUploads) Bytes(_ context.Context, ids []int64) ([]common.Blob, error) {
 	out := make([]common.Blob, 0, len(ids))
 	for _, id := range ids {
@@ -966,7 +978,7 @@ func (f *fakeUploads) Bytes(_ context.Context, ids []int64) ([]common.Blob, erro
 			continue
 		}
 		out = append(out, common.Blob{
-			ResourceID: id, Mime: "image/jpeg",
+			ResourceID: id, Mime: f.mimeOf(id),
 			Data: []byte("photo-" + strconv.FormatInt(id, 10)),
 		})
 	}

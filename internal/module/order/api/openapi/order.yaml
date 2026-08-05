@@ -201,8 +201,8 @@ paths:
                 required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '413': { description: 'Larger than this platform accepts', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '422': { description: 'That file type is not accepted', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '413': { description: 'Larger than the limit for that type — 100 MB for video, 10 MB otherwise', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'That file type is not one the platform stores', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /orders/uploads/{id}/confirmation:
     post:

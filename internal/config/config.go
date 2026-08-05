@@ -81,7 +81,10 @@ type Config struct {
 	StorageUploadTTL   time.Duration `validate:"required"`
 	StorageDownloadTTL time.Duration `validate:"required"`
 	// StorageMaxUploadBytes is the largest object accepted, refused before a byte moves.
+	// StorageMaxVideoBytes is the same for a `video/*` type: one limit for both would have to be
+	// the video's, and a 100 MB avatar or PDF is then a slot the platform happily signs.
 	StorageMaxUploadBytes int64 `validate:"required,gt=0"`
+	StorageMaxVideoBytes  int64 `validate:"required,gt=0"`
 	// StorageAllowedMimes is what may be stored at all. An allowlist: a store that accepts
 	// anything serves anything back, and `text/html` from your own domain is a stored script.
 	StorageAllowedMimes []string `validate:"required,min=1"`
@@ -285,6 +288,7 @@ func Load(v *validator.Validate) (*Config, error) {
 		StorageUploadTTL:      p.durationVar("STORAGE_UPLOAD_TTL"),
 		StorageDownloadTTL:    p.durationVar("STORAGE_DOWNLOAD_TTL"),
 		StorageMaxUploadBytes: p.int64Var("STORAGE_MAX_UPLOAD_BYTES"),
+		StorageMaxVideoBytes:  p.int64Var("STORAGE_MAX_VIDEO_BYTES"),
 		StorageAllowedMimes:   listVar("STORAGE_ALLOWED_MIMES"),
 
 		LLMProvider:            os.Getenv("LLM_PROVIDER"),
