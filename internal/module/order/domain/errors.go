@@ -76,7 +76,12 @@ var (
 	ErrRefundNotFound = errx.NewError(http.StatusNotFound, "refund_not_found", "refund not found")
 	// ErrRefundSettled is a write that lost: the case is finished, or it moved while the caller held
 	// an older copy of it. One answer for both, because the caller's remedy is the same — re-read.
-	ErrRefundSettled = errx.NewError(http.StatusConflict, "refund_settled", "this refund has moved on")
+	// A summary's window has to be a window: a dashboard that asks for one backwards, or for one
+	// bucket per day since the platform opened, is a request the caller can fix.
+	ErrSummaryWindowInvalid = errx.NewError(http.StatusUnprocessableEntity, "summary_window_invalid", "the window has to end after it starts")
+	ErrSummaryWindowTooWide = errx.NewError(http.StatusUnprocessableEntity, "summary_window_too_wide", "a summary covers at most a year")
+	ErrTimeZoneUnknown      = errx.NewError(http.StatusUnprocessableEntity, "time_zone_unknown", "no such IANA time zone")
+	ErrRefundSettled        = errx.NewError(http.StatusConflict, "refund_settled", "this refund has moved on")
 	// ErrRefundAlreadyOpen is a second refund on one order. A refund covers the whole
 	// order, so there is nothing a second one could be about.
 	ErrRefundAlreadyOpen    = errx.NewError(http.StatusConflict, "refund_already_open", "a refund on this order is already open")

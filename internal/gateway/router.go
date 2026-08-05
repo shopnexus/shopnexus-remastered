@@ -221,6 +221,8 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("GET /items", auth(http.HandlerFunc(d.Order.ListItems)))
 	mux.Handle("POST /items/{id}/cancellation", auth(http.HandlerFunc(d.Order.CancelItem)))
 	mux.Handle("GET /orders", auth(http.HandlerFunc(d.Order.ListOrders)))
+	// Literal before the wildcard, so this is not read as an order id.
+	mux.Handle("GET /orders/summary", auth(http.HandlerFunc(d.Order.GetOrderSummary)))
 	mux.Handle("POST /orders/uploads", auth(http.HandlerFunc(d.Order.CreateUpload)))
 	mux.Handle("POST /orders/uploads/{id}/confirmation", auth(http.HandlerFunc(d.Order.ConfirmUpload)))
 	mux.Handle("GET /orders/{id}", auth(http.HandlerFunc(d.Order.GetOrder)))

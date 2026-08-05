@@ -465,6 +465,37 @@ func (h *Order) CheckoutOffer(w http.ResponseWriter, r *http.Request) {
 // --- orders ---
 
 // ListOrders handles GET /orders, as buyer or as seller.
+// GetOrderSummary handles GET /orders/summary.
+func (h *Order) GetOrderSummary(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	from, err := optionalTimeParam(r, "from")
+	if failed(w, h.log, err) {
+		return
+	}
+	to, err := optionalTimeParam(r, "to")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := orderapi.OrderSummaryRequest{
+		ActorID: uid,
+		Role:    r.URL.Query().Get("role"),
+		From:    from,
+		To:      to,
+		TZ:      r.URL.Query().Get("tz"),
+	}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.GetOrderSummary(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
 func (h *Order) ListOrders(w http.ResponseWriter, r *http.Request) {
 	uid, err := actor(r)
 	if failed(w, h.log, err) {

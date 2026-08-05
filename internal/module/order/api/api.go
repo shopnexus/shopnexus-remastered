@@ -375,6 +375,50 @@ type CheckoutOfferRequest struct {
 	Note            string            `json:"note,omitempty" validate:"max=500"`
 }
 
+// OrderSummaryRequest is the window a dashboard reads. The window filters `created_at`, so every
+// number in the answer describes the same set — the orders placed in it, as they stand now.
+type OrderSummaryRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	Role    string            `json:"-" validate:"required,oneof=buyer seller"`
+	// From and To bound the window; absent means the last 30 days ending now. To is exclusive.
+	From *time.Time `json:"-"`
+	To   *time.Time `json:"-"`
+	// TZ is the IANA zone the daily buckets are cut on. A seller in Asia/Ho_Chi_Minh reading UTC
+	// buckets sees yesterday's evening sales land on today. Empty means UTC.
+	TZ string `json:"-" validate:"omitempty,max=64"`
+}
+
+// MoneyByCurrency is one currency's worth of a total. A list rather than a single number because a
+// shop may price in more than one currency, and adding those together is a figure that means nothing.
+type MoneyByCurrency struct {
+	Currency string `json:"currency"`
+	Amount   int64  `json:"amount"`
+}
+
+// OrderSummaryDay is one bucket of the series behind a chart: counts only. Money is summarised for
+// the whole window instead, for the reason MoneyByCurrency gives.
+type OrderSummaryDay struct {
+	// Date is `YYYY-MM-DD` in the requested zone, not a timestamp: a bucket is a day, and a midnight
+	// instant would invite a reader to convert it into a different one.
+	Date      string `json:"date"`
+	Placed    int64  `json:"placed"`
+	Completed int64  `json:"completed"`
+}
+
+// OrderSummary is what a seller's dashboard shows: how the window's orders stand, and what the
+// finished ones came to.
+type OrderSummary struct {
+	From      time.Time `json:"from"`
+	To        time.Time `json:"to"`
+	Open      int64     `json:"open"`
+	Completed int64     `json:"completed"`
+	Cancelled int64     `json:"cancelled"`
+	// Totals counts the goods of completed orders only, and excludes a cancelled line and the
+	// delivery fee — the fee is the courier's money and never reaches the seller.
+	Totals []MoneyByCurrency `json:"totals"`
+	Daily  []OrderSummaryDay `json:"daily"`
+}
+
 type ListOrdersRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	Role    string            `json:"-" validate:"required,oneof=buyer seller"`
@@ -538,6 +582,9 @@ type Service interface {
 
 	// --- orders ---
 	ListOrders(ctx context.Context, req ListOrdersRequest) (OrderPage, error)
+	// GetOrderSummary is the caller's own sales (or purchases) over a window: the counts a dashboard
+	// leads with, and the goods money of the completed ones.
+	GetOrderSummary(ctx context.Context, req OrderSummaryRequest) (OrderSummary, error)
 	GetOrder(ctx context.Context, req OrderRequest) (Order, error)
 	ConfirmReceipt(ctx context.Context, req ConfirmReceiptRequest) (Order, error)
 	CancelOrder(ctx context.Context, req CancelOrderRequest) (Order, error)

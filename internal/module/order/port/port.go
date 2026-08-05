@@ -40,6 +40,33 @@ type OrderFilter struct {
 	Cursor   CursorFilter
 }
 
+// SummaryFilter is one side of the sale over one window. Exactly one of the two ids is set, the same
+// way OrderFilter names the side asking.
+type SummaryFilter struct {
+	BuyerID  int64
+	SellerID int64
+	From     time.Time
+	To       time.Time
+	// TZ is an IANA zone name the daily buckets are cut on, already validated by the service — the
+	// adapter hands it to Postgres, which is the only thing that can bucket by local date.
+	TZ string
+}
+
+// OrderCounts is how a window's orders stand now, and what the finished ones came to per currency.
+type OrderCounts struct {
+	Open      int64
+	Completed int64
+	Cancelled int64
+	Totals    map[string]int64
+}
+
+// OrderDay is one day's counts, keyed by the local date the adapter computed.
+type OrderDay struct {
+	Date      string
+	Placed    int64
+	Completed int64
+}
+
 // OfferFilter pages a party's negotiations.
 type OfferFilter struct {
 	AccountID int64
@@ -146,6 +173,11 @@ type Repository interface {
 	FindOrder(ctx context.Context, id int64) (domain.Order, error)
 	FindOrderByOrigin(ctx context.Context, origin domain.Origin) (domain.Order, error)
 	ListOrders(ctx context.Context, f OrderFilter) ([]domain.Order, error)
+	// CountOrders and ListOrderDays are the two halves of a summary: one aggregate row and one row
+	// per day. Two statements rather than one, because a per-day money column would have to join the
+	// lines and then count orders through that join.
+	CountOrders(ctx context.Context, f SummaryFilter) (OrderCounts, error)
+	ListOrderDays(ctx context.Context, f SummaryFilter) ([]OrderDay, error)
 	SaveOrder(ctx context.Context, o domain.Order) error
 	// OrderItems are the lines an order covers, which is what its total is summed from.
 	OrderItems(ctx context.Context, orderID int64) ([]domain.Item, error)

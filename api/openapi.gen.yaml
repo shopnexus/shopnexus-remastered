@@ -1967,6 +1967,20 @@ components:
                     maxLength: 2000
                     type: string
             type: object
+        MoneyByCurrency:
+            description: One currency's worth of a total. Minor units, like every amount in this API.
+            properties:
+                amount:
+                    example: 1250000
+                    format: int64
+                    minimum: 0
+                    type: integer
+                currency:
+                    $ref: '#/components/schemas/CurrencyCode'
+            required:
+                - currency
+                - amount
+            type: object
         Notification:
             properties:
                 category:
@@ -2475,6 +2489,72 @@ components:
                 - completed
                 - cancelled
             type: string
+        OrderSummary:
+            properties:
+                cancelled:
+                    example: 4
+                    format: int64
+                    minimum: 0
+                    type: integer
+                completed:
+                    example: 128
+                    format: int64
+                    minimum: 0
+                    type: integer
+                daily:
+                    description: Only the days that had an order; a client fills the gaps it wants to draw.
+                    items:
+                        $ref: '#/components/schemas/OrderSummaryDay'
+                    type: array
+                from:
+                    format: date-time
+                    type: string
+                open:
+                    example: 3
+                    format: int64
+                    minimum: 0
+                    type: integer
+                to:
+                    description: Exclusive.
+                    format: date-time
+                    type: string
+                totals:
+                    description: Empty for a window with no completed order. One entry per currency sold in.
+                    items:
+                        $ref: '#/components/schemas/MoneyByCurrency'
+                    type: array
+            required:
+                - from
+                - to
+                - open
+                - completed
+                - cancelled
+                - totals
+                - daily
+            type: object
+        OrderSummaryDay:
+            description: One day's bucket of the series behind a chart.
+            properties:
+                completed:
+                    example: 9
+                    format: int64
+                    minimum: 0
+                    type: integer
+                date:
+                    description: |
+                        A local date in the requested zone, not a timestamp — a bucket is a day, and a midnight instant would invite a reader to convert it into a different one.
+                    example: "2026-08-05"
+                    type: string
+                placed:
+                    example: 12
+                    format: int64
+                    minimum: 0
+                    type: integer
+            required:
+                - date
+                - placed
+                - completed
+            type: object
         PageMeta:
             description: Where this page sits in the collection, for a page-paginated read.
             properties:
@@ -9069,6 +9149,69 @@ paths:
             summary: Rate the counterparty of a completed order
             tags:
                 - trust
+    /orders/summary:
+        get:
+            description: |
+                What a seller's dashboard leads with. The window filters `created_at`, so the counts, the totals and the daily series all describe **one** set of orders — the ones placed in it, as they stand now. Mixing "placed in the window" with "completed in the window" would produce three numbers the reader cannot reconcile.
+
+                `totals` counts the goods of completed orders only, and excludes a cancelled line and the delivery fee: the fee is the courier's money and never reaches the seller. It is a list per currency because a shop may price in more than one, and adding those together is a figure that means nothing — which is also why the daily series carries counts and no money.
+
+                Absent bounds mean the last 30 days ending now; `to` is exclusive and the window may span at most a year, so the series is at most 366 buckets.
+            parameters:
+                - in: query
+                  name: role
+                  required: true
+                  schema:
+                    enum:
+                        - buyer
+                        - seller
+                    type: string
+                - in: query
+                  name: from
+                  schema:
+                    format: date-time
+                    type: string
+                - description: Exclusive.
+                  in: query
+                  name: to
+                  schema:
+                    format: date-time
+                    type: string
+                - description: |
+                    IANA zone the daily buckets are cut on. Defaults to UTC, which makes a Vietnamese seller's evening sales land on the next day.
+                  in: query
+                  name: tz
+                  schema:
+                    example: Asia/Ho_Chi_Minh
+                    maxLength: 64
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/OrderSummary'
+                                required:
+                                    - data
+                                type: object
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: The window ends before it starts, spans more than a year, or names an unknown time zone
+            security:
+                - bearerAuth: []
+            summary: The caller's own sales or purchases over a window
+            tags:
+                - order
     /orders/uploads:
         post:
             description: |

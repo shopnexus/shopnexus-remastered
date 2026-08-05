@@ -91,6 +91,10 @@ func (Stub) CheckoutOffer(context.Context, orderapi.CheckoutOfferRequest) (order
 	return orderapi.CheckoutResult{}, errx.ErrNotImplemented
 }
 
+func (Stub) GetOrderSummary(context.Context, orderapi.OrderSummaryRequest) (orderapi.OrderSummary, error) {
+	return orderapi.OrderSummary{}, errx.ErrNotImplemented
+}
+
 func (Stub) ListOrders(context.Context, orderapi.ListOrdersRequest) (orderapi.OrderPage, error) {
 	return orderapi.OrderPage{}, errx.ErrNotImplemented
 }

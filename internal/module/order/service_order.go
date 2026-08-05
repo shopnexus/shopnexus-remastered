@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	catalogapi "shopnexus/internal/module/catalog/api"
@@ -123,6 +124,85 @@ func (s *Service) sessionAbandoned(ctx context.Context, sessionID int64) bool {
 		}
 	}
 	return true
+}
+
+// summaryWindow is how far back a summary may look. A dashboard reads a month; the cap exists so one
+// request cannot ask for a series with a bucket per day since the platform opened.
+const summaryWindow = 366 * 24 * time.Hour
+
+// defaultSummaryWindow is what a caller who named no window gets.
+const defaultSummaryWindow = 30 * 24 * time.Hour
+
+// GetOrderSummary answers the caller's own side of the sale over a window. The window filters
+// `created_at`, so the counts, the totals and the daily series all describe one set of orders — mixing
+// "placed in the window" with "completed in the window" would make three numbers that cannot be added
+// up by the person reading them.
+func (s *Service) GetOrderSummary(ctx context.Context, req orderapi.OrderSummaryRequest) (orderapi.OrderSummary, error) {
+	to := time.Now()
+	if req.To != nil {
+		to = *req.To
+	}
+	from := to.Add(-defaultSummaryWindow)
+	if req.From != nil {
+		from = *req.From
+	}
+	if !from.Before(to) {
+		return orderapi.OrderSummary{}, domain.ErrSummaryWindowInvalid
+	}
+	if to.Sub(from) > summaryWindow {
+		return orderapi.OrderSummary{}, domain.ErrSummaryWindowTooWide
+	}
+	// Validated here rather than in the SQL: Postgres answers an unknown zone with a 22023 the
+	// caller would read as a server fault.
+	zone := "UTC"
+	if req.TZ != "" {
+		if _, err := time.LoadLocation(req.TZ); err != nil {
+			return orderapi.OrderSummary{}, domain.ErrTimeZoneUnknown
+		}
+		zone = req.TZ
+	}
+
+	filter := port.SummaryFilter{From: from, To: to, TZ: zone}
+	if req.Role == orderapi.RoleSeller {
+		filter.SellerID = req.ActorID.Int64()
+	} else {
+		filter.BuyerID = req.ActorID.Int64()
+	}
+	counts, err := s.repo.CountOrders(ctx, filter)
+	if err != nil {
+		return orderapi.OrderSummary{}, fmt.Errorf("count orders: %w", err)
+	}
+	days, err := s.repo.ListOrderDays(ctx, filter)
+	if err != nil {
+		return orderapi.OrderSummary{}, fmt.Errorf("list order days: %w", err)
+	}
+
+	out := orderapi.OrderSummary{
+		From: from, To: to,
+		Open: counts.Open, Completed: counts.Completed, Cancelled: counts.Cancelled,
+		// Empty rather than null: both are lists a client renders, and a required field that
+		// arrives as null is a contract the service broke.
+		Totals: make([]orderapi.MoneyByCurrency, 0, len(counts.Totals)),
+		Daily:  make([]orderapi.OrderSummaryDay, 0, len(days)),
+	}
+	// Sorted, because a map's order is not one and a chart legend that reshuffles per request looks
+	// like the data moved.
+	currencies := make([]string, 0, len(counts.Totals))
+	for currency := range counts.Totals {
+		currencies = append(currencies, currency)
+	}
+	slices.Sort(currencies)
+	for _, currency := range currencies {
+		out.Totals = append(out.Totals, orderapi.MoneyByCurrency{
+			Currency: currency, Amount: counts.Totals[currency],
+		})
+	}
+	for _, day := range days {
+		out.Daily = append(out.Daily, orderapi.OrderSummaryDay{
+			Date: day.Date, Placed: day.Placed, Completed: day.Completed,
+		})
+	}
+	return out, nil
 }
 
 func (s *Service) ListOrders(ctx context.Context, req orderapi.ListOrdersRequest) (orderapi.OrderPage, error) {

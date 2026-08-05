@@ -396,6 +396,93 @@ func (r *Repo) ListOrders(ctx context.Context, f port.OrderFilter) ([]domain.Ord
 	return r.queryOrders(ctx, q, args)
 }
 
+// CountOrders is the aggregate half of a summary: how the window's orders stand now, plus the goods
+// money of the completed ones per currency. Two statements in one call, because the second is a
+// different grain — a line, not an order — and joining them would make the counts wrong.
+func (r *Repo) CountOrders(ctx context.Context, f port.SummaryFilter) (port.OrderCounts, error) {
+	const counts = `SELECT
+	                  count(*) FILTER (WHERE completed_at IS NULL AND cancelled_at IS NULL),
+	                  count(*) FILTER (WHERE completed_at IS NOT NULL),
+	                  count(*) FILTER (WHERE cancelled_at IS NOT NULL)
+	                FROM "order"
+	                WHERE (@buyer_id = 0 OR buyer_id = @buyer_id)
+	                  AND (@seller_id = 0 OR seller_id = @seller_id)
+	                  AND created_at >= @from AND created_at < @to`
+	args := pgx.NamedArgs{
+		"buyer_id": f.BuyerID, "seller_id": f.SellerID, "from": f.From, "to": f.To,
+	}
+	var out port.OrderCounts
+	if err := r.pool.QueryRow(ctx, counts, args).Scan(&out.Open, &out.Completed, &out.Cancelled); err != nil {
+		return port.OrderCounts{}, fmt.Errorf("db count orders: %w", err)
+	}
+
+	// A cancelled line is not revenue, and the delivery fee is not on the line at all — it is the
+	// courier's money and never reaches the seller, which is why nothing here reads transport.
+	const totals = `SELECT i.currency, coalesce(sum(i.total_amount), 0)
+	                FROM item i
+	                JOIN "order" o ON o.id = i.order_id
+	                WHERE (@buyer_id = 0 OR o.buyer_id = @buyer_id)
+	                  AND (@seller_id = 0 OR o.seller_id = @seller_id)
+	                  AND o.created_at >= @from AND o.created_at < @to
+	                  AND o.completed_at IS NOT NULL
+	                  AND i.cancelled_at IS NULL
+	                GROUP BY i.currency`
+	rows, err := r.pool.Query(ctx, totals, args)
+	if err != nil {
+		return port.OrderCounts{}, fmt.Errorf("db sum order totals: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var currency string
+		var amount int64
+		if err := rows.Scan(&currency, &amount); err != nil {
+			return port.OrderCounts{}, fmt.Errorf("db scan order total: %w", err)
+		}
+		if out.Totals == nil {
+			out.Totals = make(map[string]int64, 1)
+		}
+		out.Totals[currency] = amount
+	}
+	if err := rows.Err(); err != nil {
+		return port.OrderCounts{}, fmt.Errorf("db sum order totals: %w", err)
+	}
+	return out, nil
+}
+
+// ListOrderDays is the series half. The bucket is a local date, because a seller reading UTC buckets
+// sees an evening's sales land on the next day — Postgres is the only thing here that can cut a day
+// in an arbitrary zone.
+func (r *Repo) ListOrderDays(ctx context.Context, f port.SummaryFilter) ([]port.OrderDay, error) {
+	const q = `SELECT to_char(date_trunc('day', created_at AT TIME ZONE @tz), 'YYYY-MM-DD') AS day,
+	                  count(*),
+	                  count(*) FILTER (WHERE completed_at IS NOT NULL)
+	           FROM "order"
+	           WHERE (@buyer_id = 0 OR buyer_id = @buyer_id)
+	             AND (@seller_id = 0 OR seller_id = @seller_id)
+	             AND created_at >= @from AND created_at < @to
+	           GROUP BY day
+	           ORDER BY day`
+	rows, err := r.pool.Query(ctx, q, pgx.NamedArgs{
+		"buyer_id": f.BuyerID, "seller_id": f.SellerID, "from": f.From, "to": f.To, "tz": f.TZ,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("db list order days: %w", err)
+	}
+	defer rows.Close()
+	out := make([]port.OrderDay, 0, 30)
+	for rows.Next() {
+		var day port.OrderDay
+		if err := rows.Scan(&day.Date, &day.Placed, &day.Completed); err != nil {
+			return nil, fmt.Errorf("db scan order day: %w", err)
+		}
+		out = append(out, day)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db list order days: %w", err)
+	}
+	return out, nil
+}
+
 // PayoutDue is the escrow release *candidate* list: a confirmed receipt whose window has passed,
 // with no refund on the order that could still claim the money. Candidates only — the guard is
 // re-read under the order's lock by ClaimPayout, because a `NOT EXISTS` here is a read and a

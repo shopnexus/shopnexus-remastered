@@ -41,6 +41,50 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /orders/summary:
+    get:
+      tags: [order]
+      summary: The caller's own sales or purchases over a window
+      description: >
+        What a seller's dashboard leads with. The window filters `created_at`, so the counts, the
+        totals and the daily series all describe **one** set of orders — the ones placed in it, as
+        they stand now. Mixing "placed in the window" with "completed in the window" would produce
+        three numbers the reader cannot reconcile.
+
+
+        `totals` counts the goods of completed orders only, and excludes a cancelled line and the
+        delivery fee: the fee is the courier's money and never reaches the seller. It is a list per
+        currency because a shop may price in more than one, and adding those together is a figure
+        that means nothing — which is also why the daily series carries counts and no money.
+
+
+        Absent bounds mean the last 30 days ending now; `to` is exclusive and the window may span at
+        most a year, so the series is at most 366 buckets.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: role, in: query, required: true, schema: { type: string, enum: [buyer, seller] } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time }, description: Exclusive. }
+        - name: tz
+          in: query
+          schema: { type: string, maxLength: 64, example: Asia/Ho_Chi_Minh }
+          description: >
+            IANA zone the daily buckets are cut on. Defaults to UTC, which makes a Vietnamese
+            seller's evening sales land on the next day.
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/OrderSummary' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { description: 'The window ends before it starts, spans more than a year, or names an unknown time zone', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
   /orders/{id}:
     get:
       tags: [order]
@@ -286,6 +330,46 @@ components:
         completed_at: { type: string, format: date-time, nullable: true, description: Set when the payout is claimed }
         cancelled_at: { type: string, format: date-time, nullable: true }
       required: [id, buyer, seller, address, pickup_address, state, total, currency, receipt_attachments, created_at]
+
+    MoneyByCurrency:
+      type: object
+      description: One currency's worth of a total. Minor units, like every amount in this API.
+      properties:
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        amount: { type: integer, format: int64, minimum: 0, example: 1250000 }
+      required: [currency, amount]
+
+    OrderSummaryDay:
+      type: object
+      description: One day's bucket of the series behind a chart.
+      properties:
+        date:
+          type: string
+          example: '2026-08-05'
+          description: >
+            A local date in the requested zone, not a timestamp — a bucket is a day, and a midnight
+            instant would invite a reader to convert it into a different one.
+        placed: { type: integer, format: int64, minimum: 0, example: 12 }
+        completed: { type: integer, format: int64, minimum: 0, example: 9 }
+      required: [date, placed, completed]
+
+    OrderSummary:
+      type: object
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time, description: Exclusive. }
+        open: { type: integer, format: int64, minimum: 0, example: 3 }
+        completed: { type: integer, format: int64, minimum: 0, example: 128 }
+        cancelled: { type: integer, format: int64, minimum: 0, example: 4 }
+        totals:
+          type: array
+          description: Empty for a window with no completed order. One entry per currency sold in.
+          items: { $ref: '#/components/schemas/MoneyByCurrency' }
+        daily:
+          type: array
+          description: Only the days that had an order; a client fills the gaps it wants to draw.
+          items: { $ref: '#/components/schemas/OrderSummaryDay' }
+      required: [from, to, open, completed, cancelled, totals, daily]
 
     OrderPage:
       type: object

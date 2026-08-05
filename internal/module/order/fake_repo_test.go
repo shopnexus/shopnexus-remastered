@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"shopnexus/internal/module/common"
@@ -486,6 +487,76 @@ func (f *fakeRepo) FindOrderByOrigin(_ context.Context, origin domain.Origin) (d
 		}
 	}
 	return domain.Order{}, domain.ErrOrderNotFound
+}
+
+// CountOrders and ListOrderDays mirror the SQL's grain: counts over orders, money over their live
+// lines. The window filters created_at, and `to` is exclusive, exactly as the statements do.
+func (f *fakeRepo) CountOrders(_ context.Context, filter port.SummaryFilter) (port.OrderCounts, error) {
+	out := port.OrderCounts{}
+	for _, o := range f.summaryOrders(filter) {
+		switch o.State() {
+		case domain.StateCompleted:
+			out.Completed++
+		case domain.StateCancelled:
+			out.Cancelled++
+		default:
+			out.Open++
+		}
+		if o.State() != domain.StateCompleted {
+			continue
+		}
+		for _, i := range f.items {
+			if i.OrderID == nil || *i.OrderID != o.ID || i.CancelledAt != nil {
+				continue
+			}
+			if out.Totals == nil {
+				out.Totals = map[string]int64{}
+			}
+			out.Totals[i.Currency] += i.TotalAmount
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeRepo) ListOrderDays(_ context.Context, filter port.SummaryFilter) ([]port.OrderDay, error) {
+	loc, err := time.LoadLocation(filter.TZ)
+	if err != nil {
+		return nil, err
+	}
+	byDate := map[string]port.OrderDay{}
+	for _, o := range f.summaryOrders(filter) {
+		key := o.CreatedAt.In(loc).Format("2006-01-02")
+		day := byDate[key]
+		day.Date = key
+		day.Placed++
+		if o.State() == domain.StateCompleted {
+			day.Completed++
+		}
+		byDate[key] = day
+	}
+	out := make([]port.OrderDay, 0, len(byDate))
+	for _, day := range byDate {
+		out = append(out, day)
+	}
+	slices.SortFunc(out, func(a, b port.OrderDay) int { return strings.Compare(a.Date, b.Date) })
+	return out, nil
+}
+
+func (f *fakeRepo) summaryOrders(filter port.SummaryFilter) []domain.Order {
+	var out []domain.Order
+	for _, o := range f.orders {
+		if filter.BuyerID != 0 && o.BuyerID != filter.BuyerID {
+			continue
+		}
+		if filter.SellerID != 0 && o.SellerID != filter.SellerID {
+			continue
+		}
+		if o.CreatedAt.Before(filter.From) || !o.CreatedAt.Before(filter.To) {
+			continue
+		}
+		out = append(out, o)
+	}
+	return out
 }
 
 func (f *fakeRepo) ListOrders(_ context.Context, filter port.OrderFilter) ([]domain.Order, error) {

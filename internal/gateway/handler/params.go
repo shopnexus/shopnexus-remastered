@@ -186,6 +186,19 @@ func timeParam(r *http.Request, name string) (time.Time, error) {
 	return t, nil
 }
 
+// optionalTimeParam is timeParam for a bound a caller may leave to the service's default: absent is
+// nil rather than the zero time, which a service could not tell from "1 January year one".
+func optionalTimeParam(r *http.Request, name string) (*time.Time, error) {
+	if r.URL.Query().Get(name) == "" {
+		return nil, nil
+	}
+	t, err := timeParam(r, name)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
 // splitList reads a comma-separated query parameter — the `style: form, explode: false` shape
 // the spec uses for every list of ids. An empty value is no items rather than one empty one.
 func splitList(raw string) []string {

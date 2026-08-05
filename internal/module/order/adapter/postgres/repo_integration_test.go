@@ -1119,3 +1119,89 @@ func TestListItems_CursorReachesRowsSharingATimestamp(t *testing.T) {
 		t.Fatalf("saw %d of 3 lines, want every row reachable: %v", len(seen), seen)
 	}
 }
+
+// A summary is two statements over two grains — orders and their lines — and the fake repository can
+// only claim they agree. Here they have to: a cancelled line is not revenue, a delivery fee is not on
+// a line at all, and the buckets are cut on a local date rather than on UTC.
+func TestOrderSummary_CountsOrdersAndMoneySeparately(t *testing.T) {
+	r, pool := newRepo(t)
+	ctx := context.Background()
+	o, item := placedOrder(t, r)
+
+	filter := port.SummaryFilter{
+		SellerID: o.SellerID,
+		From:     time.Now().Add(-time.Hour),
+		To:       time.Now().Add(time.Hour),
+		TZ:       "Asia/Ho_Chi_Minh",
+	}
+	counts, err := r.CountOrders(ctx, filter)
+	if err != nil {
+		t.Fatalf("CountOrders: %v", err)
+	}
+	if counts.Open != 1 || counts.Completed != 0 || counts.Cancelled != 0 {
+		t.Fatalf("counts = %+v, want the one open order", counts)
+	}
+	if len(counts.Totals) != 0 {
+		t.Fatalf("totals = %+v, want nothing while the order is open", counts.Totals)
+	}
+
+	// Complete it the way the payout does — `completed_at` is written by the claim and nothing else —
+	// then the goods are revenue, and only the goods: the order's transport carries a 15,000 fee that
+	// must not appear here.
+	if err := o.ConfirmReceipt([]int64{item.ID}); err != nil {
+		t.Fatalf("ConfirmReceipt: %v", err)
+	}
+	if err := r.SaveOrder(ctx, o); err != nil {
+		t.Fatalf("SaveOrder: %v", err)
+	}
+	if err := r.ClaimPayout(ctx, &o); err != nil {
+		t.Fatalf("ClaimPayout: %v", err)
+	}
+	counts, err = r.CountOrders(ctx, filter)
+	if err != nil {
+		t.Fatalf("CountOrders: %v", err)
+	}
+	if counts.Open != 0 || counts.Completed != 1 {
+		t.Fatalf("counts = %+v, want it completed", counts)
+	}
+	if counts.Totals["VND"] != 100_000 {
+		t.Fatalf("totals = %+v, want the line's goods without the carriage", counts.Totals)
+	}
+
+	// A cancelled line stops being revenue while the order it belongs to stays completed.
+	if _, err := pool.Exec(ctx, `UPDATE item SET cancelled_at = now() WHERE id = $1`, item.ID); err != nil {
+		t.Fatalf("cancel line: %v", err)
+	}
+	counts, err = r.CountOrders(ctx, filter)
+	if err != nil {
+		t.Fatalf("CountOrders: %v", err)
+	}
+	if counts.Completed != 1 || len(counts.Totals) != 0 {
+		t.Fatalf("counts = %+v, want a completed order whose cancelled line earns nothing", counts)
+	}
+
+	days, err := r.ListOrderDays(ctx, filter)
+	if err != nil {
+		t.Fatalf("ListOrderDays: %v", err)
+	}
+	if len(days) != 1 || days[0].Placed != 1 || days[0].Completed != 1 {
+		t.Fatalf("days = %+v, want one bucket for the one order", days)
+	}
+	// The bucket is the seller's date, not the server's: an order placed at 23:30 in Saigon is that
+	// day's, and reading it as UTC would file it under the day before.
+	local := time.Now().In(time.FixedZone("ICT", 7*60*60)).Format("2006-01-02")
+	if days[0].Date != local {
+		t.Fatalf("bucket = %q, want the local date %q", days[0].Date, local)
+	}
+
+	// A window that ends before the order was placed holds nothing — `to` is exclusive.
+	empty, err := r.CountOrders(ctx, port.SummaryFilter{
+		SellerID: o.SellerID, From: filter.From.Add(-48 * time.Hour), To: filter.From, TZ: "UTC",
+	})
+	if err != nil {
+		t.Fatalf("CountOrders(empty window): %v", err)
+	}
+	if empty.Open != 0 || empty.Completed != 0 {
+		t.Fatalf("counts = %+v, want an empty window", empty)
+	}
+}

@@ -2432,3 +2432,108 @@ func TestPriceMode_OnlyNegotiableCanBeNegotiated(t *testing.T) {
 		t.Fatalf("CreateDraft while negotiating: %v", err)
 	}
 }
+
+// A dashboard's numbers have to describe one set of orders. The window filters when an order was
+// placed, so a completed one counts in the window it was placed in — not the one it finished in —
+// and every figure beside it can be reconciled against the same list.
+func TestGetOrderSummary_OneWindowOneMeaning(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, o := h.checkout(t)
+
+	seen, err := h.svc.GetOrderSummary(ctx, orderapi.OrderSummaryRequest{
+		ActorID: seller, Role: orderapi.RoleSeller,
+	})
+	if err != nil {
+		t.Fatalf("GetOrderSummary: %v", err)
+	}
+	if seen.Open != 1 || seen.Completed != 0 || seen.Cancelled != 0 {
+		t.Fatalf("counts = %+v, want the one open order", seen)
+	}
+	// Nothing is revenue until the order completes, and an empty list is what a client renders —
+	// a required field arriving as null is a contract the service broke.
+	if len(seen.Totals) != 0 || seen.Totals == nil {
+		t.Fatalf("totals = %+v, want an empty list while nothing has completed", seen.Totals)
+	}
+	if len(seen.Daily) != 1 || seen.Daily[0].Placed != 1 || seen.Daily[0].Completed != 0 {
+		t.Fatalf("daily = %+v, want one bucket holding the placed order", seen.Daily)
+	}
+
+	// The buyer confirms and the payout lands, which is what completes it.
+	h.uploads.confirm(42)
+	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
+		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
+	}); err != nil {
+		t.Fatalf("ConfirmReceipt: %v", err)
+	}
+	stored := h.repo.orders[o.ID.Int64()]
+	stored.ReceivedAt = new(stored.ReceivedAt.Add(-domain.PayoutWindow - 1))
+	h.repo.orders[o.ID.Int64()] = stored
+	if _, err := h.svc.ReleaseDuePayouts(ctx, 10); err != nil {
+		t.Fatalf("ReleaseDuePayouts: %v", err)
+	}
+	seen, err = h.svc.GetOrderSummary(ctx, orderapi.OrderSummaryRequest{
+		ActorID: seller, Role: orderapi.RoleSeller,
+	})
+	if err != nil {
+		t.Fatalf("GetOrderSummary: %v", err)
+	}
+	if seen.Open != 0 || seen.Completed != 1 {
+		t.Fatalf("counts = %+v, want the order counted as completed", seen)
+	}
+	// The goods, not the bill: the delivery fee is the courier's money and never reaches the seller.
+	if len(seen.Totals) != 1 || seen.Totals[0].Currency != "VND" || seen.Totals[0].Amount != 100_000 {
+		t.Fatalf("totals = %+v, want the goods without the carriage", seen.Totals)
+	}
+
+	// A buyer asking sees their own side of the same sale.
+	mine, err := h.svc.GetOrderSummary(ctx, orderapi.OrderSummaryRequest{
+		ActorID: buyer, Role: orderapi.RoleBuyer,
+	})
+	if err != nil {
+		t.Fatalf("GetOrderSummary(buyer): %v", err)
+	}
+	if mine.Completed != 1 {
+		t.Fatalf("buyer counts = %+v, want the same order", mine)
+	}
+	// And somebody else's dashboard is empty rather than this seller's.
+	none, err := h.svc.GetOrderSummary(ctx, orderapi.OrderSummaryRequest{
+		ActorID: admin, Role: orderapi.RoleSeller,
+	})
+	if err != nil {
+		t.Fatalf("GetOrderSummary(stranger): %v", err)
+	}
+	if none.Open != 0 || none.Completed != 0 || len(none.Daily) != 0 {
+		t.Fatalf("stranger summary = %+v, want nothing", none)
+	}
+}
+
+// The window and the zone are the caller's to get wrong, so each is refused with something they can
+// act on rather than a Postgres error or a series with a bucket per day since the platform opened.
+func TestGetOrderSummary_RefusesAWindowItCannotAnswer(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	now := time.Now()
+	cases := []struct {
+		name string
+		req  orderapi.OrderSummaryRequest
+	}{
+		{"backwards", orderapi.OrderSummaryRequest{
+			ActorID: seller, Role: orderapi.RoleSeller, From: new(now), To: new(now.Add(-time.Hour)),
+		}},
+		{"too wide", orderapi.OrderSummaryRequest{
+			ActorID: seller, Role: orderapi.RoleSeller,
+			From: new(now.Add(-400 * 24 * time.Hour)), To: new(now),
+		}},
+		{"unknown zone", orderapi.OrderSummaryRequest{
+			ActorID: seller, Role: orderapi.RoleSeller, TZ: "Mars/Olympus_Mons",
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := status(t, mustErr(h.svc.GetOrderSummary(ctx, c.req))); got != 422 {
+				t.Fatalf("status = %d, want 422", got)
+			}
+		})
+	}
+}
