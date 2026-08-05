@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"shopnexus/internal/provider/transport"
 	transportmock "shopnexus/internal/provider/transport/mock"
@@ -90,6 +91,113 @@ func TestCreate_BookingFailsRefusesAfterTheQuote(t *testing.T) {
 		Option: transportmock.OptionBookingFails,
 	}); err == nil {
 		t.Fatal("Create succeeded, want the booking refused")
+	}
+}
+
+// The slow courier holds the quote open, and has to give up when the caller's deadline passes rather
+// than outliving the request it is answering.
+func TestQuote_SlowCourierRespectsTheDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := newCourier().Quote(ctx, transport.QuoteParams{Option: transportmock.OptionSlowQuote})
+	if err == nil {
+		t.Fatal("Quote answered after its deadline passed")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("Quote took %s, so it waited out its pause instead of the deadline", elapsed)
+	}
+}
+
+// A person walks a parcel through its checkpoints, which is what the stalled scenario needs: the
+// alternative was a curl command nobody runs, and a scenario nobody exercises.
+func TestConsole_ReportsACheckpointAndComesBack(t *testing.T) {
+	var mu sync.Mutex
+	var got []transport.WebhookResult
+	mux := http.NewServeMux()
+	newCourier().WireWebhooks(mux, func(_ context.Context, r transport.WebhookResult) error {
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, r)
+		return nil
+	})
+
+	page := httptest.NewRecorder()
+	mux.ServeHTTP(page, httptest.NewRequest(http.MethodGet,
+		"/webhooks/transport/mock/console?tracking_id=MOCKAB12", nil))
+	if page.Code != http.StatusOK {
+		t.Fatalf("console status = %d, want 200", page.Code)
+	}
+	body := page.Body.String()
+	if !strings.Contains(body, `value="MOCKAB12"`) {
+		t.Error("the page does not carry the tracking id, so its form reports nothing")
+	}
+	// One button per checkpoint this platform models, and only those: a button for a status the
+	// module ignores would look like it did something.
+	for _, status := range []string{"processing", "success", "failed"} {
+		if !strings.Contains(body, `value="`+status+`"`) {
+			t.Errorf("the console has no %q button", status)
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/transport/mock/decision",
+		strings.NewReader("tracking_id=MOCKAB12&status=success"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	mux.ServeHTTP(rec, req)
+
+	// Back to the console, because a parcel is walked through several checkpoints — unlike a payment,
+	// which is decided once.
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("decision status = %d, want a redirect back to the console", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); !strings.Contains(loc, "tracking_id=MOCKAB12") {
+		t.Errorf("Location = %q, want the console for this parcel", loc)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 1 || got[0].TransportID != "MOCKAB12" || got[0].Status != "success" {
+		t.Fatalf("reported %+v, want one delivered checkpoint", got)
+	}
+}
+
+// A status the console does not offer is refused rather than reported: the form is the list of what
+// this platform models, and anything else would be ignored downstream while looking accepted here.
+func TestConsole_RefusesAStatusItDoesNotOffer(t *testing.T) {
+	mux := http.NewServeMux()
+	newCourier().WireWebhooks(mux, func(context.Context, transport.WebhookResult) error {
+		t.Error("a status nobody offers was reported")
+		return nil
+	})
+
+	for _, body := range []string{"tracking_id=MOCKAB12&status=held-at-customs", "status=success"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/webhooks/transport/mock/decision",
+			strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%q = %d, want 400", body, rec.Code)
+		}
+	}
+}
+
+// This route used to log the failure and answer 200, so a checkpoint that never landed looked exactly
+// like one that did.
+func TestWireWebhooks_AFailedReportSaysSo(t *testing.T) {
+	mux := http.NewServeMux()
+	path := newCourier().WireWebhooks(mux, func(context.Context, transport.WebhookResult) error {
+		return context.DeadlineExceeded
+	})
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path,
+		strings.NewReader(`{"tracking_id":"MOCKAB12","status":"success"}`)))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
 	}
 }
 

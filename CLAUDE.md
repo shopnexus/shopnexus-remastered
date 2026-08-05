@@ -630,6 +630,19 @@ give it its own doc under `docs/` and link it from here.
   refuses. Stripe's callback reads the *payment intent*, not the checkout session: a completed session
   with an unpaid intent is not money, and our leg id rides in the intent's metadata because a vendor
   reports on its own ids. VND is zero-decimal at Stripe, so the amount crosses unscaled.
+- **A mock is only worth what its edge cases are, so both of them carry a page for a person.** The
+  payment rail's scenarios are the ways a payment goes wrong — declined, unreachable, pending for
+  ever, reported twice, reported for another amount — and the courier's are the ways a parcel does:
+  a route nobody serves, a quote that hangs, a booking refused after the fee was taken, a parcel that
+  goes quiet, a checkpoint delivered twice, one that arrives *behind* where the parcel already is, and
+  a status this platform does not model. Each is a rule somewhere else in the codebase — the
+  forward-only advance, `RecordCarrierCheckpoint` ignoring a vocabulary it does not know,
+  `RetryUnbookedShipments` — and a rule with no way to reach it is a rule nobody checks.
+  Both mocks serve HTML: the rail's hosted page decides one payment, the courier's console walks one
+  parcel through its checkpoints. That is not decoration. `mock-stuck` used to say "move it along by
+  hand with POST", which meant a curl command nobody ran, so the scenario existed and was never
+  exercised. Neither swallows a failed report either: a hand-driven checkpoint that did not land
+  answers 500, because one that logged and replied 200 looked exactly like one that did.
 - **One `/options` endpoint over every category, and the rows stay per module.** `category` says who
   answers (`payment` → finance, `transport` → order), because those two columns must be able to move
   databases with their module; the projection, the DTOs and the staff gate live once in
