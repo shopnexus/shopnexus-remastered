@@ -96,6 +96,28 @@ func (s *Service) requireAdmin(ctx context.Context, actorID id.ID[id.Account]) e
 	return nil
 }
 
+// sellers resolves a page's sellers once each: twenty listings by five shops is five lookups, not
+// twenty. A seller the account module no longer has is a name the card does without — the listing is
+// what the page is about, and one deleted account must not blank the whole feed.
+func (s *Service) sellers(ctx context.Context, accountIDs []int64) map[int64]accountapi.AccountSummary {
+	out := make(map[int64]accountapi.AccountSummary, len(accountIDs))
+	for _, accountID := range accountIDs {
+		if _, done := out[accountID]; done {
+			continue
+		}
+		found, err := s.accounts.GetPublicAccount(ctx, accountapi.GetPublicAccountRequest{
+			ID: id.Of[id.Account](accountID),
+		})
+		if err != nil {
+			s.log.Debug("resolve seller failed", "account_id", accountID, "err", err)
+			out[accountID] = accountapi.AccountSummary{ID: id.Of[id.Account](accountID)}
+			continue
+		}
+		out[accountID] = accountapi.AccountSummary{ID: found.ID, Name: found.Name, Avatar: found.Avatar}
+	}
+	return out
+}
+
 // requireModerator asks the account module for the caller's role. An admin passes every
 // moderator check — a role that outranks another and still gets refused is a bug waiting to
 // be filed.

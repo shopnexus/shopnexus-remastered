@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	accountapi "shopnexus/internal/module/account/api"
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
@@ -50,6 +49,11 @@ func (s *Service) cards(ctx context.Context, rows []port.ListingSummary) ([]cata
 	if err != nil {
 		return nil, err
 	}
+	sellerIDs := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		sellerIDs = append(sellerIDs, row.SellerID)
+	}
+	sellers := s.sellers(ctx, sellerIDs)
 	out := make([]catalogapi.Listing, 0, len(rows))
 	for _, row := range rows {
 		card := catalogapi.Listing{
@@ -75,15 +79,7 @@ func (s *Service) cards(ctx context.Context, rows []port.ListingSummary) ([]cata
 				card.Cover = &res
 			}
 		}
-		// A moderator's queue shows whose listing it is; the seller lookup is per row because
-		// a page holds a handful of distinct sellers and the account module has no batch read.
-		seller, err := s.accounts.GetPublicAccount(ctx, accountapi.GetPublicAccountRequest{
-			ID: id.Of[id.Account](row.SellerID),
-		})
-		if err != nil {
-			return nil, fmt.Errorf("read seller: %w", err)
-		}
-		card.Seller = accountapi.AccountSummary{ID: seller.ID, Name: seller.Name, Avatar: seller.Avatar}
+		card.Seller = sellers[row.SellerID]
 		out = append(out, card)
 	}
 	return out, nil

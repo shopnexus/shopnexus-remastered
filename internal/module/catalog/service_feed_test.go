@@ -346,3 +346,39 @@ func TestListListings_DistanceNeedsAPosition(t *testing.T) {
 		t.Fatalf("status = %d, want 401 naming an address with no session", got)
 	}
 }
+
+// A seller the account module no longer has must cost the feed a name, not the page. And the page
+// pays one account read per distinct shop, not one per row: the old code did both wrong, so one
+// deleted account blanked the whole browse for everybody.
+func TestListListings_SellerReadsAreOncePerShopAndSurviveAMissingOne(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	for _, name := range []string{"First", "Second", "Third"} {
+		publish(t, h, seedListingNamed(t, h, name))
+	}
+
+	reads := 0
+	live := newHarnessSellerGone(h, false, &reads)
+	page, err := live.svc.ListListings(ctx, catalogapi.ListListingsRequest{Page: 1, Limit: 20})
+	if err != nil {
+		t.Fatalf("ListListings: %v", err)
+	}
+	if len(page.Data) != 3 {
+		t.Fatalf("feed = %d rows, want the three live listings", len(page.Data))
+	}
+	if reads != 1 {
+		t.Errorf("account reads = %d, want one for the whole page's single shop", reads)
+	}
+
+	gone := newHarnessSellerGone(h, true, nil)
+	page, err = gone.svc.ListListings(ctx, catalogapi.ListListingsRequest{Page: 1, Limit: 20})
+	if err != nil {
+		t.Fatalf("ListListings with the seller gone: %v", err)
+	}
+	if len(page.Data) != 3 {
+		t.Fatalf("feed = %d rows, want the listings to survive their seller", len(page.Data))
+	}
+	if page.Data[0].Seller.ID == 0 || page.Data[0].Seller.Name != "" {
+		t.Errorf("seller = %+v, want the id with no name", page.Data[0].Seller)
+	}
+}

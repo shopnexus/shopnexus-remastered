@@ -34,6 +34,12 @@ type fakeAccounts struct {
 	// but answers no radius.
 	noPickup   bool
 	ungeocoded bool
+	// gone is a seller the account module no longer has, which is what a deleted shop looks like to
+	// a feed page that still holds its listings.
+	gone bool
+	// publicReads counts the account reads a page costs, so an N+1 is a failing test rather than a
+	// slow endpoint nobody measured.
+	publicReads *int
 }
 
 func (f fakeAccounts) GetMe(context.Context, accountapi.GetMeRequest) (accountapi.Me, error) {
@@ -41,6 +47,12 @@ func (f fakeAccounts) GetMe(context.Context, accountapi.GetMeRequest) (accountap
 }
 
 func (f fakeAccounts) GetPublicAccount(_ context.Context, req accountapi.GetPublicAccountRequest) (accountapi.PublicAccount, error) {
+	if f.publicReads != nil {
+		*f.publicReads++
+	}
+	if f.gone {
+		return accountapi.PublicAccount{}, errx.NewError(404, "account_not_found", "account not found")
+	}
 	return accountapi.PublicAccount{ID: req.ID, Name: "Seller", IdentityVerified: f.verified}, nil
 }
 
@@ -116,6 +128,15 @@ func newHarnessWith(role string, identityVerified bool) *harness {
 // newHarnessModerator reuses one harness's repository with a moderator caller.
 func newHarnessModerator(h *harness) *harness {
 	svc := catalog.NewService(h.repo, fakeAccounts{role: "moderator", verified: true},
+		h.uploads, h.models, validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models}
+}
+
+// newHarnessSellerGone reuses one harness's data with the seller's account missing, and counts what
+// a page costs in account reads.
+func newHarnessSellerGone(h *harness, gone bool, reads *int) *harness {
+	svc := catalog.NewService(h.repo,
+		fakeAccounts{role: "user", verified: true, gone: gone, publicReads: reads},
 		h.uploads, h.models, validation.Default(), slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models}
 }
