@@ -7,7 +7,6 @@ import (
 	"time"
 
 	catalogapi "shopnexus/internal/module/catalog/api"
-	"shopnexus/internal/module/common"
 	financeapi "shopnexus/internal/module/finance/api"
 	orderapi "shopnexus/internal/module/order/api"
 	"shopnexus/internal/module/order/domain"
@@ -356,9 +355,9 @@ func (s *Service) ShippingQuotes(ctx context.Context, req orderapi.ShippingQuote
 		return orderapi.ShippingQuotes{}, domain.ErrCheckoutEmpty
 	}
 
-	carriers, err := s.options.ListEnabled(ctx, common.OptionTypeTransport)
+	carriers, err := s.carriers(ctx)
 	if err != nil {
-		return orderapi.ShippingQuotes{}, fmt.Errorf("list transport options: %w", err)
+		return orderapi.ShippingQuotes{}, err
 	}
 	// The seller's collection point is the same for every carrier, so it is read once — a
 	// per-option lookup here is one account round trip per row on a page-load route.

@@ -46,6 +46,10 @@ type Service struct {
 	// gateway is the rail. One client for now; a per-option client is what the
 	// registry's `provider` column is for once there is a second.
 	gateway payment.Client
+	// rail is the provider this deployment configured, which decides which registry rows are
+	// offered at all: a row naming a vendor the stack cannot reach is a checkout that fails at
+	// the last step, and the mock's scenario rows must never appear beside a real card form.
+	rail RailProvider
 	// returnURLHosts is the allowlist a payer's redirect target has to be in.
 	returnURLHosts ReturnURLHosts
 	bus            eventbus.Client
@@ -58,15 +62,35 @@ func NewService(
 	accounts accountapi.Service,
 	options port.Options,
 	gateway payment.Client,
+	rail RailProvider,
 	returnURLHosts ReturnURLHosts,
 	bus eventbus.Client,
 	v *validator.Validate,
 	log *slog.Logger,
 ) *Service {
 	return &Service{
-		repo: repo, accounts: accounts, options: options, gateway: gateway,
+		repo: repo, accounts: accounts, options: options, gateway: gateway, rail: rail,
 		returnURLHosts: returnURLHosts, bus: bus, v: v, log: log,
 	}
+}
+
+// RailProvider is the configured PAYMENT_PROVIDER. Its own type, not a bare string: the fx graph is
+// keyed by type, and "a string" is not a thing to inject.
+type RailProvider string
+
+// rails is the registry filtered to what this deployment can actually charge on, best first.
+func (s *Service) rails(ctx context.Context) ([]common.Option, error) {
+	options, err := s.options.ListEnabled(ctx, common.OptionTypePayment)
+	if err != nil {
+		return nil, fmt.Errorf("list payment options: %w", err)
+	}
+	offered := make([]common.Option, 0, len(options))
+	for _, o := range options {
+		if o.Offered(string(s.rail)) {
+			offered = append(offered, o)
+		}
+	}
+	return offered, nil
 }
 
 // ReturnURLHosts is where a gateway may send a payer back. Its own type, not a bare []string:
@@ -108,9 +132,9 @@ func (s *Service) requireAdmin(ctx context.Context, actorID id.ID[id.Account]) e
 // paymentOption resolves a rail from this module's registry. A slug nobody enabled is
 // refused here rather than handed to a gateway that has never heard of it.
 func (s *Service) paymentOption(ctx context.Context, slug string) (common.Option, error) {
-	options, err := s.options.ListEnabled(ctx, common.OptionTypePayment)
+	options, err := s.rails(ctx)
 	if err != nil {
-		return common.Option{}, fmt.Errorf("list payment options: %w", err)
+		return common.Option{}, err
 	}
 	for _, o := range options {
 		if o.ID == slug {

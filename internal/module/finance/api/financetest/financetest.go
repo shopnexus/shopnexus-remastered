@@ -17,6 +17,10 @@ type Stub struct{}
 
 var _ financeapi.Service = Stub{}
 
+func (Stub) ListPaymentOptions(context.Context, financeapi.ListPaymentOptionsRequest) ([]financeapi.PaymentOption, error) {
+	return nil, errx.ErrNotImplemented
+}
+
 func (Stub) ListSessions(context.Context, financeapi.ListSessionsRequest) (financeapi.SessionPage, error) {
 	return financeapi.SessionPage{}, errx.ErrNotImplemented
 }

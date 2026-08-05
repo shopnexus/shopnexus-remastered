@@ -43,7 +43,12 @@ func newFakeRepo() *fakeRepo {
 		posted:   map[string]bool{},
 		payees:   map[int64]domain.BankAccount{},
 		taxInfos: map[int64]domain.TaxInfo{},
-		options:  []common.Option{{ID: "mock-rail", Type: common.OptionTypePayment, IsEnabled: true}},
+		// `platform` as the provider, like the row every deployment seeds: it is offered whatever
+		// PAYMENT_PROVIDER says, so these tests are not about the registry's provider filter.
+		options: []common.Option{{
+			ID: "mock-rail", Type: common.OptionTypePayment, IsEnabled: true,
+			Provider: common.OptionProviderPlatform,
+		}},
 	}
 }
 

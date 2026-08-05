@@ -69,6 +69,9 @@ type Service struct {
 	// nobody enabled cannot be chosen; transport is the courier those slugs price with.
 	options   port.Options
 	transport transport.Client
+	// courierProvider is the courier this deployment configured, which decides which registry
+	// rows are offered at all.
+	courierProvider CourierProvider
 	// workflows holds the timers: the durable runtime when there is one, nothing when there
 	// is not. Best-effort at every call site — the row is already committed.
 	workflows port.Workflows
@@ -89,6 +92,7 @@ func NewService(
 	uploads common.Uploads,
 	options port.Options,
 	transport transport.Client,
+	courierProvider CourierProvider,
 	workflows port.Workflows,
 	bus eventbus.Client,
 	v *validator.Validate,
@@ -97,10 +101,15 @@ func NewService(
 ) *Service {
 	return &Service{
 		repo: repo, accounts: accounts, catalog: catalog, finance: finance, chat: chat,
-		uploads: uploads, options: options, transport: transport, workflows: workflows,
+		uploads: uploads, options: options, transport: transport,
+		courierProvider: courierProvider, workflows: workflows,
 		bus: bus, v: v, log: log, fanout: fanout,
 	}
 }
+
+// CourierProvider is the configured TRANSPORT_PROVIDER. Its own type, not a bare string: the fx
+// graph is keyed by type, and "a string" is not a thing to inject.
+type CourierProvider string
 
 var _ orderapi.Service = (*Service)(nil)
 
@@ -163,12 +172,29 @@ func (s *Service) requireModerator(ctx context.Context, actorID id.ID[id.Account
 	return nil
 }
 
+// carriers is the registry filtered to what this deployment's courier can actually serve, best
+// first: a row naming a vendor the stack cannot reach is a checkout that fails at the last step,
+// and the mock's scenario rows must never appear beside a real courier's services.
+func (s *Service) carriers(ctx context.Context) ([]common.Option, error) {
+	options, err := s.options.ListEnabled(ctx, common.OptionTypeTransport)
+	if err != nil {
+		return nil, fmt.Errorf("list transport options: %w", err)
+	}
+	offered := make([]common.Option, 0, len(options))
+	for _, o := range options {
+		if o.Offered(string(s.courierProvider)) {
+			offered = append(offered, o)
+		}
+	}
+	return offered, nil
+}
+
 // transportOption resolves a carrier from this module's registry. A slug nobody enabled is
 // refused here rather than handed to a courier that has never heard of it.
 func (s *Service) transportOption(ctx context.Context, slug string) error {
-	options, err := s.options.ListEnabled(ctx, common.OptionTypeTransport)
+	options, err := s.carriers(ctx)
 	if err != nil {
-		return fmt.Errorf("list transport options: %w", err)
+		return err
 	}
 	for _, o := range options {
 		if o.ID == slug {

@@ -40,10 +40,15 @@ func newFakeRepo() *fakeRepo {
 		orders: map[int64]domain.Order{}, shipments: map[int64]domain.Transport{},
 		refunds: map[int64]domain.Refund{},
 		// Two carriers so a quote list is a list, and a disabled one so "enabled" means something.
+		// `platform` as the provider, like the row every deployment seeds: it is offered whatever
+		// TRANSPORT_PROVIDER says, so these tests are not about the registry's provider filter.
 		options: []common.Option{
-			{ID: "ghn-express", Name: "GHN Express", Type: common.OptionTypeTransport, IsEnabled: true},
-			{ID: "vtp-standard", Name: "Viettel Post", Type: common.OptionTypeTransport, IsEnabled: true},
-			{ID: "retired-courier", Name: "Retired", Type: common.OptionTypeTransport},
+			{ID: "ghn-express", Name: "GHN Express", Type: common.OptionTypeTransport, IsEnabled: true,
+				Provider: common.OptionProviderPlatform},
+			{ID: "vtp-standard", Name: "Viettel Post", Type: common.OptionTypeTransport, IsEnabled: true,
+				Provider: common.OptionProviderPlatform},
+			{ID: "retired-courier", Name: "Retired", Type: common.OptionTypeTransport,
+				Provider: common.OptionProviderPlatform},
 		},
 	}
 }

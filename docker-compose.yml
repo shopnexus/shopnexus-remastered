@@ -20,6 +20,9 @@ x-app-env: &app-env
   # id ever handed out. 16, 24 or 32 bytes.
   ID_CIPHER_KEY: "0123456789abcdef0123456789abcdef"
   LOG_LEVEL: "info"
+  # Where a browser may call this API from: full origins, matched exactly. A web client on
+  # another origin gets nothing without this — its preflight is refused before any route runs.
+  CORS_ALLOWED_ORIGINS: "https://shopnexus.github.io,http://localhost:3000,http://localhost:5173"
   ACCOUNT_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
   CATALOG_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
   ORDER_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
@@ -52,6 +55,9 @@ x-app-env: &app-env
   OAUTH_VERIFIER: "mock"
   KYC_PROVIDER: "mock"
   PAYMENT_PROVIDER: "mock"
+  # This gateway's public root, with no path: the mock rail's hosted-page scenario redirects a
+  # browser to /webhooks/payment/mock/checkout, which is mounted outside the versioned prefix.
+  PAYMENT_MOCK_BASE_URL: "https://shopnexus.hopto.org"
   # The courier a shipping fee is quoted from. The buyer pays delivery on every sale, so an
   # unquoted fee is one the platform silently absorbs. `mock` prices a flat fee.
   TRANSPORT_PROVIDER: "mock"
@@ -150,7 +156,7 @@ x-app-env: &app-env
   WS_PING_INTERVAL: "30s"
   WS_SEND_BUFFER: "64"
   WS_MAX_PER_ACCOUNT: "5"
-  WS_ALLOWED_ORIGINS: "localhost:3000"
+  WS_ALLOWED_ORIGINS: "shopnexus.github.io,localhost:3000,localhost:5173"
 
 services:
   db:

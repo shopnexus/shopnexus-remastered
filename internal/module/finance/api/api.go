@@ -45,6 +45,22 @@ type SessionPage struct {
 	Meta PageInfo  `json:"meta"`
 }
 
+// PaymentOption is one rail a payer may tender on: what `StartPayment` takes in `payment_option`.
+// Operator configuration rather than anybody's data, so the list needs no filter and no paging —
+// and it carries no `provider`, because which vendor is behind a rail is this deployment's business
+// and not something a checkout screen should render.
+type PaymentOption struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// ListPaymentOptionsRequest is the rails this deployment offers. Authenticated but otherwise
+// unparameterised: only a payer at a checkout needs it.
+type ListPaymentOptionsRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+}
+
 // Transaction is one leg on an external rail. Append-only: a reversal is another leg
 // with a negative amount, never an edit of this one.
 type Transaction struct {
@@ -337,6 +353,9 @@ type EscrowRequest struct {
 
 type Service interface {
 	// --- payment sessions ---
+	// ListPaymentOptions is the rails a payer may choose from — the list a checkout renders
+	// before it calls StartPayment, and the only place a valid `payment_option` comes from.
+	ListPaymentOptions(ctx context.Context, req ListPaymentOptionsRequest) ([]PaymentOption, error)
 	ListSessions(ctx context.Context, req ListSessionsRequest) (SessionPage, error)
 	GetSession(ctx context.Context, req GetSessionRequest) (Session, error)
 	ListSessionTransactions(ctx context.Context, req GetSessionRequest) ([]Transaction, error)

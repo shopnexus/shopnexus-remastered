@@ -51,6 +51,7 @@ var Module = fx.Module("order",
 		fx.Annotate(newOptions, fx.As(new(port.Options))),
 		fx.Annotate(newUploadSweep, fx.ResultTags(`group:"sweeps"`)),
 		newWorkflows,
+		newCourierProvider,
 		fx.Annotate(NewService, fx.As(new(orderapi.Service))),
 		NewLifecycle,
 		fx.Annotate(newDefinitions, fx.ResultTags(`group:"restate-definitions,flatten"`)),
@@ -125,6 +126,12 @@ func newPool(lc fx.Lifecycle, cfg *config.Config) (*pgxpool.Pool, error) {
 func newRepo(pool *pgxpool.Pool) *orderpg.Repo { return orderpg.New(pool) }
 
 func newOptions(pool *pgxpool.Pool) *dbx.Options { return dbx.NewOptions(pool) }
+
+// newCourierProvider is which courier this deployment books through, so the registry can offer only
+// the rows that courier can serve.
+func newCourierProvider(cfg *config.Config) CourierProvider {
+	return CourierProvider(cfg.TransportProvider)
+}
 
 // newUploads is this module's own `resource` rows plus the object store. The prefix keeps
 // order's objects together, so an operator holding only a key can tell what it belongs to.

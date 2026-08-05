@@ -29,6 +29,7 @@ var Module = fx.Module("finance",
 		fx.Annotate(newRepo, fx.As(new(port.Repository))),
 		fx.Annotate(newOptions, fx.As(new(port.Options))),
 		newReturnURLHosts,
+		newRailProvider,
 		fx.Annotate(NewService, fx.As(new(financeapi.Service))),
 	),
 	// The service is built eagerly and its webhook mounted, because nothing else in the
@@ -58,6 +59,10 @@ func newReturnURLHosts(cfg *config.Config) ReturnURLHosts {
 }
 
 func newOptions(pool *pgxpool.Pool) *dbx.Options { return dbx.NewOptions(pool) }
+
+// newRailProvider is which vendor this deployment charges through, so the registry can offer only
+// the rows that vendor can serve.
+func newRailProvider(cfg *config.Config) RailProvider { return RailProvider(cfg.PaymentProvider) }
 
 // WireWebhooks mounts the payment provider's IPN routes and hands it the settler. The
 // webhook is the provider's own path, not one of ours: a gateway calls the URL it was

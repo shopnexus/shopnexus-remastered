@@ -20,7 +20,12 @@ const (
 )
 
 type ChargeParams struct {
-	RefID       string
+	RefID string
+	// Option is the rail slug the payer chose — the same value the `option` row is keyed by. A
+	// provider that offers one rail ignores it; one that offers several charges the one asked
+	// for. Without it a registry of rails is the same rail relabelled, and the payer's choice
+	// never reaches the gateway.
+	Option      string
 	Amount      int64
 	Description string
 	ReturnURL   string // redirect providers only

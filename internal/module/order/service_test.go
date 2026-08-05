@@ -464,11 +464,15 @@ func newHarnessWithFanout(priceMode string, fanout realtime.Fanout) *harness {
 	workflows := &fakeWorkflows{}
 	courier := &fakeCourier{fee: shippingFee}
 	bus := eventbus.NewMemory(slog.New(slog.DiscardHandler))
-	svc := order.NewService(repo, accounts, catalog, finance, chat, uploads, repo, courier, workflows,
-		bus, validation.Default(), slog.New(slog.DiscardHandler), fanout)
+	svc := order.NewService(repo, accounts, catalog, finance, chat, uploads, repo, courier,
+		testCourierProvider, workflows, bus, validation.Default(), slog.New(slog.DiscardHandler), fanout)
 	return &harness{svc: svc, repo: repo, catalog: catalog, finance: finance, chat: chat,
 		uploads: uploads, accounts: accounts, workflows: workflows, courier: courier, bus: bus}
 }
+
+// testCourierProvider stands in for TRANSPORT_PROVIDER. The fake's rows are all `platform`, which
+// every provider offers, so its value only matters to the filter's own test.
+const testCourierProvider = order.CourierProvider("mock")
 
 // noopFanout is the fanout for tests that are not about realtime: it accepts every push
 // and drops it, so a command's happy path does not need a bus to run.
@@ -489,7 +493,7 @@ func (h *harness) ageItems(by time.Duration) {
 // moderator reuses one harness's repository with a staff caller.
 func (h *harness) moderator() *order.Service {
 	return order.NewService(h.repo, fakeAccounts{role: "moderator"}, h.catalog, h.finance,
-		h.chat, h.uploads, h.repo, h.courier, h.workflows, h.bus,
+		h.chat, h.uploads, h.repo, h.courier, testCourierProvider, h.workflows, h.bus,
 		validation.Default(), slog.New(slog.DiscardHandler), noopFanout{})
 }
 
@@ -971,7 +975,8 @@ func TestShippingQuotes_EstimatesFromAListingPage(t *testing.T) {
 	noAddress := newHarness("fixed")
 	noAddress.svc = order.NewService(noAddress.repo, fakeAccounts{role: "user", noDelivery: true},
 		noAddress.catalog, noAddress.finance, noAddress.chat, noAddress.uploads, noAddress.repo,
-		noAddress.courier, noAddress.workflows, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
+		noAddress.courier, testCourierProvider, noAddress.workflows,
+		eventbus.NewMemory(slog.New(slog.DiscardHandler)),
 		validation.Default(), slog.New(slog.DiscardHandler), noopFanout{})
 	if got := status(t, mustErr(noAddress.svc.ShippingQuotes(ctx, orderapi.ShippingQuotesRequest{
 		ActorID: buyer, VariantID: variantID,
@@ -1701,7 +1706,8 @@ func TestCancelItem_ReleasesStockBeforePayment(t *testing.T) {
 func TestCheckout_NeedsAPickupAddress(t *testing.T) {
 	h := newHarness("fixed")
 	h.svc = order.NewService(h.repo, fakeAccounts{role: "user", noPickup: true}, h.catalog,
-		h.finance, h.chat, h.uploads, h.repo, h.courier, h.workflows, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
+		h.finance, h.chat, h.uploads, h.repo, h.courier, testCourierProvider, h.workflows,
+		eventbus.NewMemory(slog.New(slog.DiscardHandler)),
 		validation.Default(), slog.New(slog.DiscardHandler), noopFanout{})
 	ctx := context.Background()
 	draft, err := h.svc.CreateDraft(ctx, orderapi.CreateDraftRequest{ActorID: buyer, ListingID: listingID})

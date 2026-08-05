@@ -274,8 +274,8 @@ func newKYCClient(cfg *config.Config, log *slog.Logger, metrics *observability.S
 
 // newPaymentClient picks the rail. Only the mock exists today; a real gateway is a new
 // case here plus its credentials in config, exactly like the other seams.
-func newPaymentClient(cfg *config.Config) payment.Client {
-	return paymentmock.NewClient()
+func newPaymentClient(cfg *config.Config, log *slog.Logger) payment.Client {
+	return paymentmock.NewClient(paymentmock.Config{BaseURL: cfg.PaymentMockBaseURL}, log)
 }
 
 // newStorageRegistry builds the stores this deployment can serve from. STORAGE_PROVIDER picks
@@ -330,8 +330,8 @@ func newUploadsHandler(stores *storage.Registry, log *slog.Logger) *handler.Uplo
 // a real carrier is a new case here plus its credentials in config, exactly like the other seams.
 // The fee is on the money path — the buyer pays delivery on every sale — so an unquoted one is a
 // carrier bill the platform silently absorbs.
-func newTransportClient(cfg *config.Config) transport.Client {
-	return transportmock.NewClient()
+func newTransportClient(log *slog.Logger) transport.Client {
+	return transportmock.NewClient(log)
 }
 
 // observedClient builds the HTTP client a provider uses: metrics when the telemetry sink

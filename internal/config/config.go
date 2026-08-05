@@ -56,6 +56,13 @@ type Config struct {
 	// credential.
 	IDCipherKey string `validate:"required"`
 	LogLevel    string `validate:"required,oneof=debug info warn error"`
+	// CORSAllowedOrigins is where a browser may call this API from: full origins
+	// (`https://shopnexus.github.io`), comma-separated, or a lone `*`. Full origins rather than
+	// hosts like WSAllowedOrigins, because that is the form the browser sends and the form the
+	// allow header has to echo. Required like everything else here: a deployment whose web client
+	// is on another origin and whose list is empty answers every preflight with a refusal, which
+	// surfaces as "the whole site is broken" rather than as a missing variable.
+	CORSAllowedOrigins []string `validate:"required,min=1,dive,required"`
 
 	// StorageProvider is where a *new* uploaded byte goes. `local` keeps objects on this host's
 	// disk and signs URLs back to the gateway's own upload route — a real store signs the
@@ -187,6 +194,10 @@ type Config struct {
 	// PaymentProvider picks the rail money actually moves on. `mock` settles
 	// synchronously with no gateway, which is what dev and the tests use.
 	PaymentProvider string `validate:"required,oneof=mock"`
+	// PaymentMockBaseURL is this gateway's public root — no path, since a provider callback is
+	// mounted outside the versioned prefix. The mock rail's redirect scenario needs an absolute
+	// URL to send a browser to, and a web client on another origin cannot follow a relative one.
+	PaymentMockBaseURL string `validate:"required_if=PaymentProvider mock,omitempty,url"`
 
 	// --- SMTP ---
 
@@ -284,6 +295,7 @@ func Load(v *validator.Validate) (*Config, error) {
 		JWTSecret:          os.Getenv("JWT_SECRET"),
 		IDCipherKey:        os.Getenv("ID_CIPHER_KEY"),
 		LogLevel:           os.Getenv("LOG_LEVEL"),
+		CORSAllowedOrigins: listVar("CORS_ALLOWED_ORIGINS"),
 
 		StorageProvider:       os.Getenv("STORAGE_PROVIDER"),
 		StorageRoot:           os.Getenv("STORAGE_ROOT"),
@@ -323,6 +335,7 @@ func Load(v *validator.Validate) (*Config, error) {
 		OAuthVerifier:         os.Getenv("OAUTH_VERIFIER"),
 		KYCProvider:           os.Getenv("KYC_PROVIDER"),
 		PaymentProvider:       os.Getenv("PAYMENT_PROVIDER"),
+		PaymentMockBaseURL:    os.Getenv("PAYMENT_MOCK_BASE_URL"),
 		TransportProvider:     os.Getenv("TRANSPORT_PROVIDER"),
 		PaymentReturnURLHosts: listVar("PAYMENT_RETURN_URL_HOSTS"),
 

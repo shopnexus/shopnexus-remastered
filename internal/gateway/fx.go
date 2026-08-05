@@ -11,6 +11,7 @@ import (
 
 	"shopnexus/internal/config"
 	"shopnexus/internal/gateway/handler"
+	"shopnexus/internal/gateway/middleware"
 	"shopnexus/internal/gateway/ws"
 	"shopnexus/internal/infra/eventbus"
 	"shopnexus/internal/module/observability"
@@ -38,6 +39,7 @@ var Module = fx.Module("gateway",
 		// One mux for every provider callback. Provided here rather than by a provider,
 		// because several of them mount on it and the router mounts the result.
 		newWebhookMux,
+		newCORSOrigins,
 		newRouter,
 		newFanout,
 	),
@@ -72,6 +74,11 @@ func newConnCounter(hub *ws.Hub) observability.ConnCounter { return hub.Count }
 // newWebhookMux is where a provider's IPN routes land. Outside the versioned API and
 // outside auth: a gateway calls the URL it was configured with and has no token.
 func newWebhookMux() *http.ServeMux { return http.NewServeMux() }
+
+// newCORSOrigins is the browser allowlist, normalised once at startup rather than per request.
+func newCORSOrigins(cfg *config.Config) middleware.AllowedOrigins {
+	return middleware.NormalizeOrigins(cfg.CORSAllowedOrigins)
+}
 
 func newRouter(d Deps) http.Handler { return NewRouter(d) }
 

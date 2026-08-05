@@ -2638,6 +2638,38 @@ components:
             required:
                 - identifier
             type: object
+        PaymentOption:
+            description: One rail a payer may tender on.
+            properties:
+                description:
+                    description: A line of explanation. May be empty.
+                    example: The platform's configured payment provider.
+                    type: string
+                id:
+                    description: What to send as `payment_option`. Permanent — a settled leg holds it.
+                    example: platform-checkout
+                    maxLength: 100
+                    pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
+                    type: string
+                name:
+                    description: What to show the payer.
+                    example: Card or bank transfer
+                    type: string
+            required:
+                - id
+                - name
+                - description
+            type: object
+        PaymentOptionList:
+            description: Unpaginated — a deployment offers a handful of rails.
+            properties:
+                data:
+                    items:
+                        $ref: '#/components/schemas/PaymentOption'
+                    type: array
+            required:
+                - data
+            type: object
         PaymentSession:
             properties:
                 created_at:
@@ -3422,7 +3454,8 @@ components:
                     minimum: 1
                     type: integer
                 payment_option:
-                    description: A payment option slug from the common module.
+                    description: A slug from `GET /payment-options`; one nobody enabled is refused with 422.
+                    example: platform-checkout
                     maxLength: 100
                     pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
                     type: string
@@ -9410,6 +9443,26 @@ paths:
             summary: Set a new password with a reset token
             tags:
                 - account
+    /payment-options:
+        get:
+            description: |
+                Where a valid `payment_option` comes from. Operator configuration, not the caller's data, so it is unpaginated and identical for everybody — but it is not constant: a rail an operator disables leaves this list, and a client that hardcoded a slug gets 422 from `POST /payment-sessions/{id}/payments` instead. Which vendor is behind a rail is not published; the id and the name are what a checkout renders.
+
+                On a stack running the mock rail this is where its scenarios appear — one row per outcome (`mock-decline`, `mock-redirect`, `mock-webhook-success`, …), so a client can be built against a refusal and a late webhook. They are offered only while that rail is the configured one, so they cannot show up beside a real card form.
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/PaymentOptionList'
+                    description: OK
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+            security:
+                - bearerAuth: []
+            summary: List the payment rails this deployment offers
+            tags:
+                - finance
     /payment-sessions:
         get:
             description: '`role=payer` is money owed or sent, `role=payee` is money received — seller payouts and refunds land on that side.'

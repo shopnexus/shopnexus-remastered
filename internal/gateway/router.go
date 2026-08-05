@@ -40,7 +40,10 @@ type Deps struct {
 	Metrics  *observability.Sink
 	Tokens   *token.Manager
 	Sessions *session.Store
-	Log      *slog.Logger
+	// CORSOrigins is where a browser may call this from. Zero value in a test is no allow header
+	// at all, which is exactly what a same-process request needs.
+	CORSOrigins middleware.AllowedOrigins `optional:"true"`
+	Log         *slog.Logger
 }
 
 // NewRouter registers every route the OpenAPI contract declares.
@@ -181,6 +184,9 @@ func NewRouter(d Deps) http.Handler {
 
 	// ---- finance ----
 	// Authenticated
+	// The rails a payer may tender on, which is where a valid `payment_option` comes from: a
+	// client that hardcoded a slug broke the day an operator disabled that rail.
+	mux.Handle("GET /payment-options", auth(http.HandlerFunc(d.Finance.ListPaymentOptions)))
 	mux.Handle("GET /payment-sessions", auth(http.HandlerFunc(d.Finance.ListPaymentSessions)))
 	mux.Handle("GET /payment-sessions/{id}", auth(http.HandlerFunc(d.Finance.GetPaymentSession)))
 	mux.Handle("GET /payment-sessions/{id}/transactions", auth(http.HandlerFunc(d.Finance.ListTransactions)))
@@ -314,5 +320,8 @@ func NewRouter(d Deps) http.Handler {
 		root.Handle("/webhooks/", d.Webhooks)
 	}
 
-	return middleware.Logging(d.Log)(root)
+	// CORS is inside Logging so a preflight is still logged — the request that gets refused is
+	// the one an operator needs to see — and outside everything else, because a preflight has no
+	// token to authenticate and no route to match.
+	return middleware.Logging(d.Log)(middleware.CORS(d.CORSOrigins)(root))
 }

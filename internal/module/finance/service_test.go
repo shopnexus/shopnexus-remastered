@@ -37,6 +37,9 @@ func (f fakeAccounts) GetPublicAccount(_ context.Context, req accountapi.GetPubl
 	return accountapi.PublicAccount{ID: req.ID, IdentityVerified: f.verified}, nil
 }
 
+// discard is the logger every harness here uses: a service test asserts on results, not on lines.
+var discard = slog.New(slog.DiscardHandler)
+
 type harness struct {
 	svc  *finance.Service
 	repo *fakeRepo
@@ -46,9 +49,10 @@ func newHarness(role string, verified bool) *harness {
 	repo := newFakeRepo()
 	// The mock rail settles synchronously, which is what lets a service test walk a
 	// whole payment without a webhook.
-	gateway := paymentmock.NewClient()
+	gateway := paymentmock.NewClient(paymentmock.Config{BaseURL: "https://shopnexus.test"}, discard)
 	svc := finance.NewService(repo, fakeAccounts{role: role, verified: verified}, repo,
-		gateway, finance.ReturnURLHosts{"shopnexus.test"}, eventbus.NewMemory(slog.New(slog.DiscardHandler)), validation.Default(), slog.New(slog.DiscardHandler))
+		gateway, paymentmock.Name, finance.ReturnURLHosts{"shopnexus.test"},
+		eventbus.NewMemory(discard), validation.Default(), discard)
 	return &harness{svc: svc, repo: repo}
 }
 
@@ -292,9 +296,9 @@ func TestGetSession_StrangerNotFound(t *testing.T) {
 // seed money as an admin and then act as the account it belongs to.
 func newHarnessSharing(h *harness, role string) *harness {
 	svc := finance.NewService(h.repo, fakeAccounts{role: role, verified: true}, h.repo,
-		paymentmock.NewClient(),
-		finance.ReturnURLHosts{"shopnexus.test"}, eventbus.NewMemory(slog.New(slog.DiscardHandler)),
-		validation.Default(), slog.New(slog.DiscardHandler))
+		paymentmock.NewClient(paymentmock.Config{BaseURL: "https://shopnexus.test"}, discard),
+		paymentmock.Name, finance.ReturnURLHosts{"shopnexus.test"}, eventbus.NewMemory(discard),
+		validation.Default(), discard)
 	return &harness{svc: svc, repo: h.repo}
 }
 
