@@ -9,10 +9,29 @@ import (
 
 	"shopnexus/internal/infra/cache"
 	accountapi "shopnexus/internal/module/account/api"
+	"shopnexus/internal/module/account/areas"
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/provider/notify"
 	"shopnexus/internal/shared/id"
 )
+
+// ListAdministrativeAreas serves one level of the division tree from the list vendored in this
+// module. No repository and no cache: the file is in the binary, so the answer is a slice that was
+// built once at first use.
+func (s *Service) ListAdministrativeAreas(ctx context.Context, req accountapi.ListAdministrativeAreasRequest) ([]accountapi.AdministrativeArea, error) {
+	found, ok, err := areas.Children(req.Parent)
+	if err != nil {
+		return nil, fmt.Errorf("read administrative areas: %w", err)
+	}
+	if !ok {
+		return nil, domain.ErrAreaNotFound
+	}
+	out := make([]accountapi.AdministrativeArea, 0, len(found))
+	for _, a := range found {
+		out = append(out, accountapi.AdministrativeArea{Code: a.Code, Name: a.Name, Kind: a.Kind})
+	}
+	return out, nil
+}
 
 func (s *Service) ListContacts(ctx context.Context, req accountapi.ListContactsRequest) ([]accountapi.Contact, error) {
 	rows, err := s.repo.ListContacts(ctx, req.ActorID.Int64())

@@ -277,6 +277,34 @@ components:
                 - data
                 - meta
             type: object
+        AdministrativeArea:
+            properties:
+                code:
+                    description: What an address stores — two digits for a province, five for a ward.
+                    example: "79"
+                    type: string
+                kind:
+                    enum:
+                        - province
+                        - ward
+                    type: string
+                name:
+                    example: Thành phố Hồ Chí Minh
+                    type: string
+            required:
+                - code
+                - name
+                - kind
+            type: object
+        AdministrativeAreaList:
+            properties:
+                data:
+                    items:
+                        $ref: '#/components/schemas/AdministrativeArea'
+                    type: array
+            required:
+                - data
+            type: object
         AuthResult:
             properties:
                 access_token:
@@ -5779,6 +5807,39 @@ paths:
             summary: Reject a withdrawal and return the money to the balance
             tags:
                 - admin
+    /administrative-areas:
+        get:
+            description: |
+                Two tiers, one level per request: no `parent` answers the provinces, a province code answers its wards. Vietnam goes province to ward, so there is no district level to ask for — a contact's `district_code` stays null.
+
+                Unauthenticated, because an address form and the listing browse's area filter both need it before anybody has signed in. The list is served from the backend rather than from a public third-party API so that a seller's own address does not depend on somebody else's uptime, and so both clients spell a code the same way: it is the zero-padded string the columns store, and a client sends back exactly what it was given.
+            parameters:
+                - description: A province code. Omit for the provinces themselves.
+                  in: query
+                  name: parent
+                  schema:
+                    example: "79"
+                    maxLength: 5
+                    pattern: ^[0-9]+$
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AdministrativeAreaList'
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: No division has that code
+            summary: The administrative divisions an address is written in
+            tags:
+                - account
     /bank-accounts:
         get:
             description: Account numbers come back masked. The full number is only ever used to move money, never to display it back.

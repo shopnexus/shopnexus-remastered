@@ -31,6 +31,16 @@ const (
 // unreachable.
 const CodeNoPickupContact = "no_pickup_contact"
 
+// AdministrativeArea is one division of the country: the code an address stores and the name a form
+// shows. Zero-padded exactly as the columns keep it, so a client sends back what it was given.
+type AdministrativeArea struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+	// Kind is which level this is — province, district or ward — so a client rendering a chip does
+	// not have to infer it from how deep it happens to be.
+	Kind string `json:"kind"`
+}
+
 // --- authentication ---
 
 // AuthResult is what every successful sign-in returns: the two tokens, the access

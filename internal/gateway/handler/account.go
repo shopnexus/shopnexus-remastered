@@ -335,6 +335,20 @@ func (h *Account) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------ contacts ------
 
 // ListContacts handles GET /contacts.
+// ListAdministrativeAreas handles GET /administrative-areas. Unauthenticated: the browse filters on
+// these codes before anybody signs in, and an address form needs them to render at all.
+func (h *Account) ListAdministrativeAreas(w http.ResponseWriter, r *http.Request) {
+	req := accountapi.ListAdministrativeAreasRequest{Parent: r.URL.Query().Get("parent")}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListAdministrativeAreas(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
 func (h *Account) ListContacts(w http.ResponseWriter, r *http.Request) {
 	uid, err := actor(r)
 	if failed(w, h.log, err) {

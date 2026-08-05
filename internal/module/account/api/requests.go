@@ -161,6 +161,13 @@ type UnlinkOAuthIdentityRequest struct {
 
 // --- saved addresses ---
 
+// ListAdministrativeAreasRequest asks for one level of the division tree. Parent is the code above
+// it — empty for the provinces, a province code for its districts, a district code for its wards —
+// so a cascading address form is one request per select rather than the whole country up front.
+type ListAdministrativeAreasRequest struct {
+	Parent string `json:"-" validate:"omitempty,max=5,numeric"`
+}
+
 type ListContactsRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 }

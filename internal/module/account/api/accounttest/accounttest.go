@@ -89,6 +89,10 @@ func (Stub) ConfirmUpload(context.Context, accountapi.ConfirmUploadRequest) (com
 	return common.ResourceDTO{}, errx.ErrNotImplemented
 }
 
+func (Stub) ListAdministrativeAreas(context.Context, accountapi.ListAdministrativeAreasRequest) ([]accountapi.AdministrativeArea, error) {
+	return nil, errx.ErrNotImplemented
+}
+
 func (Stub) ListContacts(context.Context, accountapi.ListContactsRequest) ([]accountapi.Contact, error) {
 	return nil, errx.ErrNotImplemented
 }

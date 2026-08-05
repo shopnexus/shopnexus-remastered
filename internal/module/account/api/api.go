@@ -76,6 +76,10 @@ type Service interface {
 	ConfirmUpload(ctx context.Context, req ConfirmUploadRequest) (common.ResourceDTO, error)
 
 	// --- saved addresses ---
+	// ListAdministrativeAreas is the vocabulary a contact's codes are written in: the provinces of
+	// Vietnam, then one level at a time. Public and unauthenticated, because the listing browse
+	// filters on the same codes before anybody has signed in.
+	ListAdministrativeAreas(ctx context.Context, req ListAdministrativeAreasRequest) ([]AdministrativeArea, error)
 	ListContacts(ctx context.Context, req ListContactsRequest) ([]Contact, error)
 	GetContact(ctx context.Context, req GetContactRequest) (Contact, error)
 	// GetPickupContact answers a seller's collection point, which the order module needs to

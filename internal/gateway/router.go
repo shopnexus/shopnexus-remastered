@@ -97,6 +97,8 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("POST /me/uploads/{id}/confirmation", auth(http.HandlerFunc(d.Account.ConfirmUpload)))
 	mux.Handle("GET /me/oauth-identities", auth(http.HandlerFunc(d.Account.ListOAuthIdentities)))
 	mux.Handle("DELETE /me/oauth-identities/{provider}", auth(http.HandlerFunc(d.Account.UnlinkOAuthIdentity)))
+	// Public: the codes an address is written in, which the browse filters on before sign-in.
+	mux.HandleFunc("GET /administrative-areas", d.Account.ListAdministrativeAreas)
 	mux.Handle("GET /contacts", auth(http.HandlerFunc(d.Account.ListContacts)))
 	mux.Handle("POST /contacts", auth(http.HandlerFunc(d.Account.CreateContact)))
 	mux.Handle("PATCH /contacts/{id}", auth(http.HandlerFunc(d.Account.UpdateContact)))

@@ -1,6 +1,31 @@
 # account fragment: contact — addresses and phone verification.
 
 paths:
+  /administrative-areas:
+    get:
+      tags: [account]
+      summary: The administrative divisions an address is written in
+      description: >
+        Two tiers, one level per request: no `parent` answers the provinces, a province code answers
+        its wards. Vietnam goes province to ward, so there is no district level to ask for — a
+        contact's `district_code` stays null.
+
+
+        Unauthenticated, because an address form and the listing browse's area filter both need it
+        before anybody has signed in. The list is served from the backend rather than from a public
+        third-party API so that a seller's own address does not depend on somebody else's uptime,
+        and so both clients spell a code the same way: it is the zero-padded string the columns
+        store, and a client sends back exactly what it was given.
+      parameters:
+        - name: parent
+          in: query
+          schema: { type: string, maxLength: 5, pattern: '^[0-9]+$', example: '79' }
+          description: A province code. Omit for the provinces themselves.
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/AdministrativeAreaList' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { description: 'No division has that code', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
   /contacts:
     get:
       tags: [account]
@@ -137,6 +162,23 @@ components:
     ContactAddressType:
       type: string
       enum: [home, work]
+
+    AdministrativeArea:
+      type: object
+      properties:
+        code:
+          type: string
+          example: '79'
+          description: What an address stores — two digits for a province, five for a ward.
+        name: { type: string, example: Thành phố Hồ Chí Minh }
+        kind: { type: string, enum: [province, ward] }
+      required: [code, name, kind]
+
+    AdministrativeAreaList:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/AdministrativeArea' } }
+      required: [data]
 
     Contact:
       type: object

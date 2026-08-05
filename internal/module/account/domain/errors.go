@@ -55,7 +55,10 @@ var (
 	ErrLastSignInMethod      = errx.NewError(http.StatusUnprocessableEntity, "last_sign_in_method", "this is the only way left to sign in")
 
 	// --- contacts ---
-	ErrContactNotFound             = errx.NewError(http.StatusNotFound, "contact_not_found", "contact not found")
+	ErrContactNotFound = errx.NewError(http.StatusNotFound, "contact_not_found", "contact not found")
+	// ErrAreaNotFound is a code that names no division. Not-found rather than an empty list: an empty
+	// list would tell a client the code was real and simply has nothing under it.
+	ErrAreaNotFound                = errx.NewError(http.StatusNotFound, "administrative_area_not_found", "no such administrative area")
 	ErrContactPhoneAlreadyVerified = errx.NewError(http.StatusConflict, "contact_phone_already_verified", "this phone is already verified")
 
 	// --- devices ---
