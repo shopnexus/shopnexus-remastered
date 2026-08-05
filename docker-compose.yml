@@ -65,7 +65,9 @@ x-app-env: &app-env
   MOCK_ENABLED: "payment,transport"
   # Where a payment gateway may send a payer back. An allowlist, because a redirect target
   # nobody checked is an open redirect that borrows this platform's credibility.
-  PAYMENT_RETURN_URL_HOSTS: "shopnexus.hopto.org"
+  # Every host a web client may be sent back to after a redirect rail. The client sends its own
+  # origin, so a deployment whose site is not in this list has its whole redirect flow refused.
+  PAYMENT_RETURN_URL_HOSTS: "shopnexus.hopto.org,shopnexus.github.io,localhost:3000,localhost:5173"
 
   # Storage. This selects where a *new* upload goes, not what can be read: every resource row
   # names the store holding it and all of them stay reachable, so switching this does not
