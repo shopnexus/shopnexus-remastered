@@ -1,7 +1,7 @@
 // Package mock is the dev-only courier: no carrier contract, and one option row per way a parcel
 // can go, so the whole shipment lifecycle — quoted, booked, in transit, delivered, and the ways it
-// does not get there — can be walked without a courier account. Registered when MOCK_ENABLED names
-// `transport`.
+// does not get there — can be walked without a courier account. Registered when
+// `transport.providers` names `mock`.
 //
 // A scenario is chosen by the carrier slug the buyer picked, which is the one thing a client picks
 // from a list — and this courier declares those rows itself (`Options`), so the list a client sees

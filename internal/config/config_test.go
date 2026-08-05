@@ -1,233 +1,327 @@
 package config_test
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
-	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"shopnexus/internal/config"
 	"shopnexus/internal/shared/validation"
 )
 
-// setEnv installs exactly kv and blanks every other var Load reads. Without the blanking, a var
-// left in the developer's shell — RESTATE_INGRESS_URL, say — makes a "selector chosen without its
-// credentials" case pass, which is the one thing these tests exist to catch.
-func setEnv(t *testing.T, kv map[string]string) {
+// The tracked template is the fixture. A test that built its own document would drift from the file a
+// person actually copies; this way one set of assertions covers both — the example is valid, and it
+// stays valid when a field is added to the struct.
+const templatePath = "config.example.yml"
+
+// document reads the template as a tree a test can edit by path. Loading it back through the real
+// `config.Load` is the point: the parse, the unknown-key check and every rule run.
+func document(t *testing.T) map[string]any {
 	t.Helper()
-	for _, name := range readVars {
-		if _, ok := kv[name]; !ok {
-			t.Setenv(name, "")
+	raw, err := os.ReadFile(templatePath)
+	if err != nil {
+		t.Fatalf("read %s: %v", templatePath, err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("parse %s: %v", templatePath, err)
+	}
+	return doc
+}
+
+// load writes the tree to a temp file, points CONFIG_FILE at it, and loads it.
+func load(t *testing.T, doc map[string]any) (*config.Config, error) {
+	t.Helper()
+	raw, err := yaml.Marshal(doc)
+	if err != nil {
+		t.Fatalf("marshal document: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatalf("write document: %v", err)
+	}
+	t.Setenv(config.FileVar, path)
+	return config.Load(validation.Default())
+}
+
+// set, drop and blank edit one value by its dotted path — the same path a failure names, so a test
+// reads like the fix it describes. `blank` is how an unused vendor block sits in a real document:
+// present and empty, rather than absent.
+func set(t *testing.T, doc map[string]any, path string, value any) {
+	t.Helper()
+	section, key := walk(t, doc, path)
+	section[key] = value
+}
+
+func drop(t *testing.T, doc map[string]any, path string) {
+	t.Helper()
+	section, key := walk(t, doc, path)
+	if _, ok := section[key]; !ok {
+		t.Fatalf("%s is not in the template, so dropping it proves nothing", path)
+	}
+	delete(section, key)
+}
+
+func blank(t *testing.T, doc map[string]any, path string) {
+	t.Helper()
+	section, key := walk(t, doc, path)
+	switch section[key].(type) {
+	case int, float64:
+		section[key] = 0
+	default:
+		section[key] = ""
+	}
+}
+
+func walk(t *testing.T, doc map[string]any, path string) (map[string]any, string) {
+	t.Helper()
+	parts := strings.Split(path, ".")
+	section := doc
+	for _, part := range parts[:len(parts)-1] {
+		next, ok := section[part].(map[string]any)
+		if !ok {
+			t.Fatalf("%s: %q is not a section of the template", path, part)
 		}
+		section = next
 	}
-	for k, v := range kv {
-		t.Setenv(k, v)
-	}
+	return section, parts[len(parts)-1]
 }
 
-// readVars is every variable config.Load looks at.
-var readVars = []string{
-	"ACCOUNT_DB_DSN",
-	"CATALOG_DB_DSN",
-	"CHAT_DB_DSN",
-	"CORS_ALLOWED_ORIGINS", "PUBLIC_BASE_URL",
-	"EMAIL_PROVIDER",
-	"ESMS_API_KEY",
-	"ESMS_BASE_URL",
-	"ESMS_BRANDNAME",
-	"ESMS_CONTENT_TEMPLATE",
-	"ESMS_SANDBOX",
-	"ESMS_SECRET_KEY",
-	"ESMS_SMS_TYPE",
-	"ESMS_TIMEOUT",
-	"ESMS_UNICODE",
-	"FINANCE_DB_DSN",
-	"FPT_AI_API_KEY",
-	"FPT_AI_BASE_URL",
-	"FPT_AI_DOWNLOAD_TIMEOUT",
-	"FPT_AI_REQUEST_TIMEOUT",
-	"GATEWAY_ADDR",
-	"ID_CIPHER_KEY",
-	"INSTANCE_ID",
-	"JWT_SECRET",
-	"KYC_PROVIDER",
-	"LOG_LEVEL",
-	"NATS_URL",
-	"OAUTH_VERIFIER",
-	"OBSERVABILITY_DB_DSN",
-	"OIDC_TIMEOUT",
-	"ORDER_DB_DSN",
-	"PAYMENT_PROVIDERS",
-	"REDIS_ADDR",
-	"SEPAY_IPN_SECRET_KEY",
-	"SEPAY_MERCHANT_ID",
-	"SEPAY_SANDBOX",
-	"SEPAY_SECRET_KEY",
-	"STRIPE_REQUEST_TIMEOUT",
-	"STRIPE_SECRET_KEY",
-	"STRIPE_WEBHOOK_SECRET",
-	"REDIS_PASSWORD",
-	"RESET_PASSWORD_URL",
-	"RESTATE_INGRESS_URL",
-	"RESTATE_SEND_TIMEOUT",
-	"RESTATE_SERVE_ADDR",
-	"EMBEDDING_API_KEY",
-	"EMBEDDING_BASE_URL",
-	"EMBEDDING_BATCH_SIZE",
-	"EMBEDDING_DIMENSIONS",
-	"EMBEDDING_INTERVAL",
-	"EMBEDDING_MAX_TEXT_CHARS",
-	"EMBEDDING_PROVIDER",
-	"EMBEDDING_TIMEOUT",
-	"SMS_PROVIDER",
-	"SMTP_FROM",
-	"SMTP_HOST",
-	"SMTP_PASSWORD",
-	"SMTP_PORT",
-	"SMTP_TIMEOUT",
-	"SMTP_USERNAME",
-	"PUBLIC_BASE_URL",
-	"STORAGE_DOWNLOAD_TTL",
-	"STORAGE_MAX_UPLOAD_BYTES",
-	"STORAGE_MAX_VIDEO_BYTES",
-	"STORAGE_PROVIDER",
-	"STORAGE_ROOT",
-	"STORAGE_SECRET",
-	"STORAGE_UPLOAD_TTL",
-	"SWEEP_INTERVAL",
-	"TRANSPORT_PROVIDERS",
-	"TRUST_DB_DSN",
-	"VERIFY_EMAIL_URL",
-	"WORKFLOW_RUNTIME",
-	"WS_TICKET_TTL",
-	"WS_WRITE_TIMEOUT",
-	"WS_PING_INTERVAL",
-	"WS_SEND_BUFFER",
-	"WS_MAX_PER_ACCOUNT",
-	"WS_ALLOWED_ORIGINS",
-}
+// The template has to load, or the file somebody copies is one that does not work — and adding a
+// required field without adding it here is exactly the drift this catches.
+func TestLoad_TheTemplateIsValid(t *testing.T) {
+	t.Setenv(config.FileVar, templatePath)
 
-// fullEnv is the smallest environment that starts the gateway: every unconditional var,
-// and the provider seams on their mock implementations.
-func fullEnv() map[string]string {
-	return map[string]string{
-		"GATEWAY_ADDR":             "0.0.0.0:8080",
-		"INSTANCE_ID":              "gateway-test",
-		"ACCOUNT_DB_DSN":           "postgres://x",
-		"CATALOG_DB_DSN":           "postgres://y",
-		"ORDER_DB_DSN":             "postgres://o",
-		"CHAT_DB_DSN":              "postgres://c",
-		"TRUST_DB_DSN":             "postgres://tr",
-		"FINANCE_DB_DSN":           "postgres://fin",
-		"OBSERVABILITY_DB_DSN":     "postgres://o2",
-		"NATS_URL":                 "nats://localhost:4222",
-		"REDIS_ADDR":               "localhost:6379",
-		"REDIS_PASSWORD":           "app",
-		"JWT_SECRET":               "0123456789012345678901234567890123",
-		"ID_CIPHER_KEY":            "0123456789abcdef0123456789abcdef",
-		"LOG_LEVEL":                "info",
-		"CORS_ALLOWED_ORIGINS":     "https://shopnexus.github.io",
-		"PUBLIC_BASE_URL":          "http://localhost:5000/api/v1",
-		"EMAIL_PROVIDER":           "mock",
-		"SMS_PROVIDER":             "mock",
-		"OAUTH_VERIFIER":           "mock",
-		"KYC_PROVIDER":             "mock",
-		"PAYMENT_PROVIDERS":        "mock",
-		"TRANSPORT_PROVIDERS":      "mock",
-		"PAYMENT_RETURN_URL_HOSTS": "localhost:5000",
-		// No durable runtime in the base env: the sweep is the clock, which is the shape a
-		// local stack runs in.
-		"STORAGE_PROVIDER":         "local",
-		"STORAGE_ROOT":             "/tmp/shopnexus-objects",
-		"STORAGE_SECRET":           "0123456789abcdef0123456789abcdef",
-		"STORAGE_UPLOAD_TTL":       "15m",
-		"STORAGE_DOWNLOAD_TTL":     "1h",
-		"STORAGE_MAX_UPLOAD_BYTES": "10485760",
-		"STORAGE_MAX_VIDEO_BYTES":  "104857600",
-		"STORAGE_ALLOWED_MIMES":    "image/jpeg,image/png",
-
-		// The mock model, for the same reason as the other seams: the base env must not need
-		// a multi-gigabyte download to be valid.
-		"LLM_PROVIDER":             "mock",
-		"EMBEDDING_PROVIDER":       "mock",
-		"EMBEDDING_DIMENSIONS":     "1024",
-		"EMBEDDING_INTERVAL":       "1m",
-		"EMBEDDING_BATCH_SIZE":     "32",
-		"EMBEDDING_MAX_TEXT_CHARS": "2000",
-
-		"WORKFLOW_RUNTIME": "off",
-		"SWEEP_INTERVAL":   "1m",
-
-		"WS_TICKET_TTL":      "30s",
-		"WS_WRITE_TIMEOUT":   "10s",
-		"WS_PING_INTERVAL":   "30s",
-		"WS_SEND_BUFFER":     "64",
-		"WS_MAX_PER_ACCOUNT": "5",
-		"WS_ALLOWED_ORIGINS": "localhost:3000",
-	}
-}
-
-// requiredVars is every var that is required whatever the deployment does.
-var requiredVars = []string{
-	"GATEWAY_ADDR", "INSTANCE_ID", "ACCOUNT_DB_DSN", "CATALOG_DB_DSN", "ORDER_DB_DSN",
-	"CHAT_DB_DSN", "TRUST_DB_DSN", "FINANCE_DB_DSN", "OBSERVABILITY_DB_DSN",
-	"NATS_URL", "REDIS_ADDR", "REDIS_PASSWORD", "JWT_SECRET", "ID_CIPHER_KEY", "LOG_LEVEL",
-	"CORS_ALLOWED_ORIGINS", "PUBLIC_BASE_URL",
-	"EMAIL_PROVIDER", "SMS_PROVIDER", "OAUTH_VERIFIER", "KYC_PROVIDER",
-	"WORKFLOW_RUNTIME", "SWEEP_INTERVAL", "PAYMENT_RETURN_URL_HOSTS", "PAYMENT_PROVIDERS", "TRANSPORT_PROVIDERS",
-	"STORAGE_PROVIDER", "STORAGE_UPLOAD_TTL", "STORAGE_DOWNLOAD_TTL",
-	"STORAGE_MAX_UPLOAD_BYTES", "STORAGE_MAX_VIDEO_BYTES", "STORAGE_ALLOWED_MIMES",
-	"EMBEDDING_PROVIDER", "EMBEDDING_DIMENSIONS", "EMBEDDING_INTERVAL",
-	"EMBEDDING_BATCH_SIZE", "EMBEDDING_MAX_TEXT_CHARS",
-	"WS_TICKET_TTL", "WS_WRITE_TIMEOUT", "WS_PING_INTERVAL",
-	"WS_SEND_BUFFER", "WS_MAX_PER_ACCOUNT", "WS_ALLOWED_ORIGINS",
-}
-
-func TestLoad_MissingAnyRequiredFails(t *testing.T) {
-	// Drop one var at a time -> each must fail (every var is required, no default).
-	for _, omit := range requiredVars {
-		env := fullEnv()
-		delete(env, omit)
-		setEnv(t, env)
-		t.Setenv(omit, "") // ensure empty
-		if _, err := config.Load(validation.Default()); err == nil {
-			t.Fatalf("expected error when %s is missing", omit)
-		}
-	}
-}
-
-func TestLoad_Valid(t *testing.T) {
-	setEnv(t, fullEnv())
 	cfg, err := config.Load(validation.Default())
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("the committed template does not load: %v", err)
 	}
-	if cfg.GatewayAddr != "0.0.0.0:8080" || cfg.LogLevel != "info" {
-		t.Fatalf("unexpected config: %+v", cfg)
+	if cfg.GatewayAddr == "" || cfg.LogLevel == "" || len(cfg.PaymentProviders) == 0 {
+		t.Fatalf("the template loaded but says nothing: %+v", cfg)
+	}
+	// A template shipping a working credential is one somebody deploys by accident. It is in git.
+	if cfg.EmbeddingAPIKey != "" || cfg.SMTPPassword != "" || cfg.StripeSecretKey != "" {
+		t.Error("the template carries a credential")
 	}
 }
 
-// A rail is registered by naming it, and naming it without its credentials is a deployment that
-// cannot charge — found at startup rather than by the first buyer to pick that rail. The check is
-// hand-written (a `required_if` tag cannot ask whether a list contains a value), which is exactly
-// why it is worth a test.
+// Every value is required. Dropping the environment is worth it precisely because a missing one is
+// found at startup instead of by the first request that needed it.
+func TestLoad_EveryValueIsRequired(t *testing.T) {
+	paths := []string{
+		"gateway.addr", "gateway.public_base_url", "gateway.allowed_origins", "gateway.log_level",
+		"security.jwt_secret", "security.id_cipher_key", "security.instance_id",
+		"database.account", "database.catalog", "database.order", "database.chat",
+		"database.trust", "database.finance", "database.observability",
+		"redis.addr", "redis.password", "nats.url",
+		"storage.provider", "storage.root", "storage.secret", "storage.upload_ttl",
+		"storage.download_ttl", "storage.max_upload_bytes", "storage.max_video_bytes",
+		"storage.allowed_mimes",
+		"embedding.provider", "embedding.dimensions", "embedding.interval",
+		"embedding.batch_size", "embedding.max_text_chars",
+		"llm.provider", "workflow.runtime", "workflow.sweep_interval",
+		"email.provider", "sms.provider", "oauth.verifier", "kyc.provider",
+		"payment.providers", "payment.return_url_hosts", "transport.providers",
+		"websocket.ticket_ttl", "websocket.write_timeout", "websocket.ping_interval",
+		"websocket.send_buffer", "websocket.max_per_account", "websocket.allowed_origins",
+	}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			doc := document(t)
+			drop(t, doc, path)
+			if _, err := load(t, doc); err == nil {
+				t.Fatalf("%s is missing and the config loaded anyway", path)
+			}
+		})
+	}
+}
+
+// A whole section left out is the same failure as one value left out: a nil section would otherwise
+// validate every field inside it as a zero.
+func TestLoad_AMissingSectionFails(t *testing.T) {
+	for _, section := range []string{"gateway", "database", "storage", "payment", "websocket"} {
+		t.Run(section, func(t *testing.T) {
+			doc := document(t)
+			delete(doc, section)
+			if _, err := load(t, doc); err == nil {
+				t.Fatalf("the %s section is missing and the config loaded anyway", section)
+			}
+		})
+	}
+}
+
+// A key nobody reads is a setting somebody believes is in effect. With no defaults and no
+// environment to fall back on, a typo is otherwise completely silent.
+func TestLoad_AnUnknownKeyFails(t *testing.T) {
+	doc := document(t)
+	set(t, doc, "gateway.log_lvel", "info")
+
+	_, err := load(t, doc)
+	if err == nil {
+		t.Fatal("an unknown key loaded")
+	}
+	if !strings.Contains(err.Error(), "log_lvel") {
+		t.Errorf("error does not name the typo: %v", err)
+	}
+}
+
+func TestLoad_MalformedValues(t *testing.T) {
+	cases := []struct {
+		path  string
+		value any
+		says  string
+	}{
+		// A duration is a string like "15m", and the message has to say so: this is the field a person
+		// most often writes as a bare number.
+		{"storage.upload_ttl", 900, "duration"},
+		{"storage.upload_ttl", "15 minutes", "duration"},
+		{"gateway.addr", "0.0.0.0", "Addr"},
+		{"gateway.public_base_url", "not-a-url", "PublicBaseURL"},
+		{"gateway.log_level", "verbose", "LogLevel"},
+		// Below the minimum, which is what makes a token worth signing with.
+		{"security.jwt_secret", "short", "JWTSecret"},
+		{"storage.max_upload_bytes", 0, "MaxUploadBytes"},
+		{"workflow.runtime", "temporal", "Runtime"},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("%s=%v", tc.path, tc.value), func(t *testing.T) {
+			doc := document(t)
+			set(t, doc, tc.path, tc.value)
+
+			_, err := load(t, doc)
+			if err == nil {
+				t.Fatalf("%s = %v loaded", tc.path, tc.value)
+			}
+			if !strings.Contains(err.Error(), tc.says) {
+				t.Errorf("error does not point at %s: %v", tc.says, err)
+			}
+		})
+	}
+}
+
+// A vendor's values are required only once a selector names it. That conditional is the one thing
+// between a local stack and needing an SMTP account, an SMS contract and a KYC subscription — and a
+// selector naming a vendor whose values are blank has to fail, because a deployment that thinks it
+// sends real email and does not is discovered by the user who never got their reset link.
+func TestLoad_VendorValuesFollowTheirSelector(t *testing.T) {
+	cases := []struct {
+		name     string
+		selector string
+		vendor   string
+		filled   map[string]any
+	}{
+		{
+			name: "smtp", selector: "email.provider", vendor: "smtp",
+			filled: map[string]any{
+				"email.smtp_host": "smtp.example", "email.smtp_port": 587,
+				"email.smtp_username": "u", "email.smtp_password": "p",
+				"email.from":               "ShopNexus <no-reply@shopnexus.test>",
+				"email.timeout":            "10s",
+				"email.verify_url":         "https://shopnexus.test/verify",
+				"email.reset_password_url": "https://shopnexus.test/reset",
+			},
+		},
+		{
+			name: "esms", selector: "sms.provider", vendor: "esms",
+			filled: map[string]any{
+				"sms.esms_base_url": "https://rest.esms.vn", "sms.esms_api_key": "k",
+				"sms.esms_secret_key": "s", "sms.esms_brandname": "ShopNexus",
+				"sms.esms_sms_type": "2", "sms.esms_content_template": "{{.Code}}",
+				"sms.esms_timeout": "10s",
+			},
+		},
+		{
+			name: "fpt-ai", selector: "kyc.provider", vendor: "fpt-ai",
+			filled: map[string]any{
+				"kyc.base_url": "https://api.fpt.ai", "kyc.api_key": "k",
+				"kyc.request_timeout": "30s", "kyc.download_timeout": "30s",
+			},
+		},
+		{
+			name: "bge-m3", selector: "embedding.provider", vendor: "bge-m3",
+			filled: map[string]any{
+				"embedding.base_url": "http://embedding:5007", "embedding.api_key": "k",
+				"embedding.timeout": "5m",
+			},
+		},
+		{
+			name: "litellm", selector: "llm.provider", vendor: "litellm",
+			filled: map[string]any{
+				"llm.base_url": "http://litellm:4000", "llm.api_key": "k",
+				"llm.chat_model": "gpt-4o-mini", "llm.transcribe_model": "whisper-1",
+				"llm.request_timeout": "45s", "llm.stream_timeout": "5m",
+			},
+		},
+		{
+			name: "restate", selector: "workflow.runtime", vendor: "restate",
+			filled: map[string]any{
+				"workflow.serve_addr":   "0.0.0.0:9080",
+				"workflow.ingress_url":  "http://restate:8080",
+				"workflow.send_timeout": "5s",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name+" selected without its values fails", func(t *testing.T) {
+			doc := document(t)
+			set(t, doc, tc.selector, tc.vendor)
+			for path := range tc.filled {
+				blank(t, doc, path)
+			}
+			if _, err := load(t, doc); err == nil {
+				t.Fatalf("%s = %q loaded with its values blank", tc.selector, tc.vendor)
+			}
+		})
+
+		t.Run(tc.name+" selected with its values loads", func(t *testing.T) {
+			doc := document(t)
+			set(t, doc, tc.selector, tc.vendor)
+			for path, value := range tc.filled {
+				set(t, doc, path, value)
+			}
+			if _, err := load(t, doc); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+
+	// The other direction, once: with every selector on `mock`, nothing vendor-shaped is needed — or a
+	// checkout could not be run without somebody's contract.
+	t.Run("all mocks need no credentials", func(t *testing.T) {
+		if _, err := load(t, document(t)); err != nil {
+			t.Fatalf("a mock-only deployment must need no vendor values: %v", err)
+		}
+	})
+}
+
+// A payment rail is registered by naming it in a *list*, which no `validate` tag can ask about — so
+// the rule is a struct-level validation, and that is exactly why it is worth a test.
 func TestLoad_ANamedRailNeedsItsCredentials(t *testing.T) {
 	t.Run("sepay named without its keys fails", func(t *testing.T) {
-		env := fullEnv()
-		env["PAYMENT_PROVIDERS"] = "mock,sepay"
-		setEnv(t, env)
-		if _, err := config.Load(validation.Default()); err == nil {
-			t.Fatal("expected an error naming the missing SEPAY_ vars")
+		doc := document(t)
+		set(t, doc, "payment.providers", []any{"mock", "sepay"})
+
+		_, err := load(t, doc)
+		if err == nil {
+			t.Fatal("sepay is registered with no merchant id")
+		}
+		if !strings.Contains(err.Error(), "sepay") {
+			t.Errorf("error does not name the section to fix: %v", err)
 		}
 	})
 
 	t.Run("sepay named with its keys loads", func(t *testing.T) {
-		env := fullEnv()
-		env["PAYMENT_PROVIDERS"] = "mock,sepay"
-		env["SEPAY_MERCHANT_ID"] = "merchant-1"
-		env["SEPAY_SECRET_KEY"] = "sign-secret"
-		env["SEPAY_IPN_SECRET_KEY"] = "ipn-secret"
-		setEnv(t, env)
-		cfg, err := config.Load(validation.Default())
+		doc := document(t)
+		set(t, doc, "payment.providers", []any{"mock", "sepay"})
+		set(t, doc, "payment.sepay.merchant_id", "merchant-1")
+		set(t, doc, "payment.sepay.secret_key", "sign-secret")
+		set(t, doc, "payment.sepay.ipn_secret_key", "ipn-secret")
+
+		cfg, err := load(t, doc)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -237,148 +331,38 @@ func TestLoad_ANamedRailNeedsItsCredentials(t *testing.T) {
 	})
 
 	t.Run("stripe named without its timeout fails", func(t *testing.T) {
-		env := fullEnv()
-		env["PAYMENT_PROVIDERS"] = "stripe"
-		env["STRIPE_SECRET_KEY"] = "sk_test_x"
-		env["STRIPE_WEBHOOK_SECRET"] = "whsec_x"
-		setEnv(t, env)
-		if _, err := config.Load(validation.Default()); err == nil {
-			t.Fatal("expected an error naming STRIPE_REQUEST_TIMEOUT")
+		doc := document(t)
+		set(t, doc, "payment.providers", []any{"stripe"})
+		set(t, doc, "payment.stripe.secret_key", "sk_test_x")
+		set(t, doc, "payment.stripe.webhook_secret", "whsec_x")
+		blank(t, doc, "payment.stripe.request_timeout")
+
+		if _, err := load(t, doc); err == nil {
+			t.Fatal("stripe is registered with no request timeout")
 		}
 	})
 
-	// The other direction: a provider nobody named needs nothing, or a local stack would have to
-	// hold a merchant id and a card key to come up at all.
-	t.Run("an unnamed rail needs no credentials", func(t *testing.T) {
-		setEnv(t, fullEnv())
-		if _, err := config.Load(validation.Default()); err != nil {
-			t.Fatalf("mock-only deployment must need no vendor keys: %v", err)
-		}
-	})
-
+	// A rail with no implementation cannot be registered, however complete its credentials look.
 	t.Run("a rail this binary does not have fails", func(t *testing.T) {
-		env := fullEnv()
-		env["PAYMENT_PROVIDERS"] = "vnpay"
-		setEnv(t, env)
-		if _, err := config.Load(validation.Default()); err == nil {
-			t.Fatal("expected an error for a provider with no implementation")
+		doc := document(t)
+		set(t, doc, "payment.providers", []any{"vnpay"})
+
+		if _, err := load(t, doc); err == nil {
+			t.Fatal("a provider with no implementation loaded")
 		}
 	})
 }
 
-// An unknown selector fails at startup rather than falling back to a mock: a deployment
-// that thinks it is sending real email and is not would only be noticed by a user who
-// never got their reset link.
-func TestLoad_UnknownProviderSelectorFails(t *testing.T) {
-	for _, name := range []string{"EMAIL_PROVIDER", "SMS_PROVIDER", "OAUTH_VERIFIER", "KYC_PROVIDER"} {
-		setEnv(t, fullEnv())
-		t.Setenv(name, "sendgrid")
-		if _, err := config.Load(validation.Default()); err == nil {
-			t.Fatalf("expected error for an unknown %s", name)
-		}
-	}
-}
-
-// A vendor's credentials are required only when that vendor is selected. This is the one
-// conditional in the config, and it is still not a default: choosing "smtp" and leaving
-// the host empty has to fail.
-func TestLoad_VendorVarsRequiredOnlyWhenSelected(t *testing.T) {
-	t.Run("smtp selected without its vars fails", func(t *testing.T) {
-		env := fullEnv()
-		env["EMAIL_PROVIDER"] = "smtp"
-		setEnv(t, env)
-		if _, err := config.Load(validation.Default()); err == nil {
-			t.Fatal("expected error when EMAIL_PROVIDER=smtp and the SMTP vars are empty")
-		}
-	})
-
-	t.Run("smtp selected with its vars loads", func(t *testing.T) {
-		env := fullEnv()
-		env["EMAIL_PROVIDER"] = "smtp"
-		env["SMTP_HOST"] = "smtp.example.com"
-		env["SMTP_PORT"] = "587"
-		env["SMTP_USERNAME"] = "apikey"
-		env["SMTP_PASSWORD"] = "secret"
-		env["SMTP_FROM"] = "ShopNexus <no-reply@example.com>"
-		env["SMTP_TIMEOUT"] = "10s"
-		env["VERIFY_EMAIL_URL"] = "https://shopnexus.vn/verify-email"
-		env["RESET_PASSWORD_URL"] = "https://shopnexus.vn/reset-password"
-		setEnv(t, env)
-
-		cfg, err := config.Load(validation.Default())
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if cfg.SMTPPort != 587 || cfg.SMTPTimeout != 10*time.Second {
-			t.Fatalf("typed vars not parsed: port=%d timeout=%v", cfg.SMTPPort, cfg.SMTPTimeout)
-		}
-	})
-
-	t.Run("mock selected leaves the vendor vars alone", func(t *testing.T) {
-		setEnv(t, fullEnv())
-		if _, err := config.Load(validation.Default()); err != nil {
-			t.Fatalf("mock providers must not need vendor credentials: %v", err)
-		}
-	})
-
-	// The durable runtime is the same shape of selector, and the reason it matters is the same:
-	// a deployment that thinks it has durable timers and has no ingress URL would discover it
-	// when a seller was never paid.
-	t.Run("restate selected without its vars fails", func(t *testing.T) {
-		env := fullEnv()
-		env["WORKFLOW_RUNTIME"] = "restate"
-		setEnv(t, env)
-		if _, err := config.Load(validation.Default()); err == nil {
-			t.Fatal("expected error when WORKFLOW_RUNTIME=restate and the Restate vars are empty")
-		}
-	})
-
-	t.Run("restate selected with its vars loads", func(t *testing.T) {
-		env := fullEnv()
-		env["WORKFLOW_RUNTIME"] = "restate"
-		env["RESTATE_SERVE_ADDR"] = "0.0.0.0:9080"
-		env["RESTATE_INGRESS_URL"] = "http://restate:8080"
-		env["RESTATE_SEND_TIMEOUT"] = "5s"
-		setEnv(t, env)
-
-		cfg, err := config.Load(validation.Default())
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if cfg.RestateSendTimeout != 5*time.Second || cfg.RestateIngressURL != "http://restate:8080" {
-			t.Fatalf("restate vars not parsed: %+v", cfg)
-		}
-	})
-}
-
-// A malformed typed var names itself in the error, so a bad duration does not come back as
-// "field is required" and send someone looking in the wrong place.
-func TestLoad_MalformedTypedVarNamesItself(t *testing.T) {
-	env := fullEnv()
-	env["SMTP_TIMEOUT"] = "ten seconds"
-	setEnv(t, env)
+// The path is the one thing left to the environment, so a wrong one has to say what it looked for and
+// how to point it somewhere else.
+func TestLoad_AMissingFileNamesItself(t *testing.T) {
+	t.Setenv(config.FileVar, filepath.Join(t.TempDir(), "nope.yml"))
 
 	_, err := config.Load(validation.Default())
 	if err == nil {
-		t.Fatal("expected an error for a malformed duration")
+		t.Fatal("a missing document loaded")
 	}
-	if !strings.Contains(err.Error(), "SMTP_TIMEOUT") {
-		t.Fatalf("error does not name the variable: %v", err)
-	}
-}
-
-// A comma-separated list drops blanks, so a trailing comma is not an empty audience that
-// would accept a token issued to anybody.
-func TestLoad_AudienceListParsing(t *testing.T) {
-	env := fullEnv()
-	env["OIDC_GOOGLE_AUDIENCES"] = " one.apps.googleusercontent.com , two.apps.googleusercontent.com ,"
-	setEnv(t, env)
-
-	cfg, err := config.Load(validation.Default())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(cfg.OIDCGoogleAudiences) != 2 || cfg.OIDCGoogleAudiences[0] != "one.apps.googleusercontent.com" {
-		t.Fatalf("audiences = %#v", cfg.OIDCGoogleAudiences)
+	if !strings.Contains(err.Error(), "nope.yml") || !strings.Contains(err.Error(), config.FileVar) {
+		t.Errorf("error names neither the path nor how to change it: %v", err)
 	}
 }

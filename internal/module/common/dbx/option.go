@@ -80,7 +80,7 @@ func (s *Options) Save(ctx context.Context, o common.Option) error {
 }
 
 // Reconcile makes the rows of one provider *exactly* want. Upsert plus a delete of what is no
-// longer named, in one transaction, so a category dropped from MOCK_ENABLED leaves no rows behind
+// longer named, in one transaction, so a provider dropped from the registered list leaves no rows
 // for a client to pick from — and so a startup that half-ran leaves nothing half-registered.
 //
 // Scoped to one provider on purpose: it must never touch the rows an operator wrote by hand.

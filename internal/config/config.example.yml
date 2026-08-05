@@ -1,10 +1,258 @@
-# WebSocket realtime. A browser cannot set Authorization on `new WebSocket()`, so
-# POST /ws/tickets mints a short-lived, single-use ticket over the normal Bearer route
-# and GET /ws?ticket=... redeems it. WS_ALLOWED_ORIGINS is matched against the Origin
-# header's host, not a full URL.
-WS_TICKET_TTL: "30s"
-WS_WRITE_TIMEOUT: "10s"
-WS_PING_INTERVAL: "30s"
-WS_SEND_BUFFER: "64"
-WS_MAX_PER_ACCOUNT: "5"
-WS_ALLOWED_ORIGINS: "localhost:3000"
+# The shape of a configuration document, and the only file of its kind in git. Copy it to
+# `internal/config/config.dev.yml` — gitignored, so that copy is where real credentials go — and fill
+# in what your stack actually is.
+#
+# There is nothing else: no environment variables for any value, no defaults, no .env. Every field
+# below is required, a malformed one fails at startup naming the path to fix, and a key nobody reads
+# fails too, so a typo cannot pass for a setting. Vendor fields are the one conditional — required
+# only once a `provider` names that vendor, or a provider *list* does.
+#
+# `CONFIG_FILE` points at a document elsewhere, which is how the compose services and a real
+# deployment supply their own. That is the only thing left to the environment: where the file is.
+#
+# Every value here is a mock or a placeholder, and this file is kept loadable by a test — so it is
+# both the template and the proof that the template still matches the code.
+#
+# Hostnames are compose service names, because that is where the gateway runs
+# (`docker compose --profile dev up -d`). On the host, publish the infra ports and use `localhost`:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+gateway:
+  addr: "0.0.0.0:8080"
+  # Where this gateway answers as a client sees it, API base path included. One value, because
+  # everything that needs it needs the same answer: `local` storage signs upload and download links
+  # back to this gateway's own routes, and a redirect payment rail hands a browser an absolute link
+  # to a page this process serves.
+  public_base_url: "https://shopnexus.hopto.org/api/v1"
+  # Full origins, matched exactly — that is the form a browser sends and the form the allow header
+  # has to echo back. A web client on another origin gets nothing without this: its preflight is
+  # refused before any route runs.
+  allowed_origins:
+    - "https://shopnexus.github.io"
+    - "http://localhost:3000"
+    - "http://localhost:5173"
+  log_level: "info"
+
+security:
+  jwt_secret: "0123456789012345678901234567890123"
+  # Keys the opaque-id permutation, and permanent: rotating it invalidates every id ever handed out.
+  # 16, 24 or 32 bytes.
+  id_cipher_key: "0123456789abcdef0123456789abcdef"
+  # Tags every telemetry row with its producer; without it several replicas collapse into one
+  # meaningless series. In Kubernetes take it from the downward API (metadata.name).
+  instance_id: "gateway-1"
+
+# One DSN per module, so a module can later move to its own Postgres. Today they all point at the
+# same server and isolate their tables by schema (search_path, set per pool).
+database:
+  account: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
+  catalog: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
+  order: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
+  chat: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
+  trust: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
+  finance: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
+  observability: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
+
+redis:
+  addr: "redis:6379"
+  password: "app"
+
+nats:
+  url: "nats://nats:4222"
+
+# Where a *new* upload goes — not what can be read. Every `resource` row records the store holding
+# it and all of them stay reachable, so changing the provider strands nothing that predates the
+# change. `local` keeps objects on the container's disk and signs URLs back to the gateway's own
+# upload route, which is what makes a photo uploaded in dev actually render.
+storage:
+  provider: "local"
+  root: "/data/objects"
+  # Its own secret, not the JWT's: this one signs a URL that sits in a client's memory, so rotating
+  # it invalidates only the slots still in flight.
+  secret: "0123456789abcdef0123456789abcdef"
+  upload_ttl: "15m"
+  download_ttl: "1h"
+  max_upload_bytes: 10485760
+  # A video is an order of magnitude bigger than a photo, so it gets its own limit: one limit for
+  # both would have to be this one, and a 100 MB avatar is then a slot the platform happily signs.
+  max_video_bytes: 104857600
+  allowed_mimes:
+    - "image/jpeg"
+    - "image/png"
+    - "image/webp"
+    - "application/pdf"
+    # An unboxing clip is evidence a refund is judged on, so quicktime is here for an iPhone's .mov.
+    - "video/mp4"
+    - "video/quicktime"
+    - "video/webm"
+
+# The model behind the vectors search ranks on. `mock` hashes the words instead, which exercises the
+# queue and both vector columns without a multi-gigabyte download — semantic search then returns
+# nonsense, which is the trade a laptop makes.
+#
+# Two things embed text and they must use the *same* model: cmd/embedder writes the listing vectors
+# and the gateway embeds each search query, and vectors from two models are not comparable.
+# `dimensions` must equal the width `catalog.listing_embedding.dense` was declared with — the model
+# service lives in another repository, so nothing but that check couples the two, and changing the
+# model means a migration as well as this number.
+embedding:
+  provider: "mock"
+  base_url: ""
+  api_key: ""
+  # Generous, and it bounds one batch of transformer inferences rather than an API call: 32 listing
+  # descriptions take tens of seconds on a CPU.
+  timeout: "5m"
+  dimensions: 1024
+  interval: "1m"
+  batch_size: 32
+  max_text_chars: 2000
+
+# "Photo in, listing out" (POST /listings/suggestions). `mock` answers a plausible filled form with
+# no model, no key and no network call, so a local stack walks the whole route. A real one needs a
+# *vision* chat model — the photo is the input a seller cares about, and a text-only model answers a
+# form filled from the voice note alone — plus a transcription model, both through one LiteLLM proxy.
+llm:
+  provider: "mock"
+  base_url: "http://litellm:4000"
+  api_key: ""
+  chat_model: "gpt-4o-mini"
+  transcribe_model: "whisper-1"
+  request_timeout: "45s"
+  stream_timeout: "5m"
+
+# Who holds the timers this marketplace waits on. `off` leaves every timed transition — an unpaid
+# checkout expiring, an escrow window closing, a refund deadline passing, a blind rating revealing —
+# to the sweep, which is the same code on a slower clock. `restate` starts a run per entity and
+# signals it the moment the state moves; start the `restate` profile with it.
+workflow:
+  runtime: "off"
+  serve_addr: "0.0.0.0:9080"
+  ingress_url: "http://restate:8080"
+  send_timeout: "5s"
+  # Runs whether or not there is a runtime: it is the net under a lost run, and with one in place it
+  # finds nothing. A minute in dev so a window is visible while you watch it; longer in production,
+  # where the runtime is the prompt path.
+  sweep_interval: "1m"
+
+# Mocks by default, because a local stack must not need an SMTP account, an SMS contract or a KYC
+# subscription: the mock notifier logs the token it would have sent, the mock verifier trusts the
+# credential, and the mock KYC vendor leaves every case pending for a moderator.
+#
+# Switching a seam means changing its `provider` and filling in that vendor's fields, which then
+# become required — a selector naming a vendor whose fields are blank fails at startup, and that is
+# the point: a deployment that thinks it sends real email and does not is discovered by the user who
+# never got their reset link.
+email:
+  provider: "mock"
+  # provider: "smtp"
+  smtp_host: ""
+  smtp_port: 587
+  smtp_username: ""
+  smtp_password: ""
+  # The header and envelope sender, e.g. "ShopNexus <no-reply@shopnexus.vn>".
+  from: ""
+  timeout: "10s"
+  # The *client's* pages; the API appends the token as a query parameter. They cannot be derived from
+  # a request path, because the API does not serve them.
+  verify_url: ""
+  reset_password_url: ""
+
+sms:
+  provider: "mock"
+  # provider: "esms"
+  esms_base_url: ""
+  esms_api_key: ""
+  esms_secret_key: ""
+  # The registered sender name; an unregistered one is rejected by the aggregator.
+  esms_brandname: ""
+  # eSMS's message class, which follows from the contract: customer care and advertising traffic are
+  # priced and routed differently.
+  esms_sms_type: ""
+  # Must match the template registered with the carriers. It is given {{.Code}}.
+  esms_content_template: ""
+  # Unicode doubles the cost per segment, so leave it false for a template written without
+  # diacritics. Sandbox has the aggregator accept and drop the message.
+  esms_unicode: false
+  esms_sandbox: true
+  esms_timeout: "10s"
+
+oauth:
+  verifier: "mock"
+  # verifier: "oidc"
+  # Client ids. A provider with no audience is simply not offered; with the oidc verifier at least
+  # one of the two has to be set, which the verifier itself enforces.
+  google_audiences: []
+  apple_audiences: []
+  timeout: "10s"
+
+kyc:
+  provider: "mock"
+  # provider: "fpt-ai"
+  base_url: ""
+  api_key: ""
+  # One bounds a vendor call, the other a scan fetch from storage: different dependencies.
+  request_timeout: "30s"
+  download_timeout: "30s"
+
+# The rails this deployment registers — a list, not a selector: an `option` row names the provider
+# that serves it, so two rails can be live at once and an admin can move one through
+# PATCH /admin/options/{id} without a restart. A provider left out is one no row can name, which is
+# how `mock` is kept out of a deployment that takes real money.
+#
+# Naming `sepay` or `stripe` makes that vendor's fields below required. Both send the payer away and
+# report back on a webhook, so both need /api/v1/webhooks/* reachable from the internet and
+# `gateway.public_base_url` correct.
+payment:
+  providers:
+    - "mock"
+    # - "sepay"
+    # - "stripe"
+  # Every host a web client may be sent back to. An allowlist, because a redirect target nobody
+  # checked is an open redirect that borrows this platform's credibility — and the client sends its
+  # own origin, so a site missing from this list has its whole redirect flow refused.
+  return_url_hosts:
+    - "shopnexus.hopto.org"
+    - "shopnexus.github.io"
+    - "localhost:3000"
+    - "localhost:5173"
+  sepay:
+    merchant_id: ""
+    # secret_key signs our checkout to SePay, ipn_secret_key authenticates SePay's callback to us:
+    # two secrets, opposite directions.
+    secret_key: ""
+    ipn_secret_key: ""
+    # Picks SePay's test host. Its own value and not inferred from the key, because a deployment that
+    # thinks it is taking real transfers and is not would be discovered by the seller never paid.
+    sandbox: true
+  stripe:
+    secret_key: ""
+    # Verifies the callback signature. Without it the webhook is an endpoint anybody can use to mark
+    # an order paid.
+    webhook_secret: ""
+    # Generous next to the other providers: a checkout session is created while the buyer waits.
+    request_timeout: "20s"
+
+transport:
+  providers:
+    - "mock"
+
+# A browser cannot set Authorization on `new WebSocket()`, so POST /ws/tickets mints a short-lived,
+# single-use ticket over the normal bearer route and GET /ws?ticket=... redeems it.
+websocket:
+  # Short, because a ticket only has to survive the moment between minting it and opening the socket.
+  ticket_ttl: "30s"
+  # Bounds one write and one ping: a socket write that never completes must not hang the pump for
+  # ever. The ping interval is how often an idle socket is probed, so a peer that vanished without a
+  # FIN is found by a failed pong instead of an accumulating goroutine.
+  write_timeout: "10s"
+  ping_interval: "30s"
+  # How many envelopes a socket may fall behind before the hub drops it, and how many sockets one
+  # account may hold — so a tab-spammer cannot exhaust the process's file descriptors.
+  send_buffer: 64
+  max_per_account: 5
+  # Matched against the Origin header's *host*, not a full URL: that is what coder/websocket's
+  # OriginPatterns compares, unlike gateway.allowed_origins above.
+  allowed_origins:
+    - "shopnexus.github.io"
+    - "localhost:3000"
+    - "localhost:5173"

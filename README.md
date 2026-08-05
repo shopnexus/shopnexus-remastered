@@ -135,14 +135,20 @@ from. Sign in as `alice@shopnexus.test` / `Alice@123` (the run prints all five).
 **no finance rows** — a seeded order has no payment session, no escrow movement and no wallet
 entry, so catalog, order and trust agree with each other while the ledger behind them is empty.
 
-Every env var is **required, with no default** (`internal/config`) — a missing one fails at
-startup rather than falling back to something plausible. The full set, with a comment on each,
-is the `x-app-env` block at the top of `docker-compose.yml`; that block is the reference.
+Configuration is **one YAML document** and nothing else: no environment variables for any value,
+no defaults, no `.env`. Copy `internal/config/config.example.yml` — the committed shape, with a
+comment on every field — to `internal/config/config.dev.yml`, which is gitignored so real
+credentials belong in it. `CONFIG_FILE` points at a document elsewhere, which is how the container
+services and a real deployment supply their own; *where the file is* is the only thing left to the
+environment. Every field is required and a missing, malformed or unknown one fails at startup
+naming the path to fix, rather than falling back to something plausible.
 
-Each seam that talks to the outside world is chosen by its own selector (`EMAIL_PROVIDER`,
-`SMS_PROVIDER`, `OAUTH_VERIFIER`, `KYC_PROVIDER`, `PAYMENT_PROVIDER`), and `mock` is always one
-of the choices, so a local stack needs no SMTP account, SMS contract or KYC subscription. A
-vendor's credentials are required only when that vendor is the one selected.
+Each seam that talks to the outside world is chosen by its own selector (`email.provider`,
+`sms.provider`, `oauth.verifier`, `kyc.provider`), and `mock` is always one of the choices, so a
+local stack needs no SMTP account, SMS contract or KYC subscription. A vendor's values are required
+only once its selector names it. Payment and transport are lists rather than selectors
+(`payment.providers`, `transport.providers`): an `option` row names the provider that serves it, so
+two rails can be live at once — and a provider left out of the list is one no row can name.
 
 ### Uploads
 

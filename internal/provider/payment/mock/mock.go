@@ -1,11 +1,11 @@
 // Package mock is the dev-only payment rail: no gateway contract, no card, and one option row per
 // outcome, so a client can walk a success, a decline, a redirect, a late webhook and an unreachable
-// rail without anybody's sandbox credentials. Registered when MOCK_ENABLED names `payment`.
+// rail without anybody's sandbox credentials. Registered when `payment.providers` names `mock`.
 //
 // A scenario is chosen by the option slug the payer tendered, because that is the one thing a
 // client can pick from a list — and this rail declares those rows itself (`Options`), so the list a
 // client sees and the behaviour behind it cannot drift. Whether the rows exist at all is
-// MOCK_ENABLED: this provider is registered like any other, and nothing outside it branches on
+// `payment.providers`: this provider is registered like any other, and nothing outside it branches on
 // being a mock. A slug this table does not know succeeds, which is what an operator's own row
 // pointed at this provider gets.
 package mock

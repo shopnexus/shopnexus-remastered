@@ -58,12 +58,13 @@ meant to run together.
 `runtime` (distroless). **CI builds `runtime` explicitly** — never rely on "last
 stage wins", or a stage appended later ships the Go toolchain.
 
-All config env vars are **required, no defaults** (`internal/config`); a missing
-one fails fast at startup. `PUBLIC_BASE_URL` is where this gateway answers as a
-client sees it, base path included — one var, not one per seam, because `local`
-storage signing and a provider handing a browser an absolute link need the same
-answer. `CORS_ALLOWED_ORIGINS` holds full origins (what the browser sends and the
-allow header must echo), unlike `WS_ALLOWED_ORIGINS`, which is a host pattern.
+All configuration is **one YAML document and nothing else** — no environment
+variables for any value, no defaults, no `.env`. `internal/config/config.dev.yml`
+is it (gitignored, so real credentials live there); `config.example.yml` is the
+committed shape, kept loadable by a test. `CONFIG_FILE` points somewhere else,
+and *where the file is* is the only thing the environment still decides.
+Every field is required, an unknown key fails too (`KnownFields`), and a malformed
+one fails at startup naming the path to fix.
 
 Every route is served under **`api.BasePath`** (`/api/v1`) — the router registers
 paths unprefixed and mounts the mux there, and `openapi.base.yaml`'s
@@ -321,7 +322,16 @@ give it its own doc under `docs/` and link it from here.
   unaffected. In `adapter/postgres` repos, prefix the wrap with `db ` to mark the
   layer (e.g. `fmt.Errorf("db insert account: %w", err)`), so a full chain reads
   `create account: db insert account: <pg error>`.
-- **Config:** every env var `required`, no defaults/fallback.
+- **Config is a document, and it is validated where it is written.** Two structs, on purpose: the
+  nested `file` in `internal/config/file.go` is the *document* and carries every `validate` tag, so a
+  failure names the path somebody edits (`Storage.Secret` is `storage: secret:`); the flat `Config`
+  beside it is the *program's* shape, which a hundred call sites read field by field. Keeping them
+  apart is what let the document become grouped without those sites learning new paths, and `config()`
+  is the one place the two meet. Each seam's selector sits in the same section as the vendor fields it
+  governs, so `required_if` is a sibling reference; the one rule a tag cannot express — "required
+  because a *list* names this provider" — is a `RegisterStructValidation`, not a hand-rolled check
+  outside the validator. A duration is a string (`"15m"`) through a `Duration` type, because yaml.v3
+  will not decode one and a config counted in bare seconds is a config nobody can read.
 - **Logging:** structured **JSON** `*slog.Logger` to **stdout** (`shared/logger`,
   built with a `service` attr), injected via constructor — never a package
   global. Stdout is the shipping contract: Grafana Alloy tails container logs
@@ -589,16 +599,37 @@ give it its own doc under `docs/` and link it from here.
   `common.Registry[T]` holds every implementation the binary has, keyed by the name a row's
   `provider` gives, and `Registry.Client(provider)` is what resolves one. So two rails can be live
   at once, and moving a carrier from GHN to GHTK is `PATCH /admin/options/{id}` — the slug and every
-  order naming it stay put — where a `TRANSPORT_PROVIDER` would have moved all of them at once and
-  needed a restart. A provider nobody registered is refused (422), never substituted: charging
+  order naming it stay put — where a deployment-wide selector would have moved all of them at once
+  and needed a restart. A provider nobody registered is refused (422), never substituted: charging
   through whichever rail happened to be in the map is worse than failing.
   A provider **declares the rows it owns** (`Client.Options()`), and `SyncOptions` reconciles them
   at startup — upsert plus a delete of what it no longer names — so the list a client picks from is
   the code that will serve it and a scenario cannot outlive its implementation. Answering none means
-  "my rows are the operator's business", which is every real vendor; reconciling those would delete
-  what somebody wrote by hand. `MOCK_ENABLED` is a list of *categories*, not a mode: it decides
-  which mocks are registered, and a mock is then an ordinary member reached only by a row that names
-  it. Nothing outside a mock package branches on being one.
+  "my rows are the operator's business" — a vendor whose rails are a contract this binary cannot
+  know; reconciling those would delete what somebody wrote by hand. Where the rail *is* the whole
+  product (a SePay bank transfer, a Stripe card) the code declares its one row and owns it.
+  `payment.providers`/`transport.providers` are lists of *implementations to register*, not
+  selectors: a provider left out is one no row can name, which is how `mock` is kept out of a
+  deployment that takes real money, and a mock left in is harmless because nothing charges through it
+  unless a row asks for it. Nothing outside a mock package branches on being one.
+  Taking a provider out of that list has to take its rows out of the buyer's list too, and nothing
+  deletes them — a bad deploy must not cost an operator their configuration — so `common.ListOptions`
+  leaves out any row no registered provider serves. Not a mock-shaped special case: it is the same
+  rule `Registry.Client` enforces at the till, moved to the one place that would otherwise offer a
+  choice whose only outcome is an error. The staff view keeps showing them, since that is where "why
+  is this missing from checkout" is answered.
+- **A redirect rail sends the payer somewhere and reports on a webhook; the page they land on is not
+  evidence.** SePay and Stripe both take `return_url`, both echo the leg id onto it, and both point
+  *every* outcome — success, error, cancel — at the same page: where a payer ends up is a claim
+  anybody can forge, and the payment session they read on arrival is the fact. Only the callback
+  settles a leg. A settle that failed answers 500 so the vendor retries, because that callback is the
+  one thing that will tell us again; an event the platform has no opinion on is acked, or it is
+  retried for ever. SePay's checkout is opened by the *browser* — its init is POST-only and binds to
+  the payer's own session — so that rail serves a self-submitting form of its own and signs its fields
+  in a fixed order, which the form's input order has to match: map iteration would build a page it
+  refuses. Stripe's callback reads the *payment intent*, not the checkout session: a completed session
+  with an unpaid intent is not money, and our leg id rides in the intent's metadata because a vendor
+  reports on its own ids. VND is zero-decimal at Stripe, so the amount crosses unscaled.
 - **One `/options` endpoint over every category, and the rows stay per module.** `category` says who
   answers (`payment` → finance, `transport` → order), because those two columns must be able to move
   databases with their module; the projection, the DTOs and the staff gate live once in

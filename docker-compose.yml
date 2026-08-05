@@ -8,174 +8,13 @@
 # db/redis/nats/grafana from the host (host-run gateway, psql, Grafana UI):
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
-# Env for the containerized app (profile `app`): DSNs/hosts use compose service
-# names. Each module still gets its own DSN (all point at the shared db here).
-x-app-env: &app-env
-  GATEWAY_ADDR: "0.0.0.0:8080"
-  # Tags every telemetry row with its producer. One replica here; in Kubernetes
-  # take it from the downward API (metadata.name).
-  INSTANCE_ID: "gateway-1"
-  JWT_SECRET: "0123456789012345678901234567890123"
-  # Keys the opaque-id permutation. Permanent: rotating it invalidates every
-  # id ever handed out. 16, 24 or 32 bytes.
-  ID_CIPHER_KEY: "0123456789abcdef0123456789abcdef"
-  LOG_LEVEL: "info"
-  # Where this gateway answers as a client sees it, API base path included: `local` storage signs
-  # upload links back to its own routes, and the mock rail hands a browser a link to its pay page.
-  PUBLIC_BASE_URL: "https://shopnexus.hopto.org/api/v1"
-  # Where a browser may call this API from: full origins, matched exactly. A web client on
-  # another origin gets nothing without this — its preflight is refused before any route runs.
-  CORS_ALLOWED_ORIGINS: "https://shopnexus.github.io,http://localhost:3000,http://localhost:5173"
-  ACCOUNT_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
-  CATALOG_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
-  ORDER_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
-  CHAT_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
-  TRUST_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
-  FINANCE_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
-  OBSERVABILITY_DB_DSN: "postgres://app:app@db:5432/shopnexus?sslmode=disable"
-  NATS_URL: "nats://nats:4222"
-  REDIS_ADDR: "redis:6379"
-  REDIS_PASSWORD: "app"
-
-  # Outbound providers. Mocks by default, because a local stack must not need an SMTP
-  # account, an SMS contract or a KYC subscription: the mock notifier logs the token it
-  # would have sent, the mock verifier trusts the credential, and the mock KYC vendor
-  # leaves every case pending for a moderator.
-  #
-  # Switch a seam by changing its selector and filling in that vendor's vars — they are
-  # required only for the vendor selected, so an unused block can stay empty:
-  #
-  #   EMAIL_PROVIDER: "smtp"   -> SMTP_HOST/PORT/USERNAME/PASSWORD/FROM, SMTP_TIMEOUT,
-  #                               VERIFY_EMAIL_URL, RESET_PASSWORD_URL
-  #   SMS_PROVIDER: "esms"     -> ESMS_BASE_URL/API_KEY/SECRET_KEY/BRANDNAME/SMS_TYPE,
-  #                               ESMS_CONTENT_TEMPLATE, ESMS_TIMEOUT
-  #   OAUTH_VERIFIER: "oidc"   -> OIDC_GOOGLE_AUDIENCES and/or OIDC_APPLE_AUDIENCES,
-  #                               OIDC_TIMEOUT
-  #   KYC_PROVIDER: "fpt-ai"   -> FPT_AI_BASE_URL/API_KEY, FPT_AI_REQUEST_TIMEOUT,
-  #                               FPT_AI_DOWNLOAD_TIMEOUT
-  EMAIL_PROVIDER: "mock"
-  SMS_PROVIDER: "mock"
-  OAUTH_VERIFIER: "mock"
-  KYC_PROVIDER: "mock"
-  # The rails and couriers this deployment registers. Not selectors: an `option` row names the
-  # provider that serves it, so two rails can be live at once and an admin can move a carrier from
-  # one courier to another through PATCH /admin/options/{id}. A provider left out is one no row can
-  # name — which is how `mock` is kept out of a deployment that takes real money.
-  #
-  # Each named provider's credentials are required, checked at startup:
-  #
-  #   sepay  -> SEPAY_MERCHANT_ID/SECRET_KEY/IPN_SECRET_KEY, SEPAY_SANDBOX
-  #   stripe -> STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_REQUEST_TIMEOUT
-  #
-  # Both real rails send the payer away and report back on a webhook, so they need
-  # /webhooks/* reachable from the internet and PUBLIC_BASE_URL correct. Their secrets belong in
-  # the gitignored `server/.env`, never here.
-  PAYMENT_PROVIDERS: "${PAYMENT_PROVIDERS:-mock}"
-  TRANSPORT_PROVIDERS: "mock"
-  SEPAY_MERCHANT_ID: "${SEPAY_MERCHANT_ID:-}"
-  SEPAY_SECRET_KEY: "${SEPAY_SECRET_KEY:-}"
-  SEPAY_IPN_SECRET_KEY: "${SEPAY_IPN_SECRET_KEY:-}"
-  SEPAY_SANDBOX: "${SEPAY_SANDBOX:-true}"
-  STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
-  STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
-  # Generous next to the other providers: a checkout session is created while the buyer waits.
-  STRIPE_REQUEST_TIMEOUT: "${STRIPE_REQUEST_TIMEOUT:-20s}"
-  # Every host a web client may be sent back to after a redirect rail. An allowlist, because a
-  # redirect target nobody checked is an open redirect that borrows this platform's credibility —
-  # and the client sends its own origin, so a site missing from this list has its flow refused.
-  PAYMENT_RETURN_URL_HOSTS: "shopnexus.hopto.org,shopnexus.github.io,localhost:3000,localhost:5173"
-
-  # Storage. This selects where a *new* upload goes, not what can be read: every resource row
-  # names the store holding it and all of them stay reachable, so switching this does not
-  # strand the objects that predate the switch. `local` keeps uploaded objects on the
-  # container's disk and signs URLs back to the gateway's own upload route, which is what
-  # makes a photo uploaded in dev actually render. A real store signs the bucket directly and
-  # the bytes never touch this process — that is a new implementation behind
-  # internal/provider/storage plus a selector value.
-  STORAGE_PROVIDER: "local"
-  STORAGE_ROOT: "/data/objects"
-  STORAGE_SECRET: "0123456789abcdef0123456789abcdef"
-  STORAGE_UPLOAD_TTL: "15m"
-  STORAGE_DOWNLOAD_TTL: "1h"
-  STORAGE_MAX_UPLOAD_BYTES: "10485760"
-  # Video is an order of magnitude bigger than a photo, so it gets its own limit — one limit for both
-  # would have to be this one, and a 100 MB avatar is then a slot the platform signs.
-  STORAGE_MAX_VIDEO_BYTES: "104857600"
-  # An unboxing clip is evidence a refund is judged on, so quicktime is here for an iPhone's .mov.
-  STORAGE_ALLOWED_MIMES: "image/jpeg,image/png,image/webp,application/pdf,video/mp4,video/quicktime,video/webm"
-
-  # Embedding (cmd/embedder). `mock` hashes the words instead of running the model, which
-  # exercises the queue and both vector columns without a multi-gigabyte download — semantic
-  # search then returns nonsense, which is the trade a laptop makes.
-  #
-  # Two things embed text and they must use the *same* model: the embedder writes listing
-  # vectors, the gateway embeds each search query, and vectors from two models are not
-  # comparable. The four below are the only interpolated values in this file, because they are
-  # the only per-machine ones — the key is a secret that must not be committed. Put them in
-  # `server/.env` (gitignored, read by compose automatically) to get vectors that mean
-  # something; the default stays `mock`, so a checkout with no .env still comes up:
-  #
-  #   EMBEDDING_PROVIDER=bge-m3
-  #   EMBEDDING_BASE_URL=http://saigon4.thinkmay.net:8080
-  #   EMBEDDING_API_KEY=...
-  #
-  # EMBEDDING_DIMENSIONS must equal the width `catalog.listing_embedding.dense` was declared
-  # with. The model service lives in another repository, so nothing but that check couples the
-  # two — and changing the model means a migration, not just this number.
-  EMBEDDING_PROVIDER: "${EMBEDDING_PROVIDER:-mock}"
-  EMBEDDING_BASE_URL: "${EMBEDDING_BASE_URL:-http://embedding:5007}"
-  EMBEDDING_API_KEY: "${EMBEDDING_API_KEY:-}"
-  # Generous, and it bounds one batch of transformer inferences rather than an API call: 32
-  # listing descriptions take tens of seconds on a CPU.
-  EMBEDDING_TIMEOUT: "${EMBEDDING_TIMEOUT:-5m}"
-  EMBEDDING_DIMENSIONS: "1024"
-  EMBEDDING_INTERVAL: "1m"
-  EMBEDDING_BATCH_SIZE: "32"
-  EMBEDDING_MAX_TEXT_CHARS: "2000"
-
-  # The model behind "photo in, listing out" (POST /listings/suggestions). `mock` answers a
-  # plausible filled form with no model, no key and no network call, so a local stack walks the
-  # whole route. A real one needs a *vision* chat model — the photo is the input a seller cares
-  # about — plus a transcription model for the voice note, both through one LiteLLM proxy:
-  #
-  #   LLM_PROVIDER: "litellm"  -> LITELLM_BASE_URL/API_KEY, LITELLM_CHAT_MODEL,
-  #                               LITELLM_TRANSCRIBE_MODEL, LITELLM_REQUEST_TIMEOUT,
-  #                               LITELLM_STREAM_TIMEOUT
-  LLM_PROVIDER: "mock"
-  LITELLM_BASE_URL: "http://litellm:4000"
-  LITELLM_API_KEY: ""
-  LITELLM_CHAT_MODEL: "gpt-4o-mini"
-  LITELLM_TRANSCRIBE_MODEL: "whisper-1"
-  LITELLM_REQUEST_TIMEOUT: "45s"
-  LITELLM_STREAM_TIMEOUT: "5m"
-
-  # Durable execution. `off` leaves every timed transition — an unpaid checkout
-  # expiring, an escrow window closing, a refund deadline passing, a blind rating
-  # revealing — to the sweep below, which is the same code on a slower clock. Switch to
-  # `restate` and start the `restate` profile to get a run per entity, signalled the
-  # moment the state moves:
-  #
-  #   WORKFLOW_RUNTIME: "restate"  -> RESTATE_SERVE_ADDR/RESTATE_INGRESS_URL,
-  #                                   RESTATE_SEND_TIMEOUT, and `--profile restate`
-  WORKFLOW_RUNTIME: "off"
-  RESTATE_SERVE_ADDR: "0.0.0.0:9080"
-  RESTATE_INGRESS_URL: "http://restate:8080"
-  RESTATE_SEND_TIMEOUT: "5s"
-  # The sweep runs whether or not there is a runtime: it is the net under a lost run, and
-  # with one in place it finds nothing. A minute in dev so a window is visible while you
-  # watch it; longer in production, where the runtime is the prompt path.
-  SWEEP_INTERVAL: "1m"
-
-  # WebSocket realtime. A browser cannot set Authorization on `new WebSocket()`, so
-  # POST /ws/tickets mints a short-lived, single-use ticket over the normal Bearer route
-  # and GET /ws?ticket=... redeems it. WS_ALLOWED_ORIGINS is matched against the Origin
-  # header's host, not a full URL.
-  WS_TICKET_TTL: "30s"
-  WS_WRITE_TIMEOUT: "10s"
-  WS_PING_INTERVAL: "30s"
-  WS_SEND_BUFFER: "64"
-  WS_MAX_PER_ACCOUNT: "5"
-  WS_ALLOWED_ORIGINS: "shopnexus.github.io,localhost:3000,localhost:5173"
+# There is no environment block. Every value comes from `internal/config/config.dev.yml` — one
+# grouped, fully-required document — and the only thing the environment still decides is where that
+# file is. `gateway-dev` bind-mounts the source, so it reads the file at its default path; the images
+# built from the `runtime` stage carry no source, so they get it mounted at /config.yml.
+#
+# That is also why nothing here interpolates `${...}` with a fallback any more: a default in this file
+# was a second place a value could come from, and the one that wins was whichever was less obvious.
 
 services:
   db:
@@ -252,7 +91,10 @@ services:
     # entrypoint, not command: the image's ENTRYPOINT is /gateway, so a command
     # would be passed to the gateway as arguments instead of replacing it.
     entrypoint: ["/migrate"]
-    environment: *app-env
+    environment:
+      CONFIG_FILE: /config.yml
+    volumes:
+      - ./internal/config/config.dev.yml:/config.yml:ro
     depends_on:
       db:
         condition: service_healthy
@@ -260,9 +102,11 @@ services:
   gateway:
     profiles: ["app"]
     build: .
-    environment: *app-env
+    environment:
+      CONFIG_FILE: /config.yml
     volumes:
-      # STORAGE_PROVIDER=local keeps objects here, so they outlive the container. With a real
+      - ./internal/config/config.dev.yml:/config.yml:ro
+      # `storage.provider: local` keeps objects here, so they outlive the container. With a real
       # store this volume goes away and the bytes never reach the process at all.
       - object-data:/data/objects
     ports:
@@ -283,13 +127,16 @@ services:
   # requests should not be holding that. Skipping it entirely is a supported deployment —
   # search falls back to trigram, which is what an unembedded row already gets.
   #
-  # With EMBEDDING_PROVIDER=mock (the default here) it needs nothing else running. Point it at
-  # the real BGE-M3 service and set the provider to get vectors that mean something.
+  # With `embedding.provider: mock` it needs nothing else running. Point it at the real BGE-M3
+  # service and set the provider to get vectors that mean something.
   embedder:
     profiles: ["embed"]
     build: .
     entrypoint: ["/embedder"]
-    environment: *app-env
+    environment:
+      CONFIG_FILE: /config.yml
+    volumes:
+      - ./internal/config/config.dev.yml:/config.yml:ro
     depends_on:
       db:
         condition: service_healthy
@@ -307,7 +154,8 @@ services:
     build:
       context: .
       target: dev
-    environment: *app-env
+    # No CONFIG_FILE: the source is bind-mounted at /src, which is the working directory, so the
+    # default `internal/config/config.dev.yml` resolves to the file you are editing.
     ports:
       - "5000:8080"
     volumes:
