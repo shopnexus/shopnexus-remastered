@@ -21,8 +21,10 @@ paths:
       summary: Raise a ticket
       description: >
         `ref_id` is required exactly for the kinds that are about something — the report kinds,
-        `refund-dispute`, `order-issue` — and its prefix has to agree with the kind. `reason`
-        belongs to the report kinds and to no other.
+        `refund-dispute`, `order-issue` — and its prefix has to agree with the kind. `reason` is
+        required for the five `report-*` kinds and refused on every other one: it is what a report
+        says is wrong. Both rules depend on `kind`, so neither can be a `required` in the schema —
+        breaking either is 422.
 
 
         `body` and `attachments` open the thread: they are posted as the first message, and
@@ -54,7 +56,7 @@ paths:
         '403': { description: 'The refund being disputed is not the caller''s', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { description: 'What the ticket is about does not exist', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '409': { description: 'You already have an open ticket about this, or the refund cannot be escalated now', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '422': { description: '`ref_id` or `reason` is not what this `kind` requires — missing where it is needed, or sent where it does not belong', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     get:
       tags: [trust]
       summary: Tickets the caller raised
@@ -140,7 +142,8 @@ components:
       description: >
         What was done about it. `none` is a ticket read and answered with nothing done — the
         turn-down, which is why it is a value here and not a second status. The two `refund-*`
-        ones are written by order's verdict route, never by hand.
+        ones are written by order's verdict route and are not in the set
+        `POST /admin/tickets/{id}/resolution` accepts — see `TicketResolutionAction`.
       enum: [none, listing-removed, message-removed, account-suspended, warning, refund-granted, refund-refused]
 
     Ticket:
@@ -199,7 +202,9 @@ components:
           example: lst_1ryaj8117v2p4
         reason:
           allOf: [{ $ref: '#/components/schemas/TicketReason' }]
-          description: Report kinds only.
+          description: >
+            Required for the five `report-*` kinds, refused for every other one — 422 either way.
+            It depends on `kind`, so it cannot be listed in `required`.
         body:
           type: string
           maxLength: 4000

@@ -47,7 +47,7 @@ type OfferFilter struct {
 	Cursor    CursorFilter
 }
 
-// RefundFilter pages a party's refunds; Statuses is how the moderator queue is read.
+// RefundFilter pages a party's refunds; Statuses is the `status=` query a client filters on.
 type RefundFilter struct {
 	BuyerID  int64
 	SellerID int64
@@ -173,11 +173,15 @@ type Repository interface {
 	InsertRefund(ctx context.Context, r *domain.Refund) error
 	FindRefund(ctx context.Context, id int64) (domain.Refund, error)
 	ListRefunds(ctx context.Context, f RefundFilter) ([]domain.Refund, error)
-	SaveRefund(ctx context.Context, r domain.Refund) error
+	// SaveRefund writes the transition, guarded by `from` — the status the entity moved out
+	// of. A stale read then loses instead of writing over a move it never saw: an escalation
+	// that landed while a sweep held an older copy of the row must not be settled away.
+	SaveRefund(ctx context.Context, r domain.Refund, from string) error
 	// SaveRefundOutcome writes a refund transition together with the order it closes, in one
 	// transaction. Apart, a commit that failed halfway leaves "accepted refund over an open
-	// order", which the payout sweep reads as money to hand the seller.
-	SaveRefundOutcome(ctx context.Context, r domain.Refund, o *domain.Order) error
+	// order", which the payout sweep reads as money to hand the seller. Guarded by `from` for
+	// the same reason SaveRefund is.
+	SaveRefundOutcome(ctx context.Context, r domain.Refund, o *domain.Order, from string) error
 	// OverdueRefunds is the timeout pass: every live refund whose deadline has passed. One
 	// query advances all three windows, which is what naming a status for the party it
 	// waits on buys.

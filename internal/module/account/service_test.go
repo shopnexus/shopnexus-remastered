@@ -743,6 +743,83 @@ func TestSave_StaleAggregateIsAConflict(t *testing.T) {
 	}
 }
 
+// --- the support desk ---
+
+// seedSupportDesk is what the migration does: one row carrying the desk's role, with no password
+// and no provider — the account nobody signs in as.
+func (h *harness) seedSupportDesk(t *testing.T, username string) *domain.Account {
+	t.Helper()
+	profile, err := domain.NewProfile("Hỗ trợ ShopNexus", "VN", "vi-VN", "Asia/Ho_Chi_Minh")
+	if err != nil {
+		t.Fatalf("NewProfile: %v", err)
+	}
+	desk, err := domain.NewAccount(domain.RoleSupport, "", "", username, "", profile)
+	if err != nil {
+		t.Fatalf("NewAccount(desk): %v", err)
+	}
+	if err := h.repo.Create(context.Background(), desk); err != nil {
+		t.Fatalf("Create(desk): %v", err)
+	}
+	return desk
+}
+
+// The desk is resolved by its role, the one thing about it a user cannot register. A username can
+// be: an account wearing "support" that the platform did not seed belongs to somebody, and
+// answering with it would make every ticket thread on the platform theirs to read.
+func TestGetSupportAccount_ResolvedByRoleNotByUsername(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	// A user holding the name — as one could before it was reserved.
+	squatter := h.register(t, registerRequest())
+	h.repo.seedUsername(squatter.Account.ID.Int64(), domain.SupportUsername)
+
+	if got := status(t, mustErr(h.svc.GetSupportAccount(ctx))); got != 500 {
+		t.Fatalf("status = %d, want 500 — an unseeded desk must fail loudly, not resolve to a user", got)
+	}
+
+	// The name is taken, which the desk does not need: it is the role that answers.
+	desk := h.seedSupportDesk(t, "support-desk")
+	got, err := h.svc.GetSupportAccount(ctx)
+	if err != nil {
+		t.Fatalf("GetSupportAccount: %v", err)
+	}
+	if got.ID.Int64() != desk.ID {
+		t.Fatalf("desk = %v, want the seeded row %d", got.ID, desk.ID)
+	}
+}
+
+// Memoised: a migration seeds the row and no route changes it, so a ticket message must not pay a
+// query for it.
+func TestGetSupportAccount_IsMemoised(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	desk := h.seedSupportDesk(t, domain.SupportUsername)
+
+	if _, err := h.svc.GetSupportAccount(ctx); err != nil {
+		t.Fatalf("GetSupportAccount: %v", err)
+	}
+	delete(h.repo.accounts, desk.ID)
+	got, err := h.svc.GetSupportAccount(ctx)
+	if err != nil {
+		t.Fatalf("second GetSupportAccount: %v — the first answer was not kept", err)
+	}
+	if got.ID.Int64() != desk.ID {
+		t.Fatalf("desk = %v, want %d", got.ID, desk.ID)
+	}
+}
+
+// The desk's name is the platform's own: an account able to sign in as it would be a side of every
+// ticket thread.
+func TestRegister_SupportUsernameIsReserved(t *testing.T) {
+	h := newHarness()
+	req := registerRequest()
+	req.Username = domain.SupportUsername
+
+	if got := status(t, mustErr(h.svc.Register(context.Background(), req))); got != 409 {
+		t.Fatalf("status = %d, want 409", got)
+	}
+}
+
 // The code catalog branches on has to be the code this module returns. Two declarations, because
 // `api` may not import `errx` and `domain` may not import `api` — so a test is what keeps them
 // equal, and a rename that misses one is a publish that quietly stops recognising "no pickup

@@ -522,20 +522,21 @@ func TestTickets_QueueAndVerdict(t *testing.T) {
 	if count := counts[listingTarget]; count != 2 {
 		t.Fatalf("open against the target = %d, want 2", count)
 	}
-	// A ticket is found by what it is about — that is how order's verdict closes the one a refund
-	// dispute opened. A refund has one buyer, so the newest open one is the only one.
-	found, err := r.FindTicketByRef(ctx, domain.RefListing, target)
+	// Tickets are found by what they are about — that is how order's verdict closes the ones a
+	// disputed refund opened. Every open one, oldest first: the unique index is per requester, so two
+	// people naming one target is two tickets and one verdict has to answer both.
+	found, err := r.OpenTicketsAgainst(ctx, domain.RefListing, target)
 	if err != nil {
-		t.Fatalf("FindTicketByRef: %v", err)
+		t.Fatalf("OpenTicketsAgainst: %v", err)
 	}
-	if found.ID != second.ID {
-		t.Fatalf("by ref = %d, want the newest open one (%d)", found.ID, second.ID)
+	if len(found) != 2 || found[0].ID != first.ID || found[1].ID != second.ID {
+		t.Fatalf("by ref = %+v, want both open tickets oldest first (%d, %d)", found, first.ID, second.ID)
 	}
 
 	// The queue's default slice, oldest first: the order it is worked.
 	queue, err := r.ListTickets(ctx, port.TicketFilter{
 		Statuses: []string{domain.StatusOpen, domain.StatusReviewing},
-		RefType:  domain.RefListing,
+		Kind:     domain.KindReportListing,
 		Cursor:   port.CursorFilter{Limit: 200},
 	})
 	if err != nil {
@@ -549,7 +550,7 @@ func TestTickets_QueueAndVerdict(t *testing.T) {
 	last := queue[len(queue)-1]
 	rest, err := r.ListTickets(ctx, port.TicketFilter{
 		Statuses: []string{domain.StatusOpen, domain.StatusReviewing},
-		RefType:  domain.RefListing,
+		Kind:     domain.KindReportListing,
 		Cursor:   port.CursorFilter{Before: last.CreatedAt, BeforeID: last.ID, Limit: 200},
 	})
 	if err != nil {
@@ -590,7 +591,7 @@ func TestTickets_QueueAndVerdict(t *testing.T) {
 	}
 	// A resolved ticket leaves the queue and stops counting towards the pattern.
 	queue, err = r.ListTickets(ctx, port.TicketFilter{
-		Statuses: from, RefType: domain.RefListing, Cursor: port.CursorFilter{Limit: 200},
+		Statuses: from, Kind: domain.KindReportListing, Cursor: port.CursorFilter{Limit: 200},
 	})
 	if err != nil {
 		t.Fatalf("ListTickets: %v", err)

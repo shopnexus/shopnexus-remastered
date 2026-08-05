@@ -31,10 +31,6 @@ const (
 // unreachable.
 const CodeNoPickupContact = "no_pickup_contact"
 
-// SupportUsername is the reserved username of the support desk's account. Reserved: registration
-// refuses it, because an account able to sign in as the desk could read every ticket thread.
-const SupportUsername = "support"
-
 // --- authentication ---
 
 // AuthResult is what every successful sign-in returns: the two tokens, the access

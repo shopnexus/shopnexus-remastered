@@ -12,7 +12,7 @@ import (
 )
 
 // Trust serves the trust module's routes: order feedback, product reviews with their replies
-// and votes, reputation, and abuse reports with a moderator surface.
+// and votes, reputation, and the tickets users raise with the moderator surface over them.
 //
 // Cursor-paginated throughout, because every list here moves under the reader: a review gains
 // votes, a queue is worked, a blind rating is revealed.
@@ -366,7 +366,7 @@ func (h *Trust) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// ----------------------------------------------------------------- reports ---
+// ----------------------------------------------------------------- tickets ---
 
 // OpenTicket handles POST /tickets — the one route for everything a user raises: an abuse report, a
 // refund they want staff to decide, a payment that went wrong, a feature request. The body carries

@@ -79,7 +79,7 @@ func (o Order) State() string {
 // Settled reports whether the order has reached an outcome.
 func (o Order) Settled() bool { return o.State() != StateOpen }
 
-// ConfirmReceipt is the buyer saying the goods arrived, with the evidence a later dispute
+// ConfirmReceipt is the buyer saying the goods arrived, with the evidence a later refund
 // would be judged on. It starts the payout clock, which is why it is not re-openable.
 func (o *Order) ConfirmReceipt(attachments []int64) error {
 	if o.Settled() {

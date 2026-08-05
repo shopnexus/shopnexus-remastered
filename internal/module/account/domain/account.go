@@ -21,14 +21,20 @@ const (
 	StatusSuspended Status = "suspended"
 )
 
-// Role separates a user from the staff who moderate them. There is no seller
-// role: the same account buys and sells.
+// Role separates a user from the staff who moderate them, and both from the support desk.
+// There is no seller role: the same account buys and sells.
 type Role string
 
 const (
 	RoleUser      Role = "user"
 	RoleModerator Role = "moderator"
 	RoleAdmin     Role = "admin"
+	// RoleSupport belongs to the one row that is the support desk — the second side of every
+	// ticket thread. The desk is resolved by this rather than by its username, because a username
+	// is something a user can register and whatever answers "who is support" reads every ticket
+	// thread on the platform. No route grants or takes it: a migration puts it on that row, and a
+	// partial unique index keeps it to one.
+	RoleSupport Role = "support"
 )
 
 // usernameRe is the wire contract for a username. Lowercase only, because the
@@ -51,7 +57,7 @@ type Account struct {
 	// Each identifier is optional alone and at least one has to be set. nil reaches the
 	// database as NULL, so the UNIQUE constraints keep working.
 	Status   Status  `validate:"required,oneof=active suspended"`
-	Role     Role    `validate:"required,oneof=user moderator admin"`
+	Role     Role    `validate:"required,oneof=user moderator admin support"`
 	Phone    *string `validate:"omitempty,e164"`
 	Email    *string `validate:"omitempty,email,max=255"`
 	Username *string `validate:"omitempty,min=3,max=100"`
@@ -122,9 +128,8 @@ func NewOAuthAccount(email, username string, profile Profile, provider, uid stri
 	return a, nil
 }
 
-// SupportUsername is the reserved username of the support desk's account, which every ticket thread
-// pairs with. Declared here and re-declared in `api` for the reason every crossing value is: domain
-// may not import api, and api may not import errx.
+// SupportUsername is the username the support desk's row carries — reserved, so nobody else can
+// wear the platform's own name in a thread. It is not what resolves the desk: RoleSupport is.
 const SupportUsername = "support"
 
 // Validate checks the whole aggregate — what makes exported children safe: a caller that
@@ -140,15 +145,18 @@ func (a *Account) Validate() error {
 			Message: "must contain only lowercase letters, digits, dot, dash or underscore",
 		})
 	}
-	// The support desk's username is the platform's own: an account able to sign in as it could
-	// read every ticket thread, since it is the second side of all of them.
-	if a.ID == 0 && a.Username != nil && *a.Username == SupportUsername {
+	// The desk's username is the platform's own, and only the desk may wear it. Checked on every
+	// write rather than on an insert: a guard that fires only for a new row is walked past by a
+	// rename.
+	if a.Role != RoleSupport && a.Username != nil && *a.Username == SupportUsername {
 		return ErrUsernameReserved
 	}
 	if !a.HasIdentifier() {
 		return ErrNoIdentifier
 	}
-	if a.SignInMethods() == 0 {
+	// The desk is not an account anybody signs in as — no password and no provider is the point of
+	// it — so "at least one way in" is a rule about the accounts that have a person behind them.
+	if a.Role != RoleSupport && a.SignInMethods() == 0 {
 		return ErrLastSignInMethod
 	}
 	if err := a.Profile.Validate(); err != nil {

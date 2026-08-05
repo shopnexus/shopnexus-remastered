@@ -179,12 +179,23 @@ func TestRefund_VerdictReadsWhetherTheGoodsCameBack(t *testing.T) {
 	if granted.Status != domain.RefundDisputed || granted.DeadlineAt != nil {
 		t.Fatalf("refund = %+v, want it with staff and nobody on the clock", granted)
 	}
+	// A case staff hold is not the seller's to concede: conceding it reaches `returning` with no
+	// verdict published, and the ticket that asked for one then has nothing to close it.
+	if err := granted.Accept(); !errors.Is(err, domain.ErrNotAwaitingSeller) {
+		t.Fatalf("Accept while disputed = %v, want ErrNotAwaitingSeller", err)
+	}
 	// Nothing has come back yet, so the buyer winning grants the refund and the goods travel.
+	decided := granted.SellerDecidedAt
 	if err := granted.Resolve(true); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 	if granted.Status != domain.RefundReturning || granted.DeadlineAt != nil {
 		t.Fatalf("refund = %+v, want the goods on their way back", granted)
+	}
+	// The seller's answer stays as they gave it. Stamping the moderator's clock here would leave
+	// a row whose rejection reason is the seller's words at a moment they never spoke.
+	if granted.SellerDecidedAt != decided {
+		t.Fatalf("seller_decided_at = %v, want the seller's own %v", granted.SellerDecidedAt, decided)
 	}
 
 	// The same verdict after the return arrived pays the buyer instead: there is nothing to ship.

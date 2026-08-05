@@ -98,6 +98,24 @@ func (f *fakeRepo) GetByEmail(ctx context.Context, email string) (*domain.Accoun
 	return nil, domain.ErrAccountNotFound
 }
 
+// GetSupportAccount resolves the desk by role, as the adapter's keyed lookup does.
+func (f *fakeRepo) GetSupportAccount(ctx context.Context) (*domain.Account, error) {
+	for _, a := range f.accounts {
+		if a.Role == domain.RoleSupport {
+			return f.Get(ctx, a.ID)
+		}
+	}
+	return nil, domain.ErrSupportAccountMissing
+}
+
+// seedUsername writes a username straight onto a stored row, which is how an account that predates
+// a rule about that name exists at all.
+func (f *fakeRepo) seedUsername(accountID int64, username string) {
+	row := f.accounts[accountID]
+	row.Username = &username
+	f.accounts[accountID] = row
+}
+
 func (f *fakeRepo) GetByOAuth(ctx context.Context, provider, uid string) (*domain.Account, error) {
 	for accountID, links := range f.oauth {
 		for _, l := range links {

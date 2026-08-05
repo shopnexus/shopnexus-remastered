@@ -27,6 +27,9 @@ type fakeRepo struct {
 	shipments map[int64]domain.Transport
 	refunds   map[int64]domain.Refund
 	options   []common.Option
+	// onRefundWrite fires once, just before a refund write, so a test can land somebody else's
+	// move between a caller's read and its own.
+	onRefundWrite func()
 }
 
 func newFakeRepo() *fakeRepo {
@@ -654,14 +657,27 @@ func (f *fakeRepo) ListRefunds(ctx context.Context, filter port.RefundFilter) ([
 	return out[:min(filter.Cursor.Limit, len(out))], nil
 }
 
-// SaveRefund only moves a live one, as the status guard does.
-func (f *fakeRepo) SaveRefund(_ context.Context, r domain.Refund) error {
+// SaveRefund only moves a case that is still in the status the caller read, as the `from` guard
+// does: a stale copy loses rather than writing over a move it never saw.
+func (f *fakeRepo) SaveRefund(_ context.Context, r domain.Refund, from string) error {
+	f.beforeRefundWrite()
 	stored, ok := f.refunds[r.ID]
-	if !ok || stored.Settled() {
+	if !ok || stored.Status != from {
 		return domain.ErrRefundSettled
 	}
 	f.refunds[r.ID] = r
 	return nil
+}
+
+// beforeRefundWrite is the write that landed between the caller's read and its own — an
+// escalation, another moderator's verdict. A hook, because that interleaving is the whole point
+// of the `from` guard and a test cannot otherwise reach it.
+func (f *fakeRepo) beforeRefundWrite() {
+	if f.onRefundWrite != nil {
+		hook := f.onRefundWrite
+		f.onRefundWrite = nil
+		hook()
+	}
 }
 
 func (f *fakeRepo) OverdueRefunds(_ context.Context, now time.Time, limit int) ([]domain.Refund, error) {
@@ -678,9 +694,10 @@ func (f *fakeRepo) OverdueRefunds(_ context.Context, now time.Time, limit int) (
 // SaveRefundOutcome writes both rows or neither, as the transaction does: a settled refund over
 // an open order is money the payout sweep would hand the seller after the buyer was paid, so a
 // half-applied outcome must not be reachable here either.
-func (f *fakeRepo) SaveRefundOutcome(_ context.Context, r domain.Refund, o *domain.Order) error {
+func (f *fakeRepo) SaveRefundOutcome(_ context.Context, r domain.Refund, o *domain.Order, from string) error {
+	f.beforeRefundWrite()
 	stored, ok := f.refunds[r.ID]
-	if !ok || stored.Settled() {
+	if !ok || stored.Status != from {
 		return domain.ErrRefundSettled
 	}
 	if o != nil {

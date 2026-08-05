@@ -58,10 +58,14 @@ func (s *Service) OpenTicket(ctx context.Context, req trustapi.OpenTicketRequest
 	if err != nil {
 		return trustapi.Ticket{}, err
 	}
+	reason, err := reasonOf(req.Kind, req.Reason)
+	if err != nil {
+		return trustapi.Ticket{}, err
+	}
 	// A refund dispute moves the refund before the ticket exists: order owns that status, and a
 	// ticket about a refund staff may not decide is a queue entry with no possible answer. Order's
 	// guard is what refuses the wrong party or the wrong moment, and it is idempotent, so a retry
-	// after a failed insert below escalates nothing twice.
+	// escalates nothing twice.
 	if req.Kind == domain.KindRefundDispute {
 		if _, err := s.orders.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
 			ActorID: req.ActorID, ID: id.Of[id.Refund](*refID),
@@ -69,12 +73,17 @@ func (s *Service) OpenTicket(ctx context.Context, req trustapi.OpenTicketRequest
 			return trustapi.Ticket{}, fmt.Errorf("escalate refund: %w", err)
 		}
 	}
-	t, err := domain.NewTicket(req.ActorID.Int64(), req.Kind, req.Subject, refType, refID,
-		reasonOf(req.Kind, req.Reason))
+	t, err := domain.NewTicket(req.ActorID.Int64(), req.Kind, req.Subject, refType, refID, reason)
 	if err != nil {
 		return trustapi.Ticket{}, err
 	}
 	if err := s.repo.InsertTicket(ctx, &t); err != nil {
+		// A refund already with staff and no ticket naming it is invisible: the queue is the only
+		// staff-facing list, and nothing sweeps for one. Only the requester retrying repairs it, so
+		// this line is the alert.
+		if req.Kind == domain.KindRefundDispute && !errors.Is(err, domain.ErrTicketExists) {
+			s.log.Error("refund escalated with no ticket", "refund_id", req.RefID, "err", err)
+		}
 		return trustapi.Ticket{}, fmt.Errorf("insert ticket: %w", err)
 	}
 	// The thread, with what they wrote as its opening message. A failure here leaves a ticket with
@@ -108,13 +117,16 @@ func (s *Service) ticketTarget(ctx context.Context, req trustapi.OpenTicketReque
 	return &want, &refID, nil
 }
 
-// reasonOf keeps a reason to the kinds that have one. The domain refuses the mismatch; this is what
-// makes an empty string on a support request mean "none" rather than "invalid".
-func reasonOf(kind, reason string) *string {
-	if !domain.Reported(kind) || reason == "" {
-		return nil
+// reasonOf keeps a reason to the kinds that have one, and refuses one anywhere else — symmetrically
+// with the ref, because dropping a field the client sent answers 201 to a request nobody carried out.
+func reasonOf(kind, reason string) (*string, error) {
+	if domain.Reported(kind) != (reason != "") {
+		return nil, domain.ErrTicketReasonMismatch
 	}
-	return &reason
+	if reason == "" {
+		return nil, nil
+	}
+	return &reason, nil
 }
 
 // attachThread opens the conversation and records it on the ticket. Best-effort and idempotent: the
@@ -129,9 +141,6 @@ func (s *Service) attachThread(ctx context.Context, t *domain.Ticket, body strin
 	})
 	if err != nil {
 		s.log.Error("open ticket thread", "ticket_id", t.ID, "err", err)
-		return
-	}
-	if t.ConversationID != nil {
 		return
 	}
 	t.AttachThread(thread.ID.Int64())
@@ -207,7 +216,7 @@ func (s *Service) AdminListTickets(ctx context.Context, req trustapi.AdminListTi
 		Statuses: statuses, Kind: req.Kind, Cursor: cursor,
 	})
 	if err != nil {
-		return trustapi.AdminTicketPage{}, fmt.Errorf("list reports: %w", err)
+		return trustapi.AdminTicketPage{}, fmt.Errorf("list tickets: %w", err)
 	}
 	rows, meta := paginate(rows, req.Limit, ticketKey)
 	// The queue is a work list: it carries the requester and the pattern, not the content it is
@@ -301,9 +310,7 @@ func (s *Service) AdminResolveTicket(ctx context.Context, req trustapi.ResolveTi
 
 // requireTarget refuses a ticket about something that does not exist, and — for an order or a
 // refund — something that is not the caller's. Each kind is asked of the module that owns it: a
-// resource id only resolves inside its module, and so does everything else. Each kind is asked of
-// the module that owns it — a resource id only resolves inside its module, and so does
-// everything else.
+// resource id only resolves inside its module, and so does everything else.
 func (s *Service) requireTarget(ctx context.Context, actorID id.ID[id.Account], refType string, refID int64) error {
 	var err error
 	switch refType {
@@ -343,10 +350,13 @@ func (s *Service) requireTarget(ctx context.Context, actorID id.ID[id.Account], 
 	return fmt.Errorf("read ticket target: %w", err)
 }
 
-// target is the reported content, fetched from the module that owns it. Best-effort: a
-// listing already taken down leaves the queue entry readable, because the report is still a
-// decision somebody has to record.
+// target is what the ticket is about, fetched from the module that owns it. Nil for a kind that is
+// about nothing in particular, and nil best-effort when the owner no longer has it: a listing
+// already taken down still leaves a decision somebody has to record.
 func (s *Service) target(ctx context.Context, actorID id.ID[id.Account], t domain.Ticket) map[string]any {
+	if t.RefType == nil || t.RefID == nil {
+		return nil
+	}
 	switch *t.RefType {
 	case domain.RefListing:
 		listing, err := s.catalog.GetListing(ctx, catalogapi.GetListingRequest{
@@ -497,46 +507,46 @@ func statusFilter(status string) []string {
 	return []string{status}
 }
 
-// RecordRefundVerdict closes the ticket a refund dispute opened. Order decided it — the money is
-// its business — and this is the half the requester reads: the verdict lands on the ticket and as a
+// RecordRefundVerdict closes every ticket a refund dispute opened. Order decided it — the money is
+// its business — and this is the half a requester reads: the verdict lands on their ticket and as a
 // message in the thread they raised it in.
 //
-// Idempotent and quiet about a case it does not know: the bus is at-least-once, and an escalation
-// whose ticket was never written (or a refund escalated before this module existed) must not make a
-// delivered verdict retry for ever.
+// Every one, not the newest: both parties may escalate the same refund and each gets their own
+// ticket, so one verdict answers however many exist. A ticket left open on a decided refund can
+// never be closed at all, because resolving that kind by hand is refused.
+//
+// Idempotent and quiet about a case it does not know: the lookup only ever returns unresolved
+// tickets, so a redelivered verdict — or one for a refund escalated before this module existed —
+// finds nothing to do rather than retrying for ever.
 func (s *Service) RecordRefundVerdict(ctx context.Context, req trustapi.RecordRefundVerdictRequest) error {
 	if err := s.v.Struct(req); err != nil {
 		return err
 	}
-	t, err := s.repo.FindTicketByRef(ctx, domain.RefRefund, req.RefundID.Int64())
+	open, err := s.repo.OpenTicketsAgainst(ctx, domain.RefRefund, req.RefundID.Int64())
 	if err != nil {
-		if errors.Is(err, domain.ErrTicketNotFound) {
-			return nil
-		}
-		return fmt.Errorf("find refund ticket: %w", err)
-	}
-	if t.Resolved() {
-		return nil
+		return fmt.Errorf("find refund tickets: %w", err)
 	}
 	action := domain.ActionRefundRefused
 	if req.BuyerWins {
 		action = domain.ActionRefundGranted
 	}
-	if err := t.Resolve(req.ModeratorID.Int64(), action, req.Note); err != nil {
-		return err
-	}
-	if err := s.repo.SaveTicket(ctx, t, openStatuses); err != nil {
-		return err
-	}
-	// Best-effort: the verdict is recorded and the money has moved, so a chat that is down must not
-	// make order's published fact redeliver into a ticket that is already closed.
-	if _, err := s.chat.PostTicketMessage(ctx, chatapi.PostTicketMessageRequest{
-		RequesterID: id.Of[id.Account](t.RequesterID),
-		TicketID:    id.Of[id.Ticket](t.ID),
-		Body:        req.Note,
-		Card:        map[string]any{"refund_id": req.RefundID.String(), "action_taken": action},
-	}); err != nil {
-		s.log.Error("post refund verdict message", "ticket_id", t.ID, "err", err)
+	for _, t := range open {
+		if err := t.Resolve(req.ModeratorID.Int64(), action, req.Note); err != nil {
+			return err
+		}
+		if err := s.repo.SaveTicket(ctx, t, openStatuses); err != nil {
+			return err
+		}
+		// Best-effort: the verdict is recorded and the money has moved, so a chat that is down must
+		// not make order's published fact redeliver into tickets that are already closed.
+		if _, err := s.chat.PostTicketMessage(ctx, chatapi.PostTicketMessageRequest{
+			RequesterID: id.Of[id.Account](t.RequesterID),
+			TicketID:    id.Of[id.Ticket](t.ID),
+			Body:        req.Note,
+			Card:        map[string]any{"refund_id": req.RefundID.String(), "action_taken": action},
+		}); err != nil {
+			s.log.Error("post refund verdict message", "ticket_id", t.ID, "err", err)
+		}
 	}
 	return nil
 }

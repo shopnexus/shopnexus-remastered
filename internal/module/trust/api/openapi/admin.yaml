@@ -108,7 +108,7 @@ paths:
                 properties:
                   data: { $ref: '#/components/schemas/Ticket' }
                 required: [data]
-        '400': { $ref: '#/components/responses/BadRequest' }
+        '400': { description: 'The body is invalid, or `action_taken` is not one a moderator records by hand', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -151,13 +151,19 @@ components:
         meta: { $ref: '#/components/schemas/CursorMeta' }
       required: [data, meta]
 
+    TicketResolutionAction:
+      type: string
+      description: >
+        What a moderator may record by hand. Narrower than the ticket's own `action_taken`, which
+        also has the two `refund-*` values: those are written by order's verdict route, because that
+        is where the money moves. Sending one here is a 400 on the field.
+      enum: [none, listing-removed, message-removed, account-suspended, warning]
+
     ResolveTicketRequest:
       type: object
       properties:
         action_taken:
-          allOf: [{ $ref: '#/components/schemas/TicketAction' }]
-          description: >
-            Required. `none` is the turn-down; anything else names what was done. The two
-            `refund-*` values are what order's verdict records on the ticket it closes.
+          allOf: [{ $ref: '#/components/schemas/TicketResolutionAction' }]
+          description: Required. `none` is the turn-down; anything else names what was done.
         note: { type: string, maxLength: 2000, example: đã xác nhận hàng giả }
       required: [action_taken]

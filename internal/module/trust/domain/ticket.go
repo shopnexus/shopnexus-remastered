@@ -66,8 +66,17 @@ var refKindOf = map[string]string{
 func RefKindOf(kind string) string { return refKindOf[kind] }
 
 // Reported reports whether a kind is an abuse report — the ones that carry a reason and can end in a
-// takedown, as opposed to a question or a dispute.
-func Reported(kind string) bool { return strings.HasPrefix(kind, "report-") }
+// takedown, as opposed to a question or a dispute. Named one by one rather than matched on the
+// `report-` prefix: a kind added to the enum and to nothing else must not silently inherit a
+// vocabulary nobody wrote down for it.
+func Reported(kind string) bool {
+	switch kind {
+	case KindReportListing, KindReportAccount, KindReportMessage, KindReportReview,
+		KindReportReviewReply:
+		return true
+	}
+	return false
+}
 
 // Ticket is one thing a user raised: an abuse report, a refund they want staff to decide, a payment
 // that went wrong, a feature they wish existed.

@@ -77,8 +77,8 @@ func (r *Repo) FindRefund(ctx context.Context, id int64) (domain.Refund, error) 
 	return scanRefund(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id}))
 }
 
-// terminalRefund is every status a case can end on. Spelled once, because a transition guard
-// that forgets one lets a settled case move again.
+// terminalRefund is every status a case can end on, built from the constants so a renamed one
+// is a build failure rather than a list that quietly matches nothing.
 const terminalRefund = `'` + domain.RefundAccepted + `', '` + domain.RefundRejected + `', '` + domain.RefundCancelled + `'`
 
 func (r *Repo) ListRefunds(ctx context.Context, f port.RefundFilter) ([]domain.Refund, error) {
@@ -136,10 +136,12 @@ func (r *Repo) queryRefunds(ctx context.Context, q string, args pgx.NamedArgs) (
 	return out, nil
 }
 
-// SaveRefund writes the transition. The status it moves *from* is in the WHERE clause, so
-// two moves on one refund cannot both land — the loser is told the case moved on.
-func (r *Repo) SaveRefund(ctx context.Context, ref domain.Refund) error {
-	tag, err := r.pool.Exec(ctx, saveRefund, refundArgs(ref))
+// SaveRefund writes the transition. `from` is the status it moves out of, so two moves on one
+// refund cannot both land — the loser is told the case moved on. Naming only the terminal
+// statuses here was not enough: a sweep holding a `returned` copy of a row somebody has since
+// escalated would settle it, refunding the escrow with no verdict and no ticket to close.
+func (r *Repo) SaveRefund(ctx context.Context, ref domain.Refund, from string) error {
+	tag, err := r.pool.Exec(ctx, saveRefund, refundArgs(ref, from))
 	if err != nil {
 		return fmt.Errorf("db update refund: %w", err)
 	}
@@ -152,9 +154,9 @@ func (r *Repo) SaveRefund(ctx context.Context, ref domain.Refund) error {
 // SaveRefundOutcome writes a refund transition with the order it closes. One transaction: a
 // settled refund over an order still open is money the payout sweep would hand the seller after
 // the buyer has already been paid.
-func (r *Repo) SaveRefundOutcome(ctx context.Context, ref domain.Refund, o *domain.Order) error {
+func (r *Repo) SaveRefundOutcome(ctx context.Context, ref domain.Refund, o *domain.Order, from string) error {
 	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, saveRefund, refundArgs(ref))
+		tag, err := tx.Exec(ctx, saveRefund, refundArgs(ref, from))
 		if err != nil {
 			return fmt.Errorf("db update refund: %w", err)
 		}
@@ -189,11 +191,11 @@ const saveRefund = `UPDATE refund
                         rejection_reason = @rejection_reason,
                         return_transport_id = @return_transport_id,
                         returned_at = @returned_at
-                    WHERE id = @id AND status NOT IN (` + terminalRefund + `)`
+                    WHERE id = @id AND status::text = @from`
 
-func refundArgs(ref domain.Refund) pgx.NamedArgs {
+func refundArgs(ref domain.Refund, from string) pgx.NamedArgs {
 	return pgx.NamedArgs{
-		"id": ref.ID, "status": ref.Status, "deadline_at": ref.DeadlineAt,
+		"id": ref.ID, "from": from, "status": ref.Status, "deadline_at": ref.DeadlineAt,
 		"attachments":       dbx.Int64Array(ref.Attachments),
 		"seller_decided_at": ref.SellerDecidedAt, "rejection_reason": ref.RejectionReason,
 		"return_transport_id": ref.ReturnTransportID, "returned_at": ref.ReturnedAt,

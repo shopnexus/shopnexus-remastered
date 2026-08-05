@@ -539,6 +539,11 @@ func (s *Service) RetryClaimedPayouts(ctx context.Context, limit int) (int, erro
 //
 // The two states that wait on a carrier or on staff carry no deadline, so they are never in
 // this list: a human or a parcel decides those, not a clock.
+//
+// The list is a work list, not a snapshot to decide on. A pass of a hundred takes long enough
+// for one of them to be escalated while the earlier rows are being worked, and settling that
+// stale copy would move money staff were still being asked about — so each row is re-read, and
+// the write's `from` guard is the backstop under that.
 func (s *Service) AdvanceOverdueRefunds(ctx context.Context, limit int) (int, error) {
 	refunds, err := s.repo.OverdueRefunds(ctx, time.Now(), limit)
 	if err != nil {
@@ -546,7 +551,11 @@ func (s *Service) AdvanceOverdueRefunds(ctx context.Context, limit int) (int, er
 	}
 	advanced := 0
 	for _, r := range refunds {
-		moved, err := s.advanceRefund(ctx, r)
+		fresh, err := s.repo.FindRefund(ctx, r.ID)
+		if err != nil {
+			return advanced, fmt.Errorf("find refund: %w", err)
+		}
+		moved, err := s.advanceRefund(ctx, fresh)
 		if err != nil {
 			return advanced, err
 		}
@@ -586,6 +595,7 @@ func (s *Service) advanceRefund(ctx context.Context, r domain.Refund) (bool, err
 		// The order was cancelled or paid out under the case; there is no escrow left to move.
 		return false, nil
 	}
+	from := r.Status
 	switch r.Status {
 	case domain.RefundAwaitingSeller:
 		// The seller said nothing. It lands on the buyer exactly as a rejection does, and the
@@ -603,14 +613,22 @@ func (s *Service) advanceRefund(ctx context.Context, r domain.Refund) (bool, err
 		if err := r.Settle(); err != nil {
 			return false, nil
 		}
-		if err := s.settleRefund(ctx, r, o); err != nil {
+		if err := s.settleRefund(ctx, r, o, from); err != nil {
+			if errors.Is(err, domain.ErrRefundSettled) {
+				// Somebody escalated it in the moment between this read and this write, so their
+				// move stands and staff decide the case. The escrow refund is keyed on the order,
+				// so a verdict for the buyer finds the money already back rather than sending it
+				// twice.
+				s.log.Debug("refund escalated while settling", "refund_id", r.ID, "err", err)
+				return false, nil
+			}
 			return false, err
 		}
 		return true, nil
 	default:
 		return false, nil
 	}
-	if err := s.saveRefund(ctx, r); err != nil {
+	if err := s.saveRefund(ctx, r, from); err != nil {
 		s.log.Debug("refund already moved", "refund_id", r.ID, "err", err)
 		return false, nil
 	}

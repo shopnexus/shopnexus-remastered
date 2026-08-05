@@ -316,6 +316,10 @@ components:
                     format: date-time
                     nullable: true
                     type: string
+                from_support:
+                    description: |
+                        True on a reply the support desk wrote, in the requester's own view of their ticket thread. Support answers as the platform, so the requester is told that much and no more; staff reading the same thread see the real sender and never this flag, because a colleague's name is what makes a thread reviewable.
+                    type: boolean
                 id:
                     $ref: '#/components/schemas/MessageID'
                 refs:
@@ -326,7 +330,8 @@ components:
                 sender_id:
                     allOf:
                         - $ref: '#/components/schemas/AccountID'
-                    description: Null on a system message.
+                    description: |
+                        Null on a system message, and null on a support reply seen by the requester — see `from_support`, which is how the two are told apart.
                     nullable: true
                 type:
                     $ref: '#/components/schemas/MessageType'

@@ -151,7 +151,7 @@ Mục 4.1–4.4 cũ (về `resource_reference`) đã biến mất cùng bảng �
 
 - [x] **4.1 Listing không gắn được ảnh — đã sửa.** [V] Thêm
       `attachments BIGINT[] NOT NULL DEFAULT '{}'` vào `catalog.product_spu`,
-      `catalog.product_sku`, `order.refund`, `order.refund_dispute`. Cùng khuôn với
+      `catalog.product_sku`, `order.refund`, `trust.review`. Cùng khuôn với
       `chat.message.attachments` vốn đã có (và đã là `BIGINT[]`, không phải `UUID[]` như
       ghi chú cũ). Tổng cộng 5 cột `attachments` trong schema.
       **Mảng có thứ tự và thứ tự đó là dữ liệu**: `attachments[1]` là ảnh cover của
@@ -172,7 +172,7 @@ Mục 4.1–4.4 cũ (về `resource_reference`) đã biến mất cùng bảng �
           UNION SELECT unnest(attachments) FROM catalog.product_sku
           UNION SELECT unnest(attachments) FROM chat.message
           UNION SELECT unnest(attachments) FROM "order".refund
-          UNION SELECT unnest(attachments) FROM "order".refund_dispute
+          UNION SELECT unnest(attachments) FROM trust.review
       )
       SELECT id FROM common.resource WHERE id NOT IN (SELECT rid FROM referenced);
       ```

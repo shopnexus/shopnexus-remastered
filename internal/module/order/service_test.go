@@ -1273,6 +1273,13 @@ func TestRefund_VerdictBooksTheReturnThenPaysTheBuyer(t *testing.T) {
 		t.Fatalf("second EscalateRefund = %+v, %v; want the same refund back", again, err)
 	}
 
+	// A case staff hold is not the seller's to concede: granting it here would reach `returning`
+	// with no verdict published, and the ticket that asked for one could never be closed.
+	if got := status(t, mustErr(h.svc.AcceptRefund(ctx, orderapi.RefundRequest{
+		ActorID: seller, ID: refund.ID,
+	}))); got != 409 {
+		t.Fatalf("status = %d, want 409 for the seller conceding a case staff hold", got)
+	}
 	// The verdict is staff-only.
 	if got := status(t, mustErr(h.svc.AdminResolveRefund(ctx, orderapi.ResolveRefundRequest{
 		ActorID: buyer, ID: refund.ID, BuyerWins: true,
@@ -1378,6 +1385,13 @@ func TestRefund_VerdictBooksTheReturnThenPaysTheBuyer(t *testing.T) {
 		first.Note != "evidence is clear" {
 		t.Fatalf("published = %+v, want the verdict trust closes its ticket on", first)
 	}
+	// The second one too: the case was escalated again after the return, and trust closes that
+	// ticket on this event alone.
+	second := resolved[1]
+	if !second.BuyerWins || second.RefundID != refund.ID.Int64() || second.OrderID != o.ID.Int64() ||
+		second.ModeratorID != admin.Int64() || second.Note != "" {
+		t.Fatalf("published = %+v, want the second verdict signed by the moderator", second)
+	}
 }
 
 // A verdict for the seller ends the case and leaves the payout theirs. Nothing ships and no money
@@ -1408,11 +1422,27 @@ func TestRefund_VerdictForTheSellerEndsIt(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("EscalateRefund: %v", err)
 	}
+	// Trust closes the ticket on the published fact, and it refuses to hand-resolve a refund
+	// dispute — so a verdict for the seller that reached nobody is a ticket stuck for ever.
+	var resolved []order.RefundResolved
+	eventbus.Subscribe(h.bus, order.RefundResolvedTopic, "test",
+		func(_ context.Context, e order.RefundResolved) error {
+			resolved = append(resolved, e)
+			return nil
+		})
 	refused, err := h.moderator().AdminResolveRefund(ctx, orderapi.ResolveRefundRequest{
 		ActorID: admin, ID: refund.ID, BuyerWins: false, Note: "photos match the listing",
 	})
 	if err != nil {
 		t.Fatalf("AdminResolveRefund: %v", err)
+	}
+	h.bus.Wait()
+	if len(resolved) != 1 {
+		t.Fatalf("published = %+v, want the verdict on the bus", resolved)
+	}
+	if verdict := resolved[0]; verdict.BuyerWins || verdict.RefundID != refund.ID.Int64() ||
+		verdict.ModeratorID != admin.Int64() || verdict.Note != "photos match the listing" {
+		t.Fatalf("published = %+v, want a signed verdict for the seller", verdict)
 	}
 	if refused.Status != domain.RefundRejected || refused.DeadlineAt != nil {
 		t.Fatalf("refund = %+v, want it rejected with nobody on the clock", refused)
@@ -1429,6 +1459,197 @@ func TestRefund_VerdictForTheSellerEndsIt(t *testing.T) {
 	h.repo.orders[o.ID.Int64()] = stored
 	if paid, err := h.svc.ReleaseDuePayouts(ctx, 10); err != nil || paid != 1 {
 		t.Fatalf("ReleaseDuePayouts = %d, %v; want the payout to be the seller's again", paid, err)
+	}
+}
+
+// openRefund takes a fixed-price sale to a received order with a live refund on it, which is
+// where the case-flow tests below start.
+func (h *harness) openRefund(t *testing.T) (orderapi.Order, orderapi.Refund) {
+	t.Helper()
+	ctx := context.Background()
+	_, o := h.checkout(t)
+	h.uploads.confirm(42)
+	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
+		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
+	}); err != nil {
+		t.Fatalf("ConfirmReceipt: %v", err)
+	}
+	r, err := h.svc.CreateRefund(ctx, orderapi.CreateRefundRequest{
+		ActorID: buyer, OrderID: o.ID, Reason: "not as described",
+	})
+	if err != nil {
+		t.Fatalf("CreateRefund: %v", err)
+	}
+	return o, r
+}
+
+// The overdue pass loses to an escalation that landed while it held the row. Its list is a work
+// list, not a snapshot: without the `from` guard on the write it settled the stale copy —
+// refunding the escrow, writing `accepted` over `disputed` and cancelling the order — so the
+// seller escalated in time, got no verdict, and trust was left holding a ticket nothing could
+// ever close.
+func TestAdvanceOverdueRefunds_LosesToAnEscalationItDidNotSee(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	o, refund := h.openRefund(t)
+	if _, err := h.svc.AcceptRefund(ctx, orderapi.RefundRequest{ActorID: seller, ID: refund.ID}); err != nil {
+		t.Fatalf("AcceptRefund: %v", err)
+	}
+	if _, err := h.svc.AdvanceReturnShipment(ctx, orderapi.AdvanceReturnShipmentRequest{
+		ActorID: buyer, ID: refund.ID, Status: domain.TransportDelivered,
+	}); err != nil {
+		t.Fatalf("AdvanceReturnShipment: %v", err)
+	}
+	overdue := h.repo.refunds[refund.ID.Int64()]
+	overdue.DeadlineAt = new(overdue.CreatedAt.Add(-1))
+	h.repo.refunds[refund.ID.Int64()] = overdue
+
+	var resolved []order.RefundResolved
+	eventbus.Subscribe(h.bus, order.RefundResolvedTopic, "test",
+		func(_ context.Context, e order.RefundResolved) error {
+			resolved = append(resolved, e)
+			return nil
+		})
+	// The seller escalates what came back, in the moment between the pass reading the row and
+	// writing its own outcome over it.
+	h.repo.onRefundWrite = func() {
+		if _, err := h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
+			ActorID: seller, ID: refund.ID,
+		}); err != nil {
+			t.Errorf("seller EscalateRefund: %v", err)
+		}
+	}
+	if moved, err := h.svc.AdvanceOverdueRefunds(ctx, 10); err != nil || moved != 0 {
+		t.Fatalf("AdvanceOverdueRefunds = %d, %v; want the escalation to win", moved, err)
+	}
+	stored := h.repo.refunds[refund.ID.Int64()]
+	if stored.Status != domain.RefundDisputed {
+		t.Fatalf("refund = %q, want it still with staff", stored.Status)
+	}
+	if h.repo.orders[o.ID.Int64()].Settled() {
+		t.Fatal("the pass closed an order whose refund staff were still being asked about")
+	}
+
+	// And the verdict still decides it, which is the whole point: the escrow transfer is keyed on
+	// the order, so paying the buyer here is the same movement rather than a second one.
+	settled, err := h.moderator().AdminResolveRefund(ctx, orderapi.ResolveRefundRequest{
+		ActorID: admin, ID: refund.ID, BuyerWins: true, Note: "the item came back broken",
+	})
+	if err != nil {
+		t.Fatalf("AdminResolveRefund: %v", err)
+	}
+	if settled.Status != domain.RefundAccepted || h.finance.refunded != 100_000 {
+		t.Fatalf("refund = %q refunded = %d, want the verdict to pay the buyer once",
+			settled.Status, h.finance.refunded)
+	}
+	h.bus.Wait()
+	if len(resolved) != 1 || !resolved[0].BuyerWins {
+		t.Fatalf("published = %+v, want exactly the verdict trust closes its ticket on", resolved)
+	}
+}
+
+// A case with staff is never moved by a clock, even with a stale deadline left on the row: a
+// human decides it, and only a published verdict closes the ticket that asked for one.
+func TestAdvanceOverdueRefunds_SkipsACaseWithStaff(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, refund := h.openRefund(t)
+	if _, err := h.svc.RejectRefund(ctx, orderapi.RejectRefundRequest{
+		ActorID: seller, ID: refund.ID, Reason: "sent as described",
+	}); err != nil {
+		t.Fatalf("RejectRefund: %v", err)
+	}
+	if _, err := h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
+		ActorID: buyer, ID: refund.ID,
+	}); err != nil {
+		t.Fatalf("EscalateRefund: %v", err)
+	}
+	// Escalating clears the deadline, so the pass cannot even see it; put one back to prove the
+	// status is what decides, not the column.
+	disputed := h.repo.refunds[refund.ID.Int64()]
+	if disputed.DeadlineAt != nil {
+		t.Fatalf("refund = %+v, want nobody on the clock while staff hold it", disputed)
+	}
+	disputed.DeadlineAt = new(disputed.CreatedAt.Add(-1))
+	h.repo.refunds[refund.ID.Int64()] = disputed
+	if moved, err := h.svc.AdvanceOverdueRefunds(ctx, 10); err != nil || moved != 0 {
+		t.Fatalf("AdvanceOverdueRefunds = %d, %v; want a disputed case left alone", moved, err)
+	}
+	if h.repo.refunds[refund.ID.Int64()].Status != domain.RefundDisputed {
+		t.Fatalf("refund = %q, want it still with staff", h.repo.refunds[refund.ID.Int64()].Status)
+	}
+}
+
+// Escalating a case whose order has already settled is refused. A verdict moves the escrow, so
+// there would be nothing for staff to decide — and the ticket trust opens on the back of this
+// closes only on a published verdict, so the escalation would strand it for ever.
+func TestEscalateRefund_RefusedOnceTheOrderHasSettled(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	o, refund := h.openRefund(t)
+	if _, err := h.svc.RejectRefund(ctx, orderapi.RejectRefundRequest{
+		ActorID: seller, ID: refund.ID, Reason: "sent as described",
+	}); err != nil {
+		t.Fatalf("RejectRefund: %v", err)
+	}
+	// The parcel never left, so the buyer can still cancel the order under their own live refund.
+	if _, err := h.svc.CancelOrder(ctx, orderapi.CancelOrderRequest{ActorID: buyer, ID: o.ID}); err != nil {
+		t.Fatalf("CancelOrder: %v", err)
+	}
+	if got := status(t, mustErr(h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
+		ActorID: buyer, ID: refund.ID,
+	}))); got != 409 {
+		t.Fatalf("status = %d, want 409 escalating a case whose escrow has gone", got)
+	}
+	if stored := h.repo.refunds[refund.ID.Int64()]; stored.Status != domain.RefundAwaitingBuyer {
+		t.Fatalf("refund = %q, want it left where it was", stored.Status)
+	}
+}
+
+// Two moderators pressing the verdict at once decide it once. Both read `disputed`, so without
+// the `from` guard both wrote — two return legs, the refund pointing at the second, and the
+// verdict published twice, which is two closures of one ticket.
+func TestAdminResolveRefund_TwoModeratorsDecideItOnce(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, refund := h.openRefund(t)
+	if _, err := h.svc.RejectRefund(ctx, orderapi.RejectRefundRequest{
+		ActorID: seller, ID: refund.ID, Reason: "sent as described",
+	}); err != nil {
+		t.Fatalf("RejectRefund: %v", err)
+	}
+	if _, err := h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
+		ActorID: buyer, ID: refund.ID,
+	}); err != nil {
+		t.Fatalf("EscalateRefund: %v", err)
+	}
+	var resolved []order.RefundResolved
+	eventbus.Subscribe(h.bus, order.RefundResolvedTopic, "test",
+		func(_ context.Context, e order.RefundResolved) error {
+			resolved = append(resolved, e)
+			return nil
+		})
+	mod := h.moderator()
+	// The second press lands first, between this one's read and its write.
+	h.repo.onRefundWrite = func() {
+		if _, err := mod.AdminResolveRefund(ctx, orderapi.ResolveRefundRequest{
+			ActorID: admin, ID: refund.ID, BuyerWins: true, Note: "evidence is clear",
+		}); err != nil {
+			t.Errorf("concurrent AdminResolveRefund: %v", err)
+		}
+	}
+	if got := status(t, mustErr(mod.AdminResolveRefund(ctx, orderapi.ResolveRefundRequest{
+		ActorID: admin, ID: refund.ID, BuyerWins: true, Note: "evidence is clear",
+	}))); got != 409 {
+		t.Fatalf("status = %d, want the loser told the verdict is in", got)
+	}
+	stored := h.repo.refunds[refund.ID.Int64()]
+	if stored.Status != domain.RefundReturning || stored.ReturnTransportID == nil {
+		t.Fatalf("refund = %+v, want one granted case with one leg", stored)
+	}
+	h.bus.Wait()
+	if len(resolved) != 1 {
+		t.Fatalf("published = %+v, want one verdict for one ticket", resolved)
 	}
 }
 

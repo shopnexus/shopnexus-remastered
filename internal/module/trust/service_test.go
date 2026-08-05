@@ -208,9 +208,11 @@ func newHarness(state string) *harness {
 		accounts: accounts, uploads: uploads, images: uploads.confirmed}
 }
 
+// status is the status the gateway would answer. It translates a validator error the way the edge
+// does, so a test can pin a field the contract refuses as the 400 a client actually receives.
 func status(t *testing.T, err error) uint16 {
 	t.Helper()
-	s, _, _, ok := errx.Decompose(err)
+	s, _, _, ok := errx.Decompose(validation.AsError(err))
 	if !ok {
 		t.Fatalf("expected a coded error, got %v", err)
 	}
@@ -1140,7 +1142,7 @@ func TestOpenTicket_RefundDisputeEscalatesInOrderFirst(t *testing.T) {
 		t.Fatalf("AdminClaimTicket: %v", err)
 	}
 	if got := status(t, mustErr(h.svc.AdminResolveTicket(ctx, trustapi.ResolveTicketRequest{
-		ActorID: moderator, ID: filed.ID, ActionTaken: domain.ActionRefundGranted,
+		ActorID: moderator, ID: filed.ID, ActionTaken: domain.ActionNone,
 	}))); got != 409 {
 		t.Fatalf("status = %d, want 409 for a verdict that belongs to order", got)
 	}
@@ -1172,6 +1174,94 @@ func TestOpenTicket_RefundDisputeEscalatesInOrderFirst(t *testing.T) {
 		RefundID: id.ID[id.Refund](999), ModeratorID: moderator,
 	}); err != nil {
 		t.Fatalf("RecordRefundVerdict for an unknown refund: %v", err)
+	}
+}
+
+// Both parties may escalate one refund and the index holds one open ticket per *requester* per
+// target, so two tickets about one refund is a legal state. Order publishes one verdict, so it has
+// to close all of them: a refund dispute cannot be resolved by hand, which makes a ticket left open
+// on a decided refund a queue entry with no possible answer.
+func TestRecordRefundVerdict_ClosesEveryTicketAboutTheRefund(t *testing.T) {
+	h := newHarness("completed")
+	ctx := context.Background()
+	refundID := id.ID[id.Refund](55)
+	requesters := []id.ID[id.Account]{buyer, seller}
+	filed := make([]id.ID[id.Ticket], 0, len(requesters))
+	for _, requester := range requesters {
+		one, err := h.svc.OpenTicket(ctx, trustapi.OpenTicketRequest{
+			ActorID: requester, Kind: domain.KindRefundDispute, Subject: "Hàng không đúng mô tả",
+			RefID: refundID.String(),
+		})
+		if err != nil {
+			t.Fatalf("OpenTicket by %v: %v", requester, err)
+		}
+		filed = append(filed, one.ID)
+	}
+	if err := h.svc.RecordRefundVerdict(ctx, trustapi.RecordRefundVerdictRequest{
+		RefundID: refundID, ModeratorID: moderator, Note: "hàng về đúng mô tả",
+	}); err != nil {
+		t.Fatalf("RecordRefundVerdict: %v", err)
+	}
+	for i, ticketID := range filed {
+		got, err := h.svc.GetTicket(ctx, trustapi.TicketRequest{ActorID: requesters[i], ID: ticketID})
+		if err != nil {
+			t.Fatalf("GetTicket: %v", err)
+		}
+		if got.Status != domain.StatusResolved || got.ActionTaken == nil ||
+			*got.ActionTaken != domain.ActionRefundRefused {
+			t.Fatalf("ticket = %+v, want the verdict recorded on every ticket about the refund", got)
+		}
+	}
+	// Each requester is answered in their own thread, since each raised their own case.
+	if len(h.chat.posted) != len(filed) {
+		t.Fatalf("posted = %+v, want the verdict in every thread", h.chat.posted)
+	}
+}
+
+// A ticket about nothing in particular — a feature request, a payment question — stores no target at
+// all, and the moderator read has to answer that rather than dereference it.
+func TestAdminGetTicket_ATicketAboutNothing(t *testing.T) {
+	h := newHarness("completed")
+	ctx := context.Background()
+	filed, err := h.svc.OpenTicket(ctx, trustapi.OpenTicketRequest{
+		ActorID: buyer, Kind: domain.KindFeatureRequest, Subject: "Cho phép lọc theo tỉnh",
+	})
+	if err != nil {
+		t.Fatalf("OpenTicket: %v", err)
+	}
+	entry, err := h.svc.AdminGetTicket(ctx, trustapi.TicketRequest{ActorID: moderator, ID: filed.ID})
+	if err != nil {
+		t.Fatalf("AdminGetTicket: %v", err)
+	}
+	if entry.Target != nil || entry.OpenTicketsAgainstTarget != 0 {
+		t.Fatalf("entry = %+v, want no target on a ticket about nothing", entry)
+	}
+	if _, err := h.svc.AdminListTickets(ctx, trustapi.AdminListTicketsRequest{
+		ActorID: moderator, Limit: 10,
+	}); err != nil {
+		t.Fatalf("AdminListTickets: %v", err)
+	}
+}
+
+// A reason is a report's grounds, in both directions: a report with none is refused, and one on a
+// payment question is refused rather than dropped — a 201 whose ticket lost a field the client sent
+// says the platform recorded something it did not.
+func TestOpenTicket_AReasonBelongsToAReport(t *testing.T) {
+	h := newHarness("completed")
+	ctx := context.Background()
+	if got := status(t, mustErr(h.svc.OpenTicket(ctx, trustapi.OpenTicketRequest{
+		ActorID: buyer, Kind: domain.KindPayment, Subject: "Chưa nhận được tiền", Reason: "scam",
+	}))); got != 422 {
+		t.Fatalf("status = %d, want 422 for a reason on a kind that has none", got)
+	}
+	if len(h.repo.tickets) != 0 {
+		t.Fatalf("tickets = %+v, want none written", h.repo.tickets)
+	}
+	if got := status(t, mustErr(h.svc.OpenTicket(ctx, trustapi.OpenTicketRequest{
+		ActorID: buyer, Kind: domain.KindReportListing, Subject: "Hàng giả",
+		RefID: listingID.String(),
+	}))); got != 422 {
+		t.Fatalf("status = %d, want 422 for a report with no reason", got)
 	}
 }
 
@@ -1388,12 +1478,15 @@ func TestTicketQueue_ClaimThenResolve(t *testing.T) {
 		t.Fatalf("status = %d, want 409", got)
 	}
 
-	// An action nobody defined is refused rather than stored as free text a report reader has to
-	// interpret.
-	if err := mustErr(h.svc.AdminResolveTicket(ctx, trustapi.ResolveTicketRequest{
-		ActorID: moderator, ID: filed.ID, ActionTaken: "listing-deleted-maybe",
-	})); err == nil {
-		t.Fatal("an action that is not one was accepted")
+	// The contract itself is what refuses an action this route does not have: one nobody defined, and
+	// the two refund-* values, which only order's verdict writes. Both are a 400 on the field rather
+	// than free text a report reader has to interpret.
+	for _, action := range []string{"listing-deleted-maybe", domain.ActionRefundGranted} {
+		if got := status(t, mustErr(h.svc.AdminResolveTicket(ctx, trustapi.ResolveTicketRequest{
+			ActorID: moderator, ID: filed.ID, ActionTaken: action,
+		}))); got != 400 {
+			t.Fatalf("status = %d for %q, want 400", got, action)
+		}
 	}
 	resolved, err := h.svc.AdminResolveTicket(ctx, trustapi.ResolveTicketRequest{
 		ActorID: moderator, ID: filed.ID, ActionTaken: domain.ActionListingRemoved,

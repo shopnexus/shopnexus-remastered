@@ -219,7 +219,18 @@ components:
       type: object
       properties:
         id: { $ref: '#/components/schemas/ConversationID' }
-        counterparty: { $ref: '#/components/schemas/AccountSummary' }
+        counterparty:
+          allOf: [{ $ref: '#/components/schemas/AccountSummary' }]
+          description: >
+            The other side. On a ticket thread that is the support desk for the requester and the
+            requester for staff — a moderator answering a ticket is not a side of the row, so every
+            viewer-relative field here is computed as the desk for them.
+        ticket_id:
+          allOf: [{ $ref: '#/components/schemas/TicketID' }]
+          nullable: true
+          description: >
+            Set when this thread is a support ticket's, null on an ordinary one. A ticket is read
+            in the support screen rather than the inbox, so a client tells them apart from the row.
         last_message: { allOf: [{ $ref: '#/components/schemas/Message' }], nullable: true }
         last_message_at:
           type: string

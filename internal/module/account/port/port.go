@@ -63,6 +63,10 @@ type Repository interface {
 	// the caller does not say which kind it sent.
 	GetByIdentifier(ctx context.Context, identifier string) (*domain.Account, error)
 	GetByEmail(ctx context.Context, email string) (*domain.Account, error)
+	// GetSupportAccount reads the support desk's own row — the second side of every ticket thread —
+	// by its role, which is the one thing about it a user cannot register. A deployment that never
+	// seeded it answers domain.ErrSupportAccountMissing rather than some other account.
+	GetSupportAccount(ctx context.Context) (*domain.Account, error)
 	// GetByOAuth is the one account read that cannot start from an id.
 	GetByOAuth(ctx context.Context, provider, providerUID string) (*domain.Account, error)
 	// Save validates the aggregate and writes the root, its links and the audit rows for

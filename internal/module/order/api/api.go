@@ -391,7 +391,7 @@ type OrderRequest struct {
 type ConfirmReceiptRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	ID      id.ID[id.Order]   `json:"-" validate:"required"`
-	// At least one is mandatory: a later refund or dispute is judged on this evidence.
+	// At least one is mandatory: a later refund is judged on this evidence.
 	Attachments []id.ID[id.Resource] `json:"attachments" validate:"required,min=1,max=10"`
 }
 
@@ -474,7 +474,7 @@ type ResolveRefundRequest struct {
 // CreateUploadRequest asks for a slot to PUT evidence into — the unboxing photos a buyer
 // attaches confirming receipt, or the photos on a refund. The bytes never pass through the
 // API: the answer is a short-lived signed URL, and a second call confirms the row once the
-// object is there — so a dispute can never be judged on a photo whose bytes never arrived.
+// object is there — so a refund can never be judged on a photo whose bytes never arrived.
 type CreateUploadRequest struct {
 	ActorID  id.ID[id.Account] `json:"-" validate:"required"`
 	Filename string            `json:"filename" validate:"required,max=255"`

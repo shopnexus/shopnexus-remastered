@@ -101,11 +101,12 @@ components:
             type: string
         AccountRole:
             description: |
-                `user` self-registers and both buys and sells. `moderator` is granted by an admin. `admin` is configured, not created.
+                `user` self-registers and both buys and sells. `moderator` is granted by an admin. `admin` is configured, not created. `support` is the support desk's own row — the second side of every ticket thread, held by exactly one account and granted by no route.
             enum:
                 - user
                 - moderator
                 - admin
+                - support
             type: string
         AccountStatus:
             enum:
@@ -648,7 +649,10 @@ components:
         Conversation:
             properties:
                 counterparty:
-                    $ref: '#/components/schemas/AccountSummary'
+                    allOf:
+                        - $ref: '#/components/schemas/AccountSummary'
+                    description: |
+                        The other side. On a ticket thread that is the support desk for the requester and the requester for staff — a moderator answering a ticket is not a side of the row, so every viewer-relative field here is computed as the desk for them.
                 counterparty_read_at:
                     description: |
                         How far the other side has read. This is the read receipt: a message the caller sent is seen when this is at or past its `created_at`, which is why no message carries a delivery status of its own.
@@ -674,6 +678,12 @@ components:
                     format: date-time
                     nullable: true
                     type: string
+                ticket_id:
+                    allOf:
+                        - $ref: '#/components/schemas/TicketID'
+                    description: |
+                        Set when this thread is a support ticket's, null on an ordinary one. A ticket is read in the support screen rather than the inbox, so a client tells them apart from the row.
+                    nullable: true
                 unread:
                     description: The counterparty's messages after the caller's read mark.
                     example: 3
@@ -1872,6 +1882,10 @@ components:
                     format: date-time
                     nullable: true
                     type: string
+                from_support:
+                    description: |
+                        True on a reply the support desk wrote, in the requester's own view of their ticket thread. Support answers as the platform, so the requester is told that much and no more; staff reading the same thread see the real sender and never this flag, because a colleague's name is what makes a thread reviewable.
+                    type: boolean
                 id:
                     $ref: '#/components/schemas/MessageID'
                 refs:
@@ -1882,7 +1896,8 @@ components:
                 sender_id:
                     allOf:
                         - $ref: '#/components/schemas/AccountID'
-                    description: Null on a system message.
+                    description: |
+                        Null on a system message, and null on a support reply seen by the requester — see `from_support`, which is how the two are told apart.
                     nullable: true
                 type:
                     $ref: '#/components/schemas/MessageType'
@@ -2148,7 +2163,8 @@ components:
                 reason:
                     allOf:
                         - $ref: '#/components/schemas/TicketReason'
-                    description: Report kinds only.
+                    description: |
+                        Required for the five `report-*` kinds, refused for every other one — 422 either way. It depends on `kind`, so it cannot be listed in `required`.
                 ref_id:
                     description: Required for the kinds that are about something, refused for the others.
                     example: lst_1ryaj8117v2p4
@@ -2946,9 +2962,8 @@ components:
             properties:
                 action_taken:
                     allOf:
-                        - $ref: '#/components/schemas/TicketAction'
-                    description: |
-                        Required. `none` is the turn-down; anything else names what was done. The two `refund-*` values are what order's verdict records on the ticket it closes.
+                        - $ref: '#/components/schemas/TicketResolutionAction'
+                    description: Required. `none` is the turn-down; anything else names what was done.
                 note:
                     example: đã xác nhận hàng giả
                     maxLength: 2000
@@ -3559,7 +3574,7 @@ components:
             type: object
         TicketAction:
             description: |
-                What was done about it. `none` is a ticket read and answered with nothing done — the turn-down, which is why it is a value here and not a second status. The two `refund-*` ones are written by order's verdict route, never by hand.
+                What was done about it. `none` is a ticket read and answered with nothing done — the turn-down, which is why it is a value here and not a second status. The two `refund-*` ones are written by order's verdict route and are not in the set `POST /admin/tickets/{id}/resolution` accepts — see `TicketResolutionAction`.
             enum:
                 - none
                 - listing-removed
@@ -3622,6 +3637,16 @@ components:
                 - review-reply
                 - order
                 - refund
+            type: string
+        TicketResolutionAction:
+            description: |
+                What a moderator may record by hand. Narrower than the ticket's own `action_taken`, which also has the two `refund-*` values: those are written by order's verdict route, because that is where the money moves. Sending one here is a 400 on the field.
+            enum:
+                - none
+                - listing-removed
+                - message-removed
+                - account-suspended
+                - warning
             type: string
         TicketStatus:
             description: |
@@ -5513,7 +5538,11 @@ paths:
                                 type: object
                     description: Resolved
                 "400":
-                    $ref: '#/components/responses/BadRequest'
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: The body is invalid, or `action_taken` is not one a moderator records by hand
                 "401":
                     $ref: '#/components/responses/Unauthorized'
                 "403":
@@ -9578,7 +9607,7 @@ paths:
     /refunds/{id}/return-transport/checkpoints:
         post:
             description: |
-                The return leg exists only from the moment a refund is granted, and `delivered` is what moves the case to `returned` and opens the seller's appeal window. It is the only exit from `returning`.
+                The return leg exists only from the moment a refund is granted, and `delivered` is what moves the case to `returned` and opens the seller's inspection window. It is the only exit from `returning`.
 
                 Either party to the order may report it. The buyer posted the parcel and the seller received it, and requiring the seller alone would let one who simply never confirms strand the escrow with nobody on a clock — which is what having no writer at all did. A buyer who claims a delivery that did not happen is answered by the seller escalating, which is exactly what that window is for.
             parameters:
@@ -10156,7 +10185,7 @@ paths:
                 - trust
         post:
             description: |
-                `ref_id` is required exactly for the kinds that are about something — the report kinds, `refund-dispute`, `order-issue` — and its prefix has to agree with the kind. `reason` belongs to the report kinds and to no other.
+                `ref_id` is required exactly for the kinds that are about something — the report kinds, `refund-dispute`, `order-issue` — and its prefix has to agree with the kind. `reason` is required for the five `report-*` kinds and refused on every other one: it is what a report says is wrong. Both rules depend on `kind`, so neither can be a `required` in the schema — breaking either is 422.
 
                 `body` and `attachments` open the thread: they are posted as the first message, and everything said afterwards is ordinary chat.
 
@@ -10206,7 +10235,11 @@ paths:
                                 $ref: '#/components/schemas/Error'
                     description: You already have an open ticket about this, or the refund cannot be escalated now
                 "422":
-                    $ref: '#/components/responses/UnprocessableEntity'
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: '`ref_id` or `reason` is not what this `kind` requires — missing where it is needed, or sent where it does not belong'
             security:
                 - bearerAuth: []
             summary: Raise a ticket

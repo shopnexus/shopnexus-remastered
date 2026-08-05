@@ -74,7 +74,9 @@ var (
 
 	// --- refunds ---
 	ErrRefundNotFound = errx.NewError(http.StatusNotFound, "refund_not_found", "refund not found")
-	ErrRefundSettled  = errx.NewError(http.StatusConflict, "refund_settled", "this refund is already settled")
+	// ErrRefundSettled is a write that lost: the case is finished, or it moved while the caller held
+	// an older copy of it. One answer for both, because the caller's remedy is the same — re-read.
+	ErrRefundSettled = errx.NewError(http.StatusConflict, "refund_settled", "this refund has moved on")
 	// ErrRefundAlreadyOpen is a second refund on one order. A refund covers the whole
 	// order, so there is nothing a second one could be about.
 	ErrRefundAlreadyOpen    = errx.NewError(http.StatusConflict, "refund_already_open", "a refund on this order is already open")

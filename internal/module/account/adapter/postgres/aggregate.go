@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -65,6 +66,18 @@ func (r *Repo) GetByIdentifier(ctx context.Context, identifier string) (*domain.
 
 func (r *Repo) GetByEmail(ctx context.Context, email string) (*domain.Account, error) {
 	return loadAggregate(ctx, r.pool, `WHERE email = @key`, pgx.NamedArgs{"key": email})
+}
+
+// GetSupportAccount reads the desk by its role — a key lookup, since a partial unique index keeps
+// the role to one row. Missing is its own error rather than "account not found": there is nothing
+// for a client to correct, and answering with any other row would give it every ticket thread.
+func (r *Repo) GetSupportAccount(ctx context.Context) (*domain.Account, error) {
+	a, err := loadAggregate(ctx, r.pool,
+		`WHERE role = '`+string(domain.RoleSupport)+`'`, pgx.NamedArgs{})
+	if errors.Is(err, domain.ErrAccountNotFound) {
+		return nil, domain.ErrSupportAccountMissing
+	}
+	return a, err
 }
 
 // GetByOAuth resolves a provider's subject straight to the account, so a federated

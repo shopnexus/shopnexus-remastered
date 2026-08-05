@@ -1,5 +1,5 @@
 // Package trust implements trustapi.Service — order feedback, product reviews with their
-// replies and votes, per-account reputation, and abuse reports.
+// replies and votes, per-account reputation, and the tickets users raise.
 //
 // Reputation is never written through the API: it is folded in by the same transaction that
 // publishes a rating or writes a review, so a visible rating is always a counted one.
@@ -31,7 +31,7 @@ const repliesOnAPage = 3
 
 type Service struct {
 	repo port.Repository
-	// accounts answers the caller's role and the names beside a review or a report; catalog
+	// accounts answers the caller's role and the names beside a review or a ticket; catalog
 	// answers who owns a listing and caches its rating; order says whether a sale is
 	// finished and what it covered; chat hands a moderator the reported message.
 	accounts accountapi.Service

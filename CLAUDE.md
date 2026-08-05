@@ -347,12 +347,16 @@ give it its own doc under `docs/` and link it from here.
   Whatever fails after the claim hands it back (`ReleaseOfferCheckout`), because a buyer whose
   ledger blinked should retry rather than renegotiate. `item.offer_id` and `item.draft_id` are
   UNIQUE behind all of it, since a constraint holds when a service is wrong.
-- **A guarded write names the statuses it moves out of.** `SaveOffer(ctx, o, from)` — `active` for
+- **A guarded write names the statuses it moves out of.** `SaveRefund(ctx, r, from)`, `SaveOffer(ctx, o, from)` — `active` for
   a counter, an acceptance or a withdrawal; `active|accepted` for an expiry. A fixed `from` covering
   every status is a lost update wearing a guard: a counter that read the row before somebody else's
   acceptance landed would put terms back on a table that was already agreed, and the buyer holding
   a 200 "agreed" would then be told their checkout has nothing to check out. Same rule as
-  `Version` on an aggregate — a stale read has to lose.
+  `Version` on an aggregate — a stale read has to lose. Naming only the *terminal* statuses is the
+  version of this guard that looks right and is not: the overdue-refund sweep reads a batch of 100 and
+  works through them one finance call at a time, so a `returned` copy of a row somebody escalated in
+  the meantime would settle it — refunding the escrow with no verdict, and leaving a ticket nothing
+  can close.
 - **Agreeing to a price is not the sale; the buyer's checkout is.** (Nor is negotiating the only
   way to buy a `negotiable` listing — the asking price is takeable, see above.) Either party may
   accept the terms on the table — whoever does *not* own the standing proposal, since the two sides
@@ -420,6 +424,23 @@ give it its own doc under `docs/` and link it from here.
   from the kind and is never sent) and whether a report's `reason` is allowed. There is no `report`
   table and no `dispute` table: seven statuses across three tables were one lifecycle written three
   times, and a user asking "where are my requests" had three places to look.
+- **The desk is identified by its role, not by its name.** `account.role = 'support'` behind a partial
+  unique index, seeded by a migration, is what `GetSupportAccount` looks up — because a *username* is
+  something a user can register, and whoever held `support` would otherwise have answered "who is
+  support" and become a side of every ticket thread on the platform, reading every complaint. The
+  reserved-username guard stays as the second line, and a deployment that never seeded the row fails
+  loudly at the first ticket (`ErrSupportAccountMissing`, 500) rather than picking somebody's account.
+- **Staff answering a ticket act *as the desk* wherever a value is viewer-relative, and as themselves
+  wherever a sender is.** One helper (`chat.Service.side`) decides it once: a moderator is not a side
+  of the row, so the counterparty, the read marks and the unread count are computed for the desk —
+  which is also what makes the read mark shared, so the next moderator inherits it and the requester's
+  receipt says support looked. Message senders are never mapped, or anonymising for the desk would
+  blank the requester's own words for the staff reading them. The anonymisation has to happen on
+  **every** projection of a message, not just the thread: `last_message` on an inbox row leaked a
+  moderator's account id, and `GET /accounts/{id}` needs no token to turn that into a name.
+- **Support is reached by raising a ticket, never by messaging the desk.** Its id is public — it is the
+  counterparty of every ticket thread — and a direct thread with it is one no moderator can read, so
+  `StartConversation` refuses it instead of accepting words nobody will ever see.
 - **A ticket's requester-side view is a conversation, so it stores no body and takes no uploads.**
   `POST /tickets`'s `body` and `attachments` become the **first message** of a `kind = 'ticket'`
   thread (`chat.conversation.ticket_id`, UNIQUE), and everything after that is ordinary chat — the
@@ -433,6 +454,10 @@ give it its own doc under `docs/` and link it from here.
   read.** The ticket lands first and `OpenTicketThread` is idempotent on `ticket_id`, so a chat
   outage leaves a mute ticket rather than a lost complaint, and `GetTicket` opens the thread the
   next time it is read. Losing the conversation must never lose the ticket.
+- **A verdict closes *every* open ticket about the thing it decided.** One open ticket per requester
+  per target is what the index holds, and both parties to a refund may escalate, so a lookup that
+  answered one row left the other open for ever — and unclosable, since a `refund-dispute` has no hand
+  resolution. `OpenTicketsAgainst(refType, refID)` returns the set and the verdict walks it.
 - **A verdict that moves money is decided where the money is, and it closes the ticket itself.**
   Opening a `refund-dispute` ticket escalates the refund in order **before** the row is written (so a
   refund order will not escalate produces no queue entry with no possible answer), and staff then

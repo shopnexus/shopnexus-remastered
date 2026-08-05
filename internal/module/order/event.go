@@ -56,9 +56,11 @@ func publishOrderSettled(ctx context.Context, bus eventbus.Client, event OrderSe
 // reasoning on the refund row, and the ticket is where that decision is read.
 type RefundResolved struct {
 	RefundID int64 `json:"refund_id"`
-	OrderID  int64 `json:"order_id"`
-	BuyerID  int64 `json:"buyer_id"`
-	SellerID int64 `json:"seller_id"`
+	// OrderID is what the verdict was about: the escrow, which lives on the order. A refund id is
+	// only resolvable inside this module, so a subscriber that carries the fact anywhere else has
+	// nothing to name the sale by. The two parties are not here — nobody reads them, and a
+	// published payload should not carry accounts for no reader.
+	OrderID int64 `json:"order_id"`
 	// ModeratorID is who decided. The ticket trust closes on this records an author, and a verdict
 	// nobody signed is one nobody can be asked about.
 	ModeratorID int64 `json:"moderator_id"`

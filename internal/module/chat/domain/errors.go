@@ -16,6 +16,10 @@ var (
 	// about — so this is for a write that got past the lookup.
 	ErrNotAParticipant  = errx.NewError(http.StatusForbidden, "not_a_participant", "you are not part of this conversation")
 	ErrSelfConversation = errx.NewError(http.StatusUnprocessableEntity, "self_conversation", "a conversation needs two different accounts")
+	// ErrConversationWithSupport is a direct thread opened with the support desk. Support is reached
+	// by raising a ticket: the desk's id is public, and nobody is signed in as it, so a direct thread
+	// with it is one no moderator would ever read.
+	ErrConversationWithSupport = errx.NewError(http.StatusUnprocessableEntity, "conversation_with_support", "raise a ticket to reach support")
 	// ErrNotTheSender is editing or redacting somebody else's message. A moderator
 	// redacts through the report flow, not through this route.
 	ErrNotTheSender = errx.NewError(http.StatusForbidden, "not_the_sender", "only the sender can change this message")

@@ -363,7 +363,7 @@ type AdminListAccountsRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	Query   string            `json:"-" validate:"max=255"`
 	Status  string            `json:"-" validate:"omitempty,oneof=active suspended"`
-	Role    string            `json:"-" validate:"omitempty,oneof=user moderator admin"`
+	Role    string            `json:"-" validate:"omitempty,oneof=user moderator admin support"`
 	Page    int               `json:"-" validate:"required,min=1"`
 	Limit   int               `json:"-" validate:"required,min=1,max=100"`
 }

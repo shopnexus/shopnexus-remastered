@@ -66,7 +66,7 @@ paths:
       summary: Report a checkpoint on the leg carrying the goods back
       description: >
         The return leg exists only from the moment a refund is granted, and `delivered` is what
-        moves the case to `returned` and opens the seller's appeal window. It is the only exit
+        moves the case to `returned` and opens the seller's inspection window. It is the only exit
         from `returning`.
 
 

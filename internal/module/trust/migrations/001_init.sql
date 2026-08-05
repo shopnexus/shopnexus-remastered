@@ -4,10 +4,11 @@
 -- Schema: trust
 -- Description: Two-way transaction feedback, product reviews with their replies
 --              and helpfulness votes, per-account reputation aggregates
---              (as-seller / as-buyer), and the ticket queue — abuse reports, refund
---              admin resolution workflow. Every rating in this module is on the
---              same 1..5 scale. Cross-module refs (account_id, order_id, listing_id,
---              reported ref_id) carry no FK.
+--              (as-seller / as-buyer), and the ticket queue — everything a user
+--              raises (abuse reports, refund disputes, support requests) and how
+--              staff resolve it. Every rating in this module is on the same 1..5
+--              scale. Cross-module refs (account_id, order_id, listing_id, a
+--              ticket's ref_id) carry no FK.
 -- =============================================
 
 -- Enums

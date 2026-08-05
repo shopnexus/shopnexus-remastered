@@ -1,6 +1,6 @@
 // Package trustapi is the published contract of the trust service: two-way order
 // feedback, product reviews with their replies and helpfulness votes, per-account
-// reputation, and abuse reports with a moderator surface.
+// reputation, and the tickets users raise — with a moderator surface over them.
 //
 // Two ratings that are deliberately not the same thing. Feedback rates the other party of
 // one order and runs in both directions; a review rates the product and only a buyer
@@ -296,7 +296,8 @@ type OpenTicketRequest struct {
 	// RefID is opaque and kinded by Kind, so the two are validated together: a report about a
 	// listing needs a listing id, and a feature request needs none.
 	RefID string `json:"ref_id,omitempty"`
-	// Reason belongs to the report kinds and to no other.
+	// Reason is required for the report kinds and refused on every other, since a reason is what a
+	// report says is wrong. Checked against Kind, so it cannot be a `required` tag here.
 	Reason      string               `json:"reason,omitempty" validate:"omitempty,oneof=scam counterfeit prohibited harassment spam inappropriate other"`
 	Body        string               `json:"body,omitempty" validate:"max=4000"`
 	Attachments []id.ID[id.Resource] `json:"attachments,omitempty" validate:"max=10"`
@@ -324,8 +325,9 @@ type TicketRequest struct {
 	ID      id.ID[id.Ticket]  `json:"-" validate:"required"`
 }
 
-// RecordRefundVerdictRequest is order's verdict, arriving on the bus. The refund identifies the
-// ticket — one open ticket per target is what makes that a lookup rather than a search.
+// RecordRefundVerdictRequest is order's verdict, arriving on the bus. The refund names the tickets
+// it closes — however many: only one open ticket per *requester* per target is held, so both parties
+// to one refund may have escalated it and a single verdict answers all of them.
 type RecordRefundVerdictRequest struct {
 	RefundID    id.ID[id.Refund]  `json:"-" validate:"required"`
 	ModeratorID id.ID[id.Account] `json:"-" validate:"required"`
@@ -338,7 +340,11 @@ type ResolveTicketRequest struct {
 	ID      id.ID[id.Ticket]  `json:"-" validate:"required"`
 	// ActionTaken is what was done. `none` is the turn-down, which is why it is a value here rather
 	// than a second status: a ticket read and answered with nothing done is still answered.
-	ActionTaken string `json:"action_taken" validate:"required,oneof=none listing-removed message-removed account-suspended warning refund-granted refund-refused"`
+	//
+	// Narrower than the ticket's own action: the two `refund-*` values are what order's verdict
+	// records on its way out, so accepting one here would let a listing report be closed as a refund
+	// nobody paid.
+	ActionTaken string `json:"action_taken" validate:"required,oneof=none listing-removed message-removed account-suspended warning"`
 	Note        string `json:"note,omitempty" validate:"max=2000"`
 }
 

@@ -28,7 +28,9 @@ const (
 const (
 	SellerReviewWindow = 48 * time.Hour
 	BuyerActionWindow  = 72 * time.Hour
-	SellerAppealWindow = 48 * time.Hour
+	// SellerInspectionWindow is how long the seller has to escalate what came back before the
+	// return settles for the buyer.
+	SellerInspectionWindow = 48 * time.Hour
 )
 
 // Refund always covers the whole order, so there is no partial amount anywhere in the flow.
@@ -87,15 +89,25 @@ func (r *Refund) Withdraw() error {
 
 // Accept is the seller granting it. The goods come back first: the return leg exists only
 // from here, because a refund that never gets granted never ships anything.
+//
+// Only from their own window: a case that has been escalated is staff's to decide, and a seller
+// conceding it would reach `returning` with no verdict published, which leaves trust holding a
+// ticket nothing can ever close.
 func (r *Refund) Accept() error {
-	if r.Status != RefundAwaitingSeller && r.Status != RefundDisputed {
+	if r.Status != RefundAwaitingSeller {
 		return ErrNotAwaitingSeller
 	}
 	r.SellerDecidedAt = new(time.Now())
+	r.grantReturn()
+	return nil
+}
+
+// grantReturn puts the goods on their way back. Both ways into `returning` — the seller granting
+// it and a verdict for the buyer before the parcel moved — end here.
+func (r *Refund) grantReturn() {
 	r.Status = RefundReturning
 	// A carrier decides how long this takes, so nobody is on the clock.
 	r.DeadlineAt = nil
-	return nil
 }
 
 // Reject refuses it, with a reason. The buyer's move next: escalate to staff, or let the
@@ -154,7 +166,7 @@ func (r *Refund) MarkReturned() error {
 	}
 	r.ReturnedAt = new(time.Now())
 	r.Status = RefundReturned
-	r.DeadlineAt = new(time.Now().Add(SellerAppealWindow))
+	r.DeadlineAt = new(time.Now().Add(SellerInspectionWindow))
 	return nil
 }
 
@@ -172,6 +184,10 @@ func (r *Refund) Settle() error {
 // Resolve applies the staff verdict. There are no rounds: `ReturnedAt IS NULL` is what tells
 // the two situations apart — a buyer who wins before the goods came back is granted the refund
 // and they travel, and one who wins after has nothing left to ship, so the money moves.
+//
+// `SellerDecidedAt` is left as the seller wrote it: it is when *they* answered, and stamping the
+// moderator's clock on it would leave a row whose rejection reason is the seller's words at a
+// time they never spoke. Who overruled them, and why, is on the ticket the verdict closes.
 func (r *Refund) Resolve(buyerWins bool) error {
 	if r.Status != RefundDisputed {
 		return ErrRefundNotDisputed
@@ -180,7 +196,8 @@ func (r *Refund) Resolve(buyerWins bool) error {
 		if r.ReturnedAt != nil {
 			return r.Settle()
 		}
-		return r.Accept()
+		r.grantReturn()
+		return nil
 	}
 	r.Status = RefundRejected
 	r.DeadlineAt = nil

@@ -124,6 +124,12 @@ func (s *Service) ListConversations(ctx context.Context, req chatapi.ListConvers
 // StartConversation opens the thread with one account, or answers the one that already
 // exists — there is one per pair, so the route is idempotent by construction.
 func (s *Service) StartConversation(ctx context.Context, req chatapi.StartConversationRequest) (chatapi.Conversation, error) {
+	// Support is reached by raising a ticket, never by messaging the desk: its id is public — it is
+	// the counterparty of every ticket thread — and a direct thread with it is one no moderator can
+	// read, so a user who believed they were writing to support would be writing to nobody.
+	if desk, err := s.desk(ctx); err == nil && req.AccountID.Int64() == desk {
+		return chatapi.Conversation{}, domain.ErrConversationWithSupport
+	}
 	thread, err := s.repo.EnsureConversation(ctx, req.ActorID.Int64(), req.AccountID.Int64())
 	if err != nil {
 		return chatapi.Conversation{}, fmt.Errorf("ensure conversation: %w", err)
@@ -139,7 +145,7 @@ func (s *Service) StartConversation(ctx context.Context, req chatapi.StartConver
 // and a retry — or a repair on the next read — has to find the thread this call already made rather
 // than a second one.
 func (s *Service) OpenTicketThread(ctx context.Context, req chatapi.OpenTicketThreadRequest) (chatapi.Conversation, error) {
-	if err := s.v.Struct(req); err != nil {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
 		return chatapi.Conversation{}, err
 	}
 	desk, err := s.desk(ctx)
@@ -189,7 +195,10 @@ func (s *Service) openingMessage(ctx context.Context, thread domain.Conversation
 func (s *Service) desk(ctx context.Context) (int64, error) {
 	support, err := s.accounts.GetSupportAccount(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("read support account: %w", err)
+		// Propagated as it came: the account module already named this failure, and its coded
+		// error is what turns a deployment with no desk row into a 500 rather than a 404 telling
+		// a requester their own ticket's counterparty does not exist.
+		return 0, err
 	}
 	return support.ID.Int64(), nil
 }
@@ -199,11 +208,7 @@ func (s *Service) GetConversation(ctx context.Context, req chatapi.GetConversati
 	if err != nil {
 		return chatapi.Conversation{}, err
 	}
-	rows, err := s.inboxRows(ctx, req.ActorID.Int64(), []domain.Conversation{thread})
-	if err != nil {
-		return chatapi.Conversation{}, err
-	}
-	return rows[0], nil
+	return s.threadRow(ctx, req.ActorID.Int64(), thread)
 }
 
 // GetUnreadCount is the badge. Two numbers, because "12 unread" and "in 3 threads" are
@@ -317,26 +322,26 @@ func (s *Service) MarkConversationRead(ctx context.Context, req chatapi.MarkConv
 	if req.Before != nil {
 		at = *req.Before
 	}
-	if err := thread.MarkRead(req.ActorID.Int64(), at); err != nil {
+	// Staff move the desk's mark, which is what makes it shared: the next moderator opening the
+	// thread sees what the last one had read, and the requester's receipt says support looked.
+	reader := s.side(ctx, thread, req.ActorID.Int64())
+	if err := thread.MarkRead(reader, at); err != nil {
 		return chatapi.Conversation{}, err
 	}
 	if err := s.repo.SaveConversation(ctx, thread); err != nil {
 		return chatapi.Conversation{}, fmt.Errorf("save conversation: %w", err)
 	}
 	// The other side, never the reader: this is their own read mark advancing, which is
-	// nothing new to them.
-	if other := thread.Other(req.ActorID.Int64()); other != 0 {
+	// nothing new to them. Sent as the side that read, so a requester is told the desk read it
+	// rather than which moderator did.
+	if other := thread.Other(reader); other != 0 {
 		notify(ctx, s, other, ConversationRead, chatapi.ConversationReadMark{
 			ConversationID: id.Of[id.Conversation](thread.ID),
-			ReaderID:       req.ActorID,
+			ReaderID:       id.Of[id.Account](reader),
 			ReadAt:         at,
 		})
 	}
-	rows, err := s.inboxRows(ctx, req.ActorID.Int64(), []domain.Conversation{thread})
-	if err != nil {
-		return chatapi.Conversation{}, err
-	}
-	return rows[0], nil
+	return s.threadRow(ctx, req.ActorID.Int64(), thread)
 }
 
 // UpdateMessage rewrites a body. Only the sender's own, and never a system message or one
@@ -480,6 +485,28 @@ func hideSupport(thread domain.Conversation, viewerID int64, messages []chatapi.
 	return messages
 }
 
+// side is the account whose side of the thread the caller acts on. A moderator answering a ticket is
+// not a side of the row, so every viewer-relative value — the counterparty, the read marks — would
+// otherwise be computed against an account the thread has never heard of: `Counterparty` and
+// `ReadMark` fall through to whichever id sorts lower, and `MarkRead` refuses outright. Staff act as
+// the desk, which is also what makes the read mark shared: the next moderator inherits it.
+//
+// Message senders are the exception and are never mapped — see hideSupport, which anonymises only
+// for a viewer the thread actually involves.
+func (s *Service) side(ctx context.Context, thread domain.Conversation, actorID int64) int64 {
+	if thread.Involves(actorID) {
+		return actorID
+	}
+	desk, err := s.desk(ctx)
+	if err != nil {
+		// participant() has already refused everybody but staff on a ticket thread, so there is no
+		// safe answer here and the caller's own error path is the honest one.
+		s.log.Error("read support account for a staff view", "conversation_id", thread.ID, "err", err)
+		return 0
+	}
+	return desk
+}
+
 // isModerator asks the account module for the caller's role: it is a row in that module's
 // table. An admin passes every moderator check.
 func (s *Service) isModerator(ctx context.Context, actorID id.ID[id.Account]) bool {
@@ -523,6 +550,25 @@ func (s *Service) findOther(ctx context.Context, conversationID, actorID int64) 
 
 // inboxRows fills a page: the last message and the unread count for every thread at once,
 // and the counterparty's name per row because the account module has no batch read.
+// threadRow renders a single thread, for a caller who may be staff: the unread count is asked for the
+// side they act on, which is why this is not the one-element case of inboxRows — the inbox lists only
+// threads the caller is a side of, a ticket read does not.
+func (s *Service) threadRow(ctx context.Context, actorID int64, t domain.Conversation) (chatapi.Conversation, error) {
+	lastMessages, err := s.repo.LastMessages(ctx, []int64{t.ID})
+	if err != nil {
+		return chatapi.Conversation{}, fmt.Errorf("read last messages: %w", err)
+	}
+	unread, err := s.repo.UnreadCounts(ctx, s.side(ctx, t, actorID), []int64{t.ID})
+	if err != nil {
+		return chatapi.Conversation{}, fmt.Errorf("read unread counts: %w", err)
+	}
+	var last *domain.Message
+	if m, ok := lastMessages[t.ID]; ok {
+		last = &m
+	}
+	return s.inboxRow(ctx, actorID, t, last, unread[t.ID])
+}
+
 func (s *Service) inboxRows(ctx context.Context, viewerID int64, threads []domain.Conversation) ([]chatapi.Conversation, error) {
 	ids := make([]int64, 0, len(threads))
 	for _, t := range threads {
@@ -551,9 +597,14 @@ func (s *Service) inboxRows(ctx context.Context, viewerID int64, threads []domai
 	return out, nil
 }
 
+// inboxRow renders one thread as its viewer sees it. `viewerID` is the caller and `side` is the side
+// of the row they act on — the same account except for staff on a ticket thread, where the two differ
+// on purpose: the counterparty and the read marks are the desk's, while the last message is
+// anonymised for the requester only.
 func (s *Service) inboxRow(ctx context.Context, viewerID int64, t domain.Conversation, last *domain.Message, unread int64) (chatapi.Conversation, error) {
+	side := s.side(ctx, t, viewerID)
 	counterparty, err := s.accounts.GetPublicAccount(ctx, accountapi.GetPublicAccountRequest{
-		ID: id.Of[id.Account](t.Counterparty(viewerID)),
+		ID: id.Of[id.Account](t.Counterparty(side)),
 	})
 	if err != nil {
 		return chatapi.Conversation{}, fmt.Errorf("read counterparty: %w", err)
@@ -565,8 +616,8 @@ func (s *Service) inboxRow(ctx context.Context, viewerID int64, t domain.Convers
 		},
 		LastMessageAt:      t.LastMessageAt,
 		Unread:             unread,
-		ReadAt:             t.ReadMark(viewerID),
-		CounterpartyReadAt: t.CounterpartyReadMark(viewerID),
+		ReadAt:             t.ReadMark(side),
+		CounterpartyReadAt: t.CounterpartyReadMark(side),
 		CreatedAt:          t.CreatedAt,
 	}
 	// A ticket thread is answered in the support screen rather than the inbox, so the client has to
@@ -579,7 +630,9 @@ func (s *Service) inboxRow(ctx context.Context, viewerID int64, t domain.Convers
 		if err != nil {
 			return chatapi.Conversation{}, err
 		}
-		row.LastMessage = &message
+		// Anonymised here too, not only in the thread: this row is what `GET /conversations` renders,
+		// and a public account read turns a moderator's id into their name and their shop.
+		row.LastMessage = &hideSupport(t, viewerID, []chatapi.Message{message})[0]
 	}
 	return row, nil
 }

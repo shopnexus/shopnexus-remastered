@@ -208,8 +208,10 @@ components:
       type: string
       description: >
         `user` self-registers and both buys and sells. `moderator` is granted by an
-        admin. `admin` is configured, not created.
-      enum: [user, moderator, admin]
+        admin. `admin` is configured, not created. `support` is the support desk's own
+        row — the second side of every ticket thread, held by exactly one account and
+        granted by no route.
+      enum: [user, moderator, admin, support]
 
     ProfileGender:
       type: string

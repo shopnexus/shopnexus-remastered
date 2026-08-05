@@ -137,7 +137,16 @@ components:
         sender_id:
           allOf: [{ $ref: '#/components/schemas/AccountID' }]
           nullable: true
-          description: Null on a system message.
+          description: >
+            Null on a system message, and null on a support reply seen by the requester — see
+            `from_support`, which is how the two are told apart.
+        from_support:
+          type: boolean
+          description: >
+            True on a reply the support desk wrote, in the requester's own view of their ticket
+            thread. Support answers as the platform, so the requester is told that much and no
+            more; staff reading the same thread see the real sender and never this flag, because a
+            colleague's name is what makes a thread reviewable.
         type: { $ref: '#/components/schemas/MessageType' }
         body: { type: string, description: Empty on a redacted message. }
         attachments: { type: array, items: { $ref: '#/components/schemas/Resource' }, description: Empty on a redacted message. }

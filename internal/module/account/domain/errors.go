@@ -15,11 +15,16 @@ var (
 	// One error for all three identifiers on purpose: telling a caller *which* one
 	// collided turns registration into a way to ask "is this address registered".
 	ErrIdentifierTaken = errx.NewError(http.StatusConflict, "identifier_taken", "email or phone or username already taken")
+	// ErrUsernameReserved is an account claiming the name the platform speaks with — the support
+	// desk's. Any write, not just a registration: a rename would otherwise reach it.
+	ErrUsernameReserved = errx.NewError(http.StatusConflict, "username_reserved", "that username is reserved")
+	// ErrSupportAccountMissing is a deployment whose support desk row was never seeded. 500 and
+	// loud: nothing a client sent can fix it, and the alternative to failing here is resolving the
+	// desk to whatever other account looks like it, which would hand it every ticket thread.
+	ErrSupportAccountMissing = errx.NewError(http.StatusInternalServerError, "support_account_missing", "the support desk account is not provisioned")
 	// ErrNoIdentifier covers both directions: a new account with nothing to be addressed
 	// by, and a PATCH that would clear the last one. Validate sees the resulting account
 	// rather than the request, so there is one rule and one code.
-	// ErrUsernameReserved is a registration claiming a name the platform speaks with.
-	ErrUsernameReserved   = errx.NewError(http.StatusConflict, "username_reserved", "that username is reserved")
 	ErrNoIdentifier       = errx.NewError(http.StatusUnprocessableEntity, "no_identifier", "an account needs at least one of email, phone or username")
 	ErrInvalidCredentials = errx.NewError(http.StatusUnauthorized, "invalid_credentials", "wrong credentials")
 	ErrAccountSuspended   = errx.NewError(http.StatusForbidden, "account_suspended", "this account is suspended")

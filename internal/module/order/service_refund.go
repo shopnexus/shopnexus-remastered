@@ -97,10 +97,11 @@ func (s *Service) WithdrawRefund(ctx context.Context, req orderapi.RefundRequest
 	}
 	// Its own terminal status, not a rejection: stored as one, a withdrawal would be
 	// indistinguishable from a seller who won the case.
+	from := r.Status
 	if err := r.Withdraw(); err != nil {
 		return err
 	}
-	if err := s.saveRefund(ctx, r); err != nil {
+	if err := s.saveRefund(ctx, r, from); err != nil {
 		return err
 	}
 	return nil
@@ -117,10 +118,13 @@ func (s *Service) AddRefundAttachments(ctx context.Context, req orderapi.AddRefu
 	if err := s.requireResources(ctx, attachments); err != nil {
 		return orderapi.Refund{}, err
 	}
+	// Nothing moves, so the guard is the status the caller read: evidence added to a case that
+	// closed a moment ago belongs to the record a verdict was reached on.
+	from := r.Status
 	if err := r.AddAttachments(attachments); err != nil {
 		return orderapi.Refund{}, err
 	}
-	if err := s.saveRefund(ctx, r); err != nil {
+	if err := s.saveRefund(ctx, r, from); err != nil {
 		return orderapi.Refund{}, err
 	}
 	return s.refundView(ctx, r)
@@ -141,13 +145,14 @@ func (s *Service) AcceptRefund(ctx context.Context, req orderapi.RefundRequest) 
 	if o.Settled() {
 		return orderapi.Refund{}, domain.ErrOrderSettled
 	}
+	from := r.Status
 	if err := r.Accept(); err != nil {
 		return orderapi.Refund{}, err
 	}
 	if err := s.openReturnLeg(ctx, &r, o); err != nil {
 		return orderapi.Refund{}, err
 	}
-	if err := s.saveRefund(ctx, r); err != nil {
+	if err := s.saveRefund(ctx, r, from); err != nil {
 		return orderapi.Refund{}, err
 	}
 	return s.refundView(ctx, r)
@@ -204,10 +209,11 @@ func (s *Service) AdvanceReturnShipment(ctx context.Context, req orderapi.Advanc
 	if !leg.Delivered() {
 		return s.refundView(ctx, r)
 	}
+	from := r.Status
 	if err := r.MarkReturned(); err != nil {
 		return orderapi.Refund{}, err
 	}
-	if err := s.saveRefund(ctx, r); err != nil {
+	if err := s.saveRefund(ctx, r, from); err != nil {
 		return orderapi.Refund{}, err
 	}
 	return s.refundView(ctx, r)
@@ -226,10 +232,11 @@ func (s *Service) RejectRefund(ctx context.Context, req orderapi.RejectRefundReq
 	if o.Settled() {
 		return orderapi.Refund{}, domain.ErrOrderSettled
 	}
+	from := r.Status
 	if err := r.Reject(req.Reason); err != nil {
 		return orderapi.Refund{}, err
 	}
-	if err := s.saveRefund(ctx, r); err != nil {
+	if err := s.saveRefund(ctx, r, from); err != nil {
 		return orderapi.Refund{}, err
 	}
 	return s.refundView(ctx, r)
@@ -246,11 +253,18 @@ func (s *Service) EscalateRefund(ctx context.Context, req orderapi.EscalateRefun
 	if err != nil {
 		return orderapi.Refund{}, err
 	}
+	if r.Status == domain.RefundDisputed {
+		return s.refundView(ctx, r)
+	}
+	// A verdict moves the order's escrow, so a case over an order that has already paid out or
+	// been cancelled has nothing staff could decide — and the ticket trust is about to open
+	// closes only on a published verdict, so escalating one would strand it for ever.
+	if o.Settled() {
+		return orderapi.Refund{}, domain.ErrOrderSettled
+	}
 	// Which party may escalate follows from the state: a refusal is the buyer's to contest, and
 	// what arrived back is the seller's.
 	switch r.Status {
-	case domain.RefundDisputed:
-		return s.refundView(ctx, r)
 	case domain.RefundAwaitingBuyer:
 		if r.BuyerID != req.ActorID.Int64() {
 			return orderapi.Refund{}, domain.ErrNotTheBuyer
@@ -262,10 +276,11 @@ func (s *Service) EscalateRefund(ctx context.Context, req orderapi.EscalateRefun
 	default:
 		return orderapi.Refund{}, domain.ErrRefundNotEscalatable
 	}
+	from := r.Status
 	if err := r.Escalate(); err != nil {
 		return orderapi.Refund{}, err
 	}
-	if err := s.saveRefund(ctx, r); err != nil {
+	if err := s.saveRefund(ctx, r, from); err != nil {
 		return orderapi.Refund{}, err
 	}
 	return s.refundView(ctx, r)
@@ -303,11 +318,13 @@ func (s *Service) AdminResolveRefund(ctx context.Context, req orderapi.ResolveRe
 		}
 	}
 	if r.Status == domain.RefundAccepted {
-		if err := s.settleRefund(ctx, r, o); err != nil {
+		if err := s.settleRefund(ctx, r, o, domain.RefundDisputed); err != nil {
 			return orderapi.Refund{}, err
 		}
 	} else {
-		if err := s.repo.SaveRefundOutcome(ctx, r, nil); err != nil {
+		// Guarded on the case still being with staff, so two moderators pressing at once do not
+		// both decide it — the loser is told the verdict is in rather than publishing a second one.
+		if err := s.repo.SaveRefundOutcome(ctx, r, nil, domain.RefundDisputed); err != nil {
 			return orderapi.Refund{}, fmt.Errorf("save refund verdict: %w", err)
 		}
 		s.refundTimers(ctx, r)
@@ -322,7 +339,7 @@ func (s *Service) AdminResolveRefund(ctx context.Context, req orderapi.ResolveRe
 func (s *Service) publishResolved(ctx context.Context, r domain.Refund, o domain.Order,
 	req orderapi.ResolveRefundRequest) {
 	event := RefundResolved{
-		RefundID: r.ID, OrderID: o.ID, BuyerID: o.BuyerID, SellerID: o.SellerID,
+		RefundID: r.ID, OrderID: o.ID,
 		ModeratorID: req.ActorID.Int64(), BuyerWins: req.BuyerWins, Note: req.Note,
 	}
 	if err := publishRefundResolved(ctx, s.bus, event); err != nil {
@@ -330,14 +347,17 @@ func (s *Service) publishResolved(ctx context.Context, r domain.Refund, o domain
 	}
 }
 
-// settleRefund pays the buyer back and closes the case and the order it covers.
+// settleRefund pays the buyer back and closes the case and the order it covers. `from` is the
+// status the case is leaving, which guards both writes.
 //
 // The money moves first, and only then does the row go terminal. The other way round leaves an
 // `accepted` refund the escrow never reached — nothing retries it, because `accepted` is the
 // end of the case, and the payout sweep then hands the seller the money the buyer was awarded.
-// A transfer that landed and a write that did not is the recoverable half: the refund is still
-// live, its window is still overdue, and the sweep calls this again with the same key.
-func (s *Service) settleRefund(ctx context.Context, r domain.Refund, o domain.Order) error {
+// A transfer that landed and a write that did not converges differently on the two paths: an
+// uncontested return is still overdue, so the sweep calls this again with the same key, while a
+// `disputed` case has no clock and waits for a moderator to press the verdict again — which is
+// safe, because the transfer is keyed on the order.
+func (s *Service) settleRefund(ctx context.Context, r domain.Refund, o domain.Order, from string) error {
 	if err := s.refundEscrow(ctx, o, 0); err != nil {
 		return err
 	}
@@ -347,7 +367,7 @@ func (s *Service) settleRefund(ctx context.Context, r domain.Refund, o domain.Or
 	if err := closed.Cancel(false); err != nil {
 		return err
 	}
-	if err := s.repo.SaveRefundOutcome(ctx, r, &closed); err != nil {
+	if err := s.repo.SaveRefundOutcome(ctx, r, &closed, from); err != nil {
 		return fmt.Errorf("save refund settlement: %w", err)
 	}
 	s.publishSettled(ctx, closed, false)
@@ -394,8 +414,10 @@ func (s *Service) refundView(ctx context.Context, r domain.Refund) (orderapi.Ref
 }
 
 // saveRefund writes a non-terminal transition and starts the clock the new status carries.
-func (s *Service) saveRefund(ctx context.Context, r domain.Refund) error {
-	if err := s.repo.SaveRefund(ctx, r); err != nil {
+// `from` is the status the caller read, which is the write's guard: a case that moved under the
+// caller — an escalation, another party's decision — makes this lose rather than overwrite it.
+func (s *Service) saveRefund(ctx context.Context, r domain.Refund, from string) error {
+	if err := s.repo.SaveRefund(ctx, r, from); err != nil {
 		return fmt.Errorf("save refund: %w", err)
 	}
 	s.refundTimers(ctx, r)

@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -104,6 +105,27 @@ func TestNewAccount_MalformedIdentifiersRejected(t *testing.T) {
 				t.Fatalf("expected 400, got %v", err)
 			}
 		})
+	}
+}
+
+// The desk's row has no password and no provider on purpose — that is what "nobody signs in as it"
+// means — so the rule that every account keeps a way in is not about it. Otherwise the row could
+// not be written at all, and suspending or renaming it would answer 422.
+func TestValidate_TheSupportDeskNeedsNoWayIn(t *testing.T) {
+	desk, err := domain.NewAccount(domain.RoleSupport, "", "", domain.SupportUsername, "", testProfile(t))
+	if err != nil {
+		t.Fatalf("NewAccount(desk): %v", err)
+	}
+	if err := desk.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	// And the name stays the platform's: the guard has to hold for a row that already exists, or a
+	// rename walks straight past it.
+	squatter := newAccount(t, "a@b.com", "", "", "hash")
+	squatter.ID = 900
+	squatter.SetUsername(domain.SupportUsername)
+	if !errors.Is(squatter.Validate(), domain.ErrUsernameReserved) {
+		t.Fatalf("Validate = %v, want ErrUsernameReserved", squatter.Validate())
 	}
 }
 

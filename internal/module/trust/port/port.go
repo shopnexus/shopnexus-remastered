@@ -56,9 +56,8 @@ type TicketFilter struct {
 	Statuses    []string
 	// Kind narrows the queue to one sort of work — the abuse reports, the refund disputes — which
 	// is how one table stays one queue without making a moderator read all of it.
-	Kind    string
-	RefType string
-	Cursor  CursorFilter
+	Kind   string
+	Cursor CursorFilter
 }
 
 // TicketTarget is one polymorphic target of a ticket. The pair is what a count is per, and
@@ -139,17 +138,19 @@ type Repository interface {
 	// rather than one per row.
 	MyVotes(ctx context.Context, accountID int64, reviewIDs []int64) (map[int64]int16, error)
 
-	// --- reports ---
+	// --- tickets ---
 	InsertTicket(ctx context.Context, t *domain.Ticket) error
 	FindTicket(ctx context.Context, id int64) (domain.Ticket, error)
-	// FindTicketByRef answers the open ticket about one target, which is how the module that owns
-	// that target finds the ticket to close when it decides.
-	FindTicketByRef(ctx context.Context, refType string, refID int64) (domain.Ticket, error)
+	// OpenTicketsAgainst is every unresolved ticket about one target, which is how the module
+	// that owns that target closes them when it decides. A set and not a row: only one open
+	// ticket per *requester* per target is held, so both parties to a refund may have raised
+	// one and a single verdict has to answer all of them.
+	OpenTicketsAgainst(ctx context.Context, refType string, refID int64) ([]domain.Ticket, error)
 	ListTickets(ctx context.Context, f TicketFilter) ([]domain.Ticket, error)
-	// SaveReport writes a claim or a verdict, guarded by the status it moves from: a stale
+	// SaveTicket writes a claim or a verdict, guarded by the status it moves from: a stale
 	// read loses instead of overwriting a decision it never saw.
 	SaveTicket(ctx context.Context, t domain.Ticket, from []string) error
-	// CountOpenAgainst is how many unresolved reports name each target — a moderator decides
+	// CountOpenAgainst is how many unresolved tickets name each target — a moderator decides
 	// on a pattern rather than on one complaint. A whole page of targets in one query, so the
 	// queue does not cost a round trip per row.
 	CountOpenAgainst(ctx context.Context, targets []TicketTarget) (map[TicketTarget]int64, error)

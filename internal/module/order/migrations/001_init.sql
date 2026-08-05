@@ -326,7 +326,7 @@ CREATE TABLE IF NOT EXISTS "refund" (
     -- neither of which a timer should decide, and the terminal states wait on nothing.
     "deadline_at" TIMESTAMPTZ,
 
-    -- Seller review round. "rejection_reason" is what separates a refusal from a
+    -- The seller's answer. "rejection_reason" is what separates a refusal from a
     -- seller who simply let the window pass: both land on the buyer, only one has a
     -- reason to show them.
     "seller_decided_at" TIMESTAMPTZ,

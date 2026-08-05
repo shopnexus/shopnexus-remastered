@@ -15,6 +15,10 @@ const ticketColumns = `id, requester_id, kind::text, subject, ref_type::text, re
 	       reason::text, status::text, assignee_id, conversation_id,
 	       action_taken::text, resolved_by_id, resolved_at, resolution_note, created_at`
 
+// openStatusLiterals is the unresolved slice as SQL, built from the constants that set the column so
+// a renamed status is a build failure rather than a query that silently matches nothing.
+const openStatusLiterals = `'` + domain.StatusOpen + `', '` + domain.StatusReviewing + `'`
+
 func scanTicket(row pgx.Row) (domain.Ticket, error) {
 	var v domain.Ticket
 	err := row.Scan(&v.ID, &v.RequesterID, &v.Kind, &v.Subject, &v.RefType, &v.RefID,
@@ -51,15 +55,23 @@ func (r *Repo) FindTicket(ctx context.Context, id int64) (domain.Ticket, error) 
 	return scanTicket(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id}))
 }
 
-// FindTicketByRef answers the open ticket about one target, which is how a module that already knows
-// the target — order, holding a refund — finds the ticket to close when it decides.
-func (r *Repo) FindTicketByRef(ctx context.Context, refType string, refID int64) (domain.Ticket, error) {
+// OpenTicketsAgainst is every unresolved ticket about one target, oldest first — how a module that
+// already knows the target (order, holding a refund it just decided) finds the tickets to close.
+//
+// A set rather than a row, because the unique index is per requester: both parties to one refund may
+// have escalated it, and a verdict that closed only one of them would leave the other open for ever,
+// since resolving a refund dispute by hand is refused.
+func (r *Repo) OpenTicketsAgainst(ctx context.Context, refType string, refID int64) ([]domain.Ticket, error) {
 	const q = `SELECT ` + ticketColumns + ` FROM ticket
 	           WHERE ref_type::text = @ref_type AND ref_id = @ref_id
-	             AND status IN ('` + domain.StatusOpen + `', '` + domain.StatusReviewing + `')
-	           ORDER BY created_at DESC, id DESC
-	           LIMIT 1`
-	return scanTicket(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"ref_type": refType, "ref_id": refID}))
+	             AND status IN (` + openStatusLiterals + `)
+	           ORDER BY created_at, id`
+	rows, err := r.pool.Query(ctx, q, pgx.NamedArgs{"ref_type": refType, "ref_id": refID})
+	if err != nil {
+		return nil, fmt.Errorf("db query open tickets: %w", err)
+	}
+	defer rows.Close()
+	return collectTickets(rows)
 }
 
 // ListTickets serves both the requester's own list and the moderator queue. The queue is
@@ -69,8 +81,7 @@ func (r *Repo) ListTickets(ctx context.Context, f port.TicketFilter) ([]domain.T
 	const base = `SELECT ` + ticketColumns + ` FROM ticket
 	           WHERE (@requester_id = 0 OR requester_id = @requester_id)
 	             AND (@statuses::text[] IS NULL OR status::text = ANY(@statuses::text[]))
-	             AND (@kind::text IS NULL OR kind::text = @kind::text)
-	             AND (@ref_type::text IS NULL OR ref_type::text = @ref_type::text)`
+	             AND (@kind::text IS NULL OR kind::text = @kind::text)`
 	q := base + ` AND (@before_id = 0
 	                   OR (created_at, id) < (@before::timestamptz, @before_id))
 	              ORDER BY created_at DESC, id DESC LIMIT @limit`
@@ -81,7 +92,7 @@ func (r *Repo) ListTickets(ctx context.Context, f port.TicketFilter) ([]domain.T
 	}
 	args := pgx.NamedArgs{
 		"requester_id": f.RequesterID, "statuses": nullStrings(f.Statuses),
-		"kind": dbx.NullText(f.Kind), "ref_type": dbx.NullText(f.RefType),
+		"kind": dbx.NullText(f.Kind),
 	}
 	addCursor(args, f.Cursor)
 	rows, err := r.pool.Query(ctx, q, args)
@@ -89,6 +100,10 @@ func (r *Repo) ListTickets(ctx context.Context, f port.TicketFilter) ([]domain.T
 		return nil, fmt.Errorf("db query tickets: %w", err)
 	}
 	defer rows.Close()
+	return collectTickets(rows)
+}
+
+func collectTickets(rows pgx.Rows) ([]domain.Ticket, error) {
 	var out []domain.Ticket
 	for rows.Next() {
 		v, err := scanTicket(rows)
@@ -148,7 +163,7 @@ func (r *Repo) CountOpenAgainst(ctx context.Context, targets []port.TicketTarget
 	           WHERE (ref_type::text, ref_id) IN (
 	                   SELECT * FROM unnest(@ref_types::text[], @ref_ids::bigint[])
 	                 )
-	             AND status IN ('open', 'reviewing')
+	             AND status IN (` + openStatusLiterals + `)
 	           GROUP BY ref_type, ref_id`
 	rows, err := r.pool.Query(ctx, q, pgx.NamedArgs{"ref_types": refTypes, "ref_ids": refIDs})
 	if err != nil {

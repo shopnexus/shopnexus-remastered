@@ -251,7 +251,7 @@ func TestPayoutDue_HeldBackByALiveRefund(t *testing.T) {
 	if err := refund.Reject("sent as described"); err != nil {
 		t.Fatalf("Reject: %v", err)
 	}
-	if err := r.SaveRefund(ctx, refund); err != nil {
+	if err := r.SaveRefund(ctx, refund, domain.RefundAwaitingSeller); err != nil {
 		t.Fatalf("SaveRefund: %v", err)
 	}
 	due, err = r.PayoutDue(ctx, time.Now(), 100)
@@ -266,7 +266,7 @@ func TestPayoutDue_HeldBackByALiveRefund(t *testing.T) {
 	if err := refund.LapseBuyerAction(); err != nil {
 		t.Fatalf("LapseBuyerAction: %v", err)
 	}
-	if err := r.SaveRefund(ctx, refund); err != nil {
+	if err := r.SaveRefund(ctx, refund, domain.RefundAwaitingBuyer); err != nil {
 		t.Fatalf("SaveRefund: %v", err)
 	}
 	due, err = r.PayoutDue(ctx, time.Now(), 100)
@@ -383,10 +383,11 @@ func overdue(t *testing.T, r *orderpg.Repo, pool *pgxpool.Pool, o domain.Order, 
 	if err := r.InsertRefund(ctx, &ref); err != nil {
 		t.Fatalf("InsertRefund: %v", err)
 	}
+	from := ref.Status
 	if err := move(&ref); err != nil {
 		t.Fatalf("transition: %v", err)
 	}
-	if err := r.SaveRefund(ctx, ref); err != nil {
+	if err := r.SaveRefund(ctx, ref, from); err != nil {
 		t.Fatalf("SaveRefund: %v", err)
 	}
 	// The CHECK ties a deadline to the status, so only a status that has one is backdated.
@@ -794,7 +795,9 @@ func TestSaveRefundOutcome_VerdictNeedsALiveCase(t *testing.T) {
 	if err := ref.Escalate(); err != nil {
 		t.Fatalf("Escalate: %v", err)
 	}
-	if err := r.SaveRefund(ctx, ref); err != nil {
+	// Two in-memory moves, one write: `from` is where the row still is, not where the entity has
+	// been.
+	if err := r.SaveRefund(ctx, ref, domain.RefundAwaitingSeller); err != nil {
 		t.Fatalf("SaveRefund: %v", err)
 	}
 
@@ -810,7 +813,7 @@ func TestSaveRefundOutcome_VerdictNeedsALiveCase(t *testing.T) {
 	if err := ref.StartReturn(legID); err != nil {
 		t.Fatalf("StartReturn: %v", err)
 	}
-	if err := r.SaveRefundOutcome(ctx, ref, nil); err != nil {
+	if err := r.SaveRefundOutcome(ctx, ref, nil, domain.RefundDisputed); err != nil {
 		t.Fatalf("SaveRefundOutcome: %v", err)
 	}
 	granted, err := r.FindRefund(ctx, ref.ID)
@@ -820,6 +823,14 @@ func TestSaveRefundOutcome_VerdictNeedsALiveCase(t *testing.T) {
 	if granted.Status != domain.RefundReturning || granted.ReturnTransportID == nil ||
 		granted.DeadlineAt != nil {
 		t.Fatalf("refund = %+v, want it returning with a leg and no clock", granted)
+	}
+	// A write whose `from` is not where the row is loses even though the case is still live: that is
+	// what keeps the overdue sweep from settling a refund somebody escalated while the pass was
+	// working through earlier rows.
+	stale := granted
+	stale.Status = domain.RefundAccepted
+	if err := r.SaveRefund(ctx, stale, domain.RefundReturned); !errors.Is(err, domain.ErrRefundSettled) {
+		t.Fatalf("stale SaveRefund = %v, want the guard to refuse a write from the wrong status", err)
 	}
 
 	// The goods arrive and nobody contests them, so the money goes back and the order closes with
@@ -834,11 +845,11 @@ func TestSaveRefundOutcome_VerdictNeedsALiveCase(t *testing.T) {
 	if err := closed.Cancel(false); err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}
-	if err := r.SaveRefundOutcome(ctx, granted, &closed); err != nil {
+	if err := r.SaveRefundOutcome(ctx, granted, &closed, domain.RefundReturning); err != nil {
 		t.Fatalf("SaveRefundOutcome: %v", err)
 	}
 	// A settled case is not movable again, which is the status guard in the UPDATE.
-	if err := r.SaveRefundOutcome(ctx, granted, nil); !errors.Is(err, domain.ErrRefundSettled) {
+	if err := r.SaveRefundOutcome(ctx, granted, nil, domain.RefundReturning); !errors.Is(err, domain.ErrRefundSettled) {
 		t.Fatalf("second SaveRefundOutcome = %v, want ErrRefundSettled", err)
 	}
 	settledOrder, err := r.FindOrder(ctx, o.ID)

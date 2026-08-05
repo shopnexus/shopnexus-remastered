@@ -162,7 +162,7 @@ func (s *Service) GetOrder(ctx context.Context, req orderapi.OrderRequest) (orde
 	return s.orderView(ctx, o)
 }
 
-// ConfirmReceipt is the buyer saying the goods arrived, with the evidence a later dispute
+// ConfirmReceipt is the buyer saying the goods arrived, with the evidence a later refund
 // would be judged on. It starts the escrow window, which is why it is not re-openable.
 func (s *Service) ConfirmReceipt(ctx context.Context, req orderapi.ConfirmReceiptRequest) (orderapi.Order, error) {
 	o, err := s.involved(ctx, req.ActorID, req.ID)

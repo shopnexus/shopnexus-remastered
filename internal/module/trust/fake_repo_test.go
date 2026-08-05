@@ -452,18 +452,23 @@ func (f *fakeRepo) FindTicket(_ context.Context, id int64) (domain.Ticket, error
 	return row, nil
 }
 
-// FindTicketByRef is how a module holding the target — order, with a refund it just decided —
-// finds the open ticket to close.
-func (f *fakeRepo) FindTicketByRef(_ context.Context, refType string, refID int64) (domain.Ticket, error) {
+// OpenTicketsAgainst is how a module holding the target — order, with a refund it just decided —
+// finds the tickets to close. Oldest first, like the adapter, and every one of them: the index only
+// holds one open ticket per requester, so both parties to a refund may have raised one.
+func (f *fakeRepo) OpenTicketsAgainst(_ context.Context, refType string, refID int64) ([]domain.Ticket, error) {
+	var out []domain.Ticket
 	for _, row := range f.tickets {
 		if row.Resolved() || row.RefType == nil || row.RefID == nil {
 			continue
 		}
 		if *row.RefType == refType && *row.RefID == refID {
-			return row, nil
+			out = append(out, row)
 		}
 	}
-	return domain.Ticket{}, domain.ErrTicketNotFound
+	slices.SortFunc(out, func(a, b domain.Ticket) int {
+		return -descending(timeKey(a.CreatedAt, a.ID), timeKey(b.CreatedAt, b.ID))
+	})
+	return out, nil
 }
 
 // ListTickets pages both directions the adapter serves: the queue is worked oldest first, a
@@ -479,9 +484,6 @@ func (f *fakeRepo) ListTickets(_ context.Context, filter port.TicketFilter) ([]d
 			continue
 		}
 		if filter.Kind != "" && row.Kind != filter.Kind {
-			continue
-		}
-		if filter.RefType != "" && (row.RefType == nil || *row.RefType != filter.RefType) {
 			continue
 		}
 		if filter.Cursor.BeforeID != 0 {
