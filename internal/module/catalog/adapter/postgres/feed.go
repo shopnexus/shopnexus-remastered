@@ -45,7 +45,17 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 		"limit":            f.Limit,
 		"offset":           f.Offset,
 	}
-	q := feedSelect + scoreExpr(f) + feedFrom + feedWhere + orderBy(f) + feedPage
+	q := feedSelect + scoreExpr(f) + feedScore + feedTotal + feedFrom + feedWhere + orderBy(f) + feedPage
+	// "Newest, but still about what I searched for." A ranked search has no WHERE gate — the
+	// ranking is what makes it a search — so ordering it by anything other than the score
+	// answers the whole catalogue in date order, which is what the query was supposed to
+	// narrow. So: rank first, keep what is relevant, and order *those* by what was asked for.
+	if rerankedSort(f) {
+		args["candidates"] = relevantCandidates
+		args["relevance_floor"] = relevanceFloor
+		q = candidateHead + feedSelect + scoreExpr(f) + feedScore + feedFrom + feedWhere +
+			candidateOrder + candidateTail + rerankOrderBy(f) + feedPage
+	}
 	rows, err := r.pool.Query(ctx, q, args)
 	if err != nil {
 		return nil, 0, fmt.Errorf("db query listings: %w", err)
@@ -83,7 +93,7 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 // lateral join rather than from a column on the listing — a cached "from" price is a second
 // fact to keep in step with every variant edit.
 const feedSelect = `SELECT l.id, l.account_id, l.slug, l.name, l.status::text, l.condition::text,
-	                  l.price_mode::text, l.currency, COALESCE(v.price, 0), l.cached_sold,
+	                  l.price_mode::text, l.currency, COALESCE(v.price, 0) AS price, l.cached_sold,
 	                  l.cached_rating, l.cached_review_count, l.category_id, l.attachments[1],
 	                  l.province_code, l.province_name, l.district_code, l.district_name,
 	                  l.ward_code, l.ward_name,
@@ -110,8 +120,14 @@ const distanceExpr = `CASE WHEN @near_lat::double precision IS NULL OR l.locatio
 	                                         4326)::geography) / 1000
 	                  END`
 
-const feedFrom = ` AS score,
-	                  COUNT(*) OVER () AS total_count
+const feedScore = ` AS score`
+
+// feedTotal is the count behind the page. Its own piece because the reranked search counts
+// what survived the relevance floor instead, and that is not known until the pool is built.
+const feedTotal = `,
+	                  COUNT(*) OVER () AS total_count`
+
+const feedFrom = `
 	           FROM listing l
 	           LEFT JOIN LATERAL (
 	             SELECT price FROM variant
@@ -192,12 +208,79 @@ const feedWhere = `
 	               -- The same GIN index serves it, commuted to f_unaccent(name) %> query.
 	               AND (@query::text IS NULL
 	                    OR (@probe::text IS NOT NULL AND @probe_from_query::boolean)
-	                    OR f_unaccent(@query::text) <% f_unaccent(l.name))
+	                    OR f_unaccent(@query::text) <<% f_unaccent(l.name))
 	             END
 	           )`
 
 const feedPage = `
 	           LIMIT @limit OFFSET @offset`
+
+// relevantCandidates is how deep "relevant" goes when a search is ordered by something other
+// than relevance. A rank and not a score, because a cosine score is not comparable between
+// queries: on this catalogue the 300th hit for a broad query outscores the 5th for a narrow
+// one, so any fixed cutoff floods the first search and empties the second. A rank asks the
+// question that has a stable answer — the most relevant N — and the sort then orders those.
+const relevantCandidates = 200
+
+// relevanceFloor is the share of the top hit's score a listing must reach to stay in that pool.
+// Measured, not guessed: the genuine hits for a narrow query sit at 0.93–1.00 of the best and
+// the first unrelated one at 0.47, while a broad or cross-language query stays above 0.71 all
+// the way down — so 0.6 falls in the gap for both shapes.
+const relevanceFloor = 0.6
+
+// rerankedSort is a ranked search asked to come back in some other order. Only then: a
+// relevance sort is already the ranking, and a query with no probe still has its lexical
+// WHERE gate, so both narrow on their own.
+func rerankedSort(f port.ListingFilter) bool {
+	return f.ProbeFromQuery &&
+		f.Sort != port.SortRelevance && f.Sort != port.SortRecommended
+}
+
+const candidateHead = `WITH candidate AS (
+	           `
+
+// candidateOrder ranks the pool. The same expression the relevance sort uses, because "the
+// most relevant N" has to mean the same thing whichever order they are then shown in.
+const candidateOrder = `
+	           ORDER BY score DESC NULLS LAST, id DESC`
+
+// candidateTail cuts the pool down to what is actually about the query, then counts what is
+// left — so the total is the pageable set and not the pool.
+//
+// The floor is a fraction of the *best* hit rather than a fixed score, because a cosine score
+// means nothing on its own: on this catalogue a broad query's 100th hit scores 0.71 of its top
+// while a narrow query's 5th scores 0.47 of its. Relative, the same number reads the shape of
+// each query — it keeps a hundred shirts when a hundred shirts match, and cuts a search for
+// one phone at the cliff after the four listings that mention it.
+const candidateTail = `
+	           LIMIT @candidates
+	         ), relevant AS (
+	           SELECT * FROM candidate
+	           WHERE score >= @relevance_floor::double precision * (SELECT max(score) FROM candidate)
+	         )
+	         SELECT *, COUNT(*) OVER () FROM relevant`
+
+// rerankOrderBy orders the candidate pool, addressing it by output column name — inside the
+// CTE the row is joined from three tables, outside it is one flat row.
+func rerankOrderBy(f port.ListingFilter) string {
+	const head = `
+	           ORDER BY `
+	const tail = `, id DESC`
+	switch f.Sort {
+	case port.SortRating:
+		return head + `cached_rating DESC` + tail
+	case port.SortPriceAsc:
+		return head + `price ASC` + tail
+	case port.SortPriceDesc:
+		return head + `price DESC` + tail
+	case port.SortBestSelling:
+		return head + `cached_sold DESC` + tail
+	case port.SortDistance:
+		return head + `distance_km ASC NULLS LAST` + tail
+	default:
+		return head + `created_at DESC` + tail
+	}
+}
 
 // scoreExpr picks what "score" means for this request. Always higher-is-better, so a client
 // never has to know which mode ran:
@@ -209,14 +292,19 @@ const feedPage = `
 // A listing with no embedding scores 0 on the dense half rather than dropping out, so it stays
 // findable lexically — the contract says so explicitly.
 //
-// `word_similarity`, not `similarity`: whole-string similarity divides the shared trigrams by
-// the union of *both* strings, so a two-word query against a forty-character product name
-// scores about 0.05 and no realistic search ever clears the 0.3 threshold — "iphone" matched
-// none of the four listings with iPhone in the name. word_similarity measures the query
-// against the most similar run of words inside the name instead, which is the question a
-// search box actually asks. Argument order is load-bearing: the query is the needle.
+// Word similarity, not whole-string `similarity`: the latter divides shared trigrams by the
+// union of *both* strings, so a two-word query against a forty-character product name scores
+// about 0.05 and no realistic search ever clears the 0.3 threshold — "iphone" matched none of
+// the four listings with iPhone in the name. This measures the query against the best-matching
+// run of words inside the name instead, which is the question a search box actually asks.
+// Argument order is load-bearing: the query is the needle.
+//
+// And *strict*, which extends the match to whole word boundaries. Unaccenting Vietnamese makes
+// "quần áo" into "quan ao", and "quan" sits inside "quang" — so the loose form scored reflective
+// "phản quang" decals 0.63 against a clothing search, high enough to survive the relevance floor.
+// Strict scores them 0.40 while real matches stay at 1.00, and costs 8 hits of recall in 131.
 func scoreExpr(f port.ListingFilter) string {
-	const lexical = `word_similarity(f_unaccent(@query::text), f_unaccent(l.name))`
+	const lexical = `strict_word_similarity(f_unaccent(@query::text), f_unaccent(l.name))`
 	const dense = `COALESCE(1 - (e.dense <=> @probe::vector), 0)`
 	switch {
 	case f.Probe != nil && f.Query != "" && f.Mode == port.ModeHybrid:

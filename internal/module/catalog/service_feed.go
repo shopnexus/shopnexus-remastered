@@ -2,7 +2,10 @@ package catalog
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"strings"
+	"time"
 
 	accountapi "shopnexus/internal/module/account/api"
 	catalogapi "shopnexus/internal/module/catalog/api"
@@ -114,7 +117,7 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 
 	filter := port.ListingFilter{
 		Query:     req.Query,
-		Mode:      req.Mode,
+		Mode:      modeOf(req),
 		ViewerID:  req.ViewerID.Int64(),
 		Mine:      req.Mine,
 		Favorited: req.Favorited,
@@ -181,9 +184,10 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 // return says which one it is — a recommended feed's probe has nothing to do with Query,
 // so the adapter must not treat it as satisfying a lexical filter the caller asked for.
 //
-// The query embedding needs the same model that wrote listing_embedding, and nothing in this
-// module can call it yet — so a semantic search degrades to lexical rather than answering
-// nothing, and a client still gets results while that seam is missing.
+// Embedding the query is **best-effort**: a model that is down, slow or not deployed at all
+// leaves the probe nil, and the search runs lexically instead of failing. That is the same
+// bargain the rest of the pipeline makes — a listing with no embedding is still findable by
+// name — and it is what keeps the model off the critical path of the busiest route.
 func (s *Service) probeFor(ctx context.Context, req catalogapi.ListListingsRequest) (port.Vector, bool, error) {
 	if req.Sort == port.SortRecommended {
 		vectors, err := s.repo.InterestVectors(ctx, req.ViewerID.Int64())
@@ -195,7 +199,62 @@ func (s *Service) probeFor(ctx context.Context, req catalogapi.ListListingsReque
 		}
 		return vectors[0], false, nil
 	}
-	return nil, false, nil
+	if req.Query == "" || modeOf(req) == port.ModeLexical {
+		return nil, false, nil
+	}
+	vector, err := s.queryVector(ctx, req.Query)
+	if err != nil {
+		s.log.Warn("embed search query, falling back to lexical", "err", err)
+		return nil, false, nil
+	}
+	return vector, true, nil
+}
+
+// queryVectorTTL is how long a query's embedding is kept. Long, because the answer only
+// changes when the model does: the same words always produce the same vector, and what the
+// cache is protecting against is a popular query paying for an inference every time it is
+// typed. A domain constant rather than config — nothing about a deployment changes it.
+const queryVectorTTL = 24 * time.Hour
+
+// queryVector embeds one search query, through the cache.
+//
+// The key carries the model's name and the width it answered in, so a deployment that changes
+// either reads none of the old entries instead of ranking today's listings against yesterday's
+// model — two vectors from different models are not comparable, and the failure would look
+// like search quietly getting worse rather than like a cache to clear. A cache that is down is
+// not an error: it costs an inference, not an answer.
+func (s *Service) queryVector(ctx context.Context, query string) (port.Vector, error) {
+	normalized := strings.ToLower(strings.Join(strings.Fields(query), " "))
+	sum := sha256.Sum256([]byte(normalized))
+	key := fmt.Sprintf("search-vec:%s:%d:%x", s.vectors.Name(), len(normalized), sum)
+
+	var cached port.Vector
+	if err := s.cache.Get(ctx, key, &cached); err == nil && len(cached) > 0 {
+		return cached, nil
+	}
+
+	vectors, err := s.vectors.Embed(ctx, []string{normalized})
+	if err != nil {
+		return nil, fmt.Errorf("embed query: %w", err)
+	}
+	if len(vectors) != 1 || len(vectors[0].Dense) == 0 {
+		return nil, fmt.Errorf("embed query: model answered %d vectors", len(vectors))
+	}
+	vector := port.Vector(vectors[0].Dense)
+	if err := s.cache.Set(ctx, key, vector, queryVectorTTL); err != nil {
+		s.log.Warn("cache search query vector", "err", err)
+	}
+	return vector, nil
+}
+
+// modeOf applies the default the contract names: hybrid, which is what a model producing both a
+// dense and a lexical half is for. Only meaningful with a query, so it is left empty without one
+// — an empty mode is what tells scoreExpr a feed is not a search.
+func modeOf(req catalogapi.ListListingsRequest) string {
+	if req.Mode != "" || req.Query == "" {
+		return req.Mode
+	}
+	return port.ModeHybrid
 }
 
 // sortOf applies the two defaults the contract names: relevance when a query was given, newest

@@ -97,6 +97,10 @@ type Config struct {
 	// rule as the other seams: a selector, not a default.
 	EmbeddingProvider string `validate:"required,oneof=bge-m3 mock"`
 	EmbeddingBaseURL  string `validate:"required_if=EmbeddingProvider bge-m3,omitempty,url"`
+	// EmbeddingAPIKey is the model service's bearer token. Required with the real provider like
+	// every other vendor credential: the service holds a GPU and answers anyone who can reach
+	// it, so an unauthenticated deployment is one somebody else can spend.
+	EmbeddingAPIKey string `validate:"required_if=EmbeddingProvider bge-m3"`
 	// EmbeddingTimeout bounds one batch. Generous next to the other providers: this is a
 	// transformer over a batch of documents, often on a CPU.
 	EmbeddingTimeout time.Duration `validate:"required_if=EmbeddingProvider bge-m3"`
@@ -301,6 +305,7 @@ func Load(v *validator.Validate) (*Config, error) {
 
 		EmbeddingProvider:     os.Getenv("EMBEDDING_PROVIDER"),
 		EmbeddingBaseURL:      os.Getenv("EMBEDDING_BASE_URL"),
+		EmbeddingAPIKey:       os.Getenv("EMBEDDING_API_KEY"),
 		EmbeddingTimeout:      p.durationVar("EMBEDDING_TIMEOUT"),
 		EmbeddingDimensions:   p.intVar("EMBEDDING_DIMENSIONS"),
 		EmbeddingInterval:     p.durationVar("EMBEDDING_INTERVAL"),

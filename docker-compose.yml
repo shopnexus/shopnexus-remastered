@@ -81,17 +81,28 @@ x-app-env: &app-env
 
   # Embedding (cmd/embedder). `mock` hashes the words instead of running the model, which
   # exercises the queue and both vector columns without a multi-gigabyte download — semantic
-  # search then returns nonsense, which is the trade a laptop makes. Point it at the real
-  # service to get real vectors:
+  # search then returns nonsense, which is the trade a laptop makes.
   #
-  #   EMBEDDING_PROVIDER: "bge-m3"  -> EMBEDDING_BASE_URL, EMBEDDING_TIMEOUT
+  # Two things embed text and they must use the *same* model: the embedder writes listing
+  # vectors, the gateway embeds each search query, and vectors from two models are not
+  # comparable. The four below are the only interpolated values in this file, because they are
+  # the only per-machine ones — the key is a secret that must not be committed. Put them in
+  # `server/.env` (gitignored, read by compose automatically) to get vectors that mean
+  # something; the default stays `mock`, so a checkout with no .env still comes up:
+  #
+  #   EMBEDDING_PROVIDER=bge-m3
+  #   EMBEDDING_BASE_URL=http://saigon4.thinkmay.net:8080
+  #   EMBEDDING_API_KEY=...
   #
   # EMBEDDING_DIMENSIONS must equal the width `catalog.listing_embedding.dense` was declared
   # with. The model service lives in another repository, so nothing but that check couples the
   # two — and changing the model means a migration, not just this number.
-  EMBEDDING_PROVIDER: "mock"
-  EMBEDDING_BASE_URL: "http://embedding:5007"
-  EMBEDDING_TIMEOUT: "2m"
+  EMBEDDING_PROVIDER: "${EMBEDDING_PROVIDER:-mock}"
+  EMBEDDING_BASE_URL: "${EMBEDDING_BASE_URL:-http://embedding:5007}"
+  EMBEDDING_API_KEY: "${EMBEDDING_API_KEY:-}"
+  # Generous, and it bounds one batch of transformer inferences rather than an API call: 32
+  # listing descriptions take tens of seconds on a CPU.
+  EMBEDDING_TIMEOUT: "${EMBEDDING_TIMEOUT:-5m}"
   EMBEDDING_DIMENSIONS: "1024"
   EMBEDDING_INTERVAL: "1m"
   EMBEDDING_BATCH_SIZE: "32"

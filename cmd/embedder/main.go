@@ -97,6 +97,7 @@ func newEmbeddingClient(cfg *config.Config) (embedding.Client, error) {
 	}
 	return bgem3.New(bgem3.Config{
 		BaseURL:    cfg.EmbeddingBaseURL,
+		APIKey:     cfg.EmbeddingAPIKey,
 		Dimensions: cfg.EmbeddingDimensions,
 		Timeout:    cfg.EmbeddingTimeout,
 		// Instrumented transport, no http.Client.Timeout: the per-call budget is on the

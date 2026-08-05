@@ -26,6 +26,9 @@ import (
 	"shopnexus/internal/module/observability"
 	"shopnexus/internal/module/order"
 	"shopnexus/internal/module/trust"
+	"shopnexus/internal/provider/embedding"
+	"shopnexus/internal/provider/embedding/bgem3"
+	embeddingmock "shopnexus/internal/provider/embedding/mock"
 	"shopnexus/internal/provider/kyc"
 	"shopnexus/internal/provider/kyc/fptai"
 	kycmock "shopnexus/internal/provider/kyc/mock"
@@ -82,6 +85,7 @@ func appOptions() fx.Option {
 			newPaymentClient,
 			newTransportClient,
 			newLLMClient,
+			newEmbeddingClient,
 			// Where an uploaded byte goes. The handler beside it is provided only for the
 			// backend that needs this process to serve the bytes.
 			newStorageRegistry,
@@ -235,6 +239,23 @@ func newLLMClient(cfg *config.Config, log *slog.Logger, metrics *observability.S
 		RequestTimeout:  cfg.LiteLLMRequestTimeout,
 		StreamTimeout:   cfg.LiteLLMStreamTimeout,
 		HTTPClient:      observedClient("litellm", log, metrics),
+	})
+}
+
+// newEmbeddingClient is the same seam cmd/embedder holds, and it has to be the same model: a
+// search ranks the query's vector against the vectors that worker wrote, and two models produce
+// numbers that are not comparable. `mock` hashes the words — useless for retrieval, enough for a
+// laptop to walk the route.
+func newEmbeddingClient(cfg *config.Config, log *slog.Logger, metrics *observability.Sink) (embedding.Client, error) {
+	if cfg.EmbeddingProvider != bgem3.Name {
+		return embeddingmock.New(cfg.EmbeddingDimensions), nil
+	}
+	return bgem3.New(bgem3.Config{
+		BaseURL:    cfg.EmbeddingBaseURL,
+		APIKey:     cfg.EmbeddingAPIKey,
+		Dimensions: cfg.EmbeddingDimensions,
+		Timeout:    cfg.EmbeddingTimeout,
+		HTTPClient: observedClient(bgem3.Name, log, metrics),
 	})
 }
 

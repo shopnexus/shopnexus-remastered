@@ -9,11 +9,13 @@ import (
 
 	"github.com/go-playground/validator/v10"
 
+	"shopnexus/internal/infra/cache"
 	accountapi "shopnexus/internal/module/account/api"
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
 	"shopnexus/internal/module/common"
+	"shopnexus/internal/provider/embedding"
 	"shopnexus/internal/provider/llm"
 	"shopnexus/internal/shared/id"
 )
@@ -31,8 +33,16 @@ type Service struct {
 	// suggestion route uses it, and `mock` answers without a model so a local stack still walks
 	// the flow.
 	llm llm.Client
-	v   *validator.Validate
-	log *slog.Logger
+	// vectors embeds a search query with the same model that wrote listing_embedding — the two
+	// vectors are only comparable because they came from one model, which is why this is the
+	// same seam cmd/embedder holds rather than a second one.
+	vectors embedding.Client
+	// cache holds those query vectors. A search box sends the same few hundred queries all day
+	// and each miss is a transformer inference on the request path, so the hit rate is the
+	// difference between search costing nothing and search costing a model call.
+	cache cache.Client
+	v     *validator.Validate
+	log   *slog.Logger
 }
 
 func NewService(
@@ -40,10 +50,13 @@ func NewService(
 	accounts accountapi.Service,
 	uploads common.Uploads,
 	models llm.Client,
+	vectors embedding.Client,
+	queries cache.Client,
 	v *validator.Validate,
 	log *slog.Logger,
 ) *Service {
-	return &Service{repo: repo, accounts: accounts, uploads: uploads, llm: models, v: v, log: log}
+	return &Service{repo: repo, accounts: accounts, uploads: uploads, llm: models,
+		vectors: vectors, cache: queries, v: v, log: log}
 }
 
 // CreateUpload reserves a row and a signed slot for a listing photo. The client PUTs the bytes

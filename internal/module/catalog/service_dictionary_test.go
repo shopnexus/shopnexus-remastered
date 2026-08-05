@@ -7,12 +7,14 @@ import (
 	"strings"
 	"testing"
 
+	"shopnexus/internal/infra/cache"
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/api/accounttest"
 	"shopnexus/internal/module/catalog"
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
+	"shopnexus/internal/provider/embedding"
 	"shopnexus/internal/provider/llm"
 	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/id"
@@ -110,6 +112,9 @@ type harness struct {
 	// asked, which is the only way to check that the prompt carried the category list and that the
 	// photos reached the model at all.
 	models *fakeLLM
+	// vectors is the embedding seam a search's probe comes from. It counts calls, because what is
+	// worth proving about the probe is that a repeated query costs one inference and not two.
+	vectors *fakeVectors
 }
 
 func newHarness(role string) *harness { return newHarnessWith(role, false) }
@@ -120,16 +125,19 @@ func newHarnessWith(role string, identityVerified bool) *harness {
 	repo := newFakeRepo()
 	store := newFakeUploads()
 	models := &fakeLLM{}
+	vectors := &fakeVectors{}
 	svc := catalog.NewService(repo, fakeAccounts{role: role, verified: identityVerified},
-		store, models, validation.Default(), slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: repo, uploads: store, images: store.confirmed, models: models}
+		store, models, vectors, cache.NewInMemoryClient(), validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: repo, uploads: store, images: store.confirmed, models: models,
+		vectors: vectors}
 }
 
 // newHarnessModerator reuses one harness's repository with a moderator caller.
 func newHarnessModerator(h *harness) *harness {
 	svc := catalog.NewService(h.repo, fakeAccounts{role: "moderator", verified: true},
-		h.uploads, h.models, validation.Default(), slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models}
+		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models,
+		vectors: h.vectors}
 }
 
 // newHarnessSellerGone reuses one harness's data with the seller's account missing, and counts what
@@ -137,24 +145,27 @@ func newHarnessModerator(h *harness) *harness {
 func newHarnessSellerGone(h *harness, gone bool, reads *int) *harness {
 	svc := catalog.NewService(h.repo,
 		fakeAccounts{role: "user", verified: true, gone: gone, publicReads: reads},
-		h.uploads, h.models, validation.Default(), slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models}
+		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models,
+		vectors: h.vectors}
 }
 
 // newHarnessUngeocoded reuses one harness's data with a seller whose address has no coordinates,
 // which is what makes "near me" refusable rather than silently empty.
 func newHarnessUngeocoded(h *harness) *harness {
 	svc := catalog.NewService(h.repo, fakeAccounts{role: "user", verified: true, ungeocoded: true},
-		h.uploads, h.models, validation.Default(), slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models}
+		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models,
+		vectors: h.vectors}
 }
 
 // newHarnessAdmin reuses one harness's repository with an admin caller, so a test can seed a
 // category and then act as a plain seller against the same data.
 func newHarnessAdmin(h *harness) *harness {
 	svc := catalog.NewService(h.repo, fakeAccounts{role: "admin", verified: true},
-		h.uploads, h.models, validation.Default(), slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models}
+		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), validation.Default(), slog.New(slog.DiscardHandler))
+	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models,
+		vectors: h.vectors}
 }
 
 func status(t *testing.T, err error) uint16 {
@@ -648,4 +659,28 @@ func (f *fakeLLM) Embed(context.Context, llm.EmbedParams) (llm.EmbedResult, erro
 
 func (f *fakeLLM) Rerank(context.Context, llm.RerankParams) (llm.RerankResult, error) {
 	return llm.RerankResult{}, llm.ErrNotSupported
+}
+
+// fakeVectors is the embedding model behind a search probe. Deterministic and counted: the
+// vector's contents decide nothing here (the repo fake does not rank), but how many times the
+// model was asked is exactly what the query cache is for.
+type fakeVectors struct {
+	calls int
+	texts []string
+	err   error
+}
+
+func (f *fakeVectors) Name() string { return "fake" }
+
+func (f *fakeVectors) Embed(_ context.Context, texts []string) ([]embedding.Vector, error) {
+	f.calls++
+	f.texts = append(f.texts, texts...)
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := make([]embedding.Vector, len(texts))
+	for i := range texts {
+		out[i] = embedding.Vector{Dense: []float32{1, 0, 0}, Sparse: map[uint32]float32{1: 1}}
+	}
+	return out, nil
 }
