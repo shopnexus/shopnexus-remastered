@@ -63,7 +63,13 @@ type ListingSummary struct {
 	Score      *float64
 	CategoryID int64
 	CoverID    *int64
-	CreatedAt  time.Time
+	// Tags are the listing's own, read on the card so a client can render chips without a
+	// request per row. Empty rather than nil for a listing with none.
+	Tags []string
+	// TakenDownAt says staff removed this one, which `hidden` alone cannot: a seller who hid
+	// their own listing reads the same status.
+	TakenDownAt *time.Time
+	CreatedAt   time.Time
 	// DeletedAt is set on a listing the seller removed. Only an `ids` lookup returns one — an
 	// order that references it still has to render.
 	DeletedAt *time.Time

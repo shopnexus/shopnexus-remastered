@@ -66,7 +66,7 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 			&s.PriceMode, &s.Currency, &s.Price, &s.Sold, &s.Rating, &s.ReviewCount, &s.CategoryID,
 			&s.CoverID, &area.provinceCode, &area.provinceName, &area.districtCode,
 			&area.districtName, &area.wardCode, &area.wardName, &area.latitude, &area.longitude,
-			&s.DistanceKM, &s.CreatedAt, &s.DeletedAt, &s.Score,
+			&s.DistanceKM, &s.Tags, &s.TakenDownAt, &s.CreatedAt, &s.DeletedAt, &s.Score,
 			&total); err != nil {
 			return nil, 0, fmt.Errorf("db scan listing card: %w", err)
 		}
@@ -89,8 +89,16 @@ const feedSelect = `SELECT l.id, l.account_id, l.slug, l.name, l.status::text, l
 	                  l.ward_code, l.ward_name,
 	                  ST_Y(l.location::geometry), ST_X(l.location::geometry),
 	                  ` + distanceExpr + ` AS distance_km,
+	                  ` + cardTags + `,
+	                  l.taken_down_at,
 	                  l.created_at, l.deleted_at,
 	                  `
+
+// cardTags is the listing's tags on the card itself. A subquery rather than a second round trip:
+// a feed page is one statement, and chips a client renders are not worth a query per row.
+// COALESCE, so a listing with no tags is an empty array rather than a NULL a scanner has to hold.
+const cardTags = `COALESCE((SELECT array_agg(lt.tag ORDER BY lt.tag)
+	                          FROM listing_tag lt WHERE lt.listing_id = l.id), '{}')`
 
 // distanceExpr is the kilometres between the buyer and the goods, NULL when either end has no
 // point: a browse that named no position, or a listing whose address was never geocoded. Computed
@@ -178,9 +186,13 @@ const feedWhere = `
 	               -- ranking is the answer and an ANN scan has no threshold to apply) —
 	               -- never for a recommended feed's probe, which comes from the account's
 	               -- interest vectors and has nothing to do with @query.
+	               -- The operator is word similarity, query on the left, matched against the
+	               -- best run of words in the name. Whole-string similarity compared the two
+	               -- as wholes and so matched nothing a shopper ever types (see scoreExpr).
+	               -- The same GIN index serves it, commuted to f_unaccent(name) %> query.
 	               AND (@query::text IS NULL
 	                    OR (@probe::text IS NOT NULL AND @probe_from_query::boolean)
-	                    OR f_unaccent(l.name) % f_unaccent(@query::text))
+	                    OR f_unaccent(@query::text) <% f_unaccent(l.name))
 	             END
 	           )`
 
@@ -190,14 +202,21 @@ const feedPage = `
 // scoreExpr picks what "score" means for this request. Always higher-is-better, so a client
 // never has to know which mode ran:
 //
-//   - lexical: trigram similarity of the unaccented name.
+//   - lexical: how well the query matches the best-matching run of words in the name.
 //   - semantic and recommended: 1 − cosine distance to the probe.
 //   - hybrid: the sum of the two, which is what a query with both halves is for.
 //
 // A listing with no embedding scores 0 on the dense half rather than dropping out, so it stays
 // findable lexically — the contract says so explicitly.
+//
+// `word_similarity`, not `similarity`: whole-string similarity divides the shared trigrams by
+// the union of *both* strings, so a two-word query against a forty-character product name
+// scores about 0.05 and no realistic search ever clears the 0.3 threshold — "iphone" matched
+// none of the four listings with iPhone in the name. word_similarity measures the query
+// against the most similar run of words inside the name instead, which is the question a
+// search box actually asks. Argument order is load-bearing: the query is the needle.
 func scoreExpr(f port.ListingFilter) string {
-	const lexical = `similarity(f_unaccent(l.name), f_unaccent(@query::text))`
+	const lexical = `word_similarity(f_unaccent(@query::text), f_unaccent(l.name))`
 	const dense = `COALESCE(1 - (e.dense <=> @probe::vector), 0)`
 	switch {
 	case f.Probe != nil && f.Query != "" && f.Mode == port.ModeHybrid:

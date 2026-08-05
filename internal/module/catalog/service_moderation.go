@@ -70,6 +70,10 @@ func (s *Service) cards(ctx context.Context, rows []port.ListingSummary) ([]cata
 			ReviewCount: row.ReviewCount,
 			CategoryID:  id.Of[id.Category](row.CategoryID),
 			Score:       row.Score,
+			// Empty rather than null: the contract says an array, and a client that has to
+			// nil-check a required field is one the contract lied to.
+			Tags:        append([]string{}, row.Tags...),
+			TakenDownAt: row.TakenDownAt,
 			Location:    toAPILocation(row.Location, row.DistanceKM),
 			DeletedAt:   row.DeletedAt,
 			CreatedAt:   row.CreatedAt,

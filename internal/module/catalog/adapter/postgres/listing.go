@@ -21,6 +21,7 @@ const listingColumns = `id, version, account_id, slug, status::text, name, descr
 	       specifications, attachments, pending_edit, cached_rating, cached_review_count, cached_sold,
 	       province_code, province_name, district_code, district_name, ward_code, ward_name,
 	       ST_Y(location::geometry), ST_X(location::geometry),
+	       taken_down_at, takedown_reason,
 	       created_at, deleted_at, embedding_stale_at`
 
 func scanListing(row pgx.Row) (*domain.Listing, error) {
@@ -34,6 +35,7 @@ func scanListing(row pgx.Row) (*domain.Listing, error) {
 		&l.Specifications, &l.Attachments, &pending, &l.CachedRating, &l.CachedReviewCount, &l.CachedSold,
 		&area.provinceCode, &area.provinceName, &area.districtCode, &area.districtName,
 		&area.wardCode, &area.wardName, &area.latitude, &area.longitude,
+		&l.TakenDownAt, &l.TakedownReason,
 		&l.CreatedAt, &l.DeletedAt, &l.EmbeddingStaleAt)
 	if dbx.IsNoRows(err) {
 		return nil, domain.ErrListingNotFound
@@ -81,6 +83,8 @@ func listingArgs(l *domain.Listing) pgx.NamedArgs {
 	}
 	return pgx.NamedArgs{
 		"id":                  l.ID,
+		"taken_down_at":       l.TakenDownAt,
+		"takedown_reason":     l.TakedownReason,
 		"version":             l.Version,
 		"account_id":          l.SellerID,
 		"slug":                l.Slug,
@@ -269,6 +273,7 @@ func (r *Repo) SaveListing(ctx context.Context, l *domain.Listing, actor int64) 
 		               province_code = @province_code, province_name = @province_name,
 		               district_code = @district_code, district_name = @district_name,
 		               ward_code = @ward_code, ward_name = @ward_name,
+		               taken_down_at = @taken_down_at, takedown_reason = @takedown_reason,
 		               location = ` + locationPoint + `, version = version + 1
 		           WHERE id = @id AND version = @version AND deleted_at IS NULL`
 		tag, err := tx.Exec(ctx, q, listingArgs(l))

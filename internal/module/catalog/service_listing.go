@@ -219,6 +219,8 @@ func (s *Service) detailFor(ctx context.Context, l *domain.Listing, viewerID int
 		Images:         pick(images, l.Attachments),
 		Category:       toAPICategory(category),
 		Tags:           l.Tags,
+		TakenDownAt:    l.TakenDownAt,
+		TakedownReason: l.TakedownReason,
 		Sold:           l.CachedSold,
 		Rating:         l.CachedRating,
 		ReviewCount:    l.CachedReviewCount,

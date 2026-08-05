@@ -382,3 +382,48 @@ func TestListListings_SellerReadsAreOncePerShopAndSurviveAMissingOne(t *testing.
 		t.Errorf("seller = %+v, want the id with no name", page.Data[0].Seller)
 	}
 }
+
+// Chips on a card come from the card itself: a feed page of twenty is one statement, and a client
+// that had to open each listing to learn its tags would make twenty requests to draw them.
+func TestListListings_TagsRideOnTheCard(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	staff := newHarnessAdmin(h)
+	for _, slug := range []string{"ao-thun", "uniqlo"} {
+		if _, err := staff.svc.AdminPutTag(ctx, catalogapi.PutTagRequest{
+			ActorID: actor, Slug: slug,
+		}); err != nil {
+			t.Fatalf("AdminPutTag(%s): %v", slug, err)
+		}
+	}
+
+	req := createListingRequest(h, t)
+	req.Name = "Có tag"
+	req.Tags = []string{"uniqlo", "ao-thun"}
+	tagged, err := h.svc.CreateListing(ctx, req)
+	if err != nil {
+		t.Fatalf("CreateListing: %v", err)
+	}
+	publish(t, h, tagged)
+	publish(t, h, seedListingNamed(t, h, "Không tag"))
+
+	page, err := h.svc.ListListings(ctx, catalogapi.ListListingsRequest{Page: 1, Limit: 20})
+	if err != nil {
+		t.Fatalf("ListListings: %v", err)
+	}
+	byName := map[string][]string{}
+	for _, card := range page.Data {
+		// Empty rather than null: the contract says an array, and a client that has to nil-check a
+		// required field is one the contract lied to.
+		if card.Tags == nil {
+			t.Fatalf("card %q has null tags", card.Name)
+		}
+		byName[card.Name] = card.Tags
+	}
+	if got := byName["Có tag"]; len(got) != 2 {
+		t.Fatalf("tags = %v, want both of the listing's own", got)
+	}
+	if got := byName["Không tag"]; len(got) != 0 {
+		t.Fatalf("tags = %v, want none", got)
+	}
+}

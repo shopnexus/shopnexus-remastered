@@ -1545,6 +1545,21 @@ components:
                     type: integer
                 status:
                     $ref: '#/components/schemas/ListingStatus'
+                tags:
+                    description: |
+                        The listing's own tags, on the card so chips render without a request per row. Empty when it has none.
+                    example:
+                        - iphone
+                        - apple
+                    items:
+                        $ref: '#/components/schemas/TagSlug'
+                    type: array
+                taken_down_at:
+                    description: |
+                        When staff removed this listing — which is the only thing that tells a takedown apart from the seller hiding their own, since both read `hidden`. Null otherwise. The reason is on the detail read, because it is a sentence rather than a badge.
+                    format: date-time
+                    nullable: true
+                    type: string
             required:
                 - id
                 - slug
@@ -1658,6 +1673,18 @@ components:
                     items:
                         $ref: '#/components/schemas/TagSlug'
                     type: array
+                takedown_reason:
+                    description: |
+                        What the moderator chose to tell the seller, and null when they chose not to (`notify_seller: false` on the takedown). The full reason is in the audit trail either way. Publishing again clears both fields, so they always describe why the listing is down *now* rather than why it once was.
+                    example: Ảnh trùng với gian hàng chính hãng
+                    nullable: true
+                    type: string
+                taken_down_at:
+                    description: |
+                        When staff removed the listing. Null when it is live, and null when the seller hid it themselves — the two used to be indistinguishable, which left a seller unable to tell that their listing had been removed at all.
+                    format: date-time
+                    nullable: true
+                    type: string
                 variants:
                     items:
                         $ref: '#/components/schemas/Variant'

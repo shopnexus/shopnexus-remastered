@@ -746,6 +746,21 @@ components:
             request. A plain join, because the wishlist is a catalog table — the client
             never has to fetch its own saves to know which hearts to fill in.
         score: { $ref: '#/components/schemas/SimilarityScore' }
+        tags:
+          type: array
+          items: { $ref: '#/components/schemas/TagSlug' }
+          example: [iphone, apple]
+          description: >
+            The listing's own tags, on the card so chips render without a request per row.
+            Empty when it has none.
+        taken_down_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            When staff removed this listing — which is the only thing that tells a takedown apart
+            from the seller hiding their own, since both read `hidden`. Null otherwise. The reason
+            is on the detail read, because it is a sentence rather than a badge.
         location:
           allOf: [{ $ref: '#/components/schemas/ListingLocation' }]
           nullable: true
@@ -808,6 +823,23 @@ components:
           description: >
             An edit waiting on moderation, null when there is none. Visible to the owner
             and to staff only; buyers see the published version until it is approved.
+        taken_down_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            When staff removed the listing. Null when it is live, and null when the seller hid it
+            themselves — the two used to be indistinguishable, which left a seller unable to tell
+            that their listing had been removed at all.
+        takedown_reason:
+          type: string
+          nullable: true
+          example: Ảnh trùng với gian hàng chính hãng
+          description: >
+            What the moderator chose to tell the seller, and null when they chose not to
+            (`notify_seller: false` on the takedown). The full reason is in the audit trail either
+            way. Publishing again clears both fields, so they always describe why the listing is
+            down *now* rather than why it once was.
         created_at: { type: string, format: date-time }
         deleted_at: { type: string, format: date-time, nullable: true, description: 'Set on a listing the seller removed.' }
       required: [id, slug, name, description, status, condition, price_mode, currency, specifications, images, category, tags, variants, sold, rating, review_count, seller, favorited, favorite_count, created_at]

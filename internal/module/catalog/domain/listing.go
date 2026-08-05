@@ -92,6 +92,12 @@ type Listing struct {
 	CachedReviewCount int64
 	CachedSold        int64
 	CreatedAt         time.Time
+	// TakenDownAt is set when staff removed the listing, and by nothing else — a seller who hid
+	// their own reads the same `hidden` status, so this is the only thing that tells the two apart.
+	// TakedownReason is the seller-visible words, nil when the moderator chose not to tell them;
+	// the reason is in the trail either way.
+	TakenDownAt    *time.Time
+	TakedownReason *string
 	// DeletedAt is a soft delete, distinct from StatusHidden: order history holds the ids
 	// without a foreign key and has to stay resolvable.
 	DeletedAt        *time.Time
@@ -236,8 +242,18 @@ func (l *Listing) Publish() error {
 		return ErrNoPickupAddress
 	}
 	l.Status = StatusPending
+	// The listing is no longer down, so the reason for it having been must not survive the move —
+	// otherwise a seller reads that their live listing was removed. The trail keeps the history.
+	l.clearTakedown()
 	record(l, Published, StatusChange{Status: l.Status})
 	return nil
+}
+
+// clearTakedown drops the marker and its words. Only a transition out of `hidden` calls it, which is
+// what the DB CHECK behind these two columns enforces.
+func (l *Listing) clearTakedown() {
+	l.TakenDownAt = nil
+	l.TakedownReason = nil
 }
 
 // Approve clears whatever was awaiting a decision: a first publication, or an edit held
@@ -269,6 +285,14 @@ func (l *Listing) Takedown(reason string, notifySeller bool) error {
 	}
 	l.Status = StatusHidden
 	l.PendingEdit = nil
+	l.TakenDownAt = new(time.Now())
+	// Only what the seller may read. `notify_seller` was already the moderator's choice about
+	// telling them; this is where that choice becomes something they can act on.
+	if notifySeller && strings.TrimSpace(reason) != "" {
+		l.TakedownReason = &reason
+	} else {
+		l.TakedownReason = nil
+	}
 	record(l, TakenDown, Takedown{Status: l.Status, Reason: reason, NotifySeller: notifySeller})
 	return nil
 }

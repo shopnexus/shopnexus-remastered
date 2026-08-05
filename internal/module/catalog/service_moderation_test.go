@@ -148,3 +148,83 @@ func TestAdminTakedownListing(t *testing.T) {
 		t.Fatalf("status = %q — a seller must not be able to undo a takedown", republished.Status)
 	}
 }
+
+// A seller has to be able to tell "staff removed this" from "I hid this", and to read why. Both
+// still write `hidden`, so the marker is what carries it — and publishing again clears both, or the
+// seller would be told their live listing was removed.
+func TestAdminTakedown_TellsTheSellerWhyAndOnlyWhileItIsDown(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	l := seedListing(t, h)
+	publish(t, h, l)
+	staff := newHarnessModerator(h)
+
+	down, err := staff.svc.AdminTakedownListing(ctx, catalogapi.TakedownListingRequest{
+		ActorID: actor, ID: l.ID, Reason: "Ảnh trùng với gian hàng chính hãng",
+	})
+	if err != nil {
+		t.Fatalf("AdminTakedownListing: %v", err)
+	}
+	if down.Status != string(domain.StatusHidden) || down.TakenDownAt == nil {
+		t.Fatalf("listing = %+v, want it hidden and marked as taken down", down)
+	}
+	if down.TakedownReason == nil || *down.TakedownReason != "Ảnh trùng với gian hàng chính hãng" {
+		t.Fatalf("reason = %v, want the moderator's words", down.TakedownReason)
+	}
+	// The seller's own read carries it too — that is the whole point.
+	mine, err := h.svc.GetListing(ctx, catalogapi.GetListingRequest{ID: l.ID, ViewerID: actor})
+	if err != nil {
+		t.Fatalf("GetListing: %v", err)
+	}
+	if mine.TakenDownAt == nil || mine.TakedownReason == nil {
+		t.Fatalf("listing = %+v, want the seller told why", mine)
+	}
+	// And their own list can badge it without opening every row.
+	page, err := h.svc.ListListings(ctx, catalogapi.ListListingsRequest{
+		ViewerID: actor, Mine: true, Page: 1, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListListings(mine): %v", err)
+	}
+	if len(page.Data) != 1 || page.Data[0].TakenDownAt == nil {
+		t.Fatalf("card = %+v, want the takedown marked on the card", page.Data)
+	}
+
+	// Publishing again re-enters moderation, so the reason must not survive: it described a state
+	// the listing is no longer in.
+	if _, err := h.svc.PublishListing(ctx, catalogapi.PublishListingRequest{
+		ActorID: actor, ID: l.ID,
+	}); err != nil {
+		t.Fatalf("PublishListing: %v", err)
+	}
+	again, err := h.svc.GetListing(ctx, catalogapi.GetListingRequest{ID: l.ID, ViewerID: actor})
+	if err != nil {
+		t.Fatalf("GetListing: %v", err)
+	}
+	if again.TakenDownAt != nil || again.TakedownReason != nil {
+		t.Fatalf("listing = %+v, want the takedown cleared once it is back in moderation", again)
+	}
+}
+
+// The moderator's `notify_seller: false` has always been a recorded choice; it now decides whether
+// the seller reads the reason. The marker still lands, because "staff removed this" is not a secret.
+func TestAdminTakedown_WithoutNotifyKeepsTheReasonInTheTrailOnly(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	l := seedListing(t, h)
+	publish(t, h, l)
+
+	down, err := newHarnessModerator(h).svc.AdminTakedownListing(ctx, catalogapi.TakedownListingRequest{
+		ActorID: actor, ID: l.ID, Reason: "nghi ngờ rửa tiền, đang điều tra",
+		NotifySeller: new(false),
+	})
+	if err != nil {
+		t.Fatalf("AdminTakedownListing: %v", err)
+	}
+	if down.TakenDownAt == nil {
+		t.Fatalf("listing = %+v, want the takedown still marked", down)
+	}
+	if down.TakedownReason != nil {
+		t.Fatalf("reason = %v, want it kept out of the seller's view", *down.TakedownReason)
+	}
+}

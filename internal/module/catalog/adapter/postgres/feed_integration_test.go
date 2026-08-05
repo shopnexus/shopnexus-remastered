@@ -180,8 +180,12 @@ func TestRepo_ListListingsRecommendedProbeDoesNotBypassQueryFilter(t *testing.T)
 	// The full phrase, as the trigram index needs: a short single-word query against a
 	// name padded with a unique timestamp suffix can fall under the similarity threshold.
 	const query = "ao thun uniqlo"
+	// Scoped to this test's own category. The dev database is shared and seeded, and once the
+	// embedder has run over that seed every listing has a vector — so an unscoped assertion of
+	// "only mine came back" tests the neighbours rather than the probe.
 	rows, _, err := repo.ListListings(ctx, port.ListingFilter{
-		Query: query, Probe: probe, ProbeFromQuery: false, Sort: port.SortRecommended, Limit: 20,
+		Query: query, Probe: probe, ProbeFromQuery: false, Sort: port.SortRecommended,
+		CategoryID: category.ID, Limit: 20,
 	})
 	if err != nil {
 		t.Fatalf("ListListings: %v", err)
@@ -348,5 +352,82 @@ func TestRepo_ListListingsFiltersByAreaAndDistance(t *testing.T) {
 	ranked.Sort = port.SortDistance
 	if !held(t, ranked) {
 		t.Error("a distance sort with no radius dropped a listing")
+	}
+}
+
+// The card carries the listing's own tags and the takedown marker, both read in the one feed
+// statement — a page of twenty must not cost a query per row to draw its chips, and a seller has to
+// be able to tell a takedown from their own hiding without opening every listing.
+func TestRepo_ListListingsCarriesTagsAndTheTakedownMarker(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	category := createCategory(t, repo, unique("cat-"), nil)
+	createTag(t, repo, "handmade", nil)
+
+	live := newListingFor(t, repo, category.ID, unique("Ao thun "))
+	if err := live.Publish(); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if err := live.Approve(""); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	if err := repo.SaveListing(ctx, live, testSeller); err != nil {
+		t.Fatalf("SaveListing: %v", err)
+	}
+
+	byID := func(id int64) port.ListingSummary {
+		t.Helper()
+		rows, _, err := repo.ListListings(ctx, port.ListingFilter{
+			IDs: []int64{id}, ViewerID: testSeller, Limit: 20,
+		})
+		if err != nil {
+			t.Fatalf("ListListings: %v", err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("rows = %d, want the one listing", len(rows))
+		}
+		return rows[0]
+	}
+
+	card := byID(live.ID)
+	if len(card.Tags) != 1 || card.Tags[0] != "handmade" {
+		t.Fatalf("tags = %v, want the listing's own", card.Tags)
+	}
+	if card.TakenDownAt != nil {
+		t.Fatalf("taken down = %v, want a live listing unmarked", card.TakenDownAt)
+	}
+
+	// Staff take it down, and the marker is what a seller's list can badge.
+	if err := live.Takedown("hàng giả", true); err != nil {
+		t.Fatalf("Takedown: %v", err)
+	}
+	if err := repo.SaveListing(ctx, live, testSeller); err != nil {
+		t.Fatalf("SaveListing: %v", err)
+	}
+	if down := byID(live.ID); down.TakenDownAt == nil {
+		t.Fatal("the takedown left no marker on the card")
+	}
+	stored, err := repo.GetListing(ctx, live.ID)
+	if err != nil {
+		t.Fatalf("GetListing: %v", err)
+	}
+	if stored.TakedownReason == nil || *stored.TakedownReason != "hàng giả" {
+		t.Fatalf("reason = %v, want the moderator's words", stored.TakedownReason)
+	}
+
+	// And the CHECK is what stops a stale reason surviving the way back out: publishing clears
+	// both, so the row can never say a live listing was removed.
+	if err := stored.Publish(); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if err := repo.SaveListing(ctx, stored, testSeller); err != nil {
+		t.Fatalf("SaveListing after publishing again: %v", err)
+	}
+	again, err := repo.GetListing(ctx, live.ID)
+	if err != nil {
+		t.Fatalf("GetListing: %v", err)
+	}
+	if again.TakenDownAt != nil || again.TakedownReason != nil {
+		t.Fatalf("listing = %+v, want the takedown cleared", again)
 	}
 }

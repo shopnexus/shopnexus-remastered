@@ -641,6 +641,8 @@ func (f *fakeRepo) ListModerationQueue(_ context.Context, filter port.QueueFilte
 			Condition: l.Condition, PriceMode: l.PriceMode, Currency: l.Currency,
 			Price: price, Sold: l.CachedSold, Rating: l.CachedRating,
 			CategoryID: l.CategoryID, CoverID: coverID,
+			// The card's own copies, as the feed query reads them.
+			Tags: slices.Clone(stored.tags), TakenDownAt: l.TakenDownAt,
 			CreatedAt: l.CreatedAt,
 		})
 	}
@@ -840,6 +842,9 @@ func (f *fakeRepo) summaryOf(stored storedListing) port.ListingSummary {
 		ID: l.ID, SellerID: l.SellerID, Slug: l.Slug, Name: l.Name, Status: l.Status,
 		Condition: l.Condition, PriceMode: l.PriceMode, Currency: l.Currency, Price: price,
 		Sold: l.CachedSold, Rating: l.CachedRating, CategoryID: l.CategoryID, CoverID: coverID,
+		// The card's own copies, as the feed query reads them: the tag set is the join table's, not
+		// whatever the aggregate in memory happens to hold.
+		Tags: slices.Clone(stored.tags), TakenDownAt: l.TakenDownAt,
 		Location: l.Location, CreatedAt: l.CreatedAt, DeletedAt: l.DeletedAt,
 	}
 }

@@ -113,6 +113,11 @@ type ListingDetail struct {
 	Favorited         bool                      `json:"favorited"`
 	FavoriteCount     int64                     `json:"favorite_count"`
 	PendingEdit       *PendingEdit              `json:"pending_edit"`
+	// TakenDownAt is set when staff removed the listing, and is what tells that apart from a
+	// seller hiding their own — both read `hidden`. TakedownReason is what the moderator chose to
+	// tell the seller, nil when they chose not to; the full reason stays in the audit trail.
+	TakenDownAt    *time.Time `json:"taken_down_at"`
+	TakedownReason *string    `json:"takedown_reason"`
 	// Location is where the goods are, and nil on a listing that was never published: it is the
 	// seller's pickup address, taken when they published.
 	Location  *ListingLocation `json:"location"`
@@ -139,6 +144,12 @@ type Listing struct {
 	Seller      accountapi.AccountSummary `json:"seller"`
 	Favorited   bool                      `json:"favorited"`
 	Score       *float64                  `json:"score,omitempty"`
+	// Tags the listing carries, so a card renders its chips without a request of its own. Empty
+	// rather than null for a listing with none.
+	Tags []string `json:"tags"`
+	// TakenDownAt lets a seller's own list mark which of their hidden listings staff removed. The
+	// reason is on the detail read, since it is a sentence rather than a badge.
+	TakenDownAt *time.Time `json:"taken_down_at"`
 	// Location is where the goods are, and nil on a listing that was never published.
 	Location  *ListingLocation `json:"location"`
 	DeletedAt *time.Time       `json:"deleted_at"`

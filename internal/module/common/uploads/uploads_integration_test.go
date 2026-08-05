@@ -41,6 +41,7 @@ func newStore(t *testing.T, slotTTL time.Duration) (*uploads.Store, *dbx.Resourc
 		UploadTTL:    slotTTL,
 		DownloadTTL:  time.Hour,
 		MaxSize:      1 << 20,
+		MaxVideoSize: 8 << 20,
 		AllowedMimes: []string{"image/jpeg"},
 	})
 	if err != nil {
