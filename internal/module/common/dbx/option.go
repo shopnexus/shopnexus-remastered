@@ -16,11 +16,15 @@ type Options struct{ pool *pgxpool.Pool }
 func NewOptions(pool *pgxpool.Pool) *Options { return &Options{pool: pool} }
 
 // ListEnabled answers the live options of one type, best first.
+//
+// `deleted_at IS NULL` is half of live and was missing: a retired row is `is_enabled = false`,
+// but one removed from the registry outright kept its flag and stayed on the list — and the
+// partial index this query exists for is declared over both, so it could not be used either.
 func (s *Options) ListEnabled(ctx context.Context, optionType string) ([]common.Option, error) {
 	const q = `SELECT id, owner_id, is_enabled, name, description, priority,
 	                  logo_resource_id, data, type, provider
 	           FROM option
-	           WHERE type = @type AND is_enabled
+	           WHERE type = @type AND is_enabled AND deleted_at IS NULL
 	           ORDER BY priority DESC, name`
 	rows, err := s.pool.Query(ctx, q, pgx.NamedArgs{"type": optionType})
 	if err != nil {
