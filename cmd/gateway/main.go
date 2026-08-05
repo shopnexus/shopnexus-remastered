@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"slices"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -46,6 +45,8 @@ import (
 	oidcverify "shopnexus/internal/provider/oauth/oidc"
 	"shopnexus/internal/provider/payment"
 	paymentmock "shopnexus/internal/provider/payment/mock"
+	"shopnexus/internal/provider/payment/sepay"
+	"shopnexus/internal/provider/payment/stripe"
 	"shopnexus/internal/provider/storage"
 	localstorage "shopnexus/internal/provider/storage/local"
 	remotestorage "shopnexus/internal/provider/storage/remote"
@@ -278,14 +279,34 @@ func newKYCClient(cfg *config.Config, log *slog.Logger, metrics *observability.S
 // uses. Not a selector: which rail a payer's choice resolves to is that row's `provider`, so a
 // deployment can offer two at once and an admin can move one without a restart.
 //
-// The mock is registered only when MOCK_ENABLED names `payment` — and even then it is an ordinary
-// member, reached only by a row that names it. A real gateway is a new entry here plus its
-// credentials in config, exactly like the other seams.
-func newPaymentRails(cfg *config.Config, log *slog.Logger) *common.Registry[payment.Client] {
+// PAYMENT_PROVIDERS is what registers each one, and a rail left out is one no row can name. The
+// mock is an ordinary member of the list: registering it beside a real rail is safe, since nothing
+// charges through it unless a row asks for it by name.
+func newPaymentRails(cfg *config.Config, log *slog.Logger, metrics *observability.Sink) *common.Registry[payment.Client] {
 	rails := map[string]payment.Client{}
-	if slices.Contains(cfg.MockEnabled, common.CategoryPayment) {
-		rails[paymentmock.Name] = paymentmock.NewClient(
-			paymentmock.Config{BaseURL: cfg.PublicBaseURL}, log)
+	for _, provider := range cfg.PaymentProviders {
+		switch provider {
+		case paymentmock.Name:
+			rails[provider] = paymentmock.NewClient(
+				paymentmock.Config{BaseURL: cfg.PublicBaseURL}, log)
+		case sepay.Name:
+			// No HTTP client: this rail opens its checkout in the payer's browser, so charging is
+			// signing a form rather than calling anybody.
+			rails[provider] = sepay.New(sepay.Config{
+				MerchantID:   cfg.SePayMerchantID,
+				SecretKey:    cfg.SePaySecretKey,
+				IPNSecretKey: cfg.SePayIPNSecretKey,
+				BaseURL:      cfg.PublicBaseURL,
+				Sandbox:      cfg.SePaySandbox,
+			}, log)
+		case stripe.Name:
+			rails[provider] = stripe.New(stripe.Config{
+				SecretKey:      cfg.StripeSecretKey,
+				WebhookSecret:  cfg.StripeWebhookSecret,
+				RequestTimeout: cfg.StripeRequestTimeout,
+				HTTPClient:     observedClient(stripe.Name, log, metrics),
+			}, log)
+		}
 	}
 	return common.NewRegistry(rails)
 }
@@ -346,8 +367,10 @@ func newUploadsHandler(stores *storage.Registry, log *slog.Logger) *handler.Uplo
 // quote drops out of the list rather than being absorbed by the platform.
 func newCouriers(cfg *config.Config, log *slog.Logger) *common.Registry[transport.Client] {
 	couriers := map[string]transport.Client{}
-	if slices.Contains(cfg.MockEnabled, common.CategoryTransport) {
-		couriers[transportmock.Name] = transportmock.NewClient(log)
+	for _, provider := range cfg.TransportProviders {
+		if provider == transportmock.Name {
+			couriers[provider] = transportmock.NewClient(log)
+		}
 	}
 	return common.NewRegistry(couriers)
 }

@@ -57,16 +57,32 @@ x-app-env: &app-env
   SMS_PROVIDER: "mock"
   OAUTH_VERIFIER: "mock"
   KYC_PROVIDER: "mock"
-  # Payment and transport have no selector: an `option` row names the provider that serves it, so a
-  # deployment can offer two rails at once and an admin can move a carrier from one courier to
-  # another through PATCH /admin/options/{id}. This only decides which categories get their mock
-  # provider registered — and with it, the scenario rows a client can pick a failure from. Leave it
-  # empty where real money moves: then no row can name a mock even by hand.
-  MOCK_ENABLED: "payment,transport"
-  # Where a payment gateway may send a payer back. An allowlist, because a redirect target
-  # nobody checked is an open redirect that borrows this platform's credibility.
-  # Every host a web client may be sent back to after a redirect rail. The client sends its own
-  # origin, so a deployment whose site is not in this list has its whole redirect flow refused.
+  # The rails and couriers this deployment registers. Not selectors: an `option` row names the
+  # provider that serves it, so two rails can be live at once and an admin can move a carrier from
+  # one courier to another through PATCH /admin/options/{id}. A provider left out is one no row can
+  # name — which is how `mock` is kept out of a deployment that takes real money.
+  #
+  # Each named provider's credentials are required, checked at startup:
+  #
+  #   sepay  -> SEPAY_MERCHANT_ID/SECRET_KEY/IPN_SECRET_KEY, SEPAY_SANDBOX
+  #   stripe -> STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_REQUEST_TIMEOUT
+  #
+  # Both real rails send the payer away and report back on a webhook, so they need
+  # /webhooks/* reachable from the internet and PUBLIC_BASE_URL correct. Their secrets belong in
+  # the gitignored `server/.env`, never here.
+  PAYMENT_PROVIDERS: "${PAYMENT_PROVIDERS:-mock}"
+  TRANSPORT_PROVIDERS: "mock"
+  SEPAY_MERCHANT_ID: "${SEPAY_MERCHANT_ID:-}"
+  SEPAY_SECRET_KEY: "${SEPAY_SECRET_KEY:-}"
+  SEPAY_IPN_SECRET_KEY: "${SEPAY_IPN_SECRET_KEY:-}"
+  SEPAY_SANDBOX: "${SEPAY_SANDBOX:-true}"
+  STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
+  STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
+  # Generous next to the other providers: a checkout session is created while the buyer waits.
+  STRIPE_REQUEST_TIMEOUT: "${STRIPE_REQUEST_TIMEOUT:-20s}"
+  # Every host a web client may be sent back to after a redirect rail. An allowlist, because a
+  # redirect target nobody checked is an open redirect that borrows this platform's credibility —
+  # and the client sends its own origin, so a site missing from this list has its flow refused.
   PAYMENT_RETURN_URL_HOSTS: "shopnexus.hopto.org,shopnexus.github.io,localhost:3000,localhost:5173"
 
   # Storage. This selects where a *new* upload goes, not what can be read: every resource row

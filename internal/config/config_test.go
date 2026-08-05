@@ -56,8 +56,15 @@ var readVars = []string{
 	"OBSERVABILITY_DB_DSN",
 	"OIDC_TIMEOUT",
 	"ORDER_DB_DSN",
-	"MOCK_ENABLED",
+	"PAYMENT_PROVIDERS",
 	"REDIS_ADDR",
+	"SEPAY_IPN_SECRET_KEY",
+	"SEPAY_MERCHANT_ID",
+	"SEPAY_SANDBOX",
+	"SEPAY_SECRET_KEY",
+	"STRIPE_REQUEST_TIMEOUT",
+	"STRIPE_SECRET_KEY",
+	"STRIPE_WEBHOOK_SECRET",
 	"REDIS_PASSWORD",
 	"RESET_PASSWORD_URL",
 	"RESTATE_INGRESS_URL",
@@ -87,6 +94,7 @@ var readVars = []string{
 	"STORAGE_SECRET",
 	"STORAGE_UPLOAD_TTL",
 	"SWEEP_INTERVAL",
+	"TRANSPORT_PROVIDERS",
 	"TRUST_DB_DSN",
 	"VERIFY_EMAIL_URL",
 	"WORKFLOW_RUNTIME",
@@ -123,9 +131,8 @@ func fullEnv() map[string]string {
 		"SMS_PROVIDER":             "mock",
 		"OAUTH_VERIFIER":           "mock",
 		"KYC_PROVIDER":             "mock",
-		"PAYMENT_PROVIDER":         "mock",
-		"PAYMENT_MOCK_BASE_URL":    "http://localhost:5000",
-		"TRANSPORT_PROVIDER":       "mock",
+		"PAYMENT_PROVIDERS":        "mock",
+		"TRANSPORT_PROVIDERS":      "mock",
 		"PAYMENT_RETURN_URL_HOSTS": "localhost:5000",
 		// No durable runtime in the base env: the sweep is the clock, which is the shape a
 		// local stack runs in.
@@ -166,7 +173,7 @@ var requiredVars = []string{
 	"NATS_URL", "REDIS_ADDR", "REDIS_PASSWORD", "JWT_SECRET", "ID_CIPHER_KEY", "LOG_LEVEL",
 	"CORS_ALLOWED_ORIGINS", "PUBLIC_BASE_URL",
 	"EMAIL_PROVIDER", "SMS_PROVIDER", "OAUTH_VERIFIER", "KYC_PROVIDER",
-	"WORKFLOW_RUNTIME", "SWEEP_INTERVAL", "PAYMENT_RETURN_URL_HOSTS",
+	"WORKFLOW_RUNTIME", "SWEEP_INTERVAL", "PAYMENT_RETURN_URL_HOSTS", "PAYMENT_PROVIDERS", "TRANSPORT_PROVIDERS",
 	"STORAGE_PROVIDER", "STORAGE_UPLOAD_TTL", "STORAGE_DOWNLOAD_TTL",
 	"STORAGE_MAX_UPLOAD_BYTES", "STORAGE_MAX_VIDEO_BYTES", "STORAGE_ALLOWED_MIMES",
 	"EMBEDDING_PROVIDER", "EMBEDDING_DIMENSIONS", "EMBEDDING_INTERVAL",
@@ -197,6 +204,66 @@ func TestLoad_Valid(t *testing.T) {
 	if cfg.GatewayAddr != "0.0.0.0:8080" || cfg.LogLevel != "info" {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
+}
+
+// A rail is registered by naming it, and naming it without its credentials is a deployment that
+// cannot charge — found at startup rather than by the first buyer to pick that rail. The check is
+// hand-written (a `required_if` tag cannot ask whether a list contains a value), which is exactly
+// why it is worth a test.
+func TestLoad_ANamedRailNeedsItsCredentials(t *testing.T) {
+	t.Run("sepay named without its keys fails", func(t *testing.T) {
+		env := fullEnv()
+		env["PAYMENT_PROVIDERS"] = "mock,sepay"
+		setEnv(t, env)
+		if _, err := config.Load(validation.Default()); err == nil {
+			t.Fatal("expected an error naming the missing SEPAY_ vars")
+		}
+	})
+
+	t.Run("sepay named with its keys loads", func(t *testing.T) {
+		env := fullEnv()
+		env["PAYMENT_PROVIDERS"] = "mock,sepay"
+		env["SEPAY_MERCHANT_ID"] = "merchant-1"
+		env["SEPAY_SECRET_KEY"] = "sign-secret"
+		env["SEPAY_IPN_SECRET_KEY"] = "ipn-secret"
+		setEnv(t, env)
+		cfg, err := config.Load(validation.Default())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.PaymentProviders) != 2 {
+			t.Fatalf("providers = %v, want both", cfg.PaymentProviders)
+		}
+	})
+
+	t.Run("stripe named without its timeout fails", func(t *testing.T) {
+		env := fullEnv()
+		env["PAYMENT_PROVIDERS"] = "stripe"
+		env["STRIPE_SECRET_KEY"] = "sk_test_x"
+		env["STRIPE_WEBHOOK_SECRET"] = "whsec_x"
+		setEnv(t, env)
+		if _, err := config.Load(validation.Default()); err == nil {
+			t.Fatal("expected an error naming STRIPE_REQUEST_TIMEOUT")
+		}
+	})
+
+	// The other direction: a provider nobody named needs nothing, or a local stack would have to
+	// hold a merchant id and a card key to come up at all.
+	t.Run("an unnamed rail needs no credentials", func(t *testing.T) {
+		setEnv(t, fullEnv())
+		if _, err := config.Load(validation.Default()); err != nil {
+			t.Fatalf("mock-only deployment must need no vendor keys: %v", err)
+		}
+	})
+
+	t.Run("a rail this binary does not have fails", func(t *testing.T) {
+		env := fullEnv()
+		env["PAYMENT_PROVIDERS"] = "vnpay"
+		setEnv(t, env)
+		if _, err := config.Load(validation.Default()); err == nil {
+			t.Fatal("expected an error for a provider with no implementation")
+		}
+	})
 }
 
 // An unknown selector fails at startup rather than falling back to a mock: a deployment

@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -183,24 +184,47 @@ type Config struct {
 	// redirect wearing a payment flow, and the platform's own domain is what lends it
 	// credibility. Comma-separated hosts, no scheme.
 	PaymentReturnURLHosts []string `validate:"required,min=1,dive,required,hostname_port|hostname"`
-	// MockEnabled names the option categories whose mock provider is registered — `payment`,
-	// `transport`, or empty for none. It is not a selector like the seams above: payment and
-	// transport have no single provider to select, because *the option row* names the one that
-	// serves it, which is what lets an admin move a carrier from GHN to GHTK without a restart.
-	// This decides only whether the mock is among the providers a row may name, and a category
-	// dropped from the list has its mock rows removed at the next start.
+	// PaymentProviders and TransportProviders are the implementations this deployment registers —
+	// a list, not a selector, because *the option row* names which one serves it. That is what lets
+	// two rails be live at once and an admin move a carrier from GHN to GHTK without a restart.
 	//
-	// Registering a mock rail alongside a real one is deliberate and safe: nothing charges through
-	// it unless a row asks for it by name. Leave it empty in a deployment that takes real money, so
-	// no such row can be written by hand either.
-	MockEnabled []string `validate:"omitempty,dive,oneof=payment transport"`
+	// A provider left out is one no row can name, which is the point: `mock` beside a real rail is
+	// safe (nothing charges through it unless a row asks for it) but leaving it out of a deployment
+	// that takes real money means such a row cannot even be written by hand. A provider that
+	// declares its own rows also *removes* them when it stops being listed, at the next start.
+	//
+	// Each named provider's credentials are required — checked in Load rather than by a tag, since
+	// `required_if` cannot ask whether a list contains a value. Same rule as the vendor seams
+	// above: not a default, and a startup failure rather than a rail that quietly cannot charge.
+	PaymentProviders   []string `validate:"required,min=1,dive,oneof=mock sepay stripe"`
+	TransportProviders []string `validate:"required,min=1,dive,oneof=mock"`
 	// PublicBaseURL is where this gateway answers as a client sees it, API base path included
 	// (`https://shopnexus.example/api/v1`) — behind a proxy that is not the address the server
 	// binds. One var rather than one per seam, because every user of it needs the same answer:
-	// `local` storage signs upload and download URLs back to this gateway's own routes, and the
-	// mock rail hands a browser an absolute link to its hosted page. A web client on another origin
-	// cannot follow a relative one.
+	// `local` storage signs upload and download URLs back to this gateway's own routes, and a
+	// redirect rail hands a browser an absolute link to a page this process serves. A web client on
+	// another origin cannot follow a relative one.
 	PublicBaseURL string `validate:"required,url"`
+
+	// --- SePay (bank transfer) ---
+
+	// SePaySandbox picks the test host. Its own var and not inferred from the key, because a
+	// deployment that thinks it is taking real transfers and is not would be discovered by the
+	// seller who was never paid.
+	SePayMerchantID string
+	SePaySecretKey  string
+	// SePayIPNSecretKey authenticates SePay's callback to us; SePaySecretKey signs our checkout to
+	// them. Two secrets, opposite directions.
+	SePayIPNSecretKey string
+	SePaySandbox      bool
+
+	// --- Stripe (cards) ---
+
+	StripeSecretKey string
+	// StripeWebhookSecret verifies the callback signature. Without it the webhook is an endpoint
+	// anybody can use to mark an order paid.
+	StripeWebhookSecret  string
+	StripeRequestTimeout time.Duration
 
 	// --- SMTP ---
 
@@ -332,11 +356,21 @@ func Load(v *validator.Validate) (*Config, error) {
 		RestateSendTimeout: p.durationVar("RESTATE_SEND_TIMEOUT"),
 		SweepInterval:      p.durationVar("SWEEP_INTERVAL"),
 
-		EmailProvider:         os.Getenv("EMAIL_PROVIDER"),
-		SMSProvider:           os.Getenv("SMS_PROVIDER"),
-		OAuthVerifier:         os.Getenv("OAUTH_VERIFIER"),
-		KYCProvider:           os.Getenv("KYC_PROVIDER"),
-		MockEnabled:           listVar("MOCK_ENABLED"),
+		EmailProvider:      os.Getenv("EMAIL_PROVIDER"),
+		SMSProvider:        os.Getenv("SMS_PROVIDER"),
+		OAuthVerifier:      os.Getenv("OAUTH_VERIFIER"),
+		KYCProvider:        os.Getenv("KYC_PROVIDER"),
+		PaymentProviders:   listVar("PAYMENT_PROVIDERS"),
+		TransportProviders: listVar("TRANSPORT_PROVIDERS"),
+
+		SePayMerchantID:   os.Getenv("SEPAY_MERCHANT_ID"),
+		SePaySecretKey:    os.Getenv("SEPAY_SECRET_KEY"),
+		SePayIPNSecretKey: os.Getenv("SEPAY_IPN_SECRET_KEY"),
+		SePaySandbox:      p.boolVar("SEPAY_SANDBOX"),
+
+		StripeSecretKey:       os.Getenv("STRIPE_SECRET_KEY"),
+		StripeWebhookSecret:   os.Getenv("STRIPE_WEBHOOK_SECRET"),
+		StripeRequestTimeout:  p.durationVar("STRIPE_REQUEST_TIMEOUT"),
 		PublicBaseURL:         os.Getenv("PUBLIC_BASE_URL"),
 		PaymentReturnURLHosts: listVar("PAYMENT_RETURN_URL_HOSTS"),
 
@@ -375,6 +409,7 @@ func Load(v *validator.Validate) (*Config, error) {
 		WSMaxPerAccount:  p.intVar("WS_MAX_PER_ACCOUNT"),
 		WSAllowedOrigins: listVar("WS_ALLOWED_ORIGINS"),
 	}
+	cfg.requireProviderCredentials(&p)
 	if err := p.err(); err != nil {
 		return nil, err
 	}
@@ -382,6 +417,39 @@ func Load(v *validator.Validate) (*Config, error) {
 		return nil, fmt.Errorf("validate config: %w", err)
 	}
 	return cfg, nil
+}
+
+// requireProviderCredentials is `required_if` for a list. The validator's tag can ask whether a
+// *field* equals a value, not whether a slice contains one, and a rail registered without its
+// credentials is one that fails at the till — so the check is written out here instead.
+//
+// It runs before the struct validation, so a deployment naming three rails and forgetting one key
+// is told about that key alongside everything else that is missing, not on the next restart.
+func (c *Config) requireProviderCredentials(p *parser) {
+	needs := map[string]map[string]string{
+		"sepay": {
+			"SEPAY_MERCHANT_ID":    c.SePayMerchantID,
+			"SEPAY_SECRET_KEY":     c.SePaySecretKey,
+			"SEPAY_IPN_SECRET_KEY": c.SePayIPNSecretKey,
+		},
+		"stripe": {
+			"STRIPE_SECRET_KEY":     c.StripeSecretKey,
+			"STRIPE_WEBHOOK_SECRET": c.StripeWebhookSecret,
+		},
+	}
+	for _, provider := range c.PaymentProviders {
+		for name, value := range needs[provider] {
+			if strings.TrimSpace(value) == "" {
+				p.problems = append(p.problems,
+					fmt.Sprintf("%s is required because PAYMENT_PROVIDERS names %q", name, provider))
+			}
+		}
+	}
+	// A duration is parsed rather than read, so it is checked apart from the strings above.
+	if slices.Contains(c.PaymentProviders, "stripe") && c.StripeRequestTimeout == 0 {
+		p.problems = append(p.problems,
+			`STRIPE_REQUEST_TIMEOUT is required because PAYMENT_PROVIDERS names "stripe"`)
+	}
 }
 
 // parser reads the typed vars. An empty var is the zero value rather than an error: the

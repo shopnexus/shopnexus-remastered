@@ -145,6 +145,7 @@ func (s *Service) StartPayment(ctx context.Context, req financeapi.StartPaymentR
 		RefID:       id.Of[id.Transaction](legID).String(),
 		Option:      req.PaymentOption,
 		Amount:      amount,
+		Currency:    session.Currency,
 		Description: session.Note,
 		ReturnURL:   req.ReturnURL,
 	})

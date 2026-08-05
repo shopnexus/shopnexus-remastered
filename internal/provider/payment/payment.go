@@ -25,8 +25,11 @@ type ChargeParams struct {
 	// provider that offers one rail ignores it; one that offers several charges the one asked
 	// for. Without it a registry of rails is the same rail relabelled, and the payer's choice
 	// never reaches the gateway.
-	Option      string
-	Amount      int64
+	Option string
+	Amount int64
+	// Currency is the session's, so a rail that settles in one can refuse the rest. Passed rather
+	// than assumed: a provider hardcoding "VND" is a lie that survives until the day it does not.
+	Currency    string
 	Description string
 	ReturnURL   string // redirect providers only
 	Token       string // direct-debit providers only
