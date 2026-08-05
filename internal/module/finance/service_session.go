@@ -7,27 +7,13 @@ import (
 	"fmt"
 	"time"
 
+	"shopnexus/internal/module/common"
 	financeapi "shopnexus/internal/module/finance/api"
 	"shopnexus/internal/module/finance/domain"
 	"shopnexus/internal/module/finance/port"
 	"shopnexus/internal/provider/payment"
 	"shopnexus/internal/shared/id"
 )
-
-// ListPaymentOptions is the rails this deployment can charge on. Without it a client had to
-// hardcode a slug to call StartPayment with, and a slug nobody enabled is a 422 the client can only
-// discover by trying — an operator disabling a rail then broke every checkout.
-func (s *Service) ListPaymentOptions(ctx context.Context, _ financeapi.ListPaymentOptionsRequest) ([]financeapi.PaymentOption, error) {
-	rails, err := s.rails(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]financeapi.PaymentOption, 0, len(rails))
-	for _, r := range rails {
-		out = append(out, financeapi.PaymentOption{ID: r.ID, Name: r.Name, Description: r.Description})
-	}
-	return out, nil
-}
 
 // ListSessions answers the caller's own money flows — both sides of them, since a
 // payout is a session they received. Admin sees every account's.
@@ -115,8 +101,17 @@ func (s *Service) StartPayment(ctx context.Context, req financeapi.StartPaymentR
 	if session.FromID != req.ActorID.Int64() {
 		return financeapi.Transaction{}, domain.ErrSessionNotPayable
 	}
-	if _, err := s.paymentOption(ctx, req.PaymentOption); err != nil {
+	// The row is what names the rail, so resolving it here is also the check that this deployment
+	// still has the implementation it was written for.
+	option, err := s.paymentOption(ctx, req.PaymentOption)
+	if err != nil {
 		return financeapi.Transaction{}, err
+	}
+	rail, err := s.rails.Client(option.Provider)
+	if err != nil {
+		s.log.Error("tendered rail has no registered provider",
+			"option", option.ID, "provider", option.Provider, "err", err)
+		return financeapi.Transaction{}, common.ErrOptionProviderUnknown
 	}
 	if err := s.checkReturnURL(req.ReturnURL); err != nil {
 		return financeapi.Transaction{}, err
@@ -146,7 +141,7 @@ func (s *Service) StartPayment(ctx context.Context, req financeapi.StartPaymentR
 	}
 	// The gateway is called before the row exists, which is why the id was allocated
 	// first: the reference it is handed has to be the one the webhook will name.
-	charge, err := s.gateway.Charge(ctx, payment.ChargeParams{
+	charge, err := rail.Charge(ctx, payment.ChargeParams{
 		RefID:       id.Of[id.Transaction](legID).String(),
 		Option:      req.PaymentOption,
 		Amount:      amount,

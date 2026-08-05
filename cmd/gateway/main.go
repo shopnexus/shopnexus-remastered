@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -22,6 +23,7 @@ import (
 	"shopnexus/internal/module/account"
 	"shopnexus/internal/module/catalog"
 	"shopnexus/internal/module/chat"
+	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/finance"
 	"shopnexus/internal/module/observability"
 	"shopnexus/internal/module/order"
@@ -82,8 +84,8 @@ func appOptions() fx.Option {
 			newNotifier,
 			newOAuthVerifier,
 			newKYCClient,
-			newPaymentClient,
-			newTransportClient,
+			newPaymentRails,
+			newCouriers,
 			newLLMClient,
 			newEmbeddingClient,
 			// Where an uploaded byte goes. The handler beside it is provided only for the
@@ -272,10 +274,20 @@ func newKYCClient(cfg *config.Config, log *slog.Logger, metrics *observability.S
 	})
 }
 
-// newPaymentClient picks the rail. Only the mock exists today; a real gateway is a new
-// case here plus its credentials in config, exactly like the other seams.
-func newPaymentClient(cfg *config.Config, log *slog.Logger) payment.Client {
-	return paymentmock.NewClient(paymentmock.Config{BaseURL: cfg.PaymentMockBaseURL}, log)
+// newPaymentRails is every rail this binary can charge through, keyed by the name an option row
+// uses. Not a selector: which rail a payer's choice resolves to is that row's `provider`, so a
+// deployment can offer two at once and an admin can move one without a restart.
+//
+// The mock is registered only when MOCK_ENABLED names `payment` — and even then it is an ordinary
+// member, reached only by a row that names it. A real gateway is a new entry here plus its
+// credentials in config, exactly like the other seams.
+func newPaymentRails(cfg *config.Config, log *slog.Logger) *common.Registry[payment.Client] {
+	rails := map[string]payment.Client{}
+	if slices.Contains(cfg.MockEnabled, common.CategoryPayment) {
+		rails[paymentmock.Name] = paymentmock.NewClient(
+			paymentmock.Config{BaseURL: cfg.PublicBaseURL}, log)
+	}
+	return common.NewRegistry(rails)
 }
 
 // newStorageRegistry builds the stores this deployment can serve from. STORAGE_PROVIDER picks
@@ -294,7 +306,7 @@ func newStorageRegistry(cfg *config.Config) (*storage.Registry, error) {
 	}
 	write, err := localstorage.New(localstorage.Config{
 		Root:         cfg.StorageRoot,
-		BaseURL:      cfg.StorageBaseURL,
+		BaseURL:      cfg.PublicBaseURL,
 		Secret:       cfg.StorageSecret,
 		UploadTTL:    cfg.StorageUploadTTL,
 		DownloadTTL:  cfg.StorageDownloadTTL,
@@ -326,12 +338,18 @@ func newUploadsHandler(stores *storage.Registry, log *slog.Logger) *handler.Uplo
 	return handler.NewUploads(own, log)
 }
 
-// newTransportClient picks the courier a shipping fee is quoted from. Only the mock exists today;
-// a real carrier is a new case here plus its credentials in config, exactly like the other seams.
-// The fee is on the money path — the buyer pays delivery on every sale — so an unquoted one is a
-// carrier bill the platform silently absorbs.
-func newTransportClient(log *slog.Logger) transport.Client {
-	return transportmock.NewClient(log)
+// newCouriers is every courier this binary can book through, keyed by the name an option row uses.
+// Same rule as the rails: the row picks, so GHN and GHTK can both be live and moving a service
+// between them is one field an admin edits.
+//
+// The fee is on the money path — the buyer pays delivery on every sale — so a courier that cannot
+// quote drops out of the list rather than being absorbed by the platform.
+func newCouriers(cfg *config.Config, log *slog.Logger) *common.Registry[transport.Client] {
+	couriers := map[string]transport.Client{}
+	if slices.Contains(cfg.MockEnabled, common.CategoryTransport) {
+		couriers[transportmock.Name] = transportmock.NewClient(log)
+	}
+	return common.NewRegistry(couriers)
 }
 
 // observedClient builds the HTTP client a provider uses: metrics when the telemetry sink

@@ -19,9 +19,23 @@ type WebhookResult struct {
 // ResultHandler is called after webhook verification with a parsed result.
 type ResultHandler func(ctx context.Context, result WebhookResult) error
 
+// Option is one selectable service a provider says it should own, so the carrier row a buyer picks
+// comes from the code that will book it. A provider that answers none leaves its rows to the
+// operator — which is every real courier, whose services are a contract and not a fact this binary
+// knows.
+type Option struct {
+	ID          string
+	Name        string
+	Description string
+	Priority    int
+}
+
 type Client interface {
 	Quote(ctx context.Context, params QuoteParams) (QuoteResult, error)
 	Create(ctx context.Context, params CreateParams) (Transport, error)
+	// Options are the services this provider owns outright: the module writes exactly these and
+	// removes the ones it no longer names. Nil means "my rows are the operator's business".
+	Options() []Option
 
 	// WireWebhooks mounts the provider's webhook route on mux
 	WireWebhooks(mux *http.ServeMux, deliver ResultHandler) string

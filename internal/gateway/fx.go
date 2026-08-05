@@ -30,6 +30,7 @@ var Module = fx.Module("gateway",
 		handler.NewFinance,
 		handler.NewOrder,
 		handler.NewTrust,
+		handler.NewOptions,
 		newHub,
 		newWSHandler,
 		// observability must not import this package, so the connection count crosses

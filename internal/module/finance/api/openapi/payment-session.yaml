@@ -14,27 +14,6 @@
 # owner does open (withdrawal.yaml).
 
 paths:
-  /payment-options:
-    get:
-      tags: [finance]
-      summary: List the payment rails this deployment offers
-      description: >
-        Where a valid `payment_option` comes from. Operator configuration, not the caller's data,
-        so it is unpaginated and identical for everybody — but it is not constant: a rail an
-        operator disables leaves this list, and a client that hardcoded a slug gets 422 from
-        `POST /payment-sessions/{id}/payments` instead. Which vendor is behind a rail is not
-        published; the id and the name are what a checkout renders.
-
-
-        On a stack running the mock rail this is where its scenarios appear — one row per outcome
-        (`mock-decline`, `mock-redirect`, `mock-webhook-success`, …), so a client can be built
-        against a refusal and a late webhook. They are offered only while that rail is the
-        configured one, so they cannot show up beside a real card form.
-      security: [{ bearerAuth: [] }]
-      responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/PaymentOptionList' } } } }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-
   /payment-sessions:
     get:
       tags: [finance]
@@ -247,30 +226,6 @@ components:
         expired_at: { type: string, format: date-time, nullable: true, description: Gateway URL expiry }
       required: [id, session_id, status, payment_option, amount, currency, note, created_at]
 
-    PaymentOption:
-      type: object
-      description: One rail a payer may tender on.
-      properties:
-        id:
-          type: string
-          maxLength: 100
-          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
-          example: platform-checkout
-          description: What to send as `payment_option`. Permanent — a settled leg holds it.
-        name: { type: string, example: Card or bank transfer, description: What to show the payer. }
-        description:
-          type: string
-          example: The platform's configured payment provider.
-          description: A line of explanation. May be empty.
-      required: [id, name, description]
-
-    PaymentOptionList:
-      type: object
-      description: Unpaginated — a deployment offers a handful of rails.
-      properties:
-        data: { type: array, items: { $ref: '#/components/schemas/PaymentOption' } }
-      required: [data]
-
     TransactionList:
       type: object
       description: Unpaginated — a session has as many legs as rails it was split
@@ -287,7 +242,7 @@ components:
           maxLength: 100
           pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
           example: platform-checkout
-          description: A slug from `GET /payment-options`; one nobody enabled is refused with 422.
+          description: A slug from `GET /options?category=payment`; one nobody enabled is refused with 422.
         amount:
           type: integer
           format: int64

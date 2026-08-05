@@ -42,14 +42,10 @@ type Service struct {
 	accounts accountapi.Service
 	// options is the payment rails registry: this module's own `option` rows, so a rail
 	// nobody enabled cannot be tendered.
-	options port.Options
-	// gateway is the rail. One client for now; a per-option client is what the
-	// registry's `provider` column is for once there is a second.
-	gateway payment.Client
-	// rail is the provider this deployment configured, which decides which registry rows are
-	// offered at all: a row naming a vendor the stack cannot reach is a checkout that fails at
-	// the last step, and the mock's scenario rows must never appear beside a real card form.
-	rail RailProvider
+	options common.OptionStore
+	// rails is every implementation money can move through. A tendered option row names one, so
+	// two can be live at once and an admin can move a rail without a restart.
+	rails *common.Registry[payment.Client]
 	// returnURLHosts is the allowlist a payer's redirect target has to be in.
 	returnURLHosts ReturnURLHosts
 	bus            eventbus.Client
@@ -60,37 +56,39 @@ type Service struct {
 func NewService(
 	repo port.Repository,
 	accounts accountapi.Service,
-	options port.Options,
-	gateway payment.Client,
-	rail RailProvider,
+	options common.OptionStore,
+	rails *common.Registry[payment.Client],
 	returnURLHosts ReturnURLHosts,
 	bus eventbus.Client,
 	v *validator.Validate,
 	log *slog.Logger,
 ) *Service {
 	return &Service{
-		repo: repo, accounts: accounts, options: options, gateway: gateway, rail: rail,
+		repo: repo, accounts: accounts, options: options, rails: rails,
 		returnURLHosts: returnURLHosts, bus: bus, v: v, log: log,
 	}
 }
 
-// RailProvider is the configured PAYMENT_PROVIDER. Its own type, not a bare string: the fx graph is
-// keyed by type, and "a string" is not a thing to inject.
-type RailProvider string
-
-// rails is the registry filtered to what this deployment can actually charge on, best first.
-func (s *Service) rails(ctx context.Context) ([]common.Option, error) {
-	options, err := s.options.ListEnabled(ctx, common.OptionTypePayment)
-	if err != nil {
-		return nil, fmt.Errorf("list payment options: %w", err)
-	}
-	offered := make([]common.Option, 0, len(options))
-	for _, o := range options {
-		if o.Offered(string(s.rail)) {
-			offered = append(offered, o)
+// SyncOptions writes the rows every registered rail says it owns. Called once at startup, so the
+// list a payer picks from is the code that will serve it — and a rail no longer registered leaves
+// no rows behind for somebody to tender against.
+func (s *Service) SyncOptions(ctx context.Context) error {
+	return s.rails.Each(func(provider string, client payment.Client) error {
+		declared := client.Options()
+		// No declared rows means the provider leaves them to the operator, which is not the same
+		// as declaring none: reconciling here would delete rails somebody wrote by hand.
+		if len(declared) == 0 {
+			return nil
 		}
-	}
-	return offered, nil
+		want := make([]common.Option, 0, len(declared))
+		for _, o := range declared {
+			want = append(want, common.Option{
+				ID: o.ID, Name: o.Name, Description: o.Description,
+				Priority: o.Priority, Category: common.CategoryPayment,
+			})
+		}
+		return s.options.Reconcile(ctx, provider, want)
+	})
 }
 
 // ReturnURLHosts is where a gateway may send a payer back. Its own type, not a bare []string:
@@ -132,9 +130,9 @@ func (s *Service) requireAdmin(ctx context.Context, actorID id.ID[id.Account]) e
 // paymentOption resolves a rail from this module's registry. A slug nobody enabled is
 // refused here rather than handed to a gateway that has never heard of it.
 func (s *Service) paymentOption(ctx context.Context, slug string) (common.Option, error) {
-	options, err := s.rails(ctx)
+	options, err := s.options.ListEnabled(ctx, common.CategoryPayment)
 	if err != nil {
-		return common.Option{}, err
+		return common.Option{}, fmt.Errorf("list payment options: %w", err)
 	}
 	for _, o := range options {
 		if o.ID == slug {
@@ -230,4 +228,27 @@ func rawOrEmpty(b []byte) json.RawMessage {
 		return nil
 	}
 	return json.RawMessage(b)
+}
+
+// ListOptions is the payment rails, and the only place a valid `payment_option` comes from: a client
+// that hardcoded a slug broke the day an operator disabled that rail.
+func (s *Service) ListOptions(ctx context.Context, req common.ListOptionsRequest) (common.OptionList, error) {
+	if req.Admin {
+		if err := s.requireAdmin(ctx, req.ActorID); err != nil {
+			return common.OptionList{}, err
+		}
+	}
+	return common.ListOptions(ctx, s.options, s.rails.Providers(), req)
+}
+
+// AdminSaveOption is an operator switching a rail off, renaming it, or moving it to another
+// implementation. Admin, not moderator: this decides who the platform's money goes through.
+func (s *Service) AdminSaveOption(ctx context.Context, req common.SaveOptionRequest) (common.OptionDTO, error) {
+	if err := s.requireAdmin(ctx, req.ActorID); err != nil {
+		return common.OptionDTO{}, err
+	}
+	if err := s.v.Struct(req); err != nil {
+		return common.OptionDTO{}, err
+	}
+	return common.SaveOption(ctx, s.options, s.rails.Providers(), req)
 }

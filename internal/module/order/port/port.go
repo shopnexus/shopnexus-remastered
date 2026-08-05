@@ -7,7 +7,6 @@ import (
 	"context"
 	"time"
 
-	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/order/domain"
 )
 
@@ -80,12 +79,6 @@ type RefundFilter struct {
 	SellerID int64
 	Statuses []string
 	Cursor   CursorFilter
-}
-
-// Options is the carrier registry this module reads from its own schema. dbx.Options
-// satisfies it; a test fakes it, which is the second caller that earns the interface.
-type Options interface {
-	ListEnabled(ctx context.Context, optionType string) ([]common.Option, error)
 }
 
 type Repository interface {

@@ -12,6 +12,7 @@ import (
 	"shopnexus/internal/module/order/domain"
 	"shopnexus/internal/module/order/port"
 	"shopnexus/internal/provider/storage"
+	transportmock "shopnexus/internal/provider/transport/mock"
 )
 
 // fakeRepo is an in-memory port.Repository. It enforces the constraints the schema does — one
@@ -40,15 +41,14 @@ func newFakeRepo() *fakeRepo {
 		orders: map[int64]domain.Order{}, shipments: map[int64]domain.Transport{},
 		refunds: map[int64]domain.Refund{},
 		// Two carriers so a quote list is a list, and a disabled one so "enabled" means something.
-		// `platform` as the provider, like the row every deployment seeds: it is offered whatever
-		// TRANSPORT_PROVIDER says, so these tests are not about the registry's provider filter.
+		// All served by the mock provider, which is what these tests' registry has.
 		options: []common.Option{
-			{ID: "ghn-express", Name: "GHN Express", Type: common.OptionTypeTransport, IsEnabled: true,
-				Provider: common.OptionProviderPlatform},
-			{ID: "vtp-standard", Name: "Viettel Post", Type: common.OptionTypeTransport, IsEnabled: true,
-				Provider: common.OptionProviderPlatform},
-			{ID: "retired-courier", Name: "Retired", Type: common.OptionTypeTransport,
-				Provider: common.OptionProviderPlatform},
+			{ID: "ghn-express", Name: "GHN Express", Category: common.CategoryTransport, IsEnabled: true,
+				Provider: transportmock.Name},
+			{ID: "vtp-standard", Name: "Viettel Post", Category: common.CategoryTransport, IsEnabled: true,
+				Provider: transportmock.Name},
+			{ID: "retired-courier", Name: "Retired", Category: common.CategoryTransport,
+				Provider: transportmock.Name},
 		},
 	}
 }
@@ -75,14 +75,57 @@ func pastCursor(f port.CursorFilter, at time.Time, id int64) bool {
 var _ port.Repository = (*fakeRepo)(nil)
 
 // ListEnabled makes the fake its own carrier registry, so a service test needs no second fake.
-func (f *fakeRepo) ListEnabled(_ context.Context, optionType string) ([]common.Option, error) {
+func (f *fakeRepo) ListEnabled(_ context.Context, category string) ([]common.Option, error) {
+	return f.optionsIn(category, true), nil
+}
+
+func (f *fakeRepo) ListAll(_ context.Context, category string) ([]common.Option, error) {
+	return f.optionsIn(category, false), nil
+}
+
+func (f *fakeRepo) optionsIn(category string, liveOnly bool) []common.Option {
 	var out []common.Option
 	for _, o := range f.options {
-		if o.Type == optionType && o.IsEnabled {
+		if o.Category == category && (o.IsEnabled || !liveOnly) {
 			out = append(out, o)
 		}
 	}
-	return out, nil
+	return out
+}
+
+func (f *fakeRepo) Find(_ context.Context, id string) (common.Option, error) {
+	for _, o := range f.options {
+		if o.ID == id {
+			return o, nil
+		}
+	}
+	return common.Option{}, common.ErrOptionNotFound
+}
+
+func (f *fakeRepo) Save(_ context.Context, o common.Option) error {
+	for i, existing := range f.options {
+		if existing.ID == o.ID {
+			f.options[i] = o
+			return nil
+		}
+	}
+	return common.ErrOptionNotFound
+}
+
+// Reconcile mirrors the adapter: exactly `want` for that provider, and nothing of its own left over.
+func (f *fakeRepo) Reconcile(_ context.Context, provider string, want []common.Option) error {
+	kept := make([]common.Option, 0, len(f.options))
+	for _, o := range f.options {
+		if o.Provider != provider {
+			kept = append(kept, o)
+		}
+	}
+	for _, o := range want {
+		o.Provider, o.IsEnabled = provider, true
+		kept = append(kept, o)
+	}
+	f.options = kept
+	return nil
 }
 
 // --- cart ---

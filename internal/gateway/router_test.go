@@ -145,6 +145,7 @@ func newRouter() (http.Handler, *token.Manager, *session.Store) {
 		Chat:     handler.NewChat(stubChat{}, v, log),
 		Finance:  handler.NewFinance(stubPayment{}, v, log),
 		Trust:    handler.NewTrust(stubTrust{}, v, log),
+		Options:  handler.NewOptions(stubPayment{}, stubOrder{}, log),
 		WS:       handler.NewWS(hub, tickets, sessions, log, time.Second, time.Minute, []string{"localhost"}),
 		Tokens:   tm,
 		Sessions: sessions,

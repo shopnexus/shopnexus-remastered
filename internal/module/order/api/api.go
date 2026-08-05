@@ -556,6 +556,11 @@ type Service interface {
 	ListDrafts(ctx context.Context, req ListDraftsRequest) (DraftPage, error)
 	GetDraft(ctx context.Context, req DraftRequest) (Draft, error)
 	CancelDraft(ctx context.Context, req DraftRequest) error
+	// ListOptions is the carriers, and AdminSaveOption the operator's edit of one. Both are the
+	// shared registry surface (`GET /options?category=transport`), served by this module because
+	// the rows live in its schema.
+	ListOptions(ctx context.Context, req common.ListOptionsRequest) (common.OptionList, error)
+	AdminSaveOption(ctx context.Context, req common.SaveOptionRequest) (common.OptionDTO, error)
 	// ShippingQuotes prices every carrier for a variant, a draft or agreed terms, which is how a
 	// buyer sees delivery before they pay for it. They pay it on both kinds of sale.
 	ShippingQuotes(ctx context.Context, req ShippingQuotesRequest) (ShippingQuotes, error)

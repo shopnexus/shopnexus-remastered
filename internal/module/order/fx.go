@@ -39,6 +39,7 @@ var Module = fx.Module("order",
 	// conflict rather than one of each per module — only this module's own service may see them.
 	fx.Provide(fx.Private,
 		newPool,
+		fx.Annotate(newOptions, fx.As(new(common.OptionStore))),
 		newUploads,
 		fx.Annotate(func(s *uploads.Store) common.Uploads { return s }),
 		// NewService takes the realtime.Fanout interface, so it can be tested without a
@@ -48,10 +49,8 @@ var Module = fx.Module("order",
 	),
 	fx.Provide(
 		fx.Annotate(newRepo, fx.As(new(port.Repository))),
-		fx.Annotate(newOptions, fx.As(new(port.Options))),
 		fx.Annotate(newUploadSweep, fx.ResultTags(`group:"sweeps"`)),
 		newWorkflows,
-		newCourierProvider,
 		fx.Annotate(NewService, fx.As(new(orderapi.Service))),
 		NewLifecycle,
 		fx.Annotate(newDefinitions, fx.ResultTags(`group:"restate-definitions,flatten"`)),
@@ -59,6 +58,7 @@ var Module = fx.Module("order",
 	),
 	// Eager, because nothing else in the graph depends on a subscription or a webhook route:
 	// without these the bus would have no consumer and the carrier no path to report on.
+	fx.Invoke(SyncOptions),
 	fx.Invoke(SubscribePaidSessions),
 	fx.Invoke(WireTransportWebhooks),
 )
@@ -66,15 +66,20 @@ var Module = fx.Module("order",
 // WireTransportWebhooks mounts the carrier's own reporting path and hands it the checkpoint
 // recorder. Without it a booked parcel only ever moves when the seller says so, which is a
 // shipment status that is always behind the parcel.
-func WireTransportWebhooks(mux *http.ServeMux, courier transport.Client, svc orderapi.Service, log *slog.Logger) {
+func WireTransportWebhooks(mux *http.ServeMux, couriers *common.Registry[transport.Client], svc orderapi.Service, log *slog.Logger) {
 	recorder, ok := svc.(*Service)
 	if !ok {
 		return
 	}
-	path := courier.WireWebhooks(mux, func(ctx context.Context, r transport.WebhookResult) error {
-		return recorder.RecordCarrierCheckpoint(ctx, r.TransportID, r.Status)
+	// Per provider, not per option row: a carrier reports on its own tracking id, so the path
+	// belongs to the vendor and two services of one courier share it.
+	_ = couriers.Each(func(provider string, courier transport.Client) error {
+		path := courier.WireWebhooks(mux, func(ctx context.Context, r transport.WebhookResult) error {
+			return recorder.RecordCarrierCheckpoint(ctx, r.TransportID, r.Status)
+		})
+		log.Info("transport webhook mounted", "provider", provider, "path", path)
+		return nil
 	})
-	log.Info("transport webhook mounted", "path", path)
 }
 
 // workflowDeps takes the ingress client as optional, because the `off` deployment has none —
@@ -127,10 +132,18 @@ func newRepo(pool *pgxpool.Pool) *orderpg.Repo { return orderpg.New(pool) }
 
 func newOptions(pool *pgxpool.Pool) *dbx.Options { return dbx.NewOptions(pool) }
 
-// newCourierProvider is which courier this deployment books through, so the registry can offer only
-// the rows that courier can serve.
-func newCourierProvider(cfg *config.Config) CourierProvider {
-	return CourierProvider(cfg.TransportProvider)
+// SyncOptions writes the rows every registered courier owns, before the server accepts traffic, so
+// the services a client fetches are the ones this binary can book. Fatal on failure: a checkout
+// with no carriers cannot complete, and delivery is on the money path.
+func SyncOptions(svc orderapi.Service) error {
+	syncer, ok := svc.(*Service)
+	if !ok {
+		return nil
+	}
+	if err := syncer.SyncOptions(context.Background()); err != nil {
+		return fmt.Errorf("sync transport options: %w", err)
+	}
+	return nil
 }
 
 // newUploads is this module's own `resource` rows plus the object store. The prefix keeps

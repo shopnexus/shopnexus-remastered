@@ -19,6 +19,14 @@ type Stub struct{}
 
 var _ orderapi.Service = Stub{}
 
+func (Stub) ListOptions(context.Context, common.ListOptionsRequest) (common.OptionList, error) {
+	return common.OptionList{}, errx.ErrNotImplemented
+}
+
+func (Stub) AdminSaveOption(context.Context, common.SaveOptionRequest) (common.OptionDTO, error) {
+	return common.OptionDTO{}, errx.ErrNotImplemented
+}
+
 func (Stub) ListCartItems(context.Context, orderapi.ListCartRequest) ([]orderapi.CartItem, error) {
 	return nil, errx.ErrNotImplemented
 }

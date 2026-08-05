@@ -1,12 +1,13 @@
 // Package mock is the dev-only payment rail: no gateway contract, no card, and one option row per
 // outcome, so a client can walk a success, a decline, a redirect, a late webhook and an unreachable
-// rail without anybody's sandbox credentials. Selected by PAYMENT_PROVIDER=mock.
+// rail without anybody's sandbox credentials. Registered when MOCK_ENABLED names `payment`.
 //
 // A scenario is chosen by the option slug the payer tendered, because that is the one thing a
-// client can pick from a list. The rows live in finance's `003_mock_payment_option.sql`, offered
-// only while this provider is the configured one (`common.Option.Offered`) — the slugs there and
-// the table here have to agree, which `finance`'s own test asserts. A slug this table does not
-// know succeeds: `platform-checkout` is the row every deployment has, and it must keep working.
+// client can pick from a list — and this rail declares those rows itself (`Options`), so the list a
+// client sees and the behaviour behind it cannot drift. Whether the rows exist at all is
+// MOCK_ENABLED: this provider is registered like any other, and nothing outside it branches on
+// being a mock. A slug this table does not know succeeds, which is what an operator's own row
+// pointed at this provider gets.
 package mock
 
 import (
@@ -26,12 +27,11 @@ import (
 	"shopnexus/internal/provider/payment"
 )
 
-// Name is the PAYMENT_PROVIDER value that selects this rail.
+// Name is what an option row's `provider` says to be served by this rail.
 const Name = "mock"
 
-// The option slugs this rail understands. Exported because finance's drift test compares them
-// against the migration that seeds the rows, and a slug is permanent once published: a settled
-// `transaction.payment_option` holds it as a plain string.
+// The option slugs this rail understands, and publishes as its own rows. A slug is permanent once
+// published: a settled `transaction.payment_option` holds it as a plain string with no foreign key.
 const (
 	OptionSuccess         = "mock-success"
 	OptionDecline         = "mock-decline"
@@ -90,12 +90,43 @@ var scenarios = map[string]scenario{
 	OptionNoAnswer:        {},
 }
 
-// ScenarioIDs is every slug this rail decides by. Sorted for a stable comparison.
-func ScenarioIDs() []string {
-	return []string{
-		OptionDecline, OptionNoAnswer, OptionRedirect, OptionSlowSuccess, OptionSuccess,
-		OptionUnreachable, OptionWebhookDecline, OptionWebhookMismatch, OptionWebhookRetried,
-		OptionWebhookSuccess,
+// Options are the rows this rail owns. Descriptions included, because the point of a scenario is
+// that a human picks it off a list and knows what they are about to get.
+//
+// Priorities descend from 90 so an operator's own rails (100 by convention) stay above them, and a
+// dev stack still reads top-to-bottom as happy path first.
+func (c *Client) Options() []payment.Option {
+	return []payment.Option{
+		{ID: OptionSuccess, Name: "Mock: pay now (succeeds)",
+			Description: "Settles immediately, no redirect and no webhook. The happy path.",
+			Priority:    90},
+		{ID: OptionDecline, Name: "Mock: pay now (declined)",
+			Description: "Refused immediately. The session goes back on the shelf, so another rail can be tendered.",
+			Priority:    89},
+		{ID: OptionSlowSuccess, Name: "Mock: pay now (slow, succeeds)",
+			Description: "Holds the request open for a few seconds, then succeeds — a spinner and a client timeout.",
+			Priority:    88},
+		{ID: OptionRedirect, Name: "Mock: hosted page",
+			Description: "Redirects to a fake gateway page where you press Pay or Decline, then comes back. The shape of a real redirect rail.",
+			Priority:    87},
+		{ID: OptionWebhookSuccess, Name: "Mock: webhook succeeds later",
+			Description: "Answers pending and reports success a few seconds later, so a client has to wait for the notification rather than trust the response.",
+			Priority:    86},
+		{ID: OptionWebhookDecline, Name: "Mock: webhook declines later",
+			Description: "Answers pending, then reports a failure. The other half of the asynchronous path.",
+			Priority:    85},
+		{ID: OptionWebhookRetried, Name: "Mock: webhook delivered twice",
+			Description: "Reports the same success twice, the way a real gateway retries until it gets a 200. Nothing may be counted twice.",
+			Priority:    84},
+		{ID: OptionWebhookMismatch, Name: "Mock: webhook reports another amount",
+			Description: "Reports success for half the amount charged. The leg settles on its own figure, never on the one the rail claims.",
+			Priority:    83},
+		{ID: OptionUnreachable, Name: "Mock: rail is down",
+			Description: "The charge call itself fails. Not a declined payment: nothing settles and the payer can try again.",
+			Priority:    82},
+		{ID: OptionNoAnswer, Name: "Mock: never answers",
+			Description: "Answers pending and never reports. The session sits until the expiry job voids it — settle it by hand with POST /api/v1/webhooks/payment/mock.",
+			Priority:    81},
 	}
 }
 
@@ -108,8 +139,8 @@ var (
 
 // Config is what the hosted page needs to exist as a browser sees it.
 type Config struct {
-	// BaseURL is this gateway's public root — not the API base path, because a provider callback
-	// is mounted outside the versioned prefix. Without it the redirect scenario can only answer a
+	// BaseURL is where this gateway answers as a client sees it, API base path included, since that
+	// is where provider callbacks are mounted. Without it the redirect scenario could only answer a
 	// relative path, which a web client on another origin cannot follow.
 	BaseURL string
 }

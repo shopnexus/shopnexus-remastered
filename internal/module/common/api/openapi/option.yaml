@@ -1,0 +1,185 @@
+# The pluggable-integration registry: the payment rails a payer tenders on, the carriers a buyer
+# picks, and the operator surface that switches either. Merged by cmd/specgen with every module's
+# own fragments.
+#
+# One endpoint over every category, because a client asking "what may I choose" is asking one
+# question. The rows themselves live in the schema of the module that acts on them — a settled
+# payment names a rail and a shipped parcel names a carrier, so those columns have to be able to
+# move databases with their module — and `category` is what says which module answers.
+#
+# The shape that decides this surface: an option's `provider` is the *implementation* serving it, and
+# it is a field an admin edits. So moving a carrier from GHN to GHTK is one PATCH — the slug does not
+# move, and neither do the orders that already name it — where a deployment-wide env var would have
+# moved every carrier at once and needed a restart. A mock provider is an ordinary member of that set
+# (registered by MOCK_ENABLED), which is why a dev stack's rails and carriers appear here beside any
+# real one and are reached only by a row that names them.
+#
+# `common` is not a module and has no service. This fragment sits here because the schemas and the
+# request bodies do, and because the endpoint belongs to no single module.
+
+paths:
+  /options:
+    get:
+      tags: [common]
+      summary: List what may be chosen in one category
+      description: >
+        Where a valid `payment_option` and `transport_option` come from. Operator configuration
+        rather than the caller's data, so it is unpaginated and identical for everybody — but it is
+        not constant: a row an operator disables leaves this list, and a client that hardcoded a slug
+        gets 422 from the route that consumes it instead.
+
+
+        Only the id, the name and the description are published. Which implementation serves a row,
+        and which rows are switched off, is the operator's view — see `/admin/options`.
+
+
+        A category outside the user-visible set answers 404, exactly as one nobody defined does:
+        telling the two apart would let anyone enumerate the platform's operator surface.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OptionCategory'
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/OptionList' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'No such category, or not one this caller may see', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/options:
+    get:
+      tags: [common]
+      summary: List every row of a category, operator view
+      description: >
+        Every row including the ones switched off — "why is this carrier missing from checkout" being
+        the question this answers — each with the `provider` serving it, plus the set of providers
+        this deployment has to move a row to. Admin only.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OptionCategory'
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/OptionList' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: 'No such category', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/options/{id}:
+    patch:
+      tags: [common]
+      summary: Switch a row off, rename it, or move it to another provider
+      description: >
+        Absent fields are left alone. The id, the category and the slug do not change: a settled
+        payment and a shipped parcel hold the slug as plain text, so it is permanent, and moving a row
+        between categories would change what those records mean.
+
+
+        `provider` is checked against what this deployment actually has — one nobody registered is
+        422, because the first person to find out otherwise would be a buyer at a checkout. Switching
+        a row off takes it out of `/options` without deleting it, which is what keeps every past
+        order that names it resolvable.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, maxLength: 100, example: ghn-express }, description: 'The option slug.' }
+        - $ref: '#/components/parameters/OptionCategory'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveOptionRequest' }
+      responses:
+        '200':
+          description: 'Updated'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Option' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Admin role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: 'No such option, or no such category', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'No provider registered by that name', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  schemas:
+    OptionCategoryName:
+      type: string
+      enum: [payment, transport]
+      example: payment
+      description: >
+        The kind of choice. `payment` is the rails a payment session may be tendered on, `transport`
+        the carriers a parcel may be sent with. Both are user-visible; a category added later may be
+        staff-only, and answers 404 to anyone else.
+
+    Option:
+      type: object
+      description: One selectable entry. The last three fields are the operator's view and are absent
+        for anyone else.
+      properties:
+        id:
+          type: string
+          maxLength: 100
+          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+          example: mock-success
+          description: What to send as `payment_option` or `transport_option`. Permanent — a settled
+            payment and a shipped parcel hold it.
+        name: { type: string, maxLength: 200, example: 'Mock: pay now (succeeds)', description: What to show the chooser. }
+        description:
+          type: string
+          maxLength: 1000
+          example: Settles immediately, no redirect and no webhook. The happy path.
+          description: A line of explanation. May be empty.
+        provider:
+          type: string
+          maxLength: 100
+          example: mock
+          description: Staff only. The implementation serving this row — what an admin changes to
+            move it to another vendor.
+        is_enabled: { type: boolean, example: true, description: 'Staff only. A row switched off is not offered, but stays resolvable for the records naming it.' }
+        priority: { type: integer, minimum: 0, maximum: 1000, example: 90, description: 'Staff only. Display order, highest first.' }
+      required: [id, name, description]
+
+    OptionList:
+      type: object
+      description: A whole category. One resource rather than a collection, and deliberately
+        unpaginated — a deployment offers a handful per category.
+      properties:
+        options: { type: array, items: { $ref: '#/components/schemas/Option' } }
+        providers:
+          type: array
+          items: { type: string, maxLength: 100 }
+          example: [mock]
+          description: Staff only. What a row's `provider` may be set to in this deployment, so a
+            switch is a choice from a list rather than a guess.
+      required: [options]
+
+    SaveOptionRequest:
+      type: object
+      description: The operator's edit. Every field is optional; absent leaves it alone.
+      properties:
+        provider:
+          type: string
+          maxLength: 100
+          example: mock
+          description: One of `providers` from `/admin/options`. Unknown here is 422.
+        is_enabled: { type: boolean, example: false, description: 'Take it out of the chooser''s list without deleting the row.' }
+        name: { type: string, maxLength: 200, example: 'GHN Express' }
+        description: { type: string, maxLength: 1000, example: 'Door to door, 2 to 3 days.' }
+        priority: { type: integer, minimum: 0, maximum: 1000, example: 100 }

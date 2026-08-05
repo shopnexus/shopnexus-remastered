@@ -1,12 +1,13 @@
 // Package mock is the dev-only courier: no carrier contract, and one option row per way a parcel
 // can go, so the whole shipment lifecycle — quoted, booked, in transit, delivered, and the ways it
-// does not get there — can be walked without a courier account. Selected by TRANSPORT_PROVIDER=mock.
+// does not get there — can be walked without a courier account. Registered when MOCK_ENABLED names
+// `transport`.
 //
 // A scenario is chosen by the carrier slug the buyer picked, which is the one thing a client picks
-// from a list. The rows live in order's `003_mock_transport_option.sql`, offered only while this
-// provider is the configured one (`common.Option.Offered`) — the slugs there and the table here
-// have to agree, which `order`'s own test asserts. A slug this table does not know behaves like
-// standard delivery: `standard-delivery` is the row every deployment has, and it must keep working.
+// from a list — and this courier declares those rows itself (`Options`), so the list a client sees
+// and the behaviour behind it cannot drift. Nothing outside this package branches on being a mock. A
+// slug this table does not know behaves like standard delivery, which is what an operator's own row
+// pointed at this provider gets.
 package mock
 
 import (
@@ -24,8 +25,8 @@ import (
 	"shopnexus/internal/provider/transport"
 )
 
-// The option slugs this courier understands. A slug is permanent once published: a shipped
-// `order.item.transport_option` holds it as a plain string.
+// The option slugs this courier understands, and publishes as its own rows. A slug is permanent once
+// published: a shipped `order.item.transport_option` holds it as a plain string with no foreign key.
 const (
 	OptionStandard       = "mock-standard"
 	OptionExpress        = "mock-express"
@@ -36,8 +37,11 @@ const (
 	OptionFailedDelivery = "mock-failed-delivery"
 )
 
-// defaultCost is what an unknown slug is priced at — including `standard-delivery`, the row every
-// deployment seeds. Flat, because this courier does not price by weight.
+// Name is what an option row's `provider` says to be served by this courier.
+const Name = "mock"
+
+// defaultCost is what a slug this package does not define is priced at — an operator's own row
+// pointed here. Flat, because this courier does not price by weight.
 const defaultCost = 15000 // VND
 
 // defaultDelay is how long that same parcel takes to arrive. Nothing in this package waits longer
@@ -74,11 +78,31 @@ var scenarios = map[string]scenario{
 	OptionFailedDelivery: {cost: defaultCost, delay: 15 * time.Second, undelivered: true},
 }
 
-// ScenarioIDs is every slug this courier decides by. Sorted for a stable comparison.
-func ScenarioIDs() []string {
-	return []string{
-		OptionBookingFails, OptionEconomy, OptionExpress, OptionFailedDelivery, OptionNoService,
-		OptionStandard, OptionStuck,
+// Options are the rows this courier owns. Priorities descend from 90 so an operator's own services
+// (100 by convention) stay above them, cheapest-and-slowest last.
+func (c *Client) Options() []transport.Option {
+	return []transport.Option{
+		{ID: OptionStandard, Name: "Mock: standard (2 days)",
+			Description: "Delivers about fifteen seconds after booking. The happy path.",
+			Priority:    90},
+		{ID: OptionExpress, Name: "Mock: express (same day)",
+			Description: "Costs more and delivers in about five seconds, so the whole escrow lifecycle is watchable.",
+			Priority:    89},
+		{ID: OptionEconomy, Name: "Mock: economy (a week)",
+			Description: "Cheapest, and the slowest this courier goes: about thirty seconds, long enough to see an order sit in transit.",
+			Priority:    88},
+		{ID: OptionNoService, Name: "Mock: does not serve this route",
+			Description: "Refuses to quote, so it is missing from the shipping-quote list instead of failing the page. Choosing it at checkout is refused.",
+			Priority:    87},
+		{ID: OptionBookingFails, Name: "Mock: booking is refused",
+			Description: "Quotes and takes the fee, then refuses the booking. The case the unbooked-shipment retry exists for.",
+			Priority:    86},
+		{ID: OptionStuck, Name: "Mock: parcel goes quiet",
+			Description: "Reports in-transit and never anything else. Move it along by hand with POST /api/v1/webhooks/transport/mock.",
+			Priority:    85},
+		{ID: OptionFailedDelivery, Name: "Mock: delivery fails",
+			Description: "Goes in-transit and then comes back undelivered, about fifteen seconds after booking.",
+			Priority:    84},
 	}
 }
 

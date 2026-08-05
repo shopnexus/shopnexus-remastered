@@ -11,6 +11,7 @@ import (
 
 	"shopnexus/internal/config"
 	"shopnexus/internal/infra/postgres"
+	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/common/dbx"
 	financepg "shopnexus/internal/module/finance/adapter/postgres"
 	financeapi "shopnexus/internal/module/finance/api"
@@ -24,17 +25,21 @@ var Module = fx.Module("finance",
 	// Private, and in a Provide of its own because fx.Private applies to every constructor
 	// in the same call: the pool is this module's own, and two modules each providing a bare
 	// *pgxpool.Pool into the root graph is a conflict rather than two pools.
-	fx.Provide(fx.Private, newPool),
+	// The option store is private for the same reason: `common.OptionStore` is one type and every
+	// module has its own rows, so providing it into the root graph is a conflict rather than one
+	// store per module.
+	fx.Provide(fx.Private,
+		newPool,
+		fx.Annotate(newOptions, fx.As(new(common.OptionStore))),
+	),
 	fx.Provide(
 		fx.Annotate(newRepo, fx.As(new(port.Repository))),
-		fx.Annotate(newOptions, fx.As(new(port.Options))),
 		newReturnURLHosts,
-		newRailProvider,
 		fx.Annotate(NewService, fx.As(new(financeapi.Service))),
 	),
-	// The service is built eagerly and its webhook mounted, because nothing else in the
-	// graph depends on the mount: without this the routes would only exist once some
-	// other component happened to ask for the service.
+	// Both eager, because nothing else in the graph depends on a mounted route or a written row:
+	// without these the rails would exist only once something happened to ask for the service.
+	fx.Invoke(SyncOptions),
 	fx.Invoke(WireWebhooks),
 )
 
@@ -60,20 +65,33 @@ func newReturnURLHosts(cfg *config.Config) ReturnURLHosts {
 
 func newOptions(pool *pgxpool.Pool) *dbx.Options { return dbx.NewOptions(pool) }
 
-// newRailProvider is which vendor this deployment charges through, so the registry can offer only
-// the rows that vendor can serve.
-func newRailProvider(cfg *config.Config) RailProvider { return RailProvider(cfg.PaymentProvider) }
+// SyncOptions writes the rows every registered rail owns, before the server accepts traffic: the
+// list a client fetches has to be the one this binary can serve. A failure is fatal — a checkout
+// with no rails is not a degraded deployment, it is one that cannot take money.
+func SyncOptions(svc financeapi.Service) error {
+	syncer, ok := svc.(*Service)
+	if !ok {
+		return nil
+	}
+	if err := syncer.SyncOptions(context.Background()); err != nil {
+		return fmt.Errorf("sync payment options: %w", err)
+	}
+	return nil
+}
 
-// WireWebhooks mounts the payment provider's IPN routes and hands it the settler. The
-// webhook is the provider's own path, not one of ours: a gateway calls the URL it was
-// configured with, and this is where that URL starts existing.
-func WireWebhooks(mux *http.ServeMux, gateway payment.Client, svc financeapi.Service, log *slog.Logger) {
+// WireWebhooks mounts every registered rail's IPN route and hands each the settler. Per provider,
+// not per option row: the callback path belongs to the vendor, and two rails that share one would
+// be settling each other's notifications.
+func WireWebhooks(mux *http.ServeMux, rails *common.Registry[payment.Client], svc financeapi.Service, log *slog.Logger) {
 	settler, ok := svc.(*Service)
 	if !ok {
 		return
 	}
-	path := gateway.WireWebhooks(mux, func(ctx context.Context, n payment.Notification) error {
-		return settler.Settle(ctx, n)
+	_ = rails.Each(func(provider string, rail payment.Client) error {
+		path := rail.WireWebhooks(mux, func(ctx context.Context, n payment.Notification) error {
+			return settler.Settle(ctx, n)
+		})
+		log.Info("payment webhook mounted", "provider", provider, "path", path)
+		return nil
 	})
-	log.Info("payment webhook mounted", "path", path)
 }

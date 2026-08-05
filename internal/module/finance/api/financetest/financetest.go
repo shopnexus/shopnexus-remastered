@@ -8,6 +8,7 @@ package financetest
 import (
 	"context"
 
+	"shopnexus/internal/module/common"
 	financeapi "shopnexus/internal/module/finance/api"
 	"shopnexus/internal/shared/errx"
 )
@@ -17,8 +18,12 @@ type Stub struct{}
 
 var _ financeapi.Service = Stub{}
 
-func (Stub) ListPaymentOptions(context.Context, financeapi.ListPaymentOptionsRequest) ([]financeapi.PaymentOption, error) {
-	return nil, errx.ErrNotImplemented
+func (Stub) ListOptions(context.Context, common.ListOptionsRequest) (common.OptionList, error) {
+	return common.OptionList{}, errx.ErrNotImplemented
+}
+
+func (Stub) AdminSaveOption(context.Context, common.SaveOptionRequest) (common.OptionDTO, error) {
+	return common.OptionDTO{}, errx.ErrNotImplemented
 }
 
 func (Stub) ListSessions(context.Context, financeapi.ListSessionsRequest) (financeapi.SessionPage, error) {

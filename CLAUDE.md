@@ -59,7 +59,11 @@ meant to run together.
 stage wins", or a stage appended later ships the Go toolchain.
 
 All config env vars are **required, no defaults** (`internal/config`); a missing
-one fails fast at startup.
+one fails fast at startup. `PUBLIC_BASE_URL` is where this gateway answers as a
+client sees it, base path included — one var, not one per seam, because `local`
+storage signing and a provider handing a browser an absolute link need the same
+answer. `CORS_ALLOWED_ORIGINS` holds full origins (what the browser sends and the
+allow header must echo), unlike `WS_ALLOWED_ORIGINS`, which is a host pattern.
 
 Every route is served under **`api.BasePath`** (`/api/v1`) — the router registers
 paths unprefixed and mounts the mux there, and `openapi.base.yaml`'s
@@ -146,7 +150,10 @@ separate stack.
 telemetry — cache), fx-free. `internal/shared/` = cross-cutting helpers (errx,
 httpx, logger, token, validation, openapi). `internal/provider/` = external
 integrations (finance, transport, llm): an interface + implementations; webhook
-routes mount on `*http.ServeMux`. `internal/gateway/` = transport (thin handlers
+routes mount on `*http.ServeMux`, which the router serves **under `api.BasePath`**
+like every other route — a callback beside the versioned prefix is a second path
+every reverse proxy has to be told about, and the one in front of this platform
+was not. `internal/gateway/` = transport (thin handlers
 → `api.Service`, middleware, `gwctx` for request-scoped userID/requestID).
 
 ## Conventions
@@ -574,7 +581,32 @@ give it its own doc under `docs/` and link it from here.
   SMTP (`net/smtp`, vendor-neutral) for email, eSMS.vn for SMS, OIDC id-token
   verification (`coreos/go-oidc`) for federated sign-in, FPT.AI eKYC for identity.
   Every real client is built with `httpx.ObserveOutbound` and no
-  `http.Client.Timeout`.
+  `http.Client.Timeout`. Payment and transport are the exception and have **no selector**: see the
+  next bullet.
+- **Where a past record names the provider, the row picks it — not an env var.** A settled
+  `finance.transaction.payment_option` and a shipped `order.item.transport_option` hold an `option`
+  slug as plain text for ever, so those two seams are a *registry*, not a selection:
+  `common.Registry[T]` holds every implementation the binary has, keyed by the name a row's
+  `provider` gives, and `Registry.Client(provider)` is what resolves one. So two rails can be live
+  at once, and moving a carrier from GHN to GHTK is `PATCH /admin/options/{id}` — the slug and every
+  order naming it stay put — where a `TRANSPORT_PROVIDER` would have moved all of them at once and
+  needed a restart. A provider nobody registered is refused (422), never substituted: charging
+  through whichever rail happened to be in the map is worse than failing.
+  A provider **declares the rows it owns** (`Client.Options()`), and `SyncOptions` reconciles them
+  at startup — upsert plus a delete of what it no longer names — so the list a client picks from is
+  the code that will serve it and a scenario cannot outlive its implementation. Answering none means
+  "my rows are the operator's business", which is every real vendor; reconciling those would delete
+  what somebody wrote by hand. `MOCK_ENABLED` is a list of *categories*, not a mode: it decides
+  which mocks are registered, and a mock is then an ordinary member reached only by a row that names
+  it. Nothing outside a mock package branches on being one.
+- **One `/options` endpoint over every category, and the rows stay per module.** `category` says who
+  answers (`payment` → finance, `transport` → order), because those two columns must be able to move
+  databases with their module; the projection, the DTOs and the staff gate live once in
+  `common/optionapi.go`. `common.CategoryVisibleTo` decides who may see a category, and one nobody
+  defined answers the same 404 as one a user may not — telling them apart enumerates the operator
+  surface. Absent is 400, which is a different mistake. `/admin/options` adds the disabled rows, each
+  row's `provider`, and the set an admin may switch it to; a switch-off keeps the row resolvable for
+  the records naming it, which is what the soft delete and the immutable slug are for.
 - **The stale mark is the embedding queue, and only the worker clears it.** Three catalog tables
   carry `embedding_stale_at` — listing, category, tag — set by whatever write changed what the row
   *says*; `cmd/embedder` drains them into `*_embedding` and clears the mark. A work list that is a

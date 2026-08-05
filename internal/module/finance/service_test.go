@@ -8,6 +8,7 @@ import (
 	"shopnexus/internal/infra/eventbus"
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/api/accounttest"
+	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/finance"
 	financeapi "shopnexus/internal/module/finance/api"
 	"shopnexus/internal/module/finance/domain"
@@ -40,6 +41,15 @@ func (f fakeAccounts) GetPublicAccount(_ context.Context, req accountapi.GetPubl
 // discard is the logger every harness here uses: a service test asserts on results, not on lines.
 var discard = slog.New(slog.DiscardHandler)
 
+// railRegistry is the mock rail under the name the fake rows' `provider` says. It settles
+// synchronously, which is what lets a service test walk a whole payment without a webhook.
+func railRegistry() *common.Registry[payment.Client] {
+	return common.NewRegistry(map[string]payment.Client{
+		paymentmock.Name: paymentmock.NewClient(
+			paymentmock.Config{BaseURL: "https://shopnexus.test"}, discard),
+	})
+}
+
 type harness struct {
 	svc  *finance.Service
 	repo *fakeRepo
@@ -49,9 +59,8 @@ func newHarness(role string, verified bool) *harness {
 	repo := newFakeRepo()
 	// The mock rail settles synchronously, which is what lets a service test walk a
 	// whole payment without a webhook.
-	gateway := paymentmock.NewClient(paymentmock.Config{BaseURL: "https://shopnexus.test"}, discard)
 	svc := finance.NewService(repo, fakeAccounts{role: role, verified: verified}, repo,
-		gateway, paymentmock.Name, finance.ReturnURLHosts{"shopnexus.test"},
+		railRegistry(), finance.ReturnURLHosts{"shopnexus.test"},
 		eventbus.NewMemory(discard), validation.Default(), discard)
 	return &harness{svc: svc, repo: repo}
 }
@@ -296,8 +305,7 @@ func TestGetSession_StrangerNotFound(t *testing.T) {
 // seed money as an admin and then act as the account it belongs to.
 func newHarnessSharing(h *harness, role string) *harness {
 	svc := finance.NewService(h.repo, fakeAccounts{role: role, verified: true}, h.repo,
-		paymentmock.NewClient(paymentmock.Config{BaseURL: "https://shopnexus.test"}, discard),
-		paymentmock.Name, finance.ReturnURLHosts{"shopnexus.test"}, eventbus.NewMemory(discard),
+		railRegistry(), finance.ReturnURLHosts{"shopnexus.test"}, eventbus.NewMemory(discard),
 		validation.Default(), discard)
 	return &harness{svc: svc, repo: h.repo}
 }

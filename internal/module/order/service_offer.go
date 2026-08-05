@@ -267,7 +267,7 @@ func (s *Service) CheckoutOffer(ctx context.Context, req orderapi.CheckoutOfferR
 	if err != nil {
 		return orderapi.CheckoutResult{}, err
 	}
-	if err := s.transportOption(ctx, req.TransportOption); err != nil {
+	if _, err := s.courier(ctx, req.TransportOption); err != nil {
 		return orderapi.CheckoutResult{}, err
 	}
 	address, err := s.contactSnapshot(ctx, req.ActorID, req.ContactID)

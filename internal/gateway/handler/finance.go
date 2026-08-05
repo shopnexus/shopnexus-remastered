@@ -30,19 +30,6 @@ func NewFinance(svc financeapi.Service, v *validator.Validate, log *slog.Logger)
 
 // --- payment sessions ---
 
-// ListPaymentOptions handles GET /payment-options — the rails a checkout may tender on.
-func (h *Finance) ListPaymentOptions(w http.ResponseWriter, r *http.Request) {
-	uid, err := actor(r)
-	if failed(w, h.log, err) {
-		return
-	}
-	res, err := h.svc.ListPaymentOptions(r.Context(), financeapi.ListPaymentOptionsRequest{ActorID: uid})
-	if failed(w, h.log, err) {
-		return
-	}
-	httpx.WriteData(w, http.StatusOK, res)
-}
-
 // ListPaymentSessions handles GET /payment-sessions.
 func (h *Finance) ListPaymentSessions(w http.ResponseWriter, r *http.Request) {
 	h.listSessions(w, r, false)

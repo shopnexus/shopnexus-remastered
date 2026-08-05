@@ -16,6 +16,13 @@ components:
                 maximum: 100
                 minimum: 1
                 type: integer
+        OptionCategory:
+            description: The kind of pluggable choice.
+            in: query
+            name: category
+            required: true
+            schema:
+                $ref: '#/components/schemas/OptionCategoryName'
         Page:
             description: 1-based page number.
             in: query
@@ -2256,6 +2263,71 @@ components:
                 - kind
                 - subject
             type: object
+        Option:
+            description: One selectable entry. The last three fields are the operator's view and are absent for anyone else.
+            properties:
+                description:
+                    description: A line of explanation. May be empty.
+                    example: Settles immediately, no redirect and no webhook. The happy path.
+                    maxLength: 1000
+                    type: string
+                id:
+                    description: What to send as `payment_option` or `transport_option`. Permanent — a settled payment and a shipped parcel hold it.
+                    example: mock-success
+                    maxLength: 100
+                    pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
+                    type: string
+                is_enabled:
+                    description: Staff only. A row switched off is not offered, but stays resolvable for the records naming it.
+                    example: true
+                    type: boolean
+                name:
+                    description: What to show the chooser.
+                    example: 'Mock: pay now (succeeds)'
+                    maxLength: 200
+                    type: string
+                priority:
+                    description: Staff only. Display order, highest first.
+                    example: 90
+                    maximum: 1000
+                    minimum: 0
+                    type: integer
+                provider:
+                    description: Staff only. The implementation serving this row — what an admin changes to move it to another vendor.
+                    example: mock
+                    maxLength: 100
+                    type: string
+            required:
+                - id
+                - name
+                - description
+            type: object
+        OptionCategoryName:
+            description: |
+                The kind of choice. `payment` is the rails a payment session may be tendered on, `transport` the carriers a parcel may be sent with. Both are user-visible; a category added later may be staff-only, and answers 404 to anyone else.
+            enum:
+                - payment
+                - transport
+            example: payment
+            type: string
+        OptionList:
+            description: A whole category. One resource rather than a collection, and deliberately unpaginated — a deployment offers a handful per category.
+            properties:
+                options:
+                    items:
+                        $ref: '#/components/schemas/Option'
+                    type: array
+                providers:
+                    description: Staff only. What a row's `provider` may be set to in this deployment, so a switch is a choice from a list rather than a guess.
+                    example:
+                        - mock
+                    items:
+                        maxLength: 100
+                        type: string
+                    type: array
+            required:
+                - options
+            type: object
         Order:
             properties:
                 address:
@@ -2637,38 +2709,6 @@ components:
                     type: string
             required:
                 - identifier
-            type: object
-        PaymentOption:
-            description: One rail a payer may tender on.
-            properties:
-                description:
-                    description: A line of explanation. May be empty.
-                    example: The platform's configured payment provider.
-                    type: string
-                id:
-                    description: What to send as `payment_option`. Permanent — a settled leg holds it.
-                    example: platform-checkout
-                    maxLength: 100
-                    pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
-                    type: string
-                name:
-                    description: What to show the payer.
-                    example: Card or bank transfer
-                    type: string
-            required:
-                - id
-                - name
-                - description
-            type: object
-        PaymentOptionList:
-            description: Unpaginated — a deployment offers a handful of rails.
-            properties:
-                data:
-                    items:
-                        $ref: '#/components/schemas/PaymentOption'
-                    type: array
-            required:
-                - data
             type: object
         PaymentSession:
             properties:
@@ -3310,6 +3350,32 @@ components:
                 - helpful
                 - not_helpful
             type: object
+        SaveOptionRequest:
+            description: The operator's edit. Every field is optional; absent leaves it alone.
+            properties:
+                description:
+                    example: Door to door, 2 to 3 days.
+                    maxLength: 1000
+                    type: string
+                is_enabled:
+                    description: Take it out of the chooser's list without deleting the row.
+                    example: false
+                    type: boolean
+                name:
+                    example: GHN Express
+                    maxLength: 200
+                    type: string
+                priority:
+                    example: 100
+                    maximum: 1000
+                    minimum: 0
+                    type: integer
+                provider:
+                    description: One of `providers` from `/admin/options`. Unknown here is 422.
+                    example: mock
+                    maxLength: 100
+                    type: string
+            type: object
         SemanticSeed:
             description: |
                 A tag slug or a category id, told apart the same way a listing ref is: an opaque id always carries an underscore after its prefix and a slug never does.
@@ -3454,7 +3520,7 @@ components:
                     minimum: 1
                     type: integer
                 payment_option:
-                    description: A slug from `GET /payment-options`; one nobody enabled is refused with 422.
+                    description: A slug from `GET /options?category=payment`; one nobody enabled is refused with 422.
                     example: platform-checkout
                     maxLength: 100
                     pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
@@ -5344,6 +5410,106 @@ paths:
             summary: Revoke the moderator role
             tags:
                 - admin
+    /admin/options:
+        get:
+            description: |
+                Every row including the ones switched off — "why is this carrier missing from checkout" being the question this answers — each with the `provider` serving it, plus the set of providers this deployment has to move a row to. Admin only.
+            parameters:
+                - $ref: '#/components/parameters/OptionCategory'
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/OptionList'
+                                required:
+                                    - data
+                                type: object
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Admin role required
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: No such category
+            security:
+                - bearerAuth: []
+            summary: List every row of a category, operator view
+            tags:
+                - common
+    /admin/options/{id}:
+        patch:
+            description: |
+                Absent fields are left alone. The id, the category and the slug do not change: a settled payment and a shipped parcel hold the slug as plain text, so it is permanent, and moving a row between categories would change what those records mean.
+
+                `provider` is checked against what this deployment actually has — one nobody registered is 422, because the first person to find out otherwise would be a buyer at a checkout. Switching a row off takes it out of `/options` without deleting it, which is what keeps every past order that names it resolvable.
+            parameters:
+                - description: The option slug.
+                  in: path
+                  name: id
+                  required: true
+                  schema:
+                    example: ghn-express
+                    maxLength: 100
+                    type: string
+                - $ref: '#/components/parameters/OptionCategory'
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SaveOptionRequest'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Option'
+                                required:
+                                    - data
+                                type: object
+                    description: Updated
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Admin role required
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: No such option, or no such category
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: No provider registered by that name
+            security:
+                - bearerAuth: []
+            summary: Switch a row off, rename it, or move it to another provider
+            tags:
+                - common
     /admin/payment-sessions:
         get:
             description: Filter by kind, status and a settlement window. Intended for tying platform totals to what the rails report.
@@ -8835,6 +9001,43 @@ paths:
             summary: Create the order now, on agreed terms (buyer)
             tags:
                 - order
+    /options:
+        get:
+            description: |
+                Where a valid `payment_option` and `transport_option` come from. Operator configuration rather than the caller's data, so it is unpaginated and identical for everybody — but it is not constant: a row an operator disables leaves this list, and a client that hardcoded a slug gets 422 from the route that consumes it instead.
+
+                Only the id, the name and the description are published. Which implementation serves a row, and which rows are switched off, is the operator's view — see `/admin/options`.
+
+                A category outside the user-visible set answers 404, exactly as one nobody defined does: telling the two apart would let anyone enumerate the platform's operator surface.
+            parameters:
+                - $ref: '#/components/parameters/OptionCategory'
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/OptionList'
+                                required:
+                                    - data
+                                type: object
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: No such category, or not one this caller may see
+            security:
+                - bearerAuth: []
+            summary: List what may be chosen in one category
+            tags:
+                - common
     /orders:
         get:
             parameters:
@@ -9443,26 +9646,6 @@ paths:
             summary: Set a new password with a reset token
             tags:
                 - account
-    /payment-options:
-        get:
-            description: |
-                Where a valid `payment_option` comes from. Operator configuration, not the caller's data, so it is unpaginated and identical for everybody — but it is not constant: a rail an operator disables leaves this list, and a client that hardcoded a slug gets 422 from `POST /payment-sessions/{id}/payments` instead. Which vendor is behind a rail is not published; the id and the name are what a checkout renders.
-
-                On a stack running the mock rail this is where its scenarios appear — one row per outcome (`mock-decline`, `mock-redirect`, `mock-webhook-success`, …), so a client can be built against a refusal and a late webhook. They are offered only while that rail is the configured one, so they cannot show up beside a real card form.
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/PaymentOptionList'
-                    description: OK
-                "401":
-                    $ref: '#/components/responses/Unauthorized'
-            security:
-                - bearerAuth: []
-            summary: List the payment rails this deployment offers
-            tags:
-                - finance
     /payment-sessions:
         get:
             description: '`role=payer` is money owed or sent, `role=payee` is money received — seller payouts and refunds land on that side.'

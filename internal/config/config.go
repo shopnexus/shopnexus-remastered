@@ -76,9 +76,6 @@ type Config struct {
 	StorageProvider string `validate:"required,oneof=local"`
 	// StorageRoot is the directory `local` stores objects under.
 	StorageRoot string `validate:"required_if=StorageProvider local"`
-	// StorageBaseURL is where this gateway answers the upload and download routes as a client
-	// sees them — behind a proxy that is not the address the server binds.
-	StorageBaseURL string `validate:"required_if=StorageProvider local,omitempty,url"`
 	// StorageSecret keys the signature on an upload slot. Its own secret, not the JWT's: this
 	// one signs a URL that sits in a client's memory, and rotating it invalidates only the
 	// slots still in flight.
@@ -181,23 +178,29 @@ type Config struct {
 	// KYCProvider is "fpt-ai" for the real check, or "mock" to leave every case pending
 	// for a moderator.
 	KYCProvider string `validate:"required,oneof=fpt-ai mock"`
-	// TransportProvider is the courier a shipping fee is quoted from. The buyer pays delivery on
-	// every sale, so this is on the money path: a quote nobody asked for means the platform
-	// silently absorbs the carrier's bill. `mock` prices a flat fee, which is enough to exercise
-	// the whole flow without a courier contract.
-	TransportProvider string `validate:"required,oneof=mock"`
 	// PaymentReturnURLHosts is where a payment gateway may send a payer back. An allowlist
 	// rather than any URL the client sends: a redirect target nobody checked is an open
 	// redirect wearing a payment flow, and the platform's own domain is what lends it
 	// credibility. Comma-separated hosts, no scheme.
 	PaymentReturnURLHosts []string `validate:"required,min=1,dive,required,hostname_port|hostname"`
-	// PaymentProvider picks the rail money actually moves on. `mock` settles
-	// synchronously with no gateway, which is what dev and the tests use.
-	PaymentProvider string `validate:"required,oneof=mock"`
-	// PaymentMockBaseURL is this gateway's public root — no path, since a provider callback is
-	// mounted outside the versioned prefix. The mock rail's redirect scenario needs an absolute
-	// URL to send a browser to, and a web client on another origin cannot follow a relative one.
-	PaymentMockBaseURL string `validate:"required_if=PaymentProvider mock,omitempty,url"`
+	// MockEnabled names the option categories whose mock provider is registered — `payment`,
+	// `transport`, or empty for none. It is not a selector like the seams above: payment and
+	// transport have no single provider to select, because *the option row* names the one that
+	// serves it, which is what lets an admin move a carrier from GHN to GHTK without a restart.
+	// This decides only whether the mock is among the providers a row may name, and a category
+	// dropped from the list has its mock rows removed at the next start.
+	//
+	// Registering a mock rail alongside a real one is deliberate and safe: nothing charges through
+	// it unless a row asks for it by name. Leave it empty in a deployment that takes real money, so
+	// no such row can be written by hand either.
+	MockEnabled []string `validate:"omitempty,dive,oneof=payment transport"`
+	// PublicBaseURL is where this gateway answers as a client sees it, API base path included
+	// (`https://shopnexus.example/api/v1`) — behind a proxy that is not the address the server
+	// binds. One var rather than one per seam, because every user of it needs the same answer:
+	// `local` storage signs upload and download URLs back to this gateway's own routes, and the
+	// mock rail hands a browser an absolute link to its hosted page. A web client on another origin
+	// cannot follow a relative one.
+	PublicBaseURL string `validate:"required,url"`
 
 	// --- SMTP ---
 
@@ -299,7 +302,6 @@ func Load(v *validator.Validate) (*Config, error) {
 
 		StorageProvider:       os.Getenv("STORAGE_PROVIDER"),
 		StorageRoot:           os.Getenv("STORAGE_ROOT"),
-		StorageBaseURL:        os.Getenv("STORAGE_BASE_URL"),
 		StorageSecret:         os.Getenv("STORAGE_SECRET"),
 		StorageUploadTTL:      p.durationVar("STORAGE_UPLOAD_TTL"),
 		StorageDownloadTTL:    p.durationVar("STORAGE_DOWNLOAD_TTL"),
@@ -334,9 +336,8 @@ func Load(v *validator.Validate) (*Config, error) {
 		SMSProvider:           os.Getenv("SMS_PROVIDER"),
 		OAuthVerifier:         os.Getenv("OAUTH_VERIFIER"),
 		KYCProvider:           os.Getenv("KYC_PROVIDER"),
-		PaymentProvider:       os.Getenv("PAYMENT_PROVIDER"),
-		PaymentMockBaseURL:    os.Getenv("PAYMENT_MOCK_BASE_URL"),
-		TransportProvider:     os.Getenv("TRANSPORT_PROVIDER"),
+		MockEnabled:           listVar("MOCK_ENABLED"),
+		PublicBaseURL:         os.Getenv("PUBLIC_BASE_URL"),
 		PaymentReturnURLHosts: listVar("PAYMENT_RETURN_URL_HOSTS"),
 
 		SMTPHost:         os.Getenv("SMTP_HOST"),

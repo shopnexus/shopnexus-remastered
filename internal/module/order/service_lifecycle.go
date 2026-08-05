@@ -177,7 +177,12 @@ func (s *Service) bookShipment(ctx context.Context, o domain.Order, lines []*dom
 	for _, i := range lines {
 		items = append(items, transport.ItemMetadata{VariantID: i.VariantID, Quantity: i.Quantity})
 	}
-	booked, err := s.transport.Create(ctx, transport.CreateParams{
+	client, err := s.bookingCourier(ctx, t.Option)
+	if err != nil {
+		s.log.Error("resolve carrier to book with", "order_id", o.ID, "option", t.Option, "err", err)
+		return
+	}
+	booked, err := client.Create(ctx, transport.CreateParams{
 		Items:       items,
 		FromAddress: addressLine(o.PickupAddress),
 		ToAddress:   addressLine(o.Address),

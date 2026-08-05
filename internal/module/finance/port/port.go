@@ -9,7 +9,6 @@ package port
 import (
 	"context"
 
-	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/finance/domain"
 )
 
@@ -98,13 +97,6 @@ type Repository interface {
 	PutTaxInfo(ctx context.Context, t domain.TaxInfo) error
 	FindTaxInfo(ctx context.Context, accountID int64) (domain.TaxInfo, error)
 	SaveTaxInfo(ctx context.Context, t domain.TaxInfo) error
-}
-
-// Options is the payment-rail registry this module reads from its own schema.
-// dbx.Options satisfies it; a test fakes it, which is the second caller that earns the
-// interface — the alternative is a database in every service test.
-type Options interface {
-	ListEnabled(ctx context.Context, optionType string) ([]common.Option, error)
 }
 
 // Leg is one wallet's part of a movement: whose wallet, in which currency, and what

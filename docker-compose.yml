@@ -20,6 +20,9 @@ x-app-env: &app-env
   # id ever handed out. 16, 24 or 32 bytes.
   ID_CIPHER_KEY: "0123456789abcdef0123456789abcdef"
   LOG_LEVEL: "info"
+  # Where this gateway answers as a client sees it, API base path included: `local` storage signs
+  # upload links back to its own routes, and the mock rail hands a browser a link to its pay page.
+  PUBLIC_BASE_URL: "https://shopnexus.hopto.org/api/v1"
   # Where a browser may call this API from: full origins, matched exactly. A web client on
   # another origin gets nothing without this — its preflight is refused before any route runs.
   CORS_ALLOWED_ORIGINS: "https://shopnexus.github.io,http://localhost:3000,http://localhost:5173"
@@ -54,13 +57,12 @@ x-app-env: &app-env
   SMS_PROVIDER: "mock"
   OAUTH_VERIFIER: "mock"
   KYC_PROVIDER: "mock"
-  PAYMENT_PROVIDER: "mock"
-  # This gateway's public root, with no path: the mock rail's hosted-page scenario redirects a
-  # browser to /webhooks/payment/mock/checkout, which is mounted outside the versioned prefix.
-  PAYMENT_MOCK_BASE_URL: "https://shopnexus.hopto.org"
-  # The courier a shipping fee is quoted from. The buyer pays delivery on every sale, so an
-  # unquoted fee is one the platform silently absorbs. `mock` prices a flat fee.
-  TRANSPORT_PROVIDER: "mock"
+  # Payment and transport have no selector: an `option` row names the provider that serves it, so a
+  # deployment can offer two rails at once and an admin can move a carrier from one courier to
+  # another through PATCH /admin/options/{id}. This only decides which categories get their mock
+  # provider registered — and with it, the scenario rows a client can pick a failure from. Leave it
+  # empty where real money moves: then no row can name a mock even by hand.
+  MOCK_ENABLED: "payment,transport"
   # Where a payment gateway may send a payer back. An allowlist, because a redirect target
   # nobody checked is an open redirect that borrows this platform's credibility.
   PAYMENT_RETURN_URL_HOSTS: "shopnexus.hopto.org"
@@ -74,7 +76,6 @@ x-app-env: &app-env
   # internal/provider/storage plus a selector value.
   STORAGE_PROVIDER: "local"
   STORAGE_ROOT: "/data/objects"
-  STORAGE_BASE_URL: "https://shopnexus.hopto.org/api/v1"
   STORAGE_SECRET: "0123456789abcdef0123456789abcdef"
   STORAGE_UPLOAD_TTL: "15m"
   STORAGE_DOWNLOAD_TTL: "1h"

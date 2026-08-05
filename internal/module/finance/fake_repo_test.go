@@ -10,6 +10,7 @@ import (
 	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/finance/domain"
 	"shopnexus/internal/module/finance/port"
+	paymentmock "shopnexus/internal/provider/payment/mock"
 )
 
 // fakeRepo is an in-memory port.Repository. It enforces what the schema does — the
@@ -43,11 +44,10 @@ func newFakeRepo() *fakeRepo {
 		posted:   map[string]bool{},
 		payees:   map[int64]domain.BankAccount{},
 		taxInfos: map[int64]domain.TaxInfo{},
-		// `platform` as the provider, like the row every deployment seeds: it is offered whatever
-		// PAYMENT_PROVIDER says, so these tests are not about the registry's provider filter.
+		// One rail served by the mock provider, which is what these tests' registry has.
 		options: []common.Option{{
-			ID: "mock-rail", Type: common.OptionTypePayment, IsEnabled: true,
-			Provider: common.OptionProviderPlatform,
+			ID: "mock-rail", Category: common.CategoryPayment, IsEnabled: true,
+			Provider: paymentmock.Name,
 		}},
 	}
 }
@@ -61,14 +61,57 @@ var _ port.Repository = (*fakeRepo)(nil)
 
 // ListEnabled makes the fake its own option registry too, so a service test needs no
 // second fake for one method.
-func (f *fakeRepo) ListEnabled(_ context.Context, optionType string) ([]common.Option, error) {
+func (f *fakeRepo) ListEnabled(_ context.Context, category string) ([]common.Option, error) {
+	return f.optionsIn(category, true), nil
+}
+
+func (f *fakeRepo) ListAll(_ context.Context, category string) ([]common.Option, error) {
+	return f.optionsIn(category, false), nil
+}
+
+func (f *fakeRepo) optionsIn(category string, liveOnly bool) []common.Option {
 	var out []common.Option
 	for _, o := range f.options {
-		if o.Type == optionType && o.IsEnabled {
+		if o.Category == category && (o.IsEnabled || !liveOnly) {
 			out = append(out, o)
 		}
 	}
-	return out, nil
+	return out
+}
+
+func (f *fakeRepo) Find(_ context.Context, id string) (common.Option, error) {
+	for _, o := range f.options {
+		if o.ID == id {
+			return o, nil
+		}
+	}
+	return common.Option{}, common.ErrOptionNotFound
+}
+
+func (f *fakeRepo) Save(_ context.Context, o common.Option) error {
+	for i, existing := range f.options {
+		if existing.ID == o.ID {
+			f.options[i] = o
+			return nil
+		}
+	}
+	return common.ErrOptionNotFound
+}
+
+// Reconcile mirrors the adapter: exactly `want` for that provider, and nothing of its own left over.
+func (f *fakeRepo) Reconcile(_ context.Context, provider string, want []common.Option) error {
+	kept := make([]common.Option, 0, len(f.options))
+	for _, o := range f.options {
+		if o.Provider != provider {
+			kept = append(kept, o)
+		}
+	}
+	for _, o := range want {
+		o.Provider, o.IsEnabled = provider, true
+		kept = append(kept, o)
+	}
+	f.options = kept
+	return nil
 }
 
 // --- sessions and legs ---

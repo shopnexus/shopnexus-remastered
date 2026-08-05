@@ -23,8 +23,8 @@ import (
 type Deps struct {
 	fx.In
 
-	// Webhooks is where providers mount their own IPN paths. It is outside the versioned
-	// base path and outside auth: a gateway calls the URL it was configured with, signs
+	// Webhooks is where providers mount their own IPN paths. Under the versioned base path like
+	// every other route, but outside auth: a provider calls the URL it was configured with, signs
 	// the payload its own way, and has no bearer token to present.
 	Webhooks *http.ServeMux
 	Account  *handler.Account
@@ -33,6 +33,7 @@ type Deps struct {
 	Finance  *handler.Finance
 	Order    *handler.Order
 	Trust    *handler.Trust
+	Options  *handler.Options
 	WS       *handler.WS
 	// Uploads is nil unless the storage backend needs this process to serve the bytes — the
 	// `local` one does, a real bucket does not.
@@ -129,6 +130,14 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("GET /admin/identity-documents", auth(http.HandlerFunc(d.Account.AdminListIdentityDocuments)))
 	mux.Handle("POST /admin/identity-documents/{id}/verdict", auth(http.HandlerFunc(d.Account.AdminRecordIdentityVerdict)))
 
+	// ---- pluggable integrations ----
+	// One endpoint over every category of selectable provider — the rails a payer tenders on, the
+	// carriers a buyer picks — because a client asking "what may I choose" is asking one question.
+	// A category a user may not see answers 404, the same as one nobody defined.
+	mux.Handle("GET /options", auth(http.HandlerFunc(d.Options.List)))
+	mux.Handle("GET /admin/options", auth(http.HandlerFunc(d.Options.AdminList)))
+	mux.Handle("PATCH /admin/options/{id}", auth(http.HandlerFunc(d.Options.AdminSave)))
+
 	// ---- realtime ----
 	mux.Handle("POST /ws/tickets", auth(http.HandlerFunc(d.WS.CreateTicket)))
 	// Deliberately not wrapped in auth: the credential is a ticket in the query string,
@@ -184,9 +193,6 @@ func NewRouter(d Deps) http.Handler {
 
 	// ---- finance ----
 	// Authenticated
-	// The rails a payer may tender on, which is where a valid `payment_option` comes from: a
-	// client that hardcoded a slug broke the day an operator disabled that rail.
-	mux.Handle("GET /payment-options", auth(http.HandlerFunc(d.Finance.ListPaymentOptions)))
 	mux.Handle("GET /payment-sessions", auth(http.HandlerFunc(d.Finance.ListPaymentSessions)))
 	mux.Handle("GET /payment-sessions/{id}", auth(http.HandlerFunc(d.Finance.GetPaymentSession)))
 	mux.Handle("GET /payment-sessions/{id}/transactions", auth(http.HandlerFunc(d.Finance.ListTransactions)))
@@ -302,6 +308,16 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("POST /admin/tickets/{id}/claim", auth(http.HandlerFunc(d.Trust.AdminClaimTicket)))
 	mux.Handle("POST /admin/tickets/{id}/resolution", auth(http.HandlerFunc(d.Trust.AdminResolveTicket)))
 
+	// Provider callbacks, under the versioned prefix like every other route. They used to be
+	// mounted beside it on the bare root, which made them a second path a reverse proxy had to know
+	// about — and the one in front of this platform did not, so no provider could report anything
+	// and the mock rail's hosted page resolved to the web client's 404. Deliberately outside auth:
+	// a provider calls the URL it was configured with, signs the payload its own way, and has no
+	// bearer token to present.
+	if d.Webhooks != nil {
+		mux.Handle("/webhooks/", d.Webhooks)
+	}
+
 	// Metrics wraps the mux so it can read the matched route.
 	// Metrics is optional (nil in tests that don't wire observability).
 	var routed http.Handler = mux
@@ -314,11 +330,6 @@ func NewRouter(d Deps) http.Handler {
 	// metrics middleware, which labels by the inner mux's matched pattern.
 	root := http.NewServeMux()
 	root.Handle(openapi.BasePath+"/", http.StripPrefix(openapi.BasePath, routed))
-	// Provider callbacks. Mounted on the root rather than under the API base path,
-	// because the URL a provider was given is not ours to version.
-	if d.Webhooks != nil {
-		root.Handle("/webhooks/", d.Webhooks)
-	}
 
 	// CORS is inside Logging so a preflight is still logged — the request that gets refused is
 	// the one an operator needs to see — and outside everything else, because a preflight has no

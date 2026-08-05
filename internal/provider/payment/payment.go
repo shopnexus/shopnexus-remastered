@@ -50,8 +50,22 @@ type Notification struct {
 
 type NotificationHandler func(ctx context.Context, n Notification) error
 
+// Option is one selectable rail a provider says it should own, so the registry row a payer picks
+// comes from the code that will serve it. A provider that answers none leaves its rows to the
+// operator — which is every real vendor, whose rails are a commercial arrangement and not a fact
+// this binary knows.
+type Option struct {
+	ID          string
+	Name        string
+	Description string
+	Priority    int
+}
+
 type Client interface {
 	Charge(ctx context.Context, params ChargeParams) (ChargeResult, error)
+	// Options are the rails this provider owns outright: the module writes exactly these and
+	// removes the ones it no longer names. Nil means "my rows are the operator's business".
+	Options() []Option
 	// WireWebhooks mounts the provider's own IPN route and answers with the path it took, which
 	// is what the composition root logs.
 	WireWebhooks(mux *http.ServeMux, deliver NotificationHandler) string

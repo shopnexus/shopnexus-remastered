@@ -103,6 +103,9 @@ var (
 	ErrNotTheBuyer       = errx.NewError(http.StatusForbidden, "not_the_buyer", "only the buyer of this order may do that")
 	ErrNotTheSeller      = errx.NewError(http.StatusForbidden, "not_the_seller", "only the seller of this order may do that")
 	ErrModeratorRequired = errx.NewError(http.StatusForbidden, "moderator_required", "moderator role required")
+	// Editing the carrier registry decides who this platform books parcels with, and the buyer pays
+	// for every one of them — a moderator answers tickets, an admin changes what the platform buys.
+	ErrAdminRequired = errx.NewError(http.StatusForbidden, "admin_required", "admin role required")
 	// ErrQuoteSourceInvalid is a quote naming no source or more than one. The parcel has to be
 	// one purchase: a variant to estimate, or the draft or agreed terms about to be checked out.
 	ErrQuoteSourceInvalid = errx.NewError(http.StatusBadRequest, "quote_source_invalid", "name exactly one of a variant, a draft or an offer")

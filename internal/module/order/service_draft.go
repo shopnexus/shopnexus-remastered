@@ -110,7 +110,7 @@ func (s *Service) Checkout(ctx context.Context, req orderapi.CheckoutRequest) (o
 	if d.Snapshot.Currency != req.Currency {
 		return orderapi.CheckoutResult{}, domain.ErrCurrencyMismatch
 	}
-	if err := s.transportOption(ctx, req.TransportOption); err != nil {
+	if _, err := s.courier(ctx, req.TransportOption); err != nil {
 		return orderapi.CheckoutResult{}, err
 	}
 	address, err := s.contactSnapshot(ctx, req.ActorID, req.ContactID)
@@ -371,7 +371,15 @@ func (s *Service) ShippingQuotes(ctx context.Context, req orderapi.ShippingQuote
 		Options:   make([]orderapi.ShippingQuote, 0, len(carriers)),
 	}
 	for _, carrier := range carriers {
-		fee, err := s.quoteCarrier(ctx, carrier.ID, pickup, address, lines)
+		// The row is already in hand, so the provider is resolved from it rather than looked up
+		// again per carrier. A row whose provider went missing drops out with the ones that
+		// declined, which is the same thing to a buyer: it is not offered.
+		client, err := s.clientFor(carrier)
+		if err != nil {
+			s.log.Debug("carrier has no provider to quote with", "option", carrier.ID, "err", err)
+			continue
+		}
+		fee, err := s.quoteCarrier(ctx, client, carrier.ID, pickup, address, lines)
 		if err != nil {
 			// One carrier that cannot price this parcel is one option missing from the list, not
 			// a page that fails: the buyer picks from whoever answered.

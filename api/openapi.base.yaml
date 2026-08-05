@@ -41,6 +41,15 @@ components:
       bearerFormat: JWT
 
   parameters:
+    # Which registry a request is about. Shared because three operations take it and one of them is
+    # a PATCH, where it is not the path but still decides which module holds the row.
+    OptionCategory:
+      name: category
+      in: query
+      required: true
+      schema: { $ref: '#/components/schemas/OptionCategoryName' }
+      description: The kind of pluggable choice.
+
     # Two pagination styles. Which one a collection uses follows from the collection,
     # not from taste.
     #

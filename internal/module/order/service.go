@@ -67,11 +67,10 @@ type Service struct {
 	uploads common.Uploads
 	// options is the carrier registry — this module's own `option` rows, so a carrier
 	// nobody enabled cannot be chosen; transport is the courier those slugs price with.
-	options   port.Options
-	transport transport.Client
-	// courierProvider is the courier this deployment configured, which decides which registry
-	// rows are offered at all.
-	courierProvider CourierProvider
+	options common.OptionStore
+	// couriers is every implementation a parcel can be booked through. A chosen carrier row names
+	// one, so two can be live at once and an admin can move a service without a restart.
+	couriers *common.Registry[transport.Client]
 	// workflows holds the timers: the durable runtime when there is one, nothing when there
 	// is not. Best-effort at every call site — the row is already committed.
 	workflows port.Workflows
@@ -90,9 +89,8 @@ func NewService(
 	finance financeapi.Service,
 	chat chatapi.Service,
 	uploads common.Uploads,
-	options port.Options,
-	transport transport.Client,
-	courierProvider CourierProvider,
+	options common.OptionStore,
+	couriers *common.Registry[transport.Client],
 	workflows port.Workflows,
 	bus eventbus.Client,
 	v *validator.Validate,
@@ -101,15 +99,32 @@ func NewService(
 ) *Service {
 	return &Service{
 		repo: repo, accounts: accounts, catalog: catalog, finance: finance, chat: chat,
-		uploads: uploads, options: options, transport: transport,
-		courierProvider: courierProvider, workflows: workflows,
+		uploads: uploads, options: options, couriers: couriers, workflows: workflows,
 		bus: bus, v: v, log: log, fanout: fanout,
 	}
 }
 
-// CourierProvider is the configured TRANSPORT_PROVIDER. Its own type, not a bare string: the fx
-// graph is keyed by type, and "a string" is not a thing to inject.
-type CourierProvider string
+// SyncOptions writes the rows every registered courier says it owns. Called once at startup, so the
+// services a buyer picks from are the code that will book them — and a courier no longer registered
+// leaves no rows behind for somebody to check out with.
+func (s *Service) SyncOptions(ctx context.Context) error {
+	return s.couriers.Each(func(provider string, client transport.Client) error {
+		declared := client.Options()
+		// No declared rows means the provider leaves them to the operator, which is not the same as
+		// declaring none: reconciling here would delete services somebody wrote by hand.
+		if len(declared) == 0 {
+			return nil
+		}
+		want := make([]common.Option, 0, len(declared))
+		for _, o := range declared {
+			want = append(want, common.Option{
+				ID: o.ID, Name: o.Name, Description: o.Description,
+				Priority: o.Priority, Category: common.CategoryTransport,
+			})
+		}
+		return s.options.Reconcile(ctx, provider, want)
+	})
+}
 
 var _ orderapi.Service = (*Service)(nil)
 
@@ -172,36 +187,65 @@ func (s *Service) requireModerator(ctx context.Context, actorID id.ID[id.Account
 	return nil
 }
 
-// carriers is the registry filtered to what this deployment's courier can actually serve, best
-// first: a row naming a vendor the stack cannot reach is a checkout that fails at the last step,
-// and the mock's scenario rows must never appear beside a real courier's services.
+// requireAdmin is the stricter half of requireModerator, for the operator surface: a moderator
+// works tickets, an admin decides which vendors the platform uses.
+func (s *Service) requireAdmin(ctx context.Context, actorID id.ID[id.Account]) error {
+	me, err := s.accounts.GetMe(ctx, accountapi.GetMeRequest{ActorID: actorID})
+	if err != nil {
+		return fmt.Errorf("read caller role: %w", err)
+	}
+	if me.Role != accountapi.RoleAdmin {
+		return domain.ErrAdminRequired
+	}
+	return nil
+}
+
+// carriers is every live service, best first — what a buyer picks from.
 func (s *Service) carriers(ctx context.Context) ([]common.Option, error) {
-	options, err := s.options.ListEnabled(ctx, common.OptionTypeTransport)
+	options, err := s.options.ListEnabled(ctx, common.CategoryTransport)
 	if err != nil {
 		return nil, fmt.Errorf("list transport options: %w", err)
 	}
-	offered := make([]common.Option, 0, len(options))
-	for _, o := range options {
-		if o.Offered(string(s.courierProvider)) {
-			offered = append(offered, o)
-		}
-	}
-	return offered, nil
+	return options, nil
 }
 
-// transportOption resolves a carrier from this module's registry. A slug nobody enabled is
-// refused here rather than handed to a courier that has never heard of it.
-func (s *Service) transportOption(ctx context.Context, slug string) error {
+// courier resolves a slug a buyer is choosing *now*: it has to be live, and its provider has to be
+// one this deployment still has.
+func (s *Service) courier(ctx context.Context, slug string) (transport.Client, error) {
 	options, err := s.carriers(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, o := range options {
 		if o.ID == slug {
-			return nil
+			return s.clientFor(o)
 		}
 	}
-	return domain.ErrCarrierUnknown
+	return nil, domain.ErrCarrierUnknown
+}
+
+// bookingCourier resolves the slug a paid parcel already names, live or not. An operator retiring a
+// service must not strand the shipments already sold under it — the buyer paid for that carriage,
+// and the row is kept precisely so it stays resolvable.
+func (s *Service) bookingCourier(ctx context.Context, slug string) (transport.Client, error) {
+	o, err := s.options.Find(ctx, slug)
+	if err != nil {
+		return nil, fmt.Errorf("find carrier %q: %w", slug, err)
+	}
+	return s.clientFor(o)
+}
+
+// clientFor is the row's `provider` resolved to the implementation. A provider nobody registered is
+// refused rather than substituted: booking through whichever courier happened to be in the map
+// would send the parcel with the wrong one.
+func (s *Service) clientFor(o common.Option) (transport.Client, error) {
+	client, err := s.couriers.Client(o.Provider)
+	if err != nil {
+		s.log.Error("carrier has no registered provider",
+			"option", o.ID, "provider", o.Provider, "err", err)
+		return nil, common.ErrOptionProviderUnknown
+	}
+	return client, nil
 }
 
 // contactSnapshot copies a saved contact into the row. A pointer would not do: the
@@ -370,14 +414,18 @@ func (s *Service) quoteShipping(ctx context.Context, option string, sellerID int
 	if err != nil {
 		return 0, err
 	}
-	return s.quoteCarrier(ctx, option, pickup, to, lines)
+	client, err := s.courier(ctx, option)
+	if err != nil {
+		return 0, err
+	}
+	return s.quoteCarrier(ctx, client, option, pickup, to, lines)
 }
 
 // quoteCarrier is the call itself, with the pickup already read — so a page that prices every
 // carrier reads the seller's collection point once instead of once per option.
-func (s *Service) quoteCarrier(ctx context.Context, option string, from, to domain.AddressSnapshot,
-	lines []transport.ItemMetadata) (int64, error) {
-	quote, err := s.transport.Quote(ctx, transport.QuoteParams{
+func (s *Service) quoteCarrier(ctx context.Context, client transport.Client, option string,
+	from, to domain.AddressSnapshot, lines []transport.ItemMetadata) (int64, error) {
+	quote, err := client.Quote(ctx, transport.QuoteParams{
 		Items:       lines,
 		FromAddress: addressLine(from),
 		ToAddress:   addressLine(to),
@@ -404,4 +452,28 @@ func addressLine(a domain.AddressSnapshot) string {
 		parts = append(parts, *a.AddressDetail)
 	}
 	return strings.Join(slices.DeleteFunc(parts, func(p string) bool { return p == "" }), ", ")
+}
+
+// ListOptions is the carriers a buyer may choose from — the names beside the fees `ShippingQuotes`
+// prices. Read without a quote where a client only needs the list.
+func (s *Service) ListOptions(ctx context.Context, req common.ListOptionsRequest) (common.OptionList, error) {
+	if req.Admin {
+		if err := s.requireAdmin(ctx, req.ActorID); err != nil {
+			return common.OptionList{}, err
+		}
+	}
+	return common.ListOptions(ctx, s.options, s.couriers.Providers(), req)
+}
+
+// AdminSaveOption is an operator switching a service off, renaming it, or moving it to another
+// courier — GHN to GHTK without touching a deployment, and without moving the orders that already
+// name the slug. Admin, not moderator: delivery is on the money path.
+func (s *Service) AdminSaveOption(ctx context.Context, req common.SaveOptionRequest) (common.OptionDTO, error) {
+	if err := s.requireAdmin(ctx, req.ActorID); err != nil {
+		return common.OptionDTO{}, err
+	}
+	if err := s.v.Struct(req); err != nil {
+		return common.OptionDTO{}, err
+	}
+	return common.SaveOption(ctx, s.options, s.couriers.Providers(), req)
 }
