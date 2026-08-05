@@ -188,3 +188,49 @@ func openSession(t *testing.T, h *harness) id.ID[id.PaymentSession] {
 	}
 	return s.ID
 }
+
+// Dropping a rail from PAYMENT_PROVIDERS is how it is taken out of service, and its rows have to go
+// with it. Nothing deletes them — a bad deploy must not cost an operator their configuration — so
+// the list is what has to leave them out: a row nobody can charge through is an error the payer can
+// do nothing about, and in a deployment that takes real money the row it matters for is a mock's.
+func TestListOptions_ARowNoRegisteredProviderServesIsNotOffered(t *testing.T) {
+	h := newHarness("admin", true)
+	h.repo.options = append(h.repo.options, common.Option{
+		ID: "vnpay-qr", Name: "VNPay QR", Category: common.CategoryPayment,
+		IsEnabled: true, Provider: "vnpay",
+	})
+	ctx := context.Background()
+
+	user, err := newHarnessSharing(h, "user").svc.ListOptions(ctx, common.ListOptionsRequest{
+		ActorID: buyer, Category: common.CategoryPayment,
+	})
+	if err != nil {
+		t.Fatalf("ListOptions: %v", err)
+	}
+	for _, o := range user.Options {
+		if o.ID == "vnpay-qr" {
+			t.Fatal("a rail nothing can charge through is offered to a buyer")
+		}
+	}
+
+	// Staff still see it, because "why is this missing from checkout" is the question the operator
+	// view exists to answer — and the row carries the provider that explains it.
+	staff, err := h.svc.ListOptions(ctx, common.ListOptionsRequest{
+		ActorID: buyer, Category: common.CategoryPayment, Admin: true,
+	})
+	if err != nil {
+		t.Fatalf("admin ListOptions: %v", err)
+	}
+	var found bool
+	for _, o := range staff.Options {
+		if o.ID == "vnpay-qr" {
+			found = true
+			if o.Provider != "vnpay" {
+				t.Errorf("provider = %q, want the one nobody registered", o.Provider)
+			}
+		}
+	}
+	if !found {
+		t.Error("the operator cannot see the row they have to fix")
+	}
+}

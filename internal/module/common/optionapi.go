@@ -75,6 +75,16 @@ func ListOptions(ctx context.Context, store OptionStore, providers []string,
 	}
 	out := OptionList{Options: make([]OptionDTO, 0, len(rows))}
 	for _, o := range rows {
+		// A row whose provider this binary does not have cannot be served: tendering it is refused
+		// (`Registry.Client`), so offering it is a choice that only ever ends in an error the payer
+		// can do nothing about. Dropping the provider from PAYMENT_PROVIDERS is how a rail is taken
+		// out of service, and it has to take its rows with it — including a mock's, in the
+		// deployment where that matters most. Rows are left in place rather than deleted, so a bad
+		// deploy costs an operator nothing: the staff view below still shows them, which is where
+		// "why is this missing from checkout" gets answered.
+		if !req.Admin && !contains(providers, o.Provider) {
+			continue
+		}
 		out.Options = append(out.Options, optionDTO(o, req.Admin))
 	}
 	if req.Admin {
