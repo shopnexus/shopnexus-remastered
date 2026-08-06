@@ -15,7 +15,9 @@ Three things make this delicate, and all three are checks here rather than notes
      gets `nullable: true` at the same time.
   3. A property the spec declares but no Go field backs is a phantom: it is never sent, so
      requiring it would make the spec lie. The candidate set is therefore the intersection
-     `spec properties ∩ Go json names`, never the spec's own property list.
+     `spec properties ∩ Go json names`, never the spec's own property list — and `--verify`
+     *fails* on a phantom rather than skipping it, because the honest fix is to delete the
+     property, not to leave it optional.
 
 Read-only by default; `--apply` edits the fragments as text (never a yaml round-trip, which would
 delete the fragments' load-bearing comments).
@@ -34,12 +36,12 @@ import gofields
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-# Declared but never sent. Left optional on purpose; requiring one would be a spec that lies.
-PHANTOM = {
-    ("PaymentSession", "from_id"),
-    ("PaymentSession", "to_id"),
-    ("WalletTransaction", "group_id"),
-}
+# Empty, and `--verify` fails on anything that would go in it: a property the spec declares
+# and no Go field backs is never sent, so a generated client types a field that is always
+# null. This started as an allowlist holding `PaymentSession.from_id`/`to_id` and
+# `WalletTransaction.group_id` — all three found by this tool, silenced instead of removed,
+# and still in the spec months later. An allowlist entry is a bug with a note attached.
+PHANTOM: set[tuple[str, str]] = set()
 
 # Spec schema name -> (module, Go DTO struct name), where the schema is named for the aggregate
 # and the Go type for its place inside the module's package.
@@ -425,6 +427,11 @@ def verify(spec, by_module):
             continue
         go_kinds = dict(go["fields"])
         backed = {p for p in props if p in go_kinds and (name, p) not in PHANTOM}
+        # A declared property nothing populates is a contract the server does not keep, so it
+        # is a failure here rather than something `backed` quietly drops.
+        phantoms = sorted(p for p in props if p not in go_kinds)
+        if phantoms:
+            bad.append({"schema": name, "declared_but_never_sent": phantoms})
         # A bare opaque id marshals `null` at its zero, so whether it may be required is a
         # per-field fact: allowed either way here, and listed by the plan for a human to decide.
         demand = {p for p in backed if gofields.kind(go_kinds[p]) != "id"}

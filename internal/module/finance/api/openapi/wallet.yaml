@@ -50,9 +50,10 @@ paths:
         A gap in `seq` means a missing row.
 
 
-        Legs of one logical movement share a `group_id` — a checkout is a debit
-        plus an escrow hold plus a fee — which is what makes "does this add up"
-        answerable.
+        Legs of one logical movement share a `ref_type`/`ref_id` — a checkout is a
+        debit plus an escrow hold plus a fee, all three against the same payment
+        session — which is what makes "does this add up" answerable. An adjustment
+        references nothing, so its legs are grouped only by `seq` adjacency.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: currency, in: path, required: true, schema: { $ref: '#/components/schemas/CurrencyCode' } }
@@ -107,13 +108,6 @@ components:
         held_delta: { type: integer, format: int64, example: -250000, description: Signed change to the held balance }
         available_after: { type: integer, format: int64, minimum: 0, example: 1250000 }
         held_after: { type: integer, format: int64, minimum: 0, example: 299000 }
-        group_id:
-          type: string
-          nullable: true
-          description: >
-            Shared by every leg of one logical movement — a checkout is a debit plus an
-            escrow hold plus a fee. An opaque token for grouping rows in a response, not
-            an address: nothing accepts it as input and no endpoint resolves it.
         ref_type:
           type: string
           enum: ['', order, payment-session]

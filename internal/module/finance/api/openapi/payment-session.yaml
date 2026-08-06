@@ -158,14 +158,6 @@ components:
         id: { $ref: '#/components/schemas/PaymentSessionID' }
         kind: { $ref: '#/components/schemas/PaymentSessionKind' }
         status: { $ref: '#/components/schemas/PaymentSessionStatus' }
-        from_id:
-          allOf: [{ $ref: '#/components/schemas/AccountID' }]
-          nullable: true
-          description: The payer. Null means the platform itself.
-        to_id:
-          allOf: [{ $ref: '#/components/schemas/AccountID' }]
-          nullable: true
-          description: The payee. Null means the platform itself.
         currency: { $ref: '#/components/schemas/CurrencyCode' }
         total_amount: { type: integer, format: int64, minimum: 0, example: 598000, description: 'Amount owed, smallest unit of `currency`' }
         outstanding:

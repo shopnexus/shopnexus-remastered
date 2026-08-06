@@ -2840,11 +2840,6 @@ components:
                     description: A session still unsettled past this point is voided by a job.
                     format: date-time
                     type: string
-                from_id:
-                    allOf:
-                        - $ref: '#/components/schemas/AccountID'
-                    description: The payer. Null means the platform itself.
-                    nullable: true
                 id:
                     $ref: '#/components/schemas/PaymentSessionID'
                 kind:
@@ -2864,11 +2859,6 @@ components:
                     type: string
                 status:
                     $ref: '#/components/schemas/PaymentSessionStatus'
-                to_id:
-                    allOf:
-                        - $ref: '#/components/schemas/AccountID'
-                    description: The payee. Null means the platform itself.
-                    nullable: true
                 total_amount:
                     description: Amount owed, smallest unit of `currency`
                     example: 598000
@@ -4728,11 +4718,6 @@ components:
                     type: string
                 currency:
                     $ref: '#/components/schemas/CurrencyCode'
-                group_id:
-                    description: |
-                        Shared by every leg of one logical movement — a checkout is a debit plus an escrow hold plus a fee. An opaque token for grouping rows in a response, not an address: nothing accepts it as input and no endpoint resolves it.
-                    nullable: true
-                    type: string
                 held_after:
                     example: 299000
                     format: int64
@@ -11138,7 +11123,7 @@ paths:
             description: |
                 Every balance change with its before/after snapshot, newest first. Ordered by `seq`, not by time: two movements can share a timestamp, and a ledger that cannot be totally ordered cannot be replayed or shown to be complete. A gap in `seq` means a missing row.
 
-                Legs of one logical movement share a `group_id` — a checkout is a debit plus an escrow hold plus a fee — which is what makes "does this add up" answerable.
+                Legs of one logical movement share a `ref_type`/`ref_id` — a checkout is a debit plus an escrow hold plus a fee, all three against the same payment session — which is what makes "does this add up" answerable. An adjustment references nothing, so its legs are grouped only by `seq` adjacency.
             parameters:
                 - in: path
                   name: currency
