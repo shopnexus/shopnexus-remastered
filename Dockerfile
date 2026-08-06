@@ -1,6 +1,6 @@
 # One Dockerfile, three stages. CI builds `runtime` explicitly (see build.yml) so a
 # stage added later can never leak the dev toolchain into the published image.
-FROM golang:1.26 AS build
+FROM golang:1.27rc2 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -12,7 +12,7 @@ RUN CGO_ENABLED=0 go build -o /out/gateway ./cmd/gateway \
 
 # Hot reload for `docker compose --profile dev up`. Deliberately NOT derived from
 # `build`: source arrives as a bind mount, so a COPY here would just be shadowed.
-FROM golang:1.26 AS dev
+FROM golang:1.27rc2 AS dev
 WORKDIR /src
 RUN go install github.com/air-verse/air@latest
 CMD ["air"]

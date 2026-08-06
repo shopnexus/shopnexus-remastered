@@ -1,6 +1,11 @@
 module shopnexus
 
-go 1.26
+// 1.27 is where encoding/json/v2 became an ordinary importable package — no GOEXPERIMENT,
+// covered by the compatibility promise. This codebase marshals with v2 (see shared/httpx),
+// so 1.27 is a floor rather than a preference. Pinned to rc2 until 1.27.0 is published.
+go 1.27
+
+toolchain go1.27rc2
 
 require (
 	github.com/coder/websocket v1.8.15

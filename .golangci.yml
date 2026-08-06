@@ -3,6 +3,11 @@
 # argued for below, never a warning somebody learns to scroll past.
 version: "2"
 
+# KNOWN GAP, and it is the toolchain's, not this config's: golangci-lint refuses to run when its
+# own build targets an older Go than go.mod does, and no release targets 1.27 until 1.27 is final.
+# Forcing `run.go: "1.26"` past the refusal does not work either — its bundled go/types then
+# crashes loading encoding/json/v2 from the 1.27 stdlib source. So until a golangci-lint built
+# with 1.27 ships, `go vet ./...` is the gate that actually runs. Nothing to change here.
 linters:
   default: standard # errcheck, govet, ineffassign, staticcheck, unused
 
