@@ -25,7 +25,7 @@ type Category struct {
 	Description string              `json:"description"`
 	// Score is set only by a `near` query, where the answer is a ranking rather than
 	// the tree.
-	Score *float64 `json:"score,omitempty"`
+	Score *float64 `json:"score"`
 }
 
 // Tag is a label on a listing. Its slug is its id — a natural key, so it is readable
@@ -34,7 +34,7 @@ type Tag struct {
 	Slug        string  `json:"slug"`
 	Description *string `json:"description"`
 	// Score is set only by a `near` query.
-	Score *float64 `json:"score,omitempty"`
+	Score *float64 `json:"score"`
 }
 
 // PageInfo is the page-paginated meta every catalog list answers with. TotalCount is nil
@@ -79,14 +79,14 @@ type Variant struct {
 // PendingEdit is an edit waiting on moderation — the editable subset of a listing, and only
 // that: an edit that could carry anything would be a blob nobody can diff or review.
 type PendingEdit struct {
-	Name           *string              `json:"name,omitempty"`
-	Description    *string              `json:"description,omitempty"`
-	CategoryID     *id.ID[id.Category]  `json:"category_id,omitempty"`
-	Condition      *string              `json:"condition,omitempty"`
-	PriceMode      *string              `json:"price_mode,omitempty"`
-	Specifications map[string]any       `json:"specifications,omitempty"`
-	Attachments    []id.ID[id.Resource] `json:"attachments,omitempty"`
-	Tags           []string             `json:"tags,omitempty"`
+	Name           *string              `json:"name"`
+	Description    *string              `json:"description"`
+	CategoryID     *id.ID[id.Category]  `json:"category_id"`
+	Condition      *string              `json:"condition"`
+	PriceMode      *string              `json:"price_mode"`
+	Specifications map[string]any       `json:"specifications"`
+	Attachments    []id.ID[id.Resource] `json:"attachments"`
+	Tags           []string             `json:"tags"`
 }
 
 // ListingDetail is the product page and the answer to every write: a variant has no read of
@@ -143,7 +143,7 @@ type Listing struct {
 	CategoryID  id.ID[id.Category]        `json:"category_id"`
 	Seller      accountapi.AccountSummary `json:"seller"`
 	Favorited   bool                      `json:"favorited"`
-	Score       *float64                  `json:"score,omitempty"`
+	Score       *float64                  `json:"score"`
 	// Tags the listing carries, so a card renders its chips without a request of its own. Empty
 	// rather than null for a listing with none.
 	Tags []string `json:"tags"`
@@ -175,10 +175,10 @@ type ListingSuggestion struct {
 	Price *int64 `json:"price"`
 	// WeightG is the parcel's estimated weight, which is what a shipping quote needs.
 	WeightG        *int64         `json:"weight_g"`
-	Specifications map[string]any `json:"specifications,omitempty"`
+	Specifications map[string]any `json:"specifications"`
 	// Transcript is what the voice note was heard as, echoed so the seller can see why a field is
 	// wrong rather than guess.
-	Transcript string `json:"transcript,omitempty"`
+	Transcript string `json:"transcript"`
 }
 
 type ListingLocation struct {
@@ -191,7 +191,7 @@ type ListingLocation struct {
 	WardName     string  `json:"ward_name"`
 	// DistanceKM is how far the goods are from where the buyer said they are, and null unless they
 	// said — or unless this address was never geocoded.
-	DistanceKM *float64 `json:"distance_km,omitempty"`
+	DistanceKM *float64 `json:"distance_km"`
 }
 
 type ListingPage struct {

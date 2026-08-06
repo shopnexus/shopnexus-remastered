@@ -9,7 +9,7 @@ package financeapi
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"time"
 
 	"shopnexus/internal/module/common"
@@ -26,7 +26,7 @@ type Session struct {
 	// payment may still tender. Computed, because a stored copy is a second fact to
 	// keep in step with every leg.
 	Outstanding int64  `json:"outstanding"`
-	Note        string `json:"note,omitempty"`
+	Note        string `json:"note"`
 	// Data is the checkout context whoever opened the session wrote — the draft or offer it came
 	// from, and the delivery charge included in the total. Read back rather than kept only by the
 	// opener, because the session is what the buyer paid against and the module that settles it
@@ -35,10 +35,10 @@ type Session struct {
 	// Never serialised (`json:"-"`): it is the opener's own shape, holding raw row ids rather
 	// than opaque ones, and a client that reads it would be reading another module's internals
 	// off the wire. It travels between modules in-process, like `order`'s carrier payload.
-	Data      json.RawMessage `json:"-"`
-	CreatedAt time.Time       `json:"created_at"`
-	PaidAt    *time.Time      `json:"paid_at,omitempty"`
-	ExpiredAt time.Time       `json:"expired_at"`
+	Data      jsontext.Value `json:"-"`
+	CreatedAt time.Time      `json:"created_at"`
+	PaidAt    *time.Time     `json:"paid_at"`
+	ExpiredAt time.Time      `json:"expired_at"`
 }
 
 type SessionPage struct {
@@ -58,14 +58,14 @@ type Transaction struct {
 	// Note is whatever the rail or the platform recorded about this leg — the failure the
 	// provider gave, the reason a reversal was made.
 	Note       string                 `json:"note"`
-	ReversesID *id.ID[id.Transaction] `json:"reverses_id,omitempty"`
+	ReversesID *id.ID[id.Transaction] `json:"reverses_id"`
 	// CheckoutURL is the gateway's redirect, present only while the leg is pending and
 	// only for a rail that redirects. Not a receipt: the webhook settles the leg.
-	CheckoutURL string     `json:"checkout_url,omitempty"`
-	Error       string     `json:"error,omitempty"`
+	CheckoutURL string     `json:"checkout_url"`
+	Error       string     `json:"error"`
 	CreatedAt   time.Time  `json:"created_at"`
-	SettledAt   *time.Time `json:"settled_at,omitempty"`
-	ExpiredAt   *time.Time `json:"expired_at,omitempty"`
+	SettledAt   *time.Time `json:"settled_at"`
+	ExpiredAt   *time.Time `json:"expired_at"`
 }
 
 type Wallet struct {
@@ -88,9 +88,9 @@ type WalletMovement struct {
 	HeldDelta      int64     `json:"held_delta"`
 	AvailableAfter int64     `json:"available_after"`
 	HeldAfter      int64     `json:"held_after"`
-	RefType        string    `json:"ref_type,omitempty"`
-	RefID          string    `json:"ref_id,omitempty"`
-	Note           string    `json:"note,omitempty"`
+	RefType        string    `json:"ref_type"`
+	RefID          string    `json:"ref_id"`
+	Note           string    `json:"note"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
@@ -118,9 +118,9 @@ type Withdrawal struct {
 	Currency      string                   `json:"currency"`
 	Amount        int64                    `json:"amount"`
 	BankAccountID id.ID[id.BankAccount]    `json:"bank_account_id"`
-	Reason        string                   `json:"reason,omitempty"`
+	Reason        string                   `json:"reason"`
 	CreatedAt     time.Time                `json:"created_at"`
-	ResolvedAt    *time.Time               `json:"resolved_at,omitempty"`
+	ResolvedAt    *time.Time               `json:"resolved_at"`
 }
 
 type WithdrawalPage struct {
@@ -133,7 +133,7 @@ type TaxInfo struct {
 	TaxCodeType        string     `json:"tax_code_type"`
 	LegalName          string     `json:"legal_name"`
 	VerificationStatus string     `json:"verification_status"`
-	VerifiedAt         *time.Time `json:"verified_at,omitempty"`
+	VerifiedAt         *time.Time `json:"verified_at"`
 	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
@@ -172,8 +172,8 @@ type StartPaymentRequest struct {
 	ActorID       id.ID[id.Account]        `json:"-" validate:"required"`
 	ID            id.ID[id.PaymentSession] `json:"-" validate:"required"`
 	PaymentOption string                   `json:"payment_option" validate:"required,max=100"`
-	Amount        *int64                   `json:"amount,omitempty" validate:"omitempty,gt=0"`
-	ReturnURL     string                   `json:"return_url,omitempty" validate:"omitempty,url,max=2048"`
+	Amount        *int64                   `json:"amount" validate:"omitempty,gt=0"`
+	ReturnURL     string                   `json:"return_url" validate:"omitempty,url,max=2048"`
 }
 
 type ListWalletsRequest struct {
@@ -227,7 +227,7 @@ type CreateBankAccountRequest struct {
 	BankCode      string            `json:"bank_code" validate:"required,max=20"`
 	AccountNumber string            `json:"account_number" validate:"required,max=50"`
 	AccountHolder string            `json:"account_holder" validate:"required,max=100"`
-	IsDefault     bool              `json:"is_default,omitempty"`
+	IsDefault     bool              `json:"is_default"`
 }
 
 type UpdateBankAccountRequest struct {
@@ -272,10 +272,10 @@ type WithdrawalRequest struct {
 type ResolveWithdrawalRequest struct {
 	ActorID id.ID[id.Account]        `json:"-" validate:"required"`
 	ID      id.ID[id.PaymentSession] `json:"-" validate:"required"`
-	Reason  string                   `json:"reason,omitempty" validate:"max=500"`
+	Reason  string                   `json:"reason" validate:"max=500"`
 	// ProviderRef is the bank's own reference for the transfer, recorded on approval so
 	// a payout can be traced outside the platform.
-	ProviderRef string `json:"provider_ref,omitempty" validate:"max=200"`
+	ProviderRef string `json:"provider_ref" validate:"max=200"`
 }
 
 type GetTaxInfoRequest struct {
@@ -298,7 +298,7 @@ type VerifyTaxInfoRequest struct {
 	// Source is what the verdict was based on — the registry that answered, the document
 	// that was read. Mandatory: a verdict nobody can trace is one nobody can revisit.
 	Source string `json:"source" validate:"required,max=200"`
-	Note   string `json:"note,omitempty" validate:"max=2000"`
+	Note   string `json:"note" validate:"max=2000"`
 }
 
 // --- service-to-service: what order calls, with no route of its own ---

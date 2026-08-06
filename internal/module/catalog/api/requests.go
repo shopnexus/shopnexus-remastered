@@ -22,7 +22,7 @@ type ListCategoriesRequest struct {
 
 type CreateCategoryRequest struct {
 	ActorID     id.ID[id.Account]   `json:"-" validate:"required"`
-	ParentID    *id.ID[id.Category] `json:"parent_id,omitempty"`
+	ParentID    *id.ID[id.Category] `json:"parent_id"`
 	Name        string              `json:"name" validate:"required,min=1,max=100"`
 	Description string              `json:"description" validate:"max=2000"`
 }
@@ -30,10 +30,10 @@ type CreateCategoryRequest struct {
 type UpdateCategoryRequest struct {
 	ActorID       id.ID[id.Account]   `json:"-" validate:"required"`
 	ID            id.ID[id.Category]  `json:"-" validate:"required"`
-	ParentID      *id.ID[id.Category] `json:"parent_id,omitempty"`
-	ClearParentID bool                `json:"clear_parent_id,omitempty"`
-	Name          *string             `json:"name,omitempty" validate:"omitempty,min=1,max=100"`
-	Description   *string             `json:"description,omitempty" validate:"omitempty,max=2000"`
+	ParentID      *id.ID[id.Category] `json:"parent_id"`
+	ClearParentID bool                `json:"clear_parent_id"`
+	Name          *string             `json:"name" validate:"omitempty,min=1,max=100"`
+	Description   *string             `json:"description" validate:"omitempty,max=2000"`
 }
 
 type DeleteCategoryRequest struct {
@@ -54,7 +54,7 @@ type ListTagsRequest struct {
 type PutTagRequest struct {
 	ActorID     id.ID[id.Account] `json:"-" validate:"required"`
 	Slug        string            `json:"-" validate:"required,max=100"`
-	Description *string           `json:"description,omitempty" validate:"omitempty,max=255"`
+	Description *string           `json:"description" validate:"omitempty,max=255"`
 }
 
 type DeleteTagRequest struct {
@@ -96,7 +96,7 @@ type UploadSlot struct {
 	ResourceID id.ID[id.Resource] `json:"resource_id"`
 	URL        string             `json:"url"`
 	// Headers the client must send with the PUT, when the signature covers any.
-	Headers   map[string]string `json:"headers,omitempty"`
+	Headers   map[string]string `json:"headers"`
 	ExpiresAt time.Time         `json:"expires_at"`
 }
 
@@ -123,7 +123,7 @@ type CreateVariantInput struct {
 	Price          int64                `json:"price" validate:"required,gte=1"`
 	Attributes     map[string]any       `json:"attributes" validate:"required,min=1"`
 	PackageDetails map[string]any       `json:"package_details" validate:"required"`
-	Attachments    []id.ID[id.Resource] `json:"attachments,omitempty" validate:"max=10"`
+	Attachments    []id.ID[id.Resource] `json:"attachments" validate:"max=10"`
 	Quantity       int64                `json:"quantity" validate:"gte=0"`
 }
 
@@ -135,9 +135,9 @@ type CreateListingRequest struct {
 	Condition      string               `json:"condition" validate:"required,oneof=new used damaged"`
 	PriceMode      string               `json:"price_mode" validate:"required,oneof=fixed negotiable"`
 	Currency       string               `json:"currency" validate:"required,len=3"`
-	Specifications map[string]any       `json:"specifications,omitempty"`
-	Attachments    []id.ID[id.Resource] `json:"attachments,omitempty" validate:"max=10"`
-	Tags           []string             `json:"tags,omitempty" validate:"max=10,dive,required,max=100"`
+	Specifications map[string]any       `json:"specifications"`
+	Attachments    []id.ID[id.Resource] `json:"attachments" validate:"max=10"`
+	Tags           []string             `json:"tags" validate:"max=10,dive,required,max=100"`
 	Variants       []CreateVariantInput `json:"variants" validate:"required,min=1,dive"`
 }
 
@@ -159,12 +159,12 @@ type CreateVariantRequest struct {
 type UpdateVariantRequest struct {
 	ActorID        id.ID[id.Account]    `json:"-" validate:"required"`
 	ID             id.ID[id.Variant]    `json:"-" validate:"required"`
-	Price          *int64               `json:"price,omitempty" validate:"omitempty,gte=1"`
-	Attributes     map[string]any       `json:"attributes,omitempty"`
-	PackageDetails map[string]any       `json:"package_details,omitempty"`
-	Attachments    []id.ID[id.Resource] `json:"attachments,omitempty" validate:"max=10"`
-	Quantity       *int64               `json:"quantity,omitempty" validate:"omitempty,gte=0"`
-	IsFeatured     *bool                `json:"is_featured,omitempty"`
+	Price          *int64               `json:"price" validate:"omitempty,gte=1"`
+	Attributes     map[string]any       `json:"attributes"`
+	PackageDetails map[string]any       `json:"package_details"`
+	Attachments    []id.ID[id.Resource] `json:"attachments" validate:"max=10"`
+	Quantity       *int64               `json:"quantity" validate:"omitempty,gte=0"`
+	IsFeatured     *bool                `json:"is_featured"`
 }
 
 type DeleteVariantRequest struct {
@@ -178,16 +178,16 @@ type DeleteVariantRequest struct {
 type UpdateListingRequest struct {
 	ActorID                id.ID[id.Account]    `json:"-" validate:"required"`
 	ID                     id.ID[id.Listing]    `json:"-" validate:"required"`
-	Name                   *string              `json:"name,omitempty" validate:"omitempty,min=1,max=200"`
-	Description            *string              `json:"description,omitempty" validate:"omitempty,max=20000"`
-	CategoryID             *id.ID[id.Category]  `json:"category_id,omitempty"`
-	Condition              *string              `json:"condition,omitempty" validate:"omitempty,oneof=new used damaged"`
-	PriceMode              *string              `json:"price_mode,omitempty" validate:"omitempty,oneof=fixed negotiable"`
-	Specifications         map[string]any       `json:"specifications,omitempty"`
-	Attachments            []id.ID[id.Resource] `json:"attachments,omitempty" validate:"max=10"`
-	Tags                   []string             `json:"tags,omitempty" validate:"max=10,dive,required,max=100"`
-	FeaturedVariantID      *id.ID[id.Variant]   `json:"featured_variant_id,omitempty"`
-	ClearFeaturedVariantID bool                 `json:"clear_featured_variant_id,omitempty"`
+	Name                   *string              `json:"name" validate:"omitempty,min=1,max=200"`
+	Description            *string              `json:"description" validate:"omitempty,max=20000"`
+	CategoryID             *id.ID[id.Category]  `json:"category_id"`
+	Condition              *string              `json:"condition" validate:"omitempty,oneof=new used damaged"`
+	PriceMode              *string              `json:"price_mode" validate:"omitempty,oneof=fixed negotiable"`
+	Specifications         map[string]any       `json:"specifications"`
+	Attachments            []id.ID[id.Resource] `json:"attachments" validate:"max=10"`
+	Tags                   []string             `json:"tags" validate:"max=10,dive,required,max=100"`
+	FeaturedVariantID      *id.ID[id.Variant]   `json:"featured_variant_id"`
+	ClearFeaturedVariantID bool                 `json:"clear_featured_variant_id"`
 }
 
 type DeleteListingRequest struct {
@@ -205,22 +205,22 @@ type SuggestListingRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	// Attachments are confirmed uploads. The first three are what the model reads: past that a
 	// phone's photos are the same object again, at real cost per image.
-	Attachments []id.ID[id.Resource] `json:"attachments,omitempty" validate:"max=10"`
+	Attachments []id.ID[id.Resource] `json:"attachments" validate:"max=10"`
 	// Note is what the seller typed. Optional, like everything else — but at least one of the
 	// three has to be there, or there is nothing to look at.
-	Note string `json:"note,omitempty" validate:"max=2000"`
+	Note string `json:"note" validate:"max=2000"`
 	// VoiceNote is the recording itself, base64 in JSON. Inline rather than an upload because it
 	// is input and not content: nothing keeps it, so nothing has to reap it.
-	VoiceNote     []byte `json:"voice_note,omitempty"`
-	VoiceNoteMime string `json:"voice_note_mime,omitempty" validate:"max=100"`
+	VoiceNote     []byte `json:"voice_note"`
+	VoiceNoteMime string `json:"voice_note_mime" validate:"max=100"`
 	// Language is an ISO-639-1 hint for the transcription, empty to let the model detect.
-	Language string `json:"language,omitempty" validate:"omitempty,len=2"`
+	Language string `json:"language" validate:"omitempty,len=2"`
 }
 
 type PublishListingRequest struct {
 	ActorID         id.ID[id.Account]  `json:"-" validate:"required"`
 	ID              id.ID[id.Listing]  `json:"-" validate:"required"`
-	PickupContactID *id.ID[id.Contact] `json:"pickup_contact_id,omitempty"`
+	PickupContactID *id.ID[id.Contact] `json:"pickup_contact_id"`
 }
 
 type HideListingRequest struct {
@@ -241,14 +241,14 @@ type AdminListListingsRequest struct {
 type ApproveListingRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	ID      id.ID[id.Listing] `json:"-" validate:"required"`
-	Note    string            `json:"note,omitempty" validate:"max=2000"`
+	Note    string            `json:"note" validate:"max=2000"`
 }
 
 type TakedownListingRequest struct {
 	ActorID      id.ID[id.Account] `json:"-" validate:"required"`
 	ID           id.ID[id.Listing] `json:"-" validate:"required"`
 	Reason       string            `json:"reason" validate:"required,min=1,max=2000"`
-	NotifySeller *bool             `json:"notify_seller,omitempty"`
+	NotifySeller *bool             `json:"notify_seller"`
 }
 
 // ListListingsRequest is the browse feed, the search, the wishlist page and the "resolve these

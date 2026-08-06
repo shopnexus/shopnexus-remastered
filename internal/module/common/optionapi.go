@@ -18,9 +18,9 @@ type OptionDTO struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	Provider    string `json:"provider,omitempty"`
-	IsEnabled   *bool  `json:"is_enabled,omitempty"`
-	Priority    *int   `json:"priority,omitempty"`
+	Provider    string `json:"provider"`
+	IsEnabled   *bool  `json:"is_enabled"`
+	Priority    *int   `json:"priority"`
 }
 
 // OptionList is a whole category — one resource rather than a collection, which is why it is not
@@ -31,7 +31,7 @@ type OptionList struct {
 	// Providers is what a row's `provider` may be set to here — the implementations this binary
 	// has. Staff only, and the reason an admin can move a service from one courier to another
 	// without guessing at a name.
-	Providers []string `json:"providers,omitempty"`
+	Providers []string `json:"providers"`
 }
 
 // ListOptionsRequest reads one category. Admin asks for the staff view: every row including the
@@ -50,11 +50,11 @@ type ListOptionsRequest struct {
 type SaveOptionRequest struct {
 	ActorID     id.ID[id.Account] `json:"-" validate:"required"`
 	ID          string            `json:"-" validate:"required"`
-	Provider    *string           `json:"provider,omitempty" validate:"omitempty,max=100"`
-	IsEnabled   *bool             `json:"is_enabled,omitempty"`
-	Name        *string           `json:"name,omitempty" validate:"omitempty,max=200"`
-	Description *string           `json:"description,omitempty" validate:"omitempty,max=1000"`
-	Priority    *int              `json:"priority,omitempty" validate:"omitempty,gte=0,lte=1000"`
+	Provider    *string           `json:"provider" validate:"omitempty,max=100"`
+	IsEnabled   *bool             `json:"is_enabled"`
+	Name        *string           `json:"name" validate:"omitempty,max=200"`
+	Description *string           `json:"description" validate:"omitempty,max=1000"`
+	Priority    *int              `json:"priority" validate:"omitempty,gte=0,lte=1000"`
 }
 
 // ListOptions is the shared body: read the category, project it for whoever is asking. The caller

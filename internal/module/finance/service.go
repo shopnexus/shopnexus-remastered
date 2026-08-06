@@ -8,7 +8,7 @@ package finance
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -223,11 +223,11 @@ func toAPIMovement(m domain.Movement) financeapi.WalletMovement {
 
 // rawOrEmpty is the JSON column as a DTO field: nil rather than the literal "null", so an absent
 // context is an absent field instead of a string a client has to special-case.
-func rawOrEmpty(b []byte) json.RawMessage {
+func rawOrEmpty(b []byte) jsontext.Value {
 	if len(b) == 0 {
 		return nil
 	}
-	return json.RawMessage(b)
+	return jsontext.Value(b)
 }
 
 // ListOptions is the payment rails, and the only place a valid `payment_option` comes from: a client

@@ -8,7 +8,8 @@ package realtime
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"strconv"
@@ -42,9 +43,9 @@ func NewEvent[T any](code string) Event[T] { return Event[T]{Code: code} }
 // published it, and the payload. Data stays deferred so the hub can forward bytes it
 // never needs to understand.
 type Envelope struct {
-	Code string          `json:"code"`
-	At   time.Time       `json:"at"`
-	Data json.RawMessage `json:"data"`
+	Code string         `json:"code"`
+	At   time.Time      `json:"at"`
+	Data jsontext.Value `json:"data"`
 }
 
 // AccountSubject is the subject carrying one account's events. Per-account rather than

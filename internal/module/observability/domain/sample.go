@@ -3,7 +3,7 @@
 package domain
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"time"
 )
 
@@ -49,10 +49,10 @@ type ProviderCall struct {
 
 // BusinessEvent mirrors a domain event published on the bus.
 type BusinessEvent struct {
-	TS       time.Time       `json:"ts"`
-	Instance string          `json:"instance"`
-	Topic    string          `json:"topic"`
-	Payload  json.RawMessage `json:"payload"`
+	TS       time.Time      `json:"ts"`
+	Instance string         `json:"instance"`
+	Topic    string         `json:"topic"`
+	Payload  jsontext.Value `json:"payload"`
 }
 
 // RuntimeSample is one Go runtime snapshot.

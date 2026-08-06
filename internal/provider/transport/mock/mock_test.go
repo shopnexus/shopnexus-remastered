@@ -2,7 +2,7 @@ package mock_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"

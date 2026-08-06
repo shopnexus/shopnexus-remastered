@@ -2,23 +2,37 @@
 package httpx
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
+	"io"
 	"log/slog"
 	"net/http"
 
 	"shopnexus/internal/shared/errx"
 )
 
+// This package marshals with encoding/json/v2, and the reason is the wire shape: v1 renders a
+// nil slice as `null`, so every collection route answered `null` for "none" and each client had
+// to defend against a second empty value. v2 renders it `[]`, which is what the spec claims and
+// what a generated client's `T[]` already expects.
 func DecodeJSON(r *http.Request, dst any) error {
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	return dec.Decode(dst)
+	return json.UnmarshalRead(r.Body, dst, json.RejectUnknownMembers(true))
+}
+
+// DecodeVendorJSON reads a third party's JSON — a provider's response, or its webhook.
+//
+// It keeps v1's case-insensitive name matching, which our own routes deliberately do not: a
+// vendor's casing is whatever their documentation happened to say (eSMS answers "CodeResult"
+// beside "SMSID"), v2 matches names exactly, and a name that does not match is dropped
+// *silently* rather than refused. There is no sandbox for most of these to discover that in,
+// and a field that quietly reads as zero is how a settled payment becomes an unsettled one.
+func DecodeVendorJSON(r io.Reader, dst any) error {
+	return json.UnmarshalRead(r, dst, json.MatchCaseInsensitiveNames(true))
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	_ = json.MarshalWrite(w, v)
 }
 
 // RequestIDHeader is where the request id travels. The logging middleware sets it on the
@@ -48,7 +62,7 @@ type errBody struct {
 	Code      string       `json:"code"`
 	Message   string       `json:"message"`
 	RequestID string       `json:"request_id"`
-	Fields    []errx.Field `json:"fields,omitempty"`
+	Fields    []errx.Field `json:"fields"`
 }
 
 // PageMeta accompanies a page-paginated collection. TotalCount is a pointer because null

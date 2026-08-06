@@ -9,9 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/redis/rueidis"
 	"shopnexus/internal/infra/cache"
 	"shopnexus/internal/shared/session"
+
+	"github.com/redis/rueidis"
 )
 
 // newTestCache connects to REDIS_ADDR, skipping when it is unset — the same contract

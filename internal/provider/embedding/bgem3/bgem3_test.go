@@ -2,7 +2,7 @@ package bgem3_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -44,7 +44,7 @@ func TestEmbedReadsBothHalves(t *testing.T) {
 			t.Errorf("called %s %s, want POST /embed", r.Method, r.URL.Path)
 		}
 		auth = r.Header.Get("Authorization")
-		_ = json.NewDecoder(r.Body).Decode(&got)
+		_ = json.UnmarshalRead(r.Body, &got)
 		// Column-major, one array per half — the service's own shape. Sparse weights are keyed
 		// by the vocabulary index, because that is what a JSON object key has to be.
 		_, _ = w.Write([]byte(`{"model":"BAAI/bge-m3",

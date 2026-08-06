@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"math/big"
 	"net/http"
@@ -67,7 +67,7 @@ func newIssuer(t *testing.T) *issuer {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(v)
+	_ = json.MarshalWrite(w, v)
 }
 
 func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }

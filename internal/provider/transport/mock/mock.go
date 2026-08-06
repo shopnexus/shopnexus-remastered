@@ -14,7 +14,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"html/template"
@@ -26,6 +27,7 @@ import (
 	"time"
 
 	"shopnexus/internal/provider/transport"
+	"shopnexus/internal/shared/httpx"
 )
 
 // The option slugs this courier understands, and publishes as its own rows. A slug is permanent once
@@ -207,7 +209,7 @@ func (c *Client) Quote(ctx context.Context, params transport.QuoteParams) (trans
 	if s.declines {
 		return transport.QuoteResult{}, fmt.Errorf("mock courier %q does not serve this route", params.Option)
 	}
-	return transport.QuoteResult{Cost: s.cost, Data: json.RawMessage(`{}`)}, nil
+	return transport.QuoteResult{Cost: s.cost, Data: jsontext.Value(`{}`)}, nil
 }
 
 // Create books a shipment: stamps a tracking id into Data and schedules the checkpoints the chosen
@@ -309,7 +311,7 @@ func (c *Client) WireWebhooks(mux *http.ServeMux, deliver transport.ResultHandle
 			TrackingID string `json:"tracking_id"`
 			Status     string `json:"status"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.TrackingID == "" {
+		if err := httpx.DecodeVendorJSON(r.Body, &body); err != nil || body.TrackingID == "" {
 			http.Error(w, `want {"tracking_id":"MOCK…","status":"processing"|"success"|"failed"}`,
 				http.StatusBadRequest)
 			return

@@ -20,7 +20,7 @@ type UploadSlot struct {
 	ResourceID id.ID[id.Resource] `json:"resource_id"`
 	URL        string             `json:"url"`
 	// Headers the client must send with the PUT, when the signature covers any.
-	Headers   map[string]string `json:"headers,omitempty"`
+	Headers   map[string]string `json:"headers"`
 	ExpiresAt time.Time         `json:"expires_at"`
 }
 
@@ -60,18 +60,21 @@ type Message struct {
 	// FromSupport marks a reply the desk wrote. The requester is told that much and no more; staff
 	// reading their own queue see the real sender, because a colleague's name is what makes a
 	// thread reviewable.
-	FromSupport bool                 `json:"from_support,omitempty"`
+	FromSupport bool                 `json:"from_support"`
 	Type        string               `json:"type"`
 	Body        string               `json:"body"`
 	Images      []common.ResourceDTO `json:"attachments"`
-	// Refs is what the sender pointed at — a listing, a variant, an order.
-	Refs map[string]any `json:"refs,omitempty"`
+	// Refs is what the sender pointed at — a listing, a variant, an order. Always present, and
+	// `{}` when there is nothing: the spec marks it required, so omitting the empty case made
+	// every message unreadable to a generated client whose field is non-nullable. Which is most
+	// messages — hardly any carry a reference.
+	Refs map[string]any `json:"refs"`
 	// Card is what a system message renders. For a price negotiation it is the offer's
 	// id and nothing else, so a counter-offer cannot leave an old price on screen.
-	Card      map[string]any `json:"card,omitempty"`
+	Card      map[string]any `json:"card"`
 	CreatedAt time.Time      `json:"created_at"`
-	EditedAt  *time.Time     `json:"edited_at,omitempty"`
-	DeletedAt *time.Time     `json:"deleted_at,omitempty"`
+	EditedAt  *time.Time     `json:"edited_at"`
+	DeletedAt *time.Time     `json:"deleted_at"`
 }
 
 type MessagePage struct {
@@ -82,7 +85,7 @@ type MessagePage struct {
 // CursorInfo is the cursor meta a chat list answers with. A timestamp cursor, not an
 // offset: an inbox moves under the reader and an offset would skip or repeat a row.
 type CursorInfo struct {
-	NextCursor string `json:"next_cursor,omitempty"`
+	NextCursor string `json:"next_cursor"`
 	HasMore    bool   `json:"has_more"`
 }
 
@@ -169,8 +172,8 @@ type SendMessageRequest struct {
 	ActorID        id.ID[id.Account]      `json:"-" validate:"required"`
 	ConversationID id.ID[id.Conversation] `json:"-" validate:"required"`
 	Body           string                 `json:"body" validate:"max=4000"`
-	Attachments    []id.ID[id.Resource]   `json:"attachments,omitempty" validate:"max=10"`
-	Refs           map[string]any         `json:"refs,omitempty"`
+	Attachments    []id.ID[id.Resource]   `json:"attachments" validate:"max=10"`
+	Refs           map[string]any         `json:"refs"`
 }
 
 type MarkConversationReadRequest struct {
@@ -180,7 +183,7 @@ type MarkConversationReadRequest struct {
 	// what opening a thread does; a value is what a client that tracks its own scroll
 	// sends. Named to match the spec's field, since the wire body is what a client codes
 	// against.
-	Before *time.Time `json:"before,omitempty"`
+	Before *time.Time `json:"before"`
 }
 
 type UpdateMessageRequest struct {

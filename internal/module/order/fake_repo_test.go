@@ -2,7 +2,7 @@ package order_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"slices"
 	"strconv"
 	"strings"

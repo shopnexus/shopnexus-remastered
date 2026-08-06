@@ -20,9 +20,9 @@ import (
 // POST /admin/moderators. At least one identifier is required, which the domain
 // enforces because the same rule holds for every other way a row is created.
 type RegisterRequest struct {
-	Email    string `json:"email,omitempty" validate:"omitempty,email,max=255"`
-	Phone    string `json:"phone,omitempty" validate:"omitempty,e164"`
-	Username string `json:"username,omitempty" validate:"omitempty,min=3,max=100"`
+	Email    string `json:"email" validate:"omitempty,email,max=255"`
+	Phone    string `json:"phone" validate:"omitempty,e164"`
+	Username string `json:"username" validate:"omitempty,min=3,max=100"`
 	Password string `json:"password" validate:"required,min=8,max=72"`
 	Name     string `json:"name" validate:"required,min=1,max=100"`
 	Country  string `json:"country" validate:"required,len=2"`
@@ -43,9 +43,9 @@ type LoginRequest struct {
 type OAuthLoginRequest struct {
 	Provider   string `json:"provider" validate:"required,max=30"`
 	Credential string `json:"credential" validate:"required"`
-	Country    string `json:"country,omitempty" validate:"omitempty,len=2"`
-	Locale     string `json:"locale,omitempty" validate:"omitempty,max=10"`
-	Timezone   string `json:"timezone,omitempty" validate:"omitempty,max=64"`
+	Country    string `json:"country" validate:"omitempty,len=2"`
+	Locale     string `json:"locale" validate:"omitempty,max=10"`
+	Timezone   string `json:"timezone" validate:"omitempty,max=64"`
 }
 
 type RefreshRequest struct {
@@ -58,7 +58,7 @@ type RefreshRequest struct {
 type LogoutRequest struct {
 	ActorID   id.ID[id.Account] `json:"-" validate:"required"`
 	SessionID string            `json:"-" validate:"required"`
-	DeviceID  id.ID[id.Device]  `json:"device_id,omitempty"`
+	DeviceID  id.ID[id.Device]  `json:"device_id"`
 }
 
 // ChangePasswordRequest requires the current password even though the caller is
@@ -99,12 +99,12 @@ type GetMeRequest struct {
 // refused, because an account nobody can be addressed by cannot sign in.
 type UpdateAccountRequest struct {
 	ActorID       id.ID[id.Account] `json:"-" validate:"required"`
-	Email         *string           `json:"email,omitempty" validate:"omitempty,email,max=255"`
-	Phone         *string           `json:"phone,omitempty" validate:"omitempty,e164"`
-	Username      *string           `json:"username,omitempty" validate:"omitempty,min=3,max=100"`
-	ClearEmail    bool              `json:"clear_email,omitempty"`
-	ClearPhone    bool              `json:"clear_phone,omitempty"`
-	ClearUsername bool              `json:"clear_username,omitempty"`
+	Email         *string           `json:"email" validate:"omitempty,email,max=255"`
+	Phone         *string           `json:"phone" validate:"omitempty,e164"`
+	Username      *string           `json:"username" validate:"omitempty,min=3,max=100"`
+	ClearEmail    bool              `json:"clear_email"`
+	ClearPhone    bool              `json:"clear_phone"`
+	ClearUsername bool              `json:"clear_username"`
 }
 
 // UpdateProfileRequest is the shop front. Locale and timezone also decide how
@@ -112,19 +112,19 @@ type UpdateAccountRequest struct {
 // have a value or are left alone, and there is nothing to clear.
 type UpdateProfileRequest struct {
 	ActorID          id.ID[id.Account]   `json:"-" validate:"required"`
-	Name             *string             `json:"name,omitempty" validate:"omitempty,min=1,max=100"`
-	Country          *string             `json:"country,omitempty" validate:"omitempty,len=2"`
-	Locale           *string             `json:"locale,omitempty" validate:"omitempty,max=10"`
-	Timezone         *string             `json:"timezone,omitempty" validate:"omitempty,max=64"`
-	Description      *string             `json:"description,omitempty" validate:"omitempty,max=2000"`
-	Gender           *string             `json:"gender,omitempty" validate:"omitempty,oneof=male female other"`
-	DateOfBirth      *string             `json:"date_of_birth,omitempty"`
-	AvatarResourceID *id.ID[id.Resource] `json:"avatar_resource_id,omitempty"`
+	Name             *string             `json:"name" validate:"omitempty,min=1,max=100"`
+	Country          *string             `json:"country" validate:"omitempty,len=2"`
+	Locale           *string             `json:"locale" validate:"omitempty,max=10"`
+	Timezone         *string             `json:"timezone" validate:"omitempty,max=64"`
+	Description      *string             `json:"description" validate:"omitempty,max=2000"`
+	Gender           *string             `json:"gender" validate:"omitempty,oneof=male female other"`
+	DateOfBirth      *string             `json:"date_of_birth"`
+	AvatarResourceID *id.ID[id.Resource] `json:"avatar_resource_id"`
 
-	ClearDescription      bool `json:"clear_description,omitempty"`
-	ClearGender           bool `json:"clear_gender,omitempty"`
-	ClearDateOfBirth      bool `json:"clear_date_of_birth,omitempty"`
-	ClearAvatarResourceID bool `json:"clear_avatar_resource_id,omitempty"`
+	ClearDescription      bool `json:"clear_description"`
+	ClearGender           bool `json:"clear_gender"`
+	ClearDateOfBirth      bool `json:"clear_date_of_birth"`
+	ClearAvatarResourceID bool `json:"clear_avatar_resource_id"`
 }
 
 type GetPublicAccountRequest struct {
@@ -185,15 +185,15 @@ type CreateContactRequest struct {
 	Country           string            `json:"country" validate:"required,len=2"`
 	ProvinceCode      string            `json:"province_code" validate:"required,max=20"`
 	ProvinceName      string            `json:"province_name" validate:"required,max=100"`
-	DistrictCode      string            `json:"district_code,omitempty" validate:"max=20"`
-	DistrictName      string            `json:"district_name,omitempty" validate:"max=100"`
+	DistrictCode      string            `json:"district_code" validate:"max=20"`
+	DistrictName      string            `json:"district_name" validate:"max=100"`
 	WardCode          string            `json:"ward_code" validate:"required,max=20"`
 	WardName          string            `json:"ward_name" validate:"required,max=100"`
-	PostalCode        string            `json:"postal_code,omitempty" validate:"max=20"`
+	PostalCode        string            `json:"postal_code" validate:"max=20"`
 	Address           string            `json:"address" validate:"required,min=1,max=255"`
-	AddressDetail     string            `json:"address_detail,omitempty" validate:"max=255"`
-	Latitude          *float64          `json:"latitude,omitempty" validate:"omitempty,gte=-90,lte=90"`
-	Longitude         *float64          `json:"longitude,omitempty" validate:"omitempty,gte=-180,lte=180"`
+	AddressDetail     string            `json:"address_detail" validate:"max=255"`
+	Latitude          *float64          `json:"latitude" validate:"omitempty,gte=-90,lte=90"`
+	Longitude         *float64          `json:"longitude" validate:"omitempty,gte=-180,lte=180"`
 }
 
 // UpdateContactRequest: every field optional. Changing the phone clears
@@ -203,29 +203,29 @@ type CreateContactRequest struct {
 type UpdateContactRequest struct {
 	ActorID           id.ID[id.Account] `json:"-" validate:"required"`
 	ID                id.ID[id.Contact] `json:"-" validate:"required"`
-	FullName          *string           `json:"full_name,omitempty" validate:"omitempty,min=1,max=100"`
-	Phone             *string           `json:"phone,omitempty" validate:"omitempty,e164"`
-	AddressType       *string           `json:"address_type,omitempty" validate:"omitempty,oneof=home work"`
-	IsDefaultDelivery *bool             `json:"is_default_delivery,omitempty"`
-	IsDefaultPickup   *bool             `json:"is_default_pickup,omitempty"`
-	Country           *string           `json:"country,omitempty" validate:"omitempty,len=2"`
-	ProvinceCode      *string           `json:"province_code,omitempty" validate:"omitempty,max=20"`
-	ProvinceName      *string           `json:"province_name,omitempty" validate:"omitempty,max=100"`
-	DistrictCode      *string           `json:"district_code,omitempty" validate:"omitempty,max=20"`
-	DistrictName      *string           `json:"district_name,omitempty" validate:"omitempty,max=100"`
-	WardCode          *string           `json:"ward_code,omitempty" validate:"omitempty,max=20"`
-	WardName          *string           `json:"ward_name,omitempty" validate:"omitempty,max=100"`
-	PostalCode        *string           `json:"postal_code,omitempty" validate:"omitempty,max=20"`
-	Address           *string           `json:"address,omitempty" validate:"omitempty,min=1,max=255"`
-	AddressDetail     *string           `json:"address_detail,omitempty" validate:"omitempty,max=255"`
-	Latitude          *float64          `json:"latitude,omitempty" validate:"omitempty,gte=-90,lte=90"`
-	Longitude         *float64          `json:"longitude,omitempty" validate:"omitempty,gte=-180,lte=180"`
+	FullName          *string           `json:"full_name" validate:"omitempty,min=1,max=100"`
+	Phone             *string           `json:"phone" validate:"omitempty,e164"`
+	AddressType       *string           `json:"address_type" validate:"omitempty,oneof=home work"`
+	IsDefaultDelivery *bool             `json:"is_default_delivery"`
+	IsDefaultPickup   *bool             `json:"is_default_pickup"`
+	Country           *string           `json:"country" validate:"omitempty,len=2"`
+	ProvinceCode      *string           `json:"province_code" validate:"omitempty,max=20"`
+	ProvinceName      *string           `json:"province_name" validate:"omitempty,max=100"`
+	DistrictCode      *string           `json:"district_code" validate:"omitempty,max=20"`
+	DistrictName      *string           `json:"district_name" validate:"omitempty,max=100"`
+	WardCode          *string           `json:"ward_code" validate:"omitempty,max=20"`
+	WardName          *string           `json:"ward_name" validate:"omitempty,max=100"`
+	PostalCode        *string           `json:"postal_code" validate:"omitempty,max=20"`
+	Address           *string           `json:"address" validate:"omitempty,min=1,max=255"`
+	AddressDetail     *string           `json:"address_detail" validate:"omitempty,max=255"`
+	Latitude          *float64          `json:"latitude" validate:"omitempty,gte=-90,lte=90"`
+	Longitude         *float64          `json:"longitude" validate:"omitempty,gte=-180,lte=180"`
 
 	// The district pair and the coordinate travel together, so they clear together.
-	ClearDistrict      bool `json:"clear_district,omitempty"`
-	ClearPostalCode    bool `json:"clear_postal_code,omitempty"`
-	ClearAddressDetail bool `json:"clear_address_detail,omitempty"`
-	ClearLocation      bool `json:"clear_location,omitempty"`
+	ClearDistrict      bool `json:"clear_district"`
+	ClearPostalCode    bool `json:"clear_postal_code"`
+	ClearAddressDetail bool `json:"clear_address_detail"`
+	ClearLocation      bool `json:"clear_location"`
 }
 
 type DeleteContactRequest struct {
@@ -285,7 +285,7 @@ type GetUnreadCountRequest struct {
 // while a bound reads one range. Omit Before to mark the whole feed read.
 type MarkNotificationsReadRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
-	Before  *time.Time        `json:"before,omitempty"`
+	Before  *time.Time        `json:"before"`
 }
 
 type GetNotificationPreferencesRequest struct {
@@ -312,7 +312,7 @@ type CreateNotificationRequest struct {
 	AccountID id.ID[id.Account] `json:"account_id" validate:"required"`
 	Category  string            `json:"category" validate:"required,oneof=order promotion system chat social"`
 	Title     string            `json:"title" validate:"required,max=200"`
-	Payload   map[string]any    `json:"payload,omitempty"`
+	Payload   map[string]any    `json:"payload"`
 }
 
 // --- follow graph ---
@@ -352,7 +352,7 @@ type StartIdentityVerificationRequest struct {
 	ActorID          id.ID[id.Account]  `json:"-" validate:"required"`
 	DocType          string             `json:"doc_type" validate:"required,oneof=national-id passport driver-license"`
 	FrontResourceID  id.ID[id.Resource] `json:"front_resource_id" validate:"required"`
-	BackResourceID   id.ID[id.Resource] `json:"back_resource_id,omitempty"`
+	BackResourceID   id.ID[id.Resource] `json:"back_resource_id"`
 	SelfieResourceID id.ID[id.Resource] `json:"selfie_resource_id" validate:"required"`
 }
 
@@ -382,7 +382,7 @@ type SuspendAccountRequest struct {
 	ActorID   id.ID[id.Account] `json:"-" validate:"required"`
 	AccountID id.ID[id.Account] `json:"-" validate:"required"`
 	Reason    string            `json:"reason" validate:"required,min=1,max=2000"`
-	Until     *time.Time        `json:"until,omitempty"`
+	Until     *time.Time        `json:"until"`
 }
 
 type LiftSuspensionRequest struct {
@@ -422,8 +422,8 @@ type IdentityVerdictRequest struct {
 	ActorID         id.ID[id.Account]          `json:"-" validate:"required"`
 	DocumentID      id.ID[id.IdentityDocument] `json:"-" validate:"required"`
 	Status          string                     `json:"status" validate:"required,oneof=verified rejected"`
-	RejectionReason string                     `json:"rejection_reason,omitempty" validate:"max=2000"`
-	ExpiresAt       *time.Time                 `json:"expires_at,omitempty"`
+	RejectionReason string                     `json:"rejection_reason" validate:"max=2000"`
+	ExpiresAt       *time.Time                 `json:"expires_at"`
 }
 
 // GetContactRequest reads one of the caller's own contacts — the delivery address a

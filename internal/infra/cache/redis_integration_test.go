@@ -8,8 +8,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/redis/rueidis"
 	"shopnexus/internal/infra/cache"
+
+	"github.com/redis/rueidis"
 )
 
 // newTestCache connects to REDIS_ADDR, skipping when it is unset — the same contract

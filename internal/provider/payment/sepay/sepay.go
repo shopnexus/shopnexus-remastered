@@ -17,7 +17,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -27,6 +26,7 @@ import (
 	"strings"
 
 	"shopnexus/internal/provider/payment"
+	"shopnexus/internal/shared/httpx"
 )
 
 // Name is what an option row's `provider` says to be served by this rail.
@@ -191,7 +191,7 @@ func (c *Client) serveIPN(deliver payment.NotificationHandler) http.HandlerFunc 
 			return
 		}
 		var body ipn
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := httpx.DecodeVendorJSON(r.Body, &body); err != nil {
 			c.log.Error("decode sepay IPN", "err", err)
 			ack(w, http.StatusBadRequest, false)
 			return

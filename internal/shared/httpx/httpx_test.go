@@ -1,7 +1,7 @@
 package httpx_test
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -18,7 +18,10 @@ func TestWriteError_MapsCodedErrorToStatus(t *testing.T) {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
 	var body struct {
-		Error struct{ Code, Message string } `json:"error"`
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal: %v", err)

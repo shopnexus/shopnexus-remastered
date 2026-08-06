@@ -2,7 +2,8 @@ package catalog
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"strings"
 
@@ -159,7 +160,7 @@ func (s *Service) imageKeys(ctx context.Context, attachments []id.ID[id.Resource
 // `category` is the *name* from the list, not an id: an id is a token a model will happily invent,
 // while a name it has just been shown is a choice it can only get wrong in ways the lookup below
 // catches.
-var suggestionSchema = json.RawMessage(`{
+var suggestionSchema = jsontext.Value(`{
   "type": "object",
   "additionalProperties": false,
   "required": ["name", "description", "category", "condition", "tags", "specifications", "package_details", "price"],

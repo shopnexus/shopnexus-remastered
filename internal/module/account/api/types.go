@@ -121,7 +121,7 @@ type PublicAccount struct {
 type AccountSummary struct {
 	ID     id.ID[id.Account]   `json:"id"`
 	Name   string              `json:"name"`
-	Avatar *common.ResourceDTO `json:"avatar,omitempty"`
+	Avatar *common.ResourceDTO `json:"avatar"`
 }
 
 type OAuthIdentity struct {
@@ -134,7 +134,7 @@ type UploadSlot struct {
 	ResourceID id.ID[id.Resource] `json:"resource_id"`
 	URL        string             `json:"url"`
 	// Headers the client must send with the PUT, when the signature covers any.
-	Headers   map[string]string `json:"headers,omitempty"`
+	Headers   map[string]string `json:"headers"`
 	ExpiresAt time.Time         `json:"expires_at"`
 }
 
@@ -161,7 +161,7 @@ type Contact struct {
 	AddressDetail *string        `json:"address_detail"`
 	Latitude      *float64       `json:"latitude"`
 	Longitude     *float64       `json:"longitude"`
-	ProviderCodes map[string]any `json:"provider_codes,omitempty"`
+	ProviderCodes map[string]any `json:"provider_codes"`
 	CreatedAt     time.Time      `json:"created_at"`
 }
 

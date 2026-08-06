@@ -544,6 +544,27 @@ give it its own doc under `docs/` and link it from here.
   "not the last identifier" or "a birth date is not in the future" is checked against the
   result rather than the field. Never drop a clear to protect a required field: that answers
   200 to a request the service did not carry out.
+- **A DTO sends its zero value; it never drops the key.** No `omitempty`/`omitzero` in any DTO
+  json tag — an empty list is `[]`, an empty object `{}`, an unset number `0`, an absent pointer
+  `null`. The server marshals with **`encoding/json/v2`** (Go 1.27, no GOEXPERIMENT), which is
+  what makes that spellable: v1 rendered a nil slice as `null`, so "none" and "not loaded" were
+  one answer and every client collapsed them by hand. A generated client types a spec-`required`
+  property as **non-nullable**, so omitting it does not degrade — `Message.refs` carried
+  `omitempty`, went missing on the ~all messages that reference nothing, and every chat thread in
+  the app failed to deserialise. `TestDTOs_NeverOmitAZeroValue` walks the `api` packages' AST and
+  fails naming the field, because the tag is the whole rule and a rule with no check is a rule
+  that comes back. Three things stay omitted on purpose: a **provider wire type** (`max_tokens:
+  0` or `dimensions: 0` is a broken vendor call, so those keep `omitzero`), an **audit/event
+  payload or jsonb params struct** (a diff records what changed, so an untouched field is absent),
+  and `httpx.dataEnvelope.Meta` (a single-resource response structurally has no meta).
+  `validate:"omitempty,…"` is a different tag and untouched — it means "skip these rules when the
+  field is absent", which is exactly right on a PATCH.
+  Two more v2 differences bite. `omitempty` now means "encodes as null/`""`/`[]`/`{}`", so it no
+  longer drops `0`/`false`; and unmarshal is **case-sensitive**, dropping a mismatched name
+  *silently*. So a third party's payload is read through `httpx.DecodeVendorJSON`, which keeps
+  v1's lenient matching — eSMS answers `CodeResult` beside `SMSID`, there is no sandbox to
+  discover a casing mistake in, and a field that quietly reads as zero is how a settled payment
+  becomes an unsettled one. Our own routes use `httpx.DecodeJSON`, strict.
 - **An event binds its code to its payload type, like `eventbus.Topic[T]` does for the bus.**
   `domain/events.go` declares one var per fact —
   `var EmailChanged = newEventType[IdentifierChange]("account.email_changed")` — and nothing

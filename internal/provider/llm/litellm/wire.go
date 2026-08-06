@@ -2,7 +2,7 @@ package litellm
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"strings"
 
 	"shopnexus/internal/provider/llm"
@@ -17,11 +17,11 @@ type chatRequest struct {
 	Tools          []chatTool      `json:"tools,omitempty"`
 	ToolChoice     string          `json:"tool_choice,omitempty"`
 	ResponseFormat *responseFormat `json:"response_format,omitempty"`
-	MaxTokens      int             `json:"max_tokens,omitempty"`
+	MaxTokens      int             `json:"max_tokens,omitzero"`
 	Temperature    *float64        `json:"temperature,omitempty"`
 	TopP           *float64        `json:"top_p,omitempty"`
 	Stop           []string        `json:"stop,omitempty"`
-	Stream         bool            `json:"stream,omitempty"`
+	Stream         bool            `json:"stream,omitzero"`
 	StreamOptions  *streamOptions  `json:"stream_options,omitempty"`
 }
 
@@ -70,9 +70,9 @@ type chatTool struct {
 }
 
 type toolFunction struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	Parameters  json.RawMessage `json:"parameters,omitempty"`
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Parameters  jsontext.Value `json:"parameters,omitempty"`
 }
 
 type responseFormat struct {
@@ -81,9 +81,9 @@ type responseFormat struct {
 }
 
 type jsonSchema struct {
-	Name   string          `json:"name"`
-	Schema json.RawMessage `json:"schema"`
-	Strict bool            `json:"strict,omitempty"`
+	Name   string         `json:"name"`
+	Schema jsontext.Value `json:"schema"`
+	Strict bool           `json:"strict,omitzero"`
 }
 
 type chatResponse struct {
@@ -128,7 +128,7 @@ type embedRequest struct {
 	Model          string   `json:"model"`
 	Input          []string `json:"input"`
 	EncodingFormat string   `json:"encoding_format"`
-	Dimensions     int      `json:"dimensions,omitempty"`
+	Dimensions     int      `json:"dimensions,omitzero"`
 }
 
 type embedResponse struct {
@@ -144,7 +144,7 @@ type rerankRequest struct {
 	Model     string   `json:"model"`
 	Query     string   `json:"query"`
 	Documents []string `json:"documents"`
-	TopN      int      `json:"top_n,omitempty"`
+	TopN      int      `json:"top_n,omitzero"`
 }
 
 // rerankResponse is Cohere-shaped, which is what the proxy returns for /v1/rerank.
@@ -249,7 +249,7 @@ func (m chatMessage) toMessage() llm.Message {
 		msg.ToolCalls = append(msg.ToolCalls, llm.ToolCall{
 			ID:        tc.ID,
 			Name:      tc.Function.Name,
-			Arguments: json.RawMessage(tc.Function.Arguments),
+			Arguments: jsontext.Value(tc.Function.Arguments),
 		})
 	}
 	return msg

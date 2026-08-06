@@ -1,7 +1,8 @@
 package httpx_test
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -14,9 +15,9 @@ import (
 
 // decode into a map so the test sees the actual root keys, not what a typed struct is
 // willing to ignore. The point of the envelope is which keys exist at the root.
-func rootKeys(t *testing.T, body []byte) map[string]json.RawMessage {
+func rootKeys(t *testing.T, body []byte) map[string]jsontext.Value {
 	t.Helper()
-	var m map[string]json.RawMessage
+	var m map[string]jsontext.Value
 	if err := json.Unmarshal(body, &m); err != nil {
 		t.Fatalf("unmarshal: %v\nbody: %s", err, body)
 	}
@@ -39,7 +40,11 @@ func TestWriteData_NestsPayloadUnderData(t *testing.T) {
 	if len(root) != 1 {
 		t.Errorf("root keys = %v, want only data", keysOf(root))
 	}
-	var inner struct{ Error string }
+	// Tagged, not inferred: v2 matches member names case-sensitively, so an untagged `Error`
+	// field looks for "Error" and reads the wire's "error" as absent.
+	var inner struct {
+		Error string `json:"error"`
+	}
 	if err := json.Unmarshal(root["data"], &inner); err != nil || inner.Error != "gateway declined" {
 		t.Errorf("payload not preserved under data: %v %+v", err, inner)
 	}
@@ -70,7 +75,7 @@ func TestWritePage_NullTotalIsExplicit(t *testing.T) {
 	httpx.WritePage(rec, http.StatusOK, []string{}, httpx.PageMeta{Page: 1, Limit: 20, TotalCount: nil})
 
 	var body struct {
-		Meta map[string]json.RawMessage `json:"meta"`
+		Meta map[string]jsontext.Value `json:"meta"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
@@ -89,7 +94,7 @@ func TestWriteCursor_NullNextCursorIsExplicit(t *testing.T) {
 	httpx.WriteCursor(rec, http.StatusOK, []string{"a"}, httpx.CursorMeta{NextCursor: nil})
 
 	var body struct {
-		Meta map[string]json.RawMessage `json:"meta"`
+		Meta map[string]jsontext.Value `json:"meta"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
@@ -131,8 +136,13 @@ func TestWriteError_CarriesRequestID(t *testing.T) {
 	if body.Error.RequestID != "dkav6vyqeqm3" {
 		t.Errorf("request_id = %q, want the header's value", body.Error.RequestID)
 	}
-	if body.Error.Fields != nil {
-		t.Errorf("fields = %v, want absent on a non-validation error", body.Error.Fields)
+	// Present and empty, not absent: a zero value is normalised rather than omitted, so a
+	// client iterates "fields" unconditionally instead of testing for the key first.
+	if body.Error.Fields == nil {
+		t.Error("fields is absent; an empty list must still be sent as []")
+	}
+	if len(body.Error.Fields) != 0 {
+		t.Errorf("fields = %v, want empty on a non-validation error", body.Error.Fields)
 	}
 }
 
@@ -193,7 +203,7 @@ func TestValidationAsError_PassesThroughOtherErrors(t *testing.T) {
 	}
 }
 
-func keysOf(m map[string]json.RawMessage) []string {
+func keysOf(m map[string]jsontext.Value) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)

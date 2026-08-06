@@ -2,7 +2,8 @@ package order
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"time"
 
@@ -233,13 +234,13 @@ func shippingLines(d domain.Draft, lines []orderapi.CheckoutLine) []transport.It
 // jsonOf is the package details as the courier's client takes them. An unencodable map is an
 // empty object rather than a failed checkout: a carrier that cannot read the dimensions prices
 // by weight, and the alternative is refusing a sale over a JSON error.
-func jsonOf(v map[string]any) json.RawMessage {
+func jsonOf(v map[string]any) jsontext.Value {
 	if len(v) == 0 {
-		return json.RawMessage("{}")
+		return jsontext.Value("{}")
 	}
 	raw, err := json.Marshal(v)
 	if err != nil {
-		return json.RawMessage("{}")
+		return jsontext.Value("{}")
 	}
 	return raw
 }

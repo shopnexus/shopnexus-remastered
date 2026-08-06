@@ -2,7 +2,7 @@ package finance
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"time"
@@ -331,7 +331,7 @@ func (s *Service) publishPaid(ctx context.Context, session domain.Session) {
 		ToID:      session.ToID,
 		Currency:  session.Currency,
 		Amount:    session.TotalAmount,
-		Data:      json.RawMessage(session.Data),
+		Data:      jsontext.Value(session.Data),
 	}
 	if err := publishSessionPaid(ctx, s.bus, event); err != nil {
 		s.log.Error("publish session paid failed", "session_id", session.ID, "err", err)

@@ -47,7 +47,7 @@ type ChargeResult struct {
 type Notification struct {
 	RefID        string `json:"ref_id" validate:"required"`
 	Status       Status `json:"status" validate:"required"`
-	Amount       int64  `json:"amount,omitempty"`
+	Amount       int64  `json:"amount,omitzero"`
 	ProviderTxID string `json:"provider_tx_id,omitempty"`
 }
 

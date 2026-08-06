@@ -21,7 +21,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -31,6 +30,7 @@ import (
 	"time"
 
 	"shopnexus/internal/provider/kyc"
+	"shopnexus/internal/shared/httpx"
 )
 
 const (
@@ -290,7 +290,7 @@ func (c *Client) post(ctx context.Context, path, contentType string, body []byte
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
 		return fmt.Errorf("fpt.ai %s returned %d: %s", path, resp.StatusCode, strings.TrimSpace(string(snippet)))
 	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+	if err := httpx.DecodeVendorJSON(resp.Body, out); err != nil {
 		return fmt.Errorf("decode fpt.ai response: %w", err)
 	}
 	return nil

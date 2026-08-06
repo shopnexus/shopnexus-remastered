@@ -14,7 +14,8 @@ package bgem3
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,6 +24,7 @@ import (
 	"time"
 
 	"shopnexus/internal/provider/embedding"
+	"shopnexus/internal/shared/httpx"
 )
 
 // Name is the EMBEDDING_PROVIDER value that selects this client.
@@ -129,7 +131,7 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([]embedding.Vector,
 	}
 
 	var decoded embedResponse
-	if err := json.NewDecoder(res.Body).Decode(&decoded); err != nil {
+	if err := httpx.DecodeVendorJSON(res.Body, &decoded); err != nil {
 		return nil, fmt.Errorf("decode embed response: %w", err)
 	}
 	// Positional pairing is the caller's contract, so a short answer has to fail rather than
@@ -168,7 +170,7 @@ func serviceError(res *http.Response) error {
 	body, _ := io.ReadAll(io.LimitReader(res.Body, errBodyLimit))
 	msg := strings.TrimSpace(string(body))
 	var env struct {
-		Detail json.RawMessage `json:"detail"`
+		Detail jsontext.Value `json:"detail"`
 	}
 	if err := json.Unmarshal(body, &env); err == nil && len(env.Detail) > 0 {
 		var text string

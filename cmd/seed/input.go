@@ -2,7 +2,7 @@ package main
 
 import (
 	_ "embed"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"regexp"

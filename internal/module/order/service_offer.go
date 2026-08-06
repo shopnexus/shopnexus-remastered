@@ -2,7 +2,7 @@ package order
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"time"
 
@@ -25,7 +25,7 @@ type checkoutSource struct {
 	// ShippingFee is what the buyer agreed to pay for delivery, quoted at checkout and carried
 	// here because the session is the thing they paid against. The settle path needs it to open
 	// the shipment with the right fee and to keep it out of the seller's escrow.
-	ShippingFee int64 `json:"shipping_fee,omitempty"`
+	ShippingFee int64 `json:"shipping_fee,omitzero"`
 }
 
 func checkoutContext(origin domain.Origin, shippingFee int64) []byte {

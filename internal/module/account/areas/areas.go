@@ -20,7 +20,7 @@ package areas
 
 import (
 	"embed"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"sync"
 )

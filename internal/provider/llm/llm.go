@@ -5,7 +5,7 @@ package llm
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"iter"
@@ -88,16 +88,16 @@ type TranscribeResult struct {
 
 // ToolCall is a model request to invoke a tool with JSON arguments.
 type ToolCall struct {
-	ID        string          `json:"id"`
-	Name      string          `json:"name"`
-	Arguments json.RawMessage `json:"arguments"`
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Arguments jsontext.Value `json:"arguments"`
 }
 
 // Tool is a function the model may call. Parameters is a JSON Schema object.
 type Tool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	Parameters  json.RawMessage `json:"parameters"`
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Parameters  jsontext.Value `json:"parameters"`
 }
 
 // ToolChoice constrains tool use for a request. Empty means the provider default.
@@ -112,9 +112,9 @@ const (
 // ResponseFormat requests structured output. With Schema set the model must
 // emit JSON matching it; with Schema nil it must emit some JSON object.
 type ResponseFormat struct {
-	Name   string          `json:"name,omitempty"`
-	Schema json.RawMessage `json:"schema,omitempty"`
-	Strict bool            `json:"strict,omitempty"`
+	Name   string         `json:"name,omitempty"`
+	Schema jsontext.Value `json:"schema,omitempty"`
+	Strict bool           `json:"strict,omitzero"`
 }
 
 // CompleteParams is a chat completion request. Model overrides the provider's
@@ -257,7 +257,7 @@ func (a *ToolCallAccumulator) Calls() []ToolCall {
 	}
 	out := make([]ToolCall, len(a.calls))
 	for i, c := range a.calls {
-		c.Arguments = json.RawMessage(a.args[i])
+		c.Arguments = jsontext.Value(a.args[i])
 		out[i] = c
 	}
 	return out

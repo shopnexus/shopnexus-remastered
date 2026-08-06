@@ -3,7 +3,7 @@ package litellm
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"iter"
 	"strings"

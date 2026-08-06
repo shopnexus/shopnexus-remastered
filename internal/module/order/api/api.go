@@ -62,7 +62,7 @@ type Draft struct {
 type DraftVariant struct {
 	VariantID  id.ID[id.Variant] `json:"variant_id"`
 	Price      int64             `json:"price"`
-	Attributes map[string]any    `json:"attributes,omitempty"`
+	Attributes map[string]any    `json:"attributes"`
 }
 
 type DraftPage struct {
@@ -83,7 +83,7 @@ type Item struct {
 	TotalAmount      int64                    `json:"total_amount"`
 	TransportOption  string                   `json:"transport_option"`
 	PaymentSessionID id.ID[id.PaymentSession] `json:"payment_session_id"`
-	Note             string                   `json:"note,omitempty"`
+	Note             string                   `json:"note"`
 	CancelledAt      *time.Time               `json:"cancelled_at"`
 	CreatedAt        time.Time                `json:"created_at"`
 }
@@ -106,7 +106,7 @@ type Offer struct {
 	Quantity  int64             `json:"quantity"`
 	Total     int64             `json:"total"`
 	Currency  string            `json:"currency"`
-	Reason    string            `json:"reason,omitempty"`
+	Reason    string            `json:"reason"`
 	CreatedAt time.Time         `json:"created_at"`
 	ExpiresAt time.Time         `json:"expires_at"`
 }
@@ -132,7 +132,7 @@ type Order struct {
 	State         string                    `json:"state"`
 	Total         int64                     `json:"total"`
 	Currency      string                    `json:"currency"`
-	Transport     *Transport                `json:"transport,omitempty"`
+	Transport     *Transport                `json:"transport"`
 	ReceivedAt    *time.Time                `json:"received_at"`
 	// ReceiptAttachments is the unboxing evidence, captured with the receipt and never
 	// added to: a refund is judged on what the buyer showed at that moment.
@@ -163,10 +163,10 @@ type AddressSnapshot struct {
 	FullName      string  `json:"full_name"`
 	Phone         string  `json:"phone"`
 	Country       string  `json:"country"`
-	ProvinceCode  string  `json:"province_code,omitempty"`
-	DistrictCode  *string `json:"district_code,omitempty"`
-	WardCode      string  `json:"ward_code,omitempty"`
-	AddressDetail *string `json:"address_detail,omitempty"`
+	ProvinceCode  string  `json:"province_code"`
+	DistrictCode  *string `json:"district_code"`
+	WardCode      string  `json:"ward_code"`
+	AddressDetail *string `json:"address_detail"`
 }
 
 type Transport struct {
@@ -218,7 +218,7 @@ type CheckoutResult struct {
 
 // CursorInfo is the cursor meta every order list answers with.
 type CursorInfo struct {
-	NextCursor string `json:"next_cursor,omitempty"`
+	NextCursor string `json:"next_cursor"`
 	HasMore    bool   `json:"has_more"`
 }
 
@@ -277,7 +277,7 @@ type CheckoutRequest struct {
 	// TransportOption is the carrier. The buyer pays delivery, so the trade-off is theirs.
 	TransportOption string `json:"transport_option" validate:"required,max=100"`
 	Currency        string `json:"currency" validate:"required,len=3"`
-	Note            string `json:"note,omitempty" validate:"max=500"`
+	Note            string `json:"note" validate:"max=500"`
 }
 
 type ListItemsRequest struct {
@@ -298,7 +298,7 @@ type CreateOfferRequest struct {
 	VariantID id.ID[id.Variant] `json:"variant_id" validate:"required"`
 	Quantity  int64             `json:"quantity" validate:"required,gt=0"`
 	Total     int64             `json:"total" validate:"required,gt=0"`
-	Reason    string            `json:"reason,omitempty" validate:"max=500"`
+	Reason    string            `json:"reason" validate:"max=500"`
 }
 
 type ListOffersRequest struct {
@@ -318,7 +318,7 @@ type CounterOfferRequest struct {
 	ID       id.ID[id.Offer]   `json:"-" validate:"required"`
 	Quantity int64             `json:"quantity" validate:"required,gt=0"`
 	Total    int64             `json:"total" validate:"required,gt=0"`
-	Reason   string            `json:"reason,omitempty" validate:"max=500"`
+	Reason   string            `json:"reason" validate:"max=500"`
 }
 
 // ShippingQuotesRequest asks what delivery would cost, so the buyer sees the fee before they
@@ -331,18 +331,18 @@ type CounterOfferRequest struct {
 //   - OfferID — agreed terms, whose quantity was negotiated.
 type ShippingQuotesRequest struct {
 	ActorID   id.ID[id.Account]    `json:"-" validate:"required"`
-	VariantID id.ID[id.Variant]    `json:"variant_id,omitempty"`
-	DraftID   id.ID[id.DraftOrder] `json:"draft_id,omitempty"`
-	OfferID   id.ID[id.Offer]      `json:"offer_id,omitempty"`
+	VariantID id.ID[id.Variant]    `json:"variant_id"`
+	DraftID   id.ID[id.DraftOrder] `json:"draft_id"`
+	OfferID   id.ID[id.Offer]      `json:"offer_id"`
 	// Quantity is how many of VariantID. Zero means one, since a listing page is quoting the
 	// single unit a buyer is looking at. Ignored by the other two sources, which carry their own.
-	Quantity int64 `json:"quantity,omitempty" validate:"omitempty,gt=0"`
+	Quantity int64 `json:"quantity" validate:"omitempty,gt=0"`
 	// ContactID is where the parcel goes. Optional: with none, the caller's default delivery
 	// address is used, which is what lets a listing page quote without a form.
-	ContactID id.ID[id.Contact] `json:"contact_id,omitempty"`
+	ContactID id.ID[id.Contact] `json:"contact_id"`
 	// Lines are the draft's variants and quantities, as a checkout would send them. Ignored for
 	// an offer, whose quantity is the negotiated one.
-	Lines []CheckoutLine `json:"lines,omitempty" validate:"omitempty,max=50,dive"`
+	Lines []CheckoutLine `json:"lines" validate:"omitempty,max=50,dive"`
 }
 
 // ShippingQuotes is one entry per carrier that could price the parcel. A carrier that declined is
@@ -372,7 +372,7 @@ type CheckoutOfferRequest struct {
 	ID              id.ID[id.Offer]   `json:"-" validate:"required"`
 	ContactID       id.ID[id.Contact] `json:"contact_id" validate:"required"`
 	TransportOption string            `json:"transport_option" validate:"required,max=100"`
-	Note            string            `json:"note,omitempty" validate:"max=500"`
+	Note            string            `json:"note" validate:"max=500"`
 }
 
 // OrderSummaryRequest is the window a dashboard reads. The window filters `created_at`, so every
@@ -470,7 +470,7 @@ type CreateRefundRequest struct {
 	ActorID     id.ID[id.Account]    `json:"-" validate:"required"`
 	OrderID     id.ID[id.Order]      `json:"-" validate:"required"`
 	Reason      string               `json:"reason" validate:"required,min=1,max=2000"`
-	Attachments []id.ID[id.Resource] `json:"attachments,omitempty" validate:"max=10"`
+	Attachments []id.ID[id.Resource] `json:"attachments" validate:"max=10"`
 }
 
 type ListRefundsRequest struct {
@@ -512,7 +512,7 @@ type ResolveRefundRequest struct {
 	ActorID   id.ID[id.Account] `json:"-" validate:"required"`
 	ID        id.ID[id.Refund]  `json:"-" validate:"required"`
 	BuyerWins bool              `json:"buyer_wins"`
-	Note      string            `json:"note,omitempty" validate:"max=2000"`
+	Note      string            `json:"note" validate:"max=2000"`
 }
 
 // CreateUploadRequest asks for a slot to PUT evidence into — the unboxing photos a buyer
@@ -533,7 +533,7 @@ type UploadSlot struct {
 	ResourceID id.ID[id.Resource] `json:"resource_id"`
 	URL        string             `json:"url"`
 	// Headers the client must send with the PUT, when the signature covers any.
-	Headers   map[string]string `json:"headers,omitempty"`
+	Headers   map[string]string `json:"headers"`
 	ExpiresAt time.Time         `json:"expires_at"`
 }
 

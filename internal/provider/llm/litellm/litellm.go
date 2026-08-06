@@ -7,7 +7,7 @@ package litellm
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"shopnexus/internal/provider/llm"
+	"shopnexus/internal/shared/httpx"
 )
 
 // Name is the LLM_PROVIDER value that selects this proxy.
@@ -159,7 +160,7 @@ func (c *Client) Transcribe(ctx context.Context, params llm.TranscribeParams) (l
 		return llm.TranscribeResult{}, apiError(resp)
 	}
 	var out llm.TranscribeResult
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := httpx.DecodeVendorJSON(resp.Body, &out); err != nil {
 		return llm.TranscribeResult{}, fmt.Errorf("decode response: %w", err)
 	}
 	return out, nil
@@ -281,7 +282,7 @@ func (c *Client) postJSON(ctx context.Context, path string, payload, out any) er
 	}
 	defer resp.Body.Close()
 
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+	if err := httpx.DecodeVendorJSON(resp.Body, out); err != nil {
 		return fmt.Errorf("decode response: %w", err)
 	}
 	return nil

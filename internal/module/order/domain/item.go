@@ -1,7 +1,7 @@
 package domain
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"time"
 
 	"shopnexus/internal/shared/validation"

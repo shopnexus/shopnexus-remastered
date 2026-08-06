@@ -5,8 +5,9 @@ import (
 	"log/slog"
 	"net/http"
 
-	"go.uber.org/fx"
 	openapi "shopnexus/api"
+
+	"go.uber.org/fx"
 
 	"shopnexus/internal/gateway/handler"
 	"shopnexus/internal/gateway/middleware"

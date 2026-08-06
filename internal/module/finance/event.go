@@ -2,7 +2,7 @@ package finance
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 
 	"shopnexus/internal/infra/eventbus"
 	"shopnexus/internal/module/finance/domain"
@@ -27,7 +27,7 @@ type SessionPaid struct {
 	Amount    int64  `json:"amount"`
 	// Data is the checkout context the opener stored — which draft or offer the sale
 	// came from — handed back so the consumer needs no second lookup.
-	Data json.RawMessage `json:"data,omitempty"`
+	Data jsontext.Value `json:"data,omitempty"`
 }
 
 // SessionPaidTopic carries SessionPaid. The name is the code a subscriber names, so it

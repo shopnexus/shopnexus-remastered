@@ -4,7 +4,7 @@ package transport
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"net/http"
 )
 
@@ -55,7 +55,7 @@ type QuoteParams struct {
 type ItemMetadata struct {
 	VariantID      int64
 	Quantity       int64
-	PackageDetails json.RawMessage
+	PackageDetails jsontext.Value
 }
 
 type CreateParams struct {
@@ -67,7 +67,7 @@ type CreateParams struct {
 
 type QuoteResult struct {
 	Cost int64
-	Data json.RawMessage
+	Data jsontext.Value
 }
 
 type Transport struct {
@@ -76,5 +76,5 @@ type Transport struct {
 	ID     string
 	Option string
 	Cost   int64
-	Data   json.RawMessage
+	Data   jsontext.Value
 }

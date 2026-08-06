@@ -12,7 +12,6 @@ package mock
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -25,6 +24,7 @@ import (
 	"github.com/google/uuid"
 
 	"shopnexus/internal/provider/payment"
+	"shopnexus/internal/shared/httpx"
 )
 
 // Name is what an option row's `provider` says to be served by this rail.
@@ -247,7 +247,7 @@ func (c *Client) WireWebhooks(mux *http.ServeMux, deliver payment.NotificationHa
 
 	mux.HandleFunc("POST "+webhookPath, func(w http.ResponseWriter, r *http.Request) {
 		var n payment.Notification
-		if err := json.NewDecoder(r.Body).Decode(&n); err != nil || n.RefID == "" {
+		if err := httpx.DecodeVendorJSON(r.Body, &n); err != nil || n.RefID == "" {
 			http.Error(w, "want {\"ref_id\":…,\"status\":\"success\"|\"failed\"}", http.StatusBadRequest)
 			return
 		}

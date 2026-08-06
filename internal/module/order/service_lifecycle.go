@@ -2,7 +2,8 @@ package order
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"time"
@@ -209,7 +210,7 @@ func (s *Service) bookShipment(ctx context.Context, o domain.Order, lines []*dom
 func bookingData(t transport.Transport) ([]byte, error) {
 	out := map[string]any{"provider_ref": t.ID}
 	if len(t.Data) > 0 {
-		out["provider_data"] = json.RawMessage(t.Data)
+		out["provider_data"] = jsontext.Value(t.Data)
 	}
 	data, err := json.Marshal(out)
 	if err != nil {

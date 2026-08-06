@@ -16,7 +16,7 @@
 package id
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"strings"
 
 	"shopnexus/internal/shared/errx"

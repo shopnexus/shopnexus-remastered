@@ -2,7 +2,7 @@ package esms_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,7 +30,7 @@ func serve(t *testing.T, status int, body string) (*httptest.Server, *map[string
 	t.Helper()
 	got := map[string]any{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+		if err := json.UnmarshalRead(r.Body, &got); err != nil {
 			t.Errorf("decode request: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")

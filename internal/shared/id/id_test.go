@@ -1,7 +1,7 @@
 package id_test
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"math"
 	"math/rand/v2"
 	"strings"

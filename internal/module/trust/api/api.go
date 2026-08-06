@@ -27,7 +27,7 @@ const (
 // CursorInfo is the cursor meta every list here answers with. A timestamp cursor, not an
 // offset: these lists move under the reader.
 type CursorInfo struct {
-	NextCursor string `json:"next_cursor,omitempty"`
+	NextCursor string `json:"next_cursor"`
 	HasMore    bool   `json:"has_more"`
 }
 
@@ -76,7 +76,7 @@ type SubmitFeedbackRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	OrderID id.ID[id.Order]   `json:"-" validate:"required"`
 	Rating  int16             `json:"rating" validate:"required,gte=1,lte=5"`
-	Comment string            `json:"comment,omitempty" validate:"max=2000"`
+	Comment string            `json:"comment" validate:"max=2000"`
 }
 
 type ListFeedbackRequest struct {
@@ -162,8 +162,8 @@ type SubmitReviewRequest struct {
 	ListingID   id.ID[id.Listing]    `json:"-" validate:"required"`
 	OrderID     id.ID[id.Order]      `json:"order_id" validate:"required"`
 	Rating      int16                `json:"rating" validate:"required,gte=1,lte=5"`
-	Body        string               `json:"body,omitempty" validate:"max=2000"`
-	Attachments []id.ID[id.Resource] `json:"attachments,omitempty" validate:"max=10"`
+	Body        string               `json:"body" validate:"max=2000"`
+	Attachments []id.ID[id.Resource] `json:"attachments" validate:"max=10"`
 }
 
 type GetReviewRequest struct {
@@ -176,9 +176,9 @@ type GetReviewRequest struct {
 type UpdateReviewRequest struct {
 	ActorID     id.ID[id.Account]     `json:"-" validate:"required"`
 	ID          id.ID[id.Review]      `json:"-" validate:"required"`
-	Rating      *int16                `json:"rating,omitempty" validate:"omitempty,gte=1,lte=5"`
-	Body        *string               `json:"body,omitempty" validate:"omitempty,max=2000"`
-	Attachments *[]id.ID[id.Resource] `json:"attachments,omitempty" validate:"omitempty,max=10"`
+	Rating      *int16                `json:"rating" validate:"omitempty,gte=1,lte=5"`
+	Body        *string               `json:"body" validate:"omitempty,max=2000"`
+	Attachments *[]id.ID[id.Resource] `json:"attachments" validate:"omitempty,max=10"`
 }
 
 type ReviewRequest struct {
@@ -222,7 +222,7 @@ type UploadSlot struct {
 	ResourceID id.ID[id.Resource] `json:"resource_id"`
 	URL        string             `json:"url"`
 	// Headers the client must send with the PUT, when the signature covers any.
-	Headers   map[string]string `json:"headers,omitempty"`
+	Headers   map[string]string `json:"headers"`
 	ExpiresAt time.Time         `json:"expires_at"`
 }
 
@@ -278,7 +278,7 @@ type AdminTicket struct {
 	OpenTicketsAgainstTarget int64 `json:"open_tickets_against_target"`
 	// Target is what the ticket is about, shaped by RefType and fetched from the module that owns
 	// it. Null when that module no longer has it — a listing already taken down.
-	Target map[string]any `json:"target,omitempty"`
+	Target map[string]any `json:"target"`
 }
 
 type AdminTicketPage struct {
@@ -295,12 +295,12 @@ type OpenTicketRequest struct {
 	Subject string            `json:"subject" validate:"required,min=1,max=200"`
 	// RefID is opaque and kinded by Kind, so the two are validated together: a report about a
 	// listing needs a listing id, and a feature request needs none.
-	RefID string `json:"ref_id,omitempty"`
+	RefID string `json:"ref_id"`
 	// Reason is required for the report kinds and refused on every other, since a reason is what a
 	// report says is wrong. Checked against Kind, so it cannot be a `required` tag here.
-	Reason      string               `json:"reason,omitempty" validate:"omitempty,oneof=scam counterfeit prohibited harassment spam inappropriate other"`
-	Body        string               `json:"body,omitempty" validate:"max=4000"`
-	Attachments []id.ID[id.Resource] `json:"attachments,omitempty" validate:"max=10"`
+	Reason      string               `json:"reason" validate:"omitempty,oneof=scam counterfeit prohibited harassment spam inappropriate other"`
+	Body        string               `json:"body" validate:"max=4000"`
+	Attachments []id.ID[id.Resource] `json:"attachments" validate:"max=10"`
 }
 
 type ListTicketsRequest struct {
@@ -345,7 +345,7 @@ type ResolveTicketRequest struct {
 	// records on its way out, so accepting one here would let a listing report be closed as a refund
 	// nobody paid.
 	ActionTaken string `json:"action_taken" validate:"required,oneof=none listing-removed message-removed account-suspended warning"`
-	Note        string `json:"note,omitempty" validate:"max=2000"`
+	Note        string `json:"note" validate:"max=2000"`
 }
 
 // RecordOrderOutcomeRequest is order's settled event in this module's terms. OrderID is what

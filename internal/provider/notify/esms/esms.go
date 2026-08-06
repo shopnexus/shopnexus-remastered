@@ -10,7 +10,7 @@ package esms
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"shopnexus/internal/provider/notify"
+	"shopnexus/internal/shared/httpx"
 )
 
 // Name is the SMS_PROVIDER value that selects this vendor.
@@ -176,7 +177,7 @@ func (c *Client) SendSMS(ctx context.Context, m notify.Message) error {
 		return fmt.Errorf("esms returned %d: %s", resp.StatusCode, strings.TrimSpace(string(snippet)))
 	}
 	var out sendResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := httpx.DecodeVendorJSON(resp.Body, &out); err != nil {
 		return fmt.Errorf("decode esms response: %w", err)
 	}
 	// The status lives in the body: a rejected message still comes back 200.

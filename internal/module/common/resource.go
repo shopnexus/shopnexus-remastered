@@ -59,12 +59,12 @@ type ResourceDTO struct {
 	ObjectKey string             `json:"object_key"`
 	Mime      string             `json:"mime"`
 	Size      int64              `json:"size"`
-	Checksum  string             `json:"checksum,omitempty"`
+	Checksum  string             `json:"checksum"`
 	// URL is the presigned link, as on Resource above: short-lived, not an address to store.
-	URL string `json:"url,omitempty"`
+	URL string `json:"url"`
 	// URLExpiresAt is when that link stops working, so a caller can tell a stale URL from a
 	// wrong one.
-	URLExpiresAt *time.Time `json:"url_expires_at,omitempty"`
+	URLExpiresAt *time.Time `json:"url_expires_at"`
 }
 
 // ToDTO is the one conversion, so a module does not write its own.

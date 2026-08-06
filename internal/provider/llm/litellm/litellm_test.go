@@ -2,7 +2,8 @@ package litellm_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"net/http"
@@ -53,7 +54,7 @@ func stall(r *http.Request) {
 func decodeBody(t *testing.T, r *http.Request) map[string]any {
 	t.Helper()
 	var body map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(r.Body, &body); err != nil {
 		t.Fatalf("decode request body: %v", err)
 	}
 	return body
@@ -210,10 +211,10 @@ func TestComplete_ToolCallsAndSchema(t *testing.T) {
 		Tools: []llm.Tool{{
 			Name:        "search_products",
 			Description: "search the catalog",
-			Parameters:  json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`),
+			Parameters:  jsontext.Value(`{"type":"object","properties":{"q":{"type":"string"}}}`),
 		}},
 		ToolChoice:     llm.ToolChoiceRequired,
-		ResponseFormat: &llm.ResponseFormat{Name: "hit", Schema: json.RawMessage(`{"type":"object"}`), Strict: true},
+		ResponseFormat: &llm.ResponseFormat{Name: "hit", Schema: jsontext.Value(`{"type":"object"}`), Strict: true},
 	})
 	if err != nil {
 		t.Fatalf("complete: %v", err)
@@ -263,7 +264,7 @@ func TestComplete_SendsToolResultTurn(t *testing.T) {
 
 	_, err := c.Complete(context.Background(), llm.CompleteParams{Messages: []llm.Message{
 		{Role: llm.RoleUser, Content: "find shoes"},
-		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "call_1", Name: "search_products", Arguments: json.RawMessage(`{"q":"shoes"}`)}}},
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "call_1", Name: "search_products", Arguments: jsontext.Value(`{"q":"shoes"}`)}}},
 		{Role: llm.RoleTool, ToolCallID: "call_1", Content: `{"hits":2}`},
 	}})
 	if err != nil {
