@@ -54,10 +54,16 @@ func (s *Service) ListRefunds(ctx context.Context, req orderapi.ListRefundsReque
 	if req.Status != "" {
 		filter.Statuses = []string{req.Status}
 	}
-	if req.Role == orderapi.RoleSeller {
+	switch req.Role {
+	case orderapi.RoleSeller:
 		filter.SellerID = req.ActorID.Int64()
-	} else {
+	case orderapi.RoleBuyer:
 		filter.BuyerID = req.ActorID.Int64()
+	default:
+		// No role named: both sides. `omitempty` already allowed the parameter to be left
+		// out, and this branch used to fall through to buyer — so a client that meant "all
+		// of mine" was quietly answered "the ones I raised".
+		filter.PartyID = req.ActorID.Int64()
 	}
 	rows, err := s.repo.ListRefunds(ctx, filter)
 	if err != nil {

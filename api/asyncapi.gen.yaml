@@ -228,6 +228,23 @@ components:
             example: acc_62mxefynht57b
             pattern: ^acc_[0-9a-hjkmnp-tv-z]{13}$
             type: string
+        AccountSummary:
+            description: The compact form used in follower and following lists.
+            properties:
+                avatar:
+                    allOf:
+                        - $ref: '#/components/schemas/Resource'
+                    nullable: true
+                id:
+                    $ref: '#/components/schemas/AccountID'
+                name:
+                    example: Nguyễn Văn An
+                    type: string
+            required:
+                - id
+                - name
+                - avatar
+            type: object
         ConversationID:
             example: cnv_6ptz3n8kvq1wd
             pattern: ^cnv_[0-9a-hjkmnp-tv-z]{13}$
@@ -401,6 +418,11 @@ components:
                     $ref: '#/components/schemas/AccountID'
                 buyer_id:
                     $ref: '#/components/schemas/AccountID'
+                counterparty:
+                    allOf:
+                        - $ref: '#/components/schemas/AccountSummary'
+                    description: |
+                        The other side of the negotiation, whichever that is for the caller. This route only ever answers a party to the row, so the viewer is one of `buyer_id`/`seller_id` and this is the one they need named.
                 created_at:
                     format: date-time
                     type: string
@@ -411,6 +433,8 @@ components:
                     type: string
                 id:
                     $ref: '#/components/schemas/OfferID'
+                listing:
+                    $ref: '#/components/schemas/OfferListing'
                 listing_id:
                     allOf:
                         - $ref: '#/components/schemas/ListingID'
@@ -442,6 +466,8 @@ components:
                 - buyer_id
                 - seller_id
                 - author_id
+                - listing
+                - counterparty
                 - status
                 - quantity
                 - total
@@ -454,6 +480,22 @@ components:
             example: ofr_ptz3n8kvq1wd6
             pattern: ^ofr_[0-9a-hjkmnp-tv-z]{13}$
             type: string
+        OfferListing:
+            description: |
+                The little of a listing an offer row has to show, resolved rather than left as an id — a list of offers carrying only ids renders as a column of prices with nothing to tell them apart. Read live: a renamed listing reads as its current name, while the terms, which are the part that must not drift, are on the offer itself.
+            properties:
+                cover:
+                    allOf:
+                        - $ref: '#/components/schemas/Resource'
+                    description: Null on a listing with no photo.
+                    nullable: true
+                name:
+                    example: Áo khoác denim size M
+                    type: string
+            required:
+                - name
+                - cover
+            type: object
         OfferStatus:
             description: |
                 `active` — a proposal waiting for the other side. `accepted` — agreed, the price frozen for a short window while the buyer creates the order. `checked-out` — the buyer's payment session is open, so these terms are off the table. `cancelled` — withdrawn or lapsed.

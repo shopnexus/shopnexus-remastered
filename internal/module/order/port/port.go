@@ -35,8 +35,12 @@ type ItemFilter struct {
 type OrderFilter struct {
 	BuyerID  int64
 	SellerID int64
-	State    string
-	Cursor   CursorFilter
+	// PartyID matches an order the account is on *either* side of, which is what a caller
+	// that named no role is asking for. Not expressible with the two above: they are ANDed,
+	// so setting both would answer only the orders somebody sold to themselves.
+	PartyID int64
+	State   string
+	Cursor  CursorFilter
 }
 
 // SummaryFilter is one side of the sale over one window. Exactly one of the two ids is set, the same
@@ -77,6 +81,8 @@ type OfferFilter struct {
 type RefundFilter struct {
 	BuyerID  int64
 	SellerID int64
+	// PartyID matches a refund the account is on either side of — see OrderFilter.PartyID.
+	PartyID  int64
 	Statuses []string
 	Cursor   CursorFilter
 }

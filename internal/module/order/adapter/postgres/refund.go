@@ -99,6 +99,9 @@ func (r *Repo) ListRefunds(ctx context.Context, f port.RefundFilter) ([]domain.R
 	             AND (@seller_id = 0 OR EXISTS (
 	                   SELECT 1 FROM "order" o
 	                   WHERE o.id = r.order_id AND o.seller_id = @seller_id))
+	             AND (@party_id = 0 OR r.buyer_id = @party_id OR EXISTS (
+	                   SELECT 1 FROM "order" o
+	                   WHERE o.id = r.order_id AND o.seller_id = @party_id))
 	             AND (@statuses::text[] IS NULL OR r.status::text = ANY(@statuses::text[]))
 	             AND (@before::timestamptz IS NULL
 	                  OR (r.created_at, r.id) < (@before::timestamptz, @before_id::bigint))
@@ -106,7 +109,7 @@ func (r *Repo) ListRefunds(ctx context.Context, f port.RefundFilter) ([]domain.R
 	           LIMIT @limit`
 	before, beforeID, limit := cursorBound(f.Cursor)
 	args := pgx.NamedArgs{
-		"buyer_id": f.BuyerID, "seller_id": f.SellerID,
+		"buyer_id": f.BuyerID, "seller_id": f.SellerID, "party_id": f.PartyID,
 		"statuses": nullStrings(f.Statuses), "before": before, "before_id": beforeID,
 		"limit": limit,
 	}

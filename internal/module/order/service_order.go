@@ -211,10 +211,13 @@ func (s *Service) ListOrders(ctx context.Context, req orderapi.ListOrdersRequest
 		return orderapi.OrderPage{}, err
 	}
 	filter := port.OrderFilter{State: req.State, Cursor: cursor}
-	if req.Role == orderapi.RoleSeller {
+	switch req.Role {
+	case orderapi.RoleSeller:
 		filter.SellerID = req.ActorID.Int64()
-	} else {
+	case orderapi.RoleBuyer:
 		filter.BuyerID = req.ActorID.Int64()
+	default:
+		filter.PartyID = req.ActorID.Int64()
 	}
 	rows, err := s.repo.ListOrders(ctx, filter)
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	accountapi "shopnexus/internal/module/account/api"
 	catalogapi "shopnexus/internal/module/catalog/api"
 	chatapi "shopnexus/internal/module/chat/api"
 	financeapi "shopnexus/internal/module/finance/api"
@@ -98,7 +99,7 @@ func (s *Service) CreateOffer(ctx context.Context, req orderapi.CreateOfferReque
 	// The standing proposal is on a clock from here; accepting restarts it, and the run re-reads
 	// the row rather than holding the deadline it first saw.
 	s.timer("start offer", s.workflows.StartOffer(ctx, o.ID))
-	return toAPIOffer(o, listing.Currency), nil
+	return s.offerDTO(ctx, req.ActorID, o)
 }
 
 func (s *Service) ListOffers(ctx context.Context, req orderapi.ListOffersRequest) (orderapi.OfferPage, error) {
@@ -115,13 +116,20 @@ func (s *Service) ListOffers(ctx context.Context, req orderapi.ListOffersRequest
 	rows, meta := page(rows, req.Limit, func(o domain.Offer) (time.Time, int64) {
 		return o.CreatedAt, o.ID
 	})
-	currencies, err := s.listingCurrencies(ctx, req.ActorID, rows)
+	listings, err := s.offerListings(ctx, req.ActorID, rows)
 	if err != nil {
 		return orderapi.OfferPage{}, err
 	}
+	// One read per distinct counterparty, not per row: haggling with one seller over three of
+	// their listings is the common shape, and that is one account, not three.
+	people := make(map[int64]accountapi.AccountSummary, len(rows))
 	out := make([]orderapi.Offer, 0, len(rows))
 	for _, o := range rows {
-		out = append(out, toAPIOffer(o, currencies[o.ListingID]))
+		other, err := s.otherSide(ctx, req.ActorID, o, people)
+		if err != nil {
+			return orderapi.OfferPage{}, err
+		}
+		out = append(out, toAPIOffer(o, listings[o.ListingID], other))
 	}
 	return orderapi.OfferPage{Data: out, Meta: meta}, nil
 }
@@ -131,19 +139,15 @@ func (s *Service) GetOffer(ctx context.Context, req orderapi.OfferRequest) (orde
 	if err != nil {
 		return orderapi.Offer{}, err
 	}
-	currencies, err := s.listingCurrencies(ctx, req.ActorID, []domain.Offer{o})
-	if err != nil {
-		return orderapi.Offer{}, err
-	}
-	return toAPIOffer(o, currencies[o.ListingID]), nil
+	return s.offerDTO(ctx, req.ActorID, o)
 }
 
 // listingCurrencies resolves the currency each offer's total is in. The offer row does not carry
 // one — the listing decides it and cannot change it — so it is read here rather than copied at
 // every revision. One catalog call for the whole page: a total with no currency beside it is not
 // a price anybody can render.
-func (s *Service) listingCurrencies(ctx context.Context, viewerID id.ID[id.Account], offers []domain.Offer) (map[int64]string, error) {
-	out := make(map[int64]string, len(offers))
+func (s *Service) offerListings(ctx context.Context, viewerID id.ID[id.Account], offers []domain.Offer) (map[int64]catalogapi.Listing, error) {
+	out := make(map[int64]catalogapi.Listing, len(offers))
 	if len(offers) == 0 {
 		return out, nil
 	}
@@ -152,7 +156,7 @@ func (s *Service) listingCurrencies(ctx context.Context, viewerID id.ID[id.Accou
 		if _, ok := out[o.ListingID]; ok {
 			continue
 		}
-		out[o.ListingID] = ""
+		out[o.ListingID] = catalogapi.Listing{}
 		ids = append(ids, id.Of[id.Listing](o.ListingID))
 	}
 	page, err := s.catalog.ListListings(ctx, catalogapi.ListListingsRequest{
@@ -162,7 +166,7 @@ func (s *Service) listingCurrencies(ctx context.Context, viewerID id.ID[id.Accou
 		return nil, fmt.Errorf("resolve offer listings: %w", err)
 	}
 	for _, listing := range page.Data {
-		out[listing.ID.Int64()] = listing.Currency
+		out[listing.ID.Int64()] = listing
 	}
 	return out, nil
 }
@@ -389,7 +393,7 @@ func (s *Service) postOfferCard(ctx context.Context, o domain.Offer, body string
 	}
 }
 
-func toAPIOffer(o domain.Offer, currency string) orderapi.Offer {
+func toAPIOffer(o domain.Offer, listing catalogapi.Listing, counterparty accountapi.AccountSummary) orderapi.Offer {
 	return orderapi.Offer{
 		ID:        id.Of[id.Offer](o.ID),
 		ListingID: id.Of[id.Listing](o.ListingID),
@@ -397,25 +401,53 @@ func toAPIOffer(o domain.Offer, currency string) orderapi.Offer {
 		BuyerID:   id.Of[id.Account](o.BuyerID),
 		SellerID:  id.Of[id.Account](o.SellerID),
 		AuthorID:  id.Of[id.Account](o.AuthorID),
-		Status:    o.Status,
-		Quantity:  o.Quantity,
-		Total:     o.Total,
-		Currency:  currency,
-		Reason:    o.Reason,
-		CreatedAt: o.CreatedAt,
-		ExpiresAt: o.ExpiresAt,
+		Listing: orderapi.OfferListing{
+			Name:  listing.Name,
+			Cover: listing.Cover,
+		},
+		Counterparty: counterparty,
+		Status:       o.Status,
+		Quantity:     o.Quantity,
+		Total:        o.Total,
+		Currency:     listing.Currency,
+		Reason:       o.Reason,
+		CreatedAt:    o.CreatedAt,
+		ExpiresAt:    o.ExpiresAt,
 	}
 }
 
-// offerDTO resolves the listing's currency and builds the DTO a response and a realtime
-// notification share, so a total that crosses either boundary always carries the price it
-// belongs to.
+// otherSide names whoever the viewer is not. An offer is only ever read by one of its two
+// parties, so this always resolves to somebody the viewer did not already know about.
+func (s *Service) otherSide(ctx context.Context, viewerID id.ID[id.Account], o domain.Offer,
+	cache map[int64]accountapi.AccountSummary) (accountapi.AccountSummary, error) {
+	other := o.SellerID
+	if o.SellerID == viewerID.Int64() {
+		other = o.BuyerID
+	}
+	if got, ok := cache[other]; ok {
+		return got, nil
+	}
+	got, err := s.summary(ctx, other)
+	if err != nil {
+		return accountapi.AccountSummary{}, err
+	}
+	cache[other] = got
+	return got, nil
+}
+
+// offerDTO resolves the listing and the counterparty and builds the DTO a response and a
+// realtime notification share, so a total that crosses either boundary always carries the
+// price it belongs to and the row is renderable wherever it lands.
 func (s *Service) offerDTO(ctx context.Context, viewerID id.ID[id.Account], o domain.Offer) (orderapi.Offer, error) {
-	currencies, err := s.listingCurrencies(ctx, viewerID, []domain.Offer{o})
+	listings, err := s.offerListings(ctx, viewerID, []domain.Offer{o})
 	if err != nil {
 		return orderapi.Offer{}, err
 	}
-	return toAPIOffer(o, currencies[o.ListingID]), nil
+	other, err := s.otherSide(ctx, viewerID, o, map[int64]accountapi.AccountSummary{})
+	if err != nil {
+		return orderapi.Offer{}, err
+	}
+	return toAPIOffer(o, listings[o.ListingID], other), nil
 }
 
 // notifyOfferUpdated pushes a negotiation's current terms to both parties. Unlike chat,

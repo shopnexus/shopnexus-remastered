@@ -413,6 +413,7 @@ func (r *Repo) ListOrders(ctx context.Context, f port.OrderFilter) ([]domain.Ord
 	const q = `SELECT ` + orderColumns + ` FROM "order"
 	           WHERE (@buyer_id = 0 OR buyer_id = @buyer_id)
 	             AND (@seller_id = 0 OR seller_id = @seller_id)
+	             AND (@party_id = 0 OR buyer_id = @party_id OR seller_id = @party_id)
 	             AND (@state::text IS NULL
 	                  OR (@state::text = '` + domain.StateAwaitingConfirmation + `'
 	                      AND confirmed_at IS NULL
@@ -428,7 +429,8 @@ func (r *Repo) ListOrders(ctx context.Context, f port.OrderFilter) ([]domain.Ord
 	           LIMIT @limit`
 	before, beforeID, limit := cursorBound(f.Cursor)
 	args := pgx.NamedArgs{
-		"buyer_id": f.BuyerID, "seller_id": f.SellerID, "state": dbx.NullText(f.State),
+		"buyer_id": f.BuyerID, "seller_id": f.SellerID, "party_id": f.PartyID,
+		"state": dbx.NullText(f.State),
 		"before": before, "before_id": beforeID, "limit": limit,
 	}
 	return r.queryOrders(ctx, q, args)

@@ -104,14 +104,29 @@ type Offer struct {
 	BuyerID   id.ID[id.Account] `json:"buyer_id"`
 	SellerID  id.ID[id.Account] `json:"seller_id"`
 	// AuthorID owns the standing proposal, which is whose turn it is *not*.
-	AuthorID  id.ID[id.Account] `json:"author_id"`
-	Status    string            `json:"status"`
-	Quantity  int64             `json:"quantity"`
-	Total     int64             `json:"total"`
-	Currency  string            `json:"currency"`
-	Reason    string            `json:"reason"`
-	CreatedAt time.Time         `json:"created_at"`
-	ExpiresAt time.Time         `json:"expires_at"`
+	AuthorID id.ID[id.Account] `json:"author_id"`
+	// Listing is what is being haggled over, resolved rather than left as an id: a list of
+	// offers carrying only ids renders as a column of prices with nothing to tell them apart,
+	// which is the same rule that makes an attachment travel as a resolved ResourceDTO.
+	Listing OfferListing `json:"listing"`
+	// Counterparty is the other side, always — `/offers` only ever answers a party to the
+	// row, so the viewer is one of BuyerID/SellerID and the one they need named is the other.
+	Counterparty accountapi.AccountSummary `json:"counterparty"`
+	Status       string                    `json:"status"`
+	Quantity     int64                     `json:"quantity"`
+	Total        int64                     `json:"total"`
+	Currency     string                    `json:"currency"`
+	Reason       string                    `json:"reason"`
+	CreatedAt    time.Time                 `json:"created_at"`
+	ExpiresAt    time.Time                 `json:"expires_at"`
+}
+
+// OfferListing is the little of a listing an offer row has to show. Read live rather than
+// snapshotted: a renamed listing should read as its current name here, and the terms — which
+// are the part that must not drift — are on the offer itself.
+type OfferListing struct {
+	Name  string              `json:"name"`
+	Cover *common.ResourceDTO `json:"cover"`
 }
 
 type OfferPage struct {
@@ -431,7 +446,10 @@ type OrderSummary struct {
 
 type ListOrdersRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
-	Role    string            `json:"-" validate:"required,oneof=buyer seller"`
+	// Role is optional, and absent means both sides. A C2C account is a buyer and a seller
+	// at once, so "what is waiting on me" spans the two — demanding a side made every client
+	// grow a buyer/seller switch, and the more urgent of the two was then behind a tap.
+	Role    string            `json:"-" validate:"omitempty,oneof=buyer seller"`
 	State   string            `json:"-" validate:"omitempty,oneof=awaiting-confirmation open completed cancelled"`
 	Cursor  string            `json:"-"`
 	Limit   int               `json:"-" validate:"required,min=1,max=100"`

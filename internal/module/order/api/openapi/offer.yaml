@@ -45,10 +45,15 @@ paths:
         '409': { description: 'An active negotiation already exists for this (buyer, SKU)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     get:
       tags: [order]
-      summary: List negotiations, as buyer or as seller
+      summary: List the caller's negotiations, both sides at once
+      description: >
+        Both sides in one list, and there is no `role` to pick: an account haggles as a buyer on
+        one listing and as a seller on another, and "which of these is waiting on me" spans the
+        two — `author_id` answers that per row, since whoever owns the standing proposal is whose
+        turn it is *not*. A required `role` was documented here for a while and never read by the
+        service, so both values answered the same list.
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: role, in: query, required: true, schema: { type: string, enum: [buyer, seller] } }
         - { name: status, in: query, schema: { $ref: '#/components/schemas/OfferStatus' } }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
@@ -261,6 +266,13 @@ components:
         buyer_id: { $ref: '#/components/schemas/AccountID' }
         seller_id: { $ref: '#/components/schemas/AccountID' }
         author_id: { $ref: '#/components/schemas/AccountID' }
+        listing: { $ref: '#/components/schemas/OfferListing' }
+        counterparty:
+          allOf: [{ $ref: '#/components/schemas/AccountSummary' }]
+          description: >
+            The other side of the negotiation, whichever that is for the caller. This route
+            only ever answers a party to the row, so the viewer is one of `buyer_id`/`seller_id`
+            and this is the one they need named.
         status: { $ref: '#/components/schemas/OfferStatus' }
         quantity: { type: integer, format: int64, minimum: 1, example: 2 }
         total: { type: integer, format: int64, minimum: 1, example: 598000, description: 'Currently proposed total, smallest currency unit' }
@@ -268,7 +280,22 @@ components:
         reason: { type: string, description: Shown on the offer card beside the proposed price }
         created_at: { type: string, format: date-time }
         expires_at: { type: string, format: date-time }
-      required: [id, listing_id, variant_id, buyer_id, seller_id, author_id, status, quantity, total, currency, reason, created_at, expires_at]
+      required: [id, listing_id, variant_id, buyer_id, seller_id, author_id, listing, counterparty, status, quantity, total, currency, reason, created_at, expires_at]
+
+    OfferListing:
+      type: object
+      description: >
+        The little of a listing an offer row has to show, resolved rather than left as an id —
+        a list of offers carrying only ids renders as a column of prices with nothing to tell
+        them apart. Read live: a renamed listing reads as its current name, while the terms,
+        which are the part that must not drift, are on the offer itself.
+      properties:
+        name: { type: string, example: 'Áo khoác denim size M' }
+        cover:
+          allOf: [{ $ref: '#/components/schemas/Resource' }]
+          nullable: true
+          description: Null on a listing with no photo.
+      required: [name, cover]
 
     OfferPage:
       type: object

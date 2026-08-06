@@ -29,10 +29,15 @@ paths:
   /orders:
     get:
       tags: [order]
-      summary: List orders, as buyer or as seller
+      summary: List the caller's orders, both sides by default
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: role, in: query, required: true, schema: { type: string, enum: [buyer, seller] } }
+        - name: role
+          in: query
+          schema: { type: string, enum: [buyer, seller] }
+          description: >
+            Which side to answer for. Omit for both, which is what a C2C account usually
+            wants: it buys and sells at once, so "what is waiting on me" spans the two.
         - { name: state, in: query, schema: { $ref: '#/components/schemas/OrderState' } }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'

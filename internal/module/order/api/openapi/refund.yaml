@@ -77,12 +77,17 @@ paths:
   /refunds:
     get:
       tags: [order]
-      summary: List refunds, as buyer or as seller
-      description: '`role=seller` resolves through the order''s seller; a refund row
-        itself only records the buyer.'
+      summary: List the caller's refunds, both sides by default
+      description: >
+        Omit `role` for both sides, which is what "what is waiting on me" needs: a buyer's own
+        claims and the ones raised against their sales are the same queue of things to answer.
+        `role=seller` resolves through the order's seller, because a refund row itself only
+        records the buyer.
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: role, in: query, required: true, schema: { type: string, enum: [buyer, seller] } }
+        - name: role
+          in: query
+          schema: { type: string, enum: [buyer, seller] }
         - { name: status, in: query, schema: { $ref: '#/components/schemas/RefundStatus' } }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
