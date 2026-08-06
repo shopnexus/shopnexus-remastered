@@ -78,9 +78,17 @@ func publishRefundResolved(ctx context.Context, bus eventbus.Client, event Refun
 	return eventbus.Publish(ctx, bus, RefundResolvedTopic, event)
 }
 
-// RefundEscalated is a refund the seller let run out of time on. Trust opens the ticket for it,
-// on the buyer's behalf, so the case reaches a human without the buyer having to know they were
-// supposed to chase it.
+// Escalation causes: what put a refund with staff, for the two paths where nobody wrote a ticket.
+// A moderator's first move differs between them — chase a seller who never answered, or check a
+// return only the buyer says arrived — so the queue has to be able to tell them apart.
+const (
+	EscalationUnanswered    = "seller-unanswered"
+	EscalationReturnClaimed = "return-claimed-by-buyer"
+)
+
+// RefundEscalated is a refund that reached staff without either party raising a ticket. Trust opens
+// it for them, on the buyer's behalf, so the case reaches a human without the buyer having to know
+// they were supposed to chase it.
 //
 // Published rather than called: trust already consumes this module's api, so reaching back the
 // other way would be a dependency cycle fx cannot construct. The refund is already `disputed`
@@ -92,6 +100,9 @@ type RefundEscalated struct {
 	// BuyerID is who the ticket is raised for. Unlike RefundResolved, this payload does carry a
 	// party, because the subscriber has to name a requester and cannot ask this module for one.
 	BuyerID int64 `json:"buyer_id"`
+	// Cause is which of the two situations this is. The fact, not the wording: how a ticket reads
+	// is trust's, and this module has no business writing a subject line.
+	Cause string `json:"cause"`
 }
 
 // RefundEscalatedTopic carries RefundEscalated.

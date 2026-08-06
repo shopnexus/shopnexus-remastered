@@ -147,8 +147,9 @@ func (r *Refund) Escalate() error {
 	return nil
 }
 
-// MarkReturned is the return leg arriving. The seller may then escalate what they received,
-// and letting that window pass settles for the buyer.
+// MarkReturned is the seller acknowledging the return arrived. They may then escalate what they
+// received, and letting that window pass settles for the buyer — which is only fair because the
+// report is the seller's own: having admitted receipt, their silence is what costs them.
 func (r *Refund) MarkReturned() error {
 	if r.Status != RefundReturning {
 		return ErrRefundSettled
@@ -156,6 +157,25 @@ func (r *Refund) MarkReturned() error {
 	r.ReturnedAt = new(time.Now())
 	r.Status = RefundReturned
 	r.DeadlineAt = new(time.Now().Add(SellerInspectionWindow))
+	return nil
+}
+
+// ClaimReturned is the buyer reporting the return arrived — a claim about somebody else's
+// warehouse, so it asks staff for a verdict instead of opening the seller's inspection window.
+// On that window a report only the buyer made pays them out as soon as the seller stops reading:
+// one request plus 48 hours of somebody else's inattention, and the buyer had the money and the
+// goods. Nobody else can contradict it either — the return leg is never booked with a carrier,
+// so no webhook ever reports on it.
+//
+// `ReturnedAt` is stamped all the same: there is nothing left to ship, so a verdict for the buyer
+// has to settle rather than grant a second parcel.
+func (r *Refund) ClaimReturned() error {
+	if r.Status != RefundReturning {
+		return ErrRefundSettled
+	}
+	r.ReturnedAt = new(time.Now())
+	r.Status = RefundDisputed
+	r.DeadlineAt = nil
 	return nil
 }
 

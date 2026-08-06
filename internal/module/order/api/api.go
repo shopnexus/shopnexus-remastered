@@ -466,10 +466,11 @@ type AdvanceShipmentRequest struct {
 	Status  string            `json:"status" validate:"required,oneof=picked-up in-transit delivered returned failed"`
 }
 
-// AdvanceReturnShipmentRequest is the same for the leg carrying the goods back. `delivered` is
-// what opens the seller's inspection window, so either party may report it — a seller who never
-// confirms would otherwise strand the escrow, and escalating what arrived is their remedy against
-// a buyer who claims a delivery that did not happen.
+// AdvanceReturnShipmentRequest is the same for the leg carrying the goods back, which no carrier
+// reports on: that leg is never booked with one, so both parties may write it. Who reports
+// `delivered` is what decides where the case goes — the seller acknowledging receipt opens their
+// own inspection window, while the buyer's claim goes to staff, because a window that pays out on
+// the seller's silence is one a buyer who posted nothing can simply wait out.
 type AdvanceReturnShipmentRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	ID      id.ID[id.Refund]  `json:"-" validate:"required"`
@@ -631,9 +632,9 @@ type Service interface {
 	WithdrawRefund(ctx context.Context, req RefundRequest) error
 	AddRefundAttachments(ctx context.Context, req AddRefundAttachmentsRequest) (Refund, error)
 	AcceptRefund(ctx context.Context, req RefundRequest) (Refund, error)
-	// AdvanceReturnShipment is the only exit from `returning`: marking the return delivered is
-	// what opens the seller's inspection window, and without it a granted refund strands the
-	// escrow with nobody on a clock.
+	// AdvanceReturnShipment is the only exit from `returning`, since nothing books that leg with a
+	// carrier. The seller reporting it delivered opens their inspection window; the buyer reporting
+	// it hands the case to staff, because their own word must not settle it in their favour.
 	AdvanceReturnShipment(ctx context.Context, req AdvanceReturnShipmentRequest) (Refund, error)
 	// EscalateRefund records that staff have been asked to decide. Called by trust when the
 	// ticket is opened — not by a route — so a refund's status and its ticket cannot disagree.

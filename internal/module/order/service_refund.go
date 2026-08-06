@@ -185,12 +185,16 @@ func (s *Service) openReturnLeg(ctx context.Context, r *domain.Refund, o domain.
 	return nil
 }
 
-// AdvanceReturnShipment records a checkpoint on the leg carrying the goods back, and marking it
-// delivered is what opens the seller's inspection window. Either party may report it: the buyer
-// posted the parcel and the seller received it, and requiring the seller alone would let one who
-// simply never confirms strand the escrow — which is exactly what having no writer at all did.
-// A buyer who claims a delivery that did not happen is answered by the seller escalating, which
-// is what that window is for.
+// AdvanceReturnShipment records a checkpoint on the leg carrying the goods back. Either party may
+// report it, and unlike the outbound leg that cannot be narrowed to the carrier: openReturnLeg
+// opens the row and never books it, so there is no provider reference for a webhook to arrive on
+// and leaving the leg to the courier would strand every granted refund with nobody on a clock.
+//
+// What `delivered` does depends on who said it, which is where the guard lives instead. The seller
+// reporting it has admitted receipt, so their inspection window running out and settling for the
+// buyer is their own silence costing them. The buyer's report is a claim about somebody else's
+// warehouse, so it asks staff. Given the seller's window, a buyer who posted nothing at all had
+// only to say `delivered` and wait out an inattentive seller to keep the money and the goods.
 func (s *Service) AdvanceReturnShipment(ctx context.Context, req orderapi.AdvanceReturnShipmentRequest) (orderapi.Refund, error) {
 	r, o, err := s.refundParty(ctx, req.ActorID, req.ID)
 	if err != nil {
@@ -210,11 +214,21 @@ func (s *Service) AdvanceReturnShipment(ctx context.Context, req orderapi.Advanc
 		return s.refundView(ctx, r)
 	}
 	from := r.Status
-	if err := r.MarkReturned(); err != nil {
+	byBuyer := o.BuyerID == req.ActorID.Int64()
+	if byBuyer {
+		if err := r.ClaimReturned(); err != nil {
+			return orderapi.Refund{}, err
+		}
+	} else if err := r.MarkReturned(); err != nil {
 		return orderapi.Refund{}, err
 	}
 	if err := s.saveRefund(ctx, r, from); err != nil {
 		return orderapi.Refund{}, err
+	}
+	if byBuyer {
+		// The case is with staff now, so it needs to be in their queue — and only trust can open
+		// the ticket. Same event the unanswered-review path publishes, carrying a different cause.
+		s.publishRefundEscalated(ctx, r, o, EscalationReturnClaimed)
 	}
 	return s.refundView(ctx, r)
 }

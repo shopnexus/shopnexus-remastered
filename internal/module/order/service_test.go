@@ -1235,7 +1235,8 @@ func TestRefund_BlocksPayoutAndAdvancesOnTime(t *testing.T) {
 	// somebody goes looking for it.
 	h.bus.Wait()
 	if len(escalated) != 1 || escalated[0].RefundID != refund.ID.Int64() ||
-		escalated[0].BuyerID != buyer.Int64() {
+		escalated[0].BuyerID != buyer.Int64() ||
+		escalated[0].Cause != order.EscalationUnanswered {
 		t.Fatalf("published = %+v, want one escalation naming the refund and its buyer", escalated)
 	}
 }
@@ -1366,9 +1367,9 @@ func TestRefund_VerdictBooksTheReturnThenPaysTheBuyer(t *testing.T) {
 		t.Fatalf("status = %d, want 409", got)
 	}
 
-	// The parcel arrives, which opens the seller's inspection window.
+	// The seller acknowledges the parcel, which opens their own inspection window.
 	returned, err := h.svc.AdvanceReturnShipment(ctx, orderapi.AdvanceReturnShipmentRequest{
-		ActorID: buyer, ID: refund.ID, Status: domain.TransportDelivered,
+		ActorID: seller, ID: refund.ID, Status: domain.TransportDelivered,
 	})
 	if err != nil {
 		t.Fatalf("AdvanceReturnShipment: %v", err)
@@ -1526,6 +1527,66 @@ func (h *harness) openRefund(t *testing.T) (orderapi.Order, orderapi.Refund) {
 	return o, r
 }
 
+// A buyer cannot pay themselves by reporting a delivery. `delivered` used to open the seller's
+// inspection window whoever sent it, so a buyer who posted nothing at all reported it, waited out
+// a seller who was not reading, and the overdue pass handed them the escrow while they still had
+// the goods — one request plus somebody else's inattention. Their report asks staff instead.
+func TestAdvanceReturnShipment_BuyersReportDoesNotSettleOnTheSellersSilence(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, refund := h.openRefund(t)
+	if _, err := h.svc.AcceptRefund(ctx, orderapi.RefundRequest{ActorID: seller, ID: refund.ID}); err != nil {
+		t.Fatalf("AcceptRefund: %v", err)
+	}
+	// Staff have to be told, or the case sits in `disputed` with nothing in anybody's queue.
+	var escalated []order.RefundEscalated
+	eventbus.Subscribe(h.bus, order.RefundEscalatedTopic, "test",
+		func(_ context.Context, e order.RefundEscalated) error {
+			escalated = append(escalated, e)
+			return nil
+		})
+	claimed, err := h.svc.AdvanceReturnShipment(ctx, orderapi.AdvanceReturnShipmentRequest{
+		ActorID: buyer, ID: refund.ID, Status: domain.TransportDelivered,
+	})
+	if err != nil {
+		t.Fatalf("AdvanceReturnShipment: %v", err)
+	}
+	if claimed.Status != domain.RefundDisputed || claimed.DeadlineAt != nil {
+		t.Fatalf("refund = %+v, want the buyer's claim with staff and no clock on it", claimed)
+	}
+	// Recorded as a return all the same, so a verdict for the buyer pays them rather than granting
+	// a second parcel over goods that have already gone back.
+	if claimed.ReturnedAt == nil {
+		t.Fatalf("refund = %+v, want the claimed return recorded", claimed)
+	}
+	h.bus.Wait()
+	if len(escalated) != 1 || escalated[0].Cause != order.EscalationReturnClaimed {
+		t.Fatalf("published = %+v, want one escalation naming the buyer's claim", escalated)
+	}
+
+	// The seller now says nothing for as long as their inspection window would have run. A
+	// deadline is forced onto the row so the pass actually considers it: the theft needed a timer
+	// to fire, and this is the timer refusing to.
+	stale := h.repo.refunds[refund.ID.Int64()]
+	stale.DeadlineAt = new(time.Now().Add(-domain.SellerInspectionWindow))
+	h.repo.refunds[refund.ID.Int64()] = stale
+	if moved, err := h.svc.AdvanceOverdueRefunds(ctx, 10); err != nil || moved != 0 {
+		t.Fatalf("AdvanceOverdueRefunds = %d, %v; want a claim staff hold left alone", moved, err)
+	}
+	if h.finance.refunded != 0 {
+		t.Fatalf("refunded = %d, want the escrow untouched until staff decide", h.finance.refunded)
+	}
+	if stored := h.repo.refunds[refund.ID.Int64()]; stored.Status != domain.RefundDisputed {
+		t.Fatalf("refund = %q, want it still with staff", stored.Status)
+	}
+	// Nor can the buyer report it again to reach that window after all: the leg has ended.
+	if got := status(t, mustErr(h.svc.AdvanceReturnShipment(ctx, orderapi.AdvanceReturnShipmentRequest{
+		ActorID: buyer, ID: refund.ID, Status: domain.TransportDelivered,
+	}))); got != 409 {
+		t.Fatalf("status = %d, want 409 reporting a leg that has already ended", got)
+	}
+}
+
 // The overdue pass loses to an escalation that landed while it held the row. Its list is a work
 // list, not a snapshot: without the `from` guard on the write it settled the stale copy —
 // refunding the escrow, writing `accepted` over `disputed` and cancelling the order — so the
@@ -1539,7 +1600,7 @@ func TestAdvanceOverdueRefunds_LosesToAnEscalationItDidNotSee(t *testing.T) {
 		t.Fatalf("AcceptRefund: %v", err)
 	}
 	if _, err := h.svc.AdvanceReturnShipment(ctx, orderapi.AdvanceReturnShipmentRequest{
-		ActorID: buyer, ID: refund.ID, Status: domain.TransportDelivered,
+		ActorID: seller, ID: refund.ID, Status: domain.TransportDelivered,
 	}); err != nil {
 		t.Fatalf("AdvanceReturnShipment: %v", err)
 	}

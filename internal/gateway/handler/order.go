@@ -818,8 +818,9 @@ func (h *Order) DeclineOrder(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// AdvanceReturnShipment handles POST /refunds/{id}/return-transport/checkpoints. Marking it
-// delivered is what opens the seller's inspection window — the only exit from `returning`.
+// AdvanceReturnShipment handles POST /refunds/{id}/return-transport/checkpoints — the only exit
+// from `returning`. Who reports `delivered` decides whether the seller's inspection window opens
+// or the case goes to staff, so the actor is the service's business, not a role check here.
 func (h *Order) AdvanceReturnShipment(w http.ResponseWriter, r *http.Request) {
 	uid, err := actor(r)
 	if failed(w, h.log, err) {

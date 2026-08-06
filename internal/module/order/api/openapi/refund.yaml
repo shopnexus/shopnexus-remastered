@@ -9,7 +9,8 @@
 #   seller raises a ticket, or ignores it → disputed
 #   staff decide for the seller          → rejected, and the payout stands
 #   staff decide for the buyer           → returning, and the goods go back
-#   the return is delivered              → returned
+#   seller reports the return delivered  → returned
+#   buyer reports the return delivered   → disputed, for staff to verify
 #   seller escalates what arrived        → disputed, the same case
 #   staff decide for the seller          → rejected, and the seller is paid out
 #   staff decide for the buyer           → accepted
@@ -19,6 +20,10 @@
 # safe: whoever receives a counterfeit or the wrong item back can still escalate. There are
 # no rounds — whether the goods have come back is what a verdict reads to know whether it
 # is granting the refund or paying it.
+#
+# Only the seller's own report of the return arriving starts that turn. Nothing books the return
+# leg with a carrier, so the report is a party's word rather than a courier's, and the buyer's
+# word goes to staff instead of onto a clock that would pay them out on the seller's silence.
 #
 # A seller cannot refuse a refund. Their two moves are granting it and handing it to staff,
 # because refusing only ever moved the burden onto the buyer to escalate — and a buyer who did
@@ -166,8 +171,8 @@ paths:
       description: >
         Grants it without staff. The goods have to come back first, so this books the
         return shipment on the same carrier as the outbound leg and moves the refund to
-        `returning`; the money goes back once that leg is delivered and the seller has not
-        escalated it. No body — there is nothing left to choose.
+        `returning`; the money goes back once the seller has reported that leg delivered and has
+        not escalated what arrived. No body — there is nothing left to choose.
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -197,8 +202,10 @@ components:
         `awaiting-seller-review` — the seller grants it or hands it to staff; they cannot
         refuse it. Missing the window hands it to staff too. `disputed` — staff are looking
         at it. `returning` — the goods are on their way back; only a granted refund ever
-        reaches here. `returned` — the seller inspects what arrived and may escalate until
-        the window closes, which is where a broken or substituted return is caught.
+        reaches here. `returned` — the seller has acknowledged the return and now inspects what
+        arrived, and may escalate until the window closes, which is where a broken or substituted
+        return is caught. A return the buyer reports and the seller has not goes to `disputed`
+        rather than here.
 
 
         Then three terminals: `accepted` is money back to the buyer and the order closed with
@@ -241,7 +248,10 @@ components:
           type: string
           format: date-time
           nullable: true
-          description: When the return reached the seller and the inspection window opened.
+          description: >
+            When the return leg was reported delivered. Set by either party's report, since it
+            answers "is there anything left to ship" for a later verdict — whose report it was is
+            what `status` says.
         created_at: { type: string, format: date-time }
       required: [id, order_id, buyer_id, status, reason, attachments, deadline_at, seller_decided_at, returned_at, created_at]
 

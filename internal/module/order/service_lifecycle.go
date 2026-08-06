@@ -641,7 +641,7 @@ func (s *Service) advanceRefund(ctx context.Context, r domain.Refund) (bool, err
 		return false, nil
 	}
 	if escalated {
-		s.publishRefundEscalated(ctx, r, o)
+		s.publishRefundEscalated(ctx, r, o, EscalationUnanswered)
 	}
 	return true, nil
 }
@@ -706,11 +706,12 @@ func (s *Service) escalateConfirmation(ctx context.Context, o domain.Order) erro
 	return nil
 }
 
-// publishRefundEscalated asks trust to open the ticket for a refund the seller ran out of time
-// on. Best-effort like every other publish here: the refund is already `disputed`, so the worst a
-// lost event costs is a case staff have to find in the queue rather than in their inbox.
-func (s *Service) publishRefundEscalated(ctx context.Context, r domain.Refund, o domain.Order) {
-	event := RefundEscalated{RefundID: r.ID, OrderID: o.ID, BuyerID: o.BuyerID}
+// publishRefundEscalated asks trust to open the ticket for a refund that reached staff with nobody
+// having written one. Best-effort like every other publish here: the refund is already `disputed`,
+// so the worst a lost event costs is a case staff have to find in the queue rather than in their
+// inbox.
+func (s *Service) publishRefundEscalated(ctx context.Context, r domain.Refund, o domain.Order, cause string) {
+	event := RefundEscalated{RefundID: r.ID, OrderID: o.ID, BuyerID: o.BuyerID, Cause: cause}
 	if err := publishRefundEscalated(ctx, s.bus, event); err != nil {
 		s.log.Error("publish refund escalated failed", "refund_id", r.ID, "err", err)
 	}

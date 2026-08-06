@@ -116,19 +116,26 @@ func SubscribeResolvedRefunds(bus eventbus.Client, svc trustapi.Service, log *sl
 	})
 }
 
-// SubscribeEscalatedRefunds opens the ticket for a refund whose seller ran out of time. Order
-// moved the case to `disputed` itself and published this; the buyer never has to know they were
-// meant to chase it, which is the whole point of the change.
+// SubscribeEscalatedRefunds opens the ticket for a refund that reached staff with nobody having
+// written one — a seller who ran out of time, or a return only the buyer says arrived. Order moved
+// the case to `disputed` itself and published this; the buyer never has to know they were meant to
+// chase it, which is the whole point of the change.
 //
 // The requester is the buyer: they raised the refund and they are the one owed an answer. Filed
 // against the order, like every refund-dispute ticket, so a seller's later complaint about what
 // came back lands in the same queue against the same sale.
 func SubscribeEscalatedRefunds(bus eventbus.Client, svc trustapi.Service, log *slog.Logger) {
 	eventbus.Subscribe(bus, order.RefundEscalatedTopic, "trust", func(ctx context.Context, event order.RefundEscalated) error {
+		// The cause decides the wording, because the two need a different first move: one is a
+		// seller to chase, the other is a delivery to verify before the escrow follows it.
+		subject := "Refund not answered by the seller"
+		if event.Cause == order.EscalationReturnClaimed {
+			subject = "Return reported by the buyer, unconfirmed by the seller"
+		}
 		req := trustapi.OpenTicketRequest{
 			ActorID: id.Of[id.Account](event.BuyerID),
 			Kind:    domain.KindRefundDispute,
-			Subject: "Refund not answered by the seller",
+			Subject: subject,
 			RefID:   id.Of[id.Order](event.OrderID).String(),
 		}
 		// No opening message: nobody wrote one. A body here would appear in the thread as the
