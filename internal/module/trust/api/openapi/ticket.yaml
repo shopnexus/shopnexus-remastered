@@ -189,7 +189,7 @@ components:
         resolved_at: { type: string, format: date-time, nullable: true }
         resolution_note: { type: string, nullable: true, example: đã xác nhận hàng giả }
         created_at: { type: string, format: date-time }
-      required: [id, kind, subject, status, created_at]
+      required: [id, kind, subject, ref_type, ref_id, reason, status, conversation_id, action_taken, resolved_at, resolution_note, created_at]
 
     TicketPage:
       type: object

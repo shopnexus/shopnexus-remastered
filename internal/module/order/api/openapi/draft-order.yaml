@@ -137,7 +137,7 @@ components:
         variant_id: { $ref: '#/components/schemas/VariantID' }
         price: { type: integer, format: int64, minimum: 1, example: 299000, description: Smallest currency unit }
         attributes: { type: object, additionalProperties: true }
-      required: [variant_id, price]
+      required: [variant_id, price, attributes]
 
     DraftOrder:
       type: object
@@ -161,7 +161,7 @@ components:
           description: >
             Set when the buyer closed it, the expiry did, or a checkout spent it — a session
             is claimed as it is checked out, so exactly one checkout can succeed.
-      required: [id, listing_id, seller_id, name, currency, price_mode, variants, created_at, valid_until]
+      required: [id, listing_id, seller_id, name, currency, price_mode, variants, created_at, valid_until, cancelled_at]
 
     DraftOrderPage:
       type: object

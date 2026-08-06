@@ -299,8 +299,8 @@ components:
                 card:
                     additionalProperties: true
                     description: |
+                        Empty on an ordinary message, so a client reads "no card" as an empty object rather than a missing key.
                         What a system message renders, and for a price negotiation that is `{"offer_id": "ofr_…"}` and nothing else — the terms are read from the offer, so a counter-offer cannot leave an old price on screen. Written only by the backend and rejected on a `user` message, otherwise anyone could send a card that looks like an offer the seller accepted.
-                    nullable: true
                     type: object
                 conversation_id:
                     $ref: '#/components/schemas/ConversationID'
@@ -338,11 +338,16 @@ components:
             required:
                 - id
                 - conversation_id
+                - sender_id
+                - from_support
                 - type
                 - body
                 - attachments
                 - refs
+                - card
                 - created_at
+                - edited_at
+                - deleted_at
             type: object
         MessageID:
             example: msg_agnc1pe4pjb4k
@@ -378,6 +383,7 @@ components:
                 - category
                 - title
                 - payload
+                - read_at
                 - created_at
             type: object
         NotificationCategory:
@@ -440,6 +446,7 @@ components:
                 - quantity
                 - total
                 - currency
+                - reason
                 - created_at
                 - expires_at
             type: object
@@ -497,12 +504,13 @@ components:
                     type: integer
                 url:
                     description: |
-                        Short-lived URL to fetch the bytes. Absent until a module can presign one, so a consumer that needs the bytes has to treat it as "not available yet" rather than as an empty object. Not a stable address: store the id, not this.
+                        Short-lived URL to fetch the bytes. Empty until a module can presign one, so a consumer that needs the bytes has to treat an empty string as "not available yet". Not a stable address: store the id, not this.
                     example: https://cdn.shopnexus.test/o/9f86d081?expires=1785000000
                     format: uri
                     type: string
                 url_expires_at:
                     format: date-time
+                    nullable: true
                     type: string
             required:
                 - id
@@ -510,6 +518,9 @@ components:
                 - object_key
                 - mime
                 - size
+                - checksum
+                - url
+                - url_expires_at
             type: object
         ResourceID:
             example: res_4mx8jd2qr5wtc

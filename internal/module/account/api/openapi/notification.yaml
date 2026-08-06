@@ -128,7 +128,7 @@ components:
           description: >
             Identifies the row together with the feed order, and it is what
             `POST /notifications/read` is given a bound against.
-      required: [category, title, payload, created_at]
+      required: [category, title, payload, read_at, created_at]
 
     NotificationPage:
       type: object

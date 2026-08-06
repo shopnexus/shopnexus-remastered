@@ -44,8 +44,8 @@ components:
           description: Null for a root category.
         name: { type: string, example: Ceramics }
         description: { type: string, example: 'Hand-thrown and slipcast pottery.' }
-        score: { $ref: '#/components/schemas/SimilarityScore' }
-      required: [id, name, description]
+        score: { allOf: [{ $ref: '#/components/schemas/SimilarityScore' }], nullable: true }
+      required: [id, parent_id, name, description, score]
 
     CategoryList:
       type: object

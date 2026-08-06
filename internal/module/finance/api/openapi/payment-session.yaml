@@ -184,7 +184,7 @@ components:
           type: string
           format: date-time
           description: A session still unsettled past this point is voided by a job.
-      required: [id, kind, status, currency, total_amount, outstanding, created_at, expired_at]
+      required: [id, kind, status, currency, total_amount, outstanding, note, created_at, paid_at, expired_at]
 
     PaymentSessionPage:
       type: object
@@ -216,15 +216,14 @@ components:
           description: The leg this one reverses. Set on reversals, null on originals.
         checkout_url:
           type: string
-          nullable: true
-          description: Where to send the payer for this leg. Null once the rail no
+          description: Where to send the payer for this leg. Empty once the rail no
             longer needs it, or for rails that have none.
-        error: { type: string, nullable: true }
+        error: { type: string, description: Empty unless the rail reported a failure on this leg. }
         note: { type: string }
         created_at: { type: string, format: date-time }
         settled_at: { type: string, format: date-time, nullable: true }
         expired_at: { type: string, format: date-time, nullable: true, description: Gateway URL expiry }
-      required: [id, session_id, status, payment_option, amount, currency, note, created_at]
+      required: [id, session_id, status, payment_option, amount, currency, reverses_id, checkout_url, error, note, created_at, settled_at, expired_at]
 
     TransactionList:
       type: object

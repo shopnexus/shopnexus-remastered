@@ -59,8 +59,8 @@ components:
       properties:
         slug: { $ref: '#/components/schemas/TagSlug' }
         description: { type: string, nullable: true, example: 'Made by hand, one at a time.' }
-        score: { $ref: '#/components/schemas/SimilarityScore' }
-      required: [slug]
+        score: { allOf: [{ $ref: '#/components/schemas/SimilarityScore' }], nullable: true }
+      required: [slug, description, score]
 
     TagPage:
       type: object

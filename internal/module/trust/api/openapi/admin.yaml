@@ -140,9 +140,9 @@ components:
           additionalProperties: true
           description: >
             What the ticket is about, shaped by `ref_type`. Fetched from the module that
-            owns it, and absent once that module no longer has it — a listing already
-            taken down.
-      required: [ticket, requester, open_tickets_against_target]
+            owns it, and empty once that module no longer has it — a listing already
+            taken down — as well as on a ticket about nothing in particular.
+      required: [ticket, requester, assignee, resolved_by, open_tickets_against_target, target]
 
     AdminTicketPage:
       type: object

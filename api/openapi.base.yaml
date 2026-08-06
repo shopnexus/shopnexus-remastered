@@ -276,11 +276,11 @@ components:
           format: uri
           example: https://cdn.shopnexus.test/o/9f86d081?expires=1785000000
           description: >
-            Short-lived URL to fetch the bytes. Absent until a module can presign one, so a
-            consumer that needs the bytes has to treat it as "not available yet" rather than as
-            an empty object. Not a stable address: store the id, not this.
-        url_expires_at: { type: string, format: date-time }
-      required: [id, provider, object_key, mime, size]
+            Short-lived URL to fetch the bytes. Empty until a module can presign one, so a
+            consumer that needs the bytes has to treat an empty string as "not available yet".
+            Not a stable address: store the id, not this.
+        url_expires_at: { type: string, format: date-time, nullable: true }
+      required: [id, provider, object_key, mime, size, checksum, url, url_expires_at]
 
     CurrencyCode:
       type: string

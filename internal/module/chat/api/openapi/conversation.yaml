@@ -253,7 +253,7 @@ components:
             caller sent is seen when this is at or past its `created_at`, which is why
             no message carries a delivery status of its own.
         created_at: { type: string, format: date-time }
-      required: [id, counterparty, last_message_at, unread, created_at]
+      required: [id, counterparty, ticket_id, last_message, last_message_at, unread, read_at, counterparty_read_at, created_at]
 
     ConversationPage:
       type: object

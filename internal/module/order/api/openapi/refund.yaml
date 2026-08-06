@@ -243,7 +243,7 @@ components:
           nullable: true
           description: When the return reached the seller and the inspection window opened.
         created_at: { type: string, format: date-time }
-      required: [id, order_id, buyer_id, status, reason, attachments, created_at]
+      required: [id, order_id, buyer_id, status, reason, attachments, deadline_at, seller_decided_at, returned_at, created_at]
 
     RefundPage:
       type: object

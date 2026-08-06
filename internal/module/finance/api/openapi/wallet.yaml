@@ -116,16 +116,15 @@ components:
             an address: nothing accepts it as input and no endpoint resolves it.
         ref_type:
           type: string
-          nullable: true
-          enum: [order, payment-session]
-          description: What this movement was for. Null on an adjustment.
+          enum: ['', order, payment-session]
+          description: What this movement was for. Empty on an adjustment, which references nothing.
         ref_id:
           type: string
-          nullable: true
-          description: Opaque id of the referenced entity, its prefix given by `ref_type`.
+          description: Opaque id of the referenced entity, its prefix given by `ref_type`. Empty
+            when `ref_type` is.
         note: { type: string }
         created_at: { type: string, format: date-time }
-      required: [seq, currency, kind, available_delta, held_delta, available_after, held_after, note, created_at]
+      required: [seq, currency, kind, available_delta, held_delta, available_after, held_after, ref_type, ref_id, note, created_at]
 
     WalletTransactionPage:
       type: object

@@ -82,7 +82,7 @@ components:
             When the document itself runs out. A payout gate reads this as well as
             the status.
         created_at: { type: string, format: date-time }
-      required: [id, doc_type, provider, status, created_at]
+      required: [id, doc_type, provider, status, rejection_reason, verified_at, expires_at, created_at]
 
     IdentityDocumentList:
       type: object
@@ -128,4 +128,4 @@ components:
           nullable: true
           description: Where the caller finishes the check with the vendor.
         vendor_session_expires_at: { type: string, format: date-time, nullable: true }
-      required: [document]
+      required: [document, vendor_session_url, vendor_session_expires_at]

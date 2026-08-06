@@ -234,7 +234,7 @@ components:
         locale: { type: string, example: vi-VN }
         timezone: { type: string, example: Asia/Ho_Chi_Minh }
         created_at: { type: string, format: date-time }
-      required: [name, country, locale, timezone, created_at]
+      required: [name, description, gender, date_of_birth, avatar, country, locale, timezone, created_at]
 
     Me:
       type: object
@@ -257,7 +257,7 @@ components:
             gate reads this.
         profile: { $ref: '#/components/schemas/Profile' }
         created_at: { type: string, format: date-time }
-      required: [id, email_verified, role, status, has_password, identity_verified, profile, created_at]
+      required: [id, email, email_verified, phone, username, role, status, has_password, identity_verified, profile, created_at]
 
     PublicAccount:
       type: object
@@ -272,7 +272,7 @@ components:
         identity_verified: { type: boolean, description: Shown as a trust signal. }
         follower_count: { type: integer, format: int64, minimum: 0, example: 1240 }
         created_at: { type: string, format: date-time, description: Member since. }
-      required: [id, name, identity_verified, follower_count, created_at]
+      required: [id, name, description, avatar, identity_verified, follower_count, created_at]
 
     AccountSummary:
       type: object
@@ -281,7 +281,7 @@ components:
         id: { $ref: '#/components/schemas/AccountID' }
         name: { type: string, example: Nguyễn Văn An }
         avatar: { allOf: [{ $ref: '#/components/schemas/Resource' }], nullable: true }
-      required: [id, name]
+      required: [id, name, avatar]
 
     AccountSummaryPage:
       type: object

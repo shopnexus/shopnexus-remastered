@@ -206,7 +206,7 @@ components:
         suspension_reason: { type: string, nullable: true }
         identity_verified: { type: boolean }
         created_at: { type: string, format: date-time }
-      required: [id, email_verified, name, role, status, identity_verified, created_at]
+      required: [id, email, email_verified, phone, username, name, role, status, suspended_until, suspension_reason, identity_verified, created_at]
 
     AdminAccountPage:
       type: object

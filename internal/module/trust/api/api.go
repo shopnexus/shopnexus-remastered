@@ -277,7 +277,8 @@ type AdminTicket struct {
 	// OpenTicketsAgainstTarget is the pattern a decision rests on rather than one complaint.
 	OpenTicketsAgainstTarget int64 `json:"open_tickets_against_target"`
 	// Target is what the ticket is about, shaped by RefType and fetched from the module that owns
-	// it. Null when that module no longer has it — a listing already taken down.
+	// it. Empty — a nil map goes out as {} — once that module no longer has it, a listing already
+	// taken down.
 	Target map[string]any `json:"target"`
 }
 

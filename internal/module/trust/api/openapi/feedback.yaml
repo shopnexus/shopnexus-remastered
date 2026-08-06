@@ -114,7 +114,7 @@ components:
             Null while the rating is still blind. Only published feedback is visible
             to anyone but its author and counted towards reputation.
         created_at: { type: string, format: date-time }
-      required: [id, order_id, rater, ratee_id, direction, rating, comment, created_at]
+      required: [id, order_id, rater, ratee_id, direction, rating, comment, published_at, created_at]
 
     FeedbackPage:
       type: object
@@ -147,7 +147,7 @@ components:
             visible, whether or not both sides rated. Null once both are published.
             Exposed for the same reason the order module exposes its deadlines: a
             client that cannot count down has to guess.
-      required: [theirs_submitted]
+      required: [mine, theirs, theirs_submitted, reveal_at]
 
     SubmitFeedbackRequest:
       type: object

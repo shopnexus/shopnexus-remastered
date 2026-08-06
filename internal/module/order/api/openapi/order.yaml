@@ -333,7 +333,7 @@ components:
         district_code: { type: string, nullable: true, example: '760', description: Null where the country has no district tier }
         ward_code: { type: string, example: '26743' }
         address_detail: { type: string, nullable: true, example: 'Apt 4B, 12 Nguyen Hue', description: 'The street line and anything below it' }
-      required: [full_name, phone, country]
+      required: [full_name, phone, country, province_code, district_code, ward_code, address_detail]
 
     Order:
       type: object
@@ -366,6 +366,7 @@ components:
             paid, and a column would be a second answer to the same question.
         currency: { $ref: '#/components/schemas/CurrencyCode' }
         transport:
+          nullable: true
           allOf: [{ $ref: '#/components/schemas/Transport' }]
           description: >
             The shipment, carried in full rather than as an id: it has no read of its own
@@ -422,7 +423,7 @@ components:
         created_at: { type: string, format: date-time }
         completed_at: { type: string, format: date-time, nullable: true, description: Set when the payout is claimed }
         cancelled_at: { type: string, format: date-time, nullable: true }
-      required: [id, buyer, seller, address, pickup_address, state, total, currency, receipt_attachments, created_at]
+      required: [id, draft_id, offer_id, buyer, seller, address, pickup_address, items, state, total, currency, transport, confirmed_at, confirmation_deadline_at, decline_reason, received_at, receipt_attachments, payout_deadline_at, payout_released_at, created_at, completed_at, cancelled_at]
 
     MoneyByCurrency:
       type: object

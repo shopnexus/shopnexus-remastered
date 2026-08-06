@@ -214,7 +214,7 @@ components:
             Per-carrier territory ids. Carriers number territories their own way and
             some still require a district.
         created_at: { type: string, format: date-time }
-      required: [id, full_name, phone, phone_verified, address_type, is_default_delivery, is_default_pickup, country, province_code, province_name, ward_code, ward_name, address, created_at]
+      required: [id, full_name, phone, phone_verified, address_type, is_default_delivery, is_default_pickup, country, province_code, province_name, district_code, district_name, ward_code, ward_name, postal_code, address, address_detail, latitude, longitude, provider_codes, created_at]
 
     ContactList:
       type: object

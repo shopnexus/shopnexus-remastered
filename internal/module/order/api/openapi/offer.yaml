@@ -268,7 +268,7 @@ components:
         reason: { type: string, description: Shown on the offer card beside the proposed price }
         created_at: { type: string, format: date-time }
         expires_at: { type: string, format: date-time }
-      required: [id, listing_id, variant_id, buyer_id, seller_id, author_id, status, quantity, total, currency, created_at, expires_at]
+      required: [id, listing_id, variant_id, buyer_id, seller_id, author_id, status, quantity, total, currency, reason, created_at, expires_at]
 
     OfferPage:
       type: object

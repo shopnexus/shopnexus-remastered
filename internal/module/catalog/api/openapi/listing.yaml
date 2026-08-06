@@ -507,7 +507,7 @@ components:
           additionalProperties: { type: string }
           description: Send these with the PUT verbatim, when the signature covers any.
         expires_at: { type: string, format: date-time }
-      required: [resource_id, url, expires_at]
+      required: [resource_id, url, headers, expires_at]
 
     SimilarityScore:
       type: number
@@ -649,8 +649,8 @@ components:
           example: bán iphone 12 64gb pin 89 phần trăm, năm triệu
           description: >
             What the voice note was heard as, echoed so the seller can see why a field is wrong rather
-            than guess. Absent when they sent no recording.
-      required: [name, description, category_id, condition, tags, price, weight_g]
+            than guess. Empty when they sent no recording.
+      required: [name, description, category_id, condition, tags, price, weight_g, specifications, transcript]
 
     PublishListingRequest:
       type: object
@@ -679,6 +679,7 @@ components:
         ward_code: { type: string, example: '26734' }
         ward_name: { type: string, example: Bến Nghé }
         distance_km:
+          nullable: true
           type: number
           format: double
           minimum: 0
@@ -686,7 +687,7 @@ components:
           description: >
             How far the goods are from where the buyer said they are. Absent unless the browse sent
             a position, and absent for an address that was never geocoded.
-      required: [province_code, province_name, district_code, district_name, ward_code, ward_name]
+      required: [province_code, province_name, district_code, district_name, ward_code, ward_name, distance_km]
 
     Listing:
       type: object
@@ -745,7 +746,7 @@ components:
             Whether the caller has this on their wishlist. False for an anonymous
             request. A plain join, because the wishlist is a catalog table — the client
             never has to fetch its own saves to know which hearts to fill in.
-        score: { $ref: '#/components/schemas/SimilarityScore' }
+        score: { allOf: [{ $ref: '#/components/schemas/SimilarityScore' }], nullable: true }
         tags:
           type: array
           items: { $ref: '#/components/schemas/TagSlug' }
@@ -775,7 +776,7 @@ components:
             Set on a listing the seller removed. Only an `ids` lookup returns one, so
             that an order or a cart referencing it can still be rendered.
         created_at: { type: string, format: date-time }
-      required: [id, slug, name, status, condition, price_mode, currency, price, sold, rating, review_count, category_id, seller, favorited, created_at]
+      required: [id, slug, name, status, condition, price_mode, currency, price, sold, cover, rating, review_count, category_id, seller, favorited, score, tags, taken_down_at, location, deleted_at, created_at]
 
     ListingDetail:
       type: object
@@ -842,7 +843,7 @@ components:
             down *now* rather than why it once was.
         created_at: { type: string, format: date-time }
         deleted_at: { type: string, format: date-time, nullable: true, description: 'Set on a listing the seller removed.' }
-      required: [id, slug, name, description, status, condition, price_mode, currency, specifications, images, category, tags, variants, sold, rating, review_count, seller, favorited, favorite_count, created_at]
+      required: [location, id, slug, name, description, status, condition, price_mode, currency, specifications, images, category, tags, variants, featured_variant_id, sold, rating, review_count, seller, favorited, favorite_count, pending_edit, taken_down_at, takedown_reason, created_at, deleted_at]
 
     ListingPage:
       type: object
@@ -900,11 +901,12 @@ components:
         UpdateListingRequest and only those: an edit that could carry anything would be a
         blob nobody can diff or review.
       properties:
-        name: { type: string, minLength: 1, maxLength: 200, example: Áo thun Uniqlo cổ tròn xanh navy }
-        description: { type: string, maxLength: 20000 }
-        category_id: { $ref: '#/components/schemas/CategoryID' }
-        condition: { $ref: '#/components/schemas/ListingCondition' }
-        price_mode: { $ref: '#/components/schemas/PriceMode' }
+        name: { type: string, minLength: 1, maxLength: 200, example: Áo thun Uniqlo cổ tròn xanh navy, nullable: true }
+        description: { type: string, maxLength: 20000, nullable: true }
+        category_id: { allOf: [{ $ref: '#/components/schemas/CategoryID' }], nullable: true }
+        condition: { allOf: [{ $ref: '#/components/schemas/ListingCondition' }], nullable: true }
+        price_mode: { allOf: [{ $ref: '#/components/schemas/PriceMode' }], nullable: true }
         specifications: { type: object, additionalProperties: true }
         attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
         tags: { type: array, items: { $ref: '#/components/schemas/TagSlug' } }
+      required: [name, description, category_id, condition, price_mode, specifications, attachments, tags]

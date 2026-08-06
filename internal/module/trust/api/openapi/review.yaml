@@ -284,7 +284,7 @@ components:
           enum: [-1, 1]
           nullable: true
           description: The caller's own vote. Null when they have not voted.
-      required: [helpful, not_helpful]
+      required: [helpful, not_helpful, my_vote]
 
     ReviewReply:
       type: object
@@ -323,7 +323,7 @@ components:
           description: >
             Null until the author edits it. A review rewritten after the seller answered it
             should say so, and the reply thread cannot say it on its own.
-      required: [id, listing_id, author, rating, body, attachments, replies, reply_count, votes, created_at]
+      required: [id, listing_id, author, rating, body, attachments, replies, reply_count, votes, created_at, updated_at]
 
     ReviewPage:
       type: object

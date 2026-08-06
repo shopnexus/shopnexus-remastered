@@ -152,9 +152,9 @@ components:
           example: mock
           description: Staff only. The implementation serving this row — what an admin changes to
             move it to another vendor.
-        is_enabled: { type: boolean, example: true, description: 'Staff only. A row switched off is not offered, but stays resolvable for the records naming it.' }
-        priority: { type: integer, minimum: 0, maximum: 1000, example: 90, description: 'Staff only. Display order, highest first.' }
-      required: [id, name, description]
+        is_enabled: { type: boolean, example: true, description: 'Staff only. A row switched off is not offered, but stays resolvable for the records naming it.', nullable: true }
+        priority: { type: integer, minimum: 0, maximum: 1000, example: 90, description: 'Staff only. Display order, highest first.', nullable: true }
+      required: [id, name, description, provider, is_enabled, priority]
 
     OptionList:
       type: object
@@ -168,7 +168,7 @@ components:
           example: [mock]
           description: Staff only. What a row's `provider` may be set to in this deployment, so a
             switch is a choice from a list rather than a guess.
-      required: [options]
+      required: [options, providers]
 
     SaveOptionRequest:
       type: object

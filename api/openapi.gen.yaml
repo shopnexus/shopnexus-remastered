@@ -139,6 +139,7 @@ components:
             required:
                 - id
                 - name
+                - avatar
             type: object
         AccountSummaryPage:
             properties:
@@ -214,10 +215,15 @@ components:
                     type: string
             required:
                 - id
+                - email
                 - email_verified
+                - phone
+                - username
                 - name
                 - role
                 - status
+                - suspended_until
+                - suspension_reason
                 - identity_verified
                 - created_at
             type: object
@@ -267,14 +273,17 @@ components:
                 target:
                     additionalProperties: true
                     description: |
-                        What the ticket is about, shaped by `ref_type`. Fetched from the module that owns it, and absent once that module no longer has it — a listing already taken down.
+                        What the ticket is about, shaped by `ref_type`. Fetched from the module that owns it, and empty once that module no longer has it — a listing already taken down — as well as on a ticket about nothing in particular.
                     type: object
                 ticket:
                     $ref: '#/components/schemas/Ticket'
             required:
                 - ticket
                 - requester
+                - assignee
+                - resolved_by
                 - open_tickets_against_target
+                - target
             type: object
         AdminTicketPage:
             properties:
@@ -419,11 +428,15 @@ components:
                     description: Null for a root category.
                     nullable: true
                 score:
-                    $ref: '#/components/schemas/SimilarityScore'
+                    allOf:
+                        - $ref: '#/components/schemas/SimilarityScore'
+                    nullable: true
             required:
                 - id
+                - parent_id
                 - name
                 - description
+                - score
             type: object
         CategoryID:
             example: cat_7v2p41ryaj811
@@ -662,9 +675,16 @@ components:
                 - country
                 - province_code
                 - province_name
+                - district_code
+                - district_name
                 - ward_code
                 - ward_name
+                - postal_code
                 - address
+                - address_detail
+                - latitude
+                - longitude
+                - provider_codes
                 - created_at
             type: object
         ContactAddressType:
@@ -732,8 +752,12 @@ components:
             required:
                 - id
                 - counterparty
+                - ticket_id
+                - last_message
                 - last_message_at
                 - unread
+                - read_at
+                - counterparty_read_at
                 - created_at
             type: object
         ConversationID:
@@ -1224,6 +1248,7 @@ components:
                 - variants
                 - created_at
                 - valid_until
+                - cancelled_at
             type: object
         DraftOrderID:
             example: drf_8kvq1wd6ptz3n
@@ -1259,6 +1284,7 @@ components:
             required:
                 - variant_id
                 - price
+                - attributes
             type: object
         EmailVerificationRequest:
             properties:
@@ -1356,6 +1382,7 @@ components:
                 - direction
                 - rating
                 - comment
+                - published_at
                 - created_at
             type: object
         FeedbackDirection:
@@ -1413,6 +1440,9 @@ components:
                 - doc_type
                 - provider
                 - status
+                - rejection_reason
+                - verified_at
+                - expires_at
                 - created_at
             type: object
         IdentityDocumentID:
@@ -1485,6 +1515,8 @@ components:
                     type: string
             required:
                 - document
+                - vendor_session_url
+                - vendor_session_expires_at
             type: object
         Listing:
             description: The card shown in a feed. `GET /listings/{id}` returns the full form.
@@ -1548,7 +1580,9 @@ components:
                     minimum: 0
                     type: integer
                 score:
-                    $ref: '#/components/schemas/SimilarityScore'
+                    allOf:
+                        - $ref: '#/components/schemas/SimilarityScore'
+                    nullable: true
                 seller:
                     $ref: '#/components/schemas/AccountSummary'
                 slug:
@@ -1589,11 +1623,17 @@ components:
                 - currency
                 - price
                 - sold
+                - cover
                 - rating
                 - review_count
                 - category_id
                 - seller
                 - favorited
+                - score
+                - tags
+                - taken_down_at
+                - location
+                - deleted_at
                 - created_at
             type: object
         ListingCondition:
@@ -1709,6 +1749,7 @@ components:
                         $ref: '#/components/schemas/Variant'
                     type: array
             required:
+                - location
                 - id
                 - slug
                 - name
@@ -1722,13 +1763,18 @@ components:
                 - category
                 - tags
                 - variants
+                - featured_variant_id
                 - sold
                 - rating
                 - review_count
                 - seller
                 - favorited
                 - favorite_count
+                - pending_edit
+                - taken_down_at
+                - takedown_reason
                 - created_at
+                - deleted_at
             type: object
         ListingID:
             example: lst_5y5w68r4918v8
@@ -1744,6 +1790,7 @@ components:
                     example: 2.4
                     format: double
                     minimum: 0
+                    nullable: true
                     type: number
                 district_code:
                     description: Null where the country has no district tier. Code and name travel together.
@@ -1773,6 +1820,7 @@ components:
                 - district_name
                 - ward_code
                 - ward_name
+                - distance_km
             type: object
         ListingPage:
             description: |
@@ -1841,7 +1889,7 @@ components:
                     type: array
                 transcript:
                     description: |
-                        What the voice note was heard as, echoed so the seller can see why a field is wrong rather than guess. Absent when they sent no recording.
+                        What the voice note was heard as, echoed so the seller can see why a field is wrong rather than guess. Empty when they sent no recording.
                     example: bán iphone 12 64gb pin 89 phần trăm, năm triệu
                     type: string
                 weight_g:
@@ -1859,6 +1907,8 @@ components:
                 - tags
                 - price
                 - weight_g
+                - specifications
+                - transcript
             type: object
         LoginRequest:
             properties:
@@ -1926,7 +1976,10 @@ components:
                     type: string
             required:
                 - id
+                - email
                 - email_verified
+                - phone
+                - username
                 - role
                 - status
                 - has_password
@@ -1947,8 +2000,8 @@ components:
                 card:
                     additionalProperties: true
                     description: |
+                        Empty on an ordinary message, so a client reads "no card" as an empty object rather than a missing key.
                         What a system message renders, and for a price negotiation that is `{"offer_id": "ofr_…"}` and nothing else — the terms are read from the offer, so a counter-offer cannot leave an old price on screen. Written only by the backend and rejected on a `user` message, otherwise anyone could send a card that looks like an offer the seller accepted.
-                    nullable: true
                     type: object
                 conversation_id:
                     $ref: '#/components/schemas/ConversationID'
@@ -1986,11 +2039,16 @@ components:
             required:
                 - id
                 - conversation_id
+                - sender_id
+                - from_support
                 - type
                 - body
                 - attachments
                 - refs
+                - card
                 - created_at
+                - edited_at
+                - deleted_at
             type: object
         MessageID:
             example: msg_agnc1pe4pjb4k
@@ -2058,6 +2116,7 @@ components:
                 - category
                 - title
                 - payload
+                - read_at
                 - created_at
             type: object
         NotificationCategory:
@@ -2212,6 +2271,7 @@ components:
                 - quantity
                 - total
                 - currency
+                - reason
                 - created_at
                 - expires_at
             type: object
@@ -2292,6 +2352,7 @@ components:
                 is_enabled:
                     description: Staff only. A row switched off is not offered, but stays resolvable for the records naming it.
                     example: true
+                    nullable: true
                     type: boolean
                 name:
                     description: What to show the chooser.
@@ -2303,6 +2364,7 @@ components:
                     example: 90
                     maximum: 1000
                     minimum: 0
+                    nullable: true
                     type: integer
                 provider:
                     description: Staff only. The implementation serving this row — what an admin changes to move it to another vendor.
@@ -2313,6 +2375,9 @@ components:
                 - id
                 - name
                 - description
+                - provider
+                - is_enabled
+                - priority
             type: object
         OptionCategoryName:
             description: |
@@ -2339,6 +2404,7 @@ components:
                     type: array
             required:
                 - options
+                - providers
             type: object
         Order:
             properties:
@@ -2435,17 +2501,30 @@ components:
                         - $ref: '#/components/schemas/Transport'
                     description: |
                         The shipment, carried in full rather than as an id: it has no read of its own outside the order it belongs to.
+                    nullable: true
             required:
                 - id
+                - draft_id
+                - offer_id
                 - buyer
                 - seller
                 - address
                 - pickup_address
+                - items
                 - state
                 - total
                 - currency
+                - transport
+                - confirmed_at
+                - confirmation_deadline_at
+                - decline_reason
+                - received_at
                 - receipt_attachments
+                - payout_deadline_at
+                - payout_released_at
                 - created_at
+                - completed_at
+                - cancelled_at
             type: object
         OrderAddressSnapshot:
             description: |
@@ -2484,6 +2563,10 @@ components:
                 - full_name
                 - phone
                 - country
+                - province_code
+                - district_code
+                - ward_code
+                - address_detail
             type: object
         OrderFeedback:
             description: |
@@ -2509,7 +2592,10 @@ components:
                         Whether the counterparty has rated at all. Shown while their rating is still blind so the caller knows a reveal is coming.
                     type: boolean
             required:
+                - mine
+                - theirs
                 - theirs_submitted
+                - reveal_at
             type: object
         OrderID:
             example: ord_fv2cpg50vkrfp
@@ -2570,6 +2656,7 @@ components:
                     $ref: '#/components/schemas/VariantID'
             required:
                 - id
+                - order_id
                 - listing_id
                 - variant_id
                 - seller_id
@@ -2578,6 +2665,8 @@ components:
                 - total_amount
                 - transport_option
                 - payment_session_id
+                - note
+                - cancelled_at
                 - created_at
             type: object
         OrderItemID:
@@ -2793,7 +2882,9 @@ components:
                 - currency
                 - total_amount
                 - outstanding
+                - note
                 - created_at
+                - paid_at
                 - expired_at
             type: object
         PaymentSessionID:
@@ -2837,19 +2928,27 @@ components:
                         $ref: '#/components/schemas/ResourceID'
                     type: array
                 category_id:
-                    $ref: '#/components/schemas/CategoryID'
+                    allOf:
+                        - $ref: '#/components/schemas/CategoryID'
+                    nullable: true
                 condition:
-                    $ref: '#/components/schemas/ListingCondition'
+                    allOf:
+                        - $ref: '#/components/schemas/ListingCondition'
+                    nullable: true
                 description:
                     maxLength: 20000
+                    nullable: true
                     type: string
                 name:
                     example: Áo thun Uniqlo cổ tròn xanh navy
                     maxLength: 200
                     minLength: 1
+                    nullable: true
                     type: string
                 price_mode:
-                    $ref: '#/components/schemas/PriceMode'
+                    allOf:
+                        - $ref: '#/components/schemas/PriceMode'
+                    nullable: true
                 specifications:
                     additionalProperties: true
                     type: object
@@ -2857,6 +2956,15 @@ components:
                     items:
                         $ref: '#/components/schemas/TagSlug'
                     type: array
+            required:
+                - name
+                - description
+                - category_id
+                - condition
+                - price_mode
+                - specifications
+                - attachments
+                - tags
             type: object
         PriceMode:
             description: |
@@ -2904,6 +3012,10 @@ components:
                     type: string
             required:
                 - name
+                - description
+                - gender
+                - date_of_birth
+                - avatar
                 - country
                 - locale
                 - timezone
@@ -2946,6 +3058,8 @@ components:
             required:
                 - id
                 - name
+                - description
+                - avatar
                 - identity_verified
                 - follower_count
                 - created_at
@@ -3019,6 +3133,9 @@ components:
                 - status
                 - reason
                 - attachments
+                - deadline_at
+                - seller_decided_at
+                - returned_at
                 - created_at
             type: object
         RefundID:
@@ -3228,12 +3345,13 @@ components:
                     type: integer
                 url:
                     description: |
-                        Short-lived URL to fetch the bytes. Absent until a module can presign one, so a consumer that needs the bytes has to treat it as "not available yet" rather than as an empty object. Not a stable address: store the id, not this.
+                        Short-lived URL to fetch the bytes. Empty until a module can presign one, so a consumer that needs the bytes has to treat an empty string as "not available yet". Not a stable address: store the id, not this.
                     example: https://cdn.shopnexus.test/o/9f86d081?expires=1785000000
                     format: uri
                     type: string
                 url_expires_at:
                     format: date-time
+                    nullable: true
                     type: string
             required:
                 - id
@@ -3241,6 +3359,9 @@ components:
                 - object_key
                 - mime
                 - size
+                - checksum
+                - url
+                - url_expires_at
             type: object
         ResourceID:
             example: res_4mx8jd2qr5wtc
@@ -3298,6 +3419,7 @@ components:
                 - reply_count
                 - votes
                 - created_at
+                - updated_at
             type: object
         ReviewID:
             example: rvw_qk4mfx7bd32h9
@@ -3364,6 +3486,7 @@ components:
             required:
                 - helpful
                 - not_helpful
+                - my_vote
             type: object
         SaveOptionRequest:
             description: The operator's edit. Every field is optional; absent leaves it alone.
@@ -3677,11 +3800,15 @@ components:
                     nullable: true
                     type: string
                 score:
-                    $ref: '#/components/schemas/SimilarityScore'
+                    allOf:
+                        - $ref: '#/components/schemas/SimilarityScore'
+                    nullable: true
                 slug:
                     $ref: '#/components/schemas/TagSlug'
             required:
                 - slug
+                - description
+                - score
             type: object
         TagPage:
             properties:
@@ -3823,7 +3950,14 @@ components:
                 - id
                 - kind
                 - subject
+                - ref_type
+                - ref_id
+                - reason
                 - status
+                - conversation_id
+                - action_taken
+                - resolved_at
+                - resolution_note
                 - created_at
             type: object
         TicketAction:
@@ -3919,8 +4053,7 @@ components:
                     format: int64
                     type: integer
                 checkout_url:
-                    description: Where to send the payer for this leg. Null once the rail no longer needs it, or for rails that have none.
-                    nullable: true
+                    description: Where to send the payer for this leg. Empty once the rail no longer needs it, or for rails that have none.
                     type: string
                 created_at:
                     format: date-time
@@ -3930,7 +4063,7 @@ components:
                         - $ref: '#/components/schemas/CurrencyCode'
                     description: What the rail actually debits, which split tender may make differ from the session's currency.
                 error:
-                    nullable: true
+                    description: Empty unless the rail reported a failure on this leg.
                     type: string
                 expired_at:
                     description: Gateway URL expiry
@@ -3964,8 +4097,13 @@ components:
                 - payment_option
                 - amount
                 - currency
+                - reverses_id
+                - checkout_url
+                - error
                 - note
                 - created_at
+                - settled_at
+                - expired_at
             type: object
         TransactionID:
             example: txn_5wtc4mx8jd2qr
@@ -4411,6 +4549,7 @@ components:
             required:
                 - resource_id
                 - url
+                - headers
                 - expires_at
             type: object
         UpsertTaxInfoRequest:
@@ -4603,15 +4742,14 @@ components:
                 note:
                     type: string
                 ref_id:
-                    description: Opaque id of the referenced entity, its prefix given by `ref_type`.
-                    nullable: true
+                    description: Opaque id of the referenced entity, its prefix given by `ref_type`. Empty when `ref_type` is.
                     type: string
                 ref_type:
-                    description: What this movement was for. Null on an adjustment.
+                    description: What this movement was for. Empty on an adjustment, which references nothing.
                     enum:
+                        - ""
                         - order
                         - payment-session
-                    nullable: true
                     type: string
                 seq:
                     description: |
@@ -4628,6 +4766,8 @@ components:
                 - held_delta
                 - available_after
                 - held_after
+                - ref_type
+                - ref_id
                 - note
                 - created_at
             type: object

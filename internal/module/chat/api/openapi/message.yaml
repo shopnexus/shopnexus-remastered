@@ -160,8 +160,10 @@ components:
         card:
           type: object
           additionalProperties: true
-          nullable: true
           description: >
+            Empty on an ordinary message, so a client reads "no card" as an empty object rather
+            than a missing key.
+
             What a system message renders, and for a price negotiation that is
             `{"offer_id": "ofr_…"}` and nothing else — the terms are read from the offer, so a
             counter-offer cannot leave an old price on screen. Written only by the backend and
@@ -175,7 +177,7 @@ components:
           nullable: true
           description: Set on a redacted message. The row stays so a thread has no
             unexplained gaps.
-      required: [id, conversation_id, type, body, attachments, refs, created_at]
+      required: [id, conversation_id, sender_id, from_support, type, body, attachments, refs, card, created_at, edited_at, deleted_at]
 
     MessagePage:
       type: object

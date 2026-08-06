@@ -85,7 +85,7 @@ components:
         note: { type: string, example: Please leave at reception, description: 'Buyer note, per checkout' }
         cancelled_at: { type: string, format: date-time, nullable: true }
         created_at: { type: string, format: date-time }
-      required: [id, listing_id, variant_id, seller_id, quantity, currency, total_amount, transport_option, payment_session_id, created_at]
+      required: [id, order_id, listing_id, variant_id, seller_id, quantity, currency, total_amount, transport_option, payment_session_id, note, cancelled_at, created_at]
 
     OrderItemPage:
       type: object
