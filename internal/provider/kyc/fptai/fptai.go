@@ -11,6 +11,10 @@
 // Both answer HTTP 200 with a status *inside* the body, so a failure has to be read out
 // of the payload rather than off the status line.
 //
+// The face comparison decides on its own at both ends of the scale and hands the middle to
+// a moderator (faceMatchThreshold, faceReviewThreshold). An automatic pass needs the
+// vendor's boolean *and* its score to agree, because they are reported independently.
+//
 // Document types FPT.AI does not read here — a passport, a driver licence — come back
 // pending rather than rejected: "we did not check this" and "this is not you" are
 // different answers, and only a moderator can give the first one a verdict.
@@ -46,10 +50,29 @@ const (
 	// maxErrorBody caps what is read from an unexpected response body for the error message.
 	maxErrorBody = 4 << 10
 
-	// faceMatchThreshold is the similarity below which the selfie is treated as somebody
-	// else. FPT.AI returns both a boolean and a score; the score is used as well because
-	// a borderline "match" on a payout gate is worth refusing.
+	// faceMatchThreshold is the similarity at or above which the comparison may decide on
+	// its own — and only with the vendor's boolean agreeing, since the two are reported
+	// independently and can disagree.
 	faceMatchThreshold = 80.0
+	// faceReviewThreshold is where an automated refusal stops being defensible. Between the
+	// two a moderator decides, because the two mistakes do not cost the same: passing a
+	// document wrongly hands somebody the right to sell here, while queueing one wrongly
+	// costs a moderator a minute.
+	faceReviewThreshold = 60.0
+)
+
+// faceBand is what a comparison was worth, not whether it passed. Three values because the
+// gate has three answers, and the one in the middle is the one a boolean could not express.
+type faceBand int
+
+const (
+	// faceMismatch is a score low enough to refuse without a human.
+	faceMismatch faceBand = iota
+	// faceUncertain is a plausible score the vendor would not confirm, or a confirmation
+	// the score does not support. A moderator looks at it.
+	faceUncertain
+	// faceMatch is both signals agreeing.
+	faceMatch
 )
 
 // docExpiryLayout is how FPT.AI prints dates, and noExpiry is what it prints for a
@@ -136,20 +159,29 @@ func (c *Client) Check(ctx context.Context, p kyc.CheckParams) (kyc.Result, erro
 		return result, nil
 	}
 
-	if p.Selfie.Present() {
-		selfie, err := c.download(ctx, p.Selfie)
-		if err != nil {
-			return kyc.Result{}, err
-		}
-		matched, reason, err := c.matchFace(ctx, front, selfie)
-		if err != nil {
-			return kyc.Result{}, err
-		}
-		if !matched {
-			result.Status = kyc.StatusRejected
-			result.RejectionReason = reason
-			return result, nil
-		}
+	if !p.Selfie.Present() {
+		// Nothing has tied the document to the person holding the account, so there is no
+		// automatic pass to give: the route requires a selfie, and a caller that skipped one
+		// gets a moderator rather than the benefit of the doubt.
+		result.Status = kyc.StatusPending
+		return result, nil
+	}
+	selfie, err := c.download(ctx, p.Selfie)
+	if err != nil {
+		return kyc.Result{}, err
+	}
+	band, reason, err := c.matchFace(ctx, front, selfie)
+	if err != nil {
+		return kyc.Result{}, err
+	}
+	switch band {
+	case faceMismatch:
+		result.Status = kyc.StatusRejected
+		result.RejectionReason = reason
+		return result, nil
+	case faceUncertain:
+		result.Status = kyc.StatusPending
+		return result, nil
 	}
 
 	result.Status = kyc.StatusVerified
@@ -249,23 +281,31 @@ type checkFaceResponse struct {
 	} `json:"data"`
 }
 
-func (c *Client) matchFace(ctx context.Context, front, selfie scan) (matched bool, reason string, err error) {
+// matchFace grades the comparison. The reason is only ever read for a mismatch, since that
+// is the one band this package turns into a refusal on its own.
+func (c *Client) matchFace(ctx context.Context, front, selfie scan) (band faceBand, reason string, err error) {
 	// Both images go in the same repeated field, which is how this endpoint takes its pair.
 	body, contentType, err := multipartBody(map[string][]scan{"file[]": {front, selfie}})
 	if err != nil {
-		return false, "", err
+		return faceMismatch, "", err
 	}
 	var out checkFaceResponse
 	if err := c.post(ctx, faceMatchPath, contentType, body, &out); err != nil {
-		return false, "", err
+		return faceMismatch, "", err
 	}
 	if out.Code != "200" {
-		return false, vendorReason(out.Message, 0), nil
+		// A pair the vendor would not compare at all — no face found, wrong side of the
+		// card. Same answer as an unreadable card: something for the account to retake.
+		return faceMismatch, vendorReason(out.Message, 0), nil
 	}
-	if !out.Data.IsMatch || out.Data.Similarity < faceMatchThreshold {
-		return false, "the selfie does not match the photo on the document", nil
+	switch {
+	case out.Data.Similarity < faceReviewThreshold:
+		return faceMismatch, "the selfie does not match the photo on the document", nil
+	case out.Data.IsMatch && out.Data.Similarity >= faceMatchThreshold:
+		return faceMatch, "", nil
+	default:
+		return faceUncertain, "", nil
 	}
-	return true, "", nil
 }
 
 // post sends one multipart request and decodes the JSON answer.

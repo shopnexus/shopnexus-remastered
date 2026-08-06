@@ -160,8 +160,8 @@ func TestCheck_FaceMismatchIsRejected(t *testing.T) {
 	}
 }
 
-// A borderline "match" is refused too: this gates payouts, and the vendor's boolean is
-// more generous than that decision deserves.
+// A "match" the score does not support is refused outright when the score is low enough to
+// be sure: the vendor's boolean is more generous than a selling licence deserves.
 func TestCheck_LowSimilarityIsRejected(t *testing.T) {
 	v := &vendor{
 		idr:       `{"errorCode":0,"data":[{"doe":"01/02/2030"}]}`,
@@ -175,6 +175,64 @@ func TestCheck_LowSimilarityIsRejected(t *testing.T) {
 	}
 	if got.Status != kyc.StatusRejected {
 		t.Fatalf("status = %q, want rejected on a weak match", got.Status)
+	}
+}
+
+// The three bands, at their edges. The middle one is the whole point: a score good enough
+// that refusing it would be wrong, and not good enough to hand out the right to sell.
+func TestCheck_FaceComparisonHasThreeBands(t *testing.T) {
+	for name, tc := range map[string]struct {
+		checkface string
+		want      kyc.Status
+	}{
+		"both agree":                {checkface: `{"code":"200","data":{"isMatch":true,"similarity":80}}`, want: kyc.StatusVerified},
+		"score at the review floor": {checkface: `{"code":"200","data":{"isMatch":true,"similarity":60}}`, want: kyc.StatusPending},
+		"score just under the pass": {checkface: `{"code":"200","data":{"isMatch":true,"similarity":79.9}}`, want: kyc.StatusPending},
+		"just under the floor":      {checkface: `{"code":"200","data":{"isMatch":true,"similarity":59.9}}`, want: kyc.StatusRejected},
+		// The two signals are independent, so a high score with the boolean withheld is a
+		// disagreement — and a disagreement is not an automatic pass.
+		"vendor withholds its boolean": {checkface: `{"code":"200","data":{"isMatch":false,"similarity":95}}`, want: kyc.StatusPending},
+		"neither signal":               {checkface: `{"code":"200","data":{"isMatch":false,"similarity":10}}`, want: kyc.StatusRejected},
+	} {
+		t.Run(name, func(t *testing.T) {
+			v := &vendor{
+				idr:       `{"errorCode":0,"data":[{"doe":"01/02/2030"}]}`,
+				checkface: tc.checkface,
+			}
+			srv := v.start(t)
+
+			got, err := newClient(t, srv.URL).Check(context.Background(), params(srv.URL, "national-id"))
+			if err != nil {
+				t.Fatalf("Check: %v", err)
+			}
+			if got.Status != tc.want {
+				t.Fatalf("status = %q, want %q", got.Status, tc.want)
+			}
+			// Only a refusal is shown to the account, so only a refusal carries words.
+			if (got.RejectionReason != "") != (tc.want == kyc.StatusRejected) {
+				t.Errorf("reason = %q on a %q verdict", got.RejectionReason, got.Status)
+			}
+		})
+	}
+}
+
+// No selfie means nothing tied the document to the person holding the account. The route
+// requires one; a caller that skipped it gets a moderator, not the benefit of the doubt.
+func TestCheck_MissingSelfieIsPending(t *testing.T) {
+	v := &vendor{idr: `{"errorCode":0,"data":[{"doe":"01/02/2030"}]}`}
+	srv := v.start(t)
+	p := params(srv.URL, "national-id")
+	p.Selfie = kyc.Image{}
+
+	got, err := newClient(t, srv.URL).Check(context.Background(), p)
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if got.Status != kyc.StatusPending {
+		t.Fatalf("status = %q, want pending with no face check", got.Status)
+	}
+	if v.faceCalls != 0 {
+		t.Errorf("face match was called %d times with no selfie", v.faceCalls)
 	}
 }
 
