@@ -87,6 +87,11 @@ type Repository interface {
 	InsertBankAccount(ctx context.Context, b *domain.BankAccount) error
 	FindBankAccount(ctx context.Context, id, accountID int64) (domain.BankAccount, error)
 	ListBankAccounts(ctx context.Context, accountID int64) ([]domain.BankAccount, error)
+	// BankAccountsByIDs resolves the destinations a page of withdrawals names, in one read.
+	// Deliberately unscoped and deliberately including soft-deleted rows: an admin's queue spans
+	// every payee, and a payee who deletes an account must not make their own settled cash-outs
+	// unrenderable — the row is where that money went, whatever they do to it afterwards.
+	BankAccountsByIDs(ctx context.Context, ids []int64) (map[int64]domain.BankAccount, error)
 	SaveBankAccount(ctx context.Context, b domain.BankAccount) error
 	SoftDeleteBankAccount(ctx context.Context, id, accountID int64) error
 

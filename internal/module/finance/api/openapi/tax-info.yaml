@@ -64,9 +64,11 @@ components:
         legal_name: { type: string }
         verification_status: { $ref: '#/components/schemas/TaxVerificationStatus' }
         verified_at: { type: string, format: date-time, nullable: true }
-        created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time, description: 'When the registration was last replaced, which also resets the verdict.' }
-      required: [tax_code, tax_code_type, legal_name, verification_status, created_at, updated_at]
+      # No created_at: the row is replaced wholesale rather than amended, so `updated_at` is the
+      # only instant there is. It was required here and never sent, which made every TaxInfo
+      # undeserialisable to a generated client the moment one existed.
+      required: [tax_code, tax_code_type, legal_name, verification_status, verified_at, updated_at]
 
     UpsertTaxInfoRequest:
       type: object

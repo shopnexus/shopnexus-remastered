@@ -110,17 +110,36 @@ type BankAccount struct {
 	CreatedAt           time.Time             `json:"created_at"`
 }
 
+// How a cash-out ended, stated rather than left to the reader. Five session statuses collapse
+// onto four outcomes, and that mapping is the platform's to own: a client that had to learn it
+// would be one release behind every time a status is added.
+const (
+	WithdrawalAwaitingReview = "awaiting-review"
+	WithdrawalApproved       = "approved"
+	WithdrawalRejected       = "rejected"
+	WithdrawalCancelled      = "cancelled"
+)
+
 // Withdrawal is a cash-out: a payment session of its own kind, plus where the money is
 // going and what an admin decided.
 type Withdrawal struct {
-	ID            id.ID[id.PaymentSession] `json:"id"`
-	Status        string                   `json:"status"`
-	Currency      string                   `json:"currency"`
-	Amount        int64                    `json:"amount"`
-	BankAccountID id.ID[id.BankAccount]    `json:"bank_account_id"`
-	Reason        string                   `json:"reason"`
-	CreatedAt     time.Time                `json:"created_at"`
-	ResolvedAt    *time.Time               `json:"resolved_at"`
+	ID      id.ID[id.PaymentSession] `json:"id"`
+	Outcome string                   `json:"outcome"`
+	// Status is the underlying session's, kept because a withdrawal *is* a payment session and
+	// hiding that would make its id unexplainable. Outcome is what a client renders.
+	Status   string `json:"status"`
+	Currency string `json:"currency"`
+	Amount   int64  `json:"amount"`
+	// BankAccount is where the money went, carried whole rather than as an id: it is the one
+	// thing a payee checks, and a second round trip for it would be a read per row. Resolved
+	// even after they delete the account, because the destination of a settled cash-out is a
+	// historical fact and a list that dropped it could not be rendered at all.
+	BankAccount BankAccount `json:"bank_account"`
+	// ResolvedByID is the admin who decided, and null on one the payee called off themselves.
+	ResolvedByID   *id.ID[id.Account] `json:"resolved_by_id"`
+	ResolvedAt     *time.Time         `json:"resolved_at"`
+	ResolutionNote *string            `json:"resolution_note"`
+	CreatedAt      time.Time          `json:"created_at"`
 }
 
 type WithdrawalPage struct {

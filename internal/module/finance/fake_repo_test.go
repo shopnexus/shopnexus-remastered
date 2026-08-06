@@ -346,6 +346,20 @@ func (f *fakeRepo) FindBankAccount(_ context.Context, payeeID, accountID int64) 
 	return b, nil
 }
 
+// BankAccountsByIDs mirrors the real one's two omissions: no owner scope, and a soft-deleted row
+// still resolves. A withdrawal's destination has to stay renderable after the payee deletes it.
+func (f *fakeRepo) BankAccountsByIDs(_ context.Context, ids []int64) (map[int64]domain.BankAccount, error) {
+	out := make(map[int64]domain.BankAccount, len(ids))
+	for _, want := range ids {
+		for _, b := range f.payees {
+			if b.ID == want {
+				out[b.ID] = b
+			}
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeRepo) ListBankAccounts(_ context.Context, accountID int64) ([]domain.BankAccount, error) {
 	var out []domain.BankAccount
 	for _, b := range f.payees {

@@ -59,6 +59,32 @@ func (r *Repo) FindBankAccount(ctx context.Context, id, accountID int64) (domain
 	return scanBankAccount(r.pool.QueryRow(ctx, q, args))
 }
 
+func (r *Repo) BankAccountsByIDs(ctx context.Context, ids []int64) (map[int64]domain.BankAccount, error) {
+	out := make(map[int64]domain.BankAccount, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	// No account_id and no deleted_at: see the port for why both omissions are the point.
+	const q = `SELECT ` + bankAccountColumns + ` FROM bank_account WHERE id = ANY(@ids)`
+	rows, err := r.pool.Query(ctx, q, pgx.NamedArgs{"ids": dbx.Int64Array(ids)})
+	if err != nil {
+		return nil, fmt.Errorf("db query bank accounts by ids: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		b, err := scanBankAccount(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[b.ID] = b
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db iterate bank accounts: %w", err)
+	}
+	return out, nil
+}
+
 func (r *Repo) ListBankAccounts(ctx context.Context, accountID int64) ([]domain.BankAccount, error) {
 	const q = `SELECT ` + bankAccountColumns + ` FROM bank_account
 	           WHERE account_id = @account_id AND deleted_at IS NULL

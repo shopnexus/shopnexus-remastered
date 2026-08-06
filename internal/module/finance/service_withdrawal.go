@@ -17,10 +17,14 @@ import (
 // going and what an admin decided. It lives in the session rather than in a table of
 // its own, because a withdrawal *is* a money flow — the same lifecycle a checkout has.
 type withdrawalData struct {
-	BankAccountID int64      `json:"bank_account_id"`
-	Reason        string     `json:"reason,omitempty"`
-	ProviderRef   string     `json:"provider_ref,omitempty"`
-	ResolvedAt    *time.Time `json:"resolved_at,omitempty"`
+	BankAccountID int64  `json:"bank_account_id"`
+	Reason        string `json:"reason,omitempty"`
+	ProviderRef   string `json:"provider_ref,omitempty"`
+	// ResolvedByID is the admin who decided, and absent on one the payee called off. It is the
+	// only thing that separates those two after the fact, which is why it is stored rather than
+	// inferred: a rejection and a self-cancellation both end with the money back in the wallet.
+	ResolvedByID *int64     `json:"resolved_by_id,omitempty"`
+	ResolvedAt   *time.Time `json:"resolved_at,omitempty"`
 }
 
 // CreateWithdrawal debits the available balance now and opens the request for review.
@@ -67,7 +71,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, req financeapi.CreateWit
 	if err := s.repo.InsertWithdrawal(ctx, &session, debit); err != nil {
 		return financeapi.Withdrawal{}, fmt.Errorf("open withdrawal: %w", err)
 	}
-	return toAPIWithdrawal(session)
+	return s.withdrawalView(ctx, session)
 }
 
 func (s *Service) ListWithdrawals(ctx context.Context, req financeapi.ListWithdrawalsRequest) (financeapi.WithdrawalPage, error) {
@@ -88,9 +92,23 @@ func (s *Service) ListWithdrawals(ctx context.Context, req financeapi.ListWithdr
 	if err != nil {
 		return financeapi.WithdrawalPage{}, fmt.Errorf("list withdrawals: %w", err)
 	}
-	out := make([]financeapi.Withdrawal, 0, len(rows))
+	// Every destination in one read. An admin's queue spans payees, so this cannot go through
+	// ListBankAccounts, and one Find per row would be a query per withdrawal on the page.
+	wanted := make([]int64, 0, len(rows))
 	for _, session := range rows {
-		w, err := toAPIWithdrawal(session)
+		data, err := decodeWithdrawal(session)
+		if err != nil {
+			return financeapi.WithdrawalPage{}, err
+		}
+		wanted = append(wanted, data.BankAccountID)
+	}
+	banks, err := s.repo.BankAccountsByIDs(ctx, wanted)
+	if err != nil {
+		return financeapi.WithdrawalPage{}, fmt.Errorf("read withdrawal destinations: %w", err)
+	}
+	out := make([]financeapi.Withdrawal, 0, len(rows))
+	for i, session := range rows {
+		w, err := toAPIWithdrawal(session, toAPIBankAccount(banks[wanted[i]]))
 		if err != nil {
 			return financeapi.WithdrawalPage{}, err
 		}
@@ -107,7 +125,7 @@ func (s *Service) GetWithdrawal(ctx context.Context, req financeapi.WithdrawalRe
 	if err != nil {
 		return financeapi.Withdrawal{}, err
 	}
-	return toAPIWithdrawal(session)
+	return s.withdrawalView(ctx, session)
 }
 
 // CancelWithdrawal is the requester changing their mind before an admin gets to it. The
@@ -146,11 +164,11 @@ func (s *Service) AdminApproveWithdrawal(ctx context.Context, req financeapi.Res
 		return financeapi.Withdrawal{}, err
 	}
 	data.ProviderRef, data.Reason = req.ProviderRef, req.Reason
-	data.ResolvedAt = new(time.Now())
+	data.ResolvedByID, data.ResolvedAt = new(req.ActorID.Int64()), new(time.Now())
 	if err := s.saveWithdrawalData(ctx, &session, data); err != nil {
 		return financeapi.Withdrawal{}, err
 	}
-	return toAPIWithdrawal(session)
+	return s.withdrawalView(ctx, session)
 }
 
 // AdminRejectWithdrawal gives the money back. The reason is not optional in practice —
@@ -172,14 +190,14 @@ func (s *Service) AdminRejectWithdrawal(ctx context.Context, req financeapi.Reso
 		return financeapi.Withdrawal{}, err
 	}
 	data.Reason = req.Reason
-	data.ResolvedAt = new(time.Now())
+	data.ResolvedByID, data.ResolvedAt = new(req.ActorID.Int64()), new(time.Now())
 	if err := s.saveWithdrawalData(ctx, &session, data); err != nil {
 		return financeapi.Withdrawal{}, err
 	}
 	if err := s.returnWithdrawal(ctx, session, "withdrawal rejected: "+req.Reason); err != nil {
 		return financeapi.Withdrawal{}, err
 	}
-	return toAPIWithdrawal(session)
+	return s.withdrawalView(ctx, session)
 }
 
 // returnWithdrawal credits the debited amount back. Keyed on the session and the
@@ -246,19 +264,57 @@ func decodeWithdrawal(session domain.Session) (withdrawalData, error) {
 	return data, nil
 }
 
-func toAPIWithdrawal(session domain.Session) (financeapi.Withdrawal, error) {
+// withdrawalOutcome states how a cash-out ended. Five session statuses onto four outcomes, in one
+// place: `cancelled` and `failed` are different rows, so this is a translation rather than a
+// guess — but it is the platform's translation to make, not something every client re-derives.
+func withdrawalOutcome(status string) string {
+	switch status {
+	case domain.StatusSuccess:
+		return financeapi.WithdrawalApproved
+	case domain.StatusFailed:
+		return financeapi.WithdrawalRejected
+	case domain.StatusCancelled:
+		return financeapi.WithdrawalCancelled
+	default:
+		return financeapi.WithdrawalAwaitingReview
+	}
+}
+
+// toAPIWithdrawal projects one cash-out. The bank account is passed in rather than read here, so
+// a page resolves every destination in one query instead of one per row.
+func toAPIWithdrawal(session domain.Session, bank financeapi.BankAccount) (financeapi.Withdrawal, error) {
 	data, err := decodeWithdrawal(session)
 	if err != nil {
 		return financeapi.Withdrawal{}, err
 	}
-	return financeapi.Withdrawal{
-		ID:            id.Of[id.PaymentSession](session.ID),
-		Status:        session.Status,
-		Currency:      session.Currency,
-		Amount:        session.TotalAmount,
-		BankAccountID: id.Of[id.BankAccount](data.BankAccountID),
-		Reason:        data.Reason,
-		CreatedAt:     session.CreatedAt,
-		ResolvedAt:    data.ResolvedAt,
-	}, nil
+	w := financeapi.Withdrawal{
+		ID:          id.Of[id.PaymentSession](session.ID),
+		Outcome:     withdrawalOutcome(session.Status),
+		Status:      session.Status,
+		Currency:    session.Currency,
+		Amount:      session.TotalAmount,
+		BankAccount: bank,
+		ResolvedAt:  data.ResolvedAt,
+		CreatedAt:   session.CreatedAt,
+	}
+	if data.ResolvedByID != nil {
+		w.ResolvedByID = new(id.Of[id.Account](*data.ResolvedByID))
+	}
+	if data.Reason != "" {
+		w.ResolutionNote = &data.Reason
+	}
+	return w, nil
+}
+
+// withdrawalView is toAPIWithdrawal for a single row: it reads the one destination it needs.
+func (s *Service) withdrawalView(ctx context.Context, session domain.Session) (financeapi.Withdrawal, error) {
+	data, err := decodeWithdrawal(session)
+	if err != nil {
+		return financeapi.Withdrawal{}, err
+	}
+	banks, err := s.repo.BankAccountsByIDs(ctx, []int64{data.BankAccountID})
+	if err != nil {
+		return financeapi.Withdrawal{}, fmt.Errorf("read withdrawal destination: %w", err)
+	}
+	return toAPIWithdrawal(session, toAPIBankAccount(banks[data.BankAccountID]))
 }

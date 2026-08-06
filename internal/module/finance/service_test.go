@@ -389,6 +389,83 @@ func paymentNotification(t *testing.T, h *harness, sessionID id.ID[id.PaymentSes
 // A withdrawal shares the payment-session id space and names its requester as the payer, so
 // without a kind guard the requester could drive their own cash-out to `success` through the
 // checkout route — or cancel it here, where nothing gives the debited money back.
+// The projection the clients were written against, and never got: `bank_account` whole,
+// `resolved_by_id`, and an `outcome` that separates a payee's own cancellation from an admin's
+// refusal. The spec marked `bank_account` and `outcome` required while the server sent
+// `bank_account_id` and no outcome at all, so a generated model threw on the first real row —
+// which nobody hit only because every list was empty.
+func TestWithdrawal_ProjectsItsDestinationAndAnOutcome(t *testing.T) {
+	h := newHarness("admin", true)
+	ctx := context.Background()
+	seedBalance(t, h, 500_000)
+
+	payee, err := h.svc.CreateBankAccount(ctx, financeapi.CreateBankAccountRequest{
+		ActorID: buyer, BankCode: "vcb", AccountNumber: "0123456789", AccountHolder: "NGUYEN VAN A",
+	})
+	if err != nil {
+		t.Fatalf("CreateBankAccount: %v", err)
+	}
+	open, err := h.svc.CreateWithdrawal(ctx, financeapi.CreateWithdrawalRequest{
+		ActorID: buyer, BankAccountID: payee.ID, Currency: "VND", Amount: 200_000,
+	})
+	if err != nil {
+		t.Fatalf("CreateWithdrawal: %v", err)
+	}
+	// Waiting on a human: no outcome yet, and nobody has decided it.
+	if open.Outcome != financeapi.WithdrawalAwaitingReview || open.ResolvedByID != nil {
+		t.Fatalf("withdrawal = %+v, want it awaiting review with nobody named", open)
+	}
+	// The destination travels whole — this is what the app renders, and reading it cost a
+	// second round trip it never made.
+	if open.BankAccount.ID != payee.ID || open.BankAccount.BankCode != "vcb" {
+		t.Fatalf("bank_account = %+v, want the payee's own row", open.BankAccount)
+	}
+	if open.BankAccount.AccountNumberMasked == "0123456789" {
+		t.Error("the full account number reached the wire")
+	}
+
+	refused, err := h.svc.AdminRejectWithdrawal(ctx, financeapi.ResolveWithdrawalRequest{
+		ActorID: buyer, ID: open.ID, Reason: "tên thụ hưởng không khớp",
+	})
+	if err != nil {
+		t.Fatalf("AdminRejectWithdrawal: %v", err)
+	}
+	// Rejected, and the admin is on the record. That is the half a self-cancellation cannot
+	// produce, which is the whole reason `outcome` is stated rather than left to the reader.
+	if refused.Outcome != financeapi.WithdrawalRejected {
+		t.Fatalf("outcome = %q, want rejected", refused.Outcome)
+	}
+	if refused.ResolvedByID == nil || *refused.ResolvedByID != buyer {
+		t.Fatalf("resolved_by_id = %v, want the admin who decided", refused.ResolvedByID)
+	}
+	if refused.ResolutionNote == nil || *refused.ResolutionNote != "tên thụ hưởng không khớp" {
+		t.Fatalf("resolution_note = %v, want the reason the payee is owed", refused.ResolutionNote)
+	}
+
+	// A payee calling one off reaches a different outcome with nobody named, from the same
+	// "money is back in the wallet" position the rejection above left.
+	second, err := h.svc.CreateWithdrawal(ctx, financeapi.CreateWithdrawalRequest{
+		ActorID: buyer, BankAccountID: payee.ID, Currency: "VND", Amount: 100_000,
+	})
+	if err != nil {
+		t.Fatalf("CreateWithdrawal: %v", err)
+	}
+	if err := h.svc.CancelWithdrawal(ctx, financeapi.WithdrawalRequest{
+		ActorID: buyer, ID: second.ID,
+	}); err != nil {
+		t.Fatalf("CancelWithdrawal: %v", err)
+	}
+	called_off, err := h.svc.GetWithdrawal(ctx, financeapi.WithdrawalRequest{
+		ActorID: buyer, ID: second.ID,
+	})
+	if err != nil {
+		t.Fatalf("GetWithdrawal: %v", err)
+	}
+	if called_off.Outcome != financeapi.WithdrawalCancelled || called_off.ResolvedByID != nil {
+		t.Fatalf("withdrawal = %+v, want cancelled with nobody named", called_off)
+	}
+}
+
 func TestWithdrawalSession_IsNotPayableOrCancellableAsACheckout(t *testing.T) {
 	h := newHarness("user", true)
 	ctx := context.Background()
