@@ -8,3 +8,7 @@ internal/config/*.yml
 docs/
 legacy/
 tmp/
+
+# Bytecode from dev/spec-audit; the scripts are the artefact, not their cache.
+__pycache__/
+*.pyc
