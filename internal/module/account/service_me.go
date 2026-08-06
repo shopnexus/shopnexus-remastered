@@ -137,6 +137,14 @@ func (s *Service) GetPublicAccount(ctx context.Context, req accountapi.GetPublic
 	if err != nil {
 		return accountapi.PublicAccount{}, fmt.Errorf("check identity verified: %w", err)
 	}
+	// Only asked for a signed-in reader, and never for their own page: an account cannot
+	// follow itself, so the extra query would answer a question nobody can act on.
+	following := false
+	if actor := req.ActorID.Int64(); actor != 0 && actor != acc.ID {
+		if following, err = s.repo.IsFollowing(ctx, actor, acc.ID); err != nil {
+			return accountapi.PublicAccount{}, fmt.Errorf("check following: %w", err)
+		}
+	}
 	return accountapi.PublicAccount{
 		ID:               id.Of[id.Account](acc.ID),
 		Name:             acc.Profile.Name,
@@ -144,6 +152,7 @@ func (s *Service) GetPublicAccount(ctx context.Context, req accountapi.GetPublic
 		Avatar:           s.avatar(ctx, acc.Profile.AvatarResourceID),
 		IdentityVerified: verified,
 		FollowerCount:    followers,
+		Following:        following,
 		CreatedAt:        acc.CreatedAt,
 	}, nil
 }

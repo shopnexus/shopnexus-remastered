@@ -246,7 +246,10 @@ func (h *Account) GetPublicAccount(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	req := accountapi.GetPublicAccountRequest{ID: accountID}
+	// Anonymous is a real caller here, so a missing token is not an error — it only
+	// means `following` cannot be true.
+	viewer, _ := actor(r)
+	req := accountapi.GetPublicAccountRequest{ID: accountID, ActorID: viewer}
 	if failed(w, h.log, check(h.v, req)) {
 		return
 	}

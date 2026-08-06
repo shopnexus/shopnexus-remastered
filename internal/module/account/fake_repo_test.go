@@ -297,6 +297,11 @@ func (f *fakeRepo) LiveVerifiedDocuments(ctx context.Context, ids []int64) (map[
 	return out, nil
 }
 
+func (f *fakeRepo) IsFollowing(_ context.Context, followerID, followeeID int64) (bool, error) {
+	_, ok := f.follows[[2]int64{followerID, followeeID}]
+	return ok, nil
+}
+
 func (f *fakeRepo) CountFollowers(_ context.Context, accountID int64) (int64, error) {
 	var n int64
 	for edge := range f.follows {

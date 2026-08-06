@@ -89,7 +89,9 @@ func NewRouter(d Deps) http.Handler {
 	mux.HandleFunc("POST /password/reset-requests", d.Account.RequestPasswordReset)
 	mux.HandleFunc("POST /password/resets", d.Account.ResetPassword)
 	mux.HandleFunc("POST /email/verifications", d.Account.VerifyEmail)
-	mux.HandleFunc("GET /accounts/{id}", d.Account.GetPublicAccount)
+	// optionalAuth, not bare: the page is readable by anyone, but `following` is the
+	// *reader's* relationship to it, so a signed-in visitor has to be recognised.
+	mux.Handle("GET /accounts/{id}", optionalAuth(http.HandlerFunc(d.Account.GetPublicAccount)))
 	mux.HandleFunc("GET /accounts/{id}/followers", d.Account.ListFollowers)
 	// Authenticated
 	mux.Handle("POST /logout", auth(http.HandlerFunc(d.Account.Logout)))

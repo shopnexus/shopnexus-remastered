@@ -129,6 +129,9 @@ type UpdateProfileRequest struct {
 
 type GetPublicAccountRequest struct {
 	ID id.ID[id.Account] `json:"-" validate:"required"`
+	// ActorID is who is reading, and zero for an anonymous one — this page is readable by
+	// anyone, so it cannot be `required`. It decides `Following` and nothing else.
+	ActorID id.ID[id.Account] `json:"-"`
 }
 
 // CreateUploadRequest asks for a slot to PUT an avatar or an identity scan into. `kind`

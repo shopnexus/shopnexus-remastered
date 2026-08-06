@@ -141,6 +141,21 @@ func (r *Repo) LiveVerifiedDocuments(ctx context.Context, accountIDs []int64) (m
 	return out, nil
 }
 
+// IsFollowing answers whether one account follows another. A separate read rather than a
+// column on the follower count: the count is a fact about the followee, this is a fact about
+// the pair, and only a signed-in reader has the second one.
+func (r *Repo) IsFollowing(ctx context.Context, followerID, followeeID int64) (bool, error) {
+	const q = `SELECT EXISTS (
+	             SELECT 1 FROM follow WHERE follower_id = @follower AND followee_id = @followee)`
+	var yes bool
+	if err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{
+		"follower": followerID, "followee": followeeID,
+	}).Scan(&yes); err != nil {
+		return false, fmt.Errorf("db check follow: %w", err)
+	}
+	return yes, nil
+}
+
 func (r *Repo) CountFollowers(ctx context.Context, accountID int64) (int64, error) {
 	const q = `SELECT COUNT(*) FROM follow WHERE followee_id = @account_id`
 	var n int64

@@ -271,8 +271,17 @@ components:
         avatar: { allOf: [{ $ref: '#/components/schemas/Resource' }], nullable: true }
         identity_verified: { type: boolean, description: Shown as a trust signal. }
         follower_count: { type: integer, format: int64, minimum: 0, example: 1240 }
+        following:
+          type: boolean
+          description: >
+            Whether the *reader* follows this account, so it is false for an anonymous read
+            and on one's own page. It is here rather than left to the client because the
+            alternative is paging the whole following list to find out, and a follow button
+            with no state cannot tell "follow" from "unfollow".
         created_at: { type: string, format: date-time, description: Member since. }
-      required: [id, name, description, avatar, identity_verified, follower_count, created_at]
+      required:
+        [id, name, description, avatar, identity_verified, follower_count, following,
+         created_at]
 
     AccountSummary:
       type: object

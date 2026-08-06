@@ -112,6 +112,10 @@ type PublicAccount struct {
 	// IdentityVerified is shown as a trust signal.
 	IdentityVerified bool  `json:"identity_verified"`
 	FollowerCount    int64 `json:"follower_count"`
+	// Following is the *reader's* relationship to this account, so it is false for an
+	// anonymous read. Without it a follow button cannot tell "follow" from "unfollow" and
+	// would have to guess — or spend a paginated read of the whole following list to find out.
+	Following bool `json:"following"`
 	// CreatedAt is "member since".
 	CreatedAt time.Time `json:"created_at"`
 }

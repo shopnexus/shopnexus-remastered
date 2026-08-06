@@ -3047,6 +3047,10 @@ components:
                     format: int64
                     minimum: 0
                     type: integer
+                following:
+                    description: |
+                        Whether the *reader* follows this account, so it is false for an anonymous read and on one's own page. It is here rather than left to the client because the alternative is paging the whole following list to find out, and a follow button with no state cannot tell "follow" from "unfollow".
+                    type: boolean
                 id:
                     $ref: '#/components/schemas/AccountID'
                 identity_verified:
@@ -3062,6 +3066,7 @@ components:
                 - avatar
                 - identity_verified
                 - follower_count
+                - following
                 - created_at
             type: object
         PublishListingRequest:

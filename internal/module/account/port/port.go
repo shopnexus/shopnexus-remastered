@@ -90,6 +90,9 @@ type Repository interface {
 	HasLiveVerifiedDocument(ctx context.Context, accountID int64) (bool, error)
 	LiveVerifiedDocuments(ctx context.Context, accountIDs []int64) (map[int64]bool, error)
 	CountFollowers(ctx context.Context, accountID int64) (int64, error)
+	// IsFollowing is the reader's own relationship to the account being read, which is what
+	// lets a follow button render its state instead of guessing.
+	IsFollowing(ctx context.Context, followerID, followeeID int64) (bool, error)
 
 	// --- saved addresses: their own aggregate, scoped by the owner rather than reached
 	// through one. The one-default-per-kind rule is a partial unique index, which the
