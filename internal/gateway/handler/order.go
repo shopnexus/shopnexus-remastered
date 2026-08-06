@@ -548,8 +548,8 @@ func (h *Order) GetOrderTransport(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// AdvanceShipment handles POST /orders/{id}/transport/checkpoints — a carrier checkpoint on the
-// outbound leg, reported by the seller.
+// AdvanceShipment handles POST /orders/{id}/transport/checkpoints — a moderator correcting a
+// checkpoint on the outbound leg the carrier normally reports itself.
 func (h *Order) AdvanceShipment(w http.ResponseWriter, r *http.Request) {
 	uid, err := actor(r)
 	if failed(w, h.log, err) {

@@ -181,8 +181,23 @@ func (t Transport) Booked() bool {
 
 // Shipped reports whether the parcel has left: after that an order cannot be cancelled,
 // only refunded.
+//
+// It names the positions that mean the parcel is out of the seller's hands rather than negating
+// `pending`, because this is the buyer's cancellation on the line — a status added later must not
+// spend it by simply not being `pending`. `failed` counts: a parcel the carrier lost was still
+// collected, and who bears that is a verdict rather than a buyer taking the whole escrow back.
+//
+// The evidence behind the column is what makes the guard worth anything: only the carrier's own
+// webhook writes it (found by the carrier's reference, so a report implies a booking) and a
+// moderator may correct it. A seller's word used to be accepted here, and one request saying
+// `picked-up` — with no parcel behind it — ended the buyer's cancellation for good.
 func (t Transport) Shipped() bool {
-	return t.Status != TransportPending
+	switch t.Status {
+	case TransportPickedUp, TransportInTransit, TransportDelivered, TransportReturned, TransportFailed:
+		return true
+	default:
+		return false
+	}
 }
 
 // Delivered reports whether it arrived — which for a return leg is what closes the leg.

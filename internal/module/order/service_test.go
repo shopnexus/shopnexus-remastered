@@ -54,9 +54,15 @@ type fakeAccounts struct {
 	noPickup bool
 	// noDelivery is a buyer with no default address, so a quote that named none has nowhere to go.
 	noDelivery bool
+	// rolesDown is the account module unreachable. A caller's role is a row over there, so an
+	// outage must surface as one rather than as an answer about their permissions.
+	rolesDown bool
 }
 
 func (f fakeAccounts) GetMe(context.Context, accountapi.GetMeRequest) (accountapi.Me, error) {
+	if f.rolesDown {
+		return accountapi.Me{}, errx.NewError(503, "accounts_unavailable", "the account module is not answering")
+	}
 	return accountapi.Me{Role: f.role}, nil
 }
 
@@ -501,6 +507,14 @@ func (h *harness) ageItems(by time.Duration) {
 // moderator reuses one harness's repository with a staff caller.
 func (h *harness) moderator() *order.Service {
 	return order.NewService(h.repo, fakeAccounts{role: "moderator"}, h.catalog, h.finance,
+		h.chat, h.uploads, h.repo, courierRegistry(h.courier), h.workflows, h.bus,
+		validation.Default(), slog.New(slog.DiscardHandler), noopFanout{})
+}
+
+// unreadableRoles is the same repository with the account module down, so a role check cannot be
+// answered at all.
+func (h *harness) unreadableRoles() *order.Service {
+	return order.NewService(h.repo, fakeAccounts{rolesDown: true}, h.catalog, h.finance,
 		h.chat, h.uploads, h.repo, courierRegistry(h.courier), h.workflows, h.bus,
 		validation.Default(), slog.New(slog.DiscardHandler), noopFanout{})
 }
@@ -2230,24 +2244,17 @@ func TestBookShipment_RetriedUntilTheCarrierAcceptsTheParcel(t *testing.T) {
 	}
 }
 
-// A delivered order cannot be cancelled.// A delivered order cannot be cancelled. The guard reads the shipment's status, and until
-// something wrote it a buyer could take the whole escrow back and keep the goods.
+// A parcel the carrier has collected cannot be cancelled. The guard reads the shipment's status,
+// and the carrier's own report is what writes it — so the buyer keeps the escrow they could take
+// back until somebody outside the sale says the goods are moving.
 func TestCancelOrder_RefusesAShippedOrder(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
 	_, o := h.confirmed(t)
 
-	// Only the seller reports the outbound leg; a buyer marking their own parcel shipped would
-	// be deciding whether they may still cancel.
-	if got := status(t, mustErr(h.svc.AdvanceShipment(ctx, orderapi.AdvanceShipmentRequest{
-		ActorID: buyer, ID: o.ID, Status: domain.TransportPickedUp,
-	}))); got != 403 {
-		t.Fatalf("status = %d, want 403 for the buyer", got)
-	}
-	if _, err := h.svc.AdvanceShipment(ctx, orderapi.AdvanceShipmentRequest{
-		ActorID: seller, ID: o.ID, Status: domain.TransportPickedUp,
-	}); err != nil {
-		t.Fatalf("AdvanceShipment: %v", err)
+	// The courier reports on its own reference, which is the only id it knows.
+	if err := h.svc.RecordCarrierCheckpoint(ctx, "trk-1", "processing"); err != nil {
+		t.Fatalf("RecordCarrierCheckpoint: %v", err)
 	}
 	if got := status(t, mustErr(h.svc.CancelOrder(ctx, orderapi.CancelOrderRequest{
 		ActorID: buyer, ID: o.ID,
@@ -2258,11 +2265,61 @@ func TestCancelOrder_RefusesAShippedOrder(t *testing.T) {
 		t.Fatalf("refunded = %d held = %d, want the escrow where it was",
 			h.finance.refunded, h.finance.held)
 	}
-	// Forward-only: a late report cannot un-ship it.
-	if got := status(t, mustErr(h.svc.AdvanceShipment(ctx, orderapi.AdvanceShipmentRequest{
-		ActorID: seller, ID: o.ID, Status: domain.TransportPickedUp,
+	// Forward-only: a late correction cannot un-ship it either.
+	if got := status(t, mustErr(h.moderator().AdvanceShipment(ctx, orderapi.AdvanceShipmentRequest{
+		ActorID: admin, ID: o.ID, Status: domain.TransportPickedUp,
 	}))); got != 409 {
 		t.Fatalf("status = %d, want 409 for a checkpoint already passed", got)
+	}
+}
+
+// The shipment's position is not a party's to claim. A seller reporting `picked-up` used to be
+// enough, and it cost the buyer their cancellation for one request that nobody checked a parcel
+// behind: the carrier reports this leg, and a moderator corrects it after looking.
+func TestAdvanceShipment_IsNoLongerTheSellersToReport(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, o := h.confirmed(t)
+
+	for _, actor := range []id.ID[id.Account]{seller, buyer} {
+		if got := status(t, mustErr(h.svc.AdvanceShipment(ctx, orderapi.AdvanceShipmentRequest{
+			ActorID: actor, ID: o.ID, Status: domain.TransportPickedUp,
+		}))); got != 403 {
+			t.Fatalf("status = %d for %v, want 403: neither party writes this", got, actor)
+		}
+	}
+	// Nothing moved, so nothing was decided by the attempt.
+	stored := h.repo.orders[o.ID.Int64()]
+	if got := h.repo.shipments[stored.TransportID].Status; got != domain.TransportPending {
+		t.Fatalf("status = %q, want the shipment where the carrier left it", got)
+	}
+
+	// The buyer's cancellation therefore survives what the seller tried, escrow and all.
+	cancelled, err := h.svc.CancelOrder(ctx, orderapi.CancelOrderRequest{ActorID: buyer, ID: o.ID})
+	if err != nil {
+		t.Fatalf("CancelOrder: %v", err)
+	}
+	if cancelled.State != orderapi.StateCancelled {
+		t.Fatalf("state = %q, want the order cancelled", cancelled.State)
+	}
+	if h.finance.held != 0 || h.finance.refunded != 100_000 {
+		t.Fatalf("held = %d refunded = %d, want the escrow back with the buyer",
+			h.finance.held, h.finance.refunded)
+	}
+
+	// Staff still write it, and an account module that cannot be read is reported as itself
+	// rather than as a permissions problem.
+	fresh := newHarness("fixed")
+	_, o2 := fresh.confirmed(t)
+	if _, err := fresh.moderator().AdvanceShipment(ctx, orderapi.AdvanceShipmentRequest{
+		ActorID: admin, ID: o2.ID, Status: domain.TransportPickedUp,
+	}); err != nil {
+		t.Fatalf("moderator AdvanceShipment: %v", err)
+	}
+	if got := status(t, mustErr(fresh.unreadableRoles().AdvanceShipment(ctx, orderapi.AdvanceShipmentRequest{
+		ActorID: seller, ID: o2.ID, Status: domain.TransportInTransit,
+	}))); got != 503 {
+		t.Fatalf("status = %d, want the account outage reported as itself", got)
 	}
 }
 

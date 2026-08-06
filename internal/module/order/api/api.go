@@ -457,9 +457,9 @@ type CancelOrderRequest struct {
 	ID      id.ID[id.Order]   `json:"-" validate:"required"`
 }
 
-// AdvanceShipmentRequest is a carrier checkpoint on the outbound leg, reported by the seller or
-// corrected by a moderator. Forward-only, which is what makes "has this shipped" a fact a later
-// report cannot undo.
+// AdvanceShipmentRequest is a moderator correcting a checkpoint on the outbound leg. The carrier
+// reports the leg itself; neither party to the order writes it. Forward-only, which is what makes
+// "has this shipped" a fact a later report cannot undo.
 type AdvanceShipmentRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	ID      id.ID[id.Order]   `json:"-" validate:"required"`
@@ -619,9 +619,9 @@ type Service interface {
 	ConfirmReceipt(ctx context.Context, req ConfirmReceiptRequest) (Order, error)
 	CancelOrder(ctx context.Context, req CancelOrderRequest) (Order, error)
 	GetOrderTransport(ctx context.Context, req OrderRequest) (Transport, error)
-	// AdvanceShipment records a carrier checkpoint on the outbound leg. The seller's route:
-	// nothing else writes that status, and "has this shipped" is what decides whether an order
-	// can still be cancelled and the escrow taken back.
+	// AdvanceShipment corrects a checkpoint on the outbound leg. Staff only — the carrier's
+	// webhook is where that status comes from — because "has this shipped" decides whether an
+	// order can still be cancelled and the escrow taken back, so it is not a party's to claim.
 	AdvanceShipment(ctx context.Context, req AdvanceShipmentRequest) (Transport, error)
 
 	// --- refunds ---

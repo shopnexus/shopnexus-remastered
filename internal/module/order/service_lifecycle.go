@@ -163,9 +163,10 @@ func (s *Service) finishSettlement(ctx context.Context, o domain.Order, paid []*
 // bookShipment tells the carrier there is a parcel. It is what the delivery fee was collected
 // for, so a shipment nobody booked is money the platform took and did nothing with.
 //
-// Never fatal to the caller: the order exists either way, and the seller can still report the
-// handover. What the courier gives back — its own reference, a label — is written onto the
-// shipment, which is also the marker that says this parcel no longer needs booking.
+// Never fatal to the caller: the order exists either way and RetryUnbookedShipments will ask
+// again. What the courier gives back — its own reference, a label — is written onto the shipment,
+// which is also the marker that says this parcel no longer needs booking, and the reference the
+// carrier's checkpoints arrive on: until it exists, nothing can report this leg.
 func (s *Service) bookShipment(ctx context.Context, o domain.Order, lines []*domain.Item) {
 	t, err := s.repo.FindTransport(ctx, o.TransportID)
 	if err != nil {
@@ -220,13 +221,14 @@ func bookingData(t transport.Transport) ([]byte, error) {
 	return data, nil
 }
 
-// RecordCarrierCheckpoint is the courier's own report, arriving on the provider's webhook rather
-// than from the seller. It carries the carrier's reference, so the shipment is found by that.
+// RecordCarrierCheckpoint is the courier's own report, arriving on the provider's webhook — and
+// the only thing that moves this leg outside a moderator's correction. It carries the carrier's
+// reference, so the shipment is found by that: a leg nobody booked cannot be reported at all.
 //
 // The provider's vocabulary is translated here and nowhere else: a courier's "processing" is this
 // module's `in-transit`, and a status it does not use is ignored rather than guessed at. The same
-// forward-only rule the seller's route obeys applies, so a checkpoint that arrives late — they do
-// arrive out of order — cannot un-deliver a parcel.
+// forward-only rule the moderator's route obeys applies, so a checkpoint that arrives late — they
+// do arrive out of order — cannot un-deliver a parcel.
 func (s *Service) RecordCarrierCheckpoint(ctx context.Context, ref, status string) error {
 	t, err := s.repo.FindTransportByRef(ctx, ref)
 	if err != nil {

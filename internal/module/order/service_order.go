@@ -363,25 +363,28 @@ func (s *Service) CancelOrder(ctx context.Context, req orderapi.CancelOrderReque
 	return s.orderView(ctx, o)
 }
 
-// AdvanceShipment records a carrier checkpoint on the outbound leg. The seller's, because they
-// are the one who hands the parcel over; a moderator may correct it. Nothing else writes this
-// row, which is why `Shipped()` — the guard that stops a delivered order being cancelled and
-// the escrow taken back — used to be false for ever.
+// AdvanceShipment corrects a checkpoint on the outbound leg by hand. Staff only: the parcel's
+// position is the carrier's own report (RecordCarrierCheckpoint), and this route exists for a
+// courier that got it wrong or never reported at all.
+//
+// The seller used to write it, because nothing else did. But `Shipped()` — the guard that stops
+// an order being cancelled and the escrow taken back — reads that column, so one request saying
+// `picked-up` with no parcel behind it ended the buyer's cancellation, and nobody checked. A
+// seller who sees the status wrong raises an `order-issue` ticket, which is the same escalation
+// every other one-sided claim on this platform goes through.
 func (s *Service) AdvanceShipment(ctx context.Context, req orderapi.AdvanceShipmentRequest) (orderapi.Transport, error) {
+	// Asked before the order is read: a caller with no business here learns nothing about it.
+	// Only a *refusal* becomes "the carrier reports this" — an account module that could not be
+	// read is reported as itself, or an outage reads as a permissions problem.
+	if err := s.requireModerator(ctx, req.ActorID); err != nil {
+		if errors.Is(err, domain.ErrModeratorRequired) {
+			return orderapi.Transport{}, domain.ErrShipmentNotReportable
+		}
+		return orderapi.Transport{}, err
+	}
 	o, err := s.repo.FindOrder(ctx, req.ID.Int64())
 	if err != nil {
 		return orderapi.Transport{}, fmt.Errorf("find order: %w", err)
-	}
-	if o.SellerID != req.ActorID.Int64() {
-		// A moderator may correct a checkpoint. Only their *refusal* becomes "not the seller" —
-		// an account module that could not be read is reported as itself, or an outage reads to
-		// the seller as a permissions problem with their own order.
-		if err := s.requireModerator(ctx, req.ActorID); err != nil {
-			if errors.Is(err, domain.ErrModeratorRequired) {
-				return orderapi.Transport{}, domain.ErrNotTheSeller
-			}
-			return orderapi.Transport{}, err
-		}
 	}
 	t, err := s.advanceLeg(ctx, o.TransportID, req.Status)
 	if err != nil {

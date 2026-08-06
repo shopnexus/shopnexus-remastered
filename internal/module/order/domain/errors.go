@@ -63,7 +63,12 @@ var (
 	// ErrTransportSettled is a checkpoint that would move a shipment backwards, or one on a
 	// leg that already ended. Carrier reports arrive out of order, and `Shipped()` decides
 	// whether an order can still be cancelled — so it is not a fact a later report may undo.
-	ErrTransportSettled       = errx.NewError(http.StatusConflict, "transport_settled", "this shipment is already at or past that point")
+	ErrTransportSettled = errx.NewError(http.StatusConflict, "transport_settled", "this shipment is already at or past that point")
+	// ErrShipmentNotReportable is a party to the order trying to write their own parcel's status.
+	// The carrier reports the leg on its webhook and staff may correct it; a seller who sees it
+	// wrong raises an `order-issue` ticket. Their word was accepted here once, and it bought a
+	// single request the buyer's cancellation.
+	ErrShipmentNotReportable  = errx.NewError(http.StatusForbidden, "shipment_not_reportable", "a shipment's position comes from the carrier; raise an order issue if it looks wrong")
 	ErrTransportStatusUnknown = errx.NewError(http.StatusUnprocessableEntity, "transport_status_unknown", "no shipment status by that name")
 	// ErrTransportNotFound is a shipment nobody has: a carrier reporting on a reference this
 	// platform never booked, or an order whose transport row is missing. Not ErrOrderNotFound —
