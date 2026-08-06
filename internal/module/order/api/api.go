@@ -432,7 +432,7 @@ type OrderSummary struct {
 type ListOrdersRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	Role    string            `json:"-" validate:"required,oneof=buyer seller"`
-	State   string            `json:"-" validate:"omitempty,oneof=open completed cancelled"`
+	State   string            `json:"-" validate:"omitempty,oneof=awaiting-confirmation open completed cancelled"`
 	Cursor  string            `json:"-"`
 	Limit   int               `json:"-" validate:"required,min=1,max=100"`
 }

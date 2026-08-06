@@ -406,13 +406,19 @@ func (r *Repo) FindOrderByOrigin(ctx context.Context, origin domain.Origin) (dom
 }
 
 func (r *Repo) ListOrders(ctx context.Context, f port.OrderFilter) ([]domain.Order, error) {
-	// The state is derived from the two outcome timestamps, so it is a predicate rather
-	// than a column — and 'open' is exactly the partial indexes' own predicate.
+	// The state is derived from the timestamps, so it is a predicate rather than a column —
+	// and this predicate has to say exactly what domain.State() says. It did not: 'open'
+	// meant "no outcome yet", which also matched every unconfirmed order, so the buyer's
+	// in-flight tab and the seller's confirmation queue answered the same list.
 	const q = `SELECT ` + orderColumns + ` FROM "order"
 	           WHERE (@buyer_id = 0 OR buyer_id = @buyer_id)
 	             AND (@seller_id = 0 OR seller_id = @seller_id)
 	             AND (@state::text IS NULL
+	                  OR (@state::text = '` + domain.StateAwaitingConfirmation + `'
+	                      AND confirmed_at IS NULL
+	                      AND completed_at IS NULL AND cancelled_at IS NULL)
 	                  OR (@state::text = '` + domain.StateOpen + `'
+	                      AND confirmed_at IS NOT NULL
 	                      AND completed_at IS NULL AND cancelled_at IS NULL)
 	                  OR (@state::text = '` + domain.StateCompleted + `' AND completed_at IS NOT NULL)
 	                  OR (@state::text = '` + domain.StateCancelled + `' AND cancelled_at IS NOT NULL))
@@ -431,6 +437,11 @@ func (r *Repo) ListOrders(ctx context.Context, f port.OrderFilter) ([]domain.Ord
 // CountOrders is the aggregate half of a summary: how the window's orders stand now, plus the goods
 // money of the completed ones per currency. Two statements in one call, because the second is a
 // different grain — a line, not an order — and joining them would make the counts wrong.
+// Its `open` is every order still in flight, confirmed or not — deliberately wider than the
+// `state=open` filter above, because these three counts have to add up to the window and a
+// summary field nobody published cannot hold the unconfirmed ones. So it is not the number to
+// answer "what is waiting on me": that one is `state=awaiting-confirmation`, which is also not
+// bounded by this window.
 func (r *Repo) CountOrders(ctx context.Context, f port.SummaryFilter) (port.OrderCounts, error) {
 	const counts = `SELECT
 	                  count(*) FILTER (WHERE completed_at IS NULL AND cancelled_at IS NULL),
