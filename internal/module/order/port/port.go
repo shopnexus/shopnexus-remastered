@@ -197,6 +197,10 @@ type Repository interface {
 	// about has to still be there when the row lands.
 	InsertRefund(ctx context.Context, r *domain.Refund) error
 	FindRefund(ctx context.Context, id int64) (domain.Refund, error)
+	// LiveRefundOnOrder is the one unsettled refund on an order, if there is one. Callers outside
+	// this module name the sale, not the case: one live refund per order is an index, so which row
+	// that is stays here.
+	LiveRefundOnOrder(ctx context.Context, orderID int64) (domain.Refund, error)
 	ListRefunds(ctx context.Context, f RefundFilter) ([]domain.Refund, error)
 	// SaveRefund writes the transition, guarded by `from` — the status the entity moved out
 	// of. A stale read then loses instead of writing over a move it never saw: an escalation
@@ -211,4 +215,9 @@ type Repository interface {
 	// query advances all three windows, which is what naming a status for the party it
 	// waits on buys.
 	OverdueRefunds(ctx context.Context, now time.Time, limit int) ([]domain.Refund, error)
+	// UnconfirmedOrders is the seller-confirmation timeout pass: paid orders nobody has accepted
+	// whose window has closed and which staff have not been asked about yet. The escalation
+	// marker is in the WHERE rather than a time window, so a healthy marketplace reads nothing
+	// instead of re-reading every sale it ever made.
+	UnconfirmedOrders(ctx context.Context, before time.Time, limit int) ([]domain.Order, error)
 }

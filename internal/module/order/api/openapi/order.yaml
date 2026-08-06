@@ -106,6 +106,66 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /orders/{id}/confirmation:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderID' } }
+    post:
+      tags: [order]
+      summary: Accept a paid order (seller)
+      description: >
+        The seller agreeing to the sale, and the only thing that hands the parcel to the
+        carrier. Everything before it — the order row, the escrow, the frozen carrier and fee —
+        is the buyer's side of the transaction and obliges the seller to post nothing. Not
+        re-runnable: a second confirmation would book a second parcel for one sale.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 'Accepted; the shipment is booked with the carrier'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Order' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Caller is not the seller of this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Order is already accepted, or has reached an outcome', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /orders/{id}/decline:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderID' } }
+    post:
+      tags: [order]
+      summary: Refuse a paid order (seller)
+      description: >
+        Out of stock, mispriced, whatever they say. The escrow goes back in full, delivery
+        included, because the parcel never left. Same destination as letting the confirmation
+        window pass, reached without making the buyer wait out a clock for an answer the seller
+        already has — which is why the reason is required and kept.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeclineOrderRequest' }
+      responses:
+        '200':
+          description: 'Refused; the order is cancelled and the buyer refunded'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Order' }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Caller is not the seller of this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Order is already accepted, or has reached an outcome', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
   /orders/{id}/receipt:
     post:
       tags: [order]
@@ -241,12 +301,23 @@ components:
         id: { $ref: '#/components/schemas/OrderID' }
       required: [id]
 
+    DeclineOrderRequest:
+      type: object
+      description: >
+        A reason is mandatory and it is kept on the order: reputation reads it, and a buyer
+        whose sale was refused is owed the why.
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500, example: 'Out of stock' }
+      required: [reason]
+
     OrderState:
       type: string
       description: >
-        Derived from the two outcome timestamps: `open` means neither is set,
-        which is also the predicate of the partial indexes behind this filter.
-      enum: [open, completed, cancelled]
+        Derived from the timestamps rather than stored. `awaiting-confirmation` is a paid
+        order the seller has not accepted: nothing has been handed to a carrier, and it is
+        where every sale starts. `open` is accepted and in flight. The last two are the
+        outcomes, and they are the predicate of the partial indexes behind this filter.
+      enum: [awaiting-confirmation, open, completed, cancelled]
 
     OrderAddressSnapshot:
       type: object
@@ -299,6 +370,28 @@ components:
           description: >
             The shipment, carried in full rather than as an id: it has no read of its own
             outside the order it belongs to.
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            When the seller accepted the sale. Null means the parcel has not been booked and
+            will not be — a buyer reading this knows what they are waiting on.
+        confirmation_deadline_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            `created_at` + 48h, computed rather than stored. Staff are asked to chase the seller
+            past this point; the sale is not voided, because neither the money nor the goods are
+            the platform's to dispose of. Null once the seller has accepted.
+        decline_reason:
+          type: string
+          nullable: true
+          description: >
+            Why the seller refused, set only on an order they refused outright. A refusal is a
+            cancellation that says who ended the sale, where `cancelled_at` alone says only that
+            it did not happen.
         received_at:
           type: string
           format: date-time

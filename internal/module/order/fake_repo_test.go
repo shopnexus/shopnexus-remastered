@@ -799,6 +799,32 @@ func (f *fakeRepo) beforeRefundWrite() {
 	}
 }
 
+// UnconfirmedOrders mirrors the partial index: past the window, still unaccepted, and not
+// already raised with staff. The escalation marker is what keeps this the stranded set.
+func (f *fakeRepo) UnconfirmedOrders(_ context.Context, before time.Time, limit int) ([]domain.Order, error) {
+	var out []domain.Order
+	for _, o := range f.orders {
+		if o.Settled() || o.ConfirmedAt != nil || o.ConfirmationEscalatedAt != nil {
+			continue
+		}
+		if !o.CreatedAt.Before(before) {
+			continue
+		}
+		out = append(out, o)
+	}
+	return out[:min(limit, len(out))], nil
+}
+
+// LiveRefundOnOrder mirrors the index: at most one unsettled refund per order.
+func (f *fakeRepo) LiveRefundOnOrder(_ context.Context, orderID int64) (domain.Refund, error) {
+	for _, r := range f.refunds {
+		if r.OrderID == orderID && !r.Settled() {
+			return r, nil
+		}
+	}
+	return domain.Refund{}, domain.ErrRefundNotFound
+}
+
 func (f *fakeRepo) OverdueRefunds(_ context.Context, now time.Time, limit int) ([]domain.Refund, error) {
 	var out []domain.Refund
 	for _, r := range f.refunds {

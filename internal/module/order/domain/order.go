@@ -7,12 +7,15 @@ import (
 	"shopnexus/internal/shared/validation"
 )
 
-// Order states, derived rather than stored: the two outcome timestamps are the truth, and
-// a status column would be a third fact to keep in step with them.
+// Order states, derived rather than stored: the outcome timestamps are the truth, and a
+// status column would be one more fact to keep in step with them.
 const (
-	StateOpen      = "open"
-	StateCompleted = "completed"
-	StateCancelled = "cancelled"
+	// StateAwaitingConfirmation is a paid order the seller has not accepted yet. Nothing has
+	// been handed to a carrier in this state, which is the whole reason it exists.
+	StateAwaitingConfirmation = "awaiting-confirmation"
+	StateOpen                 = "open"
+	StateCompleted            = "completed"
+	StateCancelled            = "cancelled"
 )
 
 // PayoutWindow is how long after receipt the money sits before it is released. It is the
@@ -20,10 +23,15 @@ const (
 // one.
 const PayoutWindow = 72 * time.Hour
 
-// Order is the purchase, created as soon as the money lands — by the payment webhook, not
-// by anybody pressing a button. A seller never approves an order: on a fixed-price listing
-// there is nothing to approve, and on a negotiable one the only thing they can refuse is
-// the price, which happens before this row exists.
+// SellerConfirmWindow is how long the seller has to accept the sale before staff are asked to
+// chase it. The buyer's money is already held, so this cannot be open-ended.
+const SellerConfirmWindow = 48 * time.Hour
+
+// Order is the purchase, created as soon as the money lands — by the payment webhook, not by
+// anybody pressing a button. But the *seller* is what starts it moving: the row exists and the
+// escrow is held from payment, and nothing is handed to a carrier until they accept it. A
+// listing whose stock is wrong, or whose owner has stopped selling, is otherwise discovered by
+// the buyer waiting for a parcel nobody ever posted.
 type Order struct {
 	ID int64
 	// Where the sale came from, exactly one of the two. A fixed-price listing is checked
@@ -35,6 +43,15 @@ type Order struct {
 	TransportID   int64 `validate:"required"`
 	Address       AddressSnapshot
 	PickupAddress AddressSnapshot
+	// ConfirmedAt is the seller accepting the sale, and the gate on the carrier ever hearing
+	// about it. DeclineReason is set only on a refusal, which is a cancellation that says why —
+	// reputation reads it, where a bare cancellation says nothing about who caused it.
+	ConfirmedAt *time.Time
+	// ConfirmationEscalatedAt is when staff were asked to chase the seller. A marker, not a
+	// state: the order is still awaiting confirmation afterwards, and this only stops the sweep
+	// raising it again.
+	ConfirmationEscalatedAt *time.Time
+	DeclineReason           *string
 	// ReceivedAt and ReceiptAttachments are captured in the same request and never added
 	// to afterwards: a refund is judged on what the buyer showed at the moment of
 	// unboxing, so a growable list would weaken the record it exists to be.
@@ -71,19 +88,91 @@ func (o Order) State() string {
 		return StateCancelled
 	case o.CompletedAt != nil:
 		return StateCompleted
+	case o.ConfirmedAt == nil:
+		return StateAwaitingConfirmation
 	default:
 		return StateOpen
 	}
 }
 
-// Settled reports whether the order has reached an outcome.
-func (o Order) Settled() bool { return o.State() != StateOpen }
+// Confirm is the seller accepting the sale, and the only thing that lets the parcel be booked.
+// Not re-runnable: a second confirmation would book a second parcel for one sale.
+func (o *Order) Confirm() error {
+	if o.Settled() {
+		return ErrOrderSettled
+	}
+	if o.ConfirmedAt != nil {
+		return ErrOrderAlreadyConfirmed
+	}
+	o.ConfirmedAt = new(time.Now())
+	return nil
+}
+
+// Decline is the seller refusing outright — out of stock, wrong price, whatever they say. It is
+// the same outcome as letting the window pass, reached sooner: the sale is cancelled and the
+// buyer is made whole. Only before confirming; after that the parcel is the seller's problem
+// and the buyer's remedy is a refund.
+func (o *Order) Decline(reason string) error {
+	if o.Settled() {
+		return ErrOrderSettled
+	}
+	if o.ConfirmedAt != nil {
+		return ErrOrderAlreadyConfirmed
+	}
+	if reason == "" {
+		return ErrDeclineNeedsReason
+	}
+	o.CancelledAt = new(time.Now())
+	o.DeclineReason = &reason
+	return nil
+}
+
+// EscalateConfirmation records that staff have been asked to chase the seller. It is not a
+// transition: the order stays awaiting confirmation, because the platform will neither void the
+// sale nor post the goods on the seller's behalf. Idempotent, so a sweep and a durable run
+// racing each other raise it once.
+func (o *Order) EscalateConfirmation() error {
+	if o.Settled() {
+		return ErrOrderSettled
+	}
+	if o.ConfirmedAt != nil {
+		return ErrOrderAlreadyConfirmed
+	}
+	if o.ConfirmationEscalatedAt != nil {
+		return ErrConfirmationAlreadyEscalated
+	}
+	o.ConfirmationEscalatedAt = new(time.Now())
+	return nil
+}
+
+// Confirmed reports whether the seller has accepted the sale.
+func (o Order) Confirmed() bool { return o.ConfirmedAt != nil }
+
+// ConfirmationDue is when the seller runs out of time to accept, and nil once they have —
+// computed rather than stored, so changing the window needs no migration.
+func (o Order) ConfirmationDue() *time.Time {
+	if o.ConfirmedAt != nil || o.Settled() {
+		return nil
+	}
+	return new(o.CreatedAt.Add(SellerConfirmWindow))
+}
+
+// Settled reports whether the order has reached an outcome. Read off the two outcome
+// timestamps rather than off State(), which now has a fourth value: `awaiting-confirmation` is
+// the *earliest* point in an order's life, and defining settled as "not open" made every
+// unconfirmed order look finished — so nothing could be confirmed at all.
+func (o Order) Settled() bool { return o.CancelledAt != nil || o.CompletedAt != nil }
 
 // ConfirmReceipt is the buyer saying the goods arrived, with the evidence a later refund
 // would be judged on. It starts the payout clock, which is why it is not re-openable.
 func (o *Order) ConfirmReceipt(attachments []int64) error {
 	if o.Settled() {
 		return ErrOrderSettled
+	}
+	// Nothing was shipped before the seller accepted, so there is nothing that could have
+	// arrived. The database holds this too.
+	if o.ConfirmedAt == nil {
+		return ErrOrderNotConfirmed
 	}
 	if o.ReceivedAt != nil {
 		return ErrReceiptAlreadyConfirmed

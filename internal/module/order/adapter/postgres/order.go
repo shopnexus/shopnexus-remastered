@@ -274,8 +274,39 @@ func (r *Repo) UnbookedTransports(ctx context.Context, before time.Time, limit i
 }
 
 const orderColumns = `id, draft_id, offer_id, buyer_id, seller_id, transport_id, address,
-	       pickup_address, received_at, receipt_attachments, payout_released_at, created_at,
+	       pickup_address, confirmed_at, confirmation_escalated_at, decline_reason,
+	       received_at, receipt_attachments, payout_released_at, created_at,
 	       completed_at, cancelled_at`
+
+// UnconfirmedOrders is the seller-confirmation timeout pass. `confirmation_escalated_at IS
+// NULL` is what makes this exactly the stranded set rather than every unconfirmed sale in
+// history, and it is the partial index's predicate too.
+func (r *Repo) UnconfirmedOrders(ctx context.Context, before time.Time, limit int) ([]domain.Order, error) {
+	const q = `SELECT ` + orderColumns + ` FROM "order"
+	           WHERE confirmed_at IS NULL AND completed_at IS NULL AND cancelled_at IS NULL
+	             AND confirmation_escalated_at IS NULL
+	             AND created_at < @before
+	           ORDER BY created_at
+	           LIMIT @limit`
+	rows, err := r.pool.Query(ctx, q, pgx.NamedArgs{"before": before, "limit": limit})
+	if err != nil {
+		return nil, fmt.Errorf("db query unconfirmed orders: %w", err)
+	}
+	defer rows.Close()
+
+	var out []domain.Order
+	for rows.Next() {
+		o, err := scanOrder(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db iterate unconfirmed orders: %w", err)
+	}
+	return out, nil
+}
 
 func scanOrder(row pgx.Row) (domain.Order, error) {
 	var (
@@ -284,7 +315,8 @@ func scanOrder(row pgx.Row) (domain.Order, error) {
 		pickup  []byte
 	)
 	err := row.Scan(&o.ID, &o.DraftID, &o.OfferID, &o.BuyerID, &o.SellerID, &o.TransportID,
-		&address, &pickup, &o.ReceivedAt, &o.ReceiptAttachments, &o.PayoutReleasedAt,
+		&address, &pickup, &o.ConfirmedAt, &o.ConfirmationEscalatedAt, &o.DeclineReason,
+		&o.ReceivedAt, &o.ReceiptAttachments, &o.PayoutReleasedAt,
 		&o.CreatedAt, &o.CompletedAt, &o.CancelledAt)
 	if dbx.IsNoRows(err) {
 		return domain.Order{}, domain.ErrOrderNotFound
@@ -616,7 +648,10 @@ func (r *Repo) SaveOrder(ctx context.Context, o domain.Order) error {
 }
 
 const saveOrder = `UPDATE "order"
-                   SET received_at = @received_at,
+                   SET confirmed_at = @confirmed_at,
+                       confirmation_escalated_at = @confirmation_escalated_at,
+                       decline_reason = @decline_reason,
+                       received_at = @received_at,
                        receipt_attachments = @receipt_attachments,
                        payout_released_at = @payout_released_at,
                        completed_at = @completed_at, cancelled_at = @cancelled_at
@@ -625,9 +660,12 @@ const saveOrder = `UPDATE "order"
 func orderArgs(o domain.Order) pgx.NamedArgs {
 	return pgx.NamedArgs{
 		"id": o.ID, "received_at": o.ReceivedAt,
-		"receipt_attachments": dbx.Int64Array(o.ReceiptAttachments),
-		"payout_released_at":  o.PayoutReleasedAt,
-		"completed_at":        o.CompletedAt, "cancelled_at": o.CancelledAt,
+		"confirmed_at":              o.ConfirmedAt,
+		"confirmation_escalated_at": o.ConfirmationEscalatedAt,
+		"decline_reason":            o.DeclineReason,
+		"receipt_attachments":       dbx.Int64Array(o.ReceiptAttachments),
+		"payout_released_at":        o.PayoutReleasedAt,
+		"completed_at":              o.CompletedAt, "cancelled_at": o.CancelledAt,
 	}
 }
 

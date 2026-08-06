@@ -21,6 +21,7 @@ import (
 const (
 	signalPaid         = "ConfirmPaid"
 	signalCancelled    = "Cancelled"
+	signalConfirmed    = "Confirmed"
 	signalReceived     = "Received"
 	signalRefundRaised = "RefundRaised"
 	signalRefundDone   = "RefundResolved"
@@ -60,6 +61,10 @@ func (r *Restate) StartOrder(ctx context.Context, orderID int64) error {
 	return r.client.Start(ctx, infra.Run{
 		Workflow: port.OrderWorkflow, Key: key(orderID), Input: port.OrderParams{OrderID: orderID},
 	})
+}
+
+func (r *Restate) OrderConfirmed(ctx context.Context, orderID int64) error {
+	return r.signal(ctx, port.OrderWorkflow, orderID, signalConfirmed, nil)
 }
 
 func (r *Restate) OrderReceived(ctx context.Context, orderID int64) error {
@@ -125,6 +130,10 @@ func (o *Off) CheckoutCancelled(_ context.Context, sessionID int64) error {
 
 func (o *Off) StartOrder(_ context.Context, orderID int64) error {
 	return o.skip("order", orderID)
+}
+
+func (o *Off) OrderConfirmed(_ context.Context, orderID int64) error {
+	return o.skip("order confirmed", orderID)
 }
 
 func (o *Off) OrderReceived(_ context.Context, orderID int64) error {

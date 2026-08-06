@@ -239,6 +239,8 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("POST /orders/uploads", auth(http.HandlerFunc(d.Order.CreateUpload)))
 	mux.Handle("POST /orders/uploads/{id}/confirmation", auth(http.HandlerFunc(d.Order.ConfirmUpload)))
 	mux.Handle("GET /orders/{id}", auth(http.HandlerFunc(d.Order.GetOrder)))
+	mux.Handle("POST /orders/{id}/confirmation", auth(http.HandlerFunc(d.Order.ConfirmOrder)))
+	mux.Handle("POST /orders/{id}/decline", auth(http.HandlerFunc(d.Order.DeclineOrder)))
 	mux.Handle("POST /orders/{id}/receipt", auth(http.HandlerFunc(d.Order.ConfirmReceipt)))
 	mux.Handle("POST /orders/{id}/cancellation", auth(http.HandlerFunc(d.Order.CancelOrder)))
 	mux.Handle("GET /orders/{id}/transport", auth(http.HandlerFunc(d.Order.GetOrderTransport)))
@@ -262,7 +264,6 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("DELETE /refunds/{id}", auth(http.HandlerFunc(d.Order.WithdrawRefund)))
 	mux.Handle("POST /refunds/{id}/attachments", auth(http.HandlerFunc(d.Order.AddRefundAttachments)))
 	mux.Handle("POST /refunds/{id}/acceptance", auth(http.HandlerFunc(d.Order.AcceptRefund)))
-	mux.Handle("POST /refunds/{id}/rejection", auth(http.HandlerFunc(d.Order.RejectRefund)))
 	mux.Handle("POST /refunds/{id}/return-transport/checkpoints", auth(http.HandlerFunc(d.Order.AdvanceReturnShipment)))
 	// Staff decide the money; escalating is trust's route, because the ticket lives there.
 	mux.Handle("POST /admin/refunds/{id}/verdict", auth(http.HandlerFunc(d.Order.AdminResolveRefund)))

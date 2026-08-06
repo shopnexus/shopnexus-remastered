@@ -35,6 +35,14 @@ paths:
         first is still open is a conflict rather than a second row. A `refund-dispute` also moves
         the refund into staff's hands first, so order's own guards — the right party, the right
         moment — are what answer 403 and 409 here.
+
+
+        A `refund-dispute` names the **order**, not the refund: one live refund per sale is a
+        database index, so which case it is stays order's to resolve, and every dispute about that
+        sale then files against one target. That is what keeps a seller's complaint about what came
+        back in the thread they were already using. It is also raised for a buyer automatically
+        when the seller lets the 48-hour review window pass — silence is not a verdict, and the
+        buyer is not asked to chase a case they already opened.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true

@@ -25,10 +25,11 @@ CREATE TYPE "transport_status" AS ENUM (
 -- advance all of them, and what makes "who is holding this up" answerable without
 -- reading the service.
 --
---   awaiting-seller-review  the seller accepts or rejects
---   awaiting-buyer-action   the buyer escalates to staff, or lets it lapse. Entered
---                           by a rejection, or by the seller letting the review
---                           window pass; "rejection_reason" tells them apart.
+--   awaiting-seller-review  the seller accepts, or raises a ticket. Those are the only
+--                           two moves: a seller cannot refuse a refund on their own word,
+--                           because that only ever moved the burden onto the buyer to
+--                           escalate, and a buyer who does not know they have to loses.
+--                           Letting the window pass raises the ticket for them.
 --   disputed                staff are looking at it. The ticket lives in trust; this
 --                           value is only "no party is on the clock, a verdict is".
 --   returning               the carrier delivers the goods back to the seller. The
@@ -38,7 +39,6 @@ CREATE TYPE "transport_status" AS ENUM (
 --                           letting the window pass settles the refund for the buyer.
 CREATE TYPE "refund_status" AS ENUM (
     'awaiting-seller-review',
-    'awaiting-buyer-action',
     'disputed',
     'returning',
     'returned',
@@ -171,6 +171,20 @@ CREATE TABLE IF NOT EXISTS "order" (
     "address" JSONB NOT NULL,
     "pickup_address" JSONB NOT NULL, -- Seller's collection point, snapshotted the same way
 
+    -- The seller accepting the sale. Nothing reaches the carrier before it: the "transport"
+    -- row is written at payment because the carrier and the fee are the *buyer's* choice and
+    -- have to be frozen there, but it sits at 'pending' — created, not handed over — until
+    -- this is set. A seller who never answers is not a seller whose goods we ship.
+    "confirmed_at" TIMESTAMPTZ,
+    -- When staff were asked to chase a seller who had not answered. The marker that keeps the
+    -- sweep from re-raising the same order every interval: a healthy marketplace reads nothing
+    -- from the index below, where a time window would make the cost grow with history.
+    "confirmation_escalated_at" TIMESTAMPTZ,
+    -- Why the seller refused, when they refused outright rather than letting the window pass.
+    -- Kept on the row because it is a fact about *them* — reputation reads it — where the
+    -- cancellation itself says only that the sale did not happen.
+    "decline_reason" TEXT,
+
     -- Buyer's receipt confirmation. The unboxing evidence lives here rather than in a
     -- side table because it is captured in the same request that sets "received_at" and
     -- is never added to afterwards — a refund is judged on what the buyer showed at the
@@ -209,6 +223,16 @@ CREATE TABLE IF NOT EXISTS "order" (
     CONSTRAINT "order_payout_needs_receipt" CHECK (
         "payout_released_at" IS NULL OR "received_at" IS NOT NULL
     ),
+    -- Nothing was shipped before the seller agreed, so nothing can have been received either.
+    CONSTRAINT "order_receipt_needs_confirmation" CHECK (
+        "received_at" IS NULL OR "confirmed_at" IS NOT NULL
+    ),
+    -- A refusal is a cancellation with a reason. The reason cannot outlive the outcome, and a
+    -- confirmed order was never refused.
+    CONSTRAINT "order_decline_is_a_cancellation" CHECK (
+        "decline_reason" IS NULL
+        OR ("cancelled_at" IS NOT NULL AND "confirmed_at" IS NULL)
+    ),
 
     CONSTRAINT "order_transport_id_fkey" FOREIGN KEY ("transport_id")
         REFERENCES "transport" ("id") ON DELETE NO ACTION,
@@ -218,6 +242,13 @@ CREATE TABLE IF NOT EXISTS "order" (
         REFERENCES "offer" ("id") ON DELETE NO ACTION
 );
 CREATE INDEX IF NOT EXISTS "order_transport_id_idx" ON "order" ("transport_id");
+-- The sweep that chases sellers who have not answered reads exactly this: orders still waiting
+-- on a confirmation, oldest first. Partial, so a healthy marketplace scans almost nothing —
+-- a confirmed order leaves the index instead of accumulating in it.
+CREATE INDEX IF NOT EXISTS "order_awaiting_confirmation_idx"
+    ON "order" ("created_at")
+    WHERE "confirmed_at" IS NULL AND "completed_at" IS NULL AND "cancelled_at" IS NULL
+      AND "confirmation_escalated_at" IS NULL;
 -- Buyer's and seller's order lists, newest first, open ones only. Partial because an
 -- open order is the small, hot slice; history is read by id or by explicit date range.
 CREATE INDEX IF NOT EXISTS "order_buyer_id_open_idx"
@@ -326,11 +357,10 @@ CREATE TABLE IF NOT EXISTS "refund" (
     -- neither of which a timer should decide, and the terminal states wait on nothing.
     "deadline_at" TIMESTAMPTZ,
 
-    -- The seller's answer. "rejection_reason" is what separates a refusal from a
-    -- seller who simply let the window pass: both land on the buyer, only one has a
-    -- reason to show them.
+    -- When the seller answered. There is no "rejection_reason" beside it: a seller cannot
+    -- refuse a refund, only grant it or hand the case to staff, so their answer has no
+    -- second shape to record.
     "seller_decided_at" TIMESTAMPTZ,
-    "rejection_reason" TEXT,
 
     -- Return leg: buyer → seller, created when the refund is granted, never before.
     -- No leg back to the buyer: a seller who wins was either never sent anything, or
@@ -345,14 +375,11 @@ CREATE TABLE IF NOT EXISTS "refund" (
     CONSTRAINT "refund_returned_needs_transport" CHECK (
         "returned_at" IS NULL OR "return_transport_id" IS NOT NULL
     ),
-    CONSTRAINT "refund_rejection_needs_decision" CHECK (
-        "rejection_reason" IS NULL OR "seller_decided_at" IS NOT NULL
-    ),
     -- A live refund always has someone on the clock, and the two states that wait on a
     -- carrier or on staff never do.
     CONSTRAINT "refund_deadline_matches_status" CHECK (
         ("deadline_at" IS NOT NULL) =
-        ("status" IN ('awaiting-seller-review', 'awaiting-buyer-action', 'returned'))
+        ("status" IN ('awaiting-seller-review', 'returned'))
     ),
 
     CONSTRAINT "refund_order_id_fkey" FOREIGN KEY ("order_id")
@@ -366,11 +393,10 @@ CREATE INDEX IF NOT EXISTS "refund_order_id_idx" ON "refund" ("order_id");
 -- rather than a second claim on the same money.
 CREATE UNIQUE INDEX IF NOT EXISTS "refund_one_active_per_order"
     ON "refund" ("order_id")
-    WHERE "status" IN ('awaiting-seller-review', 'awaiting-buyer-action', 'disputed', 'returning', 'returned');
--- One job advances every overdue refund, and it reads one index to find them all:
--- a missed seller review moves to the buyer, a buyer who never escalated lapses to
--- 'rejected', and an uncontested return settles as 'accepted'. Which of the three it
--- is follows from "status", so the timer does not need a column per state.
+    WHERE "status" IN ('awaiting-seller-review', 'disputed', 'returning', 'returned');
+-- One job advances every overdue refund, and it reads one index to find them all: a seller
+-- who never answered hands the case to staff, and an uncontested return settles as 'accepted'.
+-- Which of the two it is follows from "status", so the timer needs no column per state.
 CREATE INDEX IF NOT EXISTS "refund_overdue_idx"
     ON "refund" ("deadline_at")
     WHERE "deadline_at" IS NOT NULL;

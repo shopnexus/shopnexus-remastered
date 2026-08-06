@@ -770,26 +770,48 @@ func (h *Order) AddRefundAttachments(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteData(w, http.StatusOK, res)
 }
 
-// RejectRefund handles POST /refunds/{id}/rejection. The reason is required: the buyer is
-// owed the why, and it is what separates a refusal from a seller who said nothing.
-func (h *Order) RejectRefund(w http.ResponseWriter, r *http.Request) {
+// ConfirmOrder handles POST /orders/{id}/confirmation. The seller accepting the sale, and the
+// only thing that hands the parcel to the carrier.
+func (h *Order) ConfirmOrder(w http.ResponseWriter, r *http.Request) {
 	uid, err := actor(r)
 	if failed(w, h.log, err) {
 		return
 	}
-	refundID, err := pathID[id.Refund](r, "id")
+	orderID, err := pathID[id.Order](r, "id")
 	if failed(w, h.log, err) {
 		return
 	}
-	var req orderapi.RejectRefundRequest
-	if failed(w, h.log, decodeBody(r, &req)) {
-		return
-	}
-	req.ActorID, req.ID = uid, refundID
+	req := orderapi.ConfirmOrderRequest{ActorID: uid, ID: orderID}
 	if failed(w, h.log, check(h.v, req)) {
 		return
 	}
-	res, err := h.svc.RejectRefund(r.Context(), req)
+	res, err := h.svc.ConfirmOrder(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
+// DeclineOrder handles POST /orders/{id}/decline. The reason is required and it is kept: the
+// cancellation says only that the sale did not happen, where this says who ended it and why.
+func (h *Order) DeclineOrder(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	orderID, err := pathID[id.Order](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	var req orderapi.DeclineOrderRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	req.ActorID, req.ID = uid, orderID
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.DeclineOrder(r.Context(), req)
 	if failed(w, h.log, err) {
 		return
 	}

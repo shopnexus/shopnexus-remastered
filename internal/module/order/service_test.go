@@ -426,6 +426,10 @@ func (f *fakeWorkflows) StartOrder(_ context.Context, orderID int64) error {
 	return f.record("start-order", orderID)
 }
 
+func (f *fakeWorkflows) OrderConfirmed(_ context.Context, orderID int64) error {
+	return f.record("order-confirmed", orderID)
+}
+
 func (f *fakeWorkflows) OrderReceived(_ context.Context, orderID int64) error {
 	return f.record("order-received", orderID)
 }
@@ -531,7 +535,7 @@ func (h *harness) checkout(t *testing.T) (orderapi.CheckoutResult, orderapi.Orde
 	if err != nil {
 		t.Fatalf("Checkout: %v", err)
 	}
-	// The money is what creates the order — no seller step in between.
+	// The money creates the order; the seller accepting it is what starts the delivery.
 	h.finance.pay(result.PaymentSession)
 	if err := h.svc.SettlePaidSession(ctx, result.PaymentSession); err != nil {
 		t.Fatalf("SettlePaidSession: %v", err)
@@ -548,11 +552,28 @@ func (h *harness) checkout(t *testing.T) (orderapi.CheckoutResult, orderapi.Orde
 	return result, page.Data[0]
 }
 
+// confirmed is checkout plus the seller accepting it — what most tests mean by "an order", since
+// nothing ships and nothing can be received until then.
+func (h *harness) confirmed(t *testing.T) (orderapi.CheckoutResult, orderapi.Order) {
+	t.Helper()
+	result, o := h.checkout(t)
+	if o.State != orderapi.StateAwaitingConfirmation {
+		t.Fatalf("state = %q, want a paid order to wait on the seller", o.State)
+	}
+	live, err := h.svc.ConfirmOrder(context.Background(), orderapi.ConfirmOrderRequest{
+		ActorID: seller, ID: o.ID,
+	})
+	if err != nil {
+		t.Fatalf("ConfirmOrder: %v", err)
+	}
+	return result, live
+}
+
 // The whole fixed-price path: a draft freezes the price, checkout reserves and charges, and
 // the settled session writes the order, the shipment and the escrow hold.
 func TestCheckout_MoneyCreatesTheOrder(t *testing.T) {
 	h := newHarness("fixed")
-	result, o := h.checkout(t)
+	result, o := h.confirmed(t)
 
 	// The bill is itemised, and the buyer pays both halves: the frozen price plus the carriage
 	// the courier quoted for this parcel to this address.
@@ -1008,7 +1029,7 @@ func TestCreateOffer_OneActivePerVariant(t *testing.T) {
 func TestOrder_ReceiptThenPayout(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
-	_, o := h.checkout(t)
+	_, o := h.confirmed(t)
 
 	// Evidence that names no confirmed upload is refused: a dispute judged on a photo that
 	// does not render is a decision nobody can review.
@@ -1061,7 +1082,7 @@ func TestOrder_ReceiptThenPayout(t *testing.T) {
 func TestUpload_ConfirmedBeforeItCanBeUsedAsEvidence(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
-	_, o := h.checkout(t)
+	_, o := h.confirmed(t)
 
 	slot, err := h.svc.CreateUpload(ctx, orderapi.CreateUploadRequest{
 		ActorID: buyer, Filename: "unbox.jpg", Mime: "image/jpeg", Size: 2048,
@@ -1130,7 +1151,7 @@ func TestUpload_ConfirmedBeforeItCanBeUsedAsEvidence(t *testing.T) {
 func TestRefund_BlocksPayoutAndAdvancesOnTime(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
-	_, o := h.checkout(t)
+	_, o := h.confirmed(t)
 	h.uploads.confirm(42)
 	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
 		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
@@ -1170,8 +1191,15 @@ func TestRefund_BlocksPayoutAndAdvancesOnTime(t *testing.T) {
 		t.Fatalf("ReleaseDuePayouts = %d, %v; want the refund to hold it", paid, err)
 	}
 
-	// The seller says nothing: the deadline passes and it lands on the buyer with no reason,
-	// which is what tells a lapse from a refusal.
+	// The seller says nothing: the deadline passes and staff take it over. The buyer is never
+	// asked to chase a case they already opened — that step is what used to lose them the money.
+	// Trust opens the ticket off the published fact, so the escalation has to reach the bus.
+	var escalated []order.RefundEscalated
+	eventbus.Subscribe(h.bus, order.RefundEscalatedTopic, "test",
+		func(_ context.Context, e order.RefundEscalated) error {
+			escalated = append(escalated, e)
+			return nil
+		})
 	live := h.repo.refunds[refund.ID.Int64()]
 	live.DeadlineAt = new(live.CreatedAt.Add(-1))
 	h.repo.refunds[refund.ID.Int64()] = live
@@ -1186,8 +1214,15 @@ func TestRefund_BlocksPayoutAndAdvancesOnTime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetRefund: %v", err)
 	}
-	if after.Status != domain.RefundAwaitingBuyer || after.RejectionReason != nil {
-		t.Fatalf("refund = %+v, want the buyer on the clock with no reason", after)
+	if after.Status != domain.RefundDisputed || after.DeadlineAt != nil {
+		t.Fatalf("refund = %+v, want it with staff and nobody on the clock", after)
+	}
+	// And trust is told, because a disputed case nobody was told about sits in the queue until
+	// somebody goes looking for it.
+	h.bus.Wait()
+	if len(escalated) != 1 || escalated[0].RefundID != refund.ID.Int64() ||
+		escalated[0].BuyerID != buyer.Int64() {
+		t.Fatalf("published = %+v, want one escalation naming the refund and its buyer", escalated)
 	}
 }
 
@@ -1196,7 +1231,7 @@ func TestRefund_BlocksPayoutAndAdvancesOnTime(t *testing.T) {
 func TestRefund_AcceptOpensTheReturnLeg(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
-	_, o := h.checkout(t)
+	_, o := h.confirmed(t)
 	h.uploads.confirm(42)
 	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
 		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
@@ -1228,15 +1263,15 @@ func TestRefund_AcceptOpensTheReturnLeg(t *testing.T) {
 	}
 }
 
-// A rejection puts the buyer on the clock, escalating hands the case to staff, and a verdict for
-// the buyer before the goods moved books the return leg — the state has no other exit, so a
-// verdict that only set the status stranded the escrow with nobody on a clock. The money then
+// The seller raising a ticket hands the case to staff, and a verdict for the buyer before the
+// goods moved books the return leg — the state has no other exit, so a verdict that only set the
+// status stranded the escrow with nobody on a clock. The money then
 // follows the goods back: the return is delivered, the seller escalates what arrived, and the
 // same verdict now pays the buyer and closes the order, because there is nothing left to ship.
 func TestRefund_VerdictBooksTheReturnThenPaysTheBuyer(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
-	_, o := h.checkout(t)
+	_, o := h.confirmed(t)
 	h.uploads.confirm(42)
 	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
 		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
@@ -1249,25 +1284,15 @@ func TestRefund_VerdictBooksTheReturnThenPaysTheBuyer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateRefund: %v", err)
 	}
-	// Nobody has disagreed yet, so there is nothing for staff to decide.
+	// Escalating is the seller's, in place of refusing: the buyer opened the case and is not
+	// asked to open it again.
 	if got := status(t, mustErr(h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
-		ActorID: buyer, ID: refund.ID,
-	}))); got != 409 {
-		t.Fatalf("status = %d, want 409 escalating a refund the seller has not answered", got)
-	}
-	if _, err := h.svc.RejectRefund(ctx, orderapi.RejectRefundRequest{
-		ActorID: seller, ID: refund.ID, Reason: "sent as described",
-	}); err != nil {
-		t.Fatalf("RejectRefund: %v", err)
-	}
-	// A refusal is the buyer's to contest, not the seller's.
-	if got := status(t, mustErr(h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
-		ActorID: seller, ID: refund.ID,
+		ActorID: buyer, OrderID: o.ID,
 	}))); got != 403 {
-		t.Fatalf("status = %d, want 403 for the seller escalating their own refusal", got)
+		t.Fatalf("status = %d, want 403 for the buyer escalating their own refund", got)
 	}
 	escalated, err := h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
-		ActorID: buyer, ID: refund.ID,
+		ActorID: seller, OrderID: o.ID,
 	})
 	if err != nil {
 		t.Fatalf("EscalateRefund: %v", err)
@@ -1277,7 +1302,7 @@ func TestRefund_VerdictBooksTheReturnThenPaysTheBuyer(t *testing.T) {
 	}
 	// Trust retries, so escalating again answers the refund rather than a conflict.
 	if again, err := h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
-		ActorID: buyer, ID: refund.ID,
+		ActorID: seller, OrderID: o.ID,
 	}); err != nil || again.Status != domain.RefundDisputed {
 		t.Fatalf("second EscalateRefund = %+v, %v; want the same refund back", again, err)
 	}
@@ -1339,12 +1364,12 @@ func TestRefund_VerdictBooksTheReturnThenPaysTheBuyer(t *testing.T) {
 	}
 	// What came back is the seller's to contest, and the buyer has nothing left to escalate.
 	if got := status(t, mustErr(h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
-		ActorID: buyer, ID: refund.ID,
+		ActorID: buyer, OrderID: o.ID,
 	}))); got != 403 {
 		t.Fatalf("status = %d, want 403 for the buyer escalating the return", got)
 	}
 	if _, err := h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
-		ActorID: seller, ID: refund.ID,
+		ActorID: seller, OrderID: o.ID,
 	}); err != nil {
 		t.Fatalf("seller EscalateRefund: %v", err)
 	}
@@ -1408,7 +1433,7 @@ func TestRefund_VerdictBooksTheReturnThenPaysTheBuyer(t *testing.T) {
 func TestRefund_VerdictForTheSellerEndsIt(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
-	_, o := h.checkout(t)
+	_, o := h.confirmed(t)
 	h.uploads.confirm(42)
 	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
 		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
@@ -1421,13 +1446,8 @@ func TestRefund_VerdictForTheSellerEndsIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateRefund: %v", err)
 	}
-	if _, err := h.svc.RejectRefund(ctx, orderapi.RejectRefundRequest{
-		ActorID: seller, ID: refund.ID, Reason: "sent as described",
-	}); err != nil {
-		t.Fatalf("RejectRefund: %v", err)
-	}
 	if _, err := h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
-		ActorID: buyer, ID: refund.ID,
+		ActorID: seller, OrderID: o.ID,
 	}); err != nil {
 		t.Fatalf("EscalateRefund: %v", err)
 	}
@@ -1476,7 +1496,7 @@ func TestRefund_VerdictForTheSellerEndsIt(t *testing.T) {
 func (h *harness) openRefund(t *testing.T) (orderapi.Order, orderapi.Refund) {
 	t.Helper()
 	ctx := context.Background()
-	_, o := h.checkout(t)
+	_, o := h.confirmed(t)
 	h.uploads.confirm(42)
 	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
 		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
@@ -1523,7 +1543,7 @@ func TestAdvanceOverdueRefunds_LosesToAnEscalationItDidNotSee(t *testing.T) {
 	// writing its own outcome over it.
 	h.repo.onRefundWrite = func() {
 		if _, err := h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
-			ActorID: seller, ID: refund.ID,
+			ActorID: seller, OrderID: o.ID,
 		}); err != nil {
 			t.Errorf("seller EscalateRefund: %v", err)
 		}
@@ -1562,14 +1582,9 @@ func TestAdvanceOverdueRefunds_LosesToAnEscalationItDidNotSee(t *testing.T) {
 func TestAdvanceOverdueRefunds_SkipsACaseWithStaff(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
-	_, refund := h.openRefund(t)
-	if _, err := h.svc.RejectRefund(ctx, orderapi.RejectRefundRequest{
-		ActorID: seller, ID: refund.ID, Reason: "sent as described",
-	}); err != nil {
-		t.Fatalf("RejectRefund: %v", err)
-	}
+	o, refund := h.openRefund(t)
 	if _, err := h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
-		ActorID: buyer, ID: refund.ID,
+		ActorID: seller, OrderID: o.ID,
 	}); err != nil {
 		t.Fatalf("EscalateRefund: %v", err)
 	}
@@ -1596,21 +1611,16 @@ func TestEscalateRefund_RefusedOnceTheOrderHasSettled(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
 	o, refund := h.openRefund(t)
-	if _, err := h.svc.RejectRefund(ctx, orderapi.RejectRefundRequest{
-		ActorID: seller, ID: refund.ID, Reason: "sent as described",
-	}); err != nil {
-		t.Fatalf("RejectRefund: %v", err)
-	}
 	// The parcel never left, so the buyer can still cancel the order under their own live refund.
 	if _, err := h.svc.CancelOrder(ctx, orderapi.CancelOrderRequest{ActorID: buyer, ID: o.ID}); err != nil {
 		t.Fatalf("CancelOrder: %v", err)
 	}
 	if got := status(t, mustErr(h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
-		ActorID: buyer, ID: refund.ID,
+		ActorID: seller, OrderID: o.ID,
 	}))); got != 409 {
 		t.Fatalf("status = %d, want 409 escalating a case whose escrow has gone", got)
 	}
-	if stored := h.repo.refunds[refund.ID.Int64()]; stored.Status != domain.RefundAwaitingBuyer {
+	if stored := h.repo.refunds[refund.ID.Int64()]; stored.Status != domain.RefundAwaitingSeller {
 		t.Fatalf("refund = %q, want it left where it was", stored.Status)
 	}
 }
@@ -1621,14 +1631,9 @@ func TestEscalateRefund_RefusedOnceTheOrderHasSettled(t *testing.T) {
 func TestAdminResolveRefund_TwoModeratorsDecideItOnce(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
-	_, refund := h.openRefund(t)
-	if _, err := h.svc.RejectRefund(ctx, orderapi.RejectRefundRequest{
-		ActorID: seller, ID: refund.ID, Reason: "sent as described",
-	}); err != nil {
-		t.Fatalf("RejectRefund: %v", err)
-	}
+	o, refund := h.openRefund(t)
 	if _, err := h.svc.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
-		ActorID: buyer, ID: refund.ID,
+		ActorID: seller, OrderID: o.ID,
 	}); err != nil {
 		t.Fatalf("EscalateRefund: %v", err)
 	}
@@ -1971,7 +1976,7 @@ func TestExpireCheckouts_ReleasesUnpaidReservations(t *testing.T) {
 func TestReleasePayout_LosesToARefundCommittedAfterTheSelect(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
-	_, o := h.checkout(t)
+	_, o := h.confirmed(t)
 	h.uploads.confirm(42)
 	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
 		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
@@ -2012,7 +2017,7 @@ func TestReleasePayout_LosesToARefundCommittedAfterTheSelect(t *testing.T) {
 	// And a refund cannot be opened the other way round either: once the order is claimed the
 	// escrow it was about has gone.
 	h2 := newHarness("fixed")
-	_, o2 := h2.checkout(t)
+	_, o2 := h2.confirmed(t)
 	h2.uploads.confirm(42)
 	if _, err := h2.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
 		ActorID: buyer, ID: o2.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
@@ -2039,7 +2044,7 @@ func TestReleasePayout_LosesToARefundCommittedAfterTheSelect(t *testing.T) {
 func TestSettleRefund_MovesTheMoneyBeforeTheRowGoesTerminal(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
-	_, o := h.checkout(t)
+	_, o := h.confirmed(t)
 	h.uploads.confirm(42)
 	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
 		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
@@ -2105,7 +2110,7 @@ func TestSettleRefund_MovesTheMoneyBeforeTheRowGoesTerminal(t *testing.T) {
 func TestCancelOrder_ReversesTheSaleRatherThanAReservation(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
-	_, o := h.checkout(t)
+	_, o := h.confirmed(t)
 	if h.catalog.sold != 1 || h.catalog.reserved != 0 {
 		t.Fatalf("stock = reserved %d sold %d, want the sale committed",
 			h.catalog.reserved, h.catalog.sold)
@@ -2153,7 +2158,7 @@ func TestBookShipment_RetriedUntilTheCarrierAcceptsTheParcel(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
 	h.courier.bookFails = true
-	_, o := h.checkout(t)
+	_, o := h.confirmed(t)
 
 	// The sale stands even though no courier has heard about it: the money has already moved.
 	if len(h.courier.booked) != 0 {
@@ -2230,7 +2235,7 @@ func TestBookShipment_RetriedUntilTheCarrierAcceptsTheParcel(t *testing.T) {
 func TestCancelOrder_RefusesAShippedOrder(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
-	_, o := h.checkout(t)
+	_, o := h.confirmed(t)
 
 	// Only the seller reports the outbound leg; a buyer marking their own parcel shipped would
 	// be deciding whether they may still cancel.
@@ -2266,7 +2271,7 @@ func TestCancelOrder_RefusesAShippedOrder(t *testing.T) {
 func TestWithdrawRefund_IsNotASellerWin(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
-	_, o := h.checkout(t)
+	_, o := h.confirmed(t)
 	h.uploads.confirm(42)
 	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
 		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
@@ -2449,7 +2454,7 @@ func TestPriceMode_OnlyNegotiableCanBeNegotiated(t *testing.T) {
 func TestGetOrderSummary_OneWindowOneMeaning(t *testing.T) {
 	h := newHarness("fixed")
 	ctx := context.Background()
-	_, o := h.checkout(t)
+	_, o := h.confirmed(t)
 
 	seen, err := h.svc.GetOrderSummary(ctx, orderapi.OrderSummaryRequest{
 		ActorID: seller, Role: orderapi.RoleSeller,

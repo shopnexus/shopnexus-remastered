@@ -219,40 +219,25 @@ func (s *Service) AdvanceReturnShipment(ctx context.Context, req orderapi.Advanc
 	return s.refundView(ctx, r)
 }
 
-// RejectRefund refuses it, with a reason. The buyer's move next: escalate to staff, or let the
-// window lapse.
-func (s *Service) RejectRefund(ctx context.Context, req orderapi.RejectRefundRequest) (orderapi.Refund, error) {
-	r, o, err := s.refundParty(ctx, req.ActorID, req.ID)
-	if err != nil {
-		return orderapi.Refund{}, err
-	}
-	if o.SellerID != req.ActorID.Int64() {
-		return orderapi.Refund{}, domain.ErrNotTheSeller
-	}
-	if o.Settled() {
-		return orderapi.Refund{}, domain.ErrOrderSettled
-	}
-	from := r.Status
-	if err := r.Reject(req.Reason); err != nil {
-		return orderapi.Refund{}, err
-	}
-	if err := s.saveRefund(ctx, r, from); err != nil {
-		return orderapi.Refund{}, err
-	}
-	return s.refundView(ctx, r)
-}
-
-// EscalateRefund records that staff have been asked to decide: the buyer after a refusal, the
-// seller after the goods came back and are not what they were told to expect. Trust calls this
-// when it opens the ticket, so the refund's status and the ticket cannot disagree — there is no
+// EscalateRefund records that staff have been asked to decide. Both entries are the seller's:
+// instead of refusing a refund on their own word they raise a ticket, and after the goods come
+// back they may say what arrived is not what the buyer's evidence showed. Trust calls this when
+// it opens the ticket, so the refund's status and the ticket cannot disagree — there is no
 // route, because an escalation with no ticket behind it is a case nobody would ever work.
 //
 // Idempotent: a refund already with staff is answered rather than refused, since trust retries.
 func (s *Service) EscalateRefund(ctx context.Context, req orderapi.EscalateRefundRequest) (orderapi.Refund, error) {
-	r, o, err := s.refundParty(ctx, req.ActorID, req.ID)
+	o, err := s.involved(ctx, req.ActorID, req.OrderID)
 	if err != nil {
 		return orderapi.Refund{}, err
 	}
+	r, err := s.repo.LiveRefundOnOrder(ctx, o.ID)
+	if err != nil {
+		return orderapi.Refund{}, fmt.Errorf("find live refund: %w", err)
+	}
+	// Already with staff: answered rather than refused, because trust retries and because the
+	// timeout path moves the case here itself — the ticket then follows for a refund whose status
+	// has already changed, with no actor to check.
 	if r.Status == domain.RefundDisputed {
 		return s.refundView(ctx, r)
 	}
@@ -262,14 +247,10 @@ func (s *Service) EscalateRefund(ctx context.Context, req orderapi.EscalateRefun
 	if o.Settled() {
 		return orderapi.Refund{}, domain.ErrOrderSettled
 	}
-	// Which party may escalate follows from the state: a refusal is the buyer's to contest, and
-	// what arrived back is the seller's.
+	// Only the seller escalates, from either of their two windows. The buyer opened the case;
+	// making them open it again is what used to lose them the money.
 	switch r.Status {
-	case domain.RefundAwaitingBuyer:
-		if r.BuyerID != req.ActorID.Int64() {
-			return orderapi.Refund{}, domain.ErrNotTheBuyer
-		}
-	case domain.RefundReturned:
+	case domain.RefundAwaitingSeller, domain.RefundReturned:
 		if o.SellerID != req.ActorID.Int64() {
 			return orderapi.Refund{}, domain.ErrNotTheSeller
 		}
@@ -406,7 +387,6 @@ func (s *Service) refundView(ctx context.Context, r domain.Refund) (orderapi.Ref
 		Reason:          r.Reason,
 		Attachments:     pick(evidence, r.Attachments),
 		DeadlineAt:      r.DeadlineAt,
-		RejectionReason: r.RejectionReason,
 		SellerDecidedAt: r.SellerDecidedAt,
 		ReturnedAt:      r.ReturnedAt,
 		CreatedAt:       r.CreatedAt,

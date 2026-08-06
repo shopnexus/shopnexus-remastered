@@ -102,9 +102,9 @@ type fakeOrders struct {
 	// escalateErr is order refusing the escalation — the wrong party, or a refund past the point
 	// where staff can still decide it.
 	escalateErr error
-	// escalated counts the refunds handed to staff, which is what says the ticket did not open one
+	// escalated counts the sales handed to staff, which is what says the ticket did not open one
 	// order knows nothing about.
-	escalated []id.ID[id.Refund]
+	escalated []id.ID[id.Order]
 }
 
 func (f *fakeOrders) GetRefund(_ context.Context, req orderapi.RefundRequest) (orderapi.Refund, error) {
@@ -115,8 +115,8 @@ func (f *fakeOrders) EscalateRefund(_ context.Context, req orderapi.EscalateRefu
 	if f.escalateErr != nil {
 		return orderapi.Refund{}, f.escalateErr
 	}
-	f.escalated = append(f.escalated, req.ID)
-	return orderapi.Refund{ID: req.ID, OrderID: orderID, BuyerID: buyer}, nil
+	f.escalated = append(f.escalated, req.OrderID)
+	return orderapi.Refund{ID: id.ID[id.Refund](55), OrderID: req.OrderID, BuyerID: buyer}, nil
 }
 
 func (f *fakeOrders) GetOrder(_ context.Context, req orderapi.OrderRequest) (orderapi.Order, error) {
@@ -1110,9 +1110,12 @@ func TestOpenTicket_RefundDisputeEscalatesInOrderFirst(t *testing.T) {
 	h := newHarness("completed")
 	ctx := context.Background()
 	refundID := id.ID[id.Refund](55)
+	// A refund-dispute ticket names the *order*, not the case: one live refund per order is an
+	// index, so order resolves which row that is — and every dispute about one sale then files
+	// against the same target, which is what puts a seller's later complaint in the same queue.
 	req := trustapi.OpenTicketRequest{
 		ActorID: buyer, Kind: domain.KindRefundDispute, Subject: "Hàng không đúng mô tả",
-		RefID: refundID.String(), Body: "ảnh mở hộp đây",
+		RefID: orderID.String(), Body: "ảnh mở hộp đây",
 	}
 
 	// Order refuses: nothing is written here either.
@@ -1129,11 +1132,11 @@ func TestOpenTicket_RefundDisputeEscalatesInOrderFirst(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenTicket: %v", err)
 	}
-	if len(h.orders.escalated) != 1 || h.orders.escalated[0] != refundID {
-		t.Fatalf("escalated = %v, want the refund handed to order", h.orders.escalated)
+	if len(h.orders.escalated) != 1 || h.orders.escalated[0] != orderID {
+		t.Fatalf("escalated = %v, want the sale handed to order", h.orders.escalated)
 	}
-	if filed.RefType == nil || *filed.RefType != domain.RefRefund || filed.ConversationID == nil {
-		t.Fatalf("ticket = %+v, want it about the refund with a thread", filed)
+	if filed.RefType == nil || *filed.RefType != domain.RefOrder || filed.ConversationID == nil {
+		t.Fatalf("ticket = %+v, want it about the order with a thread", filed)
 	}
 
 	// Staff cannot close it by hand: the verdict is the money moving, and a ticket marked settled
@@ -1150,7 +1153,8 @@ func TestOpenTicket_RefundDisputeEscalatesInOrderFirst(t *testing.T) {
 	// Order's verdict is what closes it, and the requester reads it in the thread. Delivered twice
 	// counts once: the bus is at-least-once and a second Resolve would argue with a recorded one.
 	verdict := trustapi.RecordRefundVerdictRequest{
-		RefundID: refundID, ModeratorID: moderator, BuyerWins: true, Note: "ảnh mở hộp rõ ràng",
+		OrderID: orderID, RefundID: refundID, ModeratorID: moderator,
+		BuyerWins: true, Note: "ảnh mở hộp rõ ràng",
 	}
 	for range 2 {
 		if err := h.svc.RecordRefundVerdict(ctx, verdict); err != nil {
@@ -1169,16 +1173,16 @@ func TestOpenTicket_RefundDisputeEscalatesInOrderFirst(t *testing.T) {
 		t.Fatalf("posted = %+v, want the verdict in the thread once", h.chat.posted)
 	}
 
-	// A verdict on a refund nobody raised a ticket about is nothing to do, not a redelivery loop.
+	// A verdict on a sale nobody raised a ticket about is nothing to do, not a redelivery loop.
 	if err := h.svc.RecordRefundVerdict(ctx, trustapi.RecordRefundVerdictRequest{
-		RefundID: id.ID[id.Refund](999), ModeratorID: moderator,
+		OrderID: id.ID[id.Order](999), RefundID: id.ID[id.Refund](999), ModeratorID: moderator,
 	}); err != nil {
 		t.Fatalf("RecordRefundVerdict for an unknown refund: %v", err)
 	}
 }
 
-// Both parties may escalate one refund and the index holds one open ticket per *requester* per
-// target, so two tickets about one refund is a legal state. Order publishes one verdict, so it has
+// Both parties may escalate one sale and the index holds one open ticket per *requester* per
+// target, so two tickets about one order is a legal state. Order publishes one verdict, so it has
 // to close all of them: a refund dispute cannot be resolved by hand, which makes a ticket left open
 // on a decided refund a queue entry with no possible answer.
 func TestRecordRefundVerdict_ClosesEveryTicketAboutTheRefund(t *testing.T) {
@@ -1190,7 +1194,7 @@ func TestRecordRefundVerdict_ClosesEveryTicketAboutTheRefund(t *testing.T) {
 	for _, requester := range requesters {
 		one, err := h.svc.OpenTicket(ctx, trustapi.OpenTicketRequest{
 			ActorID: requester, Kind: domain.KindRefundDispute, Subject: "Hàng không đúng mô tả",
-			RefID: refundID.String(),
+			RefID: orderID.String(),
 		})
 		if err != nil {
 			t.Fatalf("OpenTicket by %v: %v", requester, err)
@@ -1198,7 +1202,7 @@ func TestRecordRefundVerdict_ClosesEveryTicketAboutTheRefund(t *testing.T) {
 		filed = append(filed, one.ID)
 	}
 	if err := h.svc.RecordRefundVerdict(ctx, trustapi.RecordRefundVerdictRequest{
-		RefundID: refundID, ModeratorID: moderator, Note: "hàng về đúng mô tả",
+		OrderID: orderID, RefundID: refundID, ModeratorID: moderator, Note: "hàng về đúng mô tả",
 	}); err != nil {
 		t.Fatalf("RecordRefundVerdict: %v", err)
 	}

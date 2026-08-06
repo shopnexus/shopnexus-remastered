@@ -151,8 +151,12 @@ func (Stub) AcceptRefund(context.Context, orderapi.RefundRequest) (orderapi.Refu
 	return orderapi.Refund{}, errx.ErrNotImplemented
 }
 
-func (Stub) RejectRefund(context.Context, orderapi.RejectRefundRequest) (orderapi.Refund, error) {
-	return orderapi.Refund{}, errx.ErrNotImplemented
+func (Stub) ConfirmOrder(context.Context, orderapi.ConfirmOrderRequest) (orderapi.Order, error) {
+	return orderapi.Order{}, errx.ErrNotImplemented
+}
+
+func (Stub) DeclineOrder(context.Context, orderapi.DeclineOrderRequest) (orderapi.Order, error) {
+	return orderapi.Order{}, errx.ErrNotImplemented
 }
 
 func (Stub) AdvanceReturnShipment(context.Context, orderapi.AdvanceReturnShipmentRequest) (orderapi.Refund, error) {

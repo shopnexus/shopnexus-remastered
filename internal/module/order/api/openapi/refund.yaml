@@ -6,8 +6,7 @@
 #
 #   buyer opens it                       → awaiting-seller-review
 #   seller accepts                       → returning, and the goods go back
-#   seller rejects, or ignores it        → awaiting-buyer-action
-#   buyer escalates                      → disputed
+#   seller raises a ticket, or ignores it → disputed
 #   staff decide for the seller          → rejected, and the payout stands
 #   staff decide for the buyer           → returning, and the goods go back
 #   the return is delivered              → returned
@@ -21,9 +20,13 @@
 # no rounds — whether the goods have come back is what a verdict reads to know whether it
 # is granting the refund or paying it.
 #
-# Every state named for a waiting party carries `deadline_at`, and letting it pass is
-# itself a move — a seller who ignores the review hands it to the buyer, a buyer who
-# never escalates lets it lapse to rejected, an uncontested return settles for the buyer.
+# A seller cannot refuse a refund. Their two moves are granting it and handing it to staff,
+# because refusing only ever moved the burden onto the buyer to escalate — and a buyer who did
+# not know they had to, or who simply did not open the app for three days, lost a case nobody
+# had judged. Silence is not a verdict, so letting the window pass raises the ticket for them.
+#
+# Every state named for a waiting party carries `deadline_at`, and letting it pass is itself a
+# move — an unanswered review goes to staff, an uncontested return settles for the buyer.
 # `returning` and `disputed` carry none: a carrier and staff decide those.
 #
 # A buyer may also withdraw while the seller has not decided, which is `cancelled` — its own
@@ -182,38 +185,6 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'Refund is not awaiting seller review', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
-  /refunds/{id}/rejection:
-    parameters:
-      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/RefundID' } }
-    post:
-      tags: [order]
-      summary: Reject a refund (seller)
-      description: >
-        Refusing costs a reason, and it does not close the case: the next move is the
-        buyer's, who may escalate to staff until the refund lapses. A seller who simply
-        lets the review window pass ends up in the same place without one.
-      security: [{ bearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/RejectRefundRequest' }
-      responses:
-        '200':
-          description: 'Rejected; the buyer may now escalate'
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data: { $ref: '#/components/schemas/Refund' }
-                required: [data]
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { description: 'Caller is not the seller of this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: 'Refund is not awaiting seller review', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-
 components:
   schemas:
     RefundStatus:
@@ -223,19 +194,18 @@ components:
         of those carries a `deadline_at` that the party can miss:
 
 
-        `awaiting-seller-review` — the seller accepts or rejects. Missing it hands the
-        case to the buyer. `awaiting-buyer-action` — the buyer escalates to staff or lets
-        the refund lapse; `rejection_reason` says whether the seller refused or just went
-        quiet. `disputed` — staff are looking at it. `returning` — the goods are on their
-        way back; only a granted refund ever reaches here. `returned` — the seller
-        inspects and may escalate until the window closes.
+        `awaiting-seller-review` — the seller grants it or hands it to staff; they cannot
+        refuse it. Missing the window hands it to staff too. `disputed` — staff are looking
+        at it. `returning` — the goods are on their way back; only a granted refund ever
+        reaches here. `returned` — the seller inspects what arrived and may escalate until
+        the window closes, which is where a broken or substituted return is caught.
 
 
         Then three terminals: `accepted` is money back to the buyer and the order closed with
         it, `rejected` is no refund and the payout stands, `cancelled` is the buyer withdrawing
         before the seller decided. Only the last two give the escrow up — `accepted` keeps its
         claim, because that money has already gone to the buyer.
-      enum: [awaiting-seller-review, awaiting-buyer-action, disputed, returning, returned, accepted, rejected, cancelled]
+      enum: [awaiting-seller-review, disputed, returning, returned, accepted, rejected, cancelled]
 
     Refund:
       type: object
@@ -260,14 +230,13 @@ components:
             When the party named by `status` runs out of time, and missing it is itself
             a move. Null while the case waits on staff or a carrier, and in the terminal
             states.
-        seller_decided_at: { type: string, format: date-time, nullable: true }
-        rejection_reason:
+        seller_decided_at:
           type: string
+          format: date-time
           nullable: true
           description: >
-            The seller's grounds for refusing. Null in `awaiting-buyer-action` when the
-            seller never answered at all, which is how the two paths into that state are
-            told apart.
+            When the seller answered — by granting the refund, or by handing it to staff.
+            There is no rejection reason beside it: they cannot refuse one.
         returned_at:
           type: string
           format: date-time
@@ -298,16 +267,6 @@ components:
           maxItems: 10
           description: Evidence, and it can be topped up until the case closes.
           items: { $ref: '#/components/schemas/ResourceID' }
-      required: [reason]
-
-    RejectRefundRequest:
-      type: object
-      description: >
-        A reason is mandatory: it is what the buyer decides whether to escalate on.
-        Counter-evidence is not required here, because a rejection is not yet a case —
-        the seller supplies it if the buyer escalates.
-      properties:
-        reason: { type: string, minLength: 1, maxLength: 2000 }
       required: [reason]
 
     AddAttachmentsRequest:

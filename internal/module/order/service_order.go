@@ -267,6 +267,70 @@ func (s *Service) ConfirmReceipt(ctx context.Context, req orderapi.ConfirmReceip
 	return s.orderView(ctx, o)
 }
 
+// ConfirmOrder is the seller accepting a paid sale, and the only thing that hands the parcel to
+// the carrier. Everything before this — the order row, the escrow, the frozen carrier and fee —
+// is the *buyer's* side of the transaction, and none of it obliges the seller to post anything.
+func (s *Service) ConfirmOrder(ctx context.Context, req orderapi.ConfirmOrderRequest) (orderapi.Order, error) {
+	o, err := s.involved(ctx, req.ActorID, req.ID)
+	if err != nil {
+		return orderapi.Order{}, err
+	}
+	if o.SellerID != req.ActorID.Int64() {
+		return orderapi.Order{}, domain.ErrNotTheSeller
+	}
+	if err := o.Confirm(); err != nil {
+		return orderapi.Order{}, err
+	}
+	if err := s.repo.SaveOrder(ctx, o); err != nil {
+		return orderapi.Order{}, fmt.Errorf("save order: %w", err)
+	}
+	lines, err := s.repo.OrderItems(ctx, o.ID)
+	if err != nil {
+		return orderapi.Order{}, fmt.Errorf("read order lines to book: %w", err)
+	}
+	parcel := make([]*domain.Item, 0, len(lines))
+	for i := range lines {
+		parcel = append(parcel, &lines[i])
+	}
+	// Best-effort, as it was at settlement: the confirmation is committed, so a carrier that is
+	// down is a booking to retry rather than an acceptance to refuse — RetryUnbookedShipments is
+	// the net under it, and it reads exactly the shipments with no provider_ref.
+	s.bookShipment(ctx, o, parcel)
+	s.timer("order confirmed", s.workflows.OrderConfirmed(ctx, o.ID))
+	return s.orderView(ctx, o)
+}
+
+// DeclineOrder is the seller refusing a paid sale — out of stock, mispriced, whatever they say.
+// The outcome is a cancellation with the escrow returned in full, delivery included, because the
+// parcel never left. Same destination as letting the window pass, reached without making the
+// buyer wait out a clock for an answer the seller already has.
+func (s *Service) DeclineOrder(ctx context.Context, req orderapi.DeclineOrderRequest) (orderapi.Order, error) {
+	o, err := s.involved(ctx, req.ActorID, req.ID)
+	if err != nil {
+		return orderapi.Order{}, err
+	}
+	if o.SellerID != req.ActorID.Int64() {
+		return orderapi.Order{}, domain.ErrNotTheSeller
+	}
+	transport, err := s.repo.FindTransport(ctx, o.TransportID)
+	if err != nil {
+		return orderapi.Order{}, fmt.Errorf("find transport: %w", err)
+	}
+	if err := o.Decline(req.Reason); err != nil {
+		return orderapi.Order{}, err
+	}
+	if err := s.repo.SaveOrder(ctx, o); err != nil {
+		return orderapi.Order{}, fmt.Errorf("save order: %w", err)
+	}
+	if err := s.refundEscrow(ctx, o, transport.Fee); err != nil {
+		return orderapi.Order{}, err
+	}
+	s.uncommitOrderStock(ctx, o)
+	s.publishSettled(ctx, o, false)
+	s.timer("order cancelled", s.workflows.OrderCancelled(ctx, o.ID))
+	return s.orderView(ctx, o)
+}
+
 // CancelOrder voids an order before it ships and refunds the escrow. After the parcel has
 // left, the buyer opens a refund instead: a shipment cannot be un-sent.
 func (s *Service) CancelOrder(ctx context.Context, req orderapi.CancelOrderRequest) (orderapi.Order, error) {
@@ -403,20 +467,23 @@ func (s *Service) orderView(ctx context.Context, o domain.Order) (orderapi.Order
 		return orderapi.Order{}, err
 	}
 	out := orderapi.Order{
-		ID:                 id.Of[id.Order](o.ID),
-		Buyer:              buyer,
-		Seller:             seller,
-		Address:            toAPIAddress(o.Address),
-		PickupAddress:      toAPIAddress(o.PickupAddress),
-		State:              o.State(),
-		Total:              total,
-		Currency:           currency,
-		ReceivedAt:         o.ReceivedAt,
-		ReceiptAttachments: pick(evidence, o.ReceiptAttachments),
-		PayoutDeadlineAt:   o.PayoutDue(),
-		CreatedAt:          o.CreatedAt,
-		CompletedAt:        o.CompletedAt,
-		CancelledAt:        o.CancelledAt,
+		ID:                     id.Of[id.Order](o.ID),
+		Buyer:                  buyer,
+		Seller:                 seller,
+		Address:                toAPIAddress(o.Address),
+		PickupAddress:          toAPIAddress(o.PickupAddress),
+		State:                  o.State(),
+		Total:                  total,
+		Currency:               currency,
+		ConfirmedAt:            o.ConfirmedAt,
+		ConfirmationDeadlineAt: o.ConfirmationDue(),
+		DeclineReason:          o.DeclineReason,
+		ReceivedAt:             o.ReceivedAt,
+		ReceiptAttachments:     pick(evidence, o.ReceiptAttachments),
+		PayoutDeadlineAt:       o.PayoutDue(),
+		CreatedAt:              o.CreatedAt,
+		CompletedAt:            o.CompletedAt,
+		CancelledAt:            o.CancelledAt,
 	}
 	out.PayoutReleasedAt = o.PayoutReleasedAt
 	if o.DraftID != nil {

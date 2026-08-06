@@ -28,9 +28,12 @@ const (
 // these are derived from the outcome facts, and trust gates a rating and a review on them — so
 // they are published rather than left for each reader to spell.
 const (
-	StateOpen      = "open"
-	StateCompleted = "completed"
-	StateCancelled = "cancelled"
+	// StateAwaitingConfirmation is paid but not yet accepted by the seller. Nothing has been
+	// handed to a carrier in this state, which is the whole reason it is a state.
+	StateAwaitingConfirmation = "awaiting-confirmation"
+	StateOpen                 = "open"
+	StateCompleted            = "completed"
+	StateCancelled            = "cancelled"
 )
 
 // --- responses ---
@@ -133,7 +136,15 @@ type Order struct {
 	Total         int64                     `json:"total"`
 	Currency      string                    `json:"currency"`
 	Transport     *Transport                `json:"transport"`
-	ReceivedAt    *time.Time                `json:"received_at"`
+	// ConfirmedAt is the seller accepting the sale. Null means the parcel has not been booked
+	// and will not be: a buyer reading this knows what they are waiting on.
+	ConfirmedAt *time.Time `json:"confirmed_at"`
+	// ConfirmationDeadlineAt is when the seller runs out of time to accept, after which staff
+	// are asked to chase it. Null once they have, and computed rather than stored.
+	ConfirmationDeadlineAt *time.Time `json:"confirmation_deadline_at"`
+	// DeclineReason is why the seller refused, set only on an order they refused outright.
+	DeclineReason *string    `json:"decline_reason"`
+	ReceivedAt    *time.Time `json:"received_at"`
 	// ReceiptAttachments is the unboxing evidence, captured with the receipt and never
 	// added to: a refund is judged on what the buyer showed at that moment.
 	ReceiptAttachments []common.ResourceDTO `json:"receipt_attachments"`
@@ -188,9 +199,8 @@ type Refund struct {
 	Reason      string               `json:"reason"`
 	Attachments []common.ResourceDTO `json:"attachments"`
 	DeadlineAt  *time.Time           `json:"deadline_at"`
-	// RejectionReason is what separates a refusal from a seller who let the window pass:
-	// both land on the buyer, only one has a reason to show them.
-	RejectionReason *string    `json:"rejection_reason"`
+	// SellerDecidedAt is when the seller answered — by granting it, or by handing it to staff.
+	// There is no rejection reason beside it: a seller cannot refuse a refund on their own word.
 	SellerDecidedAt *time.Time `json:"seller_decided_at"`
 	ReturnedAt      *time.Time `json:"returned_at"`
 	CreatedAt       time.Time  `json:"created_at"`
@@ -492,17 +502,28 @@ type AddRefundAttachmentsRequest struct {
 	Attachments []id.ID[id.Resource] `json:"attachments" validate:"required,min=1,max=10"`
 }
 
-type RejectRefundRequest struct {
+// ConfirmOrderRequest is the seller accepting a paid sale, which is what books the parcel.
+type ConfirmOrderRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
-	ID      id.ID[id.Refund]  `json:"-" validate:"required"`
-	Reason  string            `json:"reason" validate:"required,min=1,max=2000"`
+	ID      id.ID[id.Order]   `json:"-" validate:"required"`
+}
+
+// DeclineOrderRequest is the seller refusing one. The reason is required and it is kept: the
+// cancellation says only that the sale did not happen, where this says who ended it and why.
+type DeclineOrderRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	ID      id.ID[id.Order]   `json:"-" validate:"required"`
+	Reason  string            `json:"reason" validate:"required,min=1,max=500"`
 }
 
 // EscalateRefundRequest has no reason field: trust's ticket carries what the escalating party
 // said, so a second copy here could disagree with it.
+// EscalateRefundRequest names the *order*, not the refund. Trust opens its ticket against the sale
+// so every dispute about it groups into one thread, and one live refund per order is an index — so
+// which case that is stays order's to resolve rather than a second id the caller has to carry.
 type EscalateRefundRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
-	ID      id.ID[id.Refund]  `json:"-" validate:"required"`
+	OrderID id.ID[id.Order]   `json:"-" validate:"required"`
 }
 
 // ResolveRefundRequest is the verdict. A boolean rather than a status, because there is no
@@ -591,6 +612,10 @@ type Service interface {
 	// leads with, and the goods money of the completed ones.
 	GetOrderSummary(ctx context.Context, req OrderSummaryRequest) (OrderSummary, error)
 	GetOrder(ctx context.Context, req OrderRequest) (Order, error)
+	// ConfirmOrder and DeclineOrder are the seller's answer to a paid sale. Nothing reaches a
+	// carrier before the first, and the second is a cancellation that records why.
+	ConfirmOrder(ctx context.Context, req ConfirmOrderRequest) (Order, error)
+	DeclineOrder(ctx context.Context, req DeclineOrderRequest) (Order, error)
 	ConfirmReceipt(ctx context.Context, req ConfirmReceiptRequest) (Order, error)
 	CancelOrder(ctx context.Context, req CancelOrderRequest) (Order, error)
 	GetOrderTransport(ctx context.Context, req OrderRequest) (Transport, error)
@@ -606,7 +631,6 @@ type Service interface {
 	WithdrawRefund(ctx context.Context, req RefundRequest) error
 	AddRefundAttachments(ctx context.Context, req AddRefundAttachmentsRequest) (Refund, error)
 	AcceptRefund(ctx context.Context, req RefundRequest) (Refund, error)
-	RejectRefund(ctx context.Context, req RejectRefundRequest) (Refund, error)
 	// AdvanceReturnShipment is the only exit from `returning`: marking the return delivered is
 	// what opens the seller's inspection window, and without it a granted refund strands the
 	// escrow with nobody on a clock.

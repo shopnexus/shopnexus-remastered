@@ -66,9 +66,13 @@ func (s *Service) OpenTicket(ctx context.Context, req trustapi.OpenTicketRequest
 	// ticket about a refund staff may not decide is a queue entry with no possible answer. Order's
 	// guard is what refuses the wrong party or the wrong moment, and it is idempotent, so a retry
 	// escalates nothing twice.
+	//
+	// The target is the *order*, so this names the sale and order resolves the live case on it.
+	// That is what puts every dispute about one order in one thread — a seller who escalates the
+	// review window and then escalates again over what came back continues where they were.
 	if req.Kind == domain.KindRefundDispute {
 		if _, err := s.orders.EscalateRefund(ctx, orderapi.EscalateRefundRequest{
-			ActorID: req.ActorID, ID: id.Of[id.Refund](*refID),
+			ActorID: req.ActorID, OrderID: id.Of[id.Order](*refID),
 		}); err != nil {
 			return trustapi.Ticket{}, fmt.Errorf("escalate refund: %w", err)
 		}
@@ -522,7 +526,11 @@ func (s *Service) RecordRefundVerdict(ctx context.Context, req trustapi.RecordRe
 	if err := s.v.Struct(req); err != nil {
 		return err
 	}
-	open, err := s.repo.OpenTicketsAgainst(ctx, domain.RefRefund, req.RefundID.Int64())
+	// Against the order, because that is what a refund-dispute ticket names. Both parties may have
+	// raised one about the same sale and the index holds one open ticket per requester, so a lookup
+	// that answered a single row would leave the other open for ever — and unclosable, since this
+	// kind refuses a hand resolution.
+	open, err := s.repo.OpenTicketsAgainst(ctx, domain.RefOrder, req.OrderID.Int64())
 	if err != nil {
 		return fmt.Errorf("find refund tickets: %w", err)
 	}

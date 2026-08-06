@@ -2,6 +2,7 @@ package trust
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -18,6 +19,7 @@ import (
 	"shopnexus/internal/module/order"
 	trustpg "shopnexus/internal/module/trust/adapter/postgres"
 	trustapi "shopnexus/internal/module/trust/api"
+	"shopnexus/internal/module/trust/domain"
 	"shopnexus/internal/module/trust/port"
 	"shopnexus/internal/provider/storage"
 	"shopnexus/internal/shared/id"
@@ -47,6 +49,8 @@ var Module = fx.Module("trust",
 	// bus would have no consumer until something happened to ask for the service.
 	fx.Invoke(SubscribeSettledOrders),
 	fx.Invoke(SubscribeResolvedRefunds),
+	fx.Invoke(SubscribeEscalatedRefunds),
+	fx.Invoke(SubscribeUnconfirmedOrders),
 )
 
 func newPool(lc fx.Lifecycle, cfg *config.Config) (*pgxpool.Pool, error) {
@@ -98,6 +102,7 @@ func SubscribeSettledOrders(bus eventbus.Client, svc trustapi.Service, log *slog
 func SubscribeResolvedRefunds(bus eventbus.Client, svc trustapi.Service, log *slog.Logger) {
 	eventbus.Subscribe(bus, order.RefundResolvedTopic, "trust", func(ctx context.Context, event order.RefundResolved) error {
 		req := trustapi.RecordRefundVerdictRequest{
+			OrderID:     id.Of[id.Order](event.OrderID),
 			RefundID:    id.Of[id.Refund](event.RefundID),
 			ModeratorID: id.Of[id.Account](event.ModeratorID),
 			BuyerWins:   event.BuyerWins,
@@ -105,6 +110,59 @@ func SubscribeResolvedRefunds(bus eventbus.Client, svc trustapi.Service, log *sl
 		}
 		if err := svc.RecordRefundVerdict(ctx, req); err != nil {
 			log.Error("record refund verdict failed", "refund_id", event.RefundID, "err", err)
+			return err
+		}
+		return nil
+	})
+}
+
+// SubscribeEscalatedRefunds opens the ticket for a refund whose seller ran out of time. Order
+// moved the case to `disputed` itself and published this; the buyer never has to know they were
+// meant to chase it, which is the whole point of the change.
+//
+// The requester is the buyer: they raised the refund and they are the one owed an answer. Filed
+// against the order, like every refund-dispute ticket, so a seller's later complaint about what
+// came back lands in the same queue against the same sale.
+func SubscribeEscalatedRefunds(bus eventbus.Client, svc trustapi.Service, log *slog.Logger) {
+	eventbus.Subscribe(bus, order.RefundEscalatedTopic, "trust", func(ctx context.Context, event order.RefundEscalated) error {
+		req := trustapi.OpenTicketRequest{
+			ActorID: id.Of[id.Account](event.BuyerID),
+			Kind:    domain.KindRefundDispute,
+			Subject: "Refund not answered by the seller",
+			RefID:   id.Of[id.Order](event.OrderID).String(),
+		}
+		// No opening message: nobody wrote one. A body here would appear in the thread as the
+		// buyer's words, and they never said them — the moderator opens the conversation.
+		if _, err := svc.OpenTicket(ctx, req); err != nil {
+			// A ticket that already exists is the answer, not a failure: this is redelivered like
+			// every other event, and the requester may have raised one themselves in the meantime.
+			if errors.Is(err, domain.ErrTicketExists) {
+				return nil
+			}
+			log.Error("open ticket for escalated refund failed",
+				"refund_id", event.RefundID, "order_id", event.OrderID, "err", err)
+			return err
+		}
+		return nil
+	})
+}
+
+// SubscribeUnconfirmedOrders opens the ticket for a seller who never accepted a paid order. Order
+// does not void the sale and does not post the goods — neither the money nor the stock is the
+// platform's to dispose of — so a human takes it from here.
+func SubscribeUnconfirmedOrders(bus eventbus.Client, svc trustapi.Service, log *slog.Logger) {
+	eventbus.Subscribe(bus, order.OrderConfirmationLapsedTopic, "trust", func(ctx context.Context, event order.OrderConfirmationLapsed) error {
+		req := trustapi.OpenTicketRequest{
+			ActorID: id.Of[id.Account](event.BuyerID),
+			Kind:    domain.KindOrderIssue,
+			Subject: "Seller has not accepted this order",
+			RefID:   id.Of[id.Order](event.OrderID).String(),
+		}
+		if _, err := svc.OpenTicket(ctx, req); err != nil {
+			if errors.Is(err, domain.ErrTicketExists) {
+				return nil
+			}
+			log.Error("open ticket for unconfirmed order failed", "order_id", event.OrderID, "err", err)
 			return err
 		}
 		return nil

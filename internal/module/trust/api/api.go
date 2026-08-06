@@ -329,6 +329,10 @@ type TicketRequest struct {
 // it closes — however many: only one open ticket per *requester* per target is held, so both parties
 // to one refund may have escalated it and a single verdict answers all of them.
 type RecordRefundVerdictRequest struct {
+	// OrderID is what the tickets are filed against, so it is what the closure looks them up by.
+	// The refund id comes along for the log line — a case is named by its refund, but a *thread*
+	// is about the sale.
+	OrderID     id.ID[id.Order]   `json:"-" validate:"required"`
 	RefundID    id.ID[id.Refund]  `json:"-" validate:"required"`
 	ModeratorID id.ID[id.Account] `json:"-" validate:"required"`
 	BuyerWins   bool              `json:"-"`

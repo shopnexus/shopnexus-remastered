@@ -11,7 +11,7 @@ import (
 // service's: a report names a target and says what is wrong with it, a refund dispute names the
 // refund and nothing more, and a feature request names nothing at all.
 func TestNewTicket_RefAndReasonFollowTheKind(t *testing.T) {
-	listing, refund := domain.RefListing, domain.RefRefund
+	listing, order := domain.RefListing, domain.RefOrder
 	target, reason := int64(20), "counterfeit"
 	zero := int64(0)
 
@@ -26,11 +26,11 @@ func TestNewTicket_RefAndReasonFollowTheKind(t *testing.T) {
 		{"a report names its target and its grounds", domain.KindReportListing, &listing, &target, &reason, nil},
 		{"a report with no grounds", domain.KindReportListing, &listing, &target, nil, domain.ErrTicketReasonMismatch},
 		{"a report with no target", domain.KindReportListing, nil, nil, &reason, domain.ErrTicketRefRequired},
-		{"a report whose target is another kind of thing", domain.KindReportListing, &refund, &target, &reason, domain.ErrTicketRefRequired},
+		{"a report whose target is another kind of thing", domain.KindReportListing, &order, &target, &reason, domain.ErrTicketRefRequired},
 		{"a target id of zero is no target", domain.KindReportListing, &listing, &zero, &reason, domain.ErrTicketRefRequired},
-		{"a refund dispute names the refund, with no grounds", domain.KindRefundDispute, &refund, &target, nil, nil},
-		{"a refund dispute with grounds", domain.KindRefundDispute, &refund, &target, &reason, domain.ErrTicketReasonMismatch},
-		{"a refund dispute with no refund", domain.KindRefundDispute, nil, nil, nil, domain.ErrTicketRefRequired},
+		{"a refund dispute names the order, with no grounds", domain.KindRefundDispute, &order, &target, nil, nil},
+		{"a refund dispute with grounds", domain.KindRefundDispute, &order, &target, &reason, domain.ErrTicketReasonMismatch},
+		{"a refund dispute with no order", domain.KindRefundDispute, nil, nil, nil, domain.ErrTicketRefRequired},
 		{"a feature request is about nothing", domain.KindFeatureRequest, nil, nil, nil, nil},
 		{"a feature request with a target", domain.KindFeatureRequest, &listing, &target, nil, domain.ErrTicketRefUnexpected},
 		{"a feature request with grounds", domain.KindFeatureRequest, nil, nil, &reason, domain.ErrTicketReasonMismatch},
@@ -58,7 +58,7 @@ func TestTicketKind_WhatItIsAboutAndWhetherItHasGrounds(t *testing.T) {
 	for kind, want := range map[string]string{
 		domain.KindReportListing:     domain.RefListing,
 		domain.KindReportReviewReply: domain.RefReviewReply,
-		domain.KindRefundDispute:     domain.RefRefund,
+		domain.KindRefundDispute:     domain.RefOrder,
 		domain.KindOrderIssue:        domain.RefOrder,
 		domain.KindPayment:           "",
 		domain.KindFeatureRequest:    "",
@@ -88,9 +88,9 @@ func TestTicketKind_WhatItIsAboutAndWhetherItHasGrounds(t *testing.T) {
 // narrower — the two refund-* values are order's verdict to record — so this is the floor under it
 // rather than the same check twice.
 func TestTicketResolve_OnceAndOnlyWithAKnownAction(t *testing.T) {
-	refund := domain.RefRefund
+	order := domain.RefOrder
 	target := int64(55)
-	one, err := domain.NewTicket(7, domain.KindRefundDispute, "Hàng không đúng mô tả", &refund, &target, nil)
+	one, err := domain.NewTicket(7, domain.KindRefundDispute, "Hàng không đúng mô tả", &order, &target, nil)
 	if err != nil {
 		t.Fatalf("NewTicket: %v", err)
 	}

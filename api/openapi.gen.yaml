@@ -1100,6 +1100,18 @@ components:
             required:
                 - next_cursor
             type: object
+        DeclineOrderRequest:
+            description: |
+                A reason is mandatory and it is kept on the order: reputation reads it, and a buyer whose sale was refused is owed the why.
+            properties:
+                reason:
+                    example: Out of stock
+                    maxLength: 500
+                    minLength: 1
+                    type: string
+            required:
+                - reason
+            type: object
         DeletedMessageRef:
             description: |
                 Enough to find and drop a message from a rendered thread. Not the whole
@@ -2343,11 +2355,28 @@ components:
                     format: date-time
                     nullable: true
                     type: string
+                confirmation_deadline_at:
+                    description: |
+                        `created_at` + 48h, computed rather than stored. Staff are asked to chase the seller past this point; the sale is not voided, because neither the money nor the goods are the platform's to dispose of. Null once the seller has accepted.
+                    format: date-time
+                    nullable: true
+                    type: string
+                confirmed_at:
+                    description: |
+                        When the seller accepted the sale. Null means the parcel has not been booked and will not be — a buyer reading this knows what they are waiting on.
+                    format: date-time
+                    nullable: true
+                    type: string
                 created_at:
                     format: date-time
                     type: string
                 currency:
                     $ref: '#/components/schemas/CurrencyCode'
+                decline_reason:
+                    description: |
+                        Why the seller refused, set only on an order they refused outright. A refusal is a cancellation that says who ended the sale, where `cancelled_at` alone says only that it did not happen.
+                    nullable: true
+                    type: string
                 draft_id:
                     allOf:
                         - $ref: '#/components/schemas/DraftOrderID'
@@ -2590,8 +2619,9 @@ components:
             type: object
         OrderState:
             description: |
-                Derived from the two outcome timestamps: `open` means neither is set, which is also the predicate of the partial indexes behind this filter.
+                Derived from the timestamps rather than stored. `awaiting-confirmation` is a paid order the seller has not accepted: nothing has been handed to a carrier, and it is where every sale starts. `open` is accepted and in flight. The last two are the outcomes, and they are the predicate of the partial indexes behind this filter.
             enum:
+                - awaiting-confirmation
                 - open
                 - completed
                 - cancelled
@@ -2969,17 +2999,14 @@ components:
                 reason:
                     example: Not as described
                     type: string
-                rejection_reason:
-                    description: |
-                        The seller's grounds for refusing. Null in `awaiting-buyer-action` when the seller never answered at all, which is how the two paths into that state are told apart.
-                    nullable: true
-                    type: string
                 returned_at:
                     description: When the return reached the seller and the inspection window opened.
                     format: date-time
                     nullable: true
                     type: string
                 seller_decided_at:
+                    description: |
+                        When the seller answered — by granting the refund, or by handing it to staff. There is no rejection reason beside it: they cannot refuse one.
                     format: date-time
                     nullable: true
                     type: string
@@ -3014,12 +3041,11 @@ components:
             description: |
                 Every live value names the party whose move the refund is waiting on, and each of those carries a `deadline_at` that the party can miss:
 
-                `awaiting-seller-review` — the seller accepts or rejects. Missing it hands the case to the buyer. `awaiting-buyer-action` — the buyer escalates to staff or lets the refund lapse; `rejection_reason` says whether the seller refused or just went quiet. `disputed` — staff are looking at it. `returning` — the goods are on their way back; only a granted refund ever reaches here. `returned` — the seller inspects and may escalate until the window closes.
+                `awaiting-seller-review` — the seller grants it or hands it to staff; they cannot refuse it. Missing the window hands it to staff too. `disputed` — staff are looking at it. `returning` — the goods are on their way back; only a granted refund ever reaches here. `returned` — the seller inspects what arrived and may escalate until the window closes, which is where a broken or substituted return is caught.
 
                 Then three terminals: `accepted` is money back to the buyer and the order closed with it, `rejected` is no refund and the payout stands, `cancelled` is the buyer withdrawing before the seller decided. Only the last two give the escrow up — `accepted` keeps its claim, because that money has already gone to the buyer.
             enum:
                 - awaiting-seller-review
-                - awaiting-buyer-action
                 - disputed
                 - returning
                 - returned
@@ -3099,17 +3125,6 @@ components:
                 - country
                 - locale
                 - timezone
-            type: object
-        RejectRefundRequest:
-            description: |
-                A reason is mandatory: it is what the buyer decides whether to escalate on. Counter-evidence is not required here, because a rejection is not yet a case — the seller supplies it if the buyer escalates.
-            properties:
-                reason:
-                    maxLength: 2000
-                    minLength: 1
-                    type: string
-            required:
-                - reason
             type: object
         Reputation:
             description: |
@@ -9143,6 +9158,100 @@ paths:
             summary: Cancel an order
             tags:
                 - order
+    /orders/{id}/confirmation:
+        parameters:
+            - in: path
+              name: id
+              required: true
+              schema:
+                $ref: '#/components/schemas/OrderID'
+        post:
+            description: |
+                The seller agreeing to the sale, and the only thing that hands the parcel to the carrier. Everything before it — the order row, the escrow, the frozen carrier and fee — is the buyer's side of the transaction and obliges the seller to post nothing. Not re-runnable: a second confirmation would book a second parcel for one sale.
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Order'
+                                required:
+                                    - data
+                                type: object
+                    description: Accepted; the shipment is booked with the carrier
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Caller is not the seller of this order
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Order is already accepted, or has reached an outcome
+            security:
+                - bearerAuth: []
+            summary: Accept a paid order (seller)
+            tags:
+                - order
+    /orders/{id}/decline:
+        parameters:
+            - in: path
+              name: id
+              required: true
+              schema:
+                $ref: '#/components/schemas/OrderID'
+        post:
+            description: |
+                Out of stock, mispriced, whatever they say. The escrow goes back in full, delivery included, because the parcel never left. Same destination as letting the confirmation window pass, reached without making the buyer wait out a clock for an answer the seller already has — which is why the reason is required and kept.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/DeclineOrderRequest'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/Order'
+                                required:
+                                    - data
+                                type: object
+                    description: Refused; the order is cancelled and the buyer refunded
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Caller is not the seller of this order
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: Order is already accepted, or has reached an outcome
+            security:
+                - bearerAuth: []
+            summary: Refuse a paid order (seller)
+            tags:
+                - order
     /orders/{id}/receipt:
         post:
             description: |
@@ -10028,57 +10137,6 @@ paths:
             summary: Add evidence to a refund case
             tags:
                 - order
-    /refunds/{id}/rejection:
-        parameters:
-            - in: path
-              name: id
-              required: true
-              schema:
-                $ref: '#/components/schemas/RefundID'
-        post:
-            description: |
-                Refusing costs a reason, and it does not close the case: the next move is the buyer's, who may escalate to staff until the refund lapses. A seller who simply lets the review window pass ends up in the same place without one.
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/RejectRefundRequest'
-                required: true
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                properties:
-                                    data:
-                                        $ref: '#/components/schemas/Refund'
-                                required:
-                                    - data
-                                type: object
-                    description: Rejected; the buyer may now escalate
-                "400":
-                    $ref: '#/components/responses/BadRequest'
-                "401":
-                    $ref: '#/components/responses/Unauthorized'
-                "403":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: Caller is not the seller of this order
-                "404":
-                    $ref: '#/components/responses/NotFound'
-                "409":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: Refund is not awaiting seller review
-            security:
-                - bearerAuth: []
-            summary: Reject a refund (seller)
-            tags:
-                - order
     /refunds/{id}/return-transport/checkpoints:
         post:
             description: |
@@ -10665,6 +10723,8 @@ paths:
                 `body` and `attachments` open the thread: they are posted as the first message, and everything said afterwards is ordinary chat.
 
                 One open ticket per target per requester, so raising the same complaint twice while the first is still open is a conflict rather than a second row. A `refund-dispute` also moves the refund into staff's hands first, so order's own guards — the right party, the right moment — are what answer 403 and 409 here.
+
+                A `refund-dispute` names the **order**, not the refund: one live refund per sale is a database index, so which case it is stays order's to resolve, and every dispute about that sale then files against one target. That is what keeps a seller's complaint about what came back in the thread they were already using. It is also raised for a buyer automatically when the seller lets the 48-hour review window pass — silence is not a verdict, and the buyer is not asked to chase a case they already opened.
             requestBody:
                 content:
                     application/json:

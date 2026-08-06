@@ -13,13 +13,13 @@ import (
 )
 
 const refundColumns = `id, buyer_id, order_id, reason, attachments, created_at,
-	       status::text, deadline_at, seller_decided_at, rejection_reason,
+	       status::text, deadline_at, seller_decided_at,
 	       return_transport_id, returned_at`
 
 func scanRefund(row pgx.Row) (domain.Refund, error) {
 	var r domain.Refund
 	err := row.Scan(&r.ID, &r.BuyerID, &r.OrderID, &r.Reason, &r.Attachments, &r.CreatedAt,
-		&r.Status, &r.DeadlineAt, &r.SellerDecidedAt, &r.RejectionReason,
+		&r.Status, &r.DeadlineAt, &r.SellerDecidedAt,
 		&r.ReturnTransportID, &r.ReturnedAt)
 	if dbx.IsNoRows(err) {
 		return domain.Refund{}, domain.ErrRefundNotFound
@@ -75,6 +75,16 @@ func (r *Repo) InsertRefund(ctx context.Context, ref *domain.Refund) error {
 func (r *Repo) FindRefund(ctx context.Context, id int64) (domain.Refund, error) {
 	const q = `SELECT ` + refundColumns + ` FROM refund WHERE id = @id`
 	return scanRefund(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"id": id}))
+}
+
+// LiveRefundOnOrder answers the one unsettled refund on an order. Exactly one can exist —
+// `refund_one_active_per_order` is the index that says so — which is what lets a caller name the
+// sale rather than the case: a dispute is about *this order*, and which refund row that is now is
+// this module's business to know.
+func (r *Repo) LiveRefundOnOrder(ctx context.Context, orderID int64) (domain.Refund, error) {
+	const q = `SELECT ` + refundColumns + ` FROM refund
+	           WHERE order_id = @order_id AND status NOT IN (` + terminalRefund + `)`
+	return scanRefund(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"order_id": orderID}))
 }
 
 // terminalRefund is every status a case can end on, built from the constants so a renamed one
@@ -188,7 +198,6 @@ const saveRefund = `UPDATE refund
                     SET status = @status, deadline_at = @deadline_at,
                         attachments = @attachments,
                         seller_decided_at = @seller_decided_at,
-                        rejection_reason = @rejection_reason,
                         return_transport_id = @return_transport_id,
                         returned_at = @returned_at
                     WHERE id = @id AND status::text = @from`
@@ -196,8 +205,8 @@ const saveRefund = `UPDATE refund
 func refundArgs(ref domain.Refund, from string) pgx.NamedArgs {
 	return pgx.NamedArgs{
 		"id": ref.ID, "from": from, "status": ref.Status, "deadline_at": ref.DeadlineAt,
-		"attachments":       dbx.Int64Array(ref.Attachments),
-		"seller_decided_at": ref.SellerDecidedAt, "rejection_reason": ref.RejectionReason,
+		"attachments":         dbx.Int64Array(ref.Attachments),
+		"seller_decided_at":   ref.SellerDecidedAt,
 		"return_transport_id": ref.ReturnTransportID, "returned_at": ref.ReturnedAt,
 	}
 }

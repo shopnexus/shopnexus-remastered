@@ -62,8 +62,13 @@ type Workflows interface {
 	// row, which is why one run covers them.
 	StartOffer(ctx context.Context, offerID int64) error
 
-	// StartOrder follows one order from creation to payout.
+	// StartOrder follows one order from creation to payout. Its first wait is the seller
+	// accepting the sale, not the receipt: nothing is handed to a carrier before that.
 	StartOrder(ctx context.Context, orderID int64) error
+	// OrderConfirmed is the seller accepting the sale, which is what releases the run from its
+	// first wait. Letting that wait time out is not a cancellation — staff are asked to chase
+	// it, because this platform neither voids a sale nor posts goods on a seller's behalf.
+	OrderConfirmed(ctx context.Context, orderID int64) error
 	// OrderReceived is the buyer confirming the goods arrived, which starts the escrow
 	// window; RefundRaised interrupts it and RefundResolved says whether the buyer was paid.
 	// OrderCancelled ends the run before any of that — the wait it is parked on is the receipt.

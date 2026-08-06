@@ -84,17 +84,23 @@ var (
 	ErrRefundSettled        = errx.NewError(http.StatusConflict, "refund_settled", "this refund has moved on")
 	// ErrRefundAlreadyOpen is a second refund on one order. A refund covers the whole
 	// order, so there is nothing a second one could be about.
-	ErrRefundAlreadyOpen    = errx.NewError(http.StatusConflict, "refund_already_open", "a refund on this order is already open")
-	ErrRefundNotDue         = errx.NewError(http.StatusConflict, "refund_not_due", "this order is not in a state a refund can be asked for")
-	ErrNotAwaitingSeller    = errx.NewError(http.StatusConflict, "not_awaiting_seller", "this refund is not waiting on the seller")
-	ErrNotAwaitingBuyer     = errx.NewError(http.StatusConflict, "not_awaiting_buyer", "this refund is not waiting on the buyer")
-	ErrRejectionNeedsReason = errx.NewError(http.StatusUnprocessableEntity, "rejection_needs_reason", "a rejected refund needs a reason")
+	ErrRefundAlreadyOpen = errx.NewError(http.StatusConflict, "refund_already_open", "a refund on this order is already open")
+	ErrRefundNotDue      = errx.NewError(http.StatusConflict, "refund_not_due", "this order is not in a state a refund can be asked for")
+	ErrNotAwaitingSeller = errx.NewError(http.StatusConflict, "not_awaiting_seller", "this refund is not waiting on the seller")
+	// The seller's gate on a paid order. A buyer whose seller has not accepted yet cancels
+	// instead of asking for a refund: nothing has shipped, so there is nothing to return.
+	ErrOrderNotConfirmed     = errx.NewError(http.StatusConflict, "order_not_confirmed", "the seller has not accepted this order yet")
+	ErrOrderAlreadyConfirmed = errx.NewError(http.StatusConflict, "order_already_confirmed", "this order has already been accepted")
+	ErrDeclineNeedsReason    = errx.NewError(http.StatusUnprocessableEntity, "decline_needs_reason", "refusing an order needs a reason")
+	// ErrConfirmationAlreadyEscalated is a second chase on one order. Not an error a client can
+	// see — the sweep and a durable run both drive it, and whichever is second stops here.
+	ErrConfirmationAlreadyEscalated = errx.NewError(http.StatusConflict, "confirmation_already_escalated", "staff have already been asked to chase this order")
 	// ErrSessionPaid is cancelling a line the buyer has already paid for. The order follows
 	// from the money, so undoing the sale is a refund the seller gets to see — cancelling here
 	// would release the stock and leave the payment covering nothing.
 	ErrSessionPaid = errx.NewError(http.StatusConflict, "session_paid", "this line is paid for; a refund is how a paid sale is undone")
-	// ErrRefundNotEscalatable is asking staff to look at a case nobody is waiting on: only a
-	// refused refund and a delivered return are states a party can disagree with.
+	// ErrRefundNotEscalatable is asking staff to look at a case that is not the seller's to
+	// contest: only their own review window and a delivered return are.
 	ErrRefundNotEscalatable = errx.NewError(http.StatusConflict, "refund_not_escalatable", "this refund cannot be escalated from its current state")
 	// ErrRefundNotDisputed is a verdict on a case staff were never asked about.
 	ErrRefundNotDisputed = errx.NewError(http.StatusConflict, "refund_not_disputed", "this refund is not with staff for a decision")

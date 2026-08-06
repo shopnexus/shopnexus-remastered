@@ -78,6 +78,46 @@ func publishRefundResolved(ctx context.Context, bus eventbus.Client, event Refun
 	return eventbus.Publish(ctx, bus, RefundResolvedTopic, event)
 }
 
+// RefundEscalated is a refund the seller let run out of time on. Trust opens the ticket for it,
+// on the buyer's behalf, so the case reaches a human without the buyer having to know they were
+// supposed to chase it.
+//
+// Published rather than called: trust already consumes this module's api, so reaching back the
+// other way would be a dependency cycle fx cannot construct. The refund is already `disputed`
+// when this goes out — a bus that is down must leave a case waiting on staff, never one still
+// waiting on a seller whose window has closed.
+type RefundEscalated struct {
+	RefundID int64 `json:"refund_id"`
+	OrderID  int64 `json:"order_id"`
+	// BuyerID is who the ticket is raised for. Unlike RefundResolved, this payload does carry a
+	// party, because the subscriber has to name a requester and cannot ask this module for one.
+	BuyerID int64 `json:"buyer_id"`
+}
+
+// RefundEscalatedTopic carries RefundEscalated.
+var RefundEscalatedTopic = eventbus.NewTopic[RefundEscalated]("order.refund_escalated")
+
+func publishRefundEscalated(ctx context.Context, bus eventbus.Client, event RefundEscalated) error {
+	return eventbus.Publish(ctx, bus, RefundEscalatedTopic, event)
+}
+
+// OrderConfirmationLapsed is a paid order whose seller never accepted it. The buyer's money is
+// held and nothing shipped, so staff pick it up: this platform does not cancel a sale on the
+// seller's behalf, and it does not post goods on their behalf either.
+type OrderConfirmationLapsed struct {
+	OrderID int64 `json:"order_id"`
+	// BuyerID is the requester of the ticket: they paid and are waiting.
+	BuyerID  int64 `json:"buyer_id"`
+	SellerID int64 `json:"seller_id"`
+}
+
+// OrderConfirmationLapsedTopic carries OrderConfirmationLapsed.
+var OrderConfirmationLapsedTopic = eventbus.NewTopic[OrderConfirmationLapsed]("order.confirmation_lapsed")
+
+func publishOrderConfirmationLapsed(ctx context.Context, bus eventbus.Client, event OrderConfirmationLapsed) error {
+	return eventbus.Publish(ctx, bus, OrderConfirmationLapsedTopic, event)
+}
+
 // OfferUpdated is every change to a negotiation's standing terms: a counter, an
 // acceptance, a withdrawal, an expiry.
 //

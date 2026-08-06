@@ -11,7 +11,6 @@ import (
 // advance all of them and "who is holding this up" answerable from the row.
 const (
 	RefundAwaitingSeller = "awaiting-seller-review"
-	RefundAwaitingBuyer  = "awaiting-buyer-action"
 	RefundDisputed       = "disputed"
 	RefundReturning      = "returning"
 	RefundReturned       = "returned"
@@ -26,10 +25,12 @@ const (
 // The three windows a refund runs on. Named here rather than in a config file: they are
 // product promises, and a buyer counting down is looking at the same numbers.
 const (
+	// SellerReviewWindow is how long the seller has to grant the refund or hand it to staff.
+	// Letting it pass hands it to staff anyway — see EscalateUnanswered.
 	SellerReviewWindow = 48 * time.Hour
-	BuyerActionWindow  = 72 * time.Hour
 	// SellerInspectionWindow is how long the seller has to escalate what came back before the
-	// return settles for the buyer.
+	// return settles for the buyer. This is the window that catches a buyer who returned a
+	// broken item, or something other than what their evidence showed.
 	SellerInspectionWindow = 48 * time.Hour
 )
 
@@ -51,7 +52,6 @@ type Refund struct {
 	DeadlineAt  *time.Time
 
 	SellerDecidedAt *time.Time
-	RejectionReason *string
 
 	ReturnTransportID *int64
 	ReturnedAt        *time.Time
@@ -87,8 +87,10 @@ func (r *Refund) Withdraw() error {
 	return nil
 }
 
-// Accept is the seller granting it. The goods come back first: the return leg exists only
-// from here, because a refund that never gets granted never ships anything.
+// Accept is the seller granting it — one of their only two moves, the other being to hand the
+// case to staff. The goods come back first: the return leg exists only from here, because a
+// refund that never gets granted never ships anything. The money moves only once the parcel is
+// back and the inspection window has passed, so granting is not paying.
 //
 // Only from their own window: a case that has been escalated is staff's to decide, and a seller
 // conceding it would reach `returning` with no verdict published, which leaves trust holding a
@@ -110,50 +112,37 @@ func (r *Refund) grantReturn() {
 	r.DeadlineAt = nil
 }
 
-// Reject refuses it, with a reason. The buyer's move next: escalate to staff, or let the
-// window lapse.
-func (r *Refund) Reject(reason string) error {
+// EscalateUnanswered is the seller letting the review window pass. Staff take it over, exactly
+// as if the seller had raised the ticket themselves.
+//
+// This is deliberately not "the buyer's turn to escalate", which is what it used to be. That
+// put the burden on the party already out of pocket, and a buyer who did not know they had to
+// act — or who simply did not open the app for three days — lost a case nobody had judged. A
+// seller's silence is not a verdict.
+func (r *Refund) EscalateUnanswered() error {
 	if r.Status != RefundAwaitingSeller {
 		return ErrNotAwaitingSeller
-	}
-	if reason == "" {
-		return ErrRejectionNeedsReason
-	}
-	r.SellerDecidedAt = new(time.Now())
-	r.RejectionReason = &reason
-	r.Status = RefundAwaitingBuyer
-	r.DeadlineAt = new(time.Now().Add(BuyerActionWindow))
-	return nil
-}
-
-// LapseSellerReview is the seller letting the window pass. It lands on the buyer exactly
-// as a rejection does, and the absent reason is what tells the two apart.
-func (r *Refund) LapseSellerReview() error {
-	if r.Status != RefundAwaitingSeller {
-		return ErrNotAwaitingSeller
-	}
-	r.Status = RefundAwaitingBuyer
-	r.DeadlineAt = new(time.Now().Add(BuyerActionWindow))
-	return nil
-}
-
-// Escalate hands the case to staff: the buyer after a refusal, the seller after the goods
-// came back. No deadline while they hold it — a human decides when they decide.
-func (r *Refund) Escalate() error {
-	if r.Status != RefundAwaitingBuyer && r.Status != RefundReturned {
-		return ErrRefundNotEscalatable
 	}
 	r.Status = RefundDisputed
 	r.DeadlineAt = nil
 	return nil
 }
 
-// LapseBuyerAction is the buyer letting a rejection stand. The case closes for the seller.
-func (r *Refund) LapseBuyerAction() error {
-	if r.Status != RefundAwaitingBuyer {
-		return ErrNotAwaitingBuyer
+// Escalate hands the case to staff. Both entries belong to the seller: instead of refusing the
+// refund on their own word they raise a ticket, and after the goods come back they may say that
+// what arrived is not what the buyer's evidence showed. No deadline while staff hold it — a
+// human decides when they decide.
+//
+// The buyer never escalates. They opened the case; asking them to open it a second time is the
+// step that used to lose them the money.
+func (r *Refund) Escalate() error {
+	if r.Status != RefundAwaitingSeller && r.Status != RefundReturned {
+		return ErrRefundNotEscalatable
 	}
-	r.Status = RefundRejected
+	if r.Status == RefundAwaitingSeller {
+		r.SellerDecidedAt = new(time.Now())
+	}
+	r.Status = RefundDisputed
 	r.DeadlineAt = nil
 	return nil
 }
@@ -186,8 +175,8 @@ func (r *Refund) Settle() error {
 // and they travel, and one who wins after has nothing left to ship, so the money moves.
 //
 // `SellerDecidedAt` is left as the seller wrote it: it is when *they* answered, and stamping the
-// moderator's clock on it would leave a row whose rejection reason is the seller's words at a
-// time they never spoke. Who overruled them, and why, is on the ticket the verdict closes.
+// moderator's clock on it would report the platform's decision as the seller's. Who decided, and
+// why, is on the ticket the verdict closes.
 func (r *Refund) Resolve(buyerWins bool) error {
 	if r.Status != RefundDisputed {
 		return ErrRefundNotDisputed

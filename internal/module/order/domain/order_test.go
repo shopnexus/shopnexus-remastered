@@ -36,12 +36,25 @@ func TestNewOrder_NeedsExactlyOneOrigin(t *testing.T) {
 	}
 }
 
-// The state is read from the two outcome timestamps rather than stored, so there is no third
-// fact to keep in step with them.
+// The state is read from the timestamps rather than stored, so there is no separate fact to
+// keep in step with them.
 func TestOrder_StateIsDerived(t *testing.T) {
 	o := newOrder(t)
+	// A paid order starts out waiting on the seller, and nothing has been handed to a carrier.
+	// Settled is read off the *outcome* timestamps, not off "not open" — this earliest state is
+	// the one that made that distinction matter.
+	if o.State() != domain.StateAwaitingConfirmation || o.Settled() {
+		t.Fatalf("state = %q, want awaiting-confirmation", o.State())
+	}
+	if err := o.Confirm(); err != nil {
+		t.Fatalf("Confirm: %v", err)
+	}
 	if o.State() != domain.StateOpen || o.Settled() {
-		t.Fatalf("state = %q, want open", o.State())
+		t.Fatalf("state = %q, want open once the seller accepted", o.State())
+	}
+	// A second confirmation would book a second parcel for one sale.
+	if err := o.Confirm(); !errors.Is(err, domain.ErrOrderAlreadyConfirmed) {
+		t.Fatalf("second Confirm = %v, want ErrOrderAlreadyConfirmed", err)
 	}
 	// A confirmed receipt starts the payout clock; it does not end the order.
 	if err := o.ConfirmReceipt([]int64{42}); err != nil {
@@ -66,6 +79,13 @@ func TestOrder_StateIsDerived(t *testing.T) {
 // a later refund would be judged on.
 func TestOrder_ConfirmReceipt(t *testing.T) {
 	o := newOrder(t)
+	// Nothing shipped before the seller accepted, so nothing can have arrived.
+	if err := o.ConfirmReceipt([]int64{1}); !errors.Is(err, domain.ErrOrderNotConfirmed) {
+		t.Fatalf("ConfirmReceipt before confirmation = %v, want ErrOrderNotConfirmed", err)
+	}
+	if err := o.Confirm(); err != nil {
+		t.Fatalf("Confirm: %v", err)
+	}
 	if err := o.ConfirmReceipt(nil); !errors.Is(err, domain.ErrReceiptNeedsEvidence) {
 		t.Fatalf("ConfirmReceipt with nothing = %v, want ErrReceiptNeedsEvidence", err)
 	}
@@ -99,8 +119,8 @@ func TestOrder_CancelOnlyBeforeShipping(t *testing.T) {
 	}
 }
 
-// The three refund windows in one test: each non-terminal status names the party on the clock,
-// which is what lets one pass advance all of them.
+// The refund windows in one test: each non-terminal status names the party on the clock, which
+// is what lets one pass advance all of them.
 func TestRefund_WindowsAndVerdicts(t *testing.T) {
 	r, err := domain.NewRefund(1, 7, "not as described", []int64{42})
 	if err != nil {
@@ -110,24 +130,23 @@ func TestRefund_WindowsAndVerdicts(t *testing.T) {
 		t.Fatalf("refund = %+v, want the seller on the clock", r)
 	}
 
-	// A rejection lands on the buyer with a reason; a lapse lands there without one, and the
-	// absent reason is what tells them apart.
-	rejected := r
-	if err := rejected.Reject(""); !errors.Is(err, domain.ErrRejectionNeedsReason) {
-		t.Fatalf("Reject with no reason = %v", err)
+	// A seller cannot refuse it: their two moves are granting it and handing it to staff, and
+	// letting the window pass hands it to staff as well. Either way the buyer is never asked to
+	// chase a case they already opened — which is what losing them the money used to look like.
+	raised := r
+	if err := raised.Escalate(); err != nil {
+		t.Fatalf("Escalate from the seller's window: %v", err)
 	}
-	if err := rejected.Reject("sent as described"); err != nil {
-		t.Fatalf("Reject: %v", err)
-	}
-	if rejected.Status != domain.RefundAwaitingBuyer || rejected.RejectionReason == nil {
-		t.Fatalf("refund = %+v, want the buyer on the clock with a reason", rejected)
+	if raised.Status != domain.RefundDisputed || raised.DeadlineAt != nil ||
+		raised.SellerDecidedAt == nil {
+		t.Fatalf("refund = %+v, want it with staff, nobody on the clock, and the seller's answer recorded", raised)
 	}
 	lapsed := r
-	if err := lapsed.LapseSellerReview(); err != nil {
-		t.Fatalf("LapseSellerReview: %v", err)
+	if err := lapsed.EscalateUnanswered(); err != nil {
+		t.Fatalf("EscalateUnanswered: %v", err)
 	}
-	if lapsed.Status != domain.RefundAwaitingBuyer || lapsed.RejectionReason != nil {
-		t.Fatalf("refund = %+v, want the buyer on the clock with no reason", lapsed)
+	if lapsed.Status != domain.RefundDisputed || lapsed.DeadlineAt != nil {
+		t.Fatalf("refund = %+v, want silence to reach staff too", lapsed)
 	}
 
 	// Accepting opens the return leg, and nobody is on the clock while a carrier has it.
@@ -169,9 +188,6 @@ func TestRefund_VerdictReadsWhetherTheGoodsCameBack(t *testing.T) {
 	// Only staff decide, and only a case they were asked about.
 	if err := granted.Resolve(true); !errors.Is(err, domain.ErrRefundNotDisputed) {
 		t.Fatalf("Resolve before escalation = %v, want ErrRefundNotDisputed", err)
-	}
-	if err := granted.Reject("sent as described"); err != nil {
-		t.Fatalf("Reject: %v", err)
 	}
 	if err := granted.Escalate(); err != nil {
 		t.Fatalf("Escalate: %v", err)
@@ -230,15 +246,12 @@ func TestRefund_VerdictReadsWhetherTheGoodsCameBack(t *testing.T) {
 	}
 }
 
-// Only two states can be escalated, because they are the only two a party can disagree with.
+// Only two states can be escalated, and both are the seller's: their own review window, and a
+// return they say is not what the buyer's evidence showed.
 func TestRefund_EscalatableStates(t *testing.T) {
 	r, err := domain.NewRefund(1, 7, "not as described", nil)
 	if err != nil {
 		t.Fatalf("NewRefund: %v", err)
-	}
-	// The seller has not answered yet: there is nothing to disagree with.
-	if err := r.Escalate(); !errors.Is(err, domain.ErrRefundNotEscalatable) {
-		t.Fatalf("Escalate awaiting the seller = %v, want ErrRefundNotEscalatable", err)
 	}
 	returning := r
 	if err := returning.Accept(); err != nil {

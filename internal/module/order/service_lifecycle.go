@@ -19,9 +19,9 @@ import (
 // no-op rather than a second effect. That is what lets the timers live in the workflow
 // instead of in a table here, and what makes a sweep over the same rows harmless.
 
-// SettlePaidSession turns a completed payment session into an order. It is the whole of
-// "the money creates the order": the shipment is opened, the escrow is held, and the lines
-// are linked, with no seller step anywhere.
+// SettlePaidSession turns a completed payment session into an order: the shipment row is opened,
+// the escrow is held, and the lines are linked. The money creates the *order* — it does not start
+// the delivery, which waits on the seller accepting it (ConfirmOrder).
 //
 // Resumable, not merely idempotent. The order is the first thing written, so every step after
 // it — linking, the escrow hold, the sale of the reserved units — has to be re-runnable
@@ -152,10 +152,11 @@ func (s *Service) finishSettlement(ctx context.Context, o domain.Order, paid []*
 	// window. Both signals are best-effort — the row already says the sale happened.
 	s.timer("checkout paid", s.workflows.CheckoutPaid(ctx, sessionID.Int64()))
 	s.timer("start order", s.workflows.StartOrder(ctx, o.ID))
-	// The parcel is handed to the courier the buyer paid for. Best-effort: the sale has happened
-	// and the money has moved, so a carrier that is down is a booking to retry rather than an
-	// order to refuse — `RetryUnbookedShipments` is the net under it.
-	s.bookShipment(ctx, o, paid)
+	// The carrier is deliberately *not* called here. The parcel is booked when the seller accepts
+	// the sale (ConfirmOrder), because a listing whose stock is wrong or whose owner has stopped
+	// selling is otherwise discovered by a buyer waiting for something nobody ever posted. The
+	// run StartOrder just began is what holds that wait — it is the same order's clock, not a
+	// second one.
 	return nil
 }
 
@@ -602,18 +603,17 @@ func (s *Service) advanceRefund(ctx context.Context, r domain.Refund) (bool, err
 		return false, nil
 	}
 	from := r.Status
+	escalated := false
 	switch r.Status {
 	case domain.RefundAwaitingSeller:
-		// The seller said nothing. It lands on the buyer exactly as a rejection does, and the
-		// absent reason is what tells the two apart.
-		if err := r.LapseSellerReview(); err != nil {
+		// The seller said nothing, so staff take it over — the buyer is not asked to chase a case
+		// they already opened. The ticket is trust's to write off the event; the status moves here
+		// either way, because a bus that is down must not leave the refund waiting on a seller who
+		// has already run out of time.
+		if err := r.EscalateUnanswered(); err != nil {
 			return false, nil
 		}
-	case domain.RefundAwaitingBuyer:
-		// The buyer let the rejection stand.
-		if err := r.LapseBuyerAction(); err != nil {
-			return false, nil
-		}
+		escalated = true
 	case domain.RefundReturned:
 		// The seller had the goods back and did not escalate, so the buyer is paid.
 		if err := r.Settle(); err != nil {
@@ -638,6 +638,9 @@ func (s *Service) advanceRefund(ctx context.Context, r domain.Refund) (bool, err
 		s.log.Debug("refund already moved", "refund_id", r.ID, "err", err)
 		return false, nil
 	}
+	if escalated {
+		s.publishRefundEscalated(ctx, r, o)
+	}
 	return true, nil
 }
 
@@ -649,6 +652,75 @@ func (s *Service) publishSettled(ctx context.Context, o domain.Order, completed 
 	}
 	if err := publishOrderSettled(ctx, s.bus, event); err != nil {
 		s.log.Error("publish order settled failed", "order_id", o.ID, "err", err)
+	}
+}
+
+// EscalateUnconfirmedOrder asks staff to chase a seller who has not accepted a paid order. The
+// idempotent method both clocks drive: a durable run calls it the moment the window closes, the
+// sweep calls it for whatever the run lost, and the second one to arrive finds the marker set.
+//
+// It deliberately does not cancel the sale. The buyer's money is held and the goods are the
+// seller's — voiding one or posting the other on their behalf are both decisions this platform
+// does not get to make, so a human takes it from here and the order keeps waiting.
+func (s *Service) EscalateUnconfirmedOrder(ctx context.Context, orderID id.ID[id.Order]) error {
+	o, err := s.repo.FindOrder(ctx, orderID.Int64())
+	if err != nil {
+		return fmt.Errorf("find order: %w", err)
+	}
+	return s.escalateConfirmation(ctx, o)
+}
+
+// EscalateUnconfirmedOrders is the sweep pass behind it. One summary line per pass, not one per
+// order: a marketplace with a hundred idle sellers would otherwise bury every other log line.
+func (s *Service) EscalateUnconfirmedOrders(ctx context.Context, limit int) (int, error) {
+	orders, err := s.repo.UnconfirmedOrders(ctx, time.Now().Add(-domain.SellerConfirmWindow), limit)
+	if err != nil {
+		return 0, fmt.Errorf("read unconfirmed orders: %w", err)
+	}
+	raised := 0
+	for _, o := range orders {
+		if err := s.escalateConfirmation(ctx, o); err != nil {
+			if errors.Is(err, domain.ErrConfirmationAlreadyEscalated) || errors.Is(err, domain.ErrOrderSettled) {
+				continue
+			}
+			return raised, err
+		}
+		raised++
+	}
+	return raised, nil
+}
+
+// escalateConfirmation marks the order and asks trust for the ticket. The marker is written
+// first: a ticket trust never opened is a chase somebody can still find in the queue, where a
+// marker never written is the same order raised again on every interval for ever.
+func (s *Service) escalateConfirmation(ctx context.Context, o domain.Order) error {
+	if err := o.EscalateConfirmation(); err != nil {
+		return err
+	}
+	if err := s.repo.SaveOrder(ctx, o); err != nil {
+		return fmt.Errorf("save order: %w", err)
+	}
+	s.publishConfirmationLapsed(ctx, o)
+	return nil
+}
+
+// publishRefundEscalated asks trust to open the ticket for a refund the seller ran out of time
+// on. Best-effort like every other publish here: the refund is already `disputed`, so the worst a
+// lost event costs is a case staff have to find in the queue rather than in their inbox.
+func (s *Service) publishRefundEscalated(ctx context.Context, r domain.Refund, o domain.Order) {
+	event := RefundEscalated{RefundID: r.ID, OrderID: o.ID, BuyerID: o.BuyerID}
+	if err := publishRefundEscalated(ctx, s.bus, event); err != nil {
+		s.log.Error("publish refund escalated failed", "refund_id", r.ID, "err", err)
+	}
+}
+
+// publishConfirmationLapsed asks trust to open the ticket for a seller who never accepted a paid
+// order. Best-effort: the escrow is untouched and the order is still awaiting confirmation, so a
+// lost event delays a chase rather than losing money either way.
+func (s *Service) publishConfirmationLapsed(ctx context.Context, o domain.Order) {
+	event := OrderConfirmationLapsed{OrderID: o.ID, BuyerID: o.BuyerID, SellerID: o.SellerID}
+	if err := publishOrderConfirmationLapsed(ctx, s.bus, event); err != nil {
+		s.log.Error("publish confirmation lapsed failed", "order_id", o.ID, "err", err)
 	}
 }
 

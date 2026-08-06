@@ -39,6 +39,7 @@ func NewLifecycle(svc orderapi.Service) (*Lifecycle, error) {
 const (
 	promPaid      = "paid"
 	promCancelled = "cancelled"
+	promConfirmed = "confirmed"
 	promReceived  = "received"
 	promRefunded  = "refund-raised"
 	promResolved  = "refund-resolved"
@@ -137,14 +138,41 @@ func (l *Lifecycle) Order() *Order { return &Order{l: l} }
 func (w *Order) ServiceName() string { return port.OrderWorkflow }
 
 func (w *Order) Run(ctx restate.WorkflowContext, p port.OrderParams) error {
+	// Phase zero: the seller accepting the sale. Nothing has been handed to a carrier yet, so
+	// this is the one wait on an order that *does* have a clock — the buyer's money is held
+	// against a parcel nobody has agreed to post.
+	//
+	// Timing out is not a cancellation. Staff are asked to chase it and the run keeps waiting,
+	// because the platform will neither void a sale nor post goods on a seller's behalf; both of
+	// those are somebody's property. So the escalation is a side effect and the wait continues.
+	confirmed := restate.Promise[bool](ctx, promConfirmed)
+	cancelled := restate.Promise[bool](ctx, promCancelled)
+	confirmWindow := restate.After(ctx, domain.SellerConfirmWindow)
+	winner, err := restate.WaitFirst(ctx, confirmed, cancelled, confirmWindow)
+	if err != nil {
+		return fmt.Errorf("await seller confirmation: %w", err)
+	}
+	if winner == confirmWindow {
+		if err := restate.RunVoid(ctx, func(rctx restate.RunContext) error {
+			return w.l.svc.EscalateUnconfirmedOrder(rctx, id.Of[id.Order](p.OrderID))
+		}, restate.WithName("escalateUnconfirmed")); err != nil {
+			return fmt.Errorf("escalate unconfirmed order: %w", err)
+		}
+		if winner, err = restate.WaitFirst(ctx, confirmed, cancelled); err != nil {
+			return fmt.Errorf("await seller confirmation after escalation: %w", err)
+		}
+	}
+	if winner == cancelled {
+		// Declined, or withdrawn: the money went back and there is nothing to ship.
+		return nil
+	}
+
 	// Phase one has no timeout on purpose: how long delivery takes is the carrier's and the
 	// seller's business, and a clock here would cancel an order that is merely slow. It does
 	// have an exit — a cancellation always comes before a receipt, so without a wait of its own
 	// every cancelled order left an invocation parked here for good.
 	received := restate.Promise[bool](ctx, promReceived)
-	cancelled := restate.Promise[bool](ctx, promCancelled)
-	winner, err := restate.WaitFirst(ctx, received, cancelled)
-	if err != nil {
+	if winner, err = restate.WaitFirst(ctx, received, cancelled); err != nil {
 		return fmt.Errorf("await receipt: %w", err)
 	}
 	if winner == cancelled {
@@ -175,6 +203,11 @@ func (w *Order) Run(ctx restate.WorkflowContext, p port.OrderParams) error {
 	return restate.RunVoid(ctx, func(rctx restate.RunContext) error {
 		return w.l.svc.ReleasePayout(rctx, id.Of[id.Order](p.OrderID))
 	}, restate.WithName("releasePayout"))
+}
+
+// Confirmed is the seller accepting the sale, which is what lets the parcel be booked.
+func (w *Order) Confirmed(ctx restate.WorkflowSharedContext) error {
+	return restate.Promise[bool](ctx, promConfirmed).Resolve(true)
 }
 
 // Received is the buyer confirming the goods arrived.
@@ -290,6 +323,7 @@ func (l *Lifecycle) Sweep(ctx context.Context, log *slog.Logger) {
 		{"retried payouts", l.svc.RetryClaimedPayouts},
 		{"booked shipments", l.svc.RetryUnbookedShipments},
 		{"advanced refunds", l.svc.AdvanceOverdueRefunds},
+		{"escalated unconfirmed orders", l.svc.EscalateUnconfirmedOrders},
 	} {
 		moved, err := pass.run(ctx, sweepBatch)
 		if err != nil {

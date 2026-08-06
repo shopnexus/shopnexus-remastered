@@ -56,7 +56,7 @@ var refKindOf = map[string]string{
 	KindReportMessage:     RefMessage,
 	KindReportReview:      RefReview,
 	KindReportReviewReply: RefReviewReply,
-	KindRefundDispute:     RefRefund,
+	KindRefundDispute:     RefOrder,
 	KindOrderIssue:        RefOrder,
 }
 
