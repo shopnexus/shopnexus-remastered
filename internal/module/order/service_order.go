@@ -245,6 +245,53 @@ func (s *Service) GetOrder(ctx context.Context, req orderapi.OrderRequest) (orde
 	return s.orderView(ctx, o)
 }
 
+// GetOrderCase is the sale plus whatever refund is live on it, for a party or for staff.
+//
+// Staff are not a party, so `involved` 404s them out of every ordinary order read and
+// `refundParty` out of every refund read. That left `AdminResolveRefund` — the only way a
+// disputed refund is ever decided — taking an id no staff-facing screen could obtain: a
+// `refund-dispute` ticket names the *order*, and the hop from there to the refund existed
+// nowhere. Reading them together is also honest about how the decision is made; the verdict
+// branches on whether the goods came back, which is a field on the refund.
+func (s *Service) GetOrderCase(ctx context.Context, req orderapi.OrderRequest) (orderapi.OrderCase, error) {
+	o, err := s.involved(ctx, req.ActorID, req.ID)
+	if err != nil {
+		// A moderator sees any sale; anyone else sees only their own, and still as a 404 so
+		// the route cannot be used to probe which order ids exist.
+		if !errors.Is(err, domain.ErrOrderNotFound) {
+			return orderapi.OrderCase{}, err
+		}
+		if modErr := s.requireModerator(ctx, req.ActorID); modErr != nil {
+			return orderapi.OrderCase{}, err
+		}
+		o, err = s.repo.FindOrder(ctx, req.ID.Int64())
+		if err != nil {
+			return orderapi.OrderCase{}, fmt.Errorf("find order: %w", err)
+		}
+	}
+
+	view, err := s.orderView(ctx, o)
+	if err != nil {
+		return orderapi.OrderCase{}, err
+	}
+	out := orderapi.OrderCase{Order: view}
+
+	r, err := s.repo.LiveRefundOnOrder(ctx, o.ID)
+	if err != nil {
+		// No live refund is the ordinary case, not a failure.
+		if errors.Is(err, domain.ErrRefundNotFound) {
+			return out, nil
+		}
+		return orderapi.OrderCase{}, fmt.Errorf("find live refund: %w", err)
+	}
+	refund, err := s.refundView(ctx, r)
+	if err != nil {
+		return orderapi.OrderCase{}, err
+	}
+	out.Refund = &refund
+	return out, nil
+}
+
 // ConfirmReceipt is the buyer saying the goods arrived, with the evidence a later refund
 // would be judged on. It starts the escrow window, which is why it is not re-openable.
 func (s *Service) ConfirmReceipt(ctx context.Context, req orderapi.ConfirmReceiptRequest) (orderapi.Order, error) {

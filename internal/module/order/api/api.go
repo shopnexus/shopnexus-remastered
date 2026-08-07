@@ -221,6 +221,15 @@ type Refund struct {
 	CreatedAt       time.Time  `json:"created_at"`
 }
 
+// OrderCase is a sale and the one unsettled refund on it, if there is one. Two reads that a
+// decision always needs together — the verdict route names the refund, while every ticket about
+// a sale names the order.
+type OrderCase struct {
+	Order Order `json:"order"`
+	// Null when nothing is being disputed.
+	Refund *Refund `json:"refund"`
+}
+
 type RefundPage struct {
 	Data []Refund   `json:"data"`
 	Meta CursorInfo `json:"meta"`
@@ -657,6 +666,11 @@ type Service interface {
 	// EscalateRefund records that staff have been asked to decide. Called by trust when the
 	// ticket is opened — not by a route — so a refund's status and its ticket cannot disagree.
 	EscalateRefund(ctx context.Context, req EscalateRefundRequest) (Refund, error)
+	// GetOrderCase is an order together with the live refund on it, for whoever has to decide
+	// something about it. Staff are not a party to a sale, so every ordinary order and refund
+	// read 404s them — which left AdminResolveRefund taking a refund id that nothing
+	// staff-facing could produce, and a refund dispute with no way to be decided.
+	GetOrderCase(ctx context.Context, req OrderRequest) (OrderCase, error)
 	// AdminResolveRefund is the verdict, and the only thing staff decide here: order owns the
 	// money, so it owns the outcome the money follows.
 	AdminResolveRefund(ctx context.Context, req ResolveRefundRequest) (Refund, error)

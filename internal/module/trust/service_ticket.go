@@ -381,6 +381,32 @@ func (s *Service) target(ctx context.Context, actorID id.ID[id.Account], t domai
 			return nil
 		}
 		return map[string]any{"id": account.ID, "name": account.Name, "created_at": account.CreatedAt}
+	case domain.RefOrder:
+		// Both kinds that point at a sale — `refund-dispute` and `order-issue` — landed here
+		// with no case at all, so `target` was null for exactly the tickets whose decision
+		// needs the most context. The refund travels with the order because the verdict route
+		// names the refund while the ticket names the order, and nothing else bridged the two.
+		orderCase, err := s.orders.GetOrderCase(ctx, orderapi.OrderRequest{
+			ActorID: actorID, ID: id.Of[id.Order](*t.RefID),
+		})
+		if err != nil {
+			return nil
+		}
+		out := map[string]any{
+			"id": orderCase.Order.ID, "state": orderCase.Order.State,
+			"total": orderCase.Order.Total, "currency": orderCase.Order.Currency,
+			"buyer": orderCase.Order.Buyer, "seller": orderCase.Order.Seller,
+			"created_at": orderCase.Order.CreatedAt,
+		}
+		if r := orderCase.Refund; r != nil {
+			// `returned_at` is what decides whether a verdict for the buyer books the return
+			// leg or pays out, so staff have to see it before they press.
+			out["refund"] = map[string]any{
+				"id": r.ID, "status": r.Status, "reason": r.Reason,
+				"returned_at": r.ReturnedAt, "deadline_at": r.DeadlineAt,
+			}
+		}
+		return out
 	case domain.RefMessage:
 		message, err := s.chat.GetMessage(ctx, chatapi.GetMessageRequest{
 			ActorID: actorID, ID: id.Of[id.Message](*t.RefID),

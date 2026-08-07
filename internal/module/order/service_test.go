@@ -2709,3 +2709,51 @@ func TestAddRefundAttachments_OnlyTheBuyerWrites(t *testing.T) {
 		t.Fatalf("attachments = %d, want the buyer's one photo", len(topped.Attachments))
 	}
 }
+
+// Staff are not a party to any sale, so `involved` 404s them out of every order read and
+// `refundParty` out of every refund read. That left the verdict route — the only way a disputed
+// refund is ever decided — taking an id no staff-facing screen could produce, because a
+// `refund-dispute` ticket names the order and nothing bridged the two.
+func TestGetOrderCase_StaffReadTheSaleAndItsLiveRefund(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, o := h.confirmed(t)
+	h.uploads.confirm(42)
+	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
+		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
+	}); err != nil {
+		t.Fatalf("ConfirmReceipt: %v", err)
+	}
+	refund, err := h.svc.CreateRefund(ctx, orderapi.CreateRefundRequest{
+		ActorID: buyer, OrderID: o.ID, Reason: "damaged",
+	})
+	if err != nil {
+		t.Fatalf("CreateRefund: %v", err)
+	}
+
+	// A party reads their own sale, and gets the live refund with it.
+	own, err := h.svc.GetOrderCase(ctx, orderapi.OrderRequest{ActorID: buyer, ID: o.ID})
+	if err != nil {
+		t.Fatalf("GetOrderCase as buyer: %v", err)
+	}
+	if own.Refund == nil || own.Refund.ID != refund.ID {
+		t.Fatalf("refund = %+v, want the live one", own.Refund)
+	}
+
+	// A stranger still gets a 404 rather than a 403, so the route cannot be used to probe
+	// which order ids exist.
+	if got := status(t, mustErr(h.svc.GetOrderCase(ctx, orderapi.OrderRequest{
+		ActorID: admin, ID: o.ID,
+	}))); got != 404 {
+		t.Fatalf("status = %d, want 404 for a non-party without a staff role", got)
+	}
+
+	// A moderator reads any sale, party or not.
+	staff, err := h.moderator().GetOrderCase(ctx, orderapi.OrderRequest{ActorID: admin, ID: o.ID})
+	if err != nil {
+		t.Fatalf("GetOrderCase as moderator: %v", err)
+	}
+	if staff.Refund == nil || staff.Refund.ID != refund.ID {
+		t.Fatalf("staff refund = %+v, want the live one", staff.Refund)
+	}
+}

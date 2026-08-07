@@ -111,6 +111,10 @@ func (Stub) GetOrder(context.Context, orderapi.OrderRequest) (orderapi.Order, er
 	return orderapi.Order{}, errx.ErrNotImplemented
 }
 
+func (Stub) GetOrderCase(context.Context, orderapi.OrderRequest) (orderapi.OrderCase, error) {
+	return orderapi.OrderCase{}, errx.ErrNotImplemented
+}
+
 func (Stub) ConfirmReceipt(context.Context, orderapi.ConfirmReceiptRequest) (orderapi.Order, error) {
 	return orderapi.Order{}, errx.ErrNotImplemented
 }
