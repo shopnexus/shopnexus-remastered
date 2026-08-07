@@ -281,7 +281,12 @@ components:
         not_helpful: { type: integer, format: int64, minimum: 0, example: 1 }
         my_vote:
           type: integer
-          enum: [-1, 1]
+          # `null` is a member of the enum, not just `nullable: true` beside it. In OpenAPI
+          # 3.0 an enum is the exhaustive value list, so a null absent from it is a value
+          # the schema forbids however the sibling keyword reads — and a generator building
+          # the union from the enum drops the null arm. That typed `my_vote` as `-1 | 1` in
+          # the clients, which renders a filled thumb for every visitor who never voted.
+          enum: [-1, 1, null]
           nullable: true
           description: The caller's own vote. Null when they have not voted.
       required: [helpful, not_helpful, my_vote]
