@@ -63,28 +63,23 @@ func NewService(
 // CreateUpload reserves a row and a signed slot for a review photo. The client PUTs the
 // bytes at the store and confirms; until then the resource resolves to nothing, so a
 // half-finished upload cannot be attached to a review.
-func (s *Service) CreateUpload(ctx context.Context, req trustapi.CreateUploadRequest) (trustapi.UploadSlot, error) {
+func (s *Service) CreateUpload(ctx context.Context, req common.CreateUploadRequest) (common.UploadSlotDTO, error) {
 	if err := s.v.Struct(req); err != nil {
-		return trustapi.UploadSlot{}, err
+		return common.UploadSlotDTO{}, err
 	}
 	slot, err := s.uploads.Presign(ctx, req.ActorID.Int64(), "review", common.UploadRequest{
 		Filename: req.Filename, Mime: req.Mime, Size: req.Size,
 	})
 	if err != nil {
-		return trustapi.UploadSlot{}, err
+		return common.UploadSlotDTO{}, err
 	}
-	return trustapi.UploadSlot{
-		ResourceID: id.Of[id.Resource](slot.ResourceID),
-		URL:        slot.URL,
-		Headers:    slot.Headers,
-		ExpiresAt:  slot.ExpiresAt,
-	}, nil
+	return slot.ToDTO(), nil
 }
 
 // ConfirmUpload makes the photo real, with the size the store reports rather than the one
 // the client declared. Scoped to the uploader: a resource id is guessable, and confirming
 // somebody else's slot would be claiming their upload.
-func (s *Service) ConfirmUpload(ctx context.Context, req trustapi.ConfirmUploadRequest) (common.ResourceDTO, error) {
+func (s *Service) ConfirmUpload(ctx context.Context, req common.ConfirmUploadRequest) (common.ResourceDTO, error) {
 	if err := s.v.Struct(req); err != nil {
 		return common.ResourceDTO{}, err
 	}

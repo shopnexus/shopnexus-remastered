@@ -70,11 +70,11 @@ func (Stub) UnvoteReview(context.Context, trustapi.ReviewRequest) (trustapi.Vote
 	return trustapi.VoteTally{}, errx.ErrNotImplemented
 }
 
-func (Stub) CreateUpload(context.Context, trustapi.CreateUploadRequest) (trustapi.UploadSlot, error) {
-	return trustapi.UploadSlot{}, errx.ErrNotImplemented
+func (Stub) CreateUpload(context.Context, common.CreateUploadRequest) (common.UploadSlotDTO, error) {
+	return common.UploadSlotDTO{}, errx.ErrNotImplemented
 }
 
-func (Stub) ConfirmUpload(context.Context, trustapi.ConfirmUploadRequest) (common.ResourceDTO, error) {
+func (Stub) ConfirmUpload(context.Context, common.ConfirmUploadRequest) (common.ResourceDTO, error) {
 	return common.ResourceDTO{}, errx.ErrNotImplemented
 }
 

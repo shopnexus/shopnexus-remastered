@@ -81,11 +81,11 @@ func (Stub) UnlinkOAuthIdentity(context.Context, accountapi.UnlinkOAuthIdentityR
 	return errx.ErrNotImplemented
 }
 
-func (Stub) CreateUpload(context.Context, accountapi.CreateUploadRequest) (accountapi.UploadSlot, error) {
-	return accountapi.UploadSlot{}, errx.ErrNotImplemented
+func (Stub) CreateUpload(context.Context, accountapi.CreateUploadRequest) (common.UploadSlotDTO, error) {
+	return common.UploadSlotDTO{}, errx.ErrNotImplemented
 }
 
-func (Stub) ConfirmUpload(context.Context, accountapi.ConfirmUploadRequest) (common.ResourceDTO, error) {
+func (Stub) ConfirmUpload(context.Context, common.ConfirmUploadRequest) (common.ResourceDTO, error) {
 	return common.ResourceDTO{}, errx.ErrNotImplemented
 }
 

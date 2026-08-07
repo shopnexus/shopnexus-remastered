@@ -276,11 +276,65 @@ components:
           format: uri
           example: https://cdn.shopnexus.test/o/9f86d081?expires=1785000000
           description: >
-            Short-lived URL to fetch the bytes. Empty until a module can presign one, so a
-            consumer that needs the bytes has to treat an empty string as "not available yet".
-            Not a stable address: store the id, not this.
+            Short-lived URL to fetch the bytes, signed by the store that actually holds them —
+            answered by the confirmation and by every response that carries a resource. Empty
+            only when no link could be produced, so a consumer that needs the bytes has to treat
+            an empty string as "not available" rather than as an empty object. Not a stable
+            address: store the id, not this.
         url_expires_at: { type: string, format: date-time, nullable: true }
       required: [id, provider, object_key, mime, size, checksum, url, url_expires_at]
+
+    # The two-step upload, shared for the same reason Resource is: every module that takes a file
+    # takes it the same way, and only the route differs — `POST <module>/uploads` then
+    # `POST <module>/uploads/{id}/confirmation`. Upload where the file is going: a resource id
+    # only resolves inside the module that stored it, so a listing photo taken by another
+    # module's route silently renders as nothing.
+    CreateUploadRequest:
+      type: object
+      properties:
+        filename:
+          type: string
+          maxLength: 255
+          example: front.jpg
+          description: >
+            Kept only for its extension. The stored key is generated — a path a client chose is
+            a directory traversal waiting for a backend that resolves one.
+        mime:
+          type: string
+          maxLength: 100
+          example: image/jpeg
+          description: >
+            One of the types this platform stores: `image/jpeg`, `image/png`, `image/webp`,
+            `application/pdf`, `video/mp4`, `video/quicktime` (an iPhone's `.mov`), `video/webm`.
+            Anything else is 422 whatever its size. The allowlist is the store's, so every upload
+            route accepts the same set — which of them a client offers is its own choice.
+        size:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 104857600
+          example: 204800
+          description: >
+            Declared up front and refused before a byte moves. The bound here is the video one: a
+            `video/*` upload may reach 100 MB, everything else is held to 10 MB, and a limit that
+            depends on the type cannot be written as one number. The confirmed row records the size
+            the *store* measured, not this.
+      required: [filename, mime, size]
+
+    UploadSlot:
+      type: object
+      properties:
+        resource_id: { $ref: '#/components/schemas/ResourceID' }
+        url:
+          type: string
+          example: https://store.example/objects/catalog/listing/9f2c?signature=...
+          description: PUT the bytes here. Short-lived, and signed for this key and method only.
+        headers:
+          type: object
+          additionalProperties: { type: string }
+          description: Send these with the PUT verbatim, when the signature covers any.
+        expires_at: { type: string, format: date-time }
+      required: [resource_id, url, headers, expires_at]
 
     CurrencyCode:
       type: string

@@ -1098,7 +1098,7 @@ func TestUpload_ConfirmedBeforeItCanBeUsedAsEvidence(t *testing.T) {
 	ctx := context.Background()
 	_, o := h.confirmed(t)
 
-	slot, err := h.svc.CreateUpload(ctx, orderapi.CreateUploadRequest{
+	slot, err := h.svc.CreateUpload(ctx, common.CreateUploadRequest{
 		ActorID: buyer, Filename: "unbox.jpg", Mime: "image/jpeg", Size: 2048,
 	})
 	if err != nil {
@@ -1117,7 +1117,7 @@ func TestUpload_ConfirmedBeforeItCanBeUsedAsEvidence(t *testing.T) {
 	}
 	// And confirming before the bytes are there is refused too, rather than producing a row
 	// that renders as a broken image.
-	if err := mustErr(h.svc.ConfirmUpload(ctx, orderapi.ConfirmUploadRequest{
+	if err := mustErr(h.svc.ConfirmUpload(ctx, common.ConfirmUploadRequest{
 		ActorID: buyer, ID: slot.ResourceID,
 	})); err == nil {
 		t.Fatal("an upload was confirmed before anything was uploaded")
@@ -1125,7 +1125,7 @@ func TestUpload_ConfirmedBeforeItCanBeUsedAsEvidence(t *testing.T) {
 
 	// The client PUTs, then confirms.
 	h.uploads.arrived[slot.ResourceID.Int64()] = true
-	confirmedUpload, err := h.svc.ConfirmUpload(ctx, orderapi.ConfirmUploadRequest{
+	confirmedUpload, err := h.svc.ConfirmUpload(ctx, common.ConfirmUploadRequest{
 		ActorID: buyer, ID: slot.ResourceID,
 	})
 	if err != nil {
@@ -1147,14 +1147,14 @@ func TestUpload_ConfirmedBeforeItCanBeUsedAsEvidence(t *testing.T) {
 	}
 
 	// Somebody else's slot is not theirs to confirm: a resource id is guessable.
-	other, err := h.svc.CreateUpload(ctx, orderapi.CreateUploadRequest{
+	other, err := h.svc.CreateUpload(ctx, common.CreateUploadRequest{
 		ActorID: buyer, Filename: "back.jpg", Mime: "image/jpeg", Size: 1024,
 	})
 	if err != nil {
 		t.Fatalf("CreateUpload: %v", err)
 	}
 	h.uploads.arrived[other.ResourceID.Int64()] = true
-	if err := mustErr(h.svc.ConfirmUpload(ctx, orderapi.ConfirmUploadRequest{
+	if err := mustErr(h.svc.ConfirmUpload(ctx, common.ConfirmUploadRequest{
 		ActorID: seller, ID: other.ResourceID,
 	})); err == nil {
 		t.Fatal("a stranger confirmed somebody else's upload slot")

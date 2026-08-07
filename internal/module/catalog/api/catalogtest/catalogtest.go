@@ -130,10 +130,10 @@ func (Stub) SyncListingRating(context.Context, catalogapi.SyncListingRatingReque
 	return errx.ErrNotImplemented
 }
 
-func (Stub) CreateUpload(context.Context, catalogapi.CreateUploadRequest) (catalogapi.UploadSlot, error) {
-	return catalogapi.UploadSlot{}, errx.ErrNotImplemented
+func (Stub) CreateUpload(context.Context, common.CreateUploadRequest) (common.UploadSlotDTO, error) {
+	return common.UploadSlotDTO{}, errx.ErrNotImplemented
 }
 
-func (Stub) ConfirmUpload(context.Context, catalogapi.ConfirmUploadRequest) (common.ResourceDTO, error) {
+func (Stub) ConfirmUpload(context.Context, common.ConfirmUploadRequest) (common.ResourceDTO, error) {
 	return common.ResourceDTO{}, errx.ErrNotImplemented
 }

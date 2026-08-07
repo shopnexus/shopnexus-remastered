@@ -135,6 +135,10 @@ paths:
         Until this lands the resource resolves to nothing, so a half-finished upload cannot
         be set as an avatar or submitted as an identity scan. The recorded size is the
         store's, not the one declared when the slot was reserved.
+
+        The answer carries a signed `url` for the bytes just uploaded. That is the only time it
+        is handed over unasked: a second confirmation is refused, and the resource is otherwise
+        only seen through whatever it gets attached to.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ResourceID' } }
@@ -331,40 +335,16 @@ components:
         clear_avatar_resource_id: { type: boolean, example: false }
 
     AccountCreateUploadRequest:
-      type: object
       description: >
-        Like `CreateUploadRequest`, plus `kind`: the same store serves an avatar and an
-        identity scan, so the service has to be told which it is presigning.
-      properties:
-        kind: { type: string, enum: [avatar, identity], example: avatar }
-        filename:
-          type: string
-          maxLength: 255
-          example: front.jpg
-          description: >
-            Kept only for its extension. The stored key is generated — a path a client chose
-            is a directory traversal waiting for a backend that resolves one.
-        mime:
-          type: string
-          maxLength: 100
-          example: image/jpeg
-          description: >
-            One of the types this platform stores: `image/jpeg`, `image/png`, `image/webp`,
-            `application/pdf`, `video/mp4`, `video/quicktime` (an iPhone's `.mov`), `video/webm`.
-            Anything else is 422 whatever its size. The allowlist is the store's, so every upload
-            route accepts the same set — which of them a client offers is its own choice.
-        size:
-          type: integer
-          format: int64
-          minimum: 1
-          maximum: 104857600
-          example: 204800
-          description: >
-            Declared up front and refused before a byte moves. The bound here is the video one: a
-            `video/*` upload may reach 100 MB, everything else is held to 10 MB, and a limit that
-            depends on the type cannot be written as one number. The confirmed row records the size
-            the *store* measured, not this.
-      required: [kind, filename, mime, size]
+        The shared upload request plus `kind`: the same store serves an avatar and an identity
+        scan, but only an avatar may ever resolve to a public link, so the service has to be told
+        which it is presigning before a byte moves.
+      allOf:
+        - $ref: '#/components/schemas/CreateUploadRequest'
+        - type: object
+          properties:
+            kind: { type: string, enum: [avatar, identity], example: avatar }
+          required: [kind]
 
     OAuthIdentity:
       type: object

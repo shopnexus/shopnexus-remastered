@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-playground/validator/v10"
 
+	"shopnexus/internal/module/common"
 	orderapi "shopnexus/internal/module/order/api"
 	"shopnexus/internal/shared/httpx"
 	"shopnexus/internal/shared/id"
@@ -880,7 +881,7 @@ func (h *Order) CreateUpload(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	var req orderapi.CreateUploadRequest
+	var req common.CreateUploadRequest
 	if failed(w, h.log, decodeBody(r, &req)) {
 		return
 	}
@@ -905,7 +906,7 @@ func (h *Order) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	req := orderapi.ConfirmUploadRequest{ActorID: uid, ID: resourceID}
+	req := common.ConfirmUploadRequest{ActorID: uid, ID: resourceID}
 	if failed(w, h.log, check(h.v, req)) {
 		return
 	}

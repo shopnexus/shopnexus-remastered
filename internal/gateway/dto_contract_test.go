@@ -12,8 +12,8 @@ import (
 )
 
 // dtoSources is where the published wire shapes live. Every `api` package is a DTO package by
-// definition; `common` is not one, so its two shared wire types are named instead of its whole
-// directory being swept.
+// definition; `common` is not one, so the files holding its shared wire types are named instead of
+// its whole directory being swept.
 var dtoSources = []struct {
 	glob string
 	// onlyDTOSuffix limits the check to types whose name ends in "DTO", for a file that holds
@@ -22,6 +22,7 @@ var dtoSources = []struct {
 }{
 	{glob: "../module/*/api/*.go"},
 	{glob: "../module/common/optionapi.go"},
+	{glob: "../module/common/uploadapi.go"},
 	{glob: "../module/common/resource.go", onlyDTOSuffix: true},
 }
 

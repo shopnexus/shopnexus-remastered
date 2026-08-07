@@ -8,6 +8,7 @@ import (
 
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
+	"shopnexus/internal/module/common"
 	"shopnexus/internal/shared/id"
 )
 
@@ -398,7 +399,7 @@ func TestUpload_ConfirmedBeforeItCanBeAttached(t *testing.T) {
 	h := newHarnessWith("user", true)
 	ctx := context.Background()
 
-	slot, err := h.svc.CreateUpload(ctx, catalogapi.CreateUploadRequest{
+	slot, err := h.svc.CreateUpload(ctx, common.CreateUploadRequest{
 		ActorID: actor, Filename: "front.jpg", Mime: "image/jpeg", Size: 2048,
 	})
 	if err != nil {
@@ -417,7 +418,7 @@ func TestUpload_ConfirmedBeforeItCanBeAttached(t *testing.T) {
 	}
 	// And confirming before the bytes are there is refused too, rather than producing a row
 	// that renders as a broken image.
-	if err := mustErr(h.svc.ConfirmUpload(ctx, catalogapi.ConfirmUploadRequest{
+	if err := mustErr(h.svc.ConfirmUpload(ctx, common.ConfirmUploadRequest{
 		ActorID: actor, ID: slot.ResourceID,
 	})); err == nil {
 		t.Fatal("an upload was confirmed before anything was uploaded")
@@ -425,7 +426,7 @@ func TestUpload_ConfirmedBeforeItCanBeAttached(t *testing.T) {
 
 	// The client PUTs, then confirms.
 	h.uploads.arrived[slot.ResourceID.Int64()] = true
-	res, err := h.svc.ConfirmUpload(ctx, catalogapi.ConfirmUploadRequest{
+	res, err := h.svc.ConfirmUpload(ctx, common.ConfirmUploadRequest{
 		ActorID: actor, ID: slot.ResourceID,
 	})
 	if err != nil {
@@ -447,14 +448,14 @@ func TestUpload_ConfirmedBeforeItCanBeAttached(t *testing.T) {
 	}
 
 	// Somebody else's slot is not theirs to confirm: a resource id is guessable.
-	other, err := h.svc.CreateUpload(ctx, catalogapi.CreateUploadRequest{
+	other, err := h.svc.CreateUpload(ctx, common.CreateUploadRequest{
 		ActorID: actor, Filename: "back.jpg", Mime: "image/jpeg", Size: 1024,
 	})
 	if err != nil {
 		t.Fatalf("CreateUpload: %v", err)
 	}
 	h.uploads.arrived[other.ResourceID.Int64()] = true
-	if err := mustErr(h.svc.ConfirmUpload(ctx, catalogapi.ConfirmUploadRequest{
+	if err := mustErr(h.svc.ConfirmUpload(ctx, common.ConfirmUploadRequest{
 		ActorID: id.Of[id.Account](4242), ID: other.ResourceID,
 	})); err == nil {
 		t.Fatal("a stranger confirmed somebody else's upload")

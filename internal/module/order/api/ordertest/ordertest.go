@@ -175,11 +175,11 @@ func (Stub) AdminResolveRefund(context.Context, orderapi.ResolveRefundRequest) (
 	return orderapi.Refund{}, errx.ErrNotImplemented
 }
 
-func (Stub) CreateUpload(context.Context, orderapi.CreateUploadRequest) (orderapi.UploadSlot, error) {
-	return orderapi.UploadSlot{}, errx.ErrNotImplemented
+func (Stub) CreateUpload(context.Context, common.CreateUploadRequest) (common.UploadSlotDTO, error) {
+	return common.UploadSlotDTO{}, errx.ErrNotImplemented
 }
 
-func (Stub) ConfirmUpload(context.Context, orderapi.ConfirmUploadRequest) (common.ResourceDTO, error) {
+func (Stub) ConfirmUpload(context.Context, common.ConfirmUploadRequest) (common.ResourceDTO, error) {
 	return common.ResourceDTO{}, errx.ErrNotImplemented
 }
 

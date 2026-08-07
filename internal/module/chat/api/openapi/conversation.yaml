@@ -62,6 +62,10 @@ paths:
         Until this lands the resource resolves to nothing, so a half-finished upload cannot
         be attached to a message. The recorded size is the store's, not the one declared
         when the slot was reserved.
+
+        The answer carries a signed `url` for the bytes just uploaded. That is the only time it
+        is handed over unasked: a second confirmation is refused, and the resource is otherwise
+        only seen through whatever it gets attached to.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ResourceID' } }

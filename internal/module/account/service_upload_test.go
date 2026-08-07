@@ -6,6 +6,7 @@ import (
 	"time"
 
 	accountapi "shopnexus/internal/module/account/api"
+	"shopnexus/internal/module/common"
 )
 
 // The two-step upload, and the reason it is two steps: a slot on its own renders nothing, so
@@ -16,7 +17,10 @@ func TestUpload_ConfirmedBeforeItRenders(t *testing.T) {
 	user := h.register(t, registerRequest())
 
 	slot, err := h.svc.CreateUpload(ctx, accountapi.CreateUploadRequest{
-		ActorID: user.Account.ID, Kind: "avatar", Filename: "face.jpg", Mime: "image/jpeg", Size: 2048,
+		CreateUploadRequest: common.CreateUploadRequest{
+			ActorID: user.Account.ID, Filename: "face.jpg", Mime: "image/jpeg", Size: 2048,
+		},
+		Kind: "avatar",
 	})
 	if err != nil {
 		t.Fatalf("CreateUpload: %v", err)
@@ -43,7 +47,7 @@ func TestUpload_ConfirmedBeforeItRenders(t *testing.T) {
 
 	// And confirming before the bytes are there is refused too, rather than producing a row
 	// that renders as a broken image.
-	if err := mustErr(h.svc.ConfirmUpload(ctx, accountapi.ConfirmUploadRequest{
+	if err := mustErr(h.svc.ConfirmUpload(ctx, common.ConfirmUploadRequest{
 		ActorID: user.Account.ID, ID: slot.ResourceID,
 	})); err == nil {
 		t.Fatal("an upload was confirmed before anything was uploaded")
@@ -51,7 +55,7 @@ func TestUpload_ConfirmedBeforeItRenders(t *testing.T) {
 
 	// The client PUTs, then confirms.
 	h.uploads.arrived[slot.ResourceID.Int64()] = true
-	res, err := h.svc.ConfirmUpload(ctx, accountapi.ConfirmUploadRequest{
+	res, err := h.svc.ConfirmUpload(ctx, common.ConfirmUploadRequest{
 		ActorID: user.Account.ID, ID: slot.ResourceID,
 	})
 	if err != nil {
@@ -77,13 +81,16 @@ func TestUpload_ConfirmedBeforeItRenders(t *testing.T) {
 		return r
 	}())
 	otherSlot, err := h.svc.CreateUpload(ctx, accountapi.CreateUploadRequest{
-		ActorID: user.Account.ID, Kind: "avatar", Filename: "back.jpg", Mime: "image/jpeg", Size: 1024,
+		CreateUploadRequest: common.CreateUploadRequest{
+			ActorID: user.Account.ID, Filename: "back.jpg", Mime: "image/jpeg", Size: 1024,
+		},
+		Kind: "avatar",
 	})
 	if err != nil {
 		t.Fatalf("CreateUpload: %v", err)
 	}
 	h.uploads.arrived[otherSlot.ResourceID.Int64()] = true
-	if err := mustErr(h.svc.ConfirmUpload(ctx, accountapi.ConfirmUploadRequest{
+	if err := mustErr(h.svc.ConfirmUpload(ctx, common.ConfirmUploadRequest{
 		ActorID: other.Account.ID, ID: otherSlot.ResourceID,
 	})); err == nil {
 		t.Fatal("a stranger confirmed somebody else's upload")

@@ -8,6 +8,7 @@ import (
 
 	"shopnexus/internal/gateway/gwctx"
 	accountapi "shopnexus/internal/module/account/api"
+	"shopnexus/internal/module/common"
 	"shopnexus/internal/shared/httpx"
 	"shopnexus/internal/shared/id"
 )
@@ -324,7 +325,7 @@ func (h *Account) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	req := accountapi.ConfirmUploadRequest{ActorID: uid, ID: resourceID}
+	req := common.ConfirmUploadRequest{ActorID: uid, ID: resourceID}
 	if failed(w, h.log, check(h.v, req)) {
 		return
 	}

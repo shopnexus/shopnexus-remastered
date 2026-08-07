@@ -52,8 +52,8 @@ type Service interface {
 	// CreateUpload reserves a row and a presigned slot; ConfirmUpload makes it real once the
 	// bytes are at the store. Until then the resource resolves to nothing, so a half-finished
 	// upload cannot be attached to anything.
-	CreateUpload(ctx context.Context, req CreateUploadRequest) (UploadSlot, error)
-	ConfirmUpload(ctx context.Context, req ConfirmUploadRequest) (common.ResourceDTO, error)
+	CreateUpload(ctx context.Context, req common.CreateUploadRequest) (common.UploadSlotDTO, error)
+	ConfirmUpload(ctx context.Context, req common.ConfirmUploadRequest) (common.ResourceDTO, error)
 
 	// --- wishlist: both idempotent, so a retry is the state the caller asked for ---
 	AddFavorite(ctx context.Context, req FavoriteRequest) error

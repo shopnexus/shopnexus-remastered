@@ -133,15 +133,6 @@ type OAuthIdentity struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// UploadSlot is where to PUT, what to confirm afterwards, and until when.
-type UploadSlot struct {
-	ResourceID id.ID[id.Resource] `json:"resource_id"`
-	URL        string             `json:"url"`
-	// Headers the client must send with the PUT, when the signature covers any.
-	Headers   map[string]string `json:"headers"`
-	ExpiresAt time.Time         `json:"expires_at"`
-}
-
 // --- saved addresses ---
 
 type Contact struct {

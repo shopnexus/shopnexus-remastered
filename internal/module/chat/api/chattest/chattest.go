@@ -18,11 +18,11 @@ type Stub struct{}
 
 var _ chatapi.Service = Stub{}
 
-func (Stub) CreateUpload(context.Context, chatapi.CreateUploadRequest) (chatapi.UploadSlot, error) {
-	return chatapi.UploadSlot{}, errx.ErrNotImplemented
+func (Stub) CreateUpload(context.Context, common.CreateUploadRequest) (common.UploadSlotDTO, error) {
+	return common.UploadSlotDTO{}, errx.ErrNotImplemented
 }
 
-func (Stub) ConfirmUpload(context.Context, chatapi.ConfirmUploadRequest) (common.ResourceDTO, error) {
+func (Stub) ConfirmUpload(context.Context, common.ConfirmUploadRequest) (common.ResourceDTO, error) {
 	return common.ResourceDTO{}, errx.ErrNotImplemented
 }
 

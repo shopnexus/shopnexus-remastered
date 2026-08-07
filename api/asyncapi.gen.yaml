@@ -546,7 +546,7 @@ components:
                     type: integer
                 url:
                     description: |
-                        Short-lived URL to fetch the bytes. Empty until a module can presign one, so a consumer that needs the bytes has to treat an empty string as "not available yet". Not a stable address: store the id, not this.
+                        Short-lived URL to fetch the bytes, signed by the store that actually holds them — answered by the confirmation and by every response that carries a resource. Empty only when no link could be produced, so a consumer that needs the bytes has to treat an empty string as "not available" rather than as an empty object. Not a stable address: store the id, not this.
                     example: https://cdn.shopnexus.test/o/9f86d081?expires=1785000000
                     format: uri
                     type: string

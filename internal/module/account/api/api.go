@@ -72,8 +72,8 @@ type Service interface {
 	// CreateUpload reserves a row and a presigned slot for an avatar or an identity scan;
 	// ConfirmUpload makes it real once the bytes are at the store. Until then the resource
 	// resolves to nothing, so a half-finished upload cannot be attached to anything.
-	CreateUpload(ctx context.Context, req CreateUploadRequest) (UploadSlot, error)
-	ConfirmUpload(ctx context.Context, req ConfirmUploadRequest) (common.ResourceDTO, error)
+	CreateUpload(ctx context.Context, req CreateUploadRequest) (common.UploadSlotDTO, error)
+	ConfirmUpload(ctx context.Context, req common.ConfirmUploadRequest) (common.ResourceDTO, error)
 
 	// --- saved addresses ---
 	// ListAdministrativeAreas is the vocabulary a contact's codes are written in: the provinces of

@@ -458,10 +458,10 @@ type ListOrdersRequest struct {
 	// Role is optional, and absent means both sides. A C2C account is a buyer and a seller
 	// at once, so "what is waiting on me" spans the two — demanding a side made every client
 	// grow a buyer/seller switch, and the more urgent of the two was then behind a tap.
-	Role    string            `json:"-" validate:"omitempty,oneof=buyer seller"`
-	State   string            `json:"-" validate:"omitempty,oneof=awaiting-confirmation open completed cancelled"`
-	Cursor  string            `json:"-"`
-	Limit   int               `json:"-" validate:"required,min=1,max=100"`
+	Role   string `json:"-" validate:"omitempty,oneof=buyer seller"`
+	State  string `json:"-" validate:"omitempty,oneof=awaiting-confirmation open completed cancelled"`
+	Cursor string `json:"-"`
+	Limit  int    `json:"-" validate:"required,min=1,max=100"`
 }
 
 type OrderRequest struct {
@@ -564,35 +564,6 @@ type ResolveRefundRequest struct {
 	Note      string            `json:"note" validate:"max=2000"`
 }
 
-// CreateUploadRequest asks for a slot to PUT evidence into — the unboxing photos a buyer
-// attaches confirming receipt, or the photos on a refund. The bytes never pass through the
-// API: the answer is a short-lived signed URL, and a second call confirms the row once the
-// object is there — so a refund can never be judged on a photo whose bytes never arrived.
-type CreateUploadRequest struct {
-	ActorID  id.ID[id.Account] `json:"-" validate:"required"`
-	Filename string            `json:"filename" validate:"required,max=255"`
-	// Mime and Size are what the client is about to send. Both are checked before a byte
-	// moves: a slot signed for anything is a slot for anything.
-	Mime string `json:"mime" validate:"required,max=100"`
-	Size int64  `json:"size" validate:"required,gt=0"`
-}
-
-// UploadSlot is where to PUT, what to confirm afterwards, and until when.
-type UploadSlot struct {
-	ResourceID id.ID[id.Resource] `json:"resource_id"`
-	URL        string             `json:"url"`
-	// Headers the client must send with the PUT, when the signature covers any.
-	Headers   map[string]string `json:"headers"`
-	ExpiresAt time.Time         `json:"expires_at"`
-}
-
-// ConfirmUploadRequest is the second step. The size is read from the store rather than taken
-// from the client, so what it declared cannot become the record.
-type ConfirmUploadRequest struct {
-	ActorID id.ID[id.Account]  `json:"-" validate:"required"`
-	ID      id.ID[id.Resource] `json:"-" validate:"required"`
-}
-
 type Service interface {
 	// --- cart ---
 	ListCartItems(ctx context.Context, req ListCartRequest) ([]CartItem, error)
@@ -679,8 +650,8 @@ type Service interface {
 	// CreateUpload reserves a slot for evidence: the unboxing photos a receipt confirmation
 	// or a refund carries. The client PUTs the bytes at the store and confirms; until then
 	// the resource resolves to nothing, so a half-finished upload cannot be named as evidence.
-	CreateUpload(ctx context.Context, req CreateUploadRequest) (UploadSlot, error)
-	ConfirmUpload(ctx context.Context, req ConfirmUploadRequest) (common.ResourceDTO, error)
+	CreateUpload(ctx context.Context, req common.CreateUploadRequest) (common.UploadSlotDTO, error)
+	ConfirmUpload(ctx context.Context, req common.ConfirmUploadRequest) (common.ResourceDTO, error)
 
 	// --- driven by the durable workflow, not by a route ---
 	//
