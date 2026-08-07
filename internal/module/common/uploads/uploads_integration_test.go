@@ -249,6 +249,37 @@ func TestResolveUsesTheStoreEachRowNames(t *testing.T) {
 	}
 }
 
+// The confirmation is the only chance to hand the uploader a link: a second confirm is refused by
+// the `completed_at IS NULL` guard and no route reads a resource on its own, so a confirm that
+// answered a bare row left the client with an id and nothing to render until it had attached the
+// photo to something and read that back.
+func TestConfirmAnswersASignedLink(t *testing.T) {
+	store, resources, client := newStore(t, time.Minute)
+	ctx := context.Background()
+	who := uploaderID()
+
+	slot, err := store.Presign(ctx, who, "review", common.UploadRequest{
+		Filename: "just-uploaded.jpg", Mime: "image/jpeg", Size: 4,
+	})
+	if err != nil {
+		t.Fatalf("Presign: %v", err)
+	}
+	if _, err := client.Write(objectKey(t, resources, slot.ResourceID, who), strings.NewReader("data")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	res, err := store.Confirm(ctx, who, slot.ResourceID)
+	if err != nil {
+		t.Fatalf("Confirm: %v", err)
+	}
+	if !strings.HasPrefix(res.URL, "http://127.0.0.1:5000/api/v1") {
+		t.Errorf("confirmed url = %q, want a link signed by the store holding the bytes", res.URL)
+	}
+	if res.URLExpiresAt == nil {
+		t.Error("a signed link with no expiry: the caller cannot tell a stale URL from a wrong one")
+	}
+}
+
 func objectKey(t *testing.T, resources *dbx.Resources, id, uploaderID int64) string {
 	t.Helper()
 	res, err := resources.FindPending(context.Background(), id, &uploaderID)

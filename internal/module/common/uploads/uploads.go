@@ -100,7 +100,41 @@ func (s *Store) Confirm(ctx context.Context, uploaderID, resourceID int64) (comm
 	if object.Checksum != "" {
 		checksum = &object.Checksum
 	}
-	return s.resources.Confirm(ctx, resourceID, uploader(uploaderID), object.Size, checksum)
+	res, err := s.resources.Confirm(ctx, resourceID, uploader(uploaderID), object.Size, checksum)
+	if err != nil {
+		return common.Resource{}, err
+	}
+	// The link to what was just uploaded, and this is the only chance to hand one over: a second
+	// confirm is refused by the `completed_at IS NULL` guard, and nothing else reads a resource
+	// on its own — a row is otherwise seen only through whatever it gets attached to.
+	s.sign(ctx, &res)
+	return res, nil
+}
+
+// sign fills in the short-lived read link, which is not a column on the row: only a store can
+// produce one, and only for the object it actually holds.
+//
+// Signing through the preferred store instead of the one the row names is the one thing this must
+// not do: a store signs any key it is handed, so an object it has never held comes back as a
+// well-formed link that serves nothing and no error branch fires to say so.
+//
+// Best-effort — a link that could not be produced is a picture that does not render, not a row the
+// caller may not have.
+func (s *Store) sign(ctx context.Context, res *common.Resource) {
+	client, err := s.stores.For(res.Provider)
+	if err != nil {
+		return
+	}
+	url, expires, err := client.PresignDownload(ctx, res.ObjectKey, 0)
+	if err != nil {
+		return
+	}
+	res.URL = url
+	// A zero expiry means the link has none of this platform's making — a public URL at somebody
+	// else's origin. Reporting a deadline we do not set would be inventing one.
+	if !expires.IsZero() {
+		res.URLExpiresAt = &expires
+	}
 }
 
 // Resolve turns ids into DTOs with a short-lived read link on each. Presigned rather than
@@ -116,28 +150,7 @@ func (s *Store) Resolve(ctx context.Context, ids []int64) (map[int64]common.Reso
 		return nil, fmt.Errorf("find resources: %w", err)
 	}
 	for _, res := range found {
-		// Signed by the store that actually holds it. Using the preferred store for every row
-		// is the one thing this must not do: a store signs any key it is handed, so an object
-		// it has never held comes back as a well-formed link that serves nothing, and the
-		// error branch below never fires to say so.
-		client, err := s.stores.For(res.Provider)
-		if err != nil {
-			// A link that could not be produced is a picture that does not render, not a page
-			// that fails: the row is still what the caller asked about.
-			out[res.ID] = res.ToDTO()
-			continue
-		}
-		url, expires, err := client.PresignDownload(ctx, res.ObjectKey, 0)
-		if err != nil {
-			out[res.ID] = res.ToDTO()
-			continue
-		}
-		res.URL = url
-		// A zero expiry means the link has none of this platform's making — a public URL at
-		// somebody else's origin. Reporting a deadline we do not set would be inventing one.
-		if !expires.IsZero() {
-			res.URLExpiresAt = &expires
-		}
+		s.sign(ctx, &res)
 		out[res.ID] = res.ToDTO()
 	}
 	return out, nil
