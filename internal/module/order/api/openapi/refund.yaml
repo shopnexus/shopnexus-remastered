@@ -233,7 +233,11 @@ components:
         attachments:
           type: array
           items: { $ref: '#/components/schemas/Resource' }
-          description: The buyer's evidence, topped up until the case closes.
+          description: >
+            The case file, topped up by either party until it closes — the buyer showing
+            what arrived, the seller what they sent. Naming it the buyer's contradicted
+            the route just above, which takes evidence from either side, and a seller who
+            reads that they may not answer a claim in kind simply does not.
         deadline_at:
           type: string
           format: date-time
