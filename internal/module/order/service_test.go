@@ -2670,3 +2670,42 @@ func TestGetOrderSummary_RefusesAWindowItCannotAnswer(t *testing.T) {
 		})
 	}
 }
+
+// The evidence on a refund is the buyer's claim, not a shared case file, so the seller cannot
+// write to it — they answer by opening a `refund-dispute` ticket, and that thread carries what
+// they have to show. The route used to take either party, which put both sides' material in one
+// list under a field named for the buyer.
+func TestAddRefundAttachments_OnlyTheBuyerWrites(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, o := h.confirmed(t)
+	h.uploads.confirm(42)
+	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
+		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
+	}); err != nil {
+		t.Fatalf("ConfirmReceipt: %v", err)
+	}
+	refund, err := h.svc.CreateRefund(ctx, orderapi.CreateRefundRequest{
+		ActorID: buyer, OrderID: o.ID, Reason: "damaged",
+	})
+	if err != nil {
+		t.Fatalf("CreateRefund: %v", err)
+	}
+
+	h.uploads.confirm(43)
+	if got := status(t, mustErr(h.svc.AddRefundAttachments(ctx, orderapi.AddRefundAttachmentsRequest{
+		ActorID: seller, ID: refund.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](43)},
+	}))); got != 403 {
+		t.Fatalf("status = %d, want 403 for the seller adding evidence", got)
+	}
+
+	topped, err := h.svc.AddRefundAttachments(ctx, orderapi.AddRefundAttachmentsRequest{
+		ActorID: buyer, ID: refund.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](43)},
+	})
+	if err != nil {
+		t.Fatalf("AddRefundAttachments: %v", err)
+	}
+	if len(topped.Attachments) != 1 {
+		t.Fatalf("attachments = %d, want the buyer's one photo", len(topped.Attachments))
+	}
+}

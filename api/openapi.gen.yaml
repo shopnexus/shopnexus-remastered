@@ -3112,7 +3112,7 @@ components:
             properties:
                 attachments:
                     description: |
-                        The case file, topped up by either party until it closes — the buyer showing what arrived, the seller what they sent. Naming it the buyer's contradicted the route just above, which takes evidence from either side, and a seller who reads that they may not answer a claim in kind simply does not.
+                        The buyer's evidence, topped up until the case closes. Theirs alone: this is the claim being made, not a shared file — the seller's answer lives on the `refund-dispute` ticket they open, so the two sides stay legible apart.
                     items:
                         $ref: '#/components/schemas/Resource'
                     type: array
@@ -10251,7 +10251,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/RefundID'
         post:
-            description: Either party to the order, while the case is open. A closed one is the record a verdict was reached on, so nothing is added to it afterwards.
+            description: |
+                The buyer, while the case is open. A closed one is the record a verdict was reached on, so nothing is added to it afterwards. The seller does not write here — they answer by opening a `refund-dispute` ticket, and that thread carries their evidence.
             requestBody:
                 content:
                     application/json:

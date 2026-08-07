@@ -113,12 +113,20 @@ func (s *Service) WithdrawRefund(ctx context.Context, req orderapi.RefundRequest
 	return nil
 }
 
-// AddRefundAttachments tops up the evidence while the case is open. A closed one is the
-// record a verdict was reached on, so nothing is added to it afterwards.
+// AddRefundAttachments tops up the buyer's evidence while the case is open. A closed one is
+// the record a verdict was reached on, so nothing is added to it afterwards.
+//
+// The buyer's, and only theirs: `attachments` is the claim being made, not a shared case
+// file. The seller answers it by opening a `refund-dispute` ticket, whose body and
+// attachments are the first message of its thread — so their side of the story has a home
+// already, one staff read alongside this rather than mixed into it.
 func (s *Service) AddRefundAttachments(ctx context.Context, req orderapi.AddRefundAttachmentsRequest) (orderapi.Refund, error) {
 	r, _, err := s.refundParty(ctx, req.ActorID, req.ID)
 	if err != nil {
 		return orderapi.Refund{}, err
+	}
+	if r.BuyerID != req.ActorID.Int64() {
+		return orderapi.Refund{}, domain.ErrNotTheBuyer
 	}
 	attachments := resourceKeys(req.Attachments)
 	if err := s.requireResources(ctx, attachments); err != nil {
