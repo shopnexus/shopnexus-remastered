@@ -21,6 +21,7 @@ import (
 	"shopnexus/internal/shared/realtime"
 	"shopnexus/internal/shared/session"
 	"shopnexus/internal/shared/token"
+	"shopnexus/internal/shared/validation"
 )
 
 func TestMain(m *testing.M) { idtest.Install(); m.Run() }
@@ -72,7 +73,7 @@ func newHarness() *harness {
 	log := slog.New(slog.DiscardHandler)
 	notes := &fakeNotifier{}
 	svc := account.NewService(repo, sessions, tokens, c,
-		notes, oauthmock.NewVerifier(), kycmock.NewClient(), uploads, log, noopFanout{})
+		notes, oauthmock.NewVerifier(), kycmock.NewClient(), uploads, validation.Default(), log, noopFanout{})
 	return &harness{svc: svc, notes: notes, repo: repo, uploads: uploads, sessions: sessions, tokens: tokens, cache: c}
 }
 
@@ -94,7 +95,7 @@ func newTestServiceWithFanout(t *testing.T, repo *fakeRepo, fanout realtime.Fano
 	log := slog.New(slog.DiscardHandler)
 	notes := &fakeNotifier{}
 	return account.NewService(repo, sessions, tokens, c,
-		notes, oauthmock.NewVerifier(), kycmock.NewClient(), uploads, log, fanout)
+		notes, oauthmock.NewVerifier(), kycmock.NewClient(), uploads, validation.Default(), log, fanout)
 }
 
 // noopFanout is the fanout for tests that are not about realtime: it accepts every push

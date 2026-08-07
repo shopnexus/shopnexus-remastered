@@ -8,12 +8,16 @@ import (
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/module/account/port"
+	"shopnexus/internal/shared/validation"
 )
 
 // ListNotifications reads the feed newest first. One extra row is asked for beyond the
 // page: that is how the next cursor is known to exist without a second query, and it
 // avoids handing back a cursor that leads to an empty page.
 func (s *Service) ListNotifications(ctx context.Context, req accountapi.ListNotificationsRequest) (accountapi.Cursor[accountapi.Notification], error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.Cursor[accountapi.Notification]{}, err
+	}
 	var before time.Time
 	if req.Cursor != "" {
 		t, err := decodeCursor(req.Cursor)
@@ -47,6 +51,9 @@ func (s *Service) ListNotifications(ctx context.Context, req accountapi.ListNoti
 }
 
 func (s *Service) GetUnreadCount(ctx context.Context, req accountapi.GetUnreadCountRequest) (accountapi.UnreadCount, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.UnreadCount{}, err
+	}
 	n, err := s.repo.CountUnreadNotifications(ctx, req.ActorID.Int64())
 	if err != nil {
 		return accountapi.UnreadCount{}, fmt.Errorf("count unread notifications: %w", err)
@@ -57,6 +64,9 @@ func (s *Service) GetUnreadCount(ctx context.Context, req accountapi.GetUnreadCo
 // MarkNotificationsRead answers with the badge that follows, so the client does not have
 // to ask for it in a second call it would make every single time.
 func (s *Service) MarkNotificationsRead(ctx context.Context, req accountapi.MarkNotificationsReadRequest) (accountapi.UnreadCount, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.UnreadCount{}, err
+	}
 	if err := s.repo.MarkNotificationsRead(ctx, req.ActorID.Int64(), req.Before); err != nil {
 		return accountapi.UnreadCount{}, fmt.Errorf("mark notifications read: %w", err)
 	}
@@ -66,6 +76,9 @@ func (s *Service) MarkNotificationsRead(ctx context.Context, req accountapi.Mark
 // GetNotificationPreferences resolves the sparse stored rows against the domain's
 // defaults and returns the whole matrix, so a client never has to know the defaults.
 func (s *Service) GetNotificationPreferences(ctx context.Context, req accountapi.GetNotificationPreferencesRequest) ([]accountapi.NotificationPreference, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return nil, err
+	}
 	stored, err := s.repo.ListPreferences(ctx, req.ActorID.Int64())
 	if err != nil {
 		return nil, fmt.Errorf("list notification preferences: %w", err)
@@ -74,6 +87,9 @@ func (s *Service) GetNotificationPreferences(ctx context.Context, req accountapi
 }
 
 func (s *Service) UpdateNotificationPreferences(ctx context.Context, req accountapi.UpdateNotificationPreferencesRequest) ([]accountapi.NotificationPreference, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return nil, err
+	}
 	accountID := req.ActorID.Int64()
 	want := make([]domain.Preference, 0, len(req.Items))
 	for _, item := range req.Items {
@@ -99,6 +115,9 @@ func (s *Service) UpdateNotificationPreferences(ctx context.Context, req account
 // Push, email and SMS are a workflow's problem, and a row that stood for "we tried
 // to email you" would be a second, weaker definition of the feed.
 func (s *Service) CreateNotification(ctx context.Context, req accountapi.CreateNotificationRequest) (accountapi.Notification, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.Notification{}, err
+	}
 	accountID := req.AccountID.Int64()
 	category := domain.Category(req.Category)
 

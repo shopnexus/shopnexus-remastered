@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-playground/validator/v10"
+
 	"shopnexus/internal/infra/cache"
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/domain"
@@ -26,6 +28,7 @@ import (
 	"shopnexus/internal/shared/realtime"
 	"shopnexus/internal/shared/session"
 	"shopnexus/internal/shared/token"
+	"shopnexus/internal/shared/validation"
 )
 
 // One-time secrets live in Redis rather than in a table: each is read once, by one
@@ -70,7 +73,11 @@ type Service struct {
 	// identity scan share it — presigning per request is what keeps a scan from ever being
 	// a public link, unlike the avatar it sits beside.
 	uploads common.Uploads
-	log     *slog.Logger
+	// v validates a request before the service acts on it. The handler checks the same struct,
+	// but a service-to-service caller reaching this contract through accountapi.Service never
+	// passes through a handler — and that caller is exactly the one no route test covers.
+	v   *validator.Validate
+	log *slog.Logger
 	// fanout pushes the realtime facts in event.go to the socket the owning account may
 	// have open. Best-effort: a write always commits whether or not anybody is listening.
 	fanout realtime.Fanout
@@ -88,6 +95,7 @@ func NewService(
 	verifier oauth.Verifier,
 	kycClient kyc.Client,
 	uploads common.Uploads,
+	v *validator.Validate,
 	log *slog.Logger,
 	fanout realtime.Fanout,
 ) *Service {
@@ -100,6 +108,7 @@ func NewService(
 		oauth:    verifier,
 		kyc:      kycClient,
 		uploads:  uploads,
+		v:        v,
 		log:      log,
 		fanout:   fanout,
 	}
@@ -124,6 +133,9 @@ var _ accountapi.Service = (*Service)(nil)
 // client PUTs the bytes at the store and confirms; until then the resource resolves to
 // nothing, so a half-finished upload cannot be attached to anything.
 func (s *Service) CreateUpload(ctx context.Context, req accountapi.CreateUploadRequest) (common.UploadSlotDTO, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return common.UploadSlotDTO{}, err
+	}
 	slot, err := s.uploads.Presign(ctx, req.ActorID.Int64(), req.Kind, common.UploadRequest{
 		Filename: req.Filename, Mime: req.Mime, Size: req.Size,
 	})
@@ -137,6 +149,9 @@ func (s *Service) CreateUpload(ctx context.Context, req accountapi.CreateUploadR
 // the client declared. Scoped to the uploader: a resource id is guessable, and confirming
 // somebody else's slot would be claiming their upload.
 func (s *Service) ConfirmUpload(ctx context.Context, req common.ConfirmUploadRequest) (common.ResourceDTO, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return common.ResourceDTO{}, err
+	}
 	res, err := s.uploads.Confirm(ctx, req.ActorID.Int64(), req.ID.Int64())
 	if err != nil {
 		return common.ResourceDTO{}, err

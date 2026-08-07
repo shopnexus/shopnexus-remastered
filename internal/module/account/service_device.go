@@ -7,12 +7,16 @@ import (
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/shared/id"
+	"shopnexus/internal/shared/validation"
 )
 
 // RegisterDevice is an upsert on the push token: the same install signing in as another
 // user moves the row instead of creating a second one, so the previous owner stops
 // receiving that phone's notifications.
 func (s *Service) RegisterDevice(ctx context.Context, req accountapi.RegisterDeviceRequest) (accountapi.Device, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.Device{}, err
+	}
 	d, err := domain.NewDevice(req.ActorID.Int64(), domain.Platform(req.Platform), req.PushToken)
 	if err != nil {
 		return accountapi.Device{}, err
@@ -24,6 +28,9 @@ func (s *Service) RegisterDevice(ctx context.Context, req accountapi.RegisterDev
 }
 
 func (s *Service) ListDevices(ctx context.Context, req accountapi.ListDevicesRequest) ([]accountapi.Device, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return nil, err
+	}
 	rows, err := s.repo.ListDevices(ctx, req.ActorID.Int64())
 	if err != nil {
 		return nil, fmt.Errorf("list devices: %w", err)
@@ -36,6 +43,9 @@ func (s *Service) ListDevices(ctx context.Context, req accountapi.ListDevicesReq
 }
 
 func (s *Service) DeleteDevice(ctx context.Context, req accountapi.DeleteDeviceRequest) error {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return err
+	}
 	d, err := s.repo.FindDevice(ctx, req.ID.Int64())
 	if err != nil {
 		return fmt.Errorf("find device: %w", err)

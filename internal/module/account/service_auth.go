@@ -14,11 +14,15 @@ import (
 	"shopnexus/internal/provider/oauth"
 	"shopnexus/internal/shared/id"
 	"shopnexus/internal/shared/token"
+	"shopnexus/internal/shared/validation"
 )
 
 // Register creates a plain user. Moderators come from POST /admin/moderators — the
 // role is granted, never claimed.
 func (s *Service) Register(ctx context.Context, req accountapi.RegisterRequest) (accountapi.AuthResult, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.AuthResult{}, err
+	}
 	hash, err := hashPassword(req.Password)
 	if err != nil {
 		return accountapi.AuthResult{}, err
@@ -47,6 +51,9 @@ func (s *Service) Register(ctx context.Context, req accountapi.RegisterRequest) 
 // unknown account as for a wrong password: the endpoint must not be usable to find out
 // who is registered.
 func (s *Service) Login(ctx context.Context, req accountapi.LoginRequest) (accountapi.AuthResult, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.AuthResult{}, err
+	}
 	acc, err := s.repo.GetByIdentifier(ctx, domain.NormalizeIdentifier(req.Identifier))
 	if err != nil {
 		if errors.Is(err, domain.ErrAccountNotFound) {
@@ -74,6 +81,9 @@ func (s *Service) Login(ctx context.Context, req accountapi.LoginRequest) (accou
 // LoginOAuth links to the account the provider's subject already names, merges into the
 // one holding a provider-verified email, or creates a new one.
 func (s *Service) LoginOAuth(ctx context.Context, req accountapi.OAuthLoginRequest) (accountapi.OAuthLoginResult, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.OAuthLoginResult{}, err
+	}
 	if err := domain.ValidateProvider(req.Provider); err != nil {
 		return accountapi.OAuthLoginResult{}, err
 	}
@@ -175,6 +185,9 @@ func (s *Service) linkIdentity(ctx context.Context, acc *domain.Account, identit
 // Refresh exchanges a refresh token for a new access token on the same session, and
 // rotates the refresh token so a stolen one is usable at most once.
 func (s *Service) Refresh(ctx context.Context, req accountapi.RefreshRequest) (accountapi.AuthResult, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.AuthResult{}, err
+	}
 	sess, err := s.sessions.Rotate(ctx, req.RefreshToken)
 	if err != nil {
 		return accountapi.AuthResult{}, fmt.Errorf("rotate session: %w", err)
@@ -205,6 +218,9 @@ func (s *Service) Refresh(ctx context.Context, req accountapi.RefreshRequest) (a
 // Logout revokes the caller's session, and unregisters the device it names so the phone
 // stops receiving notifications for an account nobody is signed in to.
 func (s *Service) Logout(ctx context.Context, req accountapi.LogoutRequest) error {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return err
+	}
 	if err := s.sessions.Revoke(ctx, req.SessionID); err != nil {
 		return fmt.Errorf("revoke session: %w", err)
 	}
@@ -234,6 +250,9 @@ func (s *Service) Logout(ctx context.Context, req accountapi.LogoutRequest) erro
 // dropped, and the caller's own survives — signing someone out of the tab they are
 // typing in is not a security win.
 func (s *Service) ChangePassword(ctx context.Context, req accountapi.ChangePasswordRequest) error {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return err
+	}
 	acc, err := s.actor(ctx, req.ActorID)
 	if err != nil {
 		return err
@@ -262,6 +281,9 @@ func (s *Service) ChangePassword(ctx context.Context, req accountapi.ChangePassw
 // that an address is unknown turns this endpoint into a way to enumerate accounts. The
 // throttle is applied first, for the same reason.
 func (s *Service) RequestPasswordReset(ctx context.Context, req accountapi.PasswordResetRequest) error {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return err
+	}
 	identifier := domain.NormalizeIdentifier(req.Identifier)
 	if err := s.throttle(ctx, "password-reset", identifier); err != nil {
 		return err
@@ -300,6 +322,9 @@ func (s *Service) RequestPasswordReset(ctx context.Context, req accountapi.Passw
 // ResetPassword sets the new password and drops every session: whoever asked for the
 // reset may well be locked out *because* someone else is signed in.
 func (s *Service) ResetPassword(ctx context.Context, req accountapi.PasswordResetConfirmRequest) error {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return err
+	}
 	accountID, err := s.takeSecret(ctx, passwordResetPrefix+req.Token, domain.ErrInvalidResetToken)
 	if err != nil {
 		return err
@@ -323,6 +348,9 @@ func (s *Service) ResetPassword(ctx context.Context, req accountapi.PasswordRese
 }
 
 func (s *Service) RequestEmailVerification(ctx context.Context, req accountapi.RequestEmailVerificationRequest) error {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return err
+	}
 	acc, err := s.actor(ctx, req.ActorID)
 	if err != nil {
 		return err
@@ -340,6 +368,9 @@ func (s *Service) RequestEmailVerification(ctx context.Context, req accountapi.R
 }
 
 func (s *Service) VerifyEmail(ctx context.Context, req accountapi.EmailVerificationRequest) error {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return err
+	}
 	accountID, err := s.takeSecret(ctx, emailVerifyPrefix+req.Token, domain.ErrInvalidVerificationToken)
 	if err != nil {
 		return err

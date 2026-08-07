@@ -7,9 +7,13 @@ import (
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/shared/id"
+	"shopnexus/internal/shared/validation"
 )
 
 func (s *Service) GetMe(ctx context.Context, req accountapi.GetMeRequest) (accountapi.Me, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.Me{}, err
+	}
 	acc, err := s.actor(ctx, req.ActorID)
 	if err != nil {
 		return accountapi.Me{}, err
@@ -25,6 +29,9 @@ func (s *Service) GetMe(ctx context.Context, req accountapi.GetMeRequest) (accou
 // last identifier cannot be removed, and a new email is unverified — so this applies the
 // patch and reports what came back.
 func (s *Service) UpdateMe(ctx context.Context, req accountapi.UpdateAccountRequest) (accountapi.Me, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.Me{}, err
+	}
 	acc, err := s.actor(ctx, req.ActorID)
 	if err != nil {
 		return accountapi.Me{}, err
@@ -66,6 +73,9 @@ func (s *Service) UpdateMe(ctx context.Context, req accountapi.UpdateAccountRequ
 }
 
 func (s *Service) UpdateProfile(ctx context.Context, req accountapi.UpdateProfileRequest) (accountapi.Profile, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.Profile{}, err
+	}
 	acc, err := s.actor(ctx, req.ActorID)
 	if err != nil {
 		return accountapi.Profile{}, err
@@ -125,6 +135,9 @@ func (s *Service) UpdateProfile(ctx context.Context, req accountapi.UpdateProfil
 
 // GetPublicAccount is the seller page: deliberately narrow, and readable by anyone.
 func (s *Service) GetPublicAccount(ctx context.Context, req accountapi.GetPublicAccountRequest) (accountapi.PublicAccount, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.PublicAccount{}, err
+	}
 	acc, err := s.repo.Get(ctx, req.ID.Int64())
 	if err != nil {
 		return accountapi.PublicAccount{}, fmt.Errorf("get account: %w", err)
@@ -158,6 +171,9 @@ func (s *Service) GetPublicAccount(ctx context.Context, req accountapi.GetPublic
 }
 
 func (s *Service) ListOAuthIdentities(ctx context.Context, req accountapi.ListOAuthIdentitiesRequest) ([]accountapi.OAuthIdentity, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return nil, err
+	}
 	acc, err := s.repo.Get(ctx, req.ActorID.Int64())
 	if err != nil {
 		return nil, fmt.Errorf("get account: %w", err)
@@ -173,6 +189,9 @@ func (s *Service) ListOAuthIdentities(ctx context.Context, req accountapi.ListOA
 // The rule is the root's, and the version check is what makes it stick: two concurrent
 // unlinks of different providers cannot both read "there is another way in" and win.
 func (s *Service) UnlinkOAuthIdentity(ctx context.Context, req accountapi.UnlinkOAuthIdentityRequest) error {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return err
+	}
 	if err := domain.ValidateProvider(req.Provider); err != nil {
 		return err
 	}

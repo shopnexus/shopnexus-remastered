@@ -6,11 +6,15 @@ import (
 
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/domain"
+	"shopnexus/internal/shared/validation"
 )
 
 // Follow is idempotent, and following yourself is refused: the edge would be a
 // self-loop in the seller graph, and the CHECK on the table says so too.
 func (s *Service) Follow(ctx context.Context, req accountapi.FollowRequest) error {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return err
+	}
 	if req.ActorID == req.TargetID {
 		return domain.ErrSelfFollow
 	}
@@ -23,6 +27,9 @@ func (s *Service) Follow(ctx context.Context, req accountapi.FollowRequest) erro
 // Unfollow is idempotent too, so a client that lost track of the state can always ask
 // for the state it wants.
 func (s *Service) Unfollow(ctx context.Context, req accountapi.UnfollowRequest) error {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return err
+	}
 	if err := s.repo.DeleteFollow(ctx, req.ActorID.Int64(), req.TargetID.Int64()); err != nil {
 		return fmt.Errorf("delete follow: %w", err)
 	}
@@ -30,6 +37,9 @@ func (s *Service) Unfollow(ctx context.Context, req accountapi.UnfollowRequest) 
 }
 
 func (s *Service) ListFollowing(ctx context.Context, req accountapi.ListFollowingRequest) (accountapi.Page[accountapi.AccountSummary], error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.Page[accountapi.AccountSummary]{}, err
+	}
 	rows, total, err := s.repo.ListFollowing(ctx, req.ActorID.Int64(), offsetOf(req.Page, req.Limit), req.Limit)
 	if err != nil {
 		return accountapi.Page[accountapi.AccountSummary]{}, fmt.Errorf("list following: %w", err)
@@ -43,6 +53,9 @@ func (s *Service) ListFollowing(ctx context.Context, req accountapi.ListFollowin
 // ListFollowers is public, so the account has to be looked up: an unknown seller is a
 // 404, not an empty follower list, which a client cannot tell from a new seller.
 func (s *Service) ListFollowers(ctx context.Context, req accountapi.ListFollowersRequest) (accountapi.Page[accountapi.AccountSummary], error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.Page[accountapi.AccountSummary]{}, err
+	}
 	if _, err := s.repo.Get(ctx, req.AccountID.Int64()); err != nil {
 		return accountapi.Page[accountapi.AccountSummary]{}, fmt.Errorf("get account: %w", err)
 	}

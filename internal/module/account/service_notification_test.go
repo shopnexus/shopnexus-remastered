@@ -2,7 +2,6 @@ package account_test
 
 import (
 	"encoding/json/v2"
-	"errors"
 	"sync"
 	"testing"
 
@@ -65,13 +64,17 @@ func TestCreateNotificationRejectsUnknownCategory(t *testing.T) {
 	repo := newFakeRepo()
 	svc := newTestService(t, repo)
 
+	// Refused by the request's own `oneof` before the domain ever sees it — this method is
+	// service-to-service, so that guard is the only one a caller passes through. The domain
+	// still refuses the same category (see domain.TestNewNotification); it is the second line,
+	// not the one that fires here.
 	_, err := svc.CreateNotification(t.Context(), accountapi.CreateNotificationRequest{
 		AccountID: id.Of[id.Account](42),
 		Category:  "gossip",
 		Title:     "t",
 	})
-	if !errors.Is(err, domain.ErrNotificationInvalid) {
-		t.Fatalf("err = %v, want ErrNotificationInvalid", err)
+	if got := status(t, err); got != 400 {
+		t.Fatalf("status = %d, want 400", got)
 	}
 	if len(repo.notifs) != 0 {
 		t.Errorf("wrote %d rows, want 0", len(repo.notifs))

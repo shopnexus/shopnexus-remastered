@@ -8,6 +8,7 @@ import (
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/module/account/port"
 	"shopnexus/internal/module/common"
+	"shopnexus/internal/shared/validation"
 )
 
 // AdminListAccounts is the moderator's search. The rows come back as accounts, and the
@@ -15,6 +16,9 @@ import (
 // each — three queries per page rather than a join the repository would have to keep in
 // step with two other read shapes.
 func (s *Service) AdminListAccounts(ctx context.Context, req accountapi.AdminListAccountsRequest) (accountapi.Page[accountapi.AdminAccount], error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.Page[accountapi.AdminAccount]{}, err
+	}
 	if _, err := s.requireModerator(ctx, req.ActorID); err != nil {
 		return accountapi.Page[accountapi.AdminAccount]{}, err
 	}
@@ -42,6 +46,9 @@ func (s *Service) AdminListAccounts(ctx context.Context, req accountapi.AdminLis
 // together: a suspended row does not stop an access token that is already in
 // circulation, so leaving the sessions alive would suspend the account on paper only.
 func (s *Service) AdminSuspendAccount(ctx context.Context, req accountapi.SuspendAccountRequest) (accountapi.AdminAccount, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.AdminAccount{}, err
+	}
 	moderator, err := s.requireModerator(ctx, req.ActorID)
 	if err != nil {
 		return accountapi.AdminAccount{}, err
@@ -64,6 +71,9 @@ func (s *Service) AdminSuspendAccount(ctx context.Context, req accountapi.Suspen
 // AdminLiftSuspension clears the reason and the deadline with the status: the row keeps
 // only the suspension in force, and the one just lifted is in the audit log.
 func (s *Service) AdminLiftSuspension(ctx context.Context, req accountapi.LiftSuspensionRequest) (accountapi.AdminAccount, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.AdminAccount{}, err
+	}
 	moderator, err := s.requireModerator(ctx, req.ActorID)
 	if err != nil {
 		return accountapi.AdminAccount{}, err
@@ -82,6 +92,9 @@ func (s *Service) AdminLiftSuspension(ctx context.Context, req accountapi.LiftSu
 // AdminCreateModerator is admin-only: a moderator decides disputes and takes listings
 // down, so there is no self-service path to the role.
 func (s *Service) AdminCreateModerator(ctx context.Context, req accountapi.CreateModeratorRequest) (accountapi.AdminAccount, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.AdminAccount{}, err
+	}
 	admin, err := s.requireAdmin(ctx, req.ActorID)
 	if err != nil {
 		return accountapi.AdminAccount{}, err
@@ -119,6 +132,9 @@ func (s *Service) AdminCreateModerator(ctx context.Context, req accountapi.Creat
 // rather than when their token expires. The account itself survives, since it may have
 // traded.
 func (s *Service) AdminRevokeModerator(ctx context.Context, req accountapi.RevokeModeratorRequest) error {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return err
+	}
 	admin, err := s.requireAdmin(ctx, req.ActorID)
 	if err != nil {
 		return err

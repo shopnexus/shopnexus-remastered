@@ -10,6 +10,7 @@ import (
 	"shopnexus/internal/module/common"
 	"shopnexus/internal/provider/kyc"
 	"shopnexus/internal/shared/id"
+	"shopnexus/internal/shared/validation"
 )
 
 // StartIdentityVerification hands the scans to the vendor and stores what came back.
@@ -20,6 +21,9 @@ import (
 // call, and the document is inserted decided. One that runs its own web flow answers
 // pending and hands back a session URL for the caller to finish in.
 func (s *Service) StartIdentityVerification(ctx context.Context, req accountapi.StartIdentityVerificationRequest) (accountapi.IdentityVerificationTicket, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.IdentityVerificationTicket{}, err
+	}
 	accountID := req.ActorID.Int64()
 	verified, err := s.repo.HasLiveVerifiedDocument(ctx, accountID)
 	if err != nil {
@@ -124,6 +128,9 @@ func (s *Service) scans(ctx context.Context, req accountapi.StartIdentityVerific
 // ListIdentityDocuments is the account's own history, expiries included: a passport runs
 // out, so a payout gate has to look at more than the status.
 func (s *Service) ListIdentityDocuments(ctx context.Context, req accountapi.ListIdentityDocumentsRequest) ([]accountapi.IdentityDocument, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return nil, err
+	}
 	rows, err := s.repo.ListIdentityDocuments(ctx, req.ActorID.Int64())
 	if err != nil {
 		return nil, fmt.Errorf("list identity documents: %w", err)
@@ -138,6 +145,9 @@ func (s *Service) ListIdentityDocuments(ctx context.Context, req accountapi.List
 // AdminListIdentityDocuments is the review queue. The subject comes back beside the
 // document, because a moderator cannot decide a case about an account they cannot see.
 func (s *Service) AdminListIdentityDocuments(ctx context.Context, req accountapi.AdminListIdentityDocumentsRequest) (accountapi.Page[accountapi.AdminIdentityDocument], error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.Page[accountapi.AdminIdentityDocument]{}, err
+	}
 	if _, err := s.requireModerator(ctx, req.ActorID); err != nil {
 		return accountapi.Page[accountapi.AdminIdentityDocument]{}, err
 	}
@@ -204,6 +214,9 @@ func (s *Service) AdminListIdentityDocuments(ctx context.Context, req accountapi
 // the repository only moves a row that is still pending, so two moderators deciding at
 // once cannot overwrite each other.
 func (s *Service) AdminRecordIdentityVerdict(ctx context.Context, req accountapi.IdentityVerdictRequest) (accountapi.IdentityDocument, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.IdentityDocument{}, err
+	}
 	moderator, err := s.requireModerator(ctx, req.ActorID)
 	if err != nil {
 		return accountapi.IdentityDocument{}, err

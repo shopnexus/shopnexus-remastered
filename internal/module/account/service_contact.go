@@ -13,12 +13,16 @@ import (
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/provider/notify"
 	"shopnexus/internal/shared/id"
+	"shopnexus/internal/shared/validation"
 )
 
 // ListAdministrativeAreas serves one level of the division tree from the list vendored in this
 // module. No repository and no cache: the file is in the binary, so the answer is a slice that was
 // built once at first use.
 func (s *Service) ListAdministrativeAreas(ctx context.Context, req accountapi.ListAdministrativeAreasRequest) ([]accountapi.AdministrativeArea, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return nil, err
+	}
 	found, ok, err := areas.Children(req.Parent)
 	if err != nil {
 		return nil, fmt.Errorf("read administrative areas: %w", err)
@@ -34,6 +38,9 @@ func (s *Service) ListAdministrativeAreas(ctx context.Context, req accountapi.Li
 }
 
 func (s *Service) ListContacts(ctx context.Context, req accountapi.ListContactsRequest) ([]accountapi.Contact, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return nil, err
+	}
 	rows, err := s.repo.ListContacts(ctx, req.ActorID.Int64())
 	if err != nil {
 		return nil, fmt.Errorf("list contacts: %w", err)
@@ -48,6 +55,9 @@ func (s *Service) ListContacts(ctx context.Context, req accountapi.ListContactsR
 // GetContact reads one of the caller's own. Somebody else's is not found rather than
 // forbidden — it is not theirs to know about.
 func (s *Service) GetContact(ctx context.Context, req accountapi.GetContactRequest) (accountapi.Contact, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.Contact{}, err
+	}
 	c, err := s.repo.FindContact(ctx, req.ActorID.Int64(), req.ID.Int64())
 	if err != nil {
 		return accountapi.Contact{}, fmt.Errorf("find contact: %w", err)
@@ -59,6 +69,9 @@ func (s *Service) GetContact(ctx context.Context, req accountapi.GetContactReque
 // when the money lands and the seller is not there, and only the pickup default is exposed
 // — the rest of somebody's addresses are not another module's business.
 func (s *Service) GetPickupContact(ctx context.Context, req accountapi.GetPickupContactRequest) (accountapi.Contact, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.Contact{}, err
+	}
 	rows, err := s.repo.ListContacts(ctx, req.AccountID.Int64())
 	if err != nil {
 		return accountapi.Contact{}, fmt.Errorf("list contacts: %w", err)
@@ -74,6 +87,9 @@ func (s *Service) GetPickupContact(ctx context.Context, req accountapi.GetPickup
 // GetDeliveryContact is the buyer's side of GetPickupContact: the one address their parcels go to
 // unless they choose another, which is what a quote uses when no contact was named.
 func (s *Service) GetDeliveryContact(ctx context.Context, req accountapi.GetDeliveryContactRequest) (accountapi.Contact, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.Contact{}, err
+	}
 	rows, err := s.repo.ListContacts(ctx, req.ActorID.Int64())
 	if err != nil {
 		return accountapi.Contact{}, fmt.Errorf("list contacts: %w", err)
@@ -87,6 +103,9 @@ func (s *Service) GetDeliveryContact(ctx context.Context, req accountapi.GetDeli
 }
 
 func (s *Service) CreateContact(ctx context.Context, req accountapi.CreateContactRequest) (accountapi.Contact, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.Contact{}, err
+	}
 	c := domain.Contact{
 		AccountID:         req.ActorID.Int64(),
 		FullName:          req.FullName,
@@ -131,6 +150,9 @@ func (s *Service) CreateContact(ctx context.Context, req accountapi.CreateContac
 // matter are about the whole address — both district fields or neither, both coordinates
 // or neither — so they cannot be checked one field at a time.
 func (s *Service) UpdateContact(ctx context.Context, req accountapi.UpdateContactRequest) (accountapi.Contact, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.Contact{}, err
+	}
 	c, err := s.ownedContact(ctx, req.ActorID, req.ID)
 	if err != nil {
 		return accountapi.Contact{}, err
@@ -215,6 +237,9 @@ func (s *Service) UpdateContact(ctx context.Context, req accountapi.UpdateContac
 }
 
 func (s *Service) DeleteContact(ctx context.Context, req accountapi.DeleteContactRequest) error {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return err
+	}
 	if err := s.repo.DeleteContact(ctx, req.ActorID.Int64(), req.ID.Int64()); err != nil {
 		return fmt.Errorf("delete contact: %w", err)
 	}
@@ -225,6 +250,9 @@ func (s *Service) DeleteContact(ctx context.Context, req accountapi.DeleteContac
 // dial. Re-sending replaces the outstanding code rather than issuing a second valid one,
 // which is what the single key per contact gives us for free.
 func (s *Service) RequestContactPhoneVerification(ctx context.Context, req accountapi.RequestContactPhoneVerificationRequest) error {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return err
+	}
 	c, err := s.ownedContact(ctx, req.ActorID, req.ID)
 	if err != nil {
 		return err
@@ -252,6 +280,9 @@ func (s *Service) RequestContactPhoneVerification(ctx context.Context, req accou
 }
 
 func (s *Service) VerifyContactPhone(ctx context.Context, req accountapi.VerifyContactPhoneRequest) (accountapi.Contact, error) {
+	if err := validation.AsError(s.v.Struct(req)); err != nil {
+		return accountapi.Contact{}, err
+	}
 	c, err := s.ownedContact(ctx, req.ActorID, req.ID)
 	if err != nil {
 		return accountapi.Contact{}, err
