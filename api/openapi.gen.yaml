@@ -5737,7 +5737,7 @@ paths:
                   schema:
                     format: date-time
                     type: string
-                - $ref: '#/components/parameters/Cursor'
+                - $ref: '#/components/parameters/Page'
                 - $ref: '#/components/parameters/Limit'
             responses:
                 "200":
@@ -11183,7 +11183,7 @@ paths:
                   name: kind
                   schema:
                     $ref: '#/components/schemas/WalletTransactionKind'
-                - $ref: '#/components/parameters/Cursor'
+                - $ref: '#/components/parameters/Page'
                 - $ref: '#/components/parameters/Limit'
             responses:
                 "200":

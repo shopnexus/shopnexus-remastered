@@ -176,8 +176,14 @@ type ListSessionsRequest struct {
 	Role   string `json:"-" validate:"omitempty,oneof=payer payee"`
 	Kind   string `json:"-" validate:"omitempty,oneof=buyer-checkout seller-payout withdrawal"`
 	Status string `json:"-" validate:"omitempty,oneof=pending processing success cancelled failed"`
-	Page   int    `json:"-" validate:"required,min=1"`
-	Limit  int    `json:"-" validate:"required,min=1,max=100"`
+	// AccountID, From and To are the staff reconciliation filters. They are read only on
+	// the admin route: on the caller's own list the answer is already their sessions, and
+	// an account_id there would be a way to ask about somebody else's money.
+	AccountID id.ID[id.Account] `json:"-"`
+	From      *time.Time        `json:"-"`
+	To        *time.Time        `json:"-"`
+	Page      int               `json:"-" validate:"required,min=1"`
+	Limit     int               `json:"-" validate:"required,min=1,max=100"`
 }
 
 type GetSessionRequest struct {

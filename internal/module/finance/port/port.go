@@ -7,6 +7,7 @@
 package port
 
 import (
+	"time"
 	"context"
 
 	"shopnexus/internal/module/finance/domain"
@@ -23,8 +24,12 @@ type SessionFilter struct {
 	PayeeID int64
 	Kind    string
 	Status  string
-	Offset  int
-	Limit   int
+	// From and To bound `created_at`: inclusive lower, exclusive upper. Nil is unbounded.
+	// A reconciliation screen is asking about a period, so the period is the filter.
+	From   *time.Time
+	To     *time.Time
+	Offset int
+	Limit  int
 }
 
 // MovementFilter pages one wallet's ledger, newest first.

@@ -37,8 +37,11 @@ func (s *Service) ListSessions(ctx context.Context, req financeapi.ListSessionsR
 		if err := s.requireAdmin(ctx, req.ActorID); err != nil {
 			return financeapi.SessionPage{}, err
 		}
-		// Zero is the admin view: every session, whoever is party to it.
-		filter.AccountID = 0
+		// Zero is the admin view: every session, whoever is party to it — unless staff
+		// named one, which is the whole point of the filter.
+		filter.AccountID = req.AccountID.Int64()
+		filter.From = req.From
+		filter.To = req.To
 	}
 	rows, total, err := s.repo.ListSessions(ctx, filter)
 	if err != nil {

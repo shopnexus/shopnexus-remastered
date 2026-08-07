@@ -58,7 +58,7 @@ paths:
       parameters:
         - { name: currency, in: path, required: true, schema: { $ref: '#/components/schemas/CurrencyCode' } }
         - { name: kind, in: query, schema: { $ref: '#/components/schemas/WalletTransactionKind' } }
-        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/WalletTransactionPage' } } } }

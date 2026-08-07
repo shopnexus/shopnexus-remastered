@@ -49,6 +49,8 @@ func (r *Repo) ListSessions(ctx context.Context, f port.SessionFilter) ([]domain
 	             AND (@payee_id = 0 OR to_id = @payee_id)
 	             AND (@kind::text IS NULL OR kind::text = @kind::text)
 	             AND (@status::text IS NULL OR status::text = @status::text)
+	             AND (@from::timestamptz IS NULL OR created_at >= @from)
+	             AND (@to::timestamptz IS NULL OR created_at < @to)
 	           ORDER BY created_at DESC, id DESC
 	           LIMIT @limit OFFSET @offset`
 	args := pgx.NamedArgs{
@@ -57,6 +59,8 @@ func (r *Repo) ListSessions(ctx context.Context, f port.SessionFilter) ([]domain
 		"payee_id":   f.PayeeID,
 		"kind":       nullString(f.Kind),
 		"status":     nullString(f.Status),
+		"from":       f.From,
+		"to":         f.To,
 		"limit":      f.Limit,
 		"offset":     f.Offset,
 	}

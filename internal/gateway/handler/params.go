@@ -199,6 +199,17 @@ func optionalTimeParam(r *http.Request, name string) (*time.Time, error) {
 	return &t, nil
 }
 
+// optionalIDParam reads an opaque id from the query string, or the zero id when it is absent.
+// The zero is what every filter already reads as "not narrowed", so absent and unset stay one
+// thing; a malformed id is still a 400 rather than a silently unfiltered list.
+func optionalIDParam[K id.Kind](r *http.Request, name string) (id.ID[K], error) {
+	raw := r.URL.Query().Get(name)
+	if raw == "" {
+		return 0, nil
+	}
+	return id.Parse[K](raw)
+}
+
 // splitList reads a comma-separated query parameter — the `style: form, explode: false` shape
 // the spec uses for every list of ids. An empty value is no items rather than one empty one.
 func splitList(raw string) []string {

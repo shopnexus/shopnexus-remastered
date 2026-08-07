@@ -86,7 +86,7 @@ paths:
         - { name: account_id, in: query, schema: { $ref: '#/components/schemas/AccountID' } }
         - { name: from, in: query, schema: { type: string, format: date-time }, description: Inclusive lower bound on creation time }
         - { name: to, in: query, schema: { type: string, format: date-time }, description: Exclusive upper bound on creation time }
-        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/PaymentSessionPage' } } } }

@@ -49,14 +49,32 @@ func (h *Finance) listSessions(w http.ResponseWriter, r *http.Request, admin boo
 	if failed(w, h.log, err) {
 		return
 	}
+	// The three staff filters the spec has always advertised. Reading them here is what
+	// makes that true: until now a date range was accepted and silently ignored, which on
+	// a reconciliation screen answers a question nobody asked.
+	from, err := optionalTimeParam(r, "from")
+	if failed(w, h.log, err) {
+		return
+	}
+	to, err := optionalTimeParam(r, "to")
+	if failed(w, h.log, err) {
+		return
+	}
+	accountID, err := optionalIDParam[id.Account](r, "account_id")
+	if failed(w, h.log, err) {
+		return
+	}
 	req := financeapi.ListSessionsRequest{
-		ActorID: uid,
-		Admin:   admin,
-		Role:    r.URL.Query().Get("role"),
-		Kind:    r.URL.Query().Get("kind"),
-		Status:  r.URL.Query().Get("status"),
-		Page:    page,
-		Limit:   limit,
+		ActorID:   uid,
+		Admin:     admin,
+		Role:      r.URL.Query().Get("role"),
+		Kind:      r.URL.Query().Get("kind"),
+		Status:    r.URL.Query().Get("status"),
+		AccountID: accountID,
+		From:      from,
+		To:        to,
+		Page:      page,
+		Limit:     limit,
 	}
 	if failed(w, h.log, check(h.v, req)) {
 		return
