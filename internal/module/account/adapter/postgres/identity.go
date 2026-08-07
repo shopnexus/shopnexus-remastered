@@ -10,7 +10,8 @@ import (
 	"shopnexus/internal/module/common/dbx"
 )
 
-const identityColumns = `id, account_id, doc_type::text, provider, provider_ref, status::text,
+const identityColumns = `id, account_id, doc_type::text, provider, provider_ref,
+	       front_resource_id, back_resource_id, selfie_resource_id, status::text,
 	       rejection_reason, verified_at, expires_at, created_at`
 
 // scanIdentity reads identityColumns, plus whatever the caller appended to the SELECT —
@@ -18,7 +19,8 @@ const identityColumns = `id, account_id, doc_type::text, provider, provider_ref,
 // every read of the table.
 func scanIdentity(row pgx.Row, tail ...any) (domain.IdentityDocument, error) {
 	var d domain.IdentityDocument
-	dest := append([]any{&d.ID, &d.AccountID, &d.DocType, &d.Provider, &d.ProviderRef, &d.Status,
+	dest := append([]any{&d.ID, &d.AccountID, &d.DocType, &d.Provider, &d.ProviderRef,
+		&d.FrontResourceID, &d.BackResourceID, &d.SelfieResourceID, &d.Status,
 		&d.RejectionReason, &d.VerifiedAt, &d.ExpiresAt, &d.CreatedAt}, tail...)
 	err := row.Scan(dest...)
 	if dbx.IsNoRows(err) {
@@ -35,20 +37,25 @@ func scanIdentity(row pgx.Row, tail ...any) (domain.IdentityDocument, error) {
 // then decide" would store a state that never happened and briefly show the account an
 // undecided case.
 func (r *Repo) InsertIdentityDocument(ctx context.Context, d *domain.IdentityDocument) error {
-	const q = `INSERT INTO identity_document (account_id, doc_type, provider, provider_ref, status,
-	                                  rejection_reason, verified_at, expires_at)
-	           VALUES (@account_id, @doc_type, @provider, @provider_ref, @status,
-	                   @rejection_reason, @verified_at, @expires_at)
+	const q = `INSERT INTO identity_document (account_id, doc_type, provider, provider_ref,
+	                                  front_resource_id, back_resource_id, selfie_resource_id,
+	                                  status, rejection_reason, verified_at, expires_at)
+	           VALUES (@account_id, @doc_type, @provider, @provider_ref,
+	                   @front_resource_id, @back_resource_id, @selfie_resource_id,
+	                   @status, @rejection_reason, @verified_at, @expires_at)
 	           RETURNING id, created_at`
 	args := pgx.NamedArgs{
-		"account_id":       d.AccountID,
-		"doc_type":         string(d.DocType),
-		"provider":         d.Provider,
-		"provider_ref":     d.ProviderRef,
-		"status":           string(d.Status),
-		"rejection_reason": d.RejectionReason,
-		"verified_at":      d.VerifiedAt,
-		"expires_at":       d.ExpiresAt,
+		"account_id":         d.AccountID,
+		"doc_type":           string(d.DocType),
+		"provider":           d.Provider,
+		"provider_ref":       d.ProviderRef,
+		"front_resource_id":  d.FrontResourceID,
+		"back_resource_id":   d.BackResourceID,
+		"selfie_resource_id": d.SelfieResourceID,
+		"status":             string(d.Status),
+		"rejection_reason":   d.RejectionReason,
+		"verified_at":        d.VerifiedAt,
+		"expires_at":         d.ExpiresAt,
 	}
 	if err := r.pool.QueryRow(ctx, q, args).Scan(&d.ID, &d.CreatedAt); err != nil {
 		switch {

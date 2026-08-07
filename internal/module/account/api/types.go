@@ -234,10 +234,24 @@ type IdentityVerificationTicket struct {
 }
 
 // AdminIdentityDocument is a review-queue entry, which needs the subject beside the
-// document.
+// document — and the scans, because a moderator overruling the vendor is deciding a payout
+// and a verdict screen with nothing on it is a rubber stamp.
+//
+// Staff-only, deliberately: the scans hang off this projection rather than off
+// IdentityDocument, so the account's own read of its verification history stays the verdict
+// and nothing else.
 type AdminIdentityDocument struct {
 	Document IdentityDocument `json:"document"`
 	Account  AccountSummary   `json:"account"`
+	Scans    IdentityScans    `json:"scans"`
+}
+
+// IdentityScans is what the vendor read. Each is null when it was never sent — a passport
+// has no back — or when the object has since been reaped.
+type IdentityScans struct {
+	Front  *common.ResourceDTO `json:"front"`
+	Back   *common.ResourceDTO `json:"back"`
+	Selfie *common.ResourceDTO `json:"selfie"`
 }
 
 // --- moderator and admin ---

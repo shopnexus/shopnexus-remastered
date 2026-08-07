@@ -313,15 +313,24 @@ CREATE INDEX IF NOT EXISTS "follow_follower_id_created_at_idx" ON "follow" ("fol
 -- Government-ID verification, required for payout in many markets. Lives in "account"
 -- rather than "finance": it establishes who the person is, and linking it to
 -- "account"."status" (a suspension follows a rejected check) stays same-schema.
--- Deliberately holds no document number and no scan: a KYC provider does the check
--- and only its verdict is kept, so leaking this table cannot impersonate anyone.
--- The scans themselves, if any, belong in "common"."resource" behind the provider.
+-- Holds no document *number* — a KYC provider does the check and only its verdict is
+-- kept, so leaking this table still cannot reproduce an identity document. It does keep
+-- the three scans by reference, because a moderator overriding the vendor is deciding a
+-- payout on evidence, and a verdict screen with nothing on it is a rubber stamp. They are
+-- resource ids, so the bytes stay behind the store's signed URLs and never in this row.
 CREATE TABLE IF NOT EXISTS "identity_document" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
     "account_id" BIGINT NOT NULL,
     "doc_type" "identity_document_type" NOT NULL,
     "provider" VARCHAR(30) NOT NULL, -- kebab-case KYC vendor, e.g. 'vnpt-ekyc'
     "provider_ref" TEXT NOT NULL, -- the vendor's case id, for re-reading the verdict
+    -- The scans the vendor read, kept for the moderator who may overrule it. Three
+    -- columns rather than one array because which is which is the whole point: a back
+    -- and a selfie are different evidence, and an unlabelled pair makes the reviewer
+    -- guess. Only the back is optional — a passport has none.
+    "front_resource_id" BIGINT,
+    "back_resource_id" BIGINT,
+    "selfie_resource_id" BIGINT,
     "status" "identity_status" NOT NULL DEFAULT 'pending',
     "rejection_reason" TEXT,
     "verified_at" TIMESTAMPTZ,
@@ -341,7 +350,14 @@ CREATE TABLE IF NOT EXISTS "identity_document" (
     ),
 
     CONSTRAINT "identity_document_account_id_fkey" FOREIGN KEY ("account_id")
-        REFERENCES "account" ("id") ON DELETE CASCADE
+        REFERENCES "account" ("id") ON DELETE CASCADE,
+    -- SET NULL, not CASCADE: a scan that is reaped must not take the verdict with it.
+    CONSTRAINT "identity_document_front_resource_id_fkey" FOREIGN KEY ("front_resource_id")
+        REFERENCES "resource" ("id") ON DELETE SET NULL,
+    CONSTRAINT "identity_document_back_resource_id_fkey" FOREIGN KEY ("back_resource_id")
+        REFERENCES "resource" ("id") ON DELETE SET NULL,
+    CONSTRAINT "identity_document_selfie_resource_id_fkey" FOREIGN KEY ("selfie_resource_id")
+        REFERENCES "resource" ("id") ON DELETE SET NULL
 );
 -- One live verified identity per account, and it makes "is this account verified"
 -- an index lookup for the payout gate instead of a scan.

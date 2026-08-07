@@ -7,6 +7,7 @@ import (
 
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/domain"
+	"shopnexus/internal/module/common"
 	"shopnexus/internal/provider/kyc"
 	"shopnexus/internal/shared/id"
 )
@@ -49,7 +50,17 @@ func (s *Service) StartIdentityVerification(ctx context.Context, req accountapi.
 		return accountapi.IdentityVerificationTicket{}, fmt.Errorf("run kyc check: %w", err)
 	}
 
-	doc, err := domain.NewIdentityDocument(accountID, domain.DocType(req.DocType), verdict.Provider, verdict.Ref)
+	// The scan ids are kept on the row: the vendor's verdict is not final, and a moderator
+	// overruling it is deciding a payout — on evidence, or on nothing.
+	doc, err := domain.NewIdentityDocument(domain.NewCheck{
+		AccountID:        accountID,
+		DocType:          domain.DocType(req.DocType),
+		Provider:         verdict.Provider,
+		ProviderRef:      verdict.Ref,
+		FrontResourceID:  nonZero(req.FrontResourceID.Int64()),
+		BackResourceID:   nonZero(req.BackResourceID.Int64()),
+		SelfieResourceID: nonZero(req.SelfieResourceID.Int64()),
+	})
 	if err != nil {
 		return accountapi.IdentityVerificationTicket{}, err
 	}
@@ -146,6 +157,24 @@ func (s *Service) AdminListIdentityDocuments(ctx context.Context, req accountapi
 	}
 	subjects := s.summariesByID(ctx, profiles)
 
+	// One resolve for the whole page: a queue of twenty is up to sixty scans, and a signed
+	// URL each is not worth sixty round trips.
+	scanIDs := make([]int64, 0, len(rows)*3)
+	for _, d := range rows {
+		for _, ref := range []*int64{d.FrontResourceID, d.BackResourceID, d.SelfieResourceID} {
+			if ref != nil {
+				scanIDs = append(scanIDs, *ref)
+			}
+		}
+	}
+	scans := s.resolveResources(ctx, scanIDs)
+	pick := func(ref *int64) *common.ResourceDTO {
+		if ref == nil {
+			return nil
+		}
+		return scans[*ref]
+	}
+
 	out := make([]accountapi.AdminIdentityDocument, 0, len(rows))
 	for _, d := range rows {
 		subject, ok := subjects[d.AccountID]
@@ -157,6 +186,11 @@ func (s *Service) AdminListIdentityDocuments(ctx context.Context, req accountapi
 		out = append(out, accountapi.AdminIdentityDocument{
 			Document: toIdentityDocument(d),
 			Account:  subject,
+			Scans: accountapi.IdentityScans{
+				Front:  pick(d.FrontResourceID),
+				Back:   pick(d.BackResourceID),
+				Selfie: pick(d.SelfieResourceID),
+			},
 		})
 	}
 	return accountapi.Page[accountapi.AdminIdentityDocument]{
@@ -201,4 +235,13 @@ func (s *Service) AdminRecordIdentityVerdict(ctx context.Context, req accountapi
 	}
 	s.audit(ctx, auditIdentityVerdict(doc, moderator.ID))
 	return toIdentityDocument(doc), nil
+}
+
+// nonZero is an optional resource id: the zero value means the client sent none, which is
+// legitimate for the back of a document that has none.
+func nonZero(id int64) *int64 {
+	if id == 0 {
+		return nil
+	}
+	return &id
 }

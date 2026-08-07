@@ -27,7 +27,13 @@ type IdentityDocument struct {
 	DocType   DocType
 	Provider  string
 	// ProviderRef is the vendor's case id, for re-reading the verdict later.
-	ProviderRef     string
+	ProviderRef string
+	// The scans the vendor read, by reference. Kept because a moderator may overrule the
+	// vendor, and a verdict screen with nothing on it is a rubber stamp. Back is nil for a
+	// document that has none.
+	FrontResourceID  *int64
+	BackResourceID   *int64
+	SelfieResourceID *int64
 	Status          IdentityStatus
 	RejectionReason *string
 	VerifiedAt      *time.Time
@@ -75,17 +81,34 @@ var expiringDocTypes = map[DocType]bool{
 // say, so a verdict always goes through Verify or Reject and the rules those enforce —
 // an expiry for a document type that has one, a reason for a refusal — hold for an
 // automated check exactly as they do for a moderator's.
-func NewIdentityDocument(accountID int64, docType DocType, provider, providerRef string) (IdentityDocument, error) {
-	if provider == "" || providerRef == "" {
+func NewIdentityDocument(c NewCheck) (IdentityDocument, error) {
+	if c.Provider == "" || c.ProviderRef == "" {
 		return IdentityDocument{}, ErrIdentityVendorIncomplete
 	}
 	return IdentityDocument{
-		AccountID:   accountID,
-		DocType:     docType,
-		Provider:    provider,
-		ProviderRef: providerRef,
-		Status:      IdentityPending,
+		AccountID:        c.AccountID,
+		DocType:          c.DocType,
+		Provider:         c.Provider,
+		ProviderRef:      c.ProviderRef,
+		FrontResourceID:  c.FrontResourceID,
+		BackResourceID:   c.BackResourceID,
+		SelfieResourceID: c.SelfieResourceID,
+		Status:           IdentityPending,
 	}, nil
+}
+
+// NewCheck is what opening a case needs. A struct rather than positional arguments: two
+// strings and three optional ids in a row transpose without a compile error, and a selfie
+// filed as the front of a passport is evidence a moderator would decide on.
+type NewCheck struct {
+	AccountID   int64
+	DocType     DocType
+	Provider    string
+	ProviderRef string
+	// Nil where the document has no back.
+	FrontResourceID  *int64
+	BackResourceID   *int64
+	SelfieResourceID *int64
 }
 
 // IsLive reports whether the document still proves anything: verified, and not past

@@ -170,11 +170,34 @@ components:
   schemas:
     AdminIdentityDocument:
       type: object
-      description: A queue entry, which needs the subject alongside the document.
+      description: >
+        A queue entry, which needs the subject alongside the document — and the scans the
+        vendor read, because a moderator overruling that verdict is deciding a payout and a
+        review screen with nothing on it is a rubber stamp.
       properties:
         document: { $ref: '#/components/schemas/IdentityDocument' }
         account: { $ref: '#/components/schemas/AccountSummary' }
-      required: [document, account]
+        scans: { $ref: '#/components/schemas/IdentityScans' }
+      required: [document, account, scans]
+
+    IdentityScans:
+      type: object
+      description: >
+        What the vendor read. Staff-only — these hang off the queue entry rather than off
+        `IdentityDocument`, so an account's own read of its verification history stays the
+        verdict and nothing else.
+      properties:
+        front:
+          allOf: [{ $ref: '#/components/schemas/Resource' }]
+          nullable: true
+        back:
+          allOf: [{ $ref: '#/components/schemas/Resource' }]
+          nullable: true
+          description: Null where the document has no back, such as a passport.
+        selfie:
+          allOf: [{ $ref: '#/components/schemas/Resource' }]
+          nullable: true
+      required: [front, back, selfie]
 
     IdentityVerdictRequest:
       type: object

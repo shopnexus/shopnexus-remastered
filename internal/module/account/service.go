@@ -297,7 +297,7 @@ func (s *Service) summariesByID(ctx context.Context, profiles map[int64]domain.P
 			ids = append(ids, *p.AvatarResourceID)
 		}
 	}
-	avatars := s.avatars(ctx, ids)
+	avatars := s.resolveResources(ctx, ids)
 	out := make(map[int64]accountapi.AccountSummary, len(profiles))
 	for accountID, p := range profiles {
 		summary := accountapi.AccountSummary{ID: id.Of[id.Account](accountID), Name: p.Name}
@@ -318,7 +318,7 @@ func (s *Service) summaries(ctx context.Context, profiles []domain.Profile) []ac
 			ids = append(ids, *p.AvatarResourceID)
 		}
 	}
-	avatars := s.avatars(ctx, ids)
+	avatars := s.resolveResources(ctx, ids)
 	out := make([]accountapi.AccountSummary, 0, len(profiles))
 	for _, p := range profiles {
 		summary := accountapi.AccountSummary{ID: id.Of[id.Account](p.ID), Name: p.Name}
@@ -336,13 +336,13 @@ func (s *Service) avatar(ctx context.Context, resourceID *int64) *common.Resourc
 	if resourceID == nil {
 		return nil
 	}
-	return s.avatars(ctx, []int64{*resourceID})[*resourceID]
+	return s.resolveResources(ctx, []int64{*resourceID})[*resourceID]
 }
 
-// avatars resolves image ids through this module's own uploads — one query for the whole
-// page, because a list of twenty sellers is twenty avatars. A missing one is left out rather
-// than failing the page.
-func (s *Service) avatars(ctx context.Context, resourceIDs []int64) map[int64]*common.ResourceDTO {
+// resolveResources resolves image ids through this module's own uploads — one query for the
+// whole page, because a list of twenty sellers is twenty avatars. A missing one is left out
+// rather than failing the page. Avatars were its first caller; identity scans are its second.
+func (s *Service) resolveResources(ctx context.Context, resourceIDs []int64) map[int64]*common.ResourceDTO {
 	out := map[int64]*common.ResourceDTO{}
 	if len(resourceIDs) == 0 {
 		return out

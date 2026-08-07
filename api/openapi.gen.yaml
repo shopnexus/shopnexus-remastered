@@ -240,15 +240,19 @@ components:
                 - meta
             type: object
         AdminIdentityDocument:
-            description: A queue entry, which needs the subject alongside the document.
+            description: |
+                A queue entry, which needs the subject alongside the document — and the scans the vendor read, because a moderator overruling that verdict is deciding a payout and a review screen with nothing on it is a rubber stamp.
             properties:
                 account:
                     $ref: '#/components/schemas/AccountSummary'
                 document:
                     $ref: '#/components/schemas/IdentityDocument'
+                scans:
+                    $ref: '#/components/schemas/IdentityScans'
             required:
                 - document
                 - account
+                - scans
             type: object
         AdminTicket:
             description: A queue entry. A moderator needs the requester and the target beside the ticket itself.
@@ -1476,6 +1480,28 @@ components:
                 - passport
                 - driver-license
             type: string
+        IdentityScans:
+            description: |
+                What the vendor read. Staff-only — these hang off the queue entry rather than off `IdentityDocument`, so an account's own read of its verification history stays the verdict and nothing else.
+            properties:
+                back:
+                    allOf:
+                        - $ref: '#/components/schemas/Resource'
+                    description: Null where the document has no back, such as a passport.
+                    nullable: true
+                front:
+                    allOf:
+                        - $ref: '#/components/schemas/Resource'
+                    nullable: true
+                selfie:
+                    allOf:
+                        - $ref: '#/components/schemas/Resource'
+                    nullable: true
+            required:
+                - front
+                - back
+                - selfie
+            type: object
         IdentityStatus:
             enum:
                 - pending
