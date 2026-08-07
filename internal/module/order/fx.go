@@ -60,6 +60,7 @@ var Module = fx.Module("order",
 	// without these the bus would have no consumer and the carrier no path to report on.
 	fx.Invoke(SyncOptions),
 	fx.Invoke(SubscribePaidSessions),
+	fx.Invoke(SubscribeCancelledSessions),
 	fx.Invoke(WireTransportWebhooks),
 )
 
@@ -170,6 +171,30 @@ func SubscribePaidSessions(bus eventbus.Client, svc orderapi.Service, log *slog.
 		}
 		if err := svc.SettlePaidSession(ctx, id.Of[id.PaymentSession](event.SessionID)); err != nil {
 			log.Error("settle paid session failed", "session_id", event.SessionID, "err", err)
+			return err
+		}
+		return nil
+	})
+}
+
+// SubscribeCancelledSessions releases what a dropped checkout was holding.
+//
+// The counterpart of SubscribePaidSessions, and it was missing. Finance's CancelSession
+// wrote the session's new status and published nothing, so a buyer who cancelled kept the
+// stock reserved and kept the lines in `GET /items?pending=true` — a row offering to pay
+// for a session the same server would refuse — until the checkout window expired.
+//
+// Idempotent through AbandonCheckout, which skips a line already closed, so at-least-once
+// delivery costs nothing.
+func SubscribeCancelledSessions(bus eventbus.Client, svc orderapi.Service, log *slog.Logger) {
+	eventbus.Subscribe(bus, finance.SessionCancelledTopic, "order", func(ctx context.Context, event finance.SessionCancelled) error {
+		// Only a buyer's checkout reserves anything. A cancelled payout or withdrawal is
+		// finance's own business and has no lines behind it.
+		if event.Kind != finance.KindBuyerCheckout {
+			return nil
+		}
+		if err := svc.AbandonCheckout(ctx, id.Of[id.PaymentSession](event.SessionID)); err != nil {
+			log.Error("abandon cancelled checkout failed", "session_id", event.SessionID, "err", err)
 			return err
 		}
 		return nil

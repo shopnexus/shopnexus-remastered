@@ -662,6 +662,10 @@ type Service interface {
 	// SettlePaidSession turns a completed payment session into an order. Called by the
 	// subscriber on finance's event and by the workflow that follows the payment.
 	SettlePaidSession(ctx context.Context, sessionID id.ID[id.PaymentSession]) error
+	// AbandonCheckout closes the lines of a session that will never be paid and gives the
+	// reserved stock back. Called by the subscriber on finance's cancellation event and by
+	// the workflow timer that gives up waiting for the money.
+	AbandonCheckout(ctx context.Context, sessionID id.ID[id.PaymentSession]) error
 	// ExpireDrafts and ExpireOffers close what nobody finished; ExpireCheckouts gives back the
 	// stock a checkout nobody paid for is holding, which nothing else in the schema looks at.
 	ExpireDrafts(ctx context.Context, limit int) (int, error)

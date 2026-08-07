@@ -53,16 +53,20 @@ func railRegistry() *common.Registry[payment.Client] {
 type harness struct {
 	svc  *finance.Service
 	repo *fakeRepo
+	// bus is kept so a test can subscribe: what this module announces is half of what it
+	// does, and a published fact nobody asserts on is one that can stop being published.
+	bus *eventbus.Memory
 }
 
 func newHarness(role string, verified bool) *harness {
 	repo := newFakeRepo()
+	bus := eventbus.NewMemory(discard)
 	// The mock rail settles synchronously, which is what lets a service test walk a
 	// whole payment without a webhook.
 	svc := finance.NewService(repo, fakeAccounts{role: role, verified: verified}, repo,
 		railRegistry(), finance.ReturnURLHosts{"shopnexus.test"},
-		eventbus.NewMemory(discard), validation.Default(), discard)
-	return &harness{svc: svc, repo: repo}
+		bus, validation.Default(), discard)
+	return &harness{svc: svc, repo: repo, bus: bus}
 }
 
 func status(t *testing.T, err error) uint16 {
@@ -561,5 +565,91 @@ func TestStartPayment_RefusesAForeignReturnURL(t *testing.T) {
 		ReturnURL: "https://shopnexus.test/orders",
 	}); err != nil {
 		t.Fatalf("StartPayment with an allowed host: %v", err)
+	}
+}
+
+// A cancelled checkout has to be announced, not just written.
+//
+// The bug this pins: CancelSession wrote the session's new status and stopped. Order
+// reserves stock against a checkout and holds its lines until something tells it the sale
+// is off, so a buyer who cancelled kept the units reserved and kept the lines in their own
+// `GET /items?pending=true` — a row offering to pay for a session this same service would
+// now refuse — until the checkout window ran out hours later.
+func TestCancelSessionAnnouncesIt(t *testing.T) {
+	h := newHarness("user", true)
+	ctx := context.Background()
+
+	var got []finance.SessionCancelled
+	eventbus.Subscribe(h.bus, finance.SessionCancelledTopic, "test",
+		func(_ context.Context, event finance.SessionCancelled) error {
+			got = append(got, event)
+			return nil
+		})
+
+	session, err := h.svc.OpenCheckout(ctx, financeapi.OpenCheckoutRequest{
+		BuyerID: buyer, SellerID: seller, Currency: "VND", Total: 250_000,
+	})
+	if err != nil {
+		t.Fatalf("OpenCheckout: %v", err)
+	}
+
+	if _, err := h.svc.CancelSession(ctx, financeapi.GetSessionRequest{
+		ActorID: buyer, ID: session.ID,
+	}); err != nil {
+		t.Fatalf("CancelSession: %v", err)
+	}
+	h.bus.Wait()
+
+	if len(got) != 1 {
+		t.Fatalf("published %d cancellations, want exactly one", len(got))
+	}
+	if got[0].SessionID != session.ID.Int64() {
+		t.Fatalf("session_id = %d, want %d", got[0].SessionID, session.ID.Int64())
+	}
+	// The subscriber filters on it, so a blank kind would silently stop releasing stock.
+	if got[0].Kind != finance.KindBuyerCheckout {
+		t.Fatalf("kind = %q, want %q", got[0].Kind, finance.KindBuyerCheckout)
+	}
+	if got[0].FromID != buyer.Int64() {
+		t.Fatalf("from_id = %d, want the payer %d", got[0].FromID, buyer.Int64())
+	}
+}
+
+// A cash-out is refused here, and refusing must not announce anything: the subscriber
+// releases stock, and there is no sale behind a withdrawal to release.
+func TestCancelSessionAnnouncesNothingWhenRefused(t *testing.T) {
+	h := newHarness("user", true)
+	ctx := context.Background()
+	seedBalance(t, h, 500_000)
+
+	var got []finance.SessionCancelled
+	eventbus.Subscribe(h.bus, finance.SessionCancelledTopic, "test",
+		func(_ context.Context, event finance.SessionCancelled) error {
+			got = append(got, event)
+			return nil
+		})
+
+	payee, err := h.svc.CreateBankAccount(ctx, financeapi.CreateBankAccountRequest{
+		ActorID: buyer, BankCode: "vcb", AccountNumber: "0123456789", AccountHolder: "NGUYEN VAN A",
+	})
+	if err != nil {
+		t.Fatalf("CreateBankAccount: %v", err)
+	}
+	cashout, err := h.svc.CreateWithdrawal(ctx, financeapi.CreateWithdrawalRequest{
+		ActorID: buyer, BankAccountID: payee.ID, Currency: "VND", Amount: 200_000,
+	})
+	if err != nil {
+		t.Fatalf("CreateWithdrawal: %v", err)
+	}
+
+	if _, err := h.svc.CancelSession(ctx, financeapi.GetSessionRequest{
+		ActorID: buyer, ID: cashout.ID,
+	}); err == nil {
+		t.Fatal("CancelSession accepted a cash-out")
+	}
+	h.bus.Wait()
+
+	if len(got) != 0 {
+		t.Fatalf("published %d cancellations for a refused call, want none", len(got))
 	}
 }

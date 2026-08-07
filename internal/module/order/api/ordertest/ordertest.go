@@ -187,6 +187,10 @@ func (Stub) SettlePaidSession(context.Context, id.ID[id.PaymentSession]) error {
 	return errx.ErrNotImplemented
 }
 
+func (Stub) AbandonCheckout(context.Context, id.ID[id.PaymentSession]) error {
+	return errx.ErrNotImplemented
+}
+
 func (Stub) ExpireDrafts(context.Context, int) (int, error) {
 	return 0, errx.ErrNotImplemented
 }

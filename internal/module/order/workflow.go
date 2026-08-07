@@ -272,25 +272,12 @@ func (w *Refund) Run(ctx restate.WorkflowContext, p port.RefundParams) error {
 	}, restate.WithName("advanceRefund"))
 }
 
-// cancelSessionLines closes the lines of a session nobody paid and gives the stock back. The
-// per-line guard makes it idempotent: a line already cancelled is skipped, so a retried timer
-// releases nothing twice, and CancelItem itself refuses a line the money did reach.
+// cancelSessionLines closes the lines of a session nobody paid and gives the stock back.
+//
+// Delegates to the service: finance's cancellation event needs the same work, and it
+// arrives at a subscriber that holds an `orderapi.Service` and cannot reach in here.
 func (l *Lifecycle) cancelSessionLines(ctx context.Context, sessionID int64) error {
-	items, err := l.svc.repo.ItemsByPaymentSession(ctx, sessionID)
-	if err != nil {
-		return fmt.Errorf("read session items: %w", err)
-	}
-	for _, i := range items {
-		if !i.Live() || i.OrderID != nil {
-			continue
-		}
-		if _, err := l.svc.CancelItem(ctx, orderapi.ItemRequest{
-			ActorID: id.Of[id.Account](i.BuyerID), ID: id.Of[id.Item](i.ID),
-		}); err != nil {
-			l.svc.log.Error("cancel unpaid line", "item_id", i.ID, "err", err)
-		}
-	}
-	return nil
+	return l.svc.AbandonCheckout(ctx, id.Of[id.PaymentSession](sessionID))
 }
 
 // Definitions are the workflows for a runtime to serve. Reflect turns each exported

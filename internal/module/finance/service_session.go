@@ -199,6 +199,7 @@ func (s *Service) CancelSession(ctx context.Context, req financeapi.GetSessionRe
 	if err := s.repo.SaveSession(ctx, session, from); err != nil {
 		return financeapi.Session{}, fmt.Errorf("save payment session: %w", err)
 	}
+	s.publishCancelled(ctx, session)
 	return toAPISession(session, 0), nil
 }
 
@@ -338,6 +339,25 @@ func (s *Service) publishPaid(ctx context.Context, session domain.Session) {
 	}
 	if err := publishSessionPaid(ctx, s.bus, event); err != nil {
 		s.log.Error("publish session paid failed", "session_id", session.ID, "err", err)
+	}
+}
+
+// publishCancelled announces a session the payer dropped. Best-effort for the same reason
+// as publishPaid: the write has committed and the caller was told it worked, so a bus that
+// is down must not turn a successful cancellation into an error.
+//
+// What the subscriber does with it is not optional, though — a lost message leaves the
+// reservation held. The order module's expiry sweep is the backstop, exactly as it is for
+// the checkout nobody ever came back to.
+func (s *Service) publishCancelled(ctx context.Context, session domain.Session) {
+	event := SessionCancelled{
+		SessionID: session.ID,
+		Kind:      session.Kind,
+		FromID:    session.FromID,
+		ToID:      session.ToID,
+	}
+	if err := publishSessionCancelled(ctx, s.bus, event); err != nil {
+		s.log.Error("publish session cancelled failed", "session_id", session.ID, "err", err)
 	}
 }
 

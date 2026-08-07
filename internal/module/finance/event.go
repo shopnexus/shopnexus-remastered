@@ -37,3 +37,26 @@ var SessionPaidTopic = eventbus.NewTopic[SessionPaid]("finance.session_paid")
 func publishSessionPaid(ctx context.Context, bus eventbus.Client, event SessionPaid) error {
 	return eventbus.Publish(ctx, bus, SessionPaidTopic, event)
 }
+
+// SessionCancelled is published when a payer walks away from a session before the money
+// moves. The counterpart of SessionPaid, and needed for the same reason: whoever opened
+// the session reserved something against it, and cancelling the money without saying so
+// leaves that reservation held by a session nobody can pay any more.
+//
+// Cancelling used to be a write and nothing else. A buyer who dropped a checkout kept the
+// stock reserved and kept the lines in their own pending list — offering to pay for a
+// session the server would refuse — until the checkout window ran out hours later.
+type SessionCancelled struct {
+	// Raw keys, like SessionPaid: this never leaves the process as a public payload.
+	SessionID int64  `json:"session_id"`
+	Kind      string `json:"kind"`
+	FromID    int64  `json:"from_id"`
+	ToID      int64  `json:"to_id"`
+}
+
+// SessionCancelledTopic carries SessionCancelled.
+var SessionCancelledTopic = eventbus.NewTopic[SessionCancelled]("finance.session_cancelled")
+
+func publishSessionCancelled(ctx context.Context, bus eventbus.Client, event SessionCancelled) error {
+	return eventbus.Publish(ctx, bus, SessionCancelledTopic, event)
+}

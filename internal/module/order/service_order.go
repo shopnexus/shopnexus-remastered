@@ -60,6 +60,36 @@ func (s *Service) CancelItem(ctx context.Context, req orderapi.ItemRequest) (ord
 	return toAPIItem(i), nil
 }
 
+// AbandonCheckout closes the lines of a session nobody paid and gives the stock back.
+//
+// Two things reach it. The durable timer, when a checkout runs out its window; and
+// finance's cancellation event, when the payer drops the session outright — which used to
+// reach nothing at all. Cancelling the money wrote one row and stopped, so the lines
+// stayed live: the stock stayed reserved, and the buyer's own pending list kept offering
+// to pay for a session the server would now refuse.
+//
+// The per-line guard makes it idempotent: a line already cancelled is skipped, so a
+// redelivered message and a retried timer release nothing twice. `CancelItem` refuses a
+// line the money did reach, so a cancellation racing a settlement cannot strip a paid
+// order of its stock.
+func (s *Service) AbandonCheckout(ctx context.Context, sessionID id.ID[id.PaymentSession]) error {
+	items, err := s.repo.ItemsByPaymentSession(ctx, sessionID.Int64())
+	if err != nil {
+		return fmt.Errorf("read session items: %w", err)
+	}
+	for _, i := range items {
+		if !i.Live() || i.OrderID != nil {
+			continue
+		}
+		if _, err := s.CancelItem(ctx, orderapi.ItemRequest{
+			ActorID: id.Of[id.Account](i.BuyerID), ID: id.Of[id.Item](i.ID),
+		}); err != nil {
+			s.log.Error("cancel unpaid line", "item_id", i.ID, "err", err)
+		}
+	}
+	return nil
+}
+
 // cancelLine drops one unpaid line and gives its reservation back.
 //
 // `order_id IS NULL` is not the guard it looks like: the order is written by the payment
