@@ -101,3 +101,15 @@ func (r *Repo) DeleteCartItem(ctx context.Context, id, accountID int64) error {
 	}
 	return nil
 }
+
+func (r *Repo) DeleteCartItemsByVariants(ctx context.Context, accountID int64, variantIDs []int64) error {
+	if len(variantIDs) == 0 {
+		return nil
+	}
+	const q = `DELETE FROM cart_item WHERE account_id = @account_id AND variant_id = ANY(@variant_ids)`
+	args := pgx.NamedArgs{"account_id": accountID, "variant_ids": variantIDs}
+	if _, err := r.pool.Exec(ctx, q, args); err != nil {
+		return fmt.Errorf("db delete cart items by variants: %w", err)
+	}
+	return nil
+}

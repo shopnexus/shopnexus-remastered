@@ -361,6 +361,11 @@ func (s *Service) CheckoutOffer(ctx context.Context, req orderapi.CheckoutOfferR
 		return orderapi.CheckoutResult{}, err
 	}
 	s.timer("start checkout", s.workflows.StartCheckout(ctx, sessionID))
+
+	if err := s.repo.DeleteCartItemsByVariants(ctx, req.ActorID.Int64(), []int64{o.VariantID}); err != nil {
+		s.log.Warn("failed to delete cart item after offer checkout", "account_id", req.ActorID.Int64(), "err", err)
+	}
+
 	return s.checkoutResult(lines, session, fee), nil
 }
 
