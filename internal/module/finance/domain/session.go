@@ -90,6 +90,13 @@ func (s Session) Settled() bool {
 // them. Without this a requester could drive their own cash-out to `success`.
 func (s Session) RailPayable() bool { return s.Kind == KindBuyerCheckout }
 
+// Resumable reports whether an unfinished attempt on this session may still be reopened.
+// Past the deadline or already settled it may not: the payer would be sent to a live gateway
+// page for money the session can no longer account for, and nothing downstream would credit it.
+func (s Session) Resumable(now time.Time) bool {
+	return !s.Settled() && now.Before(s.ExpiredAt)
+}
+
 // Charge is the session accepting a payment attempt. Only a pending session is
 // payable — a processing one already has a leg in flight, and paying twice is what
 // the status is there to prevent.

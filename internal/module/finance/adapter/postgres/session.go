@@ -99,13 +99,14 @@ func (r *Repo) NextTransactionID(ctx context.Context) (int64, error) {
 }
 
 const transactionColumns = `id, session_id, status::text, note, error, payment_option,
-	       provider_ref, data, amount, currency, reverses_id, created_at, settled_at, expired_at`
+	       provider_ref, checkout_url, data, amount, currency, reverses_id, created_at,
+	       settled_at, expired_at`
 
 func scanTransaction(row pgx.Row) (domain.Transaction, error) {
 	var t domain.Transaction
 	err := row.Scan(&t.ID, &t.SessionID, &t.Status, &t.Note, &t.Error, &t.PaymentOption,
-		&t.ProviderRef, &t.Data, &t.Amount, &t.Currency, &t.ReversesID, &t.CreatedAt,
-		&t.SettledAt, &t.ExpiredAt)
+		&t.ProviderRef, &t.CheckoutURL, &t.Data, &t.Amount, &t.Currency, &t.ReversesID,
+		&t.CreatedAt, &t.SettledAt, &t.ExpiredAt)
 	if dbx.IsNoRows(err) {
 		return domain.Transaction{}, domain.ErrTransactionNotFound
 	}
@@ -117,15 +118,16 @@ func scanTransaction(row pgx.Row) (domain.Transaction, error) {
 
 func (r *Repo) InsertTransaction(ctx context.Context, t *domain.Transaction) error {
 	const q = `INSERT INTO transaction
-	             (id, session_id, status, note, error, payment_option, provider_ref, data,
-	              amount, currency, reverses_id, expired_at)
+	             (id, session_id, status, note, error, payment_option, provider_ref,
+	              checkout_url, data, amount, currency, reverses_id, expired_at)
 	           VALUES (@id, @session_id, @status, @note, @error, @payment_option, @provider_ref,
-	                   @data, @amount, @currency, @reverses_id, @expired_at)
+	                   @checkout_url, @data, @amount, @currency, @reverses_id, @expired_at)
 	           RETURNING created_at`
 	args := pgx.NamedArgs{
 		"id": t.ID, "session_id": t.SessionID, "status": t.Status, "note": t.Note,
 		"error": t.Error, "payment_option": t.PaymentOption, "provider_ref": t.ProviderRef,
-		"data": dbx.JSONObject(rawJSON(t.Data)), "amount": t.Amount, "currency": t.Currency,
+		"checkout_url": t.CheckoutURL,
+		"data":         dbx.JSONObject(rawJSON(t.Data)), "amount": t.Amount, "currency": t.Currency,
 		"reverses_id": t.ReversesID, "expired_at": t.ExpiredAt,
 	}
 	if err := r.pool.QueryRow(ctx, q, args).Scan(&t.CreatedAt); err != nil {

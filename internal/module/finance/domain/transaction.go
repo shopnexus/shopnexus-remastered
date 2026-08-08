@@ -25,6 +25,9 @@ type Transaction struct {
 	// redelivered webhook being booked as a second charge. NULL only while the leg is
 	// pending and the gateway has not assigned one.
 	ProviderRef *string
+	// CheckoutURL is the gateway page this leg sent the payer to. Nil for a direct-debit
+	// rail, which decides on the spot and has nowhere to send anybody.
+	CheckoutURL *string
 	Data        []byte
 	// Amount is signed: positive is the charge, negative is the reversal.
 	Amount     int64  `validate:"required"`
@@ -49,6 +52,19 @@ func NewCharge(id, sessionID int64, option, currency string, amount int64, data 
 		return Transaction{}, validation.AsError(err)
 	}
 	return t, nil
+}
+
+// Resumable reports whether the payer can be sent back to this leg's gateway page.
+//
+// A redirect rail reports nothing when the payer closes its tab, so an abandoned attempt is
+// indistinguishable from one still in progress — and it is the same attempt either way. That
+// is what makes reopening the right answer and a second leg the wrong one: two live pages on
+// one session can both be paid, and the second payment has no outstanding balance to land on.
+func (t Transaction) Resumable(now time.Time) bool {
+	if t.Status != StatusPending || t.CheckoutURL == nil || *t.CheckoutURL == "" {
+		return false
+	}
+	return t.ExpiredAt == nil || now.Before(*t.ExpiredAt)
 }
 
 // NewReversal is the refund leg: a negative row pointing at the charge it undoes.

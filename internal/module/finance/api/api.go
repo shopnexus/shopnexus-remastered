@@ -25,7 +25,12 @@ type Session struct {
 	// Outstanding is the total less what has already settled on a rail: what a further
 	// payment may still tender. Computed, because a stored copy is a second fact to
 	// keep in step with every leg.
-	Outstanding int64  `json:"outstanding"`
+	Outstanding int64 `json:"outstanding"`
+	// CheckoutURL is the gateway page a payment attempt on this session is still waiting at,
+	// so a payer who closed that tab can be sent straight back to it. Empty when there is
+	// nothing to go back to — no attempt yet, a rail that redirects nowhere, or a session
+	// past its deadline — and a client then has to choose a rail first.
+	CheckoutURL string `json:"checkout_url"`
 	Note        string `json:"note"`
 	// Data is the checkout context whoever opened the session wrote — the draft or offer it came
 	// from, and the delivery charge included in the total. Read back rather than kept only by the
@@ -59,8 +64,9 @@ type Transaction struct {
 	// provider gave, the reason a reversal was made.
 	Note       string                 `json:"note"`
 	ReversesID *id.ID[id.Transaction] `json:"reverses_id"`
-	// CheckoutURL is the gateway's redirect, present only while the leg is pending and
-	// only for a rail that redirects. Not a receipt: the webhook settles the leg.
+	// CheckoutURL is the gateway page this leg sent the payer to, answered for as long as the
+	// leg can still be paid — tendering the same rail again hands back this same leg rather
+	// than opening a second one. Not a receipt: the webhook settles the leg.
 	CheckoutURL string     `json:"checkout_url"`
 	Error       string     `json:"error"`
 	CreatedAt   time.Time  `json:"created_at"`

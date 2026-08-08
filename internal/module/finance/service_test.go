@@ -653,3 +653,107 @@ func TestCancelSessionAnnouncesNothingWhenRefused(t *testing.T) {
 		t.Fatalf("published %d cancellations for a refused call, want none", len(got))
 	}
 }
+
+// seedRedirectRail adds the mock provider's redirect scenario as an option row. Only the
+// tests that need a rail a payer can walk away from: the option lists assert their exact
+// contents, so a second row in every harness is a row three other tests have to know about.
+func seedRedirectRail(t *testing.T, h *harness) {
+	t.Helper()
+	h.repo.options = append(h.repo.options, common.Option{
+		ID: paymentmock.OptionRedirect, Category: common.CategoryPayment, IsEnabled: true,
+		Provider: paymentmock.Name,
+	})
+}
+
+// A payer who closed the gateway's tab is sent back to the same page, not charged twice.
+//
+// A redirect rail reports nothing when they leave, so the session sits `processing` with a
+// live gateway page behind it and no way to tell that from a payment under way. Tendering
+// the same rail again used to be refused outright — the order was payable and unreachable
+// until it expired — and opening a second leg instead would be worse: two live pages on one
+// session can both be paid, and the second payment has no outstanding balance to land on.
+func TestStartPayment_ResumesTheAttemptTheRailIsStillWaitingOn(t *testing.T) {
+	h := newHarness("user", true)
+	seedRedirectRail(t, h)
+	ctx := context.Background()
+	session, err := h.svc.OpenCheckout(ctx, financeapi.OpenCheckoutRequest{
+		BuyerID: buyer, SellerID: seller, Currency: "VND", Total: 250_000, Note: "order 1",
+	})
+	if err != nil {
+		t.Fatalf("OpenCheckout: %v", err)
+	}
+	first, err := h.svc.StartPayment(ctx, financeapi.StartPaymentRequest{
+		ActorID: buyer, ID: session.ID, PaymentOption: paymentmock.OptionRedirect,
+	})
+	if err != nil {
+		t.Fatalf("StartPayment: %v", err)
+	}
+	if first.Status != domain.StatusPending || first.CheckoutURL == "" {
+		t.Fatalf("leg = %+v, want it pending with a gateway page", first)
+	}
+
+	again, err := h.svc.StartPayment(ctx, financeapi.StartPaymentRequest{
+		ActorID: buyer, ID: session.ID, PaymentOption: paymentmock.OptionRedirect,
+	})
+	if err != nil {
+		t.Fatalf("StartPayment again: %v", err)
+	}
+	if again.ID != first.ID || again.CheckoutURL != first.CheckoutURL {
+		t.Fatalf("resumed leg = %+v, want the same leg and the same page as %+v", again, first)
+	}
+	legs, err := h.svc.ListSessionTransactions(ctx, financeapi.GetSessionRequest{
+		ActorID: buyer, ID: session.ID,
+	})
+	if err != nil {
+		t.Fatalf("ListSessionTransactions: %v", err)
+	}
+	if len(legs) != 1 {
+		t.Fatalf("%d legs, want the one attempt to have been resumed", len(legs))
+	}
+
+	// The session carries the way back too, so a list of pending checkouts can link straight
+	// to the gateway without reading every session's legs.
+	after, err := h.svc.GetSession(ctx, financeapi.GetSessionRequest{ActorID: buyer, ID: session.ID})
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if after.CheckoutURL != first.CheckoutURL {
+		t.Fatalf("session checkout_url = %q, want the waiting leg's page", after.CheckoutURL)
+	}
+}
+
+// A session nobody can pay any more offers nowhere to go. The field is an instruction to
+// send the payer somewhere, so answering it for a cancelled session would take money that
+// nothing downstream would credit.
+func TestSession_OffersNoWayBackOnceItIsOver(t *testing.T) {
+	h := newHarness("user", true)
+	seedRedirectRail(t, h)
+	ctx := context.Background()
+	session, err := h.svc.OpenCheckout(ctx, financeapi.OpenCheckoutRequest{
+		BuyerID: buyer, SellerID: seller, Currency: "VND", Total: 250_000,
+	})
+	if err != nil {
+		t.Fatalf("OpenCheckout: %v", err)
+	}
+	if _, err := h.svc.StartPayment(ctx, financeapi.StartPaymentRequest{
+		ActorID: buyer, ID: session.ID, PaymentOption: paymentmock.OptionRedirect,
+	}); err != nil {
+		t.Fatalf("StartPayment: %v", err)
+	}
+	cancelled, err := h.svc.CancelSession(ctx, financeapi.GetSessionRequest{
+		ActorID: buyer, ID: session.ID,
+	})
+	if err != nil {
+		t.Fatalf("CancelSession: %v", err)
+	}
+	if cancelled.CheckoutURL != "" {
+		t.Fatalf("checkout_url = %q on a cancelled session, want none", cancelled.CheckoutURL)
+	}
+	after, err := h.svc.GetSession(ctx, financeapi.GetSessionRequest{ActorID: buyer, ID: session.ID})
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if after.CheckoutURL != "" {
+		t.Fatalf("checkout_url = %q when read back, want none", after.CheckoutURL)
+	}
+}

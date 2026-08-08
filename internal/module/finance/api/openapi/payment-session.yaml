@@ -82,6 +82,13 @@ paths:
         again per rail until the total is covered.
 
 
+        Tendering a rail that already has an unfinished attempt **resumes** it: the same leg
+        comes back with the same `checkout_url`, and `amount` is ignored. A redirect rail
+        reports nothing when the payer closes its tab, so a second live gateway page would be
+        one the session cannot account for — whichever payment landed second would have no
+        outstanding balance left to settle against.
+
+
         The leg starts `pending` and only the provider's webhook settles it — this
         response is not a receipt. Poll the session or the leg for the outcome.
       security: [{ bearerAuth: [] }]
@@ -169,6 +176,14 @@ components:
             The total less what has already settled on a rail: what a further payment may
             still tender. Computed, because a stored copy would be a second fact to keep in
             step with every leg.
+        checkout_url:
+          type: string
+          example: 'https://api.shopnexus.io/api/v1/webhooks/payment/sepay/checkout?ref=txn_ev6mj8exxkxwe'
+          description: >
+            The gateway page an unfinished payment attempt is still waiting at — send the payer
+            straight back to it. Empty when there is nothing to return to: no attempt yet, a rail
+            that redirects nowhere, or a session past its deadline. A client that finds it empty
+            has to ask for a rail first, through `POST /payment-sessions/{id}/payments`.
         note: { type: string }
         created_at: { type: string, format: date-time }
         paid_at: { type: string, format: date-time, nullable: true }
@@ -176,7 +191,7 @@ components:
           type: string
           format: date-time
           description: A session still unsettled past this point is voided by a job.
-      required: [id, kind, status, currency, total_amount, outstanding, note, created_at, paid_at, expired_at]
+      required: [id, kind, status, currency, total_amount, outstanding, checkout_url, note, created_at, paid_at, expired_at]
 
     PaymentSessionPage:
       type: object
@@ -208,8 +223,10 @@ components:
           description: The leg this one reverses. Set on reversals, null on originals.
         checkout_url:
           type: string
-          description: Where to send the payer for this leg. Empty once the rail no
-            longer needs it, or for rails that have none.
+          example: 'https://api.shopnexus.io/api/v1/webhooks/payment/sepay/checkout?ref=txn_ev6mj8exxkxwe'
+          description: Where to send the payer for this leg, answered for as long as the leg
+            can still be paid. Empty once it has settled or expired, and for rails that
+            redirect nowhere.
         error: { type: string, description: Empty unless the rail reported a failure on this leg. }
         note: { type: string }
         created_at: { type: string, format: date-time }

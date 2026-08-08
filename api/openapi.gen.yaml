@@ -2861,6 +2861,11 @@ components:
             type: object
         PaymentSession:
             properties:
+                checkout_url:
+                    description: |
+                        The gateway page an unfinished payment attempt is still waiting at — send the payer straight back to it. Empty when there is nothing to return to: no attempt yet, a rail that redirects nowhere, or a session past its deadline. A client that finds it empty has to ask for a rail first, through `POST /payment-sessions/{id}/payments`.
+                    example: https://api.shopnexus.io/api/v1/webhooks/payment/sepay/checkout?ref=txn_ev6mj8exxkxwe
+                    type: string
                 created_at:
                     format: date-time
                     type: string
@@ -2902,6 +2907,7 @@ components:
                 - currency
                 - total_amount
                 - outstanding
+                - checkout_url
                 - note
                 - created_at
                 - paid_at
@@ -4081,7 +4087,8 @@ components:
                     format: int64
                     type: integer
                 checkout_url:
-                    description: Where to send the payer for this leg. Empty once the rail no longer needs it, or for rails that have none.
+                    description: Where to send the payer for this leg, answered for as long as the leg can still be paid. Empty once it has settled or expired, and for rails that redirect nowhere.
+                    example: https://api.shopnexus.io/api/v1/webhooks/payment/sepay/checkout?ref=txn_ev6mj8exxkxwe
                     type: string
                 created_at:
                     format: date-time
@@ -10030,6 +10037,8 @@ paths:
         post:
             description: |
                 Creates a ledger leg on the chosen rail and returns it with the gateway redirect in `checkout_url`. Omit `amount` to tender the whole outstanding balance; pass it to split the session across several rails, calling this again per rail until the total is covered.
+
+                Tendering a rail that already has an unfinished attempt **resumes** it: the same leg comes back with the same `checkout_url`, and `amount` is ignored. A redirect rail reports nothing when the payer closes its tab, so a second live gateway page would be one the session cannot account for — whichever payment landed second would have no outstanding balance left to settle against.
 
                 The leg starts `pending` and only the provider's webhook settles it — this response is not a receipt. Poll the session or the leg for the outcome.
             parameters:

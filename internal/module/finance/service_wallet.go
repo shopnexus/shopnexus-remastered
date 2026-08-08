@@ -130,7 +130,9 @@ func (s *Service) OpenCheckout(ctx context.Context, req financeapi.OpenCheckoutR
 	if err := s.repo.InsertSession(ctx, &session); err != nil {
 		return financeapi.Session{}, fmt.Errorf("insert payment session: %w", err)
 	}
-	return toAPISession(session, session.TotalAmount), nil
+	// A session nobody has tendered yet: the whole total is outstanding and there is no
+	// gateway page to go back to.
+	return toAPISession(session, tender{Outstanding: session.TotalAmount}), nil
 }
 
 // HoldEscrow is what a paid order does to the money: it leaves the buyer and lands in

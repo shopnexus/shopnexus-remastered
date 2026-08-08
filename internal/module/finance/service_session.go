@@ -52,11 +52,11 @@ func (s *Service) ListSessions(ctx context.Context, req financeapi.ListSessionsR
 		// The outstanding balance needs the legs, so a page costs one query per row. A
 		// list of a caller's sessions is short by construction; a batched read is the
 		// change to make when that stops being true.
-		outstanding, err := s.outstanding(ctx, session)
+		t, err := s.tenderOf(ctx, session)
 		if err != nil {
 			return financeapi.SessionPage{}, err
 		}
-		out = append(out, toAPISession(session, outstanding))
+		out = append(out, toAPISession(session, t))
 	}
 	return financeapi.SessionPage{
 		Data: out,
@@ -69,11 +69,11 @@ func (s *Service) GetSession(ctx context.Context, req financeapi.GetSessionReque
 	if err != nil {
 		return financeapi.Session{}, err
 	}
-	outstanding, err := s.outstanding(ctx, session)
+	t, err := s.tenderOf(ctx, session)
 	if err != nil {
 		return financeapi.Session{}, err
 	}
-	return toAPISession(session, outstanding), nil
+	return toAPISession(session, t), nil
 }
 
 func (s *Service) ListSessionTransactions(ctx context.Context, req financeapi.GetSessionRequest) ([]financeapi.Transaction, error) {
@@ -86,7 +86,7 @@ func (s *Service) ListSessionTransactions(ctx context.Context, req financeapi.Ge
 	}
 	out := make([]financeapi.Transaction, 0, len(legs))
 	for _, leg := range legs {
-		out = append(out, toAPITransaction(leg, ""))
+		out = append(out, toAPITransaction(leg))
 	}
 	return out, nil
 }
@@ -94,6 +94,12 @@ func (s *Service) ListSessionTransactions(ctx context.Context, req financeapi.Ge
 // StartPayment opens a leg on one rail and hands back the gateway's redirect. The leg
 // is pending: only the provider's webhook settles it, so this response is not a
 // receipt however much it looks like one.
+//
+// Tendering the same rail twice **resumes** rather than opens a second leg. A redirect rail
+// reports nothing when the payer closes its tab, so the platform cannot tell an abandoned
+// attempt from one still under way — and a second live gateway page is money it cannot
+// account for: whichever payment lands second has no outstanding balance left to settle
+// against, and the payer is charged for a session that is already covered.
 func (s *Service) StartPayment(ctx context.Context, req financeapi.StartPaymentRequest) (financeapi.Transaction, error) {
 	session, err := s.party(ctx, req.ActorID, req.ID)
 	if err != nil {
@@ -119,15 +125,24 @@ func (s *Service) StartPayment(ctx context.Context, req financeapi.StartPaymentR
 	if err := s.checkReturnURL(req.ReturnURL); err != nil {
 		return financeapi.Transaction{}, err
 	}
-	outstanding, err := s.outstanding(ctx, session)
+	// Same rail, still waiting: hand back the page the payer walked away from. Ahead of the
+	// amount check on purpose — a resume tenders what it already tendered, and `outstanding`
+	// counts only settled legs, so re-deriving an amount here would re-offer a split leg at
+	// the whole balance.
+	if resumed, ok, err := s.resumable(ctx, session, req.PaymentOption); err != nil {
+		return financeapi.Transaction{}, err
+	} else if ok {
+		return toAPITransaction(resumed), nil
+	}
+	state, err := s.tenderOf(ctx, session)
 	if err != nil {
 		return financeapi.Transaction{}, err
 	}
-	amount := outstanding
+	amount := state.Outstanding
 	if req.Amount != nil {
 		amount = *req.Amount
 	}
-	if amount <= 0 || amount > outstanding {
+	if amount <= 0 || amount > state.Outstanding {
 		return financeapi.Transaction{}, domain.ErrChargeAmountInvalid
 	}
 	if err := session.Charge(time.Now()); err != nil {
@@ -158,6 +173,11 @@ func (s *Service) StartPayment(ctx context.Context, req financeapi.StartPaymentR
 	if charge.ProviderID != "" {
 		leg.ProviderRef = &charge.ProviderID
 	}
+	// Stored, not merely returned: this response is seen once, and the payer who closes the
+	// gateway tab needs the same page again rather than a second leg.
+	if charge.RedirectURL != "" {
+		leg.CheckoutURL = &charge.RedirectURL
+	}
 	if err := s.repo.InsertTransaction(ctx, &leg); err != nil {
 		return financeapi.Transaction{}, fmt.Errorf("insert transaction: %w", err)
 	}
@@ -174,7 +194,25 @@ func (s *Service) StartPayment(ctx context.Context, req financeapi.StartPaymentR
 			return financeapi.Transaction{}, fmt.Errorf("find transaction: %w", err)
 		}
 	}
-	return toAPITransaction(leg, charge.RedirectURL), nil
+	return toAPITransaction(leg), nil
+}
+
+// resumable finds the leg on this rail that the payer can still be sent back to.
+func (s *Service) resumable(ctx context.Context, session domain.Session, option string) (domain.Transaction, bool, error) {
+	now := time.Now()
+	if !session.Resumable(now) {
+		return domain.Transaction{}, false, nil
+	}
+	legs, err := s.repo.ListTransactions(ctx, session.ID)
+	if err != nil {
+		return domain.Transaction{}, false, fmt.Errorf("list transactions: %w", err)
+	}
+	for _, leg := range legs {
+		if leg.PaymentOption == option && leg.Resumable(now) {
+			return leg, true, nil
+		}
+	}
+	return domain.Transaction{}, false, nil
 }
 
 // CancelSession is the payer walking away before the money moves. A paid session is
@@ -200,7 +238,7 @@ func (s *Service) CancelSession(ctx context.Context, req financeapi.GetSessionRe
 		return financeapi.Session{}, fmt.Errorf("save payment session: %w", err)
 	}
 	s.publishCancelled(ctx, session)
-	return toAPISession(session, 0), nil
+	return toAPISession(session, tender{}), nil
 }
 
 // Settle is what a provider's notification does: it finds the leg by the reference the
@@ -269,11 +307,11 @@ func (s *Service) settle(ctx context.Context, leg domain.Transaction, status pay
 		}
 		return nil
 	}
-	outstanding, err := s.outstanding(ctx, session)
+	state, err := s.tenderOf(ctx, session)
 	if err != nil {
 		return err
 	}
-	if outstanding > 0 {
+	if state.Outstanding > 0 {
 		return nil
 	}
 	// The rail money becomes a balance before the session is called paid. Without this the
@@ -361,25 +399,38 @@ func (s *Service) publishCancelled(ctx context.Context, session domain.Session) 
 	}
 }
 
-// outstanding is the total less what has settled on a rail. Computed rather than
-// stored: a cached copy would be a second fact to keep in step with every leg, and the
-// legs are the ones that decide whether the money arrived.
-func (s *Service) outstanding(ctx context.Context, session domain.Session) (int64, error) {
+// tender is what a session's legs say about it: how much is still owed, and — when a
+// redirect rail is still waiting — where the payer was sent, so they can be sent back.
+type tender struct {
+	Outstanding int64
+	CheckoutURL string
+}
+
+// tenderOf reads both from the legs. Computed rather than stored: a cached copy would be a
+// second fact to keep in step with every leg, and the legs are the ones that decide whether
+// the money arrived. Both answers come from one read because every caller wants both.
+func (s *Service) tenderOf(ctx context.Context, session domain.Session) (tender, error) {
 	legs, err := s.repo.ListTransactions(ctx, session.ID)
 	if err != nil {
-		return 0, fmt.Errorf("list transactions: %w", err)
+		return tender{}, fmt.Errorf("list transactions: %w", err)
 	}
+	now := time.Now()
+	resumable := session.Resumable(now)
+	out := tender{}
 	settled := int64(0)
 	for _, leg := range legs {
 		if leg.Status == domain.StatusSuccess {
 			// Signed, so a reversal subtracts itself.
 			settled += leg.Amount
 		}
+		if resumable && leg.Resumable(now) {
+			out.CheckoutURL = *leg.CheckoutURL
+		}
 	}
-	if settled >= session.TotalAmount {
-		return 0, nil
+	if settled < session.TotalAmount {
+		out.Outstanding = session.TotalAmount - settled
 	}
-	return session.TotalAmount - settled, nil
+	return out, nil
 }
 
 // party reads a session the caller is allowed to see. Somebody else's money flow is

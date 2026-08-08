@@ -104,6 +104,11 @@ CREATE TABLE IF NOT EXISTS "transaction" (
     -- not assigned one yet.
     "provider_ref" TEXT,
 
+    -- Where the payer was sent for this leg. Stored, not just returned once, because a
+    -- redirect rail reports nothing when the payer closes its tab: the leg stays pending
+    -- and this is the only way back to the page they left. NULL for a rail that has none.
+    "checkout_url" TEXT,
+
     -- Rail-specific payload: gateway request/response, webhook payload, processor IDs
     "data" JSONB NOT NULL,
 

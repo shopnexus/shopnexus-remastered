@@ -146,14 +146,15 @@ func (s *Service) paymentOption(ctx context.Context, slug string) (common.Option
 // DTO, so this needs no bounds of its own.
 func offsetOf(page, limit int) int { return (page - 1) * limit }
 
-func toAPISession(s domain.Session, outstanding int64) financeapi.Session {
+func toAPISession(s domain.Session, t tender) financeapi.Session {
 	return financeapi.Session{
 		ID:          id.Of[id.PaymentSession](s.ID),
 		Kind:        s.Kind,
 		Status:      s.Status,
 		Currency:    s.Currency,
 		TotalAmount: s.TotalAmount,
-		Outstanding: outstanding,
+		Outstanding: t.Outstanding,
+		CheckoutURL: t.CheckoutURL,
 		Note:        s.Note,
 		Data:        rawOrEmpty(s.Data),
 		CreatedAt:   s.CreatedAt,
@@ -172,7 +173,13 @@ func toAPIWallet(w domain.Wallet) financeapi.Wallet {
 	}
 }
 
-func toAPITransaction(t domain.Transaction, checkoutURL string) financeapi.Transaction {
+func toAPITransaction(t domain.Transaction) financeapi.Transaction {
+	// Only while the leg can still be paid: the field is where to send the payer, and a
+	// settled or expired leg's page is somewhere they must not be sent.
+	checkoutURL := ""
+	if t.Resumable(time.Now()) {
+		checkoutURL = *t.CheckoutURL
+	}
 	out := financeapi.Transaction{
 		ID:            id.Of[id.Transaction](t.ID),
 		SessionID:     id.Of[id.PaymentSession](t.SessionID),
