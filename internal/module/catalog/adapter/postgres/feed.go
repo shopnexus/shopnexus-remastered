@@ -46,15 +46,34 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 		"offset":           f.Offset,
 	}
 	q := feedSelect + scoreExpr(f) + feedScore + feedTotal + feedFrom + feedWhere + orderBy(f) + feedPage
+	switch {
 	// "Newest, but still about what I searched for." A ranked search has no WHERE gate — the
 	// ranking is what makes it a search — so ordering it by anything other than the score
 	// answers the whole catalogue in date order, which is what the query was supposed to
 	// narrow. So: rank first, keep what is relevant, and order *those* by what was asked for.
-	if rerankedSort(f) {
+	case rerankedSort(f):
 		args["candidates"] = relevantCandidates
 		args["relevance_floor"] = relevanceFloor
 		q = candidateHead + feedSelect + scoreExpr(f) + feedScore + feedFrom + feedWhere +
 			candidateOrder + candidateTail + rerankOrderBy(f) + feedPage
+
+	// The personalised feed, which is the only shape that ranks against more than one probe.
+	case f.Sort == port.SortRecommended && len(f.Interests) > 0:
+		probes, weights := probeArrays(f.Interests)
+		args["probes"] = probes
+		args["weights"] = weights
+		args["fresh_weight"] = domain.FreshWeight
+		args["sharpness"] = domain.ExploreSharpness
+		args["seed"] = f.Seed
+		// Several pages deep per source, because the merge samples the pool rather than
+		// taking the top of it: a pool the size of the page is a pool with no alternatives
+		// in it, and the reader would get the same twelve cards in a shuffled order.
+		args["candidates"] = (f.Offset + f.Limit) * domain.FreshPoolFactor
+		q = recommendedHead +
+			feedSelect + recommendedScore + feedScore + feedFrom + feedWhere +
+			recommendedWhere + recommendedEmbedded + recommendedFresh +
+			feedSelect + freshScore + feedScore + feedFrom + feedWhere +
+			recommendedWhere + recommendedTail
 	}
 	rows, err := r.pool.Query(ctx, q, args)
 	if err != nil {
@@ -92,17 +111,31 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 // The price on a card is the cheapest live variant's, read through variant_price_idx in the
 // lateral join rather than from a column on the listing — a cached "from" price is a second
 // fact to keep in step with every variant edit.
-const feedSelect = `SELECT l.id, l.account_id, l.slug, l.name, l.status::text, l.condition::text,
-	                  l.price_mode::text, l.currency, COALESCE(v.price, 0) AS price, l.cached_sold,
-	                  l.cached_rating, l.cached_review_count, l.category_id, l.attachments[1],
-	                  l.province_code, l.province_name, l.district_code, l.district_name,
-	                  l.ward_code, l.ward_name,
-	                  ST_Y(l.location::geometry), ST_X(l.location::geometry),
+// Every column is aliased, including the ones a bare reference would have named anyway: two
+// of the query shapes below wrap this in a CTE and then select from it by name, and an
+// expression's implicit name is a detail of the parser rather than a promise.
+const feedSelect = `SELECT l.id AS id, l.account_id AS seller_id, l.slug AS slug, l.name AS name,
+	                  l.status::text AS status, l.condition::text AS condition,
+	                  l.price_mode::text AS price_mode, l.currency AS currency,
+	                  COALESCE(v.price, 0) AS price, l.cached_sold AS cached_sold,
+	                  l.cached_rating AS cached_rating, l.cached_review_count AS cached_review_count,
+	                  l.category_id AS category_id, l.attachments[1] AS cover_id,
+	                  l.province_code AS province_code, l.province_name AS province_name,
+	                  l.district_code AS district_code, l.district_name AS district_name,
+	                  l.ward_code AS ward_code, l.ward_name AS ward_name,
+	                  ST_Y(l.location::geometry) AS latitude, ST_X(l.location::geometry) AS longitude,
 	                  ` + distanceExpr + ` AS distance_km,
-	                  ` + cardTags + `,
-	                  l.taken_down_at,
-	                  l.created_at, l.deleted_at,
+	                  ` + cardTags + ` AS tags,
+	                  l.taken_down_at AS taken_down_at,
+	                  l.created_at AS created_at, l.deleted_at AS deleted_at,
 	                  `
+
+// cardColumns is that same list read back out of a CTE, in the order the row scanner expects.
+const cardColumns = `id, seller_id, slug, name, status, condition, price_mode, currency, price,
+	                  cached_sold, cached_rating, cached_review_count, category_id, cover_id,
+	                  province_code, province_name, district_code, district_name, ward_code,
+	                  ward_name, latitude, longitude, distance_km, tags, taken_down_at,
+	                  created_at, deleted_at`
 
 // cardTags is the listing's tags on the card itself. A subquery rather than a second round trip:
 // a feed page is one statement, and chips a client renders are not worth a query per row.
@@ -215,6 +248,92 @@ const feedWhere = `
 const feedPage = `
 	           LIMIT @limit OFFSET @offset`
 
+// The personalised feed, and the one query shape that reads the catalogue more than once.
+//
+// A buyer is not one taste averaged together — somebody who saves phones, running shoes and
+// houseplants has three, and the mean of three directions in embedding space points at none
+// of them. So each interest searches on its own, one more source offers whatever was posted
+// most recently, and the results are merged: a listing's place is its rank within the source
+// that liked it best, divided by that source's share of the page. A taste worth half the
+// signal takes about half the page, and the smallest of the four still reaches it — where
+// scoring every listing against every interest and keeping the best would hand the whole page
+// to whichever interest happens to have the tightest neighbourhood.
+//
+// Each interest's own pass is an ordinary nearest-neighbour scan, so the vector index serves
+// it exactly as it serves a semantic search.
+const recommendedHead = `WITH probe AS (
+	           SELECT ordinality::int AS slot, vec::vector AS vec, weight
+	           FROM unnest(@probes::text[], @weights::double precision[])
+	                WITH ORDINALITY AS t(vec, weight, ordinality)
+	         ), hit AS (
+	           SELECT p.slot, p.weight, c.*,
+	                  row_number() OVER (PARTITION BY p.slot ORDER BY c.score DESC, c.id DESC) AS rank
+	           FROM probe p
+	           CROSS JOIN LATERAL (
+	           `
+
+// recommendedWhere is what a personalised feed excludes on top of the ordinary visibility
+// rules. Nobody can buy their own goods, and a listing the account already saved is one they
+// have found — putting it back on the page spends a card telling them what they told us.
+const recommendedWhere = `
+	             AND l.account_id <> @viewer_id
+	             AND NOT EXISTS (SELECT 1 FROM favorite rf
+	                             WHERE rf.listing_id = l.id AND rf.account_id = @viewer_id)`
+
+// An interest can only rank what it can measure the distance to. The fresh source below
+// deliberately does not carry this: the newest thing on the platform is exactly the one whose
+// vector has not been computed yet.
+const recommendedEmbedded = `
+	             AND e.dense IS NOT NULL`
+
+const recommendedFresh = `
+	             ORDER BY e.dense <=> p.vec
+	             LIMIT @candidates
+	           ) c
+	         ), fresh AS (
+	           SELECT 0 AS slot, @fresh_weight::double precision AS weight, f.*,
+	                  row_number() OVER (ORDER BY f.created_at DESC, f.id DESC) AS rank
+	           FROM (
+	           `
+
+// recommendedTail merges the sources and draws the page out of the pool.
+//
+// The draw is weighted sampling without replacement (Efraimidis–Spirakis): giving a listing a
+// weight w and ordering by `−ln(u)/w` is exactly a draw in which the odds of coming up are
+// proportional to w. Here w is the source's share over the listing's rank in it, so the best
+// matches usually come first and something from four pages down surfaces now and then — which
+// is the whole point. A feed that always answers the same twelve cards has no way to learn it
+// was wrong about somebody, and nothing new can ever get in front of them.
+//
+// `u` is a hash of the seed and the listing's id, never `random()`: the ordering has to be a
+// pure function of the seed or the second page would be drawn from a different feed than the
+// first, and a reader paging down would see the same card twice and miss others entirely.
+const recommendedTail = `
+	             ORDER BY l.created_at DESC
+	             LIMIT @candidates
+	           ) f
+	         ), drawn AS (
+	           SELECT s.*,
+	                  power(s.rank, @sharpness::double precision) / s.weight * (-ln(
+	                    ((hashtextextended(@seed::text || ':' || s.id::text, 0) & 2147483647)::double precision
+	                       + 1) / 2147483649.0)) AS position
+	           FROM (SELECT * FROM hit UNION ALL SELECT * FROM fresh) s
+	         ), merged AS (
+	           -- One row per listing, at the position of whichever source drew it highest.
+	           SELECT DISTINCT ON (id) * FROM drawn ORDER BY id, position
+	         )
+	         SELECT ` + cardColumns + `, score, 0::bigint AS total_count
+	         FROM merged
+	         ORDER BY position, score DESC NULLS LAST, id DESC` + feedPage
+
+// recommendedScore is the similarity to the interest this pass is running for. Higher is
+// better, like every other score a card carries.
+const recommendedScore = `1 - (e.dense <=> p.vec)`
+
+// freshScore is what a card drawn for being new carries: nothing. It was not matched against
+// anything, and a number here would be a claim about a relevance nobody measured.
+const freshScore = `NULL::double precision`
+
 // relevantCandidates is how deep "relevant" goes when a search is ordered by something other
 // than relevance. A rank and not a score, because a cosine score is not comparable between
 // queries: on this catalogue the 300th hit for a broad query outscores the 5th for a narrow
@@ -282,12 +401,28 @@ func rerankOrderBy(f port.ListingFilter) string {
 	}
 }
 
+// probeArrays splits the interests into the two parallel arrays the merge unnests. Text
+// rather than a vector array: pgvector has no array-of-vector type, and a per-row cast from
+// the literal is what every other probe in this file already crosses the wire as.
+func probeArrays(interests []port.Interest) ([]string, []float64) {
+	probes := make([]string, 0, len(interests))
+	weights := make([]float64, 0, len(interests))
+	for _, in := range interests {
+		probes = append(probes, vectorLiteral(in.Vector))
+		weights = append(weights, in.Weight)
+	}
+	return probes, weights
+}
+
 // scoreExpr picks what "score" means for this request. Always higher-is-better, so a client
 // never has to know which mode ran:
 //
 //   - lexical: how well the query matches the best-matching run of words in the name.
-//   - semantic and recommended: 1 − cosine distance to the probe.
+//   - semantic: 1 − cosine distance to the probe.
 //   - hybrid: the sum of the two, which is what a query with both halves is for.
+//
+// A personalised feed does not come through here: it ranks against several probes at once and
+// has its own shape above.
 //
 // A listing with no embedding scores 0 on the dense half rather than dropping out, so it stays
 // findable lexically — the contract says so explicitly.
@@ -336,7 +471,7 @@ func orderBy(f port.ListingFilter) string {
 		// cached_sold, because a sum over the variants has no per-variant index to scan in
 		// order — the one sort that cannot be answered from variant_price_idx.
 		return head + `l.cached_sold DESC` + tail
-	case port.SortRelevance, port.SortRecommended:
+	case port.SortRelevance:
 		return head + `score DESC NULLS LAST` + tail
 	case port.SortDistance:
 		// Nearest first, and a listing with no point last rather than first — NULLS LAST, because
@@ -412,36 +547,6 @@ func nullFloat(v float64) any {
 		return nil
 	}
 	return v
-}
-
-// InterestVectors reads the account's slots. A handful of rows by primary key: the ANN search
-// runs against listing_embedding, not here.
-func (r *Repo) InterestVectors(ctx context.Context, accountID int64) ([]port.Vector, error) {
-	const q = `SELECT dense::text FROM account_interest
-	           WHERE account_id = @account_id
-	           ORDER BY strength DESC, slot`
-	rows, err := r.pool.Query(ctx, q, pgx.NamedArgs{"account_id": accountID})
-	if err != nil {
-		return nil, fmt.Errorf("db query interest vectors: %w", err)
-	}
-	defer rows.Close()
-
-	var out []port.Vector
-	for rows.Next() {
-		var literal string
-		if err := rows.Scan(&literal); err != nil {
-			return nil, fmt.Errorf("db scan interest vector: %w", err)
-		}
-		v, err := parseVector(literal)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, v)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("db iterate interest vectors: %w", err)
-	}
-	return out, nil
 }
 
 // FavoritedAmong reads the whole page's wishlist state at once. An empty set short-circuits: a

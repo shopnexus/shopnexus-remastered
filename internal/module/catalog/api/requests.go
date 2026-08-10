@@ -258,8 +258,13 @@ type ListListingsRequest struct {
 	NearContactID *id.ID[id.Contact] `json:"-"`
 	RadiusKM      *float64           `json:"-" validate:"omitempty,gt=0,lte=500"`
 	Sort          string             `json:"-" validate:"omitempty,oneof=newest rating price-asc price-desc best-selling relevance recommended distance"`
-	Page          int                `json:"-" validate:"required,min=1"`
-	Limit         int                `json:"-" validate:"required,min=1,max=100"`
+	// Seed pins which shuffle of a personalised feed this is. Only `sort=recommended` reads
+	// it: that feed is drawn from a pool several pages deep, so the client sends one value
+	// for a whole run of pages and a new one when it wants a new feed. Any string will do —
+	// it is hashed, never interpreted. Left out, the server rotates it on a clock instead.
+	Seed  string `json:"-" validate:"max=64"`
+	Page  int    `json:"-" validate:"required,min=1"`
+	Limit int    `json:"-" validate:"required,min=1,max=100"`
 }
 
 // FavoriteRequest is one wishlist write. PUT and DELETE are both idempotent, so neither needs

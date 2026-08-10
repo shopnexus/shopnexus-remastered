@@ -4,6 +4,10 @@ package postgres_test
 
 import (
 	"context"
+	"math"
+	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"shopnexus/internal/module/catalog/domain"
@@ -143,10 +147,305 @@ func TestRepo_ListListingsIDsResolveEvenWhenDeleted(t *testing.T) {
 	}
 }
 
-// A recommended feed's probe comes from the account's interest vectors, which have
-// nothing to do with `q`: `sort=recommended` together with a query must still filter
-// lexically. Only a probe that is the query's own embedding (ProbeFromQuery) may skip
-// the lexical predicate.
+// The personalised feed reads the catalogue once per interest and merges what comes back, so
+// what a test has to prove is that every interest reaches the page — including the weakest,
+// which a single best-score pass would have buried — and that the two exclusions hold.
+func TestRepo_ListListingsMergesEveryInterest(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	pool := poolOf(t)
+	category := createCategory(t, repo, unique("cat-"), nil)
+	createTag(t, repo, "handmade", nil)
+	// A buyer of their own, so the wishlist and the interests below belong to nobody else.
+	buyer := testSeller + 7_000_000
+
+	// Two directions in embedding space, and several listings along each. More than one per
+	// direction, because the merge is about ranks within an interest.
+	publish := func(name string, first float32) *domain.Listing {
+		t.Helper()
+		l := newListingFor(t, repo, category.ID, unique(name))
+		if err := l.Publish(); err != nil {
+			t.Fatalf("Publish: %v", err)
+		}
+		if err := l.Approve(""); err != nil {
+			t.Fatalf("Approve: %v", err)
+		}
+		if err := repo.SaveListing(ctx, l, testSeller); err != nil {
+			t.Fatalf("SaveListing: %v", err)
+		}
+		const q = `INSERT INTO listing_embedding (listing_id, dense) VALUES ($1, $2::vector)
+		           ON CONFLICT (listing_id) DO UPDATE SET dense = EXCLUDED.dense`
+		if _, err := pool.Exec(ctx, q, l.ID, denseAxis(first)); err != nil {
+			t.Fatalf("insert embedding: %v", err)
+		}
+		return l
+	}
+	near := []*domain.Listing{publish("Near a ", 1), publish("Near b ", 0.99), publish("Near c ", 0.98)}
+	far := []*domain.Listing{publish("Far a ", 0), publish("Far b ", 0.01)}
+	saved := publish("Saved ", 1)
+	if err := repo.AddFavorite(ctx, buyer, saved.ID); err != nil {
+		t.Fatalf("AddFavorite: %v", err)
+	}
+
+	toward := func(first float32) port.Vector {
+		v := make(port.Vector, 1024)
+		v[0], v[1] = first, 1-first
+		return v
+	}
+	// Lopsided on purpose: the second interest is a tenth of the signal, which is exactly the
+	// one a "best score wins" ranking never shows.
+	feed := func(seed string) []port.ListingSummary {
+		t.Helper()
+		rows, _, err := repo.ListListings(ctx, port.ListingFilter{
+			ViewerID:   buyer,
+			CategoryID: category.ID,
+			Sort:       port.SortRecommended,
+			Seed:       seed,
+			Interests: []port.Interest{
+				{Vector: toward(1), Weight: 0.9},
+				{Vector: toward(0), Weight: 0.1},
+			},
+			Limit: 20,
+		})
+		if err != nil {
+			t.Fatalf("ListListings(recommended, seed %q): %v", seed, err)
+		}
+		return rows
+	}
+	rows := feed("seed-a")
+
+	got := make(map[int64]bool, len(rows))
+	for _, row := range rows {
+		got[row.ID] = true
+	}
+	for _, l := range append(append([]*domain.Listing{}, near...), far...) {
+		if !got[l.ID] {
+			t.Errorf("listing %d is missing — an interest reached none of the page", l.ID)
+		}
+	}
+	if got[saved.ID] {
+		t.Error("a listing already on the wishlist came back as a recommendation")
+	}
+
+	// One seed is one feed: page two is drawn from the same ordering as page one, or a reader
+	// paging down sees a card twice and never sees the one it displaced.
+	ids := func(rows []port.ListingSummary) string {
+		out := make([]string, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, strconv.FormatInt(row.ID, 10))
+		}
+		return strings.Join(out, ",")
+	}
+	if again := ids(feed("seed-a")); again != ids(rows) {
+		t.Errorf("the same seed drew a different feed:\n %s\n %s", ids(rows), again)
+	}
+	// And a different seed is a different feed, which is the whole point of drawing one.
+	var differs bool
+	for _, seed := range []string{"seed-b", "seed-c", "seed-d"} {
+		if ids(feed(seed)) != ids(rows) {
+			differs = true
+			break
+		}
+	}
+	if !differs {
+		t.Error("three other seeds all drew the identical order — the draw is not reading the seed")
+	}
+
+	// The seller's own goods are not something to recommend them — not through an interest,
+	// and not through the fresh source either, which is the one that carries no vector.
+	own, _, err := repo.ListListings(ctx, port.ListingFilter{
+		ViewerID:   testSeller,
+		CategoryID: category.ID,
+		Sort:       port.SortRecommended,
+		Seed:       "seed-a",
+		Interests:  []port.Interest{{Vector: toward(1), Weight: 1}},
+		Limit:      20,
+	})
+	if err != nil {
+		t.Fatalf("ListListings(own): %v", err)
+	}
+	if len(own) != 0 {
+		t.Errorf("own = %+v, want none: every listing here belongs to the caller", own)
+	}
+}
+
+// A listing nothing has embedded yet is unreachable through an interest — there is no distance
+// to measure — and it is also the newest thing on the platform. The fresh source is what puts
+// it in front of somebody, and without it the feed can only ever answer its own past.
+func TestRepo_ListListingsRecommendsWhatHasNoVectorYet(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	pool := poolOf(t)
+	category := createCategory(t, repo, unique("cat-"), nil)
+	createTag(t, repo, "handmade", nil)
+	buyer := testSeller + 9_000_000
+
+	publish := func(name string) *domain.Listing {
+		t.Helper()
+		l := newListingFor(t, repo, category.ID, unique(name))
+		if err := l.Publish(); err != nil {
+			t.Fatalf("Publish: %v", err)
+		}
+		if err := l.Approve(""); err != nil {
+			t.Fatalf("Approve: %v", err)
+		}
+		if err := repo.SaveListing(ctx, l, testSeller); err != nil {
+			t.Fatalf("SaveListing: %v", err)
+		}
+		return l
+	}
+	matched := publish("Matched ")
+	const q = `INSERT INTO listing_embedding (listing_id, dense) VALUES ($1, $2::vector)
+	           ON CONFLICT (listing_id) DO UPDATE SET dense = EXCLUDED.dense`
+	if _, err := pool.Exec(ctx, q, matched.ID, denseAxis(1)); err != nil {
+		t.Fatalf("insert embedding: %v", err)
+	}
+	// Posted after it, and never embedded.
+	unembedded := publish("Just posted ")
+
+	probe := make(port.Vector, 1024)
+	probe[0] = 1
+	rows, _, err := repo.ListListings(ctx, port.ListingFilter{
+		ViewerID:   buyer,
+		CategoryID: category.ID,
+		Sort:       port.SortRecommended,
+		Seed:       "seed-a",
+		Interests:  []port.Interest{{Vector: probe, Weight: 1}},
+		Limit:      20,
+	})
+	if err != nil {
+		t.Fatalf("ListListings: %v", err)
+	}
+	var sawFresh bool
+	for _, row := range rows {
+		if row.ID == unembedded.ID {
+			sawFresh = true
+			if row.Score != nil {
+				t.Errorf("score = %v, want null: nothing measured this card against anything", *row.Score)
+			}
+		}
+	}
+	if !sawFresh {
+		t.Error("a newly posted listing with no vector never reached the feed")
+	}
+}
+
+// The slots are rebuilt from the wishlist, capped at NumInterests, strongest first, and the
+// weights are shares of the whole signal — that last part is what the merge above divides by.
+func TestRepo_RecomputeInterests(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	pool := poolOf(t)
+	buyer := testSeller + 8_000_000
+	createTag(t, repo, "handmade", nil)
+
+	// Five categories, so the cap has something to cut, and a different number of saved
+	// listings in each so the order is a fact rather than a coin toss.
+	counts := []int{5, 4, 3, 2, 1}
+	for _, n := range counts {
+		category := createCategory(t, repo, unique("cat-"), nil)
+		for i := 0; i < n; i++ {
+			l := newListingFor(t, repo, category.ID, unique("Interest "))
+			if err := l.Publish(); err != nil {
+				t.Fatalf("Publish: %v", err)
+			}
+			if err := l.Approve(""); err != nil {
+				t.Fatalf("Approve: %v", err)
+			}
+			if err := repo.SaveListing(ctx, l, testSeller); err != nil {
+				t.Fatalf("SaveListing: %v", err)
+			}
+			const q = `INSERT INTO listing_embedding (listing_id, dense) VALUES ($1, $2::vector)
+			           ON CONFLICT (listing_id) DO UPDATE SET dense = EXCLUDED.dense`
+			if _, err := pool.Exec(ctx, q, l.ID, denseAxis(1)); err != nil {
+				t.Fatalf("insert embedding: %v", err)
+			}
+			if err := repo.AddFavorite(ctx, buyer, l.ID); err != nil {
+				t.Fatalf("AddFavorite: %v", err)
+			}
+		}
+	}
+
+	// An account nobody has computed yet is stale, which is what the sweep looks for.
+	stale, err := repo.StaleInterests(ctx, 1000)
+	if err != nil {
+		t.Fatalf("StaleInterests: %v", err)
+	}
+	if !slices.Contains(stale, buyer) {
+		t.Error("an account with a wishlist and no slots was not reported stale")
+	}
+
+	if err := repo.RecomputeInterests(ctx, buyer); err != nil {
+		t.Fatalf("RecomputeInterests: %v", err)
+	}
+	interests, err := repo.Interests(ctx, buyer)
+	if err != nil {
+		t.Fatalf("Interests: %v", err)
+	}
+	if len(interests) != domain.NumInterests {
+		t.Fatalf("interests = %d, want %d: five categories capped to the slot count",
+			len(interests), domain.NumInterests)
+	}
+	var total float64
+	for i, in := range interests {
+		if len(in.Vector) != 1024 {
+			t.Errorf("interest %d has %d dimensions, want 1024", i, len(in.Vector))
+		}
+		if i > 0 && in.Weight > interests[i-1].Weight {
+			t.Errorf("interest %d is stronger than the one before it", i)
+		}
+		total += in.Weight
+	}
+	if math.Abs(total-1) > 1e-6 {
+		t.Errorf("weights sum to %v, want 1: the merge divides a rank by a share", total)
+	}
+
+	// Recomputed, the account is no longer behind its wishlist.
+	stale, err = repo.StaleInterests(ctx, 1000)
+	if err != nil {
+		t.Fatalf("StaleInterests: %v", err)
+	}
+	if slices.Contains(stale, buyer) {
+		t.Error("an account recomputed just now is still reported stale")
+	}
+
+	// A wishlist emptied leaves no slots behind, or the feed keeps ranking against a taste
+	// the account has withdrawn.
+	if _, err := pool.Exec(ctx, `DELETE FROM favorite WHERE account_id = $1`, buyer); err != nil {
+		t.Fatalf("clear wishlist: %v", err)
+	}
+	if err := repo.RecomputeInterests(ctx, buyer); err != nil {
+		t.Fatalf("RecomputeInterests(empty): %v", err)
+	}
+	if interests, err = repo.Interests(ctx, buyer); err != nil || len(interests) != 0 {
+		t.Fatalf("interests = %+v, %v; want none", interests, err)
+	}
+}
+
+// denseAxis is a 1024-wide literal leaning `first` toward one axis and the rest toward
+// another, which is how these tests place a listing at a known angle from a probe.
+func denseAxis(first float32) string {
+	out := make([]byte, 0, 4096)
+	out = append(out, '[')
+	for i := range 1024 {
+		if i > 0 {
+			out = append(out, ',')
+		}
+		switch i {
+		case 0:
+			out = append(out, []byte(strconv.FormatFloat(float64(first), 'f', -1, 32))...)
+		case 1:
+			out = append(out, []byte(strconv.FormatFloat(float64(1-first), 'f', -1, 32))...)
+		default:
+			out = append(out, '0')
+		}
+	}
+	return string(append(out, ']'))
+}
+
+// A personalised feed's probes come from the account and have nothing to do with `q`:
+// `sort=recommended` together with a query must still filter lexically. Only a probe that is
+// the query's own embedding (ProbeFromQuery) may skip the lexical predicate.
 func TestRepo_ListListingsRecommendedProbeDoesNotBypassQueryFilter(t *testing.T) {
 	repo := newRepo(t)
 	ctx := context.Background()
@@ -175,6 +474,18 @@ func TestRepo_ListListingsRecommendedProbeDoesNotBypassQueryFilter(t *testing.T)
 		t.Fatalf("SaveListing: %v", err)
 	}
 
+	// Both embedded, because a personalised feed ranks by vector and a listing without one has
+	// no place in the ranking at all — so without this the lexical filter would look like it
+	// held when nothing had reached it.
+	pool := poolOf(t)
+	for _, l := range []*domain.Listing{match, other} {
+		const q = `INSERT INTO listing_embedding (listing_id, dense) VALUES ($1, $2::vector)
+		           ON CONFLICT (listing_id) DO UPDATE SET dense = EXCLUDED.dense`
+		if _, err := pool.Exec(ctx, q, l.ID, denseAxis(1)); err != nil {
+			t.Fatalf("insert embedding: %v", err)
+		}
+	}
+
 	probe := make(port.Vector, 1024)
 	probe[0] = 1
 	// The full phrase, as the trigram index needs: a short single-word query against a
@@ -184,7 +495,8 @@ func TestRepo_ListListingsRecommendedProbeDoesNotBypassQueryFilter(t *testing.T)
 	// embedder has run over that seed every listing has a vector — so an unscoped assertion of
 	// "only mine came back" tests the neighbours rather than the probe.
 	rows, _, err := repo.ListListings(ctx, port.ListingFilter{
-		Query: query, Probe: probe, ProbeFromQuery: false, Sort: port.SortRecommended,
+		Query: query, ProbeFromQuery: false, Sort: port.SortRecommended,
+		Interests:  []port.Interest{{Vector: probe, Weight: 1}},
 		CategoryID: category.ID, Limit: 20,
 	})
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"strconv"
@@ -42,8 +43,12 @@ type fakeRepo struct {
 	// instead of moving the counters again.
 	movements map[string]bool
 	favorites map[[2]int64]bool
+	// lastFilter is what the service resolved before handing it over. The fake ranks nothing,
+	// so the resolution — which probes, and whether the query was one of them — is the only
+	// thing a unit test can assert about a feed.
+	lastFilter port.ListingFilter
 	// interests are the account's slots, which is what sort=recommended ranks against.
-	interests map[int64][]port.Vector
+	interests map[int64][]port.Interest
 	// resources is this module's own resource table: an id absent from it names no confirmed
 	// upload, which is what ErrAttachmentNotFound is about.
 	resources map[int64]bool
@@ -72,7 +77,7 @@ func newFakeRepo() *fakeRepo {
 		variantListing: map[int64]int64{},
 		movements:      map[string]bool{},
 		favorites:      map[[2]int64]bool{},
-		interests:      map[int64][]port.Vector{},
+		interests:      map[int64][]port.Interest{},
 		resources:      map[int64]bool{},
 	}
 }
@@ -677,6 +682,7 @@ func auditedDiff[T any](f *fakeRepo, e domain.EventType[T]) (T, bool) {
 // than the others on purpose: this is the one read whose rules a service test can get wrong
 // without a database noticing.
 func (f *fakeRepo) ListListings(_ context.Context, filter port.ListingFilter) ([]port.ListingSummary, int64, error) {
+	f.lastFilter = filter
 	var matched []port.ListingSummary
 	for _, stored := range f.listings {
 		l := stored.listing
@@ -877,8 +883,64 @@ func sortFeed(rows []port.ListingSummary, order string) {
 	}
 }
 
-func (f *fakeRepo) InterestVectors(_ context.Context, accountID int64) ([]port.Vector, error) {
+func (f *fakeRepo) Interests(_ context.Context, accountID int64) ([]port.Interest, error) {
 	return f.interests[accountID], nil
+}
+
+// RecomputeInterests mirrors the adapter's shape rather than its arithmetic: one slot per
+// category the account saved something in, strongest first, weights summing to one. That is
+// what a caller of this repository can rely on, and it is enough to tell "the wishlist write
+// refreshed the slots" from "it did not".
+func (f *fakeRepo) RecomputeInterests(_ context.Context, accountID int64) error {
+	counts := map[int64]int{}
+	for key := range f.favorites {
+		if key[0] != accountID || !f.favorites[key] {
+			continue
+		}
+		if i := f.listingAt(key[1]); i >= 0 {
+			counts[f.listings[i].listing.CategoryID]++
+		}
+	}
+	if len(counts) == 0 {
+		delete(f.interests, accountID)
+		return nil
+	}
+	categories := slices.SortedFunc(maps.Keys(counts), func(a, b int64) int {
+		if counts[a] != counts[b] {
+			return cmp.Compare(counts[b], counts[a])
+		}
+		return cmp.Compare(a, b)
+	})
+	if len(categories) > domain.NumInterests {
+		categories = categories[:domain.NumInterests]
+	}
+	var total int
+	for _, category := range categories {
+		total += counts[category]
+	}
+	slots := make([]port.Interest, 0, len(categories))
+	for _, category := range categories {
+		v := make(port.Vector, 1024)
+		v[category%1024] = 1
+		slots = append(slots, port.Interest{Vector: v, Weight: float64(counts[category]) / float64(total)})
+	}
+	f.interests[accountID] = slots
+	return nil
+}
+
+func (f *fakeRepo) StaleInterests(_ context.Context, limit int) ([]int64, error) {
+	var out []int64
+	for key := range f.favorites {
+		if !f.favorites[key] || len(f.interests[key[0]]) > 0 || slices.Contains(out, key[0]) {
+			continue
+		}
+		out = append(out, key[0])
+	}
+	slices.Sort(out)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 func (f *fakeRepo) FavoritedAmong(_ context.Context, accountID int64, listingIDs []int64) (map[int64]bool, error) {

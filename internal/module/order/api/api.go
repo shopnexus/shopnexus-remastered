@@ -171,6 +171,26 @@ type Order struct {
 	CreatedAt        time.Time  `json:"created_at"`
 	CompletedAt      *time.Time `json:"completed_at"`
 	CancelledAt      *time.Time `json:"cancelled_at"`
+	// Refund is the most recent case raised on this sale, settled or not; null when there has
+	// never been one. It rides on the order because every screen that renders an order has to
+	// know: `CreateRefund` refuses a second live case, so a button offering one is a 409 the
+	// buyer has to read. Finding it in the caller's own refund list instead was a scan of one
+	// page — wrong for anyone with more than a page of cases, and wrong for everyone until
+	// that second request came back.
+	Refund *RefundSummary `json:"refund"`
+}
+
+// RefundSummary is enough to say a case exists, where it stands and where to read it. The
+// reason and the evidence are the case's own page: an order list would resolve an upload URL
+// per row to render nothing.
+type RefundSummary struct {
+	ID     id.ID[id.Refund] `json:"id"`
+	Status string           `json:"status"`
+	// Settled is the question the button asks — whether this case still blocks another. It is
+	// answered here rather than left as a status list every client re-derives, because the
+	// statuses that block are `refund_one_active_per_order`'s, not a set anyone should guess.
+	Settled   bool      `json:"settled"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type OrderPage struct {

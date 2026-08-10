@@ -95,10 +95,21 @@ type ListingFilter struct {
 	Probe Vector
 	// ProbeFromQuery is true only when Probe is the query's own embedding (a semantic or
 	// hybrid search), which is what lets the adapter skip the lexical predicate without
-	// dropping a filter the caller asked for: a recommended feed's Probe comes from the
-	// account's interest vectors instead and has nothing to do with Query, so
-	// `q=uniqlo&sort=recommended` must still filter on "uniqlo" lexically.
+	// dropping a filter the caller asked for: `q=uniqlo&sort=recommended` ranks against the
+	// account's interests, which have nothing to do with "uniqlo", so the lexical filter
+	// still has to hold.
 	ProbeFromQuery bool
+	// Interests is what a recommended feed ranks against, strongest first. Several probes
+	// rather than one, because a buyer is several buyers: phones on Monday and a bicycle on
+	// Thursday are not one taste whose average is a taste for neither. Empty means the
+	// account has none computed, and the service falls back to newest.
+	Interests []Interest
+	// Seed decides which of the many good orderings of a personalised feed this caller gets.
+	// The merge draws from a pool several pages deep instead of taking the top of it, and the
+	// draw is a function of this and the listing's id — so one seed always produces the same
+	// order (page two follows page one) and a new one produces a different feed. Resolved by
+	// the service, never empty for a personalised feed.
+	Seed string
 	// ViewerID is the caller, needed for Mine, Favorited and Recommended. Zero is anonymous.
 	ViewerID   int64
 	Mine       bool
@@ -125,6 +136,15 @@ type ListingFilter struct {
 	Sort     string
 	Offset   int
 	Limit    int
+}
+
+// Interest is one of the things an account keeps coming back to: a direction in embedding
+// space, and how much of their behaviour points that way. Weight is a share of the whole
+// signal, so the weights of an account's interests sum to 1 and a feed can hand each of them
+// a proportional slice of the page.
+type Interest struct {
+	Vector Vector
+	Weight float64
 }
 
 // Point is a WGS84 coordinate — the buyer's position for a "near me" browse.
@@ -214,10 +234,18 @@ type Repository interface {
 	// ListListings answers the feed: cards from a flat read model, because a page of twenty
 	// must not be twenty aggregate loads. Score is set only when the filter was a search.
 	ListListings(ctx context.Context, f ListingFilter) ([]ListingSummary, int64, error)
-	// InterestVectors reads an account's interest slots, which is what `sort=recommended`
+	// Interests reads an account's interest slots, strongest first — what `sort=recommended`
 	// ranks against. Empty for an account nothing has computed yet, and the service falls
 	// back to newest.
-	InterestVectors(ctx context.Context, accountID int64) ([]Vector, error)
+	Interests(ctx context.Context, accountID int64) ([]Interest, error)
+	// RecomputeInterests rebuilds those slots from what the account saved, replacing the set
+	// in one transaction so a reader never sees half an account's taste.
+	RecomputeInterests(ctx context.Context, accountID int64) error
+	// StaleInterests names the accounts whose slots no longer reflect their wishlist —
+	// something saved or unsaved since, or a saved listing embedded since. The recompute runs
+	// inline on a wishlist write; this is the net under the pass that failed, and under the
+	// listing whose vector only arrived afterwards.
+	StaleInterests(ctx context.Context, limit int) ([]int64, error)
 
 	// --- wishlist writes ---
 

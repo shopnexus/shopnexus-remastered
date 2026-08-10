@@ -582,6 +582,17 @@ func (s *Service) orderView(ctx context.Context, o domain.Order) (orderapi.Order
 		shipment := toAPITransport(t)
 		out.Transport = &shipment
 	}
+	// An order nobody disputed is the common case, so a miss is not a failure.
+	if r, err := s.repo.LatestRefundOnOrder(ctx, o.ID); err == nil {
+		out.Refund = &orderapi.RefundSummary{
+			ID:        id.Of[id.Refund](r.ID),
+			Status:    r.Status,
+			Settled:   r.Settled(),
+			CreatedAt: r.CreatedAt,
+		}
+	} else if !errors.Is(err, domain.ErrRefundNotFound) {
+		return orderapi.Order{}, fmt.Errorf("find order refund: %w", err)
+	}
 	return out, nil
 }
 

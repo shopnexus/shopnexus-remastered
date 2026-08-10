@@ -87,6 +87,16 @@ func (r *Repo) LiveRefundOnOrder(ctx context.Context, orderID int64) (domain.Ref
 	return scanRefund(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"order_id": orderID}))
 }
 
+// LatestRefundOnOrder answers the most recent case on an order, settled or not. The order view
+// carries it so a screen about a sale never has to go looking for the case in the caller's whole
+// refund list — a scan that silently misses one once that list runs past its first page.
+func (r *Repo) LatestRefundOnOrder(ctx context.Context, orderID int64) (domain.Refund, error) {
+	const q = `SELECT ` + refundColumns + ` FROM refund
+	           WHERE order_id = @order_id
+	           ORDER BY created_at DESC, id DESC LIMIT 1`
+	return scanRefund(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"order_id": orderID}))
+}
+
 // terminalRefund is every status a case can end on, built from the constants so a renamed one
 // is a build failure rather than a list that quietly matches nothing.
 const terminalRefund = `'` + domain.RefundAccepted + `', '` + domain.RefundRejected + `', '` + domain.RefundCancelled + `'`

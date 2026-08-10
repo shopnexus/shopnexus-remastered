@@ -266,6 +266,25 @@ components:
         created_at: { type: string, format: date-time }
       required: [id, order_id, buyer_id, status, reason, attachments, deadline_at, seller_decided_at, returned_at, created_at]
 
+    RefundSummary:
+      type: object
+      description: >
+        A case as an order carries it: that it exists, where it stands, and where to read it.
+        The reason and the evidence stay on the case's own page — an order list that embedded
+        them would resolve an upload URL per row to render nothing.
+      properties:
+        id: { $ref: '#/components/schemas/RefundID' }
+        status: { $ref: '#/components/schemas/RefundStatus' }
+        settled:
+          type: boolean
+          example: false
+          description: >
+            Whether the case has ended. False is what stops another being raised, so this is
+            the question a "request a refund" control has to ask — the blocking statuses are
+            an index's, not a list for each client to re-derive.
+        created_at: { type: string, format: date-time }
+      required: [id, status, settled, created_at]
+
     RefundPage:
       type: object
       properties:

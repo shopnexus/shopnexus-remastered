@@ -2515,6 +2515,12 @@ components:
                     format: date-time
                     nullable: true
                     type: string
+                refund:
+                    allOf:
+                        - $ref: '#/components/schemas/RefundSummary'
+                    description: |
+                        The most recent refund case raised on this sale, settled or not; null when there has never been one. Read it rather than searching the caller's own refund list: only one unsettled case may exist at a time, so a screen that offers a second one is offering a 409.
+                    nullable: true
                 seller:
                     $ref: '#/components/schemas/AccountSummary'
                 state:
@@ -2555,6 +2561,7 @@ components:
                 - created_at
                 - completed_at
                 - cancelled_at
+                - refund
             type: object
         OrderAddressSnapshot:
             description: |
@@ -3203,6 +3210,28 @@ components:
                 - rejected
                 - cancelled
             type: string
+        RefundSummary:
+            description: |
+                A case as an order carries it: that it exists, where it stands, and where to read it. The reason and the evidence stay on the case's own page — an order list that embedded them would resolve an upload URL per row to render nothing.
+            properties:
+                created_at:
+                    format: date-time
+                    type: string
+                id:
+                    $ref: '#/components/schemas/RefundID'
+                settled:
+                    description: |
+                        Whether the case has ended. False is what stops another being raised, so this is the question a "request a refund" control has to ask — the blocking statuses are an index's, not a list for each client to re-derive.
+                    example: false
+                    type: boolean
+                status:
+                    $ref: '#/components/schemas/RefundStatus'
+            required:
+                - id
+                - status
+                - settled
+                - created_at
+            type: object
         RefundVerdictRequest:
             description: A decision, so there is no "still deciding" choice — which is why the verdict is a boolean rather than a status enum.
             properties:
@@ -7584,7 +7613,9 @@ paths:
 
                 `q` makes it a search and moves the default sort to `relevance`. `lexical` matches the name by trigram and tolerates missing diacritics, `semantic` runs an approximate nearest-neighbour search over the dense embedding, and `hybrid` combines the dense vector with the sparse lexical one, which is what the embedding model is built for. Each hit then carries `score`, always so that higher is better. A listing whose embedding has not been computed yet can only be found lexically.
 
-                `sort=recommended` is the personalised feed: nearest-neighbour search over listing embeddings from the caller's interest slots. It needs a token, and falls back to newest for an account with no interests computed yet.
+                `sort=recommended` is the personalised feed. A buyer is credited with up to four interests at once, derived from what they saved and refreshed as they save more; each one searches the catalogue on its own, a further share of the page goes to whatever was posted most recently, and the results are merged in proportion to how much of that buyer's behaviour each source accounts for. So an occasional taste still reaches the page instead of being crowded out by the dominant one, and something outside every one of them still gets in — a feed that only ever answers its own past has no way to learn it was wrong. The page is *drawn* from a pool several pages deep rather than taken off the top, so two runs differ; `seed` is what holds one run still while it is paged through. Their own listings and anything already on their wishlist are left out. It needs a token, and falls back to newest for an account with no interests computed yet.
+
+                `score` is the similarity to the interest that surfaced a card, and is `null` for one drawn for being new — nothing measured it against anything.
 
                 `mine=true` restricts the result to the caller's own listings, and is the only case in which `status` is honoured — a seller has to see what is not public, and nobody else may.
 
@@ -7736,6 +7767,14 @@ paths:
                         - relevance
                         - recommended
                         - distance
+                    type: string
+                - description: |
+                    Which shuffle of a personalised feed this is; read only by `sort=recommended`, ignored everywhere else. That feed is drawn from a pool several pages deep rather than taken off the top of it, so the ordering is a function of this value: send one seed for a whole run of pages, or the second page will be drawn from a different feed than the first and repeat cards it has already shown. Send a new one to get a new feed. Any string does — it is hashed, never interpreted. Left out, the server rotates it every fifteen minutes.
+                  in: query
+                  name: seed
+                  schema:
+                    example: k3f9qz
+                    maxLength: 64
                     type: string
                 - $ref: '#/components/parameters/Page'
                 - $ref: '#/components/parameters/Limit'

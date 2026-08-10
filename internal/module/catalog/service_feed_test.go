@@ -141,6 +141,74 @@ func TestFavorites_RoundTrip(t *testing.T) {
 	}
 }
 
+// Saving is what teaches the feed: the wishlist write refreshes the account's interest slots
+// on the spot, so the next personalised feed reflects what was just saved rather than waiting
+// on a sweep. Unsaving the last of them leaves none, which is the fallback to newest.
+func TestFavorites_RefreshTheInterestSlots(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	listing := seedListing(t, h)
+	publish(t, h, listing)
+	buyer := id.Of[id.Account](77)
+
+	if interests, _ := h.repo.Interests(ctx, buyer.Int64()); len(interests) != 0 {
+		t.Fatalf("interests = %+v, want none before anything was saved", interests)
+	}
+	if err := h.svc.AddFavorite(ctx, catalogapi.FavoriteRequest{ActorID: buyer, ID: listing.ID}); err != nil {
+		t.Fatalf("AddFavorite: %v", err)
+	}
+	interests, err := h.repo.Interests(ctx, buyer.Int64())
+	if err != nil {
+		t.Fatalf("Interests: %v", err)
+	}
+	if len(interests) != 1 || interests[0].Weight != 1 {
+		t.Fatalf("interests = %+v, want the one thing they saved, at the whole of the signal", interests)
+	}
+
+	if err := h.svc.RemoveFavorite(ctx, catalogapi.FavoriteRequest{ActorID: buyer, ID: listing.ID}); err != nil {
+		t.Fatalf("RemoveFavorite: %v", err)
+	}
+	if interests, _ = h.repo.Interests(ctx, buyer.Int64()); len(interests) != 0 {
+		t.Fatalf("interests = %+v, want none once the wishlist is empty", interests)
+	}
+	// And with none, the personalised feed is the newest feed rather than an empty page.
+	page, err := h.svc.ListListings(ctx, catalogapi.ListListingsRequest{
+		ViewerID: buyer, Sort: "recommended", Page: 1, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListListings(recommended): %v", err)
+	}
+	if len(page.Data) == 0 {
+		t.Error("a recommended feed with no interests answered nothing, not the newest listings")
+	}
+}
+
+// A query alongside a personalised feed stays a filter on the name. Embedding it would make
+// the adapter drop the lexical predicate — the concession a real semantic search earns — and
+// the caller would get their whole personalised feed back under a search they typed.
+func TestListListings_RecommendedNeverEmbedsTheQuery(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	listing := seedListing(t, h)
+	publish(t, h, listing)
+	buyer := id.Of[id.Account](78)
+	if err := h.svc.AddFavorite(ctx, catalogapi.FavoriteRequest{ActorID: buyer, ID: listing.ID}); err != nil {
+		t.Fatalf("AddFavorite: %v", err)
+	}
+
+	if _, err := h.svc.ListListings(ctx, catalogapi.ListListingsRequest{
+		ViewerID: buyer, Sort: "recommended", Query: "anything", Page: 1, Limit: 20,
+	}); err != nil {
+		t.Fatalf("ListListings(recommended+q): %v", err)
+	}
+	if h.repo.lastFilter.ProbeFromQuery {
+		t.Error("the query was embedded, so the adapter would have dropped the lexical filter")
+	}
+	if len(h.repo.lastFilter.Interests) == 0 {
+		t.Error("the feed was not ranked against the account's interests")
+	}
+}
+
 // A draft is not saveable by a stranger: a wishlist of ids nobody can read renders nothing.
 func TestAddFavorite_StrangersDraftNotFound(t *testing.T) {
 	h := newHarnessWith("user", true)

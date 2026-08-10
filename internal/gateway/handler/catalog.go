@@ -48,6 +48,7 @@ func (h *Catalog) ListListings(w http.ResponseWriter, r *http.Request) {
 		Tag:       query.Get("tag"),
 		Condition: query.Get("condition"),
 		Sort:      query.Get("sort"),
+		Seed:      query.Get("seed"),
 		Page:      page,
 		Limit:     limit,
 	}

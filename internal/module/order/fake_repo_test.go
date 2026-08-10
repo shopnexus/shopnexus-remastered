@@ -825,6 +825,20 @@ func (f *fakeRepo) LiveRefundOnOrder(_ context.Context, orderID int64) (domain.R
 	return domain.Refund{}, domain.ErrRefundNotFound
 }
 
+// LatestRefundOnOrder is the newest case on the order, settled or not.
+func (f *fakeRepo) LatestRefundOnOrder(_ context.Context, orderID int64) (domain.Refund, error) {
+	latest := domain.Refund{}
+	for _, r := range f.refunds {
+		if r.OrderID == orderID && (latest.ID == 0 || !r.CreatedAt.Before(latest.CreatedAt)) {
+			latest = r
+		}
+	}
+	if latest.ID == 0 {
+		return domain.Refund{}, domain.ErrRefundNotFound
+	}
+	return latest, nil
+}
+
 func (f *fakeRepo) OverdueRefunds(_ context.Context, now time.Time, limit int) ([]domain.Refund, error) {
 	var out []domain.Refund
 	for _, r := range f.refunds {

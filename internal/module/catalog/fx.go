@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/fx"
@@ -34,6 +35,7 @@ var Module = fx.Module("catalog",
 	fx.Provide(
 		fx.Annotate(newRepo, fx.As(new(port.Repository))),
 		fx.Annotate(newUploadSweep, fx.ResultTags(`group:"sweeps"`)),
+		fx.Annotate(newInterestSweep, fx.ResultTags(`group:"sweeps"`)),
 		fx.Annotate(NewService, fx.As(new(catalogapi.Service))),
 	),
 )
@@ -58,3 +60,10 @@ func newUploads(pool *pgxpool.Pool, cfg *config.Config, stores *storage.Registry
 // newUploadSweep reaps the slots nobody confirmed. Registered with the shared sweeper, because
 // an abandoned upload is a row and an object that would otherwise accumulate for ever.
 func newUploadSweep(store *uploads.Store) durable.Sweep { return store.Sweep }
+
+// newInterestSweep is the net under the recompute a wishlist write already runs: an account
+// whose saved listing was only embedded afterwards, or whose inline recompute failed, is
+// found here instead of waiting for their next save.
+func newInterestSweep(repo port.Repository) durable.Sweep {
+	return func(ctx context.Context, log *slog.Logger) { sweepInterests(ctx, repo, log) }
+}

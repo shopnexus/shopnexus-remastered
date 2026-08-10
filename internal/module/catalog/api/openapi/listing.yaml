@@ -49,9 +49,23 @@ paths:
         can only be found lexically.
 
 
-        `sort=recommended` is the personalised feed: nearest-neighbour search over
-        listing embeddings from the caller's interest slots. It needs a token, and
-        falls back to newest for an account with no interests computed yet.
+        `sort=recommended` is the personalised feed. A buyer is credited with up to
+        four interests at once, derived from what they saved and refreshed as they
+        save more; each one searches the catalogue on its own, a further share of
+        the page goes to whatever was posted most recently, and the results are
+        merged in proportion to how much of that buyer's behaviour each source
+        accounts for. So an occasional taste still reaches the page instead of
+        being crowded out by the dominant one, and something outside every one of
+        them still gets in — a feed that only ever answers its own past has no way
+        to learn it was wrong. The page is *drawn* from a pool several pages deep
+        rather than taken off the top, so two runs differ; `seed` is what holds one
+        run still while it is paged through. Their own listings and anything already
+        on their wishlist are left out. It needs a token, and falls back to newest
+        for an account with no interests computed yet.
+
+
+        `score` is the similarity to the interest that surfaced a card, and is
+        `null` for one drawn for being new — nothing measured it against anything.
 
 
         `mine=true` restricts the result to the caller's own listings, and is the
@@ -139,6 +153,17 @@ paths:
             Defaults to `relevance` when a query is given and `newest` otherwise. `distance` needs
             a position, like `radius_km` does.
           schema: { type: string, enum: [newest, rating, price-asc, price-desc, best-selling, relevance, recommended, distance] }
+        - name: seed
+          in: query
+          description: >
+            Which shuffle of a personalised feed this is; read only by `sort=recommended`,
+            ignored everywhere else. That feed is drawn from a pool several pages deep rather
+            than taken off the top of it, so the ordering is a function of this value: send one
+            seed for a whole run of pages, or the second page will be drawn from a different
+            feed than the first and repeat cards it has already shown. Send a new one to get a
+            new feed. Any string does — it is hashed, never interpreted. Left out, the server
+            rotates it every fifteen minutes.
+          schema: { type: string, maxLength: 64, example: 'k3f9qz' }
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
       responses:

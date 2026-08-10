@@ -207,6 +207,10 @@ type Repository interface {
 	// this module name the sale, not the case: one live refund per order is an index, so which row
 	// that is stays here.
 	LiveRefundOnOrder(ctx context.Context, orderID int64) (domain.Refund, error)
+	// LatestRefundOnOrder is the most recent case on an order, settled or not — what the order
+	// view reports, so a screen about the sale reads the case off the order instead of hunting
+	// for it in a paged list of every refund the caller is party to.
+	LatestRefundOnOrder(ctx context.Context, orderID int64) (domain.Refund, error)
 	ListRefunds(ctx context.Context, f RefundFilter) ([]domain.Refund, error)
 	// SaveRefund writes the transition, guarded by `from` — the status the entity moved out
 	// of. A stale read then loses instead of writing over a move it never saw: an escalation

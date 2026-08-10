@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -50,8 +51,6 @@ func (s *Service) ListListings(ctx context.Context, req catalogapi.ListListingsR
 	return catalogapi.ListingPage{Data: cards, Meta: meta}, nil
 }
 
-// feedFilter validates the combination and resolves what the adapter cannot: the search probe,
-// and the interest vectors a recommended feed ranks against.
 // browsePosition is where the buyer is browsing from: the coordinates the device sent, or the
 // coordinates of one of their own saved addresses. Nil when they named neither, and an error when
 // the address they named has never been geocoded — a distance nobody can compute is not an empty
@@ -78,6 +77,8 @@ func (s *Service) browsePosition(ctx context.Context, req catalogapi.ListListing
 	return &port.Point{Latitude: *contact.Latitude, Longitude: *contact.Longitude}, nil
 }
 
+// feedFilter validates the combination and resolves what the adapter cannot: where the buyer
+// is, the search probe, and the interests a personalised feed ranks against.
 func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsRequest) (port.ListingFilter, error) {
 	// The three filters that are about the caller need to know who that is. An empty page would
 	// answer a different question than the one asked.
@@ -165,40 +166,59 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 		})
 	}
 
-	probe, fromQuery, err := s.probeFor(ctx, req)
-	if err != nil {
-		return port.ListingFilter{}, err
+	if filter.Sort == port.SortRecommended {
+		interests, err := s.repo.Interests(ctx, req.ViewerID.Int64())
+		if err != nil {
+			return port.ListingFilter{}, fmt.Errorf("read interests: %w", err)
+		}
+		filter.Interests = interests
+		filter.Seed = feedSeed(req.Seed, req.ViewerID.Int64(), time.Now())
+		// A recommended feed with nothing computed for the account yet is the newest feed, not
+		// an empty one — the contract says it falls back, which also puts a query back in the
+		// hands of the search below.
+		if len(interests) == 0 {
+			filter.Sort = port.SortNewest
+		}
 	}
-	filter.Probe = probe
-	filter.ProbeFromQuery = fromQuery
-	// A recommended feed with nothing computed for the account yet is the newest feed, not an
-	// empty one — the contract says it falls back.
-	if filter.Sort == port.SortRecommended && filter.Probe == nil {
-		filter.Sort = port.SortNewest
+	// A personalised feed is already ranked, by the account rather than by the words, so a
+	// query alongside it stays what it is: a filter on the name. Embedding it here would set
+	// ProbeFromQuery, and the adapter drops the lexical predicate whenever that is set — so
+	// `q=uniqlo&sort=recommended` would quietly answer the whole personalised feed.
+	if filter.Sort != port.SortRecommended {
+		probe, fromQuery, err := s.probeFor(ctx, req)
+		if err != nil {
+			return port.ListingFilter{}, err
+		}
+		filter.Probe = probe
+		filter.ProbeFromQuery = fromQuery
 	}
 	return filter, nil
 }
 
-// probeFor resolves the dense vector a ranking runs against: the caller's interests for a
-// recommended feed, or the query's embedding for a semantic or hybrid search. The second
-// return says which one it is — a recommended feed's probe has nothing to do with Query,
-// so the adapter must not treat it as satisfying a lexical filter the caller asked for.
+// feedSeed decides which of the many good orderings of a personalised feed this request gets.
+//
+// The caller's own seed is honoured because only they know where one browsing run ends: the
+// ordering has to hold still while they page down, and it has to change when they come back.
+// A client that names none still moves, on a clock rather than on nothing — the alternative
+// is a feed that is identical for ever, which is the complaint that put this here. Scoped to
+// the account so two people never walk through the catalogue in step.
+func feedSeed(sent string, viewerID int64, now time.Time) string {
+	if sent != "" {
+		return sent
+	}
+	return fmt.Sprintf("%d:%d", viewerID, now.Unix()/int64(domain.SeedRotation.Seconds()))
+}
+
+// probeFor resolves the dense vector a search runs against: the query's own embedding, for a
+// semantic or hybrid search. The second return says so, which is what lets the adapter drop
+// the lexical predicate — a personalised feed's probes come from the account instead and never
+// satisfy a filter the caller asked for.
 //
 // Embedding the query is **best-effort**: a model that is down, slow or not deployed at all
 // leaves the probe nil, and the search runs lexically instead of failing. That is the same
 // bargain the rest of the pipeline makes — a listing with no embedding is still findable by
 // name — and it is what keeps the model off the critical path of the busiest route.
 func (s *Service) probeFor(ctx context.Context, req catalogapi.ListListingsRequest) (port.Vector, bool, error) {
-	if req.Sort == port.SortRecommended {
-		vectors, err := s.repo.InterestVectors(ctx, req.ViewerID.Int64())
-		if err != nil {
-			return nil, false, fmt.Errorf("read interest vectors: %w", err)
-		}
-		if len(vectors) == 0 {
-			return nil, false, nil
-		}
-		return vectors[0], false, nil
-	}
 	if req.Query == "" || modeOf(req) == port.ModeLexical {
 		return nil, false, nil
 	}
@@ -292,7 +312,19 @@ func (s *Service) AddFavorite(ctx context.Context, req catalogapi.FavoriteReques
 	if err := s.repo.AddFavorite(ctx, req.ActorID.Int64(), req.ID.Int64()); err != nil {
 		return fmt.Errorf("add favorite: %w", err)
 	}
+	s.refreshInterests(ctx, req.ActorID.Int64())
 	return nil
+}
+
+// refreshInterests folds the wishlist as it now stands back into the account's interest
+// slots, so the next personalised feed reflects what was just saved rather than waiting on a
+// sweep. Best-effort on purpose: the wishlist row is already written, and a ranking that
+// could not be recomputed is a feed a few minutes behind, not a save that failed. The sweep
+// finds the account again either way, since the mark is the wishlist itself.
+func (s *Service) refreshInterests(ctx context.Context, accountID int64) {
+	if err := s.repo.RecomputeInterests(ctx, accountID); err != nil {
+		s.log.Warn("recompute interests", "account_id", accountID, "err", err)
+	}
 }
 
 // RemoveFavorite takes it off the wishlist. It does not check the listing exists: unsaving
@@ -302,5 +334,36 @@ func (s *Service) RemoveFavorite(ctx context.Context, req catalogapi.FavoriteReq
 	if err := s.repo.RemoveFavorite(ctx, req.ActorID.Int64(), req.ID.Int64()); err != nil {
 		return fmt.Errorf("remove favorite: %w", err)
 	}
+	// Unsaving has to reach the slots too, and it is the one change no sweep can find: the row
+	// it would have compared against is gone.
+	s.refreshInterests(ctx, req.ActorID.Int64())
 	return nil
 }
+
+// sweepInterests recomputes the accounts whose slots have fallen behind their wishlist. The
+// same call the wishlist write makes, on the accounts the database says need it — so a pass
+// on a healthy platform reads one query and writes nothing.
+//
+// One summary line per pass rather than one per account: this runs for ever, and an account
+// that fails every time would otherwise bury whatever else the log had to say.
+func sweepInterests(ctx context.Context, repo port.Repository, log *slog.Logger) {
+	accounts, err := repo.StaleInterests(ctx, interestSweepBatch)
+	if err != nil {
+		log.Error("read stale interests", "err", err)
+		return
+	}
+	var failed int
+	for _, accountID := range accounts {
+		if err := repo.RecomputeInterests(ctx, accountID); err != nil {
+			failed++
+		}
+	}
+	if failed > 0 {
+		log.Error("interest recomputes failed", "accounts", failed, "of", len(accounts))
+	}
+}
+
+// interestSweepBatch bounds one pass. A recompute is a handful of vectors averaged in the
+// database, so the cost is the number of accounts and not the size of any one wishlist; the
+// rest are found by the next pass, because nothing clears the mark but the write.
+const interestSweepBatch = 500
