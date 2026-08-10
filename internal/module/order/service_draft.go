@@ -209,6 +209,15 @@ func (s *Service) Checkout(ctx context.Context, req orderapi.CheckoutRequest) (o
 	}
 	// The reserved stock is now on a clock: a checkout nobody pays has to give it back.
 	s.timer("start checkout", s.workflows.StartCheckout(ctx, session.ID.Int64()))
+
+	var variantIDs []int64
+	for _, line := range req.Lines {
+		variantIDs = append(variantIDs, line.VariantID.Int64())
+	}
+	if err := s.repo.DeleteCartItemsByVariants(ctx, req.ActorID.Int64(), variantIDs); err != nil {
+		s.log.Warn("failed to delete cart items after checkout", "account_id", req.ActorID.Int64(), "err", err)
+	}
+
 	return s.checkoutResult(lines, session, fee), nil
 }
 

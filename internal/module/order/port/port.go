@@ -96,6 +96,7 @@ type Repository interface {
 	ListCartItems(ctx context.Context, accountID int64) ([]domain.CartItem, error)
 	SaveCartItem(ctx context.Context, c domain.CartItem) error
 	DeleteCartItem(ctx context.Context, id, accountID int64) error
+	DeleteCartItemsByVariants(ctx context.Context, accountID int64, variantIDs []int64) error
 
 	// --- drafts ---
 	InsertDraft(ctx context.Context, d *domain.Draft) error

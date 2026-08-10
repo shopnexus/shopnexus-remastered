@@ -182,6 +182,19 @@ func (f *fakeRepo) DeleteCartItem(_ context.Context, cartItemID, accountID int64
 	return nil
 }
 
+func (f *fakeRepo) DeleteCartItemsByVariants(_ context.Context, accountID int64, variantIDs []int64) error {
+	variantSet := make(map[int64]bool)
+	for _, vid := range variantIDs {
+		variantSet[vid] = true
+	}
+	for id, c := range f.carts {
+		if c.AccountID == accountID && variantSet[c.VariantID] {
+			delete(f.carts, id)
+		}
+	}
+	return nil
+}
+
 // --- drafts ---
 
 func (f *fakeRepo) InsertDraft(_ context.Context, d *domain.Draft) error {
