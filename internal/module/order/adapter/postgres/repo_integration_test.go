@@ -430,7 +430,7 @@ func TestInsertOffer_OneActivePerBuyerAndVariant(t *testing.T) {
 	}
 
 	// A counter revises the same row, and the terms that come back are the new ones.
-	if err := active.Counter(seller, 1, 90_000, "firm", time.Now(), 48*time.Hour); err != nil {
+	if err := active.Counter(seller, 1, 90_000, 100_000, "firm", time.Now(), 48*time.Hour); err != nil {
 		t.Fatalf("Counter: %v", err)
 	}
 	if err := r.SaveOffer(ctx, active, []string{domain.OfferActive}); err != nil {

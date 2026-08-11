@@ -56,6 +56,11 @@ type NewTerms struct {
 	Quantity  int64
 	Total     int64
 	Reason    string
+	// UnitPrice is what the variant is listed at, and the ceiling the terms have to sit
+	// under. Zero means the caller could not resolve one, and then nothing is enforced —
+	// refusing every offer because a price lookup came back empty would be worse than the
+	// rule it is protecting.
+	UnitPrice int64
 }
 
 // NewOffer opens a negotiation. The buyer starts it — a seller has nobody to propose to on their
@@ -70,10 +75,27 @@ func NewOffer(in NewTerms, window time.Duration) (Offer, error) {
 	if in.BuyerID == in.SellerID {
 		return Offer{}, ErrSellerCannotOffer
 	}
+	if !WithinAsking(in.Quantity, in.Total, in.UnitPrice) {
+		return Offer{}, ErrOfferAboveAsking
+	}
 	if err := validation.Default().Struct(o); err != nil {
 		return Offer{}, validation.AsError(err)
 	}
 	return o, nil
+}
+
+// WithinAsking reports whether terms sit at or under what the listing asks for that quantity.
+//
+// The comparison is on the total rather than on a derived unit price, because the total is
+// what either side actually types and what the escrow will hold — dividing it by the quantity
+// first would let a rounded-down unit price pass a total that is over the line.
+//
+// An unknown asking price (zero) permits everything: see [NewTerms.UnitPrice].
+func WithinAsking(quantity, total, unitPrice int64) bool {
+	if unitPrice <= 0 || quantity <= 0 {
+		return true
+	}
+	return total <= unitPrice*quantity
 }
 
 // Live reports whether the negotiation is still open to a move.
@@ -89,7 +111,11 @@ func (o Offer) Involves(accountID int64) bool {
 // Counter revises the terms and moves authorship. Only the party that does not own the
 // standing proposal may counter, so the two sides alternate and a price on the table is
 // always somebody else's to answer.
-func (o *Offer) Counter(actorID, quantity, total int64, reason string, now time.Time, window time.Duration) error {
+//
+// [unitPrice] is the variant's listed price, and the same ceiling [NewOffer] holds: a counter
+// is the other half of the same negotiation, and a rule enforced only when a case is opened is
+// a rule with one move around it.
+func (o *Offer) Counter(actorID, quantity, total, unitPrice int64, reason string, now time.Time, window time.Duration) error {
 	if err := o.movable(actorID, now); err != nil {
 		return err
 	}
@@ -98,6 +124,9 @@ func (o *Offer) Counter(actorID, quantity, total int64, reason string, now time.
 	}
 	if quantity <= 0 || total <= 0 {
 		return errQuantityPositive
+	}
+	if !WithinAsking(quantity, total, unitPrice) {
+		return ErrOfferAboveAsking
 	}
 	o.AuthorID, o.Quantity, o.Total = actorID, quantity, total
 	if reason != "" {
