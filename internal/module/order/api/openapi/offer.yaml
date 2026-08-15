@@ -22,6 +22,11 @@ paths:
         listing, so they answer rather than start. One active negotiation per (buyer, variant); the
         terms are then revised in place rather than by stacking rows, and each revision posts a card
         into the pair's chat thread.
+
+
+        `total` may not exceed the variant's listed price for that `quantity`. Negotiation only
+        moves the price down: the asking price is already an offer to sell at it, so terms above
+        it are a proposal with no reason to exist — the buyer would simply buy.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -43,6 +48,7 @@ paths:
         '403': { description: 'A seller cannot open a negotiation on their own listing', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'An active negotiation already exists for this (buyer, SKU)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: '`total` is above the listed price for that `quantity`, or the listing is not negotiable', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     get:
       tags: [order]
       summary: List the caller's negotiations, both sides at once
@@ -89,6 +95,12 @@ paths:
         Revises the current terms in place, moves authorship to the caller and posts the new
         card into the thread. Only the party that does not own the standing proposal may
         counter, so the two sides alternate.
+
+
+        A counter may go *up* — that is a seller holding out — but not above the variant's
+        listed price for that `quantity`, the same ceiling opening one has. The price is read
+        when the counter lands, so a seller who lowered their asking price mid-thread has
+        lowered it here too.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -110,6 +122,7 @@ paths:
         '403': { description: 'Caller already owns the standing proposal, or is not a party', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'Negotiation is no longer active', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: '`total` is above the listed price for that `quantity`', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     delete:
       tags: [order]
       summary: Cancel a negotiation

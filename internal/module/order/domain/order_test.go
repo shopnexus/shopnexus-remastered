@@ -263,20 +263,77 @@ func TestRefund_EscalatableStates(t *testing.T) {
 	}
 }
 
+// Negotiation only moves the price down. The asking price is already an offer to sell at it,
+// so terms above it are a proposal with no reason to exist — the buyer would simply buy.
+func TestOffer_NotAboveAskingPrice(t *testing.T) {
+	const buyer, seller = int64(7), int64(8)
+	const asking = int64(100_000)
+
+	terms := func(total int64, quantity int64) domain.NewTerms {
+		return domain.NewTerms{
+			ListingID: 1, VariantID: 2, BuyerID: buyer, SellerID: seller,
+			Quantity: quantity, Total: total, UnitPrice: asking,
+		}
+	}
+
+	if _, err := domain.NewOffer(terms(120_000, 1), time.Hour); !errors.Is(err, domain.ErrOfferAboveAsking) {
+		t.Fatalf("opening above asking = %v, want ErrOfferAboveAsking", err)
+	}
+	// Exactly the asking price is not above it.
+	if _, err := domain.NewOffer(terms(asking, 1), time.Hour); err != nil {
+		t.Fatalf("opening at asking: %v", err)
+	}
+	// The ceiling scales with the quantity, and the comparison is on the total: three units
+	// at the asking price is fine, one đồng more is not.
+	if _, err := domain.NewOffer(terms(3*asking, 3), time.Hour); err != nil {
+		t.Fatalf("opening at asking for three: %v", err)
+	}
+	if _, err := domain.NewOffer(terms(3*asking+1, 3), time.Hour); !errors.Is(err, domain.ErrOfferAboveAsking) {
+		t.Fatalf("opening a đồng above asking for three = %v, want ErrOfferAboveAsking", err)
+	}
+
+	// And the same ceiling on the answer, from the other side: a rule the counter route did
+	// not hold would be one move away from being no rule.
+	o, err := domain.NewOffer(terms(80_000, 1), time.Hour)
+	if err != nil {
+		t.Fatalf("NewOffer: %v", err)
+	}
+	now := time.Now()
+	if err := o.Counter(seller, 1, 120_000, asking, "firm", now, time.Hour); !errors.Is(err, domain.ErrOfferAboveAsking) {
+		t.Fatalf("countering above asking = %v, want ErrOfferAboveAsking", err)
+	}
+	if o.Total != 80_000 || o.AuthorID != buyer {
+		t.Fatalf("offer = %+v, want the refused counter to have changed nothing", o)
+	}
+
+	// An asking price the caller could not resolve enforces nothing, rather than refusing
+	// every negotiation on a listing whose price lookup came back empty.
+	if _, err := domain.NewOffer(domain.NewTerms{
+		ListingID: 1, VariantID: 2, BuyerID: buyer, SellerID: seller,
+		Quantity: 1, Total: 999_000,
+	}, time.Hour); err != nil {
+		t.Fatalf("opening with no known asking price: %v", err)
+	}
+}
+
 // A negotiation alternates: the side holding the standing proposal cannot answer itself, and
 // only the buyer closes it.
 func TestOffer_AlternatesAndOnlyBuyerAccepts(t *testing.T) {
 	const buyer, seller = int64(7), int64(8)
-	o, err := domain.NewOffer(domain.NewTerms{ListingID: 1, VariantID: 2, BuyerID: buyer, SellerID: seller, Quantity: 1, Total: 100_000, Reason: ""}, time.Hour)
+	// The listing asks 150_000; every move below happens under that ceiling.
+	const asking = int64(150_000)
+	o, err := domain.NewOffer(domain.NewTerms{ListingID: 1, VariantID: 2, BuyerID: buyer, SellerID: seller, Quantity: 1, Total: 100_000, Reason: "", UnitPrice: asking}, time.Hour)
 	if err != nil {
 		t.Fatalf("NewOffer: %v", err)
 	}
 	now := time.Now()
 	// The buyer opened it, so answering is the seller's move.
-	if err := o.Counter(buyer, 1, 90_000, "", now, time.Hour); !errors.Is(err, domain.ErrNotYourTurn) {
+	if err := o.Counter(buyer, 1, 90_000, asking, "", now, time.Hour); !errors.Is(err, domain.ErrNotYourTurn) {
 		t.Fatalf("countering one's own = %v, want ErrNotYourTurn", err)
 	}
-	if err := o.Counter(seller, 1, 120_000, "firm", now, time.Hour); err != nil {
+	// A counter may go *up* — that is the seller holding out — as long as it stays at or
+	// under what the listing asks.
+	if err := o.Counter(seller, 1, 120_000, asking, "firm", now, time.Hour); err != nil {
 		t.Fatalf("Counter: %v", err)
 	}
 	if o.AuthorID != seller || o.Total != 120_000 {

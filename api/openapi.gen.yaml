@@ -8971,6 +8971,8 @@ paths:
         post:
             description: |
                 The buyer opens it, from the listing page: a seller has nobody to propose to on their own listing, so they answer rather than start. One active negotiation per (buyer, variant); the terms are then revised in place rather than by stacking rows, and each revision posts a card into the pair's chat thread.
+
+                `total` may not exceed the variant's listed price for that `quantity`. Negotiation only moves the price down: the asking price is already an offer to sell at it, so terms above it are a proposal with no reason to exist — the buyer would simply buy.
             requestBody:
                 content:
                     application/json:
@@ -9007,6 +9009,12 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/Error'
                     description: An active negotiation already exists for this (buyer, SKU)
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: '`total` is above the listed price for that `quantity`, or the listing is not negotiable'
             security:
                 - bearerAuth: []
             summary: Open a price negotiation on a variant
@@ -9067,6 +9075,8 @@ paths:
         patch:
             description: |
                 Revises the current terms in place, moves authorship to the caller and posts the new card into the thread. Only the party that does not own the standing proposal may counter, so the two sides alternate.
+
+                A counter may go *up* — that is a seller holding out — but not above the variant's listed price for that `quantity`, the same ceiling opening one has. The price is read when the counter lands, so a seller who lowered their asking price mid-thread has lowered it here too.
             requestBody:
                 content:
                     application/json:
@@ -9103,6 +9113,12 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/Error'
                     description: Negotiation is no longer active
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: '`total` is above the listed price for that `quantity`'
             security:
                 - bearerAuth: []
             summary: Counter-offer

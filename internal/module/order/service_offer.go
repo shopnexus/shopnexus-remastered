@@ -67,7 +67,7 @@ const (
 // row's, and the message carries only the offer's id so a counter cannot leave an old price
 // on screen.
 func (s *Service) CreateOffer(ctx context.Context, req orderapi.CreateOfferRequest) (orderapi.Offer, error) {
-	listing, _, err := s.variantOf(ctx, req.ActorID, req.VariantID)
+	listing, variant, err := s.variantOf(ctx, req.ActorID, req.VariantID)
 	if err != nil {
 		return orderapi.Offer{}, err
 	}
@@ -88,6 +88,7 @@ func (s *Service) CreateOffer(ctx context.Context, req orderapi.CreateOfferReque
 		Quantity:  req.Quantity,
 		Total:     req.Total,
 		Reason:    req.Reason,
+		UnitPrice: variant.Price,
 	}, offerWindow)
 	if err != nil {
 		return orderapi.Offer{}, err
@@ -179,7 +180,14 @@ func (s *Service) CounterOffer(ctx context.Context, req orderapi.CounterOfferReq
 	if err != nil {
 		return orderapi.Offer{}, err
 	}
-	if err := o.Counter(req.ActorID.Int64(), req.Quantity, req.Total, req.Reason, time.Now(), offerWindow); err != nil {
+	// The ceiling is read now rather than frozen when the negotiation opened: a seller who
+	// drops their asking price mid-thread has lowered it for the counter too, and the row
+	// carries no copy of the price to go stale.
+	_, variant, err := s.variantOf(ctx, req.ActorID, id.Of[id.Variant](o.VariantID))
+	if err != nil {
+		return orderapi.Offer{}, err
+	}
+	if err := o.Counter(req.ActorID.Int64(), req.Quantity, req.Total, variant.Price, req.Reason, time.Now(), offerWindow); err != nil {
 		return orderapi.Offer{}, err
 	}
 	// From `active` only: a counter that read the row before somebody else's acceptance landed

@@ -46,6 +46,13 @@ var (
 	// price; only the buyer turns it into an order, because only the buyer pays.
 	ErrOnlyBuyerCheckout = errx.NewError(http.StatusForbidden, "only_buyer_checkout", "only the buyer checks out agreed terms")
 	ErrFixedPriceListing = errx.NewError(http.StatusUnprocessableEntity, "fixed_price_listing", "this listing is not negotiable")
+	// ErrOfferAboveAsking is terms worth more than the listing asks for that quantity.
+	// Negotiation on this platform only ever moves the price down: the asking price is
+	// already an offer to sell at it, so anything above it is a proposal neither side has
+	// a reason to make — and one nobody would need this route for, since the buyer can
+	// simply buy. Held for both parties, because a seller countering above their own
+	// asking price is the same nonsense from the other end.
+	ErrOfferAboveAsking = errx.NewError(http.StatusUnprocessableEntity, "offer_above_asking", "an offer cannot be above the asking price")
 
 	// --- orders ---
 	ErrOrderNotFound = errx.NewError(http.StatusNotFound, "order_not_found", "order not found")
