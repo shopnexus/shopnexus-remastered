@@ -34,6 +34,7 @@ paths:
                 required: [data]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'The caller is the seller: nobody buys their own listing', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { description: 'Listing not found, deleted, or not active', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     get:
       tags: [order]

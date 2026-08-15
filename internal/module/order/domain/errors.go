@@ -18,6 +18,12 @@ var (
 	ErrDraftSettled      = errx.NewError(http.StatusConflict, "draft_settled", "this purchase session is already cancelled or checked out")
 	ErrPriceMoved        = errx.NewError(http.StatusConflict, "price_moved", "the frozen terms no longer match the listing")
 	ErrCurrencyMismatch  = errx.NewError(http.StatusUnprocessableEntity, "currency_mismatch", "the currency does not match the listing's")
+	// ErrSelfPurchase is a seller buying their own listing. The escrow would move in a circle
+	// and the platform would keep the delivery fee, but the damage is what the completed order
+	// leaves behind: a rating, a review and a sales count for goods that never changed hands.
+	// The negotiation route refuses the same thing under ErrSellerCannotOffer, which is older
+	// and phrased for that route.
+	ErrSelfPurchase = errx.NewError(http.StatusForbidden, "self_purchase", "you cannot buy your own listing")
 	ErrVariantNotInDraft = errx.NewError(http.StatusUnprocessableEntity, "variant_not_in_draft", "that variant is not in this purchase session")
 
 	// --- items ---

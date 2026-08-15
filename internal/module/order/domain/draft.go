@@ -53,6 +53,9 @@ func NewDraft(buyerID int64, snapshot ListingSnapshot, window time.Duration) (Dr
 		Snapshot:   snapshot,
 		ValidUntil: time.Now().Add(window),
 	}
+	if buyerID == snapshot.SellerID {
+		return Draft{}, ErrSelfPurchase
+	}
 	if len(snapshot.Variants) == 0 {
 		return Draft{}, ErrVariantNotInDraft
 	}

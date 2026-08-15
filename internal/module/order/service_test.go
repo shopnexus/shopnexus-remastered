@@ -2,6 +2,7 @@ package order_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -699,6 +700,30 @@ func TestCreateDraft_BuysANegotiableListingOutright(t *testing.T) {
 	}
 	if len(page.Data) != 1 || page.Data[0].DraftID == nil || page.Data[0].OfferID != nil {
 		t.Fatalf("order = %+v, want it to name the draft it came from", page.Data)
+	}
+}
+
+// A seller cannot buy their own listing, on any of the routes that lead to a sale. Trading with
+// yourself sends the escrow in a circle and leaves a completed order behind — which is a rating,
+// a review and a sales count for goods that never changed hands.
+func TestSelfPurchase_RefusedOnEveryBuyingRoute(t *testing.T) {
+	h := newHarness("negotiable")
+	ctx := context.Background()
+	if _, err := h.svc.CreateDraft(ctx, orderapi.CreateDraftRequest{
+		ActorID: seller, ListingID: listingID,
+	}); !errors.Is(err, domain.ErrSelfPurchase) {
+		t.Fatalf("CreateDraft as the seller = %v, want ErrSelfPurchase", err)
+	}
+	if _, err := h.svc.AddCartItem(ctx, orderapi.AddCartItemRequest{
+		ActorID: seller, VariantID: variantID, Quantity: 1,
+	}); !errors.Is(err, domain.ErrSelfPurchase) {
+		t.Fatalf("AddCartItem as the seller = %v, want ErrSelfPurchase", err)
+	}
+	// The negotiation was already closed to them, for the same reason under a different name.
+	if _, err := h.svc.CreateOffer(ctx, orderapi.CreateOfferRequest{
+		ActorID: seller, VariantID: variantID, Quantity: 1, Total: 90_000,
+	}); !errors.Is(err, domain.ErrSellerCannotOffer) {
+		t.Fatalf("CreateOffer as the seller = %v, want ErrSellerCannotOffer", err)
 	}
 }
 

@@ -33,6 +33,12 @@ func (s *Service) AddCartItem(ctx context.Context, req orderapi.AddCartItemReque
 	if err != nil {
 		return orderapi.CartItem{}, err
 	}
+	// A cart is an intention to buy, and buying your own listing is refused at checkout — so it
+	// is refused here, where the seller is still on the listing page and not three screens into
+	// a payment.
+	if listing.Seller.ID == req.ActorID {
+		return orderapi.CartItem{}, domain.ErrSelfPurchase
+	}
 	c, err := domain.NewCartItem(req.ActorID.Int64(), listing.ID.Int64(), req.VariantID.Int64(), req.Quantity)
 	if err != nil {
 		return orderapi.CartItem{}, err

@@ -6532,6 +6532,12 @@ paths:
                     $ref: '#/components/responses/BadRequest'
                 "401":
                     $ref: '#/components/responses/Unauthorized'
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: 'The caller is the seller: nobody buys their own listing'
                 "404":
                     $ref: '#/components/responses/NotFound'
             security:
@@ -7251,6 +7257,12 @@ paths:
                     $ref: '#/components/responses/BadRequest'
                 "401":
                     $ref: '#/components/responses/Unauthorized'
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: 'The caller is the seller: nobody buys their own listing'
                 "404":
                     content:
                         application/json:

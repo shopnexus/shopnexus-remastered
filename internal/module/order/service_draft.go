@@ -111,6 +111,11 @@ func (s *Service) Checkout(ctx context.Context, req orderapi.CheckoutRequest) (o
 	if d.Snapshot.Currency != req.Currency {
 		return orderapi.CheckoutResult{}, domain.ErrCurrencyMismatch
 	}
+	// NewDraft already refuses this, but sessions opened before it did are still in the table
+	// and this is the last gate before the money is asked for.
+	if d.BuyerID == d.Snapshot.SellerID {
+		return orderapi.CheckoutResult{}, domain.ErrSelfPurchase
+	}
 	if _, err := s.courier(ctx, req.TransportOption); err != nil {
 		return orderapi.CheckoutResult{}, err
 	}
