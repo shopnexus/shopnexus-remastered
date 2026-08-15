@@ -33,7 +33,14 @@ func testLocation() *domain.Location {
 
 func newListingFor(t *testing.T, repo *pgadapter.Repo, categoryID int64, name string) *domain.Listing {
 	t.Helper()
-	l, err := domain.NewListing(testSeller, categoryID, domain.NewListingInput{
+	return newListingForSeller(t, repo, testSeller, categoryID, name)
+}
+
+// newListingForSeller is newListingFor with the owner spelled out, for the rules that only
+// show themselves across two sellers.
+func newListingForSeller(t *testing.T, repo *pgadapter.Repo, sellerID, categoryID int64, name string) *domain.Listing {
+	t.Helper()
+	l, err := domain.NewListing(sellerID, categoryID, domain.NewListingInput{
 		Name:        name,
 		Description: "probe",
 		Condition:   domain.ConditionUsed,
@@ -51,7 +58,7 @@ func newListingFor(t *testing.T, repo *pgadapter.Repo, categoryID int64, name st
 	// The service attaches this from the seller's pickup address before publishing, so a listing
 	// that is going live in a test has to carry it too.
 	l.Location = testLocation()
-	if err := repo.CreateListing(context.Background(), l, testSeller); err != nil {
+	if err := repo.CreateListing(context.Background(), l, sellerID); err != nil {
 		t.Fatalf("CreateListing: %v", err)
 	}
 	// The category cleanup is RESTRICTed by this row, so it goes first (cleanups run LIFO).
@@ -188,32 +195,14 @@ func TestRepo_SaveListingSyncsChildren(t *testing.T) {
 	}
 }
 
-// The two structural rules the database owns, seen from Go: two live variants cannot carry
-// the same attributes, and the slug is globally unique.
-func TestRepo_SaveListingRefusesDuplicatesAndSlugs(t *testing.T) {
+// The structural rule the database owns, seen from Go: two live variants cannot carry the
+// same attributes.
+func TestRepo_SaveListingRefusesDuplicateVariants(t *testing.T) {
 	repo := newRepo(t)
 	ctx := context.Background()
 	category := createCategory(t, repo, unique("cat-"), nil)
 	createTag(t, repo, "handmade", nil)
-	name := unique("Listing ")
-	first := newListingFor(t, repo, category.ID, name)
-
-	// The same derived slug twice.
-	again, err := domain.NewListing(7, category.ID, domain.NewListingInput{
-		Name: name, Description: "x", Condition: domain.ConditionUsed,
-		PriceMode: domain.PriceModeFixed,
-		Currency:  "VND",
-		Variants: []domain.NewVariantInput{{
-			Price: 1000, Attributes: map[string]any{"size": "s"},
-			PackageDetails: map[string]any{}, Quantity: 1,
-		}},
-	})
-	if err != nil {
-		t.Fatalf("NewListing: %v", err)
-	}
-	if err := repo.CreateListing(ctx, again, 7); !errors.Is(err, domain.ErrSlugTaken) {
-		t.Fatalf("CreateListing = %v, want ErrSlugTaken", err)
-	}
+	first := newListingFor(t, repo, category.ID, unique("Listing "))
 
 	// A second variant with the first's attributes. Validate catches it before any SQL runs —
 	// which is the point of checking it in the domain — so the index is exercised separately
@@ -230,7 +219,7 @@ func TestRepo_SaveListingRefusesDuplicatesAndSlugs(t *testing.T) {
 	// "variant_listing_id_attributes_key" holds even when a service is wrong: the same
 	// attributes written straight to the table are refused, and that is the violation
 	// insertVariant maps back to ErrDuplicateVariant.
-	_, err = poolOf(t).Exec(ctx,
+	_, err := poolOf(t).Exec(ctx,
 		`INSERT INTO variant (listing_id, price, attributes, package_details)
 		 VALUES ($1, 1000, $2::jsonb, '{}'::jsonb)`,
 		first.ID, `{"size": "l"}`)

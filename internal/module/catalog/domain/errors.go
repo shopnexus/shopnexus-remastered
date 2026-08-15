@@ -35,7 +35,6 @@ var (
 	// retrying the whole command is the right answer and only the caller knows whether
 	// it still wants to.
 	ErrVersionConflict       = errx.NewError(http.StatusConflict, "version_conflict", "this listing changed while you were editing it; try again")
-	ErrSlugTaken             = errx.NewError(http.StatusConflict, "slug_taken", "a listing with this name already exists")
 	ErrInvalidTransition     = errx.NewError(http.StatusConflict, "invalid_transition", "already live or already under moderation")
 	ErrNotAwaitingModeration = errx.NewError(http.StatusConflict, "not_awaiting_moderation", "this listing has nothing awaiting moderation")
 	ErrListingInUse          = errx.NewError(http.StatusConflict, "listing_in_use", "an open order still covers this listing")

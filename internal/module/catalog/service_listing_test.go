@@ -76,17 +76,44 @@ func TestCreateListing(t *testing.T) {
 	}
 }
 
-// The same name twice derives the same slug, which is globally unique: a seller who typed
-// the title twice is told rather than handed a suffixed one.
-func TestCreateListing_DuplicateSlugConflicts(t *testing.T) {
+// A name is not a key. Two listings of the same goods — a seller who deleted one and posted
+// it again, or two sellers offering the same phone — derive the same name slug and are both
+// creatable; the published slug tells them apart because it carries the id.
+func TestCreateListing_TheSameNameTwiceIsTwoListings(t *testing.T) {
 	h := newHarnessWith("user", true)
 	ctx := context.Background()
 	req := createListingRequest(h, t)
-	if _, err := h.svc.CreateListing(ctx, req); err != nil {
+
+	first, err := h.svc.CreateListing(ctx, req)
+	if err != nil {
 		t.Fatalf("first CreateListing: %v", err)
 	}
-	if got := status(t, mustErr(h.svc.CreateListing(ctx, req))); got != 409 {
-		t.Fatalf("status = %d, want 409", got)
+	second, err := h.svc.CreateListing(ctx, req)
+	if err != nil {
+		t.Fatalf("second CreateListing: %v", err)
+	}
+	if first.ID == second.ID {
+		t.Fatal("the second listing reused the first one's id")
+	}
+	if first.Slug == second.Slug {
+		t.Fatalf("both listings published the slug %q, which addresses one of them", first.Slug)
+	}
+}
+
+// The slug a link carries resolves back to the listing it names, which is what lets the read
+// route accept it in place of the opaque id.
+func TestCreateListing_ThePublishedSlugResolvesToTheListing(t *testing.T) {
+	h := newHarnessWith("user", true)
+	got, err := h.svc.CreateListing(context.Background(), createListingRequest(h, t))
+	if err != nil {
+		t.Fatalf("CreateListing: %v", err)
+	}
+	ref, err := catalogapi.ParseListingRef(got.Slug)
+	if err != nil {
+		t.Fatalf("ParseListingRef(%q): %v", got.Slug, err)
+	}
+	if ref != got.ID {
+		t.Fatalf("slug %q resolved to %v, want %v", got.Slug, ref, got.ID)
 	}
 }
 

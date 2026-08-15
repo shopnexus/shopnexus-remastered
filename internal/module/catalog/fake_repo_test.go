@@ -389,10 +389,6 @@ func (f *fakeRepo) CreateListing(_ context.Context, l *domain.Listing, actor int
 	if err := l.Validate(); err != nil {
 		return err
 	}
-	// The slug is globally unique, as "listing_slug_key" is.
-	if slices.ContainsFunc(f.listings, func(s storedListing) bool { return s.listing.Slug == l.Slug }) {
-		return domain.ErrSlugTaken
-	}
 	if _, ok := f.categories[l.CategoryID]; !ok {
 		return domain.ErrCategoryNotFound
 	}

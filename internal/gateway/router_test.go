@@ -131,6 +131,12 @@ func (noopFanout) OnBroadcast(string, func([]byte)) (func(), error) {
 }
 
 func newRouter() (http.Handler, *token.Manager, *session.Store) {
+	return newRouterWithCatalog(stubCat{})
+}
+
+// newRouterWithCatalog is newRouter with the catalog service spelled out, for the tests that
+// assert on what a route handed the service rather than on which status it answered.
+func newRouterWithCatalog(cat catalogapi.Service) (http.Handler, *token.Manager, *session.Store) {
 	v := validation.Default()
 	log := slog.Default()
 	tm := token.NewManager("0123456789012345678901234567890123", time.Hour)
@@ -140,7 +146,7 @@ func newRouter() (http.Handler, *token.Manager, *session.Store) {
 	hub := ws.NewHub(noopFanout{}, log, ws.Config{SendBuffer: 4, MaxPerAccount: 5})
 	return gateway.NewRouter(gateway.Deps{
 		Account:  handler.NewAccount(stubAccount{}, v, log),
-		Catalog:  handler.NewCatalog(stubCat{}, v, log),
+		Catalog:  handler.NewCatalog(cat, v, log),
 		Order:    handler.NewOrder(stubOrder{}, v, log),
 		Chat:     handler.NewChat(stubChat{}, v, log),
 		Finance:  handler.NewFinance(stubPayment{}, v, log),

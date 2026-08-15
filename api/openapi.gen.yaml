@@ -1591,9 +1591,7 @@ components:
                 seller:
                     $ref: '#/components/schemas/AccountSummary'
                 slug:
-                    description: URL-friendly, globally unique and fixed at creation.
-                    example: ao-thun-uniqlo-xanh
-                    type: string
+                    $ref: '#/components/schemas/ListingRef'
                 sold:
                     description: |
                         Completed sales across the variants. An open checkout does not count and a cancelled one never did, so the number only goes up. Read from `cached_sold` on the listing rather than summed per request: a feed page would otherwise aggregate the stock rows of every card on it.
@@ -1719,8 +1717,7 @@ components:
                 seller:
                     $ref: '#/components/schemas/AccountSummary'
                 slug:
-                    example: ao-thun-uniqlo-xanh
-                    type: string
+                    $ref: '#/components/schemas/ListingRef'
                 sold:
                     description: Completed sales across the variants — see Listing.sold.
                     example: 128
@@ -1841,6 +1838,15 @@ components:
                 - data
                 - meta
             type: object
+        ListingRef:
+            description: |
+                The slug a link carries: the listing's name, slugified and frozen at creation, with the listing's id on the end. The text in front is for the person reading the link and is not matched — renaming a listing does not rewrite links already shared, and a stale one still resolves because the id behind the last hyphen is what addresses the listing.
+
+                It never contains an underscore, which is how `GET /listings/{id}` tells it from a `ListingID` and accepts either. A name that slugifies to nothing leaves the id alone.
+            example: ao-thun-uniqlo-xanh-5y5w68r4918v8
+            maxLength: 114
+            pattern: ^([a-z0-9]+(-[a-z0-9]+)*-)?[0-9a-hjkmnp-tv-z]{13}$
+            type: string
         ListingStatus:
             description: |
                 Lifecycle and moderation in one column. `hidden` is a live listing the seller took down for now; deletion is a separate flag entirely.
@@ -7849,12 +7855,6 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/Error'
                     description: Category or tag or image not found
-                "409":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                    description: Slug already taken
                 "422":
                     content:
                         application/json:
@@ -7904,12 +7904,14 @@ paths:
                 A listing that was never public — `draft` or `pending` — is readable only by its owner and by staff. One that is `hidden` or soft-deleted is readable by anyone, because a cart or an order that references it still has to render; `status` and `deleted_at` say that it cannot be bought.
             parameters:
                 - description: |
-                    The listing's opaque id or its slug. A slug is lowercase, hyphen-separated and never contains an underscore, so it cannot be mistaken for an id — but only the id is accepted today; resolving a slug needs a lookup this route does not have yet.
+                    The listing's opaque id or the slug a link carries. A slug is lowercase, hyphen-separated and never contains an underscore, so it cannot be mistaken for an id; it resolves without a lookup, because it carries the id on the end.
                   in: path
                   name: id
                   required: true
                   schema:
-                    $ref: '#/components/schemas/ListingID'
+                    oneOf:
+                        - $ref: '#/components/schemas/ListingID'
+                        - $ref: '#/components/schemas/ListingRef'
             responses:
                 "200":
                     content:
@@ -7934,7 +7936,7 @@ paths:
             description: |
                 An edit to a draft applies immediately. An edit to a live listing that trips the prohibited-goods filter is held as a pending edit and applied only when a moderator approves it, so the version buyers see never changes into unreviewed content.
 
-                The slug is fixed at creation. Renaming a listing leaves it alone: there is no redirect table, so a new slug would only turn every link already shared into a 404, and `GET /listings/{id}` takes the id as well.
+                The slug's readable half is fixed at creation. Renaming a listing leaves it alone, so a link shared before the rename keeps saying what it said then — and it would resolve either way, since the id it carries is what addresses the listing.
             parameters:
                 - description: The opaque id. A write addresses the listing, never its public slug.
                   in: path

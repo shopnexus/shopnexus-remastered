@@ -208,7 +208,7 @@ func (s *Service) detailFor(ctx context.Context, l *domain.Listing, viewerID int
 	out := catalogapi.ListingDetail{
 		Location:       toAPILocation(l.Location, nil),
 		ID:             id.Of[id.Listing](l.ID),
-		Slug:           l.Slug,
+		Slug:           catalogapi.PublicSlug(id.Of[id.Listing](l.ID), l.Slug),
 		Name:           l.Name,
 		Description:    l.Description,
 		Status:         string(l.Status),

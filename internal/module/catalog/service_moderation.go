@@ -58,7 +58,7 @@ func (s *Service) cards(ctx context.Context, rows []port.ListingSummary) ([]cata
 	for _, row := range rows {
 		card := catalogapi.Listing{
 			ID:          id.Of[id.Listing](row.ID),
-			Slug:        row.Slug,
+			Slug:        catalogapi.PublicSlug(id.Of[id.Listing](row.ID), row.Slug),
 			Name:        row.Name,
 			Status:      string(row.Status),
 			Condition:   string(row.Condition),

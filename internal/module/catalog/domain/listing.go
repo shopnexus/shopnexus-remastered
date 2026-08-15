@@ -47,8 +47,8 @@ var (
 	currencyRe = regexp.MustCompile(`^[A-Z]{3}$`)
 )
 
-// errSlugFormat catches a name of only punctuation, which derives an empty slug: the second
-// such listing would otherwise get a confusing slug_taken.
+// errSlugFormat catches a name of only punctuation, which derives an empty slug: the link
+// such a listing publishes would then be a bare id, with nothing in it a person can read.
 var errSlugFormat = errx.NewValidationError("invalid field: name", errx.Field{
 	Field: "name", Rule: "pattern", Message: "must contain at least one letter or digit",
 })

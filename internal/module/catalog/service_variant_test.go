@@ -17,8 +17,8 @@ func seedListing(t *testing.T, h *harness) catalogapi.ListingDetail {
 	return created
 }
 
-// seedListingNamed is the same with a name of its own, for a test that needs two: the slug is
-// derived from the name and is globally unique.
+// seedListingNamed is the same with a name of its own, for a test that needs to tell two
+// listings apart by what they are called rather than by their ids.
 func seedListingNamed(t *testing.T, h *harness, name string) catalogapi.ListingDetail {
 	t.Helper()
 	req := createListingRequest(h, t)

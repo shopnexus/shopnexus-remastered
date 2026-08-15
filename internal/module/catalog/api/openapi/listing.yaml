@@ -205,7 +205,6 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { description: 'Category or tag or image not found', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '409': { description: 'Slug already taken', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '422': { description: 'Identity verification is required before selling', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /listings/uploads:
@@ -279,11 +278,13 @@ paths:
           in: path
           required: true
           description: >
-            The listing's opaque id or its slug. A slug is lowercase, hyphen-separated and
-            never contains an underscore, so it cannot be mistaken for an id — but only the
-            id is accepted today; resolving a slug needs a lookup this route does not have
-            yet.
-          schema: { $ref: '#/components/schemas/ListingID' }
+            The listing's opaque id or the slug a link carries. A slug is lowercase,
+            hyphen-separated and never contains an underscore, so it cannot be mistaken for an
+            id; it resolves without a lookup, because it carries the id on the end.
+          schema:
+            oneOf:
+              - { $ref: '#/components/schemas/ListingID' }
+              - { $ref: '#/components/schemas/ListingRef' }
       description: >
         Carries the variants with their prices and stock and the seller summary.
 
@@ -322,9 +323,9 @@ paths:
         content.
 
 
-        The slug is fixed at creation. Renaming a listing leaves it alone: there is no
-        redirect table, so a new slug would only turn every link already shared into a
-        404, and `GET /listings/{id}` takes the id as well.
+        The slug's readable half is fixed at creation. Renaming a listing leaves it alone, so a
+        link shared before the rename keeps saying what it said then — and it would resolve
+        either way, since the id it carries is what addresses the listing.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -671,12 +672,27 @@ components:
             a position, and absent for an address that was never geocoded.
       required: [province_code, province_name, district_code, district_name, ward_code, ward_name, distance_km]
 
+    ListingRef:
+      type: string
+      pattern: '^([a-z0-9]+(-[a-z0-9]+)*-)?[0-9a-hjkmnp-tv-z]{13}$'
+      maxLength: 114
+      example: ao-thun-uniqlo-xanh-5y5w68r4918v8
+      description: >
+        The slug a link carries: the listing's name, slugified and frozen at creation, with the
+        listing's id on the end. The text in front is for the person reading the link and is not
+        matched — renaming a listing does not rewrite links already shared, and a stale one still
+        resolves because the id behind the last hyphen is what addresses the listing.
+
+
+        It never contains an underscore, which is how `GET /listings/{id}` tells it from a
+        `ListingID` and accepts either. A name that slugifies to nothing leaves the id alone.
+
     Listing:
       type: object
       description: The card shown in a feed. `GET /listings/{id}` returns the full form.
       properties:
         id: { $ref: '#/components/schemas/ListingID' }
-        slug: { type: string, example: ao-thun-uniqlo-xanh, description: 'URL-friendly, globally unique and fixed at creation.' }
+        slug: { $ref: '#/components/schemas/ListingRef' }
         name: { type: string, example: Áo thun Uniqlo cổ tròn xanh navy }
         status: { $ref: '#/components/schemas/ListingStatus' }
         condition: { $ref: '#/components/schemas/ListingCondition' }
@@ -770,7 +786,7 @@ components:
             Where the goods are. Null on a listing that was never published — the address is taken
             when the seller publishes, because that is when it becomes something a buyer can find.
         id: { $ref: '#/components/schemas/ListingID' }
-        slug: { type: string, example: ao-thun-uniqlo-xanh }
+        slug: { $ref: '#/components/schemas/ListingRef' }
         name: { type: string, example: Áo thun Uniqlo cổ tròn xanh navy }
         description: { type: string }
         status: { $ref: '#/components/schemas/ListingStatus' }

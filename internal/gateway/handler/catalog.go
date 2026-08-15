@@ -173,7 +173,10 @@ func (h *Catalog) CreateListing(w http.ResponseWriter, r *http.Request) {
 // GetListing handles GET /listings/{id}. Optional auth: a signed-in viewer also learns
 // whether the listing is on their wishlist.
 func (h *Catalog) GetListing(w http.ResponseWriter, r *http.Request) {
-	listingID, err := pathID[id.Listing](r, "id")
+	// The read route takes either handle: the opaque id an order item references the listing
+	// by, or the public slug a shared link carries. Only reads — a write addresses the
+	// listing by id, so a stale link can never edit whatever now sits behind it.
+	listingID, err := catalogapi.ParseListingRef(r.PathValue("id"))
 	if failed(w, h.log, err) {
 		return
 	}

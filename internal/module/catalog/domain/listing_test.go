@@ -333,8 +333,8 @@ func TestValidate_AnEmptyDraftIsStorable(t *testing.T) {
 	}
 }
 
-// A name of only punctuation derives an empty slug, and the second such listing would get a
-// confusing slug_taken instead of being told about the name.
+// A name of only punctuation derives an empty slug, and the link that listing publishes would
+// then be a bare id — so the name is refused rather than the link being unreadable.
 func TestNewListing_NameMustDeriveASlug(t *testing.T) {
 	in := listingInput()
 	in.Name = "!!! ???"

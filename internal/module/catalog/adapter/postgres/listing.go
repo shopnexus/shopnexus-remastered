@@ -234,9 +234,6 @@ func (r *Repo) CreateListing(ctx context.Context, l *domain.Listing, actor int64
 		           RETURNING id, version, created_at`
 		err := tx.QueryRow(ctx, q, listingArgs(l)).Scan(&l.ID, &l.Version, &l.CreatedAt)
 		if err != nil {
-			if dbx.IsUniqueViolation(err) {
-				return domain.ErrSlugTaken
-			}
 			if dbx.IsRestrictViolation(err) {
 				return domain.ErrCategoryNotFound
 			}
@@ -278,9 +275,6 @@ func (r *Repo) SaveListing(ctx context.Context, l *domain.Listing, actor int64) 
 		           WHERE id = @id AND version = @version AND deleted_at IS NULL`
 		tag, err := tx.Exec(ctx, q, listingArgs(l))
 		if err != nil {
-			if dbx.IsUniqueViolation(err) {
-				return domain.ErrSlugTaken
-			}
 			if dbx.IsRestrictViolation(err) {
 				return domain.ErrCategoryNotFound
 			}
