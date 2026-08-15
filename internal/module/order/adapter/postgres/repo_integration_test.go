@@ -637,13 +637,30 @@ func TestBookTransport_MarksTheParcelAndLeavesTheRetryList(t *testing.T) {
 	}
 	o, _ := placedOrder(t, r)
 
-	// A shipment nobody booked is on the list, once it is past the grace period.
+	// A parcel on a sale the seller has not accepted is nobody's to book: the money created the
+	// order, not the shipment, so the retry list must not hand an unposted parcel to a courier.
 	unbooked, err := r.UnbookedTransports(ctx, time.Now().Add(time.Minute), 200)
 	if err != nil {
 		t.Fatalf("UnbookedTransports: %v", err)
 	}
+	if slices.Contains(unbooked, o.ID) {
+		t.Fatalf("unbooked = %v, want an unconfirmed sale left alone", unbooked)
+	}
+
+	// The seller accepting is what lets the parcel be booked, so a confirmed order whose carrier
+	// never heard about it is on the list, once it is past the grace period.
+	if err := o.Confirm(); err != nil {
+		t.Fatalf("Confirm: %v", err)
+	}
+	if err := r.SaveOrder(ctx, o); err != nil {
+		t.Fatalf("SaveOrder: %v", err)
+	}
+	unbooked, err = r.UnbookedTransports(ctx, time.Now().Add(time.Minute), 200)
+	if err != nil {
+		t.Fatalf("UnbookedTransports: %v", err)
+	}
 	if !slices.Contains(unbooked, o.ID) {
-		t.Fatalf("unbooked = %v, want the order whose parcel no carrier took", unbooked)
+		t.Fatalf("unbooked = %v, want the confirmed order whose parcel no carrier took", unbooked)
 	}
 	// And not before it: a booking still in flight must not be raced.
 	fresh, err := r.UnbookedTransports(ctx, time.Now().Add(-time.Hour), 200)

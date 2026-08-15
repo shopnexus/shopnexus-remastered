@@ -121,6 +121,37 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # --- Demo data (opt-in: `--profile seed`) ---
+  # Run it, do not `up` it:
+  #
+  #   docker compose --profile seed run --rm seed                        # load
+  #   docker compose --profile seed run --rm seed -wipe -yes-i-mean-it   # remove again
+  #
+  # It has to run here rather than on the host for two reasons. The DSNs in config.dev.yml name
+  # `db`, which only resolves inside this network; and the product photographs it draws have to
+  # land in `object-data`, the volume the gateway serves `local` objects from — a host-run seeder
+  # would write them onto the host's disk where nothing can read them back.
+  #
+  # It writes only its own demo data and never the bootstrap rows: no option registry, no
+  # category is ever deleted, and the three accounts the report signs in as are never removed.
+  seed:
+    profiles: ["seed"]
+    build: .
+    # Root for the same reason `mockspec` is: the named volume starts root-owned and the image
+    # is nonroot, so a nonroot seeder cannot create the `seed/` directory it draws into. The
+    # files it writes are world-readable, which is all the gateway needs to serve them.
+    user: "0:0"
+    entrypoint: ["/seed"]
+    environment:
+      CONFIG_FILE: /config.yml
+    volumes:
+      - ./internal/config/config.dev.yml:/config.yml:ro
+      - object-data:/data/objects
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
   # --- Embedding worker (opt-in: `--profile embed`) ---
   # Drains catalog's three stale queues into their vector tables. Its own service and not a
   # goroutine in the gateway: a pass is a batch of model inferences, and the process serving

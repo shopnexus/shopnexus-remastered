@@ -1,0 +1,1818 @@
+{
+  "_comment": "The demo marketplace, written by hand rather than scraped: a Vietnamese C2C site for second-hand goods. Prices are VND in the smallest unit (VND has no minor unit, so the integer is the đồng). Every description is in the voice of the person selling the thing, because that is what a C2C listing reads like and a screenshot of anything else gives the seed away. Nothing here is bootstrap — see cmd/seed/README of the package comment in main.go for the line between the two.",
+  "categories": [
+    {
+      "name": "Điện thoại & Máy tính bảng",
+      "description": "Điện thoại, máy tính bảng và phụ kiện đã qua sử dụng."
+    },
+    {
+      "name": "Laptop & Máy tính",
+      "description": "Laptop, PC, linh kiện và thiết bị ngoại vi."
+    },
+    {
+      "name": "Máy ảnh & Quay phim",
+      "description": "Máy ảnh, ống kính, chân máy và đồ chơi nhiếp ảnh."
+    },
+    {
+      "name": "Âm thanh & Tai nghe",
+      "description": "Loa, tai nghe, ampli và thiết bị âm thanh."
+    },
+    {
+      "name": "Thể thao & Dã ngoại",
+      "description": "Xe đạp, đồ tập, đồ leo núi và cắm trại."
+    },
+    {
+      "name": "Đồ gia dụng",
+      "description": "Bếp, nồi niêu, quạt, máy lọc và đồ dùng trong nhà."
+    },
+    {
+      "name": "Nội thất & Trang trí",
+      "description": "Bàn ghế, kệ, đèn và đồ trang trí nhà cửa."
+    },
+    {
+      "name": "Sách & Văn phòng phẩm",
+      "description": "Sách cũ, truyện, giáo trình và đồ dùng học tập."
+    },
+    {
+      "name": "Thời trang & Phụ kiện",
+      "description": "Quần áo, giày dép, túi xách và đồng hồ."
+    },
+    {
+      "name": "Nhạc cụ",
+      "description": "Guitar, piano, trống và phụ kiện nhạc cụ."
+    },
+    {
+      "name": "Mẹ & Bé",
+      "description": "Xe đẩy, nôi, đồ chơi và đồ dùng cho bé."
+    },
+    {
+      "name": "Xe cộ & Phụ tùng",
+      "description": "Xe máy, xe đạp điện, mũ bảo hiểm và phụ tùng."
+    }
+  ],
+  "listings": [
+    {
+      "seller": "bob_store",
+      "category": "Điện thoại & Máy tính bảng",
+      "photo_subject": "iphone-12",
+      "name": "iPhone 12 64GB bản quốc tế, pin 89%, máy zin chưa bung",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "featured": true,
+      "description": "Mình dùng con này gần hai năm, lên đời nên để lại. Máy quốc tế, iCloud của mình đã đăng xuất sạch, không dính khoá gì cả. Pin còn 89%, dùng một ngày văn phòng vẫn thoải mái, tối về cắm sạc là đủ. Mặt lưng có một vết xước nhỏ ở góc dưới bên trái, đã chụp rõ ở ảnh thứ ba, còn màn hình thì không trầy. Máy chưa từng bung, chưa thay linh kiện, còn nguyên ốc. Tặng kèm ốp và cáp sạc mới, củ sạc thì mình dùng chung nên không có. Bạn qua quán cà phê ở Cầu Giấy test thoải mái, ưng thì lấy, không ưng cũng không sao.",
+      "specifications": {
+        "Hãng": "Apple",
+        "Dòng máy": "iPhone 12",
+        "Bộ nhớ": "64 GB",
+        "Tình trạng pin": "89%",
+        "Phiên bản": "Quốc tế (LL/A)",
+        "Phụ kiện kèm theo": "Ốp lưng, cáp sạc",
+        "Bảo hành": "Hết bảo hành hãng"
+      },
+      "tags": [
+        "dien-thoai",
+        "iphone",
+        "hang-quoc-te",
+        "may-cu"
+      ],
+      "images": 4,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Đen"
+          },
+          "price": 6200000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "bob_store",
+      "category": "Điện thoại & Máy tính bảng",
+      "photo_subject": "galaxy-s21",
+      "name": "Samsung Galaxy S21 5G 128GB, màn không ám, kèm ốp",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Máy của em gái mình, dùng nhẹ nhàng gần một năm rồi chuyển sang iPhone. Màn hình không ám, không đốm, mình đã để nền trắng chụp lại cho bạn xem ở ảnh cuối. Pin chai nhẹ, dùng lướt web nghe nhạc cả ngày vẫn ổn. Máy còn nguyên bản, chưa sửa chữa gì. Giá mình để cứng vì đã tham khảo mấy chỗ rồi, bạn thông cảm nhé. Ship COD toàn quốc, bạn kiểm tra hàng trước khi thanh toán.",
+      "specifications": {
+        "Hãng": "Samsung",
+        "Dòng máy": "Galaxy S21 5G",
+        "Bộ nhớ": "128 GB",
+        "RAM": "8 GB",
+        "Màn hình": "6.2 inch Dynamic AMOLED",
+        "Tình trạng pin": "92%"
+      },
+      "tags": [
+        "dien-thoai",
+        "samsung",
+        "galaxy",
+        "may-cu"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Tím"
+          },
+          "price": 5400000,
+          "quantity": 1
+        },
+        {
+          "attributes": {
+            "Màu sắc": "Xám"
+          },
+          "price": 5300000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "bob_store",
+      "category": "Điện thoại & Máy tính bảng",
+      "photo_subject": "ipad",
+      "name": "iPad Gen 9 64GB WiFi, kèm bao da và bút cảm ứng",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "description": "Mua cho con học online, giờ cháu vào cấp hai dùng laptop nên máy nằm không. Màn còn đẹp, mình dán cường lực từ ngày đầu, bóc ra thì mặt kính vẫn nguyên. Bao da gập ba mảnh và một cây bút cảm ứng loại thường (không phải Apple Pencil) mình tặng kèm luôn. Máy chỉ WiFi, không lắp sim được, bạn xem kỹ giúp mình. Ưu tiên bạn nào ở Hà Nội qua xem trực tiếp.",
+      "specifications": {
+        "Hãng": "Apple",
+        "Dòng máy": "iPad Gen 9 (2021)",
+        "Bộ nhớ": "64 GB",
+        "Kết nối": "Chỉ WiFi",
+        "Màn hình": "10.2 inch Retina",
+        "Phụ kiện kèm theo": "Bao da, bút cảm ứng"
+      },
+      "tags": [
+        "may-tinh-bang",
+        "ipad",
+        "hoc-online"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Bạc"
+          },
+          "price": 4800000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "bob_store",
+      "category": "Laptop & Máy tính",
+      "photo_subject": "macbook-air",
+      "name": "MacBook Air M1 2020 8GB/256GB, sạc 142 lần",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "featured": true,
+      "description": "Máy mình mua cuối 2021 để làm đồ án, giờ đi làm công ty cấp máy nên bán lại. Số lần sạc 142, mình chụp màn hình System Report để ở ảnh thứ tư. Vỏ còn đẹp, chỉ có một vết chạm nhẹ ở cạnh trước bên phải do va vào bàn. Bàn phím và trackpad nguyên bản, chưa thay pin, chưa vào nước. Máy chạy êm, không quạt nên không có tiếng ồn. Có hộp và sạc zin theo máy. Bạn nào lấy mình tặng thêm túi chống sốc.",
+      "specifications": {
+        "Hãng": "Apple",
+        "Dòng máy": "MacBook Air M1 2020",
+        "CPU": "Apple M1 8 nhân",
+        "RAM": "8 GB",
+        "Ổ cứng": "SSD 256 GB",
+        "Màn hình": "13.3 inch Retina",
+        "Số lần sạc": "142",
+        "Phụ kiện kèm theo": "Hộp, sạc zin"
+      },
+      "tags": [
+        "laptop",
+        "macbook",
+        "apple",
+        "sinh-vien"
+      ],
+      "images": 4,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Vàng đồng"
+          },
+          "price": 14500000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "bob_store",
+      "category": "Laptop & Máy tính",
+      "photo_subject": "dell-laptop",
+      "name": "Dell Latitude 5420 i5 gen 11, RAM 16GB, hợp dân văn phòng",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Máy thanh lý từ đợt công ty cũ đổi thiết bị, mình lấy về vệ sinh, thay keo tản nhiệt và test kỹ ba ngày. Vỏ nhựa nhám nên có vài vết bóng ở chỗ kê tay, còn lại đều ổn. Bàn phím gõ êm, có đèn nền. Cổng đầy đủ: HDMI, LAN, USB-C sạc được. Pin còn khoảng 3 tiếng làm việc nhẹ. Máy hợp bạn nào cần một con chạy Word Excel Zoom ổn định, không hợp chơi game. Bảo hành thợ 3 tháng.",
+      "specifications": {
+        "Hãng": "Dell",
+        "Dòng máy": "Latitude 5420",
+        "CPU": "Intel Core i5-1135G7",
+        "RAM": "16 GB DDR4",
+        "Ổ cứng": "SSD NVMe 512 GB",
+        "Màn hình": "14 inch Full HD",
+        "Bảo hành": "3 tháng tại cửa hàng"
+      },
+      "tags": [
+        "laptop",
+        "dell",
+        "van-phong",
+        "thanh-ly"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Cấu hình": "16GB / 512GB"
+          },
+          "price": 8900000,
+          "quantity": 2
+        },
+        {
+          "attributes": {
+            "Cấu hình": "16GB / 1TB"
+          },
+          "price": 10200000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "bob_store",
+      "category": "Laptop & Máy tính",
+      "photo_subject": "monitor",
+      "name": "Màn hình Dell U2419H 24 inch IPS viền mỏng",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Mình gom bộ hai màn cho bàn làm việc, giờ đổi sang một màn siêu rộng nên để lại con này. Tấm nền IPS, màu chuẩn, không điểm chết, không hở sáng. Chân xoay dọc được, nâng hạ độ cao thoải mái. Có dây nguồn và dây DisplayPort đi kèm, không có dây HDMI. Bạn qua nhà mình ở Thanh Xuân cắm thử vào máy của bạn luôn cũng được.",
+      "specifications": {
+        "Hãng": "Dell",
+        "Dòng máy": "UltraSharp U2419H",
+        "Kích thước": "24 inch",
+        "Tấm nền": "IPS",
+        "Độ phân giải": "1920 x 1080",
+        "Cổng kết nối": "HDMI, DisplayPort, USB Hub"
+      },
+      "tags": [
+        "man-hinh",
+        "dell",
+        "van-phong"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Phiên bản": "Kèm chân xoay"
+          },
+          "price": 2350000,
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "seller": "bob_store",
+      "category": "Laptop & Máy tính",
+      "photo_subject": "keyboard",
+      "name": "Bàn phím cơ Keychron K2 v2, switch Gateron nâu",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Phím mình mua hồi làm việc ở nhà, gõ được khoảng một năm. Switch nâu gõ nhẹ, không ồn lắm nên dùng ở văn phòng vẫn được. Keycap còn nguyên chữ, chưa bị mờ. Kết nối được cả Bluetooth lẫn dây, pin trâu. Mình có thay thêm foam ở trong cho tiếng gõ đầm hơn, bạn nào không thích thì tháo ra dễ. Kèm dây USB-C và bộ keycap phím Windows nếu bạn không dùng Mac.",
+      "specifications": {
+        "Hãng": "Keychron",
+        "Model": "K2 version 2",
+        "Switch": "Gateron nâu",
+        "Layout": "75%",
+        "Kết nối": "Bluetooth và USB-C",
+        "Đèn nền": "RGB"
+      },
+      "tags": [
+        "ban-phim-co",
+        "keychron",
+        "phu-kien-may-tinh"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Switch": "Gateron nâu"
+          },
+          "price": 1250000,
+          "quantity": 1
+        },
+        {
+          "attributes": {
+            "Switch": "Gateron đỏ"
+          },
+          "price": 1250000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "huyen_camera",
+      "category": "Máy ảnh & Quay phim",
+      "photo_subject": "mirrorless-cam",
+      "name": "Sony A6400 body, shot count 12k, còn bảo hành hãng",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "featured": true,
+      "description": "Body A6400 mình mua chính hãng tháng 4 năm ngoái, hoá đơn và phiếu bảo hành còn đủ, hết hạn vào tháng 4 sang năm. Shot count 12.480, mình chụp ảnh cưới cuối tuần nên máy chủ yếu nằm trong tủ chống ẩm. Cảm biến sạch, mình vừa mang đi vệ sinh ở trung tâm. Màn lật vẫn chắc, không rơ. Kèm hai pin, sạc đôi và dây đeo zin. Không kèm ống, ống mình bán riêng ở tin bên cạnh. Ở quận 3, bạn qua studio mình bắn thử vài kiểu rồi quyết định.",
+      "specifications": {
+        "Hãng": "Sony",
+        "Dòng máy": "Alpha A6400",
+        "Cảm biến": "APS-C 24.2 MP",
+        "Số lần chụp": "12.480",
+        "Quay phim": "4K 30fps",
+        "Phụ kiện kèm theo": "2 pin, sạc đôi, dây đeo",
+        "Bảo hành": "Chính hãng, còn khoảng 8 tháng"
+      },
+      "tags": [
+        "may-anh",
+        "sony",
+        "mirrorless",
+        "chup-anh"
+      ],
+      "images": 4,
+      "variants": [
+        {
+          "attributes": {
+            "Cấu hình": "Chỉ body"
+          },
+          "price": 13900000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "huyen_camera",
+      "category": "Máy ảnh & Quay phim",
+      "photo_subject": "camera-lens",
+      "name": "Ống kính Sigma 30mm F1.4 DC DN ngàm E, nét căng",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Ống này mình dùng để chụp chân dung ngoài trời, khẩu 1.4 xoá phông rất dịu. Kính trước sau trong, không mốc, không xước, không bụi. Mình luôn để trong tủ chống ẩm 45 độ. Có hood zin và hai nắp. Ngàm E cho Sony APS-C, lắp lên body full-frame sẽ bị crop, bạn lưu ý giúp. Bán vì mình chuyển hẳn sang full-frame.",
+      "specifications": {
+        "Hãng": "Sigma",
+        "Tiêu cự": "30 mm",
+        "Khẩu độ lớn nhất": "F1.4",
+        "Ngàm": "Sony E (APS-C)",
+        "Đường kính filter": "52 mm",
+        "Phụ kiện kèm theo": "Hood, 2 nắp"
+      },
+      "tags": [
+        "ong-kinh",
+        "sigma",
+        "sony-e",
+        "chan-dung"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Ngàm": "Sony E"
+          },
+          "price": 4650000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "huyen_camera",
+      "category": "Máy ảnh & Quay phim",
+      "photo_subject": "fujifilm-cam",
+      "name": "Fujifilm X-T20 kèm kit 15-45mm, màu phim đẹp",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "description": "Con này là máy đầu tay của mình, giữ gìn kỹ nên ngoại hình còn khoảng 92%. Điểm mình thích nhất là màu JPEG ra thẳng từ máy, chụp xong đăng luôn không cần chỉnh. Kèm ống kit 15-45 chống rung, đủ dùng cho du lịch. Pin gốc còn một viên, mình mua thêm một viên lô để dùng kèm. Có thẻ nhớ 32GB tặng kèm. Máy đã hết bảo hành, mình bảo hành riêng cho bạn 1 tháng lỗi do máy.",
+      "specifications": {
+        "Hãng": "Fujifilm",
+        "Dòng máy": "X-T20",
+        "Cảm biến": "APS-C X-Trans III 24.3 MP",
+        "Ống kính kèm theo": "XC 15-45mm F3.5-5.6 OIS",
+        "Phụ kiện kèm theo": "2 pin, sạc, thẻ nhớ 32GB",
+        "Bảo hành": "1 tháng từ người bán"
+      },
+      "tags": [
+        "may-anh",
+        "fujifilm",
+        "mirrorless",
+        "du-lich"
+      ],
+      "images": 4,
+      "variants": [
+        {
+          "attributes": {
+            "Bộ sản phẩm": "Body + kit 15-45"
+          },
+          "price": 9200000,
+          "quantity": 1
+        },
+        {
+          "attributes": {
+            "Bộ sản phẩm": "Chỉ body"
+          },
+          "price": 7400000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "huyen_camera",
+      "category": "Máy ảnh & Quay phim",
+      "photo_subject": "tripod",
+      "name": "Chân máy Manfrotto Befree Advanced, gọn nhẹ đi tour",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Chân nhôm gấp gọn, mình mang theo mấy chuyến Tây Bắc, xếp vào balo vừa vặn. Khoá chân còn chắc, không rơ, ball head xoay mượt. Có túi đựng đi kèm, túi hơi sờn ở quai nhưng vẫn dùng tốt. Chịu được body cộng ống tele tầm 3kg, mình từng gắn A7III với 70-200 vẫn đứng vững. Bán vì mình đổi sang chân carbon nhẹ hơn.",
+      "specifications": {
+        "Hãng": "Manfrotto",
+        "Model": "Befree Advanced",
+        "Chất liệu": "Nhôm",
+        "Chiều cao tối đa": "150 cm",
+        "Trọng lượng": "1.5 kg",
+        "Tải trọng": "8 kg"
+      },
+      "tags": [
+        "chan-may",
+        "manfrotto",
+        "phu-kien-may-anh"
+      ],
+      "images": 2,
+      "variants": [
+        {
+          "attributes": {
+            "Chất liệu": "Nhôm"
+          },
+          "price": 2100000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "huyen_camera",
+      "category": "Âm thanh & Tai nghe",
+      "photo_subject": "microphone",
+      "name": "Micro thu âm Rode NT-USB Mini, dùng quay vlog",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Micro mình mua để thu tiếng cho video hướng dẫn chụp ảnh. Cắm USB là chạy, không cần sound card. Có chân đế nam châm rất tiện, đặt lên bàn không đổ. Tiếng ra ấm, lọc ồn tốt nếu bạn ngồi gần. Còn nguyên hộp, có dây USB-C zin. Mình chuyển sang micro cài áo nên để lại.",
+      "specifications": {
+        "Hãng": "Rode",
+        "Model": "NT-USB Mini",
+        "Kiểu thu": "Cardioid",
+        "Kết nối": "USB-C",
+        "Phụ kiện kèm theo": "Chân đế nam châm, dây USB-C, hộp"
+      },
+      "tags": [
+        "micro",
+        "rode",
+        "thu-am",
+        "vlog"
+      ],
+      "images": 2,
+      "variants": [
+        {
+          "attributes": {
+            "Phiên bản": "Kèm hộp"
+          },
+          "price": 1750000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "tuan_sport",
+      "category": "Thể thao & Dã ngoại",
+      "photo_subject": "bicycle",
+      "name": "Xe đạp thể thao Giant Escape 3 size M, vành 700c",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "featured": true,
+      "description": "Xe mình mua đầu năm ngoái để đi làm, tổng quãng đường khoảng 900km nên xích líp còn rất mới. Khung nhôm size M, hợp bạn cao từ 1m65 đến 1m75. Đã thay lốp mới hồi tháng trước, phanh vành ăn tốt, mình vừa căn lại vành. Có gắn thêm chắn bùn và đèn hậu, bạn không thích thì tháo ra dễ. Xe không có giỏ. Ở Bình Thạnh, bạn qua chạy thử một vòng cho biết.",
+      "specifications": {
+        "Hãng": "Giant",
+        "Model": "Escape 3",
+        "Khung": "Nhôm ALUXX, size M",
+        "Cỡ bánh": "700c",
+        "Số tốc độ": "24 tốc độ",
+        "Phanh": "Phanh vành V-brake",
+        "Quãng đường đã đi": "khoảng 900 km"
+      },
+      "tags": [
+        "xe-dap",
+        "giant",
+        "the-thao",
+        "di-lam"
+      ],
+      "images": 4,
+      "variants": [
+        {
+          "attributes": {
+            "Kích cỡ khung": "M"
+          },
+          "price": 5300000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "tuan_sport",
+      "category": "Thể thao & Dã ngoại",
+      "photo_subject": "dumbbell",
+      "name": "Bộ tạ tay điều chỉnh 24kg, kèm giá đỡ",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Bộ tạ mình sắm hồi giãn cách để tập ở nhà, giờ đăng ký phòng gym nên không dùng nữa. Mỗi bên điều chỉnh từ 2.5kg đến 24kg bằng núm vặn, đổi mức nhanh, không phải tháo bản. Có vài vết trầy sơn ở đĩa ngoài do va chạm lúc đặt xuống sàn, không ảnh hưởng gì. Kèm giá đỡ bằng nhựa cứng. Hàng nặng nên mình ưu tiên bạn tự qua lấy, ship thì phí khá cao.",
+      "specifications": {
+        "Loại": "Tạ tay điều chỉnh",
+        "Khối lượng mỗi bên": "2.5 - 24 kg",
+        "Số lượng": "2 chiếc",
+        "Chất liệu": "Thép bọc nhựa",
+        "Phụ kiện kèm theo": "Giá đỡ"
+      },
+      "tags": [
+        "ta-tay",
+        "gym",
+        "tap-tai-nha"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Bộ sản phẩm": "2 tạ + giá đỡ"
+          },
+          "price": 3200000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "tuan_sport",
+      "category": "Thể thao & Dã ngoại",
+      "photo_subject": "tent",
+      "name": "Lều cắm trại Naturehike Cloud Up 2 người, chống mưa tốt",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Lều mình đi được bốn chuyến, hai chuyến gặp mưa đêm ở Tà Năng mà bên trong vẫn khô. Cọc và dây căng còn đủ, mình có bổ sung thêm bốn cọc nhôm dự phòng. Vải đáy không rách, không thủng. Lều gấp vào túi vừa đúng, nặng khoảng 1.8kg nên vác đi bộ đường dài vẫn chịu được. Mình đã giặt phơi khô trước khi cất.",
+      "specifications": {
+        "Hãng": "Naturehike",
+        "Model": "Cloud Up 2",
+        "Sức chứa": "2 người",
+        "Trọng lượng": "1.8 kg",
+        "Chống nước": "Lớp phủ PU 4000mm",
+        "Phụ kiện kèm theo": "Cọc, dây căng, túi đựng"
+      },
+      "tags": [
+        "leu",
+        "cam-trai",
+        "naturehike",
+        "da-ngoai"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Xanh rêu"
+          },
+          "price": 1450000,
+          "quantity": 1
+        },
+        {
+          "attributes": {
+            "Màu sắc": "Cam"
+          },
+          "price": 1450000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "tuan_sport",
+      "category": "Thể thao & Dã ngoại",
+      "photo_subject": "badminton",
+      "name": "Vợt cầu lông Yonex Astrox 88D Pro, cán còn nguyên",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Vợt mình đánh giải phong trào được nửa năm, khung chưa va lưới lần nào, sơn còn bóng. Mình vừa căng lại dây BG65 ở mức 11kg trước khi đăng bán. Cán quấn hai lớp, bạn nào tay to đánh vừa. Có bao vợt zin. Đây là dòng thiên công, hợp bạn đánh đôi đứng trên. Không phải hàng fake, mình mua ở đại lý chính hãng, có ảnh hoá đơn.",
+      "specifications": {
+        "Hãng": "Yonex",
+        "Model": "Astrox 88D Pro",
+        "Điểm cân bằng": "Nặng đầu",
+        "Độ cứng đũa": "Cứng",
+        "Mức căng dây": "11 kg, dây BG65",
+        "Phụ kiện kèm theo": "Bao vợt"
+      },
+      "tags": [
+        "vot-cau-long",
+        "yonex",
+        "the-thao"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Trọng lượng": "4U"
+          },
+          "price": 2450000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "tuan_sport",
+      "category": "Xe cộ & Phụ tùng",
+      "photo_subject": "helmet",
+      "name": "Mũ bảo hiểm fullface Royal M139, size L",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Mũ mình đội đi phượt được hai chuyến, chưa từng va chạm hay rơi. Lót trong tháo giặt được, mình vừa giặt sạch phơi khô. Kính chắn gió không xước, có kèm thêm một kính đen dự phòng. Size L, vòng đầu khoảng 58-59cm. Bán vì mình mua mũ mới màu hợp xe hơn. Mũ bảo hiểm là đồ bảo hộ nên mình nói rõ: hàng còn tốt, nhưng nếu bạn kỹ tính thì nên cân nhắc mua mới.",
+      "specifications": {
+        "Hãng": "Royal",
+        "Model": "M139",
+        "Kiểu": "Fullface",
+        "Size": "L (58-59 cm)",
+        "Phụ kiện kèm theo": "Kính đen dự phòng",
+        "Chứng nhận": "Đạt QCVN 2:2008/BKHCN"
+      },
+      "tags": [
+        "mu-bao-hiem",
+        "royal",
+        "phuot",
+        "xe-may"
+      ],
+      "images": 2,
+      "variants": [
+        {
+          "attributes": {
+            "Size": "L"
+          },
+          "price": 850000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "linh_home",
+      "category": "Đồ gia dụng",
+      "photo_subject": "air-fryer",
+      "name": "Nồi chiên không dầu Philips HD9200 4.1L, dùng 8 tháng",
+      "condition": "used",
+      "price_mode": "fixed",
+      "featured": true,
+      "description": "Nhà mình hai người, mua nồi này về nấu ăn sáng, dùng khoảng tám tháng thì chuyển sang lò nướng to hơn. Lòng nồi chống dính còn nguyên, mình luôn dùng cọ mềm nên không bị tróc. Đã rửa sạch, khử mùi bằng chanh trước khi chụp ảnh. Nút vặn cơ, không màn hình điện tử nên ít hỏng vặt. Có sách hướng dẫn kèm công thức. Không còn hộp gốc, mình sẽ đóng thùng carton kỹ nếu bạn cần ship.",
+      "specifications": {
+        "Hãng": "Philips",
+        "Model": "HD9200",
+        "Dung tích": "4.1 lít",
+        "Công suất": "1400 W",
+        "Điều khiển": "Núm vặn cơ",
+        "Thời gian sử dụng": "8 tháng"
+      },
+      "tags": [
+        "noi-chien-khong-dau",
+        "philips",
+        "nha-bep"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Dung tích": "4.1 lít"
+          },
+          "price": 1350000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "linh_home",
+      "category": "Đồ gia dụng",
+      "photo_subject": "air-purifier",
+      "name": "Máy lọc không khí Xiaomi Air Purifier 4 Lite, kèm màng mới",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Mình mua hồi mùa nồm năm ngoái cho phòng ngủ 18m2, chạy êm, ban đêm để chế độ ngủ gần như không nghe tiếng. Máy còn nguyên bản, kết nối app Mi Home bình thường. Mình vừa thay màng lọc mới hoàn toàn nên bạn nhận về dùng ngay được cả năm. Bán vì nhà mình chuyển sang chung cư có sẵn hệ thống lọc. Ảnh cuối là hoá đơn mua màng lọc mới.",
+      "specifications": {
+        "Hãng": "Xiaomi",
+        "Model": "Air Purifier 4 Lite",
+        "Diện tích phù hợp": "25 - 40 m2",
+        "Màng lọc": "Mới thay, HEPA H13",
+        "Kết nối": "WiFi, app Mi Home",
+        "Độ ồn": "từ 24 dB"
+      },
+      "tags": [
+        "may-loc-khong-khi",
+        "xiaomi",
+        "gia-dung"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Trắng"
+          },
+          "price": 1650000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "linh_home",
+      "category": "Đồ gia dụng",
+      "photo_subject": "cookware",
+      "name": "Bộ nồi inox 3 đáy Fivestar 3 món, đáy từ",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Bộ nồi này mình được tặng trong đám cưới, dùng chưa nhiều vì nhà mình hay nấu bằng nồi nhỏ. Ba món gồm nồi 16cm, 20cm và chảo 24cm, đủ nắp kính. Đáy từ nên dùng được cả bếp từ lẫn bếp ga. Có vài vết ố nhẹ ở đáy ngoài do nhiệt, đánh giấm là sạch nhưng mình để nguyên cho bạn thấy đúng tình trạng. Không móp méo, nắp kính không nứt.",
+      "specifications": {
+        "Hãng": "Fivestar",
+        "Chất liệu": "Inox 430 ba đáy",
+        "Số món": "3",
+        "Kích cỡ": "Nồi 16cm, nồi 20cm, chảo 24cm",
+        "Loại bếp phù hợp": "Bếp từ, bếp ga, bếp hồng ngoại"
+      },
+      "tags": [
+        "noi-inox",
+        "fivestar",
+        "nha-bep",
+        "bep-tu"
+      ],
+      "images": 2,
+      "variants": [
+        {
+          "attributes": {
+            "Bộ sản phẩm": "3 món"
+          },
+          "price": 720000,
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "seller": "linh_home",
+      "category": "Nội thất & Trang trí",
+      "photo_subject": "desk",
+      "name": "Bàn làm việc gỗ cao su 120x60, chân sắt sơn tĩnh điện",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "description": "Bàn mình đóng riêng hồi làm việc ở nhà, mặt gỗ cao su ghép dày 18mm, phủ dầu lau nên vân gỗ rất đẹp. Chân sắt chữ A tháo rời được, vận chuyển gọn. Mặt bàn có một vết ố nước ở góc phải, mình đã chà và lau dầu lại nên mờ đi nhiều, ảnh thứ ba chụp cận cảnh chỗ đó. Bàn chắc chắn, đặt hai màn hình vẫn không rung. Ở Đà Nẵng, ưu tiên bạn qua chở về vì bàn cồng kềnh.",
+      "specifications": {
+        "Chất liệu mặt": "Gỗ cao su ghép, dày 18 mm",
+        "Chất liệu chân": "Sắt sơn tĩnh điện",
+        "Kích thước": "120 x 60 x 75 cm",
+        "Tháo lắp": "Chân tháo rời được",
+        "Hoàn thiện": "Phủ dầu lau"
+      },
+      "tags": [
+        "ban-lam-viec",
+        "noi-that",
+        "go-cao-su"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Kích thước": "120 x 60 cm"
+          },
+          "price": 1250000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "linh_home",
+      "category": "Nội thất & Trang trí",
+      "photo_subject": "office-chair",
+      "name": "Ghế công thái học Sihoo M57, tựa lưng lưới",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "description": "Ghế mình ngồi làm việc khoảng một năm rưỡi. Lưới lưng còn căng, không võng. Tay vịn nâng hạ được, tựa đầu điều chỉnh cao thấp. Piston nâng hạ vẫn ăn, không bị tụt. Bánh xe mình đã thay bộ mới bằng bánh cao su nên chạy êm trên sàn gỗ, không xước sàn. Vải đệm ngồi có hơi bạc màu ở giữa, đã hút bụi và giặt khô. Bán vì mình đổi sang ghế có kê chân.",
+      "specifications": {
+        "Hãng": "Sihoo",
+        "Model": "M57",
+        "Tựa lưng": "Lưới",
+        "Tựa đầu": "Điều chỉnh được",
+        "Tay vịn": "Nâng hạ 2D",
+        "Tải trọng": "120 kg"
+      },
+      "tags": [
+        "ghe-cong-thai-hoc",
+        "sihoo",
+        "noi-that",
+        "van-phong"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Đen"
+          },
+          "price": 1850000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "linh_home",
+      "category": "Nội thất & Trang trí",
+      "photo_subject": "bookshelf",
+      "name": "Kệ sách gỗ thông 5 tầng, tự lắp ráp",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Kệ gỗ thông nguyên tấm, mình mua ở một xưởng nhỏ chứ không phải hàng ván ép. Năm tầng, mỗi tầng cao 32cm nên để được sách khổ lớn. Đã tháo rời, đóng gói phẳng, bạn nhận về bắt vít lại là xong, có kèm ốc và cờ lê. Gỗ có mắt gỗ tự nhiên, mình thấy đẹp chứ không phải lỗi. Một cạnh tầng dưới cùng bị sứt một mẩu nhỏ do lúc dọn nhà, không ảnh hưởng kết cấu.",
+      "specifications": {
+        "Chất liệu": "Gỗ thông nguyên tấm",
+        "Số tầng": "5",
+        "Kích thước": "80 x 30 x 175 cm",
+        "Tình trạng": "Đã tháo rời, đóng gói phẳng",
+        "Phụ kiện kèm theo": "Ốc vít, cờ lê"
+      },
+      "tags": [
+        "ke-sach",
+        "go-thong",
+        "noi-that"
+      ],
+      "images": 2,
+      "variants": [
+        {
+          "attributes": {
+            "Số tầng": "5 tầng"
+          },
+          "price": 890000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "linh_home",
+      "category": "Mẹ & Bé",
+      "photo_subject": "stroller",
+      "name": "Xe đẩy gấp gọn Aprica Luxuna, gấp một tay",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Xe của bé nhà mình, dùng từ lúc bé 6 tháng đến 2 tuổi. Gấp một tay rất tiện khi bế con, gấp xong đứng được không cần dựa tường. Bánh xe còn êm, khoá bánh ăn. Vải ghế mình đã tháo giặt sạch, có một vết ố nhạt ở chỗ tựa lưng đã cố gắng giặt nhưng không hết hẳn, mình chụp rõ ở ảnh thứ tư. Mái che còn đủ, không rách. Có kèm túi treo đồ.",
+      "specifications": {
+        "Hãng": "Aprica",
+        "Model": "Luxuna",
+        "Độ tuổi phù hợp": "6 tháng - 3 tuổi",
+        "Trọng lượng xe": "5.4 kg",
+        "Gấp gọn": "Gấp một tay, tự đứng",
+        "Phụ kiện kèm theo": "Túi treo đồ"
+      },
+      "tags": [
+        "xe-day",
+        "aprica",
+        "me-va-be"
+      ],
+      "images": 4,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Xám"
+          },
+          "price": 2350000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "sach_cu_hn",
+      "category": "Sách & Văn phòng phẩm",
+      "photo_subject": "book-series",
+      "name": "Trọn bộ Harry Potter 7 tập, bản dịch Lý Lan, bìa mềm",
+      "condition": "used",
+      "price_mode": "fixed",
+      "featured": true,
+      "description": "Bộ này mình sưu tầm dần từ thời cấp ba, đủ bảy tập của Nhà xuất bản Trẻ, bản dịch Lý Lan. Sách đọc rồi nên gáy có nếp gấp, riêng tập 5 bìa hơi cong ở góc. Không có tập nào rách trang hay thiếu trang, mình đã lật kiểm tra từng cuốn. Giấy hơi ngả vàng theo thời gian, đọc vẫn rõ. Bán vì mình chuyển sang bản bìa cứng. Bọc nilon cẩn thận trước khi gửi.",
+      "specifications": {
+        "Tác giả": "J. K. Rowling",
+        "Dịch giả": "Lý Lan",
+        "Nhà xuất bản": "NXB Trẻ",
+        "Số tập": "7",
+        "Loại bìa": "Bìa mềm",
+        "Tình trạng": "Đã đọc, gáy có nếp"
+      },
+      "tags": [
+        "sach-cu",
+        "harry-potter",
+        "van-hoc",
+        "tron-bo"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Bộ sản phẩm": "Trọn bộ 7 tập"
+          },
+          "price": 620000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "sach_cu_hn",
+      "category": "Sách & Văn phòng phẩm",
+      "photo_subject": "paperback",
+      "name": "Nhà Giả Kim - Paulo Coelho, bản in NXB Văn học",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Cuốn này mình đọc hai lần rồi, sách vẫn còn chắc gáy. Có vài dòng mình gạch chân bằng bút chì ở chương giữa, tẩy được nếu bạn không thích. Không quăn mép, không ố. Giá mình để rẻ hơn nhà sách khá nhiều, bạn nào cần đọc chứ không sưu tầm thì rất hợp. Mình gửi qua bưu điện hoặc giao tận nơi trong nội thành Hà Nội đều được.",
+      "specifications": {
+        "Tác giả": "Paulo Coelho",
+        "Nhà xuất bản": "NXB Văn học",
+        "Số trang": "228",
+        "Loại bìa": "Bìa mềm",
+        "Tình trạng": "Đã đọc, có gạch chân bút chì"
+      },
+      "tags": [
+        "sach-cu",
+        "nha-gia-kim",
+        "tieu-thuyet"
+      ],
+      "images": 2,
+      "variants": [
+        {
+          "attributes": {
+            "Loại bìa": "Bìa mềm"
+          },
+          "price": 45000,
+          "quantity": 3
+        }
+      ]
+    },
+    {
+      "seller": "sach_cu_hn",
+      "category": "Sách & Văn phòng phẩm",
+      "photo_subject": "textbook",
+      "name": "Bộ giáo trình Giải tích 1 và 2 - Bách Khoa Hà Nội",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Giáo trình mình học năm nhất, giữ khá cẩn thận. Có ghi chú bài giảng bằng bút bi ở lề, nhiều bạn lại thích cái này vì có thêm ví dụ thầy chữa trên lớp. Không thiếu trang, không rách bìa. Bán lại cho các bạn khoá dưới, giá bằng một phần ba giá bìa. Ai lấy cả hai cuốn mình bớt thêm.",
+      "specifications": {
+        "Môn học": "Giải tích 1, Giải tích 2",
+        "Trường": "Đại học Bách Khoa Hà Nội",
+        "Số cuốn": "2",
+        "Tình trạng": "Có ghi chú bút bi ở lề"
+      },
+      "tags": [
+        "giao-trinh",
+        "sach-cu",
+        "bach-khoa",
+        "sinh-vien"
+      ],
+      "images": 2,
+      "variants": [
+        {
+          "attributes": {
+            "Bộ sản phẩm": "Cả 2 cuốn"
+          },
+          "price": 90000,
+          "quantity": 2
+        },
+        {
+          "attributes": {
+            "Bộ sản phẩm": "Chỉ Giải tích 1"
+          },
+          "price": 55000,
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "seller": "sach_cu_hn",
+      "category": "Sách & Văn phòng phẩm",
+      "photo_subject": "comics",
+      "name": "Combo 12 truyện tranh Doraemon truyện dài, bản cũ",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "description": "Mười hai tập truyện dài Doraemon mình mua từ hồi tiểu học, giữ lại đến giờ. Đây là bản in cũ khổ nhỏ, nhiều bạn sưu tầm hay tìm. Bìa một vài cuốn bạc màu, hai cuốn có ghi tên mình ở trang lót. Ruột sách còn nguyên vẹn, không thiếu trang. Mình liệt kê tên từng tập ở ảnh cuối để bạn kiểm tra xem có trùng bộ đang có không.",
+      "specifications": {
+        "Tác giả": "Fujiko F. Fujio",
+        "Nhà xuất bản": "NXB Kim Đồng",
+        "Số tập": "12",
+        "Khổ sách": "Khổ nhỏ, bản in cũ",
+        "Tình trạng": "Bìa bạc màu, ruột nguyên vẹn"
+      },
+      "tags": [
+        "truyen-tranh",
+        "doraemon",
+        "kim-dong",
+        "suu-tam"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Bộ sản phẩm": "12 tập"
+          },
+          "price": 480000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "sach_cu_hn",
+      "category": "Nhạc cụ",
+      "photo_subject": "guitar",
+      "name": "Đàn guitar acoustic Yamaha F310, đã thay dây mới",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "description": "Đàn của mình từ hồi sinh viên, giờ ít chơi nên để lại cho bạn nào cần tập. Cần đàn thẳng, action thấp vừa phải, bấm không đau tay. Mình vừa thay bộ dây Alice mới và lau chùi lại phím. Thùng đàn có một vết xước dài ở mặt sau do dựng vào tường, không nứt, không ảnh hưởng tiếng. Kèm bao đàn ba lớp, một capo và mấy cái pick. Ở Hà Nội, bạn qua thử đàn thoải mái.",
+      "specifications": {
+        "Hãng": "Yamaha",
+        "Model": "F310",
+        "Loại": "Acoustic dáng D",
+        "Mặt đàn": "Gỗ vân sam",
+        "Dây đàn": "Mới thay, Alice",
+        "Phụ kiện kèm theo": "Bao đàn, capo, pick"
+      },
+      "tags": [
+        "guitar",
+        "yamaha",
+        "nhac-cu",
+        "acoustic"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Vàng gỗ tự nhiên"
+          },
+          "price": 1450000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "khoa_buyer",
+      "category": "Thời trang & Phụ kiện",
+      "photo_subject": "jacket",
+      "name": "Áo khoác gió Uniqlo Blocktech size M, còn chống nước tốt",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Áo mình mua ở Nhật, mặc được hai mùa đông. Lớp chống nước vẫn còn, mưa nhỏ nước đọng thành giọt chứ không thấm. Khoá kéo trơn, mũ tháo rời được. Size M của Nhật, mình cao 1m72 nặng 65kg mặc vừa. Không rách, không sờn cổ tay. Đã giặt sạch, treo phơi khô. Bán vì mình có áo mới màu hợp hơn.",
+      "specifications": {
+        "Hãng": "Uniqlo",
+        "Dòng sản phẩm": "Blocktech Parka",
+        "Size": "M (chuẩn Nhật)",
+        "Chất liệu": "Vải tổng hợp chống gió, chống nước",
+        "Mũ": "Tháo rời được"
+      },
+      "tags": [
+        "ao-khoac",
+        "uniqlo",
+        "thoi-trang-nam"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Size": "M"
+          },
+          "price": 480000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "khoa_buyer",
+      "category": "Thời trang & Phụ kiện",
+      "photo_subject": "watch",
+      "name": "Đồng hồ Casio MTP-1374 mặt trắng, dây thép",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Đồng hồ mình đeo đi học, chạy chuẩn, chưa phải thay pin lần nào từ lúc mua cách đây một năm rưỡi. Mặt kính không xước, dây thép có vài vết mờ ở mắt dây do đeo hằng ngày. Đã tháo bớt hai mắt cho cổ tay 16cm, mình vẫn giữ hai mắt đó và gửi kèm cho bạn. Không có hộp. Bán vì mình được tặng đồng hồ khác.",
+      "specifications": {
+        "Hãng": "Casio",
+        "Model": "MTP-1374",
+        "Đường kính mặt": "42 mm",
+        "Chất liệu dây": "Thép không gỉ",
+        "Chống nước": "5 ATM",
+        "Phụ kiện kèm theo": "2 mắt dây đã tháo"
+      },
+      "tags": [
+        "dong-ho",
+        "casio",
+        "phu-kien"
+      ],
+      "images": 2,
+      "variants": [
+        {
+          "attributes": {
+            "Màu mặt": "Trắng"
+          },
+          "price": 620000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "khoa_buyer",
+      "category": "Âm thanh & Tai nghe",
+      "photo_subject": "headphones",
+      "name": "Tai nghe Sony WH-1000XM4, chống ồn còn nhạy",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "description": "Tai nghe mình mua để đi máy bay và ngồi quán cà phê làm việc. Chống ồn vẫn ăn, bật lên là tiếng điều hoà biến mất. Đệm tai còn mềm, chưa bong tróc, mình luôn cất trong hộp cứng. Pin đầy dùng được khoảng 25 tiếng. Có hộp đựng, dây 3.5mm và dây sạc. Bán vì mình chuyển sang tai in-ear cho gọn. Ưu tiên giao tận tay ở Hà Nội để bạn nghe thử.",
+      "specifications": {
+        "Hãng": "Sony",
+        "Model": "WH-1000XM4",
+        "Kiểu": "Over-ear, chụp tai",
+        "Chống ồn": "Chủ động, còn hoạt động tốt",
+        "Thời lượng pin": "khoảng 25 giờ",
+        "Phụ kiện kèm theo": "Hộp cứng, dây 3.5mm, cáp sạc"
+      },
+      "tags": [
+        "tai-nghe",
+        "sony",
+        "chong-on",
+        "am-thanh"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Đen"
+          },
+          "price": 4200000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "minh_pham",
+      "category": "Âm thanh & Tai nghe",
+      "photo_subject": "speaker",
+      "name": "Loa Marshall Emberton II, pin trâu, tiếng dày",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Loa mình mang theo mấy chuyến cắm trại, tiếng to hơn kích thước của nó nhiều. Vỏ lưới có bám chút bụi ở khe, mình đã dùng cọ mềm chải sạch. Pin còn tốt, mở vừa nghe được cả buổi tối. Chống nước IP67 nên để ngoài trời gặp mưa nhỏ không sao. Có dây sạc USB-C, không còn hộp. Bán vì mình mua con to hơn.",
+      "specifications": {
+        "Hãng": "Marshall",
+        "Model": "Emberton II",
+        "Công suất": "20 W",
+        "Thời lượng pin": "khoảng 30 giờ",
+        "Chống nước": "IP67",
+        "Kết nối": "Bluetooth 5.1"
+      },
+      "tags": [
+        "loa-bluetooth",
+        "marshall",
+        "am-thanh",
+        "da-ngoai"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Đen đồng"
+          },
+          "price": 2650000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "minh_pham",
+      "category": "Điện thoại & Máy tính bảng",
+      "photo_subject": "android-phone",
+      "name": "Xiaomi Redmi Note 12 128GB, máy phụ ít dùng",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Máy mình mua làm máy phụ nghe gọi, dùng chưa tới sáu tháng nên còn rất mới. Màn AMOLED sáng đẹp, không điểm chết. Pin 5000mAh dùng hai ngày mới phải sạc. Còn nguyên hộp, sạc và cáp zin, có cả ốp trong suốt theo máy. Bảo hành hãng còn tới tháng 11 năm nay, mình gửi kèm ảnh phiếu bảo hành. Không bán trả góp, không giao lưu.",
+      "specifications": {
+        "Hãng": "Xiaomi",
+        "Dòng máy": "Redmi Note 12",
+        "Bộ nhớ": "128 GB",
+        "RAM": "6 GB",
+        "Pin": "5000 mAh",
+        "Bảo hành": "Chính hãng, còn đến tháng 11"
+      },
+      "tags": [
+        "dien-thoai",
+        "xiaomi",
+        "redmi",
+        "may-phu"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Xanh"
+          },
+          "price": 3150000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "minh_pham",
+      "category": "Xe cộ & Phụ tùng",
+      "photo_subject": "ebike",
+      "name": "Xe đạp điện Yadea iGo, pin còn khoẻ, đi được 45km",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "description": "Xe mình mua cho con đi học, giờ cháu lên đại học đi xa nên chuyển sang xe máy. Pin lithium còn khoẻ, sạc đầy đi được khoảng 45km đường bằng. Phanh đĩa trước sau đều ăn, mình vừa thay má phanh. Yếm xe có một vết nứt nhỏ ở góc dưới do va vào bậc, đã chụp rõ. Có sạc zin và hai chìa khoá. Giấy tờ xe đầy đủ. Ở Cần Thơ, bạn qua chạy thử.",
+      "specifications": {
+        "Hãng": "Yadea",
+        "Model": "iGo",
+        "Loại pin": "Lithium",
+        "Quãng đường mỗi lần sạc": "khoảng 45 km",
+        "Phanh": "Đĩa trước và sau",
+        "Giấy tờ": "Đầy đủ hoá đơn và phiếu bảo hành"
+      },
+      "tags": [
+        "xe-dap-dien",
+        "yadea",
+        "hoc-sinh",
+        "xe-co"
+      ],
+      "images": 4,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Trắng xanh"
+          },
+          "price": 6800000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "minh_pham",
+      "category": "Nhạc cụ",
+      "photo_subject": "digital-piano",
+      "name": "Đàn piano điện Yamaha P-45, 88 phím nặng",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "description": "Đàn mình mua cho con học, học hết hai năm thì cháu chuyển sang violin. 88 phím có cảm ứng lực, nặng gần giống piano cơ, hợp bạn nào học nghiêm túc chứ không phải đàn đồ chơi. Phím còn đều, không có phím nào kêu lạo xạo hay bị lún. Kèm chân chữ X, pedal và giá để bản nhạc. Không kèm ghế. Hàng cồng kềnh, mình ưu tiên bạn tự qua chở, hoặc mình hỗ trợ gọi xe ba gác.",
+      "specifications": {
+        "Hãng": "Yamaha",
+        "Model": "P-45",
+        "Số phím": "88 phím nặng (GHS)",
+        "Số âm sắc": "10",
+        "Phụ kiện kèm theo": "Chân chữ X, pedal, giá nhạc",
+        "Nguồn": "Adapter đi kèm"
+      },
+      "tags": [
+        "piano-dien",
+        "yamaha",
+        "nhac-cu",
+        "hoc-dan"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Đen"
+          },
+          "price": 8200000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "thao_le",
+      "category": "Thời trang & Phụ kiện",
+      "photo_subject": "handbag",
+      "name": "Túi xách nữ Charles & Keith dáng tote, da PU",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Túi mình mua ở store Singapore, xách đi làm khoảng nửa năm. Da PU còn căng, không bong tróc, đáy túi không xô lệch. Có một vết xước nhỏ ở mặt sau gần đáy, phải nhìn kỹ mới thấy, mình chụp cận ở ảnh ba. Lót trong sạch, không dính mực. Đựng vừa laptop 13 inch và một cuốn sổ. Kèm túi bụi. Bán vì mình đổi sang túi nhỏ hơn.",
+      "specifications": {
+        "Hãng": "Charles & Keith",
+        "Kiểu dáng": "Tote",
+        "Chất liệu": "Da PU",
+        "Kích thước": "34 x 27 x 12 cm",
+        "Phụ kiện kèm theo": "Túi bụi"
+      },
+      "tags": [
+        "tui-xach",
+        "charles-keith",
+        "thoi-trang-nu"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Nâu bò"
+          },
+          "price": 620000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "thao_le",
+      "category": "Thời trang & Phụ kiện",
+      "photo_subject": "running-shoes",
+      "name": "Giày chạy bộ Nike Pegasus 39 size 39, đế còn gai",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Giày mình chạy khoảng 200km, chủ yếu trên đường nhựa công viên. Đế ngoài còn gai rõ, chưa mòn tới lớp đệm. Phần upper sạch, mình giặt tay và phơi bóng râm. Lót giày mình đã thay mới hoàn toàn trước khi bán. Size 39 nữ, dài lòng trong 24.5cm. Bán vì chân mình lên size sau khi sinh em bé. Không có hộp.",
+      "specifications": {
+        "Hãng": "Nike",
+        "Model": "Air Zoom Pegasus 39",
+        "Size": "39 (lòng trong 24.5 cm)",
+        "Quãng đường đã chạy": "khoảng 200 km",
+        "Tình trạng": "Đế còn gai, lót mới thay"
+      },
+      "tags": [
+        "giay-chay-bo",
+        "nike",
+        "the-thao",
+        "thoi-trang-nu"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Size": "39"
+          },
+          "price": 890000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "thao_le",
+      "category": "Mẹ & Bé",
+      "photo_subject": "breast-pump",
+      "name": "Máy hút sữa điện đôi Medela Swing Maxi, kèm phụ kiện mới",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Máy mình dùng trong sáu tháng đầu sau sinh. Động cơ chạy êm, lực hút vẫn mạnh, mình test lại trước khi đăng. Toàn bộ phụ kiện tiếp xúc với sữa gồm phễu, van và túi trữ mình đã bỏ và mua bộ mới nguyên seal cho bạn, vì đây là đồ vệ sinh cá nhân. Máy có hộp, sách hướng dẫn và adapter zin. Bán lại đúng giá mình muốn, không mặc cả nhé.",
+      "specifications": {
+        "Hãng": "Medela",
+        "Model": "Swing Maxi",
+        "Kiểu": "Điện đôi",
+        "Phụ kiện": "Bộ phễu và van mới nguyên seal",
+        "Phụ kiện kèm theo": "Hộp, adapter, sách hướng dẫn"
+      },
+      "tags": [
+        "may-hut-sua",
+        "medela",
+        "me-va-be"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Bộ sản phẩm": "Máy + phụ kiện mới"
+          },
+          "price": 2450000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "thao_le",
+      "category": "Đồ gia dụng",
+      "photo_subject": "espresso",
+      "name": "Máy pha cà phê Delonghi Dedica EC685, kèm tay pha",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "description": "Máy mình pha cà phê mỗi sáng trong khoảng một năm. Đã vệ sinh cặn vôi định kỳ ba tháng một lần bằng dung dịch chuyên dụng, mình giữ hoá đơn mua dung dịch. Vòi đánh sữa vẫn ra hơi mạnh, đánh được foam mịn. Tay pha có kèm hai giỏ lọc một và hai phin. Vỏ inox có vài vết vân tay khó lau hết, không móp. Không kèm máy xay.",
+      "specifications": {
+        "Hãng": "Delonghi",
+        "Model": "Dedica EC685",
+        "Áp suất": "15 bar",
+        "Dung tích bình nước": "1.1 lít",
+        "Phụ kiện kèm theo": "Tay pha, 2 giỏ lọc, thìa nén",
+        "Bảo dưỡng": "Đã tẩy cặn định kỳ"
+      },
+      "tags": [
+        "may-pha-ca-phe",
+        "delonghi",
+        "espresso",
+        "gia-dung"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Bạc"
+          },
+          "price": 3350000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "duc_tran",
+      "category": "Laptop & Máy tính",
+      "photo_subject": "gaming-pc",
+      "name": "PC gaming cũ i5-10400F, RTX 3060, chơi tốt game phổ thông",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "featured": true,
+      "description": "Cấu hình mình build cuối 2021, dùng chơi game và dựng video nhẹ. Card RTX 3060 12GB mình mua mới, không phải card đào, mình có hoá đơn. Máy chạy mát, mình vừa vệ sinh và thay keo. Vỏ case có kính cường lực, hai quạt LED. Không kèm màn hình, phím chuột. Bạn qua nhà mình ở Thủ Đức chạy thử game rồi hãy chốt, mình không ngại bật máy cả buổi.",
+      "specifications": {
+        "CPU": "Intel Core i5-10400F",
+        "Card đồ hoạ": "NVIDIA RTX 3060 12GB",
+        "RAM": "16 GB DDR4 3200MHz",
+        "Ổ cứng": "SSD NVMe 500GB + HDD 1TB",
+        "Nguồn": "Corsair 650W 80 Plus Bronze",
+        "Tình trạng": "Đã vệ sinh, thay keo tản nhiệt"
+      },
+      "tags": [
+        "pc-gaming",
+        "rtx-3060",
+        "may-tinh-de-ban"
+      ],
+      "images": 4,
+      "variants": [
+        {
+          "attributes": {
+            "Cấu hình": "i5-10400F / RTX 3060"
+          },
+          "price": 12500000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "duc_tran",
+      "category": "Laptop & Máy tính",
+      "photo_subject": "ssd",
+      "name": "Ổ cứng di động Samsung T7 1TB, tốc độ còn chuẩn",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Ổ mình dùng để lưu dự án dựng phim, đọc ghi vẫn đạt tốc độ công bố, mình có chụp ảnh kết quả test tốc độ. Vỏ nhôm có vài vết xước nhẹ do bỏ chung túi với chìa khoá. Không rơi, không va đập mạnh. Có dây USB-C sang C và C sang A. Mình đã format sạch trước khi bán. Còn bảo hành hãng đến tháng 3 sang năm.",
+      "specifications": {
+        "Hãng": "Samsung",
+        "Model": "Portable SSD T7",
+        "Dung lượng": "1 TB",
+        "Tốc độ đọc": "khoảng 1000 MB/s",
+        "Kết nối": "USB 3.2 Gen 2 Type-C",
+        "Bảo hành": "Chính hãng đến tháng 3 năm sau"
+      },
+      "tags": [
+        "o-cung-di-dong",
+        "samsung",
+        "ssd",
+        "luu-tru"
+      ],
+      "images": 2,
+      "variants": [
+        {
+          "attributes": {
+            "Dung lượng": "1 TB"
+          },
+          "price": 1650000,
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "seller": "duc_tran",
+      "category": "Thể thao & Dã ngoại",
+      "photo_subject": "skateboard",
+      "name": "Ván trượt Penny 22 inch, bánh êm chạy đường nhựa",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Ván mình mua tập chơi hồi hè, chạy được vài buổi rồi bận nên cất. Mặt ván nhựa còn nguyên gai chống trượt, chưa nứt. Bánh nhựa dẻo chạy êm trên đường nhựa, ổ bi ABEC-7 quay mượt. Trục xe mình đã siết lại. Có một vết xước dài dưới bụng ván do trượt lề, chỉ là xước bề mặt. Hợp bạn mới tập, ván ngắn dễ mang theo.",
+      "specifications": {
+        "Loại": "Penny board 22 inch",
+        "Chất liệu mặt ván": "Nhựa",
+        "Ổ bi": "ABEC-7",
+        "Tải trọng": "80 kg",
+        "Tình trạng": "Xước bề mặt dưới bụng ván"
+      },
+      "tags": [
+        "van-truot",
+        "penny",
+        "the-thao"
+      ],
+      "images": 2,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Xanh pastel"
+          },
+          "price": 450000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "nga_vo",
+      "category": "Đồ gia dụng",
+      "photo_subject": "vacuum",
+      "name": "Máy hút bụi cầm tay Xiaomi Mijia 1C, lực hút còn mạnh",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Máy mình dùng hút sofa và khe ghế ô tô, khoảng một năm. Lực hút còn mạnh, mình vừa rửa lọc HEPA và phơi khô. Pin đầy dùng được khoảng 25 phút ở mức thường. Có đủ ba đầu hút: đầu dẹt, đầu chổi và đầu giường. Thân máy có vết ố nhẹ ở chỗ tay cầm do mồ hôi. Bán vì nhà mình mua robot hút bụi.",
+      "specifications": {
+        "Hãng": "Xiaomi",
+        "Model": "Mijia 1C",
+        "Kiểu": "Cầm tay không dây",
+        "Thời lượng pin": "khoảng 25 phút",
+        "Lọc": "HEPA, rửa được",
+        "Phụ kiện kèm theo": "3 đầu hút"
+      },
+      "tags": [
+        "may-hut-bui",
+        "xiaomi",
+        "gia-dung"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Trắng"
+          },
+          "price": 980000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "nga_vo",
+      "category": "Nội thất & Trang trí",
+      "photo_subject": "desk-lamp",
+      "name": "Đèn bàn Xiaomi Mi LED Desk Lamp 1S, chỉnh màu ánh sáng",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Đèn mình để bàn học của con, ánh sáng không nhấp nháy, đọc lâu không mỏi mắt. Chỉnh được cả độ sáng lẫn nhiệt màu bằng núm xoay, kết nối app cũng được. Chân đế nặng nên không đổ. Cần đèn gập hai khớp còn chắc, không bị rơ. Dây nguồn nguyên vẹn. Có hộp gốc. Bán vì bàn học mới đã có đèn gắn sẵn.",
+      "specifications": {
+        "Hãng": "Xiaomi",
+        "Model": "Mi LED Desk Lamp 1S",
+        "Công suất": "9 W",
+        "Nhiệt màu": "2700K - 6500K",
+        "Điều khiển": "Núm xoay và app Mi Home",
+        "Phụ kiện kèm theo": "Hộp gốc, adapter"
+      },
+      "tags": [
+        "den-ban",
+        "xiaomi",
+        "hoc-tap",
+        "noi-that"
+      ],
+      "images": 2,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Trắng"
+          },
+          "price": 420000,
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "seller": "nga_vo",
+      "category": "Mẹ & Bé",
+      "photo_subject": "high-chair",
+      "name": "Ghế ăn dặm gỗ Mastela, gấp gọn được",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Ghế gỗ chắc chắn, bé nhà mình ngồi từ 7 tháng đến 2 tuổi. Khay ăn tháo rời rửa được, mình đã cọ sạch các khe. Đai an toàn năm điểm còn nguyên, khoá bấm chắc. Chân ghế có bốn miếng đệm cao su chống trượt, mình thay mới. Gỗ có vài vết răng bé cắn ở tay vịn, mình đã chà nhám cho nhẵn lại. Gấp gọn dựng vào góc nhà không chiếm chỗ.",
+      "specifications": {
+        "Hãng": "Mastela",
+        "Chất liệu": "Gỗ tự nhiên",
+        "Độ tuổi phù hợp": "6 tháng - 3 tuổi",
+        "Đai an toàn": "5 điểm",
+        "Gấp gọn": "Có"
+      },
+      "tags": [
+        "ghe-an-dam",
+        "mastela",
+        "me-va-be"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Gỗ tự nhiên"
+          },
+          "price": 680000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "nga_vo",
+      "category": "Thời trang & Phụ kiện",
+      "photo_subject": "ao-dai",
+      "name": "Áo dài truyền thống lụa tơ tằm, may đo size S",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Áo dài mình may đo ở Hội An bằng lụa tơ tằm, chỉ mặc đúng hai lần chụp ảnh Tết. Màu xanh ngọc, thêu tay hoa sen nhỏ ở tà trước. Số đo của mình là cao 1m58, nặng 47kg, vòng ngực 82, eo 64, mông 88. Đã giặt khô, treo trong túi vải. Không kèm quần. Bán vì mình không có dịp mặc lại, tiếc để trong tủ.",
+      "specifications": {
+        "Chất liệu": "Lụa tơ tằm",
+        "Kiểu": "Áo dài truyền thống, may đo",
+        "Size tương đương": "S (cao 1m58, nặng 47kg)",
+        "Chi tiết": "Thêu tay hoa sen ở tà trước",
+        "Tình trạng": "Mặc 2 lần, đã giặt khô"
+      },
+      "tags": [
+        "ao-dai",
+        "lua-to-tam",
+        "thoi-trang-nu",
+        "tet"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Size": "S"
+          },
+          "price": 1250000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "nga_vo",
+      "category": "Sách & Văn phòng phẩm",
+      "photo_subject": "ereader",
+      "name": "Máy đọc sách Kindle Paperwhite gen 10, chống nước",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "description": "Kindle mình dùng đọc trước khi ngủ, khoảng hai năm. Màn e-ink không xước, đèn nền sáng đều, không ám vàng một góc. Pin vẫn dùng được hai đến ba tuần mỗi lần sạc nếu đọc mỗi ngày một tiếng. Máy đã đăng xuất tài khoản Amazon, bạn nhận về đăng nhập tài khoản của mình là dùng ngay. Có bao da nam châm tự tắt màn. Không còn hộp.",
+      "specifications": {
+        "Hãng": "Amazon",
+        "Model": "Kindle Paperwhite gen 10",
+        "Màn hình": "6 inch e-ink 300ppi",
+        "Bộ nhớ": "8 GB",
+        "Chống nước": "IPX8",
+        "Phụ kiện kèm theo": "Bao da nam châm"
+      },
+      "tags": [
+        "kindle",
+        "may-doc-sach",
+        "amazon"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Bộ nhớ": "8 GB"
+          },
+          "price": 1850000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "an_nguyen",
+      "category": "Điện thoại & Máy tính bảng",
+      "photo_subject": "iphone-13",
+      "name": "iPhone 13 Pro 256GB, máy đẹp 98%, pin 91%",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "description": "Máy mình dùng từ lúc mới ra, luôn ốp và dán, nên ngoại hình còn khoảng 98%, chỉ có một vết xước tóc ở cạnh viền dưới. Pin 91%, chưa thay. Face ID, camera ba ống, mọi chức năng hoạt động bình thường, mình quay video test gửi riêng cho bạn nào quan tâm. Máy chưa bung, chưa sửa. Có hộp và cáp. Bán vì mình chuyển sang Android cho hợp công việc.",
+      "specifications": {
+        "Hãng": "Apple",
+        "Dòng máy": "iPhone 13 Pro",
+        "Bộ nhớ": "256 GB",
+        "Tình trạng pin": "91%",
+        "Ngoại hình": "khoảng 98%",
+        "Phụ kiện kèm theo": "Hộp, cáp Lightning"
+      },
+      "tags": [
+        "dien-thoai",
+        "iphone",
+        "iphone-13-pro",
+        "may-cu"
+      ],
+      "images": 4,
+      "variants": [
+        {
+          "attributes": {
+            "Màu sắc": "Xanh Sierra"
+          },
+          "price": 13200000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "an_nguyen",
+      "category": "Máy ảnh & Quay phim",
+      "photo_subject": "action-cam",
+      "name": "GoPro Hero 9 Black kèm 2 pin và gậy tự sướng",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Máy mình mang đi lặn biển ở Phú Quốc và chạy xe đường dài. Vỏ có vài vết xước nhỏ ở cạnh, kính trước mình đã thay mới nên trong veo. Chống nước vẫn kín, mình test trong chậu nước trước khi đăng. Hai pin còn tốt, một pin zin một pin Telesin. Kèm gậy tự sướng ba chân và thẻ nhớ 64GB. Không còn hộp gốc.",
+      "specifications": {
+        "Hãng": "GoPro",
+        "Model": "Hero 9 Black",
+        "Quay phim": "5K 30fps",
+        "Chống nước": "10 m không cần vỏ",
+        "Phụ kiện kèm theo": "2 pin, gậy 3 chân, thẻ 64GB",
+        "Tình trạng": "Kính trước đã thay mới"
+      },
+      "tags": [
+        "gopro",
+        "action-cam",
+        "du-lich",
+        "quay-phim"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Bộ sản phẩm": "Máy + 2 pin + gậy"
+          },
+          "price": 4350000,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "seller": "an_nguyen",
+      "category": "Thể thao & Dã ngoại",
+      "photo_subject": "camp-stove",
+      "name": "Bếp gas mini dã ngoại Kovea kèm 2 bình gas",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Bếp mình dùng đi cắm trại hai mùa, lửa vẫn đều, đánh lửa ăn ngay lần đầu. Đã lau sạch dầu mỡ, không han gỉ. Có hộp nhựa đựng bếp, đóng lại gọn bỏ vừa balo. Kèm hai bình gas mini còn nguyên chưa dùng. Lưu ý bình gas là hàng dễ cháy nên nếu bạn ở xa mình chỉ gửi bếp, bình gas bạn mua ngoài siêu thị rất sẵn.",
+      "specifications": {
+        "Hãng": "Kovea",
+        "Loại": "Bếp gas mini dã ngoại",
+        "Công suất": "2.1 kW",
+        "Đánh lửa": "Tự động (piezo)",
+        "Phụ kiện kèm theo": "Hộp đựng, 2 bình gas mini"
+      },
+      "tags": [
+        "bep-da-ngoai",
+        "kovea",
+        "cam-trai"
+      ],
+      "images": 2,
+      "variants": [
+        {
+          "attributes": {
+            "Bộ sản phẩm": "Bếp + hộp"
+          },
+          "price": 520000,
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "seller": "bob_store",
+      "category": "Điện thoại & Máy tính bảng",
+      "photo_subject": "power-bank",
+      "name": "Sạc dự phòng Anker 20000mAh PD 20W, còn 82% pin",
+      "condition": "used",
+      "price_mode": "fixed",
+      "description": "Cục sạc mình dùng đi công tác, sạc đầy iPhone được khoảng bốn lần. Cổng USB-C hỗ trợ PD 20W sạc nhanh, cổng USB-A thường. Vỏ nhựa nhám có vài vết xước, không móp. Mình đo dung lượng thực còn khoảng 82% so với lúc mới. Kèm túi vải và cáp C sang C. Bán rẻ cho bạn nào cần dự phòng.",
+      "specifications": {
+        "Hãng": "Anker",
+        "Dung lượng": "20000 mAh",
+        "Cổng ra": "USB-C PD 20W, USB-A 12W",
+        "Dung lượng thực còn lại": "khoảng 82%",
+        "Phụ kiện kèm theo": "Túi vải, cáp C-C"
+      },
+      "tags": [
+        "sac-du-phong",
+        "anker",
+        "phu-kien"
+      ],
+      "images": 2,
+      "variants": [
+        {
+          "attributes": {
+            "Dung lượng": "20000 mAh"
+          },
+          "price": 320000,
+          "quantity": 3
+        }
+      ]
+    },
+    {
+      "seller": "huyen_camera",
+      "category": "Máy ảnh & Quay phim",
+      "photo_subject": "studio-light",
+      "name": "Đèn LED quay phim Godox SL60W kèm softbox",
+      "condition": "used",
+      "price_mode": "negotiable",
+      "description": "Đèn mình dùng quay video sản phẩm trong studio. Ánh sáng đều, chỉnh độ sáng bằng núm, quạt tản nhiệt chạy êm. Kèm softbox bát sen 85cm gấp ô rất nhanh, vải tán còn trắng chưa ngả vàng. Có chân đèn cao 2m. Đèn nặng nên mình đóng gói ba lớp nếu gửi đi tỉnh. Bán vì mình chuyển sang đèn có pin để quay ngoài trời.",
+      "specifications": {
+        "Hãng": "Godox",
+        "Model": "SL60W",
+        "Công suất": "60 W",
+        "Nhiệt màu": "5600K",
+        "Phụ kiện kèm theo": "Softbox bát sen 85cm, chân đèn 2m",
+        "Nguồn": "Điện lưới"
+      },
+      "tags": [
+        "den-quay-phim",
+        "godox",
+        "studio",
+        "phu-kien-may-anh"
+      ],
+      "images": 3,
+      "variants": [
+        {
+          "attributes": {
+            "Bộ sản phẩm": "Đèn + softbox + chân"
+          },
+          "price": 2250000,
+          "quantity": 1
+        }
+      ]
+    }
+  ]
+}

@@ -168,6 +168,13 @@ func (s *Service) finishSettlement(ctx context.Context, o domain.Order, paid []*
 // which is also the marker that says this parcel no longer needs booking, and the reference the
 // carrier's checkpoints arrive on: until it exists, nothing can report this leg.
 func (s *Service) bookShipment(ctx context.Context, o domain.Order, lines []*domain.Item) {
+	// Only the seller accepting the sale hands the parcel to a carrier. This is what the guard
+	// reads on both call sites — ConfirmOrder just confirmed, and the retry list only names
+	// confirmed orders — so an unconfirmed order reaching here is a caller's mistake, and the
+	// courier must not be told about a parcel nobody agreed to post.
+	if !o.Confirmed() {
+		return
+	}
 	t, err := s.repo.FindTransport(ctx, o.TransportID)
 	if err != nil {
 		s.log.Error("read shipment to book", "order_id", o.ID, "err", err)

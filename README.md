@@ -114,7 +114,7 @@ same server.
 - **[pgx/v5](https://github.com/jackc/pgx)** as the driver, with `pgx.NamedArgs` and hand-written SQL. No ORM and no code generation: a repository owns its queries, and each module's pool sets `search_path` to that module's schema so every statement stays unqualified.
 - **[Uber fx](https://github.com/uber-go/fx)** wires the graph. One `fx.go` per module; cross-module wiring happens by interface type, so a module depends on a peer's published `api.Service` and never on its implementation.
 - **migrate** (`cmd/migrate/`) applies the embedded migrations — `internal/module/<m>/migrations/*.sql`, preceded by the shared DDL in `common/migrations`. Required before the first run; the app never migrates at startup.
-- **seed** (`cmd/seed/`) fills a migrated database with development data: five accounts that each sell and buy, the category tree, the thousand listings in `assets/data.json` with their variants, stock, photos and tags, and the completed orders that back the product reviews. Optional, host-only (it reads the dump from disk, which is why it is not in the image), and it refuses to run twice.
+- **seed** (`cmd/seed/`) fills a migrated database with the demo marketplace: a hand-written Vietnamese C2C catalogue of second-hand goods (embedded in the command, not read off disk), the accounts that trade in it, and the history that gives every screen something to show — orders in each state, negotiations with live price cards, reviews with replies and votes, support tickets, and the wallet ledger behind all of it. Optional, runs as a compose service (`--profile seed`), refuses to run twice, and has a separate `-wipe -yes-i-mean-it` path that removes only what it created. It never writes, edits or deletes bootstrap: the option registry, the support desk account and the roles are untouched, and no category is ever deleted.
 - **embedder** (`cmd/embedder/`) drains catalog's three stale queues — listing, category, tag — into their pgvector tables. The `embedding_stale_at` mark *is* the queue, so the work list survives a restart and a pass that already ran finds nothing. Runs on `EMBEDDING_INTERVAL`, or `-once` for a backfill. Optional: skip it and search falls back to trigram. The model behind it is `EMBEDDING_PROVIDER`: `mock` hashes the words, `bge-m3` calls the real BGE-M3 service (`EMBEDDING_BASE_URL` + `EMBEDDING_API_KEY`) — put those three in a gitignored `server/.env` rather than in the committed compose file. The **gateway uses the same three**, because a search embeds its query with the model that wrote the listing vectors; if it cannot reach that model the search degrades to trigram rather than failing.
 - **specgen** (`cmd/specgen/`, via `go generate ./...`) merges one OpenAPI fragment per aggregate into `api/openapi.gen.yaml`, which is embedded, served at `/api/v1/openapi.yaml`, and mocked by Prism.
 - **[Restate](https://restate.dev)** holds the timers that outlive a request. See below.
@@ -124,16 +124,50 @@ same server.
 ```bash
 docker compose up -d                       # infra: Postgres, Redis, NATS, Grafana, Loki, Alloy
 go run ./cmd/migrate                       # required before the first run
-go run ./cmd/seed                          # optional: development data (see below)
+docker compose --profile seed run --rm seed   # optional: the demo marketplace (see below)
 go run ./cmd/embedder -once                # optional: embed what the seed left stale
 go run ./cmd/gateway                       # the API on GATEWAY_ADDR, under /api/v1
 ```
 
-`cmd/seed` gives you something to browse: 1000 listings across 28 categories, ~5000 variants
-with stock, and 1242 completed orders whose reviews are what the cached ratings are computed
-from. Sign in as `alice@shopnexus.test` / `Alice@123` (the run prints all five). It writes
-**no finance rows** — a seeded order has no payment session, no escrow movement and no wallet
-entry, so catalog, order and trust agree with each other while the ledger behind them is empty.
+`cmd/seed` gives you something to browse and something to photograph:
+
+```bash
+docker compose --profile seed run --rm seed                       # load
+docker compose --profile seed run --rm seed -wipe -yes-i-mean-it  # remove again
+```
+
+It runs as a compose service rather than on the host because it needs two things only the
+network has: the module DSNs name `db`, and the product photographs have to land in
+`object-data`, the volume the gateway serves `local` objects from. `-photos=false` skips the
+pictures if you are pointing it somewhere without that volume; galleries then render empty.
+
+Photographs come from `cmd/seed/photos/`: 92 real photographs, every one CC0 or public domain
+from Wikimedia Commons (which carries the Unsplash archive donated under CC0), downloaded once
+and committed so nothing is fetched at run time and no link can rot. `photos/ATTRIBUTION.md`
+credits each one — file, title, photographer, licence and source page — and `photos/manifest.json`
+is the same thing for the seeder to read. Nothing came from an online marketplace. Where the
+free-licence pools have no picture of the object (an áo dài, a countertop air fryer, a portable
+SSD) the listing falls back to a drawn placeholder rather than a photograph of the wrong thing:
+40 of the 53 listings get a real cover, 87 of 155 gallery slots in all.
+
+What it writes: around fifty listings across twelve categories with their variants and stock,
+a cast of eleven accounts that each buy and sell, orders in every state the UI can show
+(waiting on the seller, in transit, delivered, completed, declined, refund open, refund
+disputed, refund settled), live and expired price negotiations with their chat threads,
+reviews with seller replies and helpfulness votes, two-way transaction feedback, the
+reputation all of that adds up to, a moderator queue with an open dispute in it, and the
+wallet ledger — top-ups, escrow holds, releases, refunds and withdrawals — that puts a real
+number on the seller earnings screen.
+
+Three accounts are treated as fixtures rather than as data, because they are what a
+demonstration signs in as: `khoakomlem@gmail.com` (buyer), `bob@shopnexus.test` (seller) and
+`admin` (staff). If they already exist they are used exactly as found — no password, email,
+username or display name is rewritten — and the wipe never deletes them. Every other account
+in the cast is created by the load and removed by the wipe.
+
+The wipe removes only what the seed created, scoped by account, and never crosses into
+bootstrap: the `option` registry, the support desk account, the roles and the category tree
+are left alone at every flag.
 
 Configuration is **one YAML document** and nothing else: no environment variables for any value,
 no defaults, no `.env`. Copy `internal/config/config.example.yml` — the committed shape, with a

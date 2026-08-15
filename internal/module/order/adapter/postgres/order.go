@@ -241,14 +241,17 @@ func (r *Repo) FindTransportByRef(ctx context.Context, ref string) (domain.Trans
 	return t, nil
 }
 
-// UnbookedTransports is the retry list: shipments of live orders that no carrier has accepted
-// yet. Bounded by age, so a booking that is merely a second old is left to the call that is
-// already making it.
+// UnbookedTransports is the retry list: shipments of confirmed orders that no carrier has
+// accepted yet. A sale the seller has not accepted is nobody's to book — the money created the
+// order, not the shipment — so an order still awaiting confirmation is not here, and a sweep
+// pass cannot hand an unposted parcel to a courier. Bounded by age, so a booking that is merely
+// a second old is left to the call that is already making it.
 func (r *Repo) UnbookedTransports(ctx context.Context, before time.Time, limit int) ([]int64, error) {
 	const q = `SELECT o.id FROM "order" o
 	           JOIN transport t ON t.id = o.transport_id
 	           WHERE t.status = '` + domain.TransportPending + `'
 	             AND t.data->>'provider_ref' IS NULL
+	             AND o.confirmed_at IS NOT NULL
 	             AND o.cancelled_at IS NULL AND o.completed_at IS NULL
 	             AND t.created_at < @before
 	           ORDER BY t.created_at

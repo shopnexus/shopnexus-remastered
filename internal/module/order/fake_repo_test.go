@@ -463,11 +463,13 @@ func bookingRef(t domain.Transport) string {
 	return data.ProviderRef
 }
 
-// UnbookedTransports is the retry list: the orders whose parcel no carrier has accepted.
+// UnbookedTransports is the retry list: the confirmed orders whose parcel no carrier has
+// accepted. An unconfirmed sale is nobody's to book — the parcel goes to a courier only when the
+// seller accepts — so it is not here, mirroring `confirmed_at IS NOT NULL` in the real query.
 func (f *fakeRepo) UnbookedTransports(_ context.Context, before time.Time, limit int) ([]int64, error) {
 	var out []int64
 	for _, o := range f.orders {
-		if o.Settled() {
+		if o.Settled() || !o.Confirmed() {
 			continue
 		}
 		t, ok := f.shipments[o.TransportID]

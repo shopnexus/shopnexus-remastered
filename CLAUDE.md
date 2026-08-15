@@ -36,7 +36,8 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d   # + publi
 docker compose --profile mock up -d --build      # mock API from the spec on :4010 (Prism) — no DB, no Redis, no migrations
 docker compose --profile embed up -d --build     # + the embedding worker (EMBEDDING_PROVIDER=mock by default)
 go run ./cmd/migrate                             # apply migrations — REQUIRED before first run; app never migrates at startup
-go run ./cmd/seed                                # optional dev data from assets/data.json; host-only, refuses to run twice
+docker compose --profile seed run --rm seed      # optional demo data (embedded dataset + drawn photos); refuses to run twice
+docker compose --profile seed run --rm seed -wipe -yes-i-mean-it   # ... and the only way to remove it; never runs as part of a load
 go run ./cmd/embedder                            # the embedding worker: drains catalog's stale queues on EMBEDDING_INTERVAL
 go run ./cmd/embedder -once                      # ... one pass then exit (backfill after a seed/import; non-zero on failure)
 go run ./cmd/gateway                             # run the gateway (needs all env vars — see README.md)
@@ -692,8 +693,13 @@ give it its own doc under `docs/` and link it from here.
   is worse than an error — a store signs whatever key it is handed, so an object it has never
   held still comes back as a well-formed link and the failure surfaces in the browser. `remote`
   is a real provider on that list (the object key *is* an https URL, so there is nothing to sign
-  and no credential to configure, which is why it needs no selector); it is what `cmd/seed`'s
-  imported photos are, and it refuses every write, since only `Registry.Write()` ever takes one.
+  and no credential to configure, which is why it needs no selector), and it refuses every
+  write, since only `Registry.Write()` ever takes one. `cmd/seed` used to point its photos at
+  it — an https URL into a marketplace's CDN — and now writes CC0/public-domain photographs it
+  carries in `cmd/seed/photos/` into `local` instead (credits in `photos/ATTRIBUTION.md`, drawn
+  placeholders where no free photograph of the object exists): the hotlink was a third party's
+  copyright and a dependency the other side could switch off, and it did, which is why every
+  seeded gallery was empty.
 - **Vendor-shaped differences stay behind the seam.** `kyc.Client.Check` covers
   both a vendor that reads the scans and answers now (FPT.AI: a decided `Result`)
   and one that runs its own web flow (Sumsub-style: pending plus a session URL);

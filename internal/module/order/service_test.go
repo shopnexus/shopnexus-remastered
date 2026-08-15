@@ -2226,6 +2226,31 @@ func TestCancelOrder_ReversesTheSaleRatherThanAReservation(t *testing.T) {
 	}
 }
 
+// The retry pass that books parcels a carrier never accepted must not hand one to a courier
+// before the seller accepted the sale: the money created the order, not the shipment, and a
+// carrier told to post goods nobody agreed to post is the "buyer waiting for a parcel nobody
+// ever posted" failure the confirmation window exists to avoid.
+func TestRetryUnbookedShipments_NeverBooksBeforeConfirmation(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, o := h.checkout(t)
+
+	// The parcel has sat unbooked well past the grace period, but the seller has not answered
+	// yet — the pass must leave it alone, or a mock courier delivers a parcel nobody was asked
+	// to post.
+	order := h.repo.orders[o.ID.Int64()]
+	shipment := h.repo.shipments[order.TransportID]
+	shipment.CreatedAt = shipment.CreatedAt.Add(-time.Hour)
+	h.repo.shipments[shipment.ID] = shipment
+
+	if booked, err := h.svc.RetryUnbookedShipments(ctx, 10); err != nil || booked != 0 {
+		t.Fatalf("RetryUnbookedShipments = %d, %v; want an unconfirmed order left alone", booked, err)
+	}
+	if len(h.courier.booked) != 0 {
+		t.Fatalf("booked = %+v, want no parcel booked before the seller accepts", h.courier.booked)
+	}
+}
+
 // The delivery fee is collected for a parcel somebody actually carries, so the sale books it with
 // the courier — and a carrier that was down when the money landed is a booking to retry rather
 // than a fee the platform kept for nothing.
