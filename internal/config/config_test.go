@@ -223,6 +223,7 @@ func TestLoad_VendorValuesFollowTheirSelector(t *testing.T) {
 				"email.timeout":            "10s",
 				"email.verify_url":         "https://shopnexus.test/verify",
 				"email.reset_password_url": "https://shopnexus.test/reset",
+				"email.app_base_url":       "https://shopnexus.test",
 			},
 		},
 		{

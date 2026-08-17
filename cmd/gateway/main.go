@@ -177,6 +177,7 @@ func newNotifier(cfg *config.Config, log *slog.Logger, metrics *observability.Si
 			From:             cfg.SMTPFrom,
 			VerifyEmailURL:   cfg.VerifyEmailURL,
 			ResetPasswordURL: cfg.ResetPasswordURL,
+			AppBaseURL:       cfg.AppBaseURL,
 			Timeout:          cfg.SMTPTimeout,
 		})
 		if err != nil {

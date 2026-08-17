@@ -17,13 +17,36 @@ import (
 )
 
 // Kind selects the template. Kebab-case, like every other enum-ish string value
-// in this codebase.
+// in this codebase. A kind names one template file per language under templates/mail,
+// and the comment beside each is the contract for what Params must carry.
 type Kind string
 
 const (
+	// The secret-carrying messages: the token is in Token, and no Params are read.
 	KindEmailVerification Kind = "email-verification"
 	KindPasswordReset     Kind = "password-reset"
 	KindPhoneCode         Kind = "phone-code"
+
+	// The transactional messages about a sale. Every one of them takes order_id — the
+	// opaque id, because it is what the recipient sees everywhere else — and links to
+	// that order's page.
+	//
+	// A sale has two sides, so a fact reaches them as two kinds wherever the words
+	// differ: a buyer whose order is confirmed and a seller who has one to pack are not
+	// reading the same mail. Where the fact is the same for both, one kind serves both.
+
+	// KindOrderPlaced goes to the buyer. Params: order_id, total, currency.
+	KindOrderPlaced Kind = "order-placed"
+	// KindOrderReceived is the same fact told to the seller. Params: order_id, total, currency.
+	KindOrderReceived Kind = "order-received"
+	// KindOrderCompleted goes to both. Params: order_id.
+	KindOrderCompleted Kind = "order-completed"
+	// KindOrderCancelled goes to both. Params: order_id.
+	KindOrderCancelled Kind = "order-cancelled"
+	// KindRefundResolved goes to both. Params: order_id, buyer_wins, note.
+	KindRefundResolved Kind = "refund-resolved"
+	// KindOrderUnconfirmed goes to the buyer alone. Params: order_id.
+	KindOrderUnconfirmed Kind = "order-unconfirmed"
 )
 
 // Message is one message to one recipient. Exactly one of Email and Phone is set,
@@ -38,6 +61,15 @@ type Message struct {
 	// Locale is BCP 47, from the recipient's profile, so the message is written in
 	// the language they read.
 	Locale string
+	// Params are the template's variables, and the caller sends *facts* — an order id, a
+	// total, a moderator's note — never a sentence or a formatted number. Which words go
+	// out, and how an amount reads in a given locale, stays the template's business, which
+	// is the same reason this struct has never carried a rendered body.
+	//
+	// A template that names a key the caller did not send fails to render rather than
+	// mailing a hole, so the set is a contract: it is listed beside each Kind above and
+	// exercised for every kind by the smtp package's tests.
+	Params map[string]any
 }
 
 type Client interface {

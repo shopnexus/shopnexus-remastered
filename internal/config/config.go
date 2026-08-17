@@ -229,6 +229,9 @@ type Config struct {
 	// API does not serve those pages.
 	VerifyEmailURL   string
 	ResetPasswordURL string
+	// AppBaseURL is the client application's root, which is where a mail about a sale sends
+	// the recipient: the order's own page beneath it.
+	AppBaseURL string
 
 	// --- eSMS.vn ---
 

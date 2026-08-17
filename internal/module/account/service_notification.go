@@ -8,6 +8,7 @@ import (
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/module/account/port"
+	"shopnexus/internal/provider/notify"
 	"shopnexus/internal/shared/validation"
 )
 
@@ -109,11 +110,15 @@ func (s *Service) UpdateNotificationPreferences(ctx context.Context, req account
 	return s.GetNotificationPreferences(ctx, accountapi.GetNotificationPreferencesRequest{ActorID: req.ActorID})
 }
 
-// CreateNotification records one in-app notification, if the account wants it there.
+// CreateNotification tells one account one thing, over the channels they left on.
 //
-// Only the in-app channel is written: it is the one this module owns a table for.
-// Push, email and SMS are a workflow's problem, and a row that stood for "we tried
-// to email you" would be a second, weaker definition of the feed.
+// The feed row is the one this module owns a table for; the mail is sent through the notify
+// provider and nothing records that it went, because a row standing for "we tried to email
+// you" would be a second, weaker definition of the feed. Push and SMS are still a workflow's
+// problem.
+//
+// The two channels are decided independently. Turning the feed off is not a way to stop the
+// mail, and it used to be: the in-app preference returned early, in front of everything.
 func (s *Service) CreateNotification(ctx context.Context, req accountapi.CreateNotificationRequest) (accountapi.Notification, error) {
 	if err := validation.AsError(s.v.Struct(req)); err != nil {
 		return accountapi.Notification{}, err
@@ -138,19 +143,53 @@ func (s *Service) CreateNotification(ctx context.Context, req accountapi.CreateN
 	if err != nil {
 		return accountapi.Notification{}, fmt.Errorf("read notification preferences: %w", err)
 	}
-	if !domain.Enabled(stored, category, domain.ChannelInApp) {
-		return accountapi.Notification{}, nil
+	var dto accountapi.Notification
+	if domain.Enabled(stored, category, domain.ChannelInApp) {
+		insertedID, err := s.repo.InsertNotification(ctx, n)
+		if err != nil {
+			return accountapi.Notification{}, fmt.Errorf("insert notification: %w", err)
+		}
+		n.ID = insertedID
+		dto = toAPINotification(n)
+		notifyRealtime(ctx, s, accountID, NotificationCreated, dto)
 	}
 
-	insertedID, err := s.repo.InsertNotification(ctx, n)
-	if err != nil {
-		return accountapi.Notification{}, fmt.Errorf("insert notification: %w", err)
-	}
-	n.ID = insertedID
-
-	dto := toAPINotification(n)
-	notifyRealtime(ctx, s, accountID, NotificationCreated, dto)
+	// After the row, so a failed insert the bus will redeliver has not already mailed.
+	s.mailNotification(ctx, req, category, stored)
 	return dto, nil
+}
+
+// mailNotification sends the email channel's copy of a notification, when the account asked
+// for that channel and there is an address worth sending to.
+//
+// Best-effort, like every other send in this service: the feed row is already written, so a
+// relay that is down must not fail the call — the caller is a bus subscriber, and a returned
+// error there buys a redelivered fact and a duplicate feed row to retry a mail nobody lost.
+func (s *Service) mailNotification(ctx context.Context, req accountapi.CreateNotificationRequest,
+	category domain.Category, stored []domain.Preference) {
+	if req.MailKind == "" || !domain.Enabled(stored, category, domain.ChannelEmail) {
+		return
+	}
+	accountID := req.AccountID.Int64()
+	acc, err := s.repo.Get(ctx, accountID)
+	if err != nil {
+		s.log.Error("read account for notification email", "account_id", accountID, "err", err)
+		return
+	}
+	// Verified only. An address nobody confirmed is somebody's typo or somebody else's
+	// inbox, and what goes out here is what somebody bought and what they paid for it —
+	// plus a bounce rate that costs this domain its ability to send at all. The two mails
+	// that must reach an unverified address are the verification and the reset, and neither
+	// comes through here.
+	if acc.Email == nil || !acc.EmailVerified {
+		return
+	}
+	s.send(ctx, notify.Message{
+		Kind:   notify.Kind(req.MailKind),
+		Email:  *acc.Email,
+		Locale: acc.Profile.Locale,
+		Params: req.Payload,
+	})
 }
 
 func toAPINotification(n domain.Notification) accountapi.Notification {

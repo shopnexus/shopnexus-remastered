@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"html"
 	"mime"
 	"net"
 	"net/smtp"
@@ -20,6 +21,7 @@ import (
 	"time"
 
 	"shopnexus/internal/provider/notify"
+	"shopnexus/templates"
 )
 
 // Name is the EMAIL_PROVIDER value that selects this sender.
@@ -43,6 +45,15 @@ type Config struct {
 	// cannot be derived from a request path.
 	VerifyEmailURL   string
 	ResetPasswordURL string
+	// AppBaseURL is the client application's root, from which this package builds the
+	// page a transactional mail links to — an order's own page today.
+	//
+	// One base plus a path this package owns, rather than a configured URL per kind: the
+	// two above are configured because a token has to be handed to a page whose shape only
+	// the client knows, while "an order is at /orders/<id>" is a route this platform does
+	// define. Eight more required config values would be eight more ways for a deployment
+	// to link somewhere that does not exist.
+	AppBaseURL string
 	// Timeout bounds the whole SMTP conversation — dial, handshake, auth, DATA. Required:
 	// net/smtp has no deadline of its own, so without it a relay that stops reading
 	// holds the request goroutine forever.
@@ -55,6 +66,8 @@ type Client struct {
 	cfg  Config
 	addr string
 	auth smtp.Auth
+	// mails is every kind × language, parsed once at construction.
+	mails map[notify.Kind]map[string]*mail
 }
 
 func NewClient(cfg Config) (*Client, error) {
@@ -78,10 +91,18 @@ func NewClient(cfg Config) (*Client, error) {
 	if err := checkLink("reset password url", cfg.ResetPasswordURL); err != nil {
 		return nil, err
 	}
+	if err := checkLink("app base url", cfg.AppBaseURL); err != nil {
+		return nil, err
+	}
+	mails, err := loadMails(templates.Mail())
+	if err != nil {
+		return nil, err
+	}
 	return &Client{
-		cfg:  cfg,
-		addr: net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
-		auth: smtp.PlainAuth("", cfg.Username, cfg.Password, cfg.Host),
+		cfg:   cfg,
+		addr:  net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
+		auth:  smtp.PlainAuth("", cfg.Username, cfg.Password, cfg.Host),
+		mails: mails,
 	}, nil
 }
 
@@ -116,48 +137,69 @@ func (c *Client) SendEmail(ctx context.Context, m notify.Message) error {
 	return nil
 }
 
-// render turns the message into a subject and an HTML body, with the token already in
-// the link the recipient clicks.
+// render turns the message into a subject and an HTML body, with the link the recipient
+// clicks already built.
 func (c *Client) render(m notify.Message) (subject string, body []byte, err error) {
-	byLang, ok := mails[m.Kind]
+	byLang, ok := c.mails[m.Kind]
 	if !ok {
 		return "", nil, fmt.Errorf("smtp: no email template for kind %q", m.Kind)
 	}
-	build, ok := byLang[language(m.Locale)]
+	lang := language(m.Locale)
+	t, ok := byLang[lang]
 	if !ok {
-		return "", nil, fmt.Errorf("smtp: no email template for kind %q in any language", m.Kind)
+		return "", nil, fmt.Errorf("smtp: no email template for kind %q in %s", m.Kind, lang)
 	}
 	link, err := c.link(m)
 	if err != nil {
 		return "", nil, err
 	}
-	subject, data := build(link)
+	data := mailData{Lang: lang, Link: link, Params: m.Params}
 
+	var head strings.Builder
+	if err := t.set.ExecuteTemplate(&head, "subject", data); err != nil {
+		return "", nil, fmt.Errorf("render email subject: %w", err)
+	}
 	var buf bytes.Buffer
-	if err := frame.Execute(&buf, data); err != nil {
+	if err := t.set.ExecuteTemplate(&buf, t.frame, data); err != nil {
 		return "", nil, fmt.Errorf("render email body: %w", err)
 	}
-	return subject, buf.Bytes(), nil
+	// The subject is a header, not markup, so the HTML escaping the template applied on
+	// the way out has to come back off: an '&' in a subject line belongs there, and
+	// "&amp;" in an inbox is a bug the sender never sees.
+	return html.UnescapeString(strings.TrimSpace(head.String())), buf.Bytes(), nil
 }
 
-// link appends the token to the client page for this kind. url.Values encodes it, so a
-// token containing '-' or '_' from base64url survives intact.
+// link builds the page this mail sends the recipient to: the client's own verify/reset
+// page for the two secret-carrying kinds, and the order's page for everything else.
 func (c *Client) link(m notify.Message) (string, error) {
-	var base string
 	switch m.Kind {
 	case notify.KindEmailVerification:
-		base = c.cfg.VerifyEmailURL
+		return withToken(c.cfg.VerifyEmailURL, m.Token)
 	case notify.KindPasswordReset:
-		base = c.cfg.ResetPasswordURL
+		return withToken(c.cfg.ResetPasswordURL, m.Token)
 	default:
-		return "", fmt.Errorf("smtp: kind %q has no link", m.Kind)
+		orderID, _ := m.Params["order_id"].(string)
+		if orderID == "" {
+			return "", fmt.Errorf("smtp: kind %q needs an order_id parameter to link to", m.Kind)
+		}
+		link, err := url.JoinPath(c.cfg.AppBaseURL, "orders", orderID)
+		if err != nil {
+			return "", fmt.Errorf("build order link: %w", err)
+		}
+		return link, nil
 	}
+}
+
+// withToken appends the token to a client page. url.Values encodes it, so a token
+// containing '-' or '_' from base64url survives intact, and a base that already carries a
+// query parameter keeps it.
+func withToken(base, token string) (string, error) {
 	u, err := url.Parse(base)
 	if err != nil {
 		return "", fmt.Errorf("parse link base: %w", err)
 	}
 	q := u.Query()
-	q.Set("token", m.Token)
+	q.Set("token", token)
 	u.RawQuery = q.Encode()
 	return u.String(), nil
 }

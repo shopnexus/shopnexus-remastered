@@ -1,0 +1,17 @@
+{{/* To the buyer. Params: order_id, total, currency. */}}
+{{define "subject"}}Order {{.Params.order_id}} is confirmed{{end}}
+{{define "title"}}Your order is confirmed{{end}}
+{{define "lead"}}We have received your payment and are holding it in escrow until the goods reach you. The seller will confirm the sale and hand the parcel to the carrier.{{end}}
+{{define "extra"}}
+<table style="margin:0 0 20px;border-collapse:collapse;font-size:14px">
+  <tr>
+    <td style="padding:4px 16px 4px 0;color:#555">Order</td>
+    <td style="padding:4px 0"><strong>{{.Params.order_id}}</strong></td>
+  </tr>
+  <tr>
+    <td style="padding:4px 16px 4px 0;color:#555">Total paid</td>
+    <td style="padding:4px 0"><strong>{{money .Params.total .Params.currency}}</strong></td>
+  </tr>
+</table>
+{{end}}
+{{define "action"}}View order{{end}}

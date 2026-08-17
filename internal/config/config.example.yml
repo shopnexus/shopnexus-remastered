@@ -156,6 +156,9 @@ email:
   # a request path, because the API does not serve them.
   verify_url: ""
   reset_password_url: ""
+  # The client application's root. A mail about a sale links to the order's page beneath it, so this
+  # is one value rather than a configured URL per mail.
+  app_base_url: ""
 
 sms:
   provider: "mock"

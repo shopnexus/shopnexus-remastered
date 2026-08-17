@@ -58,9 +58,13 @@ type RefundResolved struct {
 	RefundID int64 `json:"refund_id"`
 	// OrderID is what the verdict was about: the escrow, which lives on the order. A refund id is
 	// only resolvable inside this module, so a subscriber that carries the fact anywhere else has
-	// nothing to name the sale by. The two parties are not here — nobody reads them, and a
-	// published payload should not carry accounts for no reader.
+	// nothing to name the sale by.
 	OrderID int64 `json:"order_id"`
+	// BuyerID and SellerID are both parties, because both are told the verdict — a decision on
+	// somebody's money that only one side hears about is one the other finds out from their
+	// balance. They were left out while nobody read them; account's notifier does now.
+	BuyerID  int64 `json:"buyer_id"`
+	SellerID int64 `json:"seller_id"`
 	// ModeratorID is who decided. The ticket trust closes on this records an author, and a verdict
 	// nobody signed is one nobody can be asked about.
 	ModeratorID int64 `json:"moderator_id"`

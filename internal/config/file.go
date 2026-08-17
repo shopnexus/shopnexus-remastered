@@ -215,6 +215,10 @@ type emailSection struct {
 	// parameter. They cannot be derived from a request path, because the API does not serve them.
 	VerifyURL        string `yaml:"verify_url" validate:"required_if=Provider smtp,omitempty,url"`
 	ResetPasswordURL string `yaml:"reset_password_url" validate:"required_if=Provider smtp,omitempty,url"`
+	// AppBaseURL is the client application's root. A transactional mail about a sale links
+	// to that order's page under it — one base rather than a configured URL per mail, since
+	// where an order lives is a route this platform defines and a token's landing page is not.
+	AppBaseURL string `yaml:"app_base_url" validate:"required_if=Provider smtp,omitempty,url"`
 }
 
 type smsSection struct {
@@ -440,6 +444,7 @@ func (f file) config() *Config {
 		SMTPTimeout:      f.Email.Timeout.std(),
 		VerifyEmailURL:   f.Email.VerifyURL,
 		ResetPasswordURL: f.Email.ResetPasswordURL,
+		AppBaseURL:       f.Email.AppBaseURL,
 
 		SMSProvider:         f.SMS.Provider,
 		ESMSBaseURL:         f.SMS.ESMSBase,

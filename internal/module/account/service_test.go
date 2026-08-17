@@ -29,7 +29,10 @@ func TestMain(m *testing.M) { idtest.Install(); m.Run() }
 // fakeNotifier records what was sent. A message that never goes out is invisible to every
 // other assertion — the send is the only observable half of a verification flow.
 type fakeNotifier struct {
-	mu   sync.Mutex
+	mu sync.Mutex
+	// err is what the provider answers, for the tests that assert a command survives a
+	// relay that is down.
+	err  error
 	sent []notify.Message
 }
 
@@ -37,7 +40,7 @@ func (f *fakeNotifier) Send(_ context.Context, m notify.Message) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.sent = append(f.sent, m)
-	return nil
+	return f.err
 }
 
 func (f *fakeNotifier) sentOf(kind notify.Kind) []notify.Message {
@@ -88,12 +91,18 @@ func newTestService(t *testing.T, repo *fakeRepo) *account.Service {
 // wants to assert on, instead of the noop every other test gets.
 func newTestServiceWithFanout(t *testing.T, repo *fakeRepo, fanout realtime.Fanout) *account.Service {
 	t.Helper()
+	return newTestServiceWithNotifier(t, repo, &fakeNotifier{}, fanout)
+}
+
+// newTestServiceWithNotifier is for a test that asserts on what was sent, or that makes the
+// send fail — the notifier newTestService builds is hidden inside it.
+func newTestServiceWithNotifier(t *testing.T, repo *fakeRepo, notes *fakeNotifier, fanout realtime.Fanout) *account.Service {
+	t.Helper()
 	uploads := newFakeUploads()
 	c := cache.NewInMemoryClient()
 	sessions := session.New(c, time.Hour)
 	tokens := token.NewManager("0123456789012345678901234567890123", 15*time.Minute)
 	log := slog.New(slog.DiscardHandler)
-	notes := &fakeNotifier{}
 	return account.NewService(repo, sessions, tokens, c,
 		notes, oauthmock.NewVerifier(), kycmock.NewClient(), uploads, validation.Default(), log, fanout)
 }

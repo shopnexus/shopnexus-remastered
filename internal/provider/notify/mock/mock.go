@@ -37,6 +37,9 @@ func (c *Client) Send(_ context.Context, m notify.Message) error {
 		"phone", m.Phone,
 		"locale", m.Locale,
 		"token", m.Token,
+		// The template's variables, so a developer can see a transactional mail was built
+		// from the right order without a relay to send it to.
+		"params", m.Params,
 	)
 	return nil
 }

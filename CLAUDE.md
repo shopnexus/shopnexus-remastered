@@ -590,6 +590,34 @@ give it its own doc under `docs/` and link it from here.
   disappear, which is a TTL rather than a row somebody sweeps. Same for send
   throttles, and a throttle key is set **before** the account lookup so a 429
   cannot be used to tell an existing address from an unknown one.
+- **Email is a channel of a notification, not a second way to tell somebody something.**
+  `CreateNotification` writes the feed row *and* sends the mail, because the one place that
+  knows an account was told a thing is also the only one holding their address and their
+  preference matrix — a mailer subscribing to the bus in parallel would re-derive both and
+  need `accountapi` to hand it somebody's email. The channels are decided **independently**:
+  silencing the feed is not a way to stop the letters, and `ChannelInApp` returning early in
+  front of everything is the bug that shape invites. A mail goes out only when all four hold —
+  the caller named a `MailKind`, `domain.Enabled(…, ChannelEmail)`, there is an address, and
+  `EmailVerified`. Named rather than derived from `Category`, because a category covers many
+  facts and only some have copy; verified-only because an unconfirmed address is a typo or
+  somebody else's inbox, and what goes out is a sale and its price. The send is last and
+  best-effort: the caller is a bus subscriber, so an error would redeliver the fact and buy a
+  duplicate feed row to retry a mail nobody lost.
+- **A mail is copy in `templates/mail/`, and the caller sends facts.** One file per kind per
+  language (`order-placed.vi.html`), each defining `subject`/`title`/`lead`/`action` and
+  optionally overriding `footer`/`extra`; `frame.<lang>.html` owns the layout, the button and
+  the chrome, so adding a mail is writing a paragraph rather than copying markup — and there
+  is a frame *per language* because the fallback line and the automated-mail notice are copy
+  too. `templates` is a package at the repository root beside `api` for a hard reason: a
+  `go:embed` pattern cannot name a parent directory, so nothing under `internal/` can reach
+  the folder. `notify.Message.Params` carries an order id, a total, a moderator's note —
+  never a sentence or a formatted number, since how an amount reads in a locale is the
+  template's business (`money` is bound to the set's language). Everything is parsed at
+  `NewClient`, and `missingkey=error` makes a parameter the caller forgot a render failure
+  instead of a hole in somebody's inbox; the param set is written beside each `Kind` and
+  exercised for every kind × language by the smtp package's tests. `account/subscriber.go` is
+  the single place a fact is paired with a template, so payload and template stay in sight of
+  each other.
 - **Request plumbing is shared (`gateway/handler/params.go`):** `actor`,
   `pathID[K]`, `pageParams`/`limitParam`, `boolParam`, `decodeBody`/`check`. A
   handler reads the request, fills in what only the gateway knows, calls the

@@ -349,6 +349,7 @@ func (s *Service) publishResolved(ctx context.Context, r domain.Refund, o domain
 	req orderapi.ResolveRefundRequest) {
 	event := RefundResolved{
 		RefundID: r.ID, OrderID: o.ID,
+		BuyerID: o.BuyerID, SellerID: o.SellerID,
 		ModeratorID: req.ActorID.Int64(), BuyerWins: req.BuyerWins, Note: req.Note,
 	}
 	if err := publishRefundResolved(ctx, s.bus, event); err != nil {

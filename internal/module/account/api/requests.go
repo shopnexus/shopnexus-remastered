@@ -308,7 +308,18 @@ type CreateNotificationRequest struct {
 	AccountID id.ID[id.Account] `json:"account_id" validate:"required"`
 	Category  string            `json:"category" validate:"required,oneof=order promotion system chat social"`
 	Title     string            `json:"title" validate:"required,max=200"`
-	Payload   map[string]any    `json:"payload"`
+	// Payload is the facts behind the notification — an order id, a total, a moderator's
+	// note. It is what the feed row stores *and* what the email template renders, so the
+	// two say the same thing by construction rather than by two callers agreeing to.
+	Payload map[string]any `json:"payload"`
+	// MailKind is the email template to send alongside the feed row, empty for a fact with
+	// no mail written for it.
+	//
+	// Named rather than derived from Category: a category covers many facts and only some
+	// have copy, so deriving it would mail "your order is confirmed" for a cancellation.
+	// Whether the mail actually goes out is still the account's to decide — the email
+	// channel's preference, and an address they verified.
+	MailKind string `json:"mail_kind" validate:"omitempty,oneof=order-placed order-received order-completed order-cancelled refund-resolved order-unconfirmed"`
 }
 
 // --- follow graph ---

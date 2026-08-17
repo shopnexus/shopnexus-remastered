@@ -1,0 +1,18 @@
+{{/*
+  To both sides of the sale. Params: order_id, buyer_wins (bool), note (may be empty).
+
+  The verdict is stated, never argued: the note is whatever the moderator wrote, and this
+  mail adds nothing to it. Both parties get the same words, because a verdict that reads
+  differently depending on who received it is a verdict neither side can quote back.
+*/}}
+{{define "subject"}}Kết quả yêu cầu hoàn tiền — đơn {{.Params.order_id}}{{end}}
+{{define "title"}}Yêu cầu hoàn tiền đã có kết quả{{end}}
+{{define "lead"}}Bộ phận hỗ trợ đã xem xét yêu cầu hoàn tiền của đơn hàng {{.Params.order_id}}. Kết quả: <strong>{{if .Params.buyer_wins}}chấp nhận hoàn tiền cho người mua{{else}}không chấp nhận hoàn tiền{{end}}</strong>.{{end}}
+{{define "extra"}}
+{{if .Params.note}}
+<blockquote style="margin:0 0 20px;padding:12px 16px;background:#f4f4f5;border-left:3px solid #d4d4d8;font-size:14px;color:#333">
+  {{.Params.note}}
+</blockquote>
+{{end}}
+{{end}}
+{{define "action"}}Xem đơn hàng{{end}}

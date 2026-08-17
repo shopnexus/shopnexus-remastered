@@ -1,0 +1,17 @@
+{{/* To the buyer. Params: order_id, total, currency. */}}
+{{define "subject"}}Đơn hàng {{.Params.order_id}} đã được tạo{{end}}
+{{define "title"}}Đơn hàng của bạn đã được tạo{{end}}
+{{define "lead"}}Chúng tôi đã nhận được thanh toán của bạn và giữ tiền trong tài khoản tạm giữ cho tới khi bạn nhận được hàng. Người bán sẽ xác nhận và gửi hàng.{{end}}
+{{define "extra"}}
+<table style="margin:0 0 20px;border-collapse:collapse;font-size:14px">
+  <tr>
+    <td style="padding:4px 16px 4px 0;color:#555">Mã đơn hàng</td>
+    <td style="padding:4px 0"><strong>{{.Params.order_id}}</strong></td>
+  </tr>
+  <tr>
+    <td style="padding:4px 16px 4px 0;color:#555">Tổng thanh toán</td>
+    <td style="padding:4px 0"><strong>{{money .Params.total .Params.currency}}</strong></td>
+  </tr>
+</table>
+{{end}}
+{{define "action"}}Xem đơn hàng{{end}}

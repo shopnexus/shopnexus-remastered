@@ -22,7 +22,139 @@ func testConfig() Config {
 		From:             "ShopNexus <no-reply@shopnexus.vn>",
 		VerifyEmailURL:   "https://shopnexus.vn/verify-email",
 		ResetPasswordURL: "https://shopnexus.vn/reset-password?src=mail",
+		AppBaseURL:       "https://shopnexus.vn",
 		Timeout:          10 * time.Second,
+	}
+}
+
+// paramsByKind mirrors the contract written beside each Kind in the notify package: what a
+// caller must send for that mail to render. It is the fixture for every test below, so a
+// template that starts naming a new variable fails here rather than in somebody's inbox.
+var paramsByKind = map[notify.Kind]map[string]any{
+	notify.KindEmailVerification: nil,
+	notify.KindPasswordReset:     nil,
+	notify.KindOrderPlaced:       {"order_id": "ord_2h9qk4mfx7bd3", "total": int64(1250000), "currency": "VND"},
+	notify.KindOrderReceived:     {"order_id": "ord_2h9qk4mfx7bd3", "total": int64(1250000), "currency": "VND"},
+	notify.KindOrderCompleted:    {"order_id": "ord_2h9qk4mfx7bd3"},
+	notify.KindOrderCancelled:    {"order_id": "ord_2h9qk4mfx7bd3"},
+	notify.KindRefundResolved:    {"order_id": "ord_2h9qk4mfx7bd3", "buyer_wins": true, "note": "Ảnh chụp cho thấy hàng không đúng mô tả."},
+	notify.KindOrderUnconfirmed:  {"order_id": "ord_2h9qk4mfx7bd3"},
+}
+
+// Every kind this package claims to have copy for renders in every language, with a
+// subject, a body, and no template variable left unresolved. This is the test that makes
+// adding a mail safe: forget a file, a block or a parameter and it fails here.
+func TestRender_EveryKindInEveryLanguage(t *testing.T) {
+	c, err := NewClient(testConfig())
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if len(paramsByKind) != len(mailKinds) {
+		t.Fatalf("%d fixtures for %d kinds — one of the two lists has an entry the other does not",
+			len(paramsByKind), len(mailKinds))
+	}
+	for _, kind := range mailKinds {
+		params, ok := paramsByKind[kind]
+		if !ok {
+			t.Fatalf("kind %q has no fixture — add it beside the others when adding the mail", kind)
+		}
+		for _, lang := range languages {
+			subject, body, err := c.render(notify.Message{
+				Kind: kind, Email: "a@b.com", Token: "tok", Locale: lang, Params: params,
+			})
+			if err != nil {
+				t.Errorf("render(%s, %s): %v", kind, lang, err)
+				continue
+			}
+			if subject == "" {
+				t.Errorf("render(%s, %s): empty subject", kind, lang)
+			}
+			html := string(body)
+			// An unresolved action delimiter means a block was never substituted; "<no value>"
+			// is what a nil parameter renders as. Both go out looking like a broken mail.
+			if strings.Contains(html, "{{") || strings.Contains(html, "<no value>") {
+				t.Errorf("render(%s, %s): body has an unrendered template:\n%s", kind, lang, html)
+			}
+			if !strings.Contains(html, `lang="`+lang+`"`) {
+				t.Errorf("render(%s, %s): body is not in the requested language", kind, lang)
+			}
+			if !strings.Contains(html, "https://shopnexus.vn") {
+				t.Errorf("render(%s, %s): body carries no link", kind, lang)
+			}
+		}
+	}
+}
+
+// A mail whose template names a parameter the caller did not send must fail rather than
+// mail a hole where the order number should be — which is what missingkey=error buys.
+func TestRender_MissingParameterFails(t *testing.T) {
+	c, _ := NewClient(testConfig())
+	_, _, err := c.render(notify.Message{
+		Kind: notify.KindRefundResolved, Locale: "vi-VN",
+		Params: map[string]any{"order_id": "ord_x", "buyer_wins": true}, // no note
+	})
+	if err == nil {
+		t.Fatal("expected an error for a template parameter that was not sent")
+	}
+}
+
+// An order mail with no order to point at has no link, and a button going nowhere is worse
+// than no mail: the recipient reports it as the platform being broken.
+func TestLink_OrderKindWithoutAnOrderID(t *testing.T) {
+	c, _ := NewClient(testConfig())
+	if _, err := c.link(notify.Message{Kind: notify.KindOrderPlaced}); err == nil {
+		t.Fatal("expected an error for an order mail with no order_id")
+	}
+}
+
+func TestLink_OrderPageIsBuiltFromTheAppBase(t *testing.T) {
+	c, _ := NewClient(testConfig())
+	got, err := c.link(notify.Message{
+		Kind:   notify.KindOrderCompleted,
+		Params: map[string]any{"order_id": "ord_2h9qk4mfx7bd3"},
+	})
+	if err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	if want := "https://shopnexus.vn/orders/ord_2h9qk4mfx7bd3"; got != want {
+		t.Fatalf("link = %q, want %q", got, want)
+	}
+}
+
+// The amount is stored unscaled and read by a person, so it is grouped — and grouped the
+// way the language of the mail does it, which is the whole reason the helper is bound to
+// the template set rather than shared.
+func TestMoney_GroupsPerLanguage(t *testing.T) {
+	c, _ := NewClient(testConfig())
+	for lang, want := range map[string]string{
+		langVI: "1.250.000 ₫",
+		langEN: "1,250,000 ₫",
+	} {
+		_, body, err := c.render(notify.Message{
+			Kind: notify.KindOrderPlaced, Locale: lang, Params: paramsByKind[notify.KindOrderPlaced],
+		})
+		if err != nil {
+			t.Fatalf("render(%s): %v", lang, err)
+		}
+		if !strings.Contains(string(body), want) {
+			t.Errorf("body in %s does not contain %q", lang, want)
+		}
+	}
+}
+
+// A subject is a header, not markup: whatever the template escaped on the way out has to
+// be back to plain text before it is Q-encoded into the message.
+func TestRender_SubjectIsNotHTMLEscaped(t *testing.T) {
+	c, _ := NewClient(testConfig())
+	subject, _, err := c.render(notify.Message{
+		Kind: notify.KindOrderPlaced, Locale: "vi-VN",
+		Params: map[string]any{"order_id": "ord_a&b", "total": int64(1), "currency": "VND"},
+	})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if strings.Contains(subject, "&amp;") {
+		t.Fatalf("subject = %q, want the escaping undone", subject)
 	}
 }
 
@@ -139,6 +271,7 @@ func TestNewClient_RequiredFields(t *testing.T) {
 		"timeout":            func(c *Config) { c.Timeout = 0 },
 		"verify email url":   func(c *Config) { c.VerifyEmailURL = "" },
 		"reset password url": func(c *Config) { c.ResetPasswordURL = "" },
+		"app base url":       func(c *Config) { c.AppBaseURL = "" },
 		// A relative link produces a mail whose button goes nowhere, and nobody reports
 		// that as a bug — so it fails at startup instead.
 		"absolute verify url": func(c *Config) { c.VerifyEmailURL = "/verify-email" },

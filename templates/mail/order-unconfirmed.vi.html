@@ -1,0 +1,12 @@
+{{/*
+  To the buyer only. Params: order_id.
+
+  Buyer only on purpose: this is the buyer being told their money is not stuck unnoticed.
+  The seller is the one who did not act, and chasing them is support's job — a mail here
+  would be this platform cancelling or apologising on their behalf, which it does not do.
+*/}}
+{{define "subject"}}Đơn hàng {{.Params.order_id}} đang chờ người bán xác nhận{{end}}
+{{define "title"}}Đơn hàng đang được hỗ trợ xử lý{{end}}
+{{define "lead"}}Người bán chưa xác nhận đơn hàng này trong thời hạn quy định. Tiền của bạn vẫn đang được giữ nguyên trong tài khoản tạm giữ và bộ phận hỗ trợ đã tiếp nhận để liên hệ với người bán.{{end}}
+{{define "action"}}Xem đơn hàng{{end}}
+{{define "footer"}}Bạn không cần làm gì thêm — chúng tôi sẽ báo lại khi có kết quả.{{end}}

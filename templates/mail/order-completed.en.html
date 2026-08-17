@@ -1,0 +1,5 @@
+{{/* To both sides of the sale. Params: order_id. See order-completed.vi.html on why one template serves both. */}}
+{{define "subject"}}Order {{.Params.order_id}} is complete{{end}}
+{{define "title"}}The order is complete{{end}}
+{{define "lead"}}The sale has closed and the escrow has been released to the seller. You can now rate the other side from the order — ratings stay hidden until both of you have submitted one.{{end}}
+{{define "action"}}View order{{end}}
