@@ -234,6 +234,11 @@ type Repository interface {
 	// ListListings answers the feed: cards from a flat read model, because a page of twenty
 	// must not be twenty aggregate loads. Score is set only when the filter was a search.
 	ListListings(ctx context.Context, f ListingFilter) ([]ListingSummary, int64, error)
+	// ListListingsByIDs hydrates a specific set of ids into cards, active ones only — the
+	// personalised feed's cache reads this to refresh a page it drew earlier rather than
+	// trusting a stale price. Order is the caller's to keep; an id no longer active simply
+	// does not come back.
+	ListListingsByIDs(ctx context.Context, ids []int64) ([]ListingSummary, error)
 	// Interests reads an account's interest slots, strongest first — what `sort=recommended`
 	// ranks against. Empty for an account nothing has computed yet, and the service falls
 	// back to newest.

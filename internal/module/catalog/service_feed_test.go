@@ -183,6 +183,53 @@ func TestFavorites_RefreshTheInterestSlots(t *testing.T) {
 	}
 }
 
+// A page the cache already covers is served without redrawing the feed — the whole point of
+// materialising a batch instead of re-running the weighted draw on every page.
+func TestListListings_RecommendedCachesTheDraw(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	buyer := id.Of[id.Account](80)
+	for _, name := range []string{"One", "Two", "Three", "Four"} {
+		publish(t, h, seedListingNamed(t, h, name))
+	}
+	saved := seedListingNamed(t, h, "Saved")
+	publish(t, h, saved)
+	if err := h.svc.AddFavorite(ctx, catalogapi.FavoriteRequest{ActorID: buyer, ID: saved.ID}); err != nil {
+		t.Fatalf("AddFavorite: %v", err)
+	}
+
+	req := catalogapi.ListListingsRequest{
+		ViewerID: buyer, Sort: "recommended", Seed: "one-run", Limit: 2, Page: 1,
+	}
+	if _, err := h.svc.ListListings(ctx, req); err != nil {
+		t.Fatalf("ListListings page 1: %v", err)
+	}
+	if h.repo.listListingsCalls != 1 {
+		t.Fatalf("draws = %d, want 1 for the first page", h.repo.listListingsCalls)
+	}
+
+	req.Page = 2
+	if _, err := h.svc.ListListings(ctx, req); err != nil {
+		t.Fatalf("ListListings page 2: %v", err)
+	}
+	if h.repo.listListingsCalls != 1 {
+		t.Errorf("draws = %d, want still 1 — page 2 should read the cached batch", h.repo.listListingsCalls)
+	}
+	if h.repo.listListingsByIDsCalls != 1 {
+		t.Errorf("hydration reads = %d, want 1 for page 2", h.repo.listListingsByIDsCalls)
+	}
+
+	// A different run of the same feed — the seed a fresh page load sends — is not served
+	// from the other seed's batch.
+	req.Seed, req.Page = "another-run", 1
+	if _, err := h.svc.ListListings(ctx, req); err != nil {
+		t.Fatalf("ListListings other seed: %v", err)
+	}
+	if h.repo.listListingsCalls != 2 {
+		t.Errorf("draws = %d, want 2 — a new seed is a new run", h.repo.listListingsCalls)
+	}
+}
+
 // A query alongside a personalised feed stays a filter on the name. Embedding it would make
 // the adapter drop the lexical predicate — the concession a real semantic search earns — and
 // the caller would get their whole personalised feed back under a search they typed.

@@ -80,7 +80,32 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 		return nil, 0, fmt.Errorf("db query listings: %w", err)
 	}
 	defer rows.Close()
+	return scanListingCards(rows)
+}
 
+// ListListingsByIDs is the personalised feed cache's hydration read: the ids came from an
+// earlier draw, so this asks only for their current, live state — active listings only, no
+// score, no position to measure a distance from. The caller reorders.
+func (r *Repo) ListListingsByIDs(ctx context.Context, ids []int64) ([]port.ListingSummary, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	const q = feedSelect + freshScore + feedScore + `, 0::bigint AS total_count` + feedFrom + `
+	           WHERE l.id = ANY(@ids::bigint[]) AND l.deleted_at IS NULL AND l.status = 'active'`
+	args := pgx.NamedArgs{"ids": ids, "near_lat": nil, "near_lon": nil}
+	rows, err := r.pool.Query(ctx, q, args)
+	if err != nil {
+		return nil, fmt.Errorf("db query listings by id: %w", err)
+	}
+	defer rows.Close()
+	out, _, err := scanListingCards(rows)
+	return out, err
+}
+
+// scanListingCards is the row shape every feed query answers in: a plain browse, a
+// reranked search and the personalised draw all select the same columns, `total_count`
+// included even where the caller ignores it.
+func scanListingCards(rows pgx.Rows) ([]port.ListingSummary, int64, error) {
 	var (
 		out   []port.ListingSummary
 		total int64

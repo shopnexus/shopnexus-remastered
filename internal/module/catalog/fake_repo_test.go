@@ -47,6 +47,10 @@ type fakeRepo struct {
 	// so the resolution — which probes, and whether the query was one of them — is the only
 	// thing a unit test can assert about a feed.
 	lastFilter port.ListingFilter
+	// listListingsCalls and listListingsByIDsCalls count the two reads the personalised feed's
+	// cache chooses between, so a test can assert it drew again only when it had to.
+	listListingsCalls      int
+	listListingsByIDsCalls int
 	// interests are the account's slots, which is what sort=recommended ranks against.
 	interests map[int64][]port.Interest
 	// resources is this module's own resource table: an id absent from it names no confirmed
@@ -679,6 +683,7 @@ func auditedDiff[T any](f *fakeRepo, e domain.EventType[T]) (T, bool) {
 // without a database noticing.
 func (f *fakeRepo) ListListings(_ context.Context, filter port.ListingFilter) ([]port.ListingSummary, int64, error) {
 	f.lastFilter = filter
+	f.listListingsCalls++
 	var matched []port.ListingSummary
 	for _, stored := range f.listings {
 		l := stored.listing
@@ -762,6 +767,21 @@ func (f *fakeRepo) ListListings(_ context.Context, filter port.ListingFilter) ([
 		return nil, total, nil
 	}
 	return matched[filter.Offset:min(filter.Offset+filter.Limit, len(matched))], total, nil
+}
+
+// ListListingsByIDs mirrors the adapter's hydration read: active listings only, whichever of
+// the ids still are.
+func (f *fakeRepo) ListListingsByIDs(_ context.Context, ids []int64) ([]port.ListingSummary, error) {
+	f.listListingsByIDsCalls++
+	var out []port.ListingSummary
+	for _, stored := range f.listings {
+		if stored.listing.Status != domain.StatusActive || stored.listing.DeletedAt != nil ||
+			!slices.Contains(ids, stored.listing.ID) {
+			continue
+		}
+		out = append(out, f.summaryOf(stored))
+	}
+	return out, nil
 }
 
 // priceInRange is satisfied by any one live variant, as the EXISTS subqueries are.

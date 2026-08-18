@@ -3,11 +3,13 @@ package catalog
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
+	"shopnexus/internal/infra/cache"
 	accountapi "shopnexus/internal/module/account/api"
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
@@ -23,7 +25,15 @@ func (s *Service) ListListings(ctx context.Context, req catalogapi.ListListingsR
 	if err != nil {
 		return catalogapi.ListingPage{}, err
 	}
-	rows, total, err := s.repo.ListListings(ctx, filter)
+	var (
+		rows  []port.ListingSummary
+		total int64
+	)
+	if filter.Sort == port.SortRecommended && len(filter.Interests) > 0 {
+		rows, err = s.recommendedRows(ctx, filter)
+	} else {
+		rows, total, err = s.repo.ListListings(ctx, filter)
+	}
 	if err != nil {
 		return catalogapi.ListingPage{}, fmt.Errorf("list listings: %w", err)
 	}
@@ -207,6 +217,72 @@ func feedSeed(sent string, viewerID int64, now time.Time) string {
 		return sent
 	}
 	return fmt.Sprintf("%d:%d", viewerID, now.Unix()/int64(domain.SeedRotation.Seconds()))
+}
+
+// feedCacheBatch is how many ids one draw of the personalised feed materialises at once —
+// several pages' worth, so a normal scroll never pays for a redraw mid-page.
+const feedCacheBatch = 60
+
+// feedCacheTTL is how long a materialised batch is trusted. Long enough to cover one
+// browsing session's paging, short enough that a seed reused later still finds a fresh draw.
+const feedCacheTTL = 20 * time.Minute
+
+// feedCacheKey scopes a materialised batch to the account and the seed that drew it — the
+// same pair the draw's ordering is a pure function of, so two requests naming both are
+// asking for the same run.
+func feedCacheKey(viewerID int64, seed string) string {
+	return fmt.Sprintf("feed:%d:%s", viewerID, seed)
+}
+
+// recommendedRows answers one page of the personalised feed. The first ask for a
+// (viewer, seed) draws feedCacheBatch ids and caches the order; every later page slices that
+// order and re-reads only those ids, fresh, instead of redoing the weighted draw. A page
+// past what is cached draws again for more of the same run — the ordering is a pure function
+// of the seed, so asking for more is asking the same question with a bigger limit.
+func (s *Service) recommendedRows(ctx context.Context, filter port.ListingFilter) ([]port.ListingSummary, error) {
+	key := feedCacheKey(filter.ViewerID, filter.Seed)
+	want := filter.Offset + filter.Limit
+
+	var ids []int64
+	if err := s.cache.Get(ctx, key, &ids); err != nil && !errors.Is(err, cache.ErrCacheMiss) {
+		s.log.Warn("read feed cache", "account_id", filter.ViewerID, "err", err)
+	}
+
+	if len(ids) < want {
+		draw := filter
+		draw.Offset, draw.Limit = 0, max(want, feedCacheBatch)
+		rows, _, err := s.repo.ListListings(ctx, draw)
+		if err != nil {
+			return nil, fmt.Errorf("draw recommended feed: %w", err)
+		}
+		if err := s.cache.Set(ctx, key, listingKeys(rows), feedCacheTTL); err != nil {
+			s.log.Warn("cache recommended feed", "account_id", filter.ViewerID, "err", err)
+		}
+		return rows[min(filter.Offset, len(rows)):min(want, len(rows))], nil
+	}
+
+	page := ids[filter.Offset:min(want, len(ids))]
+	rows, err := s.repo.ListListingsByIDs(ctx, page)
+	if err != nil {
+		return nil, fmt.Errorf("hydrate recommended feed: %w", err)
+	}
+	return reorderCards(rows, page), nil
+}
+
+// reorderCards puts a hydration read back in the order ids named, dropping any that did not
+// come back — delisted since the draw that named them.
+func reorderCards(rows []port.ListingSummary, ids []int64) []port.ListingSummary {
+	byID := make(map[int64]port.ListingSummary, len(rows))
+	for _, r := range rows {
+		byID[r.ID] = r
+	}
+	out := make([]port.ListingSummary, 0, len(ids))
+	for _, id := range ids {
+		if r, ok := byID[id]; ok {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // probeFor resolves the dense vector a search runs against: the query's own embedding, for a
