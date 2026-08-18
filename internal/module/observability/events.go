@@ -20,6 +20,7 @@ import (
 // this list will catch it.
 var observedTopics = []string{
 	"order.placed",
+	"catalog.listing_interaction",
 }
 
 // subscribeEvents registers an observability consumer group on each observed

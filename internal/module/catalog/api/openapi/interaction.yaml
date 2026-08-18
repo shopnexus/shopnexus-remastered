@@ -1,0 +1,51 @@
+# catalog fragment: interaction — a shopper's action against a listing.
+#
+# The two things it feeds live elsewhere: a positive interaction moves the caller's
+# personalised feed (`sort=recommended`), and every interaction moves the platform's
+# popularity score, computed in observability and read back by this module's feed. This
+# route only records the fact; both readers consume it independently off the bus.
+
+paths:
+  /listings/interactions:
+    post:
+      tags: [catalog]
+      summary: Record a batch of shopper actions against listings
+      description: >
+        Best-effort and asynchronous: the response does not wait on personalisation or
+        popularity catching up, and a batch too large to matter is refused rather than
+        silently truncated. `view` is the account looking at a listing; the three
+        `click-from-*` kinds say where that look started; `not-interested` and `hidden`
+        exclude a listing from that account's personalised feed outright rather than
+        lowering its rank — the two carry a negative weight for the popularity score, but
+        never for personalisation, which averages positive weights into a share of the page
+        and has nothing a negative number there would do but corrupt.
+
+
+        Optional auth: an anonymous view still counts toward popularity. Only a signed-in
+        one has an account for personalisation to attach to.
+      security:
+        - {}
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                interactions:
+                  type: array
+                  minItems: 1
+                  maxItems: 20
+                  items:
+                    type: object
+                    properties:
+                      listing_id: { $ref: '#/components/schemas/ListingID' }
+                      type:
+                        type: string
+                        enum: [view, click-from-search, click-from-recommended, click-from-category, not-interested, hidden]
+                    required: [listing_id, type]
+              required: [interactions]
+      responses:
+        '204': { description: Queued }
+        '400': { $ref: '#/components/responses/BadRequest' }

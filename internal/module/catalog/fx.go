@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/fx"
 
 	"shopnexus/internal/config"
 	"shopnexus/internal/infra/durable"
+	"shopnexus/internal/infra/eventbus"
 	"shopnexus/internal/infra/postgres"
 	catalogpg "shopnexus/internal/module/catalog/adapter/postgres"
 	catalogapi "shopnexus/internal/module/catalog/api"
@@ -17,6 +19,7 @@ import (
 	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/common/dbx"
 	"shopnexus/internal/module/common/uploads"
+	"shopnexus/internal/module/order"
 	"shopnexus/internal/provider/storage"
 )
 
@@ -38,6 +41,12 @@ var Module = fx.Module("catalog",
 		fx.Annotate(newInterestSweep, fx.ResultTags(`group:"sweeps"`)),
 		fx.Annotate(NewService, fx.As(new(catalogapi.Service))),
 	),
+	// Without this the bus would have no consumer, and a shopper's actions would move nothing
+	// but observability's popularity score.
+	fx.Invoke(SubscribeListingInteractions),
+	// Without this a purchase would move nothing at all — order publishes the fact and this
+	// module is what turns it into personalisation's strongest signal.
+	fx.Invoke(SubscribeOrderPlaced),
 )
 
 func newPool(lc fx.Lifecycle, cfg *config.Config) (*pgxpool.Pool, error) {
@@ -66,4 +75,51 @@ func newUploadSweep(store *uploads.Store) durable.Sweep { return store.Sweep }
 // found here instead of waiting for their next save.
 func newInterestSweep(repo port.Repository) durable.Sweep {
 	return func(ctx context.Context, log *slog.Logger) { sweepInterests(ctx, repo, log) }
+}
+
+// SubscribeListingInteractions is this module's own consumer of its own fact: a shopper's
+// action, turned into a listing_signal row for personalisation to read. Anonymous actions
+// (AccountID 0) are dropped here — they have no account for interestSignals to attach to, and
+// observability's independent subscriber is what still counts them toward popularity.
+func SubscribeListingInteractions(bus eventbus.Client, repo port.Repository, log *slog.Logger) {
+	eventbus.SubscribeBatch(bus, ListingInteractionTopic, "catalog",
+		func(ctx context.Context, events []ListingInteraction) error {
+			signals := make([]port.ListingSignal, 0, len(events))
+			for _, e := range events {
+				if e.AccountID == 0 {
+					continue
+				}
+				signals = append(signals, port.ListingSignal{
+					AccountID: e.AccountID, ListingID: e.ListingID, Type: e.Type,
+				})
+			}
+			if err := repo.InsertListingSignals(ctx, signals); err != nil {
+				log.Error("insert listing signals", "err", err)
+				return err
+			}
+			return nil
+		}, eventbus.WithBatchSize(50), eventbus.WithLinger(2*time.Second))
+}
+
+// SubscribeOrderPlaced turns a purchase into the buyer's strongest positive signal. Order
+// publishes the whole fact, lines included, so this module reads what it needs from the event
+// rather than reaching back into order's own tables for it — the coupling a published fact
+// exists to avoid.
+func SubscribeOrderPlaced(bus eventbus.Client, repo port.Repository, log *slog.Logger) {
+	eventbus.SubscribeBatch(bus, order.OrderPlacedTopic, "catalog",
+		func(ctx context.Context, events []order.OrderPlaced) error {
+			var signals []port.ListingSignal
+			for _, e := range events {
+				for _, line := range e.Lines {
+					signals = append(signals, port.ListingSignal{
+						AccountID: e.BuyerID, ListingID: line.ListingID, Type: catalogapi.InteractionPurchase,
+					})
+				}
+			}
+			if err := repo.InsertListingSignals(ctx, signals); err != nil {
+				log.Error("insert purchase signals", "err", err)
+				return err
+			}
+			return nil
+		}, eventbus.WithBatchSize(50), eventbus.WithLinger(2*time.Second))
 }

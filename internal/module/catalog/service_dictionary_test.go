@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"shopnexus/internal/infra/cache"
+	"shopnexus/internal/infra/eventbus"
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/api/accounttest"
 	"shopnexus/internal/module/catalog"
@@ -115,6 +116,10 @@ type harness struct {
 	// vectors is the embedding seam a search's probe comes from. It counts calls, because what is
 	// worth proving about the probe is that a repeated query costs one inference and not two.
 	vectors *fakeVectors
+	// bus is where RecordInteractions publishes; an in-memory transport so a test can subscribe
+	// and see what went out without a real broker. Concrete, not eventbus.Client, so a test can
+	// call Wait() and not race the subscriber's own goroutine.
+	bus *eventbus.Memory
 }
 
 func newHarness(role string) *harness { return newHarnessWith(role, false) }
@@ -126,18 +131,19 @@ func newHarnessWith(role string, identityVerified bool) *harness {
 	store := newFakeUploads()
 	models := &fakeLLM{}
 	vectors := &fakeVectors{}
+	bus := eventbus.NewMemory(slog.New(slog.DiscardHandler))
 	svc := catalog.NewService(repo, fakeAccounts{role: role, verified: identityVerified},
-		store, models, vectors, cache.NewInMemoryClient(), validation.Default(), slog.New(slog.DiscardHandler))
+		store, models, vectors, cache.NewInMemoryClient(), bus, validation.Default(), slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: repo, uploads: store, images: store.confirmed, models: models,
-		vectors: vectors}
+		vectors: vectors, bus: bus}
 }
 
 // newHarnessModerator reuses one harness's repository with a moderator caller.
 func newHarnessModerator(h *harness) *harness {
 	svc := catalog.NewService(h.repo, fakeAccounts{role: "moderator", verified: true},
-		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), validation.Default(), slog.New(slog.DiscardHandler))
+		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), h.bus, validation.Default(), slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models,
-		vectors: h.vectors}
+		vectors: h.vectors, bus: h.bus}
 }
 
 // newHarnessSellerGone reuses one harness's data with the seller's account missing, and counts what
@@ -145,27 +151,27 @@ func newHarnessModerator(h *harness) *harness {
 func newHarnessSellerGone(h *harness, gone bool, reads *int) *harness {
 	svc := catalog.NewService(h.repo,
 		fakeAccounts{role: "user", verified: true, gone: gone, publicReads: reads},
-		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), validation.Default(), slog.New(slog.DiscardHandler))
+		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), h.bus, validation.Default(), slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models,
-		vectors: h.vectors}
+		vectors: h.vectors, bus: h.bus}
 }
 
 // newHarnessUngeocoded reuses one harness's data with a seller whose address has no coordinates,
 // which is what makes "near me" refusable rather than silently empty.
 func newHarnessUngeocoded(h *harness) *harness {
 	svc := catalog.NewService(h.repo, fakeAccounts{role: "user", verified: true, ungeocoded: true},
-		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), validation.Default(), slog.New(slog.DiscardHandler))
+		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), h.bus, validation.Default(), slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models,
-		vectors: h.vectors}
+		vectors: h.vectors, bus: h.bus}
 }
 
 // newHarnessAdmin reuses one harness's repository with an admin caller, so a test can seed a
 // category and then act as a plain seller against the same data.
 func newHarnessAdmin(h *harness) *harness {
 	svc := catalog.NewService(h.repo, fakeAccounts{role: "admin", verified: true},
-		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), validation.Default(), slog.New(slog.DiscardHandler))
+		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), h.bus, validation.Default(), slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models,
-		vectors: h.vectors}
+		vectors: h.vectors, bus: h.bus}
 }
 
 func status(t *testing.T, err error) uint16 {

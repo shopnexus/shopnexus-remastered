@@ -147,6 +147,17 @@ type Interest struct {
 	Weight float64
 }
 
+// ListingSignal is one row of listing_signal: a shopper's action against a listing, the source
+// interestSignals reads next to favorite. AccountID is never 0 here — an anonymous
+// ListingInteraction is a popularity signal only, and observability's own subscriber is what
+// reads that one; this table exists for personalisation, which has nothing to attach an
+// anonymous action to.
+type ListingSignal struct {
+	AccountID int64
+	ListingID int64
+	Type      string
+}
+
 // Point is a WGS84 coordinate — the buyer's position for a "near me" browse.
 type Point struct {
 	Latitude  float64 `validate:"gte=-90,lte=90"`
@@ -243,9 +254,17 @@ type Repository interface {
 	// ranks against. Empty for an account nothing has computed yet, and the service falls
 	// back to newest.
 	Interests(ctx context.Context, accountID int64) ([]Interest, error)
-	// RecomputeInterests rebuilds those slots from what the account saved, replacing the set
-	// in one transaction so a reader never sees half an account's taste.
-	RecomputeInterests(ctx context.Context, accountID int64) error
+	// RecomputeInterests rebuilds those slots from what the account saved plus its recent
+	// positive listing_signal rows (a view, a click — never a negative one: an average that
+	// becomes a share of the page has no business holding a negative number, so
+	// "not-interested"/"hidden" instead exclude a listing outright), replacing the set in one
+	// transaction so a reader never sees half an account's taste. signalWeights is
+	// catalogapi.InteractionWeight narrowed to catalogapi.PositiveInteractionTypes — the
+	// service's job, since this layer may not import that package.
+	RecomputeInterests(ctx context.Context, accountID int64, signalWeights map[string]float64) error
+	// InsertListingSignals writes a batch of shopper actions — this module's own subscriber to
+	// its own ListingInteractionTopic, off the request path entirely.
+	InsertListingSignals(ctx context.Context, signals []ListingSignal) error
 	// StaleInterests names the accounts whose slots no longer reflect their wishlist —
 	// something saved or unsaved since, or a saved listing embedded since. The recompute runs
 	// inline on a wishlist write; this is the net under the pass that failed, and under the

@@ -142,6 +142,15 @@ Publishing is async/best-effort — never block or fail a request on telemetry; 
 sample that cannot reach the bus is counted (`reportDropped`) rather than
 retried. Once a sample *is* in JetStream it is durable: a failed insert nacks the
 batch and is redelivered, so a database blip no longer loses telemetry.
+
+Outside that pipeline, this module also holds `listing_popularity` — a platform-wide,
+account-agnostic score, `subscribePopularity`/`subscribePurchases` folding
+`catalog.listing_interaction`/`order.placed` into it on the domain bus (their own consumer
+groups, independent of `subscribeEvents`' raw mirror on the same topics and of catalog's own
+subscriber that feeds personalisation instead). UPDATE-then-INSERT, not the Sink/JetStream/COPY
+pipeline above: a score's delta can be negative, and it is a small aggregate table, not a
+hypertable of samples. `port.Repository.PopularityOf` reads it back — no `api/` package yet,
+since nothing calls it; add one the day something does rather than before.
 **Logs** are separate: app logs JSON to stdout → Grafana Alloy (`dev/alloy`)
 → **Loki** → same Grafana. **Product/web analytics is NOT in the backend** —
 it's collected client-side by Rybbit (self-hosted, ClickHouse-backed), a
@@ -797,6 +806,21 @@ give it its own doc under `docs/` and link it from here.
   behind signed URLs only this gateway serves, which a hosted model cannot follow — so a photo travels
   inside the request as a data URI (`llm.Message.Images`). `remote` refuses to be read: its keys are
   somebody else's origin and this platform does not proxy them.
+- **A shopper's action is a published fact, and three independent readers fold it into three
+  different things.** `POST /listings/interactions` publishes `catalog.listing_interaction`
+  (`catalog/event.go`) for six client-observed kinds — `view`, three `click-from-*`, and
+  `not-interested`/`hidden` — validated against exactly that set (`catalogapi.InteractionWeight`'s
+  keys, the one place the vocabulary is named). `order.OrderPlaced` carries a seventh,
+  `purchase`, never client-submitted: it is derived from a completed sale, so it stays out of the
+  route's validated set but shares the same weight map and `catalogapi.PositiveInteractionTypes`.
+  Nobody calls anybody synchronously — catalog's own subscriber turns the four positive kinds plus
+  `purchase` into `listing_signal` rows (append-only, next to `favorite`, both read by
+  `interestSignals`); observability's separate subscriber (own consumer group, same topic — a
+  third reads the raw copy into `business_events`) folds every kind into `listing_popularity`,
+  UPDATE-then-INSERT because a weight can be negative. `not-interested`/`hidden` never enter
+  `interestSignals`' positive-weighted average — an average that becomes a page's share cannot
+  hold a negative number — they instead exclude a listing outright in `recommendedWhere`,
+  checked live at request time rather than baked into the precomputed vector.
 
 ## Commits
 

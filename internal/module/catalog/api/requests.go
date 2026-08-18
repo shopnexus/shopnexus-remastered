@@ -267,6 +267,21 @@ type ListListingsRequest struct {
 	Limit int    `json:"-" validate:"required,min=1,max=100"`
 }
 
+// RecordInteractionsRequest is a batch of shopper actions against listings. Best-effort by
+// design: nothing in the read path waits on this landing, so a client fires it and moves on.
+// ActorID is optional — an anonymous view still counts toward popularity, though only a
+// signed-in one has an account for personalisation to attach to.
+type RecordInteractionsRequest struct {
+	ActorID      id.ID[id.Account]  `json:"-"`
+	Interactions []InteractionInput `json:"interactions" validate:"required,min=1,max=20,dive"`
+}
+
+// InteractionInput is one action, the vocabulary catalogapi.Interaction* names.
+type InteractionInput struct {
+	ListingID id.ID[id.Listing] `json:"listing_id" validate:"required"`
+	Type      string            `json:"type" validate:"required,oneof=view click-from-search click-from-recommended click-from-category not-interested hidden"`
+}
+
 // FavoriteRequest is one wishlist write. PUT and DELETE are both idempotent, so neither needs
 // to know whether the row was already there.
 type FavoriteRequest struct {

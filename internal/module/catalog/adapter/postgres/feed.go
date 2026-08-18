@@ -298,12 +298,18 @@ const recommendedHead = `WITH probe AS (
 	           `
 
 // recommendedWhere is what a personalised feed excludes on top of the ordinary visibility
-// rules. Nobody can buy their own goods, and a listing the account already saved is one they
-// have found — putting it back on the page spends a card telling them what they told us.
+// rules. Nobody can buy their own goods, a listing the account already saved is one they have
+// found — putting it back on the page spends a card telling them what they told us — and one
+// they marked "not interested" or "hidden" is excluded outright rather than down-weighted:
+// interestSignals never lets those two types near the positive average it feeds, precisely so
+// this is the only place they act.
 const recommendedWhere = `
 	             AND l.account_id <> @viewer_id
 	             AND NOT EXISTS (SELECT 1 FROM favorite rf
-	                             WHERE rf.listing_id = l.id AND rf.account_id = @viewer_id)`
+	                             WHERE rf.listing_id = l.id AND rf.account_id = @viewer_id)
+	             AND NOT EXISTS (SELECT 1 FROM listing_signal rs
+	                             WHERE rs.listing_id = l.id AND rs.account_id = @viewer_id
+	                               AND rs.type IN ('not-interested', 'hidden'))`
 
 // An interest can only rank what it can measure the distance to. The fresh source below
 // deliberately does not carry this: the newest thing on the platform is exactly the one whose

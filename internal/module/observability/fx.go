@@ -32,6 +32,8 @@ var Module = fx.Module("observability",
 	fx.Invoke(stopTelemetryBus),
 	fx.Invoke(startSampler),
 	fx.Invoke(subscribeEvents),
+	fx.Invoke(subscribePopularity),
+	fx.Invoke(subscribePurchases),
 )
 
 func newRepo(lc fx.Lifecycle, cfg *config.Config) (*obspg.Repo, error) {

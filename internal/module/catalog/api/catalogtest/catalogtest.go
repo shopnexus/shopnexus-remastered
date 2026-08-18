@@ -58,6 +58,10 @@ func (Stub) RemoveFavorite(context.Context, catalogapi.FavoriteRequest) error {
 	return errx.ErrNotImplemented
 }
 
+func (Stub) RecordInteractions(context.Context, catalogapi.RecordInteractionsRequest) error {
+	return errx.ErrNotImplemented
+}
+
 func (Stub) SuggestListing(context.Context, catalogapi.SuggestListingRequest) (catalogapi.ListingSuggestion, error) {
 	return catalogapi.ListingSuggestion{}, errx.ErrNotImplemented
 }

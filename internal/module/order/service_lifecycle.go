@@ -147,7 +147,7 @@ func (s *Service) finishSettlement(ctx context.Context, o domain.Order, paid []*
 			return err
 		}
 	}
-	s.publishPlaced(ctx, o, total, currency)
+	s.publishPlaced(ctx, o, paid, total, currency)
 	// The checkout's wait is over, and the order's has begun: delivery, then the escrow
 	// window. Both signals are best-effort — the row already says the sale happened.
 	s.timer("checkout paid", s.workflows.CheckoutPaid(ctx, sessionID.Int64()))
@@ -736,13 +736,18 @@ func (s *Service) publishConfirmationLapsed(ctx context.Context, o domain.Order)
 
 // publishPlaced announces the sale. Best-effort: the order is written and the money is held,
 // so a bus that is down must not turn a completed purchase into a retried one.
-func (s *Service) publishPlaced(ctx context.Context, o domain.Order, total int64, currency string) {
+func (s *Service) publishPlaced(ctx context.Context, o domain.Order, paid []*domain.Item, total int64, currency string) {
+	lines := make([]OrderLine, len(paid))
+	for i, item := range paid {
+		lines[i] = OrderLine{ListingID: item.ListingID, VariantID: item.VariantID, Quantity: item.Quantity}
+	}
 	event := OrderPlaced{
 		OrderID:  o.ID,
 		BuyerID:  o.BuyerID,
 		SellerID: o.SellerID,
 		Total:    total,
 		Currency: currency,
+		Lines:    lines,
 	}
 	if err := publishOrderPlaced(ctx, s.bus, event); err != nil {
 		s.log.Error("publish order placed failed", "order_id", o.ID, "err", err)

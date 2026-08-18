@@ -398,9 +398,20 @@ func (s *Service) AddFavorite(ctx context.Context, req catalogapi.FavoriteReques
 // could not be recomputed is a feed a few minutes behind, not a save that failed. The sweep
 // finds the account again either way, since the mark is the wishlist itself.
 func (s *Service) refreshInterests(ctx context.Context, accountID int64) {
-	if err := s.repo.RecomputeInterests(ctx, accountID); err != nil {
+	if err := s.repo.RecomputeInterests(ctx, accountID, positiveInteractionWeights()); err != nil {
 		s.log.Warn("recompute interests", "account_id", accountID, "err", err)
 	}
+}
+
+// positiveInteractionWeights is catalogapi.InteractionWeight narrowed to the types
+// interestSignals may average — never the negative ones, which exclude a listing instead of
+// weighing it (see RecomputeInterests).
+func positiveInteractionWeights() map[string]float64 {
+	out := make(map[string]float64, len(catalogapi.PositiveInteractionTypes))
+	for _, t := range catalogapi.PositiveInteractionTypes {
+		out[t] = catalogapi.InteractionWeight[t]
+	}
+	return out
 }
 
 // RemoveFavorite takes it off the wishlist. It does not check the listing exists: unsaving
@@ -429,8 +440,9 @@ func sweepInterests(ctx context.Context, repo port.Repository, log *slog.Logger)
 		return
 	}
 	var failed int
+	weights := positiveInteractionWeights()
 	for _, accountID := range accounts {
-		if err := repo.RecomputeInterests(ctx, accountID); err != nil {
+		if err := repo.RecomputeInterests(ctx, accountID, weights); err != nil {
 			failed++
 		}
 	}

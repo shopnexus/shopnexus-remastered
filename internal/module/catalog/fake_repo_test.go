@@ -43,6 +43,9 @@ type fakeRepo struct {
 	// instead of moving the counters again.
 	movements map[string]bool
 	favorites map[[2]int64]bool
+	// signals is listing_signal, append-only: a listing looked at three times is three rows,
+	// which is the whole reason it is not a map keyed like favorites.
+	signals []storedSignal
 	// lastFilter is what the service resolved before handing it over. The fake ranks nothing,
 	// so the resolution — which probes, and whether the query was one of them — is the only
 	// thing a unit test can assert about a feed.
@@ -66,6 +69,13 @@ type storedListing struct {
 	listing  domain.Listing
 	variants []domain.Variant
 	tags     []string
+}
+
+// storedSignal is one row of listing_signal.
+type storedSignal struct {
+	accountID  int64
+	listingID  int64
+	signalType string
 }
 
 func newFakeRepo() *fakeRepo {
@@ -904,17 +914,31 @@ func (f *fakeRepo) Interests(_ context.Context, accountID int64) ([]port.Interes
 }
 
 // RecomputeInterests mirrors the adapter's shape rather than its arithmetic: one slot per
-// category the account saved something in, strongest first, weights summing to one. That is
-// what a caller of this repository can rely on, and it is enough to tell "the wishlist write
-// refreshed the slots" from "it did not".
-func (f *fakeRepo) RecomputeInterests(_ context.Context, accountID int64) error {
-	counts := map[int64]int{}
+// category the account saved or positively signalled toward, strongest first, weights summing
+// to one. That is what a caller of this repository can rely on, and it is enough to tell "the
+// write refreshed the slots" from "it did not". A signal whose type is not a key in
+// signalWeights (the negative ones, in real use) contributes nothing here — this fake does not
+// simulate the exclusion RecomputeInterests' real SQL applies instead.
+func (f *fakeRepo) RecomputeInterests(_ context.Context, accountID int64, signalWeights map[string]float64) error {
+	counts := map[int64]float64{}
 	for key := range f.favorites {
 		if key[0] != accountID || !f.favorites[key] {
 			continue
 		}
 		if i := f.listingAt(key[1]); i >= 0 {
 			counts[f.listings[i].listing.CategoryID]++
+		}
+	}
+	for _, s := range f.signals {
+		if s.accountID != accountID {
+			continue
+		}
+		weight, ok := signalWeights[s.signalType]
+		if !ok {
+			continue
+		}
+		if i := f.listingAt(s.listingID); i >= 0 {
+			counts[f.listings[i].listing.CategoryID] += weight
 		}
 	}
 	if len(counts) == 0 {
@@ -930,7 +954,7 @@ func (f *fakeRepo) RecomputeInterests(_ context.Context, accountID int64) error 
 	if len(categories) > domain.NumInterests {
 		categories = categories[:domain.NumInterests]
 	}
-	var total int
+	var total float64
 	for _, category := range categories {
 		total += counts[category]
 	}
@@ -951,6 +975,12 @@ func (f *fakeRepo) StaleInterests(_ context.Context, limit int) ([]int64, error)
 			continue
 		}
 		out = append(out, key[0])
+	}
+	for _, s := range f.signals {
+		if len(f.interests[s.accountID]) > 0 || slices.Contains(out, s.accountID) {
+			continue
+		}
+		out = append(out, s.accountID)
 	}
 	slices.Sort(out)
 	if len(out) > limit {
@@ -979,6 +1009,15 @@ func (f *fakeRepo) AddFavorite(_ context.Context, accountID, listingID int64) er
 
 func (f *fakeRepo) RemoveFavorite(_ context.Context, accountID, listingID int64) error {
 	delete(f.favorites, [2]int64{accountID, listingID})
+	return nil
+}
+
+func (f *fakeRepo) InsertListingSignals(_ context.Context, signals []port.ListingSignal) error {
+	for _, s := range signals {
+		f.signals = append(f.signals, storedSignal{
+			accountID: s.AccountID, listingID: s.ListingID, signalType: s.Type,
+		})
+	}
 	return nil
 }
 

@@ -8223,6 +8223,53 @@ paths:
             summary: Review a listing you bought
             tags:
                 - trust
+    /listings/interactions:
+        post:
+            description: |
+                Best-effort and asynchronous: the response does not wait on personalisation or popularity catching up, and a batch too large to matter is refused rather than silently truncated. `view` is the account looking at a listing; the three `click-from-*` kinds say where that look started; `not-interested` and `hidden` exclude a listing from that account's personalised feed outright rather than lowering its rank — the two carry a negative weight for the popularity score, but never for personalisation, which averages positive weights into a share of the page and has nothing a negative number there would do but corrupt.
+
+                Optional auth: an anonymous view still counts toward popularity. Only a signed-in one has an account for personalisation to attach to.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            properties:
+                                interactions:
+                                    items:
+                                        properties:
+                                            listing_id:
+                                                $ref: '#/components/schemas/ListingID'
+                                            type:
+                                                enum:
+                                                    - view
+                                                    - click-from-search
+                                                    - click-from-recommended
+                                                    - click-from-category
+                                                    - not-interested
+                                                    - hidden
+                                                type: string
+                                        required:
+                                            - listing_id
+                                            - type
+                                        type: object
+                                    maxItems: 20
+                                    minItems: 1
+                                    type: array
+                            required:
+                                - interactions
+                            type: object
+                required: true
+            responses:
+                "204":
+                    description: Queued
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+            security:
+                - {}
+                - bearerAuth: []
+            summary: Record a batch of shopper actions against listings
+            tags:
+                - catalog
     /listings/suggestions:
         post:
             description: |

@@ -59,6 +59,11 @@ type Service interface {
 	AddFavorite(ctx context.Context, req FavoriteRequest) error
 	RemoveFavorite(ctx context.Context, req FavoriteRequest) error
 
+	// RecordInteractions publishes a batch of shopper actions and returns as soon as they
+	// are queued — nothing downstream (popularity, personalisation) is on the request's
+	// critical path.
+	RecordInteractions(ctx context.Context, req RecordInteractionsRequest) error
+
 	// --- moderation: moderator or admin only ---
 	AdminListListings(ctx context.Context, req AdminListListingsRequest) (ListingPage, error)
 	// AdminApproveListing clears whatever was awaiting a decision: a first publication, or an

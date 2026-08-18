@@ -10,6 +10,7 @@ import (
 	"github.com/go-playground/validator/v10"
 
 	"shopnexus/internal/infra/cache"
+	"shopnexus/internal/infra/eventbus"
 	accountapi "shopnexus/internal/module/account/api"
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
@@ -41,8 +42,12 @@ type Service struct {
 	// and each miss is a transformer inference on the request path, so the hit rate is the
 	// difference between search costing nothing and search costing a model call.
 	cache cache.Client
-	v     *validator.Validate
-	log   *slog.Logger
+	// bus carries this module's own facts — today just a shopper's interactions, published for
+	// its own subscriber (personalisation) and observability's (popularity) to read
+	// independently.
+	bus eventbus.Client
+	v   *validator.Validate
+	log *slog.Logger
 }
 
 func NewService(
@@ -52,11 +57,12 @@ func NewService(
 	models llm.Client,
 	vectors embedding.Client,
 	queries cache.Client,
+	bus eventbus.Client,
 	v *validator.Validate,
 	log *slog.Logger,
 ) *Service {
 	return &Service{repo: repo, accounts: accounts, uploads: uploads, llm: models,
-		vectors: vectors, cache: queries, v: v, log: log}
+		vectors: vectors, cache: queries, bus: bus, v: v, log: log}
 }
 
 // CreateUpload reserves a row and a signed slot for a listing photo. The client PUTs the bytes

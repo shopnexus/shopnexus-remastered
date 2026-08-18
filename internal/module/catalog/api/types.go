@@ -16,6 +16,52 @@ const (
 	PriceModeNegotiable = "negotiable"
 )
 
+// The interaction types a shopper's action against a listing is recorded under. Named here
+// rather than in domain, because observability's popularity scorer reads the same vocabulary
+// as weight-map keys without depending on this module's service.
+//
+// InteractionPurchase is the one type nobody submits through POST /listings/interactions — it
+// is derived from order.OrderPlaced, never client-observed, so it stays out of
+// RecordInteractionsRequest's validated set. It exists here anyway because it shares
+// InteractionWeight and PositiveInteractionTypes with the six a client can send: a purchase is
+// the strongest positive signal this platform has, and duplicating the map for one more entry
+// would be the drift this file already exists to prevent.
+const (
+	InteractionView               = "view"
+	InteractionClickFromSearch    = "click-from-search"
+	InteractionClickFromRecommend = "click-from-recommended"
+	InteractionClickFromCategory  = "click-from-category"
+	InteractionNotInterested      = "not-interested"
+	InteractionHidden             = "hidden"
+	InteractionPurchase           = "purchase"
+)
+
+// InteractionWeight is how strongly one interaction counts, for the two things it feeds:
+// how much it moves personalisation (only the positive five ever do — see
+// PositiveInteractionTypes) and how much it moves the platform's popularity score, where a
+// negative delta is exactly the point. A constant map, not config: like the feed's own
+// FreshWeight and ExploreSharpness, retuning this is a code change, because a wrong value
+// corrupts a weighted average rather than degrading a feature.
+var InteractionWeight = map[string]float64{
+	InteractionView:               0.2,
+	InteractionClickFromSearch:    0.4,
+	InteractionClickFromRecommend: 0.3,
+	InteractionClickFromCategory:  0.3,
+	InteractionNotInterested:      -0.6,
+	InteractionHidden:             -1.0,
+	InteractionPurchase:           0.8,
+}
+
+// PositiveInteractionTypes is the personalisation-eligible subset of InteractionWeight.
+// NotInterested and Hidden are excluded on purpose: account_interest averages positive weights
+// into a share of the page, and a negative one would corrupt that average rather than suppress
+// anything — those two instead exclude a listing outright (see
+// port.Repository.RecomputeInterests).
+var PositiveInteractionTypes = []string{
+	InteractionView, InteractionClickFromSearch, InteractionClickFromRecommend, InteractionClickFromCategory,
+	InteractionPurchase,
+}
+
 // Category is one node of the browse tree. The client assembles the shape from
 // ParentID, because a tree this small costs less to send flat than to nest.
 type Category struct {

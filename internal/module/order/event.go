@@ -12,14 +12,29 @@ import (
 // OrderPlaced is published after an order is written and its escrow held. A fact, not an
 // instruction: nothing downstream is required to act on it, and the order is already real
 // whether or not anybody does.
+//
+// Lines carries what was sold, not just that a sale happened: catalog's own subscriber folds
+// each one into the buyer's listing_signal (a purchase is the strongest positive signal this
+// platform has), and observability's folds it into the listing's popularity score. Neither
+// would have anywhere to start without it — a purchase this event named only by OrderID would
+// send both subscribers back to this module's own tables to find out what was bought, which is
+// exactly the kind of coupling a published fact exists to avoid.
 type OrderPlaced struct {
 	// Raw keys: this never leaves the process as a public payload, and a consumer wants the
 	// database key anyway.
-	OrderID  int64  `json:"order_id"`
-	BuyerID  int64  `json:"buyer_id"`
-	SellerID int64  `json:"seller_id"`
-	Total    int64  `json:"total"`
-	Currency string `json:"currency"`
+	OrderID  int64       `json:"order_id"`
+	BuyerID  int64       `json:"buyer_id"`
+	SellerID int64       `json:"seller_id"`
+	Total    int64       `json:"total"`
+	Currency string      `json:"currency"`
+	Lines    []OrderLine `json:"lines"`
+}
+
+// OrderLine is one purchased line, as far as a subscriber outside this module ever needs it.
+type OrderLine struct {
+	ListingID int64 `json:"listing_id"`
+	VariantID int64 `json:"variant_id"`
+	Quantity  int64 `json:"quantity"`
 }
 
 // OrderPlacedTopic carries OrderPlaced. Declared once here, so nothing else names the string.

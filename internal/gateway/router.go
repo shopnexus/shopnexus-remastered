@@ -155,6 +155,9 @@ func NewRouter(d Deps) http.Handler {
 	// to the caller's own drafts, and a draft is readable by its owner.
 	mux.Handle("GET /listings", optionalAuth(http.HandlerFunc(d.Catalog.ListListings)))
 	mux.Handle("GET /listings/{id}", optionalAuth(http.HandlerFunc(d.Catalog.GetListing)))
+	// Public, wider for a known caller: an anonymous view still counts toward popularity, and
+	// only a signed-in one moves personalisation.
+	mux.Handle("POST /listings/interactions", optionalAuth(http.HandlerFunc(d.Catalog.RecordInteractions)))
 	// Authenticated
 	mux.Handle("POST /listings/suggestions", auth(http.HandlerFunc(d.Catalog.SuggestListing)))
 	mux.Handle("POST /listings", auth(http.HandlerFunc(d.Catalog.CreateListing)))

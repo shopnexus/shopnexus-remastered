@@ -369,6 +369,26 @@ func (h *Catalog) DeleteVariant(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteData(w, http.StatusOK, res)
 }
 
+// RecordInteractions handles POST /listings/interactions — a batch of shopper actions against
+// listings. Optional auth: an anonymous view still counts toward popularity, and only a
+// signed-in one moves personalisation.
+func (h *Catalog) RecordInteractions(w http.ResponseWriter, r *http.Request) {
+	var req catalogapi.RecordInteractionsRequest
+	if failed(w, h.log, decodeBody(r, &req)) {
+		return
+	}
+	if uid, err := actor(r); err == nil {
+		req.ActorID = uid
+	}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	if failed(w, h.log, h.svc.RecordInteractions(r.Context(), req)) {
+		return
+	}
+	httpx.WriteNoContent(w)
+}
+
 // AddFavorite handles PUT /favorites/{listingID}. Idempotent, so saving twice answers the same.
 func (h *Catalog) AddFavorite(w http.ResponseWriter, r *http.Request) {
 	req, err := h.favoriteRequest(r)
