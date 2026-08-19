@@ -235,7 +235,16 @@ func Compile(u Understanding, resolve Resolver) Compiled {
 					if taken >= MaxPredicates {
 						break
 					}
-					p.Weight = sign * weight * PositionWeight[i]
+					// Position decays a *preference* — the second category the model named is a
+					// weaker guess than the first. A price is not that: "300k to 500k" arrives as
+					// two array entries which are two halves of one constraint, so decaying the
+					// second one silently weakens whichever end the model happened to write last.
+					// It cost a range query every in-range result on this catalogue.
+					position := PositionWeight[i]
+					if s.Attr == AttrPrice {
+						position = 1
+					}
+					p.Weight = sign * weight * position
 					out.Predicates = append(out.Predicates, p)
 					taken++
 				}

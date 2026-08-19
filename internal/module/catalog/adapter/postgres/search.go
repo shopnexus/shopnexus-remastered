@@ -232,10 +232,17 @@ func predicateSource(sql, name string) string {
 // name this file generated into it. A kind with no entry cannot reach the statement, which is what
 // keeps a model's vocabulary out of the SQL text.
 var predicateSQL = map[string]string{
-	port.PredicateCategory:  `l.category_id = @%s::bigint`,
-	port.PredicateTag:       `EXISTS (SELECT 1 FROM listing_tag pt WHERE pt.listing_id = l.id AND pt.tag = @%s::text)`,
-	port.PredicateMinPrice:  `EXISTS (SELECT 1 FROM variant pv WHERE pv.listing_id = l.id AND pv.deleted_at IS NULL AND pv.price >= @%s::bigint)`,
-	port.PredicateMaxPrice:  `EXISTS (SELECT 1 FROM variant pv WHERE pv.listing_id = l.id AND pv.deleted_at IS NULL AND pv.price <= @%s::bigint)`,
+	port.PredicateCategory: `l.category_id = @%s::bigint`,
+	port.PredicateTag:      `EXISTS (SELECT 1 FROM listing_tag pt WHERE pt.listing_id = l.id AND pt.tag = @%s::text)`,
+	// Both bounds test the price the card will show — min(price) over the live variants, the same
+	// number feedSelect renders. An EXISTS over every variant instead would let a listing with a
+	// 100k option and a 900k option satisfy "at least 300k" and "at most 500k" through two
+	// different variants, and answer a range query with a row whose displayed price is in neither.
+	// A listing with no live variant has no price to compare and satisfies neither bound.
+	port.PredicateMinPrice: `` +
+		`(SELECT min(pv.price) FROM variant pv WHERE pv.listing_id = l.id AND pv.deleted_at IS NULL) >= @%s::bigint`,
+	port.PredicateMaxPrice: `` +
+		`(SELECT min(pv.price) FROM variant pv WHERE pv.listing_id = l.id AND pv.deleted_at IS NULL) <= @%s::bigint`,
 	port.PredicateCondition: `l.condition::text = @%s::text`,
 }
 
