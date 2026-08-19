@@ -206,6 +206,10 @@ func TestPayoutDue_HeldBackByALiveRefund(t *testing.T) {
 	ctx := context.Background()
 	o, _ := placedOrder(t, r)
 
+	// The seller has to accept the sale before there is anything to receive.
+	if err := o.Confirm(); err != nil {
+		t.Fatalf("Confirm: %v", err)
+	}
 	// The unboxing evidence is an array column, so the ids stand on their own here — the
 	// service is what checks they name confirmed uploads.
 	if err := o.ConfirmReceipt([]int64{7001}); err != nil {
@@ -246,10 +250,10 @@ func TestPayoutDue_HeldBackByALiveRefund(t *testing.T) {
 		t.Fatalf("PayoutDue = %v, want the live refund to hold it", ids(due))
 	}
 
-	// The seller refuses, which puts the buyer on the clock rather than closing anything —
-	// so the payout stays held while the buyer can still escalate.
-	if err := refund.Reject("sent as described"); err != nil {
-		t.Fatalf("Reject: %v", err)
+	// The seller will not grant it, which under this lifecycle means handing the case to staff
+	// rather than deciding it themselves — so nothing closes and the payout stays held.
+	if err := refund.Escalate(); err != nil {
+		t.Fatalf("Escalate: %v", err)
 	}
 	if err := r.SaveRefund(ctx, refund, domain.RefundAwaitingSeller); err != nil {
 		t.Fatalf("SaveRefund: %v", err)
@@ -259,14 +263,14 @@ func TestPayoutDue_HeldBackByALiveRefund(t *testing.T) {
 		t.Fatalf("PayoutDue: %v", err)
 	}
 	if contains(due, o.ID) {
-		t.Fatalf("PayoutDue = %v, want it held while the buyer can still escalate", ids(due))
+		t.Fatalf("PayoutDue = %v, want it held while staff hold the case", ids(due))
 	}
 
-	// The buyer lets that window pass, the case closes, and the money is the seller's.
-	if err := refund.LapseBuyerAction(); err != nil {
-		t.Fatalf("LapseBuyerAction: %v", err)
+	// Staff decide for the seller. That is what closes the case, and the money is the seller's.
+	if err := refund.Resolve(false); err != nil {
+		t.Fatalf("Resolve: %v", err)
 	}
-	if err := r.SaveRefund(ctx, refund, domain.RefundAwaitingBuyer); err != nil {
+	if err := r.SaveRefund(ctx, refund, domain.RefundDisputed); err != nil {
 		t.Fatalf("SaveRefund: %v", err)
 	}
 	due, err = r.PayoutDue(ctx, time.Now(), 100)
@@ -323,24 +327,33 @@ func TestInsertRefund_OneLivePerOrder(t *testing.T) {
 	}
 }
 
-// The timeout pass: one query finds every refund whose clock has run out, whichever of the
-// three windows it was on, and skips the two states that wait on a carrier or a moderator.
-func TestOverdueRefunds_AllThreeWindowsOnePass(t *testing.T) {
+// The timeout pass: one query finds every refund whose clock has run out, whichever of the two
+// windows it was on, and skips the two states that wait on a carrier or a moderator.
+func TestOverdueRefunds_BothWindowsOnePass(t *testing.T) {
 	r, pool := newRepo(t)
 	ctx := context.Background()
 	past := time.Now().Add(-time.Hour)
 
-	// A seller who has not answered, and a buyer who has not acted.
+	// A seller who has not answered, and a seller who has not inspected what came back.
 	lapsing, _ := placedOrder(t, r)
 	sellerSilent := overdue(t, r, pool, lapsing, past, func(ref *domain.Refund) error { return nil })
-	buyerSilent := overdue(t, r, pool, second(t, r), past, func(ref *domain.Refund) error {
-		return ref.Reject("sent as described")
+	notInspected := overdue(t, r, pool, second(t, r), past, func(ref *domain.Refund) error {
+		if err := ref.Accept(); err != nil {
+			return err
+		}
+		// The DB requires a return leg on anything marked returned, same as the service does
+		// between accepting and the parcel coming back.
+		transportID, err := r.InsertTransport(context.Background(), "ghn-express", 0)
+		if err != nil {
+			return err
+		}
+		if err := ref.StartReturn(transportID); err != nil {
+			return err
+		}
+		return ref.MarkReturned()
 	})
 	// An escalated refund waits on staff, so it carries no deadline and no timer can touch it.
 	disputed := overdue(t, r, pool, second(t, r), past, func(ref *domain.Refund) error {
-		if err := ref.Reject("sent as described"); err != nil {
-			return err
-		}
 		return ref.Escalate()
 	})
 
@@ -353,10 +366,10 @@ func TestOverdueRefunds_AllThreeWindowsOnePass(t *testing.T) {
 		got[ref.ID] = ref.Status
 	}
 	if got[sellerSilent] != domain.RefundAwaitingSeller {
-		t.Errorf("seller window = %q, want it overdue", got[sellerSilent])
+		t.Errorf("seller review window = %q, want it overdue", got[sellerSilent])
 	}
-	if got[buyerSilent] != domain.RefundAwaitingBuyer {
-		t.Errorf("buyer window = %q, want it overdue", got[buyerSilent])
+	if got[notInspected] != domain.RefundReturned {
+		t.Errorf("seller inspection window = %q, want it overdue", got[notInspected])
 	}
 	if _, ok := got[disputed]; ok {
 		t.Errorf("a disputed refund is on the timer's list; it waits on staff")
@@ -805,9 +818,6 @@ func TestSaveRefundOutcome_VerdictNeedsALiveCase(t *testing.T) {
 	// A verdict is only reached on a case somebody escalated.
 	if err := ref.Resolve(true); !errors.Is(err, domain.ErrRefundNotDisputed) {
 		t.Fatalf("Resolve before escalation = %v, want ErrRefundNotDisputed", err)
-	}
-	if err := ref.Reject("sent as described"); err != nil {
-		t.Fatalf("Reject: %v", err)
 	}
 	if err := ref.Escalate(); err != nil {
 		t.Fatalf("Escalate: %v", err)
