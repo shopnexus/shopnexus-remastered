@@ -310,12 +310,24 @@ func validCondition(v string) bool {
 }
 
 // SelectivityRef is the ln(N/n) at which a predicate keeps the whole weight AttrWeight gave it.
-// 3.0 puts that at about 5% of the catalogue, which is the rare end the weights above were
-// measured against — so a signal naming something rarer is never scaled *up*, and only a commoner
-// one is scaled down. ln rather than the share itself because the interesting range is that rare
-// end: 5% and 1% are half an order of magnitude apart and would otherwise share one tenth of the
-// scale.
-const SelectivityRef = 3.0
+// At 1.0 that is n/N = 1/e, so nothing is scaled until a signal matches more than about a third of
+// the catalogue, and then only in proportion. ln rather than the share itself because the
+// interesting range is the common end, where a signal stops discriminating at all.
+//
+// It was shipped at 3.0 — full weight below 5% of the catalogue — and measured down to 1.0. What
+// 3.0 got wrong is the thing IDF cannot see: a predicate here is often not evidence *about*
+// relevance but a constraint the shopper *stated*. Somebody typing "dt cu" said `used`, and
+// damping it because 30% of a second-hand marketplace is used cost that query P@5 0.40 -> 0.20.
+// At 1.0 `used` (ln 1.21) is left alone entirely, while `new` — 65.6% of this catalogue, which is
+// barely a signal whoever typed it — still falls to a fifth of its weight, and that is the case
+// the whole mechanism was built for: before it, a hair comb and a travel SIM outranked actual
+// phones on "ip mới" purely for being new (nDCG@10 0.146 -> 0.327 with the damping in place).
+//
+// Both 1.0 and 4.5 beat 3.0 on the nine data points available, which is how you know that surface
+// is noise and not a gradient. So this is chosen for what it means rather than for what it scores:
+// damp only what is nearly no information at all. Settling it properly needs the labelled query
+// set the design's Deferred section names.
+const SelectivityRef = 1.0
 
 // Selectivity is how common each thing a predicate can name is, over the whole active catalogue.
 // Total is the active-listing count; Counts holds one entry per (kind, key), spelled the way
