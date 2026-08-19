@@ -126,7 +126,7 @@ func (e *Embeddings) Save(ctx context.Context, done []port.Embedded) error {
 			if !ok {
 				return fmt.Errorf("db save embedding: unknown kind %q", d.Kind)
 			}
-			sparse, err := e.sparseLiteral(d.Sparse)
+			sparse, err := sparseLiteral(d.Sparse, e.sparseDim)
 			if err != nil {
 				return err
 			}
@@ -185,7 +185,10 @@ func denseLiteral(v []float32) string {
 // one, and the value may carry at most maxSparseNonZero of them. Both are properties of the
 // column, which is why the provider hands over the tokenizer's own zero-based map and this
 // function is where storage's rules are applied.
-func (e *Embeddings) sparseLiteral(weights map[uint32]float32) (string, error) {
+//
+// A function of (weights, dim) rather than a method on the writer, because a search probe is
+// spelled by the same rules as the rows it is compared against and reaches this from search.go.
+func sparseLiteral(weights map[uint32]float32, dim uint32) (string, error) {
 	type term struct {
 		index  uint32
 		weight float32
@@ -195,8 +198,8 @@ func (e *Embeddings) sparseLiteral(weights map[uint32]float32) (string, error) {
 		if weight == 0 {
 			continue // a stored zero is a non-zero that says nothing, and it counts against the cap
 		}
-		if index >= e.sparseDim {
-			return "", fmt.Errorf("sparse index %d is outside the %d-wide column", index, e.sparseDim)
+		if index >= dim {
+			return "", fmt.Errorf("sparse index %d is outside the %d-wide column", index, dim)
 		}
 		terms = append(terms, term{index, weight})
 	}
@@ -220,6 +223,6 @@ func (e *Embeddings) sparseLiteral(weights map[uint32]float32) (string, error) {
 	}
 	b.WriteByte('}')
 	b.WriteByte('/')
-	b.WriteString(strconv.FormatUint(uint64(e.sparseDim), 10))
+	b.WriteString(strconv.FormatUint(uint64(dim), 10))
 	return b.String(), nil
 }

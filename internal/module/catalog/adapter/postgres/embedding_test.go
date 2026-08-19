@@ -10,8 +10,7 @@ import (
 // counting starts. An off-by-one here is not an error — it is every vector silently indexed
 // under the wrong term.
 func TestSparseLiteralShiftsToOneBasedIndices(t *testing.T) {
-	e := &Embeddings{sparseDim: 16}
-	got, err := e.sparseLiteral(map[uint32]float32{0: 0.5, 3: 0.25})
+	got, err := sparseLiteral(map[uint32]float32{0: 0.5, 3: 0.25}, 16)
 	if err != nil {
 		t.Fatalf("sparseLiteral: %v", err)
 	}
@@ -22,8 +21,7 @@ func TestSparseLiteralShiftsToOneBasedIndices(t *testing.T) {
 
 // Ascending index order and the trailing dimension are what pgvector's parser expects.
 func TestSparseLiteralIsOrderedAndDimensioned(t *testing.T) {
-	e := &Embeddings{sparseDim: 100}
-	got, err := e.sparseLiteral(map[uint32]float32{9: 1, 2: 1, 5: 1})
+	got, err := sparseLiteral(map[uint32]float32{9: 1, 2: 1, 5: 1}, 100)
 	if err != nil {
 		t.Fatalf("sparseLiteral: %v", err)
 	}
@@ -34,8 +32,7 @@ func TestSparseLiteralIsOrderedAndDimensioned(t *testing.T) {
 
 // A stored zero is a non-zero that says nothing, and it counts against the index's cap.
 func TestSparseLiteralDropsZeroWeights(t *testing.T) {
-	e := &Embeddings{sparseDim: 16}
-	got, err := e.sparseLiteral(map[uint32]float32{0: 0, 1: 2})
+	got, err := sparseLiteral(map[uint32]float32{0: 0, 1: 2}, 16)
 	if err != nil {
 		t.Fatalf("sparseLiteral: %v", err)
 	}
@@ -51,8 +48,7 @@ func TestSparseLiteralKeepsTheHeaviestTermsWithinTheCap(t *testing.T) {
 	for i := uint32(0); i < 1500; i++ {
 		weights[i] = float32(i) // the last 1000 indices are the heaviest
 	}
-	e := &Embeddings{sparseDim: 250048}
-	got, err := e.sparseLiteral(weights)
+	got, err := sparseLiteral(weights, 250048)
 	if err != nil {
 		t.Fatalf("sparseLiteral: %v", err)
 	}
@@ -70,8 +66,7 @@ func TestSparseLiteralKeepsTheHeaviestTermsWithinTheCap(t *testing.T) {
 // An index past the column's width is a row Postgres would reject with nothing to point at,
 // so it is caught here where the number can be named.
 func TestSparseLiteralRefusesAnIndexOutsideTheColumn(t *testing.T) {
-	e := &Embeddings{sparseDim: 16}
-	if _, err := e.sparseLiteral(map[uint32]float32{16: 1}); err == nil {
+	if _, err := sparseLiteral(map[uint32]float32{16: 1}, 16); err == nil {
 		t.Error("sparseLiteral accepted an index at the column width, want it refused")
 	}
 }

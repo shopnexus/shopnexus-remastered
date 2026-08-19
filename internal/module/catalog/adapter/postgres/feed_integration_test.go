@@ -24,8 +24,6 @@ func TestRepo_ListListingsAppliesEveryFilter(t *testing.T) {
 	createTag(t, repo, "handmade", nil)
 
 	draft := newListingFor(t, repo, category.ID, unique("Draft "))
-	// A real-looking name, because the trigram threshold is a similarity over the whole string:
-	// a four-letter query against a timestamp scores below it, which is correct behaviour.
 	live := newListingFor(t, repo, category.ID, unique("Ao thun Uniqlo "))
 	if err := live.Publish(); err != nil {
 		t.Fatalf("Publish: %v", err)
@@ -46,8 +44,6 @@ func TestRepo_ListListingsAppliesEveryFilter(t *testing.T) {
 		Tag:        "handmade",
 		MinPrice:   1,
 		MaxPrice:   new(int64(1_000_000)),
-		Query:      "ao thun uniqlo",
-		Sort:       port.SortRelevance,
 		Limit:      20,
 	}
 	rows, _, err := repo.ListListings(ctx, full)
@@ -57,11 +53,24 @@ func TestRepo_ListListingsAppliesEveryFilter(t *testing.T) {
 	if len(rows) == 0 {
 		t.Fatal("the live listing matched nothing")
 	}
-	if rows[0].Score == nil {
-		t.Error("a search answered no score")
+	if rows[0].Score != nil {
+		t.Error("a browse answered a score — nothing ranked it")
 	}
 	if rows[0].Price == 0 {
 		t.Error("the card has no price — the lateral join found no variant")
+	}
+
+	// The same filters through the search statement, which carries this very feedWhere inside each
+	// of its ANN legs: every branch above has to be legal there too. The listing has no embedding,
+	// so what this asserts is the statement — TestRepo_SearchFusesBothLegs asserts the ranking.
+	searched := full
+	searched.Sort = port.SortRelevance
+	searched.Terms = []port.Term{{
+		Weight: 1,
+		Probe:  &port.Probe{Dense: axis1024(1), Sparse: map[uint32]float32{1: 1}},
+	}}
+	if _, _, err := repo.ListListings(ctx, searched); err != nil {
+		t.Errorf("ListListings(search, every filter): %v", err)
 	}
 
 	// Every sort has to be a statement Postgres accepts.
@@ -70,9 +79,6 @@ func TestRepo_ListListingsAppliesEveryFilter(t *testing.T) {
 		port.SortBestSelling, port.SortRelevance, port.SortRecommended,
 	} {
 		f := port.ListingFilter{ViewerID: testSeller, SellerID: testSeller, Sort: order, Limit: 5}
-		if order == port.SortRelevance {
-			f.Query = "ao thun uniqlo"
-		}
 		if _, _, err := repo.ListListings(ctx, f); err != nil {
 			t.Errorf("sort %q: %v", order, err)
 		}
@@ -443,9 +449,9 @@ func denseAxis(first float32) string {
 	return string(append(out, ']'))
 }
 
-// A personalised feed's probes come from the account and have nothing to do with `q`:
-// `sort=recommended` together with a query must still filter lexically. Only a probe that is
-// the query's own embedding (carried as a Term) may skip the lexical predicate.
+// A personalised feed's probes come from the account and have nothing to do with `q`, so the
+// query is a filter on the name there and the only path where it still is one: a search carries
+// its words as terms and ranks them instead.
 func TestRepo_ListListingsRecommendedProbeDoesNotBypassQueryFilter(t *testing.T) {
 	repo := newRepo(t)
 	ctx := context.Background()
@@ -488,8 +494,6 @@ func TestRepo_ListListingsRecommendedProbeDoesNotBypassQueryFilter(t *testing.T)
 
 	probe := make(port.Vector, 1024)
 	probe[0] = 1
-	// The full phrase, as the trigram index needs: a short single-word query against a
-	// name padded with a unique timestamp suffix can fall under the similarity threshold.
 	const query = "ao thun uniqlo"
 	// Scoped to this test's own category. The dev database is shared and seeded, and once the
 	// embedder has run over that seed every listing has a vector — so an unscoped assertion of

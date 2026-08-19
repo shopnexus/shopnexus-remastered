@@ -16,47 +16,17 @@ import (
 // parameters narrow one query rather than selecting between endpoints, so every filter is a
 // `@param IS NULL OR …` branch and the shape stays static SQL.
 //
-// Two things are not branches, because they change what is being read rather than which rows
-// come back: the score expression and the ORDER BY. Both are picked from a fixed set below —
-// no user input reaches either.
+// A search is the exception and has its own statement (search.go): its ranking is two index-served
+// ANN scans fused by rank, which is a shape no `IS NULL OR` branch can fold into a browse.
 func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.ListingSummary, int64, error) {
-	args := pgx.NamedArgs{
-		"ids":              nullInt64Array(f.IDs),
-		"variant_ids":      nullInt64Array(f.VariantIDs),
-		"query":            dbx.NullText(f.Query),
-		"viewer_id":        f.ViewerID,
-		"mine":             f.Mine,
-		"favorited":        f.Favorited,
-		"status":           dbx.NullText(string(f.Status)),
-		"category_id":      nullInt64(f.CategoryID),
-		"tag":              dbx.NullText(f.Tag),
-		"seller_id":        nullInt64(f.SellerID),
-		"condition":        dbx.NullText(string(f.Condition)),
-		"min_price":        nullInt64(f.MinPrice),
-		"max_price":        nullInt64Ptr(f.MaxPrice),
-		"probe":            dbx.NullText(vectorLiteralOrEmpty(termProbe(f.Terms))),
-		"probe_from_query": len(f.Terms) > 0,
-		"province_code":    dbx.NullText(f.ProvinceCode),
-		"district_code":    dbx.NullText(f.DistrictCode),
-		"ward_code":        dbx.NullText(f.WardCode),
-		"near_lat":         nullFloat(near(f, func(p port.Point) float64 { return p.Latitude })),
-		"near_lon":         nullFloat(near(f, func(p port.Point) float64 { return p.Longitude })),
-		"radius_m":         nullFloat(radiusMetres(f)),
-		"limit":            f.Limit,
-		"offset":           f.Offset,
+	// Terms that can rank nothing — a probe with both halves empty — fall through to the browse
+	// rather than answering an error the shopper cannot act on.
+	if q, args, ok := r.searchStatement(f); ok {
+		return r.search(ctx, q, args)
 	}
-	q := feedSelect + scoreExpr(f) + feedScore + feedTotal + feedFrom + feedWhere + orderBy(f) + feedPage
+	args := feedArgs(f)
+	q := feedSelect + freshScore + feedScore + feedTotal + feedFrom + feedWhere + orderBy(f) + feedPage
 	switch {
-	// "Newest, but still about what I searched for." A ranked search has no WHERE gate — the
-	// ranking is what makes it a search — so ordering it by anything other than the score
-	// answers the whole catalogue in date order, which is what the query was supposed to
-	// narrow. So: rank first, keep what is relevant, and order *those* by what was asked for.
-	case rerankedSort(f):
-		args["candidates"] = relevantCandidates
-		args["relevance_floor"] = relevanceFloor
-		q = candidateHead + feedSelect + scoreExpr(f) + feedScore + feedFrom + feedWhere +
-			candidateOrder + candidateTail + rerankOrderBy(f) + feedPage
-
 	// The personalised feed, which is the only shape that ranks against more than one probe.
 	case f.Sort == port.SortRecommended && len(f.Interests) > 0:
 		probes, weights := probeArrays(f.Interests)
@@ -81,6 +51,35 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 	}
 	defer rows.Close()
 	return scanListingCards(rows)
+}
+
+// feedArgs is every filter as parameters, shared by the browse statement and the search's ANN
+// legs — which carry the same feedWhere, so a filter the two spelled differently would be a
+// search that narrows unlike the browse it came from.
+func feedArgs(f port.ListingFilter) pgx.NamedArgs {
+	return pgx.NamedArgs{
+		"ids":           nullInt64Array(f.IDs),
+		"variant_ids":   nullInt64Array(f.VariantIDs),
+		"query":         dbx.NullText(f.Query),
+		"viewer_id":     f.ViewerID,
+		"mine":          f.Mine,
+		"favorited":     f.Favorited,
+		"status":        dbx.NullText(string(f.Status)),
+		"category_id":   nullInt64(f.CategoryID),
+		"tag":           dbx.NullText(f.Tag),
+		"seller_id":     nullInt64(f.SellerID),
+		"condition":     dbx.NullText(string(f.Condition)),
+		"min_price":     nullInt64(f.MinPrice),
+		"max_price":     nullInt64Ptr(f.MaxPrice),
+		"province_code": dbx.NullText(f.ProvinceCode),
+		"district_code": dbx.NullText(f.DistrictCode),
+		"ward_code":     dbx.NullText(f.WardCode),
+		"near_lat":      nullFloat(near(f, func(p port.Point) float64 { return p.Latitude })),
+		"near_lon":      nullFloat(near(f, func(p port.Point) float64 { return p.Longitude })),
+		"radius_m":      nullFloat(radiusMetres(f)),
+		"limit":         f.Limit,
+		"offset":        f.Offset,
+	}
 }
 
 // ListListingsByIDs is the personalised feed cache's hydration read: the ids came from an
@@ -136,9 +135,9 @@ func scanListingCards(rows pgx.Rows) ([]port.ListingSummary, int64, error) {
 // The price on a card is the cheapest live variant's, read through variant_price_idx in the
 // lateral join rather than from a column on the listing — a cached "from" price is a second
 // fact to keep in step with every variant edit.
-// Every column is aliased, including the ones a bare reference would have named anyway: two
-// of the query shapes below wrap this in a CTE and then select from it by name, and an
-// expression's implicit name is a detail of the parser rather than a promise.
+// Every column is aliased, including the ones a bare reference would have named anyway: the
+// personalised draw selects these back out of a CTE by name and a reranked search orders by
+// them, and an expression's implicit name is a detail of the parser rather than a promise.
 const feedSelect = `SELECT l.id AS id, l.account_id AS seller_id, l.slug AS slug, l.name AS name,
 	                  l.status::text AS status, l.condition::text AS condition,
 	                  l.price_mode::text AS price_mode, l.currency AS currency,
@@ -180,8 +179,8 @@ const distanceExpr = `CASE WHEN @near_lat::double precision IS NULL OR l.locatio
 
 const feedScore = ` AS score`
 
-// feedTotal is the count behind the page. Its own piece because the reranked search counts
-// what survived the relevance floor instead, and that is not known until the pool is built.
+// feedTotal is the count behind the page. Its own piece because a relevance sort has no seekable
+// total to count — a top-K is not a set somebody can page through (see fusedTotal).
 const feedTotal = `,
 	                  COUNT(*) OVER () AS total_count`
 
@@ -254,19 +253,6 @@ const feedWhere = `
 	                     SELECT 1 FROM variant xv
 	                     WHERE xv.listing_id = l.id AND xv.deleted_at IS NULL
 	                       AND xv.price <= @max_price::bigint))
-	               -- The lexical half of a search, diacritic-insensitive through
-	               -- listing_name_unaccent_trgm_idx. Skipped only when the probe is the
-	               -- query's own embedding (a real semantic or hybrid search, where the
-	               -- ranking is the answer and an ANN scan has no threshold to apply) —
-	               -- never for a recommended feed's probe, which comes from the account's
-	               -- interest vectors and has nothing to do with @query.
-	               -- The operator is word similarity, query on the left, matched against the
-	               -- best run of words in the name. Whole-string similarity compared the two
-	               -- as wholes and so matched nothing a shopper ever types (see scoreExpr).
-	               -- The same GIN index serves it, commuted to f_unaccent(name) %> query.
-	               AND (@query::text IS NULL
-	                    OR (@probe::text IS NOT NULL AND @probe_from_query::boolean)
-	                    OR f_unaccent(@query::text) <<% f_unaccent(l.name))
 	             END
 	           )`
 
@@ -309,7 +295,15 @@ const recommendedWhere = `
 	                             WHERE rf.listing_id = l.id AND rf.account_id = @viewer_id)
 	             AND NOT EXISTS (SELECT 1 FROM listing_signal rs
 	                             WHERE rs.listing_id = l.id AND rs.account_id = @viewer_id
-	                               AND rs.type IN ('not-interested', 'hidden'))`
+	                               AND rs.type IN ('not-interested', 'hidden'))
+	             -- A query here is a filter on the name and never a ranking: this feed ranks against
+	             -- the account's interest vectors, which have nothing to do with the words, so it
+	             -- is the one path a search's terms never reach. No index and none needed — the
+	             -- per-interest legs have already cut the pool to @candidates. f_unaccent on both
+	             -- sides because this is also the one path that sees raw typing: a probe was
+	             -- normalised by the understanding stage, and this was not.
+	             AND (@query::text IS NULL
+	                  OR f_unaccent(l.name) ILIKE '%' || f_unaccent(@query::text) || '%')`
 
 // An interest can only rank what it can measure the distance to. The fresh source below
 // deliberately does not carry this: the newest thing on the platform is exactly the one whose
@@ -365,53 +359,9 @@ const recommendedScore = `1 - (e.dense <=> p.vec)`
 // anything, and a number here would be a claim about a relevance nobody measured.
 const freshScore = `NULL::double precision`
 
-// relevantCandidates is how deep "relevant" goes when a search is ordered by something other
-// than relevance. A rank and not a score, because a cosine score is not comparable between
-// queries: on this catalogue the 300th hit for a broad query outscores the 5th for a narrow
-// one, so any fixed cutoff floods the first search and empties the second. A rank asks the
-// question that has a stable answer — the most relevant N — and the sort then orders those.
-const relevantCandidates = 200
-
-// relevanceFloor is the share of the top hit's score a listing must reach to stay in that pool.
-// Measured, not guessed: the genuine hits for a narrow query sit at 0.93–1.00 of the best and
-// the first unrelated one at 0.47, while a broad or cross-language query stays above 0.71 all
-// the way down — so 0.6 falls in the gap for both shapes.
-const relevanceFloor = 0.6
-
-// rerankedSort is a ranked search asked to come back in some other order. Only then: a
-// relevance sort is already the ranking, and a query with no probe still has its lexical
-// WHERE gate, so both narrow on their own.
-func rerankedSort(f port.ListingFilter) bool {
-	return len(f.Terms) > 0 &&
-		f.Sort != port.SortRelevance && f.Sort != port.SortRecommended
-}
-
-const candidateHead = `WITH candidate AS (
-	           `
-
-// candidateOrder ranks the pool. The same expression the relevance sort uses, because "the
-// most relevant N" has to mean the same thing whichever order they are then shown in.
-const candidateOrder = `
-	           ORDER BY score DESC NULLS LAST, id DESC`
-
-// candidateTail cuts the pool down to what is actually about the query, then counts what is
-// left — so the total is the pageable set and not the pool.
-//
-// The floor is a fraction of the *best* hit rather than a fixed score, because a cosine score
-// means nothing on its own: on this catalogue a broad query's 100th hit scores 0.71 of its top
-// while a narrow query's 5th scores 0.47 of its. Relative, the same number reads the shape of
-// each query — it keeps a hundred shirts when a hundred shirts match, and cuts a search for
-// one phone at the cliff after the four listings that mention it.
-const candidateTail = `
-	           LIMIT @candidates
-	         ), relevant AS (
-	           SELECT * FROM candidate
-	           WHERE score >= @relevance_floor::double precision * (SELECT max(score) FROM candidate)
-	         )
-	         SELECT *, COUNT(*) OVER () FROM relevant`
-
-// rerankOrderBy orders the candidate pool, addressing it by output column name — inside the
-// CTE the row is joined from three tables, outside it is one flat row.
+// rerankOrderBy orders a pool that was built by relevance, addressing it by output column name:
+// the caller's sort applies to what the ranking kept, so every name here has to be an alias
+// feedSelect declares.
 func rerankOrderBy(f port.ListingFilter) string {
 	const head = `
 	           ORDER BY `
@@ -443,56 +393,6 @@ func probeArrays(interests []port.Interest) ([]string, []float64) {
 		weights = append(weights, in.Weight)
 	}
 	return probes, weights
-}
-
-// scoreExpr picks what "score" means for this request. Always higher-is-better:
-//
-//   - a probe present: 1 − cosine distance to it.
-//   - a query alone: how well it matches the best-matching run of words in the name.
-//
-// Interim shape — every search carries exactly one probe today (its own raw query), so there
-// is no case yet where both a probe and a lexical score should be summed. This whole function
-// is replaced once Terms carries more than one signal.
-//
-// A personalised feed does not come through here: it ranks against several probes at once and
-// has its own shape above.
-//
-// A listing with no embedding scores 0 on the dense half rather than dropping out, so it stays
-// findable lexically — the contract says so explicitly.
-//
-// Word similarity, not whole-string `similarity`: the latter divides shared trigrams by the
-// union of *both* strings, so a two-word query against a forty-character product name scores
-// about 0.05 and no realistic search ever clears the 0.3 threshold — "iphone" matched none of
-// the four listings with iPhone in the name. This measures the query against the best-matching
-// run of words inside the name instead, which is the question a search box actually asks.
-// Argument order is load-bearing: the query is the needle.
-//
-// And *strict*, which extends the match to whole word boundaries. Unaccenting Vietnamese makes
-// "quần áo" into "quan ao", and "quan" sits inside "quang" — so the loose form scored reflective
-// "phản quang" decals 0.63 against a clothing search, high enough to survive the relevance floor.
-// Strict scores them 0.40 while real matches stay at 1.00, and costs 8 hits of recall in 131.
-func scoreExpr(f port.ListingFilter) string {
-	const lexical = `strict_word_similarity(f_unaccent(@query::text), f_unaccent(l.name))`
-	const dense = `COALESCE(1 - (e.dense <=> @probe::vector), 0)`
-	switch {
-	case termProbe(f.Terms) != nil:
-		return dense
-	case f.Query != "":
-		return lexical
-	default:
-		return `NULL::double precision`
-	}
-}
-
-// termProbe answers the one probe today's Terms carry — a single raw-query term, dense half
-// only, until the fused ranking SQL reads Terms itself.
-func termProbe(terms []port.Term) port.Vector {
-	for _, t := range terms {
-		if t.Probe != nil {
-			return t.Probe.Dense
-		}
-	}
-	return nil
 }
 
 // orderBy maps the sort to a fixed expression. Nothing here is built from user input — the
@@ -669,11 +569,4 @@ func nullInt64Array(v []int64) any {
 		return nil
 	}
 	return v
-}
-
-func vectorLiteralOrEmpty(v port.Vector) string {
-	if len(v) == 0 {
-		return ""
-	}
-	return vectorLiteral(v)
 }
