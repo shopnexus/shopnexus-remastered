@@ -725,8 +725,9 @@ give it its own doc under `docs/` and link it from here.
   versioned aggregate, so a row re-marked while the model was working stays queued instead of
   being silently declared fresh. Both halves land in one transaction with the vector, so a row
   that left the queue always has one. Its own binary, not a `durable.Sweep`: a pass is a batch of
-  model inferences and the process serving requests should not hold that — and not running it at
-  all is a supported deployment, since search falls back to trigram. `EMBEDDING_DIMENSIONS` is
+  model inferences and the process serving requests should not hold that — but it is required
+  infrastructure, not an optional one: search is bge-m3 dense+sparse only, the trigram index is
+  gone, and a listing left unembedded is unreachable by it. `EMBEDDING_DIMENSIONS` is
   checked against every answer because the model service lives in another repository: a model of
   the wrong width does not degrade, every row fails until a migration changes the column.
 - **A store's selector picks where the next write goes, not what can be read.** Storage is the

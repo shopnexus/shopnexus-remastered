@@ -122,8 +122,7 @@ paths:
           style: form
           explode: false
           schema: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/ListingID' } }
-        - { name: q, in: query, description: 'Free-text query. Turns the request into a search.', schema: { type: string, minLength: 1, maxLength: 200 } }
-        - { name: mode, in: query, description: 'Search mode. Ignored without a query.', schema: { type: string, enum: [lexical, semantic, hybrid], default: hybrid } }
+        - { name: q, in: query, description: 'Free-text query. Turns the request into a search. Read by an understanding stage rather than matched literally, so a misspelling or a vague phrase is expected, not required to be exact.', schema: { type: string, minLength: 1, maxLength: 200 } }
         - { name: mine, in: query, description: 'The caller''s own listings, in every state.', schema: { type: boolean, default: false } }
         - { name: favorited, in: query, description: 'The caller''s wishlist. This is the wishlist page.', schema: { type: boolean, default: false } }
         - { name: status, in: query, description: 'Only honoured together with mine=true.', schema: { $ref: '#/components/schemas/ListingStatus' } }

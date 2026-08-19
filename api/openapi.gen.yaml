@@ -7657,22 +7657,12 @@ paths:
                     maxItems: 100
                     type: array
                   style: form
-                - description: Free-text query. Turns the request into a search.
+                - description: Free-text query. Turns the request into a search. Read by an understanding stage rather than matched literally, so a misspelling or a vague phrase is expected, not required to be exact.
                   in: query
                   name: q
                   schema:
                     maxLength: 200
                     minLength: 1
-                    type: string
-                - description: Search mode. Ignored without a query.
-                  in: query
-                  name: mode
-                  schema:
-                    default: hybrid
-                    enum:
-                        - lexical
-                        - semantic
-                        - hybrid
                     type: string
                 - description: The caller's own listings, in every state.
                   in: query
