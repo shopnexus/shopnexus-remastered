@@ -34,3 +34,22 @@ func TestSearch_ProbeCarriesBothHalves(t *testing.T) {
 		t.Error("probe has no sparse half — the sparse leg cannot rank without it")
 	}
 }
+
+// A misspelled, no-diacritic query still reaches the adapter as a probe: the knowledge base is
+// assembled from it and the search runs, whatever the model then makes of it.
+func TestSearch_GarbledQueryStillSearches(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	h.seedCategory(t, "Áo nam")
+	h.seedTag(t, "uniqlo")
+	publish(t, h, seedListingNamed(t, h, "Áo thun Uniqlo nam"))
+
+	if _, err := h.svc.ListListings(ctx, catalogapi.ListListingsRequest{
+		Query: "ao thun unilo", Page: 1, Limit: 20,
+	}); err != nil {
+		t.Fatalf("ListListings: %v", err)
+	}
+	if len(h.repo.lastFilter.Terms) == 0 {
+		t.Error("no term reached the adapter")
+	}
+}

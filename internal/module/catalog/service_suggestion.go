@@ -277,14 +277,15 @@ func parseSuggestion(content string, categories []domain.Category) (catalogapi.L
 }
 
 // categoryByName matches the line the model copied back. Case- and space-insensitive, because that
-// is the only way a copy goes wrong when the list was in front of it.
+// is the only way a copy goes wrong when the list was in front of it — shared with knowledge's
+// own CategoryID, the search route's version of the same lookup.
 func categoryByName(categories []domain.Category, name string) (domain.Category, bool) {
-	want := strings.ToLower(strings.TrimSpace(name))
+	want := normalizeName(name)
 	if want == "" {
 		return domain.Category{}, false
 	}
 	for _, c := range categories {
-		if strings.ToLower(c.Name) == want {
+		if normalizeName(c.Name) == want {
 			return c, true
 		}
 	}
