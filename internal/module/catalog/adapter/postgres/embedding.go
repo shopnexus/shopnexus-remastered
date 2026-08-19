@@ -20,10 +20,6 @@ import (
 // separate process and has no use for the aggregate loader.
 type Embeddings struct {
 	pool *pgxpool.Pool
-	// sparseDim is the width of the `sparsevec` columns. Held here rather than read from the
-	// catalog, because it is what an out-of-range index is checked against and a literal that
-	// disagrees with the column is rejected row by row with no clue why.
-	sparseDim uint32
 }
 
 // SparseDimensions is the width declared by `listing_embedding.sparse` and its two siblings.
@@ -31,7 +27,7 @@ type Embeddings struct {
 const SparseDimensions = 250048
 
 func NewEmbeddings(pool *pgxpool.Pool) *Embeddings {
-	return &Embeddings{pool: pool, sparseDim: SparseDimensions}
+	return &Embeddings{pool: pool}
 }
 
 var _ port.Embeddings = (*Embeddings)(nil)
@@ -126,7 +122,7 @@ func (e *Embeddings) Save(ctx context.Context, done []port.Embedded) error {
 			if !ok {
 				return fmt.Errorf("db save embedding: unknown kind %q", d.Kind)
 			}
-			sparse, err := sparseLiteral(d.Sparse, e.sparseDim)
+			sparse, err := sparseLiteral(d.Sparse, SparseDimensions)
 			if err != nil {
 				return err
 			}

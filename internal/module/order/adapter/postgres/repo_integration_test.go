@@ -111,7 +111,7 @@ func placedOrder(t *testing.T, r *orderpg.Repo) (domain.Order, domain.Item) {
 	return o, item
 }
 
-// confirmed confirms and persists the order; kept separate from placedOrder because tests need to assert the unconfirmed state first.
+// confirmed is kept separate from placedOrder because tests need to assert the unconfirmed state first.
 func confirmed(t *testing.T, r *orderpg.Repo, o *domain.Order) {
 	t.Helper()
 	if err := o.Confirm(); err != nil {

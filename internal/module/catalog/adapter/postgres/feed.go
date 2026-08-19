@@ -19,8 +19,10 @@ import (
 // A search is the exception and has its own statement (search.go): its ranking is two index-served
 // ANN scans fused by rank, which is a shape no `IS NULL OR` branch can fold into a browse.
 func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.ListingSummary, int64, error) {
-	// Terms that can rank nothing — a probe with both halves empty — fall through to the browse
-	// rather than answering an error the shopper cannot act on.
+	// Terms that can rank nothing — a probe with both halves empty — fall through to the browse,
+	// which since feedWhere lost its name predicate ignores the query entirely and answers the
+	// newest of whatever the shopper's own filters left. Unreachable today: the service embeds the
+	// raw query before it gets here, so a search either has a probe or has already failed.
 	if q, args, ok := r.searchStatement(f); ok {
 		return r.search(ctx, q, args)
 	}
@@ -396,7 +398,9 @@ func probeArrays(interests []port.Interest) ([]string, []float64) {
 }
 
 // orderBy maps the sort to a fixed expression. Nothing here is built from user input — the
-// switch is the whitelist, and an unknown sort is newest.
+// switch is the whitelist, and an unknown sort is newest — relevance included: this is the browse,
+// where the only score is freshScore's NULL, so there is nothing to order by. A search's relevance
+// order is fusedOrder's, over the fused pool.
 func orderBy(f port.ListingFilter) string {
 	const head = `
 	           ORDER BY `
@@ -413,8 +417,6 @@ func orderBy(f port.ListingFilter) string {
 		// cached_sold, because a sum over the variants has no per-variant index to scan in
 		// order — the one sort that cannot be answered from variant_price_idx.
 		return head + `l.cached_sold DESC` + tail
-	case port.SortRelevance:
-		return head + `score DESC NULLS LAST` + tail
 	case port.SortDistance:
 		// Nearest first, and a listing with no point last rather than first — NULLS LAST, because
 		// "distance unknown" is not "distance zero".

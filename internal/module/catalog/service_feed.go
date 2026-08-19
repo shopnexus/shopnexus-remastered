@@ -66,8 +66,9 @@ func (s *Service) ListListings(ctx context.Context, req catalogapi.ListListingsR
 	page := catalogapi.ListingPage{
 		Data: cards, Meta: meta, Understood: answer.understood, Probes: answer.probes,
 	}
-	// The contract says an array, and a nil slice would answer null — the exact shape that broke
-	// every chat thread when Message.refs went missing.
+	// The contract says an array. json/v2 already marshals a nil slice as `[]`, so this is a
+	// second line and not the thing holding the shape: it keeps the field an array for any
+	// encoder that reaches this struct.
 	if page.Probes == nil {
 		page.Probes = []string{}
 	}
@@ -424,10 +425,11 @@ const queryVectorTTL = 24 * time.Hour
 
 // queryProbe embeds one text into both halves, through the cache.
 //
-// The key carries the model's name and the width it answered in, so a deployment that changes
-// either reads none of the old entries instead of ranking today's listings against yesterday's
-// model. The prefix is `search-probe` rather than `search-vec`: an entry written before the
-// sparse half was kept has no sparse half, and reading one back would silently drop a leg.
+// The key carries the model's name, so a deployment that changes it reads none of the old entries
+// instead of ranking today's listings against yesterday's model; the length beside the digest is
+// only there to keep two different texts from ever sharing a key. The prefix is `search-probe`
+// rather than `search-vec`: an entry written before the sparse half was kept has no sparse half,
+// and reading one back would silently drop a leg.
 func (s *Service) queryProbe(ctx context.Context, text string) (port.Probe, error) {
 	normalized := strings.ToLower(strings.Join(strings.Fields(text), " "))
 	sum := sha256.Sum256([]byte(normalized))
