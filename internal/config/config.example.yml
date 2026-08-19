@@ -113,10 +113,16 @@ embedding:
 # form filled from the voice note alone — plus a transcription model, both through one LiteLLM proxy.
 llm:
   provider: "mock"
-  base_url: "http://litellm:4000"
+  # The API root without `/v1` — the client appends it. Any OpenAI-shaped gateway works: a
+  # LiteLLM proxy, or a vendor spoken to directly like OpenRouter.
+  base_url: "https://openrouter.ai/api"
   api_key: ""
-  chat_model: "gpt-4o-mini"
-  transcribe_model: "whisper-1"
+  # OpenRouter names a model `vendor/model`. It must read images: the photo is the input a
+  # seller cares about, and a text-only model fills the form from the note alone.
+  chat_model: "google/gemini-3.1-flash-lite"
+  # Empty because OpenRouter has no audio endpoint. The client answers llm.ErrNotSupported and
+  # the suggestion route refuses a voice note, rather than posting to a path that is not there.
+  transcribe_model: ""
   request_timeout: "45s"
   stream_timeout: "5m"
 

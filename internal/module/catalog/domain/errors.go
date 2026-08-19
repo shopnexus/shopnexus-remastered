@@ -50,6 +50,11 @@ var (
 	// ErrVoiceNoteTooLarge is a recording that was left running. A seller describes an item in a
 	// sentence or two.
 	ErrVoiceNoteTooLarge = errx.NewError(http.StatusRequestEntityTooLarge, "voice_note_too_large", "that voice note is longer than this route accepts")
+	// ErrVoiceNoteNotSupported is a voice note sent to a deployment whose model gateway has no
+	// audio endpoint. Refused rather than dropped: the words a seller spoke are half of what
+	// they told us, and a form filled from the photos alone would look like the model ignored
+	// them.
+	ErrVoiceNoteNotSupported = errx.NewError(http.StatusUnprocessableEntity, "voice_note_not_supported", "this deployment cannot transcribe a voice note; type the description instead")
 	// ErrSuggestionUnusable is a model answer that cannot fill a form — malformed, or with no name
 	// in it. 502, because nothing the caller sent is at fault and retrying is the fix.
 	ErrSuggestionUnusable = errx.NewError(http.StatusBadGateway, "suggestion_unusable", "the model did not return a usable suggestion")

@@ -174,13 +174,19 @@ type embeddingSection struct {
 // llmSection is who reads a seller's photo and voice note for the suggestion route.
 type llmSection struct {
 	Provider string `yaml:"provider" validate:"required,oneof=litellm mock"`
-	// One base URL and one key: chat and transcription are the same vendor account.
+	// One base URL and one key: whatever this gateway is, chat and transcription reach it
+	// through the same account. For a vendor spoken to directly the root is the API root
+	// without `/v1` — OpenRouter is "https://openrouter.ai/api".
 	BaseURL string `yaml:"base_url" validate:"required_if=Provider litellm,omitempty,url"`
 	APIKey  string `yaml:"api_key" validate:"required_if=Provider litellm"`
 	// ChatModel has to be one that reads images: the photo is the input a seller cares about, and a
 	// text-only model answers a form filled from the note alone.
-	ChatModel       string   `yaml:"chat_model" validate:"required_if=Provider litellm"`
-	TranscribeModel string   `yaml:"transcribe_model" validate:"required_if=Provider litellm"`
+	ChatModel string `yaml:"chat_model" validate:"required_if=Provider litellm"`
+	// TranscribeModel is empty for a gateway with no audio endpoint, and that is a value
+	// rather than a missing field: OpenRouter serves chat only, so the client answers
+	// llm.ErrNotSupported and the one route that transcribes refuses the voice note instead
+	// of failing on a 404 nobody can act on.
+	TranscribeModel string   `yaml:"transcribe_model"`
 	RequestTimeout  Duration `yaml:"request_timeout" validate:"required_if=Provider litellm"`
 	// StreamTimeout covers a whole streamed generation. Nothing streams today; it is required
 	// because the client refuses to be built without one.

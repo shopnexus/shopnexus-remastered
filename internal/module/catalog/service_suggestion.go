@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -101,6 +102,9 @@ func (s *Service) transcribe(ctx context.Context, req catalogapi.SuggestListingR
 		Mime:     req.VoiceNoteMime,
 		Language: req.Language,
 	})
+	if errors.Is(err, llm.ErrNotSupported) {
+		return "", domain.ErrVoiceNoteNotSupported
+	}
 	if err != nil {
 		return "", fmt.Errorf("transcribe voice note: %w", err)
 	}

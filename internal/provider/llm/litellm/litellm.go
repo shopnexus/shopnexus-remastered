@@ -1,7 +1,13 @@
-// Package litellm implements the llm.Client interface against a LiteLLM proxy.
-// The proxy speaks the OpenAI API for chat and embeddings and the Cohere API for
-// rerank, so one client covers every model the proxy routes to: the concrete
-// model is just a string ("gpt-5", "gemini/gemini-2.5-pro", "openai/mgte").
+// Package litellm implements the llm.Client interface against any OpenAI-shaped
+// gateway: a LiteLLM proxy, or a vendor that speaks the same API directly such as
+// OpenRouter. Chat and embeddings are the OpenAI shape and rerank is Cohere's, so
+// one client covers every model the far side routes to — the concrete model is
+// just a string ("gpt-5", "google/gemini-3.5-flash-lite", "openai/mgte").
+//
+// Not every gateway serves every capability. A default model left empty is how a
+// deployment says so, and the method answers llm.ErrNotSupported instead of
+// posting to an endpoint that is not there: OpenRouter has no audio endpoint, and
+// a 404 from it would surface as a broken upload rather than an absent feature.
 package litellm
 
 import (
@@ -133,6 +139,12 @@ func (c *Client) Complete(ctx context.Context, params llm.CompleteParams) (llm.C
 // here that is not JSON. Bounded by the same request timeout: a voice note is seconds long, and a
 // transcription that outlives that budget is one the seller has already given up on.
 func (c *Client) Transcribe(ctx context.Context, params llm.TranscribeParams) (llm.TranscribeResult, error) {
+	// No model named for it, by this deployment or by the caller, means the far side has no
+	// audio endpoint to post to. Refused here rather than at the 404, which reads to a caller
+	// as a transcription that failed instead of one this gateway never offered.
+	if c.model(params.Model, c.transcribeModel) == "" {
+		return llm.TranscribeResult{}, llm.ErrNotSupported
+	}
 	if len(params.Audio) == 0 {
 		return llm.TranscribeResult{}, errors.New("transcribe: no audio")
 	}
