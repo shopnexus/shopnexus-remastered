@@ -11,18 +11,20 @@ import (
 	"shopnexus/internal/infra/eventbus"
 	"shopnexus/internal/infra/postgres"
 	obspg "shopnexus/internal/module/observability/adapter/postgres"
+	observabilityapi "shopnexus/internal/module/observability/api"
 	"shopnexus/internal/module/observability/port"
 )
 
-// Module wires the telemetry pipeline: the Sink publishes samples to JetStream,
-// the writer drains each topic into the repository in batches, the runtime
-// sampler feeds it periodically, and business events are mirrored off the domain
-// bus. The gateway wraps its router with Sink.Middleware for HTTP RED metrics.
-// There is no api/ package: nothing calls this module, it is driven by the
-// middleware, the sampler and the bus.
+// Module wires two things that barely know about each other. The telemetry pipeline is a
+// two-stage write path — the Sink publishes samples to JetStream, the writer drains each
+// topic into the repository in batches, the runtime sampler feeds it periodically, and
+// business events are mirrored off the domain bus; the gateway wraps its router with
+// Sink.Middleware for HTTP RED metrics. api.Service is the one thing anybody calls: catalog's
+// `sort=trending` reads TopPopular, the module's first and so far only in-process caller.
 var Module = fx.Module("observability",
 	fx.Provide(
 		fx.Annotate(newRepo, fx.As(new(port.Repository))),
+		fx.Annotate(NewService, fx.As(new(observabilityapi.Service))),
 		newTelemetryBus,
 		newSink,
 	),

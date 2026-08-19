@@ -178,6 +178,12 @@ const (
 	SortRelevance   = "relevance"
 	SortRecommended = "recommended"
 	SortDistance    = "distance"
+	// SortTrending is the platform's own top list — listing_popularity, read back through
+	// observabilityapi.Service, ordered by nobody's taste but everybody's aggregate behaviour.
+	// Also what a personalised feed falls back to for an account with nothing computed yet,
+	// which is what keeps a zero-interest browse from reading as "the newest, forever" — see
+	// catalog.Service.feedFilter.
+	SortTrending = "trending"
 )
 
 // QueueFilter drives the queue. Status empty means both halves of it: a listing waiting for

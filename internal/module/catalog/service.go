@@ -16,6 +16,7 @@ import (
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
 	"shopnexus/internal/module/common"
+	observabilityapi "shopnexus/internal/module/observability/api"
 	"shopnexus/internal/provider/embedding"
 	"shopnexus/internal/provider/llm"
 	"shopnexus/internal/shared/id"
@@ -46,8 +47,13 @@ type Service struct {
 	// its own subscriber (personalisation) and observability's (popularity) to read
 	// independently.
 	bus eventbus.Client
-	v   *validator.Validate
-	log *slog.Logger
+	// popularity is observability's `listing_popularity` read back — `sort=trending`'s raw
+	// material and a zero-interest `sort=recommended`'s fallback. Best-effort from this side:
+	// observability is not on the critical path of a browse, so a store it cannot reach
+	// degrades a page to newest instead of failing the request.
+	popularity observabilityapi.Service
+	v          *validator.Validate
+	log        *slog.Logger
 }
 
 func NewService(
@@ -58,11 +64,12 @@ func NewService(
 	vectors embedding.Client,
 	queries cache.Client,
 	bus eventbus.Client,
+	popularity observabilityapi.Service,
 	v *validator.Validate,
 	log *slog.Logger,
 ) *Service {
 	return &Service{repo: repo, accounts: accounts, uploads: uploads, llm: models,
-		vectors: vectors, cache: queries, bus: bus, v: v, log: log}
+		vectors: vectors, cache: queries, bus: bus, popularity: popularity, v: v, log: log}
 }
 
 // CreateUpload reserves a row and a signed slot for a listing photo. The client PUTs the bytes

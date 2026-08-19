@@ -24,4 +24,7 @@ type Repository interface {
 	// PopularityOf answers the current score for a set of listings, 0 for one with no rows yet —
 	// catalog reads this back to blend trending into a feed that has nothing personal to rank by.
 	PopularityOf(ctx context.Context, listingIDs []int64) (map[int64]float64, error)
+	// TopPopularListings pages the ranking itself, most popular first — what api.Service.TopPopular
+	// answers, and the one method observability's own service ever calls on this repository.
+	TopPopularListings(ctx context.Context, offset, limit int) ([]int64, error)
 }

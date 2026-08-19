@@ -14,6 +14,7 @@ import (
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
+	observabilityapi "shopnexus/internal/module/observability/api"
 	"shopnexus/internal/shared/errx"
 )
 
@@ -29,9 +30,12 @@ func (s *Service) ListListings(ctx context.Context, req catalogapi.ListListingsR
 		rows  []port.ListingSummary
 		total int64
 	)
-	if filter.Sort == port.SortRecommended && len(filter.Interests) > 0 {
+	switch {
+	case filter.Sort == port.SortRecommended && len(filter.Interests) > 0:
 		rows, err = s.recommendedRows(ctx, filter)
-	} else {
+	case filter.Sort == port.SortTrending:
+		rows, err = s.trendingRows(ctx, filter)
+	default:
 		rows, total, err = s.repo.ListListings(ctx, filter)
 	}
 	if err != nil {
@@ -52,10 +56,10 @@ func (s *Service) ListListings(ctx context.Context, req catalogapi.ListListingsR
 		}
 	}
 	meta := catalogapi.PageInfo{Page: req.Page, Limit: req.Limit}
-	// A ranked query — relevance or recommended — visits only its top-K, the way the
+	// A ranked query — relevance, recommended or trending — visits only its top-K, the way the
 	// dictionary's `near` ranking does; the count behind it is not a stable, seekable
 	// total and would read as one.
-	if filter.Sort != port.SortRelevance && filter.Sort != port.SortRecommended {
+	if filter.Sort != port.SortRelevance && filter.Sort != port.SortRecommended && filter.Sort != port.SortTrending {
 		meta.TotalCount = &total
 	}
 	return catalogapi.ListingPage{Data: cards, Meta: meta}, nil
@@ -110,6 +114,12 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 		return port.ListingFilter{}, errx.NewValidationError("invalid field: sort", errx.Field{
 			Field: "sort", Rule: "excluded_with",
 			Message: "a personalised ranking of a set the caller already chose ranks nothing",
+		})
+	}
+	if req.Sort == port.SortTrending && trendingWantsFilteredBrowse(req) {
+		return port.ListingFilter{}, errx.NewValidationError("invalid field: sort", errx.Field{
+			Field: "sort", Rule: "excluded_with",
+			Message: "trending is the platform's whole top list, unfiltered — narrow the browse with another sort",
 		})
 	}
 
@@ -183,11 +193,17 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 		}
 		filter.Interests = interests
 		filter.Seed = feedSeed(req.Seed, req.ViewerID.Int64(), time.Now())
-		// A recommended feed with nothing computed for the account yet is the newest feed, not
-		// an empty one — the contract says it falls back, which also puts a query back in the
-		// hands of the search below.
+		// A recommended feed with nothing computed for the account yet falls back rather than
+		// answering empty — to trending, the platform's own best guess, when the rest of the
+		// request is a bare browse (the same test a direct sort=trending is refused without
+		// meeting, trendingWantsFilteredBrowse); to newest otherwise, which is what still lets
+		// a query or a category narrow the fallback below.
 		if len(interests) == 0 {
-			filter.Sort = port.SortNewest
+			if trendingWantsFilteredBrowse(req) {
+				filter.Sort = port.SortNewest
+			} else {
+				filter.Sort = port.SortTrending
+			}
 		}
 	}
 	// A personalised feed is already ranked, by the account rather than by the words, so a
@@ -203,6 +219,18 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 		filter.ProbeFromQuery = fromQuery
 	}
 	return filter, nil
+}
+
+// trendingWantsFilteredBrowse is true when the request narrows the browse some way trending
+// cannot honour: listing_popularity ranks the whole catalogue, with nothing to join it against
+// a category, a price range, a search or a position. Mine and Favorited are checked by the
+// caller alongside recommended's own refusal, for the same reason.
+func trendingWantsFilteredBrowse(req catalogapi.ListListingsRequest) bool {
+	return req.Mine || req.Favorited || req.Query != "" ||
+		req.CategoryID != nil || req.Tag != "" || req.SellerID != nil || req.Condition != "" ||
+		req.MinPrice != nil || req.MaxPrice != nil ||
+		req.ProvinceCode != "" || req.DistrictCode != "" || req.WardCode != "" ||
+		req.Latitude != nil || req.NearContactID != nil
 }
 
 // feedSeed decides which of the many good orderings of a personalised feed this request gets.
@@ -267,6 +295,66 @@ func (s *Service) recommendedRows(ctx context.Context, filter port.ListingFilter
 		return nil, fmt.Errorf("hydrate recommended feed: %w", err)
 	}
 	return reorderCards(rows, page), nil
+}
+
+// trendingRows answers the platform-wide top list: observability's listing_popularity, read
+// back and hydrated into cards. No cache of its own, unlike recommendedRows — this is one
+// index scan over a small aggregate table, the same shape and cost every viewer shares, so
+// there is nothing a per-account materialisation would save.
+//
+// Reading it is best-effort: observability sits off this route's critical path, so a store it
+// cannot reach degrades the page to newest rather than failing the request. The same backfill
+// covers the ordinary case of a thin ranking — a young platform with fewer popular listings
+// than one page wants.
+func (s *Service) trendingRows(ctx context.Context, filter port.ListingFilter) ([]port.ListingSummary, error) {
+	want := filter.Offset + filter.Limit
+
+	var popular []int64
+	ids, err := s.popularity.TopPopular(ctx, observabilityapi.TopPopularRequest{Limit: want})
+	if err != nil {
+		s.log.Warn("read top popular, falling back to newest", "err", err)
+	} else {
+		popular = make([]int64, len(ids))
+		for i, listingID := range ids {
+			popular[i] = listingID.Int64()
+		}
+	}
+
+	var rows []port.ListingSummary
+	if len(popular) > 0 {
+		hydrated, err := s.repo.ListListingsByIDs(ctx, popular)
+		if err != nil {
+			return nil, fmt.Errorf("hydrate trending feed: %w", err)
+		}
+		rows = reorderCards(hydrated, popular)
+	}
+	if len(rows) >= want {
+		return rows[filter.Offset:want], nil
+	}
+
+	seen := make(map[int64]bool, len(rows))
+	for _, r := range rows {
+		seen[r.ID] = true
+	}
+	backfill := filter
+	backfill.Sort, backfill.Offset, backfill.Limit = port.SortNewest, 0, want+len(seen)
+	newest, _, err := s.repo.ListListings(ctx, backfill)
+	if err != nil {
+		return nil, fmt.Errorf("backfill trending feed: %w", err)
+	}
+	for _, r := range newest {
+		if len(rows) >= want {
+			break
+		}
+		if !seen[r.ID] {
+			rows = append(rows, r)
+			seen[r.ID] = true
+		}
+	}
+	if filter.Offset >= len(rows) {
+		return nil, nil
+	}
+	return rows[filter.Offset:min(want, len(rows))], nil
 }
 
 // reorderCards puts a hydration read back in the order ids named, dropping any that did not

@@ -139,3 +139,31 @@ func (r *Repo) PopularityOf(ctx context.Context, listingIDs []int64) (map[int64]
 	}
 	return out, nil
 }
+
+// TopPopularListings pages the score index, most popular first. The tiebreak is the id
+// itself — descending, so a freshly-inserted row (a higher id) wins a tie over an older one
+// that decayed to the exact same score, which is closer to "still trending" than an
+// arbitrary row order would be.
+func (r *Repo) TopPopularListings(ctx context.Context, offset, limit int) ([]int64, error) {
+	const q = `SELECT listing_id FROM listing_popularity
+	           ORDER BY score DESC, listing_id DESC
+	           LIMIT @limit OFFSET @offset`
+	rows, err := r.pool.Query(ctx, q, pgx.NamedArgs{"limit": limit, "offset": offset})
+	if err != nil {
+		return nil, fmt.Errorf("db query top popular listings: %w", err)
+	}
+	defer rows.Close()
+
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("db scan top popular listing: %w", err)
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db iterate top popular listings: %w", err)
+	}
+	return out, nil
+}

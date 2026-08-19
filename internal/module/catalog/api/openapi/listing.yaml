@@ -60,12 +60,25 @@ paths:
         to learn it was wrong. The page is *drawn* from a pool several pages deep
         rather than taken off the top, so two runs differ; `seed` is what holds one
         run still while it is paged through. Their own listings and anything already
-        on their wishlist are left out. It needs a token, and falls back to newest
-        for an account with no interests computed yet.
+        on their wishlist are left out. It needs a token, and falls back to
+        `sort=trending` for an account with no interests computed yet and nothing
+        else in the request `trending` itself would refuse, or to newest otherwise.
 
 
         `score` is the similarity to the interest that surfaced a card, and is
         `null` for one drawn for being new — nothing measured it against anything.
+
+
+        `sort=trending` is the platform's own top list: every buyer's aggregate
+        interactions — a view, a click, a purchase — folded into one ranking with
+        no account behind it, so it needs no token. It ranks the *whole* catalogue
+        and has nothing to join that ranking against a category, a price range, a
+        search or a position, so it is refused together with any other narrowing
+        parameter — `mine`, `favorited`, `q`, `category_id`, `tag`, `seller_id`,
+        `condition`, `min_price`, `max_price`, the location filters. A page it
+        cannot fill from popularity alone backfills with the newest listings not
+        already on it, so a young platform's trending page is never emptier than
+        its newest page would be.
 
 
         `mine=true` restricts the result to the caller's own listings, and is the
@@ -151,8 +164,9 @@ paths:
           in: query
           description: >
             Defaults to `relevance` when a query is given and `newest` otherwise. `distance` needs
-            a position, like `radius_km` does.
-          schema: { type: string, enum: [newest, rating, price-asc, price-desc, best-selling, relevance, recommended, distance] }
+            a position, like `radius_km` does. `trending` refuses every other narrowing parameter —
+            see above.
+          schema: { type: string, enum: [newest, rating, price-asc, price-desc, best-selling, relevance, recommended, distance, trending] }
         - name: seed
           in: query
           description: >
@@ -171,9 +185,11 @@ paths:
         '400':
           description: >
             A combination that has no answer: `sort=relevance` without a query, `status`
-            without `mine`, or `sort=recommended` together with `favorited` or `mine` —
+            without `mine`, `sort=recommended` together with `favorited` or `mine` —
             a personalised ranking of a set the caller already chose is not a ranking of
-            anything. Combinations are refused rather than silently resolved by
+            anything — or `sort=trending` together with any narrowing parameter, since
+            it ranks the whole catalogue and has nothing to join that ranking against.
+            Combinations are refused rather than silently resolved by
             precedence, so a client never gets a different list than it asked for.
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '401': { description: '`mine=true`, `favorited=true` or `sort=recommended` without a token', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }

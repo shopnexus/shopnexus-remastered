@@ -15,6 +15,7 @@ import (
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
+	observabilityapi "shopnexus/internal/module/observability/api"
 	"shopnexus/internal/provider/embedding"
 	"shopnexus/internal/provider/llm"
 	"shopnexus/internal/shared/errx"
@@ -101,6 +102,26 @@ func (f fakeAccounts) pickup(contactID id.ID[id.Contact]) accountapi.Contact {
 	return c
 }
 
+// fakePopularity answers observabilityapi.Service.TopPopular with a fixed list, or an error to
+// prove trending degrades to newest when observability cannot be reached. The zero value
+// answers empty — the shape most tests want, since it exercises trending's own backfill without
+// a test having to seed listing_popularity first.
+type fakePopularity struct {
+	ids []int64
+	err error
+}
+
+func (f fakePopularity) TopPopular(context.Context, observabilityapi.TopPopularRequest) ([]id.ID[id.Listing], error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := make([]id.ID[id.Listing], len(f.ids))
+	for i, listingID := range f.ids {
+		out[i] = id.Of[id.Listing](listingID)
+	}
+	return out, nil
+}
+
 type harness struct {
 	svc  *catalog.Service
 	repo *fakeRepo
@@ -120,6 +141,9 @@ type harness struct {
 	// and see what went out without a real broker. Concrete, not eventbus.Client, so a test can
 	// call Wait() and not race the subscriber's own goroutine.
 	bus *eventbus.Memory
+	// popularity is what sort=trending reads back; the zero value (empty, no error) is what
+	// every test but trending's own gets, and exercises the newest backfill along the way.
+	popularity observabilityapi.Service
 }
 
 func newHarness(role string) *harness { return newHarnessWith(role, false) }
@@ -127,23 +151,36 @@ func newHarness(role string) *harness { return newHarnessWith(role, false) }
 // newHarnessWith varies the identity state too, which is what gates selling. newHarness stays
 // as it was, for the tests that only care about the role.
 func newHarnessWith(role string, identityVerified bool) *harness {
-	repo := newFakeRepo()
+	return newHarnessFull(role, identityVerified, fakePopularity{}, nil)
+}
+
+// newHarnessFull is what every other constructor narrows: role, identity, and the two seams
+// trending's tests need to vary independently — the observability answer and, to reuse one
+// harness's data, its existing repository and bus.
+func newHarnessFull(role string, identityVerified bool, popularity observabilityapi.Service, reuse *harness) *harness {
+	var repo *fakeRepo
+	var bus *eventbus.Memory
+	if reuse != nil {
+		repo, bus = reuse.repo, reuse.bus
+	} else {
+		repo = newFakeRepo()
+		bus = eventbus.NewMemory(slog.New(slog.DiscardHandler))
+	}
 	store := newFakeUploads()
 	models := &fakeLLM{}
 	vectors := &fakeVectors{}
-	bus := eventbus.NewMemory(slog.New(slog.DiscardHandler))
+	if reuse != nil {
+		store, models, vectors = reuse.uploads, reuse.models, reuse.vectors
+	}
 	svc := catalog.NewService(repo, fakeAccounts{role: role, verified: identityVerified},
-		store, models, vectors, cache.NewInMemoryClient(), bus, validation.Default(), slog.New(slog.DiscardHandler))
+		store, models, vectors, cache.NewInMemoryClient(), bus, popularity, validation.Default(), slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: repo, uploads: store, images: store.confirmed, models: models,
-		vectors: vectors, bus: bus}
+		vectors: vectors, bus: bus, popularity: popularity}
 }
 
 // newHarnessModerator reuses one harness's repository with a moderator caller.
 func newHarnessModerator(h *harness) *harness {
-	svc := catalog.NewService(h.repo, fakeAccounts{role: "moderator", verified: true},
-		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), h.bus, validation.Default(), slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models,
-		vectors: h.vectors, bus: h.bus}
+	return newHarnessFull("moderator", true, h.popularity, h)
 }
 
 // newHarnessSellerGone reuses one harness's data with the seller's account missing, and counts what
@@ -151,27 +188,30 @@ func newHarnessModerator(h *harness) *harness {
 func newHarnessSellerGone(h *harness, gone bool, reads *int) *harness {
 	svc := catalog.NewService(h.repo,
 		fakeAccounts{role: "user", verified: true, gone: gone, publicReads: reads},
-		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), h.bus, validation.Default(), slog.New(slog.DiscardHandler))
+		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), h.bus, h.popularity, validation.Default(), slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models,
-		vectors: h.vectors, bus: h.bus}
+		vectors: h.vectors, bus: h.bus, popularity: h.popularity}
 }
 
 // newHarnessUngeocoded reuses one harness's data with a seller whose address has no coordinates,
 // which is what makes "near me" refusable rather than silently empty.
 func newHarnessUngeocoded(h *harness) *harness {
 	svc := catalog.NewService(h.repo, fakeAccounts{role: "user", verified: true, ungeocoded: true},
-		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), h.bus, validation.Default(), slog.New(slog.DiscardHandler))
+		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), h.bus, h.popularity, validation.Default(), slog.New(slog.DiscardHandler))
 	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models,
-		vectors: h.vectors, bus: h.bus}
+		vectors: h.vectors, bus: h.bus, popularity: h.popularity}
 }
 
 // newHarnessAdmin reuses one harness's repository with an admin caller, so a test can seed a
 // category and then act as a plain seller against the same data.
 func newHarnessAdmin(h *harness) *harness {
-	svc := catalog.NewService(h.repo, fakeAccounts{role: "admin", verified: true},
-		h.uploads, h.models, h.vectors, cache.NewInMemoryClient(), h.bus, validation.Default(), slog.New(slog.DiscardHandler))
-	return &harness{svc: svc, repo: h.repo, uploads: h.uploads, images: h.images, models: h.models,
-		vectors: h.vectors, bus: h.bus}
+	return newHarnessFull("admin", true, h.popularity, h)
+}
+
+// newHarnessPopularity reuses one harness's data with a different observability answer — what
+// trending's own tests vary, without touching every other constructor.
+func newHarnessPopularity(h *harness, popularity observabilityapi.Service) *harness {
+	return newHarnessFull("user", true, popularity, h)
 }
 
 func status(t *testing.T, err error) uint16 {

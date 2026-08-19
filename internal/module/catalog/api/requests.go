@@ -257,7 +257,7 @@ type ListListingsRequest struct {
 	Longitude     *float64           `json:"-" validate:"omitempty,gte=-180,lte=180"`
 	NearContactID *id.ID[id.Contact] `json:"-"`
 	RadiusKM      *float64           `json:"-" validate:"omitempty,gt=0,lte=500"`
-	Sort          string             `json:"-" validate:"omitempty,oneof=newest rating price-asc price-desc best-selling relevance recommended distance"`
+	Sort          string             `json:"-" validate:"omitempty,oneof=newest rating price-asc price-desc best-selling relevance recommended distance trending"`
 	// Seed pins which shuffle of a personalised feed this is. Only `sort=recommended` reads
 	// it: that feed is drawn from a pool several pages deep, so the client sends one value
 	// for a whole run of pages and a new one when it wants a new feed. Any string will do —

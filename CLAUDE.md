@@ -118,10 +118,12 @@ boundaries) sits at the top of its **root** aggregate's file — `account.yaml`,
 `order.yaml`, `feedback.yaml`.
 
 **Observability** — the `observability` module is cross-cutting operational
-telemetry. It follows the module layout (`domain/`, `port/`,
-`adapter/postgres/` with the `COPY` inserts, `migrations/`, `fx.go`) minus `api/`:
-nothing calls it, it is driven by the middleware, the sampler and the bus. It is a
-two-stage pipeline: `Sink` **publishes** each sample to **NATS JetStream**
+telemetry, plus (as of `sort=trending`, its first real caller) a small `api/`
+package answering `TopPopular`. It follows the module layout (`domain/`, `port/`,
+`adapter/postgres/` with the `COPY` inserts, `migrations/`, `fx.go`); the
+telemetry pipeline proper is still driven by the middleware, the sampler and the
+bus rather than by that `api/` surface. It is a two-stage pipeline: `Sink`
+**publishes** each sample to **NATS JetStream**
 (`eventbus.NATS`), and `subscribeWriter` **consumes** each telemetry topic with a
 batch size + linger, handing whole batches to `port.Repository`, which `COPY`s
 them into its TimescaleDB hypertable on the `observability` schema. Two buses live
@@ -149,8 +151,12 @@ account-agnostic score, `subscribePopularity`/`subscribePurchases` folding
 groups, independent of `subscribeEvents`' raw mirror on the same topics and of catalog's own
 subscriber that feeds personalisation instead). UPDATE-then-INSERT, not the Sink/JetStream/COPY
 pipeline above: a score's delta can be negative, and it is a small aggregate table, not a
-hypertable of samples. `port.Repository.PopularityOf` reads it back — no `api/` package yet,
-since nothing calls it; add one the day something does rather than before.
+hypertable of samples. `port.Repository.PopularityOf` answers one score per listing (`0` for one
+with no rows — never "not found"); `TopPopularListings` pages the ranking itself, and is what
+`api.Service.TopPopular` wraps for catalog to call. Best-effort on the caller's side, same as
+every other cross-module read: `sort=trending` and a zero-interest `sort=recommended` both
+degrade to `sort=newest`-shaped behaviour rather than failing when this module cannot be
+reached, because neither ranking is on the critical path of a browse.
 **Logs** are separate: app logs JSON to stdout → Grafana Alloy (`dev/alloy`)
 → **Loki** → same Grafana. **Product/web analytics is NOT in the backend** —
 it's collected client-side by Rybbit (self-hosted, ClickHouse-backed), a
