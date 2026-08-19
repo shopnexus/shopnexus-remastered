@@ -24,6 +24,11 @@ var (
 	// The negotiation route refuses the same thing under ErrSellerCannotOffer, which is older
 	// and phrased for that route.
 	ErrSelfPurchase = errx.NewError(http.StatusForbidden, "self_purchase", "you cannot buy your own listing")
+
+	// ErrListingNotForSale is a listing that is not live: taken down by staff, hidden by its
+	// seller, or soft-deleted. Conflict rather than not-found, because the listing is readable
+	// — a cart line and an order item still render it — and only selling from it is refused.
+	ErrListingNotForSale = errx.NewError(http.StatusConflict, "listing_not_for_sale", "this listing is no longer for sale")
 	ErrVariantNotInDraft = errx.NewError(http.StatusUnprocessableEntity, "variant_not_in_draft", "that variant is not in this purchase session")
 
 	// --- items ---
@@ -122,6 +127,11 @@ var (
 	ErrRefundNotEscalatable = errx.NewError(http.StatusConflict, "refund_not_escalatable", "this refund cannot be escalated from its current state")
 	// ErrRefundNotDisputed is a verdict on a case staff were never asked about.
 	ErrRefundNotDisputed = errx.NewError(http.StatusConflict, "refund_not_disputed", "this refund is not with staff for a decision")
+	// ErrTooMuchEvidence is a case that would go past MaxEvidence photos. The cap is on the
+	// case and not on the submission: a top-up that could push past it would make the limit
+	// on a submission meaningless, and every read of the case presigns a URL per resource on
+	// it. Resubmitting what the case already holds is not this error — it adds nothing.
+	ErrTooMuchEvidence = errx.NewError(http.StatusUnprocessableEntity, "too_much_evidence", "a refund case carries at most 10 photos of evidence")
 
 	// --- authorization ---
 	ErrNotTheBuyer       = errx.NewError(http.StatusForbidden, "not_the_buyer", "only the buyer of this order may do that")

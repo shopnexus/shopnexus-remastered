@@ -287,6 +287,37 @@ func TestRefund_EvidenceHoldsEachResourceOnce(t *testing.T) {
 	}
 }
 
+// Ten photos per case, not ten per submission. The submission limit is meaningless if a
+// top-up can walk past it, and the array is read on every load of the case — one presigned
+// URL per resource on it.
+func TestRefund_EvidenceIsCappedAcrossTopUps(t *testing.T) {
+	full := make([]int64, 0, domain.MaxEvidence)
+	for i := range domain.MaxEvidence {
+		full = append(full, int64(100+i))
+	}
+	r, err := domain.NewRefund(1, 7, "not as described", full)
+	if err != nil {
+		t.Fatalf("NewRefund at exactly the cap: %v", err)
+	}
+
+	if err := r.AddAttachments([]int64{200}); !errors.Is(err, domain.ErrTooMuchEvidence) {
+		t.Fatalf("AddAttachments past the cap = %v, want ErrTooMuchEvidence", err)
+	}
+	if got := len(r.Attachments); got != domain.MaxEvidence {
+		t.Fatalf("attachments = %d, want the refused batch to leave the case at %d", got, domain.MaxEvidence)
+	}
+
+	// Resubmitting what a full case already holds adds nothing, so it is not past the cap.
+	if err := r.AddAttachments([]int64{full[0]}); err != nil {
+		t.Fatalf("resubmitting evidence already on a full case: %v", err)
+	}
+
+	// And a case cannot be opened past it either.
+	if _, err := domain.NewRefund(1, 7, "not as described", append(slices.Clone(full), 200)); !errors.Is(err, domain.ErrTooMuchEvidence) {
+		t.Fatalf("NewRefund past the cap = %v, want ErrTooMuchEvidence", err)
+	}
+}
+
 // Negotiation only moves the price down. The asking price is already an offer to sell at it,
 // so terms above it are a proposal with no reason to exist — the buyer would simply buy.
 func TestOffer_NotAboveAskingPrice(t *testing.T) {

@@ -35,6 +35,11 @@ const (
 	SellerInspectionWindow = 48 * time.Hour
 )
 
+// MaxEvidence is how many photos one case carries, counted over the whole case rather than
+// per submission. Ten is what a submission is capped at, and a top-up is not a way around
+// that limit.
+const MaxEvidence = 10
+
 // Refund always covers the whole order, so there is no partial amount anywhere in the flow.
 //
 // The status is the state machine and the deadline is who is on the clock: 'disputed' waits
@@ -66,6 +71,9 @@ func NewRefund(orderID, buyerID int64, reason string, attachments []int64) (Refu
 		Attachments: addEvidence(nil, attachments),
 		Status:      RefundAwaitingSeller,
 		DeadlineAt:  new(time.Now().Add(SellerReviewWindow)),
+	}
+	if len(r.Attachments) > MaxEvidence {
+		return Refund{}, ErrTooMuchEvidence
 	}
 	if err := validation.Default().Struct(r); err != nil {
 		return Refund{}, validation.AsError(err)
@@ -232,7 +240,14 @@ func (r *Refund) AddAttachments(attachments []int64) error {
 	if r.Settled() {
 		return ErrRefundSettled
 	}
-	r.Attachments = addEvidence(r.Attachments, attachments)
+	// Cloned so a refused batch cannot leave anything behind, and counted after the
+	// deduplication: a top-up naming what the case already holds adds nothing, so it is not
+	// past the cap however full the case is.
+	next := addEvidence(slices.Clone(r.Attachments), attachments)
+	if len(next) > MaxEvidence {
+		return ErrTooMuchEvidence
+	}
+	r.Attachments = next
 	return nil
 }
 

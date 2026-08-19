@@ -169,6 +169,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'The case is closed', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'The batch would take the case past ten photos of evidence', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /refunds/{id}/acceptance:
     parameters:
@@ -311,8 +312,9 @@ components:
           type: array
           maxItems: 10
           description: >
-            Evidence, and it can be topped up until the case closes. A resource named more
-            than once is stored once: the same photo twice is one piece of evidence.
+            Evidence, and it can be topped up until the case closes, to ten photos on the
+            case in total. A resource named more than once is stored once: the same photo
+            twice is one piece of evidence.
           items: { $ref: '#/components/schemas/ResourceID' }
       required: [reason]
 
@@ -327,5 +329,10 @@ components:
             A resource already on the case is ignored rather than refused, and so is one
             named twice here. A client topping up has not necessarily re-read the case, so
             resubmitting is not an error — it just leaves the case as it was.
+
+            The ten is counted over the whole case, not over this batch: a top-up is not a
+            way around the limit a submission is held to. A batch that would take the case
+            past ten is refused whole, and one that only repeats what is already there is
+            accepted however full the case is, because it adds nothing.
           items: { $ref: '#/components/schemas/ResourceID' }
       required: [attachments]
