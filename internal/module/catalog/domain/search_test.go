@@ -2,6 +2,7 @@ package domain_test
 
 import (
 	"encoding/json/jsontext"
+	"math"
 	"testing"
 
 	"shopnexus/internal/module/catalog/domain"
@@ -46,8 +47,56 @@ func TestCompile_PositionDecidesWeight(t *testing.T) {
 	if got.ProbeWeights[0] <= got.ProbeWeights[1] {
 		t.Errorf("weights = %v, want the first position to weigh more", got.ProbeWeights)
 	}
+	// The absolute values are normalized, so what holds is the total rather than any one of them:
+	// one attribute's values are worth one attribute however many the model emitted. Asserting
+	// w_attr · pos_0 instead is what this test used to do, and it was true only while the score was
+	// an unbounded sum over the model's own choice of how many probes to write.
+	var total float64
+	for _, w := range got.ProbeWeights {
+		total += w
+	}
+	if math.Abs(total-domain.AttrWeight["probes"]*domain.PositionWeight[0]) > 1e-9 {
+		t.Errorf("weights sum to %v, want one attribute's worth", total)
+	}
+}
+
+// A single probe is left exactly as configured: normalizing is for a stack, and scaling one value
+// up to fill the attribute would make a model that named one thing louder than one that named three.
+func TestCompile_OneProbeIsNotScaledUp(t *testing.T) {
+	got := domain.Compile(domain.Understanding{
+		Boosts: []domain.Signal{{Attr: "probes", Value: values(`"áo thun nam"`)}},
+	}, fakeResolver{})
+
+	if len(got.ProbeWeights) != 1 {
+		t.Fatalf("weights = %v, want one", got.ProbeWeights)
+	}
 	if got.ProbeWeights[0] != domain.AttrWeight["probes"]*domain.PositionWeight[0] {
-		t.Errorf("weight = %v, want w_attr · pos_0", got.ProbeWeights[0])
+		t.Errorf("weight = %v, want it untouched at w_attr · pos_0", got.ProbeWeights[0])
+	}
+}
+
+// A demotion is normalized apart from the boosts: sharing one budget would make a demoted phrase
+// quietly cost the boosts part of what they are worth.
+func TestCompile_DemotesNormalizeApartFromBoosts(t *testing.T) {
+	got := domain.Compile(domain.Understanding{
+		Boosts:  []domain.Signal{{Attr: "probes", Value: values(`"áo khoác nam"`)}},
+		Demotes: []domain.Signal{{Attr: "probes", Value: values(`"áo thun"`, `"áo sơ mi"`)}},
+	}, fakeResolver{})
+
+	var pos, neg float64
+	for _, w := range got.ProbeWeights {
+		if w > 0 {
+			pos += w
+		} else {
+			neg -= w
+		}
+	}
+	want := domain.AttrWeight["probes"] * domain.PositionWeight[0]
+	if math.Abs(pos-want) > 1e-9 {
+		t.Errorf("boosts sum to %v, want %v — a demote must not spend the boost budget", pos, want)
+	}
+	if math.Abs(neg-want) > 1e-9 {
+		t.Errorf("demotes sum to %v, want %v", neg, want)
 	}
 }
 

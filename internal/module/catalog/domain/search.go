@@ -221,6 +221,7 @@ func Compile(u Understanding, resolve Resolver) Compiled {
 	}
 	probes(u.Boosts, 1, MaxBoostProbes)
 	probes(u.Demotes, -1, MaxDemoteProbes)
+	normalize(out.ProbeWeights, AttrWeight[AttrProbes]*PositionWeight[0])
 
 	predicates := func(signals []Signal, sign float64) {
 		var taken int
@@ -261,7 +262,79 @@ func Compile(u Understanding, resolve Resolver) Compiled {
 	}
 	predicates(u.Boosts, 1)
 	predicates(u.Demotes, -1)
+	normalizePredicates(out.Predicates)
 	return out
+}
+
+// normalize scales one attribute's values so they sum to what that attribute is worth, keeping
+// their relative sizes. Without it the score is an unbounded sum over however many values the model
+// happened to emit, and no weight means the same thing twice: the same query answered "áo nam
+// 300k-500k" with 8 of 8 rows in range on a run that produced one probe and no tags, and 0 of 4 on
+// a run that produced three of each — the extra boosts inflated the total and shrank the price
+// bound's share of it. Positive and negative values are normalized apart, or a demotion would eat
+// into what the boosts are worth.
+func normalize(weights []float64, budget float64) {
+	for _, sign := range []float64{1, -1} {
+		var sum float64
+		for _, w := range weights {
+			if w*sign > 0 {
+				sum += w * sign
+			}
+		}
+		if sum == 0 {
+			continue
+		}
+		// One value at the first position already spends the whole budget, so it is left exactly
+		// as it was and only a stack of them is divided.
+		scale := budget / sum
+		if scale >= 1 {
+			continue
+		}
+		for i, w := range weights {
+			if w*sign > 0 {
+				weights[i] = w * scale
+			}
+		}
+	}
+}
+
+// normalizePredicates does the same per attribute, and leaves price alone: its two bounds are one
+// constraint rather than a list of guesses, and halving each of them is what broke a range query
+// before. See AttrPrice.
+func normalizePredicates(ps []CompiledPredicate) {
+	byAttr := map[string][]int{}
+	for i, p := range ps {
+		if p.Kind == PredicateMinPrice || p.Kind == PredicateMaxPrice {
+			continue
+		}
+		byAttr[p.Kind] = append(byAttr[p.Kind], i)
+	}
+	for kind, idx := range byAttr {
+		weights := make([]float64, len(idx))
+		for j, i := range idx {
+			weights[j] = ps[i].Weight
+		}
+		// The budget is that attribute's own weight, not one: a stack of three tags summed to 0.92
+		// against a tag being worth 0.5, and that inflation is what drowned a price bound.
+		normalize(weights, AttrWeight[attrOf(kind)]*PositionWeight[0])
+		for j, i := range idx {
+			ps[i].Weight = weights[j]
+		}
+	}
+}
+
+// attrOf maps a predicate kind back to the attribute whose budget it spends. Two kinds share one
+// attribute — a price range's bounds — and those never reach here.
+func attrOf(kind string) string {
+	switch kind {
+	case PredicateCategory:
+		return AttrCategory
+	case PredicateTag:
+		return AttrTag
+	case PredicateCondition:
+		return AttrCondition
+	}
+	return kind
 }
 
 // compilePredicate resolves one value. It answers a slice because one price object can carry
