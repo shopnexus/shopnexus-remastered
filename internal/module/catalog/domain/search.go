@@ -9,7 +9,15 @@ import (
 // RawQueryWeight is what the shopper's own words are worth. The server appends them as a probe
 // on every search, so base retrieval is this one term and nothing else — there is no second
 // implementation of "search without understanding" to keep in step.
-const RawQueryWeight = 1.0
+//
+// Half of a model-written probe, and measured rather than chosen: on this catalogue a raw
+// "dien thoai cu" scores P@10 0.00 on its own and 0.50 through the model's rewrite, and adding
+// the raw probe back at full weight drags the rewrite down to 0.40. At 0.5 it costs nothing on
+// either query tested. That asymmetry is structural — the words reach here misspelled and
+// undiacriticked precisely when the understanding stage was needed, so their embedding is the
+// weaker evidence by construction. When the model says nothing this is the only probe, and a
+// single term's weight cannot change an ordering, so nothing is lost at the bottom either.
+const RawQueryWeight = 0.5
 
 // RRFConstant is the `k` of reciprocal rank fusion. 60 is the value the method was published
 // with, and it is not a tuning knob here: it sets how fast a rank's contribution decays, and
@@ -17,16 +25,29 @@ const RawQueryWeight = 1.0
 const RRFConstant = 60.0
 
 // LegRelevanceFloor is the share of a leg's best score a hit must reach to survive into the
-// fusion. Measured on this catalogue against cosine scores: the genuine hits for a narrow query
-// sit at 0.93–1.00 of the best and the first unrelated one at 0.47, while a broad query stays
-// above 0.71 all the way down — so 0.6 falls in the gap for both shapes. Applied per leg,
-// because that is the only place two scores came out of the same operator.
+// fusion, applied per leg because that is the only place two scores came out of one operator.
+//
+// What it actually does, measured over twelve Vietnamese queries on this catalogue: it cuts
+// nothing from the dense leg for ten of them. Cosine on bge-m3 sits in a narrow band — the 200th
+// hit scores 0.65 to 0.76 of the first — so a relative floor of 0.6 is below the whole band, and
+// the dense pool is simply "the nearest 200". It bites only where there is a real cliff:
+// "iphone 13", whose one genuine match scores twice its neighbours, is cut from 200 rows to 25.
+// On the sparse leg it is the opposite and does the heavy work, keeping a mean of 18 rows of 200,
+// because a row sharing no token with the query has an inner product of zero.
+//
+// Raising it was tried and is worse: 0.8 gives P@10 0.445 and 0.9 gives 0.355 against 0.473 here,
+// because a higher floor empties the sparse leg first and that leg is where the precision is. The
+// number stays; the claim that it is what keeps unrelated rows off the page does not — what does
+// that is the pool now coming only from positive probe legs.
 const LegRelevanceFloor = 0.6
 
-// DenseShare and SparseShare split one probe's weight between meaning and words. Equal to start
-// with, and that is a guess: nothing has measured which half this catalogue's queries need more
-// of. A missing half contributes nothing rather than handing its share to the other one — less
-// evidence is less signal, not the same signal from one side.
+// DenseShare and SparseShare split one probe's weight between meaning and words. Equal, and now
+// measured rather than guessed: every alternative tried moved P@10 down or not at all — 0.7/0.3
+// gives 0.445 and 0.3/0.7 gives 0.455 against 0.473 for an even split. The two legs are not
+// symmetric in reach, which is why the split does not need to be: the dense leg contributes
+// almost the whole pool while the sparse leg keeps a mean of 18 rows, nearly all of them already
+// in the dense set. Sparse therefore acts as a precision bonus on rows both legs agree about, and
+// an even split is what sizes that bonus at roughly forty dense ranks.
 const (
 	DenseShare  = 0.5
 	SparseShare = 0.5
@@ -39,6 +60,32 @@ const (
 //
 // Starting values, to be measured. Nothing has calibrated them against real queries yet; the
 // golden query set in the design's Deferred section is what would.
+// AttrWeight is what each kind of signal is worth. The model never writes a number: it says
+// which attributes matter and in what order, and these decide how much that moves a page. That is
+// what keeps relevance reproducible — two identical requests rank identically, and a prompt change
+// can be compared against the one before it.
+//
+// Category is the one measured on this catalogue, over a query whose pool is genuinely mixed
+// ("điện thoại cũ", where dense similarity alone puts a phone pouch above a phone) and one whose
+// pool is not ("áo thun nam", already all inside its category). P@10 against a wrong category
+// guess and a right one:
+//
+//	weight   wrong guess   right guess
+//	  0.15      0.50          0.50        neither helps nor harms
+//	  0.30      0.50          0.60
+//	  0.60      0.50          0.70        the most a right guess buys before a wrong one costs
+//	  1.00      0.20          0.80        a wrong guess now rewrites the page
+//
+// So 0.6 is the ceiling of the free range, not a feel. The reason a weight this large is safe is
+// that a boost lifts a whole group at once and leaves the order inside it alone: it can move
+// category members past non-members, which is the point, but it cannot reorder the members
+// themselves. Arithmetic about what one row's score can jump — a match is worth more than the
+// entire span of dense ranks — reads as alarming and predicts the wrong thing; it was tried, the
+// weights were cut to a tenth of these, and the mixed pool filled with bags and headphones again.
+//
+// The other three keep the scale category was set on, and are *not* individually measured. Setting
+// them from reasoning alone is the mistake above, so they are left where they were until a query
+// set exists that separates them.
 var AttrWeight = map[string]float64{
 	AttrProbes:    1.0,
 	AttrCategory:  0.6,
