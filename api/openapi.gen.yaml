@@ -7790,7 +7790,7 @@ paths:
                         - trending
                     type: string
                 - description: |
-                    Which shuffle of a personalised feed this is; read only by `sort=recommended`, ignored everywhere else. That feed is drawn from a pool several pages deep rather than taken off the top of it, so the ordering is a function of this value: send one seed for a whole run of pages, or the second page will be drawn from a different feed than the first and repeat cards it has already shown. Send a new one to get a new feed. Any string does — it is hashed, never interpreted. Left out, the server rotates it every fifteen minutes.
+                    Which shuffle of a personalised feed this is; read only by `sort=recommended`, ignored everywhere else. That feed is drawn from a pool several pages deep rather than taken off the top of it, so the ordering is a function of this value: send one seed for a whole run of pages, or the second page will be drawn from a different feed than the first and repeat cards it has already shown. Send a new one to get a new feed. Any string does — it is hashed, never interpreted. Left out, the server rotates it every minute.
                   in: query
                   name: seed
                   schema:

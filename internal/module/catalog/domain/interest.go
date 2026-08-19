@@ -52,5 +52,7 @@ const ExploreSharpness = 2
 // SeedRotation is how often a feed reshuffles for a caller who names no seed of their own.
 // A client that pages through the feed sends one seed for the whole run, since the ordering
 // has to hold still under it; this is the fallback that keeps everyone else from reading the
-// same page for ever.
-const SeedRotation = 15 * time.Minute
+// same page for ever. Short on purpose — a minute, not fifteen — because the fallback is what a
+// demo or a bare curl against the API sees, and the wait to prove the feed moves at all should
+// not be longer than the demo itself.
+const SeedRotation = time.Minute

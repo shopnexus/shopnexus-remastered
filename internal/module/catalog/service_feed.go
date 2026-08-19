@@ -252,8 +252,10 @@ func feedSeed(sent string, viewerID int64, now time.Time) string {
 const feedCacheBatch = 60
 
 // feedCacheTTL is how long a materialised batch is trusted. Long enough to cover one
-// browsing session's paging, short enough that a seed reused later still finds a fresh draw.
-const feedCacheTTL = 20 * time.Minute
+// browsing session's paging, short enough that a seed reused later still finds a fresh draw —
+// and short enough that a demo account's new favorite or view, recomputed by the next interest
+// sweep, shows up in the same seed's next page rather than behind a stale batch.
+const feedCacheTTL = 2 * time.Minute
 
 // feedCacheKey scopes a materialised batch to the account and the seed that drew it — the
 // same pair the draw's ordering is a pure function of, so two requests naming both are

@@ -176,7 +176,7 @@ paths:
             seed for a whole run of pages, or the second page will be drawn from a different
             feed than the first and repeat cards it has already shown. Send a new one to get a
             new feed. Any string does — it is hashed, never interpreted. Left out, the server
-            rotates it every fifteen minutes.
+            rotates it every minute.
           schema: { type: string, maxLength: 64, example: 'k3f9qz' }
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
