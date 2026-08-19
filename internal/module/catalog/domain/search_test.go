@@ -117,3 +117,19 @@ func TestCompile_PriceBounds(t *testing.T) {
 		t.Errorf("predicate = %+v, want a max-price of 50000", got.Predicates[0])
 	}
 }
+
+// Predicates are capped across signals, not just within one. Six signals of three values each is
+// a shape the schema allows and the server must not carry: thirty terms is thirty joins over the
+// pool for one search.
+func TestCompile_CapsPredicatesAcrossSignals(t *testing.T) {
+	var boosts []domain.Signal
+	for range 6 {
+		boosts = append(boosts,
+			domain.Signal{Attr: "category", Value: values(`"Áo nam"`, `"Áo nam"`, `"Áo nam"`)})
+	}
+	got := domain.Compile(domain.Understanding{Boosts: boosts}, fakeResolver{})
+
+	if len(got.Predicates) != domain.MaxPredicates {
+		t.Errorf("predicates = %d, want the cap of %d", len(got.Predicates), domain.MaxPredicates)
+	}
+}

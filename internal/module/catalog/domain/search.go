@@ -1,8 +1,8 @@
 package domain
 
 import (
-	"encoding/json"
 	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"strings"
 )
 
@@ -45,34 +45,41 @@ var AttrWeight = map[string]float64{
 	AttrTag:       0.5,
 	AttrPrice:     0.4,
 	AttrCondition: 0.3,
-	AttrProvince:  0.3,
-	AttrWard:      0.3,
 }
 
 // The attributes a signal may name. A model answer outside this set is dropped: the set is also
 // the JSON Schema's enum, so it is stated twice on purpose — a schema is what we ask for, this
 // is what we accept.
+//
+// There is no place attribute. Everything here is resolved against real rows, and the knowledge
+// base a model copies from holds categories, tags and titles — never a province or a ward — so a
+// place could only ever be a guess at the codes those columns store, matching nothing and costing
+// a scan. The shopper's own location filters are hard predicates and are unaffected; re-adding an
+// attribute needs a vocabulary to resolve it against first.
 const (
 	AttrProbes    = "probes"
 	AttrCategory  = "category"
 	AttrTag       = "tag"
 	AttrPrice     = "price"
 	AttrCondition = "condition"
-	AttrProvince  = "province"
-	AttrWard      = "ward"
 )
 
 // PositionWeight is how much less each later value in a signal's array counts. The array is a
 // priority order — the one thing a model is reliably good at — so this is where "prefer A1 over
-// A2" becomes a number, on the server's terms.
+// A2" becomes a number, on the server's terms. Its length is also the cap on values per signal:
+// a fourth value has no weight to be worth anything, so there is one bound and not two.
 var PositionWeight = []float64{1.0, 0.5, 0.33}
 
-// The caps on what one statement will carry. Three boost probes plus the raw query the service
-// always appends, and two demotes: six probes, twelve ANN legs.
+// The caps on what one statement will carry, the schema's bounds again on the server — a gateway
+// that ignored the schema is exactly what the schema cannot enforce. Three boost probes plus the
+// raw query the service always appends, and two demotes: six probes, twelve ANN legs.
+// MaxPredicates is per sign: four attributes at three values each is the most a well-formed
+// answer produces, so it clips nothing that resolved and bounds the six-signal answer that did
+// not.
 const (
 	MaxBoostProbes  = 3
 	MaxDemoteProbes = 2
-	MaxValues       = 3
+	MaxPredicates   = 12
 )
 
 // Signal is one thing the understanding stage decided. Value is always an array, and the array
@@ -110,15 +117,14 @@ type CompiledPredicate struct {
 // The predicate kinds a compiled signal may name. Equal by construction to port's
 // Predicate* constants — domain may not import port, so this is the one duplication the layering
 // forces (the same shape api/domain constant pairs already have); catalog's service package
-// tests that a rename cannot silently split the two copies.
+// tests that a rename cannot silently split the two copies, and that neither side grew a kind
+// the other does not have.
 const (
 	PredicateCategory  = "category"
 	PredicateTag       = "tag"
 	PredicateMinPrice  = "min-price"
 	PredicateMaxPrice  = "max-price"
 	PredicateCondition = "condition"
-	PredicateProvince  = "province"
-	PredicateWard      = "ward"
 )
 
 // Resolver is the catalogue's own vocabulary: the only thing that turns a name a model copied
@@ -160,7 +166,11 @@ func Compile(u Understanding, resolve Resolver) Compiled {
 	probes(u.Demotes, -1, MaxDemoteProbes)
 
 	predicates := func(signals []Signal, sign float64) {
+		var taken int
 		for _, s := range signals {
+			if taken >= MaxPredicates {
+				return
+			}
 			if s.Attr == AttrProbes {
 				continue
 			}
@@ -169,12 +179,16 @@ func Compile(u Understanding, resolve Resolver) Compiled {
 				continue
 			}
 			for i, raw := range s.Value {
-				if i >= len(PositionWeight) || i >= MaxValues {
+				if taken >= MaxPredicates || i >= len(PositionWeight) {
 					break
 				}
 				for _, p := range compilePredicate(s.Attr, raw, resolve) {
+					if taken >= MaxPredicates {
+						break
+					}
 					p.Weight = sign * weight * PositionWeight[i]
 					out.Predicates = append(out.Predicates, p)
+					taken++
 				}
 			}
 		}
@@ -214,17 +228,6 @@ func compilePredicate(attr string, raw jsontext.Value, resolve Resolver) []Compi
 			return nil
 		}
 		return []CompiledPredicate{{Kind: PredicateCondition, Value: value}}
-	case AttrProvince, AttrWard:
-		// A code, not a name: these come from the request's own filters or from a value the
-		// model copied out of the knowledge base, and both are codes there.
-		code, ok := decodeString(raw)
-		if !ok || code == "" {
-			return nil
-		}
-		if attr == AttrProvince {
-			return []CompiledPredicate{{Kind: PredicateProvince, Value: code}}
-		}
-		return []CompiledPredicate{{Kind: PredicateWard, Value: code}}
 	case AttrPrice:
 		var bound struct {
 			Lt *int64 `json:"lt"`

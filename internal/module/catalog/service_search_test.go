@@ -146,3 +146,37 @@ func TestListListings_BrowseAnswersEmptySearchFields(t *testing.T) {
 		t.Errorf("understood = %q, probes = %#v; want empty and non-nil", page.Understood, page.Probes)
 	}
 }
+
+// A model that puts the shopper's own words in `demotes` must not take base retrieval away with
+// them: the raw query is appended anyway, and the page is still ranked towards it rather than
+// away from it. Without this the statement carries one negative probe of the query and
+// `ORDER BY score DESC` answers whatever is least like what was typed.
+func TestUnderstand_ADemotedQueryDoesNotSwallowTheRawProbe(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	publish(t, h, seedListingNamed(t, h, "Áo thun Uniqlo nam"))
+	h.models.answer = `{
+	  "boosts": [],
+	  "demotes": [{"attr": "probes", "value": ["áo thun"]}],
+	  "understood": "áo thun"
+	}`
+
+	page, err := h.svc.ListListings(ctx, catalogapi.ListListingsRequest{
+		Query: "áo thun", Page: 1, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListListings: %v", err)
+	}
+	var positive int
+	for _, term := range h.repo.lastFilter.Terms {
+		if term.Probe != nil && term.Weight > 0 {
+			positive++
+		}
+	}
+	if positive != 1 {
+		t.Fatalf("positive probes = %d, want the raw query appended despite the demote", positive)
+	}
+	if !slices.Equal(page.Probes, []string{"áo thun"}) {
+		t.Errorf("probes = %v, want the shopper's own words as what was searched for", page.Probes)
+	}
+}

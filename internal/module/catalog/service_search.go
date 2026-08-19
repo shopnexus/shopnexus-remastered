@@ -58,6 +58,11 @@ func (s *Service) knowledge(ctx context.Context, probe port.Probe, filter port.L
 	draw := filter
 	draw.Terms = []port.Term{{Weight: domain.RawQueryWeight, Probe: &probe}}
 	draw.Offset, draw.Limit = 0, knowledgeTitles
+	// Relevance whatever the caller asked for: this draw is vocabulary, not the answer. Under
+	// sort=price-asc the ten cheapest rows of the pool would be what the model is shown as the
+	// marketplace's words, so the brand and model words the knowledge base exists to supply go
+	// missing exactly when the shopper narrowed.
+	draw.Sort = port.SortRelevance
 	rows, _, err := s.repo.ListListings(ctx, draw)
 	if err != nil {
 		s.log.Warn("read nearest titles for search knowledge", "err", err)
@@ -109,8 +114,12 @@ func (s *Service) searchTerms(ctx context.Context, req catalogapi.ListListingsRe
 
 	texts := compiled.ProbeTexts
 	weights := compiled.ProbeWeights
-	// The shopper's own words, unless the model already named them.
-	if !containsFold(texts, req.Query) {
+	// The shopper's own words, unless the model already named them as a boost. Only a boost
+	// counts: a model that put the query itself in `demotes` would otherwise leave the statement
+	// with nothing but a negative probe of it, and `ORDER BY score DESC` then ranks the catalogue
+	// by how unlike the query it is. This is what makes a malformed answer degrade to the base
+	// search rather than invert it.
+	if !containsFold(searched(texts, weights), req.Query) {
 		texts = append(texts, req.Query)
 		weights = append(weights, domain.RawQueryWeight)
 	}
@@ -132,10 +141,12 @@ func (s *Service) searchTerms(ctx context.Context, req catalogapi.ListListingsRe
 	return terms, searchAnswer{understood: compiled.Understood, probes: searched(texts, weights)}, nil
 }
 
-// searched is the probe list a shopper is shown: the phrases the ranking was pulled *towards*.
-// A demoted phrase is a negative weight — the opposite of what was searched for — and listing it
-// under "searching for" tells them the feed is looking for the very thing it was told to avoid.
-// The first live query surfaced this: "ao thu unilo" answered with "ô tô" among its probes.
+// searched is the phrases the ranking was pulled *towards*: the positive-weight probes. It is
+// what the shopper is shown and what the raw query is deduped against, which is one question
+// asked twice — a demoted phrase is the opposite of what was searched for.
+// Listing one under "searching for" tells them the feed is looking for the very thing it was told
+// to avoid; the first live query surfaced that, "ao thu unilo" answering with "ô tô" among its
+// probes.
 func searched(texts []string, weights []float64) []string {
 	out := make([]string, 0, len(texts))
 	for i, text := range texts {
@@ -225,7 +236,7 @@ var understandingSchema = jsontext.Value(`{
       "additionalProperties": false,
       "required": ["attr", "value"],
       "properties": {
-        "attr": {"type": "string", "enum": ["probes", "category", "tag", "price", "condition", "province", "ward"]},
+        "attr": {"type": "string", "enum": ["probes", "category", "tag", "price", "condition"]},
         "value": {
           "type": "array",
           "maxItems": 3,
@@ -263,7 +274,6 @@ strongest first.
 - "category", "tag": copy a name EXACTLY from the lists below. Never invent one.
 - "price": {"lt": n} or {"gt": n} in Vietnamese dong, only when they said something about price.
 - "condition": one of new, used, damaged.
-- "province", "ward": only when they named a place.
 
 Leave out any attribute you are not confident about. A missing signal costs a little precision;
 a wrong one sends the shopper the wrong goods.

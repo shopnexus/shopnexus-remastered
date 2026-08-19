@@ -96,8 +96,9 @@ type ListingFilter struct {
 	// VariantIDs resolves the listings those variants belong to, and ignores the rest of
 	// the filter for the same reason IDs does.
 	VariantIDs []int64
-	// Query turns the request into a search; the raw words still drive the lexical predicate
-	// and the fallback sorts even once Terms carries a probe of them.
+	// Query turns the request into a search, and the words themselves rank nothing: Terms carries
+	// the probe of them. What is left for the raw string is the recommended feed's name ILIKE,
+	// which is the one path a search's terms never reach.
 	Query string
 	// Terms are the compiled ranking signals: a probe to rank against, or a row predicate that
 	// contributes when it holds. Weight is already folded, so the adapter never sees an
@@ -185,15 +186,23 @@ type Predicate struct {
 	Value any
 }
 
+// No province or ward here: the understanding stage has no vocabulary of places to copy from —
+// the knowledge base shows categories, tags and titles — so a model could only guess at the
+// codes these columns hold. The shopper's own location filters are hard predicates in the
+// browse's WHERE and are unaffected.
 const (
 	PredicateCategory  = "category"  // Value int64
 	PredicateTag       = "tag"       // Value string (slug)
 	PredicateMinPrice  = "min-price" // Value int64
 	PredicateMaxPrice  = "max-price" // Value int64
 	PredicateCondition = "condition" // Value string
-	PredicateProvince  = "province"  // Value string (code)
-	PredicateWard      = "ward"      // Value string (code)
 )
+
+// PredicateKinds is the set, listed once so the adapter's whitelist can be checked complete: a
+// kind declared with no SQL behind it compiles, reaches the statement and silently ranks nothing.
+var PredicateKinds = []string{
+	PredicateCategory, PredicateTag, PredicateMinPrice, PredicateMaxPrice, PredicateCondition,
+}
 
 // The sorts, spelled once so the service and the adapter agree.
 const (
