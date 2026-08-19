@@ -445,7 +445,7 @@ func denseAxis(first float32) string {
 
 // A personalised feed's probes come from the account and have nothing to do with `q`:
 // `sort=recommended` together with a query must still filter lexically. Only a probe that is
-// the query's own embedding (ProbeFromQuery) may skip the lexical predicate.
+// the query's own embedding (carried as a Term) may skip the lexical predicate.
 func TestRepo_ListListingsRecommendedProbeDoesNotBypassQueryFilter(t *testing.T) {
 	repo := newRepo(t)
 	ctx := context.Background()
@@ -495,7 +495,7 @@ func TestRepo_ListListingsRecommendedProbeDoesNotBypassQueryFilter(t *testing.T)
 	// embedder has run over that seed every listing has a vector — so an unscoped assertion of
 	// "only mine came back" tests the neighbours rather than the probe.
 	rows, _, err := repo.ListListings(ctx, port.ListingFilter{
-		Query: query, ProbeFromQuery: false, Sort: port.SortRecommended,
+		Query: query, Sort: port.SortRecommended,
 		Interests:  []port.Interest{{Vector: probe, Weight: 1}},
 		CategoryID: category.ID, Limit: 20,
 	})
@@ -528,7 +528,7 @@ func TestRepo_ListListingsProbeAndWishlist(t *testing.T) {
 	probe := make(port.Vector, 1024)
 	probe[0] = 1
 	if _, _, err := repo.ListListings(ctx, port.ListingFilter{
-		Query: "probe", Mode: port.ModeHybrid, Probe: probe, ProbeFromQuery: true,
+		Query: "probe", Terms: []port.Term{{Weight: 1, Probe: &port.Probe{Dense: probe}}},
 		Sort: port.SortRelevance, Limit: 5,
 	}); err != nil {
 		t.Fatalf("ListListings(hybrid): %v", err)

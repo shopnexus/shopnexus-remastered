@@ -250,7 +250,7 @@ func TestListListings_RecommendedNeverEmbedsTheQuery(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("ListListings(recommended+q): %v", err)
 	}
-	if h.repo.lastFilter.ProbeFromQuery {
+	if len(h.repo.lastFilter.Terms) != 0 {
 		t.Error("the query was embedded, so the adapter would have dropped the lexical filter")
 	}
 	if len(h.repo.lastFilter.Interests) == 0 {
@@ -564,7 +564,7 @@ func TestListListings_RecommendedCacheIsPerFilter(t *testing.T) {
 	}
 
 	req := catalogapi.ListListingsRequest{
-		ViewerID: buyer, Sort: "recommended", Seed: "one-run", Mode: "lexical", Page: 1, Limit: 1,
+		ViewerID: buyer, Sort: "recommended", Seed: "one-run", Page: 1, Limit: 1,
 	}
 	req.Query = "alpha"
 	if _, err := h.svc.ListListings(ctx, req); err != nil {
@@ -587,7 +587,7 @@ func TestListListings_RecommendedCacheIsPerFilter(t *testing.T) {
 // served from another browse's batch. This fails on the commit that adds the field, which is
 // the only place the omission is still cheap to fix.
 func TestFeedCacheKey_CoversEveryFilterField(t *testing.T) {
-	const named = 26
+	const named = 24
 	if got := reflect.TypeFor[port.ListingFilter]().NumField(); got != named {
 		t.Errorf("port.ListingFilter has %d fields, feedCacheKey was written for %d — "+
 			"add the new one to feedCacheKey (or to the list it leaves out on purpose) and update this count", got, named)

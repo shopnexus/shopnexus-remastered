@@ -234,7 +234,6 @@ type ListListingsRequest struct {
 	// hangs off is the only thing that can be rendered. Ignores the other filters too.
 	Variants   []id.ID[id.Variant] `json:"-" validate:"max=100"`
 	Query      string              `json:"-" validate:"max=200"`
-	Mode       string              `json:"-" validate:"omitempty,oneof=lexical semantic hybrid"`
 	Mine       bool                `json:"-"`
 	Favorited  bool                `json:"-"`
 	Status     string              `json:"-" validate:"omitempty,oneof=draft pending active hidden"`

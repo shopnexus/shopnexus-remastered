@@ -31,6 +31,14 @@ type Seed struct {
 // Vector is a dense embedding as pgvector stores it.
 type Vector []float32
 
+// Probe is one text's embedding as retrieval uses it: both halves out of a single pass over the
+// text. Separate from Vector, which stays dense-only because an interest is `avg(dense)`
+// computed in SQL and there is no meaningful average of sparse vectors.
+type Probe struct {
+	Dense  Vector
+	Sparse map[uint32]float32
+}
+
 type ScoredCategory struct {
 	Category domain.Category
 	Score    float64
@@ -88,17 +96,13 @@ type ListingFilter struct {
 	// VariantIDs resolves the listings those variants belong to, and ignores the rest of
 	// the filter for the same reason IDs does.
 	VariantIDs []int64
-	// Query turns the request into a search; Mode picks how. Probe is its dense embedding,
-	// resolved by the service, and is nil when the query is lexical or nothing embedded it.
+	// Query turns the request into a search; the raw words still drive the lexical predicate
+	// and the fallback sorts even once Terms carries a probe of them.
 	Query string
-	Mode  string
-	Probe Vector
-	// ProbeFromQuery is true only when Probe is the query's own embedding (a semantic or
-	// hybrid search), which is what lets the adapter skip the lexical predicate without
-	// dropping a filter the caller asked for: `q=uniqlo&sort=recommended` ranks against the
-	// account's interests, which have nothing to do with "uniqlo", so the lexical filter
-	// still has to hold.
-	ProbeFromQuery bool
+	// Terms are the compiled ranking signals: a probe to rank against, or a row predicate that
+	// contributes when it holds. Weight is already folded, so the adapter never sees an
+	// attribute name, a position or anything a model wrote.
+	Terms []Term
 	// Interests is what a recommended feed ranks against, strongest first. Several probes
 	// rather than one, because a buyer is several buyers: phones on Monday and a bicycle on
 	// Thursday are not one taste whose average is a taste for neither. Empty means the
@@ -164,12 +168,35 @@ type Point struct {
 	Longitude float64 `validate:"gte=-180,lte=180"`
 }
 
-// The search modes and the sorts, spelled once so the service and the adapter agree.
-const (
-	ModeLexical  = "lexical"
-	ModeSemantic = "semantic"
-	ModeHybrid   = "hybrid"
+// Term is one contribution to a search's ranking. Exactly one of Probe and Predicate is set.
+type Term struct {
+	// Weight is w_attr · pos_i · sign, folded by the service. Negative for a demotion.
+	Weight float64
+	Probe  *Probe
+	// Predicate contributes at rank 1 for every row that satisfies it, which is what puts it
+	// in the same units as a probe's rank without a second scale to calibrate.
+	Predicate *Predicate
+}
 
+// Predicate is a row test from a fixed set. Kind fixes the type of Value, which is bound as a
+// query parameter — nothing here reaches the SQL text.
+type Predicate struct {
+	Kind  string
+	Value any
+}
+
+const (
+	PredicateCategory  = "category"  // Value int64
+	PredicateTag       = "tag"       // Value string (slug)
+	PredicateMinPrice  = "min-price" // Value int64
+	PredicateMaxPrice  = "max-price" // Value int64
+	PredicateCondition = "condition" // Value string
+	PredicateProvince  = "province"  // Value string (code)
+	PredicateWard      = "ward"      // Value string (code)
+)
+
+// The sorts, spelled once so the service and the adapter agree.
+const (
 	SortNewest      = "newest"
 	SortRating      = "rating"
 	SortPriceAsc    = "price-asc"

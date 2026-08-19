@@ -139,7 +139,6 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 
 	filter := port.ListingFilter{
 		Query:     req.Query,
-		Mode:      modeOf(req),
 		ViewerID:  req.ViewerID.Int64(),
 		Mine:      req.Mine,
 		Favorited: req.Favorited,
@@ -207,17 +206,14 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 			}
 		}
 	}
-	// A personalised feed is already ranked, by the account rather than by the words, so a
-	// query alongside it stays what it is: a filter on the name. Embedding it here would set
-	// ProbeFromQuery, and the adapter drops the lexical predicate whenever that is set — so
-	// `q=uniqlo&sort=recommended` would quietly answer the whole personalised feed.
-	if filter.Sort != port.SortRecommended {
-		probe, fromQuery, err := s.probeFor(ctx, req)
+	// Every search reaches the adapter as terms. Today that is the raw query alone; Task 8 puts
+	// the understood signals in front of it, and the raw query stays as the last one.
+	if filter.Sort != port.SortRecommended && req.Query != "" {
+		probe, err := s.queryProbe(ctx, req.Query)
 		if err != nil {
 			return port.ListingFilter{}, err
 		}
-		filter.Probe = probe
-		filter.ProbeFromQuery = fromQuery
+		filter.Terms = append(filter.Terms, port.Term{Weight: domain.RawQueryWeight, Probe: &probe})
 	}
 	return filter, nil
 }
@@ -264,8 +260,10 @@ const feedCacheTTL = 2 * time.Minute
 // alone served a filtered browse from whatever the previous, differently filtered browse of the
 // same run had cached, which is a page answering a question nobody asked.
 //
-// Left out on purpose: Offset and Limit, which are the paging this cache exists to serve, and
-// Interests, whose staleness bound is feedCacheTTL rather than a key.
+// Left out on purpose: Offset and Limit, which are the paging this cache exists to serve;
+// Interests, whose staleness bound is feedCacheTTL rather than a key; and Terms — the only
+// filter that ever carries one is the personalised feed, which never carries a query, so
+// hashing a slice of 1024-float probes would cost a serialisation per page for nothing.
 //
 // A new field on port.ListingFilter belongs here too — TestFeedCacheKey_CoversEveryFilterField
 // is what says so, since nothing else would.
@@ -279,8 +277,8 @@ func feedCacheKey(f port.ListingFilter) string {
 		near = fmt.Sprintf("%g,%g", f.Near.Latitude, f.Near.Longitude)
 	}
 	h := sha256.New()
-	fmt.Fprintf(h, "%v|%v|%s|%s|%t|%t|%t|%s|%d|%s|%d|%s|%d|%s|%s|%s|%s|%s|%g|%s",
-		f.IDs, f.VariantIDs, f.Query, f.Mode, f.ProbeFromQuery, f.Mine, f.Favorited, f.Status,
+	fmt.Fprintf(h, "%v|%v|%s|%t|%t|%s|%d|%s|%d|%s|%d|%s|%s|%s|%s|%s|%g|%s",
+		f.IDs, f.VariantIDs, f.Query, f.Mine, f.Favorited, f.Status,
 		f.CategoryID, f.Tag, f.SellerID, f.Condition, f.MinPrice, maxPrice,
 		f.ProvinceCode, f.DistrictCode, f.WardCode, near, f.RadiusKM, f.Sort)
 	return fmt.Sprintf("feed:%d:%s:%x", f.ViewerID, f.Seed, h.Sum(nil)[:8])
@@ -397,72 +395,56 @@ func reorderCards(rows []port.ListingSummary, ids []int64) []port.ListingSummary
 	return out
 }
 
-// probeFor resolves the dense vector a search runs against: the query's own embedding, for a
-// semantic or hybrid search. The second return says so, which is what lets the adapter drop
-// the lexical predicate — a personalised feed's probes come from the account instead and never
-// satisfy a filter the caller asked for.
-//
-// Embedding the query is **best-effort**: a model that is down, slow or not deployed at all
-// leaves the probe nil, and the search runs lexically instead of failing. That is the same
-// bargain the rest of the pipeline makes — a listing with no embedding is still findable by
-// name — and it is what keeps the model off the critical path of the busiest route.
-func (s *Service) probeFor(ctx context.Context, req catalogapi.ListListingsRequest) (port.Vector, bool, error) {
-	if req.Query == "" || modeOf(req) == port.ModeLexical {
-		return nil, false, nil
-	}
-	vector, err := s.queryVector(ctx, req.Query)
-	if err != nil {
-		s.log.Warn("embed search query, falling back to lexical", "err", err)
-		return nil, false, nil
-	}
-	return vector, true, nil
-}
-
 // queryVectorTTL is how long a query's embedding is kept. Long, because the answer only
 // changes when the model does: the same words always produce the same vector, and what the
 // cache is protecting against is a popular query paying for an inference every time it is
 // typed. A domain constant rather than config — nothing about a deployment changes it.
 const queryVectorTTL = 24 * time.Hour
 
-// queryVector embeds one search query, through the cache.
+// queryProbe embeds one text into both halves, through the cache.
 //
 // The key carries the model's name and the width it answered in, so a deployment that changes
 // either reads none of the old entries instead of ranking today's listings against yesterday's
-// model — two vectors from different models are not comparable, and the failure would look
-// like search quietly getting worse rather than like a cache to clear. A cache that is down is
-// not an error: it costs an inference, not an answer.
-func (s *Service) queryVector(ctx context.Context, query string) (port.Vector, error) {
-	normalized := strings.ToLower(strings.Join(strings.Fields(query), " "))
+// model. The prefix is `search-probe` rather than `search-vec`: an entry written before the
+// sparse half was kept has no sparse half, and reading one back would silently drop a leg.
+func (s *Service) queryProbe(ctx context.Context, text string) (port.Probe, error) {
+	normalized := strings.ToLower(strings.Join(strings.Fields(text), " "))
 	sum := sha256.Sum256([]byte(normalized))
-	key := fmt.Sprintf("search-vec:%s:%d:%x", s.vectors.Name(), len(normalized), sum)
+	key := fmt.Sprintf("search-probe:%s:%d:%x", s.vectors.Name(), len(normalized), sum)
 
-	var cached port.Vector
-	if err := s.cache.Get(ctx, key, &cached); err == nil && len(cached) > 0 {
+	var cached port.Probe
+	if err := s.cache.Get(ctx, key, &cached); err == nil && len(cached.Dense) > 0 {
 		return cached, nil
 	}
 
 	vectors, err := s.vectors.Embed(ctx, []string{normalized})
 	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
+		return port.Probe{}, fmt.Errorf("embed query: %w", err)
 	}
 	if len(vectors) != 1 || len(vectors[0].Dense) == 0 {
-		return nil, fmt.Errorf("embed query: model answered %d vectors", len(vectors))
+		return port.Probe{}, fmt.Errorf("embed query: model answered %d vectors", len(vectors))
 	}
-	vector := port.Vector(vectors[0].Dense)
-	if err := s.cache.Set(ctx, key, vector, queryVectorTTL); err != nil {
-		s.log.Warn("cache search query vector", "err", err)
+	probe := port.Probe{Dense: port.Vector(vectors[0].Dense), Sparse: vectors[0].Sparse}
+	if err := s.cache.Set(ctx, key, probe, queryVectorTTL); err != nil {
+		s.log.Warn("cache search query probe", "err", err)
 	}
-	return vector, nil
+	return probe, nil
 }
 
-// modeOf applies the default the contract names: hybrid, which is what a model producing both a
-// dense and a lexical half is for. Only meaningful with a query, so it is left empty without one
-// — an empty mode is what tells scoreExpr a feed is not a search.
-func modeOf(req catalogapi.ListListingsRequest) string {
-	if req.Mode != "" || req.Query == "" {
-		return req.Mode
+// queryProbes resolves a whole list of texts, each through queryProbe's own cache lookup. It
+// does not batch the model call: batching across a partial cache hit needs an index map to put
+// the misses back in place, and with at most a handful of probes per query the simpler shape is
+// the right one until a measurement says otherwise.
+func (s *Service) queryProbes(ctx context.Context, texts []string) ([]port.Probe, error) {
+	out := make([]port.Probe, len(texts))
+	for i, text := range texts {
+		probe, err := s.queryProbe(ctx, text)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = probe
 	}
-	return port.ModeHybrid
+	return out, nil
 }
 
 // sortOf applies the two defaults the contract names: relevance when a query was given, newest

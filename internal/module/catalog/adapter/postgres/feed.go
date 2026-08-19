@@ -34,8 +34,8 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 		"condition":        dbx.NullText(string(f.Condition)),
 		"min_price":        nullInt64(f.MinPrice),
 		"max_price":        nullInt64Ptr(f.MaxPrice),
-		"probe":            dbx.NullText(vectorLiteralOrEmpty(f.Probe)),
-		"probe_from_query": f.ProbeFromQuery,
+		"probe":            dbx.NullText(vectorLiteralOrEmpty(termProbe(f.Terms))),
+		"probe_from_query": len(f.Terms) > 0,
 		"province_code":    dbx.NullText(f.ProvinceCode),
 		"district_code":    dbx.NullText(f.DistrictCode),
 		"ward_code":        dbx.NullText(f.WardCode),
@@ -382,7 +382,7 @@ const relevanceFloor = 0.6
 // relevance sort is already the ranking, and a query with no probe still has its lexical
 // WHERE gate, so both narrow on their own.
 func rerankedSort(f port.ListingFilter) bool {
-	return f.ProbeFromQuery &&
+	return len(f.Terms) > 0 &&
 		f.Sort != port.SortRelevance && f.Sort != port.SortRecommended
 }
 
@@ -445,12 +445,14 @@ func probeArrays(interests []port.Interest) ([]string, []float64) {
 	return probes, weights
 }
 
-// scoreExpr picks what "score" means for this request. Always higher-is-better, so a client
-// never has to know which mode ran:
+// scoreExpr picks what "score" means for this request. Always higher-is-better:
 //
-//   - lexical: how well the query matches the best-matching run of words in the name.
-//   - semantic: 1 − cosine distance to the probe.
-//   - hybrid: the sum of the two, which is what a query with both halves is for.
+//   - a probe present: 1 − cosine distance to it.
+//   - a query alone: how well it matches the best-matching run of words in the name.
+//
+// Interim shape — every search carries exactly one probe today (its own raw query), so there
+// is no case yet where both a probe and a lexical score should be summed. This whole function
+// is replaced once Terms carries more than one signal.
 //
 // A personalised feed does not come through here: it ranks against several probes at once and
 // has its own shape above.
@@ -473,15 +475,24 @@ func scoreExpr(f port.ListingFilter) string {
 	const lexical = `strict_word_similarity(f_unaccent(@query::text), f_unaccent(l.name))`
 	const dense = `COALESCE(1 - (e.dense <=> @probe::vector), 0)`
 	switch {
-	case f.Probe != nil && f.Query != "" && f.Mode == port.ModeHybrid:
-		return lexical + ` + ` + dense
-	case f.Probe != nil:
+	case termProbe(f.Terms) != nil:
 		return dense
 	case f.Query != "":
 		return lexical
 	default:
 		return `NULL::double precision`
 	}
+}
+
+// termProbe answers the one probe today's Terms carry — a single raw-query term, dense half
+// only, until the fused ranking SQL reads Terms itself.
+func termProbe(terms []port.Term) port.Vector {
+	for _, t := range terms {
+		if t.Probe != nil {
+			return t.Probe.Dense
+		}
+	}
+	return nil
 }
 
 // orderBy maps the sort to a fixed expression. Nothing here is built from user input — the

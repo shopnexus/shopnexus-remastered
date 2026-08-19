@@ -43,7 +43,6 @@ func (h *Catalog) ListListings(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	req := catalogapi.ListListingsRequest{
 		Query:     query.Get("q"),
-		Mode:      query.Get("mode"),
 		Status:    query.Get("status"),
 		Tag:       query.Get("tag"),
 		Condition: query.Get("condition"),
