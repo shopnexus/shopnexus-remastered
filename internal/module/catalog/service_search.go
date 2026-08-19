@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"fmt"
 	"strings"
 
 	catalogapi "shopnexus/internal/module/catalog/api"
@@ -110,7 +111,8 @@ func (s *Service) searchTerms(ctx context.Context, req catalogapi.ListListingsRe
 		return nil, searchAnswer{}, err
 	}
 	kb := s.knowledge(ctx, probe, filter)
-	compiled := domain.Compile(s.understand(ctx, req.Query, kb), kb)
+	understanding := s.understand(ctx, req.Query, kb)
+	compiled := domain.Compile(understanding, kb)
 
 	texts := compiled.ProbeTexts
 	weights := compiled.ProbeWeights
@@ -138,7 +140,60 @@ func (s *Service) searchTerms(ctx context.Context, req catalogapi.ListListingsRe
 			Predicate: &port.Predicate{Kind: p.Kind, Value: p.Value},
 		})
 	}
+	// What the answer became after resolution. Read beside the line above, this is where a signal
+	// that vanished is accounted for: `asked` is every value the model named, and anything absent
+	// from `probes` or `predicates` was dropped — a category name that matches no row, a price
+	// object of the wrong shape, a value past the cap. Compile drops those in silence on purpose,
+	// because a page missing one signal is still worth serving; silent to the shopper is not the
+	// same as invisible to whoever is asking why.
+	s.log.Info("search terms", "query", req.Query,
+		"asked", askedFor(understanding),
+		"probes", probeLog(texts, weights),
+		"predicates", predicateLog(compiled.Predicates))
+
 	return terms, searchAnswer{understood: compiled.Understood, probes: searched(texts, weights)}, nil
+}
+
+// askedFor flattens the model's own signals to `attr=value`, demotions marked, so the log line
+// carries what was requested next to what came of it.
+func askedFor(u domain.Understanding) []string {
+	out := make([]string, 0, len(u.Boosts)+len(u.Demotes))
+	for _, group := range []struct {
+		signals []domain.Signal
+		sign    string
+	}{{u.Boosts, "+"}, {u.Demotes, "-"}} {
+		for _, sig := range group.signals {
+			for _, value := range sig.Value {
+				// Compacted: a model pretty-prints its JSON, and an object value carrying the
+				// newlines it came with turns one log line into six.
+				if err := value.Compact(); err != nil {
+					continue
+				}
+				out = append(out, group.sign+sig.Attr+"="+string(value))
+			}
+		}
+	}
+	return out
+}
+
+// probeLog pairs each probe with the weight the fusion will give it. A negative one is a
+// demotion, which is the difference between a phrase the ranking moves towards and away from.
+func probeLog(texts []string, weights []float64) []string {
+	out := make([]string, 0, len(texts))
+	for i, text := range texts {
+		out = append(out, fmt.Sprintf("%s w=%+.2f", text, weights[i]))
+	}
+	return out
+}
+
+// predicateLog is the resolved predicates — ids and codes, not the names the model wrote, because
+// what ran is what matters when a page is wrong.
+func predicateLog(ps []domain.CompiledPredicate) []string {
+	out := make([]string, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, fmt.Sprintf("%s=%v w=%+.2f", p.Kind, p.Value, p.Weight))
+	}
+	return out
 }
 
 // searched is the phrases the ranking was pulled *towards*: the positive-weight probes. It is
@@ -195,6 +250,17 @@ func (s *Service) understand(ctx context.Context, query string, kb knowledge) do
 		s.log.Warn("decode search understanding", "err", err)
 		return domain.Understanding{}
 	}
+	// The answer verbatim, plus what it cost. A page nobody can explain is traced back to what
+	// the model actually said rather than to what survived resolution — and the token counts are
+	// the only place the price of a search is visible, since every one of them pays for a
+	// completion. Info and not Debug because it has to be readable on a deployment nobody has
+	// turned debug on for; if search traffic ever makes two lines per query too many, these are
+	// the two to move down.
+	s.log.Info("understood search query", "query", query, "model", answer.Model,
+		"understood", wire.Meaning, "answer", answer.Message.Content,
+		"prompt_tokens", answer.Usage.PromptTokens,
+		"completion_tokens", answer.Usage.CompletionTokens)
+
 	return domain.Understanding{
 		Boosts:     signalsOf(wire.Boosts),
 		Demotes:    signalsOf(wire.Demotes),
