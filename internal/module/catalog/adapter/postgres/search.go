@@ -59,6 +59,9 @@ func (r *Repo) search(ctx context.Context, q string, args pgx.NamedArgs) ([]port
 // also why no index could serve the ORDER BY — a sum of two expressions is not an operator class,
 // so every search sequentially scanned listing_embedding.
 //
+// Only a positive-weight probe leg retrieves; everything else adjusts what those legs found. A
+// boost and a demote are adjustments, not retrievals — see poolCTE.
+//
 // The text is assembled from fixed fragments with generated *parameter names* (`@probe_0_dense`).
 // No caller value reaches the SQL text, which is the rule orderBy already followed.
 func (r *Repo) searchStatement(f port.ListingFilter) (string, pgx.NamedArgs, bool) {
@@ -67,18 +70,30 @@ func (r *Repo) searchStatement(f port.ListingFilter) (string, pgx.NamedArgs, boo
 	args["leg_floor"] = domain.LegRelevanceFloor
 	args["candidates"] = searchCandidates
 
-	var legs, sources []string
+	var legs, poolLegs, sources []string
+	adjustments := false
 	for i, term := range f.Terms {
 		switch {
 		case term.Probe != nil:
+			// A zero weight adds nothing, so it counts as an adjustment too: it must not be
+			// the reason a row is on the page.
+			retrieves := term.Weight > 0
+			addLeg := func(leg, cte, weight string) {
+				legs = append(legs, cte)
+				if retrieves {
+					poolLegs = append(poolLegs, leg)
+				} else {
+					adjustments = true
+				}
+				sources = append(sources, legSource(leg, weight, !retrieves))
+			}
 			if len(term.Probe.Dense) > 0 {
 				name := fmt.Sprintf("probe_%d_dense", i)
 				leg := fmt.Sprintf("leg_%d_dense", i)
 				args[name] = vectorLiteral(term.Probe.Dense)
 				args[name+"_w"] = term.Weight * domain.DenseShare
-				legs = append(legs, annLeg(leg, `1 - (e.dense <=> @`+name+`::vector)`,
-					`e.dense <=> @`+name+`::vector`, `e.dense IS NOT NULL`))
-				sources = append(sources, legSource(leg, name+"_w"))
+				addLeg(leg, annLeg(leg, `1 - (e.dense <=> @`+name+`::vector)`,
+					`e.dense <=> @`+name+`::vector`, `e.dense IS NOT NULL`), name+"_w")
 			}
 			// A half with nothing in it is left out rather than scanned: an empty sparsevec is at
 			// distance 0 from every row, so the leg would rank @candidates rows of noise at score
@@ -88,9 +103,8 @@ func (r *Repo) searchStatement(f port.ListingFilter) (string, pgx.NamedArgs, boo
 				leg := fmt.Sprintf("leg_%d_sparse", i)
 				args[name] = literal
 				args[name+"_w"] = term.Weight * domain.SparseShare
-				legs = append(legs, annLeg(leg, `-(e.sparse <#> @`+name+`::sparsevec)`,
-					`e.sparse <#> @`+name+`::sparsevec`, `e.sparse IS NOT NULL`))
-				sources = append(sources, legSource(leg, name+"_w"))
+				addLeg(leg, annLeg(leg, `-(e.sparse <#> @`+name+`::sparsevec)`,
+					`e.sparse <#> @`+name+`::sparsevec`, `e.sparse IS NOT NULL`), name+"_w")
 			}
 
 		case term.Predicate != nil:
@@ -102,13 +116,20 @@ func (r *Repo) searchStatement(f port.ListingFilter) (string, pgx.NamedArgs, boo
 			args[name] = term.Predicate.Value
 			args[name+"_w"] = term.Weight
 			sources = append(sources, predicateSource(sql, name))
+			adjustments = true
 		}
 	}
 	if len(sources) == 0 {
 		return "", nil, false
 	}
 
-	ctes := append(legs, `fused AS (
+	ctes := legs
+	// The pool is referenced only by an adjustment, so a search that is all boost probes does
+	// not carry a CTE nothing joins.
+	if adjustments {
+		ctes = append(ctes, poolCTE(poolLegs))
+	}
+	ctes = append(ctes, `fused AS (
 	             SELECT id, SUM(w / (@rrf_k::double precision + rank)) AS score
 	             FROM (`+strings.Join(sources, `
 	                   UNION ALL`)+`) t
@@ -119,6 +140,32 @@ func (r *Repo) searchStatement(f port.ListingFilter) (string, pgx.NamedArgs, boo
 	           ` + feedSelect + `f.score` + feedScore + fusedTotal(f) + feedFrom + `
 	           JOIN fused f ON f.id = l.id` + fusedOrder(f) + feedPage
 	return q, args, true
+}
+
+// poolCTE is the candidate set, and it is the whole answer to "which rows may appear". Only a
+// positive-weight probe leg puts a row in it; a boost predicate and a demote leg join it, so they
+// can move a row the retrieval already found and can never introduce one.
+//
+// Both halves of that matter. A demote leg retrieves the rows nearest the phrase the model said to
+// *avoid* — its floor is relative to its own best, so it keeps them — and contributing those with
+// a negative weight is how the newest demoted listing became row 1 of `sort=newest`. A boost
+// predicate has neither a floor nor a limit, so a `category` boost would inject every active
+// listing in that category at rank 1, above a genuine probe hit ranked ~45 in both legs.
+//
+// With no positive leg there is nothing to adjust, so the pool is empty and so is the page —
+// rather than the whole catalogue, which is what an unrestricted predicate would have answered.
+func poolCTE(legs []string) string {
+	if len(legs) == 0 {
+		return `pool AS (SELECT NULL::bigint AS id WHERE false)`
+	}
+	ids := make([]string, 0, len(legs))
+	for _, leg := range legs {
+		ids = append(ids, `SELECT id FROM `+leg)
+	}
+	return `pool AS (
+	             SELECT DISTINCT id FROM (` + strings.Join(ids, `
+	                   UNION ALL `) + `) c
+	           )`
 }
 
 // annLeg is one nearest-neighbour scan and its relevance floor.
@@ -153,18 +200,32 @@ func annLeg(name, score, order, notNull string) string {
 	           )`
 }
 
-func legSource(leg, weight string) string {
-	return `
-	                   SELECT id, rank, @` + weight + `::double precision AS w FROM ` + leg
+// legSource is one leg's contribution. A retrieving leg needs no pool join — every row it ranked
+// is in the pool by construction — while a demote leg is restricted to it.
+func legSource(leg, weight string, inPoolOnly bool) string {
+	q := `
+	                   SELECT g.id AS id, g.rank AS rank, @` + weight + `::double precision AS w
+	                   FROM ` + leg + ` g`
+	if inPoolOnly {
+		q += `
+	                   JOIN pool ON pool.id = g.id`
+	}
+	return q
 }
 
 // predicateSource is a satisfied predicate entering the fusion at rank 1 — the same units as a
 // probe's best hit, so one formula covers both kinds of signal and nothing is added across scales.
 // A row that does not satisfy it contributes no row at all.
+//
+// Restricted to the pool, because a predicate is an adjustment and not a retrieval. That is also
+// why the filters are not repeated here: a pool row already satisfied feedWhere inside the leg
+// that found it, so this is an id join and not a scan of listing per predicate.
 func predicateSource(sql, name string) string {
 	return `
 	                   SELECT l.id AS id, 1 AS rank, @` + name + `_w::double precision AS w
-	                   FROM listing l` + feedWhere + ` AND ` + fmt.Sprintf(sql, name)
+	                   FROM listing l
+	                   JOIN pool ON pool.id = l.id
+	                   WHERE ` + fmt.Sprintf(sql, name)
 }
 
 // predicateSQL is the whitelist, and each fragment keeps its %s so the caller binds the parameter
@@ -176,8 +237,6 @@ var predicateSQL = map[string]string{
 	port.PredicateMinPrice:  `EXISTS (SELECT 1 FROM variant pv WHERE pv.listing_id = l.id AND pv.deleted_at IS NULL AND pv.price >= @%s::bigint)`,
 	port.PredicateMaxPrice:  `EXISTS (SELECT 1 FROM variant pv WHERE pv.listing_id = l.id AND pv.deleted_at IS NULL AND pv.price <= @%s::bigint)`,
 	port.PredicateCondition: `l.condition::text = @%s::text`,
-	port.PredicateProvince:  `l.province_code = @%s::text`,
-	port.PredicateWard:      `l.ward_code = @%s::text`,
 }
 
 // fusedOrder is the relevance order, or the order the caller asked for over the fused pool —
