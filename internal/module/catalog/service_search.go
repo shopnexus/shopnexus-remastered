@@ -129,7 +129,21 @@ func (s *Service) searchTerms(ctx context.Context, req catalogapi.ListListingsRe
 			Predicate: &port.Predicate{Kind: p.Kind, Value: p.Value},
 		})
 	}
-	return terms, searchAnswer{understood: compiled.Understood, probes: texts}, nil
+	return terms, searchAnswer{understood: compiled.Understood, probes: searched(texts, weights)}, nil
+}
+
+// searched is the probe list a shopper is shown: the phrases the ranking was pulled *towards*.
+// A demoted phrase is a negative weight — the opposite of what was searched for — and listing it
+// under "searching for" tells them the feed is looking for the very thing it was told to avoid.
+// The first live query surfaced this: "ao thu unilo" answered with "ô tô" among its probes.
+func searched(texts []string, weights []float64) []string {
+	out := make([]string, 0, len(texts))
+	for i, text := range texts {
+		if weights[i] > 0 {
+			out = append(out, text)
+		}
+	}
+	return out
 }
 
 func containsFold(list []string, want string) bool {
