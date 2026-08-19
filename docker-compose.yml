@@ -155,8 +155,8 @@ services:
   # --- Embedding worker (opt-in: `--profile embed`) ---
   # Drains catalog's three stale queues into their vector tables. Its own service and not a
   # goroutine in the gateway: a pass is a batch of model inferences, and the process serving
-  # requests should not be holding that. Skipping it entirely is a supported deployment —
-  # search falls back to trigram, which is what an unembedded row already gets.
+  # requests should not be holding that. Opt-in to run, but not optional to have: retrieval is
+  # bge-m3 dense+sparse only, so a listing nothing here embedded is a listing no search finds.
   #
   # With `embedding.provider: mock` it needs nothing else running. Point it at the real BGE-M3
   # service and set the provider to get vectors that mean something.
