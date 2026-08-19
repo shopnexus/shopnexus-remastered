@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -257,11 +258,32 @@ const feedCacheBatch = 60
 // sweep, shows up in the same seed's next page rather than behind a stale batch.
 const feedCacheTTL = 2 * time.Minute
 
-// feedCacheKey scopes a materialised batch to the account and the seed that drew it — the
-// same pair the draw's ordering is a pure function of, so two requests naming both are
-// asking for the same run.
-func feedCacheKey(viewerID int64, seed string) string {
-	return fmt.Sprintf("feed:%d:%s", viewerID, seed)
+// feedCacheKey scopes a materialised batch to the run that drew it: the account, the seed and
+// every filter that narrowed the draw. The filter half is not optional — a personalised feed
+// still takes a category, a price range, an area and a name query, so a key of (account, seed)
+// alone served a filtered browse from whatever the previous, differently filtered browse of the
+// same run had cached, which is a page answering a question nobody asked.
+//
+// Left out on purpose: Offset and Limit, which are the paging this cache exists to serve, and
+// Interests, whose staleness bound is feedCacheTTL rather than a key.
+//
+// A new field on port.ListingFilter belongs here too — TestFeedCacheKey_CoversEveryFilterField
+// is what says so, since nothing else would.
+func feedCacheKey(f port.ListingFilter) string {
+	maxPrice := "-"
+	if f.MaxPrice != nil {
+		maxPrice = strconv.FormatInt(*f.MaxPrice, 10)
+	}
+	near := "-"
+	if f.Near != nil {
+		near = fmt.Sprintf("%g,%g", f.Near.Latitude, f.Near.Longitude)
+	}
+	h := sha256.New()
+	fmt.Fprintf(h, "%v|%v|%s|%s|%t|%t|%t|%s|%d|%s|%d|%s|%d|%s|%s|%s|%s|%s|%g|%s",
+		f.IDs, f.VariantIDs, f.Query, f.Mode, f.ProbeFromQuery, f.Mine, f.Favorited, f.Status,
+		f.CategoryID, f.Tag, f.SellerID, f.Condition, f.MinPrice, maxPrice,
+		f.ProvinceCode, f.DistrictCode, f.WardCode, near, f.RadiusKM, f.Sort)
+	return fmt.Sprintf("feed:%d:%s:%x", f.ViewerID, f.Seed, h.Sum(nil)[:8])
 }
 
 // recommendedRows answers one page of the personalised feed. The first ask for a
@@ -270,7 +292,7 @@ func feedCacheKey(viewerID int64, seed string) string {
 // past what is cached draws again for more of the same run — the ordering is a pure function
 // of the seed, so asking for more is asking the same question with a bigger limit.
 func (s *Service) recommendedRows(ctx context.Context, filter port.ListingFilter) ([]port.ListingSummary, error) {
-	key := feedCacheKey(filter.ViewerID, filter.Seed)
+	key := feedCacheKey(filter)
 	want := filter.Offset + filter.Limit
 
 	var ids []int64
@@ -529,15 +551,24 @@ func sweepInterests(ctx context.Context, repo port.Repository, log *slog.Logger)
 		log.Error("read stale interests", "err", err)
 		return
 	}
-	var failed int
+	var (
+		failed int
+		first  error
+	)
 	weights := positiveInteractionWeights()
 	for _, accountID := range accounts {
 		if err := repo.RecomputeInterests(ctx, accountID, weights); err != nil {
 			failed++
+			if first == nil {
+				first = err
+			}
 		}
 	}
 	if failed > 0 {
-		log.Error("interest recomputes failed", "accounts", failed, "of", len(accounts))
+		// The count *and* the first error: a pass that fails for every account fails for one
+		// reason, and a summary carrying only the count let a statement Postgres refuses run
+		// unnoticed — every recompute failing looked exactly like a busy platform.
+		log.Error("interest recomputes failed", "accounts", failed, "of", len(accounts), "err", first)
 	}
 }
 

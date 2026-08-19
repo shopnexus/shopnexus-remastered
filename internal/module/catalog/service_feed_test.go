@@ -2,10 +2,12 @@ package catalog_test
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	catalogapi "shopnexus/internal/module/catalog/api"
 	"shopnexus/internal/module/catalog/domain"
+	"shopnexus/internal/module/catalog/port"
 	"shopnexus/internal/shared/id"
 )
 
@@ -540,5 +542,54 @@ func TestListListings_TagsRideOnTheCard(t *testing.T) {
 	}
 	if got := byName["Không tag"]; len(got) != 0 {
 		t.Fatalf("tags = %v, want none", got)
+	}
+}
+
+// One run of a personalised feed is one *filtered* browse of it, not everything the account
+// asks for inside the seed's lifetime: the search page holds a seed for as long as the page is
+// open and changes the category, the price range and the area under it. With the filters out of
+// the cache key, the second browse was served the first one's batch — a page of the category
+// the shopper had just navigated away from.
+func TestListListings_RecommendedCacheIsPerFilter(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	buyer := id.Of[id.Account](91)
+	for _, name := range []string{"Alpha bike", "Bravo lamp"} {
+		publish(t, h, seedListingNamed(t, h, name))
+	}
+	saved := seedListingNamed(t, h, "Saved thing")
+	publish(t, h, saved)
+	if err := h.svc.AddFavorite(ctx, catalogapi.FavoriteRequest{ActorID: buyer, ID: saved.ID}); err != nil {
+		t.Fatalf("AddFavorite: %v", err)
+	}
+
+	req := catalogapi.ListListingsRequest{
+		ViewerID: buyer, Sort: "recommended", Seed: "one-run", Mode: "lexical", Page: 1, Limit: 1,
+	}
+	req.Query = "alpha"
+	if _, err := h.svc.ListListings(ctx, req); err != nil {
+		t.Fatalf("ListListings(alpha): %v", err)
+	}
+	req.Query = "bravo"
+	page, err := h.svc.ListListings(ctx, req)
+	if err != nil {
+		t.Fatalf("ListListings(bravo): %v", err)
+	}
+	for _, card := range page.Data {
+		if card.Name != "Bravo lamp" {
+			t.Errorf("card = %q, want the filter the request actually carried", card.Name)
+		}
+	}
+}
+
+// feedCacheKey names the filter's fields one by one, so a field added to port.ListingFilter is
+// silently absent from the key until somebody puts it there — and absent means one browse
+// served from another browse's batch. This fails on the commit that adds the field, which is
+// the only place the omission is still cheap to fix.
+func TestFeedCacheKey_CoversEveryFilterField(t *testing.T) {
+	const named = 26
+	if got := reflect.TypeFor[port.ListingFilter]().NumField(); got != named {
+		t.Errorf("port.ListingFilter has %d fields, feedCacheKey was written for %d — "+
+			"add the new one to feedCacheKey (or to the list it leaves out on purpose) and update this count", got, named)
 	}
 }
