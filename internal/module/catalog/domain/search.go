@@ -3,6 +3,8 @@ package domain
 import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"math"
+	"strconv"
 	"strings"
 )
 
@@ -305,4 +307,82 @@ func decodeString(raw jsontext.Value) (string, bool) {
 
 func validCondition(v string) bool {
 	return Condition(v) == ConditionNew || Condition(v) == ConditionUsed || Condition(v) == ConditionDamaged
+}
+
+// SelectivityRef is the ln(N/n) at which a predicate keeps the whole weight AttrWeight gave it.
+// 3.0 puts that at about 5% of the catalogue, which is the rare end the weights above were
+// measured against — so a signal naming something rarer is never scaled *up*, and only a commoner
+// one is scaled down. ln rather than the share itself because the interesting range is that rare
+// end: 5% and 1% are half an order of magnitude apart and would otherwise share one tenth of the
+// scale.
+const SelectivityRef = 3.0
+
+// Selectivity is how common each thing a predicate can name is, over the whole active catalogue.
+// Total is the active-listing count; Counts holds one entry per (kind, key), spelled the way
+// SelectivityKeyOf spells it. A key with no entry is a signal nothing was counted for, and
+// ScaleBySelectivity then leaves its weight exactly as configured — guessing at a count is worse
+// than not scaling, because a wrong guess moves a page in a direction nobody can trace.
+type Selectivity struct {
+	Total  int64
+	Counts map[SelectivityKey]int64
+}
+
+type SelectivityKey struct {
+	Kind string
+	Key  string
+}
+
+// SelectivityKeyOf is the countable half of the predicate set: a category id, a tag slug, a
+// condition label. Price is absent on purpose — its bounds are arbitrary numbers a model wrote,
+// so there is nothing to have counted ahead of time and it keeps its static weight.
+func SelectivityKeyOf(p CompiledPredicate) (SelectivityKey, bool) {
+	switch p.Kind {
+	case PredicateCategory:
+		id, ok := p.Value.(int64)
+		if !ok {
+			return SelectivityKey{}, false
+		}
+		return SelectivityKey{Kind: p.Kind, Key: strconv.FormatInt(id, 10)}, true
+	case PredicateTag, PredicateCondition:
+		value, ok := p.Value.(string)
+		if !ok {
+			return SelectivityKey{}, false
+		}
+		return SelectivityKey{Kind: p.Kind, Key: value}, true
+	}
+	return SelectivityKey{}, false
+}
+
+// ScaleBySelectivity weighs each predicate by how rare the thing it names actually is, because
+// AttrWeight can only say what an *attribute* is worth and two values of one attribute are not
+// equally informative: on this catalogue `condition=new` matches two thirds of the marketplace and
+// `condition=damaged` a twentieth, and a fixed per-attribute weight moves a page by the same
+// amount for both.
+//
+// The sign is untouched, so a demotion of something common is damped exactly as a boost of it is.
+func ScaleBySelectivity(ps []CompiledPredicate, sel Selectivity) []CompiledPredicate {
+	if sel.Total <= 0 {
+		return ps
+	}
+	out := make([]CompiledPredicate, len(ps))
+	copy(out, ps)
+	for i := range out {
+		key, countable := SelectivityKeyOf(out[i])
+		if !countable {
+			continue
+		}
+		n := sel.Counts[key]
+		if n <= 0 {
+			continue
+		}
+		out[i].Weight *= selectivityFactor(sel.Total, n)
+	}
+	return out
+}
+
+// selectivityFactor is clamped at both ends. Above 1 would push a weight past the value it was
+// tuned at; below 0 would flip a boost into a demotion, which a count that has fallen behind a
+// deletion (n > Total, the sweep being a pass behind) would otherwise do.
+func selectivityFactor(total, n int64) float64 {
+	return min(1, max(0, math.Log(float64(total)/float64(n))/SelectivityRef))
 }

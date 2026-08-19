@@ -355,4 +355,15 @@ type Repository interface {
 	// SetCachedRating writes the review average trust recomputed. Denormalized here because
 	// trust is another schema: the number cannot be joined, so it is handed over.
 	SetCachedRating(ctx context.Context, listingID int64, rating float64, count int64) error
+
+	// --- search selectivity: how much each thing a signal can name narrows the catalogue ---
+
+	// SignalSelectivity answers the whole counts table plus the active-listing total, which is
+	// what scales a compiled predicate's weight by how rare its value is. Read per search: it
+	// is a few dozen rows on the primary key, and a process-local copy would be a second
+	// source of truth for a number that moves whenever a seller posts.
+	SignalSelectivity(ctx context.Context) (domain.Selectivity, error)
+	// RefreshSignalSelectivity recounts every kind in one transaction. Sweep-driven, never on a
+	// listing write — a count a pass behind moves a weight in the third decimal.
+	RefreshSignalSelectivity(ctx context.Context) error
 }

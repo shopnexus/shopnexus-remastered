@@ -113,6 +113,7 @@ func (s *Service) searchTerms(ctx context.Context, req catalogapi.ListListingsRe
 	kb := s.knowledge(ctx, probe, filter)
 	understanding := s.understand(ctx, req.Query, kb)
 	compiled := domain.Compile(understanding, kb)
+	compiled.Predicates = domain.ScaleBySelectivity(compiled.Predicates, s.selectivity(ctx))
 
 	texts := compiled.ProbeTexts
 	weights := compiled.ProbeWeights
@@ -152,6 +153,20 @@ func (s *Service) searchTerms(ctx context.Context, req catalogapi.ListListingsRe
 		"predicates", predicateLog(compiled.Predicates))
 
 	return terms, searchAnswer{understood: compiled.Understood, probes: searched(texts, weights)}, nil
+}
+
+// selectivity is what the sweep counted: how much of the catalogue each thing a predicate can
+// name covers. Best-effort like every other read on this path — a failure leaves each predicate at
+// the weight AttrWeight configured, which is the ranking this search had before the counts
+// existed, and read per search rather than held because a cached copy would be a second source of
+// truth for a number that moves whenever a seller posts.
+func (s *Service) selectivity(ctx context.Context) domain.Selectivity {
+	sel, err := s.repo.SignalSelectivity(ctx)
+	if err != nil {
+		s.log.Warn("read signal selectivity for search", "err", err)
+		return domain.Selectivity{}
+	}
+	return sel
 }
 
 // askedFor flattens the model's own signals to `attr=value`, demotions marked, so the log line

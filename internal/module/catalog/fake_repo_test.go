@@ -56,6 +56,9 @@ type fakeRepo struct {
 	listListingsByIDsCalls int
 	// interests are the account's slots, which is what sort=recommended ranks against.
 	interests map[int64][]port.Interest
+	// selectivity is signal_selectivity, and nothing fills it until a refresh: a service that
+	// searches before the sweep ever ran must scale nothing.
+	selectivity map[domain.SelectivityKey]int64
 	// resources is this module's own resource table: an id absent from it names no confirmed
 	// upload, which is what ErrAttachmentNotFound is about.
 	resources map[int64]bool
@@ -966,6 +969,43 @@ func (f *fakeRepo) RecomputeInterests(_ context.Context, accountID int64, signal
 	}
 	f.interests[accountID] = slots
 	return nil
+}
+
+// RefreshSignalSelectivity counts the fake's own listings the way the adapter counts the table's,
+// so a service test reads a number a real refresh would also have produced rather than one a test
+// asserted into place.
+func (f *fakeRepo) RefreshSignalSelectivity(context.Context) error {
+	counts := map[domain.SelectivityKey]int64{}
+	for _, stored := range f.listings {
+		if stored.listing.DeletedAt != nil || stored.listing.Status != domain.StatusActive {
+			continue
+		}
+		counts[domain.SelectivityKey{
+			Kind: port.PredicateCategory,
+			Key:  strconv.FormatInt(stored.listing.CategoryID, 10),
+		}]++
+		counts[domain.SelectivityKey{
+			Kind: port.PredicateCondition,
+			Key:  string(stored.listing.Condition),
+		}]++
+		for _, tag := range stored.tags {
+			counts[domain.SelectivityKey{Kind: port.PredicateTag, Key: tag}]++
+		}
+	}
+	f.selectivity = counts
+	return nil
+}
+
+// SignalSelectivity derives the total from the condition rows, the same invariant the adapter
+// leans on: every active listing has exactly one condition.
+func (f *fakeRepo) SignalSelectivity(context.Context) (domain.Selectivity, error) {
+	out := domain.Selectivity{Counts: maps.Clone(f.selectivity)}
+	for key, n := range f.selectivity {
+		if key.Kind == port.PredicateCondition {
+			out.Total += n
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeRepo) StaleInterests(_ context.Context, limit int) ([]int64, error) {

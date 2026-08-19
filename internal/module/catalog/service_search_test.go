@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	catalogapi "shopnexus/internal/module/catalog/api"
+	"shopnexus/internal/module/catalog/domain"
+	"shopnexus/internal/module/catalog/port"
 	"shopnexus/internal/shared/id"
 )
 
@@ -178,5 +180,49 @@ func TestUnderstand_ADemotedQueryDoesNotSwallowTheRawProbe(t *testing.T) {
 	}
 	if !slices.Equal(page.Probes, []string{"áo thun"}) {
 		t.Errorf("probes = %v, want the shopper's own words as what was searched for", page.Probes)
+	}
+}
+
+// The counts are what a predicate's weight is scaled by, and the service is what reads them. Here
+// every listing in the catalogue is `used`, so a `condition=used` boost separates nothing and has
+// to reach the adapter weighing nothing — where before the counts existed it moved the page by the
+// same 0.3 a `damaged` boost would have.
+func TestSearch_SelectivityScalesAPredicate(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	for _, name := range []string{"Áo thun Uniqlo nam", "Áo thun trắng", "Áo thun đen"} {
+		publish(t, h, seedListingNamed(t, h, name))
+	}
+	h.models.answer = `{
+	  "boosts": [{"attr": "condition", "value": ["used"]}],
+	  "demotes": [],
+	  "understood": "áo thun cũ"
+	}`
+	search := func() float64 {
+		t.Helper()
+		if _, err := h.svc.ListListings(ctx, catalogapi.ListListingsRequest{
+			Query: "áo thun", Page: 1, Limit: 20,
+		}); err != nil {
+			t.Fatalf("ListListings: %v", err)
+		}
+		for _, term := range h.repo.lastFilter.Terms {
+			if term.Predicate != nil && term.Predicate.Kind == port.PredicateCondition {
+				return term.Weight
+			}
+		}
+		t.Fatal("no condition predicate reached the adapter")
+		return 0
+	}
+
+	// Nothing counted yet: the predicate carries exactly what AttrWeight configured, so a
+	// deployment whose sweep has never run searches the way it did before this table.
+	if got, want := search(), domain.AttrWeight[domain.AttrCondition]*domain.PositionWeight[0]; got != want {
+		t.Errorf("weight before the first refresh = %v, want the configured %v", got, want)
+	}
+	if err := h.repo.RefreshSignalSelectivity(ctx); err != nil {
+		t.Fatalf("RefreshSignalSelectivity: %v", err)
+	}
+	if got := search(); got != 0 {
+		t.Errorf("weight = %v, want 0 for a condition every listing has", got)
 	}
 }
