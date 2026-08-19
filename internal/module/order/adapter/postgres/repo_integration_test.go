@@ -956,6 +956,12 @@ func TestPayoutAndRefund_CannotBothClaimTheEscrow(t *testing.T) {
 	r, pool := newRepo(t)
 	ctx := context.Background()
 	o, _ := placedOrder(t, r)
+	if err := o.Confirm(); err != nil {
+		t.Fatalf("Confirm: %v", err)
+	}
+	if err := r.SaveOrder(ctx, o); err != nil {
+		t.Fatalf("SaveOrder: %v", err)
+	}
 	if err := o.ConfirmReceipt([]int64{1}); err != nil {
 		t.Fatalf("ConfirmReceipt: %v", err)
 	}
@@ -991,6 +997,12 @@ func TestPayoutAndRefund_CannotBothClaimTheEscrow(t *testing.T) {
 
 	// And the other way round: an order the payout has claimed has no escrow left to argue over.
 	o2, _ := placedOrder(t, r)
+	if err := o2.Confirm(); err != nil {
+		t.Fatalf("Confirm: %v", err)
+	}
+	if err := r.SaveOrder(ctx, o2); err != nil {
+		t.Fatalf("SaveOrder: %v", err)
+	}
 	if err := o2.ConfirmReceipt([]int64{1}); err != nil {
 		t.Fatalf("ConfirmReceipt: %v", err)
 	}
@@ -1175,6 +1187,12 @@ func TestOrderSummary_CountsOrdersAndMoneySeparately(t *testing.T) {
 	// Complete it the way the payout does — `completed_at` is written by the claim and nothing else —
 	// then the goods are revenue, and only the goods: the order's transport carries a 15,000 fee that
 	// must not appear here.
+	if err := o.Confirm(); err != nil {
+		t.Fatalf("Confirm: %v", err)
+	}
+	if err := r.SaveOrder(ctx, o); err != nil {
+		t.Fatalf("SaveOrder: %v", err)
+	}
 	if err := o.ConfirmReceipt([]int64{item.ID}); err != nil {
 		t.Fatalf("ConfirmReceipt: %v", err)
 	}
