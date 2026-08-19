@@ -1834,6 +1834,34 @@ components:
                     type: array
                 meta:
                     $ref: '#/components/schemas/PageMeta'
+                probes:
+                    description: The phrases actually searched — the shopper's own words plus whatever the understanding stage added. Empty for a browse with no query.
+                    example:
+                        - áo thun Uniqlo nam
+                        - ao thun unilo
+                    items:
+                        type: string
+                    type: array
+                understood:
+                    description: What the search took the query to mean, in the shopper's language. Empty for a browse with no query.
+                    example: áo thun nam Uniqlo, dưới 500k
+                    type: string
+            required:
+                - data
+                - meta
+                - understood
+                - probes
+            type: object
+        ListingQueuePage:
+            description: |
+                The moderation queue's page: the same cards, without the two search fields. That worklist takes no query, so there is nothing it could have understood, and a key that is always empty reads as a search a moderator could have run.
+            properties:
+                data:
+                    items:
+                        $ref: '#/components/schemas/Listing'
+                    type: array
+                meta:
+                    $ref: '#/components/schemas/PageMeta'
             required:
                 - data
                 - meta
@@ -5438,7 +5466,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListingPage'
+                                $ref: '#/components/schemas/ListingQueuePage'
                     description: OK
                 "401":
                     $ref: '#/components/responses/Unauthorized'
@@ -7629,7 +7657,7 @@ paths:
             description: |
                 With no parameters, the newest live active listings. The parameters narrow that one query rather than selecting between separate endpoints.
 
-                `q` makes it a search and moves the default sort to `relevance`. `lexical` matches the name by trigram and tolerates missing diacritics, `semantic` runs an approximate nearest-neighbour search over the dense embedding, and `hybrid` combines the dense vector with the sparse lexical one, which is what the embedding model is built for. Each hit then carries `score`, always so that higher is better. A listing whose embedding has not been computed yet can only be found lexically.
+                `q` makes it a search and moves the default sort to `relevance`. It is read rather than matched: an understanding stage works out what the words meant — fixing spelling and diacritics, reading a price or a place out of the phrase — and the search ranks against those phrases *and* the shopper's own words, so a misreading narrows the ranking instead of replacing it. `understood` and `probes` on the response are what it made of the query. Ranking is dense plus sparse nearest-neighbour over the embeddings, and each hit carries `score`, always so that higher is better. A listing whose embedding has not been computed yet cannot be found at all.
 
                 `sort=recommended` is the personalised feed. A buyer is credited with up to four interests at once, derived from what they saved and refreshed as they save more; each one searches the catalogue on its own, a further share of the page goes to whatever was posted most recently, and the results are merged in proportion to how much of that buyer's behaviour each source accounts for. So an occasional taste still reaches the page instead of being crowded out by the dominant one, and something outside every one of them still gets in — a feed that only ever answers its own past has no way to learn it was wrong. The page is *drawn* from a pool several pages deep rather than taken off the top, so two runs differ; `seed` is what holds one run still while it is paged through. Their own listings and anything already on their wishlist are left out. It needs a token, and falls back to `sort=trending` for an account with no interests computed yet and nothing else in the request `trending` itself would refuse, or to newest otherwise.
 

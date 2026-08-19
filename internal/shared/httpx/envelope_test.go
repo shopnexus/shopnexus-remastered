@@ -104,6 +104,25 @@ func TestWriteCursor_NullNextCursorIsExplicit(t *testing.T) {
 	}
 }
 
+// The route that answers more than data and meta assembles its own envelope, so what it built is
+// what the client reads — no second level of nesting, and no key dropped on the way out.
+func TestWriteEnvelope_WritesTheEnvelopeAsGiven(t *testing.T) {
+	rec := httptest.NewRecorder()
+	httpx.WriteEnvelope(rec, http.StatusOK, struct {
+		Data       []string       `json:"data"`
+		Meta       httpx.PageMeta `json:"meta"`
+		Understood string         `json:"understood"`
+	}{Data: []string{"a"}, Meta: httpx.PageMeta{Page: 1, Limit: 20}, Understood: "áo thun nam"})
+
+	root := rootKeys(t, rec.Body.Bytes())
+	if got := keysOf(root); len(got) != 3 {
+		t.Errorf("root keys = %v, want data, meta and understood", got)
+	}
+	if string(root["understood"]) != `"áo thun nam"` {
+		t.Errorf("understood = %s, want the sentence at the root", root["understood"])
+	}
+}
+
 func TestWriteNoContent_HasNoBody(t *testing.T) {
 	rec := httptest.NewRecorder()
 	httpx.WriteNoContent(rec)

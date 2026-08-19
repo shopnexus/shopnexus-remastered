@@ -234,7 +234,9 @@ func TestListListings_RecommendedCachesTheDraw(t *testing.T) {
 
 // A query alongside a personalised feed stays a filter on the name. Embedding it would make
 // the adapter drop the lexical predicate — the concession a real semantic search earns — and
-// the caller would get their whole personalised feed back under a search they typed.
+// the caller would get their whole personalised feed back under a search they typed. The
+// understanding stage is skipped for the same reason: this feed ranks against the account's
+// interests, so a completion paid for here would be discarded.
 func TestListListings_RecommendedNeverEmbedsTheQuery(t *testing.T) {
 	h := newHarnessWith("user", true)
 	ctx := context.Background()
@@ -255,6 +257,9 @@ func TestListListings_RecommendedNeverEmbedsTheQuery(t *testing.T) {
 	}
 	if len(h.repo.lastFilter.Interests) == 0 {
 		t.Error("the feed was not ranked against the account's interests")
+	}
+	if h.models.asked.Messages != nil {
+		t.Error("the understanding stage ran for a feed with nothing to rank its answer against")
 	}
 }
 

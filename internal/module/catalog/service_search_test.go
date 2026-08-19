@@ -2,6 +2,7 @@ package catalog_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	catalogapi "shopnexus/internal/module/catalog/api"
@@ -51,5 +52,97 @@ func TestSearch_GarbledQueryStillSearches(t *testing.T) {
 	}
 	if len(h.repo.lastFilter.Terms) == 0 {
 		t.Error("no term reached the adapter")
+	}
+}
+
+// The model's answer becomes signals, and the shopper's own words stay in the mix underneath —
+// so a model that misreads the query narrows the ranking rather than replacing it.
+func TestUnderstand_SignalsPlusTheRawQuery(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	h.seedCategory(t, "Áo nam")
+	publish(t, h, seedListingNamed(t, h, "Áo thun Uniqlo nam"))
+	h.models.answer = `{
+	  "boosts": [
+	    {"attr": "probes", "value": ["áo thun Uniqlo nam"]},
+	    {"attr": "category", "value": ["Áo nam"]},
+	    {"attr": "price", "value": [{"lt": 500000}]}
+	  ],
+	  "demotes": [{"attr": "probes", "value": ["áo khoác"]}],
+	  "understood": "áo thun nam Uniqlo, dưới 500k"
+	}`
+
+	page, err := h.svc.ListListings(ctx, catalogapi.ListListingsRequest{
+		Query: "ao thun unilo", Page: 1, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListListings: %v", err)
+	}
+	if page.Understood != "áo thun nam Uniqlo, dưới 500k" {
+		t.Errorf("understood = %q, want the model's own sentence", page.Understood)
+	}
+	terms := h.repo.lastFilter.Terms
+	var probes, predicates, negative int
+	for _, term := range terms {
+		switch {
+		case term.Probe != nil:
+			probes++
+		case term.Predicate != nil:
+			predicates++
+		}
+		if term.Weight < 0 {
+			negative++
+		}
+	}
+	// The model's probe, its demote, and the raw query the server always appends.
+	if probes != 3 {
+		t.Errorf("probe terms = %d, want the model's two plus the raw query", probes)
+	}
+	if predicates != 2 {
+		t.Errorf("predicate terms = %d, want the category and the price bound", predicates)
+	}
+	if negative != 1 {
+		t.Errorf("negative terms = %d, want the demote and nothing else", negative)
+	}
+	if !slices.Contains(page.Probes, "ao thun unilo") {
+		t.Errorf("probes = %v, want the shopper's own words among them", page.Probes)
+	}
+}
+
+// A model answering nothing usable leaves the search exactly as it would have been without one.
+// That is the property that makes base retrieval and smart search one code path.
+func TestUnderstand_EmptyAnswerIsBaseRetrieval(t *testing.T) {
+	h := newHarnessWith("user", true)
+	ctx := context.Background()
+	publish(t, h, seedListingNamed(t, h, "Áo thun Uniqlo nam"))
+	h.models.answer = `{"boosts": [], "demotes": [], "understood": ""}`
+
+	page, err := h.svc.ListListings(ctx, catalogapi.ListListingsRequest{
+		Query: "áo thun", Page: 1, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListListings: %v", err)
+	}
+	terms := h.repo.lastFilter.Terms
+	if len(terms) != 1 || terms[0].Probe == nil {
+		t.Fatalf("terms = %+v, want the raw query alone", terms)
+	}
+	if !slices.Equal(page.Probes, []string{"áo thun"}) {
+		t.Errorf("probes = %v, want the shopper's own words alone", page.Probes)
+	}
+}
+
+// A browse with no query answers the zero values, not null: the contract says an array, and a
+// client that has to nil-check a required field is one the contract lied to.
+func TestListListings_BrowseAnswersEmptySearchFields(t *testing.T) {
+	h := newHarnessWith("user", true)
+	publish(t, h, seedListingNamed(t, h, "Áo thun Uniqlo nam"))
+
+	page, err := h.svc.ListListings(context.Background(), catalogapi.ListListingsRequest{Page: 1, Limit: 20})
+	if err != nil {
+		t.Fatalf("ListListings: %v", err)
+	}
+	if page.Understood != "" || page.Probes == nil || len(page.Probes) != 0 {
+		t.Errorf("understood = %q, probes = %#v; want empty and non-nil", page.Understood, page.Probes)
 	}
 }

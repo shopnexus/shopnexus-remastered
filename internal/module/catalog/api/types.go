@@ -240,7 +240,14 @@ type ListingLocation struct {
 	DistanceKM *float64 `json:"distance_km"`
 }
 
+// ListingPage is one page shape for every listing query, ranked or not.
+//
+// Understood and Probes are what the search made of the shopper's words: the sentence to show
+// them, and the phrases actually searched. Both are the zero value for a browse with no query —
+// never a missing key.
 type ListingPage struct {
-	Data []Listing `json:"data"`
-	Meta PageInfo  `json:"meta"`
+	Data       []Listing `json:"data"`
+	Meta       PageInfo  `json:"meta"`
+	Understood string    `json:"understood"`
+	Probes     []string  `json:"probes"`
 }

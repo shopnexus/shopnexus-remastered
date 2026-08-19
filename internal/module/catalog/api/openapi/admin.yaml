@@ -127,7 +127,7 @@ paths:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
       responses:
-        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingPage' } } } }
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingQueuePage' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 

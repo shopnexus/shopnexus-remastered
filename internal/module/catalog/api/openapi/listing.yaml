@@ -10,10 +10,10 @@
 # — the two tables reference each other and the insert order is SPU, then SKUs, then
 # point the SPU at its featured one.
 #
-# `GET /listings` is the only read for a collection. Browsing, lexical and vector
-# search, the personalised feed, a seller's own drawer and resolving the listings a
-# cart or an order list refers to are the same query under different filters, so they
-# are one endpoint rather than five nearly identical ones.
+# `GET /listings` is the only read for a collection. Browsing, search, the
+# personalised feed, a seller's own drawer and resolving the listings a cart or an
+# order list refers to are the same query under different filters, so they are one
+# endpoint rather than five nearly identical ones.
 #
 # Browsing only ever shows live active listings; that is the predicate of the partial
 # indexes behind every feed. A seller's own draft, pending and hidden rows need
@@ -40,13 +40,15 @@ paths:
         that one query rather than selecting between separate endpoints.
 
 
-        `q` makes it a search and moves the default sort to `relevance`. `lexical`
-        matches the name by trigram and tolerates missing diacritics, `semantic` runs
-        an approximate nearest-neighbour search over the dense embedding, and
-        `hybrid` combines the dense vector with the sparse lexical one, which is what
-        the embedding model is built for. Each hit then carries `score`, always so
-        that higher is better. A listing whose embedding has not been computed yet
-        can only be found lexically.
+        `q` makes it a search and moves the default sort to `relevance`. It is read
+        rather than matched: an understanding stage works out what the words meant —
+        fixing spelling and diacritics, reading a price or a place out of the phrase —
+        and the search ranks against those phrases *and* the shopper's own words, so a
+        misreading narrows the ranking instead of replacing it. `understood` and
+        `probes` on the response are what it made of the query. Ranking is dense plus
+        sparse nearest-neighbour over the embeddings, and each hit carries `score`,
+        always so that higher is better. A listing whose embedding has not been
+        computed yet cannot be found at all.
 
 
         `sort=recommended` is the personalised feed. A buyer is credited with up to
@@ -865,6 +867,19 @@ components:
         a catalog is browsed with a pager and a relevance order has no stored column to
         seek into; `total` is null for a ranked query, where the top-K is all the search
         ever visited.
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Listing' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+        understood: { type: string, description: 'What the search took the query to mean, in the shopper''s language. Empty for a browse with no query.', example: 'áo thun nam Uniqlo, dưới 500k' }
+        probes: { type: array, items: { type: string }, description: 'The phrases actually searched — the shopper''s own words plus whatever the understanding stage added. Empty for a browse with no query.', example: ['áo thun Uniqlo nam', 'ao thun unilo'] }
+      required: [data, meta, understood, probes]
+
+    ListingQueuePage:
+      type: object
+      description: >
+        The moderation queue's page: the same cards, without the two search fields. That
+        worklist takes no query, so there is nothing it could have understood, and a key
+        that is always empty reads as a search a moderator could have run.
       properties:
         data: { type: array, items: { $ref: '#/components/schemas/Listing' } }
         meta: { $ref: '#/components/schemas/PageMeta' }

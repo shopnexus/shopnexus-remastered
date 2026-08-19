@@ -161,7 +161,7 @@ services:
   # With `embedding.provider: mock` it needs nothing else running. Point it at the real BGE-M3
   # service and set the provider to get vectors that mean something.
   embedder:
-    profiles: ["embed"]
+    profiles: ["dev", "embed"]
     build: .
     entrypoint: ["/embedder"]
     environment:

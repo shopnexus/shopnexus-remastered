@@ -122,7 +122,9 @@ func (h *Catalog) ListListings(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
-	httpx.WritePage(w, http.StatusOK, res.Data, httpx.PageMeta(res.Meta))
+	// The whole page, not data plus a pager: a search also answers what it took the query to
+	// mean, and that is about the response rather than about any listing in it.
+	httpx.WriteEnvelope(w, http.StatusOK, res)
 }
 
 // SuggestListing handles POST /listings/suggestions — "photo in, listing out". One synchronous

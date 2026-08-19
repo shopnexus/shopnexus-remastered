@@ -90,6 +90,15 @@ func WritePage(w http.ResponseWriter, status int, data any, meta PageMeta) {
 	writeJSON(w, status, dataEnvelope{Data: data, Meta: meta})
 }
 
+// WriteEnvelope writes a body that is already the envelope — data at the root, meta beside it,
+// plus whatever else that one route answers about the response rather than about a resource in
+// it. GET /listings is what needs it: what the search made of the shopper's query belongs next
+// to data, not inside the PageMeta every collection in this API shares. The argument is always
+// an envelope, never a payload — that is what the writers above are for.
+func WriteEnvelope(w http.ResponseWriter, status int, envelope any) {
+	writeJSON(w, status, envelope)
+}
+
 // WriteCursor writes a cursor-paginated collection: {"data": […], "meta": {next_cursor}}.
 func WriteCursor(w http.ResponseWriter, status int, data any, meta CursorMeta) {
 	writeJSON(w, status, dataEnvelope{Data: data, Meta: meta})

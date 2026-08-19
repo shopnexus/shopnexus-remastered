@@ -23,7 +23,7 @@ import (
 // parameters narrow one query; the combinations that have no answer are refused here rather
 // than resolved by precedence, so a client never gets a different list than it asked for.
 func (s *Service) ListListings(ctx context.Context, req catalogapi.ListListingsRequest) (catalogapi.ListingPage, error) {
-	filter, err := s.feedFilter(ctx, req)
+	filter, answer, err := s.feedFilter(ctx, req)
 	if err != nil {
 		return catalogapi.ListingPage{}, err
 	}
@@ -63,7 +63,15 @@ func (s *Service) ListListings(ctx context.Context, req catalogapi.ListListingsR
 	if filter.Sort != port.SortRelevance && filter.Sort != port.SortRecommended && filter.Sort != port.SortTrending {
 		meta.TotalCount = &total
 	}
-	return catalogapi.ListingPage{Data: cards, Meta: meta}, nil
+	page := catalogapi.ListingPage{
+		Data: cards, Meta: meta, Understood: answer.understood, Probes: answer.probes,
+	}
+	// The contract says an array, and a nil slice would answer null — the exact shape that broke
+	// every chat thread when Message.refs went missing.
+	if page.Probes == nil {
+		page.Probes = []string{}
+	}
+	return page, nil
 }
 
 // browsePosition is where the buyer is browsing from: the coordinates the device sent, or the
@@ -92,46 +100,55 @@ func (s *Service) browsePosition(ctx context.Context, req catalogapi.ListListing
 	return &port.Point{Latitude: *contact.Latitude, Longitude: *contact.Longitude}, nil
 }
 
+// searchAnswer is what the understanding stage has to tell the shopper: the sentence and the
+// phrases actually searched. Carried out of feedFilter rather than recomputed, because the model
+// call that produced it happens once — and out of it rather than onto the Service, since a field
+// there would be read by whichever request arrived next.
+type searchAnswer struct {
+	understood string
+	probes     []string
+}
+
 // feedFilter validates the combination and resolves what the adapter cannot: where the buyer
-// is, the search probe, and the interests a personalised feed ranks against.
-func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsRequest) (port.ListingFilter, error) {
+// is, the search terms, and the interests a personalised feed ranks against.
+func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsRequest) (port.ListingFilter, searchAnswer, error) {
 	// The three filters that are about the caller need to know who that is. An empty page would
 	// answer a different question than the one asked.
 	if (req.Mine || req.Favorited || req.Sort == port.SortRecommended) && req.ViewerID == 0 {
-		return port.ListingFilter{}, domain.ErrAuthenticationRequired
+		return port.ListingFilter{}, searchAnswer{}, domain.ErrAuthenticationRequired
 	}
 	if req.Status != "" && !req.Mine {
-		return port.ListingFilter{}, errx.NewValidationError("invalid field: status", errx.Field{
+		return port.ListingFilter{}, searchAnswer{}, errx.NewValidationError("invalid field: status", errx.Field{
 			Field: "status", Rule: "excluded_without",
 			Message: "only honoured with mine=true: a seller may see what is not public, nobody else",
 		})
 	}
 	if req.Sort == port.SortRelevance && req.Query == "" {
-		return port.ListingFilter{}, errx.NewValidationError("invalid field: sort", errx.Field{
+		return port.ListingFilter{}, searchAnswer{}, errx.NewValidationError("invalid field: sort", errx.Field{
 			Field: "sort", Rule: "excluded_without", Message: "relevance needs a query to be relevant to",
 		})
 	}
 	if req.Sort == port.SortRecommended && (req.Favorited || req.Mine) {
-		return port.ListingFilter{}, errx.NewValidationError("invalid field: sort", errx.Field{
+		return port.ListingFilter{}, searchAnswer{}, errx.NewValidationError("invalid field: sort", errx.Field{
 			Field: "sort", Rule: "excluded_with",
 			Message: "a personalised ranking of a set the caller already chose ranks nothing",
 		})
 	}
 	if req.Sort == port.SortTrending && trendingWantsFilteredBrowse(req) {
-		return port.ListingFilter{}, errx.NewValidationError("invalid field: sort", errx.Field{
+		return port.ListingFilter{}, searchAnswer{}, errx.NewValidationError("invalid field: sort", errx.Field{
 			Field: "sort", Rule: "excluded_with",
 			Message: "trending is the platform's whole top list, unfiltered — narrow the browse with another sort",
 		})
 	}
 
 	if (req.Latitude == nil) != (req.Longitude == nil) {
-		return port.ListingFilter{}, errx.NewValidationError("invalid field: lat", errx.Field{
+		return port.ListingFilter{}, searchAnswer{}, errx.NewValidationError("invalid field: lat", errx.Field{
 			Field: "lat", Rule: "required_with",
 			Message: "a position needs both lat and lon",
 		})
 	}
 	if req.NearContactID != nil && req.Latitude != nil {
-		return port.ListingFilter{}, errx.NewValidationError("invalid field: near_contact_id", errx.Field{
+		return port.ListingFilter{}, searchAnswer{}, errx.NewValidationError("invalid field: near_contact_id", errx.Field{
 			Field: "near_contact_id", Rule: "excluded_with",
 			Message: "name a position or an address of yours, not both",
 		})
@@ -174,13 +191,13 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 	}
 	near, err := s.browsePosition(ctx, req)
 	if err != nil {
-		return port.ListingFilter{}, err
+		return port.ListingFilter{}, searchAnswer{}, err
 	}
 	filter.Near = near
 	// A radius or a distance sort with nowhere to measure from would silently answer a different
 	// question — every listing, in creation order — so it is refused instead.
 	if near == nil && (filter.RadiusKM > 0 || filter.Sort == port.SortDistance) {
-		return port.ListingFilter{}, errx.NewValidationError("invalid field: lat", errx.Field{
+		return port.ListingFilter{}, searchAnswer{}, errx.NewValidationError("invalid field: lat", errx.Field{
 			Field: "lat", Rule: "required",
 			Message: "a distance needs a position: send lat and lon, or near_contact_id",
 		})
@@ -189,7 +206,7 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 	if filter.Sort == port.SortRecommended {
 		interests, err := s.repo.Interests(ctx, req.ViewerID.Int64())
 		if err != nil {
-			return port.ListingFilter{}, fmt.Errorf("read interests: %w", err)
+			return port.ListingFilter{}, searchAnswer{}, fmt.Errorf("read interests: %w", err)
 		}
 		filter.Interests = interests
 		filter.Seed = feedSeed(req.Seed, req.ViewerID.Int64(), time.Now())
@@ -206,16 +223,20 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 			}
 		}
 	}
-	// Every search reaches the adapter as terms. Today that is the raw query alone; Task 8 puts
-	// the understood signals in front of it, and the raw query stays as the last one.
+	// Every search reaches the adapter as terms — the understood signals, then the shopper's own
+	// words. A personalised feed is left out: it ranks against the account's interests, so an
+	// understood query would have nothing to rank (`q` there is a filter on the name, see
+	// recommendedWhere) and the model call would be paid for and thrown away.
+	var answer searchAnswer
 	if filter.Sort != port.SortRecommended && req.Query != "" {
-		probe, err := s.queryProbe(ctx, req.Query)
+		terms, said, err := s.searchTerms(ctx, req, filter)
 		if err != nil {
-			return port.ListingFilter{}, err
+			return port.ListingFilter{}, searchAnswer{}, err
 		}
-		filter.Terms = append(filter.Terms, port.Term{Weight: domain.RawQueryWeight, Probe: &probe})
+		filter.Terms = terms
+		answer = said
 	}
-	return filter, nil
+	return filter, answer, nil
 }
 
 // trendingWantsFilteredBrowse is true when the request narrows the browse some way trending
