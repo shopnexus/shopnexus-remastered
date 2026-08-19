@@ -1,0 +1,119 @@
+package domain_test
+
+import (
+	"encoding/json/jsontext"
+	"testing"
+
+	"shopnexus/internal/module/catalog/domain"
+)
+
+// fakeResolver stands in for the catalogue's own vocabulary. Only what it knows resolves; the
+// rest is dropped, which is the whole contract of a model naming things by name.
+type fakeResolver struct{}
+
+func (fakeResolver) CategoryID(name string) (int64, bool) {
+	if name == "Áo nam" {
+		return 42, true
+	}
+	return 0, false
+}
+
+func (fakeResolver) TagSlug(name string) (string, bool) {
+	if name == "uniqlo" {
+		return "uniqlo", true
+	}
+	return "", false
+}
+
+func values(raw ...string) []jsontext.Value {
+	out := make([]jsontext.Value, 0, len(raw))
+	for _, r := range raw {
+		out = append(out, jsontext.Value(r))
+	}
+	return out
+}
+
+// A boost's position is its priority, and the multiplier comes from the server's own table —
+// never from the model, so two identical requests rank identically.
+func TestCompile_PositionDecidesWeight(t *testing.T) {
+	got := domain.Compile(domain.Understanding{
+		Boosts: []domain.Signal{{Attr: "probes", Value: values(`"áo thun nam"`, `"áo phông"`)}},
+	}, fakeResolver{})
+
+	if len(got.ProbeTexts) != 2 {
+		t.Fatalf("probes = %v, want both", got.ProbeTexts)
+	}
+	if got.ProbeWeights[0] <= got.ProbeWeights[1] {
+		t.Errorf("weights = %v, want the first position to weigh more", got.ProbeWeights)
+	}
+	if got.ProbeWeights[0] != domain.AttrWeight["probes"]*domain.PositionWeight[0] {
+		t.Errorf("weight = %v, want w_attr · pos_0", got.ProbeWeights[0])
+	}
+}
+
+// A demote is the same signal with the sign flipped. There is no second code path for it.
+func TestCompile_DemoteIsASign(t *testing.T) {
+	got := domain.Compile(domain.Understanding{
+		Demotes: []domain.Signal{{Attr: "probes", Value: values(`"áo khoác"`)}},
+	}, fakeResolver{})
+
+	if len(got.ProbeWeights) != 1 || got.ProbeWeights[0] >= 0 {
+		t.Fatalf("weights = %v, want one negative weight", got.ProbeWeights)
+	}
+}
+
+// Everything is resolved against real rows, and what does not resolve is dropped in silence —
+// the rule parseSuggestion already follows. A page with one signal missing is worth serving; an
+// error because a model invented a category name is not.
+func TestCompile_DropsWhatDoesNotResolve(t *testing.T) {
+	got := domain.Compile(domain.Understanding{
+		Boosts: []domain.Signal{
+			{Attr: "category", Value: values(`"Áo nam"`, `"Không có thật"`)},
+			{Attr: "condition", Value: values(`"new"`, `"mint"`)},
+			{Attr: "nonsense", Value: values(`"x"`)},
+		},
+	}, fakeResolver{})
+
+	if len(got.Predicates) != 2 {
+		t.Fatalf("predicates = %+v, want the category and the condition that exist", got.Predicates)
+	}
+}
+
+// The caps are the server's, enforced after the schema, because a schema is a request and not a
+// guarantee.
+func TestCompile_EnforcesTheCaps(t *testing.T) {
+	got := domain.Compile(domain.Understanding{
+		Boosts:  []domain.Signal{{Attr: "probes", Value: values(`"a"`, `"b"`, `"c"`, `"d"`, `"e"`)}},
+		Demotes: []domain.Signal{{Attr: "probes", Value: values(`"x"`, `"y"`, `"z"`)}},
+	}, fakeResolver{})
+
+	var boosts, demotes int
+	for _, w := range got.ProbeWeights {
+		if w > 0 {
+			boosts++
+		} else {
+			demotes++
+		}
+	}
+	if boosts != domain.MaxBoostProbes {
+		t.Errorf("boost probes = %d, want %d", boosts, domain.MaxBoostProbes)
+	}
+	if demotes != domain.MaxDemoteProbes {
+		t.Errorf("demote probes = %d, want %d", demotes, domain.MaxDemoteProbes)
+	}
+}
+
+// A price bound is an object rather than a string, and a shape the evaluator cannot read is
+// dropped like any other unresolvable value.
+func TestCompile_PriceBounds(t *testing.T) {
+	got := domain.Compile(domain.Understanding{
+		Boosts: []domain.Signal{{Attr: "price", Value: values(`{"lt":50000}`, `{"weird":1}`)}},
+	}, fakeResolver{})
+
+	if len(got.Predicates) != 1 {
+		t.Fatalf("predicates = %+v, want only the bound that parsed", got.Predicates)
+	}
+	if got.Predicates[0].Kind != "max-price" || got.Predicates[0].Value != int64(50000) {
+		t.Errorf("predicate = %+v, want a max-price of 50000", got.Predicates[0])
+	}
+}
