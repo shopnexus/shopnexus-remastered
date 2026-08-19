@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"slices"
 	"time"
 
 	"shopnexus/internal/shared/validation"
@@ -61,8 +62,10 @@ type Refund struct {
 // before anybody else is involved.
 func NewRefund(orderID, buyerID int64, reason string, attachments []int64) (Refund, error) {
 	r := Refund{
-		BuyerID: buyerID, OrderID: orderID, Reason: reason, Attachments: attachments,
-		Status: RefundAwaitingSeller, DeadlineAt: new(time.Now().Add(SellerReviewWindow)),
+		BuyerID: buyerID, OrderID: orderID, Reason: reason,
+		Attachments: addEvidence(nil, attachments),
+		Status:      RefundAwaitingSeller,
+		DeadlineAt:  new(time.Now().Add(SellerReviewWindow)),
 	}
 	if err := validation.Default().Struct(r); err != nil {
 		return Refund{}, validation.AsError(err)
@@ -229,6 +232,21 @@ func (r *Refund) AddAttachments(attachments []int64) error {
 	if r.Settled() {
 		return ErrRefundSettled
 	}
-	r.Attachments = append(r.Attachments, attachments...)
+	r.Attachments = addEvidence(r.Attachments, attachments)
 	return nil
+}
+
+// addEvidence appends the resources not already on the case, in the order they were
+// submitted. Evidence is a set rather than a log of submissions: nothing stops a client
+// naming the same resource twice — in one submission or in a later top-up — and two copies
+// of one photo are not two pieces of evidence. Deduplicated here rather than in the request
+// schema because a top-up cannot see what the case already holds, which is where the
+// duplicate actually comes from.
+func addEvidence(have, add []int64) []int64 {
+	for _, key := range add {
+		if !slices.Contains(have, key) {
+			have = append(have, key)
+		}
+	}
+	return have
 }

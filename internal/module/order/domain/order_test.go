@@ -2,6 +2,7 @@ package domain_test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -260,6 +261,29 @@ func TestRefund_EscalatableStates(t *testing.T) {
 	// A carrier has it; the seller's turn comes when the parcel arrives.
 	if err := returning.Escalate(); !errors.Is(err, domain.ErrRefundNotEscalatable) {
 		t.Fatalf("Escalate while returning = %v, want ErrRefundNotEscalatable", err)
+	}
+}
+
+// Evidence is a set, not a log of submissions. Nothing stops a client naming the same
+// resource twice — in one submission or in a later top-up — and two copies of one photo are
+// not two pieces of evidence: the case is the record a verdict gets reached on, and one that
+// looks like it carries four photos when it carries three misstates it.
+func TestRefund_EvidenceHoldsEachResourceOnce(t *testing.T) {
+	// A single submission naming one resource twice.
+	r, err := domain.NewRefund(1, 7, "not as described", []int64{42, 42, 43})
+	if err != nil {
+		t.Fatalf("NewRefund: %v", err)
+	}
+	if got := r.Attachments; !slices.Equal(got, []int64{42, 43}) {
+		t.Fatalf("attachments = %v, want [42 43]", got)
+	}
+
+	// A top-up re-naming one already on the case keeps the case as it was, and adds the rest.
+	if err := r.AddAttachments([]int64{43, 44, 44}); err != nil {
+		t.Fatalf("AddAttachments: %v", err)
+	}
+	if got := r.Attachments; !slices.Equal(got, []int64{42, 43, 44}) {
+		t.Fatalf("attachments = %v, want [42 43 44]", got)
 	}
 }
 

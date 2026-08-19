@@ -135,6 +135,8 @@ components:
         AddAttachmentsRequest:
             properties:
                 attachments:
+                    description: |
+                        A resource already on the case is ignored rather than refused, and so is one named twice here. A client topping up has not necessarily re-read the case, so resubmitting is not an error — it just leaves the case as it was.
                     items:
                         $ref: '#/components/schemas/ResourceID'
                     maxItems: 10
@@ -1004,7 +1006,8 @@ components:
                 No item selection and no amount: a refund is for the whole order. Nothing about shipping either — the goods stay with the buyer until the refund is granted, and a granted refund returns the goods' money, not the carriage: that parcel was carried. Delivery comes back only where it never happened, which is a cancellation before pickup rather than a refund. Who bears the return leg is the verdict's business.
             properties:
                 attachments:
-                    description: Evidence, and it can be topped up until the case closes.
+                    description: |
+                        Evidence, and it can be topped up until the case closes. A resource named more than once is stored once: the same photo twice is one piece of evidence.
                     items:
                         $ref: '#/components/schemas/ResourceID'
                     maxItems: 10
@@ -3165,6 +3168,7 @@ components:
                 attachments:
                     description: |
                         The buyer's evidence, topped up until the case closes. Theirs alone: this is the claim being made, not a shared file — the seller's answer lives on the `refund-dispute` ticket they open, so the two sides stay legible apart.
+                        Each resource appears once, in the order it was first submitted. Evidence is a set rather than a log of submissions, so a client may key a list on the resource id — and a photo count read off this array is the number of photos the case actually carries.
                     items:
                         $ref: '#/components/schemas/Resource'
                     type: array
