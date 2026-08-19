@@ -99,6 +99,13 @@ func appOptions() fx.Option {
 			fx.Annotate(newWorkflowServer, fx.ParamTags(``, ``, `group:"restate-definitions"`)),
 			fx.Annotate(newSweeper, fx.ParamTags(``, ``, `group:"sweeps"`)),
 		),
+		// A module and not a bare fx.Invoke, and first in the list: fx's invokeAll recurses into
+		// child modules before running its own invokes (fx/module.go), so a root-level Invoke
+		// always runs *after* every module's — including the ones that start bus subscribers.
+		// Those consume the stream's backlog immediately, and formatting an id without a cipher
+		// panics, so a single queued event was enough to kill startup with no traffic at all.
+		// Siblings keep declaration order, which is why this one goes above the domain modules.
+		fx.Module("id-cipher", fx.Invoke(installIDCipher)),
 		// Domain modules — each wires its own service + repository.
 		account.Module,
 		catalog.Module,
@@ -110,9 +117,6 @@ func appOptions() fx.Option {
 		observability.Module,
 		// Transport.
 		gateway.Module,
-		// Before the server accepts traffic: marshalling an id without a cipher
-		// panics, and fx runs every Invoke before OnStart hooks.
-		fx.Invoke(installIDCipher),
 		// Eager: nothing in the graph depends on a timer running, so without this the
 		// clocks would only start when something happened to ask for them.
 		fx.Invoke(startDurable),
