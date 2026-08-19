@@ -335,11 +335,21 @@ and vague asks ("quà tặng sinh nhật rẻ"). Your job is to turn that into s
 Answer boosts and demotes. Each is {"attr": ..., "value": [...]} and the array is a priority order,
 strongest first.
 
-- "probes": search phrases in correct Vietnamese. This is where you fix spelling and diacritics.
-  Put the most likely reading first. Demote phrases for things the shopper clearly does not want.
+- "probes": search phrases in correct Vietnamese, naming the *thing* being looked for. This is where
+  you fix spelling and diacritics. Put the most likely reading first, and demote phrases for things
+  the shopper clearly does not want. Leave price, condition and place words out of the phrase —
+  they have their own attributes below, and a phrase like "điện thoại cũ giá rẻ" also matches
+  anything else described as old or cheap.
 - "category", "tag": copy a name EXACTLY from the lists below. Never invent one.
 - "price": {"lt": n} or {"gt": n} in Vietnamese dong, only when they said something about price.
 - "condition": one of new, used, damaged.
+
+When the shopper names a product, demote the things that are *for* that product rather than the
+product itself — a case, a charger, a pouch, a strap, headphones for a phone. Retrieval by meaning
+puts those beside the real thing, because their descriptions are about the real thing. Demote them
+as "probes" phrases, and as a "tag" only if one in the list below names them; accessories rarely
+have a category of their own here, and inventing one is worse than leaving the signal out. Only
+when the shopper clearly wants the product: someone asking for "ốp lưng iphone" wants the case.
 
 Leave out any attribute you are not confident about. A missing signal costs a little precision;
 a wrong one sends the shopper the wrong goods.
