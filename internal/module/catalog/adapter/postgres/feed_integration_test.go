@@ -511,6 +511,66 @@ func TestRepo_ListListingsRecommendedProbeDoesNotBypassQueryFilter(t *testing.T)
 	}
 }
 
+// `q` with sort=recommended is a filter on the name, not a ranking: that feed ranks by the
+// account's interests, so the words have nothing to rank against. Diacritic-insensitive on both
+// sides, because this is the one search path that still sees a shopper's raw typing — an LLM
+// normalises a probe, and nothing normalises this.
+func TestRepo_RecommendedFiltersByNameWithoutDiacritics(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	pool := poolOf(t)
+	category := createCategory(t, repo, unique("cat-"), nil)
+	createTag(t, repo, "handmade", nil)
+	buyer := testSeller + 9_000_000
+
+	publish := func(name string) *domain.Listing {
+		t.Helper()
+		l := newListingFor(t, repo, category.ID, name+unique(" "))
+		if err := l.Publish(); err != nil {
+			t.Fatalf("Publish: %v", err)
+		}
+		if err := l.Approve(""); err != nil {
+			t.Fatalf("Approve: %v", err)
+		}
+		if err := repo.SaveListing(ctx, l, testSeller); err != nil {
+			t.Fatalf("SaveListing: %v", err)
+		}
+		const q = `INSERT INTO listing_embedding (listing_id, dense) VALUES ($1, $2::vector)
+		           ON CONFLICT (listing_id) DO UPDATE SET dense = EXCLUDED.dense`
+		if _, err := pool.Exec(ctx, q, l.ID, denseAxis(1)); err != nil {
+			t.Fatalf("insert embedding: %v", err)
+		}
+		return l
+	}
+	wanted := publish("Áo thun Uniqlo")
+	other := publish("Nồi cơm điện")
+
+	interest := make(port.Vector, 1024)
+	interest[0] = 1
+	rows, _, err := repo.ListListings(ctx, port.ListingFilter{
+		ViewerID:   buyer,
+		CategoryID: category.ID,
+		Sort:       port.SortRecommended,
+		Seed:       "one-run",
+		Query:      "ao thun",
+		Interests:  []port.Interest{{Vector: interest, Weight: 1}},
+		Limit:      20,
+	})
+	if err != nil {
+		t.Fatalf("ListListings: %v", err)
+	}
+	var ids []int64
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+	if !slices.Contains(ids, wanted.ID) {
+		t.Errorf("rows = %v, want the listing whose name matches the no-diacritic query", ids)
+	}
+	if slices.Contains(ids, other.ID) {
+		t.Errorf("rows = %v, want the query to have filtered the rest out", ids)
+	}
+}
+
 // A semantic probe has to be a legal statement even though nothing embeds a query yet, and the
 // wishlist filter has to work off the favorite table.
 func TestRepo_ListListingsProbeAndWishlist(t *testing.T) {
