@@ -61,36 +61,39 @@ func (r *Repo) Interests(ctx context.Context, accountID int64) ([]port.Interest,
 // weights ever arrive here: "not-interested" and "hidden" exclude a listing instead (see
 // RecommendedWhere in feed.go), since an average that becomes a share of the page has no
 // business holding a negative number.
+// Each branch of the UNION is parenthesised because each carries its own ORDER BY and LIMIT:
+// bare, those bind to the whole set operation and Postgres refuses the statement outright — so
+// the wishlist's own cap has to be written as a subquery's, not the union's.
 const interestSignals = `
 	           WITH signal AS (
-	             SELECT l.category_id, e.dense,
-	                    -- Halving decay, its exponent capped: an account whose wishlist is
-	                    -- years old still has a taste, and exp() underflows rather than
-	                    -- rounding to zero.
-	                    exp(-ln(2) * least(
-	                          extract(epoch FROM now() - f.created_at) / @half_life_seconds,
-	                          50)) AS weight
-	             FROM favorite f
-	             JOIN listing l ON l.id = f.listing_id AND l.deleted_at IS NULL
-	             JOIN listing_embedding e ON e.listing_id = l.id AND e.dense IS NOT NULL
-	             WHERE f.account_id = @account_id
-	             ORDER BY f.created_at DESC
-	             LIMIT @signals
+	             (SELECT l.category_id, e.dense,
+	                     -- Halving decay, its exponent capped: an account whose wishlist is
+	                     -- years old still has a taste, and exp() underflows rather than
+	                     -- rounding to zero.
+	                     exp(-ln(2) * least(
+	                           extract(epoch FROM now() - f.created_at) / @half_life_seconds,
+	                           50)) AS weight
+	              FROM favorite f
+	              JOIN listing l ON l.id = f.listing_id AND l.deleted_at IS NULL
+	              JOIN listing_embedding e ON e.listing_id = l.id AND e.dense IS NOT NULL
+	              WHERE f.account_id = @account_id
+	              ORDER BY f.created_at DESC
+	              LIMIT @signals)
 
 	             UNION ALL
 
-	             SELECT l.category_id, e.dense,
-	                    w.weight * exp(-ln(2) * least(
-	                          extract(epoch FROM now() - s.created_at) / @half_life_seconds,
-	                          50)) AS weight
-	             FROM listing_signal s
-	             JOIN unnest(@signal_types::text[], @signal_weights::double precision[])
-	                  AS w(type, weight) ON w.type = s.type
-	             JOIN listing l ON l.id = s.listing_id AND l.deleted_at IS NULL
-	             JOIN listing_embedding e ON e.listing_id = l.id AND e.dense IS NOT NULL
-	             WHERE s.account_id = @account_id
-	             ORDER BY s.created_at DESC
-	             LIMIT @signals
+	             (SELECT l.category_id, e.dense,
+	                     w.weight * exp(-ln(2) * least(
+	                           extract(epoch FROM now() - s.created_at) / @half_life_seconds,
+	                           50)) AS weight
+	              FROM listing_signal s
+	              JOIN unnest(@signal_types::text[], @signal_weights::double precision[])
+	                   AS w(type, weight) ON w.type = s.type
+	              JOIN listing l ON l.id = s.listing_id AND l.deleted_at IS NULL
+	              JOIN listing_embedding e ON e.listing_id = l.id AND e.dense IS NOT NULL
+	              WHERE s.account_id = @account_id
+	              ORDER BY s.created_at DESC
+	              LIMIT @signals)
 	           ),
 	           grouped AS (
 	             SELECT category_id, sum(weight) AS strength, avg(dense) AS dense

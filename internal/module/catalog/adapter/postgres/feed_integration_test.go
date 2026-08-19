@@ -375,7 +375,7 @@ func TestRepo_RecomputeInterests(t *testing.T) {
 		t.Error("an account with a wishlist and no slots was not reported stale")
 	}
 
-	if err := repo.RecomputeInterests(ctx, buyer); err != nil {
+	if err := repo.RecomputeInterests(ctx, buyer, signalWeights()); err != nil {
 		t.Fatalf("RecomputeInterests: %v", err)
 	}
 	interests, err := repo.Interests(ctx, buyer)
@@ -414,7 +414,7 @@ func TestRepo_RecomputeInterests(t *testing.T) {
 	if _, err := pool.Exec(ctx, `DELETE FROM favorite WHERE account_id = $1`, buyer); err != nil {
 		t.Fatalf("clear wishlist: %v", err)
 	}
-	if err := repo.RecomputeInterests(ctx, buyer); err != nil {
+	if err := repo.RecomputeInterests(ctx, buyer, signalWeights()); err != nil {
 		t.Fatalf("RecomputeInterests(empty): %v", err)
 	}
 	if interests, err = repo.Interests(ctx, buyer); err != nil || len(interests) != 0 {
