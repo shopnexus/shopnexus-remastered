@@ -85,14 +85,22 @@ const (
 // entire span of dense ranks — reads as alarming and predicts the wrong thing; it was tried, the
 // weights were cut to a tenth of these, and the mixed pool filled with bags and headphones again.
 //
-// The other three keep the scale category was set on, and are *not* individually measured. Setting
+// Price is measured too, on "áo nam 300k-500k" against the pool that query retrieves: 0.4 answers
+// 7 of 10 in range, 0.6 answers 10 of 10, and nothing above 0.6 buys anything — so it sits at the
+// least weight that does the job. It can be this large where category could not for a reason worth
+// keeping: a bound nobody's price satisfies promotes *nothing*, so a misread number degrades to the
+// ordinary probe ranking, while a wrong category always has hundreds of members to lift. The same
+// query at a misread 3-5M range answers 0 of 10 in that range at every weight tried, which is that
+// failure being harmless rather than absent.
+//
+// Tag and condition keep the scale category was set on and are *not* individually measured. Setting
 // them from reasoning alone is the mistake above, so they are left where they were until a query
 // set exists that separates them.
 var AttrWeight = map[string]float64{
 	AttrProbes:    1.0,
 	AttrCategory:  0.6,
 	AttrTag:       0.5,
-	AttrPrice:     0.4,
+	AttrPrice:     0.6,
 	AttrCondition: 0.3,
 }
 
