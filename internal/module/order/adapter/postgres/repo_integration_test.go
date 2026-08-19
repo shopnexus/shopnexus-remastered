@@ -111,6 +111,17 @@ func placedOrder(t *testing.T, r *orderpg.Repo) (domain.Order, domain.Item) {
 	return o, item
 }
 
+// confirmed confirms and persists the order; kept separate from placedOrder because tests need to assert the unconfirmed state first.
+func confirmed(t *testing.T, r *orderpg.Repo, o *domain.Order) {
+	t.Helper()
+	if err := o.Confirm(); err != nil {
+		t.Fatalf("Confirm: %v", err)
+	}
+	if err := r.SaveOrder(context.Background(), *o); err != nil {
+		t.Fatalf("SaveOrder: %v", err)
+	}
+}
+
 // The webhook's contract: the money writes the order once, links the lines it paid for, and
 // a redelivery loses to the unique origin rather than minting a second order.
 func TestCreateOrder_OriginIsIdempotent(t *testing.T) {
@@ -206,10 +217,7 @@ func TestPayoutDue_HeldBackByALiveRefund(t *testing.T) {
 	ctx := context.Background()
 	o, _ := placedOrder(t, r)
 
-	// The seller has to accept the sale before there is anything to receive.
-	if err := o.Confirm(); err != nil {
-		t.Fatalf("Confirm: %v", err)
-	}
+	confirmed(t, r, &o)
 	// The unboxing evidence is an array column, so the ids stand on their own here — the
 	// service is what checks they name confirmed uploads.
 	if err := o.ConfirmReceipt([]int64{7001}); err != nil {
@@ -662,12 +670,7 @@ func TestBookTransport_MarksTheParcelAndLeavesTheRetryList(t *testing.T) {
 
 	// The seller accepting is what lets the parcel be booked, so a confirmed order whose carrier
 	// never heard about it is on the list, once it is past the grace period.
-	if err := o.Confirm(); err != nil {
-		t.Fatalf("Confirm: %v", err)
-	}
-	if err := r.SaveOrder(ctx, o); err != nil {
-		t.Fatalf("SaveOrder: %v", err)
-	}
+	confirmed(t, r, &o)
 	unbooked, err = r.UnbookedTransports(ctx, time.Now().Add(time.Minute), 200)
 	if err != nil {
 		t.Fatalf("UnbookedTransports: %v", err)
@@ -956,12 +959,7 @@ func TestPayoutAndRefund_CannotBothClaimTheEscrow(t *testing.T) {
 	r, pool := newRepo(t)
 	ctx := context.Background()
 	o, _ := placedOrder(t, r)
-	if err := o.Confirm(); err != nil {
-		t.Fatalf("Confirm: %v", err)
-	}
-	if err := r.SaveOrder(ctx, o); err != nil {
-		t.Fatalf("SaveOrder: %v", err)
-	}
+	confirmed(t, r, &o)
 	if err := o.ConfirmReceipt([]int64{1}); err != nil {
 		t.Fatalf("ConfirmReceipt: %v", err)
 	}
@@ -997,12 +995,7 @@ func TestPayoutAndRefund_CannotBothClaimTheEscrow(t *testing.T) {
 
 	// And the other way round: an order the payout has claimed has no escrow left to argue over.
 	o2, _ := placedOrder(t, r)
-	if err := o2.Confirm(); err != nil {
-		t.Fatalf("Confirm: %v", err)
-	}
-	if err := r.SaveOrder(ctx, o2); err != nil {
-		t.Fatalf("SaveOrder: %v", err)
-	}
+	confirmed(t, r, &o2)
 	if err := o2.ConfirmReceipt([]int64{1}); err != nil {
 		t.Fatalf("ConfirmReceipt: %v", err)
 	}
@@ -1187,12 +1180,7 @@ func TestOrderSummary_CountsOrdersAndMoneySeparately(t *testing.T) {
 	// Complete it the way the payout does — `completed_at` is written by the claim and nothing else —
 	// then the goods are revenue, and only the goods: the order's transport carries a 15,000 fee that
 	// must not appear here.
-	if err := o.Confirm(); err != nil {
-		t.Fatalf("Confirm: %v", err)
-	}
-	if err := r.SaveOrder(ctx, o); err != nil {
-		t.Fatalf("SaveOrder: %v", err)
-	}
+	confirmed(t, r, &o)
 	if err := o.ConfirmReceipt([]int64{item.ID}); err != nil {
 		t.Fatalf("ConfirmReceipt: %v", err)
 	}
