@@ -25,6 +25,9 @@ type fakeEmbeddings struct {
 	saveErr error
 	listErr map[port.Kind]error
 	calls   int
+	// contended caps what a read answers regardless of the limit asked for, which is what
+	// SKIP LOCKED does when another worker is holding the rest of the batch.
+	contended int
 }
 
 func newFakeEmbeddings() *fakeEmbeddings {
@@ -37,6 +40,9 @@ func (f *fakeEmbeddings) ListStale(_ context.Context, kind port.Kind, limit int)
 		return nil, err
 	}
 	q := f.queues[kind]
+	if f.contended > 0 && limit > f.contended {
+		limit = f.contended
+	}
 	if len(q) > limit {
 		q = q[:limit]
 	}
@@ -222,5 +228,28 @@ func TestNewIndexerRejectsUnusableConfig(t *testing.T) {
 		if _, err := catalog.NewIndexer(newFakeEmbeddings(), &fakeClient{}, cfg, discard()); err == nil {
 			t.Errorf("NewIndexer(%+v) succeeded, want it refused", cfg)
 		}
+	}
+}
+
+// A batch that comes back short is not a queue that is empty. ListStale claims its rows with
+// FOR UPDATE SKIP LOCKED, so a second worker holding the next few makes the read short while
+// the backlog is untouched — and a drain that read that as "done" would hand the rest to the
+// next tick, a minute later, one short batch at a time.
+func TestDrainKeepsGoingAfterAShortRead(t *testing.T) {
+	repo := newFakeEmbeddings()
+	for i := int64(1); i <= 9; i++ {
+		repo.queues[port.KindListing] = append(repo.queues[port.KindListing], stale(port.KindListing, i, "listing"))
+	}
+	repo.contended = 2 // every read answers 2 of the 8 asked for
+
+	n, err := newIndexer(t, repo, &fakeClient{}, 8, 100).Pass(context.Background())
+	if err != nil {
+		t.Fatalf("Pass: %v", err)
+	}
+	if n != 9 {
+		t.Errorf("embedded %d, want all 9 rows drained despite every read being short", n)
+	}
+	if len(repo.queues[port.KindListing]) != 0 {
+		t.Errorf("listing queue still holds %d rows", len(repo.queues[port.KindListing]))
 	}
 }
