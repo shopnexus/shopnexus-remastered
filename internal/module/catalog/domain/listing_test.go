@@ -382,3 +382,65 @@ func TestValidate_AttributeTypesAreDistinct(t *testing.T) {
 		t.Fatalf("Validate: %v — a number and a string are two jsonb values", err)
 	}
 }
+
+// The vector is built from the name, the category, the tags, the specification values and the
+// description — and from nothing else. An edit that only reorders the photos, or switches the
+// condition, changes no word the model reads, so marking it stale buys a transformer pass that
+// produces the vector the row already has. At a million listings that is the difference between
+// a queue that keeps up and one that never empties.
+func TestApplyEdit_OnlyTheEmbeddedFieldsMakeTheVectorStale(t *testing.T) {
+	fresh := func(t *testing.T) *domain.Listing {
+		t.Helper()
+		l := newListing(t)
+		// NewListing marks a listing that has never been embedded. Clear it, so what the test
+		// reads afterwards is what *this edit* decided.
+		l.EmbeddingStaleAt = nil
+		return l
+	}
+
+	unchanged := map[string]domain.PendingEdit{
+		"photos":          {Attachments: []int64{9, 8, 7}},
+		"condition":       {Condition: new(domain.ConditionNew)},
+		"price mode":      {PriceMode: new(domain.PriceModeNegotiable)},
+		"the same name":   {Name: new("Áo thun Uniqlo")},
+		"the name padded": {Name: new("  Áo thun Uniqlo  ")},
+		"the same tags":   {Tags: []string{"handmade"}},
+		"tags reordered":  {Tags: []string{"handmade", "cotton"}},
+		"the same specs":  {Specifications: map[string]any{"brand": "Uniqlo"}},
+	}
+	for name, edit := range unchanged {
+		t.Run("stays fresh: "+name, func(t *testing.T) {
+			l := fresh(t)
+			if name == "tags reordered" {
+				// Reordering only says nothing because the indexer sorts: the listing text is
+				// built with string_agg(tag ORDER BY tag).
+				l.Tags = []string{"cotton", "handmade"}
+			}
+			if err := l.SubmitEdit(edit); err != nil {
+				t.Fatalf("SubmitEdit: %v", err)
+			}
+			if l.EmbeddingStaleAt != nil {
+				t.Errorf("editing %s queued the listing for re-embedding", name)
+			}
+		})
+	}
+
+	changed := map[string]domain.PendingEdit{
+		"name":           {Name: new("Áo thun Uniqlo cổ tròn")},
+		"description":    {Description: new("Đã giặt một lần")},
+		"category":       {CategoryID: new(int64(11))},
+		"tags":           {Tags: []string{"handmade", "cotton"}},
+		"specifications": {Specifications: map[string]any{"brand": "Uniqlo", "size": "L"}},
+	}
+	for name, edit := range changed {
+		t.Run("goes stale: "+name, func(t *testing.T) {
+			l := fresh(t)
+			if err := l.SubmitEdit(edit); err != nil {
+				t.Fatalf("SubmitEdit: %v", err)
+			}
+			if l.EmbeddingStaleAt == nil {
+				t.Errorf("editing the %s left the old vector in place", name)
+			}
+		})
+	}
+}

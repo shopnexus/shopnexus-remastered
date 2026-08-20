@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -341,6 +342,7 @@ func (l *Listing) ApplyPendingEdit() error {
 // apply writes an edit onto the row. Absent leaves a field alone; there is no clearing here
 // because every field it touches is NOT NULL.
 func (l *Listing) apply(edit PendingEdit) error {
+	before := l.embeddedText()
 	if edit.Name != nil {
 		l.Name = strings.TrimSpace(*edit.Name)
 	}
@@ -365,10 +367,36 @@ func (l *Listing) apply(edit PendingEdit) error {
 	if edit.Tags != nil {
 		l.Tags = dedupe(edit.Tags)
 	}
-	// The name and the description are what the vector is built from, so an edit makes it
-	// stale. The slug is not touched: it is fixed at creation and lives in URLs.
-	l.EmbeddingStaleAt = new(time.Now())
+	// Only an edit that changed a word the model reads makes the vector stale. Compared after
+	// the write rather than against the edit itself, so a value re-submitted as it already was
+	// costs nothing: the trimming, the tag dedupe and the ordering have all happened by here,
+	// and "the same listing spelled differently" is not a change. The slug is not touched
+	// either way: it is fixed at creation and lives in URLs.
+	if l.embeddedText() != before {
+		l.EmbeddingStaleAt = new(time.Now())
+	}
 	return l.Validate()
+}
+
+// embeddedText is everything catalog's indexer composes a listing's vector from, as one
+// comparable value — its name, the category it sits in, its tags, its specification values and
+// its description (see ListStale). Anything absent here — the photos, the condition, the price
+// mode — can change without the vector meaning anything different, and re-embedding for it is
+// a transformer pass bought for nothing.
+//
+// Tags are sorted because the indexer sorts them (`string_agg(tag ORDER BY tag)`), and the
+// specifications go through attributeKey for the same reason its own callers do: json.Marshal
+// sorts a map's keys, which is what makes two equal maps compare equal.
+func (l *Listing) embeddedText() string {
+	tags := slices.Clone(l.Tags)
+	slices.Sort(tags)
+	return strings.Join([]string{
+		l.Name,
+		strconv.FormatInt(l.CategoryID, 10),
+		strings.Join(tags, "\x00"),
+		attributeKey(l.Specifications),
+		l.Description,
+	}, "\x1f")
 }
 
 // --- variants: the child collection ---
