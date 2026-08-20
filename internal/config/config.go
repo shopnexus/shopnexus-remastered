@@ -110,9 +110,13 @@ type Config struct {
 	// EmbeddingBatchSize is rows per model call, which also bounds the write transaction and
 	// how much a crash repeats.
 	EmbeddingBatchSize int
-	// EmbeddingMaxTextChars clips what the model reads. The sparse vector has one non-zero per
-	// distinct token and the HNSW index refuses more than a thousand, so an unbounded
-	// description is a failed write rather than a poor result.
+	// EmbeddingMaxTextChars clips what the model reads, and it is the one number that decides
+	// what a backfill costs: inference time is roughly linear in the text, so doubling this
+	// doubles the wall clock of every pass. Not a correctness bound — the sparse vector's
+	// thousand-non-zero cap is enforced where it belongs, in `sparseLiteral` — which is why it
+	// is set from what the tail of a description is worth to a search rather than from the
+	// column. The composed text puts the description last, so what falls off is the least
+	// searchable part.
 	EmbeddingMaxTextChars int
 
 	// --- listing suggestions (the "photo in, listing out" route) ---
