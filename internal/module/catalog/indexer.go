@@ -15,10 +15,11 @@ type IndexerConfig struct {
 	// Batch is how many rows go to the model in one call. It bounds three things at once: the
 	// request, the transaction that writes the answers, and how much work a crash repeats.
 	Batch int
-	// MaxTextChars clips what the model reads. The sparse half of the embedding has one
-	// non-zero per distinct token and the HNSW index caps that at a thousand, so an unbounded
-	// description is a write that fails rather than a document that indexes badly. Characters
-	// and not tokens, because the tokenizer lives on the other side of the seam.
+	// MaxTextChars clips what the model reads, and it is what a pass costs: inference time is
+	// roughly linear in the text. Characters and not tokens, because the tokenizer lives on the
+	// other side of the seam. The sparse half's thousand-non-zero cap is enforced by the
+	// adapter, so this is a budget rather than a bound — the composed text puts the description
+	// last, and that is what falls off.
 	MaxTextChars int
 }
 
@@ -68,9 +69,14 @@ func (i *Indexer) Pass(ctx context.Context) (int, error) {
 	return total, first
 }
 
-// drain works one kind a batch at a time until a short read says the queue is empty. Bounded
-// by the queue emptying and not by a batch count: a backlog is worked off in one pass rather
-// than one batch per interval, which at a minute a batch would never catch up with an import.
+// drain works one kind a batch at a time until a read comes back empty. Bounded by the queue
+// emptying and not by a batch count: a backlog is worked off in one pass rather than one batch
+// per interval, which at a minute a batch would never catch up with an import.
+//
+// Empty and not short: ListStale claims its rows with SKIP LOCKED, so a read is short whenever
+// another worker holds the rest of the batch, and treating that as the end of the queue would
+// leave a backlog being drained a few rows a minute. The cost is one extra empty read per kind
+// per pass, which is an index scan that finds nothing.
 func (i *Indexer) drain(ctx context.Context, kind port.Kind) (int, error) {
 	embedded := 0
 	for {
@@ -85,11 +91,6 @@ func (i *Indexer) drain(ctx context.Context, kind port.Kind) (int, error) {
 		embedded += n
 		if err != nil {
 			return embedded, err
-		}
-		// A short read is the last batch. Checked after the write, so the final partial batch
-		// is still embedded.
-		if len(stale) < i.cfg.Batch {
-			return embedded, nil
 		}
 	}
 }

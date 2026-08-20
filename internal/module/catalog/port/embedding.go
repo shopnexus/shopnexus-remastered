@@ -31,10 +31,10 @@ type Stale struct {
 	// Text is what the model reads, composed by the adapter from the columns that describe
 	// the row — see the composition rules in the catalog indexer.
 	Text string
-	// StaleAt is the mark this pass is clearing. Written back as a guard rather than
-	// discarded: a row edited while the model was working must stay queued, and comparing
-	// against the value that was read is the only way to tell that apart from the pass's own
-	// work. Same idiom as a version-guarded aggregate write.
+	// StaleAt is the mark this pass is clearing, set when ListStale claimed the row. Written
+	// back as a guard rather than discarded: a row edited while the model was working must stay
+	// queued, and comparing against the value that was read is the only way to tell that apart
+	// from the pass's own work. Same idiom as a version-guarded aggregate write.
 	StaleAt time.Time
 }
 
@@ -53,7 +53,14 @@ type Embedded struct {
 // business loading a listing aggregate, and Repository has no business growing a queue drain.
 type Embeddings interface {
 	// ListStale reads the oldest marks first, so a row that has been waiting does not starve
-	// behind a listing somebody edits every minute.
+	// behind a listing somebody edits every minute, and it *claims* what it reads: the rows it
+	// answers are ones a second worker's next read will step past. A claim is not a lock — it
+	// has to outlive the read, because the model call that follows takes seconds — so a claimed
+	// row is still queued and a worker that dies loses nothing.
+	//
+	// Two consequences for the caller. The batch may come back shorter than the limit while the
+	// queue is not empty, so only an empty answer means done. And the returned StaleAt is the
+	// claim, not the moment the row went stale — which is what Save must be handed back.
 	ListStale(ctx context.Context, kind Kind, limit int) ([]Stale, error)
 	// Save writes each vector and clears the mark it was computed from, in one transaction:
 	// a vector that landed is always a row that left the queue, and a row that stayed queued

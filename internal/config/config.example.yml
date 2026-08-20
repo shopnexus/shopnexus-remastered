@@ -99,13 +99,20 @@ embedding:
   provider: "mock"
   base_url: ""
   api_key: ""
-  # Generous, and it bounds one batch of transformer inferences rather than an API call: 32 listing
-  # descriptions take tens of seconds on a CPU.
+  # Generous, and it bounds one batch of transformer inferences rather than an API call: a batch of
+  # listing descriptions takes tens of seconds on a CPU.
   timeout: "5m"
   dimensions: 1024
   interval: "1m"
-  batch_size: 32
-  max_text_chars: 2000
+  # Bigger than it needs to be for the model — throughput is flat across batch sizes, because one
+  # batch already saturates the device — but each batch is a queue read and a write transaction,
+  # and a backfill of a million listings is 8,000 of them at this size instead of 31,000.
+  batch_size: 128
+  # What a listing is embedded from is name + category + tags + specification values +
+  # description, and inference time is roughly linear in it: measured on a CPU box, 466 characters
+  # ran at 8.2 texts/s and 2000 at 1.67 — five times the wall clock for the tail of a description.
+  # The thousand-non-zero sparse cap is not what sets this; `sparseLiteral` enforces that.
+  max_text_chars: 1000
 
 # "Photo in, listing out" (POST /listings/suggestions). `mock` answers a plausible filled form with
 # no model, no key and no network call, so a local stack walks the whole route. A real one needs a

@@ -37,6 +37,28 @@ var _ port.Embeddings = (*Embeddings)(nil)
 // keeps the heaviest terms instead, which is what the tail of a weight distribution is worth.
 const maxSparseNonZero = 1000
 
+// ListStale reads the next batch and claims it in the same statement, by moving each row's mark
+// to now().
+//
+// Claiming has to survive the read, and a lock does not: the model call that follows takes
+// seconds, while `FOR UPDATE` here would be released the moment this statement's implicit
+// transaction commits — so two workers would read the same rows and buy the same vectors twice.
+// The mark is the claim instead. A claimed row is still stale, so nothing is lost if the worker
+// dies; it has simply moved to the back of `ORDER BY embedding_stale_at`, where the next read
+// steps past it to rows nobody has taken.
+//
+// SKIP LOCKED alone does not make that safe, and the guard on the mark is what does. Under READ
+// COMMITTED a second worker that blocks on a row the first is claiming does not give up when the
+// first commits: it re-reads the new version and re-applies the qual, and "still stale" is still
+// true of a row somebody just claimed — so it would claim it a second time. Comparing the mark
+// against the one the subquery read fails that re-check, because the claim is precisely what
+// changed it. The row is then left for the next pass. Same idiom as Save's clear, and the reason
+// a batch may come back shorter than the limit.
+//
+// Save is unaffected: it clears by comparing against the mark it was handed, which is the
+// bumped one, and a seller editing the row mid-flight bumps it again and keeps it queued —
+// exactly as before. A row that fails to embed also moves to the back rather than sitting at the
+// head, so one poison listing no longer blocks the queue behind it.
 func (e *Embeddings) ListStale(ctx context.Context, kind port.Kind, limit int) ([]port.Stale, error) {
 	var q string
 	switch kind {
@@ -44,33 +66,55 @@ func (e *Embeddings) ListStale(ctx context.Context, kind port.Kind, limit int) (
 		// The text a listing is found by: its name, the category it sits in, its tags, its
 		// specification values and finally its description. Ordered by how much each is worth
 		// to a search — the tail is what gets cut when the text is clipped, and a description
-		// is the most expendable of the five.
-		q = `SELECT l.id, '', l.embedding_stale_at,
-		            concat_ws(' ', l.name, c.name,
-		              (SELECT string_agg(lt.tag, ' ' ORDER BY lt.tag)
-		                 FROM listing_tag lt WHERE lt.listing_id = l.id),
-		              (SELECT string_agg(value, ' ')
-		                 FROM jsonb_each_text(l.specifications)),
-		              l.description)
-		     FROM listing l
-		     JOIN category c ON c.id = l.category_id
-		     WHERE l.embedding_stale_at IS NOT NULL AND l.deleted_at IS NULL
-		     ORDER BY l.embedding_stale_at, l.id
-		     LIMIT @limit`
+		// is the most expendable of the five. The category is a subquery and not a join
+		// because RETURNING sees only the updated table; "category_id" is NOT NULL behind a
+		// RESTRICT foreign key, so it finds a row for the same reason the join did.
+		q = `UPDATE listing SET embedding_stale_at = now()
+		     FROM (
+		       SELECT l.id, l.embedding_stale_at FROM listing l
+		       WHERE l.embedding_stale_at IS NOT NULL AND l.deleted_at IS NULL
+		       ORDER BY l.embedding_stale_at, l.id
+		       LIMIT @limit
+		       FOR UPDATE SKIP LOCKED
+		     ) AS claim
+		     WHERE listing.id = claim.id
+		       AND listing.embedding_stale_at = claim.embedding_stale_at
+		     RETURNING listing.id, '', listing.embedding_stale_at,
+		       concat_ws(' ', name,
+		         (SELECT c.name FROM category c WHERE c.id = listing.category_id),
+		         (SELECT string_agg(lt.tag, ' ' ORDER BY lt.tag)
+		            FROM listing_tag lt WHERE lt.listing_id = listing.id),
+		         (SELECT string_agg(value, ' ')
+		            FROM jsonb_each_text(listing.specifications)),
+		         description)`
 	case port.KindCategory:
-		q = `SELECT id, '', embedding_stale_at, concat_ws(' ', name, description)
-		     FROM category
-		     WHERE embedding_stale_at IS NOT NULL
-		     ORDER BY embedding_stale_at, id
-		     LIMIT @limit`
+		q = `UPDATE category SET embedding_stale_at = now()
+		     FROM (
+		       SELECT c.id, c.embedding_stale_at FROM category c
+		       WHERE c.embedding_stale_at IS NOT NULL
+		       ORDER BY c.embedding_stale_at, c.id
+		       LIMIT @limit
+		       FOR UPDATE SKIP LOCKED
+		     ) AS claim
+		     WHERE category.id = claim.id
+		       AND category.embedding_stale_at = claim.embedding_stale_at
+		     RETURNING category.id, '', category.embedding_stale_at,
+		       concat_ws(' ', category.name, category.description)`
 	case port.KindTag:
 		// A slug is the tag's only text, and it is kebab-case: split it, or the model sees one
 		// unknown token where there were two ordinary words.
-		q = `SELECT 0, id, embedding_stale_at, concat_ws(' ', replace(id, '-', ' '), description)
-		     FROM tag
-		     WHERE embedding_stale_at IS NOT NULL
-		     ORDER BY embedding_stale_at, id
-		     LIMIT @limit`
+		q = `UPDATE tag SET embedding_stale_at = now()
+		     FROM (
+		       SELECT t.id, t.embedding_stale_at FROM tag t
+		       WHERE t.embedding_stale_at IS NOT NULL
+		       ORDER BY t.embedding_stale_at, t.id
+		       LIMIT @limit
+		       FOR UPDATE SKIP LOCKED
+		     ) AS claim
+		     WHERE tag.id = claim.id
+		       AND tag.embedding_stale_at = claim.embedding_stale_at
+		     RETURNING 0, tag.id, tag.embedding_stale_at,
+		       concat_ws(' ', replace(tag.id, '-', ' '), tag.description)`
 	default:
 		return nil, fmt.Errorf("db list stale: unknown kind %q", kind)
 	}
@@ -117,6 +161,16 @@ func (e *Embeddings) Save(ctx context.Context, done []port.Embedded) error {
 	}
 	now := time.Now()
 	return dbx.InTx(ctx, e.pool, func(tx pgx.Tx) error {
+		// Pipelined rather than sent one at a time: a batch is two statements per row, and at a
+		// few hundred rows the round trips cost more than the writes do. They still run inside
+		// the one transaction, in the order queued, so what a partial failure leaves behind is
+		// what it left behind before — nothing.
+		batch := &pgx.Batch{}
+		// failures[i] names what the i-th queued statement was doing, for the error that reads
+		// its result. Kept beside the batch because a batch result says only which position
+		// failed.
+		failures := make([]string, 0, 2*len(done))
+
 		for _, d := range done {
 			vec, ok := vectorTable[d.Kind]
 			if !ok {
@@ -136,15 +190,13 @@ func (e *Embeddings) Save(ctx context.Context, done []port.Embedded) error {
 			             SET dense = EXCLUDED.dense,
 			                 sparse = EXCLUDED.sparse,
 			                 updated_at = EXCLUDED.updated_at`
-			args := pgx.NamedArgs{
+			batch.Queue(upsert, pgx.NamedArgs{
 				"key":    key,
 				"dense":  denseLiteral(d.Dense),
 				"sparse": sparse,
 				"now":    now,
-			}
-			if _, err := tx.Exec(ctx, upsert, args); err != nil {
-				return fmt.Errorf("db upsert %s embedding: %w", d.Kind, err)
-			}
+			})
+			failures = append(failures, fmt.Sprintf("db upsert %s embedding", d.Kind))
 
 			// Clear the exact mark this vector was computed from. A row edited while the model
 			// was working carries a newer one, matches nothing here, and is picked up next
@@ -152,9 +204,20 @@ func (e *Embeddings) Save(ctx context.Context, done []port.Embedded) error {
 			src := staleTable[d.Kind]
 			clear := `UPDATE ` + src.table + ` SET embedding_stale_at = NULL
 			          WHERE ` + src.key + ` = @key AND embedding_stale_at = @stale_at`
-			if _, err := tx.Exec(ctx, clear, pgx.NamedArgs{"key": key, "stale_at": d.StaleAt}); err != nil {
-				return fmt.Errorf("db clear %s stale mark: %w", d.Kind, err)
+			batch.Queue(clear, pgx.NamedArgs{"key": key, "stale_at": d.StaleAt})
+			failures = append(failures, fmt.Sprintf("db clear %s stale mark", d.Kind))
+		}
+
+		// Every result has to be read, and the reader closed, before the transaction commits.
+		results := tx.SendBatch(ctx, batch)
+		for _, what := range failures {
+			if _, err := results.Exec(); err != nil {
+				_ = results.Close()
+				return fmt.Errorf("%s: %w", what, err)
 			}
+		}
+		if err := results.Close(); err != nil {
+			return fmt.Errorf("db save %d embeddings: %w", len(done), err)
 		}
 		return nil
 	})
