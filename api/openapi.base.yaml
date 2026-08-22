@@ -222,6 +222,7 @@ components:
     AccountID: { type: string, pattern: '^acc_[0-9a-hjkmnp-tv-z]{13}$', example: acc_62mxefynht57b }
     ContactID: { type: string, pattern: '^ctc_[0-9a-hjkmnp-tv-z]{13}$', example: ctc_kvq1wd6ptz3n8 }
     DeviceID: { type: string, pattern: '^dvc_[0-9a-hjkmnp-tv-z]{13}$', example: dvc_ynht57b62mxef }
+    NotificationID: { type: string, pattern: '^ntf_[0-9a-hjkmnp-tv-z]{13}$', example: ntf_01380p4vjjzc0 }
     IdentityDocumentID: { type: string, pattern: '^idd_[0-9a-hjkmnp-tv-z]{13}$', example: idd_57b62mxefynht }
     CategoryID: { type: string, pattern: '^cat_[0-9a-hjkmnp-tv-z]{13}$', example: cat_7v2p41ryaj811 }
     ListingID: { type: string, pattern: '^lst_[0-9a-hjkmnp-tv-z]{13}$', example: lst_5y5w68r4918v8 }

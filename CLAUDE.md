@@ -612,12 +612,26 @@ give it its own doc under `docs/` and link it from here.
   need `accountapi` to hand it somebody's email. The channels are decided **independently**:
   silencing the feed is not a way to stop the letters, and `ChannelInApp` returning early in
   front of everything is the bug that shape invites. A mail goes out only when all four hold —
-  the caller named a `MailKind`, `domain.Enabled(…, ChannelEmail)`, there is an address, and
-  `EmailVerified`. Named rather than derived from `Category`, because a category covers many
-  facts and only some have copy; verified-only because an unconfirmed address is a typo or
-  somebody else's inbox, and what goes out is a sale and its price. The send is last and
-  best-effort: the caller is a bus subscriber, so an error would redeliver the fact and buy a
-  duplicate feed row to retry a mail nobody lost.
+  the **kind's spec names a template**, `domain.Enabled(…, ChannelEmail)`, there is an address,
+  and `EmailVerified`. Named by the kind rather than derived from `Category`, because a category
+  covers many facts and only some have copy — deriving it would mail "your order is confirmed"
+  for a cancellation; verified-only because an unconfirmed address is a typo or somebody else's
+  inbox, and what goes out is a sale and its price. The send is last and best-effort: the caller
+  is a bus subscriber, so an error would redeliver the fact and buy a duplicate feed row to
+  retry a mail nobody lost.
+- **A notification stores the fact and the words are written when it is read.** The row carries a
+  `kind` (`order-placed`, `listing-approved` — kebab-case, TEXT not an enum, since nothing keys off
+  it in SQL and the vocabulary grows with every fact worth telling) plus the `payload` behind it,
+  and never a sentence. `domain.KindSpec` is what everything else follows from: the `Category` that
+  files it and decides the preference, the `Mail` template that carries it, and the `Href` it opens.
+  Copy lives in `templates/notification/<lang>.yaml`, one entry per kind, rendered against the
+  payload with `missingkey=error` and loaded at startup so a kind with no words is a process that
+  does not come up. A stored title is frozen in whatever language the emitter was written in —
+  which is how an English "Order placed" reached a Vietnamese feed — and retranslating it later
+  means rewriting rows nobody can read. So the API answers a finished `title`/`body`/`href` and
+  **no payload**: every client would otherwise re-implement the copy and drift from the mail
+  saying the same thing. A kind carries its audience wherever the two sides of a sale read
+  different words or land on a different page (`order-placed` / `sale-received`).
 - **A mail is copy in `templates/mail/`, and the caller sends facts.** One file per kind per
   language (`order-placed.vi.html`), each defining `subject`/`title`/`lead`/`action` and
   optionally overriding `footer`/`extra`; `frame.<lang>.html` owns the layout, the button and
@@ -630,9 +644,10 @@ give it its own doc under `docs/` and link it from here.
   template's business (`money` is bound to the set's language). Everything is parsed at
   `NewClient`, and `missingkey=error` makes a parameter the caller forgot a render failure
   instead of a hole in somebody's inbox; the param set is written beside each `Kind` and
-  exercised for every kind × language by the smtp package's tests. `account/subscriber.go` is
-  the single place a fact is paired with a template, so payload and template stay in sight of
-  each other.
+  exercised for every kind × language by the smtp package's tests. Which template a fact takes is
+  `domain.KindSpec.Mail`, so a payload, its feed copy and its letter are all decided from one
+  vocabulary. `shared/lang` holds what both senders need — the BCP 47 → file mapping and the
+  `money` helper — because a second copy of that is a second way to spell 250.000 ₫.
 - **Request plumbing is shared (`gateway/handler/params.go`):** `actor`,
   `pathID[K]`, `pageParams`/`limitParam`, `boolParam`, `decodeBody`/`check`. A
   handler reads the request, fills in what only the gateway knows, calls the

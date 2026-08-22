@@ -344,6 +344,11 @@ components:
                     description: |
                         What the sender pointed at — a listing, a variant, an order. Client-supplied and validated against the caller's own access to each id, so it can carry a reference but never assert anything about it.
                     type: object
+                reply_to:
+                    allOf:
+                        - $ref: '#/components/schemas/MessageQuote'
+                    description: The message this one answers, resolved. Null on an ordinary message.
+                    nullable: true
                 sender_id:
                     allOf:
                         - $ref: '#/components/schemas/AccountID'
@@ -365,11 +370,62 @@ components:
                 - created_at
                 - edited_at
                 - deleted_at
+                - reply_to
             type: object
         MessageID:
             example: msg_agnc1pe4pjb4k
             pattern: ^msg_[0-9a-hjkmnp-tv-z]{13}$
             type: string
+        MessageQuote:
+            description: |
+                The little of a message a reply has to show above itself.
+                Resolved when the thread is read, never copied at send time — the same rule an offer card follows by storing only `offer_id`. A snapshot would keep the sender's original words in every reply to it after an edit, and would go on showing them after a redaction, which is the one thing unsending is for.
+            properties:
+                attachments:
+                    description: |
+                        How many files it carried, so a quote of four photos says four instead of looking like an empty message.
+                    example: 0
+                    format: int32
+                    maximum: 10
+                    minimum: 0
+                    type: integer
+                created_at:
+                    description: The quoted message's own instant — what a client needs to jump to it.
+                    example: "2026-08-03T11:14:51Z"
+                    format: date-time
+                    type: string
+                from_support:
+                    description: True when the quoted message is a reply the support desk wrote.
+                    example: false
+                    type: boolean
+                id:
+                    description: Opaque id of the quoted message.
+                    example: msg_2h9qk4mfx7bd3
+                    type: string
+                preview:
+                    description: |
+                        The opening of what it said, cut to 120 characters on a rune boundary. Empty on a redacted one and on one that carried only files.
+                    example: cái áo xanh còn không?
+                    type: string
+                redacted:
+                    description: Set when the quoted message has since been unsent.
+                    example: false
+                    type: boolean
+                sender_id:
+                    allOf:
+                        - $ref: '#/components/schemas/AccountID'
+                    description: |
+                        Null on a system message and on a support reply seen by the requester — the same masking the quoted message itself gets, because a quote is a projection of it.
+                    nullable: true
+            required:
+                - id
+                - created_at
+                - sender_id
+                - from_support
+                - preview
+                - attachments
+                - redacted
+            type: object
         MessageType:
             description: |
                 A `system` message is produced by the backend — an offer was accepted, an order shipped — and belongs to no participant, which is why it has no sender.
@@ -378,28 +434,46 @@ components:
                 - system
             type: string
         Notification:
+            description: |
+                A feed row as it is drawn: already written, in the reader's language, with the page it opens resolved. There is no payload — the server renders the stored facts, so a client never probes a free-form object for a body that may not be there.
             properties:
+                body:
+                    description: The one supporting line, empty for a fact that needs none.
+                    example: Đơn ord_2h9qk4mfx7bd3 · 250.000 ₫. Người bán đang chuẩn bị hàng.
+                    type: string
                 category:
                     $ref: '#/components/schemas/NotificationCategory'
                 created_at:
                     description: |
-                        Identifies the row together with the feed order, and it is what `POST /notifications/read` is given a bound against.
+                        The feed order, and the bound `POST /notifications/read` takes to clear everything the reader has scrolled past.
                     format: date-time
                     type: string
-                payload:
-                    additionalProperties: true
-                    description: Structured content such as deep links and images.
-                    type: object
+                href:
+                    description: |
+                        The in-app path this notification opens, empty when it opens nothing. A row with nowhere to go is still worth reading and still dismissible.
+                    example: /account/orders/ord_2h9qk4mfx7bd3
+                    type: string
+                id:
+                    $ref: '#/components/schemas/NotificationID'
+                kind:
+                    description: |
+                        What happened, kebab-case. Not an enum: the vocabulary grows with every fact the platform learns to tell somebody, and a client renders by `category` — `kind` is for a client that wants to special-case one row, and for support reading a log.
+                    example: order-placed
+                    type: string
                 read_at:
                     format: date-time
                     nullable: true
                     type: string
                 title:
+                    example: Đặt hàng thành công
                     type: string
             required:
+                - id
+                - kind
                 - category
                 - title
-                - payload
+                - body
+                - href
                 - read_at
                 - created_at
             type: object
@@ -411,6 +485,10 @@ components:
                 - system
                 - chat
                 - social
+            type: string
+        NotificationID:
+            example: ntf_01380p4vjjzc0
+            pattern: ^ntf_[0-9a-hjkmnp-tv-z]{13}$
             type: string
         Offer:
             properties:

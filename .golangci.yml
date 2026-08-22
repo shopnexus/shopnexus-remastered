@@ -3,11 +3,21 @@
 # argued for below, never a warning somebody learns to scroll past.
 version: "2"
 
-# KNOWN GAP, and it is the toolchain's, not this config's: golangci-lint refuses to run when its
-# own build targets an older Go than go.mod does, and no release targets 1.27 until 1.27 is final.
-# Forcing `run.go: "1.26"` past the refusal does not work either — its bundled go/types then
-# crashes loading encoding/json/v2 from the 1.27 stdlib source. So until a golangci-lint built
-# with 1.27 ships, `go vet ./...` is the gate that actually runs. Nothing to change here.
+# RUNNING IT ON GO 1.27: build the linter with the toolchain this module already uses, rather
+# than with whatever Go the distro packaged it against.
+#
+#   GOTOOLCHAIN=go1.27rc2 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+#
+# That is the whole fix, and it is not the one an earlier note here predicted. Two walls, in
+# order: golangci-lint refuses outright when its own build targets an older Go than go.mod
+# (a distro binary built with 1.26), and building it with 1.27 clears that. Behind it, the
+# staticcheck bundled in 2.12.x panics building IR for 1.27 syntax — `unexpected expr:
+# *ast.KeyValueExpr`, which is the `new(expr)` builtin this codebase uses everywhere — so
+# 2.12.2 gets through the version check and then dies on the first package. 2.13.0 bundles a
+# staticcheck that handles it, and the full standard set runs clean.
+#
+# Forcing `run.go: "1.26"` is still not a way past either wall: the bundled go/types then
+# crashes loading encoding/json/v2 from the 1.27 stdlib source.
 linters:
   default: standard # errcheck, govet, ineffassign, staticcheck, unused
 

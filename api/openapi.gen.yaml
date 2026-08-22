@@ -871,18 +871,22 @@ components:
                     maxLength: 20
                     type: string
                 province_code:
+                    description: A province code from /administrative-areas. It and the ward code must name a real pair, or the request is 400.
                     maxLength: 20
                     minLength: 1
                     type: string
                 province_name:
+                    description: 'Ignored: the name is resolved from the code against /administrative-areas, so two addresses with one code cannot disagree. Still required, so a client that has the name need not look it up to send a valid body.'
                     maxLength: 100
                     minLength: 1
                     type: string
                 ward_code:
+                    description: A ward code from /administrative-areas, under the province named above.
                     maxLength: 20
                     minLength: 1
                     type: string
                 ward_name:
+                    description: 'Ignored: the name is resolved from the code against /administrative-areas, so two addresses with one code cannot disagree. Still required, so a client that has the name need not look it up to send a valid body.'
                     maxLength: 100
                     minLength: 1
                     type: string
@@ -991,6 +995,8 @@ components:
                     maxLength: 500
                     type: string
                 total:
+                    description: |
+                        The whole proposal, not a unit price, and strictly below the variant's listed price times `quantity` — see the route description for why the boundary is exclusive.
                     example: 598000
                     format: int64
                     minimum: 1
@@ -1782,6 +1788,95 @@ components:
                 - created_at
                 - deleted_at
             type: object
+        ListingHistoryCode:
+            description: |
+                The business fact recorded. Stored values, so they are the vocabulary the trail was written in rather than one chosen for the wire — which is also why they are `snake_case` after the dot while every other enum here is kebab: the family predates that rule and rewriting a code would rewrite how existing history reads.
+
+                `listing.edit` and `listing.edit_submitted` are the same change under different circumstances: the first was written straight through, the second was held for a moderator because buyers were already looking at the listing.
+            enum:
+                - listing.create
+                - listing.edit
+                - listing.edit_submitted
+                - listing.publish
+                - listing.approve
+                - listing.takedown
+                - listing.hide
+                - listing.variant_added
+                - listing.variant_edited
+                - listing.variant_removed
+                - listing.delete
+            example: listing.takedown
+            type: string
+        ListingHistoryEntry:
+            description: |
+                One change the listing has been through. What the trail stored beside this — a snapshot of the whole row as it then was — is deliberately not published: a client rendering it would be reading a shape the database is free to change.
+            properties:
+                actor:
+                    allOf:
+                        - $ref: '#/components/schemas/AccountSummary'
+                    description: The account responsible, and null when there is none to show — a `system` change, or a moderator's read by anyone but staff.
+                    nullable: true
+                actor_kind:
+                    description: |
+                        Who was behind the change. `system` is one no account is responsible for — a scheduled job, a vendor callback. `staff` is a moderator, and stays just that word to a seller.
+                    enum:
+                        - seller
+                        - staff
+                        - system
+                    type: string
+                change_type:
+                    enum:
+                        - insert
+                        - update
+                        - delete
+                    type: string
+                changed_at:
+                    format: date-time
+                    type: string
+                code:
+                    $ref: '#/components/schemas/ListingHistoryCode'
+                details:
+                    additionalProperties: true
+                    description: 'The rest of what was recorded: the status it reached, the variant it was about, and — for staff only — the words a moderator wrote.'
+                    example:
+                        reason: Counterfeit branding on the photos.
+                        status: hidden
+                    type: object
+                fields:
+                    description: What an edit touched, in the listing's own field names. Empty for a fact that names none.
+                    example:
+                        - name
+                        - description
+                    items:
+                        type: string
+                    type: array
+                version:
+                    description: The trail's counter for this listing. 1 is its creation, and it never repeats.
+                    example: 4
+                    format: int64
+                    type: integer
+            required:
+                - version
+                - code
+                - change_type
+                - changed_at
+                - actor_kind
+                - actor
+                - fields
+                - details
+            type: object
+        ListingHistoryPage:
+            properties:
+                data:
+                    items:
+                        $ref: '#/components/schemas/ListingHistoryEntry'
+                    type: array
+                meta:
+                    $ref: '#/components/schemas/PageMeta'
+            required:
+                - data
+                - meta
+            type: object
         ListingID:
             example: lst_5y5w68r4918v8
             pattern: ^lst_[0-9a-hjkmnp-tv-z]{13}$
@@ -1981,9 +2076,16 @@ components:
             properties:
                 before:
                     description: |
-                        Mark everything created at or before this instant read. Omit to mark the whole feed read.
+                        Mark everything created at or before this instant read. Send neither field to mark the whole feed read.
                     format: date-time
                     type: string
+                ids:
+                    description: |
+                        Mark exactly these rows read. Capped because the statement has no time bound and so visits every chunk in the retention window; a reader never opens more than a screenful.
+                    items:
+                        $ref: '#/components/schemas/NotificationID'
+                    maxItems: 100
+                    type: array
             type: object
         Me:
             description: The caller's own view. Everything here is private to them.
@@ -2071,6 +2173,11 @@ components:
                     description: |
                         What the sender pointed at — a listing, a variant, an order. Client-supplied and validated against the caller's own access to each id, so it can carry a reference but never assert anything about it.
                     type: object
+                reply_to:
+                    allOf:
+                        - $ref: '#/components/schemas/MessageQuote'
+                    description: The message this one answers, resolved. Null on an ordinary message.
+                    nullable: true
                 sender_id:
                     allOf:
                         - $ref: '#/components/schemas/AccountID'
@@ -2092,6 +2199,7 @@ components:
                 - created_at
                 - edited_at
                 - deleted_at
+                - reply_to
             type: object
         MessageID:
             example: msg_agnc1pe4pjb4k
@@ -2108,6 +2216,74 @@ components:
             required:
                 - data
                 - meta
+            type: object
+        MessageQuote:
+            description: |
+                The little of a message a reply has to show above itself.
+                Resolved when the thread is read, never copied at send time — the same rule an offer card follows by storing only `offer_id`. A snapshot would keep the sender's original words in every reply to it after an edit, and would go on showing them after a redaction, which is the one thing unsending is for.
+            properties:
+                attachments:
+                    description: |
+                        How many files it carried, so a quote of four photos says four instead of looking like an empty message.
+                    example: 0
+                    format: int32
+                    maximum: 10
+                    minimum: 0
+                    type: integer
+                created_at:
+                    description: The quoted message's own instant — what a client needs to jump to it.
+                    example: "2026-08-03T11:14:51Z"
+                    format: date-time
+                    type: string
+                from_support:
+                    description: True when the quoted message is a reply the support desk wrote.
+                    example: false
+                    type: boolean
+                id:
+                    description: Opaque id of the quoted message.
+                    example: msg_2h9qk4mfx7bd3
+                    type: string
+                preview:
+                    description: |
+                        The opening of what it said, cut to 120 characters on a rune boundary. Empty on a redacted one and on one that carried only files.
+                    example: cái áo xanh còn không?
+                    type: string
+                redacted:
+                    description: Set when the quoted message has since been unsent.
+                    example: false
+                    type: boolean
+                sender_id:
+                    allOf:
+                        - $ref: '#/components/schemas/AccountID'
+                    description: |
+                        Null on a system message and on a support reply seen by the requester — the same masking the quoted message itself gets, because a quote is a projection of it.
+                    nullable: true
+            required:
+                - id
+                - created_at
+                - sender_id
+                - from_support
+                - preview
+                - attachments
+                - redacted
+            type: object
+        MessageReplyRef:
+            description: |
+                Names the message a reply answers.
+                The instant travels with the id because `message` is a hypertable whose primary key is (id, created_at): it is what makes resolving the quote a point lookup in one chunk rather than a scan of every chunk. A client always has it — it is on the message being replied to — which is the same reason the edit and redact routes take it.
+            properties:
+                created_at:
+                    description: That message's own instant, passed back unchanged.
+                    example: "2026-08-03T11:14:51Z"
+                    format: date-time
+                    type: string
+                id:
+                    description: Opaque id of the message being answered.
+                    example: msg_2h9qk4mfx7bd3
+                    type: string
+            required:
+                - id
+                - created_at
             type: object
         MessageType:
             description: |
@@ -2137,28 +2313,46 @@ components:
                 - amount
             type: object
         Notification:
+            description: |
+                A feed row as it is drawn: already written, in the reader's language, with the page it opens resolved. There is no payload — the server renders the stored facts, so a client never probes a free-form object for a body that may not be there.
             properties:
+                body:
+                    description: The one supporting line, empty for a fact that needs none.
+                    example: Đơn ord_2h9qk4mfx7bd3 · 250.000 ₫. Người bán đang chuẩn bị hàng.
+                    type: string
                 category:
                     $ref: '#/components/schemas/NotificationCategory'
                 created_at:
                     description: |
-                        Identifies the row together with the feed order, and it is what `POST /notifications/read` is given a bound against.
+                        The feed order, and the bound `POST /notifications/read` takes to clear everything the reader has scrolled past.
                     format: date-time
                     type: string
-                payload:
-                    additionalProperties: true
-                    description: Structured content such as deep links and images.
-                    type: object
+                href:
+                    description: |
+                        The in-app path this notification opens, empty when it opens nothing. A row with nowhere to go is still worth reading and still dismissible.
+                    example: /account/orders/ord_2h9qk4mfx7bd3
+                    type: string
+                id:
+                    $ref: '#/components/schemas/NotificationID'
+                kind:
+                    description: |
+                        What happened, kebab-case. Not an enum: the vocabulary grows with every fact the platform learns to tell somebody, and a client renders by `category` — `kind` is for a client that wants to special-case one row, and for support reading a log.
+                    example: order-placed
+                    type: string
                 read_at:
                     format: date-time
                     nullable: true
                     type: string
                 title:
+                    example: Đặt hàng thành công
                     type: string
             required:
+                - id
+                - kind
                 - category
                 - title
-                - payload
+                - body
+                - href
                 - read_at
                 - created_at
             type: object
@@ -2177,6 +2371,10 @@ components:
                 - push
                 - email
                 - sms
+            type: string
+        NotificationID:
+            example: ntf_01380p4vjjzc0
+            pattern: ^ntf_[0-9a-hjkmnp-tv-z]{13}$
             type: string
         NotificationPage:
             properties:
@@ -2672,6 +2870,55 @@ components:
                 - theirs_submitted
                 - reveal_at
             type: object
+        OrderHistoryEntry:
+            description: One thing that happened to an order. The stored row snapshot is deliberately not exposed.
+            properties:
+                actor_kind:
+                    description: |
+                        Which side was behind it, derived from the fact rather than stored — only a seller confirms, only a carrier moves a parcel.
+                    enum:
+                        - buyer
+                        - seller
+                        - carrier
+                        - system
+                    example: seller
+                    type: string
+                changed_at:
+                    format: date-time
+                    type: string
+                code:
+                    description: |
+                        Which fact this is. One of `order.placed`, `order.confirmed`, `order.declined`, `order.confirmation_escalated`, `order.shipment_advanced`, `order.received`, `order.cancelled`, `order.completed`, `order.payout_released`.
+                    example: order.confirmed
+                    type: string
+                evidence:
+                    description: How many photos were filed with a receipt. Zero otherwise.
+                    example: 2
+                    minimum: 0
+                    type: integer
+                reason:
+                    description: The seller's own words on a refusal. Empty for every other fact.
+                    example: Hết hàng
+                    type: string
+                shipment_status:
+                    description: Where the parcel got to. Empty unless this entry is a shipment move.
+                    example: in-transit
+                    type: string
+                version:
+                    description: The trail's own counter for this order, so it is also the entry's key.
+                    example: 3
+                    format: int64
+                    minimum: 1
+                    type: integer
+            required:
+                - version
+                - code
+                - changed_at
+                - actor_kind
+                - reason
+                - shipment_status
+                - evidence
+            type: object
         OrderID:
             example: ord_fv2cpg50vkrfp
             pattern: ^ord_[0-9a-hjkmnp-tv-z]{13}$
@@ -3155,6 +3402,22 @@ components:
                     maxLength: 255
                     type: string
             type: object
+        RatingBucket:
+            description: How many reviews gave one star rating.
+            properties:
+                count:
+                    example: 40
+                    format: int64
+                    minimum: 0
+                    type: integer
+                rating:
+                    maximum: 5
+                    minimum: 1
+                    type: integer
+            required:
+                - rating
+                - count
+            type: object
         RefreshRequest:
             properties:
                 refresh_token:
@@ -3563,6 +3826,43 @@ components:
             example: rpl_mfx7bd32h9qk4
             pattern: ^rpl_[0-9a-hjkmnp-tv-z]{13}$
             type: string
+        ReviewSummary:
+            properties:
+                breakdown:
+                    description: |
+                        Always five buckets, five stars first, zeros included. A rating with no one-star reviews still has a one-star row: a client that has to invent the missing ones cannot draw the same chart twice.
+                    items:
+                        $ref: '#/components/schemas/RatingBucket'
+                    maxItems: 5
+                    minItems: 5
+                    type: array
+                listing_id:
+                    $ref: '#/components/schemas/ListingID'
+                rating:
+                    example: 4.6
+                    format: double
+                    maximum: 5
+                    minimum: 0
+                    type: number
+                review_count:
+                    example: 64
+                    format: int64
+                    minimum: 0
+                    type: integer
+                with_media_count:
+                    description: |
+                        How many carry at least one attachment — the count beside the "with photos" filter, which the list route takes as `media=true`.
+                    example: 9
+                    format: int64
+                    minimum: 0
+                    type: integer
+            required:
+                - listing_id
+                - rating
+                - review_count
+                - with_media_count
+                - breakdown
+            type: object
         ReviewVoteTally:
             description: |
                 Counters on the review, not a count of `review_vote` rows per request — that is what lets `sort=helpful` be an index scan. Flipping a vote moves one unit between the two totals, so both sides have to change in the same transaction as the vote row itself; a tally that has drifted from the rows it summarises is recomputable, but a half-applied flip is visible.
@@ -3640,6 +3940,97 @@ components:
                     description: |
                         References to point at, each checked against the caller's access to it. There is no way to set `card` from here: a system payload is the backend's to write.
                     type: object
+                reply_to:
+                    allOf:
+                        - $ref: '#/components/schemas/MessageReplyRef'
+                    description: |
+                        The message being answered, and absent on an ordinary one. It has to be in this same conversation: the quote carries a preview of what was said, so answering a message from elsewhere would read another thread out through this one. `422 reply_outside_thread` when it is not, `404` when it names nothing.
+                    nullable: true
+            type: object
+        Shelf:
+            properties:
+                browse:
+                    $ref: '#/components/schemas/ShelfBrowse'
+                key:
+                    description: |
+                        Unique within the response. A reason can occur more than once — four interest slots — so a client needs one stable handle per row rather than per reason.
+                    example: interest:0
+                    type: string
+                listings:
+                    description: At least three, or the shelf is not returned at all.
+                    items:
+                        $ref: '#/components/schemas/Listing'
+                    minItems: 3
+                    type: array
+                reason:
+                    $ref: '#/components/schemas/ShelfReason'
+                subject:
+                    allOf:
+                        - $ref: '#/components/schemas/ShelfSubject'
+                    nullable: true
+            required:
+                - key
+                - reason
+                - subject
+                - browse
+                - listings
+            type: object
+        ShelfBrowse:
+            description: |
+                The search that widens this shelf into a whole page — what a "see all" link asks for. Sent as parameters rather than as a URL: the client owns its own routes, and a server writing them would be writing the client's router. Every field is nullable and only the ones that apply are set.
+            properties:
+                category_id:
+                    allOf:
+                        - $ref: '#/components/schemas/CategoryID'
+                    nullable: true
+                similar_to:
+                    allOf:
+                        - $ref: '#/components/schemas/ListingID'
+                    nullable: true
+                sort:
+                    description: Empty when the shelf's own ranking is not a `sort` a client can ask for.
+                    example: newest
+                    nullable: true
+                    type: string
+            required:
+                - sort
+                - category_id
+                - similar_to
+            type: object
+        ShelfReason:
+            description: |
+                Why the shelf is on the page.
+
+                `interest` is one of the account's four interest slots, shown apart instead of blended into `sort=recommended`; its subject is the category nearest that slot. `because-you-viewed` is the neighbourhood of the last listing the shopper opened. The rest are the marketplace's own orderings and are about nobody in particular.
+            enum:
+                - interest
+                - because-you-viewed
+                - trending
+                - best-selling
+                - top-rated
+                - newest
+            example: interest
+            type: string
+        ShelfSubject:
+            description: |
+                What the reason is *about*, and null on a reason that is about nothing in particular — what is trending is trending for everyone.
+            properties:
+                id:
+                    example: cat_7k2m9x4bqn1ds
+                    type: string
+                kind:
+                    description: Fixes what `id` is.
+                    enum:
+                        - listing
+                        - category
+                    type: string
+                name:
+                    example: Điện thoại
+                    type: string
+            required:
+                - kind
+                - id
+                - name
             type: object
         ShippingQuote:
             properties:
@@ -4292,7 +4683,23 @@ components:
                 - cancelled
             type: string
         UnreadCount:
+            description: |
+                The badge and the breakdown behind it, from one query — so the number on the bell and the number beside each filter cannot disagree.
             properties:
+                by_category:
+                    additionalProperties:
+                        format: int64
+                        minimum: 0
+                        type: integer
+                    description: |
+                        Every category, zeros included: a client renders a fixed set of filters and must not have to know which of them the server considers empty.
+                    example:
+                        chat: 0
+                        order: 2
+                        promotion: 0
+                        social: 0
+                        system: 1
+                    type: object
                 unread:
                     example: 3
                     format: int64
@@ -4300,6 +4707,7 @@ components:
                     type: integer
             required:
                 - unread
+                - by_category
             type: object
         UpdateAccountRequest:
             description: Every field optional. Omit one to leave it alone, send a value to replace it, send its `clear_*` flag to remove it — which is refused when it is the last identifier (422 `no_identifier`).
@@ -4444,7 +4852,8 @@ components:
                     maxLength: 20
                     type: string
                 province_name:
-                    example: TP Hồ Chí Minh
+                    description: 'Ignored: the name is resolved from the code against /administrative-areas, so two addresses with one code cannot disagree.'
+                    example: Thành phố Hồ Chí Minh
                     maxLength: 100
                     type: string
                 ward_code:
@@ -4452,7 +4861,8 @@ components:
                     maxLength: 20
                     type: string
                 ward_name:
-                    example: Bến Nghé
+                    description: 'Ignored: the name is resolved from the code against /administrative-areas, so two addresses with one code cannot disagree.'
+                    example: Phường Tân Định
                     maxLength: 100
                     type: string
             type: object
@@ -4465,10 +4875,6 @@ components:
                     type: array
                 category_id:
                     $ref: '#/components/schemas/CategoryID'
-                clear_featured_variant_id:
-                    description: Leaves the listing with no featured variant; the card then shows the cheapest one.
-                    example: false
-                    type: boolean
                 condition:
                     $ref: '#/components/schemas/ListingCondition'
                 description:
@@ -4531,6 +4937,8 @@ components:
                     maxLength: 500
                     type: string
                 total:
+                    description: |
+                        The whole proposal, not a unit price, and strictly below the variant's listed price times `quantity` — see the route description for why the boundary is exclusive.
                     example: 598000
                     format: int64
                     minimum: 1
@@ -4615,7 +5023,7 @@ components:
                     type: object
                 is_featured:
                     description: |
-                        True moves the card's variant to this one. False is ignored: which variant is featured is cleared through `clear_featured_variant_id` on the listing, so there is one way to spell it.
+                        True moves the card's variant to this one. False is ignored: exactly one variant is featured at all times, so the flag is moved rather than dropped.
                     example: true
                     type: boolean
                 package_details:
@@ -5098,6 +5506,9 @@ paths:
                     description: OK
                 "404":
                     $ref: '#/components/responses/NotFound'
+            security:
+                - {}
+                - bearerAuth: []
             summary: Read another account's public profile
             tags:
                 - account
@@ -7726,6 +8137,16 @@ paths:
                   name: seller_id
                   schema:
                     $ref: '#/components/schemas/AccountID'
+                - description: |
+                    "More like this one": rank by that listing's own stored embedding. The listing itself is excluded — its vector is its own nearest neighbour — and one that the embedding pass has not reached yet degrades to the newest of the catalogue rather than answering nothing.
+
+                    Cheaper as well as more accurate than the text search it replaces. Spelling this as `q=<the listing's name>` ran the whole query-understanding stage, model call included, once per page view, to rediscover a vector that was already in the database — and ranked by the *words* of the title, which puts a phone case beside a phone.
+
+                    It is a ranking, so it cannot share a request with another one: not with `q`, not with a `sort` other than `relevance`, and not with `mine` or `favorited`, which are sets the caller already chose.
+                  in: query
+                  name: similar_to
+                  schema:
+                    $ref: '#/components/schemas/ListingID'
                 - in: query
                   name: condition
                   schema:
@@ -8024,6 +8445,39 @@ paths:
             summary: Edit a listing
             tags:
                 - catalog
+    /listings/{id}/history:
+        get:
+            description: |
+                The listing's own trail, newest first: it being posted, every edit, every publication, and every decision staff made about it. `version` is the trail's counter for this listing — 1 is its creation — and it never repeats.
+
+                Two readers, one route: the seller who owns the listing, and staff. They are not answered the same rows. A moderator is `staff` to a seller and nothing more — `actor` is null and only staff read the account behind it — and the words moderators write for each other stay theirs: a takedown's full reason is answered to the seller only when the moderator chose to notify them (the same choice `takedown_reason` on the listing reflects), and an approval note never is.
+
+                An edit names the fields it touched rather than their values. The values are the listing, and a second copy of them in the trail is one that can drift from it.
+            parameters:
+                - description: The opaque id. History addresses the listing, never its public slug.
+                  in: path
+                  name: id
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/ListingID'
+                - $ref: '#/components/parameters/Page'
+                - $ref: '#/components/parameters/Limit'
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListingHistoryPage'
+                    description: OK
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+            security:
+                - bearerAuth: []
+            summary: What has happened to this listing
+            tags:
+                - catalog
     /listings/{id}/publication:
         delete:
             description: |
@@ -8168,6 +8622,12 @@ paths:
                     maximum: 5
                     minimum: 1
                     type: integer
+                - description: |
+                    Only reviews that came with a photo or a video. How many those are is `with_media_count` on the summary, so the filter can be offered with its count rather than as a chip nobody can size.
+                  in: query
+                  name: media
+                  schema:
+                    type: boolean
                 - description: '`helpful` reads the stored tally; see the note above about paging it.'
                   in: query
                   name: sort
@@ -8190,6 +8650,9 @@ paths:
                     $ref: '#/components/responses/BadRequest'
                 "404":
                     $ref: '#/components/responses/NotFound'
+            security:
+                - {}
+                - bearerAuth: []
             summary: Reviews of a listing
             tags:
                 - trust
@@ -8249,6 +8712,38 @@ paths:
             summary: Review a listing you bought
             tags:
                 - trust
+    /listings/{listingID}/reviews/summary:
+        get:
+            description: |
+                Public. The average and the count are on the listing already — catalog caches them — and what only this answers is the shape behind them: how many reviews sit at each of the five stars, and how many came with a photo.
+
+                Those are one read of one listing's reviews here and five reads of the review list anywhere else, which is why the product page's star histogram used to be four numbers nobody sent.
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ReviewSummary'
+                                required:
+                                    - data
+                                type: object
+                    description: OK
+                "404":
+                    $ref: '#/components/responses/NotFound'
+            security:
+                - {}
+                - bearerAuth: []
+            summary: A listing's rating distribution
+            tags:
+                - trust
+        parameters:
+            - in: path
+              name: listingID
+              required: true
+              schema:
+                $ref: '#/components/schemas/ListingID'
     /listings/interactions:
         post:
             description: |
@@ -8294,6 +8789,52 @@ paths:
                 - {}
                 - bearerAuth: []
             summary: Record a batch of shopper actions against listings
+            tags:
+                - catalog
+    /listings/shelves:
+        get:
+            description: |
+                Several short rows instead of one ranked page, each carrying the reason it is on the page: what you looked at last, one row per taste the account's behaviour points at, and what the marketplace as a whole is doing.
+
+                Composed here rather than by the client because the interesting half cannot be composed anywhere else. A personalised feed ranks against four **interest slots** — directions in embedding space, recomputed from what the account saved and clicked — and `sort=recommended` *blends* them, so a reader gets one page and no way to tell which of their tastes produced which card. Each slot is a row here, named by the category nearest its vector, which is the only honest label a vector has. The slots themselves are not published and will not be.
+
+                Nothing is invented for this. A slot's row is the personalised feed handed one interest instead of four — the same retrieval, restricted — and the naming is the ranking `GET /categories?near=` already answers with.
+
+                Titles are not sent. `reason` and `subject` are, and the sentence is the client's — every other enum on this API is localised there, and a title from the server would be the one string a second language could not translate.
+
+                A listing appears on at most one shelf: rows are built in the order they are returned and each excludes what the rows above it already showed, because "vì bạn đã xem" and "đang là xu hướng" showing the same twelve cards is one row wearing two headings. A row that comes back with fewer than three listings is dropped rather than rendered — a rail of two cards reads as a failed request. Both are why the response is a list of whatever the page turned out to have, not a fixed set a client can index into.
+
+                Anonymous is a shorter page, not an error: there is no account to have interests, so only the marketplace's own rows come back.
+            parameters:
+                - description: |
+                    Cards per shelf, not for the response. How many shelves there are is the server's answer rather than the client's request.
+                  in: query
+                  name: limit
+                  schema:
+                    default: 12
+                    maximum: 30
+                    minimum: 1
+                    type: integer
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        items:
+                                            $ref: '#/components/schemas/Shelf'
+                                        type: array
+                                required:
+                                    - data
+                                type: object
+                    description: 'OK — in the order the page should be read: what is about the reader first, then what is about the marketplace.'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+            security:
+                - {}
+                - bearerAuth: []
+            summary: The home page, as shelves
             tags:
                 - catalog
     /listings/suggestions:
@@ -8978,7 +9519,7 @@ paths:
     /notifications/read:
         post:
             description: |
-                Takes a time bound rather than a list of ids. Marking individual rows by id would have to search every chunk of a time-partitioned table; a bound reads one range. Omit `before` to mark everything read.
+                Send `ids` to mark exactly those rows read, `before` to mark everything up to an instant, or an empty body to mark the whole feed. The two fields are refused together: "these three, and also everything from last Tuesday" is a client sending a stale bound beside a fresh click, not something a reader asked for.
             requestBody:
                 content:
                     application/json:
@@ -9003,7 +9544,7 @@ paths:
                     $ref: '#/components/responses/Unauthorized'
             security:
                 - bearerAuth: []
-            summary: Mark notifications read up to a point in time
+            summary: Mark notifications read
             tags:
                 - account
     /notifications/unread-count:
@@ -9059,7 +9600,7 @@ paths:
             description: |
                 The buyer opens it, from the listing page: a seller has nobody to propose to on their own listing, so they answer rather than start. One active negotiation per (buyer, variant); the terms are then revised in place rather than by stacking rows, and each revision posts a card into the pair's chat thread.
 
-                `total` may not exceed the variant's listed price for that `quantity`. Negotiation only moves the price down: the asking price is already an offer to sell at it, so terms above it are a proposal with no reason to exist — the buyer would simply buy.
+                `total` has to be **strictly below** the variant's listed price for that `quantity`. Negotiation only moves the price down, and it has to actually move: the asking price is already an offer to sell at it, takeable by pressing buy, so terms at or above it are a proposal with no reason to exist. Landing exactly on the asking price is the case worth naming — it is refused, because it costs both sides two round trips (the other party accepts, then the buyer has thirty minutes to check out) to reach a price that was one press away.
             requestBody:
                 content:
                     application/json:
@@ -9101,7 +9642,7 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Error'
-                    description: '`total` is above the listed price for that `quantity`, or the listing is not negotiable'
+                    description: '`total` is at or above the listed price for that `quantity`, or the listing is not negotiable'
             security:
                 - bearerAuth: []
             summary: Open a price negotiation on a variant
@@ -9205,7 +9746,7 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Error'
-                    description: '`total` is above the listed price for that `quantity`'
+                    description: '`total` is at or above the listed price for that `quantity`'
             security:
                 - bearerAuth: []
             summary: Counter-offer
@@ -9560,6 +10101,39 @@ paths:
             security:
                 - bearerAuth: []
             summary: Refuse a paid order (seller)
+            tags:
+                - order
+    /orders/{id}/history:
+        get:
+            description: |
+                The order's trail, newest first: one entry per transition and one per carrier checkpoint. Unpaged — an order collects a dozen entries, and the route caps what it answers rather than taking a page. Readable by the two parties; anybody else gets the same 404 the order itself gives.
+            parameters:
+                - in: path
+                  name: id
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/OrderID'
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        items:
+                                            $ref: '#/components/schemas/OrderHistoryEntry'
+                                        type: array
+                                required:
+                                    - data
+                                type: object
+                    description: OK
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+            security:
+                - bearerAuth: []
+            summary: What has happened to this order
             tags:
                 - order
     /orders/{id}/receipt:
@@ -10608,6 +11182,9 @@ paths:
                     description: OK
                 "404":
                     $ref: '#/components/responses/NotFound'
+            security:
+                - {}
+                - bearerAuth: []
             summary: Read a review
             tags:
                 - trust
