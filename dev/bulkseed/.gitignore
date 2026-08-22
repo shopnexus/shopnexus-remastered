@@ -1,0 +1,9 @@
+# Crawler output and generated load files: megabytes of derived data that
+# crawl_tiki.py and generate.py rebuild from scratch.
+vocab.json
+vocab.json.tmp
+out/
+proxies.txt
+photos/
+photos_manifest.json
+last-run.log

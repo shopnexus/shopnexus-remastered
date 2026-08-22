@@ -156,12 +156,11 @@ type refundPlan struct {
 	createdAt time.Time
 }
 
-// threadPlan is one conversation and its messages. Direct threads are one per pair of
-// accounts; a ticket thread is created beside its ticket and pairs the requester with the
-// support desk.
+// threadPlan is one direct conversation and its messages, one per pair of accounts. A ticket
+// thread is not planned here: it is created from `tickets` beside the ticket row itself, which
+// is where the requester and the support desk are already paired.
 type threadPlan struct {
 	a, b     string // account keys, unordered — the writer sorts them by id
-	ticket   string // ticket key; empty on a direct thread
 	messages []messagePlan
 }
 
@@ -430,11 +429,4 @@ func (p *plan) offer(key string) (*offerPlan, bool) {
 		}
 	}
 	return nil, false
-}
-
-func minTime(a, b time.Time) time.Time {
-	if a.Before(b) {
-		return a
-	}
-	return b
 }

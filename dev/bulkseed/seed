@@ -1,0 +1,440 @@
+#!/usr/bin/env python3
+"""bulkseed — build a large, evenly spread catalogue from nothing.
+
+One entry point, so setting this up on a fresh machine is a command rather than a folder of
+numbered scripts run in an order somebody has to remember:
+
+    ./seed status                    # what exists already
+    ./seed all --total 1000000       # everything, skipping whatever is done
+
+    ./seed categories                # merge duplicate categories, build the two-level tree
+    ./seed crawl                     # harvest product names -> vocab.json
+    ./seed photos                    # download each product's photograph
+    ./seed photos --install          # ... and put it in the object store
+    ./seed load --total 1000000      # generate and load, in steps
+    ./seed embed --per-leaf 2941     # queue a bounded subset for the indexer
+    ./seed wipe --yes                # remove everything this tool wrote
+
+Every step is idempotent or skippable, and `all` checks before doing: run it twice and the
+second run loads nothing. That is the property that makes this safe to point at a new server —
+the failure mode of a folder of scripts is not that one breaks, it is that somebody runs 03
+before 02 and finds out an hour later.
+"""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib import paths
+
+
+# ------------------------------------------------------------------------------ the database
+
+def pg_env():
+    """Connection settings for psql, host-side against the published port.
+
+    Host psql and not psql inside the container: `\\copy` reads the file on the client side and
+    the TSVs are on the host. Overridable, because a different deployment publishes elsewhere.
+    """
+    env = dict(os.environ)
+    env.setdefault("PGHOST", "localhost")
+    env.setdefault("PGPORT", "5002")
+    env.setdefault("PGUSER", "app")
+    env.setdefault("PGPASSWORD", "app")
+    env.setdefault("PGDATABASE", "shopnexus")
+    return env
+
+
+def psql(*args, cwd=None, check=True, quiet=False):
+    cmd = ["psql", "-v", "ON_ERROR_STOP=1"] + (["-q"] if quiet else []) + list(args)
+    return subprocess.run(cmd, cwd=cwd, env=pg_env(), check=check)
+
+
+def scalar(sql):
+    p = subprocess.run(["psql", "-tAqc", sql], env=pg_env(), capture_output=True, text=True)
+    if p.returncode != 0:
+        return None
+    return p.stdout.strip()
+
+
+def rows(sql):
+    p = subprocess.run(["psql", "-tAq", "-F", "\t", "-c", sql], env=pg_env(),
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        sys.exit(f"psql failed:\n{p.stderr.strip()}")
+    return [ln.split("\t") for ln in p.stdout.strip().split("\n") if ln]
+
+
+# --------------------------------------------------------------------------------- the steps
+
+def step_categories(args):
+    """The tree. Idempotent: every statement is conditioned on the state it creates."""
+    print("== categories: merging duplicates and building the tree", file=sys.stderr)
+    psql("-f", str(paths.SQL / "categories.sql"), quiet=True)
+    leaves = scalar("SELECT count(*) FROM catalog.category WHERE parent_id IS NOT NULL")
+    roots = scalar("SELECT count(*) FROM catalog.category WHERE parent_id IS NULL")
+    print(f"   {roots} roots, {leaves} leaves", file=sys.stderr)
+    if scalar("SELECT to_regprocedure('catalog.category_subtree(bigint)')") in (None, ""):
+        print("   ! catalog.category_subtree is missing — apply migration 012 "
+              "(`go run ./cmd/migrate`) or a category root will match no listings",
+              file=sys.stderr)
+
+
+def step_crawl(args):
+    from lib import crawl
+    argv = ["--per-leaf", str(args.per_leaf), "--workers", str(args.workers),
+            "--max-pages", str(args.max_pages)]
+    if paths.PROXIES.exists():
+        argv += ["--proxies", str(paths.PROXIES), "--per-proxy", str(args.per_proxy)]
+    if not args.fresh:
+        argv.append("--resume")
+    print(f"== crawl: {' '.join(argv)}", file=sys.stderr)
+    sys.argv = ["crawl"] + argv
+    crawl.main()
+
+
+def step_photos(args):
+    """Download, then optionally install.
+
+    The download always runs. Guarding it on "does the manifest exist" was wrong and would have
+    been silent: after a deeper crawl the manifest exists but names forty thousand fewer
+    products than the vocabulary now has, so the new ones would never get a photograph and every
+    listing generated from them would fall back to a sibling's picture. The download is
+    resumable — a file already on disk is a stat and a skip — so re-running it costs a walk of
+    the tree and nothing else.
+    """
+    from lib import photos
+    photos.download(args.workers)
+
+    # Coverage, stated rather than assumed. The bug this replaces was silent: the manifest
+    # existed, so the download was skipped, and the names the deeper crawl had added simply had
+    # no photograph — every listing generated from them borrowed a sibling's picture and nothing
+    # failed. A number on screen is what makes that visible.
+    vocab = json.loads(paths.VOCAB.read_text(encoding="utf-8")) if paths.VOCAB.exists() else {}
+    want = {it["name"] for items in vocab.values() for it in items if it.get("thumb")}
+    have = {r["name"] for r in json.loads(paths.MANIFEST.read_text(encoding="utf-8"))} \
+        if paths.MANIFEST.exists() else set()
+    missing = len(want - have)
+    pct = 100 * len(want & have) / len(want) if want else 0
+    print(f"   photographs cover {len(want & have)}/{len(want)} product names ({pct:.1f}%)"
+          + (f"; {missing} without one will borrow from their leaf" if missing else ""),
+          file=sys.stderr)
+    if want and pct < 90:
+        print(f"   ! under 90% — every listing from those {missing} names shows another "
+              f"product's photograph", file=sys.stderr)
+
+    if args.install:
+        install_photos(args)
+
+
+def install_photos(args):
+    """Copy the staged tree into the store and write one resource row per file.
+
+    `docker cp` because the volume is root-owned and writing to it as the invoking user is
+    refused. The rows carry `completed_at` because the bytes are already there — a NULL would
+    put every one of them on `resource_abandoned_idx` for the reaper to collect.
+    """
+    manifest = json.loads(paths.MANIFEST.read_text(encoding="utf-8"))
+    keys = {r["key"]: r["size"] for r in manifest}
+    print(f"== photos: installing {len(keys)} files into {args.container}:{args.root}",
+          file=sys.stderr)
+    subprocess.run(["docker", "exec", args.container, "mkdir", "-p",
+                    f"{args.root}/{paths.PHOTO_PREFIX.rsplit('/', 1)[0]}"], check=True)
+    subprocess.run(["docker", "cp", str(paths.PHOTOS / paths.PHOTO_PREFIX),
+                    f"{args.container}:{args.root}/{paths.PHOTO_PREFIX.rsplit('/', 1)[0]}/"],
+                   check=True)
+    load = ["\\set ON_ERROR_STOP on", "BEGIN;",
+            "CREATE UNLOGGED TABLE tiki_photo (key text PRIMARY KEY, bytes bigint);",
+            "COPY tiki_photo (key, bytes) FROM stdin;"]
+    load += [f"{k}\t{v}" for k, v in keys.items()]
+    load += ["\\.", f"""
+INSERT INTO catalog.resource (provider, object_key, mime, size, metadata, created_at, completed_at)
+SELECT '{paths.PHOTO_PROVIDER}', key, 'image/jpeg', bytes, '{{"source":"tiki"}}'::jsonb, now(), now()
+  FROM tiki_photo
+ON CONFLICT (provider, object_key) DO NOTHING;
+DROP TABLE tiki_photo;
+COMMIT;"""]
+    sql = paths.ROOT / ".install_photos.sql"
+    sql.write_text("\n".join(load) + "\n", encoding="utf-8")
+    try:
+        psql("-f", str(sql), quiet=True)
+    finally:
+        sql.unlink(missing_ok=True)
+    print(f"   {scalar(photo_count_sql())} photographs in the store", file=sys.stderr)
+
+
+def photo_count_sql():
+    return (f"SELECT count(*) FROM catalog.resource WHERE provider = '{paths.PHOTO_PROVIDER}' "
+            "AND metadata->>'source' = 'tiki' AND deleted_at IS NULL")
+
+
+def step_load(args):
+    """Generate and load, in steps.
+
+    Split because one transaction carrying a million listings and their variants, reviews, tags
+    and signals is several gigabytes of WAL against a max_wal_size of one — and because a
+    failure then costs the whole run instead of one step. Each step is a complete incremental
+    load: `--total` is the size to end up at, so the steps are just a ramp to the final number.
+    """
+    from lib import generate
+    already = int(scalar("SELECT count(*) FROM catalog.listing") or 0)
+    steps = [round(args.total * (i + 1) / args.steps) for i in range(args.steps)]
+    steps = [t for t in steps if t > already] or []
+    if not steps:
+        print(f"== load: {already} listings already there, nothing to do", file=sys.stderr)
+        return
+    print(f"== load: {already} -> {args.total} in {len(steps)} steps: {steps}", file=sys.stderr)
+    for n, target in enumerate(steps, 1):
+        print(f"\n-- step {n}/{len(steps)}: to {target}", file=sys.stderr)
+        sys.argv = ["generate", "--total", str(target), "--sellers", str(args.sellers),
+                    "--buyers", str(args.buyers), "--out", str(paths.OUT)]
+        if args.embed_queue:
+            sys.argv.append("--embed-queue")
+        generate.main()
+        # \copy resolves its paths against the client's working directory.
+        psql("-f", "load.sql", cwd=str(paths.OUT), quiet=True)
+    print(f"\n== {scalar('SELECT count(*) FROM catalog.listing')} listings", file=sys.stderr)
+
+
+def step_embed(args):
+    print(f"== embed: queueing {args.per_leaf} per leaf", file=sys.stderr)
+    psql("-v", f"per_leaf={args.per_leaf}", "-f", str(paths.SQL / "embed_queue.sql"))
+
+
+def step_wipe(args):
+    if not args.yes:
+        sys.exit("refusing without --yes: this deletes every generated listing, review, tag "
+                 "link, favourite, signal, popularity row, seller and buyer")
+    print("== wipe: removing everything this tool wrote", file=sys.stderr)
+    psql("-v", "yes_i_mean_it=1", "-f", str(paths.SQL / "wipe.sql"))
+
+
+def step_status(args):
+    def n(sql):
+        return scalar(sql) or "?"
+    have_fn = scalar("SELECT to_regprocedure('catalog.category_subtree(bigint)')") not in (None, "")
+    vocab = json.loads(paths.VOCAB.read_text(encoding="utf-8")) if paths.VOCAB.exists() else {}
+    manifest = (json.loads(paths.MANIFEST.read_text(encoding="utf-8"))
+                if paths.MANIFEST.exists() else [])
+    print(f"""
+categories        {n("SELECT count(*) FROM catalog.category WHERE parent_id IS NULL")} roots, \
+{n("SELECT count(*) FROM catalog.category WHERE parent_id IS NOT NULL")} leaves
+migration 012     {"applied" if have_fn else "MISSING — a root category will match no listings"}
+vocab.json        {len(vocab)} leaves, {sum(len(v) for v in vocab.values())} names
+photos on disk    {sum(1 for f in paths.PHOTOS.rglob("*") if f.is_file() and f.suffix != ".part") if paths.PHOTOS.exists() else 0} files
+photos in store   {n(photo_count_sql())} resources
+listings          {n("SELECT count(*) FROM catalog.listing")} \
+({n("SELECT count(*) FROM catalog.listing l JOIN account.account a ON a.id = l.account_id AND a.username LIKE 'bulk|_%' ESCAPE '|'")} generated)
+reviews           {n("SELECT count(*) FROM trust.review")}
+embed queue       {n("SELECT count(*) FROM catalog.listing WHERE embedding_stale_at IS NOT NULL")} waiting, \
+{n("SELECT count(*) FROM catalog.listing_embedding WHERE dense IS NOT NULL")} embedded
+distribution      {n("SELECT coalesce(min(k)||' .. '||max(k), 'empty') FROM (SELECT count(*) k FROM catalog.listing l JOIN catalog.category c ON c.id = l.category_id WHERE c.parent_id IS NOT NULL GROUP BY c.id) t")} per leaf
+database          {n("SELECT pg_size_pretty(pg_database_size(current_database()))")}
+""".strip(), file=sys.stderr)
+
+
+def step_verify(args):
+    """Check the claims this tool makes about its own output.
+
+    Not a test of the code — a test of the data that is actually in the database, because the
+    interesting failures here are all of that shape: a generator change that silently stopped
+    applying, a photo install that half landed, a repeated review body nobody looked at. Each
+    line prints the measurement, not a verdict, and then says whether it passes.
+    """
+    checks = []
+
+    lo, hi = (rows("""SELECT min(k), max(k) FROM (
+                        SELECT count(*) k FROM catalog.listing l
+                          JOIN catalog.category c ON c.id = l.category_id
+                         WHERE c.parent_id IS NOT NULL GROUP BY c.id) t""")[0])
+    lo, hi = int(lo or 0), int(hi or 0)
+    # Reported, not asserted. An even catalogue was the original goal and it stopped being one:
+    # duplicate names mattered more, and removing them means each leaf keeps as many rows as Tiki
+    # has distinct products in it — six hundred musical instruments against tens of thousands of
+    # shirts. A lopsided catalogue is what the real thing looks like. The number is still worth
+    # printing, because a leaf at zero would be a bug rather than a fact about Tiki.
+    checks.append(("rows per leaf (reported, not asserted)", f"{lo} .. {hi}", lo > 0,
+                   "a leaf with nothing in it is a bug; an uneven one is the market"))
+
+    # This is the assertion that replaced it.
+    total_l, distinct_l = rows("""SELECT count(*), count(DISTINCT name) FROM catalog.listing
+                                   WHERE deleted_at IS NULL""")[0]
+    dupes = int(total_l) - int(distinct_l)
+    checks.append(("listings sharing a name with another", str(dupes), dupes == 0,
+                   "two product pages with one title is the thing a reader notices first"))
+
+    tiki, total = rows("""SELECT count(*) FILTER (WHERE r.metadata->>'source' = 'tiki'),
+                                 count(*)
+                            FROM catalog.listing l
+                            CROSS JOIN LATERAL unnest(l.attachments) a(rid)
+                            JOIN catalog.resource r ON r.id = a.rid
+                           WHERE l.deleted_at IS NULL""")[0]
+    tiki, total = int(tiki), int(total)
+    pct = 100 * tiki / total if total else 0
+    checks.append(("gallery slots on real Tiki photos", f"{tiki}/{total} ({pct:.0f}%)",
+                   pct > 40, "the cover of a generated listing is its own product's photograph"))
+
+    cover_ok = int(rows("""SELECT count(*) FROM catalog.listing l
+                             JOIN catalog.resource r ON r.id = l.attachments[1]
+                            WHERE l.deleted_at IS NULL AND l.attachments <> '{}'
+                              AND r.metadata->>'source' = 'tiki'""")[0][0])
+    with_cover = int(rows("SELECT count(*) FROM catalog.listing WHERE attachments <> '{}'")[0][0])
+    # 0.85 and not 0.5. At half, the run where forty thousand crawled names had no photograph
+    # still passed — covers came out around 60% and the check said fine. The real number when
+    # the photographs are all there is ~95%, so anything under 85% means a chunk of the
+    # vocabulary is missing its pictures.
+    cover_pct = cover_ok / with_cover if with_cover else 0
+    checks.append(("covers specifically", f"{cover_ok}/{with_cover} ({100 * cover_pct:.0f}%)",
+                   cover_pct > 0.85,
+                   "attachments[1] is what the card renders, so it has to be the right one"))
+
+    # Sampled: count(distinct) over two and a half million bodies is a sort nobody needs here.
+    d, n = rows("""SELECT count(DISTINCT body), count(*)
+                     FROM (SELECT body FROM trust.review LIMIT 200000) t""")[0]
+    d, n = int(d), int(n)
+    checks.append(("review bodies distinct (200k sample)", f"{d}/{n} = {n / max(d, 1):.2f}x repeat",
+                   n == 0 or n / max(d, 1) < 3, "was 18 distinct across the whole table once"))
+
+    bad = int(rows("""SELECT count(*) FROM catalog.listing l
+                       WHERE l.cached_review_count <>
+                             (SELECT count(*) FROM trust.review r WHERE r.listing_id = l.id)""")[0][0])
+    checks.append(("cached_review_count vs trust.review", f"{bad} disagree", bad == 0,
+                   "the number on the card and the list under it cannot disagree"))
+
+    nulls = int(rows("""SELECT count(*) FROM catalog.listing
+                         WHERE deleted_at IS NULL AND location IS NULL""")[0][0])
+    checks.append(("listings with no location point", str(nulls), nulls < 1000,
+                   "a NULL point is outside every radius, so 'near me' never returns it"))
+
+    orphan = int(rows("""SELECT count(*) FROM catalog.listing l
+                          CROSS JOIN LATERAL unnest(l.attachments) a(rid)
+                          LEFT JOIN catalog.resource r ON r.id = a.rid
+                         WHERE r.id IS NULL""")[0][0])
+    checks.append(("attachment ids with no resource row", str(orphan), orphan == 0,
+                   "a dangling id renders as a broken image"))
+
+    width = max(len(c[0]) for c in checks)
+    failed = 0
+    for name, measured, ok, why in checks:
+        print(f"{'ok  ' if ok else 'FAIL'}  {name:<{width}}  {measured}", file=sys.stderr)
+        if not ok:
+            failed += 1
+            print(f"      why it matters: {why}", file=sys.stderr)
+    print(f"\n{len(checks) - failed}/{len(checks)} passed", file=sys.stderr)
+    sys.exit(1 if failed else 0)
+
+
+def step_all(args):
+    step_categories(args)
+    if not paths.VOCAB.exists() or args.fresh:
+        step_crawl(args)
+    else:
+        v = json.loads(paths.VOCAB.read_text(encoding="utf-8"))
+        print(f"== crawl: skipping, vocab.json has {sum(len(x) for x in v.values())} names",
+              file=sys.stderr)
+    if args.photos:
+        args.install = True
+        step_photos(args)
+    step_load(args)
+    if args.embed_after:
+        step_embed(args)
+    step_status(args)
+    print(file=sys.stderr)
+    try:
+        step_verify(args)
+    except SystemExit as e:
+        if e.code:
+            print("verify found problems — see above", file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------------- the parser
+
+def main():
+    ap = argparse.ArgumentParser(prog="seed", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    def common(p):
+        p.add_argument("--workers", type=int, default=12)
+        p.add_argument("--fresh", action="store_true", help="redo the step from scratch")
+
+    s = sub.add_parser("status", help="what exists already")
+    s.set_defaults(fn=step_status)
+
+    s = sub.add_parser("categories", help="merge duplicates, build the two-level tree")
+    s.set_defaults(fn=step_categories)
+
+    s = sub.add_parser("crawl", help="harvest product names into vocab.json")
+    common(s)
+    # 3000, not 600. At 600 the vocabulary tops out around 210 000 distinct names, and a
+    # million listings drawn from that repeats the worst name fifty-two times — which is what a
+    # category page shows a reader. Depth is free: Tiki caps nothing, page 40 of a category
+    # still answers 40 rows. Leaves whose sources are genuinely small (Tiki lists ~344 phones
+    # in total) stop early on their own.
+    s.add_argument("--per-leaf", type=int, default=3000)
+    s.add_argument("--per-proxy", type=float, default=90.0)
+    # How deep into one source category a leaf may page. There is no server-side cap — page 40
+    # of a category still answers 40 rows — so this is the only thing bounding depth, and depth
+    # is what more base names comes from.
+    s.add_argument("--max-pages", type=int, default=90)
+    s.set_defaults(fn=step_crawl, workers=6)
+
+    s = sub.add_parser("photos", help="download product photographs")
+    common(s)
+    s.add_argument("--install", action="store_true", help="also put them in the object store")
+    s.add_argument("--container", default="server-gateway-dev-1")
+    s.add_argument("--root", default="/data/objects")
+    s.set_defaults(fn=step_photos)
+
+    s = sub.add_parser("load", help="generate and load, in steps")
+    s.add_argument("--total", type=int, default=1_000_000)
+    s.add_argument("--steps", type=int, default=3)
+    s.add_argument("--sellers", type=int, default=400)
+    s.add_argument("--buyers", type=int, default=3000)
+    s.add_argument("--embed-queue", action="store_true",
+                   help="mark the new listings stale as they are written")
+    s.set_defaults(fn=step_load)
+
+    s = sub.add_parser("embed", help="queue a bounded subset for the indexer")
+    s.add_argument("--per-leaf", type=int, default=2941)
+    s.set_defaults(fn=step_embed)
+
+    s = sub.add_parser("verify", help="check the claims this tool makes about its output")
+    s.set_defaults(fn=step_verify)
+
+    s = sub.add_parser("wipe", help="remove everything this tool wrote")
+    s.add_argument("--yes", action="store_true")
+    s.set_defaults(fn=step_wipe)
+
+    s = sub.add_parser("all", help="every step, skipping what is done")
+    common(s)
+    s.add_argument("--total", type=int, default=1_000_000)
+    s.add_argument("--steps", type=int, default=3)
+    s.add_argument("--sellers", type=int, default=400)
+    s.add_argument("--buyers", type=int, default=3000)
+    # 3000, not 600. At 600 the vocabulary tops out around 210 000 distinct names, and a
+    # million listings drawn from that repeats the worst name fifty-two times — which is what a
+    # category page shows a reader. Depth is free: Tiki caps nothing, page 40 of a category
+    # still answers 40 rows. Leaves whose sources are genuinely small (Tiki lists ~344 phones
+    # in total) stop early on their own.
+    s.add_argument("--per-leaf", type=int, default=3000)
+    s.add_argument("--per-proxy", type=float, default=90.0)
+    s.add_argument("--max-pages", type=int, default=90)
+    s.add_argument("--no-photos", dest="photos", action="store_false",
+                   help="skip the photograph download; galleries fall back to a per-leaf pool")
+    s.add_argument("--embed-after", action="store_true",
+                   help="queue the embedding subset once the load is done")
+    s.add_argument("--container", default="server-gateway-dev-1")
+    s.add_argument("--root", default="/data/objects")
+    s.set_defaults(fn=step_all, install=True, embed_queue=False, workers=6)
+
+    args = ap.parse_args()
+    args.fn(args)
+
+
+if __name__ == "__main__":
+    main()
