@@ -70,7 +70,8 @@ func (r *Repo) FindReview(ctx context.Context, id int64) (domain.Review, error) 
 func (r *Repo) ListReviews(ctx context.Context, f port.ReviewFilter) ([]domain.Review, error) {
 	const base = `SELECT ` + reviewColumns + ` FROM review
 	           WHERE (@listing_id = 0 OR listing_id = @listing_id)
-	             AND (@rating = 0 OR rating = @rating)`
+	             AND (@rating = 0 OR rating = @rating)
+	             AND (NOT @media OR cardinality(attachments) > 0)`
 	q := base + ` AND (@before_id = 0
 	                   OR (created_at, id) < (@before::timestamptz, @before_id))
 	              ORDER BY created_at DESC, id DESC LIMIT @limit`
@@ -79,9 +80,34 @@ func (r *Repo) ListReviews(ctx context.Context, f port.ReviewFilter) ([]domain.R
 		                  OR (helpful_count, id) < (@before_count, @before_id))
 		             ORDER BY helpful_count DESC, id DESC LIMIT @limit`
 	}
-	args := pgx.NamedArgs{"listing_id": f.ListingID, "rating": f.Rating}
+	args := pgx.NamedArgs{"listing_id": f.ListingID, "rating": f.Rating, "media": f.Media}
 	addCursor(args, f.Cursor)
 	return r.queryReviews(ctx, q, args)
+}
+
+// ReviewSummary is the listing's rating distribution, in one row and one scan of one index.
+//
+// Five aggregates over the same rows rather than five queries: the product page renders the
+// average, the total, the count at each star and the number of reviews with a photo
+// together, and any of them read separately can disagree with the others.
+func (r *Repo) ReviewSummary(ctx context.Context, listingID int64) (port.ReviewSummary, error) {
+	const q = `SELECT COALESCE(AVG(rating), 0)::double precision,
+	                  COUNT(*),
+	                  COUNT(*) FILTER (WHERE cardinality(attachments) > 0),
+	                  COUNT(*) FILTER (WHERE rating = 1),
+	                  COUNT(*) FILTER (WHERE rating = 2),
+	                  COUNT(*) FILTER (WHERE rating = 3),
+	                  COUNT(*) FILTER (WHERE rating = 4),
+	                  COUNT(*) FILTER (WHERE rating = 5)
+	           FROM review WHERE listing_id = @listing_id`
+	var out port.ReviewSummary
+	err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{"listing_id": listingID}).Scan(
+		&out.Average, &out.Count, &out.WithMedia,
+		&out.Stars[0], &out.Stars[1], &out.Stars[2], &out.Stars[3], &out.Stars[4])
+	if err != nil {
+		return port.ReviewSummary{}, fmt.Errorf("db scan review summary: %w", err)
+	}
+	return out, nil
 }
 
 // SaveReview writes an edit and moves the seller's review rating by the difference in the same

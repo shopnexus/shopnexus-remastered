@@ -41,7 +41,8 @@ func (s *Service) ListReviews(ctx context.Context, req trustapi.ListReviewsReque
 		return trustapi.ReviewPage{}, err
 	}
 	rows, err := s.repo.ListReviews(ctx, port.ReviewFilter{
-		ListingID: req.ListingID.Int64(), Rating: req.Rating, Sort: req.Sort, Cursor: filter,
+		ListingID: req.ListingID.Int64(), Rating: req.Rating, Sort: req.Sort,
+		Media: req.Media, Cursor: filter,
 	})
 	if err != nil {
 		return trustapi.ReviewPage{}, fmt.Errorf("list reviews: %w", err)
@@ -52,6 +53,41 @@ func (s *Service) ListReviews(ctx context.Context, req trustapi.ListReviewsReque
 		return trustapi.ReviewPage{}, err
 	}
 	return trustapi.ReviewPage{Data: data, Meta: meta}, nil
+}
+
+// GetReviewSummary is the listing's rating distribution: the average, the total, the count at
+// each of the five stars, and how many reviews came with a photo.
+//
+// The listing is read first for the same reason the list route reads it — a summary of a
+// listing the caller may not see is still a fact about it — and the buckets are filled for all
+// five stars whether or not anyone gave that rating: a client that has to invent the missing
+// rows cannot draw the same chart twice.
+func (s *Service) GetReviewSummary(ctx context.Context, req trustapi.GetReviewSummaryRequest) (trustapi.ReviewSummary, error) {
+	if err := s.v.Struct(req); err != nil {
+		return trustapi.ReviewSummary{}, err
+	}
+	if _, err := s.catalog.GetListing(ctx, catalogapi.GetListingRequest{
+		ID: req.ListingID, ViewerID: req.ViewerID,
+	}); err != nil {
+		return trustapi.ReviewSummary{}, fmt.Errorf("read listing: %w", err)
+	}
+	sum, err := s.repo.ReviewSummary(ctx, req.ListingID.Int64())
+	if err != nil {
+		return trustapi.ReviewSummary{}, fmt.Errorf("review summary: %w", err)
+	}
+	breakdown := make([]trustapi.RatingBucket, 0, len(sum.Stars))
+	for star := len(sum.Stars); star >= 1; star-- {
+		breakdown = append(breakdown, trustapi.RatingBucket{
+			Rating: int16(star), Count: sum.Stars[star-1],
+		})
+	}
+	return trustapi.ReviewSummary{
+		ListingID:      req.ListingID,
+		Rating:         sum.Average,
+		ReviewCount:    sum.Count,
+		WithMediaCount: sum.WithMedia,
+		Breakdown:      breakdown,
+	}, nil
 }
 
 // SubmitReview writes a buyer's rating of something they bought. The order is what earns it:

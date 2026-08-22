@@ -7,6 +7,9 @@ paths:
     get:
       tags: [trust]
       summary: Reviews of a listing
+      security:
+        - {}
+        - bearerAuth: []
       description: >
         Public, with the first few replies and the vote tally on each one.
 
@@ -24,6 +27,13 @@ paths:
         stable traversal should page by `newest`.
       parameters:
         - { name: rating, in: query, schema: { type: integer, minimum: 1, maximum: 5 }, description: Restrict to one star rating. }
+        - name: media
+          in: query
+          schema: { type: boolean }
+          description: >
+            Only reviews that came with a photo or a video. How many those are is
+            `with_media_count` on the summary, so the filter can be offered with its count
+            rather than as a chip nobody can size.
         - { name: sort, in: query, description: '`helpful` reads the stored tally; see the note above about paging it.', schema: { type: string, enum: [newest, helpful], default: newest } }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
@@ -62,12 +72,45 @@ paths:
         '409': { description: 'Already reviewed for this order', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '422': { description: 'The order did not include this listing, or did not complete — a cancelled sale leaves no goods to review', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
+  /listings/{listingID}/reviews/summary:
+    parameters:
+      - { name: listingID, in: path, required: true, schema: { $ref: '#/components/schemas/ListingID' } }
+    get:
+      tags: [trust]
+      summary: A listing's rating distribution
+      security:
+        - {}
+        - bearerAuth: []
+      description: >
+        Public. The average and the count are on the listing already — catalog caches them —
+        and what only this answers is the shape behind them: how many reviews sit at each of
+        the five stars, and how many came with a photo.
+
+
+        Those are one read of one listing's reviews here and five reads of the review list
+        anywhere else, which is why the product page's star histogram used to be four numbers
+        nobody sent.
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewSummary' }
+                required: [data]
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /reviews/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ReviewID' } }
     get:
       tags: [trust]
       summary: Read a review
+      security:
+        - {}
+        - bearerAuth: []
       description: Carries the whole reply thread, unlike the listing page, which caps it.
       responses:
         '200':
@@ -333,6 +376,39 @@ components:
             Null until the author edits it. A review rewritten after the seller answered it
             should say so, and the reply thread cannot say it on its own.
       required: [id, listing_id, author, rating, body, attachments, replies, reply_count, votes, created_at, updated_at]
+
+    RatingBucket:
+      type: object
+      description: How many reviews gave one star rating.
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        count: { type: integer, format: int64, minimum: 0, example: 40 }
+      required: [rating, count]
+
+    ReviewSummary:
+      type: object
+      properties:
+        listing_id: { $ref: '#/components/schemas/ListingID' }
+        rating: { type: number, format: double, minimum: 0, maximum: 5, example: 4.6 }
+        review_count: { type: integer, format: int64, minimum: 0, example: 64 }
+        with_media_count:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 9
+          description: >
+            How many carry at least one attachment — the count beside the "with photos"
+            filter, which the list route takes as `media=true`.
+        breakdown:
+          type: array
+          minItems: 5
+          maxItems: 5
+          items: { $ref: '#/components/schemas/RatingBucket' }
+          description: >
+            Always five buckets, five stars first, zeros included. A rating with no one-star
+            reviews still has a one-star row: a client that has to invent the missing ones
+            cannot draw the same chart twice.
+      required: [listing_id, rating, review_count, with_media_count, breakdown]
 
     ReviewPage:
       type: object

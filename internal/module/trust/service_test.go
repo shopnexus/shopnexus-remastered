@@ -786,6 +786,73 @@ func seedReview(h *harness, helpful int64, createdAt time.Time) domain.Review {
 	return v
 }
 
+// seedRatedReview is seedReview with the rating and the photos the summary counts.
+func seedRatedReview(h *harness, rating int16, attachments []int64) domain.Review {
+	v := domain.Review{
+		ID: h.repo.next(), ListingID: listingID.Int64(), OrderID: h.repo.next(),
+		AuthorID: buyer.Int64(), SellerID: seller.Int64(), Rating: rating,
+		Attachments: attachments, CreatedAt: time.Now(),
+	}
+	h.repo.reviews[v.ID] = v
+	return v
+}
+
+// A distribution has a row per star whether or not anyone gave it: a client that has to invent
+// the missing ones cannot draw the same chart twice.
+func TestGetReviewSummary_FiveBucketsHighestFirst(t *testing.T) {
+	h, ctx := newHarness("completed"), context.Background()
+	seedRatedReview(h, 5, []int64{1})
+	seedRatedReview(h, 5, nil)
+	seedRatedReview(h, 3, []int64{2, 3})
+
+	got, err := h.svc.GetReviewSummary(ctx, trustapi.GetReviewSummaryRequest{ListingID: listingID})
+	if err != nil {
+		t.Fatalf("GetReviewSummary: %v", err)
+	}
+	if got.ReviewCount != 3 {
+		t.Fatalf("review_count = %d, want 3", got.ReviewCount)
+	}
+	if got.WithMediaCount != 2 {
+		t.Fatalf("with_media_count = %d, want 2", got.WithMediaCount)
+	}
+	if len(got.Breakdown) != 5 {
+		t.Fatalf("breakdown has %d buckets, want 5", len(got.Breakdown))
+	}
+	want := []trustapi.RatingBucket{
+		{Rating: 5, Count: 2}, {Rating: 4, Count: 0}, {Rating: 3, Count: 1},
+		{Rating: 2, Count: 0}, {Rating: 1, Count: 0},
+	}
+	for i, bucket := range want {
+		if got.Breakdown[i] != bucket {
+			t.Fatalf("breakdown[%d] = %+v, want %+v", i, got.Breakdown[i], bucket)
+		}
+	}
+}
+
+// The filter and the count beside it have to agree, so both are answered from the same rows.
+func TestListReviews_MediaFilterMatchesItsCount(t *testing.T) {
+	h, ctx := newHarness("completed"), context.Background()
+	withPhoto := seedRatedReview(h, 5, []int64{1})
+	seedRatedReview(h, 4, nil)
+
+	page, err := h.svc.ListReviews(ctx, trustapi.ListReviewsRequest{
+		ListingID: listingID, Media: true, Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("ListReviews: %v", err)
+	}
+	if got := reviewIDs(page); len(got) != 1 || got[0] != id.Of[id.Review](withPhoto.ID) {
+		t.Fatalf("media page = %v, want just the review with a photo", got)
+	}
+	summary, err := h.svc.GetReviewSummary(ctx, trustapi.GetReviewSummaryRequest{ListingID: listingID})
+	if err != nil {
+		t.Fatalf("GetReviewSummary: %v", err)
+	}
+	if summary.WithMediaCount != 1 {
+		t.Fatalf("with_media_count = %d, want 1 — the count the filter returned", summary.WithMediaCount)
+	}
+}
+
 func reviewIDs(page trustapi.ReviewPage) []id.ID[id.Review] {
 	out := make([]id.ID[id.Review], 0, len(page.Data))
 	for _, row := range page.Data {

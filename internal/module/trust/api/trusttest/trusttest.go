@@ -38,6 +38,10 @@ func (Stub) ListReviews(context.Context, trustapi.ListReviewsRequest) (trustapi.
 	return trustapi.ReviewPage{}, errx.ErrNotImplemented
 }
 
+func (Stub) GetReviewSummary(context.Context, trustapi.GetReviewSummaryRequest) (trustapi.ReviewSummary, error) {
+	return trustapi.ReviewSummary{}, errx.ErrNotImplemented
+}
+
 func (Stub) SubmitReview(context.Context, trustapi.SubmitReviewRequest) (trustapi.Review, error) {
 	return trustapi.Review{}, errx.ErrNotImplemented
 }

@@ -153,8 +153,43 @@ type ListReviewsRequest struct {
 	ViewerID id.ID[id.Account] `json:"-"`
 	Rating   int16             `json:"-" validate:"omitempty,gte=1,lte=5"`
 	Sort     string            `json:"-" validate:"omitempty,oneof=newest helpful"`
-	Cursor   string            `json:"-"`
-	Limit    int               `json:"-" validate:"required,gt=0,lte=100"`
+	// Media restricts to reviews that came with a photo or a video. How many those are is
+	// what ReviewSummary.WithMediaCount says, so the filter can be offered with its count.
+	Media  bool   `json:"-"`
+	Cursor string `json:"-"`
+	Limit  int    `json:"-" validate:"required,gt=0,lte=100"`
+}
+
+// RatingBucket is how many reviews gave one star rating.
+type RatingBucket struct {
+	Rating int16 `json:"rating"`
+	Count  int64 `json:"count"`
+}
+
+// ReviewSummary is everything a rating claim needs to be read honestly: the average, what it
+// averages, the shape of the distribution behind it, and how much of it came with a photo.
+//
+// The average and the count are on the listing too — catalog caches them — but the buckets
+// are not derivable from a page of reviews, and a bar chart drawn from four numbers nobody
+// sent is what this replaces.
+type ReviewSummary struct {
+	ListingID   id.ID[id.Listing] `json:"listing_id"`
+	Rating      float64           `json:"rating"`
+	ReviewCount int64             `json:"review_count"`
+	// WithMediaCount is how many carry at least one attachment — the count beside the
+	// "with photos" filter, which the list route takes as `media=true`.
+	WithMediaCount int64 `json:"with_media_count"`
+	// Breakdown is always five buckets, five stars first, zeros included: a rating with no
+	// one-star reviews still has a one-star row, and a client that has to invent the missing
+	// ones cannot draw the same chart twice.
+	Breakdown []RatingBucket `json:"breakdown"`
+}
+
+type GetReviewSummaryRequest struct {
+	ListingID id.ID[id.Listing] `json:"-" validate:"required"`
+	// ViewerID is the caller when there is one. The summary is public; this only decides
+	// whether a listing the seller has hidden is readable at all.
+	ViewerID id.ID[id.Account] `json:"-"`
 }
 
 type SubmitReviewRequest struct {
@@ -345,6 +380,9 @@ type Service interface {
 
 	// --- reviews ---
 	ListReviews(ctx context.Context, req ListReviewsRequest) (ReviewPage, error)
+	// GetReviewSummary is the rating distribution of one listing — the average, the total,
+	// the count at each star, and how many reviews came with a photo.
+	GetReviewSummary(ctx context.Context, req GetReviewSummaryRequest) (ReviewSummary, error)
 	SubmitReview(ctx context.Context, req SubmitReviewRequest) (Review, error)
 	GetReview(ctx context.Context, req GetReviewRequest) (Review, error)
 	UpdateReview(ctx context.Context, req UpdateReviewRequest) (Review, error)

@@ -45,7 +45,24 @@ type ReviewFilter struct {
 	ListingID int64
 	Rating    int16
 	Sort      string
-	Cursor    CursorFilter
+	// Media restricts to reviews that carry a photo or a video. Not a tri-state: absent and
+	// false both ask for the whole list, and the count the product page puts on the filter
+	// comes from the summary rather than from paging this.
+	Media  bool
+	Cursor CursorFilter
+}
+
+// ReviewSummary is a listing's whole rating in one row: the average, the total, how many
+// reviews came with a photo, and the count at each of the five stars. The counts are what a
+// distribution bar needs, and paging the list to derive them would read every review a
+// listing has ever had.
+type ReviewSummary struct {
+	Average float64
+	Count   int64
+	// WithMedia is how many carry at least one attachment.
+	WithMedia int64
+	// Stars is indexed by rating − 1, so Stars[4] is how many five-star reviews there are.
+	Stars [5]int64
 }
 
 // TicketFilter serves both the requester's own list and the moderator queue. Statuses is a
@@ -102,6 +119,9 @@ type Repository interface {
 	// ReviewAverage is a listing's rating over its reviews, which catalog caches. Returned
 	// with the count, because an average with no count cannot be rendered honestly.
 	ReviewAverage(ctx context.Context, listingID int64) (average float64, count int64, err error)
+	// ReviewSummary is the same aggregate broken out per star, plus how many reviews carry a
+	// photo. One query rather than five: a distribution is one read of one listing's reviews.
+	ReviewSummary(ctx context.Context, listingID int64) (ReviewSummary, error)
 
 	// --- reviews ---
 	// InsertReview writes the review and folds its rating into the seller's reputation in

@@ -210,6 +210,30 @@ func (f *fakeRepo) ReviewAverage(_ context.Context, listingID int64) (float64, i
 	return float64(sum) / float64(count), count, nil
 }
 
+// ReviewSummary counts the same rows the adapter's FILTERed aggregates do, per star and per
+// attachment.
+func (f *fakeRepo) ReviewSummary(_ context.Context, listingID int64) (port.ReviewSummary, error) {
+	var out port.ReviewSummary
+	var sum int64
+	for _, row := range f.reviews {
+		if row.ListingID != listingID {
+			continue
+		}
+		sum += int64(row.Rating)
+		out.Count++
+		if len(row.Attachments) > 0 {
+			out.WithMedia++
+		}
+		if row.Rating >= 1 && row.Rating <= 5 {
+			out.Stars[row.Rating-1]++
+		}
+	}
+	if out.Count > 0 {
+		out.Average = float64(sum) / float64(out.Count)
+	}
+	return out, nil
+}
+
 // --- reviews ---
 
 func (f *fakeRepo) InsertReview(_ context.Context, v *domain.Review) error {
@@ -270,6 +294,9 @@ func (f *fakeRepo) ListReviews(_ context.Context, filter port.ReviewFilter) ([]d
 			continue
 		}
 		if filter.Rating != 0 && row.Rating != filter.Rating {
+			continue
+		}
+		if filter.Media && len(row.Attachments) == 0 {
 			continue
 		}
 		if !after(row) {
