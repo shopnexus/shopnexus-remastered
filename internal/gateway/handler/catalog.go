@@ -178,6 +178,32 @@ func (h *Catalog) SuggestListing(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteData(w, http.StatusOK, res)
 }
 
+// SuggestChatQuestions handles GET /listings/{id}/chat-suggestions — the openers a buyer taps to
+// start a chat about this listing. A GET that costs a model call, which is unusual enough to say
+// out loud: it is a read of the listing with a phrasing step on the end, it stores nothing, and
+// nothing about it changes the listing. Authenticated, because the phrasing step is not free.
+func (h *Catalog) SuggestChatQuestions(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	// The same either-handle parse the read route uses: a buyer arrives from a link carrying the
+	// public slug, and the dock asks about the listing they are looking at.
+	listingID, err := catalogapi.ParseListingRef(r.PathValue("id"))
+	if failed(w, h.log, err) {
+		return
+	}
+	req := catalogapi.SuggestChatQuestionsRequest{ActorID: uid, ListingID: listingID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.SuggestChatQuestions(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
 // CreateListing handles POST /listings — the listing and its variants in one call.
 func (h *Catalog) CreateListing(w http.ResponseWriter, r *http.Request) {
 	uid, err := actor(r)

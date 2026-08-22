@@ -62,6 +62,13 @@ var (
 	// ErrSuggestionUnusable is a model answer that cannot fill a form — malformed, or with no name
 	// in it. 502, because nothing the caller sent is at fault and retrying is the fix.
 	ErrSuggestionUnusable = errx.NewError(http.StatusBadGateway, "suggestion_unusable", "the model did not return a usable suggestion")
+	// ErrChatQuestionsOwnListing is a seller asking for openers to send themselves. Chat refuses a
+	// conversation with your own account, so the questions would have nowhere to go.
+	ErrChatQuestionsOwnListing = errx.NewError(http.StatusUnprocessableEntity, "chat_questions_own_listing", "these are openers for a buyer; this listing is yours")
+	// ErrChatQuestionsUnusable is a model answer with nothing renderable in it. 502 for the same
+	// reason as ErrSuggestionUnusable, and the caller's move is its own fallback list rather than
+	// a retry: a chat that opens without chips still opens.
+	ErrChatQuestionsUnusable = errx.NewError(http.StatusBadGateway, "chat_questions_unusable", "the model did not return usable questions")
 	ErrNoPickupAddress    = errx.NewError(http.StatusUnprocessableEntity, "no_pickup_address", "set a pickup address before publishing: it is where carriers collect and how buyers find you")
 	ErrNoVariant          = errx.NewError(http.StatusUnprocessableEntity, "no_variant", "a listing needs at least one variant with a price")
 	ErrTooManyTags        = errx.NewError(http.StatusUnprocessableEntity, "too_many_tags", "a listing carries at most 10 tags")

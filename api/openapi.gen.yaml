@@ -449,6 +449,24 @@ components:
                 - current_password
                 - new_password
             type: object
+        ChatQuestions:
+            description: |
+                Opening messages for a buyer, written in their voice — no greeting, no emoji, one sentence each. Suggestions and nothing more: the client drops the tapped one into the composer, and the buyer edits or ignores it.
+            properties:
+                questions:
+                    example:
+                        - Pin còn bao nhiêu phần trăm vậy bạn?
+                        - Máy đã thay màn hình lần nào chưa?
+                        - Mình xem trực tiếp ở Cầu Giấy được không?
+                    items:
+                        maxLength: 60
+                        type: string
+                    maxItems: 4
+                    minItems: 1
+                    type: array
+            required:
+                - questions
+            type: object
         ChatUnreadCount:
             properties:
                 conversations:
@@ -8443,6 +8461,56 @@ paths:
             security:
                 - bearerAuth: []
             summary: Edit a listing
+            tags:
+                - catalog
+    /listings/{id}/chat-suggestions:
+        get:
+            description: |
+                Three or four short questions, in Vietnamese, written the way a buyer would type them. The client puts one in the composer when it is tapped; it does not send it, and nothing here is stored.
+
+                What makes them worth a request is what they leave out. A fixed list asks about warranty on a listing whose warranty is in the specifications, and about haggling on a fixed price — questions the page has already answered, which teach the reader that these chips are decoration. These are drawn from the listing itself, so they skip what is settled and ask about what is not: battery health on a phone, frame size on a bicycle, measurements on a coat.
+
+                Computed per call by a model, with no cache: they are cheap, they change the moment the seller edits the listing, and a cached copy would be a second source of truth for something that was only ever a suggestion. That also makes it a `GET` that costs money, so it needs a token even though it reads a public listing.
+
+                Treat a failure as nothing rather than as an error: a chat that opens without chips still opens, and a client with a fallback list of its own should use it.
+            parameters:
+                - description: The opaque id or the public slug — a buyer arrives from a shared link.
+                  in: path
+                  name: id
+                  required: true
+                  schema:
+                    $ref: '#/components/schemas/ListingRef'
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    data:
+                                        $ref: '#/components/schemas/ChatQuestions'
+                                required:
+                                    - data
+                                type: object
+                    description: Questions to offer, never fewer than one
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: The listing is the caller's own, so there is nobody to ask
+                "502":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                    description: The model did not return usable questions
+            security:
+                - bearerAuth: []
+            summary: Openers a buyer would tap to start a chat about this listing
             tags:
                 - catalog
     /listings/{id}/history:

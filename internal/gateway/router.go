@@ -165,6 +165,7 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("POST /listings/suggestions", auth(http.HandlerFunc(d.Catalog.SuggestListing)))
 	mux.Handle("POST /listings", auth(http.HandlerFunc(d.Catalog.CreateListing)))
 	mux.Handle("GET /listings/{id}/history", auth(http.HandlerFunc(d.Catalog.ListListingHistory)))
+	mux.Handle("GET /listings/{id}/chat-suggestions", auth(http.HandlerFunc(d.Catalog.SuggestChatQuestions)))
 	mux.Handle("PATCH /listings/{id}", auth(http.HandlerFunc(d.Catalog.UpdateListing)))
 	mux.Handle("DELETE /listings/{id}", auth(http.HandlerFunc(d.Catalog.DeleteListing)))
 	mux.Handle("POST /listings/{id}/publication", auth(http.HandlerFunc(d.Catalog.PublishListing)))

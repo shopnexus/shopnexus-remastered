@@ -34,6 +34,10 @@ type Service interface {
 	// them. It writes nothing: the answer is a suggestion the seller edits and then posts through
 	// CreateListing, so no model's guess reaches a buyer without a human between.
 	SuggestListing(ctx context.Context, req SuggestListingRequest) (ListingSuggestion, error)
+	// SuggestChatQuestions answers the openers a buyer would tap to start a chat about a listing.
+	// Read-only and per-call: they are drawn from what the listing already says, so that what
+	// comes back leaves out the questions the page has answered.
+	SuggestChatQuestions(ctx context.Context, req SuggestChatQuestionsRequest) (ChatQuestions, error)
 	CreateListing(ctx context.Context, req CreateListingRequest) (ListingDetail, error)
 	GetListing(ctx context.Context, req GetListingRequest) (ListingDetail, error)
 

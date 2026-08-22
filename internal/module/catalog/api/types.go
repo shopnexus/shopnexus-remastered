@@ -244,6 +244,12 @@ type ListingSuggestion struct {
 	Transcript string `json:"transcript"`
 }
 
+// ChatQuestions is a handful of opening messages, in the buyer's own voice. Suggestions and
+// nothing more: the client puts them in the composer, and the buyer edits or ignores them.
+type ChatQuestions struct {
+	Questions []string `json:"questions"`
+}
+
 type ListingLocation struct {
 	ProvinceCode string `json:"province_code"`
 	ProvinceName string `json:"province_name"`

@@ -74,6 +74,10 @@ func (Stub) SuggestListing(context.Context, catalogapi.SuggestListingRequest) (c
 	return catalogapi.ListingSuggestion{}, errx.ErrNotImplemented
 }
 
+func (Stub) SuggestChatQuestions(context.Context, catalogapi.SuggestChatQuestionsRequest) (catalogapi.ChatQuestions, error) {
+	return catalogapi.ChatQuestions{}, errx.ErrNotImplemented
+}
+
 func (Stub) CreateListing(context.Context, catalogapi.CreateListingRequest) (catalogapi.ListingDetail, error) {
 	return catalogapi.ListingDetail{}, errx.ErrNotImplemented
 }

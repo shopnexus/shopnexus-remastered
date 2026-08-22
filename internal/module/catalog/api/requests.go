@@ -195,6 +195,14 @@ type SuggestListingRequest struct {
 	Language string `json:"language" validate:"omitempty,len=2"`
 }
 
+// SuggestChatQuestionsRequest asks for the openers a buyer would tap to start a chat about a
+// listing. The actor is required: the answer is computed by a model on every call, so this is not
+// a route to leave open to anyone passing by.
+type SuggestChatQuestionsRequest struct {
+	ActorID   id.ID[id.Account] `json:"-" validate:"required"`
+	ListingID id.ID[id.Listing] `json:"-" validate:"required"`
+}
+
 type PublishListingRequest struct {
 	ActorID         id.ID[id.Account]  `json:"-" validate:"required"`
 	ID              id.ID[id.Listing]  `json:"-" validate:"required"`

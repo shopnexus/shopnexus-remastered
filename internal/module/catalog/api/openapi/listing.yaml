@@ -495,6 +495,54 @@ paths:
         '422': { description: 'Nothing to look at, or the seller has no verified identity', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '502': { description: 'The model did not return a usable suggestion', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
+  /listings/{id}/chat-suggestions:
+    get:
+      tags: [catalog]
+      summary: Openers a buyer would tap to start a chat about this listing
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The opaque id or the public slug — a buyer arrives from a shared link.
+          schema: { $ref: '#/components/schemas/ListingRef' }
+      description: >
+        Three or four short questions, in Vietnamese, written the way a buyer would type them.
+        The client puts one in the composer when it is tapped; it does not send it, and nothing
+        here is stored.
+
+
+        What makes them worth a request is what they leave out. A fixed list asks about warranty
+        on a listing whose warranty is in the specifications, and about haggling on a fixed price
+        — questions the page has already answered, which teach the reader that these chips are
+        decoration. These are drawn from the listing itself, so they skip what is settled and ask
+        about what is not: battery health on a phone, frame size on a bicycle, measurements on a
+        coat.
+
+
+        Computed per call by a model, with no cache: they are cheap, they change the moment the
+        seller edits the listing, and a cached copy would be a second source of truth for
+        something that was only ever a suggestion. That also makes it a `GET` that costs money,
+        so it needs a token even though it reads a public listing.
+
+
+        Treat a failure as nothing rather than as an error: a chat that opens without chips still
+        opens, and a client with a fallback list of its own should use it.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 'Questions to offer, never fewer than one'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChatQuestions' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: 'The listing is the caller''s own, so there is nobody to ask', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '502': { description: 'The model did not return usable questions', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
   /listings/{id}/publication:
     parameters:
       - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ListingID' } }
@@ -720,6 +768,24 @@ components:
           maxLength: 2
           example: vi
           description: ISO-639-1 hint for the transcription. Omit to let the model detect.
+
+    ChatQuestions:
+      type: object
+      description: >
+        Opening messages for a buyer, written in their voice — no greeting, no emoji, one sentence
+        each. Suggestions and nothing more: the client drops the tapped one into the composer, and
+        the buyer edits or ignores it.
+      properties:
+        questions:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items: { type: string, maxLength: 60 }
+          example:
+            - Pin còn bao nhiêu phần trăm vậy bạn?
+            - Máy đã thay màn hình lần nào chưa?
+            - Mình xem trực tiếp ở Cầu Giấy được không?
+      required: [questions]
 
     ListingSuggestion:
       type: object
