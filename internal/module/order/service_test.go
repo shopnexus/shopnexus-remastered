@@ -106,6 +106,9 @@ type fakeCatalog struct {
 	sold     int64
 	// available bounds a reservation, so an oversell is refusable.
 	available int64
+	// status is the listing's, empty meaning live. A test takes the listing down by setting
+	// it, which is what a moderator's verdict and a seller hiding their own both write.
+	status string
 	// movements is the idempotency ledger the real commit writes beside the counter, so a
 	// retried settlement is a no-op here too.
 	movements map[string]bool
@@ -125,8 +128,12 @@ func (f *fakeCatalog) ListListings(context.Context, catalogapi.ListListingsReque
 }
 
 func (f *fakeCatalog) listing() catalogapi.ListingDetail {
+	status := f.status
+	if status == "" {
+		status = catalogapi.StatusActive
+	}
 	return catalogapi.ListingDetail{
-		ID: listingID, Name: "Ao thun", Currency: "VND", PriceMode: f.priceMode,
+		ID: listingID, Name: "Ao thun", Currency: "VND", PriceMode: f.priceMode, Status: status,
 		Seller:   accountapi.AccountSummary{ID: seller},
 		Variants: []catalogapi.Variant{{ID: variantID, Price: f.price}},
 	}
@@ -746,6 +753,76 @@ func TestCheckout_RefusesAnOversell(t *testing.T) {
 	}
 	if h.catalog.reserved != 0 {
 		t.Errorf("reserved = %d, want nothing held after a refused checkout", h.catalog.reserved)
+	}
+}
+
+// A listing that is not live is not for sale, on every path that leads to money. The read
+// contract still serves it — a cart row and an order item have to render — so `status` is the
+// only thing standing between a takedown and a sale, and it was being read nowhere.
+func TestPurchasePaths_RefuseAListingThatIsNotLive(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("a cart cannot be filled from it", func(t *testing.T) {
+		h := newHarness("fixed")
+		h.catalog.status = "hidden"
+		err := mustErr(h.svc.AddCartItem(ctx, orderapi.AddCartItemRequest{
+			ActorID: buyer, VariantID: variantID, Quantity: 1,
+		}))
+		if got := status(t, err); got != 409 {
+			t.Fatalf("status = %d, want 409", got)
+		}
+	})
+
+	t.Run("a purchase session cannot be opened on it", func(t *testing.T) {
+		h := newHarness("fixed")
+		h.catalog.status = "hidden"
+		err := mustErr(h.svc.CreateDraft(ctx, orderapi.CreateDraftRequest{
+			ActorID: buyer, ListingID: listingID,
+		}))
+		if got := status(t, err); got != 409 {
+			t.Fatalf("status = %d, want 409", got)
+		}
+	})
+
+	t.Run("a negotiation cannot be opened on it", func(t *testing.T) {
+		h := newHarness("negotiable")
+		h.catalog.status = "hidden"
+		err := mustErr(h.svc.CreateOffer(ctx, orderapi.CreateOfferRequest{
+			ActorID: buyer, VariantID: variantID, Quantity: 1, Total: 80_000,
+		}))
+		if got := status(t, err); got != 409 {
+			t.Fatalf("status = %d, want 409", got)
+		}
+	})
+}
+
+// The window that matters: a session opened while the listing was live, spent after staff took
+// it down. The snapshot froze the terms, which is not permission to sell — and this is the last
+// gate before the buyer is asked for money.
+func TestCheckout_RefusesAListingTakenDownAfterTheSessionOpened(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	draft, err := h.svc.CreateDraft(ctx, orderapi.CreateDraftRequest{ActorID: buyer, ListingID: listingID})
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+
+	h.catalog.status = "hidden"
+	err = mustErr(h.svc.Checkout(ctx, orderapi.CheckoutRequest{
+		ActorID: buyer, ID: draft.ID, ContactID: contactID, Currency: "VND",
+		TransportOption: "ghn-express",
+		Lines:           []orderapi.CheckoutLine{{VariantID: variantID, Quantity: 1}},
+	}))
+	if got := status(t, err); got != 409 {
+		t.Fatalf("status = %d, want 409", got)
+	}
+	// Refused before anything was claimed or held: the session is still there to spend if the
+	// listing comes back, and no stock is sitting reserved against a sale that cannot happen.
+	if h.catalog.reserved != 0 {
+		t.Errorf("reserved = %d, want nothing held", h.catalog.reserved)
+	}
+	if h.finance.held != 0 {
+		t.Errorf("held = %d, want no money asked for", h.finance.held)
 	}
 }
 
@@ -2352,6 +2429,112 @@ func TestBookShipment_RetriedUntilTheCarrierAcceptsTheParcel(t *testing.T) {
 	// A reference nobody booked is not this platform's parcel.
 	if got := status(t, h.svc.RecordCarrierCheckpoint(ctx, "trk-nobody", "success")); got != 404 {
 		t.Fatalf("status = %d, want 404 for an unknown carrier reference", got)
+	}
+}
+
+// An arrival is announced, because confirming receipt is the buyer's to do and nothing else asks
+// them for it — the escrow sits with the platform until they do. Once per parcel: the announcement
+// rides on the transition, so a courier reporting the same delivery twice does not mail twice.
+func TestDelivery_IsAnnouncedOncePerParcel(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, o := h.confirmed(t)
+
+	var delivered []order.OrderDelivered
+	eventbus.Subscribe(h.bus, order.OrderDeliveredTopic, "test",
+		func(_ context.Context, e order.OrderDelivered) error {
+			delivered = append(delivered, e)
+			return nil
+		})
+
+	if err := h.svc.RecordCarrierCheckpoint(ctx, "trk-1", "success"); err != nil {
+		t.Fatalf("RecordCarrierCheckpoint: %v", err)
+	}
+	h.bus.Wait()
+	if len(delivered) != 1 || delivered[0].OrderID != o.ID.Int64() ||
+		delivered[0].BuyerID != buyer.Int64() || delivered[0].SellerID != seller.Int64() {
+		t.Fatalf("published = %+v, want one arrival naming the sale and both parties", delivered)
+	}
+	if err := h.svc.RecordCarrierCheckpoint(ctx, "trk-1", "success"); err != nil {
+		t.Fatalf("a repeated checkpoint was an error: %v", err)
+	}
+	h.bus.Wait()
+	if len(delivered) != 1 {
+		t.Fatalf("published = %+v, want the arrival announced once", delivered)
+	}
+
+	// A moderator correcting a parcel the courier never reported is the same arrival to the buyer.
+	fresh := newHarness("fixed")
+	_, corrected := fresh.confirmed(t)
+	var byHand []order.OrderDelivered
+	eventbus.Subscribe(fresh.bus, order.OrderDeliveredTopic, "test",
+		func(_ context.Context, e order.OrderDelivered) error {
+			byHand = append(byHand, e)
+			return nil
+		})
+	if _, err := fresh.moderator().AdvanceShipment(ctx, orderapi.AdvanceShipmentRequest{
+		ActorID: admin, ID: corrected.ID, Status: domain.TransportDelivered,
+	}); err != nil {
+		t.Fatalf("moderator AdvanceShipment: %v", err)
+	}
+	fresh.bus.Wait()
+	if len(byHand) != 1 || byHand[0].OrderID != corrected.ID.Int64() {
+		t.Fatalf("published = %+v, want the correction announced as an arrival", byHand)
+	}
+}
+
+// A buyer who confirmed receipt before the courier's report has already done the one thing the
+// arrival asks for, and a receipt cannot be given twice — so nothing goes out.
+func TestDelivery_IsNotAnnouncedAfterTheBuyerConfirmedReceipt(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, o := h.confirmed(t)
+	h.uploads.confirm(42)
+	if _, err := h.svc.ConfirmReceipt(ctx, orderapi.ConfirmReceiptRequest{
+		ActorID: buyer, ID: o.ID, Attachments: []id.ID[id.Resource]{id.Of[id.Resource](42)},
+	}); err != nil {
+		t.Fatalf("ConfirmReceipt: %v", err)
+	}
+
+	var delivered []order.OrderDelivered
+	eventbus.Subscribe(h.bus, order.OrderDeliveredTopic, "test",
+		func(_ context.Context, e order.OrderDelivered) error {
+			delivered = append(delivered, e)
+			return nil
+		})
+	if err := h.svc.RecordCarrierCheckpoint(ctx, "trk-1", "success"); err != nil {
+		t.Fatalf("RecordCarrierCheckpoint: %v", err)
+	}
+	h.bus.Wait()
+	if len(delivered) != 0 {
+		t.Fatalf("published = %+v, want no nudge for a receipt already given", delivered)
+	}
+}
+
+// The return leg reaching its destination is not that arrival. Those goods are going back to the
+// seller, and announcing it would ask the buyer to confirm receipt of a parcel they posted.
+func TestDelivery_ReturnLegIsNotAnArrival(t *testing.T) {
+	h := newHarness("fixed")
+	ctx := context.Background()
+	_, refund := h.openRefund(t)
+	if _, err := h.svc.AcceptRefund(ctx, orderapi.RefundRequest{ActorID: seller, ID: refund.ID}); err != nil {
+		t.Fatalf("AcceptRefund: %v", err)
+	}
+
+	var delivered []order.OrderDelivered
+	eventbus.Subscribe(h.bus, order.OrderDeliveredTopic, "test",
+		func(_ context.Context, e order.OrderDelivered) error {
+			delivered = append(delivered, e)
+			return nil
+		})
+	if _, err := h.svc.AdvanceReturnShipment(ctx, orderapi.AdvanceReturnShipmentRequest{
+		ActorID: seller, ID: refund.ID, Status: domain.TransportDelivered,
+	}); err != nil {
+		t.Fatalf("AdvanceReturnShipment: %v", err)
+	}
+	h.bus.Wait()
+	if len(delivered) != 0 {
+		t.Fatalf("published = %+v, want the return leg to announce nothing", delivered)
 	}
 }
 

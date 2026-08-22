@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/common/dbx"
 	"shopnexus/internal/module/order/domain"
 	"shopnexus/internal/module/order/port"
@@ -191,20 +192,35 @@ func (r *Repo) FindTransport(ctx context.Context, id int64) (domain.Transport, e
 // version, and two carrier reports landing at once must not both apply — the one that read a
 // status somebody else has already moved on from loses.
 func (r *Repo) SaveTransport(ctx context.Context, t domain.Transport, from string) error {
-	const q = `UPDATE transport SET status = @status, data = @data
-	           WHERE id = @id AND status::text = @from`
-	args := pgx.NamedArgs{
-		"id": t.ID, "status": t.Status, "from": from,
-		"data": dbx.JSONObject(rawJSON(t.Data)),
-	}
-	tag, err := r.pool.Exec(ctx, q, args)
-	if err != nil {
-		return fmt.Errorf("db update transport: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return domain.ErrTransportSettled
-	}
-	return nil
+	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
+		const q = `UPDATE transport SET status = @status, data = @data
+		           WHERE id = @id AND status::text = @from`
+		args := pgx.NamedArgs{
+			"id": t.ID, "status": t.Status, "from": from,
+			"data": dbx.JSONObject(rawJSON(t.Data)),
+		}
+		tag, err := tx.Exec(ctx, q, args)
+		if err != nil {
+			return fmt.Errorf("db update transport: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return domain.ErrTransportSettled
+		}
+		// The parcel's journey belongs to the order's trail, and `transport_id` is UNIQUE on the
+		// order — so the owner is resolved here rather than threaded through every caller.
+		const owner = `SELECT id FROM "order" WHERE transport_id = @transport_id`
+		var orderID int64
+		if err := tx.QueryRow(ctx, owner, pgx.NamedArgs{"transport_id": t.ID}).Scan(&orderID); err != nil {
+			// A shipment exists from the moment the money lands, so a leg with no order yet is a
+			// settlement still in flight rather than a broken row.
+			if dbx.IsNoRows(err) {
+				return nil
+			}
+			return fmt.Errorf("db find order for transport: %w", err)
+		}
+		return recordOrderFact(ctx, tx, orderID, domain.ShipmentAdvanced.Code,
+			domain.ShipmentMove{Status: t.Status})
+	})
 }
 
 // BookTransport records what the courier gave back for a shipment it accepted: its own reference
@@ -369,7 +385,7 @@ func (r *Repo) CreateOrder(ctx context.Context, o *domain.Order, itemIDs []int64
 		if _, err := tx.Exec(ctx, linkItems, linkArgs); err != nil {
 			return fmt.Errorf("db link items: %w", err)
 		}
-		return nil
+		return recordOrderFact(ctx, tx, o.ID, domain.Placed.Code, domain.NoPayload{})
 	})
 }
 
@@ -408,6 +424,50 @@ func (r *Repo) FindOrderByOrigin(ctx context.Context, origin domain.Origin) (dom
 	return scanOrder(r.pool.QueryRow(ctx, q, args))
 }
 
+// FindOrderByTransport answers the sale a parcel belongs to. `transport_id` is UNIQUE on the
+// order, so a shipment the carrier reports on has exactly one.
+func (r *Repo) FindOrderByTransport(ctx context.Context, transportID int64) (domain.Order, error) {
+	const q = `SELECT ` + orderColumns + ` FROM "order" WHERE transport_id = @transport_id`
+	return scanOrder(r.pool.QueryRow(ctx, q, pgx.NamedArgs{"transport_id": transportID}))
+}
+
+// ListOrderHistory reads the trail one order left behind. Two statements rather than a window
+// function: the count is what tells a client there is a page after this one, and an order's
+// trail is tens of rows, not a feed.
+func (r *Repo) ListOrderHistory(ctx context.Context, orderID int64, offset, limit int) ([]port.AuditRecord, int64, error) {
+	const q = `SELECT version, code, changed_at, diff
+	           FROM audit_log
+	           WHERE table_name = 'order' AND record_id = @record_id
+	           ORDER BY version DESC
+	           LIMIT @limit OFFSET @offset`
+	args := pgx.NamedArgs{"record_id": orderID, "limit": limit, "offset": offset}
+	rows, err := r.pool.Query(ctx, q, args)
+	if err != nil {
+		return nil, 0, fmt.Errorf("db query order history: %w", err)
+	}
+	defer rows.Close()
+
+	var out []port.AuditRecord
+	for rows.Next() {
+		var rec port.AuditRecord
+		if err := rows.Scan(&rec.Version, &rec.Code, &rec.ChangedAt, &rec.Diff); err != nil {
+			return nil, 0, fmt.Errorf("db scan order history: %w", err)
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("db iterate order history: %w", err)
+	}
+
+	var total int64
+	const count = `SELECT count(*) FROM audit_log
+	               WHERE table_name = 'order' AND record_id = @record_id`
+	if err := r.pool.QueryRow(ctx, count, pgx.NamedArgs{"record_id": orderID}).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("db count order history: %w", err)
+	}
+	return out, total, nil
+}
+
 func (r *Repo) ListOrders(ctx context.Context, f port.OrderFilter) ([]domain.Order, error) {
 	// The state is derived from the timestamps, so it is a predicate rather than a column —
 	// and this predicate has to say exactly what domain.State() says. It did not: 'open'
@@ -433,7 +493,7 @@ func (r *Repo) ListOrders(ctx context.Context, f port.OrderFilter) ([]domain.Ord
 	before, beforeID, limit := cursorBound(f.Cursor)
 	args := pgx.NamedArgs{
 		"buyer_id": f.BuyerID, "seller_id": f.SellerID, "party_id": f.PartyID,
-		"state": dbx.NullText(f.State),
+		"state":  dbx.NullText(f.State),
 		"before": before, "before_id": beforeID, "limit": limit,
 	}
 	return r.queryOrders(ctx, q, args)
@@ -593,7 +653,7 @@ func (r *Repo) ClaimPayout(ctx context.Context, o *domain.Order) error {
 		if tag.RowsAffected() == 0 {
 			return domain.ErrOrderSettled
 		}
-		return nil
+		return recordOrderFact(ctx, tx, o.ID, domain.Completed.Code, domain.NoPayload{})
 	})
 	if err != nil {
 		return err
@@ -606,13 +666,21 @@ func (r *Repo) ClaimPayout(ctx context.Context, o *domain.Order) error {
 // off the stranded list. Guarded by the column being NULL, so a repeat is a no-op rather than a
 // moved timestamp.
 func (r *Repo) MarkPayoutReleased(ctx context.Context, o domain.Order) error {
-	const q = `UPDATE "order" SET payout_released_at = @released_at
-	           WHERE id = @id AND payout_released_at IS NULL`
-	args := pgx.NamedArgs{"id": o.ID, "released_at": o.PayoutReleasedAt}
-	if _, err := r.pool.Exec(ctx, q, args); err != nil {
-		return fmt.Errorf("db mark payout released: %w", err)
-	}
-	return nil
+	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
+		const q = `UPDATE "order" SET payout_released_at = @released_at
+		           WHERE id = @id AND payout_released_at IS NULL`
+		args := pgx.NamedArgs{"id": o.ID, "released_at": o.PayoutReleasedAt}
+		tag, err := tx.Exec(ctx, q, args)
+		if err != nil {
+			return fmt.Errorf("db mark payout released: %w", err)
+		}
+		// The column being NULL is the guard, so a repeat moves nothing — and must not leave a
+		// second entry saying the money went out twice.
+		if tag.RowsAffected() == 0 {
+			return nil
+		}
+		return recordOrderFact(ctx, tx, o.ID, domain.PayoutReleased.Code, domain.NoPayload{})
+	})
 }
 
 // ClaimedPayouts is the stranded releases: an order whose outcome was written but whose money
@@ -653,14 +721,58 @@ func (r *Repo) queryOrders(ctx context.Context, q string, args pgx.NamedArgs) ([
 // SaveOrder writes the receipt and the outcome. Guarded on the order still being open, so
 // two payouts or a payout racing a cancellation cannot both land.
 func (r *Repo) SaveOrder(ctx context.Context, o domain.Order) error {
-	tag, err := r.pool.Exec(ctx, saveOrder, orderArgs(o))
+	err := dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, saveOrder, orderArgs(o))
+		if err != nil {
+			return fmt.Errorf("db update order: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return domain.ErrOrderSettled
+		}
+		return writeOrderEvents(ctx, tx, o.ID, o.Events())
+	})
 	if err != nil {
-		return fmt.Errorf("db update order: %w", err)
+		return err
 	}
-	if tag.RowsAffected() == 0 {
-		return domain.ErrOrderSettled
+	o.ClearEvents()
+	return nil
+}
+
+// writeOrderEvents puts the trail in the same transaction as the change it describes, so a
+// write that landed always has one and the diff comes from the decision rather than from a
+// reconstruction afterwards.
+//
+// No `changed_by`: which party acted follows from the fact — only a seller confirms, only a
+// buyer confirms receipt — so an account id here would be a second copy of something the
+// code already says, and one that could disagree with it.
+func writeOrderEvents(ctx context.Context, tx pgx.Tx, orderID int64, events []domain.Event) error {
+	for _, e := range events {
+		entry := common.AuditEntry{
+			Table:      "order",
+			RecordID:   orderID,
+			ChangeType: common.ChangeTypeUpdate,
+			Code:       string(e.Code),
+			Diff:       e.Payload,
+			Snapshot:   struct{}{},
+		}
+		if err := dbx.InsertAuditLog(ctx, tx, entry); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// recordOrderFact is the single-fact form, for the transitions a guarded repo write decides
+// rather than the aggregate: the escrow claim, the release, the insert and a shipment move.
+func recordOrderFact(ctx context.Context, tx pgx.Tx, orderID int64, code domain.EventCode, diff any) error {
+	return dbx.InsertAuditLog(ctx, tx, common.AuditEntry{
+		Table:      "order",
+		RecordID:   orderID,
+		ChangeType: common.ChangeTypeUpdate,
+		Code:       string(code),
+		Diff:       diff,
+		Snapshot:   struct{}{},
+	})
 }
 
 const saveOrder = `UPDATE "order"

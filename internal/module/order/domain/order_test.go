@@ -318,9 +318,10 @@ func TestRefund_EvidenceIsCappedAcrossTopUps(t *testing.T) {
 	}
 }
 
-// Negotiation only moves the price down. The asking price is already an offer to sell at it,
-// so terms above it are a proposal with no reason to exist — the buyer would simply buy.
-func TestOffer_NotAboveAskingPrice(t *testing.T) {
+// Negotiation only moves the price down, and it has to actually move: the asking price is
+// already an offer to sell at it, so terms *at or* above it are a proposal with no reason to
+// exist — the buyer would simply buy.
+func TestOffer_BelowAskingPriceOnly(t *testing.T) {
 	const buyer, seller = int64(7), int64(8)
 	const asking = int64(100_000)
 
@@ -334,17 +335,22 @@ func TestOffer_NotAboveAskingPrice(t *testing.T) {
 	if _, err := domain.NewOffer(terms(120_000, 1), time.Hour); !errors.Is(err, domain.ErrOfferAboveAsking) {
 		t.Fatalf("opening above asking = %v, want ErrOfferAboveAsking", err)
 	}
-	// Exactly the asking price is not above it.
-	if _, err := domain.NewOffer(terms(asking, 1), time.Hour); err != nil {
-		t.Fatalf("opening at asking: %v", err)
+	// Exactly the asking price is refused too, and for the same reason: a negotiation that
+	// lands where the buy button already was has cost both sides two round trips for nothing.
+	if _, err := domain.NewOffer(terms(asking, 1), time.Hour); !errors.Is(err, domain.ErrOfferAboveAsking) {
+		t.Fatalf("opening at asking = %v, want ErrOfferAboveAsking", err)
 	}
-	// The ceiling scales with the quantity, and the comparison is on the total: three units
-	// at the asking price is fine, one đồng more is not.
-	if _, err := domain.NewOffer(terms(3*asking, 3), time.Hour); err != nil {
-		t.Fatalf("opening at asking for three: %v", err)
+	// A đồng under is a negotiation, and it is allowed — the boundary is exact.
+	if _, err := domain.NewOffer(terms(asking-1, 1), time.Hour); err != nil {
+		t.Fatalf("opening a đồng under asking: %v", err)
 	}
-	if _, err := domain.NewOffer(terms(3*asking+1, 3), time.Hour); !errors.Is(err, domain.ErrOfferAboveAsking) {
-		t.Fatalf("opening a đồng above asking for three = %v, want ErrOfferAboveAsking", err)
+	// The ceiling scales with the quantity, and the comparison is on the total: three units at
+	// the asking price is the boundary, so it is out, and one đồng under it is in.
+	if _, err := domain.NewOffer(terms(3*asking, 3), time.Hour); !errors.Is(err, domain.ErrOfferAboveAsking) {
+		t.Fatalf("opening at asking for three = %v, want ErrOfferAboveAsking", err)
+	}
+	if _, err := domain.NewOffer(terms(3*asking-1, 3), time.Hour); err != nil {
+		t.Fatalf("opening a đồng under asking for three: %v", err)
 	}
 
 	// And the same ceiling on the answer, from the other side: a rule the counter route did
@@ -356,6 +362,9 @@ func TestOffer_NotAboveAskingPrice(t *testing.T) {
 	now := time.Now()
 	if err := o.Counter(seller, 1, 120_000, asking, "firm", now, time.Hour); !errors.Is(err, domain.ErrOfferAboveAsking) {
 		t.Fatalf("countering above asking = %v, want ErrOfferAboveAsking", err)
+	}
+	if err := o.Counter(seller, 1, asking, asking, "firm", now, time.Hour); !errors.Is(err, domain.ErrOfferAboveAsking) {
+		t.Fatalf("countering at asking = %v, want ErrOfferAboveAsking", err)
 	}
 	if o.Total != 80_000 || o.AuthorID != buyer {
 		t.Fatalf("offer = %+v, want the refused counter to have changed nothing", o)
@@ -485,5 +494,85 @@ func TestDraft_FreezesItsVariants(t *testing.T) {
 	}
 	if err := d.Cancel(); !errors.Is(err, domain.ErrDraftSettled) {
 		t.Fatalf("second Cancel = %v, want ErrDraftSettled", err)
+	}
+}
+
+// Every code the module can record has to be in EventCodes: that list is what the published
+// contract enumerates, so a fact added to the vars above and nowhere else would reach a client
+// whose generated types never mentioned it.
+func TestEventCodes_CoversEveryFactTheAggregateRecords(t *testing.T) {
+	declared := map[domain.EventCode]bool{}
+	for _, c := range domain.EventCodes {
+		declared[c] = true
+	}
+	for _, c := range []domain.EventCode{
+		domain.Placed.Code, domain.Confirmed.Code, domain.Declined.Code,
+		domain.ConfirmationEscalated.Code, domain.ShipmentAdvanced.Code,
+		domain.Received.Code, domain.Cancelled.Code, domain.Completed.Code,
+		domain.PayoutReleased.Code,
+	} {
+		if !declared[c] {
+			t.Errorf("%q is recordable but missing from EventCodes", c)
+		}
+	}
+	if len(domain.EventCodes) != 9 {
+		t.Errorf("EventCodes has %d entries; add the new one to the spec's enum too", len(domain.EventCodes))
+	}
+}
+
+// A transition records exactly one fact, and the payload carries what the trail needs to read
+// it back. Two records for one change would show the buyer the same step twice.
+func TestTransitions_RecordOneFactEach(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		act  func(*domain.Order) error
+		want domain.EventCode
+	}{
+		{"confirm", func(o *domain.Order) error { return o.Confirm() }, domain.Confirmed.Code},
+		{"decline", func(o *domain.Order) error { return o.Decline("hết hàng") }, domain.Declined.Code},
+		{"escalate", func(o *domain.Order) error { return o.EscalateConfirmation() }, domain.ConfirmationEscalated.Code},
+		{"cancel", func(o *domain.Order) error { return o.Cancel(false) }, domain.Cancelled.Code},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o := &domain.Order{BuyerID: 1, SellerID: 2, TransportID: 3, CreatedAt: time.Now()}
+			if err := tc.act(o); err != nil {
+				t.Fatalf("%s: %v", tc.name, err)
+			}
+			events := o.Events()
+			if len(events) != 1 {
+				t.Fatalf("recorded %d facts, want exactly 1", len(events))
+			}
+			if events[0].Code != tc.want {
+				t.Errorf("code = %q, want %q", events[0].Code, tc.want)
+			}
+		})
+	}
+}
+
+// The refusal's words are what the buyer reads, so they travel with the fact rather than being
+// looked up on a row that a later change could overwrite.
+func TestDecline_RecordsTheReason(t *testing.T) {
+	o := &domain.Order{BuyerID: 1, SellerID: 2, TransportID: 3, CreatedAt: time.Now()}
+	if err := o.Decline("hết hàng rồi bạn"); err != nil {
+		t.Fatalf("Decline: %v", err)
+	}
+	got, ok := domain.PayloadOf(o.Events()[0], domain.Declined)
+	if !ok {
+		t.Fatal("payload is not a Refusal")
+	}
+	if got.Reason != "hết hàng rồi bạn" {
+		t.Errorf("reason = %q", got.Reason)
+	}
+}
+
+// ClearEvents is what stops a second save recording the same facts again.
+func TestClearEvents_DrainsTheTrail(t *testing.T) {
+	o := &domain.Order{BuyerID: 1, SellerID: 2, TransportID: 3, CreatedAt: time.Now()}
+	if err := o.Confirm(); err != nil {
+		t.Fatalf("Confirm: %v", err)
+	}
+	o.ClearEvents()
+	if got := len(o.Events()); got != 0 {
+		t.Errorf("events after clear = %d, want 0", got)
 	}
 }

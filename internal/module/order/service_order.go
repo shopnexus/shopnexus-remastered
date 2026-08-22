@@ -470,6 +470,11 @@ func (s *Service) AdvanceShipment(ctx context.Context, req orderapi.AdvanceShipm
 	if err != nil {
 		return orderapi.Transport{}, err
 	}
+	if t.Delivered() {
+		// A correction is still an arrival: the buyer is told the same way the carrier's own
+		// report tells them.
+		s.publishDelivered(ctx, o)
+	}
 	return toAPITransport(t), nil
 }
 

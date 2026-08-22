@@ -46,6 +46,22 @@ func publishOrderPlaced(ctx context.Context, bus eventbus.Client, event OrderPla
 	return eventbus.Publish(ctx, bus, OrderPlacedTopic, event)
 }
 
+// OrderDelivered is the outbound parcel arriving, as the carrier or a moderator reported it.
+// The return leg does not publish this: it carries goods the other way and closes a refund.
+type OrderDelivered struct {
+	OrderID  int64 `json:"order_id"`
+	BuyerID  int64 `json:"buyer_id"`
+	SellerID int64 `json:"seller_id"`
+}
+
+// OrderDeliveredTopic carries OrderDelivered. Declared once here, so nothing else names the
+// string.
+var OrderDeliveredTopic = eventbus.NewTopic[OrderDelivered]("order.delivered")
+
+func publishOrderDelivered(ctx context.Context, bus eventbus.Client, event OrderDelivered) error {
+	return eventbus.Publish(ctx, bus, OrderDeliveredTopic, event)
+}
+
 // OrderSettled is published when an order reaches an outcome — paid out or cancelled. A
 // fact, like OrderPlaced: the row already says so, and a consumer that misses it is behind
 // rather than wrong.
@@ -167,3 +183,41 @@ var financeMovementPosted = financedomain.ErrMovementAlreadyPosted
 // financePaid is the session status that means the money is in. Named here because cancelling
 // a line turns on it: from that point the sale is undone by a refund, not by a cancellation.
 const financePaid = financedomain.StatusSuccess
+
+// OfferChanged is a negotiation's standing terms moving, told to the side that did not move
+// them. The realtime OfferUpdated above pushes the row to a client that already has the thread
+// open; this one is for the party who does not — it is what turns a counter into something they
+// find in their feed tomorrow morning.
+//
+// Actor is who caused it, because either side may have: a subscriber has to tell the *other*
+// one, and asking this module which side that is would be a call back the way the dependency
+// already runs.
+type OfferChanged struct {
+	OfferID  int64 `json:"offer_id"`
+	BuyerID  int64 `json:"buyer_id"`
+	SellerID int64 `json:"seller_id"`
+	ActorID  int64 `json:"actor_id"`
+	// Change is which transition this was: 'countered', 'accepted' or 'withdrawn'. The fact,
+	// not the wording — how it reads is the reader's module's business.
+	Change string `json:"change"`
+	// ListingName travels with it: a subscriber that had to resolve the listing would need
+	// catalog, and this module already holds the name it just answered the actor with.
+	ListingName string `json:"listing_name"`
+	Total       int64  `json:"total"`
+	Currency    string `json:"currency"`
+}
+
+// The transitions OfferChanged reports. An expiry is not among them: nobody did it, and a feed
+// row saying a price nobody took has run out is a notification about the absence of an event.
+const (
+	OfferChangeCountered = "countered"
+	OfferChangeAccepted  = "accepted"
+	OfferChangeWithdrawn = "withdrawn"
+)
+
+// OfferChangedTopic carries OfferChanged.
+var OfferChangedTopic = eventbus.NewTopic[OfferChanged]("order.offer_changed")
+
+func publishOfferChanged(ctx context.Context, bus eventbus.Client, event OfferChanged) error {
+	return eventbus.Publish(ctx, bus, OfferChangedTopic, event)
+}

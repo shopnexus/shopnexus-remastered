@@ -127,6 +127,10 @@ func (Stub) GetOrderTransport(context.Context, orderapi.OrderRequest) (orderapi.
 	return orderapi.Transport{}, errx.ErrNotImplemented
 }
 
+func (Stub) ListOrderHistory(context.Context, orderapi.ListOrderHistoryRequest) ([]orderapi.OrderHistoryEntry, error) {
+	return nil, errx.ErrNotImplemented
+}
+
 func (Stub) AdvanceShipment(context.Context, orderapi.AdvanceShipmentRequest) (orderapi.Transport, error) {
 	return orderapi.Transport{}, errx.ErrNotImplemented
 }

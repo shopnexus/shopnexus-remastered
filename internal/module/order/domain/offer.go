@@ -75,7 +75,7 @@ func NewOffer(in NewTerms, window time.Duration) (Offer, error) {
 	if in.BuyerID == in.SellerID {
 		return Offer{}, ErrSellerCannotOffer
 	}
-	if !WithinAsking(in.Quantity, in.Total, in.UnitPrice) {
+	if !BelowAsking(in.Quantity, in.Total, in.UnitPrice) {
 		return Offer{}, ErrOfferAboveAsking
 	}
 	if err := validation.Default().Struct(o); err != nil {
@@ -84,18 +84,25 @@ func NewOffer(in NewTerms, window time.Duration) (Offer, error) {
 	return o, nil
 }
 
-// WithinAsking reports whether terms sit at or under what the listing asks for that quantity.
+// BelowAsking reports whether terms sit strictly under what the listing asks for that quantity.
+//
+// Strictly: terms *at* the asking price are refused along with terms above it, and the reason is
+// the same for both. The asking price is already an offer to sell at it, takeable by pressing
+// buy — so a negotiation that lands exactly there has bought nothing and cost two round trips
+// (the other side has to accept, and then the buyer has thirty minutes to check out) to reach a
+// price that was one press away. Naming the rule for what it permits rather than for what it
+// forbids is deliberate: the previous name, WithinAsking, read as true at the boundary.
 //
 // The comparison is on the total rather than on a derived unit price, because the total is
 // what either side actually types and what the escrow will hold — dividing it by the quantity
 // first would let a rounded-down unit price pass a total that is over the line.
 //
 // An unknown asking price (zero) permits everything: see [NewTerms.UnitPrice].
-func WithinAsking(quantity, total, unitPrice int64) bool {
+func BelowAsking(quantity, total, unitPrice int64) bool {
 	if unitPrice <= 0 || quantity <= 0 {
 		return true
 	}
-	return total <= unitPrice*quantity
+	return total < unitPrice*quantity
 }
 
 // Live reports whether the negotiation is still open to a move.
@@ -125,7 +132,7 @@ func (o *Offer) Counter(actorID, quantity, total, unitPrice int64, reason string
 	if quantity <= 0 || total <= 0 {
 		return errQuantityPositive
 	}
-	if !WithinAsking(quantity, total, unitPrice) {
+	if !BelowAsking(quantity, total, unitPrice) {
 		return ErrOfferAboveAsking
 	}
 	o.AuthorID, o.Quantity, o.Total = actorID, quantity, total

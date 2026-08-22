@@ -203,6 +203,7 @@ func (s *Service) CounterOffer(ctx context.Context, req orderapi.CounterOfferReq
 		return orderapi.Offer{}, err
 	}
 	s.notifyOfferUpdated(ctx, o, dto)
+	s.announceOfferChanged(ctx, o, dto, req.ActorID, OfferChangeCountered)
 	return dto, nil
 }
 
@@ -223,6 +224,7 @@ func (s *Service) CancelOffer(ctx context.Context, req orderapi.OfferRequest) er
 		s.log.Warn("resolve offer currency for notify failed", "offer_id", o.ID, "err", err)
 	} else {
 		s.notifyOfferUpdated(ctx, o, dto)
+		s.announceOfferChanged(ctx, o, dto, req.ActorID, OfferChangeWithdrawn)
 	}
 	return nil
 }
@@ -256,6 +258,7 @@ func (s *Service) AcceptOffer(ctx context.Context, req orderapi.OfferRequest) (o
 		return orderapi.Offer{}, err
 	}
 	s.notifyOfferUpdated(ctx, o, dto)
+	s.announceOfferChanged(ctx, o, dto, req.ActorID, OfferChangeAccepted)
 	return dto, nil
 }
 
@@ -469,5 +472,25 @@ func (s *Service) offerDTO(ctx context.Context, viewerID id.ID[id.Account], o do
 func (s *Service) notifyOfferUpdated(ctx context.Context, o domain.Offer, dto orderapi.Offer) {
 	for _, accountID := range [...]int64{o.BuyerID, o.SellerID} {
 		notify(ctx, s, accountID, OfferUpdated, dto)
+	}
+}
+
+// announceOfferChanged publishes the same transition as a domain fact, for the party who does
+// not have the thread open. Best-effort and after the write, like every other publish here: the
+// terms are already saved, so a bus that is down costs a feed row and not a negotiation.
+func (s *Service) announceOfferChanged(ctx context.Context, o domain.Offer, dto orderapi.Offer,
+	actorID id.ID[id.Account], change string) {
+	event := OfferChanged{
+		OfferID:     o.ID,
+		BuyerID:     o.BuyerID,
+		SellerID:    o.SellerID,
+		ActorID:     actorID.Int64(),
+		Change:      change,
+		ListingName: dto.Listing.Name,
+		Total:       o.Total,
+		Currency:    dto.Currency,
+	}
+	if err := publishOfferChanged(ctx, s.bus, event); err != nil {
+		s.log.Error("publish offer changed failed", "offer_id", o.ID, "change", change, "err", err)
 	}
 }

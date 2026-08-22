@@ -75,6 +75,13 @@ func (s *Service) DeleteCartItem(ctx context.Context, req orderapi.CartItemReque
 // variantOf resolves a variant to its listing through catalog, which is the only place that
 // knows the mapping — a variant is not addressable on its own in that contract, so the
 // listing is read and the variant found inside it.
+//
+// It also refuses a listing that is not for sale, because every caller is a step towards
+// buying: filling a cart, opening or countering a negotiation, spending agreed terms, quoting
+// the delivery for one of those. The read contract deliberately serves a taken-down listing
+// to anyone — a cart row has to render — and says `status` is what reports it cannot be
+// bought; this is where that is read. Rendering paths do not come through here: a cart lists
+// its own rows, and an order carries a snapshot.
 func (s *Service) variantOf(ctx context.Context, viewerID id.ID[id.Account], variantID id.ID[id.Variant]) (catalogapi.ListingDetail, catalogapi.Variant, error) {
 	page, err := s.catalog.ListListings(ctx, catalogapi.ListListingsRequest{
 		ViewerID: viewerID, Variants: []id.ID[id.Variant]{variantID}, Page: 1, Limit: 1,
@@ -90,6 +97,9 @@ func (s *Service) variantOf(ctx context.Context, viewerID id.ID[id.Account], var
 	})
 	if err != nil {
 		return catalogapi.ListingDetail{}, catalogapi.Variant{}, fmt.Errorf("get listing: %w", err)
+	}
+	if !listing.ForSale() {
+		return catalogapi.ListingDetail{}, catalogapi.Variant{}, domain.ErrListingNotForSale
 	}
 	for _, v := range listing.Variants {
 		if v.ID == variantID {

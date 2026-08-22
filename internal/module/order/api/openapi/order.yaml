@@ -111,6 +111,33 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /orders/{id}/history:
+    get:
+      tags: [order]
+      summary: What has happened to this order
+      description: >
+        The order's trail, newest first: one entry per transition and one per carrier checkpoint.
+        Unpaged — an order collects a dozen entries, and the route caps what it answers rather
+        than taking a page. Readable by the two parties; anybody else gets the same 404 the order
+        itself gives.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderID' } }
+      responses:
+        '200':
+          description: 'OK'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/OrderHistoryEntry' }
+                required: [data]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /orders/{id}/confirmation:
     parameters:
       - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/OrderID' } }
@@ -343,6 +370,46 @@ components:
         ward_code: { type: string, example: '26743' }
         address_detail: { type: string, nullable: true, example: 'Apt 4B, 12 Nguyen Hue', description: 'The street line and anything below it' }
       required: [full_name, phone, country, province_code, district_code, ward_code, address_detail]
+
+    OrderHistoryEntry:
+      type: object
+      description: One thing that happened to an order. The stored row snapshot is deliberately not exposed.
+      properties:
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          example: 3
+          description: The trail's own counter for this order, so it is also the entry's key.
+        code:
+          type: string
+          example: order.confirmed
+          description: >
+            Which fact this is. One of `order.placed`, `order.confirmed`, `order.declined`,
+            `order.confirmation_escalated`, `order.shipment_advanced`, `order.received`,
+            `order.cancelled`, `order.completed`, `order.payout_released`.
+        changed_at: { type: string, format: date-time }
+        actor_kind:
+          type: string
+          enum: [buyer, seller, carrier, system]
+          example: seller
+          description: >
+            Which side was behind it, derived from the fact rather than stored — only a seller
+            confirms, only a carrier moves a parcel.
+        reason:
+          type: string
+          example: Hết hàng
+          description: The seller's own words on a refusal. Empty for every other fact.
+        shipment_status:
+          type: string
+          example: in-transit
+          description: Where the parcel got to. Empty unless this entry is a shipment move.
+        evidence:
+          type: integer
+          minimum: 0
+          example: 2
+          description: How many photos were filed with a receipt. Zero otherwise.
+      required: [version, code, changed_at, actor_kind, reason, shipment_status, evidence]
 
     Order:
       type: object

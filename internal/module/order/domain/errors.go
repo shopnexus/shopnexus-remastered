@@ -13,11 +13,11 @@ var (
 	ErrCartItemNotFound = errx.NewError(http.StatusNotFound, "cart_item_not_found", "cart item not found")
 
 	// --- drafts and checkout ---
-	ErrDraftNotFound     = errx.NewError(http.StatusNotFound, "draft_not_found", "purchase session not found")
-	ErrDraftExpired      = errx.NewError(http.StatusConflict, "draft_expired", "this purchase session has expired")
-	ErrDraftSettled      = errx.NewError(http.StatusConflict, "draft_settled", "this purchase session is already cancelled or checked out")
-	ErrPriceMoved        = errx.NewError(http.StatusConflict, "price_moved", "the frozen terms no longer match the listing")
-	ErrCurrencyMismatch  = errx.NewError(http.StatusUnprocessableEntity, "currency_mismatch", "the currency does not match the listing's")
+	ErrDraftNotFound    = errx.NewError(http.StatusNotFound, "draft_not_found", "purchase session not found")
+	ErrDraftExpired     = errx.NewError(http.StatusConflict, "draft_expired", "this purchase session has expired")
+	ErrDraftSettled     = errx.NewError(http.StatusConflict, "draft_settled", "this purchase session is already cancelled or checked out")
+	ErrPriceMoved       = errx.NewError(http.StatusConflict, "price_moved", "the frozen terms no longer match the listing")
+	ErrCurrencyMismatch = errx.NewError(http.StatusUnprocessableEntity, "currency_mismatch", "the currency does not match the listing's")
 	// ErrSelfPurchase is a seller buying their own listing. The escrow would move in a circle
 	// and the platform would keep the delivery fee, but the damage is what the completed order
 	// leaves behind: a rating, a review and a sales count for goods that never changed hands.
@@ -63,7 +63,7 @@ var (
 	// a reason to make — and one nobody would need this route for, since the buyer can
 	// simply buy. Held for both parties, because a seller countering above their own
 	// asking price is the same nonsense from the other end.
-	ErrOfferAboveAsking = errx.NewError(http.StatusUnprocessableEntity, "offer_above_asking", "an offer cannot be above the asking price")
+	ErrOfferAboveAsking = errx.NewError(http.StatusUnprocessableEntity, "offer_above_asking", "an offer has to be below the asking price — at it, there is nothing to negotiate")
 
 	// --- orders ---
 	ErrOrderNotFound = errx.NewError(http.StatusNotFound, "order_not_found", "order not found")

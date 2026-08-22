@@ -33,6 +33,10 @@ const SellerConfirmWindow = 48 * time.Hour
 // listing whose stock is wrong, or whose owner has stopped selling, is otherwise discovered by
 // the buyer waiting for a parcel nobody ever posted.
 type Order struct {
+	// events is what this order decided during the current command, drained by the repository
+	// into the trail in the same transaction as the change.
+	events []Event
+
 	ID int64
 	// Where the sale came from, exactly one of the two. A fixed-price listing is checked
 	// out from a draft; a negotiable one is agreed in a negotiation.
@@ -105,6 +109,7 @@ func (o *Order) Confirm() error {
 		return ErrOrderAlreadyConfirmed
 	}
 	o.ConfirmedAt = new(time.Now())
+	record(o, Confirmed, NoPayload{})
 	return nil
 }
 
@@ -124,6 +129,7 @@ func (o *Order) Decline(reason string) error {
 	}
 	o.CancelledAt = new(time.Now())
 	o.DeclineReason = &reason
+	record(o, Declined, Refusal{Reason: reason})
 	return nil
 }
 
@@ -142,6 +148,7 @@ func (o *Order) EscalateConfirmation() error {
 		return ErrConfirmationAlreadyEscalated
 	}
 	o.ConfirmationEscalatedAt = new(time.Now())
+	record(o, ConfirmationEscalated, NoPayload{})
 	return nil
 }
 
@@ -182,6 +189,7 @@ func (o *Order) ConfirmReceipt(attachments []int64) error {
 	}
 	o.ReceivedAt = new(time.Now())
 	o.ReceiptAttachments = attachments
+	record(o, Received, Receipt{Evidence: len(attachments)})
 	return nil
 }
 
@@ -215,6 +223,7 @@ func (o *Order) Cancel(shipped bool) error {
 		return ErrOrderNotCancellable
 	}
 	o.CancelledAt = new(time.Now())
+	record(o, Cancelled, NoPayload{})
 	return nil
 }
 

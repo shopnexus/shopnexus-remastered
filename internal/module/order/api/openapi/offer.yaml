@@ -24,9 +24,13 @@ paths:
         into the pair's chat thread.
 
 
-        `total` may not exceed the variant's listed price for that `quantity`. Negotiation only
-        moves the price down: the asking price is already an offer to sell at it, so terms above
-        it are a proposal with no reason to exist — the buyer would simply buy.
+        `total` has to be **strictly below** the variant's listed price for that `quantity`.
+        Negotiation only moves the price down, and it has to actually move: the asking price is
+        already an offer to sell at it, takeable by pressing buy, so terms at or above it are a
+        proposal with no reason to exist. Landing exactly on the asking price is the case worth
+        naming — it is refused, because it costs both sides two round trips (the other party
+        accepts, then the buyer has thirty minutes to check out) to reach a price that was one
+        press away.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -48,7 +52,7 @@ paths:
         '403': { description: 'A seller cannot open a negotiation on their own listing', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'An active negotiation already exists for this (buyer, SKU)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '422': { description: '`total` is above the listed price for that `quantity`, or the listing is not negotiable', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: '`total` is at or above the listed price for that `quantity`, or the listing is not negotiable', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     get:
       tags: [order]
       summary: List the caller's negotiations, both sides at once
@@ -122,7 +126,7 @@ paths:
         '403': { description: 'Caller already owns the standing proposal, or is not a party', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'Negotiation is no longer active', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '422': { description: '`total` is above the listed price for that `quantity`', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: '`total` is at or above the listed price for that `quantity`', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     delete:
       tags: [order]
       summary: Cancel a negotiation
@@ -322,7 +326,14 @@ components:
       properties:
         variant_id: { $ref: '#/components/schemas/VariantID' }
         quantity: { type: integer, format: int64, minimum: 1, example: 2 }
-        total: { type: integer, format: int64, minimum: 1, example: 598000 }
+        total:
+          type: integer
+          format: int64
+          minimum: 1
+          example: 598000
+          description: >
+            The whole proposal, not a unit price, and strictly below the variant's listed price
+            times `quantity` — see the route description for why the boundary is exclusive.
         reason: { type: string, maxLength: 500 }
       required: [variant_id, quantity, total]
 
@@ -330,7 +341,14 @@ components:
       type: object
       properties:
         quantity: { type: integer, format: int64, minimum: 1, example: 2 }
-        total: { type: integer, format: int64, minimum: 1, example: 598000 }
+        total:
+          type: integer
+          format: int64
+          minimum: 1
+          example: 598000
+          description: >
+            The whole proposal, not a unit price, and strictly below the variant's listed price
+            times `quantity` — see the route description for why the boundary is exclusive.
         reason: { type: string, maxLength: 500 }
       required: [quantity, total]
 

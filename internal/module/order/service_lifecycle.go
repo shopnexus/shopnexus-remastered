@@ -246,13 +246,23 @@ func (s *Service) RecordCarrierCheckpoint(ctx context.Context, ref, status strin
 		s.log.Debug("carrier status ignored", "ref", ref, "status", status)
 		return nil
 	}
-	if _, err := s.advanceLeg(ctx, t.ID, next); err != nil {
+	leg, err := s.advanceLeg(ctx, t.ID, next)
+	if err != nil {
 		// A report that would move the parcel backwards is not an error the carrier can fix, so
 		// it is accepted and dropped rather than retried for ever.
 		if errors.Is(err, domain.ErrTransportSettled) {
 			return nil
 		}
 		return err
+	}
+	if leg.Delivered() {
+		// The webhook names the shipment and nothing else, so the parties come from the order.
+		o, err := s.repo.FindOrderByTransport(ctx, t.ID)
+		if err != nil {
+			s.log.Error("read order for a delivered parcel", "transport_id", t.ID, "err", err)
+			return nil
+		}
+		s.publishDelivered(ctx, o)
 	}
 	return nil
 }
@@ -651,6 +661,21 @@ func (s *Service) advanceRefund(ctx context.Context, r domain.Refund) (bool, err
 		s.publishRefundEscalated(ctx, r, o, EscalationUnanswered)
 	}
 	return true, nil
+}
+
+// publishDelivered announces the parcel's arrival, which is the buyer's cue to confirm receipt.
+// Best-effort like every other publish here: the leg is written, and a bus that is down must not
+// undo a checkpoint.
+func (s *Service) publishDelivered(ctx context.Context, o domain.Order) {
+	// Nothing to ask for on an order the buyer already signed off, or one that ended without
+	// them: a receipt is not re-openable, so the nudge would be a letter with no action behind it.
+	if o.ReceivedAt != nil || o.Settled() {
+		return
+	}
+	event := OrderDelivered{OrderID: o.ID, BuyerID: o.BuyerID, SellerID: o.SellerID}
+	if err := publishOrderDelivered(ctx, s.bus, event); err != nil {
+		s.log.Error("publish order delivered failed", "order_id", o.ID, "err", err)
+	}
 }
 
 // publishSettled announces an outcome. Best-effort for the same reason publishPlaced is: the

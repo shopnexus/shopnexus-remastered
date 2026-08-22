@@ -20,6 +20,7 @@ import (
 // and every transition guarded by the status it moves from — because those are the rules the
 // service's behaviour rests on.
 type fakeRepo struct {
+	history map[int64][]port.AuditRecord
 	nextID    int64
 	carts     map[int64]domain.CartItem
 	drafts    map[int64]domain.Draft
@@ -540,6 +541,28 @@ func (f *fakeRepo) FindOrder(_ context.Context, orderID int64) (domain.Order, er
 		return domain.Order{}, domain.ErrOrderNotFound
 	}
 	return o, nil
+}
+
+// FindOrderByTransport is the webhook's second lookup: the parcel names the sale. `transport_id`
+// is UNIQUE on the order, so the outbound leg has exactly one and a return leg has none.
+// history is the trail the real repo writes inside each order write. The fake records what a
+// test hands it, so a service test can assert on the reading side without a database.
+func (f *fakeRepo) ListOrderHistory(_ context.Context, orderID int64, offset, limit int) ([]port.AuditRecord, int64, error) {
+	all := f.history[orderID]
+	if offset >= len(all) {
+		return nil, int64(len(all)), nil
+	}
+	end := min(offset+limit, len(all))
+	return all[offset:end], int64(len(all)), nil
+}
+
+func (f *fakeRepo) FindOrderByTransport(_ context.Context, transportID int64) (domain.Order, error) {
+	for _, o := range f.orders {
+		if o.TransportID == transportID {
+			return o, nil
+		}
+	}
+	return domain.Order{}, domain.ErrOrderNotFound
 }
 
 func (f *fakeRepo) FindOrderByOrigin(_ context.Context, origin domain.Origin) (domain.Order, error) {

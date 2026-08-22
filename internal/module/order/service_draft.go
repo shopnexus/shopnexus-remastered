@@ -26,6 +26,9 @@ func (s *Service) CreateDraft(ctx context.Context, req orderapi.CreateDraftReque
 	if err != nil {
 		return orderapi.Draft{}, fmt.Errorf("get listing: %w", err)
 	}
+	if !listing.ForSale() {
+		return orderapi.Draft{}, domain.ErrListingNotForSale
+	}
 	snapshot := domain.ListingSnapshot{
 		ListingID: listing.ID.Int64(),
 		SellerID:  listing.Seller.ID.Int64(),
@@ -115,6 +118,18 @@ func (s *Service) Checkout(ctx context.Context, req orderapi.CheckoutRequest) (o
 	// and this is the last gate before the money is asked for.
 	if d.BuyerID == d.Snapshot.SellerID {
 		return orderapi.CheckoutResult{}, domain.ErrSelfPurchase
+	}
+	// A session freezes the *terms*, not permission to sell: a takedown between opening it and
+	// spending it stops the sale. Read here rather than trusted from the snapshot, and before
+	// the draft is claimed, so a refusal leaves the session intact.
+	listing, err := s.catalog.GetListing(ctx, catalogapi.GetListingRequest{
+		ID: id.Of[id.Listing](d.ListingID), ViewerID: req.ActorID,
+	})
+	if err != nil {
+		return orderapi.CheckoutResult{}, fmt.Errorf("get listing: %w", err)
+	}
+	if !listing.ForSale() {
+		return orderapi.CheckoutResult{}, domain.ErrListingNotForSale
 	}
 	if _, err := s.courier(ctx, req.TransportOption); err != nil {
 		return orderapi.CheckoutResult{}, err

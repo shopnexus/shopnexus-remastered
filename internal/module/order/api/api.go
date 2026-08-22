@@ -193,6 +193,27 @@ type RefundSummary struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// OrderHistoryEntry is one thing that happened to an order, as its trail reads it.
+//
+// The stored snapshot is not here: it is the whole row as it then was, and a client that
+// rendered it would be reading a shape the database is free to change.
+type OrderHistoryEntry struct {
+	// Version is the trail's own counter for this order, so it is also the entry's key.
+	Version   int64     `json:"version"`
+	Code      string    `json:"code"`
+	ChangedAt time.Time `json:"changed_at"`
+	// ActorKind is who was behind it — `buyer`, `seller`, `carrier` or `system`. Derived from
+	// the fact rather than stored: only a seller confirms, only a carrier moves a parcel, so
+	// an account id here would be a second copy of what the code already says.
+	ActorKind string `json:"actor_kind"`
+	// Reason is the seller's own words on a refusal, and empty for every other fact.
+	Reason string `json:"reason"`
+	// ShipmentStatus is where the parcel got to, and empty unless this is a shipment move.
+	ShipmentStatus string `json:"shipment_status"`
+	// Evidence is how many photos were filed with a receipt, and zero otherwise.
+	Evidence int `json:"evidence"`
+}
+
 type OrderPage struct {
 	Data []Order    `json:"data"`
 	Meta CursorInfo `json:"meta"`
@@ -489,6 +510,11 @@ type OrderRequest struct {
 	ID      id.ID[id.Order]   `json:"-" validate:"required"`
 }
 
+type ListOrderHistoryRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	ID      id.ID[id.Order]   `json:"-" validate:"required"`
+}
+
 type ConfirmReceiptRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	ID      id.ID[id.Order]   `json:"-" validate:"required"`
@@ -638,6 +664,9 @@ type Service interface {
 	ConfirmReceipt(ctx context.Context, req ConfirmReceiptRequest) (Order, error)
 	CancelOrder(ctx context.Context, req CancelOrderRequest) (Order, error)
 	GetOrderTransport(ctx context.Context, req OrderRequest) (Transport, error)
+	// ListOrderHistory is the order's own trail: what happened to it, when, and which side
+	// was behind each step. Readable by the two parties, which is who the order is about.
+	ListOrderHistory(ctx context.Context, req ListOrderHistoryRequest) ([]OrderHistoryEntry, error)
 	// AdvanceShipment corrects a checkpoint on the outbound leg. Staff only — the carrier's
 	// webhook is where that status comes from — because "has this shipped" decides whether an
 	// order can still be cancelled and the escrow taken back, so it is not a party's to claim.

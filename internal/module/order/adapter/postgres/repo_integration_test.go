@@ -722,6 +722,24 @@ func TestBookTransport_MarksTheParcelAndLeavesTheRetryList(t *testing.T) {
 	if _, err := r.FindTransportByRef(ctx, "trk-nobody"); !errors.Is(err, domain.ErrTransportNotFound) {
 		t.Fatalf("unknown ref = %v, want ErrTransportNotFound", err)
 	}
+
+	// And from the parcel to the sale, which is how a checkpoint reaches the parties: the webhook
+	// names the shipment and nothing else.
+	sale, err := r.FindOrderByTransport(ctx, o.TransportID)
+	if err != nil {
+		t.Fatalf("FindOrderByTransport: %v", err)
+	}
+	if sale.ID != o.ID {
+		t.Fatalf("found order %d, want %d", sale.ID, o.ID)
+	}
+	// A leg no order covers — a refund's return parcel — is not a sale.
+	returnLeg, err := r.InsertTransport(ctx, "ghn-express", 0)
+	if err != nil {
+		t.Fatalf("InsertTransport: %v", err)
+	}
+	if _, err := r.FindOrderByTransport(ctx, returnLeg); !errors.Is(err, domain.ErrOrderNotFound) {
+		t.Fatalf("return leg = %v, want ErrOrderNotFound", err)
+	}
 }
 
 // The cart is keyed by (account, variant), so adding the same variant twice tops the// The cart is keyed by (account, variant), so adding the same variant twice tops the
@@ -1237,4 +1255,105 @@ func TestOrderSummary_CountsOrdersAndMoneySeparately(t *testing.T) {
 	if empty.Open != 0 || empty.Completed != 0 {
 		t.Fatalf("counts = %+v, want an empty window", empty)
 	}
+}
+
+// The trail is written in the same transaction as the change it describes, so a write that
+// landed always has one. Before this the module's audit_log was empty at every row count: the
+// table existed and nothing had ever written to it, which is why an order screen could only
+// ever show a snapshot.
+func TestRepo_WritesTheOrderTrail(t *testing.T) {
+	r, _ := newRepo(t)
+	ctx := context.Background()
+	buyer, seller := party(t)
+	d := draft(t, r, buyer, seller)
+	item := paidItem(t, r, domain.FromDraft(d.ID), buyer, seller, time.Now().UnixNano()%1_000_000_000)
+	transportID, err := r.InsertTransport(ctx, "ghn-express", 15_000)
+	if err != nil {
+		t.Fatalf("InsertTransport: %v", err)
+	}
+	o, err := domain.NewOrder(domain.FromDraft(d.ID), buyer, seller, transportID, address(), address())
+	if err != nil {
+		t.Fatalf("NewOrder: %v", err)
+	}
+	if err := r.CreateOrder(ctx, &o, []int64{item.ID}); err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+
+	// The insert is the order's first entry: it is decided by the payment webhook, so no
+	// transition would have recorded it.
+	codes := historyCodes(t, r, o.ID)
+	if !slices.Contains(codes, string(domain.Placed.Code)) {
+		t.Fatalf("after create, codes = %v, want %q", codes, domain.Placed.Code)
+	}
+
+	// A transition's fact is drained by the save that persists it.
+	if err := o.Confirm(); err != nil {
+		t.Fatalf("Confirm: %v", err)
+	}
+	if err := r.SaveOrder(ctx, o); err != nil {
+		t.Fatalf("SaveOrder: %v", err)
+	}
+	codes = historyCodes(t, r, o.ID)
+	if !slices.Contains(codes, string(domain.Confirmed.Code)) {
+		t.Fatalf("after confirm, codes = %v, want %q", codes, domain.Confirmed.Code)
+	}
+
+	// A shipment move belongs to the order's trail, resolved from the transport it happened to.
+	leg, err := r.FindTransport(ctx, transportID)
+	if err != nil {
+		t.Fatalf("FindTransport: %v", err)
+	}
+	from := leg.Status
+	if err := leg.Advance(domain.TransportPickedUp); err != nil {
+		t.Fatalf("Advance: %v", err)
+	}
+	if err := r.SaveTransport(ctx, leg, from); err != nil {
+		t.Fatalf("SaveTransport: %v", err)
+	}
+	records, _, err := r.ListOrderHistory(ctx, o.ID, 0, 50)
+	if err != nil {
+		t.Fatalf("ListOrderHistory: %v", err)
+	}
+	var move *port.AuditRecord
+	for i := range records {
+		if records[i].Code == string(domain.ShipmentAdvanced.Code) {
+			move = &records[i]
+		}
+	}
+	if move == nil {
+		t.Fatalf("no shipment entry; codes = %v", codesOf(records))
+	}
+	// The payload is what lets the trail say where the parcel got to; the status column only
+	// ever holds the latest.
+	if got := move.Diff["status"]; got != domain.TransportPickedUp {
+		t.Errorf("shipment entry status = %v, want %q", got, domain.TransportPickedUp)
+	}
+
+	// Newest first, which is the order a history is read in.
+	if len(records) < 3 || records[0].Version <= records[len(records)-1].Version {
+		t.Errorf("versions = %v, want newest first", func() []int64 {
+			out := make([]int64, len(records))
+			for i, rec := range records {
+				out[i] = rec.Version
+			}
+			return out
+		}())
+	}
+}
+
+func historyCodes(t *testing.T, r *orderpg.Repo, orderID int64) []string {
+	t.Helper()
+	records, _, err := r.ListOrderHistory(context.Background(), orderID, 0, 50)
+	if err != nil {
+		t.Fatalf("ListOrderHistory: %v", err)
+	}
+	return codesOf(records)
+}
+
+func codesOf(records []port.AuditRecord) []string {
+	out := make([]string, len(records))
+	for i, rec := range records {
+		out[i] = rec.Code
+	}
+	return out
 }

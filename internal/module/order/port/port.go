@@ -32,6 +32,15 @@ type ItemFilter struct {
 
 // OrderFilter pages orders as buyer or as seller. State is derived from the two outcome
 // timestamps, so it is a predicate here rather than a column.
+// AuditRecord is one row of an order's trail, as the repository reads it.
+type AuditRecord struct {
+	Version   int64
+	Code      string
+	ChangedAt time.Time
+	// Diff is the payload the recorder declared, decoded as it was stored.
+	Diff map[string]any
+}
+
 type OrderFilter struct {
 	BuyerID  int64
 	SellerID int64
@@ -172,6 +181,12 @@ type Repository interface {
 	LinkItems(ctx context.Context, orderID int64, itemIDs []int64) error
 	FindOrder(ctx context.Context, id int64) (domain.Order, error)
 	FindOrderByOrigin(ctx context.Context, origin domain.Origin) (domain.Order, error)
+	// FindOrderByTransport answers the sale a parcel belongs to: a carrier's webhook names the
+	// shipment and nothing else, and the parties to tell are on the order.
+	FindOrderByTransport(ctx context.Context, transportID int64) (domain.Order, error)
+	// ListOrderHistory reads the order's trail, newest first — the order a history is read
+	// in. The count is what says whether there is a page after this one.
+	ListOrderHistory(ctx context.Context, orderID int64, offset, limit int) ([]AuditRecord, int64, error)
 	ListOrders(ctx context.Context, f OrderFilter) ([]domain.Order, error)
 	// CountOrders and ListOrderDays are the two halves of a summary: one aggregate row and one row
 	// per day. Two statements rather than one, because a per-day money column would have to join the
