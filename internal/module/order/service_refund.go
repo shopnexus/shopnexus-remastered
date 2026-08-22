@@ -408,7 +408,17 @@ func (s *Service) refundView(ctx context.Context, r domain.Refund) (orderapi.Ref
 	if err != nil {
 		return orderapi.Refund{}, err
 	}
+	// Read here rather than threaded in from the ten callers. Most of them loaded the order a
+	// moment ago to check the caller is a party to it, so this repeats a point lookup on the
+	// action paths — which is the cheaper mistake: the alternative is a signature every future
+	// caller has to get right, on a view whose whole job is to be the one place a refund is
+	// shaped.
+	order, err := s.refundOrderView(ctx, r.OrderID)
+	if err != nil {
+		return orderapi.Refund{}, err
+	}
 	return orderapi.Refund{
+		Order: order,
 		ID:              id.Of[id.Refund](r.ID),
 		OrderID:         id.Of[id.Order](r.OrderID),
 		BuyerID:         id.Of[id.Account](r.BuyerID),
@@ -419,6 +429,50 @@ func (s *Service) refundView(ctx context.Context, r domain.Refund) (orderapi.Ref
 		SellerDecidedAt: r.SellerDecidedAt,
 		ReturnedAt:      r.ReturnedAt,
 		CreatedAt:       r.CreatedAt,
+	}, nil
+}
+
+// refundOrderView is the sale a case is about, trimmed to what a row has to show.
+//
+// The listing ids come out of the order's items rather than being resolved here: catalogue is
+// another module, and the clients that draw these rows already batch one `GET /listings?ids=`
+// for the page.
+func (s *Service) refundOrderView(ctx context.Context, orderID int64) (orderapi.RefundOrder, error) {
+	o, err := s.repo.FindOrder(ctx, orderID)
+	if err != nil {
+		return orderapi.RefundOrder{}, fmt.Errorf("find order behind refund: %w", err)
+	}
+	total, currency, items, err := s.orderTotal(ctx, o.ID)
+	if err != nil {
+		return orderapi.RefundOrder{}, err
+	}
+	buyer, err := s.summary(ctx, o.BuyerID)
+	if err != nil {
+		return orderapi.RefundOrder{}, err
+	}
+	seller, err := s.summary(ctx, o.SellerID)
+	if err != nil {
+		return orderapi.RefundOrder{}, err
+	}
+	// Distinct and in item order: two variants of one listing are one thing to name.
+	listings := make([]id.ID[id.Listing], 0, len(items))
+	seen := make(map[int64]struct{}, len(items))
+	for _, item := range items {
+		if _, repeated := seen[item.ListingID]; repeated {
+			continue
+		}
+		seen[item.ListingID] = struct{}{}
+		listings = append(listings, id.Of[id.Listing](item.ListingID))
+	}
+	return orderapi.RefundOrder{
+		ID:         id.Of[id.Order](o.ID),
+		Buyer:      buyer,
+		Seller:     seller,
+		State:      o.State(),
+		Total:      total,
+		Currency:   currency,
+		ListingIDs: listings,
+		CreatedAt:  o.CreatedAt,
 	}, nil
 }
 

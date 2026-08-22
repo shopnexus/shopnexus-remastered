@@ -260,6 +260,37 @@ type Refund struct {
 	SellerDecidedAt *time.Time `json:"seller_decided_at"`
 	ReturnedAt      *time.Time `json:"returned_at"`
 	CreatedAt       time.Time  `json:"created_at"`
+	// Order is the sale being disputed, trimmed to what a row about it has to show. It rides
+	// on the refund for the same reason RefundSummary rides on the order, in the other
+	// direction: a list of cases carrying only `order_id` renders as a column of opaque ids,
+	// and the one question a reader has of each row — which item, how much, and who — cannot
+	// be answered without a second request per row.
+	Order RefundOrder `json:"order"`
+}
+
+// RefundOrder is the little of a sale a refund row has to show.
+//
+// Not the whole Order: that carries both addresses, the parcel, the receipt evidence and the
+// refund summary pointing back here, none of which a list row renders — and resolving an
+// upload URL per row to draw nothing is what the order list already learned not to do.
+//
+// The items are named by listing id rather than resolved. Catalogue lives in another module,
+// and every client that draws these rows already batches `GET /listings?ids=` for exactly this
+// — the order list does it too — so one read covers the page instead of one per row.
+type RefundOrder struct {
+	ID     id.ID[id.Order]           `json:"id"`
+	Buyer  accountapi.AccountSummary `json:"buyer"`
+	Seller accountapi.AccountSummary `json:"seller"`
+	// State is the sale's own state, which is not the refund's: a case can be open on an
+	// order that has already been delivered.
+	State    string `json:"state"`
+	Total    int64  `json:"total"`
+	Currency string `json:"currency"`
+	// ListingIDs is every distinct listing on the order, in item order. A refund is raised
+	// against the whole sale rather than one line, so a row showing only the first item says
+	// how many others there are.
+	ListingIDs []id.ID[id.Listing] `json:"listing_ids"`
+	CreatedAt  time.Time           `json:"created_at"`
 }
 
 // OrderCase is a sale and the one unsettled refund on it, if there is one. Two reads that a
