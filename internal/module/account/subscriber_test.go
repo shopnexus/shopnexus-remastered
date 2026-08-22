@@ -12,21 +12,48 @@ import (
 	"shopnexus/internal/module/account"
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/api/accounttest"
+	"shopnexus/internal/module/account/domain"
+	"shopnexus/internal/module/catalog"
+	"shopnexus/internal/module/finance"
+	financedomain "shopnexus/internal/module/finance/domain"
 	"shopnexus/internal/module/order"
-	"shopnexus/internal/provider/notify"
 )
 
-// The subscriber turns an order fact into one notification per interested party.
-func TestSubscribeOrderEventsNotifiesBothSides(t *testing.T) {
+// What the subscribers are for: another module's fact becomes one notification per interested
+// party, told as a *kind*. Nothing here asserts on words — the kind decides those, and the
+// copybook writes them in the reader's language. What is worth asserting is which side gets
+// which kind, because that is where a buyer used to be told they had an order to pack.
+
+// bus is a memory bus wired to every subscriber, torn down with the test.
+func subscribedBus(t *testing.T) (*eventbus.Memory, *spyNotifier) {
+	t.Helper()
 	bus := eventbus.NewMemory(slog.New(slog.DiscardHandler))
 	t.Cleanup(func() {
 		if err := bus.Close(); err != nil {
 			t.Errorf("close bus: %v", err)
 		}
 	})
+	spy := &spyNotifier{done: make(chan struct{}, 8)}
+	log := slog.New(slog.DiscardHandler)
+	account.SubscribeOrderEvents(bus, spy, log)
+	account.SubscribeCatalogEvents(bus, spy, log)
+	account.SubscribeFinanceEvents(bus, spy, log)
+	return bus, spy
+}
 
-	spy := &spyNotifier{done: make(chan struct{}, 4)}
-	account.SubscribeOrderEvents(bus, spy, slog.New(slog.DiscardHandler))
+// kindsByAccount is what most of these tests actually check.
+func kindsByAccount(reqs []accountapi.CreateNotificationRequest) map[int64]string {
+	out := make(map[int64]string, len(reqs))
+	for _, req := range reqs {
+		out[req.AccountID.Int64()] = req.Kind
+	}
+	return out
+}
+
+// The two sides of a sale read different words about it — one has an order confirmed, the other
+// has one to pack — so the fact reaches them as two kinds.
+func TestSubscribeOrderEventsNotifiesBothSides(t *testing.T) {
+	bus, spy := subscribedBus(t)
 
 	err := eventbus.Publish(t.Context(), bus, order.OrderPlacedTopic, order.OrderPlaced{
 		OrderID:  9,
@@ -40,47 +67,42 @@ func TestSubscribeOrderEventsNotifiesBothSides(t *testing.T) {
 	}
 
 	got := spy.wait(t, 2)
-	if got[0].Category != "order" || got[1].Category != "order" {
-		t.Errorf("categories = %q, %q, want order", got[0].Category, got[1].Category)
+	byAccount := kindsByAccount(got)
+	if byAccount[42] != string(domain.KindOrderPlaced) {
+		t.Errorf("buyer kind = %q, want %q", byAccount[42], domain.KindOrderPlaced)
 	}
-	ids := map[int64]bool{got[0].AccountID.Int64(): true, got[1].AccountID.Int64(): true}
-	if !ids[42] || !ids[77] {
-		t.Errorf("recipients = %v, want buyer 42 and seller 77", ids)
-	}
-
-	// The two sides read different words about the same sale — one has an order confirmed,
-	// the other has one to pack — so the fact reaches them as two templates.
-	byAccount := map[int64]string{}
-	for _, req := range got {
-		byAccount[req.AccountID.Int64()] = req.MailKind
-	}
-	if byAccount[42] != string(notify.KindOrderPlaced) {
-		t.Errorf("buyer mail = %q, want %q", byAccount[42], notify.KindOrderPlaced)
-	}
-	if byAccount[77] != string(notify.KindOrderReceived) {
-		t.Errorf("seller mail = %q, want %q", byAccount[77], notify.KindOrderReceived)
+	if byAccount[77] != string(domain.KindSaleReceived) {
+		t.Errorf("seller kind = %q, want %q", byAccount[77], domain.KindSaleReceived)
 	}
 
-	// The mail renders the payload, so the terms have to be in it: an order mail whose
-	// total came from somewhere else could disagree with the feed row beside it.
+	// Both the feed copy and the mail render this map, so the terms have to be in it: a total
+	// that came from somewhere else could disagree with the row beside it.
 	if got[0].Payload["order_id"] == "" || got[0].Payload["total"] != int64(1250000) {
 		t.Errorf("payload = %v, want the order's terms", got[0].Payload)
 	}
 }
 
-// A lapsed confirmation is the buyer being told their money is not stuck unnoticed. The
-// seller is the one who did not act: they get the feed row, and chasing them is support's
-// job rather than a letter this platform sends on their behalf.
-func TestSubscribeOrderEventsMailsOnlyTheBuyerOnALapsedConfirmation(t *testing.T) {
-	bus := eventbus.NewMemory(slog.New(slog.DiscardHandler))
-	t.Cleanup(func() {
-		if err := bus.Close(); err != nil {
-			t.Errorf("close bus: %v", err)
-		}
-	})
+// A delivered parcel is the buyer's cue to confirm receipt, which is what releases the escrow —
+// so their kind is the one with a letter. The seller shipped it and gets a feed row.
+func TestSubscribeOrderEventsMailsOnlyTheBuyerOnADelivery(t *testing.T) {
+	bus, spy := subscribedBus(t)
 
-	spy := &spyNotifier{done: make(chan struct{}, 4)}
-	account.SubscribeOrderEvents(bus, spy, slog.New(slog.DiscardHandler))
+	err := eventbus.Publish(t.Context(), bus, order.OrderDeliveredTopic, order.OrderDelivered{
+		OrderID: 9, BuyerID: 42, SellerID: 77,
+	})
+	if err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	byAccount := kindsByAccount(spy.wait(t, 2))
+	assertMailed(t, byAccount[42], domain.KindOrderDelivered, true)
+	assertMailed(t, byAccount[77], domain.KindSaleHandedOver, false)
+}
+
+// The seller is the one who did not act on a lapsed confirmation: chasing them is support's job
+// rather than a letter this platform sends on their behalf.
+func TestSubscribeOrderEventsMailsOnlyTheBuyerOnALapsedConfirmation(t *testing.T) {
+	bus, spy := subscribedBus(t)
 
 	err := eventbus.Publish(t.Context(), bus, order.OrderConfirmationLapsedTopic, order.OrderConfirmationLapsed{
 		OrderID: 9, BuyerID: 42, SellerID: 77,
@@ -89,44 +111,200 @@ func TestSubscribeOrderEventsMailsOnlyTheBuyerOnALapsedConfirmation(t *testing.T
 		t.Fatalf("Publish: %v", err)
 	}
 
-	for _, req := range spy.wait(t, 2) {
-		want := ""
-		if req.AccountID.Int64() == 42 {
-			want = string(notify.KindOrderUnconfirmed)
-		}
-		if req.MailKind != want {
-			t.Errorf("account %d mail = %q, want %q", req.AccountID.Int64(), req.MailKind, want)
-		}
+	byAccount := kindsByAccount(spy.wait(t, 2))
+	assertMailed(t, byAccount[42], domain.KindOrderUnconfirmed, true)
+	assertMailed(t, byAccount[77], domain.KindSaleUnconfirmed, false)
+}
+
+func assertMailed(t *testing.T, got string, want domain.Kind, mailed bool) {
+	t.Helper()
+	if got != string(want) {
+		t.Errorf("kind = %q, want %q", got, want)
+		return
+	}
+	spec, _ := domain.SpecOf(want)
+	if (spec.Mail != "") != mailed {
+		t.Errorf("kind %q mail = %q, want mailed=%v", want, spec.Mail, mailed)
 	}
 }
 
-// A settled order is one fact with two outcomes, and the mail has to follow the outcome —
+// A settled order is one fact with two outcomes, and the kind has to follow the outcome —
 // telling both sides a cancelled sale completed is the worst version of this bug.
 func TestSubscribeOrderEventsTellsCompletedFromCancelled(t *testing.T) {
 	for _, tc := range []struct {
-		completed bool
-		want      notify.Kind
+		completed   bool
+		buyer, sell domain.Kind
 	}{
-		{completed: true, want: notify.KindOrderCompleted},
-		{completed: false, want: notify.KindOrderCancelled},
+		{completed: true, buyer: domain.KindOrderCompleted, sell: domain.KindSaleCompleted},
+		{completed: false, buyer: domain.KindOrderCancelled, sell: domain.KindSaleCancelled},
 	} {
-		bus := eventbus.NewMemory(slog.New(slog.DiscardHandler))
-		spy := &spyNotifier{done: make(chan struct{}, 4)}
-		account.SubscribeOrderEvents(bus, spy, slog.New(slog.DiscardHandler))
-
+		bus, spy := subscribedBus(t)
 		err := eventbus.Publish(t.Context(), bus, order.OrderSettledTopic, order.OrderSettled{
 			OrderID: 9, BuyerID: 42, SellerID: 77, Completed: tc.completed,
 		})
 		if err != nil {
 			t.Fatalf("Publish: %v", err)
 		}
-		for _, req := range spy.wait(t, 2) {
-			if req.MailKind != string(tc.want) {
-				t.Errorf("completed=%v: mail = %q, want %q", tc.completed, req.MailKind, tc.want)
-			}
+		byAccount := kindsByAccount(spy.wait(t, 2))
+		if byAccount[42] != string(tc.buyer) || byAccount[77] != string(tc.sell) {
+			t.Errorf("completed=%v: kinds = %q/%q, want %q/%q",
+				tc.completed, byAccount[42], byAccount[77], tc.buyer, tc.sell)
 		}
-		if err := bus.Close(); err != nil {
-			t.Errorf("close bus: %v", err)
+	}
+}
+
+// A refund escalation exists to stop the buyer chasing a seller who stopped answering, so it is
+// theirs alone — nothing goes to the party the case is against.
+func TestSubscribeOrderEventsTellsOnlyTheBuyerAboutAnEscalation(t *testing.T) {
+	bus, spy := subscribedBus(t)
+
+	err := eventbus.Publish(t.Context(), bus, order.RefundEscalatedTopic, order.RefundEscalated{
+		RefundID: 3, OrderID: 9, BuyerID: 42, Cause: order.EscalationUnanswered,
+	})
+	if err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	got := spy.wait(t, 1)
+	if len(got) != 1 || got[0].AccountID.Int64() != 42 {
+		t.Fatalf("recipients = %v, want the buyer alone", kindsByAccount(got))
+	}
+	if got[0].Kind != string(domain.KindRefundEscalated) {
+		t.Errorf("kind = %q", got[0].Kind)
+	}
+}
+
+// A negotiation moving is told to whoever did not move it: the actor is looking at the thread
+// they just typed in, and either side may be that actor.
+func TestSubscribeOrderEventsTellsTheOtherSideOfAnOffer(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		actorID  int64
+		wantID   int64
+		change   string
+		wantKind domain.Kind
+	}{
+		{name: "buyer countered", actorID: 42, wantID: 77, change: order.OfferChangeCountered, wantKind: domain.KindOfferCountered},
+		{name: "seller accepted", actorID: 77, wantID: 42, change: order.OfferChangeAccepted, wantKind: domain.KindOfferAccepted},
+		{name: "buyer withdrew", actorID: 42, wantID: 77, change: order.OfferChangeWithdrawn, wantKind: domain.KindOfferWithdrawn},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bus, spy := subscribedBus(t)
+			err := eventbus.Publish(t.Context(), bus, order.OfferChangedTopic, order.OfferChanged{
+				OfferID: 5, BuyerID: 42, SellerID: 77, ActorID: tc.actorID,
+				Change: tc.change, ListingName: "Máy ảnh Canon", Total: 4500000, Currency: "VND",
+			})
+			if err != nil {
+				t.Fatalf("Publish: %v", err)
+			}
+			got := spy.wait(t, 1)
+			if got[0].AccountID.Int64() != tc.wantID {
+				t.Errorf("recipient = %d, want %d — the actor already knows", got[0].AccountID.Int64(), tc.wantID)
+			}
+			if got[0].Kind != string(tc.wantKind) {
+				t.Errorf("kind = %q, want %q", got[0].Kind, tc.wantKind)
+			}
+			// The copy names the listing and the price, and this module holds neither: they
+			// travel on the event so no subscriber has to read back into catalog.
+			if got[0].Payload["listing_name"] != "Máy ảnh Canon" || got[0].Payload["price"] != int64(4500000) {
+				t.Errorf("payload = %v, want the terms on the table", got[0].Payload)
+			}
+		})
+	}
+}
+
+// The moderator's choice is honoured here, not in catalog: whether a seller hears about a
+// takedown is a product rule, and the publisher carries the flag without deciding it.
+func TestSubscribeCatalogEventsHonoursNotifySeller(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		approved     bool
+		notifySeller bool
+		want         domain.Kind
+	}{
+		{name: "approved", approved: true, notifySeller: true, want: domain.KindListingApproved},
+		{name: "taken down, told", notifySeller: true, want: domain.KindListingTakenDown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bus, spy := subscribedBus(t)
+			err := eventbus.Publish(t.Context(), bus, catalog.ListingModeratedTopic, catalog.ListingModerated{
+				ListingID: 11, SellerID: 77, Name: "Áo khoác", Approved: tc.approved,
+				Reason: "hàng giả", NotifySeller: tc.notifySeller,
+			})
+			if err != nil {
+				t.Fatalf("Publish: %v", err)
+			}
+			got := spy.wait(t, 1)
+			if got[0].AccountID.Int64() != 77 || got[0].Kind != string(tc.want) {
+				t.Errorf("told %d as %q, want seller 77 as %q", got[0].AccountID.Int64(), got[0].Kind, tc.want)
+			}
+		})
+	}
+}
+
+// An approval is always told — a seller waiting on a queue is the one person who asked to be —
+// but a takedown the moderator chose to keep quiet stays quiet.
+func TestSubscribeCatalogEventsStaysQuietWhenAskedTo(t *testing.T) {
+	bus, spy := subscribedBus(t)
+
+	err := eventbus.Publish(t.Context(), bus, catalog.ListingModeratedTopic, catalog.ListingModerated{
+		ListingID: 11, SellerID: 77, Name: "Áo khoác", Approved: false, NotifySeller: false,
+	})
+	if err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	spy.wantSilence(t)
+}
+
+// A withdrawal is money the account asked to move, and the only money that leaves this platform
+// on somebody's instruction — so it is worth a row. A paid buyer-checkout is not: it becomes an
+// order, and `order.placed` already says so.
+func TestSubscribeFinanceEventsTellsOnlyAboutMoneyLeaving(t *testing.T) {
+	bus, spy := subscribedBus(t)
+
+	err := eventbus.Publish(t.Context(), bus, finance.SessionPaidTopic, finance.SessionPaid{
+		SessionID: 4, Kind: financedomain.KindBuyerCheckout, FromID: 42, Amount: 250000, Currency: "VND",
+	})
+	if err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	spy.wantSilence(t)
+
+	err = eventbus.Publish(t.Context(), bus, finance.SessionPaidTopic, finance.SessionPaid{
+		SessionID: 5, Kind: financedomain.KindWithdrawal, FromID: 42, Amount: 900000, Currency: "VND",
+	})
+	if err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	got := spy.wait(t, 1)
+	if got[0].Kind != string(domain.KindWithdrawalPaid) || got[0].AccountID.Int64() != 42 {
+		t.Errorf("told %d as %q, want 42 as %q", got[0].AccountID.Int64(), got[0].Kind, domain.KindWithdrawalPaid)
+	}
+	if got[0].Payload["amount"] != int64(900000) {
+		t.Errorf("payload = %v, want the amount that moved", got[0].Payload)
+	}
+}
+
+// A cancelled session is a claim released: the buyer's cart is still there, and a withdrawal's
+// money is back in the wallet. Both are things somebody is waiting on an answer about.
+func TestSubscribeFinanceEventsTellsAboutACancelledSession(t *testing.T) {
+	for _, tc := range []struct {
+		sessionKind string
+		want        domain.Kind
+	}{
+		{sessionKind: financedomain.KindBuyerCheckout, want: domain.KindCheckoutExpired},
+		{sessionKind: financedomain.KindWithdrawal, want: domain.KindPayoutFailed},
+	} {
+		bus, spy := subscribedBus(t)
+		err := eventbus.Publish(t.Context(), bus, finance.SessionCancelledTopic, finance.SessionCancelled{
+			SessionID: 6, Kind: tc.sessionKind, FromID: 42,
+		})
+		if err != nil {
+			t.Fatalf("Publish: %v", err)
+		}
+		got := spy.wait(t, 1)
+		if got[0].Kind != string(tc.want) {
+			t.Errorf("session kind %q became %q, want %q", tc.sessionKind, got[0].Kind, tc.want)
 		}
 	}
 }
@@ -159,4 +337,17 @@ func (s *spyNotifier) wait(t *testing.T, n int) []accountapi.CreateNotificationR
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return slices.Clone(s.got)
+}
+
+// wantSilence asserts nothing was told. A short wait rather than an immediate read, because the
+// bus delivers on its own goroutine and an empty slice read too early passes for anything.
+func (s *spyNotifier) wantSilence(t *testing.T) {
+	t.Helper()
+	select {
+	case <-s.done:
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		t.Fatalf("told somebody %v, want silence", kindsByAccount(s.got))
+	case <-time.After(100 * time.Millisecond):
+	}
 }

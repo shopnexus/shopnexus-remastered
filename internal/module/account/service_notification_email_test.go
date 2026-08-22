@@ -2,6 +2,7 @@ package account_test
 
 import (
 	"errors"
+	"io/fs"
 	"testing"
 
 	"shopnexus/internal/module/account"
@@ -9,12 +10,18 @@ import (
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/provider/notify"
 	"shopnexus/internal/shared/id"
+	"shopnexus/internal/shared/lang"
+	"shopnexus/templates"
 )
 
 // The email channel of a notification. What is worth testing is the four things that have
-// to hold before a letter goes out — the caller named a template, the account left the
-// channel on, there is an address, and somebody proved it is theirs — plus the fact that
-// none of them can fail the caller.
+// to hold before a letter goes out — the kind has a template, the account left the channel on,
+// there is an address, and somebody proved it is theirs — plus the fact that none of them can
+// fail the caller.
+//
+// The template is no longer something a caller names: it follows from the kind, along with the
+// category and the words. So the drift these tests used to guard — a title saying one thing and
+// a mail template another — is now a shape that cannot be expressed.
 
 const mailAccountID = 42
 
@@ -35,10 +42,8 @@ func mailHarness(t *testing.T) (*account.Service, *fakeRepo, *fakeNotifier) {
 func orderNotification() accountapi.CreateNotificationRequest {
 	return accountapi.CreateNotificationRequest{
 		AccountID: id.Of[id.Account](mailAccountID),
-		Category:  string(domain.CategoryOrder),
-		Title:     "Order placed",
+		Kind:      string(domain.KindOrderPlaced),
 		Payload:   map[string]any{"order_id": "ord_x", "total": int64(1250000), "currency": "VND"},
-		MailKind:  string(notify.KindOrderPlaced),
 	}
 }
 
@@ -68,12 +73,14 @@ func TestCreateNotificationMailsTheAccount(t *testing.T) {
 	}
 }
 
-// A fact with no mail written for it is a feed row and nothing more.
-func TestCreateNotificationWithoutAMailKindSendsNothing(t *testing.T) {
+// A fact with no mail written for it is a feed row and nothing more. Which facts those are is
+// the kind's own spec, so this is a property of the vocabulary rather than of a caller
+// remembering to leave a field blank.
+func TestCreateNotificationWithoutAMailTemplateSendsNothing(t *testing.T) {
 	svc, _, notes := mailHarness(t)
 
 	req := orderNotification()
-	req.MailKind = ""
+	req.Kind = string(domain.KindSaleHandedOver)
 	if _, err := svc.CreateNotification(t.Context(), req); err != nil {
 		t.Fatalf("CreateNotification: %v", err)
 	}
@@ -162,51 +169,66 @@ func TestCreateNotificationSurvivesAFailedSend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateNotification: %v", err)
 	}
-	if got.Title != "Order placed" {
-		t.Errorf("Title = %q", got.Title)
+	if got.Title == "" {
+		t.Error("the returned row has no title; a failed send must not cost the words too")
 	}
 	if len(repo.notifs) != 1 {
 		t.Errorf("wrote %d feed rows, want 1", len(repo.notifs))
 	}
 }
 
-// The request's `oneof` list and the notify constants are the same set spelled twice, in two
-// packages that cannot share the vocabulary — a struct tag takes no constant. This is what
-// stops them drifting: a kind the subscriber emits that the request refuses would be a 400
-// on a real order fact, found in production and nowhere else.
-func TestCreateNotificationAcceptsEveryOrderMailKind(t *testing.T) {
-	for _, kind := range []notify.Kind{
-		notify.KindOrderPlaced,
-		notify.KindOrderReceived,
-		notify.KindOrderCompleted,
-		notify.KindOrderCancelled,
-		notify.KindRefundResolved,
-		notify.KindOrderUnconfirmed,
-	} {
+// Every kind that claims a mail template actually reaches the provider under that template.
+// Walked from the vocabulary rather than a hand-kept list: a kind added with a `Mail` nobody
+// wired would otherwise be a letter that silently never goes out.
+func TestCreateNotificationMailsEveryKindThatClaimsATemplate(t *testing.T) {
+	for _, kind := range domain.Kinds {
+		spec, _ := domain.SpecOf(kind)
+		if spec.Mail == "" {
+			continue
+		}
 		svc, _, notes := mailHarness(t)
 		req := orderNotification()
-		req.MailKind = string(kind)
+		req.Kind = string(kind)
 		if _, err := svc.CreateNotification(t.Context(), req); err != nil {
 			t.Errorf("CreateNotification(%s): %v", kind, err)
 			continue
 		}
-		if len(notes.sentOf(kind)) != 1 {
-			t.Errorf("kind %s did not reach the provider", kind)
+		if len(notes.sentOf(notify.Kind(spec.Mail))) != 1 {
+			t.Errorf("kind %s did not reach the provider as template %q", kind, spec.Mail)
 		}
 	}
 }
 
-// A template this deployment has no copy for must be refused at the request, not discovered
-// by the provider when there is nothing left to do but log it.
-func TestCreateNotificationRejectsAnUnknownMailKind(t *testing.T) {
-	svc, _, notes := mailHarness(t)
+// Every template a kind names has copy on disk, in every language. The two lists live in
+// different packages — a domain may not import a provider — so this is what keeps them in step:
+// a typo here used to be a mail that failed at 3am on the one night it mattered.
+func TestKindSpecs_MailTemplatesExist(t *testing.T) {
+	mails := templates.Mail()
+	for _, kind := range domain.Kinds {
+		spec, _ := domain.SpecOf(kind)
+		if spec.Mail == "" {
+			continue
+		}
+		for _, l := range lang.All {
+			file := spec.Mail + "." + l + ".html"
+			if _, err := fs.Stat(mails, file); err != nil {
+				t.Errorf("kind %s names mail template %q, which has no %s copy", kind, spec.Mail, l)
+			}
+		}
+	}
+}
+
+// A kind nobody has copy for must be refused where it arrives, not discovered by a reader
+// staring at a blank row.
+func TestCreateNotificationRejectsAnUnknownKind(t *testing.T) {
+	svc, repo, notes := mailHarness(t)
 
 	req := orderNotification()
-	req.MailKind = "order-vanished"
+	req.Kind = "order-vanished"
 	if _, err := svc.CreateNotification(t.Context(), req); status(t, err) != 400 {
 		t.Fatalf("status = %d, want 400", status(t, err))
 	}
-	if len(notes.sent) != 0 {
-		t.Errorf("sent %d mails, want 0", len(notes.sent))
+	if len(repo.notifs) != 0 || len(notes.sent) != 0 {
+		t.Errorf("wrote %d rows and sent %d mails, want none of either", len(repo.notifs), len(notes.sent))
 	}
 }

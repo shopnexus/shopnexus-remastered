@@ -73,6 +73,9 @@ type Service struct {
 	// identity scan share it — presigning per request is what keeps a scan from ever being
 	// a public link, unlike the avatar it sits beside.
 	uploads common.Uploads
+	// copy writes a notification's words. The feed stores a kind and the facts, so the sentence
+	// is composed when it is read, in the language of whoever is reading.
+	copy port.Copybook
 	// v validates a request before the service acts on it. The handler checks the same struct,
 	// but a service-to-service caller reaching this contract through accountapi.Service never
 	// passes through a handler — and that caller is exactly the one no route test covers.
@@ -95,6 +98,7 @@ func NewService(
 	verifier oauth.Verifier,
 	kycClient kyc.Client,
 	uploads common.Uploads,
+	copybook port.Copybook,
 	v *validator.Validate,
 	log *slog.Logger,
 	fanout realtime.Fanout,
@@ -108,6 +112,7 @@ func NewService(
 		oauth:    verifier,
 		kyc:      kycClient,
 		uploads:  uploads,
+		copy:     copybook,
 		v:        v,
 		log:      log,
 		fanout:   fanout,

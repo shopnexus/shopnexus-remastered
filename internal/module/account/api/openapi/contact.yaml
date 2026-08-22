@@ -231,12 +231,12 @@ components:
         is_default_delivery: { type: boolean, default: false }
         is_default_pickup: { type: boolean, default: false }
         country: { type: string, minLength: 2, maxLength: 2, pattern: '^[A-Z]{2}$' }
-        province_code: { type: string, minLength: 1, maxLength: 20 }
-        province_name: { type: string, minLength: 1, maxLength: 100 }
+        province_code: { type: string, minLength: 1, maxLength: 20, description: 'A province code from /administrative-areas. It and the ward code must name a real pair, or the request is 400.' }
+        province_name: { type: string, minLength: 1, maxLength: 100, description: 'Ignored: the name is resolved from the code against /administrative-areas, so two addresses with one code cannot disagree. Still required, so a client that has the name need not look it up to send a valid body.' }
         district_code: { type: string, maxLength: 20, description: Send both district fields or neither. }
         district_name: { type: string, maxLength: 100 }
-        ward_code: { type: string, minLength: 1, maxLength: 20 }
-        ward_name: { type: string, minLength: 1, maxLength: 100 }
+        ward_code: { type: string, minLength: 1, maxLength: 20, description: 'A ward code from /administrative-areas, under the province named above.' }
+        ward_name: { type: string, minLength: 1, maxLength: 100, description: 'Ignored: the name is resolved from the code against /administrative-areas, so two addresses with one code cannot disagree. Still required, so a client that has the name need not look it up to send a valid body.' }
         postal_code: { type: string, maxLength: 20 }
         address: { type: string, minLength: 1, maxLength: 255 }
         address_detail: { type: string, maxLength: 255 }
@@ -263,11 +263,11 @@ components:
         is_default_pickup: { type: boolean, example: false }
         country: { type: string, minLength: 2, maxLength: 2, pattern: '^[A-Z]{2}$', example: VN }
         province_code: { type: string, maxLength: 20, example: '79' }
-        province_name: { type: string, maxLength: 100, example: TP Hồ Chí Minh }
+        province_name: { type: string, maxLength: 100, example: Thành phố Hồ Chí Minh, description: 'Ignored: the name is resolved from the code against /administrative-areas, so two addresses with one code cannot disagree.' }
         district_code: { type: string, maxLength: 20, example: '760' }
         district_name: { type: string, maxLength: 100, example: Quận 1 }
         ward_code: { type: string, maxLength: 20, example: '26734' }
-        ward_name: { type: string, maxLength: 100, example: Bến Nghé }
+        ward_name: { type: string, maxLength: 100, example: Phường Tân Định, description: 'Ignored: the name is resolved from the code against /administrative-areas, so two addresses with one code cannot disagree.' }
         postal_code: { type: string, maxLength: 20, example: '700000' }
         address: { type: string, maxLength: 255, example: 1 Lê Lợi }
         address_detail: { type: string, maxLength: 255, example: Tầng 3 }

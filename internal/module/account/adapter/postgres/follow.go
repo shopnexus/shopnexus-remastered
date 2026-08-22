@@ -12,18 +12,19 @@ import (
 
 // InsertFollow is idempotent: following twice is the same state as following once, so a
 // conflict is success rather than an error a client has to special-case.
-func (r *Repo) InsertFollow(ctx context.Context, followerID, followeeID int64) error {
+func (r *Repo) InsertFollow(ctx context.Context, followerID, followeeID int64) (bool, error) {
 	const q = `INSERT INTO follow (follower_id, followee_id)
 	           VALUES (@follower_id, @followee_id)
 	           ON CONFLICT DO NOTHING`
 	args := pgx.NamedArgs{"follower_id": followerID, "followee_id": followeeID}
-	if _, err := r.pool.Exec(ctx, q, args); err != nil {
+	tag, err := r.pool.Exec(ctx, q, args)
+	if err != nil {
 		if dbx.IsForeignKeyViolation(err) {
-			return domain.ErrAccountNotFound
+			return false, domain.ErrAccountNotFound
 		}
-		return fmt.Errorf("db insert follow: %w", err)
+		return false, fmt.Errorf("db insert follow: %w", err)
 	}
-	return nil
+	return tag.RowsAffected() == 1, nil
 }
 
 // DeleteFollow is idempotent for the same reason, so unfollowing something that was

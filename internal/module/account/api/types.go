@@ -174,21 +174,38 @@ type Device struct {
 
 // --- notifications ---
 
-// Notification carries no id: the feed is a time-partitioned table read newest
-// first, and POST /notifications/read takes a time bound, so a row never has to be
-// named individually.
+// Notification is a feed row as a client draws it: already written, in the reader's own
+// language, with the page it opens resolved.
+//
+// It carries no payload. The row stores the facts and the server renders them, which is what
+// keeps every client — web, mobile, whatever comes next — from re-implementing the same copy
+// and drifting. A client that probes a free-form payload for a body is a client the server
+// silently stopped telling anything.
 type Notification struct {
-	Category string         `json:"category"`
-	Title    string         `json:"title"`
-	Payload  map[string]any `json:"payload"`
-	ReadAt   *time.Time     `json:"read_at"`
-	// CreatedAt identifies the row together with the feed order, and is what the
-	// mark-read bound is given against.
+	ID   id.ID[id.Notification] `json:"id"`
+	Kind string                 `json:"kind"`
+	// Category is what the feed filters and the unread counts group by. Derived from Kind, and
+	// sent because that is what a client filters on without knowing the vocabulary.
+	Category string `json:"category"`
+	Title    string `json:"title"`
+	// Body is the one supporting line, empty for a fact that needs none.
+	Body string `json:"body"`
+	// Href is the in-app path this notification opens, empty when it opens nothing — a row with
+	// nowhere to go is still a row worth reading, and still dismissible.
+	Href   string     `json:"href"`
+	ReadAt *time.Time `json:"read_at"`
+	// CreatedAt is the feed order, and the bound POST /notifications/read takes to clear
+	// everything the reader has scrolled past.
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// UnreadCount is the badge plus the breakdown behind it, from one query — so the number on the
+// bell and the number beside each filter cannot disagree.
 type UnreadCount struct {
 	Unread int64 `json:"unread"`
+	// ByCategory carries every category, zeros included: a client renders a fixed set of
+	// filters and must not have to know which of them the server considers empty.
+	ByCategory map[string]int64 `json:"by_category"`
 }
 
 type NotificationPreference struct {

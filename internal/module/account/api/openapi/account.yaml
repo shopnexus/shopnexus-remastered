@@ -160,6 +160,9 @@ paths:
     get:
       tags: [account]
       summary: Read another account's public profile
+      security:
+        - {}
+        - bearerAuth: []
       description: >
         The seller page. Deliberately narrow: a display name, an avatar, a blurb and
         a join date. Email, phone, birth date and saved addresses are never part of

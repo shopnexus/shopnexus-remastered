@@ -8,110 +8,227 @@ import (
 	"shopnexus/internal/infra/eventbus"
 	accountapi "shopnexus/internal/module/account/api"
 	"shopnexus/internal/module/account/domain"
+	"shopnexus/internal/module/catalog"
+	"shopnexus/internal/module/finance"
+	financedomain "shopnexus/internal/module/finance/domain"
 	"shopnexus/internal/module/order"
-	"shopnexus/internal/provider/notify"
 	"shopnexus/internal/shared/id"
 )
 
-// SubscribeOrderEvents turns order facts into feed rows and the mail that goes with them.
+// The subscribers that turn another module's facts into this one's feed rows.
 //
-// One notification per interested party, because a notification belongs to an account: an
-// order fact has two of them and there is no shared inbox. The handler is not idempotent
-// and does not need to be — a redelivered order event costs a duplicate feed row and a
-// duplicate mail, which is a cosmetic fault, and de-duplicating it would need a uniqueness
-// rule the feed does not have.
+// One notification per interested party, because a notification belongs to an account: a sale
+// has two sides and there is no shared inbox. A handler is not idempotent and does not need to
+// be — a redelivered event costs a duplicate feed row, which is a cosmetic fault, and
+// de-duplicating it would need a uniqueness rule the feed does not have.
 //
-// This file is the only place that pairs a fact with a mail template, which is what keeps
-// the parameters a template names and the payload a caller builds in one another's sight.
+// What a caller sends is a *kind* and the facts behind it. The words, the link and the mail
+// template are all looked up from the kind when the row is read, so nothing in this file
+// contains a sentence — which is the point: it used to hold English titles that reached
+// Vietnamese readers, and a mail template named beside them that could disagree.
+
+// SubscribeOrderEvents turns the sale's facts into feed rows for both of its sides.
 func SubscribeOrderEvents(bus eventbus.Client, svc accountapi.Service, log *slog.Logger) {
 	eventbus.Subscribe(bus, order.OrderPlacedTopic, "account", func(ctx context.Context, e order.OrderPlaced) error {
-		// The sale's terms, which both the feed row and the mail render. The buyer and the
-		// seller read different words about the same fact, so they get different templates.
+		// The sale's terms, which the buyer's copy, the seller's copy and both mails render
+		// from the one map.
 		payload := map[string]any{
 			"order_id": orderRef(e.OrderID),
 			"total":    e.Total,
 			"currency": e.Currency,
 		}
 		return notifyParties(ctx, svc, log, notice{
-			category: domain.CategoryOrder,
-			title:    "Order placed",
-			payload:  payload,
+			payload: payload,
 			to: []party{
-				{accountID: e.BuyerID, mail: notify.KindOrderPlaced},
-				{accountID: e.SellerID, mail: notify.KindOrderReceived},
+				{accountID: e.BuyerID, kind: domain.KindOrderPlaced},
+				{accountID: e.SellerID, kind: domain.KindSaleReceived},
+			},
+		})
+	})
+
+	eventbus.Subscribe(bus, order.OrderDeliveredTopic, "account", func(ctx context.Context, e order.OrderDelivered) error {
+		return notifyParties(ctx, svc, log, notice{
+			payload: map[string]any{"order_id": orderRef(e.OrderID)},
+			// Confirming receipt is the buyer's to do and it is what releases the escrow, so
+			// their row asks for it; the seller's reports that the parcel landed.
+			to: []party{
+				{accountID: e.BuyerID, kind: domain.KindOrderDelivered},
+				{accountID: e.SellerID, kind: domain.KindSaleHandedOver},
 			},
 		})
 	})
 
 	eventbus.Subscribe(bus, order.OrderSettledTopic, "account", func(ctx context.Context, e order.OrderSettled) error {
-		title, mail := "Order completed", notify.KindOrderCompleted
+		buyer, seller := domain.KindOrderCompleted, domain.KindSaleCompleted
 		if !e.Completed {
-			title, mail = "Order cancelled", notify.KindOrderCancelled
+			buyer, seller = domain.KindOrderCancelled, domain.KindSaleCancelled
 		}
 		return notifyParties(ctx, svc, log, notice{
-			category: domain.CategoryOrder,
-			title:    title,
-			payload:  map[string]any{"order_id": orderRef(e.OrderID)},
+			payload: map[string]any{"order_id": orderRef(e.OrderID)},
 			to: []party{
-				{accountID: e.BuyerID, mail: mail},
-				{accountID: e.SellerID, mail: mail},
+				{accountID: e.BuyerID, kind: buyer},
+				{accountID: e.SellerID, kind: seller},
 			},
 		})
 	})
 
 	eventbus.Subscribe(bus, order.RefundResolvedTopic, "account", func(ctx context.Context, e order.RefundResolved) error {
 		return notifyParties(ctx, svc, log, notice{
-			category: domain.CategoryOrder,
-			title:    "Refund decided",
-			// The note travels as the moderator wrote it: the mail states the verdict and
-			// quotes the reasoning, and adds nothing of its own to either.
+			// The verdict and the note travel as the moderator left them: the copy states which
+			// way it went and quotes the reasoning, and adds nothing of its own to either.
 			payload: map[string]any{
 				"order_id":   orderRef(e.OrderID),
 				"buyer_wins": e.BuyerWins,
 				"note":       e.Note,
 			},
 			to: []party{
-				{accountID: e.BuyerID, mail: notify.KindRefundResolved},
-				{accountID: e.SellerID, mail: notify.KindRefundResolved},
+				{accountID: e.BuyerID, kind: domain.KindRefundResolved},
+				{accountID: e.SellerID, kind: domain.KindSaleRefundResolved},
 			},
+		})
+	})
+
+	eventbus.Subscribe(bus, order.RefundEscalatedTopic, "account", func(ctx context.Context, e order.RefundEscalated) error {
+		// The buyer alone. A seller learns a case went to staff from the case itself, and this
+		// row exists to stop the buyer chasing a seller who has stopped answering.
+		return notifyParties(ctx, svc, log, notice{
+			payload: map[string]any{"order_id": orderRef(e.OrderID)},
+			to:      []party{{accountID: e.BuyerID, kind: domain.KindRefundEscalated}},
 		})
 	})
 
 	eventbus.Subscribe(bus, order.OrderConfirmationLapsedTopic, "account", func(ctx context.Context, e order.OrderConfirmationLapsed) error {
 		return notifyParties(ctx, svc, log, notice{
-			category: domain.CategoryOrder,
-			title:    "Order waiting on the seller",
-			payload:  map[string]any{"order_id": orderRef(e.OrderID)},
-			// The buyer alone is mailed. The seller is the one who did not act, and chasing
-			// them is support's job — a mail from here would be this platform apologising on
+			payload: map[string]any{"order_id": orderRef(e.OrderID)},
+			// Only the buyer is mailed, by the kind's own spec: chasing a seller who did not act
+			// is support's job, and a letter from here would be this platform apologising on
 			// their behalf. They still get the feed row, which is a nudge and not a letter.
 			to: []party{
-				{accountID: e.BuyerID, mail: notify.KindOrderUnconfirmed},
-				{accountID: e.SellerID},
+				{accountID: e.BuyerID, kind: domain.KindOrderUnconfirmed},
+				{accountID: e.SellerID, kind: domain.KindSaleUnconfirmed},
 			},
+		})
+	})
+
+	eventbus.Subscribe(bus, order.OfferChangedTopic, "account", func(ctx context.Context, e order.OfferChanged) error {
+		kind, ok := offerKind(e.Change)
+		if !ok {
+			// A transition this module has no words for is not an error: order may report one
+			// before there is copy, and nacking would redeliver it for ever.
+			return nil
+		}
+		// Whoever did not cause it. The actor is looking at the thread they just typed in.
+		recipient := e.BuyerID
+		if e.ActorID == e.BuyerID {
+			recipient = e.SellerID
+		}
+		return notifyParties(ctx, svc, log, notice{
+			payload: map[string]any{
+				"listing_name": e.ListingName,
+				"price":        e.Total,
+				"currency":     e.Currency,
+			},
+			to: []party{{accountID: recipient, kind: kind}},
 		})
 	})
 }
 
-// notice is one fact told to the accounts it concerns. A struct rather than six positional
-// arguments, four of which are strings that would transpose without a compile error.
-type notice struct {
-	category domain.Category
-	title    string
-	payload  map[string]any
-	to       []party
+// SubscribeCatalogEvents tells a seller what a moderator decided about their listing.
+func SubscribeCatalogEvents(bus eventbus.Client, svc accountapi.Service, log *slog.Logger) {
+	eventbus.Subscribe(bus, catalog.ListingModeratedTopic, "account", func(ctx context.Context, e catalog.ListingModerated) error {
+		kind := domain.KindListingTakenDown
+		if e.Approved {
+			kind = domain.KindListingApproved
+		}
+		// The moderator's choice, honoured here rather than in the publisher: whether a seller
+		// hears about a takedown is a product rule, and catalog carries the flag without
+		// deciding it. An approval is always told — a seller waiting on a queue is the one
+		// person who asked to be.
+		if !e.Approved && !e.NotifySeller {
+			return nil
+		}
+		return notifyParties(ctx, svc, log, notice{
+			payload: map[string]any{
+				"listing_id":   listingRef(e.ListingID),
+				"listing_name": e.Name,
+				"reason":       e.Reason,
+			},
+			to: []party{{accountID: e.SellerID, kind: kind}},
+		})
+	})
 }
 
-// party is one recipient and the mail they get, empty where the fact is worth a feed row
-// but not a letter.
+// SubscribeFinanceEvents tells an account what happened to money it moved itself.
+//
+// A paid buyer-checkout is deliberately silent: it becomes an order, and `order.placed` already
+// says so. Two rows for one act is how a feed becomes something people mute.
+func SubscribeFinanceEvents(bus eventbus.Client, svc accountapi.Service, log *slog.Logger) {
+	eventbus.Subscribe(bus, finance.SessionPaidTopic, "account", func(ctx context.Context, e finance.SessionPaid) error {
+		if e.Kind != financedomain.KindWithdrawal {
+			return nil
+		}
+		return notifyParties(ctx, svc, log, notice{
+			payload: map[string]any{"amount": e.Amount, "currency": e.Currency},
+			// FromID: a withdrawal debits the wallet of whoever asked for it, and has no payee
+			// inside this platform.
+			to: []party{{accountID: e.FromID, kind: domain.KindWithdrawalPaid}},
+		})
+	})
+
+	eventbus.Subscribe(bus, finance.SessionCancelledTopic, "account", func(ctx context.Context, e finance.SessionCancelled) error {
+		kind, ok := cancelledSessionKind(e.Kind)
+		if !ok {
+			return nil
+		}
+		// No amount on this event, and the copy asks for none: what a reader needs is that the
+		// money is back and what to do next, not a figure they can read in their wallet.
+		return notifyParties(ctx, svc, log, notice{to: []party{{accountID: e.FromID, kind: kind}}})
+	})
+}
+
+func offerKind(change string) (domain.Kind, bool) {
+	switch change {
+	case order.OfferChangeCountered:
+		return domain.KindOfferCountered, true
+	case order.OfferChangeAccepted:
+		return domain.KindOfferAccepted, true
+	case order.OfferChangeWithdrawn:
+		return domain.KindOfferWithdrawn, true
+	default:
+		return "", false
+	}
+}
+
+func cancelledSessionKind(sessionKind string) (domain.Kind, bool) {
+	switch sessionKind {
+	case financedomain.KindBuyerCheckout:
+		return domain.KindCheckoutExpired, true
+	case financedomain.KindWithdrawal:
+		return domain.KindPayoutFailed, true
+	default:
+		return "", false
+	}
+}
+
+// notice is one fact told to the accounts it concerns. A struct rather than positional
+// arguments, because a payload and a recipient list transpose without a compile error.
+type notice struct {
+	payload map[string]any
+	to      []party
+}
+
+// party is one recipient and the kind they are told. The kind differs between the two sides of
+// a sale wherever they read different words or land on a different page — which is most facts
+// on a marketplace.
 type party struct {
 	accountID int64
-	mail      notify.Kind
+	kind      domain.Kind
 }
 
-// orderRef is the order as the recipient sees it everywhere else: the opaque id, as a plain
-// string, so the feed row's JSON is unchanged and a mail template can print it directly.
-func orderRef(orderID int64) string { return id.Of[id.Order](orderID).String() }
+// The references a payload carries: the opaque ids, as plain strings, because that is what the
+// recipient sees everywhere else and what a link is built from.
+func orderRef(orderID int64) string     { return id.Of[id.Order](orderID).String() }
+func listingRef(listingID int64) string { return id.Of[id.Listing](listingID).String() }
 
 // notifyParties writes to every party and reports the first failure, so the bus retries the
 // set rather than silently delivering half of it.
@@ -122,13 +239,11 @@ func notifyParties(ctx context.Context, svc accountapi.Service, log *slog.Logger
 		}
 		_, err := svc.CreateNotification(ctx, accountapi.CreateNotificationRequest{
 			AccountID: id.Of[id.Account](p.accountID),
-			Category:  string(n.category),
-			Title:     n.title,
+			Kind:      string(p.kind),
 			Payload:   n.payload,
-			MailKind:  string(p.mail),
 		})
 		if err != nil {
-			log.Error("create order notification failed", "account_id", p.accountID, "title", n.title, "err", err)
+			log.Error("create notification failed", "account_id", p.accountID, "kind", p.kind, "err", err)
 			return fmt.Errorf("notify account %d: %w", p.accountID, err)
 		}
 	}

@@ -113,19 +113,30 @@ type Repository interface {
 
 	// --- notifications ---
 	ListNotifications(ctx context.Context, q NotificationQuery) ([]domain.Notification, error)
-	CountUnreadNotifications(ctx context.Context, accountID int64) (int64, error)
+	// CountUnreadNotifications answers the badge, broken down by category — one query for
+	// both, so the total and the per-filter counts cannot disagree. A category with nothing
+	// unread is absent from the map rather than zero.
+	CountUnreadNotifications(ctx context.Context, accountID int64) (map[domain.Category]int64, error)
 	// InsertNotification writes one feed row and answers its generated id. The
 	// caller has already decided the account wants it in-app: preference is a
 	// service rule, not a storage one.
 	InsertNotification(ctx context.Context, n domain.Notification) (int64, error)
+	// MarkNotificationsRead clears everything up to an instant, or the whole feed on a nil
+	// bound. The bulk shape.
 	MarkNotificationsRead(ctx context.Context, accountID int64, before *time.Time) error
+	// MarkNotificationsReadByIDs clears exactly the rows the reader opened. Without it the
+	// only way to read one notification was a bound, which took everything older with it.
+	MarkNotificationsReadByIDs(ctx context.Context, accountID int64, ids []int64) error
 	ListPreferences(ctx context.Context, accountID int64) ([]domain.Preference, error)
 	// SavePreferences applies one change set: store the deviations, delete the pairs
 	// that went back to their default.
 	SavePreferences(ctx context.Context, accountID int64, store, remove []domain.Preference) error
 
 	// --- follow graph ---
-	InsertFollow(ctx context.Context, followerID, followeeID int64) error
+	// InsertFollow is idempotent and reports whether the edge is new, because "you have a new
+	// follower" is a fact about the insert and not about the request: a client that re-sends a
+	// follow it already holds must not notify the seller again.
+	InsertFollow(ctx context.Context, followerID, followeeID int64) (bool, error)
 	DeleteFollow(ctx context.Context, followerID, followeeID int64) error
 	ListFollowing(ctx context.Context, accountID int64, offset, limit int) ([]domain.Profile, int64, error)
 	ListFollowers(ctx context.Context, accountID int64, offset, limit int) ([]domain.Profile, int64, error)
@@ -139,4 +150,15 @@ type Repository interface {
 
 	// --- audit ---
 	InsertAuditLog(ctx context.Context, e common.AuditEntry) error
+}
+
+// Copybook writes a notification's words. The account service holds one because a feed row
+// stores a kind and the facts, never a sentence — see internal/module/account/copybook.
+//
+// An interface here rather than the concrete type so a service test needs no template files,
+// and so the words a test asserts on are the test's own.
+type Copybook interface {
+	// Render answers the title and the supporting line in the reader's language. It does not
+	// fail: a row it has no copy for renders empty rather than failing the whole page.
+	Render(locale string, kind domain.Kind, payload map[string]any) (title, body string)
 }

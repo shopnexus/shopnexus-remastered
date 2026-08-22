@@ -9,6 +9,8 @@ import (
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/module/account/port"
 	"shopnexus/internal/provider/notify"
+	"shopnexus/internal/shared/errx"
+	"shopnexus/internal/shared/id"
 	"shopnexus/internal/shared/validation"
 )
 
@@ -44,31 +46,68 @@ func (s *Service) ListNotifications(ctx context.Context, req accountapi.ListNoti
 		c := encodeCursor(rows[len(rows)-1].CreatedAt)
 		next = &c
 	}
+	if len(rows) == 0 {
+		return accountapi.Cursor[accountapi.Notification]{Data: []accountapi.Notification{}}, nil
+	}
+	// One profile read for the whole page, not one per row: the language is the reader's, and
+	// the reader is the same person for every notification on it.
+	locale := s.readerLocale(ctx, req.ActorID.Int64())
 	out := make([]accountapi.Notification, 0, len(rows))
 	for _, n := range rows {
-		out = append(out, toAPINotification(n))
+		out = append(out, s.toAPINotification(locale, n))
 	}
 	return accountapi.Cursor[accountapi.Notification]{Data: out, NextCursor: next}, nil
+}
+
+// readerLocale is the language the feed is written in for one account.
+//
+// Best-effort: a profile that cannot be read falls back to the platform's default rather than
+// failing the page, because a feed is worth more in the wrong language than not at all. The
+// copybook falls back again on an unknown locale, so a truly broken read still renders.
+func (s *Service) readerLocale(ctx context.Context, accountID int64) string {
+	profile, err := s.repo.FindProfile(ctx, accountID)
+	if err != nil {
+		s.log.Error("read profile for notification locale", "account_id", accountID, "err", err)
+		return defaultLocale
+	}
+	return profile.Locale
 }
 
 func (s *Service) GetUnreadCount(ctx context.Context, req accountapi.GetUnreadCountRequest) (accountapi.UnreadCount, error) {
 	if err := validation.AsError(s.v.Struct(req)); err != nil {
 		return accountapi.UnreadCount{}, err
 	}
-	n, err := s.repo.CountUnreadNotifications(ctx, req.ActorID.Int64())
+	byCategory, err := s.repo.CountUnreadNotifications(ctx, req.ActorID.Int64())
 	if err != nil {
 		return accountapi.UnreadCount{}, fmt.Errorf("count unread notifications: %w", err)
 	}
-	return accountapi.UnreadCount{Unread: n}, nil
+	return toAPIUnreadCount(byCategory), nil
 }
 
 // MarkNotificationsRead answers with the badge that follows, so the client does not have
 // to ask for it in a second call it would make every single time.
+//
+// A list of ids clears exactly those rows; a bound clears everything up to an instant; neither
+// clears the whole feed. The two are refused together rather than applied in some order,
+// because "these three, and also everything from last Tuesday" is not a thing a reader asked
+// for — it is a client sending a stale bound alongside a fresh click.
 func (s *Service) MarkNotificationsRead(ctx context.Context, req accountapi.MarkNotificationsReadRequest) (accountapi.UnreadCount, error) {
 	if err := validation.AsError(s.v.Struct(req)); err != nil {
 		return accountapi.UnreadCount{}, err
 	}
-	if err := s.repo.MarkNotificationsRead(ctx, req.ActorID.Int64(), req.Before); err != nil {
+	if len(req.IDs) > 0 && req.Before != nil {
+		return accountapi.UnreadCount{}, errx.NewValidationError("send either ids or before, not both")
+	}
+	accountID := req.ActorID.Int64()
+	if len(req.IDs) > 0 {
+		ids := make([]int64, 0, len(req.IDs))
+		for _, notificationID := range req.IDs {
+			ids = append(ids, notificationID.Int64())
+		}
+		if err := s.repo.MarkNotificationsReadByIDs(ctx, accountID, ids); err != nil {
+			return accountapi.UnreadCount{}, fmt.Errorf("mark notifications read: %w", err)
+		}
+	} else if err := s.repo.MarkNotificationsRead(ctx, accountID, req.Before); err != nil {
 		return accountapi.UnreadCount{}, fmt.Errorf("mark notifications read: %w", err)
 	}
 	return s.GetUnreadCount(ctx, accountapi.GetUnreadCountRequest{ActorID: req.ActorID})
@@ -112,10 +151,14 @@ func (s *Service) UpdateNotificationPreferences(ctx context.Context, req account
 
 // CreateNotification tells one account one thing, over the channels they left on.
 //
-// The feed row is the one this module owns a table for; the mail is sent through the notify
-// provider and nothing records that it went, because a row standing for "we tried to email
-// you" would be a second, weaker definition of the feed. Push and SMS are still a workflow's
-// problem.
+// The caller sends a kind and the facts. Everything else follows from the kind: which category
+// the row files under and therefore which preference decides it, which words it renders as,
+// which page it opens, and which mail template carries it. A caller that had to name its own
+// title and its own mail template could name two that disagreed, and did.
+//
+// The feed row is the one this module owns a table for; the mail goes out through the notify
+// provider and nothing records that it went, because a row standing for "we tried to email you"
+// would be a second, weaker definition of the feed. Push and SMS are still a workflow's problem.
 //
 // The two channels are decided independently. Turning the feed off is not a way to stop the
 // mail, and it used to be: the in-app preference returned early, in front of everything.
@@ -124,56 +167,54 @@ func (s *Service) CreateNotification(ctx context.Context, req accountapi.CreateN
 		return accountapi.Notification{}, err
 	}
 	accountID := req.AccountID.Int64()
-	category := domain.Category(req.Category)
 
-	// Validated before the preference lookup: an unknown category must answer
-	// ErrNotificationInvalid, not silently read as "off" the way DefaultPreference
-	// treats any pair it does not recognise.
+	// The domain refuses a kind it has no vocabulary for, and derives the category from the one
+	// it accepts — so the preference lookup below can never read an unknown category as "off"
+	// the way DefaultPreference treats any pair it does not recognise.
 	n, err := domain.NewNotification(domain.NewNotificationParams{
 		AccountID: accountID,
-		Category:  category,
-		Title:     req.Title,
+		Kind:      domain.Kind(req.Kind),
 		Payload:   req.Payload,
 	})
 	if err != nil {
 		return accountapi.Notification{}, err
 	}
+	spec, _ := domain.SpecOf(n.Kind)
 
 	stored, err := s.repo.ListPreferences(ctx, accountID)
 	if err != nil {
 		return accountapi.Notification{}, fmt.Errorf("read notification preferences: %w", err)
 	}
 	var dto accountapi.Notification
-	if domain.Enabled(stored, category, domain.ChannelInApp) {
+	if domain.Enabled(stored, n.Category, domain.ChannelInApp) {
 		insertedID, err := s.repo.InsertNotification(ctx, n)
 		if err != nil {
 			return accountapi.Notification{}, fmt.Errorf("insert notification: %w", err)
 		}
 		n.ID = insertedID
-		dto = toAPINotification(n)
+		dto = s.toAPINotification(s.readerLocale(ctx, accountID), n)
 		notifyRealtime(ctx, s, accountID, NotificationCreated, dto)
 	}
 
 	// After the row, so a failed insert the bus will redeliver has not already mailed.
-	s.mailNotification(ctx, req, category, stored)
+	s.mailNotification(ctx, n, spec, stored)
 	return dto, nil
 }
 
-// mailNotification sends the email channel's copy of a notification, when the account asked
-// for that channel and there is an address worth sending to.
+// mailNotification sends the email channel's copy of a notification, when the fact has a
+// template, the account asked for that channel and there is an address worth sending to.
 //
 // Best-effort, like every other send in this service: the feed row is already written, so a
 // relay that is down must not fail the call — the caller is a bus subscriber, and a returned
 // error there buys a redelivered fact and a duplicate feed row to retry a mail nobody lost.
-func (s *Service) mailNotification(ctx context.Context, req accountapi.CreateNotificationRequest,
-	category domain.Category, stored []domain.Preference) {
-	if req.MailKind == "" || !domain.Enabled(stored, category, domain.ChannelEmail) {
+func (s *Service) mailNotification(ctx context.Context, n domain.Notification,
+	spec domain.KindSpec, stored []domain.Preference) {
+	if spec.Mail == "" || !domain.Enabled(stored, n.Category, domain.ChannelEmail) {
 		return
 	}
-	accountID := req.AccountID.Int64()
-	acc, err := s.repo.Get(ctx, accountID)
+	acc, err := s.repo.Get(ctx, n.AccountID)
 	if err != nil {
-		s.log.Error("read account for notification email", "account_id", accountID, "err", err)
+		s.log.Error("read account for notification email", "account_id", n.AccountID, "err", err)
 		return
 	}
 	// Verified only. An address nobody confirmed is somebody's typo or somebody else's
@@ -185,21 +226,43 @@ func (s *Service) mailNotification(ctx context.Context, req accountapi.CreateNot
 		return
 	}
 	s.send(ctx, notify.Message{
-		Kind:   notify.Kind(req.MailKind),
+		Kind:   notify.Kind(spec.Mail),
 		Email:  *acc.Email,
 		Locale: acc.Profile.Locale,
-		Params: req.Payload,
+		Params: n.Payload,
 	})
 }
 
-func toAPINotification(n domain.Notification) accountapi.Notification {
+// toAPINotification writes the row out as the reader sees it: the words in their language, and
+// the link resolved from the same payload the words came from.
+func (s *Service) toAPINotification(locale string, n domain.Notification) accountapi.Notification {
+	title, body := s.copy.Render(locale, n.Kind, n.Payload)
+	var href string
+	if spec, ok := domain.SpecOf(n.Kind); ok && spec.Href != nil {
+		href = spec.Href(n.Payload)
+	}
 	return accountapi.Notification{
+		ID:        id.Of[id.Notification](n.ID),
+		Kind:      string(n.Kind),
 		Category:  string(n.Category),
-		Title:     n.Title,
-		Payload:   n.Payload,
+		Title:     title,
+		Body:      body,
+		Href:      href,
 		ReadAt:    n.ReadAt,
 		CreatedAt: n.CreatedAt,
 	}
+}
+
+// toAPIUnreadCount fills in every category, zeros included, and sums the badge from the same
+// map — so the bell and the filters are one answer rather than two that can disagree.
+func toAPIUnreadCount(byCategory map[domain.Category]int64) accountapi.UnreadCount {
+	out := accountapi.UnreadCount{ByCategory: make(map[string]int64, len(domain.Categories))}
+	for _, category := range domain.Categories {
+		n := byCategory[category]
+		out.ByCategory[string(category)] = n
+		out.Unread += n
+	}
+	return out
 }
 
 func toAPIPreferences(rows []domain.EffectivePreference) []accountapi.NotificationPreference {

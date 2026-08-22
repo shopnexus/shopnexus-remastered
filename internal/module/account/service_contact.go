@@ -12,6 +12,7 @@ import (
 	"shopnexus/internal/module/account/areas"
 	"shopnexus/internal/module/account/domain"
 	"shopnexus/internal/provider/notify"
+	"shopnexus/internal/shared/errx"
 	"shopnexus/internal/shared/id"
 	"shopnexus/internal/shared/validation"
 )
@@ -102,6 +103,24 @@ func (s *Service) GetDeliveryContact(ctx context.Context, req accountapi.GetDeli
 	return accountapi.Contact{}, domain.ErrNoDeliveryContact
 }
 
+// canonicalizeArea makes the names on the wire advisory: a client sends codes, and what is stored
+// is what those codes mean here. Denormalized is not client-owned — taking the name from the
+// request let one code carry three names ("Ha Noi", "Hà Nội", "Thành phố Hà Nội" all under 01).
+func canonicalizeArea(c *domain.Contact) error {
+	provinceName, wardName, err := areas.Resolve(c.ProvinceCode, c.WardCode)
+	if err != nil {
+		if errors.Is(err, areas.ErrUnknownArea) {
+			return errx.NewValidationError("invalid field: province_code", errx.Field{
+				Field: "province_code", Rule: "oneof",
+				Message: "no such province and ward: send a code pair from /administrative-areas",
+			})
+		}
+		return fmt.Errorf("resolve administrative area: %w", err)
+	}
+	c.ProvinceName, c.WardName = provinceName, wardName
+	return nil
+}
+
 func (s *Service) CreateContact(ctx context.Context, req accountapi.CreateContactRequest) (accountapi.Contact, error) {
 	if err := validation.AsError(s.v.Struct(req)); err != nil {
 		return accountapi.Contact{}, err
@@ -136,6 +155,9 @@ func (s *Service) CreateContact(ctx context.Context, req accountapi.CreateContac
 	}
 	if req.AddressDetail != "" {
 		c.AddressDetail = &req.AddressDetail
+	}
+	if err := canonicalizeArea(&c); err != nil {
+		return accountapi.Contact{}, err
 	}
 	if err := c.Validate(); err != nil {
 		return accountapi.Contact{}, err
@@ -226,6 +248,10 @@ func (s *Service) UpdateContact(ctx context.Context, req accountapi.UpdateContac
 	}
 	if req.AddressType != nil {
 		c.AddressType = domain.AddressType(*req.AddressType)
+	}
+	// After the patch, not per field: one request may move both, and the pair resolves only once.
+	if err := canonicalizeArea(&c); err != nil {
+		return accountapi.Contact{}, err
 	}
 	if err := c.Validate(); err != nil {
 		return accountapi.Contact{}, err

@@ -452,14 +452,14 @@ func (f *fakeRepo) InsertNotification(_ context.Context, n domain.Notification) 
 	return n.ID, nil
 }
 
-func (f *fakeRepo) CountUnreadNotifications(_ context.Context, accountID int64) (int64, error) {
-	var n int64
+func (f *fakeRepo) CountUnreadNotifications(_ context.Context, accountID int64) (map[domain.Category]int64, error) {
+	out := map[domain.Category]int64{}
 	for _, x := range f.notifs {
 		if x.AccountID == accountID && x.ReadAt == nil {
-			n++
+			out[x.Category]++
 		}
 	}
-	return n, nil
+	return out, nil
 }
 
 func (f *fakeRepo) MarkNotificationsRead(_ context.Context, accountID int64, before *time.Time) error {
@@ -469,6 +469,17 @@ func (f *fakeRepo) MarkNotificationsRead(_ context.Context, accountID int64, bef
 			continue
 		}
 		if before != nil && n.CreatedAt.After(*before) {
+			continue
+		}
+		f.notifs[i].ReadAt = &now
+	}
+	return nil
+}
+
+func (f *fakeRepo) MarkNotificationsReadByIDs(_ context.Context, accountID int64, ids []int64) error {
+	now := time.Now()
+	for i, n := range f.notifs {
+		if n.AccountID != accountID || n.ReadAt != nil || !slices.Contains(ids, n.ID) {
 			continue
 		}
 		f.notifs[i].ReadAt = &now
@@ -503,12 +514,14 @@ func (f *fakeRepo) SavePreferences(_ context.Context, accountID int64, store, re
 
 // --- follow graph ---
 
-func (f *fakeRepo) InsertFollow(_ context.Context, followerID, followeeID int64) error {
+func (f *fakeRepo) InsertFollow(_ context.Context, followerID, followeeID int64) (bool, error) {
 	if _, ok := f.accounts[followeeID]; !ok {
-		return domain.ErrAccountNotFound
+		return false, domain.ErrAccountNotFound
 	}
-	f.follows[[2]int64{followerID, followeeID}] = time.Now()
-	return nil
+	key := [2]int64{followerID, followeeID}
+	_, existed := f.follows[key]
+	f.follows[key] = time.Now()
+	return !existed, nil
 }
 
 func (f *fakeRepo) DeleteFollow(_ context.Context, followerID, followeeID int64) error {

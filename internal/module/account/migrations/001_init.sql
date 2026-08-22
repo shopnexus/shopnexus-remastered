@@ -225,12 +225,25 @@ CREATE INDEX IF NOT EXISTS "contact_location_idx" ON "contact" USING GIST ("loca
 
 -- In-app notifications: what the user is told, once, whatever channels it went out on.
 -- The fan-out itself is a Restate workflow and keeps no state here.
+--
+-- The row records the *fact*, not the sentence — see "kind" and "payload" below.
 CREATE TABLE IF NOT EXISTS "notification" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY,
     "account_id" BIGINT NOT NULL,
+    -- What happened, kebab-case: 'order-placed', 'listing-approved'. The whole identity of the
+    -- notification — the words, the link and the mail template are all looked up from it when
+    -- the row is *read*, in the reader's own language.
+    --
+    -- TEXT and not an enum, unlike "category" beside it: nothing keys off a kind in SQL, the
+    -- vocabulary grows with every fact the platform learns to tell somebody, and the domain
+    -- refuses one it does not know before the INSERT. An enum here would be a migration per
+    -- sentence.
+    "kind" TEXT NOT NULL,
     "category" "notification_category" NOT NULL, -- what it is about; also the preference key
-    "title" VARCHAR(200) NOT NULL,
-    "payload" JSONB NOT NULL, -- structured payload (deep-links, images, etc.)
+    -- The facts behind the notification — an order id, a total, a moderator's note. Never a
+    -- sentence: a stored title is frozen in whatever language the emitter was written in, and
+    -- retranslating it later means rewriting rows nobody can read.
+    "payload" JSONB NOT NULL,
 
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "read_at" TIMESTAMPTZ, -- NULL = unread; the timestamp is what "mark all read" needs
@@ -253,9 +266,12 @@ SELECT add_retention_policy('notification', INTERVAL '180 days', if_not_exists =
 -- The account's feed, newest first.
 CREATE INDEX IF NOT EXISTS "notification_account_id_created_at_idx"
     ON "notification" ("account_id", "created_at" DESC);
--- The unread badge count, and the unread-only feed: "created_at" is in the key so that
--- filtering to unread still comes out in feed order and a cursor can seek into it,
--- rather than reading every unread row to sort them.
+-- The unread-only feed: "created_at" is in the key so that filtering to unread still comes out
+-- in feed order and a cursor can seek into it, rather than reading every unread row to sort them.
+-- The unread badge count, the per-category breakdown beside it, and marking a handful of
+-- opened rows read: all three read only an account's unread rows, of which there are never
+-- many, which is what makes visiting every chunk in the retention window cheap enough that
+-- none of them needs a time bound.
 CREATE INDEX IF NOT EXISTS "notification_account_id_unread_idx"
     ON "notification" ("account_id", "created_at" DESC)
     WHERE "read_at" IS NULL;

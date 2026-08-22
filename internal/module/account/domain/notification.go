@@ -27,19 +27,31 @@ const (
 // Categories and Channels are the full axes of the preference matrix, in the order
 // the API reports them. Being explicit lists rather than derived keeps the response
 // order stable for a client that renders a grid.
+// Not every category has a kind that emits it yet: 'promotion' waits on a campaign tool, and
+// 'chat' is deliberately empty — a message already has its own unread badge, and mirroring it
+// here would double every conversation. Both stay on the axis because the axis is the product's
+// channel matrix, and an account may opt out of a category before anything sends it.
 var (
 	Categories = []Category{CategoryOrder, CategoryPromotion, CategorySystem, CategoryChat, CategorySocial}
 	Channels   = []Channel{ChannelInApp, ChannelPush, ChannelEmail, ChannelSMS}
 )
 
 // Notification is what the user was told, once, whatever channels carried it.
-// It has no opaque id on the wire: the table is chunked by time and is read as a
-// feed, so a row is addressed by its instant and never individually.
+//
+// It stores the *fact* and not the sentence: Kind names what happened and Payload carries the
+// particulars, so the words are chosen when the row is read, in the reader's own language. A
+// stored title would be frozen in whatever language the emitter happened to be written in —
+// which is how an English "Order placed" ended up in a Vietnamese feed.
 type Notification struct {
 	ID        int64
 	AccountID int64
-	Category  Category
-	Title     string
+	Kind      Kind
+	// Category is derived from Kind and stored anyway, because it is what the feed filters and
+	// the unread counts group by: deriving it in SQL would mean teaching Postgres the
+	// vocabulary, and re-deriving it in Go would mean reading rows only to throw them away.
+	Category Category
+	// Payload is the facts the copy and the link are rendered from — an order id, a total, a
+	// moderator's note. Never a sentence: what a fact reads like is the copybook's business.
 	Payload   map[string]any
 	CreatedAt time.Time
 	ReadAt    *time.Time
@@ -134,37 +146,33 @@ func SplitPreferences(want []Preference) (store, remove []Preference) {
 	return store, remove
 }
 
-// NewNotificationParams is a struct rather than positional arguments: four of the
-// fields are strings or maps and would transpose without a compile error.
+// NewNotificationParams is a struct rather than positional arguments: an account id and a
+// schedule are both easy to transpose, and there is no Category — it follows from the Kind.
 type NewNotificationParams struct {
 	AccountID int64
-	Category  Category
-	Title     string
+	Kind      Kind
 	Payload   map[string]any
 	// ScheduledAt is a future dispatch time; nil means it goes out now.
 	ScheduledAt *time.Time
 }
 
-// NewNotification validates a notification and stamps its creation instant.
+// NewNotification validates a notification, derives its category from its kind and stamps its
+// creation instant.
+//
+// An unknown kind is refused here rather than defaulted, because every question asked later —
+// which category, which words, which page, which letter — is answered from the kind, and a row
+// nobody has copy for is a blank line in somebody's feed.
 func NewNotification(p NewNotificationParams) (Notification, error) {
-	if p.AccountID == 0 || p.Title == "" || !validCategory(p.Category) {
+	spec, ok := SpecOf(p.Kind)
+	if p.AccountID == 0 || !ok {
 		return Notification{}, ErrNotificationInvalid
 	}
 	return Notification{
 		AccountID:   p.AccountID,
-		Category:    p.Category,
-		Title:       p.Title,
+		Kind:        p.Kind,
+		Category:    spec.Category,
 		Payload:     p.Payload,
 		CreatedAt:   time.Now(),
 		ScheduledAt: p.ScheduledAt,
 	}, nil
-}
-
-func validCategory(c Category) bool {
-	for _, known := range Categories {
-		if known == c {
-			return true
-		}
-	}
-	return false
 }

@@ -13,12 +13,14 @@ import (
 	"shopnexus/internal/infra/postgres"
 	accountpg "shopnexus/internal/module/account/adapter/postgres"
 	accountapi "shopnexus/internal/module/account/api"
+	"shopnexus/internal/module/account/copybook"
 	"shopnexus/internal/module/account/port"
 	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/common/dbx"
 	"shopnexus/internal/module/common/uploads"
 	"shopnexus/internal/provider/storage"
 	"shopnexus/internal/shared/realtime"
+	"shopnexus/templates"
 )
 
 // Module wires the account service, its Postgres-backed repository, and the uploads an
@@ -43,12 +45,13 @@ var Module = fx.Module("account",
 	),
 	fx.Provide(
 		fx.Annotate(newRepo, fx.As(new(port.Repository))),
+		fx.Annotate(newCopybook, fx.As(new(port.Copybook))),
 		fx.Annotate(newUploadSweep, fx.ResultTags(`group:"sweeps"`)),
 		fx.Annotate(NewService, fx.As(new(accountapi.Service))),
 	),
-	// Eager, because nothing else in the graph depends on a subscription: without it the bus
-	// would have no consumer and an order fact would never become a feed row.
-	fx.Invoke(SubscribeOrderEvents),
+	// Eager, because nothing else in the graph depends on a subscription: without them the bus
+	// would have no consumer and another module's fact would never become a feed row.
+	fx.Invoke(SubscribeOrderEvents, SubscribeCatalogEvents, SubscribeFinanceEvents),
 )
 
 func newPool(lc fx.Lifecycle, cfg *config.Config) (*pgxpool.Pool, error) {
@@ -61,6 +64,17 @@ func newPool(lc fx.Lifecycle, cfg *config.Config) (*pgxpool.Pool, error) {
 }
 
 func newRepo(pool *pgxpool.Pool) *accountpg.Repo { return accountpg.New(pool) }
+
+// newCopybook parses the feed's wording for every kind in every language at startup, so a kind
+// somebody added without copy is a process that does not come up rather than a blank row in
+// somebody's feed. Same bargain as the mail templates.
+func newCopybook() (*copybook.Book, error) {
+	book, err := copybook.Load(templates.Notification())
+	if err != nil {
+		return nil, fmt.Errorf("load notification copybook: %w", err)
+	}
+	return book, nil
+}
 
 // newUploads is this module's own `resource` rows plus the object store. One store serves
 // both an avatar and an identity scan — the kind only narrows the key prefix, and what keeps

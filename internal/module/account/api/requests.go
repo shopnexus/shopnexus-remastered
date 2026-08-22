@@ -276,12 +276,20 @@ type GetUnreadCountRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 }
 
-// MarkNotificationsReadRequest takes a time bound rather than a list of ids:
-// marking individual rows would search every chunk of a time-partitioned table,
-// while a bound reads one range. Omit Before to mark the whole feed read.
+// MarkNotificationsReadRequest clears either a bound or a list, and an empty body clears the
+// whole feed.
+//
+// Both shapes exist because they are different acts. Pressing "read all", or scrolling past
+// fifty rows, is a bound — one range of a time-partitioned table. Opening one notification is
+// that row and no other: it used to be a bound too, so reading the newest thing in the feed
+// silently marked everything beneath it read, which is the whole reason the list has ids now.
 type MarkNotificationsReadRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
-	Before  *time.Time        `json:"before"`
+	// Before marks everything created at or before this instant read.
+	Before *time.Time `json:"before"`
+	// IDs marks exactly these rows read. Capped because the statement has no time bound and so
+	// visits every chunk in the retention window; a reader never opens more than a screenful.
+	IDs []id.ID[id.Notification] `json:"ids" validate:"omitempty,max=100,dive,required"`
 }
 
 type GetNotificationPreferencesRequest struct {
@@ -304,22 +312,23 @@ type UpdateNotificationPreferencesRequest struct {
 // CreateNotificationRequest is backend-to-backend: no route exposes it, because a
 // client must not be able to write another account's feed. It reaches the service
 // from a bus subscriber.
+//
+// Kind is the whole fact. It used to be a Category, a baked Title and a separate MailKind —
+// three fields a caller had to keep consistent, so a cancellation could carry the words of a
+// confirmation and mail the template of neither. Now the category, the words, the link and the
+// mail template all follow from the kind, and the caller sends only what happened.
 type CreateNotificationRequest struct {
 	AccountID id.ID[id.Account] `json:"account_id" validate:"required"`
-	Category  string            `json:"category" validate:"required,oneof=order promotion system chat social"`
-	Title     string            `json:"title" validate:"required,max=200"`
-	// Payload is the facts behind the notification — an order id, a total, a moderator's
-	// note. It is what the feed row stores *and* what the email template renders, so the
-	// two say the same thing by construction rather than by two callers agreeing to.
-	Payload map[string]any `json:"payload"`
-	// MailKind is the email template to send alongside the feed row, empty for a fact with
-	// no mail written for it.
+	// Kind is validated by the domain against the vocabulary it has copy for, not by a tag
+	// here: the tag would be a second list to keep in step with the first.
+	Kind string `json:"kind" validate:"required,max=64"`
+	// Payload is the facts behind the notification — an order id, a total, a moderator's note.
+	// The feed's copy and the mail template render from this same map, so the two say the same
+	// thing by construction rather than by two callers agreeing to.
 	//
-	// Named rather than derived from Category: a category covers many facts and only some
-	// have copy, so deriving it would mail "your order is confirmed" for a cancellation.
-	// Whether the mail actually goes out is still the account's to decide — the email
-	// channel's preference, and an address they verified.
-	MailKind string `json:"mail_kind" validate:"omitempty,oneof=order-placed order-received order-completed order-cancelled refund-resolved order-unconfirmed"`
+	// A key a template names and the caller did not send fails that render, so the set is a
+	// contract: templates/notification/*.yaml is where a kind's keys are visible.
+	Payload map[string]any `json:"payload"`
 }
 
 // --- follow graph ---

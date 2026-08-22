@@ -2,6 +2,8 @@ package domain_test
 
 import (
 	"errors"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,33 +89,29 @@ func TestNewNotification(t *testing.T) {
 			name: "valid",
 			params: domain.NewNotificationParams{
 				AccountID: 42,
-				Category:  domain.CategoryOrder,
-				Title:     "Your order shipped",
+				Kind:      domain.KindOrderDelivered,
 				Payload:   map[string]any{"order_id": "ord_x"},
 			},
 		},
 		{
 			name: "account required",
 			params: domain.NewNotificationParams{
-				Category: domain.CategoryOrder,
-				Title:    "t",
+				Kind: domain.KindOrderDelivered,
 			},
 			want: domain.ErrNotificationInvalid,
 		},
 		{
-			name: "title required",
+			name: "kind required",
 			params: domain.NewNotificationParams{
 				AccountID: 42,
-				Category:  domain.CategoryOrder,
 			},
 			want: domain.ErrNotificationInvalid,
 		},
 		{
-			name: "category must be known",
+			name: "kind must be known",
 			params: domain.NewNotificationParams{
 				AccountID: 42,
-				Category:  domain.Category("gossip"),
-				Title:     "t",
+				Kind:      domain.Kind("gossip"),
 			},
 			want: domain.ErrNotificationInvalid,
 		},
@@ -131,6 +129,11 @@ func TestNewNotification(t *testing.T) {
 			if got.AccountID != tt.params.AccountID {
 				t.Errorf("AccountID = %d, want %d", got.AccountID, tt.params.AccountID)
 			}
+			// The category is not sent; it is what the kind files under, which is what stops a
+			// caller filing an order fact under 'promotion' and having it silenced.
+			if got.Category != domain.CategoryOrder {
+				t.Errorf("Category = %q, want it derived from the kind", got.Category)
+			}
 			if got.CreatedAt.IsZero() {
 				t.Error("CreatedAt is zero; the constructor stamps it")
 			}
@@ -146,8 +149,7 @@ func TestNewNotificationScheduled(t *testing.T) {
 	at := time.Now().Add(time.Hour)
 	got, err := domain.NewNotification(domain.NewNotificationParams{
 		AccountID:   7,
-		Category:    domain.CategorySystem,
-		Title:       "Maintenance",
+		Kind:        domain.KindListingApproved,
 		ScheduledAt: &at,
 	})
 	if err != nil {
@@ -155,5 +157,38 @@ func TestNewNotificationScheduled(t *testing.T) {
 	}
 	if got.ScheduledAt == nil || !got.ScheduledAt.Equal(at) {
 		t.Fatalf("ScheduledAt = %v, want %v", got.ScheduledAt, at)
+	}
+}
+
+// Every kind resolves to a category and a link builder. A kind added to the vocabulary without
+// either is a feed row with no preference deciding it and nowhere to go — which the constructor
+// would happily accept, because it only checks the kind is known.
+func TestKindSpecs_AreComplete(t *testing.T) {
+	if len(domain.Kinds) == 0 {
+		t.Fatal("no kinds; the vocabulary is derived from the spec map and came out empty")
+	}
+	for _, kind := range domain.Kinds {
+		spec, ok := domain.SpecOf(kind)
+		if !ok {
+			t.Fatalf("kind %q is listed but has no spec", kind)
+		}
+		if !slices.Contains(domain.Categories, spec.Category) {
+			t.Errorf("kind %q files under unknown category %q", kind, spec.Category)
+		}
+		if spec.Href == nil {
+			t.Errorf("kind %q has no link builder", kind)
+		}
+	}
+}
+
+// A link builder reads the payload and must answer empty rather than a path to nowhere when the
+// key it names is missing — a row with no link is readable, a link to /account/orders/ is a 404.
+func TestKindSpecs_HrefTolerantOfAMissingKey(t *testing.T) {
+	for _, kind := range domain.Kinds {
+		spec, _ := domain.SpecOf(kind)
+		href := spec.Href(map[string]any{})
+		if strings.HasSuffix(href, "/") {
+			t.Errorf("kind %q builds a dangling link %q from an empty payload", kind, href)
+		}
 	}
 }

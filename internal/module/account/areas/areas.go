@@ -21,6 +21,7 @@ package areas
 import (
 	"embed"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"sync"
 )
@@ -30,6 +31,10 @@ const (
 	KindProvince = "province"
 	KindWard     = "ward"
 )
+
+// ErrUnknownArea is a code this list does not spell, or a ward under the wrong province — a bad
+// request, since the vocabulary ships with the binary.
+var ErrUnknownArea = errors.New("unknown administrative area")
 
 //go:embed vn.json
 var files embed.FS
@@ -58,6 +63,8 @@ var (
 	provinces []Area
 	// wards is keyed by province code: the one level there is below a province.
 	wards map[string][]Area
+	// Every division by code. Ward codes are unique countrywide, so the two levels cannot collide.
+	names map[string]string
 )
 
 // Children answers the divisions one level under parent: the provinces when parent is empty, a
@@ -72,6 +79,25 @@ func Children(parent string) ([]Area, bool, error) {
 	}
 	found, ok := wards[parent]
 	return found, ok, nil
+}
+
+// Resolve answers the canonical names for a pair of codes, so a stored name never comes from the
+// wire and two rows with one code cannot disagree. A ward under another province is refused
+// rather than half-resolved: that is not an address.
+func Resolve(provinceCode, wardCode string) (provinceName, wardName string, err error) {
+	if err := load(); err != nil {
+		return "", "", err
+	}
+	provinceName, ok := names[provinceCode]
+	if !ok {
+		return "", "", fmt.Errorf("%w: province %q", ErrUnknownArea, provinceCode)
+	}
+	for _, w := range wards[provinceCode] {
+		if w.Code == wardCode {
+			return provinceName, w.Name, nil
+		}
+	}
+	return "", "", fmt.Errorf("%w: ward %q is not in province %q", ErrUnknownArea, wardCode, provinceCode)
 }
 
 // load parses the embedded file once. A failure here is a broken build rather than a runtime
@@ -91,8 +117,10 @@ func load() error {
 		}
 		provinces = make([]Area, 0, len(parsed))
 		wards = make(map[string][]Area, len(parsed))
+		names = make(map[string]string, len(parsed))
 		for _, p := range parsed {
 			provinces = append(provinces, Area{Code: p.Code, Name: p.Name, Kind: KindProvince})
+			names[p.Code] = p.Name
 			out := make([]Area, 0, len(p.Wards))
 			for _, w := range p.Wards {
 				out = append(out, Area{Code: w.Code, Name: w.Name, Kind: KindWard})

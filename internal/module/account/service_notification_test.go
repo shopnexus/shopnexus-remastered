@@ -17,21 +17,37 @@ func TestCreateNotificationWritesInApp(t *testing.T) {
 
 	got, err := svc.CreateNotification(t.Context(), accountapi.CreateNotificationRequest{
 		AccountID: id.Of[id.Account](42),
-		Category:  string(domain.CategoryOrder),
-		Title:     "Your order shipped",
+		Kind:      string(domain.KindOrderDelivered),
 		Payload:   map[string]any{"order_id": "ord_x"},
 	})
 	if err != nil {
 		t.Fatalf("CreateNotification: %v", err)
 	}
-	if got.Title != "Your order shipped" {
-		t.Errorf("Title = %q", got.Title)
+	// The answer is written, not stored: the row holds the kind and the facts, and the words
+	// come from the copybook in the reader's language — which the fake spells out so this
+	// asserts on the wiring rather than on the copy.
+	if want := "title:order-delivered:vi-VN"; got.Title != want {
+		t.Errorf("Title = %q, want %q", got.Title, want)
+	}
+	if got.Body != "body:ord_x" {
+		t.Errorf("Body = %q, want the payload rendered", got.Body)
+	}
+	// The link comes from the kind's spec and the same payload, so a client never builds one.
+	if want := "/account/orders/ord_x"; got.Href != want {
+		t.Errorf("Href = %q, want %q", got.Href, want)
+	}
+	if got.ID == 0 {
+		t.Error("the row has no id; without one a reader cannot mark just this one read")
 	}
 	if len(repo.notifs) != 1 {
 		t.Fatalf("wrote %d rows, want 1", len(repo.notifs))
 	}
 	if repo.notifs[0].AccountID != 42 {
 		t.Errorf("AccountID = %d, want 42", repo.notifs[0].AccountID)
+	}
+	// Stored as the fact, so tomorrow's copy change reaches yesterday's rows.
+	if repo.notifs[0].Kind != domain.KindOrderDelivered {
+		t.Errorf("stored Kind = %q", repo.notifs[0].Kind)
 	}
 }
 
@@ -41,7 +57,7 @@ func TestCreateNotificationRespectsPreference(t *testing.T) {
 	repo := newFakeRepo()
 	repo.prefs[42] = []domain.Preference{{
 		AccountID: 42,
-		Category:  domain.CategoryPromotion,
+		Category:  domain.CategoryOrder,
 		Channel:   domain.ChannelInApp,
 		IsEnabled: false,
 	}}
@@ -49,8 +65,7 @@ func TestCreateNotificationRespectsPreference(t *testing.T) {
 
 	_, err := svc.CreateNotification(t.Context(), accountapi.CreateNotificationRequest{
 		AccountID: id.Of[id.Account](42),
-		Category:  string(domain.CategoryPromotion),
-		Title:     "50% off",
+		Kind:      string(domain.KindOrderDelivered),
 	})
 	if err != nil {
 		t.Fatalf("CreateNotification: %v", err)
@@ -60,18 +75,16 @@ func TestCreateNotificationRespectsPreference(t *testing.T) {
 	}
 }
 
-func TestCreateNotificationRejectsUnknownCategory(t *testing.T) {
+// The category is not something a caller can get wrong any more: it follows from the kind. What
+// a caller can still get wrong is the kind, and the domain is the only thing that knows the
+// vocabulary — a tag on the request would be a second list to keep in step with the first.
+func TestCreateNotificationRejectsUnknownKind(t *testing.T) {
 	repo := newFakeRepo()
 	svc := newTestService(t, repo)
 
-	// Refused by the request's own `oneof` before the domain ever sees it — this method is
-	// service-to-service, so that guard is the only one a caller passes through. The domain
-	// still refuses the same category (see domain.TestNewNotification); it is the second line,
-	// not the one that fires here.
 	_, err := svc.CreateNotification(t.Context(), accountapi.CreateNotificationRequest{
 		AccountID: id.Of[id.Account](42),
-		Category:  "gossip",
-		Title:     "t",
+		Kind:      "gossip",
 	})
 	if got := status(t, err); got != 400 {
 		t.Fatalf("status = %d, want 400", got)
@@ -114,8 +127,7 @@ func TestCreateNotificationPushesToTheOwner(t *testing.T) {
 
 	_, err := svc.CreateNotification(t.Context(), accountapi.CreateNotificationRequest{
 		AccountID: id.Of[id.Account](42),
-		Category:  string(domain.CategoryOrder),
-		Title:     "Your order shipped",
+		Kind:      string(domain.KindOrderDelivered),
 	})
 	if err != nil {
 		t.Fatalf("CreateNotification: %v", err)
@@ -138,7 +150,7 @@ func TestCreateNotificationDoesNotPushWhenSuppressed(t *testing.T) {
 	repo := newFakeRepo()
 	repo.prefs[42] = []domain.Preference{{
 		AccountID: 42,
-		Category:  domain.CategoryPromotion,
+		Category:  domain.CategoryOrder,
 		Channel:   domain.ChannelInApp,
 		IsEnabled: false,
 	}}
@@ -147,8 +159,7 @@ func TestCreateNotificationDoesNotPushWhenSuppressed(t *testing.T) {
 
 	_, err := svc.CreateNotification(t.Context(), accountapi.CreateNotificationRequest{
 		AccountID: id.Of[id.Account](42),
-		Category:  string(domain.CategoryPromotion),
-		Title:     "50% off",
+		Kind:      string(domain.KindOrderDelivered),
 	})
 	if err != nil {
 		t.Fatalf("CreateNotification: %v", err)

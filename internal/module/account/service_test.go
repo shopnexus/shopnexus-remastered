@@ -2,6 +2,7 @@ package account_test
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"slices"
 	"strconv"
@@ -76,7 +77,7 @@ func newHarness() *harness {
 	log := slog.New(slog.DiscardHandler)
 	notes := &fakeNotifier{}
 	svc := account.NewService(repo, sessions, tokens, c,
-		notes, oauthmock.NewVerifier(), kycmock.NewClient(), uploads, validation.Default(), log, noopFanout{})
+		notes, oauthmock.NewVerifier(), kycmock.NewClient(), uploads, fakeCopybook{}, validation.Default(), log, noopFanout{})
 	return &harness{svc: svc, notes: notes, repo: repo, uploads: uploads, sessions: sessions, tokens: tokens, cache: c}
 }
 
@@ -104,7 +105,16 @@ func newTestServiceWithNotifier(t *testing.T, repo *fakeRepo, notes *fakeNotifie
 	tokens := token.NewManager("0123456789012345678901234567890123", 15*time.Minute)
 	log := slog.New(slog.DiscardHandler)
 	return account.NewService(repo, sessions, tokens, c,
-		notes, oauthmock.NewVerifier(), kycmock.NewClient(), uploads, validation.Default(), log, fanout)
+		notes, oauthmock.NewVerifier(), kycmock.NewClient(), uploads, fakeCopybook{}, validation.Default(), log, fanout)
+}
+
+// fakeCopybook writes a predictable sentence instead of real copy, so a service test asserts on
+// what the service did with the words rather than on what the words are. The real templates are
+// exercised where they live, by the copybook package's own test.
+type fakeCopybook struct{}
+
+func (fakeCopybook) Render(locale string, kind domain.Kind, payload map[string]any) (string, string) {
+	return "title:" + string(kind) + ":" + locale, "body:" + fmt.Sprint(payload["order_id"])
 }
 
 // noopFanout is the fanout for tests that are not about realtime: it accepts every push

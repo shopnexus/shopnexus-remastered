@@ -1,6 +1,7 @@
 package areas_test
 
 import (
+	"errors"
 	"testing"
 
 	"shopnexus/internal/module/account/areas"
@@ -58,6 +59,45 @@ func TestChildren_UnknownCodeIsNotFound(t *testing.T) {
 	for _, code := range []string{"99", "00", "abc", "0079"} {
 		if _, ok, err := areas.Children(code); ok || err != nil {
 			t.Errorf("Children(%q) = ok %v, err %v, want not found", code, ok, err)
+		}
+	}
+}
+
+// Resolve is the only place a stored name may come from, so it has to answer the list's own
+// spelling — not whatever a client sent — and it has to refuse a pair that is not an address.
+func TestResolve_AnswersTheListsOwnSpelling(t *testing.T) {
+	for _, tc := range []struct {
+		province, ward         string
+		wantProvince, wantWard string
+	}{
+		{"01", "00001", "Thành phố Hà Nội", "Phường Phúc Xá"},
+		{"31", "11365", "Thành phố Hải Phòng", "Phường Lạch Tray"},
+		{"79", "27154", "Thành phố Hồ Chí Minh", "Phường 3"},
+	} {
+		province, ward, err := areas.Resolve(tc.province, tc.ward)
+		if err != nil {
+			t.Fatalf("Resolve(%q, %q) = err %v", tc.province, tc.ward, err)
+		}
+		if province != tc.wantProvince || ward != tc.wantWard {
+			t.Errorf("Resolve(%q, %q) = %q, %q, want %q, %q",
+				tc.province, tc.ward, province, ward, tc.wantProvince, tc.wantWard)
+		}
+	}
+}
+
+// A ward that exists under another province is not an address, and answering the province's name
+// with somebody else's ward would store exactly the mismatch the codes were meant to prevent.
+func TestResolve_RefusesWhatIsNotAnAddress(t *testing.T) {
+	for _, tc := range []struct{ province, ward string }{
+		{"99", "00001"}, // no such province
+		{"01", "99999"}, // no such ward
+		{"01", "27154"}, // a real ward, in Ho Chi Minh City rather than Hanoi
+		{"1", "00001"},  // unpadded province
+		{"01", "1"},     // unpadded ward
+		{"", ""},        // nothing at all
+	} {
+		if _, _, err := areas.Resolve(tc.province, tc.ward); !errors.Is(err, areas.ErrUnknownArea) {
+			t.Errorf("Resolve(%q, %q) = err %v, want ErrUnknownArea", tc.province, tc.ward, err)
 		}
 	}
 }

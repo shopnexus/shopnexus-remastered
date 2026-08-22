@@ -1,9 +1,16 @@
 # account fragment: notification — inbox and per-category channel preferences.
 #
-# Notifications are a hypertable. Marking one read by id would fan out across every
-# chunk, so `POST /notifications/read` takes a *time bound* instead of a list of
-# ids: it covers both "mark all read" and "mark what I just scrolled past", stays
-# chunk-bounded, and means a notification needs no opaque id on the wire at all.
+# A feed row stores the *fact* — a kind and its particulars — and the words are written when it
+# is read, in the reader's own language. So this contract answers a finished sentence and the
+# page it opens, and carries no payload for a client to probe: every client would otherwise
+# re-implement the same copy and drift from the mail that says the same thing.
+#
+# Notifications are a hypertable, which decides how they are marked read rather than whether
+# they can be. `POST /notifications/read` takes a time bound for the bulk act — "read all", or
+# "read what I scrolled past" — because a bound reads one range of chunks. A list of ids is the
+# per-row act, and has no bound: it visits every chunk in the retention window, which is what
+# the unread count already does on every page load and is cheap for the same reason — the
+# partial index holds only an account's unread rows.
 
 paths:
   /notifications:
@@ -46,11 +53,12 @@ paths:
   /notifications/read:
     post:
       tags: [account]
-      summary: Mark notifications read up to a point in time
+      summary: Mark notifications read
       description: >
-        Takes a time bound rather than a list of ids. Marking individual rows by id
-        would have to search every chunk of a time-partitioned table; a bound reads
-        one range. Omit `before` to mark everything read.
+        Send `ids` to mark exactly those rows read, `before` to mark everything up to an
+        instant, or an empty body to mark the whole feed. The two fields are refused
+        together: "these three, and also everything from last Tuesday" is a client sending a
+        stale bound beside a fresh click, not something a reader asked for.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: false
@@ -114,21 +122,39 @@ components:
 
     Notification:
       type: object
+      description: >
+        A feed row as it is drawn: already written, in the reader's language, with the page
+        it opens resolved. There is no payload — the server renders the stored facts, so a
+        client never probes a free-form object for a body that may not be there.
       properties:
+        id: { $ref: '#/components/schemas/NotificationID' }
+        kind:
+          type: string
+          description: >
+            What happened, kebab-case. Not an enum: the vocabulary grows with every fact the
+            platform learns to tell somebody, and a client renders by `category` — `kind` is
+            for a client that wants to special-case one row, and for support reading a log.
+          example: 'order-placed'
         category: { $ref: '#/components/schemas/NotificationCategory' }
-        title: { type: string }
-        payload:
-          type: object
-          additionalProperties: true
-          description: Structured content such as deep links and images.
+        title: { type: string, example: 'Đặt hàng thành công' }
+        body:
+          type: string
+          description: The one supporting line, empty for a fact that needs none.
+          example: 'Đơn ord_2h9qk4mfx7bd3 · 250.000 ₫. Người bán đang chuẩn bị hàng.'
+        href:
+          type: string
+          description: >
+            The in-app path this notification opens, empty when it opens nothing. A row with
+            nowhere to go is still worth reading and still dismissible.
+          example: '/account/orders/ord_2h9qk4mfx7bd3'
         read_at: { type: string, format: date-time, nullable: true }
         created_at:
           type: string
           format: date-time
           description: >
-            Identifies the row together with the feed order, and it is what
-            `POST /notifications/read` is given a bound against.
-      required: [category, title, payload, read_at, created_at]
+            The feed order, and the bound `POST /notifications/read` takes to clear
+            everything the reader has scrolled past.
+      required: [id, kind, category, title, body, href, read_at, created_at]
 
     NotificationPage:
       type: object
@@ -139,9 +165,19 @@ components:
 
     UnreadCount:
       type: object
+      description: >
+        The badge and the breakdown behind it, from one query — so the number on the bell and
+        the number beside each filter cannot disagree.
       properties:
         unread: { type: integer, format: int64, minimum: 0, example: 3 }
-      required: [unread]
+        by_category:
+          type: object
+          description: >
+            Every category, zeros included: a client renders a fixed set of filters and must
+            not have to know which of them the server considers empty.
+          additionalProperties: { type: integer, format: int64, minimum: 0 }
+          example: { order: 2, promotion: 0, system: 1, chat: 0, social: 0 }
+      required: [unread, by_category]
 
     MarkNotificationsReadRequest:
       type: object
@@ -150,8 +186,16 @@ components:
           type: string
           format: date-time
           description: >
-            Mark everything created at or before this instant read. Omit to mark the
-            whole feed read.
+            Mark everything created at or before this instant read. Send neither field to
+            mark the whole feed read.
+        ids:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/NotificationID' }
+          description: >
+            Mark exactly these rows read. Capped because the statement has no time bound and
+            so visits every chunk in the retention window; a reader never opens more than a
+            screenful.
 
     NotificationPreference:
       type: object

@@ -21,7 +21,7 @@ import (
 // A notification scheduled for later is not in the feed yet — the row exists so the
 // dispatch workflow has something to send, not so the user reads it early.
 func (r *Repo) ListNotifications(ctx context.Context, q port.NotificationQuery) ([]domain.Notification, error) {
-	const sql = `SELECT id, account_id, category::text, title, payload, created_at, read_at, scheduled_at
+	const sql = `SELECT id, account_id, kind, category::text, payload, created_at, read_at, scheduled_at
 	             FROM notification
 	             WHERE account_id = @account_id
 	               AND (scheduled_at IS NULL OR scheduled_at <= now())
@@ -46,7 +46,7 @@ func (r *Repo) ListNotifications(ctx context.Context, q port.NotificationQuery) 
 	var out []domain.Notification
 	for rows.Next() {
 		var n domain.Notification
-		if err := rows.Scan(&n.ID, &n.AccountID, &n.Category, &n.Title, &n.Payload,
+		if err := rows.Scan(&n.ID, &n.AccountID, &n.Kind, &n.Category, &n.Payload,
 			&n.CreatedAt, &n.ReadAt, &n.ScheduledAt); err != nil {
 			return nil, fmt.Errorf("db scan notification row: %w", err)
 		}
@@ -61,15 +61,15 @@ func (r *Repo) ListNotifications(ctx context.Context, q port.NotificationQuery) 
 // InsertNotification writes one feed row and answers its generated id.
 func (r *Repo) InsertNotification(ctx context.Context, n domain.Notification) (int64, error) {
 	const q = `
-		INSERT INTO notification (account_id, category, title, payload, created_at, scheduled_at)
-		VALUES (@account_id, @category, @title, @payload, @created_at, @scheduled_at)
+		INSERT INTO notification (account_id, kind, category, payload, created_at, scheduled_at)
+		VALUES (@account_id, @kind, @category, @payload, @created_at, @scheduled_at)
 		RETURNING id`
 
 	var id int64
 	err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{
 		"account_id":   n.AccountID,
+		"kind":         string(n.Kind),
 		"category":     string(n.Category),
-		"title":        n.Title,
 		"payload":      dbx.JSONObject(n.Payload),
 		"created_at":   n.CreatedAt,
 		"scheduled_at": n.ScheduledAt,
@@ -82,26 +82,67 @@ func (r *Repo) InsertNotification(ctx context.Context, n domain.Notification) (i
 
 // CountUnreadNotifications answers the badge, which is read far more often than the
 // feed itself. The partial index on unread rows is what keeps it cheap.
-func (r *Repo) CountUnreadNotifications(ctx context.Context, accountID int64) (int64, error) {
-	const q = `SELECT COUNT(*) FROM notification
+//
+// Grouped by category rather than one total, because the sidebar shows a count per filter and
+// the two used to be two queries whose answers could disagree. Only categories with unread
+// rows come back; the total is their sum, which is what keeps it consistent with the breakdown
+// by construction. Categories are absent, never zero — a caller reads a missing key as none.
+func (r *Repo) CountUnreadNotifications(ctx context.Context, accountID int64) (map[domain.Category]int64, error) {
+	const q = `SELECT category::text, COUNT(*) FROM notification
 	           WHERE account_id = @account_id AND read_at IS NULL
-	             AND (scheduled_at IS NULL OR scheduled_at <= now())`
-	var n int64
-	if err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{"account_id": accountID}).Scan(&n); err != nil {
-		return 0, fmt.Errorf("db count unread notifications: %w", err)
+	             AND (scheduled_at IS NULL OR scheduled_at <= now())
+	           GROUP BY category`
+	rows, err := r.pool.Query(ctx, q, pgx.NamedArgs{"account_id": accountID})
+	if err != nil {
+		return nil, fmt.Errorf("db count unread notifications: %w", err)
 	}
-	return n, nil
+	defer rows.Close()
+
+	out := make(map[domain.Category]int64, len(domain.Categories))
+	for rows.Next() {
+		var category domain.Category
+		var n int64
+		if err := rows.Scan(&category, &n); err != nil {
+			return nil, fmt.Errorf("db scan unread notification count: %w", err)
+		}
+		out[category] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db iterate unread notification counts: %w", err)
+	}
+	return out, nil
 }
 
-// MarkNotificationsRead takes a time bound, not a list of ids: on a time-partitioned
-// table a set of ids has to be searched for in every chunk, while a bound reads one
-// range. A nil bound marks the whole feed.
+// MarkNotificationsRead clears everything up to an instant — the "read all" button, and the
+// bound a reader who scrolled past fifty rows is marked against. A nil bound marks the whole
+// feed. On a time-partitioned table a bound reads one range of chunks, which is why this is
+// the bulk shape and MarkNotificationsReadByIDs is the per-row one.
 func (r *Repo) MarkNotificationsRead(ctx context.Context, accountID int64, before *time.Time) error {
 	const q = `UPDATE notification SET read_at = CURRENT_TIMESTAMP
 	           WHERE account_id = @account_id AND read_at IS NULL
 	             AND (@before::timestamptz IS NULL OR created_at <= @before)`
 	if _, err := r.pool.Exec(ctx, q, pgx.NamedArgs{"account_id": accountID, "before": before}); err != nil {
 		return fmt.Errorf("db mark notifications read: %w", err)
+	}
+	return nil
+}
+
+// MarkNotificationsReadByIDs marks the rows the reader actually opened, and nothing else.
+//
+// It has no time bound, so it visits every chunk in the retention window — which is what
+// CountUnreadNotifications already does on every page load, and for the same reason it is
+// cheap: the partial index holds only an account's unread rows, and there are never many.
+// The alternative was what this feed had before — opening one notification marked everything
+// older read, because a bound was the only thing a row could be named by.
+func (r *Repo) MarkNotificationsReadByIDs(ctx context.Context, accountID int64, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	const q = `UPDATE notification SET read_at = CURRENT_TIMESTAMP
+	           WHERE account_id = @account_id AND read_at IS NULL AND id = ANY(@ids)`
+	args := pgx.NamedArgs{"account_id": accountID, "ids": dbx.Int64Array(ids)}
+	if _, err := r.pool.Exec(ctx, q, args); err != nil {
+		return fmt.Errorf("db mark notifications read by id: %w", err)
 	}
 	return nil
 }

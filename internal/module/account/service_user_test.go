@@ -24,6 +24,92 @@ func contactRequest() accountapi.CreateContactRequest {
 	}
 }
 
+// The names on the wire are advisory: what gets stored is what the code means in the vendored
+// division list. Two sellers who spell one province differently must not end up with two names
+// under one code -- a browse filtered by that code would return cards disagreeing with the chip
+// that selected them, and a listing snapshots these names when it is published.
+func TestCreateContact_NamesComeFromTheCodeNotTheRequest(t *testing.T) {
+	h := newHarness()
+	owner := h.register(t, registerRequest())
+	req := contactRequest()
+	req.ActorID = owner.Account.ID
+	req.ProvinceName = "TP HCM"
+	req.WardName = "Bến Nghé"
+
+	created, err := h.svc.CreateContact(context.Background(), req)
+	if err != nil {
+		t.Fatalf("CreateContact: %v", err)
+	}
+	if created.ProvinceName != "Thành phố Hồ Chí Minh" {
+		t.Errorf("province_name = %q, want the list's spelling", created.ProvinceName)
+	}
+	if created.WardName != "Phường Tân Định" {
+		t.Errorf("ward_name = %q, want the list's spelling", created.WardName)
+	}
+}
+
+// A code pair that names nothing is refused rather than stored: a province nobody can select and
+// a ward belonging to another province are both addresses no carrier can collect from, and an
+// unchecked code is how a filter goes silently empty.
+func TestCreateContact_RefusesACodePairThatIsNotAnAddress(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		province, ward string
+	}{
+		{"unknown province", "99", "26734"},
+		{"unknown ward", "79", "99999"},
+		{"ward of another province", "01", "26734"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness()
+			owner := h.register(t, registerRequest())
+			req := contactRequest()
+			req.ActorID = owner.Account.ID
+			req.ProvinceCode, req.WardCode = tc.province, tc.ward
+
+			if got := status(t, mustErr(h.svc.CreateContact(context.Background(), req))); got != 400 {
+				t.Fatalf("status = %d, want 400", got)
+			}
+		})
+	}
+}
+
+// The same on a PATCH, and for the same reason the district pair is checked after the whole patch
+// is applied: a request may move the ward and the province together, so neither is resolvable
+// until both hold their final value.
+func TestUpdateContact_MovingAnAddressResolvesTheNewPair(t *testing.T) {
+	h := newHarness()
+	ctx := context.Background()
+	owner := h.register(t, registerRequest())
+	req := contactRequest()
+	req.ActorID = owner.Account.ID
+	created, err := h.svc.CreateContact(ctx, req)
+	if err != nil {
+		t.Fatalf("CreateContact: %v", err)
+	}
+
+	province, ward := "01", "00001"
+	updated, err := h.svc.UpdateContact(ctx, accountapi.UpdateContactRequest{
+		ActorID: owner.Account.ID, ID: created.ID,
+		ProvinceCode: &province, WardCode: &ward,
+	})
+	if err != nil {
+		t.Fatalf("UpdateContact: %v", err)
+	}
+	if updated.ProvinceName != "Thành phố Hà Nội" || updated.WardName != "Phường Phúc Xá" {
+		t.Errorf("names = %q, %q, want Hanoi's", updated.ProvinceName, updated.WardName)
+	}
+
+	// Moving only the ward, to one under a different province, is not a move -- it is a pair that
+	// is not an address, and it has to be refused rather than half-applied.
+	stray := "26734"
+	if got := status(t, mustErr(h.svc.UpdateContact(ctx, accountapi.UpdateContactRequest{
+		ActorID: owner.Account.ID, ID: created.ID, WardCode: &stray,
+	}))); got != 400 {
+		t.Fatalf("status = %d, want 400", got)
+	}
+}
+
 // --- saved addresses ---
 
 func TestCreateContact_StoresAndLists(t *testing.T) {
@@ -623,8 +709,8 @@ func (h *harness) seedNotifications(accountID int64, n int) []time.Time {
 		h.repo.notifs = append(h.repo.notifs, domain.Notification{
 			ID:        int64(i + 1),
 			AccountID: accountID,
+			Kind:      domain.KindOrderDelivered,
 			Category:  domain.CategoryOrder,
-			Title:     "Đơn hàng đã được xác nhận",
 			Payload:   map[string]any{"order_id": "ord_1"},
 			CreatedAt: at,
 		})

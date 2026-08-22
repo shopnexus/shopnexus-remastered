@@ -34,9 +34,9 @@ type IdentityDocument struct {
 	FrontResourceID  *int64
 	BackResourceID   *int64
 	SelfieResourceID *int64
-	Status          IdentityStatus
-	RejectionReason *string
-	VerifiedAt      *time.Time
+	Status           IdentityStatus
+	RejectionReason  *string
+	VerifiedAt       *time.Time
 	// ExpiresAt is when the document itself runs out. A payout gate reads this as
 	// well as the status, which is why a passport's expiry is not optional detail.
 	ExpiresAt *time.Time
