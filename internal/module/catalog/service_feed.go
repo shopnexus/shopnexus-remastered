@@ -27,34 +27,13 @@ func (s *Service) ListListings(ctx context.Context, req catalogapi.ListListingsR
 	if err != nil {
 		return catalogapi.ListingPage{}, err
 	}
-	var (
-		rows  []port.ListingSummary
-		total int64
-	)
-	switch {
-	case filter.Sort == port.SortRecommended && len(filter.Interests) > 0:
-		rows, err = s.recommendedRows(ctx, filter)
-	case filter.Sort == port.SortTrending:
-		rows, err = s.trendingRows(ctx, filter)
-	default:
-		rows, total, err = s.repo.ListListings(ctx, filter)
-	}
+	rows, total, err := s.listingRows(ctx, filter)
 	if err != nil {
 		return catalogapi.ListingPage{}, fmt.Errorf("list listings: %w", err)
 	}
-	cards, err := s.cards(ctx, rows)
+	cards, err := s.listingCards(ctx, rows, req.ViewerID.Int64())
 	if err != nil {
 		return catalogapi.ListingPage{}, err
-	}
-	// A card says whether the viewer saved it, in one query for the page rather than one each.
-	if req.ViewerID != 0 {
-		saved, err := s.repo.FavoritedAmong(ctx, req.ViewerID.Int64(), listingKeys(rows))
-		if err != nil {
-			return catalogapi.ListingPage{}, fmt.Errorf("read favorited: %w", err)
-		}
-		for i := range cards {
-			cards[i].Favorited = saved[cards[i].ID.Int64()]
-		}
 	}
 	meta := catalogapi.PageInfo{Page: req.Page, Limit: req.Limit}
 	// A ranked query — relevance, recommended or trending — visits only its top-K, the way the
@@ -73,6 +52,47 @@ func (s *Service) ListListings(ctx context.Context, req catalogapi.ListListingsR
 		page.Probes = []string{}
 	}
 	return page, nil
+}
+
+// listingRows runs whichever of the three retrieval shapes the filter asks for. The browse and
+// the search are one statement in the adapter; a personalised draw and the trending top list are
+// their own, and which one a filter means is decided here rather than at each caller — the home
+// page's shelves ask the same question the feed does.
+//
+// Total is zero for the two that are not seekable, which is also why ListListings only publishes
+// it for the others.
+func (s *Service) listingRows(ctx context.Context, filter port.ListingFilter) ([]port.ListingSummary, int64, error) {
+	switch {
+	case filter.Sort == port.SortRecommended && len(filter.Interests) > 0:
+		rows, err := s.recommendedRows(ctx, filter)
+		return rows, 0, err
+	case filter.Sort == port.SortTrending:
+		rows, err := s.trendingRows(ctx, filter)
+		return rows, 0, err
+	default:
+		return s.repo.ListListings(ctx, filter)
+	}
+}
+
+// listingCards is the card projection plus the one thing a card can only say about the caller:
+// whether they saved it. One query for the whole page rather than one per row, and skipped
+// entirely for an anonymous read, which has nothing saved.
+func (s *Service) listingCards(ctx context.Context, rows []port.ListingSummary, viewerID int64) ([]catalogapi.Listing, error) {
+	cards, err := s.cards(ctx, rows)
+	if err != nil {
+		return nil, err
+	}
+	if viewerID == 0 {
+		return cards, nil
+	}
+	saved, err := s.repo.FavoritedAmong(ctx, viewerID, listingKeys(rows))
+	if err != nil {
+		return nil, fmt.Errorf("read favorited: %w", err)
+	}
+	for i := range cards {
+		cards[i].Favorited = saved[cards[i].ID.Int64()]
+	}
+	return cards, nil
 }
 
 // browsePosition is where the buyer is browsing from: the coordinates the device sent, or the
@@ -124,7 +144,8 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 			Message: "only honoured with mine=true: a seller may see what is not public, nobody else",
 		})
 	}
-	if req.Sort == port.SortRelevance && req.Query == "" {
+	// `similar_to` is the other thing relevance can be relevant to.
+	if req.Sort == port.SortRelevance && req.Query == "" && req.SimilarTo == nil {
 		return port.ListingFilter{}, searchAnswer{}, errx.NewValidationError("invalid field: sort", errx.Field{
 			Field: "sort", Rule: "excluded_without", Message: "relevance needs a query to be relevant to",
 		})
@@ -134,6 +155,28 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 			Field: "sort", Rule: "excluded_with",
 			Message: "a personalised ranking of a set the caller already chose ranks nothing",
 		})
+	}
+	if req.SimilarTo != nil {
+		// Two rankings in one request answer neither: `q` compiles a query into probes and
+		// `similar_to` *is* the probe, and a personalised feed ranks against the account rather
+		// than against a listing. A set the caller already chose has nothing to rank either.
+		switch {
+		case req.Query != "":
+			return port.ListingFilter{}, searchAnswer{}, errx.NewValidationError("invalid field: similar_to", errx.Field{
+				Field: "similar_to", Rule: "excluded_with",
+				Message: "rank by a query or by a listing, not both",
+			})
+		case req.Sort != "" && req.Sort != port.SortRelevance:
+			return port.ListingFilter{}, searchAnswer{}, errx.NewValidationError("invalid field: sort", errx.Field{
+				Field: "sort", Rule: "excluded_with",
+				Message: "similar_to is itself the ranking; leave sort out or ask for relevance",
+			})
+		case req.Mine || req.Favorited:
+			return port.ListingFilter{}, searchAnswer{}, errx.NewValidationError("invalid field: similar_to", errx.Field{
+				Field: "similar_to", Rule: "excluded_with",
+				Message: "a set the caller already chose has nothing to rank against a listing",
+			})
+		}
 	}
 	if req.Sort == port.SortTrending && trendingWantsFilteredBrowse(req) {
 		return port.ListingFilter{}, searchAnswer{}, errx.NewValidationError("invalid field: sort", errx.Field{
@@ -224,6 +267,24 @@ func (s *Service) feedFilter(ctx context.Context, req catalogapi.ListListingsReq
 			}
 		}
 	}
+	// "More like this one" is one probe and no model call: the listing's own stored embedding
+	// is the query. The anchor is excluded because its own vector is its own best match, and a
+	// listing the embedding pass has not reached yet degrades to the newest of its category —
+	// still a rail about the same kind of thing, rather than an empty one.
+	if req.SimilarTo != nil {
+		filter.Sort = port.SortRelevance
+		filter.ExcludeIDs = append(filter.ExcludeIDs, req.SimilarTo.Int64())
+		probe, err := s.repo.ListingProbe(ctx, req.SimilarTo.Int64())
+		switch {
+		case errors.Is(err, domain.ErrListingNotEmbedded):
+			filter.Sort = port.SortNewest
+		case err != nil:
+			return port.ListingFilter{}, searchAnswer{}, fmt.Errorf("read listing probe: %w", err)
+		default:
+			filter.Terms = []port.Term{{Weight: 1, Probe: &probe}}
+		}
+		return filter, searchAnswer{}, nil
+	}
 	// Every search reaches the adapter as terms — the understood signals, then the shopper's own
 	// words. A personalised feed is left out: it ranks against the account's interests, so an
 	// understood query would have nothing to rank (`q` there is a filter on the name, see
@@ -283,9 +344,12 @@ const feedCacheTTL = 2 * time.Minute
 // same run had cached, which is a page answering a question nobody asked.
 //
 // Left out on purpose: Offset and Limit, which are the paging this cache exists to serve;
-// Interests, whose staleness bound is feedCacheTTL rather than a key; and Terms — the only
-// filter that ever carries one is the personalised feed, which never carries a query, so
-// hashing a slice of 1024-float probes would cost a serialisation per page for nothing.
+// Interests, whose staleness bound is feedCacheTTL rather than a key; Terms — the only filter
+// that ever carries one is the personalised feed, which never carries a query, so hashing a
+// slice of 1024-float probes would cost a serialisation per page for nothing; and SkipTotal,
+// because what this cache holds is a list of ids and nothing else. Two callers differing only
+// in whether they want a count want the same ids, so keying on it would halve the hit rate and
+// buy nothing.
 //
 // A new field on port.ListingFilter belongs here too — TestFeedCacheKey_CoversEveryFilterField
 // is what says so, since nothing else would.
@@ -299,10 +363,19 @@ func feedCacheKey(f port.ListingFilter) string {
 		near = fmt.Sprintf("%g,%g", f.Near.Latitude, f.Near.Longitude)
 	}
 	h := sha256.New()
-	fmt.Fprintf(h, "%v|%v|%s|%t|%t|%s|%d|%s|%d|%s|%d|%s|%s|%s|%s|%s|%g|%s",
-		f.IDs, f.VariantIDs, f.Query, f.Mine, f.Favorited, f.Status,
+	// ExcludeIDs is in the key because the home page's shelves are the same personalised draw
+	// with a different exclusion each time: shelf three asks for the same interests as shelf two
+	// minus everything shelf two showed. Left out of the key, the second shelf would be served
+	// the first one's cached batch and the page would repeat itself under two headings.
+	// Discarded rather than checked: `hash.Hash` documents that Write never returns an error,
+	// so there is nothing here a caller could do or a test could reach.
+	// MatchedOnly is in the key and SkipTotal is not, which looks inconsistent and is not: this
+	// cache holds ids, and dropping the fresh source changes which ids the draw produces, while
+	// wanting a count changes nothing about them.
+	_, _ = fmt.Fprintf(h, "%v|%v|%v|%s|%t|%t|%s|%d|%s|%d|%s|%d|%s|%s|%s|%s|%s|%g|%s|%t",
+		f.IDs, f.VariantIDs, f.ExcludeIDs, f.Query, f.Mine, f.Favorited, f.Status,
 		f.CategoryID, f.Tag, f.SellerID, f.Condition, f.MinPrice, maxPrice,
-		f.ProvinceCode, f.DistrictCode, f.WardCode, near, f.RadiusKM, f.Sort)
+		f.ProvinceCode, f.DistrictCode, f.WardCode, near, f.RadiusKM, f.Sort, f.MatchedOnly)
 	return fmt.Sprintf("feed:%d:%s:%x", f.ViewerID, f.Seed, h.Sum(nil)[:8])
 }
 
@@ -353,14 +426,28 @@ func (s *Service) recommendedRows(ctx context.Context, filter port.ListingFilter
 func (s *Service) trendingRows(ctx context.Context, filter port.ListingFilter) ([]port.ListingSummary, error) {
 	want := filter.Offset + filter.Limit
 
+	// The exclusion has to be applied here rather than left to the adapter: this ranking comes
+	// from another module's table and is hydrated by id, and ListListingsByIDs answers the ids it
+	// is given whatever else the filter says. Asking for more than `want` is what keeps the row
+	// full after the drop — the home page's shelves each exclude what the shelves above them
+	// already showed, and a trending row that ignored that would repeat them.
+	excluded := make(map[int64]bool, len(filter.ExcludeIDs))
+	for _, id := range filter.ExcludeIDs {
+		excluded[id] = true
+	}
+
 	var popular []int64
-	ids, err := s.popularity.TopPopular(ctx, observabilityapi.TopPopularRequest{Limit: want})
+	ids, err := s.popularity.TopPopular(ctx, observabilityapi.TopPopularRequest{
+		Limit: want + len(excluded),
+	})
 	if err != nil {
 		s.log.Warn("read top popular, falling back to newest", "err", err)
 	} else {
-		popular = make([]int64, len(ids))
-		for i, listingID := range ids {
-			popular[i] = listingID.Int64()
+		popular = make([]int64, 0, len(ids))
+		for _, listingID := range ids {
+			if !excluded[listingID.Int64()] {
+				popular = append(popular, listingID.Int64())
+			}
 		}
 	}
 
@@ -476,7 +563,7 @@ func sortOf(req catalogapi.ListListingsRequest) string {
 	if req.Sort != "" {
 		return req.Sort
 	}
-	if req.Query != "" {
+	if req.Query != "" || req.SimilarTo != nil {
 		return port.SortRelevance
 	}
 	return port.SortNewest

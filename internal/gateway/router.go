@@ -154,6 +154,9 @@ func NewRouter(d Deps) http.Handler {
 	// Public, wider for a known caller: the listing feed can be personalised or scoped
 	// to the caller's own drafts, and a draft is readable by its owner.
 	mux.Handle("GET /listings", optionalAuth(http.HandlerFunc(d.Catalog.ListListings)))
+	// The home page. Registered before the id lookup for a reader's benefit only — ServeMux
+	// prefers the literal segment either way.
+	mux.Handle("GET /listings/shelves", optionalAuth(http.HandlerFunc(d.Catalog.ListShelves)))
 	mux.Handle("GET /listings/{id}", optionalAuth(http.HandlerFunc(d.Catalog.GetListing)))
 	// Public, wider for a known caller: an anonymous view still counts toward popularity, and
 	// only a signed-in one moves personalisation.
@@ -161,6 +164,7 @@ func NewRouter(d Deps) http.Handler {
 	// Authenticated
 	mux.Handle("POST /listings/suggestions", auth(http.HandlerFunc(d.Catalog.SuggestListing)))
 	mux.Handle("POST /listings", auth(http.HandlerFunc(d.Catalog.CreateListing)))
+	mux.Handle("GET /listings/{id}/history", auth(http.HandlerFunc(d.Catalog.ListListingHistory)))
 	mux.Handle("PATCH /listings/{id}", auth(http.HandlerFunc(d.Catalog.UpdateListing)))
 	mux.Handle("DELETE /listings/{id}", auth(http.HandlerFunc(d.Catalog.DeleteListing)))
 	mux.Handle("POST /listings/{id}/publication", auth(http.HandlerFunc(d.Catalog.PublishListing)))
@@ -248,6 +252,7 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("POST /orders/{id}/decline", auth(http.HandlerFunc(d.Order.DeclineOrder)))
 	mux.Handle("POST /orders/{id}/receipt", auth(http.HandlerFunc(d.Order.ConfirmReceipt)))
 	mux.Handle("POST /orders/{id}/cancellation", auth(http.HandlerFunc(d.Order.CancelOrder)))
+	mux.Handle("GET /orders/{id}/history", auth(http.HandlerFunc(d.Order.ListOrderHistory)))
 	mux.Handle("GET /orders/{id}/transport", auth(http.HandlerFunc(d.Order.GetOrderTransport)))
 	mux.Handle("POST /orders/{id}/transport/checkpoints", auth(http.HandlerFunc(d.Order.AdvanceShipment)))
 	mux.Handle("POST /orders/{id}/refunds", auth(http.HandlerFunc(d.Order.CreateRefund)))
@@ -286,6 +291,7 @@ func NewRouter(d Deps) http.Handler {
 	// Reading a review is public, but a signed-in caller also gets their own vote back on
 	// each row, which is what optionalAuth is for.
 	mux.Handle("GET /listings/{listingID}/reviews", optionalAuth(http.HandlerFunc(d.Trust.ListReviews)))
+	mux.Handle("GET /listings/{listingID}/reviews/summary", optionalAuth(http.HandlerFunc(d.Trust.GetReviewSummary)))
 	mux.Handle("GET /reviews/{id}", optionalAuth(http.HandlerFunc(d.Trust.GetReview)))
 	// Authenticated
 	mux.Handle("GET /orders/{orderID}/feedback", auth(http.HandlerFunc(d.Trust.GetOrderFeedback)))

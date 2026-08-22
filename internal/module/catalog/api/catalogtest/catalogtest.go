@@ -34,6 +34,10 @@ func (Stub) AdminDeleteCategory(context.Context, catalogapi.DeleteCategoryReques
 	return errx.ErrNotImplemented
 }
 
+func (Stub) ListListingHistory(context.Context, catalogapi.ListListingHistoryRequest) (catalogapi.ListingHistoryPage, error) {
+	return catalogapi.ListingHistoryPage{}, errx.ErrNotImplemented
+}
+
 func (Stub) ListTags(context.Context, catalogapi.ListTagsRequest) (catalogapi.TagPage, error) {
 	return catalogapi.TagPage{}, errx.ErrNotImplemented
 }
@@ -48,6 +52,10 @@ func (Stub) AdminDeleteTag(context.Context, catalogapi.DeleteTagRequest) error {
 
 func (Stub) ListListings(context.Context, catalogapi.ListListingsRequest) (catalogapi.ListingPage, error) {
 	return catalogapi.ListingPage{}, errx.ErrNotImplemented
+}
+
+func (Stub) ListShelves(context.Context, catalogapi.ListShelvesRequest) (catalogapi.ShelfList, error) {
+	return catalogapi.ShelfList{}, errx.ErrNotImplemented
 }
 
 func (Stub) AddFavorite(context.Context, catalogapi.FavoriteRequest) error {

@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 
 	openapi "shopnexus/api"
+	"shopnexus/internal/module/catalog/domain"
 
 	"gopkg.in/yaml.v3"
 )
@@ -193,5 +195,125 @@ func TestOpenAPIContract_AllPathsRouted(t *testing.T) {
 		sort.Strings(unrouted)
 		t.Errorf("%d/%d documented operations are not registered on the router:\n  %s",
 			len(unrouted), total, strings.Join(unrouted, "\n  "))
+	}
+}
+
+// TestOpenAPIContract_ListingHistoryCodesArePublished keeps the trail's vocabulary and its
+// published enum in step. The history route answers `code` straight out of `audit_log`, and
+// a generated client types it as a union — so a fact recorded under a code the spec never
+// listed is one no client can render, and the failure lands on whoever reads the history
+// rather than on whoever added the event.
+// TestOpenAPIContract_ViewerAwareRoutesDeclareOptionalAuth holds the router's own rule to the
+// spec: "an operation that lists both `{}` and `bearerAuth` gets OptionalAuth". Five routes had
+// broken it in the other direction — served under OptionalAuth while declaring no security at
+// all — and the failure is invisible from either side alone.
+//
+// It is invisible because it degrades to a *valid answer*. A generated client attaches the bearer
+// token only for operations the spec marks with a security scheme, so an unmarked route is one the
+// browser asks anonymously however signed-in the reader is; the route then answers 200 with the
+// anonymous version. Nothing 401s, so the refresh-on-401 never fires and nothing is logged. The
+// symptom was a home page that showed a signed-in shopper the four platform shelves and none of
+// the four drawn from their own interests — with the API returning all nine to curl.
+//
+// Which middleware a route carries is probed rather than declared twice: a garbage bearer is
+// refused by both Auth and OptionalAuth, while no bearer at all is refused only by Auth. So
+// (no token → not 401) and (bad token → 401) is exactly OptionalAuth, read off the real router.
+//
+// GET only. The probe sends real requests, and the one non-GET route under OptionalAuth
+// (POST /listings/interactions) would record an interaction to prove a point about its spec.
+func TestOpenAPIContract_ViewerAwareRoutesDeclareOptionalAuth(t *testing.T) {
+	var doc struct {
+		Servers []struct {
+			URL string `yaml:"url"`
+		} `yaml:"servers"`
+		// The operation is a lazy node: a path's keys are not all operations — `parameters` is a
+		// sequence — and typing the whole map fails on it.
+		Paths map[string]map[string]yaml.Node `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(openapi.SpecYAML, &doc); err != nil {
+		t.Fatalf("parse openapi spec: %v", err)
+	}
+	base := doc.Servers[0].URL
+	r, _, _ := newRouter()
+	paramRe := regexp.MustCompile(`\{[^}]+\}`)
+
+	send := func(path, bearer string) int {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	var offenders []string
+	for path, ops := range doc.Paths {
+		node, ok := ops["get"]
+		if !ok {
+			continue
+		}
+		var op struct {
+			Security []map[string][]string `yaml:"security"`
+		}
+		if err := node.Decode(&op); err != nil {
+			t.Fatalf("decode GET %s: %v", path, err)
+		}
+		reqPath := base + paramRe.ReplaceAllString(path, "x")
+		if send(reqPath, "") == http.StatusUnauthorized {
+			continue // Auth: anonymous is refused outright
+		}
+		if send(reqPath, "not.a.real.token") != http.StatusUnauthorized {
+			continue // no auth middleware at all: the header is ignored
+		}
+		// OptionalAuth. The spec has to offer both, or no client will ever send the token.
+		anonymous, bearerAuth := false, false
+		for _, option := range op.Security {
+			if len(option) == 0 {
+				anonymous = true
+			}
+			if _, named := option["bearerAuth"]; named {
+				bearerAuth = true
+			}
+		}
+		if !anonymous || !bearerAuth {
+			offenders = append(offenders, fmt.Sprintf("GET %s (security: %v)", path, op.Security))
+		}
+	}
+
+	if len(offenders) > 0 {
+		sort.Strings(offenders)
+		t.Errorf("served under OptionalAuth but the spec does not offer both `{}` and `bearerAuth`, "+
+			"so the generated client never sends a token and every signed-in reader silently gets "+
+			"the anonymous answer:\n  %s", strings.Join(offenders, "\n  "))
+	}
+}
+
+func TestOpenAPIContract_ListingHistoryCodesArePublished(t *testing.T) {
+	var doc struct {
+		Components struct {
+			Schemas struct {
+				ListingHistoryCode struct {
+					Enum []string `yaml:"enum"`
+				} `yaml:"ListingHistoryCode"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(openapi.SpecYAML, &doc); err != nil {
+		t.Fatalf("parse openapi spec: %v", err)
+	}
+	published := doc.Components.Schemas.ListingHistoryCode.Enum
+	if len(published) == 0 {
+		t.Fatal("ListingHistoryCode has no enum; the check is looking at the wrong schema")
+	}
+	for _, code := range domain.EventCodes {
+		if !slices.Contains(published, string(code)) {
+			t.Errorf("%q is recorded but not in ListingHistoryCode: add it to listing.yaml", code)
+		}
+	}
+	for _, code := range published {
+		if !slices.Contains(domain.EventCodes, domain.EventCode(code)) {
+			t.Errorf("%q is published but nothing records it", code)
+		}
 	}
 }

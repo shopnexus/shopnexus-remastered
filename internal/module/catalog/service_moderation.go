@@ -110,6 +110,7 @@ func (s *Service) AdminApproveListing(ctx context.Context, req catalogapi.Approv
 	if err := s.repo.SaveListing(ctx, l, req.ActorID.Int64()); err != nil {
 		return catalogapi.ListingDetail{}, fmt.Errorf("save listing: %w", err)
 	}
+	s.announceModeration(ctx, l, true, "", true)
 	return s.detail(ctx, l, req.ActorID.Int64())
 }
 
@@ -123,15 +124,34 @@ func (s *Service) AdminTakedownListing(ctx context.Context, req catalogapi.Taked
 	if err != nil {
 		return catalogapi.ListingDetail{}, fmt.Errorf("get listing: %w", err)
 	}
-	notify := req.NotifySeller == nil || *req.NotifySeller
-	if err := l.Takedown(req.Reason, notify); err != nil {
+	notifySeller := req.NotifySeller == nil || *req.NotifySeller
+	if err := l.Takedown(req.Reason, notifySeller); err != nil {
 		return catalogapi.ListingDetail{}, err
 	}
 	if err := s.repo.SaveListing(ctx, l, req.ActorID.Int64()); err != nil {
 		return catalogapi.ListingDetail{}, fmt.Errorf("save listing: %w", err)
 	}
-	// Telling the seller is a notification the account module owns, and this slice has no seam
-	// to it: the choice lands in the trail, not in an outbox. Wire it when that API is a
-	// dependency rather than a plan.
+	s.announceModeration(ctx, l, false, req.Reason, notifySeller)
 	return s.detail(ctx, l, req.ActorID.Int64())
+}
+
+// announceModeration publishes the decision so the account module can tell the seller.
+//
+// After the write and best-effort, like every other publish in this module: the listing's state
+// is already what the moderator decided, so a bus that is down costs the seller a feed row, not
+// the decision. Reaching accountapi directly instead would be a dependency cycle — that module
+// consumes this one.
+func (s *Service) announceModeration(ctx context.Context, l *domain.Listing, approved bool,
+	reason string, notifySeller bool) {
+	event := ListingModerated{
+		ListingID:    l.ID,
+		SellerID:     l.SellerID,
+		Name:         l.Name,
+		Approved:     approved,
+		Reason:       reason,
+		NotifySeller: notifySeller,
+	}
+	if err := publishListingModerated(ctx, s.bus, event); err != nil {
+		s.log.Error("publish listing moderated failed", "listing_id", l.ID, "err", err)
+	}
 }

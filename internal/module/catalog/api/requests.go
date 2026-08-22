@@ -118,6 +118,15 @@ type GetListingRequest struct {
 	ViewerID id.ID[id.Account] `json:"-"`
 }
 
+// ListListingHistoryRequest reads one listing's trail. The actor is required — history is
+// nobody's to browse — and also decides how much of each entry comes back.
+type ListListingHistoryRequest struct {
+	ActorID id.ID[id.Account] `json:"-" validate:"required"`
+	ID      id.ID[id.Listing] `json:"-" validate:"required"`
+	Page    int               `json:"-" validate:"required,min=1"`
+	Limit   int               `json:"-" validate:"required,min=1,max=100"`
+}
+
 type CreateVariantRequest struct {
 	ActorID   id.ID[id.Account] `json:"-" validate:"required"`
 	ListingID id.ID[id.Listing] `json:"-" validate:"required"`
@@ -146,18 +155,17 @@ type DeleteVariantRequest struct {
 // which is why none appear here — and why an edit to a live listing waits on moderation
 // while a price change does not.
 type UpdateListingRequest struct {
-	ActorID                id.ID[id.Account]    `json:"-" validate:"required"`
-	ID                     id.ID[id.Listing]    `json:"-" validate:"required"`
-	Name                   *string              `json:"name" validate:"omitempty,min=1,max=200"`
-	Description            *string              `json:"description" validate:"omitempty,max=20000"`
-	CategoryID             *id.ID[id.Category]  `json:"category_id"`
-	Condition              *string              `json:"condition" validate:"omitempty,oneof=new used damaged"`
-	PriceMode              *string              `json:"price_mode" validate:"omitempty,oneof=fixed negotiable"`
-	Specifications         map[string]any       `json:"specifications"`
-	Attachments            []id.ID[id.Resource] `json:"attachments" validate:"max=10"`
-	Tags                   []string             `json:"tags" validate:"max=10,dive,required,max=100"`
-	FeaturedVariantID      *id.ID[id.Variant]   `json:"featured_variant_id"`
-	ClearFeaturedVariantID bool                 `json:"clear_featured_variant_id"`
+	ActorID           id.ID[id.Account]    `json:"-" validate:"required"`
+	ID                id.ID[id.Listing]    `json:"-" validate:"required"`
+	Name              *string              `json:"name" validate:"omitempty,min=1,max=200"`
+	Description       *string              `json:"description" validate:"omitempty,max=20000"`
+	CategoryID        *id.ID[id.Category]  `json:"category_id"`
+	Condition         *string              `json:"condition" validate:"omitempty,oneof=new used damaged"`
+	PriceMode         *string              `json:"price_mode" validate:"omitempty,oneof=fixed negotiable"`
+	Specifications    map[string]any       `json:"specifications"`
+	Attachments       []id.ID[id.Resource] `json:"attachments" validate:"max=10"`
+	Tags              []string             `json:"tags" validate:"max=10,dive,required,max=100"`
+	FeaturedVariantID *id.ID[id.Variant]   `json:"featured_variant_id"`
 }
 
 type DeleteListingRequest struct {
@@ -232,8 +240,15 @@ type ListListingsRequest struct {
 	// Variants resolves the listings a set of variants belongs to, which is what a cart or
 	// an order row needs: a variant is not addressable on its own here, so the listing it
 	// hangs off is the only thing that can be rendered. Ignores the other filters too.
-	Variants   []id.ID[id.Variant] `json:"-" validate:"max=100"`
-	Query      string              `json:"-" validate:"max=200"`
+	Variants []id.ID[id.Variant] `json:"-" validate:"max=100"`
+	Query    string              `json:"-" validate:"max=200"`
+	// SimilarTo turns the browse into "more like this one": the ranking is that listing's own
+	// stored embedding, so it needs no query and pays for no model call. It is the primitive
+	// behind a "similar products" rail and behind a home shelf that says which listing it is
+	// about — both of which used to be spelled as a text search of the listing's *name*, which
+	// ran the whole query-understanding stage, once per page view, to rediscover a vector that
+	// was already in the database.
+	SimilarTo  *id.ID[id.Listing]  `json:"-"`
 	Mine       bool                `json:"-"`
 	Favorited  bool                `json:"-"`
 	Status     string              `json:"-" validate:"omitempty,oneof=draft pending active hidden"`
@@ -264,6 +279,16 @@ type ListListingsRequest struct {
 	Seed  string `json:"-" validate:"max=64"`
 	Page  int    `json:"-" validate:"required,min=1"`
 	Limit int    `json:"-" validate:"required,min=1,max=100"`
+}
+
+// ListShelvesRequest is the home page's one read. Limit is per shelf, not for the response:
+// a row is a handful of cards a reader swipes, and how many shelves there are is the
+// server's answer rather than the client's request.
+type ListShelvesRequest struct {
+	// ViewerID is zero for an anonymous read, which is served the platform's shelves only —
+	// there is no account to have interests.
+	ViewerID id.ID[id.Account] `json:"-"`
+	Limit    int               `json:"-" validate:"required,min=1,max=30"`
 }
 
 // RecordInteractionsRequest is a batch of shopper actions against listings. Best-effort by

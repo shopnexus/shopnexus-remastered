@@ -16,6 +16,11 @@ const (
 	PriceModeNegotiable = "negotiable"
 )
 
+// StatusActive is the one listing status anything may be sold from. The others are either not
+// published yet — `draft`, `pending` — or down: `hidden` covers both a seller withdrawing
+// their own and a moderator's takedown.
+const StatusActive = "active"
+
 // The interaction types a shopper's action against a listing is recorded under. Named here
 // rather than in domain, because observability's popularity scorer reads the same vocabulary
 // as weight-map keys without depending on this module's service.
@@ -171,6 +176,18 @@ type ListingDetail struct {
 	DeletedAt *time.Time       `json:"deleted_at"`
 }
 
+// ForSale reports whether this listing may be bought right now.
+//
+// The read contract hands a hidden or soft-deleted listing to anyone, because a cart line and
+// an order item both have to render one, and says that `status` and `deleted_at` are what
+// report it cannot be bought. Nothing on the purchase path was reading them, so the promise
+// held only as long as no caller tried: a taken-down listing could be added to a cart,
+// negotiated over and checked out. This is that promise, in one place, for every path that
+// spends money to ask.
+func (l ListingDetail) ForSale() bool {
+	return l.Status == StatusActive && l.DeletedAt == nil
+}
+
 // Listing is the card a feed shows. Price is the featured variant's, or the cheapest one
 // when a price sort is in force — not stored on the listing.
 type Listing struct {
@@ -245,6 +262,104 @@ type ListingLocation struct {
 // Understood and Probes are what the search made of the shopper's words: the sentence to show
 // them, and the phrases actually searched. Both are the zero value for a browse with no query —
 // never a missing key.
+// ListingHistoryEntry is one change the listing has been through, as its history reads it.
+//
+// The stored snapshot is not here: it is the whole row as it then was, and a client that
+// rendered it would be reading a shape the database is free to change. What a history needs
+// is what moved and who moved it.
+type ListingHistoryEntry struct {
+	// Version is the trail's own counter for this listing: 1 is the listing being created,
+	// and it never repeats, so it is also the entry's key.
+	Version    int64     `json:"version"`
+	Code       string    `json:"code"`
+	ChangeType string    `json:"change_type"`
+	ChangedAt  time.Time `json:"changed_at"`
+	// ActorKind says who was behind the change — `seller`, `staff` or `system` — and is what
+	// a client renders when Actor is null. A moderator is `staff` to everyone; only staff
+	// also get the account.
+	ActorKind string `json:"actor_kind"`
+	// Actor is the account responsible, and null when there is none to show: a change nobody
+	// is responsible for, or a moderator's, read by anyone but staff.
+	Actor *accountapi.AccountSummary `json:"actor"`
+	// Fields is what an edit touched, in the listing's own field names. Empty for a fact that
+	// names none — a publication, a takedown.
+	Fields []string `json:"fields"`
+	// Details is the rest of what was recorded: the status it reached, the variant it was
+	// about, and — for staff only — the words a moderator wrote.
+	Details map[string]any `json:"details"`
+}
+
+type ListingHistoryPage struct {
+	Data []ListingHistoryEntry `json:"data"`
+	Meta PageInfo              `json:"meta"`
+}
+
+// ShelfReason is why a shelf is on the page — the whole point of a shelf rather than a page of
+// cards. Machine-readable rather than a sentence, because the sentence is the client's: every
+// other enum on this API is localised there, and a Vietnamese title from the server would be
+// the one string a second language could not translate.
+//
+// `interest` is one of the four slots a personalised feed ranks against, shown apart instead of
+// blended. The feed answers "what is here for me" in one page; the shelves answer it four times
+// and say which taste each answer came from, which is the difference between a good page and a
+// page a reader can trust.
+type ShelfReason = string
+
+const (
+	ReasonInterest         ShelfReason = "interest"
+	ReasonBecauseYouViewed ShelfReason = "because-you-viewed"
+	ReasonTrending         ShelfReason = "trending"
+	ReasonBestSelling      ShelfReason = "best-selling"
+	ReasonTopRated         ShelfReason = "top-rated"
+	ReasonNewest           ShelfReason = "newest"
+)
+
+const (
+	SubjectListing  = "listing"
+	SubjectCategory = "category"
+)
+
+// ShelfSubject is what the reason is *about*: the listing you looked at, the category an
+// interest slot turned out to be near. Null on a shelf whose reason is about nothing in
+// particular — what is trending is trending for everyone.
+//
+// An interest is a direction in embedding space and has no name of its own, so the subject is
+// the nearest category to it: that is the only honest label available, and it is the same
+// ranking `GET /categories?near=` already answers with.
+type ShelfSubject struct {
+	// Kind is `listing` or `category`, and it fixes what ID means.
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ShelfBrowse is the search that widens a shelf into a whole page — what "see all" links to.
+// Sent as parameters rather than as a URL: the client owns its own routes, and a server that
+// wrote them would be writing the client's router.
+type ShelfBrowse struct {
+	Sort       string  `json:"sort"`
+	CategoryID *string `json:"category_id"`
+	SimilarTo  *string `json:"similar_to"`
+}
+
+// Shelf is one horizontal row of the home page: a reason, what it is about, the listings, and
+// the browse behind it.
+type Shelf struct {
+	// Key is unique within the response — a reason can occur more than once (four interest
+	// slots) and a client needs one stable handle per row.
+	Key      string        `json:"key"`
+	Reason   ShelfReason   `json:"reason"`
+	Subject  *ShelfSubject `json:"subject"`
+	Browse   ShelfBrowse   `json:"browse"`
+	Listings []Listing     `json:"listings"`
+}
+
+// ShelfList is the whole home page's worth, in the order it should be read: what is about the
+// reader first, then what is about the marketplace.
+type ShelfList struct {
+	Data []Shelf `json:"data"`
+}
+
 type ListingPage struct {
 	Data       []Listing `json:"data"`
 	Meta       PageInfo  `json:"meta"`

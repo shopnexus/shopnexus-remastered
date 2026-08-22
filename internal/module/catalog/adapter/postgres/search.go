@@ -232,7 +232,8 @@ func predicateSource(sql, name string) string {
 // name this file generated into it. A kind with no entry cannot reach the statement, which is what
 // keeps a model's vocabulary out of the SQL text.
 var predicateSQL = map[string]string{
-	port.PredicateCategory: `l.category_id = @%s::bigint`,
+	// The category and its descendants, not just the id: see migration 012.
+	port.PredicateCategory: `l.category_id IN (SELECT category_subtree(@%s::bigint))`,
 	port.PredicateTag:      `EXISTS (SELECT 1 FROM listing_tag pt WHERE pt.listing_id = l.id AND pt.tag = @%s::text)`,
 	// Both bounds test the price the card will show — min(price) over the live variants, the same
 	// number feedSelect renders. An EXISTS over every variant instead would let a listing with a
@@ -260,8 +261,8 @@ func fusedOrder(f port.ListingFilter) string {
 // nothing for a relevance sort — a top-K is not a seekable total, which is the rule the service
 // already applies when it leaves TotalCount unset.
 func fusedTotal(f port.ListingFilter) string {
-	if f.Sort == port.SortRelevance || f.Sort == "" {
-		return `, 0::bigint AS total_count`
+	if f.SkipTotal || f.Sort == port.SortRelevance || f.Sort == "" {
+		return noTotal
 	}
 	return feedTotal
 }

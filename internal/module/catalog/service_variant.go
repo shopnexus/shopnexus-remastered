@@ -48,29 +48,39 @@ func (s *Service) UpdateVariant(ctx context.Context, req catalogapi.UpdateVarian
 	if err != nil {
 		return catalogapi.ListingDetail{}, err
 	}
+	// What the patch touches is also what the trail records: a price change is the edit a
+	// seller makes most, and nothing else on this path would name it.
+	var edited []string
 	if req.Price != nil {
 		v.Price = *req.Price
+		edited = append(edited, "price")
 	}
 	if req.Attributes != nil {
 		v.Attributes = req.Attributes
+		edited = append(edited, "attributes")
 	}
 	if req.PackageDetails != nil {
 		v.PackageDetails = req.PackageDetails
+		edited = append(edited, "package_details")
 	}
 	if req.Attachments != nil {
 		v.Attachments = resourceKeys(req.Attachments)
+		edited = append(edited, "attachments")
 	}
 	if req.Quantity != nil {
 		if err := v.Stock.SetQuantity(*req.Quantity); err != nil {
 			return catalogapi.ListingDetail{}, err
 		}
+		edited = append(edited, "quantity")
 	}
 	// Featuring is a rule about the set, so it goes through the root rather than the field.
 	if req.IsFeatured != nil && *req.IsFeatured {
 		if err := l.SetFeatured(v.ID); err != nil {
 			return catalogapi.ListingDetail{}, err
 		}
+		edited = append(edited, "is_featured")
 	}
+	l.NoteVariantEdited(v.ID, edited)
 	if err := s.requireResources(ctx, l); err != nil {
 		return catalogapi.ListingDetail{}, err
 	}

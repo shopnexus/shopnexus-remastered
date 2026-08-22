@@ -592,7 +592,7 @@ func TestListListings_RecommendedCacheIsPerFilter(t *testing.T) {
 // served from another browse's batch. This fails on the commit that adds the field, which is
 // the only place the omission is still cheap to fix.
 func TestFeedCacheKey_CoversEveryFilterField(t *testing.T) {
-	const named = 24
+	const named = 27
 	if got := reflect.TypeFor[port.ListingFilter]().NumField(); got != named {
 		t.Errorf("port.ListingFilter has %d fields, feedCacheKey was written for %d — "+
 			"add the new one to feedCacheKey (or to the list it leaves out on purpose) and update this count", got, named)

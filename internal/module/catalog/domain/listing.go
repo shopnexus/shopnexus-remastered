@@ -212,6 +212,11 @@ func (l *Listing) Validate() error {
 	if featured > 1 {
 		return ErrTooManyFeatured
 	}
+	// Exactly one, not "at most one": the card shows a price the seller chose, so there is no
+	// state where the platform picks for them.
+	if len(live) > 0 && featured == 0 {
+		return ErrNoFeatured
+	}
 	return nil
 }
 
@@ -319,11 +324,26 @@ func (l *Listing) SubmitEdit(edit PendingEdit) error {
 		return nil
 	}
 	if l.Status != StatusActive {
-		return l.apply(edit)
+		if err := l.apply(edit); err != nil {
+			return err
+		}
+		record(l, Edited, EditSubmission{Fields: edit.Fields()})
+		return nil
 	}
 	l.PendingEdit = &edit
 	record(l, EditSubmitted, EditSubmission{Fields: edit.Fields()})
 	return nil
+}
+
+// NoteVariantEdited records a change a caller already made to one of the variants. The
+// fields on a variant are plain assignments — there is no rule spanning a price and the
+// root — so the fact has nowhere else to be recorded, and a history missing the price
+// changes is missing what a seller edits most.
+func (l *Listing) NoteVariantEdited(variantID int64, fields []string) {
+	if len(fields) == 0 {
+		return
+	}
+	record(l, VariantEdited, VariantEdit{VariantID: variantID, Fields: fields})
 }
 
 // ApplyPendingEdit is what approval does with a held edit.
@@ -459,8 +479,8 @@ func (l *Listing) SetFeatured(variantID int64) error {
 	return nil
 }
 
-// Featured is what a card shows. Nil is legal: `clear_featured_variant_id` leaves a listing
-// with none, and the card then shows the cheapest variant instead.
+// Featured is what a card shows. Never nil for a listing with a live variant — Validate
+// requires exactly one, and the invariants above keep the flag on a live row.
 func (l *Listing) Featured() *Variant {
 	for _, v := range l.LiveVariants() {
 		if v.IsFeatured {

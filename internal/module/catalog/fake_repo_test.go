@@ -3,6 +3,7 @@ package catalog_test
 import (
 	"cmp"
 	"context"
+	"encoding/json/v2"
 	"fmt"
 	"maps"
 	"math"
@@ -56,9 +57,9 @@ type fakeRepo struct {
 	listListingsByIDsCalls int
 	// interests are the account's slots, which is what sort=recommended ranks against.
 	interests map[int64][]port.Interest
-	// selectivity is signal_selectivity, and nothing fills it until a refresh: a service that
-	// searches before the sweep ever ran must scale nothing.
-	selectivity map[domain.SelectivityKey]int64
+	// embeddings is listing_embedding's dense half: what a `similar_to` ranking reads back as
+	// its query. A listing absent from it is one the embedding pass has not reached.
+	embeddings map[int64]port.Vector
 	// resources is this module's own resource table: an id absent from it names no confirmed
 	// upload, which is what ErrAttachmentNotFound is about.
 	resources map[int64]bool
@@ -95,6 +96,7 @@ func newFakeRepo() *fakeRepo {
 		movements:      map[string]bool{},
 		favorites:      map[[2]int64]bool{},
 		interests:      map[int64][]port.Interest{},
+		embeddings:     map[int64]port.Vector{},
 		resources:      map[int64]bool{},
 	}
 }
@@ -415,9 +417,63 @@ func (f *fakeRepo) CreateListing(_ context.Context, l *domain.Listing, actor int
 	if err := f.putListing(l); err != nil {
 		return err
 	}
+	// The insert's own row, written by hand the way the adapter writes it: an insert has no
+	// events, so nothing else would record that the listing was posted at all.
+	f.audit = append(f.audit, common.AuditEntry{
+		Table: "listing", RecordID: l.ID, ChangeType: "insert",
+		Code: string(domain.Created.Code), ChangedBy: auditActor(actor),
+		Diff: domain.StatusChange{Status: l.Status}, Snapshot: l.Snapshot(),
+	})
 	f.recordTrail(l, actor)
 	l.ClearEvents()
 	return nil
+}
+
+// ListListingHistory reads the trail back newest first. The version is the entry's position
+// among that record's rows, which is what the adapter's `MAX(version) + 1` derives.
+func (f *fakeRepo) ListListingHistory(_ context.Context, listingID int64, offset, limit int) ([]port.AuditRecord, int64, error) {
+	var all []port.AuditRecord
+	for _, entry := range f.audit {
+		if entry.Table != "listing" || entry.RecordID != listingID {
+			continue
+		}
+		all = append(all, port.AuditRecord{
+			Version:    int64(len(all) + 1),
+			Code:       entry.Code,
+			ChangeType: entry.ChangeType,
+			ChangedAt:  time.Now(),
+			ChangedBy:  entry.ChangedBy,
+			Diff:       jsonRoundTrip(entry.Diff),
+		})
+	}
+	slices.Reverse(all)
+	total := int64(len(all))
+	if offset >= len(all) {
+		return nil, total, nil
+	}
+	return all[offset:min(offset+limit, len(all))], total, nil
+}
+
+// jsonRoundTrip is what the JSONB column does to a payload on the way in and out: a typed
+// struct becomes a map of whatever JSON can hold. A fake that handed the struct straight
+// back would let a service read a shape the database cannot store.
+func jsonRoundTrip(payload any) map[string]any {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return map[string]any{}
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return map[string]any{}
+	}
+	return out
+}
+
+func auditActor(actor int64) *int64 {
+	if actor == 0 {
+		return nil
+	}
+	return &actor
 }
 
 func (f *fakeRepo) SaveListing(_ context.Context, l *domain.Listing, actor int64) error {
@@ -445,10 +501,7 @@ func (f *fakeRepo) SaveListing(_ context.Context, l *domain.Listing, actor int64
 // recordTrail is the audit half of a write: one row per fact the root recorded, with the
 // snapshot as it now is.
 func (f *fakeRepo) recordTrail(l *domain.Listing, actor int64) {
-	var changedBy *int64
-	if actor != 0 {
-		changedBy = &actor
-	}
+	changedBy := auditActor(actor)
 	snapshot := l.Snapshot()
 	for _, e := range l.Events() {
 		f.audit = append(f.audit, common.AuditEntry{
@@ -602,13 +655,9 @@ func (f *fakeRepo) SoftDeleteListing(_ context.Context, id, sellerID, actor int6
 	now := time.Now()
 	f.listings[at].listing.DeletedAt = &now
 	f.listings[at].listing.Version++
-	var changedBy *int64
-	if actor != 0 {
-		changedBy = &actor
-	}
 	f.audit = append(f.audit, common.AuditEntry{
-		Table: "listing", RecordID: id, ChangeType: "delete",
-		Code: string(domain.Deleted.Code), ChangedBy: changedBy,
+		Table: "listing", RecordID: id, ChangeType: "delete", ChangedBy: auditActor(actor),
+		Code: string(domain.Deleted.Code),
 		Diff: domain.NoPayload{}, Snapshot: domain.NoPayload{},
 	})
 	return nil
@@ -971,43 +1020,6 @@ func (f *fakeRepo) RecomputeInterests(_ context.Context, accountID int64, signal
 	return nil
 }
 
-// RefreshSignalSelectivity counts the fake's own listings the way the adapter counts the table's,
-// so a service test reads a number a real refresh would also have produced rather than one a test
-// asserted into place.
-func (f *fakeRepo) RefreshSignalSelectivity(context.Context) error {
-	counts := map[domain.SelectivityKey]int64{}
-	for _, stored := range f.listings {
-		if stored.listing.DeletedAt != nil || stored.listing.Status != domain.StatusActive {
-			continue
-		}
-		counts[domain.SelectivityKey{
-			Kind: port.PredicateCategory,
-			Key:  strconv.FormatInt(stored.listing.CategoryID, 10),
-		}]++
-		counts[domain.SelectivityKey{
-			Kind: port.PredicateCondition,
-			Key:  string(stored.listing.Condition),
-		}]++
-		for _, tag := range stored.tags {
-			counts[domain.SelectivityKey{Kind: port.PredicateTag, Key: tag}]++
-		}
-	}
-	f.selectivity = counts
-	return nil
-}
-
-// SignalSelectivity derives the total from the condition rows, the same invariant the adapter
-// leans on: every active listing has exactly one condition.
-func (f *fakeRepo) SignalSelectivity(context.Context) (domain.Selectivity, error) {
-	out := domain.Selectivity{Counts: maps.Clone(f.selectivity)}
-	for key, n := range f.selectivity {
-		if key.Kind == port.PredicateCondition {
-			out.Total += n
-		}
-	}
-	return out, nil
-}
-
 func (f *fakeRepo) StaleInterests(_ context.Context, limit int) ([]int64, error) {
 	var out []int64
 	for key := range f.favorites {
@@ -1050,6 +1062,41 @@ func (f *fakeRepo) AddFavorite(_ context.Context, accountID, listingID int64) er
 func (f *fakeRepo) RemoveFavorite(_ context.Context, accountID, listingID int64) error {
 	delete(f.favorites, [2]int64{accountID, listingID})
 	return nil
+}
+
+// RecentSignals answers the account's rows newest first, one per listing — the same
+// de-duplication the adapter's DISTINCT ON does, since a shopper who opened one listing four
+// times has one reason and not four. The fake appends in order, so "newest" is the tail.
+func (f *fakeRepo) RecentSignals(_ context.Context, accountID int64, types []string, limit int) ([]port.ListingSignal, error) {
+	wanted := func(t string) bool {
+		if len(types) == 0 {
+			return true
+		}
+		return slices.Contains(types, t)
+	}
+	seen := map[int64]bool{}
+	var out []port.ListingSignal
+	for i := len(f.signals) - 1; i >= 0 && len(out) < limit; i-- {
+		row := f.signals[i]
+		if row.accountID != accountID || !wanted(row.signalType) || seen[row.listingID] {
+			continue
+		}
+		seen[row.listingID] = true
+		out = append(out, port.ListingSignal{
+			AccountID: row.accountID, ListingID: row.listingID, Type: row.signalType,
+		})
+	}
+	return out, nil
+}
+
+// ListingProbe answers whatever vector the test filed for the listing, and the adapter's
+// "not embedded yet" error when it filed none.
+func (f *fakeRepo) ListingProbe(_ context.Context, listingID int64) (port.Probe, error) {
+	v, ok := f.embeddings[listingID]
+	if !ok || len(v) == 0 {
+		return port.Probe{}, domain.ErrListingNotEmbedded
+	}
+	return port.Probe{Dense: v}, nil
 }
 
 func (f *fakeRepo) InsertListingSignals(_ context.Context, signals []port.ListingSignal) error {

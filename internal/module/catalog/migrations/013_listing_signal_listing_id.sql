@@ -1,0 +1,14 @@
+-- An index for the foreign key that cascades, because Postgres does not make one.
+--
+-- "listing_signal_listing_id_fkey" is ON DELETE CASCADE, and the referential-integrity trigger
+-- behind that runs once per deleted row: DELETE FROM "listing_signal" WHERE "listing_id" = $1.
+-- The two indexes this table had both lead with "account_id" — right for reading somebody's
+-- history, useless for that delete — so every listing removed cost a sequential scan of the whole
+-- table. Deleting fifty thousand listings against 2.3M signal rows sat for minutes and had not
+-- finished; with this index it is fifty thousand index lookups.
+--
+-- The soft delete on "listing" is why nobody noticed: an ordinary takedown sets "deleted_at" and
+-- the cascade never fires. It fires for a real DELETE — a moderator purge, a category cleanup, or
+-- a dev tool rebuilding the catalogue — and that is when the table's size becomes the cost of
+-- removing one row.
+CREATE INDEX IF NOT EXISTS "listing_signal_listing_id_idx" ON "listing_signal" ("listing_id");

@@ -11,6 +11,7 @@ import (
 
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
+	"shopnexus/internal/module/common/dbx"
 )
 
 // SeedVectors reads one vector per seed, in the order asked. Two statements rather than a
@@ -89,6 +90,33 @@ func collectVectors(ctx context.Context, q *pgxpool.Pool, sql string, args pgx.N
 		return fmt.Errorf("db iterate seed vectors: %w", err)
 	}
 	return nil
+}
+
+// ListingProbe reads a listing's own embedding back to be used as a query — the dense half
+// only, which is what "more like this one" means.
+//
+// The sparse half is deliberately left out. It is a lexical vector: matching against it finds
+// the listings that reuse this one's *words*, which for a marketplace of one-of-a-kind goods
+// ranks a "iPhone 13 case" beside an "iPhone 13" and calls them similar. Dense alone is the
+// neighbourhood of the thing rather than of its title.
+func (r *Repo) ListingProbe(ctx context.Context, listingID int64) (port.Probe, error) {
+	// Cast to text for the same reason every other vector read here is: pgx has no codec for
+	// the type and this module adds no dependency for one.
+	const q = `SELECT dense::text FROM listing_embedding
+	           WHERE listing_id = @listing_id AND dense IS NOT NULL`
+	var literal string
+	err := r.pool.QueryRow(ctx, q, pgx.NamedArgs{"listing_id": listingID}).Scan(&literal)
+	if dbx.IsNoRows(err) {
+		return port.Probe{}, domain.ErrListingNotEmbedded
+	}
+	if err != nil {
+		return port.Probe{}, fmt.Errorf("db scan listing probe: %w", err)
+	}
+	v, err := parseVector(literal)
+	if err != nil {
+		return port.Probe{}, err
+	}
+	return port.Probe{Dense: v}, nil
 }
 
 // NearestCategories ranks by cosine distance to the centroid of the probes. One probe is the

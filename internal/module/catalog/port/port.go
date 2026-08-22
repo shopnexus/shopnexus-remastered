@@ -87,6 +87,20 @@ type ListingSummary struct {
 	DistanceKM *float64
 }
 
+// AuditRecord is one row of the listing's trail, as the history read needs it. The snapshot
+// column is deliberately absent: it is the whole row as it then was, and nothing outside the
+// database has a use for it that would survive the row growing a column.
+type AuditRecord struct {
+	Version    int64
+	Code       string
+	ChangeType string
+	ChangedAt  time.Time
+	// ChangedBy is nil for a change no account is responsible for.
+	ChangedBy *int64
+	// Diff is the payload the recorder declared, decoded as it was stored.
+	Diff map[string]any
+}
+
 // ListingFilter is the browse feed: one query narrowed by parameters rather than a family of
 // endpoints. Zero values mean "not filtered", so a bare filter is "the newest live listings".
 type ListingFilter struct {
@@ -96,6 +110,11 @@ type ListingFilter struct {
 	// VariantIDs resolves the listings those variants belong to, and ignores the rest of
 	// the filter for the same reason IDs does.
 	VariantIDs []int64
+	// ExcludeIDs drops rows whatever else matched them. Today it holds the listing a
+	// "similar to this one" ranking is *about*: its own embedding is its own nearest
+	// neighbour, so without this the first card of every such rail is the listing the
+	// reader is already looking at.
+	ExcludeIDs []int64
 	// Query turns the request into a search, and the words themselves rank nothing: Terms carries
 	// the probe of them. What is left for the raw string is the recommended feed's name ILIKE,
 	// which is the one path a search's terms never reach.
@@ -115,6 +134,15 @@ type ListingFilter struct {
 	// order (page two follows page one) and a new one produces a different feed. Resolved by
 	// the service, never empty for a personalised feed.
 	Seed string
+	// SkipTotal drops the count behind the page. Not an optimisation to reach for casually —
+	// it is for callers that never read it. The count is `COUNT(*) OVER ()`, a window function
+	// that makes Postgres run the whole feed statement over every matching row before LIMIT
+	// applies: measured on 920 344 active listings, the same query is 4.4ms without it and
+	// 1 165ms with it. The home page's shelves discarded three of these per request.
+	SkipTotal bool
+	// MatchedOnly drops the personalised feed's fresh source, leaving only what the interest
+	// legs actually matched. For a named row, whose heading is a claim about its cards.
+	MatchedOnly bool
 	// ViewerID is the caller, needed for Mine, Favorited and Recommended. Zero is anonymous.
 	ViewerID   int64
 	Mine       bool
@@ -278,6 +306,9 @@ type Repository interface {
 	// SoftDeleteListing marks the row deleted and writes the trail. Soft, because order.item
 	// holds listing_id without a foreign key and a past order has to stay renderable.
 	SoftDeleteListing(ctx context.Context, id, sellerID, actor int64) error
+	// ListListingHistory reads the listing's trail, newest first — the order a history is
+	// read in, against the version's own order.
+	ListListingHistory(ctx context.Context, listingID int64, offset, limit int) ([]AuditRecord, int64, error)
 	// ListModerationQueue answers the moderator's worklist, oldest first — the order it should
 	// be worked.
 	ListModerationQueue(ctx context.Context, f QueueFilter) ([]ListingSummary, int64, error)
@@ -296,6 +327,14 @@ type Repository interface {
 	// ranks against. Empty for an account nothing has computed yet, and the service falls
 	// back to newest.
 	Interests(ctx context.Context, accountID int64) ([]Interest, error)
+	// ListingProbe is a listing's own stored embedding, read back to be used as a query — what
+	// "more like this one" ranks against. domain.ErrListingNotEmbedded when the embedding pass
+	// has not reached the row yet, which is a listing to fall back for rather than a failure.
+	ListingProbe(ctx context.Context, listingID int64) (Probe, error)
+	// RecentSignals is what an account did last, most recent first — the rows behind a shelf
+	// that says *why* it is there ("because you looked at this"). Types narrows to the kinds
+	// worth reasoning from; empty takes them all.
+	RecentSignals(ctx context.Context, accountID int64, types []string, limit int) ([]ListingSignal, error)
 	// RecomputeInterests rebuilds those slots from what the account saved plus its recent
 	// positive listing_signal rows (a view, a click — never a negative one: an average that
 	// becomes a share of the page has no business holding a negative number, so
@@ -355,15 +394,4 @@ type Repository interface {
 	// SetCachedRating writes the review average trust recomputed. Denormalized here because
 	// trust is another schema: the number cannot be joined, so it is handed over.
 	SetCachedRating(ctx context.Context, listingID int64, rating float64, count int64) error
-
-	// --- search selectivity: how much each thing a signal can name narrows the catalogue ---
-
-	// SignalSelectivity answers the whole counts table plus the active-listing total, which is
-	// what scales a compiled predicate's weight by how rare its value is. Read per search: it
-	// is a few dozen rows on the primary key, and a process-local copy would be a second
-	// source of truth for a number that moves whenever a seller posts.
-	SignalSelectivity(ctx context.Context) (domain.Selectivity, error)
-	// RefreshSignalSelectivity recounts every kind in one transaction. Sweep-driven, never on a
-	// listing write — a count a pass behind moves a weight in the third decimal.
-	RefreshSignalSelectivity(ctx context.Context) error
 }

@@ -1,0 +1,129 @@
+# catalog fragment: shelf — the home page as rows that say why they are there.
+
+paths:
+  /listings/shelves:
+    get:
+      tags: [catalog]
+      summary: The home page, as shelves
+      description: >
+        Several short rows instead of one ranked page, each carrying the reason it is on the
+        page: what you looked at last, one row per taste the account's behaviour points at, and
+        what the marketplace as a whole is doing.
+
+
+        Composed here rather than by the client because the interesting half cannot be composed
+        anywhere else. A personalised feed ranks against four **interest slots** — directions in
+        embedding space, recomputed from what the account saved and clicked — and `sort=recommended`
+        *blends* them, so a reader gets one page and no way to tell which of their tastes produced
+        which card. Each slot is a row here, named by the category nearest its vector, which is the
+        only honest label a vector has. The slots themselves are not published and will not be.
+
+
+        Nothing is invented for this. A slot's row is the personalised feed handed one interest
+        instead of four — the same retrieval, restricted — and the naming is the ranking
+        `GET /categories?near=` already answers with.
+
+
+        Titles are not sent. `reason` and `subject` are, and the sentence is the client's — every
+        other enum on this API is localised there, and a title from the server would be the one
+        string a second language could not translate.
+
+
+        A listing appears on at most one shelf: rows are built in the order they are returned and
+        each excludes what the rows above it already showed, because "vì bạn đã xem" and "đang là xu
+        hướng" showing the same twelve cards is one row wearing two headings. A row that comes back
+        with fewer than three listings is dropped rather than rendered — a rail of two cards reads as
+        a failed request. Both are why the response is a list of whatever the page turned out to
+        have, not a fixed set a client can index into.
+
+
+        Anonymous is a shorter page, not an error: there is no account to have interests, so only
+        the marketplace's own rows come back.
+      parameters:
+        - name: limit
+          in: query
+          description: >
+            Cards per shelf, not for the response. How many shelves there are is the server's
+            answer rather than the client's request.
+          schema: { type: integer, minimum: 1, maximum: 30, default: 12 }
+      security:
+        - {}
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 'OK — in the order the page should be read: what is about the reader first, then what is about the marketplace.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Shelf' } }
+                required: [data]
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+components:
+  schemas:
+    ShelfReason:
+      type: string
+      description: >
+        Why the shelf is on the page.
+
+
+        `interest` is one of the account's four interest slots, shown apart instead of blended into
+        `sort=recommended`; its subject is the category nearest that slot. `because-you-viewed` is
+        the neighbourhood of the last listing the shopper opened. The rest are the marketplace's own
+        orderings and are about nobody in particular.
+      enum: [interest, because-you-viewed, trending, best-selling, top-rated, newest]
+      example: interest
+
+    ShelfSubject:
+      type: object
+      description: >
+        What the reason is *about*, and null on a reason that is about nothing in particular — what
+        is trending is trending for everyone.
+      properties:
+        kind:
+          type: string
+          enum: [listing, category]
+          description: Fixes what `id` is.
+        id: { type: string, example: cat_7k2m9x4bqn1ds }
+        name: { type: string, example: Điện thoại }
+      required: [kind, id, name]
+
+    ShelfBrowse:
+      type: object
+      description: >
+        The search that widens this shelf into a whole page — what a "see all" link asks for. Sent
+        as parameters rather than as a URL: the client owns its own routes, and a server writing
+        them would be writing the client's router. Every field is nullable and only the ones that
+        apply are set.
+      properties:
+        sort:
+          type: string
+          nullable: true
+          description: Empty when the shelf's own ranking is not a `sort` a client can ask for.
+          example: newest
+        category_id: { allOf: [{ $ref: '#/components/schemas/CategoryID' }], nullable: true }
+        similar_to: { allOf: [{ $ref: '#/components/schemas/ListingID' }], nullable: true }
+      required: [sort, category_id, similar_to]
+
+    Shelf:
+      type: object
+      properties:
+        key:
+          type: string
+          description: >
+            Unique within the response. A reason can occur more than once — four interest slots —
+            so a client needs one stable handle per row rather than per reason.
+          example: interest:0
+        reason: { $ref: '#/components/schemas/ShelfReason' }
+        subject:
+          allOf: [{ $ref: '#/components/schemas/ShelfSubject' }]
+          nullable: true
+        browse: { $ref: '#/components/schemas/ShelfBrowse' }
+        listings:
+          type: array
+          minItems: 3
+          items: { $ref: '#/components/schemas/Listing' }
+          description: At least three, or the shelf is not returned at all.
+      required: [key, reason, subject, browse, listings]

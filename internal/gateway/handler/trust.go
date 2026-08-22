@@ -137,10 +137,15 @@ func (h *Trust) ListReviews(w http.ResponseWriter, r *http.Request) {
 	if failed(w, h.log, err) {
 		return
 	}
+	media, err := boolParam(r, "media")
+	if failed(w, h.log, err) {
+		return
+	}
 	req := trustapi.ListReviewsRequest{
 		ListingID: listingID,
 		Rating:    int16(rating),
 		Sort:      r.URL.Query().Get("sort"),
+		Media:     media != nil && *media,
 		Cursor:    cursorParam(r),
 		Limit:     limit,
 	}
@@ -157,6 +162,27 @@ func (h *Trust) ListReviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteCursor(w, http.StatusOK, res.Data, cursorMeta(res.Meta.NextCursor))
+}
+
+// GetReviewSummary handles GET /listings/{listingID}/reviews/summary. Public, and under
+// optionalAuth for the same reason the list is: a seller reading their own hidden listing.
+func (h *Trust) GetReviewSummary(w http.ResponseWriter, r *http.Request) {
+	listingID, err := pathID[id.Listing](r, "listingID")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := trustapi.GetReviewSummaryRequest{ListingID: listingID}
+	if uid, err := actor(r); err == nil {
+		req.ViewerID = uid
+	}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.GetReviewSummary(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
 }
 
 // SubmitReview handles POST /listings/{listingID}/reviews.

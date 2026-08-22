@@ -27,7 +27,13 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 		return r.search(ctx, q, args)
 	}
 	args := feedArgs(f)
-	q := feedSelect + freshScore + feedScore + feedTotal + feedFrom + feedWhere + orderBy(f) + feedPage
+	// The page never carries its own count. `COUNT(*) OVER ()` is a window function, so it makes
+	// Postgres run this whole statement — the price LATERAL, the embedding join, the tag
+	// subquery — over every matching row before LIMIT applies. Measured on 920 344 active
+	// listings: 4.4ms without it, 1 165ms with. The count comes from countListings below
+	// instead, which is the same predicate over the bare table and costs about two.
+	q := feedSelect + freshScore + feedScore + noTotal + feedFrom + feedWhere + orderBy(f) + feedPage
+	personalised := f.Sort == port.SortRecommended && len(f.Interests) > 0
 	switch {
 	// The personalised feed, which is the only shape that ranks against more than one probe.
 	case f.Sort == port.SortRecommended && len(f.Interests) > 0:
@@ -36,11 +42,20 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 		args["weights"] = weights
 		args["fresh_weight"] = domain.FreshWeight
 		args["sharpness"] = domain.ExploreSharpness
+		args["interest_max_distance"] = domain.InterestMaxDistance
+		args["oos_penalty"] = domain.OutOfStockPenalty
 		args["seed"] = f.Seed
 		// Several pages deep per source, because the merge samples the pool rather than
 		// taking the top of it: a pool the size of the page is a pool with no alternatives
 		// in it, and the reader would get the same twelve cards in a shuffled order.
 		args["candidates"] = (f.Offset + f.Limit) * domain.FreshPoolFactor
+		// Zero, and not a filter on the fresh CTE: the source is meant to be there for the
+		// blended feed and absent for a named row, and a depth of nothing says that without
+		// giving the statement a second shape to test.
+		args["fresh_candidates"] = args["candidates"]
+		if f.MatchedOnly {
+			args["fresh_candidates"] = 0
+		}
 		q = recommendedHead +
 			feedSelect + recommendedScore + feedScore + feedFrom + feedWhere +
 			recommendedWhere + recommendedEmbedded + recommendedFresh +
@@ -52,7 +67,35 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 		return nil, 0, fmt.Errorf("db query listings: %w", err)
 	}
 	defer rows.Close()
-	return scanListingCards(rows)
+	cards, _, err := scanListingCards(rows)
+	if err != nil {
+		return nil, 0, err
+	}
+	// Not for the personalised feed: it narrows further than feedWhere does (recommendedWhere)
+	// and draws from a sampled pool, so a count of feedWhere would be a number about a different
+	// set. The service leaves TotalCount unset for that sort anyway.
+	if personalised || f.SkipTotal {
+		return cards, 0, nil
+	}
+	total, err := r.countListings(ctx, f)
+	if err != nil {
+		return nil, 0, err
+	}
+	return cards, total, nil
+}
+
+// countListings is the page's total, as its own statement.
+//
+// The same feedWhere, over `listing` alone: that predicate touches no other table — every
+// price and tag test in it is a subquery, not a join — so the count needs none of the page
+// statement's joins and the partial indexes on (status, deleted_at) serve it directly.
+func (r *Repo) countListings(ctx context.Context, f port.ListingFilter) (int64, error) {
+	const q = `SELECT count(*) FROM listing l` + feedWhere
+	var n int64
+	if err := r.pool.QueryRow(ctx, q, feedArgs(f)).Scan(&n); err != nil {
+		return 0, fmt.Errorf("db count listings: %w", err)
+	}
+	return n, nil
 }
 
 // feedArgs is every filter as parameters, shared by the browse statement and the search's ANN
@@ -61,6 +104,7 @@ func (r *Repo) ListListings(ctx context.Context, f port.ListingFilter) ([]port.L
 func feedArgs(f port.ListingFilter) pgx.NamedArgs {
 	return pgx.NamedArgs{
 		"ids":           nullInt64Array(f.IDs),
+		"exclude_ids":   nullInt64Array(f.ExcludeIDs),
 		"variant_ids":   nullInt64Array(f.VariantIDs),
 		"query":         dbx.NullText(f.Query),
 		"viewer_id":     f.ViewerID,
@@ -186,6 +230,12 @@ const feedScore = ` AS score`
 const feedTotal = `,
 	                  COUNT(*) OVER () AS total_count`
 
+// noTotal keeps the column in the select list while answering nothing for it: every shape here
+// shares one row type, and a statement that sometimes has one fewer column is a scan that
+// sometimes fails. The browse path always uses this now — see ListListings — and the search
+// path picks between the two in fusedTotal.
+const noTotal = `, 0::bigint AS total_count`
+
 const feedFrom = `
 	           FROM listing l
 	           LEFT JOIN LATERAL (
@@ -219,10 +269,18 @@ const feedWhere = `
 	                     l.account_id = @viewer_id
 	                     AND (@status::text IS NULL OR l.status::text = @status::text)
 	                   ELSE l.status = 'active' END
+	               -- The listing a "more like this" ranking is about. Its own embedding is its
+	               -- own nearest neighbour, so without this the first card of the rail is the
+	               -- listing the reader is already looking at.
+	               AND (@exclude_ids::bigint[] IS NULL
+	                    OR l.id <> ALL(@exclude_ids::bigint[]))
 	               AND (NOT @favorited::boolean OR EXISTS (
 	                     SELECT 1 FROM favorite fv
 	                     WHERE fv.listing_id = l.id AND fv.account_id = @viewer_id))
-	               AND (@category_id::bigint IS NULL OR l.category_id = @category_id::bigint)
+	               -- The category named and everything under it: listings sit on leaves, so an
+	               -- equality test against a root matches nothing. See migration 012.
+	               AND (@category_id::bigint IS NULL
+	                    OR l.category_id IN (SELECT category_subtree(@category_id::bigint)))
 	               AND (@seller_id::bigint IS NULL OR l.account_id = @seller_id::bigint)
 	               AND (@condition::text IS NULL OR l.condition::text = @condition::text)
 	               -- Where the goods are. One level, the one the caller named: a ward code is
@@ -311,7 +369,8 @@ const recommendedWhere = `
 // deliberately does not carry this: the newest thing on the platform is exactly the one whose
 // vector has not been computed yet.
 const recommendedEmbedded = `
-	             AND e.dense IS NOT NULL`
+	             AND e.dense IS NOT NULL
+	             AND (e.dense <=> p.vec) <= @interest_max_distance::double precision`
 
 const recommendedFresh = `
 	             ORDER BY e.dense <=> p.vec
@@ -337,7 +396,7 @@ const recommendedFresh = `
 // first, and a reader paging down would see the same card twice and miss others entirely.
 const recommendedTail = `
 	             ORDER BY l.created_at DESC
-	             LIMIT @candidates
+	             LIMIT @fresh_candidates
 	           ) f
 	         ), drawn AS (
 	           SELECT s.*,
@@ -353,9 +412,22 @@ const recommendedTail = `
 	         FROM merged
 	         ORDER BY position, score DESC NULLS LAST, id DESC` + feedPage
 
-// recommendedScore is the similarity to the interest this pass is running for. Higher is
-// better, like every other score a card carries.
-const recommendedScore = `1 - (e.dense <=> p.vec)`
+// recommendedScore is the similarity to the interest this pass is running for, less a penalty
+// for a listing nothing can be bought from. Higher is better, like every other score a card
+// carries.
+//
+// The penalty rides on the score rather than on the rank window because everything downstream
+// reads the score: `hit` ranks by it, and the final ORDER BY breaks ties on it. Demoting in one
+// place and not the other would order the page by two different opinions of the same row.
+//
+// Evaluated after the candidate LIMIT, which is by distance — so an out-of-stock listing still
+// enters the pool and still competes, it just competes from further back. Excluding it here
+// instead would quietly narrow every rail by a third.
+const recommendedScore = `1 - (e.dense <=> p.vec) - CASE WHEN EXISTS (
+	                   SELECT 1 FROM variant sv JOIN stock ss ON ss.variant_id = sv.id
+	                    WHERE sv.listing_id = l.id AND sv.deleted_at IS NULL
+	                      AND ss.quantity - ss.reserved - ss.sold > 0
+	                 ) THEN 0 ELSE @oos_penalty::double precision END`
 
 // freshScore is what a card drawn for being new carries: nothing. It was not matched against
 // anything, and a number here would be a claim about a relevance nobody measured.
@@ -567,6 +639,13 @@ func nullInt64Ptr(n *int64) any {
 }
 
 func nullInt64Array(v []int64) any {
+	if len(v) == 0 {
+		return nil
+	}
+	return v
+}
+
+func nullTextArray(v []string) any {
 	if len(v) == 0 {
 		return nil
 	}

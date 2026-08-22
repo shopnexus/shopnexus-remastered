@@ -143,12 +143,22 @@ func (s *Service) sellers(ctx context.Context, accountIDs []int64) map[int64]acc
 // moderator check — a role that outranks another and still gets refused is a bug waiting to
 // be filed.
 func (s *Service) requireModerator(ctx context.Context, actorID id.ID[id.Account]) error {
-	me, err := s.accounts.GetMe(ctx, accountapi.GetMeRequest{ActorID: actorID})
+	staff, err := s.isStaff(ctx, actorID)
 	if err != nil {
-		return fmt.Errorf("read caller role: %w", err)
+		return err
 	}
-	if me.Role != accountapi.RoleModerator && me.Role != accountapi.RoleAdmin {
+	if !staff {
 		return domain.ErrModeratorRequired
 	}
 	return nil
+}
+
+// isStaff answers the same question without refusing: a read that is allowed either way but
+// answers less to a seller than to a moderator needs the fact, not the guard.
+func (s *Service) isStaff(ctx context.Context, actorID id.ID[id.Account]) (bool, error) {
+	me, err := s.accounts.GetMe(ctx, accountapi.GetMeRequest{ActorID: actorID})
+	if err != nil {
+		return false, fmt.Errorf("read caller role: %w", err)
+	}
+	return me.Role == accountapi.RoleModerator || me.Role == accountapi.RoleAdmin, nil
 }

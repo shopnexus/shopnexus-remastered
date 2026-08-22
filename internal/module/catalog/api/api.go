@@ -27,6 +27,9 @@ type Service interface {
 	// ListListings is the feed, the search, the wishlist page and the id lookup. Cards, not
 	// aggregates: a page of twenty must not be twenty loads.
 	ListListings(ctx context.Context, req ListListingsRequest) (ListingPage, error)
+	// ListShelves is the home page: several short, reason-carrying rows instead of one ranked
+	// page. Only the server can compose it — the interest slots it decomposes are not published.
+	ListShelves(ctx context.Context, req ListShelvesRequest) (ShelfList, error)
 	// SuggestListing fills in a listing form from the seller's photos and what they said about
 	// them. It writes nothing: the answer is a suggestion the seller edits and then posts through
 	// CreateListing, so no model's guess reaches a buyer without a human between.
@@ -41,6 +44,11 @@ type Service interface {
 	DeleteVariant(ctx context.Context, req DeleteVariantRequest) (ListingDetail, error)
 
 	UpdateListing(ctx context.Context, req UpdateListingRequest) (ListingDetail, error)
+	// ListListingHistory is the listing's own trail — what changed, when, and who was
+	// behind it. Its two readers are the seller who owns the listing and staff, and they
+	// are not answered the same rows: a moderator's identity and the words they wrote for
+	// each other are staff's, not the seller's.
+	ListListingHistory(ctx context.Context, req ListListingHistoryRequest) (ListingHistoryPage, error)
 	DeleteListing(ctx context.Context, req DeleteListingRequest) error
 	// PublishListing always enters moderation: there is no path that makes a listing live
 	// without a human, which is also why re-publishing a taken-down listing cannot undo the

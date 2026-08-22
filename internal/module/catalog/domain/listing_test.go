@@ -444,3 +444,25 @@ func TestApplyEdit_OnlyTheEmbeddedFieldsMakeTheVectorStale(t *testing.T) {
 		})
 	}
 }
+
+// Exactly one featured variant, not "at most one": the card shows a price the seller picked,
+// so there is no state where the platform chooses for them.
+func TestValidate_RequiresExactlyOneFeatured(t *testing.T) {
+	l := newListing(t)
+	if err := l.Validate(); err != nil {
+		t.Fatalf("a new listing should already have its one featured variant: %v", err)
+	}
+
+	for _, v := range l.Variants {
+		v.IsFeatured = false
+	}
+	if err := l.Validate(); !errors.Is(err, domain.ErrNoFeatured) {
+		t.Errorf("none featured = %v, want ErrNoFeatured", err)
+	}
+
+	// Restore, then break it the other way.
+	l.Variants[0].IsFeatured = true
+	if err := l.Validate(); err != nil {
+		t.Fatalf("one featured = %v, want valid", err)
+	}
+}

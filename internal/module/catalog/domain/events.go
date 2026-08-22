@@ -16,15 +16,36 @@ func newEventType[T any](code EventCode) EventType[T] { return EventType[T]{Code
 // The facts this module records. `listing.publish` is the code the schema already names as
 // its example, so the vocabulary is `listing.*`.
 var (
-	Published      = newEventType[StatusChange]("listing.publish")
-	Approved       = newEventType[Decision]("listing.approve")
-	TakenDown      = newEventType[Takedown]("listing.takedown")
-	Hidden         = newEventType[StatusChange]("listing.hide")
-	EditSubmitted  = newEventType[EditSubmission]("listing.edit_submitted")
+	// Created is the listing's first row in the trail, written by hand on the insert: an
+	// insert has no version to guard and no events yet, so nothing else would record it —
+	// and a history whose oldest entry is the first publication cannot say when the seller
+	// wrote the listing.
+	Created       = newEventType[StatusChange]("listing.create")
+	Published     = newEventType[StatusChange]("listing.publish")
+	Approved      = newEventType[Decision]("listing.approve")
+	TakenDown     = newEventType[Takedown]("listing.takedown")
+	Hidden        = newEventType[StatusChange]("listing.hide")
+	EditSubmitted = newEventType[EditSubmission]("listing.edit_submitted")
+	// Edited is the same change written straight through, which is what happens to a
+	// listing no buyer is looking at. It carries the same payload as EditSubmitted on
+	// purpose: the difference between the two codes is whether a moderator stood in
+	// between, not what the seller changed.
+	Edited         = newEventType[EditSubmission]("listing.edit")
 	VariantAdded   = newEventType[VariantChange]("listing.variant_added")
 	VariantRemoved = newEventType[VariantChange]("listing.variant_removed")
+	VariantEdited  = newEventType[VariantEdit]("listing.variant_edited")
 	Deleted        = newEventType[NoPayload]("listing.delete")
 )
+
+// EventCodes is every fact this module can record. Declared as a list because the trail is
+// published — `GET /listings/{id}/history` answers these strings and the spec enumerates
+// them — so a code added above and nowhere else has to fail a test rather than reach a
+// client the generated types told there were only ten.
+var EventCodes = []EventCode{
+	Created.Code, Published.Code, Approved.Code, TakenDown.Code, Hidden.Code,
+	EditSubmitted.Code, Edited.Code, VariantAdded.Code, VariantEdited.Code,
+	VariantRemoved.Code, Deleted.Code,
+}
 
 // The payloads. Their JSON is what lands in `audit_log.diff`, so the tags are the trail's
 // column names and changing one rewrites how history reads.
@@ -56,6 +77,13 @@ type (
 
 	VariantChange struct {
 		VariantID int64 `json:"variant_id"`
+	}
+
+	// VariantEdit names which of a variant's fields moved, not their values — a price is
+	// on the row and in the snapshot, and a third copy is one that can drift.
+	VariantEdit struct {
+		VariantID int64    `json:"variant_id"`
+		Fields    []string `json:"fields"`
 	}
 
 	// NoPayload is a fact with nothing to say beyond having happened.

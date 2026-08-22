@@ -549,6 +549,28 @@ func (h *Order) GetOrderTransport(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteData(w, http.StatusOK, res)
 }
 
+// ListOrderHistory handles GET /orders/{id}/history. Unpaged: an order's trail is a dozen
+// entries, and the service caps it.
+func (h *Order) ListOrderHistory(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	orderID, err := pathID[id.Order](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	req := orderapi.ListOrderHistoryRequest{ActorID: uid, ID: orderID}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListOrderHistory(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res)
+}
+
 // AdvanceShipment handles POST /orders/{id}/transport/checkpoints — a moderator correcting a
 // checkpoint on the outbound leg the carrier normally reports itself.
 func (h *Order) AdvanceShipment(w http.ResponseWriter, r *http.Request) {

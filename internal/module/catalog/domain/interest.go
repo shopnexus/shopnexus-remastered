@@ -49,6 +49,38 @@ const FreshPoolFactor = 4
 // scoring against all of them was that the small one still reaches the reader.
 const ExploreSharpness = 2
 
+// InterestMaxDistance is how far an interest leg will reach before it would rather return
+// nothing. Cosine distance, so 0 is the same vector and 1 is unrelated.
+//
+// A slot's vector is `avg(dense)` over the listings an account touched in one category, and the
+// mean of a diverse group is a point that no product occupies. Measured on a real account: two
+// healthy slots whose nearest listing sat at 0.052 and 0.000, and two whose nearest sat at 0.385
+// and 0.417 — the second of those was labelled "Trang trí nhà cửa & Đèn chiếu sáng" and filled
+// with dog bowls, because the label comes from the nearest *category* and the cards from the
+// nearest *listings*, and out in empty space those two stop agreeing.
+//
+// Without a floor the leg still returns @candidates rows, however far away they are: `ORDER BY
+// … LIMIT` has no notion of far. This is the same guard `search`'s ANN legs get from leg_floor,
+// which is relative to the best hit; here it is absolute, because there is no query to be
+// relative to.
+const InterestMaxDistance = 0.30
+
+// OutOfStockPenalty is subtracted from a recommendation's score when nothing on the listing can
+// still be bought — no live variant with quantity above what is reserved and sold.
+//
+// Subtracted and not excluded, because a listing out of stock today is still the best answer to
+// what somebody likes, and a buyer who saves it or asks the seller is better served than one
+// shown a worse match. It is 0.25 because that is about the spread of a healthy interest leg:
+// scores there run from ~0.95 down to 0.70 (the floor is a distance of 0.30), so a penalty of a
+// quarter drops a row below the in-stock rows near it while still keeping it above genuinely
+// distant ones.
+//
+// The effect on the page is larger than the number suggests, and deliberately so: the draw
+// weights a row by 1/rank^ExploreSharpness, so a row pushed from third to thirtieth is about a
+// hundred times less likely to be shown. Measured on the catalogue this was written against,
+// 34.6% of active listings had nothing available.
+const OutOfStockPenalty = 0.25
+
 // SeedRotation is how often a feed reshuffles for a caller who names no seed of their own.
 // A client that pages through the feed sends one seed for the whole run, since the ordering
 // has to hold still under it; this is the fallback that keeps everyone else from reading the

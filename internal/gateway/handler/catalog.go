@@ -35,6 +35,27 @@ func NewCatalog(svc catalogapi.Service, v *validator.Validate, log *slog.Logger)
 // ListListings handles GET /listings — the feed, the search, the wishlist page and the
 // "resolve these ids" lookup, all narrowing one query. Optional auth: the three filters that
 // are about the caller need a token, and the service is what refuses them without one.
+// ListShelves handles GET /listings/shelves. Public, and under optionalAuth because who is asking
+// is most of the answer: a signed-in reader gets their interest slots as rows of their own.
+func (h *Catalog) ListShelves(w http.ResponseWriter, r *http.Request) {
+	limit, err := limitParam(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	req := catalogapi.ListShelvesRequest{Limit: limit}
+	if uid, err := actor(r); err == nil {
+		req.ViewerID = uid
+	}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListShelves(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, res.Data)
+}
+
 func (h *Catalog) ListListings(w http.ResponseWriter, r *http.Request) {
 	page, limit, err := pageParams(r)
 	if failed(w, h.log, err) {
@@ -88,6 +109,13 @@ func (h *Catalog) ListListings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		req.SellerID = &sellerID
+	}
+	if raw := query.Get("similar_to"); raw != "" {
+		similarTo, err := id.Parse[id.Listing](raw)
+		if failed(w, h.log, err) {
+			return
+		}
+		req.SimilarTo = &similarTo
 	}
 	if req.MinPrice, err = int64Param(r, "min_price"); failed(w, h.log, err) {
 		return
@@ -195,6 +223,31 @@ func (h *Catalog) GetListing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteData(w, http.StatusOK, res)
+}
+
+// ListListingHistory handles GET /listings/{id}/history.
+func (h *Catalog) ListListingHistory(w http.ResponseWriter, r *http.Request) {
+	uid, err := actor(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	listingID, err := pathID[id.Listing](r, "id")
+	if failed(w, h.log, err) {
+		return
+	}
+	page, limit, err := pageParams(r)
+	if failed(w, h.log, err) {
+		return
+	}
+	req := catalogapi.ListListingHistoryRequest{ActorID: uid, ID: listingID, Page: page, Limit: limit}
+	if failed(w, h.log, check(h.v, req)) {
+		return
+	}
+	res, err := h.svc.ListListingHistory(r.Context(), req)
+	if failed(w, h.log, err) {
+		return
+	}
+	httpx.WritePage(w, http.StatusOK, res.Data, httpx.PageMeta(res.Meta))
 }
 
 // UpdateListing handles PATCH /listings/{id}.

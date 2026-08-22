@@ -14,6 +14,7 @@ import (
 	pgadapter "shopnexus/internal/module/catalog/adapter/postgres"
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
+	"shopnexus/internal/module/common"
 )
 
 // testSeller keeps one run's listings out of another's: the queue test asserts on every row a
@@ -253,6 +254,51 @@ func TestRepo_SaveListingWritesTheTrail(t *testing.T) {
 	}
 	if len(l.Events()) != 0 {
 		t.Error("Save left the events on the aggregate")
+	}
+}
+
+// The read half of the trail: newest first, the creation at version 1, and the diff back as
+// the payload that was recorded rather than as a string of JSON.
+func TestRepo_ListListingHistory(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	category := createCategory(t, repo, unique("cat-"), nil)
+	createTag(t, repo, "handmade", nil)
+	l := newListingFor(t, repo, category.ID, unique("Listing "))
+	if err := l.Publish(); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if err := repo.SaveListing(ctx, l, testSeller); err != nil {
+		t.Fatalf("SaveListing: %v", err)
+	}
+
+	records, total, err := repo.ListListingHistory(ctx, l.ID, 0, 20)
+	if err != nil {
+		t.Fatalf("ListListingHistory: %v", err)
+	}
+	if total != 2 || len(records) != 2 {
+		t.Fatalf("history = %d rows (total %d), want the creation and the publication", len(records), total)
+	}
+	if records[0].Code != string(domain.Published.Code) || records[1].Code != string(domain.Created.Code) {
+		t.Fatalf("order = %q, %q; want the publication first", records[0].Code, records[1].Code)
+	}
+	if records[1].Version != 1 || records[1].ChangeType != common.ChangeTypeInsert {
+		t.Errorf("creation = version %d, %q; want version 1, insert", records[1].Version, records[1].ChangeType)
+	}
+	if records[0].ChangedBy == nil || *records[0].ChangedBy != testSeller {
+		t.Errorf("changed_by = %v, want the seller", records[0].ChangedBy)
+	}
+	if records[0].Diff["status"] != string(domain.StatusPending) {
+		t.Errorf("diff = %v, want the status it reached", records[0].Diff)
+	}
+
+	// The page is a window on the same order, so the second page is the older row.
+	page, _, err := repo.ListListingHistory(ctx, l.ID, 1, 20)
+	if err != nil {
+		t.Fatalf("ListListingHistory page 2: %v", err)
+	}
+	if len(page) != 1 || page[0].Code != string(domain.Created.Code) {
+		t.Fatalf("page 2 = %+v, want the creation alone", page)
 	}
 }
 

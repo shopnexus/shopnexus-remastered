@@ -10,6 +10,7 @@ type (
 	Account          struct{} // account.account
 	Contact          struct{} // account.contact
 	Device           struct{} // account.device
+	Notification     struct{} // account.notification
 	IdentityDocument struct{} // account.identity_document
 	Category         struct{} // catalog.category
 	Listing          struct{} // catalog.listing
@@ -36,6 +37,7 @@ type (
 func (Account) Prefix() string          { return "acc" }
 func (Contact) Prefix() string          { return "ctc" }
 func (Device) Prefix() string           { return "dvc" }
+func (Notification) Prefix() string     { return "ntf" }
 func (IdentityDocument) Prefix() string { return "idd" }
 func (Category) Prefix() string         { return "cat" }
 func (Listing) Prefix() string          { return "lst" }

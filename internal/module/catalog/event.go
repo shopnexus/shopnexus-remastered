@@ -23,3 +23,32 @@ var ListingInteractionTopic = eventbus.NewTopic[ListingInteraction]("catalog.lis
 func publishListingInteraction(ctx context.Context, bus eventbus.Client, event ListingInteraction) error {
 	return eventbus.Publish(ctx, bus, ListingInteractionTopic, event)
 }
+
+// ListingModerated is a moderator's decision on somebody's listing, published so the seller can
+// be told. Until now the decision only reached `audit_log`: `Takedown.NotifySeller` was recorded
+// and acted on by nothing, because this module has no seam to the one that owns notifications
+// and reaching for one would be a dependency cycle fx cannot construct.
+//
+// Published for a takedown *whether or not* the moderator asked to notify — the flag is their
+// choice and the subscriber's to honour, and burying it here would put a product rule in a
+// publisher. An approval always goes out: a seller waiting on a queue is the one person who
+// asked to be told.
+type ListingModerated struct {
+	ListingID int64 `json:"listing_id"`
+	SellerID  int64 `json:"seller_id"`
+	// Name travels with it so a subscriber does not have to read back into this module for the
+	// one string it needs to write a sentence.
+	Name     string `json:"name"`
+	Approved bool   `json:"approved"`
+	// Reason is the moderator's note on a takedown, empty on an approval.
+	Reason string `json:"reason"`
+	// NotifySeller is the moderator's choice, carried rather than applied: see above.
+	NotifySeller bool `json:"notify_seller"`
+}
+
+// ListingModeratedTopic carries ListingModerated.
+var ListingModeratedTopic = eventbus.NewTopic[ListingModerated]("catalog.listing_moderated")
+
+func publishListingModerated(ctx context.Context, bus eventbus.Client, event ListingModerated) error {
+	return eventbus.Publish(ctx, bus, ListingModeratedTopic, event)
+}

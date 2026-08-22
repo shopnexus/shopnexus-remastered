@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"shopnexus/internal/module/catalog/domain"
+	"shopnexus/internal/module/catalog/port"
 	"shopnexus/internal/module/common"
 	"shopnexus/internal/module/common/dbx"
 )
@@ -245,6 +246,16 @@ func (r *Repo) CreateListing(ctx context.Context, l *domain.Listing, actor int64
 		if err := saveListingTags(ctx, tx, l); err != nil {
 			return err
 		}
+		// The insert has no version to guard and no events yet, so its one audit row is
+		// written by hand — and it is what dates the listing in its own history.
+		err = dbx.InsertAuditLog(ctx, tx, common.AuditEntry{
+			Table: "listing", RecordID: l.ID, ChangeType: common.ChangeTypeInsert,
+			Code: string(domain.Created.Code), ChangedBy: auditActor(actor),
+			Diff: domain.StatusChange{Status: l.Status}, Snapshot: l.Snapshot(),
+		})
+		if err != nil {
+			return err
+		}
 		if err := saveListingEvents(ctx, tx, l, actor); err != nil {
 			return err
 		}
@@ -448,6 +459,15 @@ func saveListingTags(ctx context.Context, tx pgx.Tx, l *domain.Listing) error {
 	return nil
 }
 
+// auditActor is the responsible account as the column wants it: zero means no account is
+// responsible — a scheduled job, a vendor callback — which the column spells NULL.
+func auditActor(actor int64) *int64 {
+	if actor == 0 {
+		return nil
+	}
+	return &actor
+}
+
 // saveListingEvents writes the trail in the same transaction as the change it describes: a
 // write that landed always has one, and the diff comes from the decision rather than from a
 // reconstruction after the fact.
@@ -456,11 +476,7 @@ func saveListingEvents(ctx context.Context, tx pgx.Tx, l *domain.Listing, actor 
 	if len(events) == 0 {
 		return nil
 	}
-	// Zero means no account is responsible, which the column spells NULL.
-	var changedBy *int64
-	if actor != 0 {
-		changedBy = &actor
-	}
+	changedBy := auditActor(actor)
 	snapshot := l.Snapshot()
 	for _, e := range events {
 		entry := common.AuditEntry{
@@ -543,14 +559,49 @@ func (r *Repo) SoftDeleteListing(ctx context.Context, id, sellerID, actor int64)
 		if tag.RowsAffected() == 0 {
 			return domain.ErrListingInUse
 		}
-		var changedBy *int64
-		if actor != 0 {
-			changedBy = &actor
-		}
 		return dbx.InsertAuditLog(ctx, tx, common.AuditEntry{
 			Table: "listing", RecordID: id, ChangeType: common.ChangeTypeDelete,
-			Code: string(domain.Deleted.Code), ChangedBy: changedBy,
+			Code: string(domain.Deleted.Code), ChangedBy: auditActor(actor),
 			Diff: domain.NoPayload{}, Snapshot: domain.NoPayload{},
 		})
 	})
+}
+
+// ListListingHistory reads the trail one listing left behind. Two statements rather than a
+// window function: the count is what tells a client there is a page after this one, and a
+// listing's trail is tens of rows, not a feed.
+func (r *Repo) ListListingHistory(ctx context.Context, listingID int64, offset, limit int) ([]port.AuditRecord, int64, error) {
+	const q = `SELECT version, code, change_type, changed_at, changed_by, diff
+	           FROM audit_log
+	           WHERE table_name = 'listing' AND record_id = @record_id
+	           ORDER BY version DESC
+	           LIMIT @limit OFFSET @offset`
+	args := pgx.NamedArgs{"record_id": listingID, "limit": limit, "offset": offset}
+	rows, err := r.pool.Query(ctx, q, args)
+	if err != nil {
+		return nil, 0, fmt.Errorf("db query listing history: %w", err)
+	}
+	defer rows.Close()
+
+	var out []port.AuditRecord
+	for rows.Next() {
+		var rec port.AuditRecord
+		err := rows.Scan(&rec.Version, &rec.Code, &rec.ChangeType, &rec.ChangedAt, &rec.ChangedBy, &rec.Diff)
+		if err != nil {
+			return nil, 0, fmt.Errorf("db scan listing history: %w", err)
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("db iterate listing history: %w", err)
+	}
+
+	var total int64
+	err = r.pool.QueryRow(ctx,
+		`SELECT count(*) FROM audit_log WHERE table_name = 'listing' AND record_id = @record_id`,
+		pgx.NamedArgs{"record_id": listingID}).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("db count listing history: %w", err)
+	}
+	return out, total, nil
 }

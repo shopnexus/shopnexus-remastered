@@ -38,6 +38,10 @@ var (
 	ErrInvalidTransition     = errx.NewError(http.StatusConflict, "invalid_transition", "already live or already under moderation")
 	ErrNotAwaitingModeration = errx.NewError(http.StatusConflict, "not_awaiting_moderation", "this listing has nothing awaiting moderation")
 	ErrListingInUse          = errx.NewError(http.StatusConflict, "listing_in_use", "an open order still covers this listing")
+	// ErrListingNotEmbedded is a listing the embedding pass has not reached, asked to serve as
+	// the query of a "more like this" ranking. 409 rather than 404: the listing exists and the
+	// answer is "not yet", which is a state that clears on its own.
+	ErrListingNotEmbedded = errx.NewError(http.StatusConflict, "listing_not_embedded", "this listing has no embedding yet, so nothing can be ranked against it")
 	// ErrNoPickupAddress is a seller publishing before they have said where a carrier collects.
 	// Refused here rather than at the buyer's checkout, which is where it used to surface: the
 	// listing was live, browsable and impossible to buy.
@@ -70,7 +74,10 @@ var (
 	ErrLastVariant      = errx.NewError(http.StatusConflict, "last_variant", "this is the only variant of a live listing")
 	// ErrTooManyFeatured is two live variants both claiming the card. "duplicate_variant" used
 	// to answer this, which told the caller about attributes it had not touched.
-	ErrTooManyFeatured        = errx.NewError(http.StatusConflict, "too_many_featured", "only one variant can be featured")
+	ErrTooManyFeatured = errx.NewError(http.StatusConflict, "too_many_featured", "only one variant can be featured")
+	// ErrNoFeatured is a listing whose card would have no price the seller picked. The flag is
+	// moved, never dropped, so this is reachable only by asking to drop it.
+	ErrNoFeatured             = errx.NewError(http.StatusConflict, "no_featured", "one variant must be featured")
 	ErrQuantityBelowCommitted = errx.NewError(http.StatusUnprocessableEntity, "quantity_below_committed", "quantity is below what is already reserved or sold")
 	ErrInsufficientStock      = errx.NewError(http.StatusConflict, "insufficient_stock", "not enough stock for this variant")
 	// ErrStockMovementKeyRequired is a commit or a reversal with no idempotency key. 500

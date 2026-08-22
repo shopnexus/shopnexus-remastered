@@ -39,7 +39,6 @@ var Module = fx.Module("catalog",
 		fx.Annotate(newRepo, fx.As(new(port.Repository))),
 		fx.Annotate(newUploadSweep, fx.ResultTags(`group:"sweeps"`)),
 		fx.Annotate(newInterestSweep, fx.ResultTags(`group:"sweeps"`)),
-		fx.Annotate(newSelectivitySweep, fx.ResultTags(`group:"sweeps"`)),
 		fx.Annotate(NewService, fx.As(new(catalogapi.Service))),
 	),
 	// Without this the bus would have no consumer, and a shopper's actions would move nothing
@@ -76,18 +75,6 @@ func newUploadSweep(store *uploads.Store) durable.Sweep { return store.Sweep }
 // found here instead of waiting for their next save.
 func newInterestSweep(repo port.Repository) durable.Sweep {
 	return func(ctx context.Context, log *slog.Logger) { sweepInterests(ctx, repo, log) }
-}
-
-// newSelectivitySweep recounts how much of the catalogue each thing a search signal can name
-// covers. On the sweeper because nothing else has to be in step with it: a count a pass behind
-// moves a compiled predicate's weight in the third decimal, where recounting on every publish
-// would put a table-wide aggregate on the listing write path.
-func newSelectivitySweep(repo port.Repository) durable.Sweep {
-	return func(ctx context.Context, log *slog.Logger) {
-		if err := repo.RefreshSignalSelectivity(ctx); err != nil {
-			log.Error("refresh signal selectivity", "err", err)
-		}
-	}
 }
 
 // SubscribeListingInteractions is this module's own consumer of its own fact: a shopper's

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"shopnexus/internal/module/catalog/domain"
 	"shopnexus/internal/module/catalog/port"
@@ -598,7 +599,11 @@ func TestRepo_ListListingsProbeAndWishlist(t *testing.T) {
 		t.Fatalf("ListListings(hybrid): %v", err)
 	}
 
-	const buyer = int64(4242)
+	// An id nobody else can be using. A fixed 4242 passed for as long as the only rows in this
+	// schema were fixtures, and stopped the moment dev/bulkseed put a million listings and ten
+	// thousand accounts in it — account 4242 was `bulk_buyer_004242`, with 136 favourites of its
+	// own, and this assertion is about owning the account rather than about the query.
+	buyer := time.Now().UnixNano()
 	if err := repo.AddFavorite(ctx, buyer, l.ID); err != nil {
 		t.Fatalf("AddFavorite: %v", err)
 	}

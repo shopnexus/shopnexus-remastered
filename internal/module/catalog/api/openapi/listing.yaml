@@ -131,6 +131,25 @@ paths:
         - { name: category_id, in: query, schema: { $ref: '#/components/schemas/CategoryID' } }
         - { name: tag, in: query, schema: { $ref: '#/components/schemas/TagSlug' } }
         - { name: seller_id, in: query, schema: { $ref: '#/components/schemas/AccountID' } }
+        - name: similar_to
+          in: query
+          schema: { $ref: '#/components/schemas/ListingID' }
+          description: >
+            "More like this one": rank by that listing's own stored embedding. The listing itself
+            is excluded — its vector is its own nearest neighbour — and one that the embedding pass
+            has not reached yet degrades to the newest of the catalogue rather than answering
+            nothing.
+
+
+            Cheaper as well as more accurate than the text search it replaces. Spelling this as
+            `q=<the listing's name>` ran the whole query-understanding stage, model call included,
+            once per page view, to rediscover a vector that was already in the database — and
+            ranked by the *words* of the title, which puts a phone case beside a phone.
+
+
+            It is a ranking, so it cannot share a request with another one: not with `q`, not with
+            a `sort` other than `relevance`, and not with `mine` or `favorited`, which are sets the
+            caller already chose.
         - { name: condition, in: query, schema: { $ref: '#/components/schemas/ListingCondition' } }
         - { name: min_price, in: query, schema: { type: integer, format: int64, minimum: 0 } }
         - { name: max_price, in: query, schema: { type: integer, format: int64, minimum: 0 } }
@@ -395,6 +414,40 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'An open order still covers this listing', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
+  /listings/{id}/history:
+    get:
+      tags: [catalog]
+      summary: What has happened to this listing
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The opaque id. History addresses the listing, never its public slug.
+          schema: { $ref: '#/components/schemas/ListingID' }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      description: >
+        The listing's own trail, newest first: it being posted, every edit, every
+        publication, and every decision staff made about it. `version` is the trail's
+        counter for this listing — 1 is its creation — and it never repeats.
+
+
+        Two readers, one route: the seller who owns the listing, and staff. They are not
+        answered the same rows. A moderator is `staff` to a seller and nothing more —
+        `actor` is null and only staff read the account behind it — and the words
+        moderators write for each other stay theirs: a takedown's full reason is answered
+        to the seller only when the moderator chose to notify them (the same choice
+        `takedown_reason` on the listing reflects), and an approval note never is.
+
+
+        An edit names the fields it touched rather than their values. The values are the
+        listing, and a second copy of them in the trail is one that can drift from it.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/ListingHistoryPage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /listings/suggestions:
     post:
       tags: [catalog]
@@ -536,6 +589,73 @@ components:
       oneOf:
         - $ref: '#/components/schemas/TagSlug'
         - $ref: '#/components/schemas/CategoryID'
+
+    ListingHistoryEntry:
+      type: object
+      description: >
+        One change the listing has been through. What the trail stored beside this — a
+        snapshot of the whole row as it then was — is deliberately not published: a client
+        rendering it would be reading a shape the database is free to change.
+      properties:
+        version: { type: integer, format: int64, description: 'The trail''s counter for this listing. 1 is its creation, and it never repeats.', example: 4 }
+        code: { $ref: '#/components/schemas/ListingHistoryCode' }
+        change_type: { type: string, enum: [insert, update, delete] }
+        changed_at: { type: string, format: date-time }
+        actor_kind:
+          type: string
+          enum: [seller, staff, system]
+          description: >
+            Who was behind the change. `system` is one no account is responsible for — a
+            scheduled job, a vendor callback. `staff` is a moderator, and stays just that
+            word to a seller.
+        actor:
+          allOf: [{ $ref: '#/components/schemas/AccountSummary' }]
+          nullable: true
+          description: 'The account responsible, and null when there is none to show — a `system` change, or a moderator''s read by anyone but staff.'
+        fields:
+          type: array
+          items: { type: string }
+          description: 'What an edit touched, in the listing''s own field names. Empty for a fact that names none.'
+          example: [name, description]
+        details:
+          type: object
+          additionalProperties: true
+          description: 'The rest of what was recorded: the status it reached, the variant it was about, and — for staff only — the words a moderator wrote.'
+          example: { status: hidden, reason: 'Counterfeit branding on the photos.' }
+      required: [version, code, change_type, changed_at, actor_kind, actor, fields, details]
+
+    ListingHistoryCode:
+      type: string
+      description: >
+        The business fact recorded. Stored values, so they are the vocabulary the trail was
+        written in rather than one chosen for the wire — which is also why they are
+        `snake_case` after the dot while every other enum here is kebab: the family predates
+        that rule and rewriting a code would rewrite how existing history reads.
+
+
+        `listing.edit` and `listing.edit_submitted` are the same change under different
+        circumstances: the first was written straight through, the second was held for a
+        moderator because buyers were already looking at the listing.
+      enum:
+        - listing.create
+        - listing.edit
+        - listing.edit_submitted
+        - listing.publish
+        - listing.approve
+        - listing.takedown
+        - listing.hide
+        - listing.variant_added
+        - listing.variant_edited
+        - listing.variant_removed
+        - listing.delete
+      example: listing.takedown
+
+    ListingHistoryPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/ListingHistoryEntry' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+      required: [data, meta]
 
     ListingStatus:
       type: string
@@ -920,7 +1040,6 @@ components:
         attachments: { type: array, items: { $ref: '#/components/schemas/ResourceID' } }
         tags: { type: array, items: { $ref: '#/components/schemas/TagSlug' } }
         featured_variant_id: { $ref: '#/components/schemas/VariantID' }
-        clear_featured_variant_id: { type: boolean, example: false, description: 'Leaves the listing with no featured variant; the card then shows the cheapest one.' }
 
     PendingEdit:
       type: object

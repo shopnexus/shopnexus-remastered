@@ -338,12 +338,7 @@ func (s *Service) UpdateListing(ctx context.Context, req catalogapi.UpdateListin
 	}
 	// Featuring is not part of the reviewed set: which variant the card shows is not a claim
 	// about what the listing is, so it takes effect at once.
-	switch {
-	case req.ClearFeaturedVariantID:
-		for _, v := range l.Variants {
-			v.IsFeatured = false
-		}
-	case req.FeaturedVariantID != nil:
+	if req.FeaturedVariantID != nil {
 		if err := l.SetFeatured(req.FeaturedVariantID.Int64()); err != nil {
 			return catalogapi.ListingDetail{}, err
 		}
