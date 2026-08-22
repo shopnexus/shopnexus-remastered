@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"shopnexus/internal/provider/notify"
+	"shopnexus/internal/shared/lang"
 	"shopnexus/templates"
 )
 
@@ -45,8 +46,10 @@ type Config struct {
 	// cannot be derived from a request path.
 	VerifyEmailURL   string
 	ResetPasswordURL string
-	// AppBaseURL is the client application's root, from which this package builds the
-	// page a transactional mail links to — an order's own page today.
+	// AppBaseURL is the client application's root, from which this package builds an order
+	// page at /account/orders/<id> and the help centre at /help. Both are routes the client
+	// serves; this used to build /orders/<id>, which it never has, so every order mail's
+	// button landed on a 404.
 	//
 	// One base plus a path this package owns, rather than a configured URL per kind: the
 	// two above are configured because a token has to be handed to a page whose shape only
@@ -144,16 +147,16 @@ func (c *Client) render(m notify.Message) (subject string, body []byte, err erro
 	if !ok {
 		return "", nil, fmt.Errorf("smtp: no email template for kind %q", m.Kind)
 	}
-	lang := language(m.Locale)
-	t, ok := byLang[lang]
+	l := lang.Of(m.Locale)
+	t, ok := byLang[l]
 	if !ok {
-		return "", nil, fmt.Errorf("smtp: no email template for kind %q in %s", m.Kind, lang)
+		return "", nil, fmt.Errorf("smtp: no email template for kind %q in %s", m.Kind, l)
 	}
 	link, err := c.link(m)
 	if err != nil {
 		return "", nil, err
 	}
-	data := mailData{Lang: lang, Link: link, Params: m.Params}
+	data := c.decorate(mailData{Lang: l, Link: link, Params: m.Params}, m)
 
 	var head strings.Builder
 	if err := t.set.ExecuteTemplate(&head, "subject", data); err != nil {
@@ -169,6 +172,36 @@ func (c *Client) render(m notify.Message) (subject string, body []byte, err erro
 	return html.UnescapeString(strings.TrimSpace(head.String())), buf.Bytes(), nil
 }
 
+// decorate fills in what the frame draws that is not copy: tone, beat, escrow box and order
+// reference. One place to read when a mail comes out the wrong colour.
+func (c *Client) decorate(data mailData, m notify.Message) mailData {
+	lk, ok := looks[m.Kind]
+	if !ok {
+		// An empty look renders a blank card rather than an obvious bug.
+		lk = look{tone: toneMoving}
+	}
+	data.Tone = lk.tone
+	data.Step = lk.step
+	data.Escrow = lk.escrow
+	if total, sent := m.Params["total"]; sent {
+		data.Amount = lang.Money(data.Lang, total, m.Params["currency"])
+	}
+	data.OrderRef, _ = m.Params["order_id"].(string)
+	data.HelpLink = c.helpLink()
+	return data
+}
+
+// helpLink is the footer's help centre. Not its own config value: it is a fixed route on the
+// client AppBaseURL already points at.
+func (c *Client) helpLink() string {
+	link, err := url.JoinPath(c.cfg.AppBaseURL, "help")
+	if err != nil {
+		// AppBaseURL parsed at construction; a footer link is not worth failing a send over.
+		return c.cfg.AppBaseURL
+	}
+	return link
+}
+
 // link builds the page this mail sends the recipient to: the client's own verify/reset
 // page for the two secret-carrying kinds, and the order's page for everything else.
 func (c *Client) link(m notify.Message) (string, error) {
@@ -182,7 +215,7 @@ func (c *Client) link(m notify.Message) (string, error) {
 		if orderID == "" {
 			return "", fmt.Errorf("smtp: kind %q needs an order_id parameter to link to", m.Kind)
 		}
-		link, err := url.JoinPath(c.cfg.AppBaseURL, "orders", orderID)
+		link, err := url.JoinPath(c.cfg.AppBaseURL, "account", "orders", orderID)
 		if err != nil {
 			return "", fmt.Errorf("build order link: %w", err)
 		}

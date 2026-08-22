@@ -2,11 +2,13 @@ package smtp
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"shopnexus/internal/provider/notify"
+	"shopnexus/internal/shared/lang"
 )
 
 // White-box, because what is worth testing here is the message that gets built — the
@@ -35,6 +37,7 @@ var paramsByKind = map[notify.Kind]map[string]any{
 	notify.KindPasswordReset:     nil,
 	notify.KindOrderPlaced:       {"order_id": "ord_2h9qk4mfx7bd3", "total": int64(1250000), "currency": "VND"},
 	notify.KindOrderReceived:     {"order_id": "ord_2h9qk4mfx7bd3", "total": int64(1250000), "currency": "VND"},
+	notify.KindOrderDelivered:    {"order_id": "ord_2h9qk4mfx7bd3"},
 	notify.KindOrderCompleted:    {"order_id": "ord_2h9qk4mfx7bd3"},
 	notify.KindOrderCancelled:    {"order_id": "ord_2h9qk4mfx7bd3"},
 	notify.KindRefundResolved:    {"order_id": "ord_2h9qk4mfx7bd3", "buyer_wins": true, "note": "Ảnh chụp cho thấy hàng không đúng mô tả."},
@@ -58,29 +61,86 @@ func TestRender_EveryKindInEveryLanguage(t *testing.T) {
 		if !ok {
 			t.Fatalf("kind %q has no fixture — add it beside the others when adding the mail", kind)
 		}
-		for _, lang := range languages {
+		for _, l := range lang.All {
 			subject, body, err := c.render(notify.Message{
-				Kind: kind, Email: "a@b.com", Token: "tok", Locale: lang, Params: params,
+				Kind: kind, Email: "a@b.com", Token: "tok", Locale: l, Params: params,
 			})
 			if err != nil {
-				t.Errorf("render(%s, %s): %v", kind, lang, err)
+				t.Errorf("render(%s, %s): %v", kind, l, err)
 				continue
 			}
 			if subject == "" {
-				t.Errorf("render(%s, %s): empty subject", kind, lang)
+				t.Errorf("render(%s, %s): empty subject", kind, l)
 			}
 			html := string(body)
 			// An unresolved action delimiter means a block was never substituted; "<no value>"
 			// is what a nil parameter renders as. Both go out looking like a broken mail.
 			if strings.Contains(html, "{{") || strings.Contains(html, "<no value>") {
-				t.Errorf("render(%s, %s): body has an unrendered template:\n%s", kind, lang, html)
+				t.Errorf("render(%s, %s): body has an unrendered template:\n%s", kind, l, html)
 			}
-			if !strings.Contains(html, `lang="`+lang+`"`) {
-				t.Errorf("render(%s, %s): body is not in the requested language", kind, lang)
+			if !strings.Contains(html, `lang="`+l+`"`) {
+				t.Errorf("render(%s, %s): body is not in the requested language", kind, l)
 			}
 			if !strings.Contains(html, "https://shopnexus.vn") {
-				t.Errorf("render(%s, %s): body carries no link", kind, lang)
+				t.Errorf("render(%s, %s): body carries no link", kind, l)
 			}
+		}
+	}
+}
+
+// A kind missing from looks renders a card with no state on it: a blank, not a crash, which
+// is the kind of bug that ships.
+func TestLooks_CoverEveryKind(t *testing.T) {
+	for _, kind := range mailKinds {
+		if _, ok := looks[kind]; !ok {
+			t.Errorf("kind %q has a template but no look — add it beside the others", kind)
+		}
+	}
+	for kind := range looks {
+		if !slices.Contains(mailKinds, kind) {
+			t.Errorf("kind %q has a look but no template — one of the two lists is stale", kind)
+		}
+	}
+}
+
+// Every order mail has to draw the escrow box, and the amount only where one was sent: an
+// escrow box reading "0 ₫" is worse than no box.
+func TestRender_EscrowBoxAndAmount(t *testing.T) {
+	c, _ := NewClient(testConfig())
+	for _, kind := range mailKinds {
+		lk := looks[kind]
+		_, body, err := c.render(notify.Message{
+			Kind: kind, Email: "a@b.com", Token: "tok", Locale: lang.VI, Params: paramsByKind[kind],
+		})
+		if err != nil {
+			t.Fatalf("render(%s): %v", kind, err)
+		}
+		html := string(body)
+		if got := strings.Contains(html, "Tiền tạm giữ"); got != lk.escrow {
+			t.Errorf("render(%s): escrow box present = %v, want %v", kind, got, lk.escrow)
+		}
+		_, sent := paramsByKind[kind]["total"]
+		if got := strings.Contains(html, "1.250.000 ₫"); got != sent {
+			t.Errorf("render(%s): amount present = %v, want %v", kind, got, sent)
+		}
+	}
+}
+
+// A delivered mail showing one filled segment contradicts its own headline.
+func TestRender_RailFillsToTheKindsStep(t *testing.T) {
+	c, _ := NewClient(testConfig())
+	for _, kind := range mailKinds {
+		lk := looks[kind]
+		_, body, err := c.render(notify.Message{
+			Kind: kind, Email: "a@b.com", Token: "tok", Locale: lang.VI, Params: paramsByKind[kind],
+		})
+		if err != nil {
+			t.Fatalf("render(%s): %v", kind, err)
+		}
+		// One filled segment per beat reached.
+		filled := strings.Count(string(body), "background:"+lk.tone.Rule+";font-size:0")
+		if filled != lk.step {
+			t.Errorf("render(%s): %d filled rail segments, want %d", kind, filled, lk.step)
 		}
 	}
 }
@@ -116,28 +176,28 @@ func TestLink_OrderPageIsBuiltFromTheAppBase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("link: %v", err)
 	}
-	if want := "https://shopnexus.vn/orders/ord_2h9qk4mfx7bd3"; got != want {
+	if want := "https://shopnexus.vn/account/orders/ord_2h9qk4mfx7bd3"; got != want {
 		t.Fatalf("link = %q, want %q", got, want)
 	}
 }
 
 // The amount is stored unscaled and read by a person, so it is grouped — and grouped the
-// way the language of the mail does it, which is the whole reason the helper is bound to
-// the template set rather than shared.
+// way the language of the mail does it, which is why the helper is bound to the template
+// set rather than being one global formatter.
 func TestMoney_GroupsPerLanguage(t *testing.T) {
 	c, _ := NewClient(testConfig())
-	for lang, want := range map[string]string{
-		langVI: "1.250.000 ₫",
-		langEN: "1,250,000 ₫",
+	for l, want := range map[string]string{
+		lang.VI: "1.250.000 ₫",
+		lang.EN: "1,250,000 ₫",
 	} {
 		_, body, err := c.render(notify.Message{
-			Kind: notify.KindOrderPlaced, Locale: lang, Params: paramsByKind[notify.KindOrderPlaced],
+			Kind: notify.KindOrderPlaced, Locale: l, Params: paramsByKind[notify.KindOrderPlaced],
 		})
 		if err != nil {
-			t.Fatalf("render(%s): %v", lang, err)
+			t.Fatalf("render(%s): %v", l, err)
 		}
 		if !strings.Contains(string(body), want) {
-			t.Errorf("body in %s does not contain %q", lang, want)
+			t.Errorf("body in %s does not contain %q", l, want)
 		}
 	}
 }

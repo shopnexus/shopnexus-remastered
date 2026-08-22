@@ -1,0 +1,101 @@
+# The notification feed in English. See vi.yaml for what the variables are and why the link is
+# not among them.
+
+# --- the sale, as the buyer follows it ---
+
+order-placed:
+  title: "Order placed"
+  body: "Order {{.order_id}} · {{money .total .currency}}. The seller is getting it ready."
+
+order-delivered:
+  title: "Order delivered"
+  body: "Order {{.order_id}} has arrived. Confirm you received it to close the order and pay the seller."
+
+order-completed:
+  title: "Order completed"
+  body: "Order {{.order_id}} is done. You can now rate the seller and the item."
+
+order-cancelled:
+  title: "Order cancelled"
+  body: "Order {{.order_id}} will not go ahead. The money being held comes back to you."
+
+order-unconfirmed:
+  title: "Order waiting on the seller"
+  body: "The seller has not confirmed order {{.order_id}}. Support has picked it up; there is nothing for you to do."
+
+refund-resolved:
+  title: "{{if .buyer_wins}}Refund granted{{else}}Refund declined{{end}}"
+  body: "Order {{.order_id}}{{with .note}} · {{.}}{{end}}"
+
+refund-escalated:
+  title: "Your case is with support"
+  body: "A person is reviewing order {{.order_id}}. You no longer have to wait on the seller."
+
+# --- the same sale, as the seller sees it ---
+
+sale-received:
+  title: "You have a new order"
+  body: "Order {{.order_id}} · {{money .total .currency}}. Pack it and hand it to the carrier."
+
+sale-handed-over:
+  title: "Order reached the buyer"
+  body: "Order {{.order_id}} was delivered. The money lands in your wallet once the buyer confirms."
+
+sale-completed:
+  title: "Order completed"
+  body: "Order {{.order_id}} is done and the money is in your wallet."
+
+sale-cancelled:
+  title: "Order cancelled"
+  body: "Order {{.order_id}} will not go ahead. The stock it held is back in your inventory."
+
+sale-unconfirmed:
+  title: "You have an unconfirmed order"
+  body: "Order {{.order_id}} is past its confirmation window. Deal with it now to protect your standing."
+
+sale-refund-resolved:
+  title: "{{if .buyer_wins}}Dispute: the buyer was refunded{{else}}Dispute: decided in your favour{{end}}"
+  body: "Order {{.order_id}}{{with .note}} · {{.}}{{end}}"
+
+# --- a negotiation's standing terms ---
+
+offer-countered:
+  title: "New price on the table"
+  body: "{{.listing_name}} · {{money .price .currency}}"
+
+offer-accepted:
+  title: "Your price was accepted"
+  body: "{{.listing_name}} · {{money .price .currency}}. Check out before the hold runs out."
+
+offer-withdrawn:
+  title: "Negotiation withdrawn"
+  body: "{{.listing_name}} has no price on the table any more."
+
+# --- what the platform did to the account's own things ---
+
+listing-approved:
+  title: "Listing approved"
+  body: "{{.listing_name}} is now visible to buyers."
+
+listing-taken-down:
+  title: "Listing taken down"
+  body: "{{.listing_name}}{{with .reason}} · {{.}}{{end}}"
+
+
+withdrawal-paid:
+  title: "Withdrawal sent"
+  body: "{{money .amount .currency}} is on its way to your bank account."
+
+payout-failed:
+  title: "Payout failed"
+  body: "{{money .amount .currency}} went back to your wallet. Check your bank details and try again."
+
+checkout-expired:
+  title: "Checkout expired"
+  body: "Your cart is untouched. Pay again to hold the items."
+
+# --- the follow graph ---
+
+new-follower:
+  title: "You have a new follower"
+  body: "{{.follower_name}} started following your shop."

@@ -1,0 +1,9 @@
+{{/* To the buyer only. Params: order_id. See order-delivered.vi.html. */}}
+{{define "subject"}}Order {{.Params.order_id}} was delivered{{end}}
+{{define "preheader"}}Check the parcel, then confirm receipt to close the order.{{end}}
+{{define "badge"}}Delivered{{end}}
+{{define "title"}}Your parcel arrived{{end}}
+{{define "lead"}}The carrier reported a successful delivery. Check the parcel, then confirm receipt and the money goes to the seller.{{end}}
+{{define "escrow_state"}}Still held, waiting on you{{end}}
+{{define "action"}}Confirm receipt{{end}}
+{{define "footer"}}Something wrong with the parcel? Ask for a refund from the order page.{{end}}

@@ -39,6 +39,8 @@ const (
 	KindOrderPlaced Kind = "order-placed"
 	// KindOrderReceived is the same fact told to the seller. Params: order_id, total, currency.
 	KindOrderReceived Kind = "order-received"
+	// KindOrderDelivered goes to the buyer alone. Params: order_id.
+	KindOrderDelivered Kind = "order-delivered"
 	// KindOrderCompleted goes to both. Params: order_id.
 	KindOrderCompleted Kind = "order-completed"
 	// KindOrderCancelled goes to both. Params: order_id.

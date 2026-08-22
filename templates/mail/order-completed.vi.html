@@ -1,11 +1,10 @@
-{{/*
-  To both sides of the sale. Params: order_id.
-
-  The copy is deliberately neutral rather than one mail per role: what happened is the same
-  fact for both — the escrow is released and the sale is closed — and a second template
-  would exist to change two words.
-*/}}
-{{define "subject"}}Đơn hàng {{.Params.order_id}} đã hoàn tất{{end}}
+{{/* To both sides: the money moved and the sale closed is the same fact for each, and a
+     second template would exist to change two words. */}}
+{{define "subject"}}Đơn {{.Params.order_id}} đã hoàn tất{{end}}
+{{define "preheader"}}Tiền đã về ví người bán. Hai bên có thể đánh giá nhau.{{end}}
+{{define "badge"}}Hoàn tất{{end}}
 {{define "title"}}Đơn hàng đã hoàn tất{{end}}
-{{define "lead"}}Giao dịch đã kết thúc và số tiền tạm giữ đã được giải ngân cho người bán. Bạn có thể đánh giá phía bên kia trong đơn hàng — đánh giá chỉ hiển thị khi cả hai bên đã gửi.{{end}}
+{{define "lead"}}Giao dịch đã xong và tiền đã về ví người bán. Hai bên có thể đánh giá nhau trong trang đơn hàng.{{end}}
+{{define "escrow_state"}}Đã về ví người bán{{end}}
 {{define "action"}}Xem đơn hàng{{end}}
+{{define "footer"}}Đánh giá chỉ hiển thị khi cả hai bên đã gửi.{{end}}

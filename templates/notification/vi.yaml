@@ -1,0 +1,108 @@
+# The notification feed in Vietnamese. One entry per domain.Kind: a title, and a body that is
+# the one supporting line a feed row has room for.
+#
+# The variables are the payload the emitter published — `.order_id`, `.total` — and a key it
+# did not send is a render failure rather than a hole, so a template names only what its kind's
+# emitter always sets. `money` groups digits the Vietnamese way and appends the currency.
+#
+# The link is not here: which page a kind opens is structure, not wording, and lives in
+# domain/notification_kind.go so it cannot differ between languages.
+
+# --- the sale, as the buyer follows it ---
+
+order-placed:
+  title: "Đặt hàng thành công"
+  body: "Đơn {{.order_id}} · {{money .total .currency}}. Người bán đang chuẩn bị hàng."
+
+order-delivered:
+  title: "Đơn hàng đã được giao"
+  body: "Đơn {{.order_id}} đã tới nơi. Xác nhận đã nhận để hoàn tất đơn và thanh toán cho người bán."
+
+order-completed:
+  title: "Đơn hàng đã hoàn tất"
+  body: "Đơn {{.order_id}} đã xong. Bạn có thể đánh giá người bán và sản phẩm."
+
+order-cancelled:
+  title: "Đơn hàng đã bị hủy"
+  body: "Đơn {{.order_id}} không tiếp tục. Số tiền đang giữ sẽ được hoàn lại."
+
+order-unconfirmed:
+  title: "Đơn hàng đang chờ người bán"
+  body: "Đơn {{.order_id}} chưa được người bán xác nhận. Bộ phận hỗ trợ đã tiếp nhận, bạn không cần làm gì thêm."
+
+refund-resolved:
+  title: "{{if .buyer_wins}}Yêu cầu hoàn tiền được chấp nhận{{else}}Yêu cầu hoàn tiền bị từ chối{{end}}"
+  body: "Đơn {{.order_id}}{{with .note}} · {{.}}{{end}}"
+
+refund-escalated:
+  title: "Khiếu nại đã chuyển tới bộ phận hỗ trợ"
+  body: "Đơn {{.order_id}} đang được người thật xem xét. Bạn không cần chờ người bán trả lời nữa."
+
+# --- the same sale, as the seller sees it ---
+
+sale-received:
+  title: "Bạn có đơn hàng mới"
+  body: "Đơn {{.order_id}} · {{money .total .currency}}. Hãy đóng gói và giao cho đơn vị vận chuyển."
+
+sale-handed-over:
+  title: "Đơn hàng đã tới người mua"
+  body: "Đơn {{.order_id}} đã được giao. Tiền sẽ về ví sau khi người mua xác nhận."
+
+sale-completed:
+  title: "Đơn hàng đã hoàn tất"
+  body: "Đơn {{.order_id}} đã xong và tiền đã được chuyển vào ví của bạn."
+
+sale-cancelled:
+  title: "Đơn hàng đã bị hủy"
+  body: "Đơn {{.order_id}} không tiếp tục. Hàng đã giữ cho đơn này được trả lại kho."
+
+sale-unconfirmed:
+  title: "Bạn có đơn hàng chưa xác nhận"
+  body: "Đơn {{.order_id}} đã quá hạn xác nhận. Xử lý ngay để không ảnh hưởng tới uy tín shop."
+
+sale-refund-resolved:
+  title: "{{if .buyer_wins}}Khiếu nại: người mua được hoàn tiền{{else}}Khiếu nại: kết quả có lợi cho bạn{{end}}"
+  body: "Đơn {{.order_id}}{{with .note}} · {{.}}{{end}}"
+
+# --- a negotiation's standing terms ---
+
+offer-countered:
+  title: "Có mức giá mới trong thương lượng"
+  body: "{{.listing_name}} · {{money .price .currency}}"
+
+offer-accepted:
+  title: "Mức giá đã được chấp nhận"
+  body: "{{.listing_name}} · {{money .price .currency}}. Đặt hàng trước khi hết hạn giữ giá."
+
+offer-withdrawn:
+  title: "Thương lượng đã được rút lại"
+  body: "{{.listing_name}} không còn mức giá nào đang chờ."
+
+# --- what the platform did to the account's own things ---
+
+listing-approved:
+  title: "Tin đăng đã được duyệt"
+  body: "{{.listing_name}} đã hiển thị với người mua."
+
+listing-taken-down:
+  title: "Tin đăng đã bị ẩn"
+  body: "{{.listing_name}}{{with .reason}} · {{.}}{{end}}"
+
+
+withdrawal-paid:
+  title: "Rút tiền thành công"
+  body: "{{money .amount .currency}} đang trên đường về tài khoản ngân hàng của bạn."
+
+payout-failed:
+  title: "Lệnh chi không thành công"
+  body: "{{money .amount .currency}} đã được trả lại ví. Kiểm tra tài khoản ngân hàng rồi thử lại."
+
+checkout-expired:
+  title: "Phiên thanh toán đã hết hạn"
+  body: "Giỏ hàng của bạn vẫn còn nguyên. Thanh toán lại để giữ hàng."
+
+# --- the follow graph ---
+
+new-follower:
+  title: "Bạn có người theo dõi mới"
+  body: "{{.follower_name}} vừa theo dõi shop của bạn."

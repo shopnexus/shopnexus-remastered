@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"html/template"
 	"io/fs"
-	"strconv"
-	"strings"
 
 	"shopnexus/internal/provider/notify"
+	"shopnexus/internal/shared/lang"
 )
 
 // The transactional mail this API sends, loaded from the templates/mail directory at the
@@ -28,25 +27,64 @@ var mailKinds = []notify.Kind{
 	notify.KindPasswordReset,
 	notify.KindOrderPlaced,
 	notify.KindOrderReceived,
+	notify.KindOrderDelivered,
 	notify.KindOrderCompleted,
 	notify.KindOrderCancelled,
 	notify.KindRefundResolved,
 	notify.KindOrderUnconfirmed,
 }
 
-// The languages this marketplace writes in. Anything else falls back to English rather
-// than sending nothing.
-const (
-	langVI       = "vi"
-	langEN       = "en"
-	langFallback = langEN
+// blocks every mail file has to define. The frame defaults "footer", "extra" and
+// "escrow_state". Preheader and badge are required, not defaulted: both are read before the
+// mail is opened, and a shared default there makes every mail look like the last one.
+var requiredBlocks = [...]string{"subject", "preheader", "badge", "title", "lead", "action"}
+
+// tone is the palette one mail is drawn in. Three hex values rather than a name, because
+// html/template cannot branch on a string. The four tones are the website's own
+// (src/lib/order-state.ts), so a mail and the page it links to agree on what green means.
+type tone struct {
+	Ink  string // text on Wash, and the state word
+	Wash string // the badge and escrow box fill
+	Rule string // the 2px line under the header
+}
+
+var (
+	toneSuccess = tone{Ink: "#00504a", Wash: "#e6f0ef", Rule: "#00685f"}
+	toneMoving  = tone{Ink: "#266d67", Wash: "#a8ece4", Rule: "#266d67"}
+	toneWaiting = tone{Ink: "#924628", Wash: "#ffdbcf", Rule: "#924628"}
+	toneDanger  = tone{Ink: "#93000a", Wash: "#ffdad6", Rule: "#ba1a1a"}
 )
 
-var languages = [...]string{langVI, langEN}
+// railBeats is how many segments the order rail has. The labels are copy and live in each
+// frame; the count lives here so the two frames cannot disagree.
+const railBeats = 4
 
-// blocks every mail file has to define. The frame supplies "footer" and "extra", so those
-// are overrides rather than requirements.
-var requiredBlocks = [...]string{"subject", "title", "lead", "action"}
+// look is a mail's appearance where it follows from the kind rather than the wording. Here
+// rather than in the templates for the same reason the link is: a fact that renders
+// differently per language is a bug waiting for the reader who gets both.
+type look struct {
+	tone tone
+	// step is the beat this mail reports, 1..railBeats. Zero draws no rail: for the two
+	// non-order mails, and for branches that end the sequence rather than advance it.
+	step int
+	// escrow draws the escrow box. Every order mail does: where the buyer's money is sitting
+	// is the question this marketplace exists to answer.
+	escrow bool
+}
+
+var looks = map[notify.Kind]look{
+	notify.KindEmailVerification: {tone: toneMoving},
+	notify.KindPasswordReset:     {tone: toneWaiting},
+	notify.KindOrderPlaced:       {tone: toneMoving, step: 1, escrow: true},
+	notify.KindOrderReceived:     {tone: toneMoving, step: 1, escrow: true},
+	notify.KindOrderDelivered:    {tone: toneWaiting, step: 3, escrow: true},
+	notify.KindOrderCompleted:    {tone: toneSuccess, step: railBeats, escrow: true},
+	// No rail below: all three would point at a beat that will not arrive.
+	notify.KindOrderCancelled: {tone: toneDanger, escrow: true},
+	// Waiting, not danger: red would tell one of the two recipients they lost before reading.
+	notify.KindRefundResolved:   {tone: toneWaiting, escrow: true},
+	notify.KindOrderUnconfirmed: {tone: toneWaiting, escrow: true},
+}
 
 // mailData is what a template is executed against. Params is reached as `.Params.order_id`,
 // and a key the caller did not send is a render failure — see missingkey below.
@@ -54,6 +92,19 @@ type mailData struct {
 	Lang   string
 	Link   string
 	Params map[string]any
+
+	// Tone, Step and Escrow come from looks, and the frame draws itself from them.
+	Tone   tone
+	Step   int
+	Escrow bool
+
+	// Amount is the escrowed sum, grouped for this language, empty when no total was sent.
+	// Computed here because missingkey=error leaves a template unable to ask.
+	Amount string
+	// OrderRef sits beside the wordmark, empty for the two account mails.
+	OrderRef string
+	// HelpLink is the help centre, for the recipient the mail did not answer.
+	HelpLink string
 }
 
 // mail is one kind in one language: the parsed set, plus the name of the frame to execute
@@ -69,27 +120,27 @@ type mail struct {
 func loadMails(fsys fs.FS) (map[notify.Kind]map[string]*mail, error) {
 	out := make(map[notify.Kind]map[string]*mail, len(mailKinds))
 	for _, kind := range mailKinds {
-		byLang := make(map[string]*mail, len(languages))
-		for _, lang := range languages {
-			m, err := loadMail(fsys, kind, lang)
+		byLang := make(map[string]*mail, len(lang.All))
+		for _, l := range lang.All {
+			m, err := loadMail(fsys, kind, l)
 			if err != nil {
 				return nil, err
 			}
-			byLang[lang] = m
+			byLang[l] = m
 		}
 		out[kind] = byLang
 	}
 	return out, nil
 }
 
-func loadMail(fsys fs.FS, kind notify.Kind, lang string) (*mail, error) {
-	frame := "frame." + lang + ".html"
-	file := string(kind) + "." + lang + ".html"
+func loadMail(fsys fs.FS, kind notify.Kind, l string) (*mail, error) {
+	frame := "frame." + l + ".html"
+	file := string(kind) + "." + l + ".html"
 
 	// Two Parse calls rather than one with both files: redefinition across successive
 	// parses is defined behaviour, and it is what lets a mail override the frame's default
 	// "footer". Parsing them together leaves which definition wins up to argument order.
-	set, err := template.New(frame).Funcs(funcs(lang)).Option("missingkey=error").ParseFS(fsys, frame)
+	set, err := template.New(frame).Funcs(lang.Funcs(l)).Option("missingkey=error").ParseFS(fsys, frame)
 	if err != nil {
 		return nil, fmt.Errorf("parse mail frame %s: %w", frame, err)
 	}
@@ -102,78 +153,4 @@ func loadMail(fsys fs.FS, kind notify.Kind, lang string) (*mail, error) {
 		}
 	}
 	return &mail{set: set, frame: frame}, nil
-}
-
-// funcs are the template helpers, bound to the language of the set they serve — which is
-// what lets `money` group digits the way that language does without every template
-// having to say so.
-func funcs(lang string) template.FuncMap {
-	sep := ","
-	if lang == langVI {
-		sep = "."
-	}
-	return template.FuncMap{
-		"money": func(amount, currency any) string { return formatMoney(amount, currency, sep) },
-	}
-}
-
-// formatMoney renders an amount the way this platform stores it: unscaled, because VND has
-// no minor unit and every rail here settles in it. A currency that is not VND is printed
-// with its code rather than a symbol this package would have to guess.
-func formatMoney(amount, currency any, sep string) string {
-	n, ok := asInt64(amount)
-	if !ok {
-		return fmt.Sprint(amount)
-	}
-	digits := group(n, sep)
-	if code, _ := currency.(string); code == "" || code == "VND" {
-		return digits + " ₫"
-	}
-	return digits + " " + fmt.Sprint(currency)
-}
-
-// asInt64 accepts the shapes an amount arrives in. Params crosses no wire — the caller is
-// in this process — so an int64 is the normal case and the rest are a caller's convenience.
-func asInt64(v any) (int64, bool) {
-	switch n := v.(type) {
-	case int64:
-		return n, true
-	case int:
-		return int64(n), true
-	case int32:
-		return int64(n), true
-	case float64:
-		return int64(n), true
-	default:
-		return 0, false
-	}
-}
-
-// group inserts a thousands separator. Written out rather than pulled from x/text: this is
-// the only place in the codebase that formats an amount for a person, and a language pack
-// for one function is a dependency with nothing else to do.
-func group(n int64, sep string) string {
-	sign := ""
-	if n < 0 {
-		sign = "-"
-		n = -n
-	}
-	digits := strconv.FormatInt(n, 10)
-	var b strings.Builder
-	for i, r := range digits {
-		if i > 0 && (len(digits)-i)%3 == 0 {
-			b.WriteString(sep)
-		}
-		b.WriteRune(r)
-	}
-	return sign + b.String()
-}
-
-// language picks the copy for a BCP 47 locale: the base language decides, and anything
-// unknown falls back to English.
-func language(locale string) string {
-	if strings.HasPrefix(locale, langVI) {
-		return langVI
-	}
-	return langFallback
 }

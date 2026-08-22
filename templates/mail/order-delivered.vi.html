@@ -1,0 +1,10 @@
+{{/* To the buyer only: confirming receipt is the one thing only they can do, and it is what
+     releases the money. The refund path is in the footer, not the lead. */}}
+{{define "subject"}}Đơn {{.Params.order_id}} đã được giao{{end}}
+{{define "preheader"}}Kiểm tra hàng rồi xác nhận đã nhận để hoàn tất đơn.{{end}}
+{{define "badge"}}Đã giao{{end}}
+{{define "title"}}Kiện hàng đã tới nơi{{end}}
+{{define "lead"}}Đơn vị vận chuyển báo đã giao thành công. Bạn kiểm tra hàng rồi xác nhận đã nhận, tiền sẽ về ví người bán.{{end}}
+{{define "escrow_state"}}Vẫn đang giữ, chờ bạn xác nhận{{end}}
+{{define "action"}}Xác nhận đã nhận hàng{{end}}
+{{define "footer"}}Hàng có vấn đề? Yêu cầu hoàn tiền ngay trong trang đơn hàng.{{end}}

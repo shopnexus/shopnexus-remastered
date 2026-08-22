@@ -1,5 +1,8 @@
 {{/* To both sides of the sale. Params: order_id. */}}
-{{define "subject"}}Đơn hàng {{.Params.order_id}} đã bị huỷ{{end}}
-{{define "title"}}Đơn hàng đã bị huỷ{{end}}
-{{define "lead"}}Đơn hàng này đã kết thúc mà không hoàn tất. Số tiền tạm giữ được hoàn lại cho người mua, bao gồm cả phí vận chuyển vì kiện hàng chưa được gửi đi.{{end}}
+{{define "subject"}}Đơn {{.Params.order_id}} đã bị hủy{{end}}
+{{define "preheader"}}Tiền tạm giữ đã hoàn lại cho người mua, gồm cả phí giao hàng.{{end}}
+{{define "badge"}}Đã hủy{{end}}
+{{define "title"}}Đơn hàng đã bị hủy{{end}}
+{{define "lead"}}Đơn này dừng lại và không tiếp tục. Tiền tạm giữ đã hoàn lại cho người mua, gồm cả phí giao hàng vì kiện hàng chưa gửi đi.{{end}}
+{{define "escrow_state"}}Đã hoàn lại cho người mua{{end}}
 {{define "action"}}Xem đơn hàng{{end}}

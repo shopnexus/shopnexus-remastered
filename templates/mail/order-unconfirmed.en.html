@@ -1,6 +1,9 @@
-{{/* To the buyer only. Params: order_id. See order-unconfirmed.vi.html on why the seller gets nothing here. */}}
+{{/* To the buyer only. Params: order_id. See order-unconfirmed.vi.html. */}}
 {{define "subject"}}Order {{.Params.order_id}} is waiting on the seller{{end}}
-{{define "title"}}Support has picked up your order{{end}}
-{{define "lead"}}The seller did not confirm this order within the window. Your money is untouched in escrow, and support has taken the case up to reach them.{{end}}
+{{define "preheader"}}Your money is untouched. There is nothing for you to do.{{end}}
+{{define "badge"}}With support{{end}}
+{{define "title"}}Support is handling this order{{end}}
+{{define "lead"}}The seller did not confirm the order in time. Support has picked it up and is contacting them.{{end}}
+{{define "escrow_state"}}Untouched, still held{{end}}
 {{define "action"}}View order{{end}}
-{{define "footer"}}There is nothing for you to do — we will write again once there is an outcome.{{end}}
+{{define "footer"}}Nothing is needed from you. We will write again when there is news.{{end}}

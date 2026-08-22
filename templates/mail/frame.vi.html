@@ -1,36 +1,134 @@
 {{/*
-  The Vietnamese layout. Every mail is this frame plus four short blocks, so adding one is
-  writing copy rather than copying markup.
+  The Vietnamese layout. A mail file must define subject, preheader, badge, title, lead and
+  action; it may override escrow_state, extra and footer.
 
-  A mail file must define: subject, title, lead, action.
-  It may override: footer, extra — both have a default below.
+  Tone, rail and escrow box come from `looks` in the smtp package, keyed by kind.
 
-  There is a frame per language rather than a frame plus a table of strings, because the
-  chrome is copy too: the fallback line and the automated-mail notice have to be written by
-  whoever writes the rest of the mail, in the same file style they read it in.
+  Inline styles carry the design; the <style> block is enhancement only. Note html/template
+  elides HTML comments, so <!--[if mso]--> conditionals are unavailable here.
 
-  Inline styles only, and a table-free single column: a mail client strips <style> blocks and
-  a third of them still lay out flexbox wrong. HTML only, no text/plain alternative — the
-  reason is in frame.en.html, where the same note would be a duplicate.
+  The card is width:100% capped at 560px. Outlook ignores max-width and goes full-bleed —
+  the deliberate half of the trade, since a fixed 560px overflows every phone.
 */}}
 <!doctype html>
 <html lang="vi">
-<body style="margin:0;padding:24px;background:#f4f4f5;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.55;color:#111">
-  <div style="max-width:560px;margin:0 auto;padding:28px;background:#fff;border-radius:10px">
-    <h1 style="margin:0 0 12px;font-size:20px;font-weight:600">{{template "title" .}}</h1>
-    <p style="margin:0 0 16px">{{template "lead" .}}</p>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+{{/* Both, so Apple Mail hands dark mode to the rules below instead of blunt-inverting. */}}
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>{{template "subject" .}}</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');
+@media only screen and (max-width:600px){
+  .sx-pad{padding:24px 20px !important}
+  .sx-beat{font-size:10px !important}
+}
+@media (prefers-color-scheme:dark){
+  .sx-page{background:#101413 !important}
+  .sx-card{background:#1a1c1b !important;border-color:#3e4947 !important}
+  .sx-ink{color:#f1f1ef !important}
+  .sx-muted{color:#bec9c6 !important}
+  .sx-mark{color:#85d5c9 !important}
+  .sx-track{background:#3e4947 !important}
+  .sx-btn{background:#85d5c9 !important}
+  .sx-btn a{color:#00201d !important}
+}
+</style>
+</head>
+<body class="sx-page" style="margin:0;padding:0;width:100%;background:#eeeeec;-webkit-text-size-adjust:100%">
+
+{{/* The inbox preview line. The filler stops the client reaching into the card for it. */}}
+<div style="display:none;max-height:0;max-width:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#eeeeec">{{template "preheader" .}}&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;&#847;&zwnj;</div>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="sx-page" style="background:#eeeeec">
+<tr><td align="center" style="padding:24px 12px 32px">
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="sx-card" style="width:100%;max-width:560px;background:#ffffff;border:1px solid #bec9c6;border-radius:16px">
+
+  {{/* The order reference is printed in full, never shortened: support asks for it. */}}
+  <tr><td class="sx-pad" style="padding:22px 28px 14px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td style="font-family:'Be Vietnam Pro',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:18px;line-height:26px;font-weight:800;letter-spacing:-0.4px;color:#00504a" class="sx-mark">ShopNexus</td>
+        {{if .OrderRef}}<td align="right" style="font-family:'Be Vietnam Pro',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:12px;line-height:20px;color:#3e4947"><span class="sx-muted">Đơn {{.OrderRef}}</span></td>{{end}}
+      </tr>
+    </table>
+  </td></tr>
+  {{/* The rule carries the state, so the mail's colour reads before its words do. */}}
+  <tr><td style="padding:0 28px"><div style="height:2px;background:{{.Tone.Rule}};border-radius:1px;font-size:0;line-height:0">&nbsp;</div></td></tr>
+
+  <tr><td class="sx-pad" style="padding:24px 28px 28px">
+
+    <div style="margin:0 0 12px">
+      <span style="display:inline-block;padding:3px 9px;border-radius:4px;background:{{.Tone.Wash}};color:{{.Tone.Ink}};font-family:'Be Vietnam Pro',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:11px;line-height:18px;font-weight:500;letter-spacing:0.4px;text-transform:uppercase">{{template "badge" .}}</span>
+    </div>
+
+    <h1 class="sx-ink" style="margin:0 0 10px;font-family:'Be Vietnam Pro',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:20px;line-height:30px;font-weight:600;letter-spacing:-0.2px;color:#1a1c1b">{{template "title" .}}</h1>
+
+    <p class="sx-ink" style="margin:0 0 20px;font-family:'Be Vietnam Pro',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:16px;line-height:26px;color:#1a1c1b">{{template "lead" .}}</p>
+
     {{block "extra" .}}{{end}}
-    <p style="margin:0 0 24px">
-      <a href="{{.Link}}" style="display:inline-block;padding:11px 20px;background:#111;color:#fff;border-radius:6px;text-decoration:none;font-weight:500">{{template "action" .}}</a>
-    </p>
-    <p style="margin:0 0 8px;font-size:13px;color:#555">
-      Nếu nút không hoạt động, hãy mở liên kết này:<br>
+
+    {{if .Escrow}}
+    {{/* Where the money is sitting: the one thing a recipient should not have to open the
+         app to learn. */}}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;background:{{.Tone.Wash}};border-radius:12px">
+      <tr><td style="padding:14px 18px">
+        <div style="font-family:'Be Vietnam Pro',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:11px;line-height:18px;font-weight:500;letter-spacing:0.7px;text-transform:uppercase;color:{{.Tone.Ink}}">Tiền tạm giữ</div>
+        <div style="padding-top:2px;font-family:'Be Vietnam Pro',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:15px;line-height:24px;font-weight:600;color:{{.Tone.Ink}}">{{block "escrow_state" .}}{{end}}</div>
+        {{if .Amount}}<div style="padding-top:4px;font-family:'Be Vietnam Pro',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:20px;line-height:30px;font-weight:700;color:{{.Tone.Ink}}">{{.Amount}}</div>{{end}}
+      </td></tr>
+    </table>
+    {{end}}
+
+    {{if .Step}}
+    {{/* Only mails that advance the order draw this; a dead end would point at a beat that
+         never arrives. */}}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px">
+      <tr>
+        <td width="25%" style="padding:0 2px 0 0"><div class="{{if gt 1 .Step}}sx-track{{end}}" style="height:4px;border-radius:2px;background:{{if le 1 .Step}}{{.Tone.Rule}}{{else}}#bec9c6{{end}};font-size:0;line-height:0">&nbsp;</div></td>
+        <td width="25%" style="padding:0 2px"><div class="{{if gt 2 .Step}}sx-track{{end}}" style="height:4px;border-radius:2px;background:{{if le 2 .Step}}{{.Tone.Rule}}{{else}}#bec9c6{{end}};font-size:0;line-height:0">&nbsp;</div></td>
+        <td width="25%" style="padding:0 2px"><div class="{{if gt 3 .Step}}sx-track{{end}}" style="height:4px;border-radius:2px;background:{{if le 3 .Step}}{{.Tone.Rule}}{{else}}#bec9c6{{end}};font-size:0;line-height:0">&nbsp;</div></td>
+        <td width="25%" style="padding:0 0 0 2px"><div class="{{if gt 4 .Step}}sx-track{{end}}" style="height:4px;border-radius:2px;background:{{if le 4 .Step}}{{.Tone.Rule}}{{else}}#bec9c6{{end}};font-size:0;line-height:0">&nbsp;</div></td>
+      </tr>
+      <tr>
+        <td class="sx-beat" style="padding:7px 2px 0 0;font-family:'Be Vietnam Pro',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:11px;line-height:18px;font-weight:500;color:{{if le 1 .Step}}{{.Tone.Ink}}{{else}}#6e7977{{end}}">Đặt hàng</td>
+        <td class="sx-beat" style="padding:7px 2px 0;font-family:'Be Vietnam Pro',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:11px;line-height:18px;font-weight:500;color:{{if le 2 .Step}}{{.Tone.Ink}}{{else}}#6e7977{{end}}">Xác nhận</td>
+        <td class="sx-beat" style="padding:7px 2px 0;font-family:'Be Vietnam Pro',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:11px;line-height:18px;font-weight:500;color:{{if le 3 .Step}}{{.Tone.Ink}}{{else}}#6e7977{{end}}">Giao hàng</td>
+        <td class="sx-beat" style="padding:7px 0 0 2px;font-family:'Be Vietnam Pro',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:11px;line-height:18px;font-weight:500;color:{{if le 4 .Step}}{{.Tone.Ink}}{{else}}#6e7977{{end}}">Hoàn tất</td>
+      </tr>
+    </table>
+    {{end}}
+
+    {{/* Table-wrapped: Outlook drops padding on an inline <a> and mails a bare blue link. */}}
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px">
+      <tr><td class="sx-btn" align="center" bgcolor="#00504a" style="background:#00504a;border-radius:9999px">
+        <a href="{{.Link}}" style="display:inline-block;padding:13px 28px;font-family:'Be Vietnam Pro',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:16px;line-height:24px;font-weight:600;color:#ffffff;text-decoration:none">{{template "action" .}}</a>
+      </td></tr>
+    </table>
+
+    <p class="sx-muted" style="margin:0;font-family:'Be Vietnam Pro',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:12px;line-height:20px;color:#3e4947">
+      Nút không mở được? Dán liên kết này vào trình duyệt:<br>
       <span style="word-break:break-all">{{.Link}}</span>
     </p>
-    <p style="margin:0;font-size:13px;color:#555">{{block "footer" .}}Bạn nhận được email này vì tài khoản ShopNexus của bạn có hoạt động liên quan.{{end}}</p>
-  </div>
-  <p style="max-width:560px;margin:16px auto 0;font-size:12px;color:#8a8a8a">
-    ShopNexus · Email được gửi tự động, vui lòng không trả lời.
-  </p>
+
+  </td></tr>
+
+  <tr><td style="padding:0 28px"><div style="height:1px;background:#bec9c6;font-size:0;line-height:0">&nbsp;</div></td></tr>
+  <tr><td class="sx-pad" style="padding:16px 28px 20px">
+    <p class="sx-muted" style="margin:0 0 4px;font-family:'Be Vietnam Pro',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:13px;line-height:22px;color:#3e4947">{{block "footer" .}}Bạn nhận được email này vì tài khoản ShopNexus của bạn có hoạt động liên quan.{{end}}</p>
+    <p class="sx-muted" style="margin:0;font-family:'Be Vietnam Pro',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:13px;line-height:22px;color:#3e4947">Cần người thật giúp? <a href="{{.HelpLink}}" style="color:#00504a;text-decoration:underline" class="sx-mark">Trung tâm hỗ trợ</a></p>
+  </td></tr>
+
+</table>
+
+<p class="sx-muted" style="max-width:560px;margin:16px auto 0;font-family:'Be Vietnam Pro',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:12px;line-height:20px;color:#3e4947;text-align:center">
+  ShopNexus · Email được gửi tự động, vui lòng không trả lời.
+</p>
+
+</td></tr>
+</table>
 </body>
 </html>
