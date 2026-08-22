@@ -457,9 +457,9 @@ components:
                     example:
                         - Pin còn bao nhiêu phần trăm vậy bạn?
                         - Máy đã thay màn hình lần nào chưa?
-                        - Mình xem trực tiếp ở Cầu Giấy được không?
+                        - Xem trực tiếp ở Cầu Giấy được không?
                     items:
-                        maxLength: 60
+                        maxLength: 46
                         type: string
                     maxItems: 4
                     minItems: 1

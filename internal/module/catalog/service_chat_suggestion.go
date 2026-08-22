@@ -17,9 +17,10 @@ const (
 	// chatQuestionsWanted is how many openers come back. Four is the most a row of chips can hold
 	// before it becomes a menu to read, which is the thing they exist to save the buyer from.
 	chatQuestionsWanted = 4
-	// chatQuestionMaxRunes keeps a chip to one line. Vietnamese runs long, and a question that
-	// wraps to three lines in a 380px dock is a paragraph with a border around it.
-	chatQuestionMaxRunes = 60
+	// chatQuestionMaxRunes keeps a chip to a line or two. Measured against the dock it renders
+	// in: 380px wide at 12px, a Vietnamese question runs past two lines somewhere around 50
+	// characters, and four two-line chips fill the panel the messages are supposed to be in.
+	chatQuestionMaxRunes = 46
 	// chatDescriptionBudget is how much of the seller's own text the model reads. Enough to know
 	// what has already been answered; not so much that a novel of a description costs a page of
 	// tokens on every product view.
@@ -96,7 +97,7 @@ var chatQuestionsSchema = jsontext.Value(`{
       "type": "array",
       "minItems": 1,
       "maxItems": 4,
-      "items": {"type": "string", "maxLength": 120}
+      "items": {"type": "string", "maxLength": 60}
     }
   }
 }`)
@@ -120,7 +121,9 @@ Rules:
 - Be specific to this object. For a phone ask about battery health or the IMEI; for a bicycle ask
   about the frame size or the brakes; for clothing ask about measurements. A question that would
   fit any listing is a wasted chip.
-- Each question is one sentence, at most 60 characters, and ends with a question mark.
+- Each question is one sentence and ends with a question mark. Keep it under 40 characters —
+  it is rendered as a chip, not a paragraph. Drop "cho mình", "được không ạ" and anything else
+  that is politeness rather than the question.
 - Never promise anything on the seller's behalf and never state a fact about the goods. You are
   writing a question, not an answer.
 - If the listing is so completely described that only one question is left, answer with one.`

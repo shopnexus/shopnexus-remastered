@@ -780,11 +780,11 @@ components:
           type: array
           minItems: 1
           maxItems: 4
-          items: { type: string, maxLength: 60 }
+          items: { type: string, maxLength: 46 }
           example:
             - Pin còn bao nhiêu phần trăm vậy bạn?
             - Máy đã thay màn hình lần nào chưa?
-            - Mình xem trực tiếp ở Cầu Giấy được không?
+            - Xem trực tiếp ở Cầu Giấy được không?
       required: [questions]
 
     ListingSuggestion:
