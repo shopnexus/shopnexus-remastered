@@ -177,7 +177,82 @@ components:
           nullable: true
           description: Set on a redacted message. The row stays so a thread has no
             unexplained gaps.
-      required: [id, conversation_id, sender_id, from_support, type, body, attachments, refs, card, created_at, edited_at, deleted_at]
+        reply_to:
+          allOf: [{ $ref: '#/components/schemas/MessageQuote' }]
+          nullable: true
+          description: The message this one answers, resolved. Null on an ordinary message.
+      required: [id, conversation_id, sender_id, from_support, type, body, attachments, refs, card, created_at, edited_at, deleted_at, reply_to]
+
+    MessageQuote:
+      type: object
+      description: >
+        The little of a message a reply has to show above itself.
+
+        Resolved when the thread is read, never copied at send time — the same rule an offer
+        card follows by storing only `offer_id`. A snapshot would keep the sender's original
+        words in every reply to it after an edit, and would go on showing them after a
+        redaction, which is the one thing unsending is for.
+      properties:
+        id:
+          type: string
+          description: Opaque id of the quoted message.
+          example: msg_2h9qk4mfx7bd3
+        created_at:
+          type: string
+          format: date-time
+          description: The quoted message's own instant — what a client needs to jump to it.
+          example: '2026-08-03T11:14:51Z'
+        sender_id:
+          allOf: [{ $ref: '#/components/schemas/AccountID' }]
+          nullable: true
+          description: >
+            Null on a system message and on a support reply seen by the requester — the same
+            masking the quoted message itself gets, because a quote is a projection of it.
+        from_support:
+          type: boolean
+          description: True when the quoted message is a reply the support desk wrote.
+          example: false
+        preview:
+          type: string
+          description: >
+            The opening of what it said, cut to 120 characters on a rune boundary. Empty on a
+            redacted one and on one that carried only files.
+          example: cái áo xanh còn không?
+        attachments:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 10
+          description: >
+            How many files it carried, so a quote of four photos says four instead of looking
+            like an empty message.
+          example: 0
+        redacted:
+          type: boolean
+          description: Set when the quoted message has since been unsent.
+          example: false
+      required: [id, created_at, sender_id, from_support, preview, attachments, redacted]
+
+    MessageReplyRef:
+      type: object
+      description: >
+        Names the message a reply answers.
+
+        The instant travels with the id because `message` is a hypertable whose primary key is
+        (id, created_at): it is what makes resolving the quote a point lookup in one chunk
+        rather than a scan of every chunk. A client always has it — it is on the message being
+        replied to — which is the same reason the edit and redact routes take it.
+      properties:
+        id:
+          type: string
+          description: Opaque id of the message being answered.
+          example: msg_2h9qk4mfx7bd3
+        created_at:
+          type: string
+          format: date-time
+          description: That message's own instant, passed back unchanged.
+          example: '2026-08-03T11:14:51Z'
+      required: [id, created_at]
 
     MessagePage:
       type: object
@@ -199,6 +274,14 @@ components:
             References to point at, each checked against the caller's access to it.
             There is no way to set `card` from here: a system payload is the backend's
             to write.
+        reply_to:
+          allOf: [{ $ref: '#/components/schemas/MessageReplyRef' }]
+          nullable: true
+          description: >
+            The message being answered, and absent on an ordinary one. It has to be in this
+            same conversation: the quote carries a preview of what was said, so answering a
+            message from elsewhere would read another thread out through this one. `422
+            reply_outside_thread` when it is not, `404` when it names nothing.
 
     UpdateMessageRequest:
       type: object

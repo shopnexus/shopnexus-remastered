@@ -176,7 +176,7 @@ func (s *Service) openingMessage(ctx context.Context, thread domain.Conversation
 	if err := s.requireResources(ctx, attachments); err != nil {
 		return err
 	}
-	m, err := domain.NewMessage(thread.ID, req.RequesterID.Int64(), req.Body, attachments, nil)
+	m, err := domain.NewMessage(thread.ID, req.RequesterID.Int64(), req.Body, attachments, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -267,8 +267,12 @@ func (s *Service) SendMessage(ctx context.Context, req chatapi.SendMessageReques
 	if err := s.requireResources(ctx, attachments); err != nil {
 		return chatapi.Message{}, err
 	}
+	replyTo, err := s.replyTarget(ctx, req.ConversationID.Int64(), req.ReplyTo)
+	if err != nil {
+		return chatapi.Message{}, err
+	}
 	m, err := domain.NewMessage(req.ConversationID.Int64(), req.ActorID.Int64(), req.Body,
-		attachments, req.Refs)
+		attachments, req.Refs, replyTo)
 	if err != nil {
 		return chatapi.Message{}, err
 	}
@@ -285,6 +289,26 @@ func (s *Service) SendMessage(ctx context.Context, req chatapi.SendMessageReques
 		notify(ctx, s, recipient, MessageCreated, hideSupport(thread, recipient, []chatapi.Message{dto})[0])
 	}
 	return dto, nil
+}
+
+// replyTarget turns the reference a client sent into one the message can carry.
+//
+// Read rather than trusted, for one reason: the quote carries a preview of what the target
+// said, so accepting a target from another conversation would read a thread the sender is
+// not in out through one they are. A redacted target is allowed through — the quote then
+// renders as redacted, which is the honest thing to say about an answer to it.
+func (s *Service) replyTarget(ctx context.Context, conversationID int64, ref *chatapi.MessageRefRequest) (*domain.MessageRef, error) {
+	if ref == nil {
+		return nil, nil
+	}
+	target, err := s.repo.FindMessageAt(ctx, ref.ID.Int64(), ref.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("read reply target: %w", err)
+	}
+	if target.ConversationID != conversationID {
+		return nil, domain.ErrReplyOutsideThread
+	}
+	return &domain.MessageRef{ID: target.ID, CreatedAt: target.CreatedAt}, nil
 }
 
 // recipient is who a new message is pushed to, and 0 when nobody should be. On a direct thread that
@@ -471,6 +495,14 @@ func hideSupport(thread domain.Conversation, viewerID int64, messages []chatapi.
 		return messages
 	}
 	for i, m := range messages {
+		// A quote is a projection of a message as much as the row is: leaving its sender in
+		// place named the moderator who wrote the message being answered, and one public
+		// account read turns that id into a name.
+		if quote := messages[i].ReplyTo; quote != nil && quote.SenderID != nil &&
+			quote.SenderID.Int64() != viewerID {
+			quote.SenderID = nil
+			quote.FromSupport = true
+		}
 		if m.SenderID == nil || m.SenderID.Int64() == viewerID {
 			continue
 		}
@@ -642,9 +674,13 @@ func (s *Service) toAPIMessages(ctx context.Context, messages []domain.Message) 
 	if err != nil {
 		return nil, err
 	}
+	quotes, err := s.quotes(ctx, messages)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]chatapi.Message, 0, len(messages))
 	for _, m := range messages {
-		out = append(out, buildMessage(m, images))
+		out = append(out, buildMessage(m, images, quotes))
 	}
 	return out, nil
 }
@@ -654,10 +690,65 @@ func (s *Service) toAPIMessage(ctx context.Context, m domain.Message) (chatapi.M
 	if err != nil {
 		return chatapi.Message{}, err
 	}
-	return buildMessage(m, images), nil
+	quotes, err := s.quotes(ctx, []domain.Message{m})
+	if err != nil {
+		return chatapi.Message{}, err
+	}
+	return buildMessage(m, images, quotes), nil
 }
 
-func buildMessage(m domain.Message, images map[int64]common.ResourceDTO) chatapi.Message {
+// quotes resolves what a page of replies points at, keyed by the quoted message's id — one
+// read for the page. Live rather than snapshotted at send time, so an edit to the original
+// shows through and a redaction reads as one.
+func (s *Service) quotes(ctx context.Context, messages []domain.Message) (map[int64]chatapi.MessageQuote, error) {
+	var refs []domain.MessageRef
+	for _, m := range messages {
+		if m.ReplyTo != nil {
+			refs = append(refs, *m.ReplyTo)
+		}
+	}
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	found, err := s.repo.QuotedMessages(ctx, refs)
+	if err != nil {
+		return nil, fmt.Errorf("read quoted messages: %w", err)
+	}
+	out := make(map[int64]chatapi.MessageQuote, len(found))
+	for key, quoted := range found {
+		out[key] = buildQuote(quoted)
+	}
+	return out, nil
+}
+
+// previewRunes caps a quote at what a bubble can hold. Runes rather than bytes: a
+// Vietnamese sentence is mostly multi-byte, and cutting on a byte boundary produces a
+// replacement character instead of a shorter sentence.
+const previewRunes = 120
+
+func buildQuote(m domain.Message) chatapi.MessageQuote {
+	out := chatapi.MessageQuote{
+		ID:          id.Of[id.Message](m.ID),
+		CreatedAt:   m.CreatedAt,
+		Preview:     truncateRunes(m.Body, previewRunes),
+		Attachments: len(m.Attachments),
+		Redacted:    !m.IsLive(),
+	}
+	if m.SenderID != 0 {
+		out.SenderID = new(id.Of[id.Account](m.SenderID))
+	}
+	return out
+}
+
+func truncateRunes(s string, limit int) string {
+	runes := []rune(s)
+	if len(runes) <= limit {
+		return s
+	}
+	return string(runes[:limit]) + "…"
+}
+
+func buildMessage(m domain.Message, images map[int64]common.ResourceDTO, quotes map[int64]chatapi.MessageQuote) chatapi.Message {
 	out := chatapi.Message{
 		ID:             id.Of[id.Message](m.ID),
 		ConversationID: id.Of[id.Conversation](m.ConversationID),
@@ -673,6 +764,20 @@ func buildMessage(m domain.Message, images map[int64]common.ResourceDTO) chatapi
 	// Null on a system message: that one is the backend's word, not a person's.
 	if m.SenderID != 0 {
 		out.SenderID = new(id.Of[id.Account](m.SenderID))
+	}
+	if m.ReplyTo != nil {
+		if quote, ok := quotes[m.ReplyTo.ID]; ok {
+			out.ReplyTo = &quote
+		} else {
+			// The reference outlived its row, which a deleted conversation is the only way
+			// to arrange. Naming it as unavailable beats dropping the quote, which would
+			// render an answer as though it had answered nothing.
+			out.ReplyTo = &chatapi.MessageQuote{
+				ID:        id.Of[id.Message](m.ReplyTo.ID),
+				CreatedAt: m.ReplyTo.CreatedAt,
+				Redacted:  true,
+			}
+		}
 	}
 	return out
 }

@@ -56,6 +56,12 @@ type Repository interface {
 	// LastMessage is what an inbox row shows. Separate from the page, because a page of
 	// threads needs one per thread rather than a history each.
 	LastMessages(ctx context.Context, conversationIDs []int64) (map[int64]domain.Message, error)
+	// QuotedMessages resolves what a page of replies points at, keyed by message id — one
+	// query for the page rather than one per reply. Read live rather than snapshotted at
+	// send time, so an edited original shows through and a redacted one reads as redacted.
+	// A reference with no row is simply absent from the map: the quote then renders as
+	// unavailable, which is a truer answer than failing the whole page.
+	QuotedMessages(ctx context.Context, refs []domain.MessageRef) (map[int64]domain.Message, error)
 
 	// UnreadCounts answers, per thread, how many of the counterparty's messages fall
 	// after the caller's read mark — one query for the whole page.

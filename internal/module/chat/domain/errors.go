@@ -29,7 +29,11 @@ var (
 	// ErrSystemMessage is a client trying to write or change one. A system message is the
 	// backend's word — an offer card, an order update — and a user forging one would be a
 	// client asserting something the platform is supposed to attest.
-	ErrSystemMessage      = errx.NewError(http.StatusForbidden, "system_message", "a system message is not yours to write or change")
-	ErrEmptyMessage       = errx.NewError(http.StatusUnprocessableEntity, "empty_message", "a message needs a body or an attachment")
+	ErrSystemMessage = errx.NewError(http.StatusForbidden, "system_message", "a system message is not yours to write or change")
+	ErrEmptyMessage  = errx.NewError(http.StatusUnprocessableEntity, "empty_message", "a message needs a body or an attachment")
+	// ErrReplyOutsideThread is answering a message from another conversation. The quote
+	// carries a preview of what was said, so accepting one would read a thread the sender is
+	// not in out through a thread they are.
+	ErrReplyOutsideThread = errx.NewError(http.StatusUnprocessableEntity, "reply_outside_thread", "a reply must answer a message in the same conversation")
 	ErrAttachmentNotFound = errx.NewError(http.StatusNotFound, "attachment_not_found", "an attachment id names no confirmed resource")
 )

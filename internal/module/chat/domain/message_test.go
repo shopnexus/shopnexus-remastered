@@ -10,7 +10,7 @@ import (
 )
 
 func TestNewMessage_Valid(t *testing.T) {
-	m, err := domain.NewMessage(3, 7, "Hello", nil, nil)
+	m, err := domain.NewMessage(3, 7, "Hello", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -22,10 +22,10 @@ func TestNewMessage_Valid(t *testing.T) {
 // A message with neither text nor an attachment says nothing. An attachment alone does,
 // which is what makes this a rule about content rather than about the body field.
 func TestNewMessage_NeedsSomethingToSay(t *testing.T) {
-	if _, err := domain.NewMessage(3, 7, "   ", nil, nil); !errors.Is(err, domain.ErrEmptyMessage) {
+	if _, err := domain.NewMessage(3, 7, "   ", nil, nil, nil); !errors.Is(err, domain.ErrEmptyMessage) {
 		t.Fatalf("empty message = %v, want ErrEmptyMessage", err)
 	}
-	if _, err := domain.NewMessage(3, 7, "", []int64{42}, nil); err != nil {
+	if _, err := domain.NewMessage(3, 7, "", []int64{42}, nil, nil); err != nil {
 		t.Fatalf("a photo with no caption was refused: %v", err)
 	}
 }
@@ -51,7 +51,7 @@ func TestSystemMessage_IsNotAUsers(t *testing.T) {
 // Only the sender edits, and never something already unsent — an edit of a redaction
 // would bring the content back.
 func TestMessage_EditAndRedact(t *testing.T) {
-	m, err := domain.NewMessage(3, 7, "Hello", nil, nil)
+	m, err := domain.NewMessage(3, 7, "Hello", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("NewMessage: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestMessage_EditAndRedact(t *testing.T) {
 }
 
 func TestNewMessage_EmptyBody(t *testing.T) {
-	_, err := domain.NewMessage(3, 7, "", nil, nil)
+	_, err := domain.NewMessage(3, 7, "", nil, nil, nil)
 	if status, _, _, ok := errx.Decompose(err); !ok || status != 422 {
 		t.Fatalf("expected an unprocessable entity, got %v", err)
 	}

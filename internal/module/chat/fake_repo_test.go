@@ -201,6 +201,21 @@ func (f *fakeRepo) LastMessages(_ context.Context, conversationIDs []int64) (map
 	return out, nil
 }
 
+// QuotedMessages matches on both halves of the reference, like the real one: the instant is
+// part of the hypertable's primary key, so a lookup by id alone is not the same lookup.
+func (f *fakeRepo) QuotedMessages(_ context.Context, refs []domain.MessageRef) (map[int64]domain.Message, error) {
+	out := map[int64]domain.Message{}
+	for _, ref := range refs {
+		for _, m := range f.messages {
+			if m.ID == ref.ID && m.CreatedAt.Equal(ref.CreatedAt) {
+				out[m.ID] = m
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
 // UnreadCounts is the counterparty's live messages after the caller's own mark.
 func (f *fakeRepo) UnreadCounts(_ context.Context, accountID int64, conversationIDs []int64) (map[int64]int64, error) {
 	out := make(map[int64]int64, len(conversationIDs))

@@ -14,6 +14,15 @@ const (
 	TypeSystem = "system"
 )
 
+// MessageRef names one message. Both halves, because "message" is a hypertable whose
+// primary key is (id, created_at): the instant is what makes finding it a point lookup in
+// one chunk rather than a scan of every chunk, which is also why the edit and redact routes
+// take it off the query string.
+type MessageRef struct {
+	ID        int64     `validate:"required"`
+	CreatedAt time.Time `validate:"required"`
+}
+
 // Message is one entry in a thread. A system message has no sender: it is the backend's
 // word — an offer card, an order update — which is why the schema ties the two together
 // with a CHECK and why a client cannot write one.
@@ -38,11 +47,20 @@ type Message struct {
 	// DeletedAt is a redaction — the sender unsending, or moderation acting on a report.
 	// The row stays so a thread has no unexplained gaps.
 	DeletedAt *time.Time
+	// ReplyTo is the message this one answers, and nil on an ordinary one. A reference, not
+	// a copy: the quote is resolved when the thread is read, so an edit to the original
+	// shows through and a redaction reads as redacted instead of leaving its old words in
+	// every reply to it.
+	ReplyTo *MessageRef
 }
 
 // NewMessage is a person speaking. A message with neither text nor an attachment says
 // nothing, so it is refused rather than stored.
-func NewMessage(conversationID, senderID int64, body string, attachments []int64, refs map[string]any) (Message, error) {
+//
+// replyTo is the message being answered, or nil. Whether that message is one the sender may
+// answer — the same thread, and one that exists — is not knowable here: it is a lookup, so
+// the service checks it before calling this.
+func NewMessage(conversationID, senderID int64, body string, attachments []int64, refs map[string]any, replyTo *MessageRef) (Message, error) {
 	m := Message{
 		ConversationID: conversationID,
 		SenderID:       senderID,
@@ -50,6 +68,7 @@ func NewMessage(conversationID, senderID int64, body string, attachments []int64
 		Body:           strings.TrimSpace(body),
 		Attachments:    attachments,
 		Refs:           refs,
+		ReplyTo:        replyTo,
 	}
 	if senderID == 0 {
 		return Message{}, ErrNotAParticipant

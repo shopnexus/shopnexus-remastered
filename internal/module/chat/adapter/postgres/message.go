@@ -16,16 +16,18 @@ import (
 // A system message has no sender, which the column holds as NULL — so the scan reads it
 // into a pointer and the entity keeps zero for "the backend said this".
 const messageColumns = `id, conversation_id, sender_id, type::text, body, attachments,
-	       metadata, created_at, edited_at, deleted_at`
+	       metadata, created_at, edited_at, deleted_at, reply_to_id, reply_to_created_at`
 
 func scanMessage(row pgx.Row) (domain.Message, error) {
 	var (
 		m        domain.Message
 		senderID *int64
 		metadata []byte
+		replyID  *int64
+		replyAt  *time.Time
 	)
 	err := row.Scan(&m.ID, &m.ConversationID, &senderID, &m.Type, &m.Body, &m.Attachments,
-		&metadata, &m.CreatedAt, &m.EditedAt, &m.DeletedAt)
+		&metadata, &m.CreatedAt, &m.EditedAt, &m.DeletedAt, &replyID, &replyAt)
 	if dbx.IsNoRows(err) {
 		return domain.Message{}, domain.ErrMessageNotFound
 	}
@@ -34,6 +36,10 @@ func scanMessage(row pgx.Row) (domain.Message, error) {
 	}
 	if senderID != nil {
 		m.SenderID = *senderID
+	}
+	// The CHECK keeps these two together, so one test covers both.
+	if replyID != nil && replyAt != nil {
+		m.ReplyTo = &domain.MessageRef{ID: *replyID, CreatedAt: *replyAt}
 	}
 	// One JSONB column carries both halves: what the sender pointed at, and what the
 	// backend rendered. They are read apart because only one of them is the client's.
@@ -60,20 +66,28 @@ type messageMetadata struct {
 func (r *Repo) InsertMessage(ctx context.Context, m *domain.Message) error {
 	return dbx.InTx(ctx, r.pool, func(tx pgx.Tx) error {
 		const q = `INSERT INTO message
-		             (conversation_id, sender_id, type, body, attachments, metadata)
-		           VALUES (@conversation_id, @sender_id, @type, @body, @attachments, @metadata)
+		             (conversation_id, sender_id, type, body, attachments, metadata,
+		              reply_to_id, reply_to_created_at)
+		           VALUES (@conversation_id, @sender_id, @type, @body, @attachments, @metadata,
+		                   @reply_to_id, @reply_to_created_at)
 		           RETURNING id, created_at`
 		metadata, err := json.Marshal(messageMetadata{Refs: m.Refs, Card: m.Card})
 		if err != nil {
 			return fmt.Errorf("encode message metadata: %w", err)
 		}
 		args := pgx.NamedArgs{
-			"conversation_id": m.ConversationID,
-			"sender_id":       dbx.NullID(m.SenderID),
-			"type":            m.Type,
-			"body":            m.Body,
-			"attachments":     dbx.Int64Array(m.Attachments),
-			"metadata":        metadata,
+			"conversation_id":     m.ConversationID,
+			"sender_id":           dbx.NullID(m.SenderID),
+			"type":                m.Type,
+			"body":                m.Body,
+			"attachments":         dbx.Int64Array(m.Attachments),
+			"metadata":            metadata,
+			"reply_to_id":         nil,
+			"reply_to_created_at": nil,
+		}
+		if m.ReplyTo != nil {
+			args["reply_to_id"] = m.ReplyTo.ID
+			args["reply_to_created_at"] = m.ReplyTo.CreatedAt
 		}
 		if err := tx.QueryRow(ctx, q, args).Scan(&m.ID, &m.CreatedAt); err != nil {
 			return fmt.Errorf("db insert message: %w", err)
@@ -175,7 +189,8 @@ func (r *Repo) LastMessages(ctx context.Context, conversationIDs []int64) (map[i
 		return out, nil
 	}
 	const q = `SELECT m.id, m.conversation_id, m.sender_id, m.type::text, m.body,
-	                  m.attachments, m.metadata, m.created_at, m.edited_at, m.deleted_at
+	                  m.attachments, m.metadata, m.created_at, m.edited_at, m.deleted_at,
+	                  m.reply_to_id, m.reply_to_created_at
 	           FROM unnest(@ids::bigint[]) AS t(conversation_id)
 	           JOIN LATERAL (
 	             SELECT * FROM message
@@ -198,6 +213,53 @@ func (r *Repo) LastMessages(ctx context.Context, conversationIDs []int64) (map[i
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("db iterate last messages: %w", err)
+	}
+	return out, nil
+}
+
+// QuotedMessages resolves the messages a page of replies points at — one query for the
+// page, not one per reply.
+//
+// Both halves of each reference are used in the join, not just the id: `created_at` is the
+// hypertable's partitioning column, so the equality is what lets chunk exclusion go
+// straight to the chunk holding the quoted message instead of scanning all of them.
+//
+// Keyed by id alone on the way out. `id` is `GENERATED ALWAYS AS IDENTITY` and so unique
+// across the table on its own; the instant is in the primary key because TimescaleDB
+// requires the partitioning column there, not because the id needs help.
+func (r *Repo) QuotedMessages(ctx context.Context, refs []domain.MessageRef) (map[int64]domain.Message, error) {
+	out := make(map[int64]domain.Message, len(refs))
+	if len(refs) == 0 {
+		return out, nil
+	}
+
+	ids := make([]int64, 0, len(refs))
+	ats := make([]time.Time, 0, len(refs))
+	for _, ref := range refs {
+		ids = append(ids, ref.ID)
+		ats = append(ats, ref.CreatedAt)
+	}
+
+	const q = `SELECT m.id, m.conversation_id, m.sender_id, m.type::text, m.body,
+	                  m.attachments, m.metadata, m.created_at, m.edited_at, m.deleted_at,
+	                  m.reply_to_id, m.reply_to_created_at
+	           FROM unnest(@ids::bigint[], @ats::timestamptz[]) AS t(id, created_at)
+	           JOIN message m ON m.id = t.id AND m.created_at = t.created_at`
+	rows, err := r.pool.Query(ctx, q, pgx.NamedArgs{"ids": ids, "ats": ats})
+	if err != nil {
+		return nil, fmt.Errorf("db query quoted messages: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[m.ID] = m
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db iterate quoted messages: %w", err)
 	}
 	return out, nil
 }

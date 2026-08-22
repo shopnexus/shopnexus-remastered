@@ -66,6 +66,31 @@ type Message struct {
 	CreatedAt time.Time      `json:"created_at"`
 	EditedAt  *time.Time     `json:"edited_at"`
 	DeletedAt *time.Time     `json:"deleted_at"`
+	// ReplyTo is the message this one answers, resolved, and null on an ordinary one.
+	ReplyTo *MessageQuote `json:"reply_to"`
+}
+
+// MessageQuote is the little of a message a reply has to show above itself.
+//
+// Resolved on read, not copied at send time: the same rule an offer card follows by storing
+// only `offer_id`. A snapshot would leave the sender's original words in every reply to it
+// after an edit, and would keep showing them after a redaction — which is the one thing
+// unsending is for.
+type MessageQuote struct {
+	ID        id.ID[id.Message] `json:"id"`
+	CreatedAt time.Time         `json:"created_at"`
+	// SenderID is null on a system message and on a support reply seen by the requester,
+	// the same masking the quoted message itself gets — see FromSupport.
+	SenderID    *id.ID[id.Account] `json:"sender_id"`
+	FromSupport bool               `json:"from_support"`
+	// Preview is the opening of what it said, cut to a length a bubble can hold. Empty on a
+	// redacted one and on one that was only files.
+	Preview string `json:"preview"`
+	// Attachments is how many files it carried, so a quote of four photos says four rather
+	// than looking like an empty message.
+	Attachments int `json:"attachments"`
+	// Redacted marks a quote whose message has since been unsent.
+	Redacted bool `json:"redacted"`
 }
 
 type MessagePage struct {
@@ -147,6 +172,21 @@ type SendMessageRequest struct {
 	Body           string                 `json:"body" validate:"max=4000"`
 	Attachments    []id.ID[id.Resource]   `json:"attachments" validate:"max=10"`
 	Refs           map[string]any         `json:"refs"`
+	// ReplyTo is the message being answered, and absent on an ordinary one. It must be in
+	// this same conversation: the quote carries a preview, so answering a message from
+	// somewhere else would read another thread's words out through this one.
+	ReplyTo *MessageRefRequest `json:"reply_to" validate:"omitempty"`
+}
+
+// MessageRefRequest names the message a reply answers.
+//
+// The instant travels with the id because `message` is a hypertable whose primary key is
+// (id, created_at): it is what makes resolving the quote a point lookup in one chunk rather
+// than a scan of every chunk, and the client always has it — it is on the message it is
+// replying to. Same reason the edit and redact routes take it.
+type MessageRefRequest struct {
+	ID        id.ID[id.Message] `json:"id" validate:"required"`
+	CreatedAt time.Time         `json:"created_at" validate:"required"`
 }
 
 type MarkConversationReadRequest struct {
