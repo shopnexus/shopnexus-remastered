@@ -351,8 +351,18 @@ components:
       description: >
         Derived from the timestamps rather than stored. `awaiting-confirmation` is a paid
         order the seller has not accepted: nothing has been handed to a carrier, and it is
-        where every sale starts. `open` is accepted and in flight. The last two are the
-        outcomes, and they are the predicate of the partial indexes behind this filter.
+        where every sale starts. `open` is accepted and in flight.
+
+
+        `completed` is the buyer having the goods and saying so — `received_at` — not the
+        payout. The escrow is claimed days later, when the refund window closes, and reading
+        only `completed_at` left a delivered sale under `open` for the whole of that window
+        while neither party had anything left to do. It is therefore **not** the same
+        question as "is the money settled": a `completed` order can still be refunded, and
+        `payout_released_at` is what says whether the seller has been paid.
+
+
+        `cancelled` wins over both, so an order refunded after delivery is listed once.
       enum: [awaiting-confirmation, open, completed, cancelled]
 
     OrderAddressSnapshot:

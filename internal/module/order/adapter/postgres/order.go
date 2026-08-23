@@ -482,9 +482,15 @@ func (r *Repo) ListOrders(ctx context.Context, f port.OrderFilter) ([]domain.Ord
 	                      AND confirmed_at IS NULL
 	                      AND completed_at IS NULL AND cancelled_at IS NULL)
 	                  OR (@state::text = '` + domain.StateOpen + `'
-	                      AND confirmed_at IS NOT NULL
+	                      AND confirmed_at IS NOT NULL AND received_at IS NULL
 	                      AND completed_at IS NULL AND cancelled_at IS NULL)
-	                  OR (@state::text = '` + domain.StateCompleted + `' AND completed_at IS NOT NULL)
+	                  -- Receipt is what finishes a sale, not the payout: see Order.State. The
+	                  -- cancelled guard is new here and has to be, because an order refunded
+	                  -- after delivery carries both timestamps and would otherwise be listed
+	                  -- under two states at once.
+	                  OR (@state::text = '` + domain.StateCompleted + `'
+	                      AND (completed_at IS NOT NULL OR received_at IS NOT NULL)
+	                      AND cancelled_at IS NULL)
 	                  OR (@state::text = '` + domain.StateCancelled + `' AND cancelled_at IS NOT NULL))
 	             AND (@before::timestamptz IS NULL
 	                  OR (created_at, id) < (@before::timestamptz, @before_id::bigint))

@@ -57,15 +57,21 @@ func TestOrder_StateIsDerived(t *testing.T) {
 	if err := o.Confirm(); !errors.Is(err, domain.ErrOrderAlreadyConfirmed) {
 		t.Fatalf("second Confirm = %v, want ErrOrderAlreadyConfirmed", err)
 	}
-	// A confirmed receipt starts the payout clock; it does not end the order.
+	// A confirmed receipt is what finishes the sale. It reads as completed from here, while
+	// staying *unsettled*: the escrow is still held, so a refund can still be raised and the
+	// payout still has to be claimed. The two questions are separate on purpose — one is what
+	// the sale is called, the other is who may still move the money.
 	if err := o.ConfirmReceipt([]int64{42}); err != nil {
 		t.Fatalf("ConfirmReceipt: %v", err)
 	}
-	if o.State() != domain.StateOpen {
-		t.Fatalf("state = %q, want it still open after a receipt", o.State())
+	if o.State() != domain.StateCompleted {
+		t.Fatalf("state = %q, want completed once the buyer has the goods", o.State())
+	}
+	if o.Settled() {
+		t.Fatal("a receipt settled the order; the escrow has not been claimed yet")
 	}
 	// Completion is the payout's own write — the conditional UPDATE that decides the escrow
-	// race — so the state is read back from the timestamp it sets.
+	// race — and it is what settles the order. The state does not move again.
 	o.CompletedAt = new(time.Now())
 	if o.State() != domain.StateCompleted || !o.Settled() {
 		t.Fatalf("state = %q, want completed", o.State())

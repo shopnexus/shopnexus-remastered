@@ -86,11 +86,21 @@ func NewOrder(origin Origin, buyerID, sellerID, transportID int64, address, pick
 }
 
 // State is read from the outcome timestamps rather than stored.
+//
+// Receipt ends it, not the payout. `completed_at` is written by the escrow claim, which runs
+// when the refund window closes — days after the buyer has the goods in their hands and has
+// said so. Reading only that column left a delivered, confirmed sale sitting under "đang xử
+// lý" for the whole of that window, for both parties: nothing was being processed, and
+// neither of them had anything left to do.
+//
+// The column is untouched. `Settled` and `ClaimPayout` still read `completed_at`, because
+// whoever writes that column wins the escrow — that guard is about money and this is about
+// what the sale is called.
 func (o Order) State() string {
 	switch {
 	case o.CancelledAt != nil:
 		return StateCancelled
-	case o.CompletedAt != nil:
+	case o.CompletedAt != nil || o.ReceivedAt != nil:
 		return StateCompleted
 	case o.ConfirmedAt == nil:
 		return StateAwaitingConfirmation
