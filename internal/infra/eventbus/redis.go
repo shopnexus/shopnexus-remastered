@@ -84,17 +84,34 @@ func (r *Redis) Subscribe(topic, group string, h Handler, opts SubscribeOptions)
 }
 
 func (r *Redis) consume(stream, group, consumer string, h Handler, opts SubscribeOptions) {
-	if !r.ensureGroup(stream, group) {
+	// "$" on first create: a fresh group starts at live entries, not at whatever
+	// history the stream happens to hold.
+	if !r.ensureGroup(stream, group, "$") {
 		return
 	}
 	// "0" replays this consumer's pending (delivered, never acked) backlog
 	// first; once drained, ">" reads new entries.
 	readID := "0"
+	// Last entry handled, and so where to resume if the group is lost.
+	lastID := "$"
 	for r.ctx.Err() == nil {
 		entries, err := r.read(stream, group, consumer, readID, opts)
 		if err != nil {
 			if r.ctx.Err() != nil {
 				return
+			}
+			// The group (or the whole stream) is gone: Redis restarted without
+			// persistence, or the key was deleted. Recreate it at the last entry
+			// handled — otherwise the loop logs NOGROUP forever while publishers
+			// keep filling a stream nobody reads.
+			if isNoGroup(err) {
+				r.logger.WarnContext(r.ctx, "eventbus: group missing, recreating",
+					"stream", stream, "group", group, "from", lastID)
+				if !r.ensureGroup(stream, group, lastID) {
+					return
+				}
+				readID = ">" // a new group has no pending list for this consumer
+				continue
 			}
 			// A nil reply just means the block elapsed with nothing to read.
 			// errors.Is, not rueidis.IsRedisNil: read wraps the cause, and
@@ -112,13 +129,16 @@ func (r *Redis) consume(stream, group, consumer string, h Handler, opts Subscrib
 		if readID != ">" {
 			readID = entries[len(entries)-1].ID // advance the backlog cursor
 		}
-		r.deliver(stream, group, entries, h)
+		if r.deliver(stream, group, entries, h) {
+			lastID = entries[len(entries)-1].ID
+		}
 	}
 }
 
-// deliver hands a batch to h and acks on success. No ack on error: entries
-// stay pending and are replayed on restart.
-func (r *Redis) deliver(stream, group string, entries []rueidis.XRangeEntry, h Handler) {
+// deliver hands a batch to h and acks on success, reporting whether the batch
+// is done with. No ack on error: entries stay pending and are replayed on
+// restart, and the caller keeps its resume cursor behind them.
+func (r *Redis) deliver(stream, group string, entries []rueidis.XRangeEntry, h Handler) bool {
 	payloads := make([][]byte, 0, len(entries))
 	ids := make([]string, 0, len(entries))
 	for _, e := range entries {
@@ -128,21 +148,22 @@ func (r *Redis) deliver(stream, group string, entries []rueidis.XRangeEntry, h H
 		}
 	}
 	if len(payloads) == 0 {
-		return
+		return true
 	}
 	if err := h(context.Background(), payloads); err != nil {
 		r.logger.ErrorContext(r.ctx, "eventbus: handler failed",
 			"stream", stream, "group", group, "batch", len(payloads), "err", err)
-		return
+		return false
 	}
 	r.ack(stream, group, ids)
+	return true
 }
 
-// ensureGroup creates the consumer group (and stream) if missing, retrying on
-// transient errors until the transport closes.
-func (r *Redis) ensureGroup(stream, group string) bool {
+// ensureGroup creates the consumer group (and stream) if missing, starting it at
+// id, and retries transient errors until the transport closes.
+func (r *Redis) ensureGroup(stream, group, id string) bool {
 	for r.ctx.Err() == nil {
-		cmd := r.client.B().XgroupCreate().Key(stream).Group(group).Id("$").Mkstream().Build()
+		cmd := r.client.B().XgroupCreate().Key(stream).Group(group).Id(id).Mkstream().Build()
 		err := r.client.Do(r.ctx, cmd).Error()
 		if err == nil || strings.Contains(err.Error(), "BUSYGROUP") {
 			return true
@@ -151,6 +172,13 @@ func (r *Redis) ensureGroup(stream, group string) bool {
 		time.Sleep(redisRetryBackoff)
 	}
 	return false
+}
+
+// isNoGroup reports the NOGROUP reply: the stream key or the consumer group no
+// longer exists. Matched on the message like BUSYGROUP above — rueidis models
+// both as a plain RedisError.
+func isNoGroup(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "NOGROUP")
 }
 
 func (r *Redis) read(stream, group, consumer, readID string, opts SubscribeOptions) ([]rueidis.XRangeEntry, error) {

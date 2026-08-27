@@ -168,3 +168,60 @@ func TestRedisGroupsFanOutConsumersCompete(t *testing.T) {
 		return counts["g1-a"]+counts["g1-b"] == n && counts["g2"] == n
 	})
 }
+
+// Redis without persistence loses every stream and group on restart, and the
+// gateway's consumers used to spin on NOGROUP forever afterwards. Deleting the
+// key is the same loss, so the consumer must rebuild its group and keep going.
+func TestRedisRecreatesLostGroup(t *testing.T) {
+	t.Parallel()
+	c, topic := newTestRedis(t)
+
+	var mu sync.Mutex
+	var got []userEvent
+	eventbus.Subscribe(c, topic, "g1", func(_ context.Context, p userEvent) error {
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, p)
+		return nil
+	})
+	time.Sleep(300 * time.Millisecond)
+
+	first := userEvent{ID: 1, Name: "before"}
+	if err := eventbus.Publish(context.Background(), c, topic, first); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(got) == 1
+	})
+
+	addr, password := redisEnv(t)
+	admin, err := rueidis.NewClient(rueidis.ClientOption{
+		InitAddress: []string{addr},
+		Password:    password,
+		SelectDB:    testRedisDB,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	if delErr := admin.Do(context.Background(), admin.B().Del().Key("bus:"+topic.Name).Build()).Error(); delErr != nil {
+		t.Fatal(delErr)
+	}
+
+	second := userEvent{ID: 2, Name: "after"}
+	if err := eventbus.Publish(context.Background(), c, topic, second); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(got) == 2
+	})
+	mu.Lock()
+	defer mu.Unlock()
+	if got[1] != second {
+		t.Fatalf("got %+v, want %+v", got[1], second)
+	}
+}
