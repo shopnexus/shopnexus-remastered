@@ -135,9 +135,13 @@ func scanVariant(row pgx.Row) (*domain.Variant, error) {
 	return &v, nil
 }
 
+// GetListing serves a soft-deleted listing, which is the whole reason the delete is soft: a cart
+// line, an order item and a ticket's target all hold the id across a schema boundary with no
+// foreign key to follow, so a row that stops resolving takes those pages down with it. What may
+// be *done* with one is the caller's rule — catalogapi.ListingDetail.ForSale reads deleted_at for
+// every path that spends money, and SaveListing's WHERE refuses to write one.
 func (r *Repo) GetListing(ctx context.Context, id int64) (*domain.Listing, error) {
-	return loadListing(ctx, r.pool, `WHERE id = @id AND deleted_at IS NULL`,
-		pgx.NamedArgs{"id": id})
+	return loadListing(ctx, r.pool, `WHERE id = @id`, pgx.NamedArgs{"id": id})
 }
 
 // GetListingForSeller makes ownership part of the lookup, so another seller's listing is a

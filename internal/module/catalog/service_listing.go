@@ -63,11 +63,29 @@ func (s *Service) GetListing(ctx context.Context, req catalogapi.GetListingReque
 	// A listing that was never public is the seller's own draft. Hidden and soft-deleted stay
 	// readable, because a cart or an order that names one still has to render.
 	privileged := l.SellerID == req.ViewerID.Int64()
-	if !privileged && (l.Status == domain.StatusDraft || l.Status == domain.StatusPending) {
-		if err := s.requireModerator(ctx, req.ViewerID); err != nil {
+	// Two things are not a stranger's to read, and staff read both. Escalating on the status
+	// alone left the second one out: a *live* listing holding an edit is the other half of the
+	// moderation queue, and the moderator reading it was answered `pending_edit: null` — so the
+	// console showed them nothing to compare and refused the approve button, for every held edit
+	// on the platform.
+	unlisted := l.Status == domain.StatusDraft || l.Status == domain.StatusPending
+	if !privileged && (unlisted || l.PendingEdit != nil) {
+		// Asked only when there is something behind the answer. A role lookup on every read of
+		// every live listing is a cross-module call per product page view whose result would be
+		// discarded, and an anonymous caller has no role to read at all.
+		staff := false
+		if req.ViewerID.Int64() != 0 {
+			var err error
+			if staff, err = s.isStaff(ctx, req.ViewerID); err != nil {
+				return catalogapi.ListingDetail{}, err
+			}
+		}
+		switch {
+		case staff:
+			privileged = true
+		case unlisted:
 			return catalogapi.ListingDetail{}, domain.ErrListingNotFound
 		}
-		privileged = true
 	}
 	return s.detailFor(ctx, l, req.ViewerID.Int64(), privileged)
 }
@@ -208,6 +226,7 @@ func (s *Service) detailFor(ctx context.Context, l *domain.Listing, viewerID int
 	out := catalogapi.ListingDetail{
 		Location:       toAPILocation(l.Location, nil),
 		ID:             id.Of[id.Listing](l.ID),
+		Version:        l.Version,
 		Slug:           catalogapi.PublicSlug(id.Of[id.Listing](l.ID), l.Slug),
 		Name:           l.Name,
 		Description:    l.Description,

@@ -589,6 +589,11 @@ func (s *Service) AddFavorite(ctx context.Context, req catalogapi.FavoriteReques
 			return domain.ErrListingNotFound
 		}
 	}
+	// Same rule, for the listing that is readable only so an existing cart line renders: saving
+	// a new one is not something the reader can act on later.
+	if l.DeletedAt != nil {
+		return domain.ErrListingNotFound
+	}
 	if err := s.repo.AddFavorite(ctx, req.ActorID.Int64(), req.ID.Int64()); err != nil {
 		return fmt.Errorf("add favorite: %w", err)
 	}

@@ -143,7 +143,11 @@ type PendingEdit struct {
 // ListingDetail is the product page and the answer to every write: a variant has no read of
 // its own, so editing one comes back as the refreshed listing.
 type ListingDetail struct {
-	ID                id.ID[id.Listing]         `json:"id"`
+	ID id.ID[id.Listing] `json:"id"`
+	// Version is what the row was at when this was read. A moderator sends it back with their
+	// verdict, so a listing edited between the reading and the decision is answered 409 rather
+	// than approved on the strength of content nobody looked at.
+	Version           int64                     `json:"version"`
 	Slug              string                    `json:"slug"`
 	Name              string                    `json:"name"`
 	Description       string                    `json:"description"`

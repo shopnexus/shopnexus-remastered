@@ -265,13 +265,20 @@ func (l *Listing) clearTakedown() {
 // Approve clears whatever was awaiting a decision: a first publication, or an edit held
 // against a live listing. The note is the moderator's, kept in the trail.
 func (l *Listing) Approve(note string) error {
+	if l.DeletedAt != nil {
+		return ErrInvalidTransition
+	}
 	switch {
 	case l.Status == StatusPending:
-		l.Status = StatusActive
-		// A queued listing writes its edits through, so there is never one held here to lose.
+		// Nothing can be held here: SubmitEdit writes an edit through unless the listing is
+		// live, and Publish applies whatever was parked before the row enters the queue. The
+		// check stays as the assertion that both still hold, and it comes *before* the
+		// transition — a refusal that had already moved the status left the caller holding an
+		// entity nobody decided to activate.
 		if l.PendingEdit != nil {
 			return ErrNotAwaitingModeration
 		}
+		l.Status = StatusActive
 	case l.Status == StatusActive && l.PendingEdit != nil:
 		if err := l.ApplyPendingEdit(); err != nil {
 			return err
@@ -286,7 +293,10 @@ func (l *Listing) Approve(note string) error {
 // Takedown is the moderator's verdict. It also drops a held edit: whatever was under review
 // is not going live.
 func (l *Listing) Takedown(reason string, notifySeller bool) error {
-	if l.Status != StatusPending && l.Status != StatusActive {
+	// A soft-deleted listing keeps the status it had, so a moderator reading one would find an
+	// `active` row to act on. It is already off the marketplace; SaveListing would refuse the
+	// write anyway, and a version conflict is not what happened.
+	if l.DeletedAt != nil || (l.Status != StatusPending && l.Status != StatusActive) {
 		return ErrInvalidTransition
 	}
 	l.Status = StatusHidden
@@ -306,9 +316,28 @@ func (l *Listing) Takedown(reason string, notifySeller bool) error {
 // Hide is the seller taking their own listing down. It reads the same in the row as a
 // takedown — who did it is in the trail — and that is safe only because publishing from
 // hidden re-enters moderation.
+// An edit is held only while the listing is live: that is the whole reason to hold one, because
+// buyers are looking at an approved version that has to stay put. So every exit from `active`
+// settles it — Approve applies it, Takedown drops it as part of the verdict, and this writes it
+// through, because a seller taking their own listing down did not ask to lose the change they
+// already saved and there is no longer an approved version to protect.
+//
+// Two bugs lived in the gap where this did not hold. A hidden listing carrying a held edit came
+// back through Publish as `pending` with one still attached — the pair Approve refuses, so the
+// row sat in the moderation queue with a takedown as its only exit. And an edit made while it
+// was hidden was written straight through (SubmitEdit only parks for a live listing) while the
+// older held one stayed put, so whichever code applied it later overwrote the newer change with
+// the older one.
 func (l *Listing) Hide() error {
 	if l.Status != StatusActive {
 		return ErrInvalidTransition
+	}
+	if edit := l.PendingEdit; edit != nil {
+		fields := edit.Fields()
+		if err := l.ApplyPendingEdit(); err != nil {
+			return err
+		}
+		record(l, Edited, EditSubmission{Fields: fields})
 	}
 	l.Status = StatusHidden
 	record(l, Hidden, StatusChange{Status: l.Status})
@@ -327,6 +356,11 @@ func (l *Listing) SubmitEdit(edit PendingEdit) error {
 		if err := l.apply(edit); err != nil {
 			return err
 		}
+		// This edit supersedes anything held, so nothing may be left behind to be applied on
+		// top of it later. Hide is what keeps a held edit off a listing that is not live, so
+		// there should be none here — but rows that predate that fix are in the database with
+		// one, and this is the write that lets an ordinary edit heal them.
+		l.PendingEdit = nil
 		record(l, Edited, EditSubmission{Fields: edit.Fields()})
 		return nil
 	}

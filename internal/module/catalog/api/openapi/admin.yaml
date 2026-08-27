@@ -140,7 +140,7 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/ListingID' } }
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/ModerationNoteRequest' }
@@ -158,7 +158,7 @@ paths:
         '403': { description: 'Moderator role required', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
         '400': { $ref: '#/components/responses/BadRequest' }
-        '409': { description: 'Not awaiting moderation', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'Nothing awaiting a decision, or the listing changed since it was read', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '422': { description: 'The approved edit names an image that no longer exists', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /admin/listings/{id}/takedown:
@@ -197,8 +197,20 @@ components:
   schemas:
     ModerationNoteRequest:
       type: object
+      description: >
+        A verdict, on the version the moderator read. A queued listing is still editable by its
+        seller and that edit is written straight through — there is no approved version to
+        protect yet — so a verdict that named no version would approve whatever the row happened
+        to say when the button landed rather than what was on the screen.
       properties:
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          example: 7
+          description: ListingDetail.version as it was read. A 409 means it moved; read it again.
         note: { type: string, maxLength: 2000 }
+      required: [version]
 
     TakedownRequest:
       type: object

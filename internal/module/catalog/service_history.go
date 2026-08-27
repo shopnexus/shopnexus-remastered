@@ -24,12 +24,15 @@ const (
 // see what they changed and what was decided about it; a moderator reads it to see how a
 // listing got where it is. They are not answered the same rows — see redact.
 //
-// A deleted listing is not readable here, because it is not readable anywhere: GetListing is
-// the only loader and it excludes one.
+// A deleted listing has no history to answer. GetListing serves one — a cart line has to render
+// it — so the refusal is stated here rather than inherited from the loader.
 func (s *Service) ListListingHistory(ctx context.Context, req catalogapi.ListListingHistoryRequest) (catalogapi.ListingHistoryPage, error) {
 	l, err := s.repo.GetListing(ctx, req.ID.Int64())
 	if err != nil {
 		return catalogapi.ListingHistoryPage{}, fmt.Errorf("get listing: %w", err)
+	}
+	if l.DeletedAt != nil {
+		return catalogapi.ListingHistoryPage{}, domain.ErrListingNotFound
 	}
 	staff := false
 	if l.SellerID != req.ActorID.Int64() {

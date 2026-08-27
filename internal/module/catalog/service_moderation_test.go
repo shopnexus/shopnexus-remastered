@@ -2,6 +2,7 @@ package catalog_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	catalogapi "shopnexus/internal/module/catalog/api"
@@ -27,10 +28,7 @@ func TestAdminListListings_BothHalvesOfTheQueue(t *testing.T) {
 	mod := newHarnessModerator(seller)
 	ctx := context.Background()
 
-	first := seedListing(t, seller)
-	if _, err := seller.svc.PublishListing(ctx, catalogapi.PublishListingRequest{ActorID: actor, ID: first.ID}); err != nil {
-		t.Fatalf("PublishListing: %v", err)
-	}
+	first := queue(t, seller, seedListing(t, seller))
 
 	page, err := mod.svc.AdminListListings(ctx, catalogapi.AdminListListingsRequest{
 		ActorID: actor, Page: 1, Limit: 20,
@@ -48,11 +46,7 @@ func TestAdminListListings_BothHalvesOfTheQueue(t *testing.T) {
 
 	// Approve it, then edit it: it comes back into the queue holding an edit while staying
 	// live.
-	if _, err := mod.svc.AdminApproveListing(ctx, catalogapi.ApproveListingRequest{
-		ActorID: actor, ID: first.ID,
-	}); err != nil {
-		t.Fatalf("AdminApproveListing: %v", err)
-	}
+	approve(t, mod, actor, first)
 	renamed := "Renamed"
 	if _, err := seller.svc.UpdateListing(ctx, catalogapi.UpdateListingRequest{
 		ActorID: actor, ID: first.ID, Name: &renamed,
@@ -78,18 +72,12 @@ func TestAdminApproveListing(t *testing.T) {
 	listing := seedListing(t, seller)
 
 	if s := status(t, mustErr(mod.svc.AdminApproveListing(ctx, catalogapi.ApproveListingRequest{
-		ActorID: actor, ID: listing.ID,
+		ActorID: actor, ID: listing.ID, Version: listing.Version,
 	}))); s != 409 {
 		t.Fatalf("status = %d, want 409 for a draft", s)
 	}
 
-	if _, err := seller.svc.PublishListing(ctx, catalogapi.PublishListingRequest{ActorID: actor, ID: listing.ID}); err != nil {
-		t.Fatalf("PublishListing: %v", err)
-	}
-	got, err := mod.svc.AdminApproveListing(ctx, catalogapi.ApproveListingRequest{ActorID: actor, ID: listing.ID})
-	if err != nil {
-		t.Fatalf("AdminApproveListing: %v", err)
-	}
+	got := approve(t, mod, actor, queue(t, seller, listing))
 	if got.Status != string(domain.StatusActive) {
 		t.Fatalf("status = %q, want active", got.Status)
 	}
@@ -100,10 +88,11 @@ func TestAdminApproveListing(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("UpdateListing: %v", err)
 	}
-	got, err = mod.svc.AdminApproveListing(ctx, catalogapi.ApproveListingRequest{ActorID: actor, ID: listing.ID})
+	held, err := seller.svc.GetListing(ctx, catalogapi.GetListingRequest{ID: listing.ID, ViewerID: actor})
 	if err != nil {
-		t.Fatalf("AdminApproveListing (edit): %v", err)
+		t.Fatalf("GetListing: %v", err)
 	}
+	got = approve(t, mod, actor, held)
 	if got.Name != renamed || got.PendingEdit != nil {
 		t.Fatalf("listing = %+v, want the edit applied and cleared", got)
 	}
@@ -111,17 +100,46 @@ func TestAdminApproveListing(t *testing.T) {
 
 // A takedown hides the listing with a reason, drops any held edit, and the seller cannot
 // undo it: publishing again re-enters the queue.
+// The verdict is on a version, so a listing the seller changed while it sat in the queue is
+// refused rather than approved. Without this a seller could keep a queued listing clean while a
+// moderator reads it and swap it for anything a moment before the decision landed — the edit is
+// written straight through while it is queued, so nothing else stood in the way.
+func TestAdminApproveListing_RefusesAVerdictOnAStaleRead(t *testing.T) {
+	seller := newHarnessWith("user", true)
+	mod := newHarnessModerator(seller)
+	ctx := context.Background()
+	read := queue(t, seller, seedListing(t, seller))
+
+	swapped := "Something else entirely"
+	if _, err := seller.svc.UpdateListing(ctx, catalogapi.UpdateListingRequest{
+		ActorID: actor, ID: read.ID, Name: &swapped,
+	}); err != nil {
+		t.Fatalf("UpdateListing: %v", err)
+	}
+
+	_, err := mod.svc.AdminApproveListing(ctx, catalogapi.ApproveListingRequest{
+		ActorID: actor, ID: read.ID, Version: read.Version,
+	})
+	if !errors.Is(err, domain.ErrVersionConflict) {
+		t.Fatalf("AdminApproveListing = %v, want ErrVersionConflict", err)
+	}
+	after, err := seller.svc.GetListing(ctx, catalogapi.GetListingRequest{ID: read.ID, ViewerID: actor})
+	if err != nil {
+		t.Fatalf("GetListing: %v", err)
+	}
+	if after.Status != string(domain.StatusPending) {
+		t.Fatalf("status = %q, want it still queued", after.Status)
+	}
+	// Reading it again is all the moderator has to do.
+	approve(t, mod, actor, after)
+}
+
 func TestAdminTakedownListing(t *testing.T) {
 	seller := newHarnessWith("user", true)
 	mod := newHarnessModerator(seller)
 	ctx := context.Background()
 	listing := seedListing(t, seller)
-	if _, err := seller.svc.PublishListing(ctx, catalogapi.PublishListingRequest{ActorID: actor, ID: listing.ID}); err != nil {
-		t.Fatalf("PublishListing: %v", err)
-	}
-	if _, err := mod.svc.AdminApproveListing(ctx, catalogapi.ApproveListingRequest{ActorID: actor, ID: listing.ID}); err != nil {
-		t.Fatalf("AdminApproveListing: %v", err)
-	}
+	approve(t, mod, actor, queue(t, seller, listing))
 
 	got, err := mod.svc.AdminTakedownListing(ctx, catalogapi.TakedownListingRequest{
 		ActorID: actor, ID: listing.ID, Reason: "counterfeit",

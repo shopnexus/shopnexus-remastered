@@ -224,9 +224,17 @@ type AdminListListingsRequest struct {
 	Limit    int               `json:"-" validate:"required,min=1,max=100"`
 }
 
+// ApproveListingRequest carries the version the moderator actually read.
+//
+// A seller may edit a listing that is queued and the edit is written straight through — there
+// is no approved version to protect yet — so without this the content approved is whatever is
+// in the row at the moment the button lands, not what was on the screen. That gap is worth a
+// field: a listing kept clean while it is read and swapped for spam a second before the verdict
+// would go live carrying a moderator's approval.
 type ApproveListingRequest struct {
 	ActorID id.ID[id.Account] `json:"-" validate:"required"`
 	ID      id.ID[id.Listing] `json:"-" validate:"required"`
+	Version int64             `json:"version" validate:"required,gt=0"`
 	Note    string            `json:"note" validate:"max=2000"`
 }
 

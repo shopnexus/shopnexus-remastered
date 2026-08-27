@@ -698,8 +698,9 @@ func (h *Catalog) AdminApproveListing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req catalogapi.ApproveListingRequest
-	// The note is optional, so the body may be absent entirely.
-	if failed(w, h.log, decodeOptionalBody(r, &req)) {
+	// The body carries the version the moderator read, so it is required — the note beside it
+	// is still optional.
+	if failed(w, h.log, decodeBody(r, &req)) {
 		return
 	}
 	req.ActorID, req.ID = uid, listingID

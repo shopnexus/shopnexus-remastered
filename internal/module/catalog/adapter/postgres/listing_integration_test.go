@@ -399,3 +399,35 @@ func TestRepo_FeaturedFlagMovesEitherDirection(t *testing.T) {
 		}
 	}
 }
+
+// A soft-deleted listing still loads. That is the entire point of the delete being soft: order
+// items, cart lines and a ticket's target hold the id from another schema with no foreign key, so
+// a row that stopped resolving would take every page rendering one down with it. Whether it can
+// be *bought* is `deleted_at`'s job on the way out, not the loader's.
+func TestRepo_GetListingServesASoftDeletedRow(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	category := createCategory(t, repo, unique("cat-"), nil)
+	createTag(t, repo, "handmade", nil)
+	created := newListingFor(t, repo, category.ID, unique("Listing "))
+
+	if err := repo.SoftDeleteListing(ctx, created.ID, testSeller, testSeller); err != nil {
+		t.Fatalf("SoftDeleteListing: %v", err)
+	}
+
+	got, err := repo.GetListing(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetListing after a soft delete: %v", err)
+	}
+	if got.DeletedAt == nil {
+		t.Error("the row came back without its deleted_at, so nothing downstream can refuse it")
+	}
+	if len(got.Variants) != 1 {
+		t.Errorf("variants = %d, want the children to load too", len(got.Variants))
+	}
+	// The seller-scoped loader is a write path — every caller of it is about to change the
+	// row — so it keeps refusing one that is gone.
+	if _, err := repo.GetListingForSeller(ctx, created.ID, testSeller); !errors.Is(err, domain.ErrListingNotFound) {
+		t.Errorf("GetListingForSeller on a deleted listing = %v, want ErrListingNotFound", err)
+	}
+}

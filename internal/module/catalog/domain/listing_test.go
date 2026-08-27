@@ -3,6 +3,7 @@ package domain_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"shopnexus/internal/module/catalog/domain"
 )
@@ -312,6 +313,89 @@ func TestSubmitEdit_PendingWritesThrough(t *testing.T) {
 	}
 }
 
+// An edit is held only while the listing is live, so hiding one writes the held edit through.
+// Two bugs lived in the gap: the listing came back through Publish as `pending` with an edit
+// still held, which is the pair Approve refuses and which left the row in the moderation queue
+// for ever; and a newer edit made while it was hidden was overwritten by the older held one.
+func TestHide_WritesAHeldEditThrough(t *testing.T) {
+	l := newListing(t)
+	if err := l.Publish(); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if err := l.Approve(""); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	held := "Edited while live"
+	if err := l.SubmitEdit(domain.PendingEdit{Name: &held}); err != nil {
+		t.Fatalf("SubmitEdit: %v", err)
+	}
+	if l.PendingEdit == nil || l.Name == held {
+		t.Fatalf("listing = %+v, want the edit held against the live version", l)
+	}
+	if err := l.Hide(); err != nil {
+		t.Fatalf("Hide: %v", err)
+	}
+	if l.Name != held || l.PendingEdit != nil {
+		t.Fatalf("listing = %+v, want the held edit written through on the way down", l)
+	}
+
+	// The newer edit wins, and the row goes back into the queue with nothing attached.
+	newer := "Edited while hidden"
+	if err := l.SubmitEdit(domain.PendingEdit{Name: &newer}); err != nil {
+		t.Fatalf("SubmitEdit: %v", err)
+	}
+	if err := l.Publish(); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if l.Name != newer || l.PendingEdit != nil {
+		t.Fatalf("listing = %+v, want the newest edit and nothing held", l)
+	}
+	if err := l.Approve(""); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	if l.Status != domain.StatusActive || l.Name != newer {
+		t.Fatalf("listing = %+v, want it live carrying the newest edit", l)
+	}
+}
+
+// A takedown is the other exit from live, and it drops the held edit rather than applying it:
+// whatever was under review is not going live on a moderator's verdict.
+func TestTakedown_DropsAHeldEdit(t *testing.T) {
+	l := newListing(t)
+	if err := l.Publish(); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if err := l.Approve(""); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	name := l.Name
+	if err := l.SubmitEdit(domain.PendingEdit{Name: new("edited while live")}); err != nil {
+		t.Fatalf("SubmitEdit: %v", err)
+	}
+	if err := l.Takedown("counterfeit", true); err != nil {
+		t.Fatalf("Takedown: %v", err)
+	}
+	if l.PendingEdit != nil || l.Name != name {
+		t.Fatalf("listing = %+v, want the held edit dropped and the row left as it was", l)
+	}
+}
+
+// A refusal must not leave the caller holding a status nobody decided on.
+func TestApprove_RefusingLeavesTheStatusAlone(t *testing.T) {
+	l := newListing(t)
+	if err := l.Publish(); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	edit := domain.PendingEdit{Name: new("held by hand")}
+	l.PendingEdit = &edit
+	if err := l.Approve(""); !errors.Is(err, domain.ErrNotAwaitingModeration) {
+		t.Fatalf("Approve = %v, want ErrNotAwaitingModeration", err)
+	}
+	if l.Status != domain.StatusPending {
+		t.Fatalf("status = %q, want it left pending", l.Status)
+	}
+}
+
 // A draft may be emptied: DELETE /variants only refuses the last variant of a listing that is
 // live or queued, so Publish is where "there has to be something to buy" is checked.
 func TestValidate_AnEmptyDraftIsStorable(t *testing.T) {
@@ -464,5 +548,36 @@ func TestValidate_RequiresExactlyOneFeatured(t *testing.T) {
 	l.Variants[0].IsFeatured = true
 	if err := l.Validate(); err != nil {
 		t.Fatalf("one featured = %v, want valid", err)
+	}
+}
+
+// A soft-deleted listing keeps the status it had, so nothing about `active` tells a moderator it
+// is gone. Both verdicts have to read the delete themselves, or a takedown lands on a row the
+// write would then refuse for the wrong reason.
+func TestModeration_RefusesADeletedListing(t *testing.T) {
+	deleted := func(t *testing.T) *domain.Listing {
+		t.Helper()
+		l := newListing(t)
+		if err := l.Publish(); err != nil {
+			t.Fatalf("Publish: %v", err)
+		}
+		if err := l.Approve(""); err != nil {
+			t.Fatalf("Approve: %v", err)
+		}
+		l.DeletedAt = new(time.Now())
+		return l
+	}
+
+	if err := deleted(t).Takedown("counterfeit", true); !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Errorf("Takedown on a deleted listing = %v, want ErrInvalidTransition", err)
+	}
+
+	l := deleted(t)
+	name := "Áo thun mới"
+	if err := l.SubmitEdit(domain.PendingEdit{Name: &name}); err != nil {
+		t.Fatalf("SubmitEdit: %v", err)
+	}
+	if err := l.Approve("looks fine"); !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Errorf("Approve on a deleted listing = %v, want ErrInvalidTransition", err)
 	}
 }

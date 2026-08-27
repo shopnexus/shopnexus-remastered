@@ -154,11 +154,9 @@ func TestListListingHistory_ModeratorsWordsStayWithStaff(t *testing.T) {
 	ctx := context.Background()
 	listing := seedListing(t, seller)
 
-	if _, err := seller.svc.PublishListing(ctx, catalogapi.PublishListingRequest{ActorID: actor, ID: listing.ID}); err != nil {
-		t.Fatalf("PublishListing: %v", err)
-	}
+	queued := queue(t, seller, listing)
 	if _, err := mod.svc.AdminApproveListing(ctx, catalogapi.ApproveListingRequest{
-		ActorID: stranger, ID: listing.ID, Note: "looks fine to me",
+		ActorID: stranger, ID: listing.ID, Version: queued.Version, Note: "looks fine to me",
 	}); err != nil {
 		t.Fatalf("AdminApproveListing: %v", err)
 	}

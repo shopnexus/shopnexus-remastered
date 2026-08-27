@@ -1778,9 +1778,17 @@ components:
                     items:
                         $ref: '#/components/schemas/Variant'
                     type: array
+                version:
+                    description: |
+                        What the row was at when this was read. A moderator sends it back with their verdict, so a listing edited between the reading and the decision is answered 409 rather than approved on content nobody looked at.
+                    example: 7
+                    format: int64
+                    minimum: 1
+                    type: integer
             required:
                 - location
                 - id
+                - version
                 - slug
                 - name
                 - description
@@ -2311,10 +2319,20 @@ components:
                 - system
             type: string
         ModerationNoteRequest:
+            description: |
+                A verdict, on the version the moderator read. A queued listing is still editable by its seller and that edit is written straight through — there is no approved version to protect yet — so a verdict that named no version would approve whatever the row happened to say when the button landed rather than what was on the screen.
             properties:
                 note:
                     maxLength: 2000
                     type: string
+                version:
+                    description: ListingDetail.version as it was read. A 409 means it moved; read it again.
+                    example: 7
+                    format: int64
+                    minimum: 1
+                    type: integer
+            required:
+                - version
             type: object
         MoneyByCurrency:
             description: One currency's worth of a total. Minor units, like every amount in this API.
@@ -5978,7 +5996,7 @@ paths:
                     application/json:
                         schema:
                             $ref: '#/components/schemas/ModerationNoteRequest'
-                required: false
+                required: true
             responses:
                 "200":
                     content:
@@ -6008,7 +6026,7 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Error'
-                    description: Not awaiting moderation
+                    description: Nothing awaiting a decision, or the listing changed since it was read
                 "422":
                     content:
                         application/json:

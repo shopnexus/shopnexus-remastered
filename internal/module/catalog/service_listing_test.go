@@ -148,14 +148,7 @@ func TestGetListing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateListing: %v", err)
 	}
-	if _, err := h.svc.PublishListing(ctx, catalogapi.PublishListingRequest{ActorID: actor, ID: created.ID}); err != nil {
-		t.Fatalf("PublishListing: %v", err)
-	}
-	if _, err := mod.svc.AdminApproveListing(ctx, catalogapi.ApproveListingRequest{
-		ActorID: actor, ID: created.ID,
-	}); err != nil {
-		t.Fatalf("AdminApproveListing: %v", err)
-	}
+	approve(t, mod, actor, queue(t, h, created))
 
 	got, err := h.svc.GetListing(ctx, catalogapi.GetListingRequest{ID: created.ID})
 	if err != nil {
@@ -262,14 +255,7 @@ func TestUpdateListing_LiveEditIsHeld(t *testing.T) {
 	ctx := context.Background()
 	listing := seedListing(t, h)
 
-	if _, err := h.svc.PublishListing(ctx, catalogapi.PublishListingRequest{ActorID: actor, ID: listing.ID}); err != nil {
-		t.Fatalf("PublishListing: %v", err)
-	}
-	if _, err := mod.svc.AdminApproveListing(ctx, catalogapi.ApproveListingRequest{
-		ActorID: actor, ID: listing.ID,
-	}); err != nil {
-		t.Fatalf("AdminApproveListing: %v", err)
-	}
+	approve(t, mod, actor, queue(t, h, listing))
 
 	renamed := "Áo thun Uniqlo cổ tròn xanh navy"
 	got, err := h.svc.UpdateListing(ctx, catalogapi.UpdateListingRequest{
@@ -339,14 +325,7 @@ func TestGetListing_PendingEditIsNotPublic(t *testing.T) {
 	mod := newHarnessModerator(h)
 	ctx := context.Background()
 	listing := seedListing(t, h)
-	if _, err := h.svc.PublishListing(ctx, catalogapi.PublishListingRequest{ActorID: actor, ID: listing.ID}); err != nil {
-		t.Fatalf("PublishListing: %v", err)
-	}
-	if _, err := mod.svc.AdminApproveListing(ctx, catalogapi.ApproveListingRequest{
-		ActorID: actor, ID: listing.ID,
-	}); err != nil {
-		t.Fatalf("AdminApproveListing: %v", err)
-	}
+	approve(t, mod, actor, queue(t, h, listing))
 	renamed := "Renamed"
 	if _, err := h.svc.UpdateListing(ctx, catalogapi.UpdateListingRequest{
 		ActorID: actor, ID: listing.ID, Name: &renamed,
@@ -369,6 +348,20 @@ func TestGetListing_PendingEditIsNotPublic(t *testing.T) {
 	}
 	if buyer.PendingEdit != nil {
 		t.Errorf("a buyer sees the edit under review: %+v", buyer.PendingEdit)
+	}
+
+	// Staff read it too, and this is the half that was missing. A live listing holding an edit
+	// is the other half of the moderation queue, and escalating to staff on the *status* alone
+	// never covered it: the console listed the row, then read it back with nothing held, so it
+	// had no diff to show and disabled the approve button on every held edit there was.
+	staff, err := mod.svc.GetListing(ctx, catalogapi.GetListingRequest{
+		ID: listing.ID, ViewerID: stranger,
+	})
+	if err != nil {
+		t.Fatalf("GetListing as staff: %v", err)
+	}
+	if staff.PendingEdit == nil {
+		t.Error("a moderator cannot see the edit they are being asked to decide on")
 	}
 }
 
@@ -403,14 +396,7 @@ func TestUpdateListing_HeldEditAttachmentsAreChecked(t *testing.T) {
 	mod := newHarnessModerator(h)
 	ctx := context.Background()
 	listing := seedListing(t, h)
-	if _, err := h.svc.PublishListing(ctx, catalogapi.PublishListingRequest{ActorID: actor, ID: listing.ID}); err != nil {
-		t.Fatalf("PublishListing: %v", err)
-	}
-	if _, err := mod.svc.AdminApproveListing(ctx, catalogapi.ApproveListingRequest{
-		ActorID: actor, ID: listing.ID,
-	}); err != nil {
-		t.Fatalf("AdminApproveListing: %v", err)
-	}
+	approve(t, mod, actor, queue(t, h, listing))
 
 	unknown := []id.ID[id.Resource]{id.Of[id.Resource](99)}
 	if got := status(t, mustErr(h.svc.UpdateListing(ctx, catalogapi.UpdateListingRequest{

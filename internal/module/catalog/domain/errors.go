@@ -69,9 +69,9 @@ var (
 	// reason as ErrSuggestionUnusable, and the caller's move is its own fallback list rather than
 	// a retry: a chat that opens without chips still opens.
 	ErrChatQuestionsUnusable = errx.NewError(http.StatusBadGateway, "chat_questions_unusable", "the model did not return usable questions")
-	ErrNoPickupAddress    = errx.NewError(http.StatusUnprocessableEntity, "no_pickup_address", "set a pickup address before publishing: it is where carriers collect and how buyers find you")
-	ErrNoVariant          = errx.NewError(http.StatusUnprocessableEntity, "no_variant", "a listing needs at least one variant with a price")
-	ErrTooManyTags        = errx.NewError(http.StatusUnprocessableEntity, "too_many_tags", "a listing carries at most 10 tags")
+	ErrNoPickupAddress       = errx.NewError(http.StatusUnprocessableEntity, "no_pickup_address", "set a pickup address before publishing: it is where carriers collect and how buyers find you")
+	ErrNoVariant             = errx.NewError(http.StatusUnprocessableEntity, "no_variant", "a listing needs at least one variant with a price")
+	ErrTooManyTags           = errx.NewError(http.StatusUnprocessableEntity, "too_many_tags", "a listing carries at most 10 tags")
 
 	// --- variants ---
 	ErrVariantNotFound = errx.NewError(http.StatusNotFound, "variant_not_found", "variant not found")

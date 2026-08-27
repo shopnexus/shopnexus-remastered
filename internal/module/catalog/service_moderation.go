@@ -99,6 +99,12 @@ func (s *Service) AdminApproveListing(ctx context.Context, req catalogapi.Approv
 	if err != nil {
 		return catalogapi.ListingDetail{}, fmt.Errorf("get listing: %w", err)
 	}
+	// The verdict is on what the moderator read. A queued listing is editable by its seller and
+	// the edit is written straight through, so approving whatever the row happens to say now
+	// would let content nobody reviewed go live carrying this approval.
+	if l.Version != req.Version {
+		return catalogapi.ListingDetail{}, domain.ErrVersionConflict
+	}
 	if err := l.Approve(req.Note); err != nil {
 		return catalogapi.ListingDetail{}, err
 	}

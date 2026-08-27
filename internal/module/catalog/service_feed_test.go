@@ -14,17 +14,40 @@ import (
 // publish takes a seeded listing all the way live, which is what the public feed shows.
 func publish(t *testing.T, h *harness, listing catalogapi.ListingDetail) {
 	t.Helper()
-	ctx := context.Background()
-	if _, err := h.svc.PublishListing(ctx, catalogapi.PublishListingRequest{
+	queued, err := h.svc.PublishListing(context.Background(), catalogapi.PublishListingRequest{
 		ActorID: actor, ID: listing.ID,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("PublishListing: %v", err)
 	}
-	if _, err := newHarnessModerator(h).svc.AdminApproveListing(ctx, catalogapi.ApproveListingRequest{
-		ActorID: actor, ID: listing.ID,
-	}); err != nil {
+	approve(t, newHarnessModerator(h), actor, queued)
+}
+
+// approve is a verdict on the version the moderator read. Threading it is the whole point of the
+// field: a listing edited between the reading and the decision is refused rather than approved on
+// content nobody looked at.
+func approve(t *testing.T, mod *harness, moderator id.ID[id.Account],
+	read catalogapi.ListingDetail) catalogapi.ListingDetail {
+	t.Helper()
+	got, err := mod.svc.AdminApproveListing(context.Background(), catalogapi.ApproveListingRequest{
+		ActorID: moderator, ID: read.ID, Version: read.Version,
+	})
+	if err != nil {
 		t.Fatalf("AdminApproveListing: %v", err)
 	}
+	return got
+}
+
+// queue publishes and answers the listing as the moderator now reads it.
+func queue(t *testing.T, h *harness, listing catalogapi.ListingDetail) catalogapi.ListingDetail {
+	t.Helper()
+	queued, err := h.svc.PublishListing(context.Background(), catalogapi.PublishListingRequest{
+		ActorID: actor, ID: listing.ID,
+	})
+	if err != nil {
+		t.Fatalf("PublishListing: %v", err)
+	}
+	return queued
 }
 
 // With no parameters the feed is the live listings only: a draft is the seller's business.
