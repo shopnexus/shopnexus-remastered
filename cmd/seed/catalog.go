@@ -211,6 +211,10 @@ func writeCategories(ctx context.Context, tx pgx.Tx, cats []category, now time.T
 // "uploaded_by_id" is NULL because nobody uploaded anything, which is exactly what the column's
 // NULL means. "completed_at" is set, because the object really is there: a resource without it
 // is a reservation, and dbx.Find drops those, so the gallery would silently come back empty.
+//
+// The key is deterministic, so a row the wipe kept because a listing outside the cast points at
+// it is adopted here rather than inserted twice -- DO UPDATE and not DO NOTHING, because every
+// key has to come back out of RETURNING or its gallery slot goes missing.
 func writeListingPhotos(ctx context.Context, tx pgx.Tx, photos []photo, now time.Time) (map[string]int64, error) {
 	out := make(map[string]int64, len(photos))
 	if len(photos) == 0 {
@@ -232,6 +236,8 @@ func writeListingPhotos(ctx context.Context, tx pgx.Tx, photos []photo, now time
 		                      metadata, created_at, completed_at)
 		SELECT NULL, 'local', r.key, r.mime, r.size, '{}', @now, @now
 		FROM unnest(@keys::text[], @sizes::bigint[], @mimes::text[]) AS r(key, size, mime)
+		ON CONFLICT (provider, object_key) DO UPDATE
+		  SET mime = EXCLUDED.mime, size = EXCLUDED.size, completed_at = EXCLUDED.completed_at
 		RETURNING id, object_key`
 	rows, err := tx.Query(ctx, q, pgx.NamedArgs{
 		"keys": keys, "sizes": sizes, "mimes": mimes, "now": now,

@@ -30,11 +30,17 @@ import (
 //
 // It is idempotent. Running it twice deletes nothing the second time, which is what makes
 // "wipe, seed, look at it, wipe, seed again" a workflow rather than a gamble.
+//
+// The audit trail goes with the records it describes. It carries no foreign key onto them — one
+// that cascaded would be a trail deleted by the first change it was written for — so every id has
+// to reach deleteAuditTrail by hand, and a module that starts auditing a table named nowhere below
+// will leave its rows behind, pointing at records that no longer exist.
 
 type wipeCounts struct {
 	accounts, listings, orders, offers, refunds int64
 	conversations, messages, reviews, tickets   int64
 	walletRows, sessions, resources, files      int64
+	auditRows, strandedRefs                     int64
 }
 
 func wipe(ctx context.Context, db *pools, storageRoot string) (wipeCounts, error) {
@@ -57,26 +63,35 @@ func wipe(ctx context.Context, db *pools, storageRoot string) (wipeCounts, error
 	if err != nil {
 		return c, err
 	}
+	// Same reason, the other direction: order's cart lines, drafts and offers name a listing
+	// across the schema boundary, and wipeCatalog runs after wipeOrder.
+	listingIDs, err := seedListingIDs(ctx, db.catalog, seedIDs)
+	if err != nil {
+		return c, err
+	}
 
-	if err := wipeFinance(ctx, db.finance, seedIDs, protectedIDs, &c); err != nil {
-		return c, fmt.Errorf("wipe finance: %w", err)
+	// The object keys of every resource row that went, module by module. The store is swept
+	// from this list rather than by removing the seeder's directory, because one of those rows
+	// can be shared with a listing this wipe is not about — see wipeCatalog.
+	var keys []string
+	for _, step := range []struct {
+		name string
+		run  func() ([]string, error)
+	}{
+		{"finance", func() ([]string, error) { return wipeFinance(ctx, db.finance, seedIDs, protectedIDs, &c) }},
+		{"trust", func() ([]string, error) { return wipeTrust(ctx, db.trust, seedIDs, orderIDs, &c) }},
+		{"chat", func() ([]string, error) { return wipeChat(ctx, db.chat, seedIDs, &c) }},
+		{"order", func() ([]string, error) { return wipeOrder(ctx, db.order, seedIDs, listingIDs, &c) }},
+		{"catalog", func() ([]string, error) { return wipeCatalog(ctx, db.catalog, seedIDs, deletableIDs, &c) }},
+		{"accounts", func() ([]string, error) { return wipeAccounts(ctx, db.account, deletableIDs, &c) }},
+	} {
+		got, err := step.run()
+		if err != nil {
+			return c, fmt.Errorf("wipe %s: %w", step.name, err)
+		}
+		keys = append(keys, got...)
 	}
-	if err := wipeTrust(ctx, db.trust, seedIDs, orderIDs, &c); err != nil {
-		return c, fmt.Errorf("wipe trust: %w", err)
-	}
-	if err := wipeChat(ctx, db.chat, seedIDs, &c); err != nil {
-		return c, fmt.Errorf("wipe chat: %w", err)
-	}
-	if err := wipeOrder(ctx, db.order, seedIDs, &c); err != nil {
-		return c, fmt.Errorf("wipe order: %w", err)
-	}
-	if err := wipeCatalog(ctx, db.catalog, seedIDs, &c); err != nil {
-		return c, fmt.Errorf("wipe catalog: %w", err)
-	}
-	if err := wipeAccounts(ctx, db.account, deletableIDs, &c); err != nil {
-		return c, fmt.Errorf("wipe accounts: %w", err)
-	}
-	files, err := wipeObjects(storageRoot)
+	files, err := wipeObjects(storageRoot, keys)
 	if err != nil {
 		return c, fmt.Errorf("wipe objects: %w", err)
 	}
@@ -92,20 +107,11 @@ func seedAccountIDs(ctx context.Context, pool *pgxpool.Pool) (all, protected, de
 		const q = `
 			SELECT id FROM account
 			WHERE username = ANY(@users::text[]) OR email = ANY(@emails::text[])`
-		rows, err := pool.Query(ctx, q, pgx.NamedArgs{"users": users, "emails": emails})
+		ids, err := collectIDs(ctx, pool, q, pgx.NamedArgs{"users": users, "emails": emails})
 		if err != nil {
 			return nil, fmt.Errorf("find seeded accounts: %w", err)
 		}
-		defer rows.Close()
-		var out []int64
-		for rows.Next() {
-			var id int64
-			if err := rows.Scan(&id); err != nil {
-				return nil, fmt.Errorf("scan account id: %w", err)
-			}
-			out = append(out, id)
-		}
-		return out, rows.Err()
+		return ids, nil
 	}
 
 	if protected, err = load(protectedUsers, protectedEmails); err != nil {
@@ -120,24 +126,41 @@ func seedAccountIDs(ctx context.Context, pool *pgxpool.Pool) (all, protected, de
 
 func seedOrderIDs(ctx context.Context, pool *pgxpool.Pool, seedIDs []int64) ([]int64, error) {
 	const q = `SELECT id FROM "order" WHERE buyer_id = ANY(@ids) OR seller_id = ANY(@ids)`
-	rows, err := pool.Query(ctx, q, pgx.NamedArgs{"ids": seedIDs})
+	ids, err := collectIDs(ctx, pool, q, pgx.NamedArgs{"ids": seedIDs})
 	if err != nil {
 		return nil, fmt.Errorf("find seeded orders: %w", err)
 	}
-	defer rows.Close()
-	var out []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("scan order id: %w", err)
-		}
-		out = append(out, id)
-	}
-	return out, rows.Err()
+	return ids, nil
 }
 
-func wipeFinance(ctx context.Context, pool *pgxpool.Pool, seedIDs, protectedIDs []int64, c *wipeCounts) error {
-	return dbx.InTx(ctx, pool, func(tx pgx.Tx) error {
+func seedListingIDs(ctx context.Context, pool *pgxpool.Pool, seedIDs []int64) ([]int64, error) {
+	const q = `SELECT id FROM listing WHERE account_id = ANY(@ids)`
+	ids, err := collectIDs(ctx, pool, q, pgx.NamedArgs{"ids": seedIDs})
+	if err != nil {
+		return nil, fmt.Errorf("find seeded listings: %w", err)
+	}
+	return ids, nil
+}
+
+// idQuerier is the pool or a transaction: a read taken before the wipe runs on the pool, a
+// DELETE ... RETURNING runs inside it.
+type idQuerier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+// collectIDs runs a statement whose one column is an id. The DELETE form is what tells the audit
+// trail which records went, since there is no cascade to follow and RowsAffected names no ids.
+func collectIDs(ctx context.Context, q idQuerier, stmt string, args pgx.NamedArgs) ([]int64, error) {
+	rows, err := q.Query(ctx, stmt, args)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[int64])
+}
+
+func wipeFinance(ctx context.Context, pool *pgxpool.Pool, seedIDs, protectedIDs []int64, c *wipeCounts) ([]string, error) {
+	var keys []string
+	err := dbx.InTx(ctx, pool, func(tx pgx.Tx) error {
 		args := pgx.NamedArgs{"ids": seedIDs, "protected": protectedIDs}
 		// Rail legs before the sessions they hang off, and the wallet ledger before the
 		// wallets it has a foreign key onto.
@@ -175,12 +198,15 @@ func wipeFinance(ctx context.Context, pool *pgxpool.Pool, seedIDs, protectedIDs 
 			return err
 		}
 		c.walletRows = tag.RowsAffected()
-		return deleteSeedResources(ctx, tx, c)
+		keys, err = deleteSeedResources(ctx, tx, deleteSeedResourcesStmt, c)
+		return err
 	})
+	return keys, err
 }
 
-func wipeTrust(ctx context.Context, pool *pgxpool.Pool, seedIDs, orderIDs []int64, c *wipeCounts) error {
-	return dbx.InTx(ctx, pool, func(tx pgx.Tx) error {
+func wipeTrust(ctx context.Context, pool *pgxpool.Pool, seedIDs, orderIDs []int64, c *wipeCounts) ([]string, error) {
+	var keys []string
+	err := dbx.InTx(ctx, pool, func(tx pgx.Tx) error {
 		args := pgx.NamedArgs{"ids": seedIDs, "orders": orderIDs}
 		if _, err := tx.Exec(ctx, `DELETE FROM review_vote WHERE account_id = ANY(@ids)`, args); err != nil {
 			return err
@@ -210,12 +236,15 @@ func wipeTrust(ctx context.Context, pool *pgxpool.Pool, seedIDs, orderIDs []int6
 			return err
 		}
 		c.tickets = tag.RowsAffected()
-		return deleteSeedResources(ctx, tx, c)
+		keys, err = deleteSeedResources(ctx, tx, deleteSeedResourcesStmt, c)
+		return err
 	})
+	return keys, err
 }
 
-func wipeChat(ctx context.Context, pool *pgxpool.Pool, seedIDs []int64, c *wipeCounts) error {
-	return dbx.InTx(ctx, pool, func(tx pgx.Tx) error {
+func wipeChat(ctx context.Context, pool *pgxpool.Pool, seedIDs []int64, c *wipeCounts) ([]string, error) {
+	var keys []string
+	err := dbx.InTx(ctx, pool, func(tx pgx.Tx) error {
 		args := pgx.NamedArgs{"ids": seedIDs}
 		// Count the messages before the cascade takes them, because a cascaded delete does
 		// not report what it removed.
@@ -233,13 +262,16 @@ func wipeChat(ctx context.Context, pool *pgxpool.Pool, seedIDs []int64, c *wipeC
 			return err
 		}
 		c.conversations = tag.RowsAffected()
-		return deleteSeedResources(ctx, tx, c)
+		keys, err = deleteSeedResources(ctx, tx, deleteSeedResourcesStmt, c)
+		return err
 	})
+	return keys, err
 }
 
-func wipeOrder(ctx context.Context, pool *pgxpool.Pool, seedIDs []int64, c *wipeCounts) error {
-	return dbx.InTx(ctx, pool, func(tx pgx.Tx) error {
-		args := pgx.NamedArgs{"ids": seedIDs}
+func wipeOrder(ctx context.Context, pool *pgxpool.Pool, seedIDs, listingIDs []int64, c *wipeCounts) ([]string, error) {
+	var keys []string
+	err := dbx.InTx(ctx, pool, func(tx pgx.Tx) error {
+		args := pgx.NamedArgs{"ids": seedIDs, "listings": listingIDs}
 		const scope = `SELECT id FROM "order" WHERE buyer_id = ANY(@ids) OR seller_id = ANY(@ids)`
 
 		tag, err := tx.Exec(ctx, `DELETE FROM refund WHERE order_id IN (`+scope+`)`, args)
@@ -254,11 +286,15 @@ func wipeOrder(ctx context.Context, pool *pgxpool.Pool, seedIDs []int64, c *wipe
 			`DELETE FROM item WHERE buyer_id = ANY(@ids) OR seller_id = ANY(@ids)`, args); err != nil {
 			return err
 		}
-		tag, err = tx.Exec(ctx, `DELETE FROM "order" WHERE buyer_id = ANY(@ids) OR seller_id = ANY(@ids)`, args)
+		orderIDs, err := collectIDs(ctx, tx,
+			`DELETE FROM "order" WHERE buyer_id = ANY(@ids) OR seller_id = ANY(@ids) RETURNING id`, args)
 		if err != nil {
 			return err
 		}
-		c.orders = tag.RowsAffected()
+		c.orders = int64(len(orderIDs))
+		if err := deleteAuditTrail(ctx, tx, "order", orderIDs, c); err != nil {
+			return err
+		}
 
 		for _, stmt := range []string{
 			`DELETE FROM draft_order WHERE buyer_id = ANY(@ids)`,
@@ -278,14 +314,36 @@ func wipeOrder(ctx context.Context, pool *pgxpool.Pool, seedIDs []int64, c *wipe
 			return err
 		}
 		c.offers = tag.RowsAffected()
-		return deleteSeedResources(ctx, tx, c)
+
+		// What is left names a listing this wipe is about to delete but belongs to nobody in the
+		// cast — a real shopper's cart line, or a draft on a seeded listing, since drafts are
+		// scoped by buyer above and offers by either party. The listing is in another schema, so
+		// no foreign key can take these along, and one left pointing at a row that no longer
+		// exists is a 404 on every page that renders it. Intent only: a draft or an offer that
+		// became an order is that order's provenance, and item's foreign key onto it holds.
+		for _, stmt := range []string{
+			`DELETE FROM cart_item WHERE listing_id = ANY(@listings)`,
+			`DELETE FROM draft_order WHERE listing_id = ANY(@listings)
+			   AND NOT EXISTS (SELECT 1 FROM item WHERE item.draft_id = draft_order.id)`,
+			`DELETE FROM offer WHERE listing_id = ANY(@listings)
+			   AND NOT EXISTS (SELECT 1 FROM item WHERE item.offer_id = offer.id)`,
+		} {
+			tag, err := tx.Exec(ctx, stmt, args)
+			if err != nil {
+				return err
+			}
+			c.strandedRefs += tag.RowsAffected()
+		}
+		keys, err = deleteSeedResources(ctx, tx, deleteSeedResourcesStmt, c)
+		return err
 	})
+	return keys, err
 }
 
-func wipeCatalog(ctx context.Context, pool *pgxpool.Pool, seedIDs []int64, c *wipeCounts) error {
+func wipeCatalog(ctx context.Context, pool *pgxpool.Pool, seedIDs, deletableIDs []int64, c *wipeCounts) ([]string, error) {
 	d, err := loadDataset()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	tags := map[string]bool{}
 	for _, l := range d.Listings {
@@ -298,20 +356,34 @@ func wipeCatalog(ctx context.Context, pool *pgxpool.Pool, seedIDs []int64, c *wi
 		tagIDs = append(tagIDs, t)
 	}
 
-	return dbx.InTx(ctx, pool, func(tx pgx.Tx) error {
-		args := pgx.NamedArgs{"ids": seedIDs, "tags": tagIDs}
-		if _, err := tx.Exec(ctx, `DELETE FROM favorite WHERE account_id = ANY(@ids)`, args); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `DELETE FROM account_interest WHERE account_id = ANY(@ids)`, args); err != nil {
-			return err
+	var keys []string
+	err = dbx.InTx(ctx, pool, func(tx pgx.Tx) error {
+		args := pgx.NamedArgs{"ids": seedIDs, "gone": deletableIDs, "tags": tagIDs}
+		// A favourite, a browse signal and an interest rail are none of them the seeder's --
+		// nothing in this command writes one -- so they go with the account that owns them and
+		// not with the cast. dev/bulkseed/sql/demo_interests.sql builds the protected buyer's
+		// rails out of real listings, and a wipe that took those would empty the personalised
+		// feed the demo exists to show. Whatever points at a listing deleted below cascades
+		// anyway, so scoping this to the accounts that are going loses nothing.
+		for _, stmt := range []string{
+			`DELETE FROM favorite WHERE account_id = ANY(@gone)`,
+			`DELETE FROM account_interest WHERE account_id = ANY(@gone)`,
+			`DELETE FROM listing_signal WHERE account_id = ANY(@gone)`,
+		} {
+			if _, err := tx.Exec(ctx, stmt, args); err != nil {
+				return err
+			}
 		}
 		// Variants, stock, tag links, embeddings and favourites all cascade off the listing.
-		tag, err := tx.Exec(ctx, `DELETE FROM listing WHERE account_id = ANY(@ids)`, args)
+		listingIDs, err := collectIDs(ctx, tx,
+			`DELETE FROM listing WHERE account_id = ANY(@ids) RETURNING id`, args)
 		if err != nil {
 			return err
 		}
-		c.listings = tag.RowsAffected()
+		c.listings = int64(len(listingIDs))
+		if err := deleteAuditTrail(ctx, tx, "listing", listingIDs, c); err != nil {
+			return err
+		}
 
 		// A tag this seeder introduced and nothing else uses. Anything a real listing still
 		// carries stays: the dictionary is shared, and emptying it because a demo was reset
@@ -322,65 +394,124 @@ func wipeCatalog(ctx context.Context, pool *pgxpool.Pool, seedIDs []int64, c *wi
 			return err
 		}
 		// Categories are deliberately absent from this function. See the note at the top.
-		return deleteSeedResources(ctx, tx, c)
+		keys, err = deleteSeedResources(ctx, tx, deleteUnsharedSeedResourcesStmt, c)
+		return err
 	})
+	return keys, err
 }
 
-// deleteSeedResources removes the rows pointing at objects this command wrote, in whichever
-// schema the transaction is aimed at. The key prefix is the marker: every object the seeder
-// creates lives under "seed/", and nothing else does.
-func deleteSeedResources(ctx context.Context, tx pgx.Tx, c *wipeCounts) error {
-	tag, err := tx.Exec(ctx,
-		`DELETE FROM resource WHERE provider = 'local' AND object_key LIKE 'seed/%'`)
+// The two statements deleteSeedResources runs, in whichever schema the transaction is aimed at.
+// The key prefix is the marker: every object the seeder creates lives under "seed/", and nothing
+// else does.
+//
+// Catalog takes the second one. A seeded photograph there is not the seeder's alone:
+// dev/bulkseed points a generated listing with no photograph of its own at whichever gallery was
+// already in the catalogue, so tens of thousands of listings this wipe is not about share these
+// rows. Deleting one leaves an attachment id resolving to nothing, which is an empty gallery on
+// a page that had one -- and no foreign key can say so, because an attachment is an id in an
+// array. The anti-join is over the surviving listings, so it runs after they are deleted.
+const (
+	seedResourceScope = `provider = 'local' AND object_key LIKE 'seed/%'`
+
+	deleteSeedResourcesStmt = `DELETE FROM resource WHERE ` + seedResourceScope +
+		` RETURNING object_key`
+
+	deleteUnsharedSeedResourcesStmt = `DELETE FROM resource WHERE ` + seedResourceScope +
+		` AND id NOT IN (SELECT unnest(attachments) FROM listing) RETURNING object_key`
+)
+
+// deleteSeedResources removes the rows pointing at objects this command wrote and answers the
+// keys of the objects that went, which is what the store is swept from: a row that stayed keeps
+// its file.
+func deleteSeedResources(ctx context.Context, tx pgx.Tx, stmt string, c *wipeCounts) ([]string, error) {
+	rows, err := tx.Query(ctx, stmt)
 	if err != nil {
-		return fmt.Errorf("delete seeded resources: %w", err)
+		return nil, fmt.Errorf("delete seeded resources: %w", err)
 	}
-	c.resources += tag.RowsAffected()
+	keys, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("delete seeded resources: %w", err)
+	}
+	c.resources += int64(len(keys))
+	return keys, nil
+}
+
+// deleteAuditTrail removes the trail of records this wipe just deleted, in whichever schema the
+// transaction is aimed at. One audit_log holds every audited table of its module side by side, so
+// the caller names the one whose ids it is carrying.
+func deleteAuditTrail(ctx context.Context, tx pgx.Tx, table string, recordIDs []int64, c *wipeCounts) error {
+	if len(recordIDs) == 0 {
+		return nil
+	}
+	tag, err := tx.Exec(ctx,
+		`DELETE FROM audit_log WHERE table_name = @table AND record_id = ANY(@ids)`,
+		pgx.NamedArgs{"table": table, "ids": recordIDs})
+	if err != nil {
+		return fmt.Errorf("delete audit trail for %s: %w", table, err)
+	}
+	c.auditRows += tag.RowsAffected()
 	return nil
 }
 
-func wipeAccounts(ctx context.Context, pool *pgxpool.Pool, deletableIDs []int64, c *wipeCounts) error {
+func wipeAccounts(ctx context.Context, pool *pgxpool.Pool, deletableIDs []int64, c *wipeCounts) ([]string, error) {
 	if len(deletableIDs) == 0 {
-		return nil
+		return nil, nil
 	}
-	return dbx.InTx(ctx, pool, func(tx pgx.Tx) error {
-		// Contacts, devices, notifications, follows and linked identities all cascade off the
-		// account row. The three protected accounts are not in this list and keep everything.
-		tag, err := tx.Exec(ctx,
-			`DELETE FROM account WHERE id = ANY(@ids)`, pgx.NamedArgs{"ids": deletableIDs})
+	var keys []string
+	err := dbx.InTx(ctx, pool, func(tx pgx.Tx) error {
+		args := pgx.NamedArgs{"ids": deletableIDs}
+		// The documents cascade off the account, so their ids are read while the rows are still
+		// there — what audited them does not cascade with them.
+		docIDs, err := collectIDs(ctx, tx,
+			`SELECT id FROM identity_document WHERE account_id = ANY(@ids)`, args)
 		if err != nil {
 			return err
 		}
-		c.accounts = tag.RowsAffected()
-		return deleteSeedResources(ctx, tx, c)
+		// Contacts, devices, notifications, follows and linked identities all cascade off the
+		// account row. The three protected accounts are not in this list and keep everything.
+		accountIDs, err := collectIDs(ctx, tx, `DELETE FROM account WHERE id = ANY(@ids) RETURNING id`, args)
+		if err != nil {
+			return err
+		}
+		c.accounts = int64(len(accountIDs))
+		if err := deleteAuditTrail(ctx, tx, "account", accountIDs, c); err != nil {
+			return err
+		}
+		if err := deleteAuditTrail(ctx, tx, "identity_document", docIDs, c); err != nil {
+			return err
+		}
+		keys, err = deleteSeedResources(ctx, tx, deleteSeedResourcesStmt, c)
+		return err
 	})
+	return keys, err
 }
 
-// wipeObjects removes the generated photographs from the object store. Best effort by design:
-// a seeder run outside the gateway's filesystem cannot see them, and a wipe that refuses to
-// clean the database because it could not reach a directory is worse than a few orphaned files
-// that the next run overwrites anyway.
-func wipeObjects(root string) (int64, error) {
+// wipeObjects removes the objects whose rows have just gone, named one by one. Not the seeder's
+// directory: a key a surviving listing still points at keeps its file, or the wipe empties a
+// gallery it was never about. Best effort by design — a seeder run outside the gateway's
+// filesystem cannot see the store at all, and an object with no row left is unreachable whether
+// or not its file went, so a file that is already gone is not an error either.
+func wipeObjects(root string, keys []string) (int64, error) {
 	if root == "" {
 		return 0, nil
 	}
-	dir := filepath.Join(root, "seed")
 	var n int64
-	err := filepath.Walk(dir, func(_ string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
+	dirs := map[string]bool{}
+	for _, key := range keys {
+		path := filepath.Join(root, filepath.Clean("/"+key))
+		if err := os.Remove(path); err != nil {
+			if !os.IsNotExist(err) {
+				log.Printf("wipe: could not remove %s: %v (database is clean; remove it by hand)", path, err)
+			}
+			continue
 		}
-		if !info.IsDir() {
-			n++
-		}
-		return nil
-	})
-	if err != nil {
-		return 0, nil
+		n++
+		dirs[filepath.Dir(path)] = true
 	}
-	if err := os.RemoveAll(dir); err != nil {
-		log.Printf("wipe: could not remove %s: %v (database is clean; remove it by hand)", dir, err)
-		return 0, nil
+	// Whatever is now empty. os.Remove refuses a directory that is not, which is the test.
+	for dir := range dirs {
+		_ = os.Remove(dir)
 	}
+	_ = os.Remove(filepath.Join(root, "seed"))
 	return n, nil
 }

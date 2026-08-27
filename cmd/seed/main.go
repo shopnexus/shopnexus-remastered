@@ -96,11 +96,11 @@ func run(ctx context.Context, doWipe, confirm, photos bool) error {
 		}
 		log.Printf("wiped in %s: %d accounts, %d listings, %d orders, %d offers, %d refunds, "+
 			"%d conversations, %d messages, %d reviews, %d tickets, %d wallets, %d payment sessions, "+
-			"%d resource rows, %d objects",
+			"%d resource rows, %d audit rows, %d stranded refs, %d objects",
 			time.Since(start).Round(time.Millisecond),
 			c.accounts, c.listings, c.orders, c.offers, c.refunds,
 			c.conversations, c.messages, c.reviews, c.tickets,
-			c.walletRows, c.sessions, c.resources, c.files)
+			c.walletRows, c.sessions, c.resources, c.auditRows, c.strandedRefs, c.files)
 		log.Printf("categories, the option registry, the support desk and the three demo logins were left alone")
 		return nil
 	}
